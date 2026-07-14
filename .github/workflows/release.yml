@@ -372,34 +372,17 @@ jobs:
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
 
-    # Fast-build path (TODO-fast-release): a workflow_dispatch with skip_tests:true
-    # skips the analyze/unit/package suites and goes straight to compile+publish.
-    # push/release events never carry the input (github.event.inputs.skip_tests is
-    # '') so they keep running the full gate -- the continuous test signal on
-    # main/develop is preserved; only the manual, user-waited release is fast.
-    - name: Run dart analyze
-      if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') }}
-      working-directory: hibiki
-      run: flutter analyze
-
-    - name: Run unit tests (main app)
-      if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') }}
-      working-directory: hibiki
-      run: dart run tool/flutter_test_failures.dart --exclude-tags golden
-
-    - name: Run package tests
-      if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') }}
-      run: |
-        for pkg in packages/hibiki_core packages/hibiki_dictionary packages/hibiki_anki packages/hibiki_audio packages/hibiki_platform; do
-          if [ -d "$pkg/test" ]; then
-            echo "::group::Testing $pkg"
-            (cd "$pkg" && dart ../../hibiki/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$(basename "$pkg"))
-            echo "::endgroup::"
-          else
-            echo "::warning title=No package tests::$pkg has no test/ dir — its code is only covered transitively by the main-app suite"
-          fi
-        done
-
+    # TODO-fast-release: analyze/unit/package tests no longer gate this build job.
+    # They ran here as sequential steps BEFORE `flutter build apk`, so a slow or
+    # red suite delayed (and could block) the debug-channel APK the user is
+    # waiting on. They now live in the sibling `tests` job below, which runs in
+    # PARALLEL off the same trigger and does NOT gate build/publish: the APK
+    # compiles + publishes immediately, and a test failure still surfaces as a red
+    # X on the `tests` job (continuous signal preserved on every push, including
+    # direct develop pushes that skip the PR gate in main.yml). The desktop/EXE
+    # workflow (release-desktop.yml) never ran tests, so nothing there changes.
+    # The workflow_dispatch skip_tests input now governs whether the `tests` job
+    # runs (see its job-level `if`), keeping the manual fast-release path intact.
     - name: Collect Android release build diagnostics
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
       working-directory: hibiki
@@ -751,3 +734,96 @@ jobs:
         ASSET_GLOB: hibiki-*.apk
         PLATFORM_LABEL: android
       run: bash tool/publish_update_manifest.sh
+
+  # TODO-fast-release: the analyze/unit/package suites that used to run as
+  # sequential steps at the top of the `build` job (gating `flutter build apk`)
+  # now live here as an INDEPENDENT job. It shares the same trigger as `build`
+  # but has NO `needs:` relationship, so it runs in parallel and never delays or
+  # blocks the debug-channel APK. A failure still marks the whole workflow run
+  # red (signal preserved on every push, including direct develop pushes that
+  # bypass main.yml's PR gate). The job-level `if` keeps the workflow_dispatch
+  # skip_tests fast-release path: a manual dispatch with skip_tests:true skips
+  # this entire job. Setup mirrors `build` minus the Android/Gradle/keystore bits
+  # tests don't need (analyze + Dart-VM unit tests link no native/Android
+  # toolchain). Only google_oauth_secret.dart is gitignored and must be stubbed
+  # or `flutter analyze` fails to compile google_drive_auth.dart; the
+  # log_upload/dandanplay placeholders are committed, so their stubs are needed
+  # only to bake real secrets when present (kept here for parity with `build`).
+  tests:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.44.0'
+        cache: true
+
+    - name: Provide gitignored Google OAuth secret stub
+      shell: bash
+      env:
+        GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      run: |
+        dst=hibiki/lib/src/sync/google_oauth_secret.dart
+        if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+          printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+        fi
+
+    - name: Provide gitignored dandanplay secret stub
+      shell: bash
+      env:
+        DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+        DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+      run: |
+        dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+        if [ -n "$DANDANPLAY_APP_ID" ]; then
+          printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
+            "$DANDANPLAY_APP_ID" \
+            "$DANDANPLAY_APP_SECRET" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+        fi
+
+    - name: Cache pub packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.pub-cache
+        key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-pubcache-
+
+    - name: Flutter pub get
+      working-directory: hibiki
+      run: flutter pub get
+
+    - name: Apply pub cache patches
+      run: |
+        chmod +x ci/apply-patches.sh
+        bash ci/apply-patches.sh
+
+    - name: Run dart analyze
+      working-directory: hibiki
+      run: flutter analyze
+
+    - name: Run unit tests (main app)
+      working-directory: hibiki
+      run: dart run tool/flutter_test_failures.dart --exclude-tags golden
+
+    - name: Run package tests
+      run: |
+        for pkg in packages/hibiki_core packages/hibiki_dictionary packages/hibiki_anki packages/hibiki_audio packages/hibiki_platform; do
+          if [ -d "$pkg/test" ]; then
+            echo "::group::Testing $pkg"
+            (cd "$pkg" && dart ../../hibiki/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$(basename "$pkg"))
+            echo "::endgroup::"
+          else
+            echo "::warning title=No package tests::$pkg has no test/ dir — its code is only covered transitively by the main-app suite"
+          fi
+        done

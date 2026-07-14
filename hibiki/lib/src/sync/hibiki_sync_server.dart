@@ -1784,7 +1784,61 @@ class HibikiSyncServer {
       }
     }
 
+    // PUT /api/library/videos/<id> — client→host 上传本地视频文件并注册进 host 视频库
+    // （syncVideoFiles 开关驱动的 live push）。走到此处的 PUT 必是「裸 id 无 suffix」：
+    // 所有带 suffix 的端点（cover/streamurl/stream/subtitle/position）已在上方消化（非
+    // GET 的 suffix 请求返回 405，position 的 PUT 已被上面 switch 接管）。id 允许含 `/`
+    // （bookUid 形如 video/xxx），但拒 `..` / `\`（路径穿越）。title / 原始文件名经
+    // URL-encode 走 header（HTTP header 只收 ASCII，日文标题必须编码）。
+    if (method == 'PUT' && reqPath.startsWith('/api/library/videos/')) {
+      const String prefix = '/api/library/videos/';
+      final String id = reqPath.substring(prefix.length);
+      if (id.isEmpty || id.contains('..') || id.contains('\\')) {
+        return shelf.Response(400, body: 'Invalid video id');
+      }
+      final String title =
+          _decodeHeaderValue(request, 'x-hibiki-video-title') ?? id;
+      final String? fileName =
+          _decodeHeaderValue(request, 'x-hibiki-video-filename');
+      final Directory tmpDir =
+          Directory.systemTemp.createTempSync('hibiki_video_in');
+      final File tmp = File(p.join(tmpDir.path, 'upload.bin'));
+      final IOSink sink = tmp.openWrite();
+      try {
+        await request.read().forEach(sink.add);
+        await sink.close();
+        await svc.importVideo(tmp,
+            id: id, title: title, originalFileName: fileName);
+        return shelf.Response(200);
+      } catch (e) {
+        try {
+          await sink.close();
+        } catch (_) {
+          // best-effort
+        }
+        return shelf.Response(500, body: 'Video import failed: $e');
+      } finally {
+        try {
+          tmpDir.deleteSync(recursive: true);
+        } catch (_) {
+          // best-effort
+        }
+      }
+    }
+
     return shelf.Response.notFound('Not found');
+  }
+
+  /// 从请求 header 读一个 URL-encoded 值并解码（HTTP header 只收 ASCII，非 ASCII 值
+  /// 由 client 端 [Uri.encodeComponent] 编码）。缺失/空返回 null；解码失败退回原文。
+  static String? _decodeHeaderValue(shelf.Request request, String name) {
+    final String? raw = request.headers[name];
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return Uri.decodeComponent(raw);
+    } catch (_) {
+      return raw;
+    }
   }
 
   Map<String, Object?> _remoteVideoJsonForRequest(

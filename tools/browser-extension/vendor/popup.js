@@ -1048,6 +1048,10 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     } else if (!hasDimensions && isSvg) {
         node.dataset.hasAspectRatio = 'false';
         imageContainer.style.width = 'auto';
+        const isGaiji = nodeData?.class === 'gaiji' || Object.prototype.hasOwnProperty.call(nodeData || {}, 'gaiji');
+        if (isGaiji) {
+            imageContainer.style.setProperty('width', 'auto', 'important');
+        }
         imageContainer.style.minWidth = '1.2em';
         imageContainer.style.height = '1.2em';
         imageContainer.style.fontSize = 'inherit';

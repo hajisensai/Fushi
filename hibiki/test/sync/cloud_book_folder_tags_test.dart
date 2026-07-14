@@ -9,7 +9,11 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart' show kSyncBookTagsAssetName;
 import 'package:hibiki/src/sync/sync_orchestrator.dart'
-    show importRemoteBookFolder;
+    show
+        importRemoteBookFolder,
+        kSyncAudiobookAssetName,
+        parseTagSidecar,
+        parseBookCssSidecar;
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -67,15 +71,21 @@ class _FakeBookFolderBackend implements SyncBackend {
     required this.folderId,
     required this.sidecarJson,
     this.includeSidecarEntry = true,
+    this.includeAudiobookEntry = false,
   });
 
   final String bookTitle;
   final String folderId;
   final Object? sidecarJson;
   final bool includeSidecarEntry;
+  final bool includeAudiobookEntry;
+
+  /// getAsset 请求过的 assetId（供断言云有声书 pull 是否被触达）。
+  final List<String> requestedAssetIds = <String>[];
 
   static const String epubAssetId = 'epubAsset1';
   static const String sidecarAssetId = 'tagsSidecar1';
+  static const String audiobookAssetId = 'audioAsset1';
 
   @override
   Future<List<AssetEntry>> listChildren(String id) async {
@@ -84,12 +94,21 @@ class _FakeBookFolderBackend implements SyncBackend {
       const AssetEntry(id: epubAssetId, name: 'book.epub'),
       if (includeSidecarEntry)
         const AssetEntry(id: sidecarAssetId, name: kSyncBookTagsAssetName),
+      if (includeAudiobookEntry)
+        const AssetEntry(id: audiobookAssetId, name: kSyncAudiobookAssetName),
     ];
   }
 
   @override
   Future<void> getAsset(String assetId, File destination,
       {void Function(double progress)? onProgress}) async {
+    requestedAssetIds.add(assetId);
+    // 有声书资产：写非法包字节，让 importAudioDatabasePackage 抛错（被
+    // _pullRemoteFolderAudiobook 吞掉）——本测试只验证「下载路径是否触达该资产」。
+    if (assetId == audiobookAssetId) {
+      await destination.writeAsBytes(<int>[0, 1, 2, 3]);
+      return;
+    }
     await destination.writeAsBytes(_buildMinimalEpub(bookTitle));
   }
 
@@ -353,5 +372,132 @@ void main() {
           reason: 'malformed sidecar $malformed must degrade to empty tags');
       expect(await db.getAllTags(), isEmpty);
     }
+  });
+
+  // ── 云后端有声书 pull（修复「只上传拿不回」缺口）──────────────────────────────
+  test('提供 audioDatabaseRoot 时下载远端书文件夹会补拉 audiobook.hibikiaudio', () async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
+      bookTitle: 'BookWithAudio',
+      folderId: 'folderAudio',
+      sidecarJson: null,
+      includeSidecarEntry: false,
+      includeAudiobookEntry: true,
+    );
+    final Directory audioRoot = freshTemp();
+
+    final bool imported = await importRemoteBookFolder(
+      db: db,
+      backend: backend,
+      folderId: backend.folderId,
+      tempDir: freshTemp(),
+      audioDatabaseRoot: audioRoot,
+    );
+
+    expect(imported, isTrue); // EPUB 导入成功
+    expect(await db.getAllEpubBooks(), hasLength(1));
+    // 关键：下载路径触达了有声书资产（此前只找 .epub、拿不回音频）。
+    expect(backend.requestedAssetIds,
+        contains(_FakeBookFolderBackend.audiobookAssetId));
+  });
+
+  test('未提供 audioDatabaseRoot 时不拉 audiobook.hibikiaudio（保持旧行为）', () async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
+      bookTitle: 'BookAudioSkipped',
+      folderId: 'folderAudioSkip',
+      sidecarJson: null,
+      includeSidecarEntry: false,
+      includeAudiobookEntry: true,
+    );
+
+    final bool imported = await importRemoteBookFolder(
+      db: db,
+      backend: backend,
+      folderId: backend.folderId,
+      tempDir: freshTemp(),
+      // audioDatabaseRoot 缺省 null
+    );
+
+    expect(imported, isTrue);
+    expect(backend.requestedAssetIds,
+        isNot(contains(_FakeBookFolderBackend.audiobookAssetId)),
+        reason: '未注入 audioDatabaseRoot 时绝不触达有声书资产（向后兼容）');
+  });
+
+  // ── parseTagSidecar：v1/v2 LWW 输入解析（tags 稳健档）──────────────────────────
+  group('parseTagSidecar', () {
+    test('v2 带 tagsAddedAt + tagTombstones 直接用', () {
+      final parsed = parseTagSidecar(<String, Object?>{
+        'schemaVersion': 2,
+        'tags': <String>['听力'],
+        'tagsAddedAt': <String, Object?>{'听力': 100},
+        'tagTombstones': <String, Object?>{'N2': 200},
+      });
+      expect(parsed.addedAt, <String, int>{'听力': 100});
+      expect(parsed.tombstones, <String, int>{'N2': 200});
+    });
+
+    test('v1 只有 tags 名单 → 合成 addedAt=1、无墓碑（向后兼容只增）', () {
+      final parsed = parseTagSidecar(<String, Object?>{
+        'schemaVersion': 1,
+        'tags': <String>['听力', 'N2'],
+      });
+      expect(parsed.addedAt, <String, int>{'听力': 1, 'N2': 1});
+      expect(parsed.tombstones, isEmpty);
+    });
+
+    test('数字串值容忍 + 空名/坏字段跳过；非 Map 安全降级为空', () {
+      final parsed = parseTagSidecar(<String, Object?>{
+        'tagsAddedAt': <String, Object?>{'A': '300', '': 5, 'B': 'x'},
+        'tagTombstones': <String, Object?>{'C': 400},
+      });
+      expect(parsed.addedAt, <String, int>{'A': 300});
+      expect(parsed.tombstones, <String, int>{'C': 400});
+      final empty = parseTagSidecar('not json');
+      expect(empty.addedAt, isEmpty);
+      expect(empty.tombstones, isEmpty);
+    });
+  });
+
+  // ── parseBookCssSidecar：per-book CSS sidecar 解析 ──────────────────────────
+  group('parseBookCssSidecar', () {
+    test('files 映射解析出 content/deleted/updatedAt', () {
+      final parsed = parseBookCssSidecar(<String, Object?>{
+        'schemaVersion': 1,
+        'files': <String, Object?>{
+          'style.css': <String, Object?>{
+            'content': 'body{color:red}',
+            'deleted': false,
+            'updatedAt': 100,
+          },
+          'reset.css': <String, Object?>{
+            'content': '',
+            'deleted': true,
+            'updatedAt': 200,
+          },
+        },
+      });
+      expect(parsed['style.css']!.content, 'body{color:red}');
+      expect(parsed['style.css']!.deleted, isFalse);
+      expect(parsed['style.css']!.updatedAt, 100);
+      expect(parsed['reset.css']!.deleted, isTrue);
+      expect(parsed['reset.css']!.updatedAt, 200);
+    });
+
+    test('缺 updatedAt / 空 rel / 非 Map 一律安全跳过或返空', () {
+      final parsed = parseBookCssSidecar(<String, Object?>{
+        'files': <String, Object?>{
+          'a.css': <String, Object?>{'content': 'x'}, // 缺 updatedAt
+          '': <String, Object?>{'content': 'y', 'updatedAt': 1}, // 空 rel
+          'b.css': 'not-a-map',
+        },
+      });
+      expect(parsed, isEmpty);
+      expect(parseBookCssSidecar('not json'), isEmpty);
+      expect(parseBookCssSidecar(<String, Object?>{'files': 'oops'}), isEmpty);
+    });
   });
 }

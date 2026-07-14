@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -103,6 +103,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<_RemoteVideoState?>? _remoteFuture;
   RemoteVideoClient? _remoteVideoClient;
 
+  /// BUG-793：视频库 uid 集合监听。列表是一次性 FutureBuilder + 保活 tab，无此
+  /// 订阅时非本页发起的导入（外部「用 Hibiki 打开」等直接落库不 _refresh 的路径）
+  /// 要等下拉刷新/重启才出现。订阅 videoBooks 表 → 集合一变（插入/删除）就 _refresh。
+  StreamSubscription<List<String>>? _videoUidsSub;
+
+  /// 上一次已知的视频 uid 集合，用于对 [_videoUidsSub] 事件去重：仅集合变化才刷新，
+  /// 封面自愈 / 进度回写等纯列更新（集合不变）跳过，避免写回→重刷环。null=尚未收到
+  /// 首个事件（首事件仅登记基线，不刷——initState 已首载）。
+  Set<String>? _knownVideoUids;
+
   /// 多端库联合视图 §2.2/§2.6：云后端（Google Drive 等）的云视频目录 client。互联
   /// （hibikiServer）与云后端互斥——一台设备只配一种后端，故 [_remoteVideoClient]（互联）
   /// 与本字段（云）至多一个非空，[_downloadRemote] 据此分派下载路径。
@@ -171,6 +181,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     _loadLibraryMaps();
     // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
     _maybeBackfillCovers();
+    // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
+    _videoUidsSub =
+        widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
@@ -179,11 +192,26 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   @override
   void dispose() {
+    _videoUidsSub?.cancel();
     assert(() {
       HomeVideoPage.debugRefreshVideos = null;
       return true;
     }());
     super.dispose();
+  }
+
+  /// BUG-793：视频库 uid 集合变化回调。首个事件仅登记基线（initState 已首载）；
+  /// 此后仅当集合真变化（插入/删除）才 _refresh——纯列更新（封面自愈 / 进度回写）
+  /// 集合不变故跳过，避免自愈写回→重刷环。
+  void _onVideoUidsChanged(List<String> uids) {
+    final Set<String> next = uids.toSet();
+    if (_knownVideoUids == null) {
+      _knownVideoUids = next;
+      return;
+    }
+    if (setEquals(next, _knownVideoUids)) return;
+    _knownVideoUids = next;
+    if (mounted) _refresh();
   }
 
   void _refresh() {
@@ -425,6 +453,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       id: e.uid,
       title: e.title,
       sizeBytes: e.sizeBytes,
+      // tags 稳健档：把清单条目的标签 LWW 时钟带进 RemoteVideoInfo，供下载后
+      // mergeRemoteVideoTags 按名 max(add) vs max(removed) 解析（删除/改名传播）。
+      tagsAddedAt: e.tagsAddedAt,
+      tagTombstones: e.tagTombstones,
     );
   }
 
@@ -834,7 +866,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   void _openStatistics() {
     Navigator.push(
       context,
-      adaptivePageRoute<void>(builder: (_) => const VideoStatisticsPage()),
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const VideoStatisticsPage(),
+      ),
     );
   }
 
@@ -982,7 +1017,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   void _openCollections() {
     Navigator.push(
       context,
-      adaptivePageRoute<void>(builder: (_) => const CollectionsPage()),
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const CollectionsPage(),
+      ),
     );
   }
 
@@ -994,6 +1032,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     await Navigator.push(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => VideoHibikiPage.neutralized(
           bookUid: book.bookUid,
           repo: widget.repo,
@@ -1024,6 +1063,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     Navigator.push(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => VideoHibikiPage.neutralizedRemote(
           info: video,
           repo: widget.repo,
@@ -1204,9 +1244,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (subtitle.cues.isNotEmpty) {
       await widget.repo.saveCues(bookUid: bookUid, cues: subtitle.cues);
     }
-    // TODO-1165：按标签名重建视频标签映射（host 按名传来，只增不删）。
-    if (video.tags.isNotEmpty) {
-      await widget.repo.applyTagNamesToVideoBook(bookUid, video.tags);
+    // tags 稳健档：LWW 合并 host 传来的标签时钟 + 移除墓碑（删除/改名传播、防复活）。
+    // host 带 tagsAddedAt/tagTombstones（v2）→ mergeRemoteVideoTags；旧 host 只有 tags
+    // 名单 → 合成 addedAt=1 退化为「只增 + 尊重本地移除墓碑」（向后兼容）。
+    if (video.tagsAddedAt.isNotEmpty ||
+        video.tagTombstones.isNotEmpty ||
+        video.tags.isNotEmpty) {
+      final Map<String, int> remoteAddedAt = video.tagsAddedAt.isNotEmpty
+          ? video.tagsAddedAt
+          : <String, int>{
+              for (final String name in video.tags)
+                if (name.isNotEmpty) name: 1,
+            };
+      await widget.repo.mergeRemoteVideoTags(
+        bookUid,
+        remoteAddedAt: remoteAddedAt,
+        remoteTombstones: video.tagTombstones,
+      );
     }
     // 封面抽帧（extractVideoCover 走 ffmpeg 子进程，最长 30s）是慢的可选增强，绝不能
     // 挡在建行前——否则用户「下载完」要等到抽帧结束才看到视频。这里建行已落库，封面
@@ -1239,6 +1293,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       embeddedSubtitleTrack: const Value<int?>(0),
       importedAt: Value(DateTime.now()),
     ));
+    // tags 稳健档：合并云清单携带的标签 LWW 时钟（删除/改名传播、防复活）。空则 no-op。
+    if (video.tagsAddedAt.isNotEmpty || video.tagTombstones.isNotEmpty) {
+      await widget.repo.mergeRemoteVideoTags(
+        bookUid,
+        remoteAddedAt: video.tagsAddedAt,
+        remoteTombstones: video.tagTombstones,
+      );
+    }
     // 封面：先试云端封面资产（可选，无封面记录返回 false 不抛）；失败/无则本地抽帧兜底。
     // 与建行解耦（抽帧走 ffmpeg 慢，绝不挡建行落库），抽好后 updateCover 回写并刷新一次。
     bool gotCover = false;
@@ -1396,6 +1458,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     await Navigator.push(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => TagPickerPage(videoBookUid: book.bookUid),
       ),
     );
@@ -2074,10 +2137,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           completed: it.payload.local?.completedAt != null,
         ),
     ]);
-    // #5：行头计数只数**本地成员**（远端占位成员不入 n），与合集详情页口径一致——详情页
-    // 只显示本地成员。行体（itemCount）仍渲染全部成员（含远端占位卡供流播/下载），故不变。
-    final int localCount =
-        group.items.where((it) => it.payload.local != null).length;
+    // 行头计数 = 行体实际渲染的成员数（本地 + 远端占位），与 itemCount 同源（BUG-790）。
+    // 旧口径只数本地成员，导致「全为未下载远端剧集」的合集行明明有云占位卡却显示「0 集」，
+    // 与眼前所见割裂（用户实报）。行头数字必须诚实反映该行看得见的卡片数。
+    final int memberCount = group.items.length;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
@@ -2088,8 +2151,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: CollectionShelfRow(
         key: ValueKey<String>('home_video_collection_row_${collection.id}'),
         title: collection.name,
-        countLabel: t.video_playlist_episodes(count: localCount),
-        itemCount: group.items.length,
+        countLabel: t.video_playlist_episodes(count: memberCount),
+        itemCount: memberCount,
         // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout；218 = 封面区 + 标题 +
         // Phase D 观看进度行）。
         itemWidth: cardLayout.cardWidth,
@@ -2508,6 +2571,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => MediaCollectionDetailPage(
           database: db,
           collection: collection,

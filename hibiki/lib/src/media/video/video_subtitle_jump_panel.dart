@@ -531,7 +531,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               child: showLoading
                   ? _buildLoading(cs)
                   : cues.isEmpty || visibleIndexes.isEmpty
-                      ? _buildEmpty(cs)
+                      ? _buildEmpty(cs, cuesLoaded: cues.isNotEmpty)
                       // 无 itemExtent：行高自适应换行后的文本（TODO-340）。每行包一个
                       // GlobalKey（存 _rowKeys，按 rawIndex）供 ensureVisible 自动滚动。
                       : ListView.builder(
@@ -700,12 +700,19 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     );
   }
 
-  Widget _buildEmpty(ColorScheme cs) {
+  /// 空态文案（TODO-631 / BUG-795）。必须区分两种「无行可显示」：
+  ///   1. `cuesLoaded == false`：字幕本体一条都没有（真未加载）→ [widget.emptyHint]
+  ///      （"未加载字幕"）。
+  ///   2. `cuesLoaded == true` 但当前过滤档（收藏 / 已选）筛出 0 条：字幕已加载，只是
+  ///      本档为空 → 给**过滤档专属**文案，别再误报"未加载字幕"（用户报的核心症状：
+  ///      收藏 0 句时切到收藏档，明明有字幕却显示未加载）。「全部」档筛出 0 条只可能因
+  ///      cues 本身为空（[VideoSubtitleListFilter.all] 全量映射），故落回 [widget.emptyHint]。
+  Widget _buildEmpty(ColorScheme cs, {required bool cuesLoaded}) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Text(
-          widget.emptyHint,
+          _emptyHintForFilter(cuesLoaded: cuesLoaded),
           textAlign: TextAlign.center,
           style: TextStyle(
             color: cs.onSurfaceVariant,
@@ -714,6 +721,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         ),
       ),
     );
+  }
+
+  String _emptyHintForFilter({required bool cuesLoaded}) {
+    if (!cuesLoaded) return widget.emptyHint;
+    switch (_filter) {
+      case VideoSubtitleListFilter.favorites:
+        return t.video_subtitle_filter_favorites_empty;
+      case VideoSubtitleListFilter.selected:
+        return t.video_subtitle_filter_selected_empty;
+      case VideoSubtitleListFilter.all:
+        return widget.emptyHint;
+    }
   }
 
   Widget _buildLoading(ColorScheme cs) {

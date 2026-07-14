@@ -4,7 +4,7 @@
 
 ## 平台与 SDK
 
-5 平台均出包：Android / iOS / macOS / Windows / Linux（Android 走 Material 3，iOS 走 Cupertino，桌面端复用 Material；桌面 EPUB 渲染靠 fork 的 `flutter_inappwebview_windows`，Linux 阅读器能力受限）。Android：`compileSdk 36` / `minSdkVersion 24` / `targetSdk 35`。
+5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3；Cupertino / macOS renderer 仅保留为隐藏内部能力；桌面 EPUB 渲染靠 fork 的 `flutter_inappwebview_windows`，Linux 阅读器能力受限）。Android：`compileSdk 36` / `minSdkVersion 24` / `targetSdk 35`。
 
 ## Melos
 

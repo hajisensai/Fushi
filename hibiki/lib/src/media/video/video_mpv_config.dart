@@ -384,6 +384,34 @@ Map<String, String> resolveScaleProperties(bool highQuality, {bool? isMobile}) {
   };
 }
 
+/// 把 [audioChannels] 偏好解析成「实际下发给 libmpv 的 `audio-channels` 值」。纯函数。
+///
+/// **根治「特殊多声道布局（如 6.1 `FL+FR+FC+LFE+BL+BR+FLC`）无声」（BUG-798）。** 用户
+/// 4K FLAC 片源音轨是 6.1（含罕见的 `FLC`＝前左中央声道）。mpv 默认 `audio-channels=auto-safe`
+/// 会把这个源布局**原样当输出目标**透传给音频输出（AO），而 libswresample **无法为含 `FLC`
+/// 的输出布局建重采样矩阵**（FFmpeg 已知限制：FLC/FRC 可在下混**输入**里处理，但不能作
+/// **输出**目标）→ `swr_init` 失败 → 整条音频滤镜链建不起来 → 彻底无声（日志
+/// `SWR: Output channel layout '7 channels (...FLC)' is not supported` /
+/// `libswresample failed to initialize`）；画面正常。
+///
+/// 修复=对齐 mpv 桌面版「给一组标准布局清单、按 AO 实际能力挑最匹配并自动转换」的做法：
+/// `auto-safe` 不再透传源布局，而是下发标准布局白名单 [_standardChannelLayouts]
+/// （`7.1,5.1,stereo`，高→低有序）。mpv 会选**第一个 AO 支持的**布局并「converting the audio
+/// if necessary」（下混/上混）——7.1/5.1 环绕设备仍拿到环绕（源 6.1-FLC → 标准 7.1/5.1
+/// 重采样，FLC 只在输入端，swr 支持），普通立体声设备回落到永远支持的 `stereo`（下混，
+/// 用户听到全部声道内容）。**任何设备都不会再让 FLC 奇异布局成为输出目标 → 不再无声**。
+///
+/// `stereo` / `mono`（用户显式强制）原样透传，语义不变。这是**对齐 mpv 标准布局协商**的根因
+/// 修复，不是给某个片源打特例；不破坏环绕输出（Never break userspace）。
+String resolveAudioChannels(String audioChannels) {
+  if (audioChannels == 'auto-safe') return _standardChannelLayouts;
+  return audioChannels; // stereo / mono（用户显式强制）原样透传。
+}
+
+/// mpv `audio-channels` 标准布局白名单：高→低有序，末位 `stereo` 永远兜底（不会无声）。
+/// 见 [resolveAudioChannels]（BUG-798）。
+const String _standardChannelLayouts = '7.1,5.1,stereo';
+
 /// 构建 Android 专用的「10-bit → 8-bit 降位」视频滤镜属性 map（`vf`）。纯函数。
 ///
 /// **根治 realme 8 / Mali-G76「10-bit HEVC 视频闪烁 + 无画面」（TODO-1196；用户 BUG-465
@@ -452,7 +480,10 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
   // 音频
   out['audio-delay'] = (config.audioDelayMs / 1000).toString(); // 秒
   out['audio-pitch-correction'] = config.audioPitchCorrection ? 'yes' : 'no';
-  out['audio-channels'] = config.audioChannels;
+  // 声道：auto-safe 下发标准布局白名单（7.1,5.1,stereo）而非透传源布局，绕开含 FLC
+  // 的奇异布局做输出目标时 libswresample 无法初始化 → 无声（BUG-798）。见
+  // [resolveAudioChannels]；stereo/mono（用户显式强制）原样透传。
+  out['audio-channels'] = resolveAudioChannels(config.audioChannels);
   out['audio-normalize-downmix'] = config.normalizeDownmix ? 'yes' : 'no';
   // 播放
   out['loop-file'] = config.loopFile ? 'inf' : 'no';

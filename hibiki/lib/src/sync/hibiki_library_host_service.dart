@@ -206,6 +206,8 @@ class RemoteBookInfo {
     this.coverPath,
     this.hasAudiobook = false,
     this.tags = const <String>[],
+    this.tagsAddedAt = const <String, int>{},
+    this.tagTombstones = const <String, int>{},
     this.collection,
   });
 
@@ -224,6 +226,13 @@ class RemoteBookInfo {
   /// 名不传本地 id；client 下载后 getOrCreateTagByName + addTagToBook 重建映射。
   final List<String> tags;
 
+  /// tags 稳健档 LWW：标签「名→加入戳」（client mergeRemoteBookTags 用）。空 = 旧 host
+  /// 未带（退化为按 [tags] 名单只增 + 尊重本地移除墓碑）。
+  final Map<String, int> tagsAddedAt;
+
+  /// tags 稳健档 LWW：标签移除墓碑「名→移除戳」（host 移除标签跨端传播、防复活）。
+  final Map<String, int> tagTombstones;
+
   /// 该书在 host 端的主合集归属（多端库联合视图 §2.3 任务5.1；null = 散卡）。
   /// 远端占位卡据此归进对应合集行（UI 批任务 10）。
   final RemoteCollectionMembership? collection;
@@ -241,6 +250,8 @@ class RemoteBookInfo {
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
         if (hasAudiobook) 'hasAudiobook': true,
         if (tags.isNotEmpty) 'tags': tags,
+        if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
+        if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
         if (collection != null) 'collection': collection!.toJson(),
       };
 
@@ -251,6 +262,8 @@ class RemoteBookInfo {
     String? coverPath,
     bool? hasAudiobook,
     List<String>? tags,
+    Map<String, int>? tagsAddedAt,
+    Map<String, int>? tagTombstones,
     RemoteCollectionMembership? collection,
   }) =>
       RemoteBookInfo(
@@ -262,6 +275,8 @@ class RemoteBookInfo {
         coverPath: coverPath ?? this.coverPath,
         hasAudiobook: hasAudiobook ?? this.hasAudiobook,
         tags: tags ?? this.tags,
+        tagsAddedAt: tagsAddedAt ?? this.tagsAddedAt,
+        tagTombstones: tagTombstones ?? this.tagTombstones,
         collection: collection ?? this.collection,
       );
 
@@ -279,6 +294,8 @@ class RemoteBookInfo {
       coverPath: coverPath,
       hasAudiobook: json['hasAudiobook'] == true,
       tags: _jsonStringList(json['tags']),
+      tagsAddedAt: _jsonNameIntMap(json['tagsAddedAt']),
+      tagTombstones: _jsonNameIntMap(json['tagTombstones']),
       collection: RemoteCollectionMembership.fromJson(json['collection']),
     );
   }
@@ -689,6 +706,8 @@ class RemoteVideoInfo {
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
     this.tags = const <String>[],
+    this.tagsAddedAt = const <String, int>{},
+    this.tagTombstones = const <String, int>{},
     this.collection,
   });
 
@@ -712,6 +731,13 @@ class RemoteVideoInfo {
   /// 该视频在 host 端的标签名列表（TODO-1165）。标签每设备本地，只传名；
   /// client 下载后 getOrCreateTagByName + addTagToVideoBook 重建映射。
   final List<String> tags;
+
+  /// tags 稳健档 LWW：标签「名→加入戳」（下载端 mergeRemoteVideoTags 用，云清单携带）。
+  /// 空 = 旧端未带（退化为按 [tags] 名单只增）。
+  final Map<String, int> tagsAddedAt;
+
+  /// tags 稳健档 LWW：标签移除墓碑「名→移除戳」（跨端传播删除/改名、防复活）。
+  final Map<String, int> tagTombstones;
 
   /// 该视频在 host 端的主合集归属（多端库联合视图 §2.3 任务5.1；null = 散卡）。
   /// 远端占位卡据此归进对应合集行（UI 批任务 10）。
@@ -761,6 +787,8 @@ class RemoteVideoInfo {
           if (currentEpisode > 0) 'currentEpisode': currentEpisode,
         },
         if (tags.isNotEmpty) 'tags': tags,
+        if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
+        if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
         if (collection != null) 'collection': collection!.toJson(),
       };
 
@@ -791,6 +819,8 @@ class RemoteVideoInfo {
         episodes: episodes,
         currentEpisode: currentEpisode,
         tags: tags,
+        tagsAddedAt: tagsAddedAt,
+        tagTombstones: tagTombstones,
         collection: collection ?? this.collection,
       );
 
@@ -818,8 +848,25 @@ class RemoteVideoInfo {
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
       tags: _jsonStringList(json['tags']),
+      tagsAddedAt: _jsonNameIntMap(json['tagsAddedAt']),
+      tagTombstones: _jsonNameIntMap(json['tagTombstones']),
     );
   }
+}
+
+/// 解析 `{name: ms}` 映射（值容忍 int/num/数字串；空名/非数值跳过）。非 Map → 空。
+Map<String, int> _jsonNameIntMap(Object? raw) {
+  if (raw is! Map) return const <String, int>{};
+  final Map<String, int> out = <String, int>{};
+  raw.forEach((Object? k, Object? v) {
+    final String name = k?.toString() ?? '';
+    if (name.isEmpty) return;
+    final int? ms = v is int
+        ? v
+        : (v is num ? v.toInt() : int.tryParse(v?.toString() ?? ''));
+    if (ms != null) out[name] = ms;
+  });
+  return out;
 }
 
 List<RemoteVideoEpisode> _jsonVideoEpisodes(Object? value) {
@@ -1049,12 +1096,35 @@ abstract class HibikiLibraryHostService {
     int updatedAtMs,
   );
 
-  // ── 视频（只读，不同步）────────────────────────────────────────────────────────
+  // ── 视频 ──────────────────────────────────────────────────────────────────────
 
   /// host 当前视频清单（从 VideoBooks 表读，按 importedAt DESC 排序）。
   ///
-  /// 只读接口：视频文件通常数 GB，不走同步管道；这里仅供客户端请求流式传输用。
+  /// 流式播放：视频文件通常数 GB，host→client 只按需流式传输（不走同步管道下发整
+  /// 文件）；client→host 方向由 [importVideo] 接收上传（syncVideoFiles 开关驱动，
+  /// 见 [SyncOrchestrator]._syncVideosLive）。
   Future<List<RemoteVideoInfo>> listVideos();
+
+  /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（仅一次 DB 查询）。
+  /// 供 client 侧 push 幂等判据（远端已有同 uid+同尺寸则跳过重传）与上传端点用。
+  /// [id] 含路径穿越字符（`..` / `\`）时抛 [ArgumentError]。
+  Future<bool> videoExists(String id);
+
+  /// 接收 client 上传的单文件视频并注册进 host 视频库（client→host，
+  /// syncVideoFiles 开关驱动的 live push）。
+  ///
+  /// [videoFile] 是已落到临时位置的上传字节；实现把它搬进 host 拥有的视频目录，按
+  /// [id]（= client 端 `VideoBooks.bookUid`，跨设备稳定同步键）+ [title] upsert 一行
+  /// `VideoBooks`（`videoPath` = 目录内绝对路径），使上传的视频出现在 host 视频列表、
+  /// 可被其它 client 流式播放。bookUid 稳定 ⇒ upsert，重复上传同一视频只覆盖同一行。
+  /// [originalFileName] 用于保留扩展名（media_kit 依赖），实现须做路径穿越校验。
+  /// 封面为可选增强，best-effort 抽取，绝不挡建行落库。
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  });
 
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
   ///

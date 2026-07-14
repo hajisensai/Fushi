@@ -214,6 +214,7 @@ hibiki は以下のプロジェクトとエコシステムを基盤としてい�
 | [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | ローカル音声と AnkiDroid 連携の参考 |
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | リーダー、統計、同期の互換性の参考 |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter 動画再生フレームワーク（libmpv コア） |
+| [Niratan](https://github.com/W1ght/Niratan) | macOS 向け没入型言語学習スイート |
 
 ## ライセンス
 

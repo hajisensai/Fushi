@@ -434,6 +434,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     Navigator.push(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => VideoHibikiPage.neutralized(
           bookUid: row.bookUid,
           repo: repo,

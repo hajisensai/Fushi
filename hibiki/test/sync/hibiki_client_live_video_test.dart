@@ -78,6 +78,28 @@ class _FakeLibraryService implements HibikiLibraryHostService {
           {String langCode = 'ja', int episodeIndex = 0}) async =>
       id == videoId ? subtitleFile : null;
 
+  /// 记录 client→host 上传（供上传端点 e2e 断言）。
+  final List<({String id, String title, String? fileName, List<int> bytes})>
+      uploaded =
+      <({String id, String title, String? fileName, List<int> bytes})>[];
+
+  @override
+  Future<bool> videoExists(String id) async =>
+      id == videoId || uploaded.any((u) => u.id == id);
+
+  @override
+  Future<void> importVideo(File videoFile,
+      {required String id,
+      required String title,
+      String? originalFileName}) async {
+    uploaded.add((
+      id: id,
+      title: title,
+      fileName: originalFileName,
+      bytes: await videoFile.readAsBytes(),
+    ));
+  }
+
   @override
   Future<List<RemoteDictionaryInfo>> listDictionaries() async =>
       <RemoteDictionaryInfo>[];
@@ -227,18 +249,20 @@ void main() {
   late HibikiSyncServer server;
   late String base;
   late _EmbeddedSubtitleFfmpegBackend ffmpeg;
+  late _FakeLibraryService library;
   const String token = 'live-video-token';
 
   setUp(() async {
     ffmpeg = _EmbeddedSubtitleFfmpegBackend();
     setFfmpegBackendForTesting(ffmpeg);
+    library = _FakeLibraryService();
     server = HibikiSyncServer(
       syncDataDir:
           Directory.systemTemp.createTempSync('hbk_live_video_srv').path,
       port: 0,
       token: token,
       allowLan: false,
-      libraryService: _FakeLibraryService(),
+      libraryService: library,
     );
     await server.start();
     base = 'http://127.0.0.1:${server.port}';
@@ -260,6 +284,27 @@ void main() {
     expect(result.single.title, 'Sample Video');
     expect(result.single.sizeBytes, 16);
     expect(result.single.hasSubtitle, isTrue);
+  });
+
+  test('putRemoteVideo uploads local video file to host (client→host)',
+      () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_up');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    // 非 ASCII 文件名 + 标题：验证 header URL-encode 往返（HTTP header 只收 ASCII）。
+    final File local = File('${tmp.path}/映画.mp4')
+      ..writeAsBytesSync(<int>[10, 20, 30, 40, 50]);
+
+    await backend.putRemoteVideo('video/uploaded', local, title: '映画タイトル');
+
+    expect(library.uploaded, hasLength(1));
+    final ({String id, String title, String? fileName, List<int> bytes}) rec =
+        library.uploaded.single;
+    expect(rec.id, 'video/uploaded'); // 含 `/` 的 bookUid 经 _encodeVideoId 往返
+    expect(rec.title, '映画タイトル'); // 非 ASCII 标题经 header 往返正确
+    expect(rec.fileName, '映画.mp4'); // 原始文件名保留（供 host 保扩展名）
+    expect(rec.bytes, <int>[10, 20, 30, 40, 50]); // 字节流完整送达
   });
 
   test('remoteVideoStreamUrls returns directly playable token stream URL',

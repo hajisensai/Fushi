@@ -144,6 +144,82 @@ void main() {
       expect(all.keys.where((k) => k == 'counter').length, 1);
     });
 
+    test('compareAndSetPref changes the expected raw value and bumps once',
+        () async {
+      final db = await _openDb();
+      final String hiddenRaw = PrefCodec.encode('macos');
+      final String autoRaw = PrefCodec.encode('auto');
+      await db.setPref('design_system', hiddenRaw);
+
+      final bool changed = await db.compareAndSetPref(
+        'design_system',
+        expectedValue: hiddenRaw,
+        newValue: autoRaw,
+      );
+
+      expect(changed, isTrue);
+      expect(await db.getPref('design_system'), autoRaw);
+      expect(
+        PrefCodec.decode<int>(
+          (await db.getPref(HibikiDatabase.prefsVersionKey))!,
+          0,
+        ),
+        2,
+      );
+    });
+
+    test('compareAndSetPref mismatch changes neither value nor version',
+        () async {
+      final db = await _openDb();
+      final String materialRaw = PrefCodec.encode('material');
+      await db.setPref('design_system', materialRaw);
+      final String versionBefore =
+          (await db.getPref(HibikiDatabase.prefsVersionKey))!;
+
+      final bool changed = await db.compareAndSetPref(
+        'design_system',
+        expectedValue: PrefCodec.encode('macos'),
+        newValue: PrefCodec.encode('auto'),
+      );
+
+      expect(changed, isFalse);
+      expect(await db.getPref('design_system'), materialRaw);
+      expect(
+        await db.getPref(HibikiDatabase.prefsVersionKey),
+        versionBefore,
+      );
+    });
+
+    test('concurrent compareAndSetPref calls allow exactly one winner',
+        () async {
+      final db = await _openDb();
+      final String hiddenRaw = PrefCodec.encode('cupertino');
+      await db.setPref('design_system', hiddenRaw);
+
+      final List<bool> results = await Future.wait(<Future<bool>>[
+        db.compareAndSetPref(
+          'design_system',
+          expectedValue: hiddenRaw,
+          newValue: PrefCodec.encode('auto'),
+        ),
+        db.compareAndSetPref(
+          'design_system',
+          expectedValue: hiddenRaw,
+          newValue: PrefCodec.encode('auto'),
+        ),
+      ]);
+
+      expect(results.where((bool changed) => changed), hasLength(1));
+      expect(
+        PrefCodec.decode<int>(
+          (await db.getPref(HibikiDatabase.prefsVersionKey))!,
+          0,
+        ),
+        2,
+        reason: '只有成功的 CAS 能 bump prefs_version',
+      );
+    });
+
     test('interleaved setPref on different keys all persist', () async {
       final db = await _openDb();
       const int n = 30;

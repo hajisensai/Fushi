@@ -220,6 +220,7 @@ hibiki 基於以下專案與生態：
 | [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | 本機音訊與 AnkiDroid 互動參考 |
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | 閱讀器、統計與同步相容性參考 |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter 影片播放框架（libmpv 核心） |
+| [Niratan](https://github.com/W1ght/Niratan) | macOS 沉浸式語言學習套件 |
 
 ## 授權條款
 

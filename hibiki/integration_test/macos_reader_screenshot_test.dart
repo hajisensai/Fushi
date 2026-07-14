@@ -6,15 +6,16 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:macos_ui/macos_ui.dart' show MacosWindow;
 
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart'
+    show hibikiMaterialNavKey;
 
 import 'helpers/library_fixture.dart';
 
-/// macOS-only visual capture of the READER inside the Approach-B root
-/// MacosWindow. Seeds a fresh paginated EPUB, opens it, waits for the WebView
+/// macOS-only visual capture of the reader inside the default-auto MD3 shell.
+/// Seeds a fresh paginated EPUB, opens it, waits for the WebView
 /// content, then grabs the engine framebuffer (RepaintBoundary.toImage) so the
 /// shot works even when the OS window is parked on a non-active Space.
 ///
@@ -23,19 +24,18 @@ import 'helpers/library_fixture.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('macOS reader renders inside the native shell', (tester) async {
+  testWidgets('macOS reader renders inside the default-auto MD3 shell',
+      (tester) async {
     app.main();
-    // macOS Approach B nav is the root SidebarItems, not the Material rail that
-    // waitForHome() looks for — wait on the MacosWindow shell instead.
-    bool shell = false;
+    bool homeReady = false;
     for (int i = 0; i < 180; i++) {
       await tester.pump(const Duration(milliseconds: 500));
-      if (find.byType(MacosWindow).evaluate().isNotEmpty) {
-        shell = true;
+      if (find.byKey(hibikiMaterialNavKey).evaluate().isNotEmpty) {
+        homeReady = true;
         break;
       }
     }
-    expect(shell, isTrue, reason: 'MacosWindow within 90s');
+    expect(homeReady, isTrue, reason: 'MD3 home shell within 90s');
     await tester.pump(const Duration(seconds: 2));
 
     // develop: book identity is a name-derived String key (not an int id);
@@ -51,7 +51,7 @@ void main() {
 
     // macOS-only screenshot harness (manual `flutter drive -d macos`): opens the
     // seeded book only to capture reader pixels — no interaction assertion, and
-    // the macos_ui shell is not modeled by the Material-oriented FocusDriver.
+    // this file is only a visual-capture harness, not an interaction assertion.
     await tester.tap(seededEntry); // itest-tap-allow: macOS pixel-capture only
     await tester.pump(const Duration(seconds: 3));
 

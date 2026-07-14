@@ -7290,8 +7290,16 @@ class $BookTagMappingsTable extends BookTagMappings
       requiredDuringInsert: true,
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'REFERENCES book_tags (id) ON DELETE CASCADE'));
+  static const VerificationMeta _addedAtMeta =
+      const VerificationMeta('addedAt');
   @override
-  List<GeneratedColumn> get $columns => [id, bookKey, tagId];
+  late final GeneratedColumn<int> addedAt = GeneratedColumn<int>(
+      'added_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [id, bookKey, tagId, addedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -7317,6 +7325,10 @@ class $BookTagMappingsTable extends BookTagMappings
     } else if (isInserting) {
       context.missing(_tagIdMeta);
     }
+    if (data.containsKey('added_at')) {
+      context.handle(_addedAtMeta,
+          addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta));
+    }
     return context;
   }
 
@@ -7336,6 +7348,8 @@ class $BookTagMappingsTable extends BookTagMappings
           .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
       tagId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
+      addedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}added_at'])!,
     );
   }
 
@@ -7350,14 +7364,23 @@ class BookTagMappingRow extends DataClass
   final int id;
   final String bookKey;
   final int tagId;
+
+  /// 该映射被加入的毫秒戳（TODO tags-sync：LWW-element-set 的 add 时钟——与
+  /// [BookTagMembershipTombstones].removedAt 比较决定 add-wins/remove-wins，防跨设备
+  /// 复活/误删）。旧行迁移填 0（最古 add，任何带时间戳的远端移除都能压过）。
+  final int addedAt;
   const BookTagMappingRow(
-      {required this.id, required this.bookKey, required this.tagId});
+      {required this.id,
+      required this.bookKey,
+      required this.tagId,
+      required this.addedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['book_key'] = Variable<String>(bookKey);
     map['tag_id'] = Variable<int>(tagId);
+    map['added_at'] = Variable<int>(addedAt);
     return map;
   }
 
@@ -7366,6 +7389,7 @@ class BookTagMappingRow extends DataClass
       id: Value(id),
       bookKey: Value(bookKey),
       tagId: Value(tagId),
+      addedAt: Value(addedAt),
     );
   }
 
@@ -7376,6 +7400,7 @@ class BookTagMappingRow extends DataClass
       id: serializer.fromJson<int>(json['id']),
       bookKey: serializer.fromJson<String>(json['bookKey']),
       tagId: serializer.fromJson<int>(json['tagId']),
+      addedAt: serializer.fromJson<int>(json['addedAt']),
     );
   }
   @override
@@ -7385,20 +7410,24 @@ class BookTagMappingRow extends DataClass
       'id': serializer.toJson<int>(id),
       'bookKey': serializer.toJson<String>(bookKey),
       'tagId': serializer.toJson<int>(tagId),
+      'addedAt': serializer.toJson<int>(addedAt),
     };
   }
 
-  BookTagMappingRow copyWith({int? id, String? bookKey, int? tagId}) =>
+  BookTagMappingRow copyWith(
+          {int? id, String? bookKey, int? tagId, int? addedAt}) =>
       BookTagMappingRow(
         id: id ?? this.id,
         bookKey: bookKey ?? this.bookKey,
         tagId: tagId ?? this.tagId,
+        addedAt: addedAt ?? this.addedAt,
       );
   BookTagMappingRow copyWithCompanion(BookTagMappingsCompanion data) {
     return BookTagMappingRow(
       id: data.id.present ? data.id.value : this.id,
       bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       tagId: data.tagId.present ? data.tagId.value : this.tagId,
+      addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
     );
   }
 
@@ -7407,55 +7436,66 @@ class BookTagMappingRow extends DataClass
     return (StringBuffer('BookTagMappingRow(')
           ..write('id: $id, ')
           ..write('bookKey: $bookKey, ')
-          ..write('tagId: $tagId')
+          ..write('tagId: $tagId, ')
+          ..write('addedAt: $addedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, bookKey, tagId);
+  int get hashCode => Object.hash(id, bookKey, tagId, addedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is BookTagMappingRow &&
           other.id == this.id &&
           other.bookKey == this.bookKey &&
-          other.tagId == this.tagId);
+          other.tagId == this.tagId &&
+          other.addedAt == this.addedAt);
 }
 
 class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
   final Value<int> id;
   final Value<String> bookKey;
   final Value<int> tagId;
+  final Value<int> addedAt;
   const BookTagMappingsCompanion({
     this.id = const Value.absent(),
     this.bookKey = const Value.absent(),
     this.tagId = const Value.absent(),
+    this.addedAt = const Value.absent(),
   });
   BookTagMappingsCompanion.insert({
     this.id = const Value.absent(),
     required String bookKey,
     required int tagId,
+    this.addedAt = const Value.absent(),
   })  : bookKey = Value(bookKey),
         tagId = Value(tagId);
   static Insertable<BookTagMappingRow> custom({
     Expression<int>? id,
     Expression<String>? bookKey,
     Expression<int>? tagId,
+    Expression<int>? addedAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (bookKey != null) 'book_key': bookKey,
       if (tagId != null) 'tag_id': tagId,
+      if (addedAt != null) 'added_at': addedAt,
     });
   }
 
   BookTagMappingsCompanion copyWith(
-      {Value<int>? id, Value<String>? bookKey, Value<int>? tagId}) {
+      {Value<int>? id,
+      Value<String>? bookKey,
+      Value<int>? tagId,
+      Value<int>? addedAt}) {
     return BookTagMappingsCompanion(
       id: id ?? this.id,
       bookKey: bookKey ?? this.bookKey,
       tagId: tagId ?? this.tagId,
+      addedAt: addedAt ?? this.addedAt,
     );
   }
 
@@ -7471,6 +7511,9 @@ class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
     if (tagId.present) {
       map['tag_id'] = Variable<int>(tagId.value);
     }
+    if (addedAt.present) {
+      map['added_at'] = Variable<int>(addedAt.value);
+    }
     return map;
   }
 
@@ -7479,7 +7522,8 @@ class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
     return (StringBuffer('BookTagMappingsCompanion(')
           ..write('id: $id, ')
           ..write('bookKey: $bookKey, ')
-          ..write('tagId: $tagId')
+          ..write('tagId: $tagId, ')
+          ..write('addedAt: $addedAt')
           ..write(')'))
         .toString();
   }
@@ -9829,8 +9873,16 @@ class $VideoBookTagMappingsTable extends VideoBookTagMappings
       requiredDuringInsert: true,
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'REFERENCES book_tags (id) ON DELETE CASCADE'));
+  static const VerificationMeta _addedAtMeta =
+      const VerificationMeta('addedAt');
   @override
-  List<GeneratedColumn> get $columns => [id, videoBookUid, tagId];
+  late final GeneratedColumn<int> addedAt = GeneratedColumn<int>(
+      'added_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [id, videoBookUid, tagId, addedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -9859,6 +9911,10 @@ class $VideoBookTagMappingsTable extends VideoBookTagMappings
     } else if (isInserting) {
       context.missing(_tagIdMeta);
     }
+    if (data.containsKey('added_at')) {
+      context.handle(_addedAtMeta,
+          addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta));
+    }
     return context;
   }
 
@@ -9878,6 +9934,8 @@ class $VideoBookTagMappingsTable extends VideoBookTagMappings
           .read(DriftSqlType.string, data['${effectivePrefix}video_book_uid'])!,
       tagId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
+      addedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}added_at'])!,
     );
   }
 
@@ -9892,14 +9950,21 @@ class VideoBookTagMappingRow extends DataClass
   final int id;
   final String videoBookUid;
   final int tagId;
+
+  /// 该映射被加入的毫秒戳（LWW-element-set 的 add 时钟，见 [BookTagMappings].addedAt）。
+  final int addedAt;
   const VideoBookTagMappingRow(
-      {required this.id, required this.videoBookUid, required this.tagId});
+      {required this.id,
+      required this.videoBookUid,
+      required this.tagId,
+      required this.addedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['video_book_uid'] = Variable<String>(videoBookUid);
     map['tag_id'] = Variable<int>(tagId);
+    map['added_at'] = Variable<int>(addedAt);
     return map;
   }
 
@@ -9908,6 +9973,7 @@ class VideoBookTagMappingRow extends DataClass
       id: Value(id),
       videoBookUid: Value(videoBookUid),
       tagId: Value(tagId),
+      addedAt: Value(addedAt),
     );
   }
 
@@ -9918,6 +9984,7 @@ class VideoBookTagMappingRow extends DataClass
       id: serializer.fromJson<int>(json['id']),
       videoBookUid: serializer.fromJson<String>(json['videoBookUid']),
       tagId: serializer.fromJson<int>(json['tagId']),
+      addedAt: serializer.fromJson<int>(json['addedAt']),
     );
   }
   @override
@@ -9927,15 +9994,17 @@ class VideoBookTagMappingRow extends DataClass
       'id': serializer.toJson<int>(id),
       'videoBookUid': serializer.toJson<String>(videoBookUid),
       'tagId': serializer.toJson<int>(tagId),
+      'addedAt': serializer.toJson<int>(addedAt),
     };
   }
 
   VideoBookTagMappingRow copyWith(
-          {int? id, String? videoBookUid, int? tagId}) =>
+          {int? id, String? videoBookUid, int? tagId, int? addedAt}) =>
       VideoBookTagMappingRow(
         id: id ?? this.id,
         videoBookUid: videoBookUid ?? this.videoBookUid,
         tagId: tagId ?? this.tagId,
+        addedAt: addedAt ?? this.addedAt,
       );
   VideoBookTagMappingRow copyWithCompanion(VideoBookTagMappingsCompanion data) {
     return VideoBookTagMappingRow(
@@ -9944,6 +10013,7 @@ class VideoBookTagMappingRow extends DataClass
           ? data.videoBookUid.value
           : this.videoBookUid,
       tagId: data.tagId.present ? data.tagId.value : this.tagId,
+      addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
     );
   }
 
@@ -9952,20 +10022,22 @@ class VideoBookTagMappingRow extends DataClass
     return (StringBuffer('VideoBookTagMappingRow(')
           ..write('id: $id, ')
           ..write('videoBookUid: $videoBookUid, ')
-          ..write('tagId: $tagId')
+          ..write('tagId: $tagId, ')
+          ..write('addedAt: $addedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, videoBookUid, tagId);
+  int get hashCode => Object.hash(id, videoBookUid, tagId, addedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is VideoBookTagMappingRow &&
           other.id == this.id &&
           other.videoBookUid == this.videoBookUid &&
-          other.tagId == this.tagId);
+          other.tagId == this.tagId &&
+          other.addedAt == this.addedAt);
 }
 
 class VideoBookTagMappingsCompanion
@@ -9973,35 +10045,44 @@ class VideoBookTagMappingsCompanion
   final Value<int> id;
   final Value<String> videoBookUid;
   final Value<int> tagId;
+  final Value<int> addedAt;
   const VideoBookTagMappingsCompanion({
     this.id = const Value.absent(),
     this.videoBookUid = const Value.absent(),
     this.tagId = const Value.absent(),
+    this.addedAt = const Value.absent(),
   });
   VideoBookTagMappingsCompanion.insert({
     this.id = const Value.absent(),
     required String videoBookUid,
     required int tagId,
+    this.addedAt = const Value.absent(),
   })  : videoBookUid = Value(videoBookUid),
         tagId = Value(tagId);
   static Insertable<VideoBookTagMappingRow> custom({
     Expression<int>? id,
     Expression<String>? videoBookUid,
     Expression<int>? tagId,
+    Expression<int>? addedAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (videoBookUid != null) 'video_book_uid': videoBookUid,
       if (tagId != null) 'tag_id': tagId,
+      if (addedAt != null) 'added_at': addedAt,
     });
   }
 
   VideoBookTagMappingsCompanion copyWith(
-      {Value<int>? id, Value<String>? videoBookUid, Value<int>? tagId}) {
+      {Value<int>? id,
+      Value<String>? videoBookUid,
+      Value<int>? tagId,
+      Value<int>? addedAt}) {
     return VideoBookTagMappingsCompanion(
       id: id ?? this.id,
       videoBookUid: videoBookUid ?? this.videoBookUid,
       tagId: tagId ?? this.tagId,
+      addedAt: addedAt ?? this.addedAt,
     );
   }
 
@@ -10017,6 +10098,9 @@ class VideoBookTagMappingsCompanion
     if (tagId.present) {
       map['tag_id'] = Variable<int>(tagId.value);
     }
+    if (addedAt.present) {
+      map['added_at'] = Variable<int>(addedAt.value);
+    }
     return map;
   }
 
@@ -10025,7 +10109,8 @@ class VideoBookTagMappingsCompanion
     return (StringBuffer('VideoBookTagMappingsCompanion(')
           ..write('id: $id, ')
           ..write('videoBookUid: $videoBookUid, ')
-          ..write('tagId: $tagId')
+          ..write('tagId: $tagId, ')
+          ..write('addedAt: $addedAt')
           ..write(')'))
         .toString();
   }
@@ -14969,6 +15054,620 @@ class StatisticsTombstonesCompanion
   }
 }
 
+class $BookTagMembershipTombstonesTable extends BookTagMembershipTombstones
+    with
+        TableInfo<$BookTagMembershipTombstonesTable,
+            BookTagMembershipTombstoneRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookTagMembershipTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _itemKeyMeta =
+      const VerificationMeta('itemKey');
+  @override
+  late final GeneratedColumn<String> itemKey = GeneratedColumn<String>(
+      'item_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaTypeMeta =
+      const VerificationMeta('mediaType');
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+      'media_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _tagNameMeta =
+      const VerificationMeta('tagName');
+  @override
+  late final GeneratedColumn<String> tagName = GeneratedColumn<String>(
+      'tag_name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _removedAtMeta =
+      const VerificationMeta('removedAt');
+  @override
+  late final GeneratedColumn<int> removedAt = GeneratedColumn<int>(
+      'removed_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [itemKey, mediaType, tagName, removedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_tag_membership_tombstones';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<BookTagMembershipTombstoneRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('item_key')) {
+      context.handle(_itemKeyMeta,
+          itemKey.isAcceptableOrUnknown(data['item_key']!, _itemKeyMeta));
+    } else if (isInserting) {
+      context.missing(_itemKeyMeta);
+    }
+    if (data.containsKey('media_type')) {
+      context.handle(_mediaTypeMeta,
+          mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta));
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('tag_name')) {
+      context.handle(_tagNameMeta,
+          tagName.isAcceptableOrUnknown(data['tag_name']!, _tagNameMeta));
+    } else if (isInserting) {
+      context.missing(_tagNameMeta);
+    }
+    if (data.containsKey('removed_at')) {
+      context.handle(_removedAtMeta,
+          removedAt.isAcceptableOrUnknown(data['removed_at']!, _removedAtMeta));
+    } else if (isInserting) {
+      context.missing(_removedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {itemKey, mediaType, tagName};
+  @override
+  BookTagMembershipTombstoneRow map(Map<String, dynamic> data,
+      {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookTagMembershipTombstoneRow(
+      itemKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}item_key'])!,
+      mediaType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
+      tagName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}tag_name'])!,
+      removedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}removed_at'])!,
+    );
+  }
+
+  @override
+  $BookTagMembershipTombstonesTable createAlias(String alias) {
+    return $BookTagMembershipTombstonesTable(attachedDatabase, alias);
+  }
+}
+
+class BookTagMembershipTombstoneRow extends DataClass
+    implements Insertable<BookTagMembershipTombstoneRow> {
+  /// 被移除标签的宿主稳定身份：EPUB 的 bookKey / 视频的 videoBookUid（跨设备一致）。
+  final String itemKey;
+
+  /// 宿主媒体种类：'epub' | 'video'（同名书与视频各自独立立碑/清碑）。
+  final String mediaType;
+
+  /// 被移除的标签名（标签跨设备身份 = name，与 [getOrCreateTagByName] 同语义）。
+  final String tagName;
+
+  /// 移除毫秒戳（LWW 比较键；重复移除 upsert 取新）。
+  final int removedAt;
+  const BookTagMembershipTombstoneRow(
+      {required this.itemKey,
+      required this.mediaType,
+      required this.tagName,
+      required this.removedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['item_key'] = Variable<String>(itemKey);
+    map['media_type'] = Variable<String>(mediaType);
+    map['tag_name'] = Variable<String>(tagName);
+    map['removed_at'] = Variable<int>(removedAt);
+    return map;
+  }
+
+  BookTagMembershipTombstonesCompanion toCompanion(bool nullToAbsent) {
+    return BookTagMembershipTombstonesCompanion(
+      itemKey: Value(itemKey),
+      mediaType: Value(mediaType),
+      tagName: Value(tagName),
+      removedAt: Value(removedAt),
+    );
+  }
+
+  factory BookTagMembershipTombstoneRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BookTagMembershipTombstoneRow(
+      itemKey: serializer.fromJson<String>(json['itemKey']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      tagName: serializer.fromJson<String>(json['tagName']),
+      removedAt: serializer.fromJson<int>(json['removedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'itemKey': serializer.toJson<String>(itemKey),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'tagName': serializer.toJson<String>(tagName),
+      'removedAt': serializer.toJson<int>(removedAt),
+    };
+  }
+
+  BookTagMembershipTombstoneRow copyWith(
+          {String? itemKey,
+          String? mediaType,
+          String? tagName,
+          int? removedAt}) =>
+      BookTagMembershipTombstoneRow(
+        itemKey: itemKey ?? this.itemKey,
+        mediaType: mediaType ?? this.mediaType,
+        tagName: tagName ?? this.tagName,
+        removedAt: removedAt ?? this.removedAt,
+      );
+  BookTagMembershipTombstoneRow copyWithCompanion(
+      BookTagMembershipTombstonesCompanion data) {
+    return BookTagMembershipTombstoneRow(
+      itemKey: data.itemKey.present ? data.itemKey.value : this.itemKey,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      tagName: data.tagName.present ? data.tagName.value : this.tagName,
+      removedAt: data.removedAt.present ? data.removedAt.value : this.removedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookTagMembershipTombstoneRow(')
+          ..write('itemKey: $itemKey, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('tagName: $tagName, ')
+          ..write('removedAt: $removedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(itemKey, mediaType, tagName, removedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BookTagMembershipTombstoneRow &&
+          other.itemKey == this.itemKey &&
+          other.mediaType == this.mediaType &&
+          other.tagName == this.tagName &&
+          other.removedAt == this.removedAt);
+}
+
+class BookTagMembershipTombstonesCompanion
+    extends UpdateCompanion<BookTagMembershipTombstoneRow> {
+  final Value<String> itemKey;
+  final Value<String> mediaType;
+  final Value<String> tagName;
+  final Value<int> removedAt;
+  final Value<int> rowid;
+  const BookTagMembershipTombstonesCompanion({
+    this.itemKey = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.tagName = const Value.absent(),
+    this.removedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  BookTagMembershipTombstonesCompanion.insert({
+    required String itemKey,
+    required String mediaType,
+    required String tagName,
+    required int removedAt,
+    this.rowid = const Value.absent(),
+  })  : itemKey = Value(itemKey),
+        mediaType = Value(mediaType),
+        tagName = Value(tagName),
+        removedAt = Value(removedAt);
+  static Insertable<BookTagMembershipTombstoneRow> custom({
+    Expression<String>? itemKey,
+    Expression<String>? mediaType,
+    Expression<String>? tagName,
+    Expression<int>? removedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (itemKey != null) 'item_key': itemKey,
+      if (mediaType != null) 'media_type': mediaType,
+      if (tagName != null) 'tag_name': tagName,
+      if (removedAt != null) 'removed_at': removedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  BookTagMembershipTombstonesCompanion copyWith(
+      {Value<String>? itemKey,
+      Value<String>? mediaType,
+      Value<String>? tagName,
+      Value<int>? removedAt,
+      Value<int>? rowid}) {
+    return BookTagMembershipTombstonesCompanion(
+      itemKey: itemKey ?? this.itemKey,
+      mediaType: mediaType ?? this.mediaType,
+      tagName: tagName ?? this.tagName,
+      removedAt: removedAt ?? this.removedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (itemKey.present) {
+      map['item_key'] = Variable<String>(itemKey.value);
+    }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (tagName.present) {
+      map['tag_name'] = Variable<String>(tagName.value);
+    }
+    if (removedAt.present) {
+      map['removed_at'] = Variable<int>(removedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookTagMembershipTombstonesCompanion(')
+          ..write('itemKey: $itemKey, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('tagName: $tagName, ')
+          ..write('removedAt: $removedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $BookCustomCssTable extends BookCustomCss
+    with TableInfo<$BookCustomCssTable, BookCustomCssRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookCustomCssTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _relativePathMeta =
+      const VerificationMeta('relativePath');
+  @override
+  late final GeneratedColumn<String> relativePath = GeneratedColumn<String>(
+      'relative_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _contentMeta =
+      const VerificationMeta('content');
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+      'content', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _deletedMeta =
+      const VerificationMeta('deleted');
+  @override
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+      'deleted', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("deleted" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [bookKey, relativePath, content, deleted, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_custom_css';
+  @override
+  VerificationContext validateIntegrity(Insertable<BookCustomCssRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    } else if (isInserting) {
+      context.missing(_bookKeyMeta);
+    }
+    if (data.containsKey('relative_path')) {
+      context.handle(
+          _relativePathMeta,
+          relativePath.isAcceptableOrUnknown(
+              data['relative_path']!, _relativePathMeta));
+    } else if (isInserting) {
+      context.missing(_relativePathMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(_contentMeta,
+          content.isAcceptableOrUnknown(data['content']!, _contentMeta));
+    }
+    if (data.containsKey('deleted')) {
+      context.handle(_deletedMeta,
+          deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookKey, relativePath};
+  @override
+  BookCustomCssRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookCustomCssRow(
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
+      relativePath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}relative_path'])!,
+      content: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}content'])!,
+      deleted: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}deleted'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $BookCustomCssTable createAlias(String alias) {
+    return $BookCustomCssTable(attachedDatabase, alias);
+  }
+}
+
+class BookCustomCssRow extends DataClass
+    implements Insertable<BookCustomCssRow> {
+  /// 书稳定身份（= EpubBooks.bookKey，内容派生跨设备一致）。
+  final String bookKey;
+
+  /// 书内 CSS 文件相对路径（extractDir 内，正斜杠归一，同 [CssFileEntry].relativePath）。
+  final String relativePath;
+
+  /// 用户自定义的 CSS 全文（[deleted]=true 时无意义，留空）。
+  final String content;
+
+  /// true = 已重置回原始（重置墓碑）；false = 有自定义内容。
+  final bool deleted;
+
+  /// 最后修改毫秒戳（LWW 比较键；保存/重置都刷新）。
+  final int updatedAt;
+  const BookCustomCssRow(
+      {required this.bookKey,
+      required this.relativePath,
+      required this.content,
+      required this.deleted,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_key'] = Variable<String>(bookKey);
+    map['relative_path'] = Variable<String>(relativePath);
+    map['content'] = Variable<String>(content);
+    map['deleted'] = Variable<bool>(deleted);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  BookCustomCssCompanion toCompanion(bool nullToAbsent) {
+    return BookCustomCssCompanion(
+      bookKey: Value(bookKey),
+      relativePath: Value(relativePath),
+      content: Value(content),
+      deleted: Value(deleted),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory BookCustomCssRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BookCustomCssRow(
+      bookKey: serializer.fromJson<String>(json['bookKey']),
+      relativePath: serializer.fromJson<String>(json['relativePath']),
+      content: serializer.fromJson<String>(json['content']),
+      deleted: serializer.fromJson<bool>(json['deleted']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookKey': serializer.toJson<String>(bookKey),
+      'relativePath': serializer.toJson<String>(relativePath),
+      'content': serializer.toJson<String>(content),
+      'deleted': serializer.toJson<bool>(deleted),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  BookCustomCssRow copyWith(
+          {String? bookKey,
+          String? relativePath,
+          String? content,
+          bool? deleted,
+          int? updatedAt}) =>
+      BookCustomCssRow(
+        bookKey: bookKey ?? this.bookKey,
+        relativePath: relativePath ?? this.relativePath,
+        content: content ?? this.content,
+        deleted: deleted ?? this.deleted,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  BookCustomCssRow copyWithCompanion(BookCustomCssCompanion data) {
+    return BookCustomCssRow(
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      relativePath: data.relativePath.present
+          ? data.relativePath.value
+          : this.relativePath,
+      content: data.content.present ? data.content.value : this.content,
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookCustomCssRow(')
+          ..write('bookKey: $bookKey, ')
+          ..write('relativePath: $relativePath, ')
+          ..write('content: $content, ')
+          ..write('deleted: $deleted, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(bookKey, relativePath, content, deleted, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BookCustomCssRow &&
+          other.bookKey == this.bookKey &&
+          other.relativePath == this.relativePath &&
+          other.content == this.content &&
+          other.deleted == this.deleted &&
+          other.updatedAt == this.updatedAt);
+}
+
+class BookCustomCssCompanion extends UpdateCompanion<BookCustomCssRow> {
+  final Value<String> bookKey;
+  final Value<String> relativePath;
+  final Value<String> content;
+  final Value<bool> deleted;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const BookCustomCssCompanion({
+    this.bookKey = const Value.absent(),
+    this.relativePath = const Value.absent(),
+    this.content = const Value.absent(),
+    this.deleted = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  BookCustomCssCompanion.insert({
+    required String bookKey,
+    required String relativePath,
+    this.content = const Value.absent(),
+    this.deleted = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  })  : bookKey = Value(bookKey),
+        relativePath = Value(relativePath),
+        updatedAt = Value(updatedAt);
+  static Insertable<BookCustomCssRow> custom({
+    Expression<String>? bookKey,
+    Expression<String>? relativePath,
+    Expression<String>? content,
+    Expression<bool>? deleted,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookKey != null) 'book_key': bookKey,
+      if (relativePath != null) 'relative_path': relativePath,
+      if (content != null) 'content': content,
+      if (deleted != null) 'deleted': deleted,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  BookCustomCssCompanion copyWith(
+      {Value<String>? bookKey,
+      Value<String>? relativePath,
+      Value<String>? content,
+      Value<bool>? deleted,
+      Value<int>? updatedAt,
+      Value<int>? rowid}) {
+    return BookCustomCssCompanion(
+      bookKey: bookKey ?? this.bookKey,
+      relativePath: relativePath ?? this.relativePath,
+      content: content ?? this.content,
+      deleted: deleted ?? this.deleted,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (relativePath.present) {
+      map['relative_path'] = Variable<String>(relativePath.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookCustomCssCompanion(')
+          ..write('bookKey: $bookKey, ')
+          ..write('relativePath: $relativePath, ')
+          ..write('content: $content, ')
+          ..write('deleted: $deleted, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -15031,6 +15730,9 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $LookupMiningCountersTable(this);
   late final $StatisticsTombstonesTable statisticsTombstones =
       $StatisticsTombstonesTable(this);
+  late final $BookTagMembershipTombstonesTable bookTagMembershipTombstones =
+      $BookTagMembershipTombstonesTable(this);
+  late final $BookCustomCssTable bookCustomCss = $BookCustomCssTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -15074,7 +15776,9 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         hibikiPairedPeers,
         bookTombstones,
         lookupMiningCounters,
-        statisticsTombstones
+        statisticsTombstones,
+        bookTagMembershipTombstones,
+        bookCustomCss
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -19565,12 +20269,14 @@ typedef $$BookTagMappingsTableCreateCompanionBuilder = BookTagMappingsCompanion
   Value<int> id,
   required String bookKey,
   required int tagId,
+  Value<int> addedAt,
 });
 typedef $$BookTagMappingsTableUpdateCompanionBuilder = BookTagMappingsCompanion
     Function({
   Value<int> id,
   Value<String> bookKey,
   Value<int> tagId,
+  Value<int> addedAt,
 });
 
 final class $$BookTagMappingsTableReferences extends BaseReferences<
@@ -19618,6 +20324,9 @@ class $$BookTagMappingsTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get addedAt => $composableBuilder(
+      column: $table.addedAt, builder: (column) => ColumnFilters(column));
 
   $$EpubBooksTableFilterComposer get bookKey {
     final $$EpubBooksTableFilterComposer composer = $composerBuilder(
@@ -19672,6 +20381,9 @@ class $$BookTagMappingsTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get addedAt => $composableBuilder(
+      column: $table.addedAt, builder: (column) => ColumnOrderings(column));
+
   $$EpubBooksTableOrderingComposer get bookKey {
     final $$EpubBooksTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -19724,6 +20436,9 @@ class $$BookTagMappingsTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get addedAt =>
+      $composableBuilder(column: $table.addedAt, builder: (column) => column);
 
   $$EpubBooksTableAnnotationComposer get bookKey {
     final $$EpubBooksTableAnnotationComposer composer = $composerBuilder(
@@ -19793,21 +20508,25 @@ class $$BookTagMappingsTableTableManager extends RootTableManager<
             Value<int> id = const Value.absent(),
             Value<String> bookKey = const Value.absent(),
             Value<int> tagId = const Value.absent(),
+            Value<int> addedAt = const Value.absent(),
           }) =>
               BookTagMappingsCompanion(
             id: id,
             bookKey: bookKey,
             tagId: tagId,
+            addedAt: addedAt,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             required String bookKey,
             required int tagId,
+            Value<int> addedAt = const Value.absent(),
           }) =>
               BookTagMappingsCompanion.insert(
             id: id,
             bookKey: bookKey,
             tagId: tagId,
+            addedAt: addedAt,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
@@ -22009,12 +22728,14 @@ typedef $$VideoBookTagMappingsTableCreateCompanionBuilder
   Value<int> id,
   required String videoBookUid,
   required int tagId,
+  Value<int> addedAt,
 });
 typedef $$VideoBookTagMappingsTableUpdateCompanionBuilder
     = VideoBookTagMappingsCompanion Function({
   Value<int> id,
   Value<String> videoBookUid,
   Value<int> tagId,
+  Value<int> addedAt,
 });
 
 final class $$VideoBookTagMappingsTableReferences extends BaseReferences<
@@ -22063,6 +22784,9 @@ class $$VideoBookTagMappingsTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get addedAt => $composableBuilder(
+      column: $table.addedAt, builder: (column) => ColumnFilters(column));
 
   $$VideoBooksTableFilterComposer get videoBookUid {
     final $$VideoBooksTableFilterComposer composer = $composerBuilder(
@@ -22117,6 +22841,9 @@ class $$VideoBookTagMappingsTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get addedAt => $composableBuilder(
+      column: $table.addedAt, builder: (column) => ColumnOrderings(column));
+
   $$VideoBooksTableOrderingComposer get videoBookUid {
     final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -22169,6 +22896,9 @@ class $$VideoBookTagMappingsTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get addedAt =>
+      $composableBuilder(column: $table.addedAt, builder: (column) => column);
 
   $$VideoBooksTableAnnotationComposer get videoBookUid {
     final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
@@ -22240,21 +22970,25 @@ class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
             Value<int> id = const Value.absent(),
             Value<String> videoBookUid = const Value.absent(),
             Value<int> tagId = const Value.absent(),
+            Value<int> addedAt = const Value.absent(),
           }) =>
               VideoBookTagMappingsCompanion(
             id: id,
             videoBookUid: videoBookUid,
             tagId: tagId,
+            addedAt: addedAt,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             required String videoBookUid,
             required int tagId,
+            Value<int> addedAt = const Value.absent(),
           }) =>
               VideoBookTagMappingsCompanion.insert(
             id: id,
             videoBookUid: videoBookUid,
             tagId: tagId,
+            addedAt: addedAt,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
@@ -25306,6 +26040,346 @@ typedef $$StatisticsTombstonesTableProcessedTableManager
         ),
         StatisticsTombstoneRow,
         PrefetchHooks Function()>;
+typedef $$BookTagMembershipTombstonesTableCreateCompanionBuilder
+    = BookTagMembershipTombstonesCompanion Function({
+  required String itemKey,
+  required String mediaType,
+  required String tagName,
+  required int removedAt,
+  Value<int> rowid,
+});
+typedef $$BookTagMembershipTombstonesTableUpdateCompanionBuilder
+    = BookTagMembershipTombstonesCompanion Function({
+  Value<String> itemKey,
+  Value<String> mediaType,
+  Value<String> tagName,
+  Value<int> removedAt,
+  Value<int> rowid,
+});
+
+class $$BookTagMembershipTombstonesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $BookTagMembershipTombstonesTable> {
+  $$BookTagMembershipTombstonesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get itemKey => $composableBuilder(
+      column: $table.itemKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get tagName => $composableBuilder(
+      column: $table.tagName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get removedAt => $composableBuilder(
+      column: $table.removedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$BookTagMembershipTombstonesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $BookTagMembershipTombstonesTable> {
+  $$BookTagMembershipTombstonesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get itemKey => $composableBuilder(
+      column: $table.itemKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get tagName => $composableBuilder(
+      column: $table.tagName, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get removedAt => $composableBuilder(
+      column: $table.removedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BookTagMembershipTombstonesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $BookTagMembershipTombstonesTable> {
+  $$BookTagMembershipTombstonesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get itemKey =>
+      $composableBuilder(column: $table.itemKey, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get tagName =>
+      $composableBuilder(column: $table.tagName, builder: (column) => column);
+
+  GeneratedColumn<int> get removedAt =>
+      $composableBuilder(column: $table.removedAt, builder: (column) => column);
+}
+
+class $$BookTagMembershipTombstonesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $BookTagMembershipTombstonesTable,
+    BookTagMembershipTombstoneRow,
+    $$BookTagMembershipTombstonesTableFilterComposer,
+    $$BookTagMembershipTombstonesTableOrderingComposer,
+    $$BookTagMembershipTombstonesTableAnnotationComposer,
+    $$BookTagMembershipTombstonesTableCreateCompanionBuilder,
+    $$BookTagMembershipTombstonesTableUpdateCompanionBuilder,
+    (
+      BookTagMembershipTombstoneRow,
+      BaseReferences<_$HibikiDatabase, $BookTagMembershipTombstonesTable,
+          BookTagMembershipTombstoneRow>
+    ),
+    BookTagMembershipTombstoneRow,
+    PrefetchHooks Function()> {
+  $$BookTagMembershipTombstonesTableTableManager(
+      _$HibikiDatabase db, $BookTagMembershipTombstonesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BookTagMembershipTombstonesTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BookTagMembershipTombstonesTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BookTagMembershipTombstonesTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> itemKey = const Value.absent(),
+            Value<String> mediaType = const Value.absent(),
+            Value<String> tagName = const Value.absent(),
+            Value<int> removedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookTagMembershipTombstonesCompanion(
+            itemKey: itemKey,
+            mediaType: mediaType,
+            tagName: tagName,
+            removedAt: removedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String itemKey,
+            required String mediaType,
+            required String tagName,
+            required int removedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookTagMembershipTombstonesCompanion.insert(
+            itemKey: itemKey,
+            mediaType: mediaType,
+            tagName: tagName,
+            removedAt: removedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$BookTagMembershipTombstonesTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $BookTagMembershipTombstonesTable,
+        BookTagMembershipTombstoneRow,
+        $$BookTagMembershipTombstonesTableFilterComposer,
+        $$BookTagMembershipTombstonesTableOrderingComposer,
+        $$BookTagMembershipTombstonesTableAnnotationComposer,
+        $$BookTagMembershipTombstonesTableCreateCompanionBuilder,
+        $$BookTagMembershipTombstonesTableUpdateCompanionBuilder,
+        (
+          BookTagMembershipTombstoneRow,
+          BaseReferences<_$HibikiDatabase, $BookTagMembershipTombstonesTable,
+              BookTagMembershipTombstoneRow>
+        ),
+        BookTagMembershipTombstoneRow,
+        PrefetchHooks Function()>;
+typedef $$BookCustomCssTableCreateCompanionBuilder = BookCustomCssCompanion
+    Function({
+  required String bookKey,
+  required String relativePath,
+  Value<String> content,
+  Value<bool> deleted,
+  required int updatedAt,
+  Value<int> rowid,
+});
+typedef $$BookCustomCssTableUpdateCompanionBuilder = BookCustomCssCompanion
+    Function({
+  Value<String> bookKey,
+  Value<String> relativePath,
+  Value<String> content,
+  Value<bool> deleted,
+  Value<int> updatedAt,
+  Value<int> rowid,
+});
+
+class $$BookCustomCssTableFilterComposer
+    extends Composer<_$HibikiDatabase, $BookCustomCssTable> {
+  $$BookCustomCssTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get relativePath => $composableBuilder(
+      column: $table.relativePath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get deleted => $composableBuilder(
+      column: $table.deleted, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$BookCustomCssTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $BookCustomCssTable> {
+  $$BookCustomCssTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get relativePath => $composableBuilder(
+      column: $table.relativePath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+      column: $table.deleted, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BookCustomCssTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $BookCustomCssTable> {
+  $$BookCustomCssTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<String> get relativePath => $composableBuilder(
+      column: $table.relativePath, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$BookCustomCssTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $BookCustomCssTable,
+    BookCustomCssRow,
+    $$BookCustomCssTableFilterComposer,
+    $$BookCustomCssTableOrderingComposer,
+    $$BookCustomCssTableAnnotationComposer,
+    $$BookCustomCssTableCreateCompanionBuilder,
+    $$BookCustomCssTableUpdateCompanionBuilder,
+    (
+      BookCustomCssRow,
+      BaseReferences<_$HibikiDatabase, $BookCustomCssTable, BookCustomCssRow>
+    ),
+    BookCustomCssRow,
+    PrefetchHooks Function()> {
+  $$BookCustomCssTableTableManager(
+      _$HibikiDatabase db, $BookCustomCssTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BookCustomCssTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BookCustomCssTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BookCustomCssTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> bookKey = const Value.absent(),
+            Value<String> relativePath = const Value.absent(),
+            Value<String> content = const Value.absent(),
+            Value<bool> deleted = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookCustomCssCompanion(
+            bookKey: bookKey,
+            relativePath: relativePath,
+            content: content,
+            deleted: deleted,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String bookKey,
+            required String relativePath,
+            Value<String> content = const Value.absent(),
+            Value<bool> deleted = const Value.absent(),
+            required int updatedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookCustomCssCompanion.insert(
+            bookKey: bookKey,
+            relativePath: relativePath,
+            content: content,
+            deleted: deleted,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$BookCustomCssTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $BookCustomCssTable,
+    BookCustomCssRow,
+    $$BookCustomCssTableFilterComposer,
+    $$BookCustomCssTableOrderingComposer,
+    $$BookCustomCssTableAnnotationComposer,
+    $$BookCustomCssTableCreateCompanionBuilder,
+    $$BookCustomCssTableUpdateCompanionBuilder,
+    (
+      BookCustomCssRow,
+      BaseReferences<_$HibikiDatabase, $BookCustomCssTable, BookCustomCssRow>
+    ),
+    BookCustomCssRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -25390,4 +26464,10 @@ class $HibikiDatabaseManager {
       $$LookupMiningCountersTableTableManager(_db, _db.lookupMiningCounters);
   $$StatisticsTombstonesTableTableManager get statisticsTombstones =>
       $$StatisticsTombstonesTableTableManager(_db, _db.statisticsTombstones);
+  $$BookTagMembershipTombstonesTableTableManager
+      get bookTagMembershipTombstones =>
+          $$BookTagMembershipTombstonesTableTableManager(
+              _db, _db.bookTagMembershipTombstones);
+  $$BookCustomCssTableTableManager get bookCustomCss =>
+      $$BookCustomCssTableTableManager(_db, _db.bookCustomCss);
 }

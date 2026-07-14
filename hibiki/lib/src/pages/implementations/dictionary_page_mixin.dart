@@ -99,6 +99,11 @@ mixin DictionaryPageMixin {
   /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内）。复用视频覆写的
   /// [onSentenceContextPreviewToDraft]/[onSetSentenceContextToDraft] 驱动预览+增减；
   /// 「确认制卡」回 [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条制卡按钮。
+  /// BUG-797：「制卡·选择句子上下文」原生对话框打开期间置真。查词弹窗是原生平台视图，总
+  /// 画在 Flutter overlay 之上，会盖住 showAppDialog 弹的对话框（层级不对）。对话框期间据此
+  /// 把弹窗 [parkedPopupLayer] 的 `visible` 强制翻假 → 停靠屏外，让对话框独占屏幕；关闭后复原。
+  bool _sentenceContextDialogOpen = false;
+
   Future<void> _openSentenceContextDialogForVideo({
     required GlobalKey<DictionaryPopupWebViewState> webViewKey,
     required int entryIndex,
@@ -108,15 +113,22 @@ mixin DictionaryPageMixin {
         onSentenceContextPreviewToDraft;
     final Future<int> Function(int, int)? setter = onSetSentenceContextToDraft;
     if (preview == null || setter == null) return;
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => SentenceContextDialog(
-        matched: matched,
-        fetchPreview: preview,
-        setContext: setter,
-        onConfirm: () => webViewKey.currentState?.mineEntryByIndex(entryIndex),
-      ),
-    );
+    // BUG-797：对话框期间把弹窗 WebView 停靠屏外，否则原生平台视图盖住对话框。
+    setState(() => _sentenceContextDialogOpen = true);
+    try {
+      await showAppDialog<void>(
+        context: context,
+        builder: (_) => SentenceContextDialog(
+          matched: matched,
+          fetchPreview: preview,
+          setContext: setter,
+          onConfirm: () =>
+              webViewKey.currentState?.mineEntryByIndex(entryIndex),
+        ),
+      );
+    } finally {
+      setState(() => _sentenceContextDialogOpen = false);
+    }
   }
 
   // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
@@ -508,7 +520,8 @@ mixin DictionaryPageMixin {
     // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
     return parkedPopupLayer(
       pos: pos,
-      visible: entry.visible,
+      // BUG-797：「选择句子上下文」原生对话框打开期间把弹窗停靠屏外，否则原生平台视图盖住对话框。
+      visible: entry.visible && !_sentenceContextDialogOpen,
       screen: screen,
       child: DictionaryPopupLayer(
         result: entry.result,

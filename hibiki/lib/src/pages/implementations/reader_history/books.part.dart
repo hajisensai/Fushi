@@ -755,6 +755,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     Navigator.push(
       context,
       adaptivePageRoute(
+        context: context,
         builder: (_) => IllustrationsViewerPage(
           bookTitle: item.title,
           extractDir: row.extractDir,
@@ -947,6 +948,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       await Navigator.push(
         context,
         adaptivePageRoute<void>(
+          context: context,
           builder: (_) => BookCssEditorPage(extractDir: extractDir),
         ),
       );

@@ -345,4 +345,38 @@ void main() {
     expect(historySrc.contains("mediaType: 'remote-book'"), isFalse,
         reason: '远端书占位须给真实 mediaType（epub）才能与本地成员共键折叠');
   });
+
+  test('BUG-790：视频合集行头集数 = 行体成员数（本地+远端占位同源），全云端合集不再显示「0 集」', () {
+    // 根因：旧口径 localCount = group.items.where(local != null).length 只数本地成员，
+    // 但行体 itemCount = group.items.length 渲染全部成员（含远端未下载占位卡）。全为
+    // 远端剧集的合集行明明有云占位卡却显示「0 集」，与眼前所见割裂（用户实报）。
+    // 修复：行头计数与行体 itemCount 同源。回退到「行头只数本地」或「与 itemCount 异源」
+    // 即转红。
+    final int rowFn = homeSrc.indexOf('Widget _buildVideoCollectionRow(');
+    expect(rowFn, isNonNegative, reason: '缺 _buildVideoCollectionRow');
+    final int rowEnd = homeSrc.indexOf('\n  /// ', rowFn + 1);
+    final String rowSrc =
+        homeSrc.substring(rowFn, rowEnd < 0 ? homeSrc.length : rowEnd);
+
+    // ① 行头计数不得再用「只数本地成员」的过滤式喂 video_playlist_episodes。
+    expect(rowSrc.contains('.where((it) => it.payload.local != null).length'),
+        isFalse,
+        reason: 'BUG-790：不得再用「只数本地」过滤统计行头集数（localCount）');
+    expect(
+        RegExp(r'video_playlist_episodes\(\s*count:\s*\w*[Ll]ocal')
+            .hasMatch(rowSrc),
+        isFalse,
+        reason: 'BUG-790：行头计数不得喂 localCount，须与行体 itemCount 同源');
+
+    // ② 行头 countLabel 的 count 与 itemCount 必须引用同一变量（同源）。
+    final Match? countMatch =
+        RegExp(r'countLabel:\s*t\.video_playlist_episodes\(count:\s*(\w+)\)')
+            .firstMatch(rowSrc);
+    final Match? itemMatch = RegExp(r'itemCount:\s*(\w+)').firstMatch(rowSrc);
+    expect(countMatch, isNotNull, reason: '未找到行头 countLabel 表达式');
+    expect(itemMatch, isNotNull, reason: '未找到 itemCount 表达式');
+    expect(countMatch!.group(1), equals(itemMatch!.group(1)),
+        reason: 'BUG-790：行头集数与行体 itemCount 必须同源（同一变量），'
+            '否则「看得见却 0 集」回潮');
+  });
 }

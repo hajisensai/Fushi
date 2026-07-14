@@ -24,6 +24,8 @@ void main() {
 }
 
 class EpubGenerator {
+  static const int standardChapterMarkerCount = 420;
+
   static const _lookupLead = 'testword 猫 testword 猫 testword 猫。';
 
   static const _jpTexts = [
@@ -63,8 +65,8 @@ class EpubGenerator {
     files['OEBPS/toc.ncx'] = _utf8(_buildNcx());
 
     // Chapter 1: Standard Japanese paragraphs (420 markers)
-    files['OEBPS/chapter_01_standard.xhtml'] =
-        _utf8(_buildChapter('第一章　標準テスト', _generateStandard(420)));
+    files['OEBPS/chapter_01_standard.xhtml'] = _utf8(_buildChapter(
+        '第一章　標準テスト', _generateStandard(standardChapterMarkerCount)));
 
     // Chapter 2: Very short (5 markers, tests 1-2 page scenarios)
     files['OEBPS/chapter_02_short.xhtml'] =

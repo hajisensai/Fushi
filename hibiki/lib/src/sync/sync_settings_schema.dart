@@ -232,17 +232,15 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncAudioBookFilesEnabled(value);
             },
           ),
-          // 上传视频文件（多端库联合视图 §2.6）：默认关。仅**云后端**可见——上传走
-          // syncVideoAssets 的 `__videos__` 伪装资产，只在 run() 的非互联分支执行；
-          // 互联（hibikiServer）视频资产走 host API（后续批），此开关在互联下纯空转，
-          // 故沿既有 backend-scope visible 范式仅云后端显示。
+          // 上传视频文件（多端库联合视图 §2.6）：默认关，全后端可见。云后端走
+          // syncVideoAssets 的 `__videos__` 伪装资产（run() 非互联分支）；互联
+          // （hibikiServer）走 _syncVideosLive 的 host 上传端点（client→host）。两条通道
+          // 同为 upload-only（host→client 仍按需流式/下载），故此开关对所有后端都生效。
           SettingsSwitchItem(
             id: 'sync.video_files',
             title: t.sync_video_files,
             subtitle: t.sync_video_files_warning,
             icon: Icons.video_file_outlined,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.hibikiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncVideoFiles,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncVideoFiles = value;

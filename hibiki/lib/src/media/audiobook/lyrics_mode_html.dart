@@ -195,9 +195,28 @@ function _lyricsCenterDelta(el) {
   var elCenterY = r.top + r.height / 2;
   return elCenterY - (window.innerHeight / 2);
 }
+// BUG-784: `html, body { height:100%; overflow-x:hidden }` —— 按 CSS 规范，overflow-x
+// 非 visible 会把 overflow-y 从 visible **计算成 auto**，于是 body 恰好填满 html、真正
+// 溢出滚动的是 **body**，而 `window.scrollBy` 作用于 `document.scrollingElement`(=html，
+// body 等高无溢出) → **空转 no-op**：当前句高亮会更新，但页面永不跟随滚动、初始也不居中
+// （用户手动滚滚的正是 body 故有效）——即「歌词高亮变但不跟随滚动」。这里改成动态选真正
+// 有溢出的滚动元素再滚，横竖排一致；`_lyricsCenterDelta` 用 getBoundingClientRect（视口相对）
+// 不受影响。
+function _lyricsScrollTarget() {
+  var b = document.body, h = document.documentElement;
+  if (__lyricsVertical) {
+    if (b && b.scrollWidth > b.clientWidth + 1) return b;
+    if (h && h.scrollWidth > h.clientWidth + 1) return h;
+  } else {
+    if (b && b.scrollHeight > b.clientHeight + 1) return b;
+    if (h && h.scrollHeight > h.clientHeight + 1) return h;
+  }
+  return b || h;
+}
 function _lyricsScrollByAxis(d) {
-  if (__lyricsVertical) window.scrollBy(d, 0);
-  else window.scrollBy(0, d);
+  var s = _lyricsScrollTarget();
+  if (__lyricsVertical) s.scrollLeft += d;
+  else s.scrollTop += d;
 }
 function scrollToCenter(el, duration) {
   if (!el) return;

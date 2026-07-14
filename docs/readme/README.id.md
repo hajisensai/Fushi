@@ -214,6 +214,7 @@ hibiki dibangun di atas proyek dan ekosistem berikut:
 | [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | Referensi audio lokal dan interaksi AnkiDroid |
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Referensi pembaca, statistik, dan kompatibilitas sinkronisasi |
 | [media_kit](https://github.com/media-kit/media-kit) | Kerangka pemutaran video Flutter (inti libmpv) |
+| [Niratan](https://github.com/W1ght/Niratan) | Rangkaian belajar bahasa imersif untuk macOS |
 
 ## Lisensi
 

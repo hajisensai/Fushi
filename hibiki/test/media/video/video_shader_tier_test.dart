@@ -53,35 +53,46 @@ void main() {
       expect(high.shaderFileNames, contains('Anime4K_Upscale_CNN_x2_VL.glsl'));
     });
 
-    test('极高 = ArtCNN C4F32 DS（denoise+sharpen，MIT）：内置缩放 on + 单文件 ArtCNN DS',
-        () {
+    test('极高 = Anime4K Mode A UL（Ultra Large 超大网络重建，MIT）：内置缩放 on + UL 链', () {
       final VideoShaderTierSpec ultra = shaderTierSpec(VideoShaderTier.ultra);
       expect(ultra.highQuality, isTrue);
-      expect(ultra.preset, same(kArtCnnC4F32DsPreset));
-      // TODO-706：极高绑 denoise+sharpen 变体（专为 web 压制源），不再是中性 C4F32。
-      expect(ultra.shaderFileNames, <String>['ArtCNN_C4F32_DS.glsl']);
+      expect(ultra.preset, same(kAnime4kUlPreset));
+      expect(ultra.preset!.id, 'mode_a_ul');
+      // 极高绑 UL 变体：Restore/首次 Upscale 用超大网络，比高档 VL 更强、同宗更单调。
+      expect(ultra.shaderFileNames, contains('Anime4K_Restore_CNN_UL.glsl'));
+      expect(ultra.shaderFileNames, contains('Anime4K_Upscale_CNN_x2_UL.glsl'));
     });
   });
 
-  group('kArtCnnC4F32DsPreset（极高档 denoise+sharpen 变体）', () {
-    test('来自 Artoriuz/ArtCNN（MIT），DS 变体，ref=main（非 master）', () {
-      expect(kArtCnnC4F32DsPreset.repo, 'Artoriuz/ArtCNN');
-      // TODO-706：Artoriuz/ArtCNN 主分支是 main，旧的 master 已修正。
-      expect(kArtCnnC4F32DsPreset.ref, 'main');
-      expect(kArtCnnC4F32DsPreset.shaders.single.repoPath,
-          'GLSL/ArtCNN_C4F32_DS.glsl');
+  group('kAnime4kUlPreset（极高档 Ultra Large 重建链）', () {
+    test('来自 bloc97/Anime4K（MIT），默认 master 分支，Mode A UL 结构', () {
+      expect(kAnime4kUlPreset.repo, 'bloc97/Anime4K');
+      expect(kAnime4kUlPreset.ref, 'master');
+      // Clamp → Restore_UL → Upscale_UL → AutoDownscale x2/x4 → Upscale_VL。
+      expect(
+          kAnime4kUlPreset.shaders
+              .map((Anime4kShaderFile s) => s.repoPath)
+              .toList(),
+          <String>[
+            'glsl/Restore/Anime4K_Clamp_Highlights.glsl',
+            'glsl/Restore/Anime4K_Restore_CNN_UL.glsl',
+            'glsl/Upscale/Anime4K_Upscale_CNN_x2_UL.glsl',
+            'glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl',
+            'glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl',
+            'glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl',
+          ]);
     });
 
-    test('镜像 URL 用 ArtCNN repo + main 分支 + DS 文件名', () {
+    test('镜像 URL 用 Anime4K repo + master 分支（与中/高档同源，无需覆写）', () {
       final List<String> urls = anime4kMirrorUrls(
-        kArtCnnC4F32DsPreset.shaders.single.repoPath,
-        repo: kArtCnnC4F32DsPreset.repo,
-        ref: kArtCnnC4F32DsPreset.ref,
+        'glsl/Restore/Anime4K_Restore_CNN_UL.glsl',
+        repo: kAnime4kUlPreset.repo,
+        ref: kAnime4kUlPreset.ref,
       );
       expect(urls.first,
-          'https://cdn.jsdelivr.net/gh/Artoriuz/ArtCNN@main/GLSL/ArtCNN_C4F32_DS.glsl');
+          'https://cdn.jsdelivr.net/gh/bloc97/Anime4K@master/glsl/Restore/Anime4K_Restore_CNN_UL.glsl');
       expect(urls.last,
-          'https://raw.githubusercontent.com/Artoriuz/ArtCNN/main/GLSL/ArtCNN_C4F32_DS.glsl');
+          'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_UL.glsl');
     });
   });
 
@@ -121,16 +132,16 @@ void main() {
           VideoShaderTier.high);
     });
 
-    test('内置 on + ArtCNN C4F32 DS → 极高', () {
+    test('内置 on + Anime4K UL 全集 → 极高', () {
       expect(
           tierFromState(
               highQuality: true,
-              enabledShaders: <String>['ArtCNN_C4F32_DS.glsl']),
+              enabledShaders: shaderFilesForTier(VideoShaderTier.ultra)),
           VideoShaderTier.ultra);
     });
 
     test('反查唯一：高/极高文件集互不相等，(highQuality, shaderSet) 两两不重复', () {
-      // TODO-706：极高=ArtCNN DS、高=Anime4K A HQ 文件集不同 → 反查无歧义。
+      // 极高=Anime4K UL、高=Anime4K A HQ 文件集不同（UL vs VL 变体）→ 反查无歧义。
       final Set<String> highSet =
           shaderFilesForTier(VideoShaderTier.high).toSet();
       final Set<String> ultraSet =
@@ -157,7 +168,7 @@ void main() {
       expect(
           tierFromState(
               highQuality: false,
-              enabledShaders: <String>['ArtCNN_C4F32_DS.glsl']),
+              enabledShaders: <String>['Anime4K_Restore_CNN_UL.glsl']),
           isNull);
     });
   });

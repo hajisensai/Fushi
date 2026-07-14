@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 
@@ -13,12 +14,16 @@ Widget _buildHarness({
   required TargetPlatform platform,
   required Widget child,
   TextScaler? textScaler,
+  HibikiDesignSystem designSystem = HibikiDesignSystem.auto,
 }) {
   return MaterialApp(
     theme: ThemeData(
       useMaterial3: true,
       platform: platform,
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
+      extensions: <ThemeExtension<dynamic>>[
+        HibikiDesignSystemTheme(designSystem),
+      ],
     ),
     home: textScaler == null
         ? child
@@ -264,6 +269,7 @@ void main() {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.iOS,
+        designSystem: HibikiDesignSystem.cupertino,
         child: AdaptiveSettingsScaffold(
           title: const Text('Reader settings'),
           children: [
@@ -336,6 +342,7 @@ void main() {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.iOS,
+        designSystem: HibikiDesignSystem.cupertino,
         child: AdaptiveSettingsScaffold(
           title: const Text('Reader settings'),
           children: [
@@ -689,6 +696,7 @@ void main() {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.iOS,
+        designSystem: HibikiDesignSystem.cupertino,
         child: AdaptiveSettingsScaffold(
           title: const Text('Reader settings'),
           children: [

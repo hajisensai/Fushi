@@ -637,9 +637,11 @@ void main() {
       expect(body.contains('_PopupContextMenuAction.copy'), isTrue,
           reason: '「复制」必须自补（原是 WebView2 原生项，禁原生后丢失）');
       expect(body.contains('t.copy'), isTrue);
-      // 复制走 BUG-402 范式：getSelectedText + Clipboard.setData。
-      expect(body.contains('_controller?.getSelectedText()'), isTrue,
-          reason: '复制取选区文本（BUG-402：桌面 WebView2 原生复制键转发受限）');
+      // 复制/搜索取选区文本 + Clipboard.setData（BUG-402）。BUG-802：选区读取从早年的
+      // getSelectedText（桌面 fork 未实现 + 只读顶层文档取不到词条卡 iframe 内选区）改为
+      // 穿透同源 iframe 的 _selectedTextAcrossFrames，否则复制/搜索永远拿空串无效。
+      expect(body.contains('_selectedTextAcrossFrames()'), isTrue,
+          reason: '复制/搜索经穿透 iframe 的 _selectedTextAcrossFrames 取选区（BUG-802）');
       expect(
           body.contains('Clipboard.setData(ClipboardData(text: text))'), isTrue,
           reason: '把选区文本写系统剪贴板（BUG-402 范式）');

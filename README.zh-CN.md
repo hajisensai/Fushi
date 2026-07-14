@@ -232,6 +232,7 @@ hibiki 基于以下项目与生态：
 | [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | 本地音频与 AnkiDroid 交互参考 |
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | 阅读器、统计与同步兼容性参考 |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter 视频播放框架（libmpv 内核） |
+| [Niratan](https://github.com/W1ght/Niratan) | macOS 沉浸式语言学习套件 |
 
 ## 许可证
 

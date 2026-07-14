@@ -18,11 +18,13 @@ void main() {
     required double last,
     required double ctxMax,
     required double pageStep,
+    double? physicalMax,
   }) =>
       ReaderPaginationScripts.resolveContentBoundsForTesting(
         firstContentEdge: first,
         lastContentEdge: last,
         contextMaxScroll: ctxMax,
+        physicalMaxScroll: physicalMax ?? ctxMax,
         pageStep: pageStep,
       );
 
@@ -88,6 +90,43 @@ void main() {
       expect(r.maxScroll, lessThanOrEqualTo(last),
           reason: 'maxScroll 不得越过末内容边所在页（否则末页空白）');
     });
+
+    test('chrome inset 后末内容落下一网格页时，以浏览器物理终点补一张非网格尾页', () {
+      // 2026-07-13 macOS 真机 RED：底栏把 pageStep 从 635 改成 582.490967。
+      // 末内容属于 62*P，但浏览器最多只能滚到 36041；若仍把 maxScroll 截在
+      // 61*P=35531.949，m420 只露一小截，随后 paginate 直接报 limit。
+      const double ps = 582.490967;
+      const double logicalMax = 36093.509033;
+      const double physicalMax = 36041;
+      const double last = 36664.5;
+
+      final r = bounds(
+        first: 17,
+        last: last,
+        ctxMax: logicalMax,
+        physicalMax: physicalMax,
+        pageStep: ps,
+      );
+
+      expect(r.maxScroll, physicalMax, reason: '最后一个整页网格不可达时，必须保留浏览器可达的非网格章尾页');
+      expect(r.maxScroll, greaterThan(61 * ps),
+          reason: '章尾页必须越过最后一个整页网格，才能露出剩余正文');
+      expect(r.maxScroll, lessThan(62 * ps), reason: '不得请求超过浏览器物理上限的下一整页网格');
+    });
+
+    test('物理终点远于末内容页时仍停在末内容整页，不制造空白尾页', () {
+      const double ps = 800;
+      const double last = 2 * ps + 200;
+      final r = bounds(
+        first: 17,
+        last: last,
+        ctxMax: 8 * ps,
+        physicalMax: 8.75 * ps,
+        pageStep: ps,
+      );
+
+      expect(r.maxScroll, 2 * ps);
+    });
   });
 
   group('退化/边界输入', () {
@@ -97,9 +136,56 @@ void main() {
       expect(r.maxScroll, 0);
     });
 
+    test('pageStep<0 → (0,0)', () {
+      final r = bounds(first: 100, last: 200, ctxMax: 300, pageStep: -1);
+      expect(r.minScroll, 0);
+      expect(r.maxScroll, 0);
+    });
+
     test('无内容（last<=0）→ maxScroll = 0', () {
       final r = bounds(first: 0, last: 0, ctxMax: 500, pageStep: 800);
       expect(r.maxScroll, 0);
+    });
+  });
+
+  group('非网格 terminal pageInfo', () {
+    test('本机 61 条整页网格后追加物理终点，页数与当前位置均为 63', () {
+      final info = ReaderPaginationScripts.resolvePageInfoForTesting(
+        minScroll: 0,
+        maxScroll: 36041,
+        currentScroll: 36041,
+        pageStep: 582.490967,
+      );
+
+      expect(info.totalPages, 63);
+      expect(info.currentPage, 63);
+    });
+
+    test('整页终点不额外增加 terminal 页', () {
+      const double ps = 582.490967;
+      final info = ReaderPaginationScripts.resolvePageInfoForTesting(
+        minScroll: 0,
+        maxScroll: 61 * ps,
+        currentScroll: 61 * ps,
+        pageStep: ps,
+      );
+
+      expect(info.totalPages, 62);
+      expect(info.currentPage, 62);
+    });
+
+    test('不足半页的非网格终点仍必须计作独立末页', () {
+      const double ps = 800;
+      final info = ReaderPaginationScripts.resolvePageInfoForTesting(
+        minScroll: 0,
+        maxScroll: 2 * ps + 20,
+        currentScroll: 2 * ps + 20,
+        pageStep: ps,
+      );
+
+      expect(info.totalPages, 4,
+          reason: 'round(span/pageStep) 会漏掉不足半页但真实可读的 terminal 页');
+      expect(info.currentPage, 4);
     });
   });
 }

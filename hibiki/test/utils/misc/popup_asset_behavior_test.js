@@ -31,6 +31,21 @@ class FakeClassList {
   }
 }
 
+class FakeStyle {
+  constructor() {
+    this.priorities = new Map();
+  }
+
+  setProperty(name, value, priority = '') {
+    this[name] = String(value);
+    this.priorities.set(name, String(priority));
+  }
+
+  getPropertyPriority(name) {
+    return this.priorities.get(name) ?? '';
+  }
+}
+
 class FakeElement {
   constructor(tagName) {
     this.tagName = tagName.toUpperCase();
@@ -38,7 +53,7 @@ class FakeElement {
     this.children = [];
     this.childNodes = this.children;
     this.dataset = {};
-    this.style = {};
+    this.style = new FakeStyle();
     this.attributes = {};
     this.className = '';
     this.classList = new FakeClassList(this);
@@ -450,6 +465,40 @@ function testExplicitContentImageDimensionsDefaultToPixelUnits() {
   assert.equal(node.className, 'gloss-image-link');
   assert.equal(node.dataset.sizeUnits, undefined);
   assert.equal(node.children[0].style.width, '100px');
+}
+
+// BUG-803: Meikyo's structured-content CSS assigns `width: 15em !important`
+// to a dimensionless SVG gaiji container. The renderer identifies that image as
+// an inline glyph, so its intrinsic width must win the author stylesheet's
+// important declaration or the following antonym link is pushed far right.
+function testDimensionlessGaijiSvgLocksItsInlineWidth() {
+  const context = loadPopup();
+  const node = context.createDefinitionImage(
+    {
+      tag: 'img',
+      path: 'gaiji/対義語.svg',
+      background: false,
+      collapsed: false,
+      collapsible: false,
+      data: {
+        img: '',
+        gaiji: '',
+        class: 'gaiji',
+        alt: '［対義語］',
+        src: 'gaiji/対義語.svg',
+      },
+    },
+    '明鏡国語辞典 第三版',
+    false,
+  );
+
+  const container = node.children[0];
+  assert.equal(container.style.width, 'auto');
+  assert.equal(
+    container.style.getPropertyPriority('width'),
+    'important',
+    'inline gaiji width must outrank dictionary CSS such as width:15em!important',
+  );
 }
 
 function testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad() {
@@ -1782,6 +1831,7 @@ testSanseidoEmAccentImageStaysInlineAndPointsAtDictionaryMedia();
 testGlossImageScrollWrapperIsInline();
 testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
+testDimensionlessGaijiSvgLocksItsInlineWidth();
 testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad();
 testTappingDefinitionImageOpensLightbox();
 testTapOnGlossaryTextSelectsWord();

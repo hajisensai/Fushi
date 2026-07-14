@@ -1031,6 +1031,7 @@ class _CustomFontsPageState extends BasePageState {
     final font = await Navigator.push<_RecommendedFont>(
       context,
       adaptivePageRoute(
+        context: context,
         builder: (_) => _RecommendedFontsPage(
           alreadyAdded: _addedFontNames,
         ),
@@ -1044,6 +1045,7 @@ class _CustomFontsPageState extends BasePageState {
     final selected = await Navigator.push<String>(
       context,
       adaptivePageRoute(
+        context: context,
         builder: (_) => _SystemFontPickerPage(alreadyAdded: _addedFontNames),
       ),
     );

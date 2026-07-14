@@ -263,9 +263,36 @@ class VideoPlayerController extends ChangeNotifier
   /// 自然越过目标句首（情形 1）即作废宽限、恢复正常清除语义。配额耗尽（seek 永不落地，
   /// 慢设备 / libmpv 丢弃，对齐 BUG-179）也放弃保护，绝不永久把高亮钉在旧目标上。
   ///
-  /// 用户**主动** seek（[seekRelative] / 收藏句直接 [seekMs]）走的是别的入口、不置宽限，
-  /// 且 [seekRelative] 显式清宽限+快照——手动 seek 仍能立刻清快照，不被本保护误连坐。
+  /// 用户**主动** seek（[seekRelative] / 收藏句直接 [seekMs]）走的是别的入口、不置本
+  /// **cue-snap** 宽限，且 [seekRelative] 显式清宽限+快照——手动 seek 仍能立刻清快照，不被
+  /// 本保护误连坐。（普通 seek 的在途 lag 由另一套 [_plainSeekTargetMs] 处理，见其注释。）
   int _seekSnapGraceTicksLeft = 0;
+
+  /// 普通 seek（[seekRelative] / [seekToChapter] / 页面收藏句直接 [seekMs]，**非**
+  /// [skipToCue]）的「在途目标位置」（ms，effective 前的原始播放位置）；null = 无在途普通 seek。
+  ///
+  /// **修「±秒等普通跳转到 gap 后旧字幕不消失（尤其暂停重听时）」。** media_kit 的
+  /// `player.state.position` 不随 seek 同步更新（与 [_seekTargetCueIndex] 注释同一 lag），
+  /// **暂停态更是长时间停在旧位置**（有声书 `AudiobookPlayerController._explicitSeekInFlight`
+  /// 同结论：暂停态 positionStream 不推进、`seek` 仍吐旧位置）。125ms tick
+  /// （[updateCueForPosition]）在 seek 落地前逐拍读到旧 position → [JsonAlignmentParser.findCueIndex]
+  /// 反推旧句 → 旧字幕被反复确认、一直挂着。[skipToCue] 用 [_seekTargetCueIndex] 快照抑制了
+  /// 这个 lag，但普通 seek 历史上**有意未置**保护（见 [_seekSnapGraceTicksLeft] 注释末段），
+  /// 于是暴露本 bug。
+  ///
+  /// 修法对齐有声书 `_explicitSeekInFlight` 抑制范式：[seekMs] 一发 seek 就记下目标位置、
+  /// 并立刻按目标位置**权威同步一次字幕**（直接调 [_syncCueForPosition]，不经 tick 的位置
+  /// 调和），字幕即时反映跳转目的地（gap 则消失）；随后 tick 经 [_reconcileSeekInFlightPosition]
+  /// 在 seek 落地前把「读到的旧 position」替换成目标位置——**暂停态无限期保持**（等按播放），
+  /// **播放态给有界宽限**（[_plainSeekGraceTicksLeft]）等真实位置落定后放行。与 [skipToCue]
+  /// 的 [_seekTargetCueIndex] 快照互斥（后者非空时本调和让路、不双重抑制；[skipToCue] 走
+  /// [_rawSeekMs] 也不置本状态）。
+  int? _plainSeekTargetMs;
+
+  /// 普通 seek 在途宽限剩余 tick（仅**播放态**消耗；暂停态无限期保持目标、不计此配额）。
+  /// 复用 [_seekSnapGraceTicks] 同一 2 秒量级：播放态真实位置通常一两拍即落定，配额耗尽
+  /// （慢设备 / 永不落定）也放行真实位置，绝不永久把字幕钉在旧目标上。
+  int _plainSeekGraceTicksLeft = 0;
 
   /// 音画延迟（毫秒）：正值表示"视频比文字先播"，查 cue 时把位置往回拨。
   int _delayMs = 0;
@@ -402,6 +429,11 @@ class VideoPlayerController extends ChangeNotifier
   /// [_restoreGuardGraceTicks]（10 秒）：保护只覆盖「这一次跳转的 seek 在途」短瞬，
   /// 真落地后由「首次进入引导窗口」立即作废，不会拖到 2 秒。永不落地时 2 秒后放弃保护。
   static const int _seekSnapGraceTicks = 16;
+
+  /// 普通 seek「落地判据」容差（ms）：播放态下真实 position 到达 `目标 − 本容差` 即判
+  /// seek 落定、放行真实位置（普通 seek 无 preRoll、落点≈目标，取 250ms 足够吸收关键帧
+  /// 吸附尾差与一拍 tick 推进）。见 [_reconcileSeekInFlightPosition]。
+  static const int _kPlainSeekLandToleranceMs = 250;
 
   /// 位置持久化回调：整秒变化时调用，由上层（repository）落库。
   Future<void> Function(String bookUid, int positionMs)? onPositionWrite;
@@ -1371,6 +1403,21 @@ class VideoPlayerController extends ChangeNotifier
     // 取 httpHeaders 设 `http-header-fields` 后才真正打开 URL（media_kit-1.2.6 real.dart:2145），
     // 故 header 走 Media 构造参数才赶得上 open。open 后的 [applyHttpHeaderFieldsToPlayer] 保留，
     // 为随后（本方法内、seek/play 之前）外挂的 audio-only 音轨设全局属性（TODO-1280）。
+    // 根治 BUG-801：libmpv 默认 `sub-auto=exact` 会在 `open()` 加载文件时**自动加载与视频
+    // 同名的 sidecar 外挂字幕**（用户放在视频旁的 `<video>.ass/.srt`），把它选成字幕轨、
+    // 经 media_kit 的原生 `SubtitleView` 渲染，与 Hibiki 自己解析同一 .ass 得到的可点
+    // [VideoSubtitleOverlay] **叠成两条同句字幕**（原生较小钉底、overlay 较大随控制条避让）。
+    // 抑制属性（下面 open 之后的 [buildSubtitleSuppressionProperties]）设 `sub-auto=no` 已**太迟**
+    // ——sidecar 在 `open()` 那一刻就已随 `sub-auto=exact` 自动加载并选中。故必须在 **open 之前**
+    // 下发 `sub-auto=no`，让 libmpv 从一开始就不自动加载 sidecar；字幕一律走 Hibiki 自己的解析
+    // （sidecar/内嵌文本轨抽成 cue 走 overlay，图形 PGS 轨由 [selectEmbeddedGraphicTrack]
+    // 显式选轨渲染，均不受 `sub-auto=no` 影响）。open 后仍再下发一次做兜底（内嵌轨 open 后异步
+    // 就绪的重选竞态，BUG-190）。仅 libmpv 后端生效，非 libmpv 静默 no-op（见 helper）。
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSubtitleSuppressionProperties(),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return; // open 前抑制下发后换片/销毁。
     await player.open(
       Media(
         sourceUri,
@@ -1796,7 +1843,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 5. 命中下标与 [_currentCueIndex] 相同时不重复 [notifyListeners]。
   /// 6. 否则更新当前 cue 并通知。
   void updateCueForPosition(int posMs) {
-    _syncCueForPosition(posMs, persistPosition: true);
+    // 普通 seek 在途：把 tick 读到的滞后旧 position 调和成跳转目标位置（见
+    // [_plainSeekTargetMs] / [_reconcileSeekInFlightPosition]），避免旧字幕被反复确认。
+    _syncCueForPosition(_reconcileSeekInFlightPosition(posMs),
+        persistPosition: true);
   }
 
   void _syncCueForPosition(int posMs, {required bool persistPosition}) {
@@ -1966,21 +2016,73 @@ class VideoPlayerController extends ChangeNotifier
     return snappedIdx;
   }
 
-  /// 清「主动跳转目标」快照（[_seekTargetCueIndex]）及其在途 seek 宽限配额，
-  /// 退回纯位置推导。换字幕 / 换片 / 用户主动 seek / 自然越过目标句都汇到这里。
+  /// 清「主动跳转目标」快照（[_seekTargetCueIndex]）及其在途 seek 宽限配额，并一并清普通
+  /// seek 在途状态（[_plainSeekTargetMs]）——退回纯位置推导。换字幕 / 换片 / 用户主动 seek /
+  /// 自然越过目标句都汇到这里，作「seek 追踪状态」的统一复位点。
   void _clearSeekTargetSnap() {
     _seekTargetCueIndex = null;
     _seekSnapGraceTicksLeft = 0;
+    _clearPlainSeekInFlight();
+  }
+
+  /// 记下普通 seek 的在途目标位置并充满播放态宽限（见 [_plainSeekTargetMs]）。
+  void _beginPlainSeekInFlight(int targetMs) {
+    _plainSeekTargetMs = targetMs;
+    _plainSeekGraceTicksLeft = _seekSnapGraceTicks;
+  }
+
+  /// 清普通 seek 在途状态（目标位置 + 宽限），退回读真实 position。
+  void _clearPlainSeekInFlight() {
+    _plainSeekTargetMs = null;
+    _plainSeekGraceTicksLeft = 0;
+  }
+
+  /// 普通 seek 在途位置调和（见 [_plainSeekTargetMs]）：tick 读到的 [rawPosMs] 在 seek
+  /// 落地前是滞后的旧 position；据「已知目标位置」把它替换成目标位置，直到真实位置落定。
+  /// - 与 [skipToCue] 快照（[_seekTargetCueIndex]）互斥：后者非空时让路，返回 [rawPosMs]；
+  /// - 暂停态（positionStream 不推进）：无限期返回目标位置，让字幕停在目的地（gap 则消失）；
+  /// - 播放态：真实位置到达 `目标 − [_kPlainSeekLandToleranceMs]` 即落定、放行真实位置；否则
+  ///   消耗一格宽限继续返回目标，宽限耗尽（慢设备 / 永不落定）也放行真实位置。
+  int _reconcileSeekInFlightPosition(int rawPosMs) {
+    final int? target = _plainSeekTargetMs;
+    if (target == null || _seekTargetCueIndex != null) return rawPosMs;
+    if (!isPlaying) return target;
+    if (rawPosMs >= target - _kPlainSeekLandToleranceMs) {
+      _clearPlainSeekInFlight();
+      return rawPosMs;
+    }
+    if (_plainSeekGraceTicksLeft > 0) {
+      _plainSeekGraceTicksLeft--;
+      return target;
+    }
+    _clearPlainSeekInFlight();
+    return rawPosMs;
   }
 
   /// 公开清除入口（TODO-565 复核退回的必修项）：供**绕过 [seekMs]** 的 seek 路径手动
   /// 作废「主动跳转目标」快照。唯一调用方是页面层 media_kit 进度条（seek bar）——它在
   /// media_kit / vendored fork 内部直接调 `player.seek`，既不经本类 [seekMs]、也不向页面
-  /// 层暴露 onSeek 回调（fork 的 onSeekStart/End 写死给控制条隐藏计时、不透出 theme），
-  /// 故 [seekMs] 的统一清除点覆盖不到它。页面层在进度条交互的可观测点调本方法补清，避免
-  /// 「[skipToCue] 宽限窗口内拖进度条到更早句被误 snap 回旧目标」。
+  /// 层暴露 seek 目标（fork 的 onSeekStart 只透出「开始拖动」信号、无目标位置），故
+  /// [seekMs] 的统一清除点覆盖不到它。页面层在**开始拖动**（fork onSeekStart）时调本方法补清，
+  /// 避免「[skipToCue] 宽限窗口内拖进度条到更早句被误 snap 回旧目标」；拖动**落点**的字幕在途
+  /// 保护由 [notifyExternalSeek] 承载（见其注释）。
   void clearSeekTargetSnap() {
     _clearSeekTargetSnap();
+  }
+
+  /// 外部 seek（media_kit 进度条拖动 / 点击，绕过 [seekMs] 直接 `player.seek`）**落点**通知：
+  /// 页面在 fork 的 `onSeekEnd(target)` 回调里调本方法，补上与 [seekMs] 同款「普通 seek 在途
+  /// 保护」——按 [targetMs] 权威同步一次字幕（gap 立即消失）+ 抑制随后 tick 的滞后旧 position
+  /// （暂停无限保持 / 播放有界宽限），**但不重复 `player.seek`**（进度条内部已 seek）。
+  ///
+  /// 修「进度条拖到无字幕段后旧字幕不消失」（尤其暂停重听时）：进度条走 media_kit 内部 seek，
+  /// [seekMs] 的权威同步 + 在途抑制覆盖不到它，旧字幕会被滞后旧 position 逐拍确认（同 BUG-796
+  /// ±秒键根因）。本方法把同一保护补到进度条落点。
+  void notifyExternalSeek(int targetMs) {
+    final int clampedMs = targetMs.clamp(0, 1 << 30);
+    _clearSeekTargetSnap();
+    _beginPlainSeekInFlight(clampedMs);
+    _syncCueForPosition(clampedMs, persistPosition: false);
   }
 
   /// 主动跳转目标 snap 的纯决策（TODO-565，越界判据 BUG-378 收紧到 endMs）。所有几何在
@@ -2421,12 +2523,33 @@ class VideoPlayerController extends ChangeNotifier
   ///
   /// **「主动跳转目标」快照的统一清除点（TODO-565 复核退回的必修项）。** 经本方法的
   /// 每一次 seek 都先清快照：章节跳转（[seekToChapter]）、相对 seek（[seekRelative]）、
-  /// 收藏句直接跳转（页面层 `seekMs`）都汇于此，落地前用户跳更早句不再被旧 [skipToCue]
-  /// 目标误 snap 回去。**唯一例外是 [skipToCue] 自己**——它要在本 seek **之后**才置
-  /// 快照+宽限，故先调 [seekMs]（在这里把上一个快照清掉）、再置自己的快照，绝不会被
-  /// 本清除点自清（见 [skipToCue] 注释）。进度条拖动经 media_kit 内部 `player.seek`
+  /// 收藏句直接跳转（页面层 `seekMs`）都汇于此（[seekMs] / [_rawSeekMs] 开头都调
+  /// [_clearSeekTargetSnap]），落地前用户跳更早句不再被旧 [skipToCue] 目标误 snap 回去。
+  /// **唯一例外是 [skipToCue] 自己**——它要在本 seek **之后**才置快照+宽限，故先调
+  /// [_rawSeekMs]（在这里把上一个快照清掉）、再置自己的快照，绝不会被本清除点自清
+  /// （见 [skipToCue] 注释）。进度条拖动经 media_kit 内部 `player.seek`
   /// 绕过本方法，由页面层 [clearSeekTargetSnap] 单独清（media_kit seek bar 不暴露回调）。
+  ///
+  /// 除清快照外，本方法还给普通 seek 挂「在途保护」（[_plainSeekTargetMs]）：一发 seek 就按
+  /// 目标位置**权威同步一次字幕**（不等滞后的 player position），字幕即时反映跳转目的地（gap
+  /// 则立即消失），随后 tick 经 [_reconcileSeekInFlightPosition] 抑制旧 position 的瞬态回跳，
+  /// 修「±秒跳转到 gap 后旧字幕不消失」（尤其暂停重听时）。[skipToCue] 自带 cue-snap，走
+  /// [_rawSeekMs] 不吃本保护，避免权威同步先把目标清成 preRoll gap、下一拍才 snap 回而闪烁。
   Future<void> seekMs(int positionMs) async {
+    final int clampedMs = positionMs.clamp(0, 1 << 30);
+    _clearSeekTargetSnap();
+    _beginPlainSeekInFlight(clampedMs);
+    // 权威同步：直接按目标位置算一次字幕（不经 tick 的位置调和），gap 则立即清空。
+    _syncCueForPosition(clampedMs, persistPosition: false);
+    await _player?.seek(Duration(milliseconds: clampedMs));
+  }
+
+  /// 直发 player seek（只清「主动跳转目标」快照，**不**置普通 seek 在途保护）——[skipToCue]
+  /// 专用：它自带 [_seekTargetCueIndex] 快照抑制在途 lag，且需要本清除点先清上一次快照、再由
+  /// 自己在 seek **之后**置新快照（见 [skipToCue] / [_clearSeekTargetSnap] 注释）。若改走会置
+  /// 在途保护的 [seekMs]，seek 前的权威同步会先把目标句清成 preRoll 落点的 gap、下一拍才随
+  /// 快照 snap 回目标，凭空多一次闪烁。
+  Future<void> _rawSeekMs(int positionMs) async {
     _clearSeekTargetSnap();
     await _player?.seek(Duration(milliseconds: positionMs.clamp(0, 1 << 30)));
   }
@@ -2531,11 +2654,12 @@ class VideoPlayerController extends ChangeNotifier
     // snap 回目标句，消除「点第 N 行高亮 N-1」。解析不到下标（cue 不在 _cues）时为 null，
     // 退回纯位置推导。**在 seek 之前先算好**，避免下面 await 期间 _cues 被异步改写。
     final int? targetIndex = _resolveCueIndex(cue);
-    // **顺序关键（TODO-565 复核退回的必修项）**：先 await [seekMs] 发出 seek——[seekMs]
-    // 开头会把**上一个**主动跳转快照清掉（统一清除点），故本句快照必须在它**之后**才置，
-    // 否则会被 [seekMs] 自清成 off-by-one 又复发。await 与同步置快照在单线程事件循环里对
-    // 后续 tick 等价可见（tick 不会插在 await 与置快照之间读到半截状态）。
-    await seekMs(cueSeekTargetMs(
+    // **顺序关键（TODO-565 复核退回的必修项）**：先 await [_rawSeekMs] 发出 seek——它开头
+    // 会把**上一个**主动跳转快照清掉（统一清除点），故本句快照必须在它**之后**才置，否则会被
+    // 自清成 off-by-one 又复发。await 与同步置快照在单线程事件循环里对后续 tick 等价可见
+    // （tick 不会插在 await 与置快照之间读到半截状态）。用 [_rawSeekMs] 而非 [seekMs]：后者
+    // 会挂普通 seek 在途保护 + 权威同步，与本路径自带的 cue-snap 抑制重复且会引入闪烁。
+    await _rawSeekMs(cueSeekTargetMs(
       cueStartMs: cue.startMs,
       delayMs: _delayMs,
       preRollMs: kCueSeekPreRollMs,

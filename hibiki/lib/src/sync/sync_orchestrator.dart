@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:hibiki/src/epub/book_css_repository.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
@@ -371,11 +372,15 @@ class SyncOrchestrator {
     if (isInterconnect) {
       if (syncLocalAudio) await _syncLocalAudioLive(report, b);
       if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
+      // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
+      // host 视频库。与云后端 syncVideoAssets 同为 syncVideoFiles 开关驱动、同为
+      // upload-only（host→client 仍走按需流式/下载）。
+      if (syncVideoFiles) await _syncVideosLive(report, b);
     } else {
       if (syncLocalAudio) await syncLocalAudioPackages(report);
       if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
-      // 云视频资产上传（多端库联合视图 §2.6）：仅云后端 + 开关开启。互联视频资产走
-      // host API（后续批），不走 __videos__ 伪装资产，故留在此云后端专属分支。
+      // 云视频资产上传（多端库联合视图 §2.6）：仅云后端走 __videos__ 伪装资产。互联
+      // 视频文件走上面 _syncVideosLive 的 host API 上传，不走此云后端分支。
       if (syncVideoFiles) await syncVideoAssets(report);
     }
 
@@ -781,6 +786,18 @@ class SyncOrchestrator {
             report.videosExported++;
           }
 
+          // tags 稳健档：清单条目累积「知识的并集」——本地标签 LWW 时钟与 priorEntry
+          // （他端已发布）取 max 并集，使单一共享清单文件不因后写覆盖丢掉他端标签知识；
+          // 下载端按 max(add) vs max(removed) 逐名解析。删除靠墓碑跨端传播、防复活。
+          final Map<String, int> mergedTagAddedAt = _unionMaxIntMap(
+            await _db.videoTagAddedAtByName(v.bookUid),
+            priorEntry?.tagsAddedAt ?? const <String, int>{},
+          );
+          final Map<String, int> mergedTagTombstones = _unionMaxIntMap(
+            await _db.tagTombstonesByName(v.bookUid, 'video'),
+            priorEntry?.tagTombstones ?? const <String, int>{},
+          );
+
           // 无论是否跳过上传，都刷新清单条目（保证同尺寸跳过时清单仍有此 uid）。
           // coverAsset 回退保留 byUid 既有值：本地封面文件丢失 ≠ 远端没有封面，绝不
           // 把已发布的 coverAsset 抹成 null。
@@ -791,6 +808,8 @@ class SyncOrchestrator {
             sizeBytes: size,
             importedAtMs: v.importedAt?.millisecondsSinceEpoch ?? 0,
             coverAsset: coverAsset ?? priorEntry?.coverAsset,
+            tagsAddedAt: mergedTagAddedAt,
+            tagTombstones: mergedTagTombstones,
           );
         } catch (e) {
           report.errors.add('video "${v.title}": $e');
@@ -885,6 +904,8 @@ class SyncOrchestrator {
           backend: _backend,
           folderId: folder.id,
           tempDir: _tempDir,
+          // 下载远端书文件夹时一并补下其有声书包（修复云有声书「只上传拿不回」缺口）。
+          audioDatabaseRoot: _audioDatabaseRoot,
           onProgress: (double f) => _emit(SyncPhase.books,
               itemIndex: i,
               itemTotal: total,
@@ -1707,6 +1728,80 @@ class SyncOrchestrator {
     }
   }
 
+  /// 互联视频文件 live push（client→host，TODO §2.6「后续批」接线）。
+  ///
+  /// 直打对端 host 上传端点：枚举本地可上传单文件视频（[_isUploadableLocalVideo]，
+  /// 排除流媒体 / 多集播放列表），对 host 尚无（按 bookUid）或尺寸不同的推上去。视频
+  /// 身份键是 `VideoBooks.bookUid`（= host 端 [RemoteVideoInfo.id]，两端同源派生），故
+  /// 直接按 uid union，重复上传同一视频 host 端 upsert 覆盖同一行、不产生重复。
+  ///
+  /// **upload-only**：host→client 方向仍是按需流式播放 / 手动下载（视频 GB 级不进
+  /// 自动 pull），与云后端 [syncVideoAssets] 同律。互联 host 上传字节未混淆（与
+  /// [putRemoteAudiobook] 同为裸 octet-stream），故 host 清单 [RemoteVideoInfo.sizeBytes]
+  /// == 本地明文尺寸，可直接按尺寸判幂等（不必像云后端那样绕物理尺寸走清单）。
+  ///
+  /// 仅当 client syncVideoFiles 开且 isInterconnect 时由 [run] 调用。进度走
+  /// [SyncPhase.videos]，逐项错误进 report.errors 不中断，[report.videosExported] 计上传数。
+  Future<void> _syncVideosLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    // host 既有视频（uid → sizeBytes，null=host 无法 stat）。
+    final Map<String, int?> hostSizeByUid = <String, int?>{
+      for (final RemoteVideoInfo info in await backend.listRemoteVideos())
+        info.id: info.sizeBytes,
+    };
+
+    // 稳定顺序（uid 升序）遍历本地可上传视频，先算出真正要传的（host 无 / 尺寸不同），
+    // 让进度分母只计实际上传数。
+    final List<VideoBookRow> localVideos = <VideoBookRow>[
+      for (final VideoBookRow v in await _db.allVideoBooks())
+        if (_isUploadableLocalVideo(v)) v,
+    ]..sort((VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid));
+
+    final List<({VideoBookRow row, File file})> toPush =
+        <({VideoBookRow row, File file})>[];
+    for (final VideoBookRow v in localVideos) {
+      final File file = File(v.videoPath);
+      if (!file.existsSync()) {
+        report.errors.add(
+            'live push video "${v.title}": local file missing: ${v.videoPath}');
+        continue;
+      }
+      final bool hostHas = hostSizeByUid.containsKey(v.bookUid);
+      final int? hostSize = hostSizeByUid[v.bookUid];
+      final int localSize = await file.length();
+      // host 已有：尺寸可比且相等 ⇒ 跳过（幂等）；host 尺寸不可知（null）也跳过（无从
+      // 判差异，避免每轮全量重传大视频，下轮 host stat 成功即自愈）。host 无 ⇒ 上传。
+      if (hostHas && (hostSize == null || hostSize == localSize)) continue;
+      toPush.add((row: v, file: file));
+    }
+
+    final int total = toPush.length;
+    int index = 0;
+    for (final ({VideoBookRow row, File file}) item in toPush) {
+      final VideoBookRow v = item.row;
+      _emit(SyncPhase.videos,
+          itemIndex: index, itemTotal: total, title: v.title);
+      try {
+        await backend.putRemoteVideo(
+          v.bookUid,
+          item.file,
+          title: v.title,
+          onProgress: (double f) => _emit(SyncPhase.videos,
+              itemIndex: index,
+              itemTotal: total,
+              title: v.title,
+              fileFraction: f),
+        );
+        report.videosExported++;
+      } catch (e) {
+        report.errors.add('live push video "${v.title}": $e');
+      }
+      index++;
+    }
+  }
+
   /// Union-syncs local audio source DBs in the `__local_audio__` namespace.
   /// 资产名 = displayName（[LocalAudioDbEntry.path] 含本机时间戳，每机不同不可用）。
   /// push 本地独有（displayName 不在远端）/ pull 远端独有（displayName 不在本地）。
@@ -1924,6 +2019,7 @@ Future<bool> importRemoteBookFolder({
   required SyncBackend backend,
   required String folderId,
   required Directory tempDir,
+  Directory? audioDatabaseRoot,
   void Function(double fraction)? onProgress,
 }) async {
   final List<AssetEntry> children = await backend.listChildren(folderId);
@@ -1951,6 +2047,23 @@ Future<bool> importRemoteBookFolder({
     // TODO-1165：按标签名重建云盘书标签映射（sidecar 由 push 侧写在同文件夹，只增
     // 不删）。复用已列出的 children，不再多发一次 listChildren。
     await _applyRemoteBookFolderTags(db, backend, children, importedBookKey);
+    // 云后端有声书 pull：下载远端书文件夹时若带 `audiobook.hibikiaudio`（push 侧
+    // syncAudiobookPackages 写在同文件夹），且调用方注入了 [audioDatabaseRoot]，一并
+    // 补下音频包。修复历史缺口——此前 syncAudiobookPackages 是 upload-only、
+    // importRemoteBookFolder 只找 `.epub`，导致云有声书「只上传拿不回」。best-effort：
+    // 音频补下失败不影响 EPUB 已成功导入。
+    if (audioDatabaseRoot != null) {
+      await _pullRemoteFolderAudiobook(
+        db: db,
+        backend: backend,
+        children: children,
+        bookKey: importedBookKey,
+        audioDatabaseRoot: audioDatabaseRoot,
+        tempDir: tempDir,
+      );
+    }
+    // per-book 自定义 CSS：LWW 合并同文件夹 book_css.json，把较新内容写穿 extractDir。
+    await _applyRemoteBookFolderCss(db, backend, children, importedBookKey);
     return true;
   } finally {
     try {
@@ -1961,9 +2074,54 @@ Future<bool> importRemoteBookFolder({
   }
 }
 
-/// 读取云盘书文件夹里的标签 sidecar（[kSyncBookTagsAssetName]）并按名重建 [bookKey]
-/// 的标签映射（TODO-1165）。[children] 复用 [importRemoteBookFolder] 已列出的目录项。
-/// 缺 sidecar（旧端未写）安全降级为空——按名只增不删，绝不清本地既有标签。
+/// 若远端书文件夹 [children] 里存在 `audiobook.hibikiaudio`（[kSyncAudiobookAssetName]），
+/// 下载并用本地刚导入 EPUB 的 [bookKey] 作 `bookKeyOverride` 解包落盘（修复云后端有声书
+/// 「只上传拿不回」缺口）。无音频资产是常态（普通书）——静默返回。best-effort：下载/
+/// 解包失败仅吞掉（EPUB 已成功导入，不因音频回退整本失败）。
+Future<void> _pullRemoteFolderAudiobook({
+  required HibikiDatabase db,
+  required SyncBackend backend,
+  required List<AssetEntry> children,
+  required String bookKey,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+}) async {
+  AssetEntry? audioAsset;
+  for (final AssetEntry e in children) {
+    if (!e.isFolder && e.name == kSyncAudiobookAssetName) {
+      audioAsset = e;
+      break;
+    }
+  }
+  if (audioAsset == null) return;
+
+  final File tmp = File(p.join(
+    tempDir.path,
+    'hibiki_remote_audio_${DateTime.now().microsecondsSinceEpoch}.hibikiaudio',
+  ));
+  try {
+    await backend.getAsset(audioAsset.id, tmp);
+    await SyncAssetPackageService(db: db).importAudioDatabasePackage(
+      packageFile: tmp,
+      audioDatabaseRoot: audioDatabaseRoot,
+      bookKeyOverride: bookKey,
+    );
+  } catch (_) {
+    // best-effort：音频补下失败不影响 EPUB 已成功导入。
+  } finally {
+    try {
+      if (tmp.existsSync()) tmp.deleteSync();
+    } catch (_) {
+      // best-effort temp cleanup
+    }
+  }
+}
+
+/// 读取云盘书文件夹里的标签 sidecar（[kSyncBookTagsAssetName]）并 LWW-element-set 合并进
+/// [bookKey] 本地标签（TODO-1165 / tags 稳健档）。[children] 复用 [importRemoteBookFolder]
+/// 已列出的目录项。缺 sidecar（旧端未写）安全降级为不动本地。v2 sidecar 带 tagsAddedAt +
+/// tagTombstones → 按名 max(add) vs max(removed) 裁决（删除/改名传播、防复活）；v1 旧
+/// sidecar 只有 tags 名单 → 合成 addedAt=1，退化为「只增且尊重本地移除墓碑」（向后兼容）。
 Future<void> _applyRemoteBookFolderTags(
   HibikiDatabase db,
   SyncBackend backend,
@@ -1979,15 +2137,120 @@ Future<void> _applyRemoteBookFolderTags(
   }
   if (sidecar == null) return;
   final Object? json = await backend.getJsonAsset(sidecar.id);
-  for (final String name in _bookTagNamesFromSidecar(json)) {
-    if (name.isEmpty) continue;
-    final int tagId = await db.getOrCreateTagByName(name);
-    await db.addTagToBook(bookKey, tagId);
+  final ({Map<String, int> addedAt, Map<String, int> tombstones}) parsed =
+      parseTagSidecar(json);
+  if (parsed.addedAt.isEmpty && parsed.tombstones.isEmpty) return;
+  await db.mergeRemoteBookTags(
+    bookKey,
+    remoteAddedAt: parsed.addedAt,
+    remoteTombstones: parsed.tombstones,
+  );
+}
+
+/// 读取云盘书文件夹里的 CSS sidecar（[kSyncBookCssAssetName]）并 LWW 合并进 [bookKey]：
+/// 按 relativePath 取 updatedAt 较新，把内容/重置写穿书的 extractDir（磁盘是渲染真相源，
+/// DB 只是时间戳载体）。缺 sidecar / 本书无对应 CSS 文件 / 反查不到 extractDir 一律安全跳过。
+Future<void> _applyRemoteBookFolderCss(
+  HibikiDatabase db,
+  SyncBackend backend,
+  List<AssetEntry> children,
+  String bookKey,
+) async {
+  AssetEntry? sidecar;
+  for (final AssetEntry e in children) {
+    if (!e.isFolder && e.name == kSyncBookCssAssetName) {
+      sidecar = e;
+      break;
+    }
+  }
+  if (sidecar == null) return;
+  final Object? json = await backend.getJsonAsset(sidecar.id);
+  final Map<String, ({String content, bool deleted, int updatedAt})> remote =
+      parseBookCssSidecar(json);
+  if (remote.isEmpty) return;
+  final List<({String relativePath, String content, bool deleted})> changed =
+      await db.mergeRemoteBookCss(bookKey, remote);
+  if (changed.isEmpty) return;
+  final EpubBookRow? book = await db.getEpubBook(bookKey);
+  final String? extractDir = book?.extractDir;
+  if (extractDir == null || extractDir.isEmpty) return;
+  final BookCssRepository repo = BookCssRepository(extractDir);
+  final Map<String, CssFileEntry> byRel = <String, CssFileEntry>{
+    for (final CssFileEntry e in repo.discoverCssFiles()) e.relativePath: e,
+  };
+  for (final ({String relativePath, String content, bool deleted}) c
+      in changed) {
+    final CssFileEntry? entry = byRel[c.relativePath];
+    if (entry == null) continue; // 本书无此 CSS 文件（版本差异）→ 跳过
+    try {
+      if (c.deleted) {
+        repo.resetFile(entry);
+      } else {
+        repo.saveCss(entry, c.content);
+      }
+    } catch (_) {
+      // best-effort：单个 CSS 写盘失败不影响其余（磁盘/权限异常）。
+    }
   }
 }
 
-/// 从标签 sidecar JSON 解析非空标签名列表（TODO-1165）。非 Map / `tags` 非 List /
-/// 缺键一律返回空列表——向后兼容旧格式，绝不对缺字段抛 FormatException。
+/// 解析 CSS sidecar JSON 为 LWW 输入：`{files:{relativePath:{content,deleted,updatedAt}}}`。
+/// 非 Map / 缺 updatedAt / 坏字段一律安全跳过，绝不抛 FormatException。测试可见。
+@visibleForTesting
+Map<String, ({String content, bool deleted, int updatedAt})>
+    parseBookCssSidecar(Object? json) {
+  if (json is! Map) {
+    return const <String, ({String content, bool deleted, int updatedAt})>{};
+  }
+  final Object? files = json['files'];
+  if (files is! Map) {
+    return const <String, ({String content, bool deleted, int updatedAt})>{};
+  }
+  final Map<String, ({String content, bool deleted, int updatedAt})> out =
+      <String, ({String content, bool deleted, int updatedAt})>{};
+  files.forEach((Object? k, Object? v) {
+    final String rel = k?.toString() ?? '';
+    if (rel.isEmpty || v is! Map) return;
+    final Object? updatedAt = v['updatedAt'];
+    final int? ms = updatedAt is int
+        ? updatedAt
+        : (updatedAt is num
+            ? updatedAt.toInt()
+            : int.tryParse(updatedAt?.toString() ?? ''));
+    if (ms == null) return;
+    out[rel] = (
+      content: v['content']?.toString() ?? '',
+      deleted: v['deleted'] == true,
+      updatedAt: ms,
+    );
+  });
+  return out;
+}
+
+/// 解析标签 sidecar JSON 为 LWW 输入（tags 稳健档）。v2 带 `tagsAddedAt` / `tagTombstones`
+/// （名→毫秒戳）直接用；否则 v1 只有 `tags` 名单 → 合成 addedAt=1（正数，胜过缺席但输给
+/// 任何本地墓碑，保持「只增 + 尊重本地移除」的旧语义）。非 Map / 坏字段一律安全降级为空，
+/// 绝不抛 FormatException。测试可见。
+@visibleForTesting
+({Map<String, int> addedAt, Map<String, int> tombstones}) parseTagSidecar(
+    Object? json) {
+  if (json is! Map) {
+    return (addedAt: <String, int>{}, tombstones: <String, int>{});
+  }
+  final Map<String, int> addedAt = _parseNameIntMap(json['tagsAddedAt']);
+  final Map<String, int> tombstones = _parseNameIntMap(json['tagTombstones']);
+  if (addedAt.isNotEmpty || tombstones.isNotEmpty) {
+    return (addedAt: addedAt, tombstones: tombstones);
+  }
+  final Map<String, int> v1 = <String, int>{
+    for (final String name in _bookTagNamesFromSidecar(json))
+      if (name.isNotEmpty) name: 1,
+  };
+  return (addedAt: v1, tombstones: <String, int>{});
+}
+
+/// 从标签 sidecar JSON 解析非空标签名列表（v1 兼容）。非 Map / `tags` 非 List / 缺键
+/// 一律返回空列表——向后兼容旧格式，绝不对缺字段抛 FormatException。
 List<String> _bookTagNamesFromSidecar(Object? json) {
   if (json is! Map) return const <String>[];
   final Object? raw = json['tags'];
@@ -1996,4 +2259,30 @@ List<String> _bookTagNamesFromSidecar(Object? json) {
     for (final Object? item in raw)
       if (item != null && item.toString().isNotEmpty) item.toString(),
   ];
+}
+
+/// 解析 `{name: ms}` 映射（值容忍 int / num / 数字串）。非 Map / 空名 / 非数值值跳过。
+Map<String, int> _parseNameIntMap(Object? raw) {
+  if (raw is! Map) return <String, int>{};
+  final Map<String, int> out = <String, int>{};
+  raw.forEach((Object? k, Object? v) {
+    final String name = k?.toString() ?? '';
+    if (name.isEmpty) return;
+    final int? ms = v is int
+        ? v
+        : (v is num ? v.toInt() : int.tryParse(v?.toString() ?? ''));
+    if (ms != null) out[name] = ms;
+  });
+  return out;
+}
+
+/// 两个 `{name: ms}` 时钟按名取 max 并集（tags 稳健档：视频清单条目累积他端知识）。
+Map<String, int> _unionMaxIntMap(Map<String, int> a, Map<String, int> b) {
+  final Map<String, int> out = <String, int>{...a};
+  for (final MapEntry<String, int> e in b.entries) {
+    out[e.key] = out.containsKey(e.key)
+        ? (out[e.key]! > e.value ? out[e.key]! : e.value)
+        : e.value;
+  }
+  return out;
 }
