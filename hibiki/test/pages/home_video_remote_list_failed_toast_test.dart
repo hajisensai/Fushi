@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
-/// BUG-808 回归守卫：下拉刷新时远端清单拉取失败，用户可见的 toast 必须是**本地化
+/// BUG-811 回归守卫：下拉刷新时远端清单拉取失败，用户可见的 toast 必须是**本地化
 /// 友好文案**，绝不泄漏原始异常（`TimeoutException after 0:00:15.000000: Future not
 /// completed` 等开发者文本）进 UI。
 ///

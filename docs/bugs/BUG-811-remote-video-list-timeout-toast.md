@@ -1,4 +1,4 @@
-## BUG-808 · 远端视频清单超时把异常原文泄漏进 toast
+## BUG-811 · 远端视频清单超时把异常原文泄漏进 toast
 - **报告**：2026-07-14（用户：截图「无法加载远端视频：TimeoutException after 0:00:15.000000: Future not completed」）
 - **真实性**：✅ 真 bug。下拉刷新视频库时 `home_video_page._pullToRefresh`（`hibiki/lib/src/pages/implementations/home_video_page.dart:250`）把 `state.errorMessage`（= catch 里的 `e.toString()`）直接拼进 `t.remote_video_list_failed(error:)`，用户看到裸 `TimeoutException`。异常源自 `HibikiClientSyncBackend.listRemoteVideos()` 对 `GET /api/library/videos` 的 `.timeout(listTimeout=15s)`（`hibiki/lib/src/sync/hibiki_client_sync_backend.dart:145,1109,1116`）。
 - **[x] ① 已修复** — 提交 `<pending>`。把 i18n key `remote_video_list_failed` 从带 `$error` 占位符改成无参自包含友好文案（`无法加载远端视频，请确认对端设备在线并与本机处于同一网络后重试` / 17 语言经 `tool/i18n_sync.dart` 重建，`dart run slang` 重新生成），toast 调用点去掉 `error:` 参数；删除随之变死的 `_RemoteVideoState.errorMessage` 字段与两处 `e.toString()` 赋值；原始异常只留 `debugPrint` 供排查。
