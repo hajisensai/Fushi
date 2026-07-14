@@ -168,8 +168,8 @@ void main() {
     });
 
     test(
-        'a db-only backup (no localAudio category) leaves stored audio paths '
-        'untouched — playback relies on runtime filename resolution', () async {
+        'BUG-812: unticking localAudio strips the local_audio_dbs registry from '
+        'the export (paths are personal) — a fresh import has none', () async {
       final String srcDbDir = p.join(src.path, 'db');
       Directory(srcDbDir).createSync(recursive: true);
       final String laPath = p.join(srcDbDir, 'local_audio_333.db');
@@ -191,27 +191,25 @@ void main() {
       final BackupService service =
           BackupService(db: db, dbDirectory: srcDbDir, appVersion: '1.0.0');
       final String zip = p.join(src.path, 'books_only.zip');
+      // Empty set = every category unticked, including localAudio → the
+      // local-audio registry (which holds this device's absolute `.db` paths)
+      // must be stripped from the exported DB copy (BUG-812).
       await service.exportBackup(zip, categories: <BackupCategory>{});
       await db.close();
 
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
+      // Fresh device (no current DB), so there is nothing to preserve from bak;
+      // the imported registry is simply absent.
       await BackupService.importBackupFiles(
           dbDirectory: dstDbDir, zipPath: zip);
 
       final HibikiDatabase restored = HibikiDatabase(dstDbDir);
       try {
         final Map<String, String> prefs = await restored.getAllPrefs();
-        final List<dynamic> dbs = jsonDecode(
-                PrefCodec.decode<String>(prefs['local_audio_dbs']!, '[]'))
-            as List<dynamic>;
-        final String path = (dbs.single as Map)['path'] as String;
-        // No files crossed over (localAudioRoot null), so import does NOT open
-        // the DB to rewrite prefs — the stored path stays as-is. Cross-machine
-        // playback of copies that DID travel is handled at bind time by
-        // LocalAudioManager.resolveInternalPath (filename resolution), covered
-        // by local_audio_manager_resolve_test.dart.
-        expect(path, laPath);
+        expect(prefs.containsKey('local_audio_dbs'), isFalse,
+            reason:
+                'localAudio unticked → registry paths never leave the device');
       } finally {
         await restored.close();
       }

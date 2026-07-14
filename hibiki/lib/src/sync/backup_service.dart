@@ -461,6 +461,23 @@ class BackupService {
   /// strip must never delete it.
   static const String _favoriteSentencesPrefKey = 'favorite_sentences';
 
+  /// Device-local tables that must NEVER travel in a shared backup and are
+  /// always restored from this device's pre-restore bak on an overwrite import
+  /// (BUG-812). Same philosophy as [SyncRepository.deviceLocalPrefKeys]:
+  ///   - `hibiki_paired_peers` — LAN pairing rows including the plaintext auth
+  ///     `token` (a live credential the HBK-AUDIT-012 pref-key sweep missed
+  ///     because it lives in its own table, not `preferences`).
+  ///   - `sync_baselines`      — per-asset incremental-sync causality; carrying
+  ///     it to another device corrupts later fork detection (mirrors why
+  ///     `_keyCollectionsBaselineMs` is device-local).
+  /// Neither is FK-targeted by a content table, so a wholesale DELETE / swap is
+  /// safe. The merge engine already skips both, so only the overwrite path needs
+  /// the restore.
+  static const List<String> _deviceLocalTables = <String>[
+    'hibiki_paired_peers',
+    'sync_baselines',
+  ];
+
   /// Content tables stripped from the exported DB copy when the `statistics`
   /// category is unticked (TODO-1193). None is FK-targeted by another content
   /// table, so a wholesale DELETE is safe.
@@ -491,11 +508,19 @@ class BackupService {
   /// EXCLUDES (preserves) the rows owned by other categories or that are
   /// content, so an "exclude settings" export never collaterally drops them:
   ///   - `audiobook_pos_*`         -> progress (the `progress` category)
-  ///   - `sync_*`                  -> device-local sync config (never travels)
-  ///   - `favorite_sentences`      -> favorites content (travels / merges)
-  ///   - `local_audio_dbs`         -> local-audio registry (`localAudio`)
-  ///   - `audio_source_configs`    -> audio-source config
-  ///   - font catalog + legacy font prefs -> font registry (`fonts`)
+  ///   - `favorite_sentences`      -> favorites content, gated on `books`
+  ///     (BUG-812, stripped/restored separately by the content-registry path)
+  ///   - `local_audio_dbs`         -> local-audio registry (`localAudio`, BUG-812)
+  ///   - `audio_source_configs`    -> audio-source config (`localAudio`, BUG-812)
+  ///   - font catalog + legacy font prefs -> font registry (`fonts`, BUG-812)
+  /// BUG-812: `sync_*` behaviour toggles ARE settings (see `sync_repository.dart`
+  /// — they are treated as user settings that travel), so they are NO LONGER
+  /// excepted here: unticking `settings` now strips them from the export and the
+  /// import restores them from bak. The device-local sync CONFIG / credentials
+  /// (`deviceLocalPrefKeys`) are handled out-of-band by `_stripCredentials`
+  /// (export) + `_applyPreservedConfig` (import, authoritative last word), so
+  /// letting this predicate also touch them on a settings-excluded restore is a
+  /// harmless no-op that `_applyPreservedConfig` overrides.
   /// Used SYMMETRICALLY by the export strip and the import preserve-from-bak so
   /// a `settings`-excluded backup and its restore never diverge.
   static final String settingsPrefPredicate = _buildSettingsPrefPredicate();
@@ -512,7 +537,6 @@ class BackupService {
         .map((String k) => "'${k.replaceAll("'", "''")}'")
         .join(', ');
     return "key NOT LIKE 'audiobook_pos_%' "
-        "AND key NOT LIKE 'sync_%' "
         'AND key NOT IN ($notIn)';
   }
 
@@ -922,6 +946,17 @@ class BackupService {
         );
       }
 
+      // BUG-812: content-registry preference rows follow their OWNING content
+      // category, not `settings` — strip favorites when `books` is unticked,
+      // the font registry when `fonts` is, and the local-audio registry (incl.
+      // the localAudio entries of `audio_source_configs`) when `localAudio` is.
+      await _stripExcludedContentRegistry(
+        tmpDir.path,
+        stripFavorites: !includeBooks,
+        stripFonts: !wants(BackupCategory.fonts),
+        stripLocalAudio: !wants(BackupCategory.localAudio),
+      );
+
       final books = await _db.getAllEpubBooks();
       final stats = await _db.getAllReadingStatistics();
       // The count reported to the import confirm dialog must reflect what is
@@ -1164,10 +1199,61 @@ class BackupService {
         " OR key LIKE 'sync_%private_key%'"
         " OR key = 'sync_desktop_credentials'",
       );
+      // BUG-812: device-local tables (LAN pairing token + sync baselines) live
+      // outside `preferences`, so the key sweeps above never touched them and a
+      // shared backup leaked the plaintext pairing `token`. Wipe them from the
+      // export copy unconditionally — they are meaningless (or harmful) on any
+      // other device and are restored from bak on an overwrite import.
+      for (final String table in _deviceLocalTables) {
+        await db.customStatement('DELETE FROM $table');
+      }
       await db.customStatement('VACUUM');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
+    }
+  }
+
+  /// Restores [_deviceLocalTables] from [bakPath] (this device's pre-import
+  /// snapshot) into the freshly-overwritten DB in [dbDirectory] (BUG-812). The
+  /// backup carries these tables EMPTY by design (`_stripCredentials`), so
+  /// without this the overwrite would wipe this device's LAN pairings and sync
+  /// baselines. Runs inline during import while both DBs are at the current
+  /// schema (bak is a copy of the live DB), so `SELECT *` columns align. No-op
+  /// (logged) if bak is gone.
+  static Future<void> _restoreDeviceLocalTablesFromBak(
+    String dbDirectory,
+    String bakPath,
+  ) async {
+    if (!File(bakPath).existsSync()) {
+      debugPrint('BackupService._restoreDeviceLocalTablesFromBak: '
+          'pre-restore.bak missing — local pairing/baselines could not be '
+          'preserved on import.');
+      return;
+    }
+    HibikiDatabase? db;
+    try {
+      db = HibikiDatabase(dbDirectory);
+      final String safeBak =
+          bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
+      await db.customStatement("ATTACH DATABASE '$safeBak' AS devbak");
+      await db.transaction(() async {
+        for (final String t in _deviceLocalTables) {
+          await db!.customStatement('DELETE FROM $t');
+          await db.customStatement('INSERT INTO $t SELECT * FROM devbak.$t');
+        }
+      });
+      await db.customStatement('DETACH DATABASE devbak');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e, st) {
+      // Best-effort preservation: a corrupt/unreadable imported DB must not
+      // abort the whole restore (the primary overwrite already landed).
+      debugPrint('BackupService._restoreDeviceLocalTablesFromBak failed: '
+          '$e\n$st');
+    } finally {
+      try {
+        await db?.close();
+      } catch (_) {/* db may have failed to open */}
     }
   }
 
@@ -1236,6 +1322,139 @@ class BackupService {
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
+    }
+  }
+
+  /// BUG-812: strips the content-registry preference rows whose OWNING content
+  /// category the user unticked, from the standalone export DB copy. Each key is
+  /// governed by the feature it belongs to, NOT `settings`:
+  ///  - favorites (`favorite_sentences`)          -> `books`
+  ///  - font catalog + legacy font prefs          -> `fonts`
+  ///  - local-audio registry (`local_audio_dbs`)  -> `localAudio`
+  ///  - `audio_source_configs` localAudio entries -> `localAudio` (option B:
+  ///    only the `kind == 'localAudio'` entries carrying this device's absolute
+  ///    `.db` paths are dropped; remote audio-source entries are kept).
+  /// Mirrored on an overwrite import by [_restoreExcludedContentRegistry].
+  static Future<void> _stripExcludedContentRegistry(
+    String dbDirectory, {
+    required bool stripFavorites,
+    required bool stripFonts,
+    required bool stripLocalAudio,
+  }) async {
+    if (!stripFavorites && !stripFonts && !stripLocalAudio) return;
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      if (stripFavorites) {
+        await db.customStatement(
+            "DELETE FROM preferences WHERE key = '$_favoriteSentencesPrefKey'");
+      }
+      if (stripFonts) {
+        for (final String k in <String>[
+          _fontCatalogPrefKey,
+          ..._legacyFontPrefKeys,
+        ]) {
+          await db.customStatement("DELETE FROM preferences WHERE key = '$k'");
+        }
+      }
+      if (stripLocalAudio) {
+        await db.customStatement(
+            "DELETE FROM preferences WHERE key = '$_localAudioDbsPrefKey'");
+        await _filterLocalAudioFromAudioSourceConfigs(db);
+      }
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Rewrites the `audio_source_configs` pref (BUG-812 option B): removes only
+  /// its `kind == 'localAudio'` entries (they carry this device's absolute `.db`
+  /// paths), keeping remote audio-source entries. Preserves the [PrefCodec] tag
+  /// on write. No-op if the pref is absent, unparseable, or has no local-audio
+  /// entry.
+  static Future<void> _filterLocalAudioFromAudioSourceConfigs(
+      HibikiDatabase db) async {
+    final rows = await db
+        .customSelect('SELECT value FROM preferences '
+            "WHERE key = '$_audioSourceConfigsPrefKey'")
+        .get();
+    if (rows.isEmpty) return;
+    final String? raw = rows.first.read<String?>('value');
+    if (raw == null) return;
+    final dynamic decoded = PrefCodec.decodeUntyped(raw);
+    if (decoded is! List) return;
+    final List<dynamic> kept = decoded
+        .where((dynamic e) => !(e is Map && e['kind'] == 'localAudio'))
+        .toList();
+    if (kept.length == decoded.length) return; // no local-audio entry to strip
+    if (kept.isEmpty) {
+      await db.customStatement('DELETE FROM preferences '
+          "WHERE key = '$_audioSourceConfigsPrefKey'");
+      return;
+    }
+    await db.customStatement(
+      'UPDATE preferences SET value = ? WHERE key = ?',
+      <Object?>[PrefCodec.encode(kept), _audioSourceConfigsPrefKey],
+    );
+  }
+
+  /// BUG-812: restores the content-registry preference rows from [bakPath] when
+  /// the backup EXCLUDED their owning category, so an overwrite import of a
+  /// books / fonts / localAudio-excluded backup never wipes this device's
+  /// favorites / font registry / local-audio registry to empty. Mirror of
+  /// [_stripExcludedContentRegistry]. `audio_source_configs` is restored whole
+  /// from bak (the device keeps its own audio setup when localAudio was
+  /// excluded), which subsumes the export-side B-filter. No-op (logged) if bak
+  /// is gone.
+  static Future<void> _restoreExcludedContentRegistry(
+    String dbDirectory,
+    String bakPath, {
+    required bool restoreFavorites,
+    required bool restoreFonts,
+    required bool restoreLocalAudio,
+  }) async {
+    final List<String> keys = <String>[
+      if (restoreFavorites) _favoriteSentencesPrefKey,
+      if (restoreFonts) ...<String>[
+        _fontCatalogPrefKey,
+        ..._legacyFontPrefKeys
+      ],
+      if (restoreLocalAudio) ...<String>[
+        _localAudioDbsPrefKey,
+        _audioSourceConfigsPrefKey,
+      ],
+    ];
+    if (keys.isEmpty) return;
+    if (!File(bakPath).existsSync()) {
+      debugPrint('BackupService._restoreExcludedContentRegistry: '
+          'pre-restore.bak missing — local favorites/fonts/audio registry could '
+          'not be preserved for a category-excluded backup.');
+      return;
+    }
+    HibikiDatabase? db;
+    try {
+      db = HibikiDatabase(dbDirectory);
+      final String safeBak =
+          bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
+      final String inList =
+          keys.map((String k) => "'${k.replaceAll("'", "''")}'").join(', ');
+      await db.customStatement("ATTACH DATABASE '$safeBak' AS crbak");
+      await db.transaction(() async {
+        await db!
+            .customStatement('DELETE FROM preferences WHERE key IN ($inList)');
+        await db.customStatement('INSERT INTO preferences '
+            'SELECT * FROM crbak.preferences WHERE key IN ($inList)');
+      });
+      await db.customStatement('DETACH DATABASE crbak');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e, st) {
+      debugPrint('BackupService._restoreExcludedContentRegistry failed: '
+          '$e\n$st');
+    } finally {
+      try {
+        await db?.close();
+      } catch (_) {/* db may have failed to open */}
     }
   }
 
@@ -1349,6 +1568,16 @@ class BackupService {
               false;
       final bool backupProfilesExcluded =
           meta?.excludedCategories.contains(BackupCategory.profiles.name) ??
+              false;
+      // BUG-812: content-registry prefs (favorites / fonts / local-audio) travel
+      // EMPTY when their owning category was unticked, so an overwrite import
+      // must preserve THIS device's rows from bak instead of wiping them.
+      final bool backupBooksExcluded =
+          meta?.excludedCategories.contains(BackupCategory.books.name) ?? false;
+      final bool backupFontsExcluded =
+          meta?.excludedCategories.contains(BackupCategory.fonts.name) ?? false;
+      final bool backupLocalAudioExcluded =
+          meta?.excludedCategories.contains(BackupCategory.localAudio.name) ??
               false;
 
       final String? dictionaryRestoreDirectory = dictionaryResourceDirectory;
@@ -1560,6 +1789,25 @@ class BackupService {
       } else if (haveCurrent) {
         // Keep this device's whole settings layer.
         await _restoreSettingsLayer(dbDirectory);
+      }
+
+      // 3a) BUG-812: the export wipes device-local tables (LAN pairing token +
+      //     sync baselines) unconditionally, so they arrive EMPTY. Restore this
+      //     device's rows from bak on any overwrite import (both importSettings
+      //     branches) — else the overwrite would wipe the device's pairings and
+      //     baselines. No-op on a fresh install (no bak).
+      if (haveCurrent) {
+        await _restoreDeviceLocalTablesFromBak(dbDirectory, bakPath);
+        // BUG-812: preserve THIS device's content-registry prefs from bak when
+        // the backup excluded their owning category (books/fonts/localAudio) —
+        // runs in both importSettings branches, mirroring the export strip.
+        await _restoreExcludedContentRegistry(
+          dbDirectory,
+          bakPath,
+          restoreFavorites: backupBooksExcluded,
+          restoreFonts: backupFontsExcluded,
+          restoreLocalAudio: backupLocalAudioExcluded,
+        );
       }
 
       // 3b) Rebase the imported DB's stored absolute paths (which point at the

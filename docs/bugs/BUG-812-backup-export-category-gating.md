@@ -1,0 +1,12 @@
+## BUG-812 · 导出未按功能类别剥离个人数据(收藏句/音频源路径/字体路径/sync开关/配对token泄漏)
+- **报告**：2026-07-14（用户：分享备份给他人时，取消勾选的个人数据仍出现在导出 hibiki.db 里）
+- **真实性**：✅ 真 bug。用户备份 `backup_meta.json` 排除了 `settings` 等类别，但导出的 `hibiki.db` 仍明文残留：`hibiki_paired_peers`(peer_id + **token** + IP)、`favorite_sentences`(书名/章节/原句)、`local_audio_dbs`/`audio_source_configs`(绝对路径)、字体绝对路径、`sync_*` 开关、`sync_baselines`。
+  - 根因：`backup_service.dart` `settingsPrefPredicate` 把 `sync_*`/favorites/audio/font 键全列入「永久保留」，等于免除一切 gating；`favorite_sentences` 无任何 BackupCategory 归属故永不被剥；`hibiki_paired_peers`/`sync_baselines` 在整个 backup_service.dart 零引用，`_stripCredentials` 只扫 preferences 表，漏掉带 token 的独立表——尽管 HBK-AUDIT-012 注释宣称「已剥离凭据」，且 token 列 schema 明写「🔴 绝不进 sync/backup 明文导出」。
+- **[x] ① 已修复** — 每样数据挂回所属类别：
+  - `_stripCredentials` 增 `DELETE FROM _deviceLocalTables`（`hibiki_paired_peers`+`sync_baselines` 永远剥）；覆盖式导入新增 `_restoreDeviceLocalTablesFromBak` 从 bak 恢复本机行（两条 importSettings 子路径都覆盖）。
+  - `settingsPrefPredicate` 去掉 `NOT LIKE 'sync_%'` 例外 → sync 开关归 settings（导出剥离+导入回插共用谓词，天然对称）。
+  - 新增 `_stripExcludedContentRegistry`：favorites 跟 books、字体键跟 fonts、`local_audio_dbs`+`audio_source_configs`(按 `kind==localAudio` 条目筛，B) 跟 localAudio；新增 `_restoreExcludedContentRegistry` 覆盖式导入据 `meta.excludedCategories` 从 bak 保留本机。
+  - 恢复函数容错化（假/坏库 debugPrint 不阻断导入，仿 `_readDeviceLocalPrefs`）。
+  - 计划：`docs/superpowers/plans/2026-07-14-backup-export-category-gating.md`。提交见本分支/PR。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/backup_share_sanitization_test.dart`（11 例：导出剥离 token/baseline/favorites/fonts/audio(B)/sync 开关 + 覆盖导入保留本机 pairing/favorites + 全量迁移不变）；`hibiki/test/sync/backup_device_local_leak_guard_test.dart`（源码扫描守卫 `_stripCredentials` 覆盖两表）；更新 `backup_local_audio_portability_test.dart` 旧契约为新隐私契约。`flutter test test/sync/` 除 1 条预存无关失败(`sync_settings_visibility` auto-sync 门控，e6114bec1 引入，非本改动)外全绿。
+- **备注**：合并模式 `BackupMergeEngine` 已跳过 `sync_baselines`/`media_sources`/deviceLocalPrefKeys 且不碰 `hibiki_paired_peers`，加法式合并不受导出剥离影响；仅覆盖式导入需补对称。用户确认映射表 + `audio_source_configs` 选 B(按条目筛保留 remote)。契约变更：db-only 备份不勾 localAudio 时不再保留 `local_audio_dbs` 注册表（旧「runtime filename resolution」便利让位于隐私）。
