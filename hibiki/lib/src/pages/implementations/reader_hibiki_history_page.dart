@@ -185,6 +185,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Map<String, ({int position, int duration})> _epubProgressByBookKey = const {};
 
   Future<_RemoteBookState?>? _remoteBooksFuture;
+  // BUG-992：上次成功的远端书态，自动刷新重拉（future→waiting）时沿用，避免闪屏。
+  _RemoteBookState? _lastRemoteState;
 
   /// 排序交互重设计层次 A：当前排序方式（偏好 `shelf_sort_mode` 持久化，默认
   /// 最近阅读=历史序，现状零变化）。旧 `ShelfEntries.sortOrder` 手动权重已废弃。
@@ -296,6 +298,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 重跑（本 State 存活、future 非 null）。这里显式监听刷新信号重载映射，使后台
     // 合集同步落库后书架立即成组（否则合集不渲染，直到重启 app）。
     mediaType.tabRefreshNotifier.addListener(_reloadShelfMapsOnTabRefresh);
+    // BUG-992：顶层 tab IndexedStack 保活（BUG-750）后，切回书架不再隐式重拉远端书 →
+    // 远端占位卡 + 书库概览总数要等用户手动下拉刷新才补齐。监听全局 tab 信号，切回
+    // 书架 tab 时自动重拉一次远端（缓存 _lastRemoteState 顶住 waiting、不闪屏）。
+    homeShellTabNotifier.addListener(_onShellTabActivated);
+  }
+
+  /// 切回书架 tab 时自动重拉远端书（BUG-992）。非书架 tab 的切换忽略。
+  void _onShellTabActivated() {
+    if (!mounted) return;
+    if (homeShellTabNotifier.value == HomeTab.books) {
+      _refreshRemoteBooks();
+    }
   }
 
   /// tabRefreshNotifier 回调：重载书架合集折叠映射。后台合集同步（仅
@@ -311,6 +325,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   @override
   void dispose() {
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
+    homeShellTabNotifier.removeListener(_onShellTabActivated);
     assert(() {
       ReaderHibikiHistoryPage.debugOpenBook = null;
       return true;
@@ -1057,7 +1072,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 混排成主网格占位卡。远端目录拉取失败/未配对/无后端（remoteState==null 或
     // failed）→ 占位卡不出现（离线=只剩本地）；「显示远端条目」开关关闭 → 同样不
     // 渲染；标签筛选激活时占位卡不参与（远端书无本地标签），只在无筛选时混排。
-    final _RemoteBookState? remoteState = remoteSnapshot?.data;
+    // BUG-992：自动刷新（切回书架重拉远端）期间 future 切成 waiting → data 暂为 null。
+    // 缓存上次成功的远端态、waiting 时沿用，避免每次切回远端占位卡 + 书库概览总数闪一
+    // 下（仿视频页 _videosCache）。失败态不覆盖缓存（离线时下一次 waiting 仍能顶住旧数据）。
+    final _RemoteBookState? snapState = remoteSnapshot?.data;
+    if (snapState != null && !snapState.failed) {
+      _lastRemoteState = snapState;
+    }
+    final _RemoteBookState? remoteState = snapState ?? _lastRemoteState;
     final bool showRemote = remoteState != null &&
         !remoteState.failed &&
         !hasActiveFilter &&

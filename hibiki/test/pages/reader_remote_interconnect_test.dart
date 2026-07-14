@@ -11,6 +11,8 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/pages/implementations/home_page.dart'
+    show homeShellTabNotifier, HomeTab;
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
@@ -84,6 +86,8 @@ void main() {
   });
 
   tearDown(() async {
+    // BUG-992：全局 tab notifier 跨测试持久，复位避免污染其它用例。
+    homeShellTabNotifier.value = HomeTab.books;
     await db.close();
   });
 
@@ -514,6 +518,26 @@ void main() {
         reason: 'BUG-991：总数 = 本地 1 + 远端占位 1（此前只报本地 1）');
   });
 
+  testWidgets('BUG-992: 切回书架 tab 自动重拉远端书（不必手动下拉刷新）',
+      (WidgetTester tester) async {
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    // 首帧懒加载已拉一次。
+    expect(remoteClient.listRemoteBooksCalls, greaterThanOrEqualTo(1));
+    final int before = remoteClient.listRemoteBooksCalls;
+
+    // 切到别的 tab（不重拉）再切回书架（自动重拉）。
+    homeShellTabNotifier.value = HomeTab.video;
+    await tester.pump();
+    expect(remoteClient.listRemoteBooksCalls, before, reason: '切到非书架 tab 不应重拉');
+
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpAndSettle();
+    expect(remoteClient.listRemoteBooksCalls, greaterThan(before),
+        reason: 'BUG-992：切回书架 tab 应自动重拉远端书');
+  });
+
   testWidgets(
       'remote book without audiobook never touches the audiobook wiring '
       '(BUG-406)', (WidgetTester tester) async {
@@ -557,16 +581,22 @@ class _FakeRemoteBookClient implements RemoteBookClient {
   @override
   RemoteBookSourceKind get remoteSourceKind => sourceKind;
 
+  // BUG-992：listRemoteBooks 调用次数（观测「切回书架 tab 自动重拉远端」）。
+  int listRemoteBooksCalls = 0;
+
   @override
-  Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
-        RemoteBookInfo.fromJson(<String, Object?>{
-          'title': title,
-          if (bookKey != null) 'bookKey': bookKey,
-          'hasContent': true,
-          'coverPath': coverPath,
-          if (hasAudiobook) 'hasAudiobook': true,
-        }),
-      ];
+  Future<List<RemoteBookInfo>> listRemoteBooks() async {
+    listRemoteBooksCalls++;
+    return <RemoteBookInfo>[
+      RemoteBookInfo.fromJson(<String, Object?>{
+        'title': title,
+        if (bookKey != null) 'bookKey': bookKey,
+        'hasContent': true,
+        'coverPath': coverPath,
+        if (hasAudiobook) 'hasAudiobook': true,
+      }),
+    ];
+  }
 
   @override
   Future<void> getRemoteBook(
