@@ -659,10 +659,14 @@ void FloatingLyricWindow::Render() {
   const float pad = ScaleForDpi(kHorizontalPaddingDip);
   const float controls_h =
       ScaleForDpi(kButtonSizeDip) + ScaleForDpi(kControlsTopDip);
+  // Text-only mode has no controls row: the text uses the full window height
+  // (centred), so the clipboard string is never pushed down under a phantom
+  // button strip. The audiobook strip keeps reserving controls_h at the top.
+  const float text_top = text_only_ ? pad : controls_h;
   text_rect_.left = pad;
-  text_rect_.top = controls_h;
+  text_rect_.top = text_top;
   text_rect_.width = std::max(1.0f, width - pad * 2);
-  text_rect_.height = std::max(1.0f, height - controls_h - pad * 0.5f);
+  text_rect_.height = std::max(1.0f, height - text_top - pad * 0.5f);
 
   if (text_format_ != nullptr && !text_.empty()) {
     if (text_layout_ == nullptr) {
@@ -737,6 +741,10 @@ void FloatingLyricWindow::Render() {
     }
   }
 
+  // Text-only clipboard window draws no transport / lock / close buttons and no
+  // resize grip — only the draggable, tappable text. Skip the whole controls +
+  // grip block; ControlActionAt() / ResizeGripContains() short-circuit to match.
+  if (!text_only_) {
   // Controls row (only fully visible while hovered, like QQ Music). The hit
   // areas in ControlActionAt() stay live regardless so a deliberate click on a
   // half-faded button still works.
@@ -806,6 +814,7 @@ void FloatingLyricWindow::Render() {
           D2D1::Point2F(width - 2.0f, height - off), grip_brush.Get(), stroke);
     }
   }
+  }  // if (!text_only_)
 
   HRESULT hr = render_target_->EndDraw();
   if (hr == D2DERR_RECREATE_TARGET) {
@@ -832,6 +841,11 @@ void FloatingLyricWindow::Render() {
 }
 
 std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
+  // Text-only clipboard window has no control buttons, so no client point is
+  // ever a control hit — every press falls through to the drag / lookup path.
+  if (text_only_) {
+    return std::string();
+  }
   RECT rc;
   GetClientRect(hwnd_, &rc);
   const float width = static_cast<float>(rc.right - rc.left);
@@ -867,7 +881,10 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
 }
 
 bool FloatingLyricWindow::ResizeGripContains(float x, float y) const {
-  if (hwnd_ == nullptr) {
+  // Text-only clipboard window has no resize grip — WM_NCHITTEST stays HTCLIENT
+  // everywhere so the whole surface keeps driving drag / lookup, never a system
+  // resize loop.
+  if (text_only_ || hwnd_ == nullptr) {
     return false;
   }
   RECT rc;

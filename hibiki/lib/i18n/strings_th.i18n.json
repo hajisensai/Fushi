@@ -2335,5 +2335,8 @@
   "desktop_clipboard_auto_lookup": "Auto-look-up on copy",
   "desktop_clipboard_auto_lookup_hint": "When off, the panel shows only the copied text; tap a word to look it up.",
   "video_subtitle_filter_favorites_empty": "No favorited lines yet",
-  "video_subtitle_filter_selected_empty": "No lines selected yet"
+  "video_subtitle_filter_selected_empty": "No lines selected yet",
+  "clipboard_text_window_bg_opacity_hint": "Background opacity of the transparent clipboard text window — 0% shows only the text over the game beneath",
+  "desktop_clipboard_destination_text_window": "Transparent text window",
+  "clipboard_text_window_bg_opacity": "Text window background"
 }

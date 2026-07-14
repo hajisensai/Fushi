@@ -2335,5 +2335,8 @@
   "desktop_clipboard_auto_lookup": "复制后自动查词",
   "desktop_clipboard_auto_lookup_hint": "关闭后面板只显示复制到的文字，点词才查词。",
   "video_subtitle_filter_favorites_empty": "暂无收藏的句子",
-  "video_subtitle_filter_selected_empty": "还未选择句子"
+  "video_subtitle_filter_selected_empty": "还未选择句子",
+  "clipboard_text_window_bg_opacity_hint": "透明剪切板文字窗的背景不透明度——0% 时背景全透只露文字，透视底下的游戏",
+  "desktop_clipboard_destination_text_window": "透明文字窗",
+  "clipboard_text_window_bg_opacity": "文字窗背景不透明度"
 }

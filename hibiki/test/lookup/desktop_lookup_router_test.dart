@@ -53,6 +53,23 @@ void main() {
           DesktopLookupConsumer.panel);
       expect(resolve(o, DesktopClipboardDestination.transient, true),
           DesktopLookupConsumer.transient);
+      expect(resolve(o, DesktopClipboardDestination.textWindow, true),
+          DesktopLookupConsumer.textWindow);
     }
+  });
+
+  test('每个 destination 恰好映射一个非 mainTab 消费面（新增 textWindow 覆盖）', () {
+    // 覆盖窗可用 + clipboard origin 下，四个去向各落唯一消费面，互不重叠。
+    final Set<DesktopLookupConsumer> seen = <DesktopLookupConsumer>{};
+    for (final DesktopClipboardDestination d
+        in DesktopClipboardDestination.values) {
+      seen.add(resolve(DesktopLookupOrigin.clipboard, d, true));
+    }
+    expect(seen, <DesktopLookupConsumer>{
+      DesktopLookupConsumer.mainTab,
+      DesktopLookupConsumer.panel,
+      DesktopLookupConsumer.transient,
+      DesktopLookupConsumer.textWindow,
+    });
   });
 }

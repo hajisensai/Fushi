@@ -6,6 +6,7 @@
 import 'dart:async';
 
 import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
+import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -57,6 +58,11 @@ class DesktopLookupDispatcher {
         // 前缀/去屈折从句首匹配（与主窗 tab 的整句自动查同语义）。
         unawaited(GlobalLookupController.instance
             .lookupText(request.text, sentence: request.text));
+      case DesktopLookupConsumer.textWindow:
+        DesktopLookupService.instance.clearPending();
+        // 逐像素透明文字窗原地显示整句：不自动查词，用户点某个字才经 native
+        // lookupText 回调弹瞬态查词卡（VN/游戏透明浮字场景）。
+        unawaited(ClipboardTextOverlayController.instance.update(request));
     }
   }
 }

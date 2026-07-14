@@ -42,7 +42,12 @@ enum DesktopClipboardWindowMode {
 enum DesktopClipboardDestination {
   main('main'),
   panel('panel'),
-  transient('transient');
+  transient('transient'),
+
+  /// 真透明剪切板文字窗：剪贴板文本落进逐像素透明的悬浮文字窗（复用
+  /// FloatingLyricWindow 第二实例，text-only），背景默认全透只露实心文字，点字
+  /// 弹瞬态查词卡。VN/游戏 + Textractor 自动复制场景。Windows-only。
+  textWindow('textWindow');
 
   const DesktopClipboardDestination(this.storageValue);
 
@@ -528,6 +533,19 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setClipboardPanelOpacity(double value) async {
     await setPref('clipboard_panel_opacity', value);
+    notifyListeners();
+  }
+
+  /// 真透明剪切板文字窗的**背景**不透明度（0.0 = 完全透明只露文字，用户默认诉求；
+  /// 拉高则给文字垫一层暗底，亮色游戏上白字看不清时用）。与 [clipboardPanelOpacity]
+  /// （整窗 LWA_ALPHA）不同：这里只影响窗口背景 alpha，文字始终实心。默认 0.0。
+  double get clipboardTextWindowBgOpacity => getPref(
+        'clipboard_text_window_bg_opacity',
+        defaultValue: 0.0,
+      ) as double;
+
+  Future<void> setClipboardTextWindowBgOpacity(double value) async {
+    await setPref('clipboard_text_window_bg_opacity', value);
     notifyListeners();
   }
 
