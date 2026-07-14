@@ -29,6 +29,9 @@ import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+// BUG-813：构造 ReaderPositionsCompanion 回填下载书的阅读进度需要 drift 的 Value（
+// hibiki_core 未再导出它）。
+import 'package:drift/drift.dart' show Value;
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
@@ -1295,8 +1298,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 本地成员）。当前书侧合集成员本就全是本地（远端占位卡不进合集，见 _buildShelfMemberCard），
     // 此过滤是防御性对齐口径；行体（itemCount）仍渲染 group.items 全部。
     final int localCount = group.items
-        .where((it) =>
-            it.payload.remote == null && it.payload.remoteSrt == null)
+        .where(
+            (it) => it.payload.remote == null && it.payload.remoteSrt == null)
         .length;
     return Padding(
       // 水平不加 padding：书卡自带 12px 内边距，与网格散卡左缘逐像素对齐。

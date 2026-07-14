@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 791 条。点号进各自文件。
+> 共 792 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-813](bugs/BUG-813-interconnect-download-no-reading-progress.md) | ✅ | ✅ | 互联手动下载远端书不带回阅读记录(阅读进度/有声书断点) |
 | [BUG-812](bugs/BUG-812-interconnect-audiobook-not-in-collection.md) | ✅ | ✅ | 互联开启后手机上有声书不进合集(host listBooks 只用 epub\|bookKey 查归属，漏 srt-backed 有声书的 srt\|uid 成员键) |
 | [BUG-811](bugs/BUG-811-interconnect-video-list-empty.md) | ✅ | ✅ | 互联开启后手机视频列表为空(host listVideos 每视频串行 ffmpeg 探测超过 client 15s 超时) |
 | [BUG-807](bugs/BUG-807-multiselect-combine-icon-tooltip.md) | ✅ | ✅ | 多选栏组合成系列图标与收藏夹雷同且无tooltip |

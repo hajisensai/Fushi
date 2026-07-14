@@ -385,6 +385,43 @@ void main() {
     expect(importedAudiobooks.single.package.existsSync(), isTrue);
   });
 
+  testWidgets('BUG-813: 下载远端书把 host 阅读进度回填进本地 reader_positions',
+      (WidgetTester tester) async {
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      progress: const RemoteBookProgress(
+        sectionIndex: 3,
+        normCharOffset: 4200,
+        charOffset: 137,
+        updatedAtMs: 1700000000000,
+      ),
+    );
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey<String>(
+        'remote_book_download_Remote_Book',
+      )));
+      // 轮询直到进度回填落库（下载 → 导入 → 拉进度 upsert 是异步链）。
+      for (int i = 0; i < 60; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (await db.getReaderPosition('local-book-key') != null) break;
+      }
+    });
+    await tester.pump();
+
+    // 下载动作把 host 端阅读进度回填进本地 reader_positions（键 = 导入后的本地
+    // bookKey，非 host downloadId）——手动下载不再丢「阅读记录」。
+    final ReaderPositionRow? row = await db.getReaderPosition('local-book-key');
+    expect(row, isNotNull,
+        reason: 'BUG-813：下载远端书必须把 host 阅读进度落进 reader_positions');
+    expect(row!.sectionIndex, 3);
+    expect(row.normCharOffset, 4200);
+    expect(row.charOffset, 137);
+    expect(row.updatedAt, 1700000000000);
+  });
+
   testWidgets(
       'remote book without audiobook never touches the audiobook wiring '
       '(BUG-406)', (WidgetTester tester) async {
@@ -413,6 +450,7 @@ class _FakeRemoteBookClient implements RemoteBookClient {
     this.bookKey,
     this.hasAudiobook = false,
     this.sourceKind = RemoteBookSourceKind.interconnect,
+    this.progress = RemoteBookProgress.empty,
   });
 
   final String coverPath;
@@ -420,6 +458,8 @@ class _FakeRemoteBookClient implements RemoteBookClient {
   final String? bookKey;
   final bool hasAudiobook;
   final RemoteBookSourceKind sourceKind;
+  // BUG-813：host 端该书的阅读进度，供「下载回填进度」用例配置。
+  final RemoteBookProgress progress;
   final List<String> downloadedTitles = <String>[];
 
   @override
@@ -449,7 +489,7 @@ class _FakeRemoteBookClient implements RemoteBookClient {
 
   @override
   Future<RemoteBookProgress> remoteBookProgress(String bookKey) async =>
-      RemoteBookProgress.empty;
+      progress;
 
   @override
   Future<void> putRemoteBookProgress(
