@@ -1,0 +1,6 @@
+## BUG-813 · 互联手动下载远端书不带回阅读记录(阅读进度/有声书断点)
+- **报告**：2026-07-14（用户：点击有声书远端，下载出来的是普通书，也没有下载阅读记录）
+- **真实性**：✅ 真 bug(进度部分确凿)。根因:进度双向同步只存在于**整库「立即同步」** sweep(`sync_orchestrator.dart` `_syncBookProgressLive` :1024 / `_syncAudiobookPositionLive` :1245),且只遍历**已在本地**的书(`getAllEpubBooks`);手动点下载卡的链路 `_downloadRemoteBook`(`reader_history/remote.part.dart:319`)整段**从不调** `remoteBookProgress`/`remoteAudiobookPosition`,下载动作本身零进度回填 → 下到的书「没有阅读记录」。（附带:「下载出来是普通书」的音频部分,追加下载有声书包的路径 `_downloadRemoteAudiobook` 已由 commit `b76345790` 落地并在构建中;6 本书 host 均判 hasAudiobook=true,line 441 早退不触发。若真机仍无音频需查运行时异常,另计。）
+- **[x] ① 已修复** — `reader_history/remote.part.dart` 新增 `_downloadRemoteBookProgress`,在 `_downloadRemoteBook` 里 EPUB 导入成功后、有声书下载之前调用(独立 try/catch,不被有声书失败连带跳过):① 书阅读进度经 `RemoteBookClient.remoteBookProgress(downloadId)`(接口方法,互联+云盘后端都实现,不按后端类型门控)→ host 有记录(updatedAtMs>0)即 `upsertReaderPosition`(键=导入后本地 bookKey,非 host downloadId,防 BUG-414 漂移);② 有声书播放断点经 `HibikiClientSyncBackend.remoteAudiobookPosition`(仅互联后端)→ 写 `audiobookPositionPrefKey/AtPrefKey` prefs。契约与 sweep 同源。
+- **[x] ② 已加自动化测试** — `test/pages/reader_remote_interconnect_test.dart`:`_FakeRemoteBookClient` 配置 host 端进度(section/normCharOffset/charOffset/updatedAt),点下载后断言本地 `reader_positions` 被回填成该进度(键=local-book-key)。
+- **备注**：进度是确凿根因已修;音频「普通书」部分需真机在新构建上重下一次确认(旧构建下的书不会重下)。取 813 避让 origin/develop 已用的 808-810。

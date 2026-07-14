@@ -379,6 +379,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
           remoteTombstones: book.tagTombstones,
         );
       }
+      // BUG-813：把该书在 host 端的阅读进度 + 有声书播放断点一并拉回本地，手动下载
+      // 远端书时不再丢「阅读记录」（放在有声书下载之前、独立吞错，保证进度回填不被
+      // 有声书失败连带跳过）。
+      await _downloadRemoteBookProgress(book, client, localBookKey);
       // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。
       await _downloadRemoteAudiobook(book, client, localBookKey);
     } on _RemoteAudiobookException catch (e, stack) {
@@ -415,6 +419,64 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_book_downloaded)),
     );
+  }
+
+  /// EPUB 导入成功后，把该书在 host 端的**阅读进度**（reader_positions）与**有声书
+  /// 播放断点**（prefs）拉回本地（BUG-813）。此前进度双向同步只在整库「立即同步」
+  /// sweep 里对**已在本地**的书跑（[SyncOrchestrator._syncBookProgressLive] /
+  /// `_syncAudiobookPositionLive`），手动下载动作本身零回填 → 下到的书「没有阅读记录」。
+  ///
+  /// 契约与 sweep 同源：用 host 端真实 key [RemoteBookInfo.downloadId] 拉取，写本地用
+  /// 刚导入的 [localBookKey]（标题派生 key 可能漂移，BUG-414）。live progress API 仅
+  /// 存在于互联后端；云盘后端跳过（真实能力边界）。新下载的书本地无既有进度，host
+  /// 侧有记录（updatedAtMs>0）即直接落库。书进度与有声书断点各自 try/catch 吞错，
+  /// 绝不阻断主下载。
+  Future<void> _downloadRemoteBookProgress(
+    RemoteBookInfo book,
+    RemoteBookClient client,
+    String? localBookKey,
+  ) async {
+    if (localBookKey == null) return;
+
+    // 书阅读进度 → reader_positions（新书本地无行，host 有记录即落）。
+    // `remoteBookProgress` 是 [RemoteBookClient] 接口方法（互联 + 云盘后端都实现），
+    // 故不按后端类型门控——两种远端来源下载都能带回阅读进度。
+    try {
+      final RemoteBookProgress remote =
+          await client.remoteBookProgress(book.downloadId);
+      if (remote.updatedAtMs > 0) {
+        await appModel.database.upsertReaderPosition(ReaderPositionsCompanion(
+          bookKey: Value(localBookKey),
+          sectionIndex: Value(remote.sectionIndex),
+          normCharOffset: Value(remote.normCharOffset),
+          charOffset: Value(remote.charOffset),
+          updatedAt: Value(remote.updatedAtMs),
+        ));
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibikiHistoryPage.downloadRemoteBookProgress', e, stack);
+    }
+
+    // 有声书播放断点 → prefs（与 resume/播放写键空间同源，见 sync sweep）。
+    // `remoteAudiobookPosition` 仅互联后端具备（live API），故此段按类型门控。
+    if (book.hasAudiobook && client is HibikiClientSyncBackend) {
+      try {
+        final ({int positionMs, int updatedAtMs}) pos =
+            await client.remoteAudiobookPosition(book.downloadId);
+        if (pos.updatedAtMs > 0) {
+          await appModel.database.setPrefTyped<int>(
+              audiobookPositionPrefKey(localBookKey), pos.positionMs);
+          await appModel.database.setPrefTyped<int>(
+              audiobookPositionAtPrefKey(localBookKey), pos.updatedAtMs);
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+            'ReaderHibikiHistoryPage.downloadRemoteAudiobookPosition',
+            e,
+            stack);
+      }
+    }
   }
 
   /// EPUB 导入成功后，按需补下该书的有声书包（750a 手动下载补音频）。
@@ -520,8 +582,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       return const <RemoteAudiobookInfo>[];
     }
     final List<SrtBookRow> localSrt = await appModel.database.getAllSrtBooks();
-    final Set<String> localUids =
-        localSrt.map((SrtBookRow r) => r.uid).toSet();
+    final Set<String> localUids = localSrt.map((SrtBookRow r) => r.uid).toSet();
     return <RemoteAudiobookInfo>[
       for (final RemoteAudiobookInfo ab in all)
         if (ab.isStandaloneSrt &&

@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 793 条。点号进各自文件。
+> 共 796 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-814](bugs/BUG-814-interconnect-video-list-empty.md) | ✅ | ✅ | 互联开启后手机视频列表为空(host listVideos 每视频串行 ffmpeg 探测超过 client 15s 超时) |
+| [BUG-813](bugs/BUG-813-interconnect-download-no-reading-progress.md) | ✅ | ✅ | 互联手动下载远端书不带回阅读记录(阅读进度/有声书断点) |
+| [BUG-812](bugs/BUG-812-interconnect-audiobook-not-in-collection.md) | ✅ | ✅ | 互联开启后手机上有声书不进合集(host listBooks 只用 epub\|bookKey 查归属，漏 srt-backed 有声书的 srt\|uid 成员键) |
 | [BUG-811](bugs/BUG-811-remote-video-list-timeout-toast.md) | ✅ | ✅ | 远端视频清单超时把异常原文泄漏进 toast |
 | [BUG-810](bugs/BUG-810-backup-import-overlay-no-progress.md) | ✅ | ✅ | 备份导入复制阶段无进度条遮罩 |
 | [BUG-809](bugs/BUG-809-audiobook-clip-mjpeg-mov-size.md) | ✅ | ✅ | 有声书导出片段桌面仍用mjpeg/.mov无帧间压缩导致30秒200MB且非通用格式 |

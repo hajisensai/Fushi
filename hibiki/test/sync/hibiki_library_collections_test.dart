@@ -102,6 +102,63 @@ void main() {
           reason: '主归属 = 最小 collectionId 的合集');
     });
 
+    test('BUG-812: srt-backed 有声书经 srt|uid 成员键折进合集（listBooks 兜底）', () async {
+      final HibikiDatabase db = memDb();
+      // srt-backed 有声书：同 bookKey 既有 EpubBooks 又有 SrtBooks 行。
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'AudioVol1',
+        title: 'AudioVol1',
+        epubPath: '/tmp/AudioVol1.epub',
+        extractDir: '/tmp/AudioVol1',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+      await db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'srtbook_epub_AudioVol1',
+        title: 'AudioVol1',
+        srtPath: '/tmp/AudioVol1.srt',
+        importedAt: 0,
+        bookKey: const Value('AudioVol1'),
+      ));
+      final int cid =
+          await db.createMediaCollection('有声集', collectionType: 'collection');
+      // 有声书加入合集时以 srt|uid 存（本地书架当 SRT 卡渲染的成员键），非 epub|bookKey。
+      await db.addToCollection(cid, 'srt', 'srtbook_epub_AudioVol1');
+
+      final List<RemoteBookInfo> books = await buildSvc(db).listBooks();
+      final RemoteBookInfo vol1 =
+          books.firstWhere((RemoteBookInfo b) => b.bookKey == 'AudioVol1');
+      expect(vol1.collection, isNotNull,
+          reason: 'srt-backed 有声书应经 srt|uid 兜底带上合集归属（BUG-812）');
+      expect(vol1.collection!.collectionName, '有声集');
+      expect(vol1.collection!.collectionType, 'collection');
+      expect(vol1.collection!.sortIndex, 0);
+    });
+
+    test('BUG-812: 无 srt 成员的 srt-backed 书归属仍为 null（散卡不误折）', () async {
+      final HibikiDatabase db = memDb();
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'LoneAudio',
+        title: 'LoneAudio',
+        epubPath: '/tmp/LoneAudio.epub',
+        extractDir: '/tmp/LoneAudio',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+      await db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'srtbook_epub_LoneAudio',
+        title: 'LoneAudio',
+        srtPath: '/tmp/LoneAudio.srt',
+        importedAt: 0,
+        bookKey: const Value('LoneAudio'),
+      ));
+      // 不加入任何合集。
+      final List<RemoteBookInfo> books = await buildSvc(db).listBooks();
+      expect(books.single.collection, isNull);
+    });
+
     test('listVideos 附主合集归属', () async {
       final HibikiDatabase db = memDb();
       await db.upsertVideoBook(VideoBooksCompanion.insert(
@@ -121,6 +178,42 @@ void main() {
       expect(ep1.collection!.collectionName, '番剧');
       expect(ep1.collection!.collectionType, 'playlist');
       expect(ep1.collection!.sortIndex, 0);
+    });
+
+    test('BUG-814: listVideos 对存在的视频文件不做内嵌字幕 ffmpeg 探测（延迟到播放）', () async {
+      final HibikiDatabase db = memDb();
+      final Directory tmp =
+          Directory.systemTemp.createTempSync('hbk_video_probe');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      // 存在的视频文件（走 f.existsSync() 分支，旧实现会在此 spawn ffmpeg）。
+      final File video = File('${tmp.path}/ep.mp4')
+        ..writeAsBytesSync(<int>[0, 0, 0, 0]);
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/probe',
+        title: 'Probe',
+        videoPath: video.path,
+        importedAt: Value(DateTime.now()),
+      ));
+
+      final List<RemoteVideoInfo> videos = await buildSvc(db).listVideos();
+      final RemoteVideoInfo v =
+          videos.firstWhere((RemoteVideoInfo x) => x.id == 'video/probe');
+      // 列表端点是纯 DB/stat 读：内嵌轨探测延迟到 /streamurl，列表恒空。
+      expect(v.embeddedSubtitleTracks, isEmpty,
+          reason: 'BUG-814：列表不再枚举内嵌字幕轨（避免逐视频 ffmpeg 超时）');
+      // sizeBytes 仍来自廉价 stat（证明文件确被识别为存在、走了 existsSync 分支）。
+      expect(v.sizeBytes, 4);
+      // 无外挂 sidecar → hasSubtitle 为 false（不再靠内嵌轨点亮）。
+      expect(v.hasSubtitle, isFalse);
+    });
+
+    test('BUG-814 守卫: host 库服务不得在列表路径引用 ffmpeg 内嵌探测', () {
+      final String src =
+          File('lib/src/sync/app_model_library_host_service.dart')
+              .readAsStringSync();
+      expect(src.contains('listEmbeddedSubtitleTracks'), isFalse,
+          reason: 'listVideos 一旦重新引入内嵌字幕 ffmpeg 探测，大库互联视频列表会再次'
+              '超过 client 15s 超时变空（BUG-814 回归）');
     });
   });
 

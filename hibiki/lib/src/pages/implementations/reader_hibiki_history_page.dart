@@ -29,6 +29,9 @@ import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+// BUG-813：构造 ReaderPositionsCompanion 回填下载书的阅读进度需要 drift 的 Value（
+// hibiki_core 未再导出它）。
+import 'package:drift/drift.dart' show Value;
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';

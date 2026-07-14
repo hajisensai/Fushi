@@ -4,11 +4,6 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
-import 'package:hibiki/src/media/video/video_subtitle_source.dart'
-    show
-        EmbeddedSubtitleTrack,
-        listEmbeddedSubtitleTracks,
-        subtitleFormatForCodec;
 import 'package:hibiki/src/media/video/video_sidecar.dart'
     show findSidecarSubtitle;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
@@ -313,6 +308,16 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     }
     final Map<String, RemoteCollectionMembership> membership =
         await _primaryCollectionMembership();
+    // BUG-812：srt-backed 有声书（同 bookKey 既有 EpubBooks 又有 SrtBooks 行）加入合集
+    // 时以 **`srt|<uid>`** 存进成员表（本地书架把它当 SRT 卡渲染、经 srt|uid 折叠），
+    // 而非 `epub|<bookKey>`。互联 client 把这类书作为 EPUB 占位卡收下，只查 `epub|bookKey`
+    // 会 miss → RemoteBookInfo.collection=null → 有声书不折进合集。这里补一趟
+    // bookKey→srtUid 映射，供下面按 srt 成员键兜底查归属，让有声书 EPUB 卡也带上
+    // collection（client 经现有注入循环折进合集，与本地书架对称、不依赖后台 sweep）。
+    final Map<String, String> srtUidByBookKey = <String, String>{
+      for (final SrtBookRow s in await _db.getAllSrtBooks())
+        if (s.bookKey.isNotEmpty) s.bookKey: s.uid,
+    };
     return rows.map((EpubBookRow r) {
       // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
       // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
@@ -331,7 +336,12 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         tagsAddedAt: tagAddedAtByKey[r.bookKey] ?? const <String, int>{},
         tagTombstones: tagTombByKey[r.bookKey] ?? const <String, int>{},
         // 合集成员键：epub 条目 mediaType='epub'、entryKey=bookKey（§2.3 任务5.1）。
-        collection: membership['epub|${r.bookKey}'],
+        // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub|bookKey 会 miss，
+        // 回退查 srt|uid（BUG-812）。散卡（两键都无）= null。
+        collection: membership['epub|${r.bookKey}'] ??
+            (srtUidByBookKey[r.bookKey] != null
+                ? membership['srt|${srtUidByBookKey[r.bookKey]}']
+                : null),
       );
     }).toList();
   }
@@ -853,21 +863,22 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         } catch (_) {
           // stat 失败：保守返回 null
         }
-        // 检查外挂字幕 sidecar
+        // 检查外挂字幕 sidecar（廉价：仅文件存在性探测）。
         final String? sub =
             findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
         if (sub != null && File(sub).existsSync()) {
           hasSubtitle = true;
           subtitleFileName = p.basename(sub);
         }
-        embeddedSubtitleTracks = await _embeddedSubtitleTracksForVideo(
-          videoPath,
-        );
-        if (embeddedSubtitleTracks.any(
-          (RemoteVideoEmbeddedSubtitleTrack track) => track.isText,
-        )) {
-          hasSubtitle = true;
-        }
+        // BUG-814：列表端点**不做**内嵌字幕轨 ffmpeg 探测。旧实现在此逐视频串行
+        // spawn `ffmpeg -i`（每项超时基线 60s、大文件到 1200s、无缓存、每次 GET 全量
+        // 重跑），大库（如 511 个视频）轻易超过 client 的 15s listTimeout → 远端视频
+        // 判空 → 手机整页空。内嵌轨是**播放时**才需要的信息，已由 `/streamurl` 端点
+        // (`hibiki_sync_server.dart` `_embeddedSubtitleTracksForRequest`) 在拉流时按需
+        // 探测并下发（client 唯一消费者 video_hibiki_page 读的是 streamurl 响应，列表
+        // 的 embeddedSubtitleTracks 零消费）。故此处保持 embeddedSubtitleTracks 为空、
+        // hasSubtitle 只反映廉价的外挂 sidecar——列表变纯 DB/stat 读，与 listBooks 对称、
+        // 毫秒返回。
       }
     }
 
@@ -951,24 +962,6 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     if (episodeIndex >= entries.length) return null;
     final String path = entries[episodeIndex].path;
     return path.isEmpty ? null : path;
-  }
-
-  Future<List<RemoteVideoEmbeddedSubtitleTrack>>
-      _embeddedSubtitleTracksForVideo(
-    String videoPath,
-  ) async {
-    final List<EmbeddedSubtitleTrack> tracks =
-        await listEmbeddedSubtitleTracks(videoPath);
-    return <RemoteVideoEmbeddedSubtitleTrack>[
-      for (final EmbeddedSubtitleTrack track in tracks)
-        RemoteVideoEmbeddedSubtitleTrack(
-          streamIndex: track.streamIndex,
-          codec: track.codec,
-          language: track.language,
-          title: track.title,
-          isText: subtitleFormatForCodec(track.codec) != null,
-        ),
-    ];
   }
 
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。

@@ -152,9 +152,10 @@ void main() {
       expect(list.single.toJson()['subtitleFileName'], 'show.ja.vtt');
     });
 
-    test(
-        'embedded text subtitle tracks are exposed and graphic tracks are marked unsupported',
+    test('BUG-814: listVideos 不做内嵌字幕 ffmpeg 探测（即便后端可返回轨也延迟到 /streamurl）',
         () async {
+      // 注入一个「若被探测就会返回 3 轨」的 mock ffmpeg 后端——用来证明 listVideos
+      // 根本没调用它（内嵌轨探测已延迟到播放时的 /streamurl 端点，BUG-814）。
       setFfmpegBackendForTesting(const _EmbeddedSubtitleProbeBackend());
       final String videoPath = p.join(tmp.path, 'embedded.mkv');
       File(videoPath).writeAsBytesSync(<int>[0, 1, 2, 3]);
@@ -168,22 +169,11 @@ void main() {
       final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
 
-      expect(list.single.hasSubtitle, isTrue);
+      // 列表端点是纯 DB/stat 读：内嵌轨恒空、hasSubtitle 只反映外挂 sidecar（此处无）。
+      expect(list.single.embeddedSubtitleTracks, isEmpty,
+          reason: 'listVideos 不再逐视频 spawn ffmpeg（避免大库互联视频列表超时变空）');
+      expect(list.single.hasSubtitle, isFalse);
       expect(list.single.subtitleFileName, isNull);
-      expect(list.single.embeddedSubtitleTracks, hasLength(3));
-      expect(
-        list.single.embeddedSubtitleTracks
-            .map((RemoteVideoEmbeddedSubtitleTrack track) => track.codec),
-        <String>['subrip', 'mov_text', 'hdmv_pgs_subtitle'],
-      );
-      expect(list.single.embeddedSubtitleTracks[0].isText, isTrue);
-      expect(list.single.embeddedSubtitleTracks[1].isText, isTrue);
-      expect(list.single.embeddedSubtitleTracks[2].isText, isFalse);
-
-      final RemoteVideoInfo restored =
-          RemoteVideoInfo.fromJson(list.single.toJson());
-      expect(restored.embeddedSubtitleTracks[1].language, 'eng');
-      expect(restored.embeddedSubtitleTracks[2].isText, isFalse);
     });
 
     test('toJson/fromJson 往返一致', () {
