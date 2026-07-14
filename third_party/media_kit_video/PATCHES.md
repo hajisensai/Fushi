@@ -151,6 +151,42 @@ snapshot just like every other seek entry point.
 
 Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.
 
+## BUG-796 follow-up: surface the committed seek target on drag/tap (`onSeekEnd(Duration)`)
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart` and
+`material.dart`, both theme data classes and the seek-bar States.
+
+Every Hibiki-initiated seek funnels through `VideoPlayerController.seekMs`, which
+(BUG-796) authoritatively re-syncs the bottom subtitle to the destination and
+suppresses the *lagging* post-seek `player.state.position` (media_kit doesn't
+update position synchronously with `seek`, and while **paused** it stays at the
+old position for a long time — the 125ms cue tick then keeps re-affirming the
+*old* subtitle, so seeking to a silent gap leaves the previous subtitle stuck on
+screen). The progress (seek) bar drives `controller(context).player.seek(...)`
+directly inside media_kit and bypasses `seekMs`, so it never got that protection.
+
+Upstream's seek bar's internal `onSeekEnd` is a `VoidCallback` wired only to the
+controls' auto-hide timer, and carries no target. The patch:
+
+- adds an optional `final void Function(Duration)? onSeekEnd;` to both theme data
+  classes (wired through their constructors and `copyWith`);
+- **retypes** each seek bar's internal `onSeekEnd` from `VoidCallback?` to
+  `void Function(Duration)?` and passes the committed target `duration * slider`
+  at the `onPointerUp` seek-commit;
+- merges `_theme(context).onSeekEnd?.call(target)` into that seek bar's internal
+  `onSeekEnd` callback (alongside the existing auto-hide-timer logic).
+
+When no callback is injected the behaviour is identical to pub.dev. Hibiki injects
+`(Duration target) => controller.notifyExternalSeek(target.inMilliseconds)` through
+**both** control themes (`_desktopControlsTheme` / `_mobileControlsTheme` in
+`video_hibiki_page.dart`). `notifyExternalSeek` applies the same in-flight
+protection as `seekMs` (authoritative cue re-sync + suppress the lagging position)
+**without** re-issuing `player.seek` (the bar already sought). Only the commit
+(pointer-up / tap) notifies; intermediate drag-move seeks do not.
+
+Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`
+(group `BUG-796 follow-up: seek-bar onSeekEnd(target) patch survives re-vendor`).
+
 ## BUG-374: play/pause on `onTap` (arena-respecting), not `onTapDown`
 
 `lib/media_kit_video_controls/src/controls/material_desktop.dart`,

@@ -326,6 +326,16 @@ class MaterialVideoControlsThemeData {
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function()? onSeekStart;
 
+  /// Hibiki patch (BUG-796 follow-up): fires when the user **commits** a seek-bar
+  /// seek (drag release / tap), with the target [Duration]. The seek bar drives
+  /// `player.seek` directly inside media_kit, bypassing the host's
+  /// `VideoPlayerController.seekMs` in-flight protection; Hibiki uses this to
+  /// re-sync the subtitle to the destination + suppress the lagging post-seek
+  /// position (else seeking to a gap, esp. while paused, leaves the previous
+  /// subtitle on screen). Null (upstream default) = no callback, behaviour
+  /// identical to pub.dev. See third_party/media_kit_video/PATCHES.md.
+  final void Function(Duration)? onSeekEnd;
+
   /// {@macro material_video_controls_theme_data}
   const MaterialVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -393,6 +403,7 @@ class MaterialVideoControlsThemeData {
     this.visibilityNotifier,
     this.restartHideTimerSignal,
     this.onSeekStart,
+    this.onSeekEnd,
   });
 
   /// Creates a copy of this [MaterialVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -449,6 +460,7 @@ class MaterialVideoControlsThemeData {
     ValueNotifier<bool>? visibilityNotifier,
     Listenable? restartHideTimerSignal,
     void Function()? onSeekStart,
+    void Function(Duration)? onSeekEnd,
   }) {
     return MaterialVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -527,6 +539,7 @@ class MaterialVideoControlsThemeData {
       restartHideTimerSignal:
           restartHideTimerSignal ?? this.restartHideTimerSignal,
       onSeekStart: onSeekStart ?? this.onSeekStart,
+      onSeekEnd: onSeekEnd ?? this.onSeekEnd,
     );
   }
 }
@@ -1188,7 +1201,15 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                         _theme(context).onSeekStart?.call();
                                         _timer?.cancel();
                                       },
-                                      onSeekEnd: () {
+                                      onSeekEnd: (Duration target) {
+                                        // Hibiki patch (BUG-796 follow-up):
+                                        // surface the committed seek target to the
+                                        // host so it re-syncs the subtitle +
+                                        // suppresses the lagging post-seek
+                                        // position. See PATCHES.md.
+                                        _theme(context)
+                                            .onSeekEnd
+                                            ?.call(target);
                                         _timer = Timer(
                                           _theme(context).controlsHoverDuration,
                                           () {
@@ -1653,7 +1674,11 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 class MaterialSeekBar extends StatefulWidget {
   final ValueNotifier<Duration>? delta;
   final VoidCallback? onSeekStart;
-  final VoidCallback? onSeekEnd;
+
+  /// Hibiki patch (BUG-796 follow-up): retyped from `VoidCallback?` to carry the
+  /// committed seek target [Duration] to the host (theme `onSeekEnd`). See
+  /// third_party/media_kit_video/PATCHES.md.
+  final void Function(Duration)? onSeekEnd;
 
   const MaterialSeekBar({
     super.key,
@@ -1784,7 +1809,10 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
     // unmounted, matching the State's existing `if (mounted)` setState guard.
     // See third_party/media_kit_video/PATCHES.md.
     if (!mounted) return;
-    widget.onSeekEnd?.call();
+    // Hibiki patch (BUG-796 follow-up): carry the committed seek target so the
+    // host can re-sync the subtitle to the destination + suppress the lagging
+    // post-seek position (progress-bar seek bypasses seekMs). See PATCHES.md.
+    widget.onSeekEnd?.call(duration * slider);
     setState(() {
       // Explicitly set the position to prevent the slider from jumping.
       tapped = false;

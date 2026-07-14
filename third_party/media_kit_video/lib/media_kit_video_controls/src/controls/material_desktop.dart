@@ -206,6 +206,18 @@ class MaterialDesktopVideoControlsThemeData {
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function()? onSeekStart;
 
+  /// Hibiki patch (BUG-796 follow-up): fires when the user **commits** a seek-bar
+  /// seek (drag release / tap), with the target [Duration] the bar just seeked to.
+  /// The seek bar drives `player.seek` directly inside media_kit, bypassing the
+  /// host's `VideoPlayerController.seekMs` (which authoritatively re-syncs the
+  /// subtitle to the destination and suppresses the lagging post-seek position).
+  /// Hibiki uses this to apply the *same* in-flight protection to progress-bar
+  /// seeks — otherwise seeking (esp. while paused) to a gap leaves the previous
+  /// subtitle on screen because the 125ms tick keeps reading the stale old
+  /// position. Null (upstream default) = no callback, behaviour identical to
+  /// pub.dev. See third_party/media_kit_video/PATCHES.md.
+  final void Function(Duration)? onSeekEnd;
+
   // SEEK BAR HOVER POSITION (Hibiki patch)
 
   /// Optional callback fired with the current hover position (fraction `[0,1]`
@@ -270,6 +282,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.shiftSubtitlesOnControlsVisibilityChange = true,
     this.visibilityNotifier,
     this.onSeekStart,
+    this.onSeekEnd,
     this.onHoverPosition,
   });
 
@@ -314,6 +327,7 @@ class MaterialDesktopVideoControlsThemeData {
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
     void Function()? onSeekStart,
+    void Function(Duration)? onSeekEnd,
     void Function(double? fraction)? onHoverPosition,
   }) {
     return MaterialDesktopVideoControlsThemeData(
@@ -371,6 +385,7 @@ class MaterialDesktopVideoControlsThemeData {
               this.shiftSubtitlesOnControlsVisibilityChange,
       visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
       onSeekStart: onSeekStart ?? this.onSeekStart,
+      onSeekEnd: onSeekEnd ?? this.onSeekEnd,
       onHoverPosition: onHoverPosition ?? this.onHoverPosition,
     );
   }
@@ -874,7 +889,15 @@ class _MaterialDesktopVideoControlsState
                                                   ?.call();
                                               _timer?.cancel();
                                             },
-                                            onSeekEnd: () {
+                                            onSeekEnd: (Duration target) {
+                                              // Hibiki patch (BUG-796 follow-up):
+                                              // surface the committed seek target
+                                              // to the host so it re-syncs the
+                                              // subtitle + suppresses the lagging
+                                              // post-seek position. See PATCHES.md.
+                                              _theme(context)
+                                                  .onSeekEnd
+                                                  ?.call(target);
                                               _timer = Timer(
                                                 _theme(context)
                                                     .controlsHoverDuration,
@@ -987,7 +1010,11 @@ class _MaterialDesktopVideoControlsState
 /// Material design seek bar.
 class MaterialDesktopSeekBar extends StatefulWidget {
   final VoidCallback? onSeekStart;
-  final VoidCallback? onSeekEnd;
+
+  /// Hibiki patch (BUG-796 follow-up): retyped from `VoidCallback?` to carry the
+  /// committed seek target [Duration] to the host (theme `onSeekEnd`). See
+  /// third_party/media_kit_video/PATCHES.md.
+  final void Function(Duration)? onSeekEnd;
 
   /// Hibiki patch (TODO-669): hover position callback (fraction `[0,1]` of the
   /// track width, or null on exit). See third_party/media_kit_video/PATCHES.md.
@@ -1107,7 +1134,10 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
     // Bail out when unmounted, matching the State's existing `if (mounted)`
     // setState guard. See third_party/media_kit_video/PATCHES.md.
     if (!mounted) return;
-    widget.onSeekEnd?.call();
+    // Hibiki patch (BUG-796 follow-up): carry the committed seek target so the
+    // host can re-sync the subtitle to the destination + suppress the lagging
+    // post-seek position (progress-bar seek bypasses seekMs). See PATCHES.md.
+    widget.onSeekEnd?.call(duration * slider);
     setState(() {
       // Explicitly set the position to prevent the slider from jumping.
       click = false;
