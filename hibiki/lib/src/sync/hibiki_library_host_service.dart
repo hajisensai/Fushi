@@ -51,22 +51,48 @@ LocalAudioSyncDiff computeLocalAudioSyncDiff({
 
 // ── 有声书包 ──────────────────────────────────────────────────────────────────
 
-/// host 实时有声书的清单条目（键 = bookKey）。
+/// host 实时有声书的清单条目。
 ///
-/// [bookKey] 即 `sanitizeTtuFilename(title)`，在 Audiobooks/SrtBooks/AudioCues 表
-/// 中均以此为外键，跨设备稳定一致。[title] 可选，供显示用（允许 null）。
+/// 两类有声书统一走本 DTO：
+/// - **srt-backed**（EPUB 配对）：[bookKey] 非空（= `sanitizeTtuFilename(title)`），
+///   在 Audiobooks/SrtBooks/AudioCues 表中以 bookKey 为外键；[uid] 是其 SrtBook 的
+///   uid（新增，供 client 落地时定位）。
+/// - **纯 SRT（standalone）有声书**：无 EPUB、无 Audiobooks 行、[bookKey] 为空，
+///   身份只能靠 SrtBook 的 [uid]（cue/进度/持久目录全在 uid 命名空间）。旧枚举完全
+///   遗漏这类书，无法跨设备下载/同步。
+///
+/// [identity] 是传输/URL 身份键：srt-backed 取 bookKey（向后兼容旧 client/host），
+/// 纯 SRT 取 uid。host 端按此键先查 Audiobooks(bookKey) 再查 SrtBooks(uid) 解析。
+/// [title] 可选，供显示用（允许 null）。
 class RemoteAudiobookInfo {
-  const RemoteAudiobookInfo({required this.bookKey, this.title});
+  const RemoteAudiobookInfo({required this.bookKey, this.uid, this.title});
 
   final String bookKey;
+
+  /// SrtBook uid。纯 SRT 有声书（[bookKey] 空）的唯一身份；srt-backed 也带上供
+  /// client 落地定位。旧 host 不下发此字段 → fromJson 得 null（向后兼容）。
+  final String? uid;
+
   final String? title;
 
-  Map<String, Object?> toJson() =>
-      <String, Object?>{'bookKey': bookKey, 'title': title};
+  /// 传输/URL 身份键：srt-backed=bookKey；纯 SRT（bookKey 空）=uid。
+  String get identity => bookKey.isNotEmpty ? bookKey : (uid ?? '');
+
+  /// 纯 SRT（standalone）有声书：无 EPUB 配对、无 Audiobooks 行、bookKey 为空。
+  bool get isStandaloneSrt => bookKey.isEmpty;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'bookKey': bookKey,
+        if (uid != null && uid!.isNotEmpty) 'uid': uid,
+        'title': title,
+      };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
       RemoteAudiobookInfo(
         bookKey: json['bookKey']?.toString() ?? '',
+        uid: (json['uid']?.toString().isNotEmpty ?? false)
+            ? json['uid']!.toString()
+            : null,
         title: json['title']?.toString(),
       );
 }

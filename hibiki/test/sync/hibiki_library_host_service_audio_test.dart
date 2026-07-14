@@ -217,6 +217,124 @@ void main() {
       expect(info.bookKey, '');
       expect(info.title, isNull);
     });
+
+    test('srt-backed：identity=bookKey、非 standalone', () {
+      const RemoteAudiobookInfo info =
+          RemoteAudiobookInfo(bookKey: 'ttu-1', uid: 'u1', title: 'T');
+      expect(info.identity, 'ttu-1');
+      expect(info.isStandaloneSrt, isFalse);
+      final RemoteAudiobookInfo decoded =
+          RemoteAudiobookInfo.fromJson(info.toJson());
+      expect(decoded.uid, 'u1');
+      expect(decoded.identity, 'ttu-1');
+    });
+
+    test('纯 SRT standalone：bookKey 空 → identity=uid、isStandaloneSrt', () {
+      const RemoteAudiobookInfo info =
+          RemoteAudiobookInfo(bookKey: '', uid: 'srt-uid-9', title: 'S');
+      expect(info.identity, 'srt-uid-9');
+      expect(info.isStandaloneSrt, isTrue);
+      final RemoteAudiobookInfo decoded =
+          RemoteAudiobookInfo.fromJson(info.toJson());
+      expect(decoded.bookKey, '');
+      expect(decoded.uid, 'srt-uid-9');
+      expect(decoded.identity, 'srt-uid-9');
+      expect(decoded.isStandaloneSrt, isTrue);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 纯 SRT（standalone）有声书：枚举 + 身份解析导出
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('纯 SRT standalone 有声书', () {
+    late HibikiDatabase db;
+    late Directory temp;
+
+    setUp(() async {
+      db = _memDb();
+      temp = await Directory.systemTemp.createTemp('hibiki-standalone-svc-');
+    });
+
+    tearDown(() async {
+      await db.close();
+      await temp.delete(recursive: true);
+    });
+
+    Future<void> insertStandalone(String uid, String title) async {
+      final Directory audioDir = Directory(p.join(temp.path, uid));
+      audioDir.createSync(recursive: true);
+      final File track = File(p.join(audioDir.path, 'voice.mp3'))
+        ..writeAsStringSync('a');
+      final File subs = File(p.join(audioDir.path, 'subs.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
+      await db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: uid,
+        title: title,
+        audioRoot: Value(audioDir.path),
+        audioPathsJson: Value(jsonEncode(<String>[track.path])),
+        srtPath: subs.path,
+        importedAt: 1,
+        bookKey: const Value(''),
+      ));
+    }
+
+    test('listAudiobooks 同时枚举 srt-backed 与 standalone', () async {
+      await _insertAudiobook(
+        db: db,
+        bookKey: 'ttu-42',
+        audioDir: Directory(p.join(temp.path, 'ab')),
+      );
+      await insertStandalone('srt-standalone-1', '纯字幕书');
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
+      final Map<String, RemoteAudiobookInfo> byIdentity = <String,
+          RemoteAudiobookInfo>{for (final RemoteAudiobookInfo a in list) a.identity: a};
+
+      expect(byIdentity.keys, containsAll(<String>['ttu-42', 'srt-standalone-1']));
+      expect(byIdentity['ttu-42']!.isStandaloneSrt, isFalse);
+      final RemoteAudiobookInfo standalone = byIdentity['srt-standalone-1']!;
+      expect(standalone.isStandaloneSrt, isTrue);
+      expect(standalone.bookKey, '');
+      expect(standalone.uid, 'srt-standalone-1');
+      expect(standalone.title, '纯字幕书');
+    });
+
+    test('audiobookExists(uid) 对 standalone 为 true', () async {
+      await insertStandalone('srt-x', 'X');
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      expect(await svc.audiobookExists('srt-x'), isTrue);
+      expect(await svc.audiobookExists('nonexistent'), isFalse);
+    });
+
+    test('exportAudiobook(uid) 打纯 SRT 包（无 audiobook 段）并可导入落 SrtBook',
+        () async {
+      await insertStandalone('srt-standalone-2', 'Standalone2');
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+
+      final File pkg = await svc.exportAudiobook('srt-standalone-2');
+      addTearDown(() {
+        try {
+          pkg.parent.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final HibikiDatabase targetDb = _memDb();
+      addTearDown(targetDb.close);
+      final Directory targetAudio = Directory(p.join(temp.path, 'target'));
+      await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
+        packageFile: pkg,
+        audioDatabaseRoot: targetAudio,
+        bookKeyOverride: 'srt-standalone-2', // server 会传 identity，须被忽略
+      );
+
+      expect(await targetDb.getAllAudiobooks(), isEmpty);
+      final SrtBookRow srt =
+          (await targetDb.getSrtBookByUid('srt-standalone-2'))!;
+      expect(srt.bookKey, '');
+      expect(srt.title, 'Standalone2');
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════════════

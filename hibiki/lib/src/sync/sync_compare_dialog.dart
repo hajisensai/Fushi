@@ -756,7 +756,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     // 按 title 找到该书，用其真实 bookKey 下载——不要按书名重算 ttu 文件名（BUG-414）。
     String? remoteBookKey;
     for (final RemoteAudiobookInfo a in remote) {
-      if (a.title == entry.title) {
+      // 只匹配 srt-backed（bookKey 非空）：本函数是给 EPUB 书补音频，纯 SRT
+      // standalone 项（bookKey 空、身份=uid）不参与，避免同名误匹配到空 bookKey。
+      if (a.bookKey.isNotEmpty && a.title == entry.title) {
         remoteBookKey = a.bookKey;
         break;
       }
