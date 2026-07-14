@@ -218,6 +218,26 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 指示（#3：远端下载全程有进行中反馈，不再 await 完才弹一次提示）。
   final Map<String, double?> _downloadingBooks = <String, double?>{};
 
+  /// 正在下载有声书包的本地书（key = 导入后的本地 bookKey，BUG-990）。远端有声书
+  /// 走「先下 EPUB 后下有声书」两阶段：EPUB 一落库，书架 provider 自动刷新把远端占位
+  /// 卡（带下载转圈）顶替成本地卡，此刻有声书还没落库 → 本地卡若无指示就露出「无转圈
+  /// 的普通书」。下载有声书期间把本地 bookKey 记进这里，本地 EPUB 卡 / SRT 卡据此继续
+  /// 显示加载覆盖层，直到有声书下完（成功或失败都在 finally 清除）。
+  final Set<String> _downloadingAudiobookKeys = <String>{};
+
+  /// 本地卡在「有声书还在下」时叠的居中加载覆盖层（BUG-990）；[bookKey] 不在下载集合
+  /// 时返回 null（不叠）。
+  Widget? _audiobookDownloadingOverlay(String? bookKey) {
+    if (bookKey == null || !_downloadingAudiobookKeys.contains(bookKey)) {
+      return null;
+    }
+    return RemoteDownloadProgressBadge(
+      key: ValueKey<String>('audiobook_downloading_$bookKey'),
+      progress: null,
+      tooltip: t.remote_book_downloading,
+    );
+  }
+
   VideoBookRepository get _videoRepo => VideoBookRepository(appModel.database);
 
   double _gridExtent(BuildContext context, BoxConstraints constraints) {
@@ -1483,6 +1503,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         item,
         completed: bookKey != null && _completedBookKeys.contains(bookKey),
       ),
+      // BUG-990：这本书的有声书包还在下载 → 本地 EPUB 卡继续显示加载覆盖层。
+      loadingOverlay: _audiobookDownloadingOverlay(bookKey),
     );
   }
 
