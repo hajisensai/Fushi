@@ -1,0 +1,11 @@
+## BUG-816 · 退出视频后底部导航栏残留隐藏（系统栏未还原）
+- **报告**：2026-07-15（用户：从视频出来手机底部状态栏的位置就消失了）
+- **真实性**：✅ 真 bug。根因：视频页获取了系统栏沉浸所有权（enter）却无对称 exit 还原。链路——
+  - 进视频页：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:1488` `initState` 调 `_applyVideoImmersiveMode()`（`4678`）→ `SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky)`，隐藏**顶栏 + 底部导航栏**（BUG-219/TODO-158 引入，让视频期间系统栏持续隐藏，`resumed` 分支 `1522` 还重申）。
+  - 视频页经 `Navigator.push(VideoHibikiPage.neutralized(...))` 独立压栈（`home_video_page.dart:1000`、`collections_page.dart:438`、`episode.part.dart:133`、`reader_history/video.part.dart:69`），`_VideoHibikiPageState extends ConsumerState<VideoHibikiPage>`（`575`）——**不是 `BaseSourcePageState`**，不经 `AppModel.openMedia/closeMedia`。
+  - 退出走 `_handleBackOrExit`（`3412`）→ `nav.pop()` → `dispose`（`2832`）。`dispose` 只有 `_restoreOrientationOnExit()`（`2872`）还原**屏幕方向**，**0 处还原系统栏模式**。
+  - 系统栏还原的唯一实现 `setHomeShellSystemUiMode()`（`hibiki/lib/src/utils/misc/platform_utils.dart:47`）只在 `AppModel.closeMedia`（`app_model.dart:3409`）里调用，而 `closeMedia` 的唯一调用者是 `BaseSourcePageState.onWillPop`（`base_source_page.dart:191`）——视频页永远走不到。
+  - 结果：退出视频后系统停在 `immersiveSticky`，底部导航栏残留隐藏。源码注释（`1487`、`4676`）声称「退出由 closeMedia 还原」是错的——视频页根本不走 closeMedia。
+- **[x] ① 已修复** — `video_hibiki_page.dart` 新增 `_restoreSystemUiOnExit()`（`isMobilePlatform` 门控 + `setHomeShellSystemUiMode()`，桌面 no-op，与同页 `_restoreOrientationOnExit` 对称），在 `dispose` 里 `_restoreOrientationOnExit()` 之后调用；同步修正 `_applyVideoImmersiveMode` / initState 处「退出由 closeMedia 还原」的误导注释为「退出由本页 dispose 的 `_restoreSystemUiOnExit` 还原」。不动 openMedia/closeMedia（严格限视频页）。提交见本次 commit（`git log`）。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_statusbar_immersive_guard_test.dart` 补 ⑤⑥ 两条源码守卫：⑤ `_restoreSystemUiOnExit` 定义含 `isMobilePlatform` 门控 + `setHomeShellSystemUiMode()`；⑥ `dispose` 调用 `_restoreSystemUiOnExit()` 且既有 `_restoreOrientationOnExit()` 并存。6/6 通过（`flutter test`，需挂本机代理过 sqlite3 原生资产下载）。
+- **备注**：号从工具自动分配的 791 改为 816（791 属 PR#96 草稿「查词弹窗假名词拆卡」，792~815 亦为未合入 develop 的草稿 PR 占用，避撞号）。系统栏模式切换 / 生命周期无法在 headless widget 测试真实驱动，用源码守卫钉住 dispose 的还原接线（与 `_restoreOrientationOnExit` 同范式）；「退出后底部导航栏恢复」需真机确认（needsDevice）。

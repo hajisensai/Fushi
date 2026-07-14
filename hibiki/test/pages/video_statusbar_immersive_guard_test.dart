@@ -17,7 +17,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// ② didChangeAppLifecycleState 的 resumed 分支重申（回前台后系统栏被恢复，主动重隐）；
 /// ③ 方法 `isMobilePlatform` 门控 + 设 `SystemUiMode.immersiveSticky`，桌面 no-op；
 /// ④ 严格限本页：不动 openMedia（书走 reader 自设 edgeToEdge、首页走
-///    setHomeShellSystemUiMode），退出由 [AppModel.closeMedia] 还原。
+///    setHomeShellSystemUiMode）。
+///
+/// BUG-816 补充：视频页经 `Navigator.push(VideoHibikiPage.neutralized)` 独立压栈、是
+/// [ConsumerState] 而非 [BaseSourcePageState]，**不经 `AppModel.closeMedia`**——所以退出
+/// 时系统栏还原不能依赖 closeMedia 兜底（那条路径只对走 MediaSource 的阅读器 / 有声书
+/// 生效），必须由本页 dispose 显式调 [setHomeShellSystemUiMode] 还原，否则退出后底部
+/// 导航栏残留隐藏（⑤/⑥ 守卫钉住这条对称还原接线）。
 ///
 /// 用静态扫描守卫：media_kit 跑不了 headless，系统栏模式切换 / 生命周期回前台都无法
 /// 在 widget 测试里真实驱动（与 _lockLandscapeForVideo / _restoreOrientationOnExit 同
@@ -98,6 +104,51 @@ void main() {
           .length,
       1,
       reason: 'app_model 里系统栏沉浸只应有 openMedia 一处，视频专属重申不得下沉到共用入口',
+    );
+  });
+
+  test(
+      '⑤ 视频页定义 _restoreSystemUiOnExit：移动端门控 + setHomeShellSystemUiMode（BUG-816）',
+      () {
+    final int idx =
+        src.indexOf('Future<void> _restoreSystemUiOnExit() async {');
+    expect(idx, greaterThanOrEqualTo(0),
+        reason: '视频页必须自带退出还原 helper（不经 closeMedia，需对称还原系统栏）');
+    final int end = src.indexOf('  }', idx);
+    final String body = src.substring(idx, end);
+    expect(
+      body.contains('if (!isMobilePlatform) return;'),
+      isTrue,
+      reason: '退出还原必须 isMobilePlatform 门控（桌面无系统栏，no-op）',
+    );
+    expect(
+      body.contains('setHomeShellSystemUiMode()'),
+      isTrue,
+      reason: '退出必须还原成 home-shell 系统栏模式（底部导航栏恢复），否则残留隐藏',
+    );
+  });
+
+  test(
+      '⑥ dispose 调用 _restoreSystemUiOnExit（对称于 _restoreOrientationOnExit·BUG-816）',
+      () {
+    // 视频页不经 closeMedia，退出时若不在 dispose 主动还原系统栏，immersiveSticky
+    // 会残留 → 退出后底部导航栏消失。守卫钉住 dispose 里这条对称还原接线。
+    final int disposeIdx = src.indexOf('void dispose() {');
+    expect(disposeIdx, greaterThanOrEqualTo(0));
+    // dispose 体很长，取到方法定义外的 `_restoreSystemUiOnExit(` helper 定义之前为界。
+    final int helperIdx =
+        src.indexOf('Future<void> _restoreSystemUiOnExit() async {');
+    final String disposeBody = src.substring(disposeIdx, helperIdx);
+    expect(
+      disposeBody.contains('_restoreSystemUiOnExit()'),
+      isTrue,
+      reason:
+          'dispose 必须调 _restoreSystemUiOnExit 还原系统栏（与 _restoreOrientationOnExit 对称）',
+    );
+    expect(
+      disposeBody.contains('_restoreOrientationOnExit()'),
+      isTrue,
+      reason: '既有方向还原不应被破坏（两条 exit 还原并存）',
     );
   });
 }

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 773 条。点号进各自文件。
+> 共 774 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-816](bugs/BUG-816-video-exit-systemui-navbar.md) | ✅ | ✅ | 退出视频后底部导航栏残留隐藏（系统栏未还原） |
 | [BUG-790](bugs/BUG-790-inline-gaiji-width.md) | ✅ | ✅ | 词典行内外字图标撑开相邻链接 |
 | [BUG-789](bugs/BUG-789-reader-chrome-inset-stale-pagination-metrics.md) | ✅ | ✅ | 底栏 inset 后分页终点过期导致章尾不可读 |
 | [BUG-788](bugs/BUG-788-fractional-page-boundary-premature-limit.md) | ✅ | ✅ | 亚像素页距在第31页误判边界提前停翻 |
