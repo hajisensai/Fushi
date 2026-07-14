@@ -42,7 +42,11 @@ import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
         YoutubeCaptionTrack,
         resolveYoutubeCaptionTracks,
         resolveYoutubeCaptionCues,
-        pickBestYoutubeCaptionTrack;
+        pickBestYoutubeCaptionTrack,
+        YoutubeVideoVariant,
+        YoutubeVariantSet,
+        resolveYoutubeVideoVariants,
+        isYoutubeUrl;
 import 'package:hibiki/src/media/video/video_resource_check.dart';
 import 'package:hibiki/src/media/video/video_long_press_speed_badge.dart';
 import 'package:hibiki/src/media/video/video_seek_indicator_label.dart';
@@ -110,7 +114,6 @@ import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
-import 'package:hibiki/src/utils/misc/debug_log_service.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/render_backend_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
@@ -841,6 +844,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VoidCallback? _chapterListener;
   bool _failed = false;
 
+  /// 加载失败态的用户可读原因（[_failed] 为 true 时展示在 [_buildFailedBody]）。null
+  /// = 尚无具体原因（回退到通用文案）。各失败点（book row 缺失 / 流解析失败 / 换集失败 /
+  /// controller.load 抛异常）在置 [_failed] 时经 [_describeLoadFailure] 从异常派生一句
+  /// 友好文案，替代旧的「只有一个红叹号、没有任何说明」。
+  String? _failReason;
+
   /// TODO-1213：当前加载阶段（网络流 / 本地共用）。非就绪态时 [_buildScaffold] 的
   /// spinner 分支据此显示带上下文的加载态（标题 + 返回 + 阶段文案）。默认 preparing，
   /// 首帧即有文案；[_loadRemoteEpisode] / [_applyLoad] 各阶段推进。就绪 / 失败 / 缺失
@@ -1357,6 +1366,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   int _selectedHlsVariantIndex = -1;
   int _hlsDetectSeq = 0;
 
+  /// YouTube 画质档（用户报「YouTube 没法调画质」）：与 HLS 画质并行的一套状态，**懒解析**
+  /// ——用户点开画质菜单时才 [resolveYoutubeVideoVariants]（一次 getManifest）填 [_youtubeVariants]
+  /// （各档 video-only 流，高→低）。[_selectedYoutubeVariantIndex] 当前选中档（-1=自动=解析器
+  /// 默认最佳）；[_youtubeVariantsAudioUrl] 分离音轨（切档保持同一音频）；[_youtubeVariantsLoading]
+  /// 解析中（画质侧栏显 spinner）。切档走 [_switchYoutubeVariant]（换 video-only URL + 同音轨重载，
+  /// 保持播放位置 + 现有字幕 cue）。非 YouTube 时恒空。
+  List<YoutubeVideoVariant> _youtubeVariants = const <YoutubeVideoVariant>[];
+  int _selectedYoutubeVariantIndex = -1;
+
+  /// 「自动」档对应的 [_youtubeVariants] 下标（= 解析器默认最佳挑选，avc1≤1080p）。用户选
+  /// 「自动」时切到这条 URL；-1=尚未解析。
+  int _youtubeVariantsDefaultIndex = -1;
+  String? _youtubeVariantsAudioUrl;
+  bool _youtubeVariantsLoading = false;
+
+  /// 本集是否已解析过画质档（含「解析成功但无分离流→空档」）。用作「已解析空档」哨兵，
+  /// 避免 muxed-only 视频每次点开画质菜单都重复 getManifest。每集起播复位。
+  bool _youtubeVariantsResolved = false;
+
   bool _clipExportMarking = false;
   bool _clipExporting = false;
   int? _clipExportStartMs;
@@ -1627,7 +1655,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     final VideoBookRow? row = await widget.repo.getByBookUid(widget.bookUid);
     if (row == null) {
-      if (mounted) setState(() => _failed = true);
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _failReason = t.video_load_failed_not_found;
+        });
+      }
       return;
     }
     _bookRow = row;
@@ -1648,7 +1681,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _resolvedStreamClient = launch.client;
       } catch (e) {
         debugPrint('[VideoHibikiPage] stream book launch build failed: $e');
-        if (mounted) setState(() => _failed = true);
+        if (mounted) {
+          setState(() {
+            _failed = true;
+            _failReason = _describeLoadFailure(e);
+          });
+        }
         return;
       }
       await _initRemote();
@@ -1747,6 +1785,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
     // [_resolveDeferredYoutubeCaptions]）。
     _remoteSubtitleUserDismissed = false;
+    // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
+    _youtubeVariants = const <YoutubeVideoVariant>[];
+    _selectedYoutubeVariantIndex = -1;
+    _youtubeVariantsDefaultIndex = -1;
+    _youtubeVariantsAudioUrl = null;
+    _youtubeVariantsLoading = false;
+    _youtubeVariantsResolved = false;
     final int initialPositionMs = initialPositionMsOverride ??
         _readPersistedRemotePositionForEpisode(index);
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
@@ -1838,7 +1883,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       debugPrint(
         '[VideoHibikiPage] remote episode $index load failed: $e\n$stack',
       );
-      if (mounted) setState(() => _failed = true);
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _failReason = _describeLoadFailure(e);
+        });
+      }
     }
   }
 
@@ -2330,13 +2380,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 远端 / 流（videoPath==null 或 http(s) URL）天然豁免（见 video_resource_check）。
     if (await isLocalVideoResourceMissing(videoPath)) {
       debugPrint('[VideoHibikiPage] local video resource missing: $videoPath');
-      ErrorLogService.instance.log(
-        'VideoHibiki.diag',
-        '[VIDEO-DIAG] local video resource missing: $videoPath',
-      );
       if (!mounted) return;
       setState(() {
         _failed = false;
+        _failReason = null;
         _missingResource = true;
         _missingRow = _bookRow;
         _title = title;
@@ -2365,31 +2412,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           )
         : const <String>[];
     controller.setOnCompleted(_handlePlaybackCompleted);
-    // TODO-984：把控制器诊断行接到错误日志服务（用户可在「错误日志」页查看 / 上传）。
-    // 现场定位 Android「闪烁 + 空白无画面」（realme 8 / Android 11）——其他 app 播同文件
-    // 正常，疑点在 hwdec / 纹理 surface / 解码出帧。诊断行带 `[VIDEO-DIAG]` 前缀便于筛选。
-    controller.onDiagLog = (String message) {
-      ErrorLogService.instance.log('VideoHibiki.diag', message);
-    };
-    // TODO-1232：verbose 视频诊断（libmpv verbose log / videoParams / buffering 每次
-    // 变化）只有用户开了「调试日志」开关才收——正常播放只留关键低频诊断行，避免刷爆
-    // 错误日志（realme 8 事故里 verbose 洪水把关键头部行挤出环形缓冲）。
-    controller.diagVerbose = DebugLogService.instance.enabled;
     // TODO-1119 / BUG-545：Windows 高显卡占用黑屏闪烁运行时提示。仅 Windows 挂回调
     // （其它平台 null＝控制器完全不采样，零开销）；判定持续迟帧后弹一次可关闭提示条。
     controller.onSuspectedBlackFlicker =
         Platform.isWindows ? _handleSuspectedBlackFlicker : null;
-    ErrorLogService.instance.log(
-      'VideoHibiki.diag',
-      '[VIDEO-DIAG] _applyLoad: title=$title videoPath=$videoPath '
-          'mediaUri=$mediaUri cues=${cues.length} '
-          'initialPositionMs=$initialPositionMs '
-          'externalSubtitlePath=$externalSubtitlePath '
-          'renderGraphicStreamIndex=$renderGraphicStreamIndex '
-          'fitMode=$_videoFitMode platform=${Platform.operatingSystem} '
-          'impellerDisabledPref=${RenderBackendService.instance.impellerDisabled} '
-          'activeRenderBackend=${RenderBackendService.instance.activeBackendLabel}',
-    );
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
     _setLoadingPhase(_VideoLoadPhase.buffering);
@@ -2417,25 +2443,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       );
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
-      ErrorLogService.instance
-          .log('VideoHibiki.diag', '[VIDEO-DIAG] controller.load() threw: $e');
       ErrorLogService.instance.log('VideoHibiki.load', e, stack);
       if (_controller == null) controller.dispose();
       _pendingController = null; // BUG-772：在途结束（失败），清标记
-      if (mounted) setState(() => _failed = true);
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _failReason = _describeLoadFailure(e);
+        });
+      }
       return;
     }
-    // TODO-984：load() 正常返回（未抛）——记一行让日志能区分「load 抛异常失败」与
-    // 「load 返回了但画面仍空白」（后者疑点在解码出帧 / 纹理，看控制器 [VIDEO-DIAG] 行）。
-    ErrorLogService.instance.log(
-      'VideoHibiki.diag',
-      '[VIDEO-DIAG] controller.load() returned ok: '
-          'durationMs=${controller.durationMs} '
-          'videoWidth=${controller.videoWidth} '
-          'videoHeight=${controller.videoHeight} '
-          'videoController=${controller.videoController != null} '
-          'activeRenderBackend=${RenderBackendService.instance.activeBackendLabel}',
-    );
     _syncVolumeDisplay(controller.volume);
     // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使
     // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
@@ -2472,6 +2490,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _hasChapters = controller.chapters.isNotEmpty;
       _title = title;
       _failed = false;
+      _failReason = null;
       _missingResource = false;
       _missingRow = null;
       _currentVideoPath = videoPath;
@@ -2687,6 +2706,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _missingResource = false;
       _missingRow = null;
       _failed = false;
+      _failReason = null;
     });
     HibikiToast.show(msg: t.video_resource_relink_success);
     await _loadSingle(updated);
@@ -5093,16 +5113,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialControlLayout: _controlLayout,
       onControlLayoutChanged: _setVideoControlLayout,
       onEditControlsOnscreen: _showVideoControlEditOverlay,
-      // TODO-1158：HLS 多档画质入口（跨平台，经设置面板「播放」分类可达）。仅当探测到
-      // HLS master variant 时给入口；点开画质侧栏（替换当前设置侧栏）。
-      qualityOptionCount: _hlsVariants.length,
-      qualityCurrentLabel: _hlsVariants.isEmpty
-          ? null
-          : (_selectedHlsVariantIndex < 0 ||
-                  _selectedHlsVariantIndex >= _hlsVariants.length
-              ? t.video_quality_auto
-              : _hlsVariants[_selectedHlsVariantIndex].qualityLabel),
-      onOpenQuality: _hlsVariants.isEmpty ? null : _showQualityMenu,
+      // TODO-1158 / TODO-1159：多档画质入口（跨平台，经设置面板「播放」分类可达）。HLS
+      // master variant 或 YouTube 流（懒解析多档）时给入口；点开画质侧栏（替换设置侧栏）。
+      qualityOptionCount: _qualityOptionCount,
+      qualityCurrentLabel: _qualityCurrentLabel,
+      onOpenQuality: _hasQualityMenu ? _showQualityMenu : null,
       // TODO-1232 / BUG-597：视频黑屏（有声无画）降级入口——仅当渲染 channel 已接线
       // （Android）、本次运行确实跑 Impeller、且用户尚未选 Skia 时接线（=可能中招黑屏
       // 的人群）；否则 null 不显示该行。点按走确认弹窗 → 关 Impeller → 重启。
@@ -5303,7 +5318,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return Scaffold(
       backgroundColor: cs.surface,
       body: _failed
-          ? Center(child: Icon(Icons.error_outline, color: cs.error, size: 48))
+          ? _buildFailedBody(cs)
           // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
           // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
           : _missingResource
@@ -5397,6 +5412,109 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                         unawaited(_confirmMissingResourceDelete(row)),
                     child: Text(t.dialog_delete),
                   ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 把加载失败的异常映射成一句用户可读的原因文案。YouTube/网络流最常见的三类失败
+  /// （解析/连接超时、网络错误、视频不可用/受限）各给出可指导的说明；无法归类时回退
+  /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
+  String _describeLoadFailure(Object? error) {
+    if (error is TimeoutException) return t.video_load_failed_timeout;
+    final String s = error?.toString().toLowerCase() ?? '';
+    if (s.contains('403') ||
+        s.contains('forbidden') ||
+        s.contains('manifest failed') ||
+        s.contains('unavailable') ||
+        s.contains('unplayable') ||
+        s.contains('age') ||
+        s.contains('private')) {
+      return t.video_load_failed_unavailable;
+    }
+    if (s.contains('socket') ||
+        s.contains('network') ||
+        s.contains('connection') ||
+        s.contains('handshake') ||
+        s.contains('failed host lookup') ||
+        s.contains('timed out')) {
+      return t.video_load_failed_network;
+    }
+    return t.video_load_failed_generic;
+  }
+
+  /// 加载失败态「重试」：清失败标记后从头重跑 [_init]（本地重读 row、流媒体重解析
+  /// getManifest——临时流 URL 过期也会自愈）。与首次打开同一路径，覆盖所有失败点。
+  void _retryLoad() {
+    if (!mounted) return;
+    setState(() {
+      _failed = false;
+      _failReason = null;
+    });
+    _setLoadingPhase(_VideoLoadPhase.connecting);
+    unawaited(_init());
+  }
+
+  /// 加载失败态正文（替代旧的「一个居中红叹号、无任何说明」）。图标 + 标题 + 具体
+  /// 原因（[_failReason]，缺省回退通用文案）+ 「重试 / 返回」按钮，让用户知道为何失败、
+  /// 能一键重试或退出，不再对着孤零零的叹号发懵。
+  Widget _buildFailedBody(ColorScheme cs) {
+    final String title = _titleNotifier.value ??
+        _title ??
+        _effectiveRemoteInfo?.title ??
+        _bookRow?.title ??
+        '';
+    final String reason = _failReason ?? t.video_load_failed_generic;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.error_outline, color: cs.error, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              t.video_load_failed_title,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            if (title.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              reason,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: <Widget>[
+                FilledButton.tonalIcon(
+                  onPressed: _retryLoad,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(t.video_load_failed_retry),
+                ),
+                TextButton(
+                  onPressed: () => unawaited(_handleBackOrExit()),
+                  child: Text(t.video_load_failed_back),
+                ),
               ],
             ),
           ],
@@ -5744,8 +5862,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         t.video_audio_track,
         () => _showAudioTrackMenu(controller),
       ),
-      // TODO-1158：仅当当前流是 HLS master（探测到多档码率 variant）才给画质入口。
-      if (_hlsVariants.isNotEmpty)
+      // TODO-1158/1159：HLS master（多档码率）或 YouTube 流（懒解析多档）才给画质入口。
+      if (_hasQualityMenu)
         item(Icons.high_quality, t.video_quality, _showQualityMenu),
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
