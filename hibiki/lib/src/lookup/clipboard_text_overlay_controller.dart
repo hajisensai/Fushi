@@ -48,15 +48,21 @@ class ClipboardTextOverlayController {
     if (!_started) return;
     final String text = request.text.trim();
     if (text.isEmpty) return;
-    await ClipboardTextOverlayChannel.show(bgColor: _bgColor());
+    await ClipboardTextOverlayChannel.show(
+      bgColor: _bgColor(),
+      textColor: _textColor(),
+    );
     await ClipboardTextOverlayChannel.updateText(text);
     _visible = true;
   }
 
-  /// 背景不透明度滑杆改动后即时重刷（窗口在显示时才需要）。
+  /// 背景不透明度滑杆改动、或主题明暗/配色切换后即时重刷（窗口在显示时才需要）。
   Future<void> refreshStyle() async {
     if (!_started || !_visible) return;
-    await ClipboardTextOverlayChannel.updateStyle(bgColor: _bgColor());
+    await ClipboardTextOverlayChannel.updateStyle(
+      bgColor: _bgColor(),
+      textColor: _textColor(),
+    );
   }
 
   /// 切走去向 / 关剪贴板监听时收起窗口（不留孤儿透明窗）。
@@ -69,6 +75,9 @@ class ClipboardTextOverlayController {
   /// 由背景不透明度 pref 折算 ARGB 背景色（见 [clipboardTextWindowBgColor]）。
   int _bgColor() => clipboardTextWindowBgColor(
       _appModel?.clipboardTextWindowBgOpacity ?? 0.0);
+
+  /// 文字颜色跟随 app 主题（onSurface）；无 appModel 时回退实心白。
+  int _textColor() => _appModel?.clipboardTextWindowTextColor() ?? 0xFFFFFFFF;
 
   Future<void> _onLookup(String text, int index) async {
     final AppModel? model = _appModel;
