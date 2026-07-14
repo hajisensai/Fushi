@@ -367,22 +367,34 @@ Map<String, String> youtubeStreamReplayHeaders() =>
 /// 而 [_pickPlaybackVideoUrl] 只按编码/分辨率挑、不看来源，可能选中 ios/tv 的 403 直链 →
 /// 回归。故此处对**单一** client 调 getManifest（其内部已做首流 HEAD 403 探测：403 抛异常
 /// = 该 client 失败），androidVr 成功即零回归返回，只有它失败才试下一个。全部失败抛最后异常。
+///
+/// 提速（用户报「YouTube 加载巨慢」）：每个 client 的 getManifest 加 [perClientTimeout]
+/// 上限。googlevideo/innertube 偶发 tarpit（限流时连接不完成），旧代码只有外层 40s 总超时
+/// 兜底——首选 androidVr 一旦 tarpit，要等满 40s 才轮到 ios/tv，用户干等到近乎放弃。加
+/// 每 client 超时后，某 client 挂住 [perClientTimeout] 即判失败、立刻试下一个兜底 client，
+/// 常见「androidVr 慢」场景从「等 40s」降到「等 ~perClientTimeout 就换」。取值需保证
+/// 三 client 累计（[perClientTimeout] × 3）不超外层 40s 兜底（13s × 3 = 39s）。超时按普通
+/// client 失败处理（记异常、试下一个），与 403/无流同路径。
 Future<yt.StreamManifest> _getManifestWithClientFallback(
   yt.YoutubeExplode client,
   yt.VideoId videoId,
-  List<yt.YoutubeApiClient> ytClients,
-) async {
+  List<yt.YoutubeApiClient> ytClients, {
+  Duration perClientTimeout = const Duration(seconds: 13),
+}) async {
   Object? lastError;
   for (final yt.YoutubeApiClient api in ytClients) {
     try {
       final yt.StreamManifest manifest =
-          await client.videos.streamsClient.getManifest(
-        videoId,
-        ytClients: <yt.YoutubeApiClient>[api],
-      );
+          await client.videos.streamsClient
+              .getManifest(
+                videoId,
+                ytClients: <yt.YoutubeApiClient>[api],
+              )
+              .timeout(perClientTimeout);
       if (manifest.streams.isNotEmpty) return manifest;
     } catch (e) {
-      // 单 client 失败（403 / 无流 / 限流）：记异常、试下一个兜底 client（非致命）。
+      // 单 client 失败（403 / 无流 / 限流 / 本 client 超时）：记异常、试下一个兜底
+      // client（非致命）。超时（[TimeoutException]）与其它失败同路径，快速切下一个。
       lastError = e;
     }
   }
