@@ -81,6 +81,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         // [_progressBar]（读 srtItem.position/duration，来自共享 EpubBooks 行）。
         // 纯字幕书无进度真值则不传 metadata，保持原样（无进度条）。
         metadata: _srtBookHasProgress(book) ? _progressBar(srtItem) : null,
+        // BUG-814：两阶段下载末段卡已变 SRT 卡但有声书包仍在下 → 继续显示加载覆盖层。
+        loadingOverlay: _audiobookDownloadingOverlay(book.bookKey),
       ),
     );
   }
