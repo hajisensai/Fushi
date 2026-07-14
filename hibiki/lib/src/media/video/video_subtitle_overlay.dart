@@ -1042,6 +1042,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         );
       }
     }
+    // 缓存屏障（BUG-797 掉帧型闪烁）：\fad/\t/\move 动画期 [_fadeTicker] 每帧 setState、
+    // 播放位置更新也随 controller 通知整树重绘——没有屏障时，上方 Opacity/Transform 每
+    // tick 都把盒内**每字一个**的 ImageFiltered 高斯 saveLayer（双语长句 ~35 个/帧）
+    // 重录重栅格化一遍，掉帧表现为字幕闪/卡。RepaintBoundary 让盒内容成为独立缓存层：
+    // 动画只重合成缓存纹理。放在动画包装层之下、盒（含背景/收藏角标）之上；不改布局/
+    // 命中几何（[_charEntries] 是 build 期登记，与 paint 无关）。
+    box = RepaintBoundary(child: box);
+
     // \frz 旋转 / \fscx\fscy 缩放（+ \t 缩放动画）：绕字幕盒中心变换（TODO-1374）。招牌类
     // 字幕（\pos + \frz/缩放）据此复现 mpv/libass 摆位。Transform 不改布局尺寸（组内堆叠 /
     // 命中登记按未变换盒几何），旋转招牌本就不查词，可接受命中矩形不随旋转。
