@@ -22,6 +22,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     required this.loadMembers,
     required this.onOpenEpisode,
     required this.onChanged,
+    this.onDeleteMembersMedia,
     super.key,
   });
 
@@ -36,6 +37,12 @@ class MediaCollectionDetailPage extends StatefulWidget {
 
   /// 改名 / 删除后刷新库页。
   final VoidCallback onChanged;
+
+  /// 「删除合集」时可选连同各集视频本体一起删（默认不删，保持只解链语义）。
+  /// 调用方（持 [VideoBookRepository]）注入：按 [VideoBookRow] 删视频 DB 行 +
+  /// app 拥有副本（封面/字幕），**保留用户原始视频文件**（导入时只存路径从不复制）。
+  /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
+  final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
 
   @override
   State<MediaCollectionDetailPage> createState() =>
@@ -239,27 +246,56 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
   }
 
   Future<void> _delete() async {
+    // 仅当调用方注入了删本体回调、且合集当前有成员时，才给用户「连同视频一起删」
+    // 选项；否则退回纯解链删除（老行为，零变化）。
+    final bool canDeleteMembers =
+        widget.onDeleteMembersMedia != null && _members.isNotEmpty;
+    bool alsoDeleteMembers = false;
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.delete_collection),
-        content: Text(t.delete_collection_confirm),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setLocal) => AlertDialog(
+          title: Text(t.delete_collection),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(t.delete_collection_confirm),
+              if (canDeleteMembers) ...<Widget>[
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  value: alsoDeleteMembers,
+                  onChanged: (bool? v) =>
+                      setLocal(() => alsoDeleteMembers = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(t.delete_collection_also_videos),
+                ),
+              ],
+            ],
           ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.delete_collection),
-          ),
-        ],
+          actions: <Widget>[
+            adaptiveDialogAction(
+              context: ctx,
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: ctx,
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t.delete_collection),
+            ),
+          ],
+        ),
       ),
     );
     if (ok != true) return;
+    // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
+    // 引用行并自删空合集，故随后的 deleteMediaCollection 多为幂等收尾（写合集级墓碑）。
+    if (alsoDeleteMembers && widget.onDeleteMembersMedia != null) {
+      await widget.onDeleteMembersMedia!(List<VideoBookRow>.of(_members));
+    }
     await widget.database.deleteMediaCollection(widget.collection.id);
     if (!mounted) return;
     widget.onChanged();
