@@ -2,14 +2,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-1133 / BUG-804 源码守卫：缺失的本地视频除「删除」外必须提供真实的重链/重导入
+/// TODO-1133 / BUG-805 源码守卫：缺失的本地视频除「删除」外必须提供真实的重链/重导入
 /// 路径。
 ///
 /// 断言 `_relinkMissingResource` 存在且：① 经既有统一拾取 [pickRealFilePath]
 /// （TODO-1112 的真实路径拾取：安卓 SAF 真实路径 / 桌面 file_picker）拿新路径，不新造
 /// 第二套文件通道；② 经 `updateLocalMediaPaths(..., videoPath:` 持久化重链。
 ///
-/// BUG-804：原来「重新选择文件」是独立按钮、「重新导入」是空操作 `nav.pop()`（用户点了
+/// BUG-805：原来「重新选择文件」是独立按钮、「重新导入」是空操作 `nav.pop()`（用户点了
 /// 「没反应」）。现合并为单一「重新导入」真动作 [_reimportMissingResource]——单视频委托
 /// 上面的重链、播放列表打开 [VideoImportDialog]。故本守卫改为断言缺失对话框与 inline
 /// 正文都把「重新导入」接到 `_reimportMissingResource`（不再有独立 relink 按钮/枚举/key，
@@ -45,7 +45,7 @@ void main() {
     expect(body.contains('_loadSingle('), isTrue, reason: '重链后必须重新载入播放');
   });
 
-  test('BUG-804: 缺失对话框与 inline 正文的「重新导入」都接真动作，无空操作/无独立 relink', () {
+  test('BUG-805: 缺失对话框与 inline 正文的「重新导入」都接真动作，无空操作/无独立 relink', () {
     // 「重新导入」真动作方法存在，且单视频分支委托既有重链 _relinkMissingResource
     // （保留进度 / 字幕 / 音轨），非单视频打开 VideoImportDialog 真导入。
     expect(

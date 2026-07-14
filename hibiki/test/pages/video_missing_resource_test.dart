@@ -141,7 +141,7 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
     // 缺失态正文图标（中性，非 generic error_outline）。
     expect(find.byIcon(Icons.video_file_outlined), findsWidgets);
-    // BUG-804：缺失态收敛成两个真按钮 [重新导入] [删除]（缺失正文 + 对话框都含此文案）。
+    // BUG-805：缺失态收敛成两个真按钮 [重新导入] [删除]（缺失正文 + 对话框都含此文案）。
     expect(find.text(t.video_resource_missing_reimport), findsWidgets);
     // 单视频（canDelete）提供「删除」。
     expect(find.text(t.dialog_delete), findsWidgets);

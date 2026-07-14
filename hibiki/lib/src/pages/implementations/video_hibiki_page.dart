@@ -300,7 +300,7 @@ String videoFavoriteCacheKey({
       : 'cue|${normalizedEpisodeIndex ?? 'single'}|$startMs|$text';
 }
 
-/// TODO-897 / BUG-804：缺失资源对话框的用户选择。「重新导入」现为真动作
+/// TODO-897 / BUG-805：缺失资源对话框的用户选择。「重新导入」现为真动作
 /// （单视频重链选文件 / 播放列表打开导入对话框），不再有独立「重新选择文件」项。
 enum _MissingResourceChoice { reimport, delete, cancel }
 
@@ -2575,11 +2575,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_restoreSecondarySubtitle(controller));
   }
 
-  /// TODO-897 / BUG-804：本地视频资源缺失时弹中性对话框（资源位置变化 → 重新导入 /
+  /// TODO-897 / BUG-805：本地视频资源缺失时弹中性对话框（资源位置变化 → 重新导入 /
   /// 删除条目 / 取消）。措辞中性、不诱导直删；删除走二次确认
   /// [_confirmMissingResourceDelete]。
   ///
-  /// BUG-804 根因修复：旧「重新导入」是空操作（只 `nav.pop()` 退回视频库、不做任何
+  /// BUG-805 根因修复：旧「重新导入」是空操作（只 `nav.pop()` 退回视频库、不做任何
   /// 导入），用户点了看着「没反应」；真正能修复的「重新选择文件」重链动作却藏在
   /// 独立按钮里、且只对单视频显示。现在收敛成用户预期的两个真按钮——
   /// 「重新导入」= 真动作（[_reimportMissingResource]：单视频重链选文件、播放列表
@@ -2636,7 +2636,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  /// BUG-804：缺失态「重新导入」的真实动作——替代旧的空操作 `nav.pop()`。
+  /// BUG-805：缺失态「重新导入」的真实动作——替代旧的空操作 `nav.pop()`。
   ///
   /// - **单个本地视频**（非播放列表、非远端）：走重链 [_relinkMissingResource]——让
   ///   用户重新选真实文件、重写 `videoPath` 并原地重载，保留进度 / 字幕 / 音轨 / 倍速
@@ -5359,10 +5359,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  /// TODO-897 / BUG-804：本地资源缺失态正文（不转圈）。中性图标 + 文案 + 「重新导入 /
+  /// TODO-897 / BUG-805：本地资源缺失态正文（不转圈）。中性图标 + 文案 + 「重新导入 /
   /// 删除条目（仅单视频）」两个真按钮，对应 [_promptMissingResource] 的选项；首帧若
   /// 对话框被取消，用户仍能从这里再次触发。「重新导入」走 [_reimportMissingResource]
-  /// 真动作（BUG-804 前是空操作 pop）。
+  /// 真动作（BUG-805 前是空操作 pop）。
   Widget _buildMissingResourceBody(ColorScheme cs) {
     final VideoBookRow? row = _missingRow;
     final bool canDelete = row != null && !_isPlaylist && !_isRemote;

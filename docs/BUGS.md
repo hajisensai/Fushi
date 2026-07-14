@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-804](bugs/BUG-804-video-missing-reimport-noop.md) | ✅ | ✅ | 视频缺失态重新导入空操作没反应 |
+| [BUG-805](bugs/BUG-805-video-missing-reimport-noop.md) | ✅ | ✅ | 视频缺失态重新导入空操作没反应 |
 | [BUG-803](bugs/BUG-803-inline-gaiji-width.md) | ✅ | ✅ | 词典行内外字图标撑开相邻链接 |
 | [BUG-802](bugs/BUG-802-popup-copy-search-selection.md) | ✅ | ✅ | 查词弹窗选中后复制/搜索无效 |
 | [BUG-801](bugs/BUG-801-android-native-subtitleview-duplicate.md) | ✅ | ✅ | 安卓视频原生SubtitleView与可点浮层字幕重复(控制条显示时上下两条) |
