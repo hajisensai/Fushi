@@ -259,8 +259,6 @@ String buildStackRenderScript({
   // 帧的 settingsJs；cascade 模式忽略。
   int sentenceHitStart = -1,
   int sentenceHitLength = 0,
-  // 阶段三 — 面板栏「悬停显示」(peek)：仅面板模式携带，host 据此收起/常显面板栏。
-  bool peek = false,
 }) {
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
@@ -324,10 +322,6 @@ String buildStackRenderScript({
   // spec 2026-07-10 — 仅面板模式携带 layoutMode 键；cascade 载荷字节不变。
   if (layoutMode == 'panel') {
     payloadObj['layoutMode'] = 'panel';
-    // 阶段三 — 面板栏悬停显示：仅面板模式且开启时携带，cascade/关闭时载荷不变。
-    if (peek) {
-      payloadObj['peek'] = true;
-    }
   }
   // TODO-1345 (BUG-583 深层根因续) — reserve cascade headroom toward the screen
   // interior so an up/left child lands INSIDE the window origin committed at the

@@ -1015,9 +1015,13 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
   // （图钉关）被游戏/浏览器压底时，点任务栏图标即可激活+拉回前台。瞬态查词窗
   // 不设，保持无任务栏项。
   clipboard_panel_window_->SetTaskbarPresence(true);
-  // 背景逐像素透明：面板走 composition + DirectComposition（透明像素真透到桌面，
-  // 背景全透 + 文字实心），取代整窗 LWA_ALPHA。瞬态查词窗不设，保持 windowed。
-  clipboard_panel_window_->SetCompositionMode(true);
+  // 背景逐像素透明（composition + DirectComposition）真机实测：窗口进了 composition
+  // 模式（WS_EX_NOREDIRECTIONBITMAP）但透明像素被合成成**黑**（DComp/WebView2 alpha
+  // 合成未生效），且 composition 下整窗 LWA_ALPHA 不透明度被 no-op → 反而把「之前能用
+  // 的整窗不透明度」弄坏了、两头空。故暂时**关闭** composition，面板退回 windowed：
+  // 整窗不透明度滑杆恢复工作。真·逐像素透明改走别的路线（悬浮歌词窗式 GDI per-pixel，
+  // 或先把 DComp 黑底修对）再单独开启。composition 代码保留、休眠（默认 false）。
+  clipboard_panel_window_->SetCompositionMode(false);
   clipboard_panel_window_->SetWindowTitle(L"Hibiki");
   clipboard_panel_window_->SetUserDataLeaf(L"ClipboardPanelWebView2");
 

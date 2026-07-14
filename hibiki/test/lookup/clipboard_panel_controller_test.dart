@@ -185,15 +185,12 @@ void main() {
           reason: '回传必须走面板自己的 channel，与瞬态窗互不串线');
     });
 
-    test('渲染走 layoutMode panel；背景逐像素透明由 cardBgAlpha 承担（composition）', () {
+    test('渲染走 layoutMode panel；卡背景恒不透明（透明路线 composition 失败已回退）', () {
       expect(controllerSrc.contains("layoutMode: 'panel'"), isTrue);
-      // 背景逐像素透明：透明开关开→cardBgAlpha=0（卡背景透明、只剩文字），
-      // 关→1.0（不透明卡）。取代旧的「整窗 LWA_ALPHA 恒 cardBgAlpha:1.0」。
-      expect(
-        controllerSrc.contains('clipboardPanelTransparent ? 0.0 : 1.0'),
-        isTrue,
-        reason: '透明开关驱动卡背景 alpha：开=0（只剩文字），关=1（不透明卡）',
-      );
+      // 背景透明改走 composition 真机失败已回退 + 透明开关删除：卡背景恒 1.0
+      // （windowed 下卡背景透明只会露黑）。真透明改走 GDI 悬浮字幕窗（B 路线）另起。
+      expect(controllerSrc.contains('cardBgAlpha: 1.0'), isTrue,
+          reason: '卡背景恒不透明，透明开关已删');
       expect(controllerSrc.contains('applyBackdrop'), isFalse,
           reason: 'acrylic backdrop 路线废弃（毛玻璃≠透视），面板不再调用');
     });

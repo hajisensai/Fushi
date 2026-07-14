@@ -2335,9 +2335,5 @@
   "desktop_clipboard_auto_lookup": "Auto-look-up on copy",
   "desktop_clipboard_auto_lookup_hint": "When off, the panel shows only the copied text; tap a word to look it up.",
   "video_subtitle_filter_favorites_empty": "No favorited lines yet",
-  "video_subtitle_filter_selected_empty": "No lines selected yet",
-  "clipboard_panel_transparent": "Transparent panel background",
-  "clipboard_panel_transparent_hint": "Per-pixel transparency: only the text shows, the game behind stays visible (Windows).",
-  "clipboard_panel_peek": "Auto-hide panel bar",
-  "clipboard_panel_peek_hint": "Hide the drag/pin/close bar; move the mouse to the top edge to reveal it."
+  "video_subtitle_filter_selected_empty": "No lines selected yet"
 }
