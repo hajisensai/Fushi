@@ -207,11 +207,17 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncLocalAudioEnabled(value);
             },
           ),
+          // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给已解析的后端。互联
+          // host（本机在做服务端）没有任何 outbound sync——client 从它拉取/往它推，
+          // 它自己不上传（auto_sync 同理已隐藏）。故 host 模式下这三个上传开关纯空转，
+          // 一律随 auto_sync 的 `!_isHostingInterconnect` 门控隐藏（client 模式仍可见，
+          // client 确实能往 host 推）。
           SettingsSwitchItem(
             id: 'sync.content',
             title: t.sync_content,
             subtitle: t.sync_content_warning,
             icon: Icons.book_outlined,
+            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
             value: (SettingsContext ctx) => _syncSettings(ctx).syncContent,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncContent = value;
@@ -224,6 +230,7 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.sync_audiobook_files,
             subtitle: t.sync_audiobook_files_warning,
             icon: Icons.audio_file_outlined,
+            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).syncAudioBookFiles,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -232,15 +239,17 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncAudioBookFilesEnabled(value);
             },
           ),
-          // 上传视频文件（多端库联合视图 §2.6）：默认关，全后端可见。云后端走
-          // syncVideoAssets 的 `__videos__` 伪装资产（run() 非互联分支）；互联
-          // （hibikiServer）走 _syncVideosLive 的 host 上传端点（client→host）。两条通道
-          // 同为 upload-only（host→client 仍按需流式/下载），故此开关对所有后端都生效。
+          // 上传视频文件（多端库联合视图 §2.6）：默认关。云后端走 syncVideoAssets 的
+          // `__videos__` 伪装资产（run() 非互联分支）；互联（hibikiServer）走
+          // _syncVideosLive 的 host 上传端点（client→host）。两条通道同为 upload-only
+          // （host→client 仍按需流式/下载，且与本开关正交——客户端手动浏览/下载远端视频
+          // 只看 show_remote_entries，从不受此开关门控）。host 模式无 outbound → 隐藏。
           SettingsSwitchItem(
             id: 'sync.video_files',
             title: t.sync_video_files,
             subtitle: t.sync_video_files_warning,
             icon: Icons.video_file_outlined,
+            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
             value: (SettingsContext ctx) => _syncSettings(ctx).syncVideoFiles,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncVideoFiles = value;

@@ -228,7 +228,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   ///
   /// 顶层 tab 保活（[HomePage] 的 `_keepAliveTabs`）后，切回视频 tab 不再隐式重拉远端，
   /// 故给用户一个**显式**强制刷新入口——别的设备新上传的互联视频，不重启 app 也能刷出来。
-  /// [_loadRemoteVideos] 内部吞异常返回 `failed:true`，await 不会抛，指示器必定收起。
+  /// [_loadRemoteVideos] 内部吞异常返回 `failed:true`，await 不会抛，指示器必定收起
+  /// （客户端 [listRemoteVideos] 已用 listTimeout 封顶，host 卡响应也不会无限转圈）。
+  /// 显式刷新失败时给一个可见 SnackBar（带原因），避免「看不到远端视频却不知为何」。
   Future<void> _pullToRefresh() async {
     final Future<_RemoteVideoState?> remote = _loadRemoteVideos();
     if (mounted) {
@@ -239,7 +241,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
     _loadLibraryMaps();
     _maybeBackfillCovers();
-    await remote;
+    final _RemoteVideoState? state = await remote;
+    if (!mounted) return;
+    if (state != null && state.failed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            t.remote_video_list_failed(error: state.errorMessage ?? ''),
+          ),
+        ),
+      );
+    }
   }
 
   /// 一次性预取库页排序/分组所需映射：合集字典、折叠归属、组内 sortIndex、
@@ -405,10 +417,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         );
       } catch (e) {
         // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
+        // errorMessage 带上原因供显式下拉刷新时可见反馈（初次静默加载仍不打扰）。
         debugPrint('[home-video] remote video list failed: $e');
-        return const _RemoteVideoState(
-          videos: <RemoteVideoInfo>[],
+        return _RemoteVideoState(
+          videos: const <RemoteVideoInfo>[],
           failed: true,
+          errorMessage: e.toString(),
         );
       }
     }
@@ -436,9 +450,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       );
     } catch (e) {
       debugPrint('[home-video] cloud video manifest failed: $e');
-      return const _RemoteVideoState(
-        videos: <RemoteVideoInfo>[],
+      return _RemoteVideoState(
+        videos: const <RemoteVideoInfo>[],
         failed: true,
+        errorMessage: e.toString(),
       );
     }
   }
@@ -3174,10 +3189,15 @@ class _RemoteVideoState {
   const _RemoteVideoState({
     required this.videos,
     this.failed = false,
+    this.errorMessage,
   });
 
   final List<RemoteVideoInfo> videos;
 
   /// 远端目录拉取失败（离线/未配对/后端不可达）：占位卡不渲染（spec §2.4）。
   final bool failed;
+
+  /// 失败原因（异常文本），仅在 [failed] 时非空。初次静默加载走离线语义不打扰用户，
+  /// 但**显式下拉刷新**失败时用它给出可见反馈（不再「看不到远端视频还不知为何」）。
+  final String? errorMessage;
 }
