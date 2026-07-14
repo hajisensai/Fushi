@@ -244,12 +244,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final _RemoteVideoState? state = await remote;
     if (!mounted) return;
     if (state != null && state.failed) {
+      // 只给用户一句本地化、可执行的友好提示；原始异常（TimeoutException /
+      // SocketException 等开发者文本）绝不进 UI，只留在下方 debugPrint 供排查。
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            t.remote_video_list_failed(error: state.errorMessage ?? ''),
-          ),
-        ),
+        SnackBar(content: Text(t.remote_video_list_failed)),
       );
     }
   }
@@ -417,12 +415,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         );
       } catch (e) {
         // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
-        // errorMessage 带上原因供显式下拉刷新时可见反馈（初次静默加载仍不打扰）。
+        // 原始异常只落 debugPrint 供排查；显式下拉刷新时的用户可见反馈用本地化友好
+        // 文案（见 _pullToRefresh），不把 TimeoutException 等开发者文本泄漏进 UI。
         debugPrint('[home-video] remote video list failed: $e');
         return _RemoteVideoState(
           videos: const <RemoteVideoInfo>[],
           failed: true,
-          errorMessage: e.toString(),
         );
       }
     }
@@ -453,7 +451,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       return _RemoteVideoState(
         videos: const <RemoteVideoInfo>[],
         failed: true,
-        errorMessage: e.toString(),
       );
     }
   }
@@ -3191,15 +3188,12 @@ class _RemoteVideoState {
   const _RemoteVideoState({
     required this.videos,
     this.failed = false,
-    this.errorMessage,
   });
 
   final List<RemoteVideoInfo> videos;
 
-  /// 远端目录拉取失败（离线/未配对/后端不可达）：占位卡不渲染（spec §2.4）。
+  /// 远端目录拉取失败（离线/未配对/后端不可达/host 响应超时）：占位卡不渲染
+  /// （spec §2.4）。初次静默加载走离线语义不打扰用户；**显式下拉刷新**失败时
+  /// [_pullToRefresh] 据此弹一句本地化友好提示（不再「看不到远端视频还不知为何」）。
   final bool failed;
-
-  /// 失败原因（异常文本），仅在 [failed] 时非空。初次静默加载走离线语义不打扰用户，
-  /// 但**显式下拉刷新**失败时用它给出可见反馈（不再「看不到远端视频还不知为何」）。
-  final String? errorMessage;
 }
