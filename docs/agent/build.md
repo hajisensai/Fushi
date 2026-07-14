@@ -69,3 +69,15 @@ Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别�
 - **pub-cache 补丁**：`ci/apply-patches.sh` 把 `ci/patches/{hosted,git}/<包-版本>/` 覆盖到 pub cache，按精确版本号命名；版本漂移就跳过并警告（HBK-AUDIT-005）。每次清 cache 或 `pub get` 后要重跑（bootstrap 已含）。
 
 > `carousel_slider` / `fading_edge_scrollview` / `network_to_file_image` 两边都有：`dependency_overrides` 生效，pub-cache 同名补丁因版本对不上被自动跳过，以 vendored 为准。
+
+## 移动端 ffmpeg-kit h264 重建（BUG-809）
+
+有声书导出片段（`audiobook.part.dart` `_synthClipWithCodecFallback`）**先试 h264/.mp4，失败回退 mjpeg/.mov**：桌面捆绑 ffmpeg-min 有 libx264 → 直接 `.mp4`（30s 从 ~200MB 降到几 MB）；**移动端当前 vendored ffmpeg-kit min 无任何可用 h264 编码器**（AAR 实测 configuration 只有 `--enable-jni --enable-v4l2-m2m --enable-version3 --enable-small`，无 `--enable-gpl/--enable-libx264/--enable-mediacodec/--enable-videotoolbox`；`libx264`/`h264_mediacodec`/`h264_videotoolbox` 符号计数=0，仅 `h264_v4l2m2m` 但 Android app 沙箱基本打不开 V4L2 M2M 设备节点、不可靠），故移动端仍走 mjpeg/.mov。
+
+**要移动端也输出 h264/.mp4，必须重建 ffmpeg-kit 二进制并重新 vendor**（用户已定走 libx264/GPL，与桌面 ffmpeg-min 的 `--enable-gpl --enable-libx264` 一致，全设备可靠、许可证不新增负担）。落地后 **Dart 侧零改动**：`_synthClipWithCodecFallback` 探到 h264 合成成功即自动切 `.mp4`。
+
+- **源码**：arthenica `ffmpeg-kit`（本仓 vendored 的是其 min 变体自编产物；构建脚本不在本仓，需在 Linux/macOS + Android NDK / Xcode 环境跑其 `android.sh` / `ios.sh`）。
+- **Android**：`./android.sh --enable-gpl --enable-x264`（会自动拉取/交叉编译 x264+ffmpeg 到 arm64-v8a + armeabi-v7a）。产物 `ffmpeg-kit.aar` 覆盖 `third_party/ffmpeg_kit_flutter/android/libs/ffmpeg-kit.aar`。体积：当前 20.75MB → 约 25~28MB（每架构 libavcodec.so +1.5~2.5MB）；用户 APK 按 ABI split 实际下载增量约 +1.5~2.5MB。
+- **iOS**：`./ios.sh --enable-gpl --enable-x264`（videotoolbox 也可加但 libx264 更可靠）。产物 xcframeworks 覆盖 `third_party/ffmpeg_kit_flutter/ios/Frameworks/*.xcframework`。
+- **验证**：真机导出有声书片段 → 产出应为 `.mp4`、体积几 MB、任意播放器可开；确认 h264 合成 returnCode=0（失败会自动回退 mjpeg/.mov，不会崩）。
+- **许可证**：libx264=GPL → 产物许可从 LGPL 变 GPL。app 桌面已随 ffmpeg-min 分发 GPL 的 ffmpeg（见 `tool/ffmpeg-min/build-ffmpeg-min.sh` 顶部说明），移动端一致，无新增负担。

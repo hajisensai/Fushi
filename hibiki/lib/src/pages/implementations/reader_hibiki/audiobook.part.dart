@@ -1222,15 +1222,18 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
     File? audioClip;
     File? imageFile;
-    File? videoFile;
+    // BUG-809：两个候选容器——先试 H.264/.mp4（带帧间压缩，30 秒从 ~200MB 压到几 MB、
+    // .mp4 通用可直接播放/分享），失败再回退 mjpeg/.mov。桌面 ffmpeg-min 已编入
+    // libx264 → h264 一次成功；移动端自编 ffmpeg-kit **min** 当前无 libx264 → h264 在
+    // 编码器 init 即快速失败 → 复用同批已渲帧回退 mjpeg（保持旧行为不破坏），等移动端
+    // 重建带 libx264 的 AAR/xcframework 落地后，h264 自动成功、无需再改 Dart（能力由
+    // 「合成是否成功」真实判定，不靠平台假设，也绕开 ffmpeg-kit `-encoders` 输出不可靠）。
+    File? mp4File; // H.264 候选
+    File? movFile; // mjpeg 回退候选
+    File? videoFile; // 实际产出（= mp4File 或 movFile）
     Directory? framesDir;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-    // BUG-809：桌面走 H.264 + .mp4（ffmpeg-min 已编入 libx264+mp4，带帧间压缩把
-    // 30 秒片段从 mjpeg 的 ~200MB 压到几 MB，且 .mp4 通用可直接播放/分享）；移动端
-    // 自编 ffmpeg-kit min 无 libx264，保持 mjpeg + .mov（帧内 JPEG，两端都能编）。
-    final bool useH264 = isDesktop;
-    final String videoExt = useH264 ? 'mp4' : 'mov';
     try {
       final Directory tmpDir = await getTemporaryDirectory();
       final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
@@ -1293,22 +1296,23 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         highlight: themeColors.sasayaki,
       );
 
-      videoFile = File('$base.$videoExt');
+      mp4File = File('$base.mp4');
+      movFile = File('$base.mov');
 
       // M3/M4：优先动态逐帧高亮跟随（多句序列帧 → image2 合成）；任一步失败回退单句静态。
-      bool dynamicOk = false;
       if (dynamicPlan != null) {
         framesDir = Directory('${base}_frames');
-        dynamicOk = await _synthDynamicClipVideo(
+        videoFile = await _synthDynamicClipVideo(
           plan: dynamicPlan,
           overlay: overlay,
           layout: layout,
           framesDir: framesDir,
           audioClip: audioClip,
-          videoFile: videoFile,
+          mp4File: mp4File,
+          movFile: movFile,
           isDesktop: isDesktop,
         );
-        if (!dynamicOk) {
+        if (videoFile == null) {
           // 回退：清掉可能半成的序列帧目录，走单句静态。
           await _deleteClipFramesDir(framesDir);
           framesDir = null;
@@ -1321,7 +1325,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         }
       }
 
-      if (!dynamicOk) {
+      if (videoFile == null) {
         // 单句静态回退：整段文本单图 + `-loop 1` 单图合成（原有稳定路径）。
         // TODO-1147 option A: vertical uses the true-vertical offscreen WebView
         // render; horizontal keeps the Flutter raster path. If the WebView path
@@ -1369,31 +1373,35 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         imageFile = File('$base.jpg');
         await imageFile.writeAsBytes(jpgBytes);
 
-        final AudiobookClipSynthResult synth =
-            await synthAudiobookClipVideoViaFfmpeg(
-          imagePath: imageFile.path,
-          audioPath: audioClip.path,
-          outputPath: videoFile.path,
-          width: layout.width,
-          height: layout.height,
-          // TODO-1147：桌面去色度下采样（yuvj444p）保留彩色文字边缘精度；移动端
-          // ffmpeg-kit min 的 mjpeg encoder 收 444 需真机验合成不 exit，故保守 420
-          // （仍靠 1080×1920 分辨率提升消模糊，不触碰移动合成 exit1 风险）。
-          // BUG-809：桌面 h264/.mp4（pixFmt 被 yuv420p 覆盖），移动 mjpeg/.mov。
-          pixFmt: isDesktop ? 'yuvj444p' : 'yuvj420p',
-          h264: useH264,
+        // BUG-809：先试 H.264/.mp4，失败回退 mjpeg/.mov（同一张 JPEG 复用，不重渲）。
+        final File img = imageFile;
+        final File audio = audioClip;
+        videoFile = await _synthClipWithCodecFallback(
+          mp4File: mp4File,
+          movFile: movFile,
+          isDesktop: isDesktop,
+          synth: ({
+            required String outputPath,
+            required bool h264,
+            required String pixFmt,
+          }) =>
+              synthAudiobookClipVideoViaFfmpeg(
+            imagePath: img.path,
+            audioPath: audio.path,
+            outputPath: outputPath,
+            width: layout.width,
+            height: layout.height,
+            // TODO-1147：mjpeg 回退时桌面去色度下采样（yuvj444p）保文字边缘、移动保守
+            // 420；h264 时 builder 强制 yuv420p，此 pixFmt 被忽略。
+            pixFmt: pixFmt,
+            h264: h264,
+          ),
         );
-        if (!synth.isSuccess || synth.outputPath == null) {
-          debugPrint(
-            '[ReaderHibiki] export-clip synth failed: '
-            '${synth.failure} ${synth.detail ?? ''}',
-          );
-          // TODO-1005 / BUG-472：synth 内部已记 ffmpeg 真因；这里补一条管线级摘要，
-          // 让失败原因（inputMissing / ffmpegUnavailable / ffmpegFailed / outputMissing）
-          // 与上下文一起出现在 in-app 日志页。
+        if (videoFile == null) {
+          // TODO-1005 / BUG-472：synth 内部已记 ffmpeg 真因；这里补一条管线级摘要。
           ErrorLogService.instance.log(
             'ReaderHibiki.exportClip.synthFailed',
-            'video synth failed: ${synth.failure} ${synth.detail ?? ''}',
+            'video synth failed (both h264/.mp4 and mjpeg/.mov)',
             StackTrace.current,
           );
           if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
@@ -1401,15 +1409,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         }
       }
       final String outPath = videoFile.path;
+      // BUG-809：容器/扩展名/mime 跟随实际产出（.mp4 h264 或 .mov mjpeg 回退）。
+      final bool isMp4 = outPath.toLowerCase().endsWith('.mp4');
+      final String outExt = isMp4 ? 'mp4' : 'mov';
 
       // M5：分享/存盘。桌面（含 Linux）走 FilePicker 存盘；移动走系统 Share。
       if (isDesktop) {
         final String? savePath = await FilePicker.platform.saveFile(
           dialogTitle: t.audiobook_export_clip,
-          // BUG-809：桌面导出 .mp4（h264，通用可直接播放）。
-          fileName: 'audiobook_clip_$stamp.$videoExt',
+          fileName: 'audiobook_clip_$stamp.$outExt',
           type: FileType.custom,
-          allowedExtensions: <String>[videoExt],
+          allowedExtensions: <String>[outExt],
         );
         if (savePath != null) {
           await File(outPath).copy(savePath);
@@ -1420,8 +1430,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           <XFile>[
             XFile(
               outPath,
-              // BUG-809：容器与编码器一致（桌面 mp4/h264 / 移动 mov/mjpeg）。
-              mimeType: useH264 ? 'video/mp4' : 'video/quicktime',
+              mimeType: isMp4 ? 'video/mp4' : 'video/quicktime',
             ),
           ],
           subject: text,
@@ -1441,24 +1450,76 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       await _deleteClipTempFile(imageFile);
       // TODO-1115：动态路径的 N 帧 JPEG 序列帧目录一并清理（无论成功/回退/桌面/移动）。
       await _deleteClipFramesDir(framesDir);
-      if (isDesktop) await _deleteClipTempFile(videoFile);
+      // BUG-809：两个候选容器。桌面最终视频已 copy 到用户选定路径，两个都清；移动端系统
+      // Share 异步读取产出文件，保留产出（videoFile）、只清另一个未采用的候选（h264 失败
+      // 回退时 mp4File 已被 synth 删除，movFile 才是产出）。
+      if (isDesktop) {
+        await _deleteClipTempFile(mp4File);
+        await _deleteClipTempFile(movFile);
+      } else {
+        if (mp4File != null && mp4File.path != videoFile?.path) {
+          await _deleteClipTempFile(mp4File);
+        }
+        if (movFile != null && movFile.path != videoFile?.path) {
+          await _deleteClipTempFile(movFile);
+        }
+      }
     }
   }
 
+  /// BUG-809：先试 H.264/.mp4（[mp4File]），失败回退 mjpeg/.mov（[movFile]）。[synth] 是
+  /// 具体合成器（单图或序列帧），只暴露 `outputPath`/`h264`/`pixFmt` 三个变量，其余输入
+  /// 由调用方闭包捕获。返回实际产出的 File（mp4 或 mov），两者都失败返回 null。
+  ///
+  /// 为何「试→回退」而非「探测编码器」：桌面捆绑 ffmpeg-min 有 libx264 → h264 一次成功；
+  /// 移动端自编 ffmpeg-kit **min** 当前无 libx264 → h264 在编码器 init 即快速失败（不处理
+  /// 帧），复用同一批已渲帧只多跑一次廉价的失败 ffmpeg，再回退 mjpeg（保持旧行为）。等
+  /// 移动端重建带 `--enable-gpl --enable-libx264` 的 AAR/xcframework 落地，h264 自动成功
+  /// → .mp4，无需再改 Dart。这比解析 ffmpeg `-encoders`（ffmpeg-kit 对 stdout 列表捕获
+  /// 不可靠）更稳，且能力由「合成是否真成功」判定，绝不误判导致导出全挂。
+  Future<File?> _synthClipWithCodecFallback({
+    required File mp4File,
+    required File movFile,
+    required bool isDesktop,
+    required Future<AudiobookClipSynthResult> Function({
+      required String outputPath,
+      required bool h264,
+      required String pixFmt,
+    }) synth,
+  }) async {
+    // H.264 时 pixFmt 被 builder 强制 yuv420p，传占位即可。
+    final AudiobookClipSynthResult h264Result = await synth(
+      outputPath: mp4File.path,
+      h264: true,
+      pixFmt: 'yuv420p',
+    );
+    if (h264Result.isSuccess && h264Result.outputPath != null) return mp4File;
+    // 回退 mjpeg/.mov（TODO-1147：桌面 444 / 移动保守 420）。
+    final AudiobookClipSynthResult mjpegResult = await synth(
+      outputPath: movFile.path,
+      h264: false,
+      pixFmt: isDesktop ? 'yuvj444p' : 'yuvj420p',
+    );
+    if (mjpegResult.isSuccess && mjpegResult.outputPath != null) return movFile;
+    return null;
+  }
+
   /// TODO-1115 动态逐帧高亮：按 [plan] 的 cue 列表批量渲「整段文本 + 逐句高亮」序列帧
-  /// 到 [framesDir]，再用 image2 序列帧 + 完整音频合成 [videoFile]。全程成功返回 true；
-  /// 任一步失败返回 false（调用方回退单句静态）。
+  /// 到 [framesDir]，再用 image2 序列帧 + 完整音频合成短视频。全程成功返回**实际产出的
+  /// File**（BUG-809：先试 [mp4File]/H.264，失败回退 [movFile]/mjpeg）；任一步失败返回
+  /// null（调用方回退单句静态）。
   ///
   /// 每句只渲一次 PNG（去重），后台 isolate 编码为 JPEG 母帧落盘（encodeClipTextFrameAsJpgAsync，
   /// BUG-543 + TODO-1167），再按帧计划里各 [ClipFrameSpec.frameCount] 从母帧复制成连续帧
   /// 编号，喂给 image2 demuxer（`frame_%04d.jpg`），从而复刻「逐句高亮跟随」时间轴。
-  Future<bool> _synthDynamicClipVideo({
+  Future<File?> _synthDynamicClipVideo({
     required _AudiobookClipDynamicPlan plan,
     required OverlayState overlay,
     required AudiobookClipTextLayout layout,
     required Directory framesDir,
     required File audioClip,
-    required File videoFile,
+    required File mp4File,
+    required File movFile,
     required bool isDesktop,
   }) async {
     // BUG-713（用户回访「导出片段高亮进度慢了」根因·帧量化残差）：逐句高亮切换被帧
@@ -1489,7 +1550,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       globalEndMs: plan.globalEndMs,
       fps: fps,
     );
-    if (frames.isEmpty) return false;
+    if (frames.isEmpty) return null;
 
     // 去重要渲的高亮下标（每句只渲一次），再批量离屏渲 PNG。TODO-1127：把该句后夹带的
     // 插图（plan.imagesByCueIndex[i]）一并挂进 segment，渲染层会渲在该句文本之下。
@@ -1557,13 +1618,13 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         onFrame: onFrame,
       );
     }
-    if (frameFailed) return false;
+    if (frameFailed) return null;
 
     // 落盘序列帧：按帧计划从母帧复制成连续编号 frame_0000.jpg, frame_0001.jpg ...
     int frameNo = 0;
     for (final ClipFrameSpec spec in frames) {
       final String? masterPath = masterJpgPathByIndex[spec.highlightCueIndex];
-      if (masterPath == null) return false;
+      if (masterPath == null) return null;
       final File master = File(masterPath);
       for (int i = 0; i < spec.frameCount; i++) {
         final String name = 'frame_${frameNo.toString().padLeft(4, '0')}.jpg';
@@ -1571,36 +1632,40 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         frameNo += 1;
       }
     }
-    if (frameNo == 0) return false;
+    if (frameNo == 0) return null;
 
-    // image2 序列帧 + 完整音频 → mjpeg/.mov。
-    final AudiobookClipSynthResult synth =
-        await synthAudiobookClipFrameSeqVideoViaFfmpeg(
-      framesDir: framesDir.path,
-      audioPath: audioClip.path,
-      outputPath: videoFile.path,
-      width: layout.width,
-      height: layout.height,
-      fps: fps,
-      // TODO-1147：同单图静态路径——桌面 444 / 移动保守 420（见上）。
-      // BUG-809：桌面 h264（帧间压缩把逐句高亮的重复帧压到近零）/ 移动 mjpeg。
-      pixFmt: isDesktop ? 'yuvj444p' : 'yuvj420p',
-      h264: isDesktop,
+    // image2 序列帧 + 完整音频 → 先试 h264/.mp4，失败回退 mjpeg/.mov（同一批帧复用，
+    // BUG-809）。逐句高亮的大量重复帧在 h264 下靠 P 帧压到近零（消「30 秒 200MB」）。
+    final File? produced = await _synthClipWithCodecFallback(
+      mp4File: mp4File,
+      movFile: movFile,
+      isDesktop: isDesktop,
+      synth: ({
+        required String outputPath,
+        required bool h264,
+        required String pixFmt,
+      }) =>
+          synthAudiobookClipFrameSeqVideoViaFfmpeg(
+        framesDir: framesDir.path,
+        audioPath: audioClip.path,
+        outputPath: outputPath,
+        width: layout.width,
+        height: layout.height,
+        fps: fps,
+        pixFmt: pixFmt,
+        h264: h264,
+      ),
     );
-    if (!synth.isSuccess || synth.outputPath == null) {
-      debugPrint(
-        '[ReaderHibiki] export-clip dynamic synth failed: '
-        '${synth.failure} ${synth.detail ?? ''}',
-      );
+    if (produced == null) {
       ErrorLogService.instance.log(
         'ReaderHibiki.exportClip.dynamicSynthFailed',
-        'dynamic seq video synth failed: ${synth.failure} '
-            '${synth.detail ?? ''} (frames=$frameNo)',
+        'dynamic seq video synth failed (both h264/.mp4 and mjpeg/.mov, '
+            'frames=$frameNo)',
         StackTrace.current,
       );
-      return false;
+      return null;
     }
-    return true;
+    return produced;
   }
 
   Future<void> _deleteClipTempFile(File? file) async {

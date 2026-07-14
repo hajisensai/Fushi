@@ -144,22 +144,28 @@ void main() {
     expect(code.contains('encodeClipTextFrameAsJpg'), isTrue);
   });
 
-  // BUG-809：桌面导出用 H.264 + .mp4（带帧间压缩解决「30 秒 200MB」+ 通用容器），
-  // 移动端保持 mjpeg/.mov（自编 ffmpeg-kit min 无 libx264）。守卫 caller 真按 isDesktop
-  // 分流编码器/容器，两条合成调用都透传 h264，且输出扩展名跟随。
-  test('BUG-809: caller wires desktop h264/.mp4, keeps mobile mjpeg/.mov', () {
+  // BUG-809：导出用「先试 H.264/.mp4，失败回退 mjpeg/.mov」的能力自适应——桌面
+  // ffmpeg-min 有 libx264 → h264 一次成功（消「30 秒 200MB」+ 通用容器）；移动端自编
+  // ffmpeg-kit min 当前无 libx264 → h264 init 即失败 → 复用同批帧回退 mjpeg（不破坏旧
+  // 行为），等移动端重建带 libx264 的二进制后 h264 自动成功。守卫这套结构在位。
+  test('BUG-809: caller tries h264/.mp4 then falls back to mjpeg/.mov', () {
     final String code = File(
       'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
     ).readAsStringSync();
-    // 编码器/容器按桌面能力分流。
-    expect(code.contains('useH264'), isTrue);
-    expect(code.contains("videoExt = useH264 ? 'mp4' : 'mov'"), isTrue);
-    // 输出文件用动态扩展名（不再硬编码 .mov）。
-    expect(code.contains(r"File('$base.$videoExt')"), isTrue);
-    expect(code.contains(r"File('$base.mov')"), isFalse,
-        reason: 'output container must follow the codec, not hardcode .mov');
-    // 两条合成路径（静态 + 动态序列帧）都把 h264 透传下去。
-    expect(code.contains('h264: useH264'), isTrue);
-    expect(code.contains('h264: isDesktop'), isTrue);
+    // 两个候选容器 + 编码器回退助手。
+    expect(code.contains('mp4File'), isTrue);
+    expect(code.contains('movFile'), isTrue);
+    expect(code.contains('_synthClipWithCodecFallback'), isTrue);
+    // 回退助手先试 h264 再试 mjpeg（h264:true 后 h264:false）。
+    final int h264TrueIdx = code.indexOf('h264: true');
+    final int h264FalseIdx = code.indexOf('h264: false');
+    expect(h264TrueIdx, greaterThanOrEqualTo(0));
+    expect(h264FalseIdx, greaterThan(h264TrueIdx),
+        reason: 'must try h264 first, then fall back to mjpeg');
+    // 两个候选容器都预建（先 .mp4，回退 .mov）。
+    expect(code.contains(r"File('$base.mp4')"), isTrue);
+    expect(code.contains(r"File('$base.mov')"), isTrue);
+    // 容器/mime 跟随实际产出文件后缀（不再靠 isDesktop 假设编码器）。
+    expect(code.contains(".endsWith('.mp4')"), isTrue);
   });
 }
