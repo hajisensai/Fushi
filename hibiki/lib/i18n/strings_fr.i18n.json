@@ -2070,7 +2070,6 @@
   "global_context_capture_hint": "Read surrounding text from the foreground app to show the current sentence (Windows only)",
   "video_windows_black_flash_notice_title": "Black flickering on Windows?",
   "video_windows_black_flash_notice_body": "On Windows, video may flash black under heavy GPU load. To reduce the load, try turning off Quality enhancement, Sigmoid upscaling and Debanding above, or switch Hardware decoding to Copy.",
-  "video_resource_missing_relink": "Choose file",
   "video_resource_relink_success": "Video relinked",
   "ttu_merge_image_pages": "Merge illustration pages into text",
   "ttu_merge_image_pages_subtitle": "Standalone single-image chapters render inline in the adjacent text chapter instead of on their own page",
