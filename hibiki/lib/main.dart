@@ -1198,6 +1198,86 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         ),
       );
     }
+    // BUG-815: a custom data location IS configured on desktop but is currently
+    // unreachable (slow/sleeping/disconnected drive). AppPaths.resolve threw
+    // instead of SILENTLY opening the empty default location — that empty view
+    // reads as catastrophic data loss even though the real data sits untouched
+    // on the configured drive, and any content created in that empty session
+    // would land in the WRONG place. Show a dedicated escape screen that NEVER
+    // presents empty-as-real: default action is Retry (re-probe → use the real
+    // DB once the drive wakes); an explicit, clearly-worded second button lets
+    // the user consciously start with the default location (their data is NOT
+    // touched) for the drive-truly-gone case. Checked BEFORE the loading branch.
+    final dataRootUnavailable = appModel.dataRootUnavailable;
+    if (dataRootUnavailable != null) {
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final cs = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1F4959),
+        brightness: brightness,
+      );
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          home: Scaffold(
+            backgroundColor: _savedSplashColor ?? cs.surface,
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.folder_off_outlined,
+                        size: 48, color: cs.primary),
+                    const SizedBox(height: 16),
+                    Text(
+                      t.data_root_unavailable_title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: cs.onSurface,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      t.data_root_unavailable_message(
+                        path: dataRootUnavailable.configuredPath,
+                      ),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        FilledButton.icon(
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: Text(t.retry),
+                          onPressed: () => appModel.retryInitialise(),
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.folder_open, size: 18),
+                          label: Text(t.data_root_use_default_button),
+                          onPressed: () =>
+                              appModel.retryInitialiseWithDefaultRoot(),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     if (appModel.initError != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;

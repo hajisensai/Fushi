@@ -33,6 +33,24 @@ import 'package:hibiki/src/utils/misc/platform_utils.dart';
 /// [audiobooksDirectory] 等），给 `EpubStorage` / `VideoStorage` /
 /// `mpvShaderDirectory` 这些无法持有 `AppModel` 实例的 `static` 存储助手用。两条路径
 /// 共用同一份解析函数（[_resolveDocumentsRoot] 等），不存在两套缓存打架。
+/// BUG-815：桌面端**配置了自定义数据根、但本次启动它不可达**（休眠 / 高负载 / 掉线 /
+/// 拔出的盘）时由 [AppPaths.resolve] 抛出。
+///
+/// 铁律：这种情况**绝不**静默派生空的 `path_provider` 默认根——那会让用户看到「全空」
+/// 误以为数据被清空，甚至在空态里把新内容写进错误位置，而真实数据其实原封不动躺在配置
+/// 的盘上。UI 接住本异常，改显「数据位置未响应」逃生屏（重试 / 由用户显式选择用默认位置
+/// 启动），而不是把空当真。
+class DataRootUnavailableException implements Exception {
+  DataRootUnavailableException({required this.configuredPath});
+
+  /// 用户在设置里配置的自定义数据根绝对路径（本次不可达，但数据仍在此处）。
+  final String configuredPath;
+
+  @override
+  String toString() =>
+      'DataRootUnavailableException(configuredPath: $configuredPath)';
+}
+
 class AppPaths {
   AppPaths._({
     required this.documentsRoot,
@@ -50,7 +68,19 @@ class AppPaths {
   final Directory tempRoot;
 
   /// 解析三个根一次，返回不可变快照。在启动期 `_prepareRuntimeDirectories` 调用。
+  ///
+  /// BUG-815 预检（桌面）：若**配置了**自定义数据根但本次探测不可达，**抛
+  /// [DataRootUnavailableException]**，绝不静默派生空默认根（那等于把用户数据「弄没」
+  /// 的观感）。仅当用户已显式选择「本次用默认位置启动」（[forceDefaultRootForSession]）
+  /// 时跳过预检、走默认根。无自定义根的普通用户（configured==null）不受影响。
   static Future<AppPaths> resolve() async {
+    if (isDesktopPlatform && !forceDefaultRootForSession) {
+      final String? configured = await _configuredDataRootPath();
+      if (configured != null &&
+          !await _probeDataRootExists(Directory(configured))) {
+        throw DataRootUnavailableException(configuredPath: configured);
+      }
+    }
     final Directory documents = await _resolveDocumentsRoot();
     final Directory support = await _resolveSupportRoot();
     final Directory temp = await _resolveTempRoot();
@@ -82,12 +112,17 @@ class AppPaths {
   /// 时走真实读取；返回空串视为「无覆盖」。仅供测试设置，生产恒 null。
   static Future<String?> Function()? debugDataRootReader;
 
-  /// 读取桌面自定义数据根（绝对路径）。无覆盖 / 非桌面 / 目录不存在 → 返回 null，
-  /// 调用方退回 `path_provider` 默认根（老用户逐字节零变化）。
-  ///
-  /// **顺序铁律**：[hibikiTestDirectory] 测试分支在三个 `_resolve*` 里**优先于**本覆盖
-  /// （测试根始终赢），保证现有测试与 E0 行为等价的断言不被 dataRoot 改动破坏。
-  static Future<Directory?> _resolveDataRoot() async {
+  /// BUG-815：用户在「数据位置未响应」逃生屏上**显式选择**「仍用默认位置启动」时置真。
+  /// 置真后本次启动跳过 [resolve] 的不可达预检、[_resolveDataRoot] 直接返回 null（走
+  /// `path_provider` 默认根），让配置了自定义根但盘暂时不可达的用户能主动进入空态而不被
+  /// 锁在门外——**绝不自动置真**（默认 false）。仅本次进程有效：下次启动重新探测配置根，
+  /// 盘醒了即自动用回真实数据；用户的 `data_root` 配置与原盘数据一字节不动。
+  static bool forceDefaultRootForSession = false;
+
+  /// 读取桌面自定义数据根**配置路径**（绝对路径，不做存在性探测）。无覆盖 / 非桌面 /
+  /// 未设 / 空白 / prefs 通道不可用 → 返回 null（调用方退回默认根）。macOS 下顺带激活
+  /// 安全域书签。存在性探测分离到 [_probeDataRootExists]。
+  static Future<String?> _configuredDataRootPath() async {
     if (!isDesktopPlatform) return null;
     final Future<String?> Function()? reader = debugDataRootReader;
     String? raw;
@@ -109,27 +144,45 @@ class AppPaths {
       }
     }
     if (raw == null || raw.trim().isEmpty) return null;
-    final Directory dir = Directory(raw);
-    // TODO-1260：自定义数据根可能落在网络盘 / 移动盘上。盘**掉线**（而非被删）时，
-    // 旧代码的同步 `existsSync()`（底层是一次阻塞式 `stat`）会在**主 isolate** 上一直
-    // 卡到 OS 层超时（Windows 对断链网络盘可达数十秒），而它跑在 app 启动最早期、
-    // `initialise()` 又对 hang 无逃生口 → 表现为「偶发无限加载」。
-    //
-    // 改用**带超时的异步探测**：异步 `exists()` 本身不阻塞主 isolate，再叠一个 2s
-    // 超时兜底断链盘上连异步 stat 都不回的极端情况。2s 内没确认存在就当数据根**本次
-    // 启动不可用**，返回 null → 调用方退回 `path_provider` 默认根。**数据安全**：pref
-    // 里的自定义根路径原样保留、原盘上的数据一字节不动；仅本次启动改用默认根让 app 能
-    // 开，盘恢复后下次启动 `exists()` 秒回 true 即自动重新用回自定义根（无迁移、无覆盖）。
-    bool exists;
+    return raw;
+  }
+
+  /// TODO-1260 / BUG-572：对数据根目录做**带 2s 超时的异步存在性探测**。自定义数据根可能
+  /// 落在网络盘 / 移动盘上，盘**掉线**时旧代码的同步 `existsSync()`（阻塞式 `stat`）会在
+  /// **主 isolate** 卡到 OS 层超时（Windows 对断链网络盘可达数十秒），而它跑在 app 启动
+  /// 最早期 → 无限加载。异步 `exists()` 不阻塞主 isolate，再叠 2s 超时兜底断链盘连异步
+  /// stat 都不回的极端情况。**铁律**：只准 `exists().timeout(...)`，永不 `existsSync()`
+  /// （守卫 `test/storage/app_paths_data_root_timeout_test.dart`）。超时 / 抛错 / 不存在
+  /// 都返回 false。
+  static Future<bool> _probeDataRootExists(Directory dir) async {
     try {
-      exists = await dir
+      return await dir
           .exists()
           .timeout(const Duration(seconds: 2), onTimeout: () => false);
     } catch (_) {
-      // 断链盘的异步 stat 也可能直接抛（而非挂起）→ 同样当作不可用，退回默认根。
-      exists = false;
+      // 断链盘的异步 stat 也可能直接抛（而非挂起）→ 同样当作不可用。
+      return false;
     }
-    if (!exists) return null; // 失效 / 掉线路径（盘符没挂 / 被删）→ 退回默认根
+  }
+
+  /// 解析桌面自定义数据根（可用时返回目录，否则 null → 调用方退回默认根）。
+  ///
+  /// **数据安全语义**：返回 null 只代表「本次启动用默认根」，pref 里的自定义根路径与原盘
+  /// 数据一字节不动，盘恢复后下次启动自动用回。**注意**：启动期真正的「配置了但不可达」
+  /// 由 [resolve] 预检提前抛 [DataRootUnavailableException] 拦截（不静默回退）；本函数保持
+  /// 宽容仅服务于 [forceDefaultRootForSession] 用户显式回退，以及无 AppModel 实例的运行时
+  /// 静态便捷层（`documentsRootDirectory` 等，此时根已在 init 期确认可用）。
+  ///
+  /// **顺序铁律**：[hibikiTestDirectory] 测试分支在三个 `_resolve*` 里**优先于**本覆盖
+  /// （测试根始终赢），保证现有测试与 E0 行为等价的断言不被 dataRoot 改动破坏。
+  static Future<Directory?> _resolveDataRoot() async {
+    if (!isDesktopPlatform) return null;
+    // BUG-815：用户已显式选择本次用默认位置启动（配置根不可达时）→ 直接退回默认根。
+    if (forceDefaultRootForSession) return null;
+    final String? raw = await _configuredDataRootPath();
+    if (raw == null) return null;
+    final Directory dir = Directory(raw);
+    if (!await _probeDataRootExists(dir)) return null;
     return dir;
   }
 
