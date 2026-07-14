@@ -2339,5 +2339,13 @@
   "remote_video_list_failed": "无法加载远端视频：$error",
   "clipboard_text_window_bg_opacity_hint": "透明剪切板文字窗的背景不透明度——0% 时背景全透只露文字，透视底下的游戏",
   "desktop_clipboard_destination_text_window": "透明文字窗",
-  "clipboard_text_window_bg_opacity": "文字窗背景不透明度"
+  "clipboard_text_window_bg_opacity": "文字窗背景不透明度",
+  "video_load_failed_title": "视频加载失败",
+  "video_load_failed_timeout": "连接超时，网络较慢或视频源暂时限流，请稍后重试。",
+  "video_load_failed_network": "网络错误，请检查网络连接后重试。",
+  "video_load_failed_unavailable": "无法获取视频流，视频可能不可用、受地区或年龄限制，或来源已变更。",
+  "video_load_failed_generic": "无法加载该视频。",
+  "video_load_failed_not_found": "在书架中找不到该条目。",
+  "video_load_failed_retry": "重试",
+  "video_load_failed_back": "返回"
 }

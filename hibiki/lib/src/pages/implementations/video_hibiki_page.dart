@@ -838,6 +838,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VoidCallback? _chapterListener;
   bool _failed = false;
 
+  /// 加载失败态的用户可读原因（[_failed] 为 true 时展示在 [_buildFailedBody]）。null
+  /// = 尚无具体原因（回退到通用文案）。各失败点（book row 缺失 / 流解析失败 / 换集失败 /
+  /// controller.load 抛异常）在置 [_failed] 时经 [_describeLoadFailure] 从异常派生一句
+  /// 友好文案，替代旧的「只有一个红叹号、没有任何说明」。
+  String? _failReason;
+
   /// TODO-1213：当前加载阶段（网络流 / 本地共用）。非就绪态时 [_buildScaffold] 的
   /// spinner 分支据此显示带上下文的加载态（标题 + 返回 + 阶段文案）。默认 preparing，
   /// 首帧即有文案；[_loadRemoteEpisode] / [_applyLoad] 各阶段推进。就绪 / 失败 / 缺失
@@ -1624,7 +1630,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     final VideoBookRow? row = await widget.repo.getByBookUid(widget.bookUid);
     if (row == null) {
-      if (mounted) setState(() => _failed = true);
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _failReason = t.video_load_failed_not_found;
+        });
+      }
       return;
     }
     _bookRow = row;
@@ -1645,7 +1656,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _resolvedStreamClient = launch.client;
       } catch (e) {
         debugPrint('[VideoHibikiPage] stream book launch build failed: $e');
-        if (mounted) setState(() => _failed = true);
+        if (mounted) {
+          setState(() {
+            _failed = true;
+            _failReason = _describeLoadFailure(e);
+          });
+        }
         return;
       }
       await _initRemote();
@@ -1835,7 +1851,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       debugPrint(
         '[VideoHibikiPage] remote episode $index load failed: $e\n$stack',
       );
-      if (mounted) setState(() => _failed = true);
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _failReason = _describeLoadFailure(e);
+        });
+      }
     }
   }
 
@@ -2330,6 +2351,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (!mounted) return;
       setState(() {
         _failed = false;
+        _failReason = null;
         _missingResource = true;
         _missingRow = _bookRow;
         _title = title;
@@ -2392,7 +2414,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ErrorLogService.instance.log('VideoHibiki.load', e, stack);
       if (_controller == null) controller.dispose();
       _pendingController = null; // BUG-772：在途结束（失败），清标记
-      if (mounted) setState(() => _failed = true);
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _failReason = _describeLoadFailure(e);
+        });
+      }
       return;
     }
     _syncVolumeDisplay(controller.volume);
@@ -2431,6 +2458,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _hasChapters = controller.chapters.isNotEmpty;
       _title = title;
       _failed = false;
+      _failReason = null;
       _missingResource = false;
       _missingRow = null;
       _currentVideoPath = videoPath;
@@ -2630,6 +2658,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _missingResource = false;
       _missingRow = null;
       _failed = false;
+      _failReason = null;
     });
     HibikiToast.show(msg: t.video_resource_relink_success);
     await _loadSingle(updated);
@@ -5246,7 +5275,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return Scaffold(
       backgroundColor: cs.surface,
       body: _failed
-          ? Center(child: Icon(Icons.error_outline, color: cs.error, size: 48))
+          ? _buildFailedBody(cs)
           // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
           // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
           : _missingResource
@@ -5344,6 +5373,109 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                         unawaited(_confirmMissingResourceDelete(row)),
                     child: Text(t.dialog_delete),
                   ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 把加载失败的异常映射成一句用户可读的原因文案。YouTube/网络流最常见的三类失败
+  /// （解析/连接超时、网络错误、视频不可用/受限）各给出可指导的说明；无法归类时回退
+  /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
+  String _describeLoadFailure(Object? error) {
+    if (error is TimeoutException) return t.video_load_failed_timeout;
+    final String s = error?.toString().toLowerCase() ?? '';
+    if (s.contains('403') ||
+        s.contains('forbidden') ||
+        s.contains('manifest failed') ||
+        s.contains('unavailable') ||
+        s.contains('unplayable') ||
+        s.contains('age') ||
+        s.contains('private')) {
+      return t.video_load_failed_unavailable;
+    }
+    if (s.contains('socket') ||
+        s.contains('network') ||
+        s.contains('connection') ||
+        s.contains('handshake') ||
+        s.contains('failed host lookup') ||
+        s.contains('timed out')) {
+      return t.video_load_failed_network;
+    }
+    return t.video_load_failed_generic;
+  }
+
+  /// 加载失败态「重试」：清失败标记后从头重跑 [_init]（本地重读 row、流媒体重解析
+  /// getManifest——临时流 URL 过期也会自愈）。与首次打开同一路径，覆盖所有失败点。
+  void _retryLoad() {
+    if (!mounted) return;
+    setState(() {
+      _failed = false;
+      _failReason = null;
+    });
+    _setLoadingPhase(_VideoLoadPhase.connecting);
+    unawaited(_init());
+  }
+
+  /// 加载失败态正文（替代旧的「一个居中红叹号、无任何说明」）。图标 + 标题 + 具体
+  /// 原因（[_failReason]，缺省回退通用文案）+ 「重试 / 返回」按钮，让用户知道为何失败、
+  /// 能一键重试或退出，不再对着孤零零的叹号发懵。
+  Widget _buildFailedBody(ColorScheme cs) {
+    final String title = _titleNotifier.value ??
+        _title ??
+        _effectiveRemoteInfo?.title ??
+        _bookRow?.title ??
+        '';
+    final String reason = _failReason ?? t.video_load_failed_generic;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.error_outline, color: cs.error, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              t.video_load_failed_title,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            if (title.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              reason,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: <Widget>[
+                FilledButton.tonalIcon(
+                  onPressed: _retryLoad,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(t.video_load_failed_retry),
+                ),
+                TextButton(
+                  onPressed: () => unawaited(_handleBackOrExit()),
+                  child: Text(t.video_load_failed_back),
+                ),
               ],
             ),
           ],

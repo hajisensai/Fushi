@@ -2339,5 +2339,13 @@
   "remote_video_list_failed": "Could not load remote videos: $error",
   "clipboard_text_window_bg_opacity_hint": "Background opacity of the transparent clipboard text window — 0% shows only the text over the game beneath",
   "desktop_clipboard_destination_text_window": "Transparent text window",
-  "clipboard_text_window_bg_opacity": "Text window background"
+  "clipboard_text_window_bg_opacity": "Text window background",
+  "video_load_failed_title": "Video failed to load",
+  "video_load_failed_timeout": "Connection timed out - the network is slow or the source is rate-limiting. Please try again.",
+  "video_load_failed_network": "Network error - check your connection and try again.",
+  "video_load_failed_unavailable": "Couldn't get the video stream - it may be unavailable, region or age restricted, or the source changed.",
+  "video_load_failed_generic": "Couldn't load this video.",
+  "video_load_failed_not_found": "This item was not found in your library.",
+  "video_load_failed_retry": "Retry",
+  "video_load_failed_back": "Back"
 }
