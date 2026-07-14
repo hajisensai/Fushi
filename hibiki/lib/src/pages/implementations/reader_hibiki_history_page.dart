@@ -700,39 +700,40 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   /// UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页）。
   ///
-  /// 数据边界（诚实外显）：hero = 在读（0<position<duration）EPUB 中「最后阅读
-  /// 时间」（[bookLastReadAtProvider]，即 reader_positions.updatedAt）最新者，
-  /// 显示「已读 x%」；无候选整块只剩统计。BUG-777：旧实现取列表第一本在读书，
-  /// 但列表序 = getAllEpubBooks 的 importedAt 倒序，选中的是「最近导入」而非
-  /// 「最近阅读」的书。统计 = 总数（EPUB+SRT）/ 在读 / 读完（后两格按 EPUB
-  /// 进度；SRT 卡无统一进度数据，不硬造）。宽 >=720 并排、窄屏堆叠。
+  /// 数据边界（诚实外显）：hero = 在读（0<position<duration）EPUB-backed 书中
+  /// 「最后阅读时间」（[bookLastReadAtProvider]，即 reader_positions.updatedAt）
+  /// 最新者，显示「已读 x%」；无候选整块只剩统计。BUG-777：旧实现取列表第一本
+  /// 在读书，但列表序 = getAllEpubBooks 的 importedAt 倒序，选中的是「最近导入」
+  /// 而非「最近阅读」的书。
+  ///
+  /// BUG-804：[progressBooks] 必须是**未按 srt 过滤的全量 EPUB-backed 列表**
+  /// （`hibikiBooksProvider` 全部行，含有声书——EPUB 正文 + SRT 字幕同 bookKey）。
+  /// 旧实现只喂 srt 过滤后的 `epubBooks`，有声书虽有进度与 lastReadAt 却被整类
+  /// 排除，读了有声书回书架「继续阅读」永不更新。过滤到纯 EPUB 只为主网格卡
+  /// 去重（有声书渲染成 SRT 卡），与 hero/统计无关。
+  ///
+  /// 统计 = 总数（[libraryTotal] = 纯 EPUB 卡 + SRT 卡，有声书计一次）/ 在读 /
+  /// 读完（后两格按 EPUB-backed 进度；纯字幕无 EPUB 正文的书无进度维度，跳过）。
+  /// 宽 >=720 并排、窄屏堆叠。
   Widget _buildShelfOverviewSection(
-    List<MediaItem> epubBooks,
-    List<SrtBook> srtBooks,
+    List<MediaItem> progressBooks,
+    int libraryTotal,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final List<MediaItem> inProgress = <MediaItem>[];
-    int reading = 0;
-    int finished = 0;
-    for (final MediaItem item in epubBooks) {
-      final int duration = item.duration;
-      if (duration <= 0) continue;
-      if (item.position >= duration) {
-        finished++;
-      } else if (item.position > 0) {
-        reading++;
-        inProgress.add(item);
-      }
-    }
+    final ShelfProgressTally<MediaItem> tally = tallyShelfProgress<MediaItem>(
+      progressBooks,
+      (MediaItem item) => item.position,
+      (MediaItem item) => item.duration,
+    );
     final MediaItem? hero = mostRecentlyReadCandidate(
-      inProgress,
+      tally.inProgress,
       (MediaItem item) =>
           _lastReadAtByBookKey[_parseBookKey(item.mediaIdentifier)] ?? 0,
     );
     final Widget stats = _buildShelfOverviewStats(
-      total: epubBooks.length + srtBooks.length,
-      reading: reading,
-      finished: finished,
+      total: libraryTotal,
+      reading: tally.reading,
+      finished: tally.finished,
       tokens: tokens,
     );
     final Widget? heroCard =
@@ -1119,9 +1120,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
               // UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页，用户
               // 拍板「书架也要有」）。空库隐藏；统计按未过滤全量描述整库。
+              // BUG-804：hero/在读统计喂**未过滤的全量 EPUB-backed `books`**（含
+              // 有声书），不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续
+              // 阅读」永不更新。libraryTotal 仍按可见卡数（纯 EPUB + SRT）计，
+              // 有声书渲染成单张 SRT 卡只计一次。
               if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
                 SliverToBoxAdapter(
-                  child: _buildShelfOverviewSection(epubBooks, srtBooks),
+                  child: _buildShelfOverviewSection(
+                    books,
+                    epubBooks.length + srtBooks.length,
+                  ),
                 ),
               // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
               // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB

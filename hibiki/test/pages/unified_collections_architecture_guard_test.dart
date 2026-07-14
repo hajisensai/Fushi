@@ -308,6 +308,30 @@ void main() {
         reason: '列表下标假名次已删（provider 序 = importedAt 倒序，不是访问序）');
   });
 
+  test('BUG-804：继续阅读 hero/概览统计喂全量 EPUB-backed（含有声书），不喂 srt 过滤后的 epubBooks', () {
+    // 有声书 = EPUB 正文 + SRT 字幕同 bookKey，有真实 position/duration 与
+    // lastReadAt。旧实现把 srt 过滤后的 `epubBooks` 喂给 _buildShelfOverviewSection，
+    // 有声书整类被排除，读了有声书回书架「继续阅读」永不更新。守卫：概览 section
+    // 调用点必须传未过滤的 `books`（hibikiBooksProvider 全部 EPUB-backed 行）。
+    final int callAt = historySrc.lastIndexOf('_buildShelfOverviewSection(');
+    expect(callAt, isNonNegative);
+    final String callArgs = historySrc.substring(
+      callAt,
+      (callAt + 80).clamp(0, historySrc.length),
+    );
+    expect(callArgs.contains('books,'), isTrue,
+        reason: 'hero/统计必须吃未过滤的全量 EPUB-backed 列表 books');
+    // 绝不能回退到把 srt 过滤后的 epubBooks 当概览/hero 输入（有声书会被排除）。
+    expect(
+        RegExp(r'_buildShelfOverviewSection\(\s*epubBooks\b')
+            .hasMatch(historySrc),
+        isFalse,
+        reason: 'hero 输入不得是 srt 过滤后的 epubBooks（有声书会被排除，BUG-804 回退）');
+    // 在读/读完/候选分类抽成纯函数 tallyShelfProgress（可单测，见 shelf_sort_test）。
+    expect(historySrc.contains('tallyShelfProgress'), isTrue,
+        reason: '书架概览分类必须走纯函数 tallyShelfProgress（BUG-804 单测锁）');
+  });
+
   test('多端库联合视图 §2.2/§2.6：云视频占位必经 CloudRemoteVideoClient（不自造清单解析）', () {
     // 云后端分支必须经 CloudRemoteVideoClient（唯一清单解析入口）而非在页面里自己
     // ensureNamespace/读 videos.json/构造 RemoteVideoManifest——把解析散进页面即转红。
