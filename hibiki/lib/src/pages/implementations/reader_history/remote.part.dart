@@ -81,6 +81,9 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     final Future<_RemoteBookState?> future = _loadRemoteBooks();
     _rebuild(() {
       _remoteBooksFuture = future;
+      // 合集折叠映射也一并重载：下拉刷新前若后台同步落了新合集成员，只失效书列表
+      // 而不重载 _shelfMapsFuture 会让新成员仍不成组（合集不渲染）。
+      _shelfMapsFuture = _loadShelfMaps();
     });
     await future;
   }

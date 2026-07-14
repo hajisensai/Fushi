@@ -519,7 +519,12 @@ class AppModel with ChangeNotifier {
 
     if (report.booksImported > 0 ||
         report.audiobooksImported > 0 ||
-        report.localBookProgressPulled > 0) {
+        report.localBookProgressPulled > 0 ||
+        report.collectionsUpdated > 0) {
+      // 合集专属同步（仅 collectionsUpdated>0、无书内容导入）也必须刷新书架 tab：
+      // 否则后台把合集成员落库后，书架非响应式的 _shelfMapsFuture 永不重载，合集
+      // 不成组（书架合集不渲染，直到重启 app）。refreshTab 触发本 tab 的
+      // tabRefreshNotifier，ReaderHibikiHistoryPage 监听后重载合集折叠映射。
       ReaderMediaType.instance.refreshTab();
     }
 

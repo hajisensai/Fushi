@@ -263,7 +263,29 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   @override
+  void initState() {
+    super.initState();
+    // 后台同步（关书后 / 启动）把合集成员落库后，只会 refreshTab() 通知本 tab；但
+    // 折叠映射（_collectionsById / _primaryCollectionByEntry / _memberSortIndex）走
+    // 非响应式的 _shelfMapsFuture，只在首帧 `??=` 懒加载一次，父 setState 不会让它
+    // 重跑（本 State 存活、future 非 null）。这里显式监听刷新信号重载映射，使后台
+    // 合集同步落库后书架立即成组（否则合集不渲染，直到重启 app）。
+    mediaType.tabRefreshNotifier.addListener(_reloadShelfMapsOnTabRefresh);
+  }
+
+  /// tabRefreshNotifier 回调：重载书架合集折叠映射。后台合集同步（仅
+  /// collectionsUpdated>0）现也触发 refreshTab（[AppModel.refreshAfterSyncRun]），
+  /// 落到这里重载 _shelfMapsFuture，让新同步进来的合集成员立即成组。
+  void _reloadShelfMapsOnTabRefresh() {
+    if (!mounted) return;
+    setState(() {
+      _shelfMapsFuture = _loadShelfMaps();
+    });
+  }
+
+  @override
   void dispose() {
+    mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
     assert(() {
       ReaderHibikiHistoryPage.debugOpenBook = null;
       return true;
@@ -1012,16 +1034,31 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final Map<String, int> memberSortIndex =
         Map<String, int>.of(_memberSortIndex);
     for (final RemoteBookInfo book in remoteBooks) {
-      final RemoteCollectionMembership? membership = book.collection;
-      if (membership == null) continue;
-      final int? cid = _resolveLocalCollectionId(
-        membership.collectionName,
-        membership.collectionType,
-      );
-      if (cid == null) continue; // 归属解析不到本地合集 → 散卡降级
       final String key = 'epub|${book.downloadId}';
+      final RemoteCollectionMembership? membership = book.collection;
+      if (membership != null) {
+        // 互联/host 路径：host 下发 RemoteBookInfo.collection，按 (name,type) 解析
+        // 本地合集 id 注入折叠归属。
+        final int? cid = _resolveLocalCollectionId(
+          membership.collectionName,
+          membership.collectionType,
+        );
+        if (cid == null) continue; // 归属解析不到本地合集 → 散卡降级
+        primaryByEntry[key] = cid;
+        memberSortIndex[key] = membership.sortIndex;
+        continue;
+      }
+      // 云盘后端（CloudRemoteBookClient）没有 host 实时库 API，不下发 collection
+      // 字段。但合集成员已由 collection_sync_engine 落进本地 MediaCollectionItems
+      // （entryKey = 本地 bookKey = sanitizeTtuFilename(title)）。远端占位卡的 title
+      // 与本地书同名，故用其本地等价 bookKey 回查已同步的折叠归属注入——云盘远端书
+      // 也能折进对应合集行（否则云盘合集永远不成组，BUG：云盘书架合集不渲染）。
+      final String localKey = 'epub|${sanitizeTtuFilename(book.title)}';
+      final int? cid = _primaryCollectionByEntry[localKey];
+      if (cid == null) continue; // 本地无已同步的合集归属 → 散卡降级
       primaryByEntry[key] = cid;
-      memberSortIndex[key] = membership.sortIndex;
+      final int? sidx = _memberSortIndex[localKey];
+      if (sidx != null) memberSortIndex[key] = sidx;
     }
     final List<CollectionGroup<_ShelfBookSlot>> shelfGroups =
         groupByCollections<_ShelfBookSlot>(
