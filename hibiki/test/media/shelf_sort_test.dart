@@ -138,4 +138,70 @@ void main() {
       expect(ShelfSortMode.fromName(''), ShelfSortMode.recent);
     });
   });
+
+  group('tallyShelfProgress（BUG-804：概览统计 + hero 候选含有声书）', () {
+    // 测试项 = (position, duration, lastReadAt)；有声书与纯 EPUB 在这一层无区别，
+    // 都是有 position/duration 的 EPUB-backed 书——bug 在于旧调用点把有声书从
+    // 输入里过滤掉了，这里锁死「只要喂进来就正确分类/入候选」。
+    ({int position, int duration, int lastReadAt}) item(
+      int position,
+      int duration, {
+      int lastReadAt = 0,
+    }) =>
+        (position: position, duration: duration, lastReadAt: lastReadAt);
+
+    test('分类：读完 / 在读 / 无进度维度(duration<=0)跳过 / 未开始(position=0)不计', () {
+      final tally = tallyShelfProgress(
+        <({int position, int duration, int lastReadAt})>[
+          item(100, 100), // 读完
+          item(30, 100), // 在读
+          item(0, 100), // 未开始（不计在读也不计读完）
+          item(5, 0), // duration<=0：无进度维度，跳过
+          item(200, 100), // position>=duration 也算读完（越界钳到读完）
+        ],
+        (it) => it.position,
+        (it) => it.duration,
+      );
+      expect(tally.finished, 2, reason: 'position>=duration 计读完（含越界）');
+      expect(tally.reading, 1);
+      expect(tally.inProgress.length, 1, reason: '只有真在读的进候选');
+      expect(tally.inProgress.single.position, 30);
+    });
+
+    test('复现 BUG-804：全量列表里「最近读的有声书」必须能当选 hero', () {
+      // 模拟：一本更晚导入的纯 EPUB（在读，lastReadAt 旧）+ 一本有声书（在读，
+      // lastReadAt 新——刚听完）。旧实现把有声书过滤出候选，hero 恒选纯 EPUB；
+      // 修复后有声书在候选里，按 lastReadAt 胜出。
+      final List<({int position, int duration, int lastReadAt})> allEpubBacked =
+          <({int position, int duration, int lastReadAt})>[
+        item(10, 100, lastReadAt: 100), // 纯 EPUB，较早读
+        item(40, 100, lastReadAt: 500), // 有声书，刚听完（最近）
+      ];
+      final tally = tallyShelfProgress(
+        allEpubBacked,
+        (it) => it.position,
+        (it) => it.duration,
+      );
+      expect(tally.inProgress.length, 2, reason: '有声书不得被排除在候选外');
+      final hero = mostRecentlyReadCandidate(
+        tally.inProgress,
+        (it) => it.lastReadAt,
+      );
+      expect(hero?.lastReadAt, 500, reason: '刚听完的有声书必须赢过更早读的纯 EPUB');
+    });
+
+    test('空/全无进度 → 无候选（hero 整块只剩统计）', () {
+      final tally = tallyShelfProgress(
+        <({int position, int duration, int lastReadAt})>[
+          item(0, 100),
+          item(3, 0),
+        ],
+        (it) => it.position,
+        (it) => it.duration,
+      );
+      expect(tally.reading, 0);
+      expect(tally.finished, 0);
+      expect(tally.inProgress, isEmpty);
+    });
+  });
 }
