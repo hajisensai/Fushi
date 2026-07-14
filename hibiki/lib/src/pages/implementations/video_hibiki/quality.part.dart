@@ -105,7 +105,7 @@ extension _VideoQuality on _VideoHibikiPageState {
   /// （一次 getManifest；侧栏解析中显 spinner），避免每次开视频都预解析多档拖慢起播。
   void _showQualityMenu({VideoControlSlot? sourceSlot}) {
     if (_isYoutubeStream &&
-        _youtubeVariants.isEmpty &&
+        !_youtubeVariantsResolved &&
         !_youtubeVariantsLoading) {
       unawaited(_ensureYoutubeVariantsLoaded());
     }
@@ -118,24 +118,31 @@ extension _VideoQuality on _VideoHibikiPageState {
   /// 懒解析当前 YouTube 视频的各档 video-only 流（用户点开画质菜单时调）。填
   /// [_youtubeVariants] / [_youtubeVariantsAudioUrl] / [_youtubeVariantsDefaultIndex]。
   /// best-effort：失败 / 无分离流（仅 muxed）弹一次 OSD，画质侧栏留占位（不影响播放）。
+  ///
+  /// getManifest 有数秒网络往返：解析期间用户可能换集（playlist），换集会复位画质态并
+  /// bump [_episodeLoadSeq]。故 await 后除 `mounted` 外**必须重校验 seq**——否则 A 集迟到
+  /// 的解析结果会覆盖 B 集状态，B 的画质菜单显 A 的档、切档播 A 的流（换集状态泄漏）。
   Future<void> _ensureYoutubeVariantsLoaded() async {
     final String? watch = _currentYoutubeWatchUrl;
     if (watch == null) return;
-    if (_youtubeVariants.isNotEmpty || _youtubeVariantsLoading) return;
+    if (_youtubeVariantsResolved || _youtubeVariantsLoading) return;
+    final int seq = _episodeLoadSeq;
     _rebuild(() => _youtubeVariantsLoading = true);
     try {
       final YoutubeVariantSet set = await resolveYoutubeVideoVariants(watch);
-      if (!mounted) return;
+      // 换集：丢弃迟到结果（新集已复位状态、bump seq），绝不覆盖新集画质态。
+      if (!mounted || seq != _episodeLoadSeq) return;
       _rebuild(() {
         _youtubeVariants = set.variants;
         _youtubeVariantsAudioUrl = set.audioStreamUrl;
         _youtubeVariantsDefaultIndex = set.defaultIndex;
         _selectedYoutubeVariantIndex = -1; // 默认自动。
         _youtubeVariantsLoading = false;
+        _youtubeVariantsResolved = true; // 已解析（含空档）——不再重复 getManifest。
       });
       if (set.variants.isEmpty) _showOsd(t.video_quality_load_failed);
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || seq != _episodeLoadSeq) return;
       _rebuild(() => _youtubeVariantsLoading = false);
       _showOsd(t.video_quality_load_failed);
     }

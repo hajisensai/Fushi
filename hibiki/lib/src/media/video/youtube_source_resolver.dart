@@ -86,21 +86,22 @@ class YoutubeVideoVariant {
 }
 
 /// YouTube 画质档集合：各档 video-only 流（[variants]，高→低、每高度一条编码最优）+ 共用
-/// 的最高码率 audio-only 流（[audioStreamUrl]，切档保持同一音轨）+ 防盗链 header +
-/// 「自动/默认最佳」档下标（[defaultIndex]，= [pickPlaybackVideoStream] 的选择，供画质菜单
-/// 的「自动」项与初始高亮对齐）。视频无分离流（仅 muxed ≤360p）时 [variants] 为空。
+/// 的最高码率 audio-only 流（[audioStreamUrl]，切档保持同一音轨）+「自动/默认最佳」档下标
+/// （[defaultIndex]，= [pickPlaybackVideoStream] 的选择，供画质菜单的「自动」项与初始高亮
+/// 对齐）。视频无分离流（仅 muxed ≤360p）时 [variants] 为空。
+///
+/// 不带防盗链 header——切档回放的 UA 由播放页复用当前 [UrlStreamVideoClient.httpHeaderFields]
+/// （初始解析已铸的同一 youtube replay UA），与这里现取的 video-only URL 一致。
 @immutable
 class YoutubeVariantSet {
   const YoutubeVariantSet({
     required this.variants,
     required this.audioStreamUrl,
-    required this.httpHeaders,
     required this.defaultIndex,
   });
 
   final List<YoutubeVideoVariant> variants;
   final String? audioStreamUrl;
-  final Map<String, String> httpHeaders;
   final int defaultIndex;
 
   bool get isEmpty => variants.isEmpty;
@@ -682,7 +683,6 @@ Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
     return const YoutubeVariantSet(
       variants: <YoutubeVideoVariant>[],
       audioStreamUrl: null,
-      httpHeaders: <String, String>{},
       defaultIndex: -1,
     );
   }
@@ -717,7 +717,6 @@ Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
   return YoutubeVariantSet(
     variants: variants,
     audioStreamUrl: manifest.audioOnly.withHighestBitrate().url.toString(),
-    httpHeaders: youtubeStreamReplayHeaders(),
     defaultIndex: defaultIndex,
   );
 }

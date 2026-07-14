@@ -1379,6 +1379,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   String? _youtubeVariantsAudioUrl;
   bool _youtubeVariantsLoading = false;
 
+  /// 本集是否已解析过画质档（含「解析成功但无分离流→空档」）。用作「已解析空档」哨兵，
+  /// 避免 muxed-only 视频每次点开画质菜单都重复 getManifest。每集起播复位。
+  bool _youtubeVariantsResolved = false;
+
   bool _clipExportMarking = false;
   bool _clipExporting = false;
   int? _clipExportStartMs;
@@ -1785,6 +1789,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _youtubeVariantsDefaultIndex = -1;
     _youtubeVariantsAudioUrl = null;
     _youtubeVariantsLoading = false;
+    _youtubeVariantsResolved = false;
     final int initialPositionMs = initialPositionMsOverride ??
         _readPersistedRemotePositionForEpisode(index);
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
