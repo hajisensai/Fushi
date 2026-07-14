@@ -34,6 +34,7 @@ import 'package:hibiki/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
+import 'package:hibiki/src/media/video/video_import_dialog.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
 import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
@@ -299,8 +300,9 @@ String videoFavoriteCacheKey({
       : 'cue|${normalizedEpisodeIndex ?? 'single'}|$startMs|$text';
 }
 
-/// TODO-897：缺失资源对话框的用户选择。
-enum _MissingResourceChoice { relink, reimport, delete, cancel }
+/// TODO-897 / BUG-805：缺失资源对话框的用户选择。「重新导入」现为真动作
+/// （单视频重链选文件 / 播放列表打开导入对话框），不再有独立「重新选择文件」项。
+enum _MissingResourceChoice { reimport, delete, cancel }
 
 /// TODO-1213：视频（尤其网络流）加载阶段。裸转圈无反馈会让用户以为卡死，
 /// [_VideoHibikiPageState._buildLoadingBody] 据此显示对应阶段文案：连接流 → 下载
@@ -2573,17 +2575,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_restoreSecondarySubtitle(controller));
   }
 
-  /// TODO-897：本地视频资源缺失时弹中性对话框（资源位置变化 → 重新导入 / 删除条目 /
-  /// 取消）。措辞中性、不诱导直删；删除走二次确认 [_confirmMissingResourceDelete]。
+  /// TODO-897 / BUG-805：本地视频资源缺失时弹中性对话框（资源位置变化 → 重新导入 /
+  /// 删除条目 / 取消）。措辞中性、不诱导直删；删除走二次确认
+  /// [_confirmMissingResourceDelete]。
+  ///
+  /// BUG-805 根因修复：旧「重新导入」是空操作（只 `nav.pop()` 退回视频库、不做任何
+  /// 导入），用户点了看着「没反应」；真正能修复的「重新选择文件」重链动作却藏在
+  /// 独立按钮里、且只对单视频显示。现在收敛成用户预期的两个真按钮——
+  /// 「重新导入」= 真动作（[_reimportMissingResource]：单视频重链选文件、播放列表
+  /// 打开导入对话框），「删除」= 删条目；不再有空操作 pop 与重复的「重新选择文件」。
   ///
   /// 误删缓解（Never-break-userspace 红线）：外接盘 / 网络盘未挂载时 `exists()` 也
   /// 返 false（误报缺失）。故①文案中性（「位置可能变化或磁盘未连接」），不预设是
   /// 「文件被删」；②「取消」是默认 / 主动作（停在缺失态，可重连磁盘后退页重进），
   /// 「删除」是次要、且本身再过一道 [video_delete_confirm] 二次确认；③播放列表
   /// （多集）单集缺失不提供删除（删除粒度只有整张 video book，删一整部太重），
-  /// 只给「重新导入 / 取消」（M1，见计划待定夺 #3）。
+  /// 只给「重新导入 / 取消」。
   Future<void> _promptMissingResource(String title) async {
-    final NavigatorState nav = Navigator.of(context);
     final VideoBookRow? row = _missingRow;
     // 仅单视频条目（非播放列表、非远端）提供「删除条目」；缺 row 也不提供删除。
     final bool canDelete = row != null && !_isPlaylist && !_isRemote;
@@ -2599,15 +2607,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: () => Navigator.pop(ctx, _MissingResourceChoice.cancel),
             child: Text(t.dialog_cancel),
           ),
-          // TODO-1133：重新选择文件——把 videoPath 重链到用户新选的真实文件并持久化，
-          // 保留进度 / 字幕 / 音轨等既有状态。只对单视频（非播放列表、非远端）提供，
-          // 判据与「删除条目」一致（重链只对单个物理文件有意义）。
-          if (canDelete)
-            TextButton(
-              onPressed: () =>
-                  Navigator.pop(ctx, _MissingResourceChoice.relink),
-              child: Text(t.video_resource_missing_relink),
-            ),
+          // 重新导入 = 主修复动作（真动作，见 [_reimportMissingResource]）。
           TextButton(
             onPressed: () =>
                 Navigator.pop(ctx, _MissingResourceChoice.reimport),
@@ -2625,12 +2625,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
     if (!mounted) return;
     switch (choice) {
-      case _MissingResourceChoice.relink:
-        // TODO-1133：重新选择文件，重链 videoPath 并原地重新播放（保留 row 上其它状态）。
-        await _relinkMissingResource(row!);
       case _MissingResourceChoice.reimport:
-        // M1：退回视频库，由用户在库内重新导入（最小落地，零新依赖）。
-        nav.pop();
+        await _reimportMissingResource(row);
       case _MissingResourceChoice.delete:
         await _confirmMissingResourceDelete(row!);
       case _MissingResourceChoice.cancel:
@@ -2638,6 +2634,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 停在缺失态（不转圈）。可重连磁盘 / 移回文件后退页重进。
         break;
     }
+  }
+
+  /// BUG-805：缺失态「重新导入」的真实动作——替代旧的空操作 `nav.pop()`。
+  ///
+  /// - **单个本地视频**（非播放列表、非远端）：走重链 [_relinkMissingResource]——让
+  ///   用户重新选真实文件、重写 `videoPath` 并原地重载，保留进度 / 字幕 / 音轨 / 倍速
+  ///   等既有状态。这正是用户对「重新导入」的预期（重新指定这个视频的文件）。
+  /// - **播放列表 / 其它**：打开与视频库共用的 [VideoImportDialog] 走真实导入流程，
+  ///   导入成功后退回视频库（库内出现新条目）。至少是可见的真实动作，不再空转。
+  Future<void> _reimportMissingResource(VideoBookRow? row) async {
+    if (row != null && !_isPlaylist && !_isRemote) {
+      await _relinkMissingResource(row);
+      return;
+    }
+    final NavigatorState nav = Navigator.of(context);
+    final String? importedBookUid = await showAppDialog<String>(
+      context: context,
+      builder: (_) => VideoImportDialog(repo: widget.repo),
+    );
+    if (!mounted) return;
+    // 导入成功（拿到新 bookUid）→ 退回视频库让用户从库里打开新条目；取消则停在缺失态。
+    if (importedBookUid != null) nav.pop();
   }
 
   /// TODO-1133：缺失的本地视频「重新选择文件」——重链 [VideoBookRow.videoPath] 到
@@ -5341,9 +5359,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  /// TODO-897：本地资源缺失态正文（不转圈）。中性图标 + 文案 + 「重新导入 / 删除
-  /// 条目（仅单视频）」按钮，对应 [_promptMissingResource] 的选项；首帧若对话框
-  /// 被取消，用户仍能从这里再次触发。
+  /// TODO-897 / BUG-805：本地资源缺失态正文（不转圈）。中性图标 + 文案 + 「重新导入 /
+  /// 删除条目（仅单视频）」两个真按钮，对应 [_promptMissingResource] 的选项；首帧若
+  /// 对话框被取消，用户仍能从这里再次触发。「重新导入」走 [_reimportMissingResource]
+  /// 真动作（BUG-805 前是空操作 pop）。
   Widget _buildMissingResourceBody(ColorScheme cs) {
     final VideoBookRow? row = _missingRow;
     final bool canDelete = row != null && !_isPlaylist && !_isRemote;
@@ -5367,14 +5386,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: <Widget>[
-                // TODO-1133：重新选择文件（重链），单视频主修复动作。
-                if (canDelete)
-                  FilledButton.tonal(
-                    onPressed: () => unawaited(_relinkMissingResource(row)),
-                    child: Text(t.video_resource_missing_relink),
-                  ),
+                // 重新导入 = 主修复动作（真动作：单视频重链选文件 / 播放列表打开导入对话框）。
                 FilledButton.tonal(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => unawaited(_reimportMissingResource(row)),
                   child: Text(t.video_resource_missing_reimport),
                 ),
                 if (canDelete)
