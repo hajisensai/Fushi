@@ -379,7 +379,9 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
                 key: const ValueKey<String>('reader_shelf_batch_combine'),
                 enabled: canCombine,
                 onTap: _batchCombineIntoSeries,
-                icon: Icons.collections_bookmark_outlined,
+                // 组合成系列用 playlist_add，与页头「收藏夹」入口的
+                // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
+                icon: Icons.playlist_add,
                 tooltip: t.combine_into_series,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
