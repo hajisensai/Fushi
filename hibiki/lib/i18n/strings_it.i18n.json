@@ -2348,5 +2348,6 @@
   "video_load_failed_retry": "Retry",
   "video_load_failed_back": "Back",
   "video_quality_loading": "Loading available qualities…",
-  "video_quality_load_failed": "Couldn't load qualities for this video."
+  "video_quality_load_failed": "Couldn't load qualities for this video.",
+  "loading_slow_message_mobile": "Startup is taking longer than usual — Hibiki may be loading a large library or dictionaries. Please wait a moment, or tap Retry to reload. Your data is safe and won't be lost."
 }

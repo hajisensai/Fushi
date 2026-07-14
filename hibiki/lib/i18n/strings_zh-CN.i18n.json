@@ -2348,5 +2348,6 @@
   "video_load_failed_retry": "重试",
   "video_load_failed_back": "返回",
   "video_quality_loading": "正在获取可选画质…",
-  "video_quality_load_failed": "无法获取该视频的画质档。"
+  "video_quality_load_failed": "无法获取该视频的画质档。",
+  "loading_slow_message_mobile": "启动比平常慢，可能在加载较大的书库或词典。请稍候，或点「重试」重新加载——你的数据是安全的，不会丢失。"
 }
