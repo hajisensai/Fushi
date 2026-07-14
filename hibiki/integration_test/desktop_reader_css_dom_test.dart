@@ -108,8 +108,8 @@ void main() {
   });
 
   testWidgets(
-      'BUG-803: dimensionless inline gaiji ignores a dictionary 15em important '
-      'width in the live WebView engine', (WidgetTester tester) async {
+      'BUG-803: dimensionless inline gaiji ignores dictionary 15em width and '
+      '2em end margin in the live WebView engine', (WidgetTester tester) async {
     final String popupJs = await rootBundle.loadString('assets/popup/popup.js');
     final String popupCss =
         await rootBundle.loadString('assets/popup/popup.css');
@@ -189,8 +189,13 @@ void main() {
         return JSON.stringify({
           imageWidth: imageRect.width,
           referenceOffset: referenceRect.left - rowRect.left,
+          referenceGap: referenceRect.left - imageRect.right,
           computedWidth: getComputedStyle(imageContainer).width,
-          inlinePriority: imageContainer.style.getPropertyPriority('width')
+          computedMarginInlineEnd:
+            getComputedStyle(imageContainer).marginInlineEnd,
+          inlinePriority: imageContainer.style.getPropertyPriority('width'),
+          marginPriority:
+            imageContainer.style.getPropertyPriority('margin-inline-end')
         });
         } catch (error) {
           return JSON.stringify({
@@ -212,10 +217,16 @@ void main() {
     final double imageWidth = (geometry['imageWidth'] as num).toDouble();
     final double referenceOffset =
         (geometry['referenceOffset'] as num).toDouble();
+    final double referenceGap = (geometry['referenceGap'] as num).toDouble();
     expect(geometry['inlinePriority'], 'important');
+    expect(geometry['marginPriority'], 'important');
+    expect(geometry['computedMarginInlineEnd'], '0px');
     expect(imageWidth, lessThan(40),
         reason: '20px text should keep the inline gaiji near 1.2em, not 15em');
-    expect(referenceOffset, lessThan(100),
+    expect(referenceOffset, lessThan(40),
         reason: 'the adjacent 以内 link must remain next to the gaiji label');
+    expect(referenceGap.abs(), lessThan(1),
+        reason:
+            'dictionary margin-inline-end must not leave a gap after gaiji');
   });
 }

@@ -468,10 +468,10 @@ function testExplicitContentImageDimensionsDefaultToPixelUnits() {
 }
 
 // BUG-803: Meikyo's structured-content CSS assigns `width: 15em !important`
-// to a dimensionless SVG gaiji container. The renderer identifies that image as
-// an inline glyph, so its intrinsic width must win the author stylesheet's
-// important declaration or the following antonym link is pushed far right.
-function testDimensionlessGaijiSvgLocksItsInlineWidth() {
+// and `margin-inline-end: 2em` to a dimensionless SVG gaiji container. The
+// renderer identifies that image as an inline glyph, so both layout dimensions
+// must stay renderer-owned or the following antonym link is pushed right.
+function testDimensionlessGaijiSvgLocksItsInlineMetrics() {
   const context = loadPopup();
   const node = context.createDefinitionImage(
     {
@@ -498,6 +498,16 @@ function testDimensionlessGaijiSvgLocksItsInlineWidth() {
     container.style.getPropertyPriority('width'),
     'important',
     'inline gaiji width must outrank dictionary CSS such as width:15em!important',
+  );
+  assert.equal(
+    container.style['margin-inline-end'],
+    '0',
+    'inline gaiji must neutralize dictionary spacing such as margin-inline-end:2em',
+  );
+  assert.equal(
+    container.style.getPropertyPriority('margin-inline-end'),
+    'important',
+    'inline gaiji spacing must remain renderer-owned',
   );
 }
 
@@ -1831,7 +1841,7 @@ testSanseidoEmAccentImageStaysInlineAndPointsAtDictionaryMedia();
 testGlossImageScrollWrapperIsInline();
 testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
-testDimensionlessGaijiSvgLocksItsInlineWidth();
+testDimensionlessGaijiSvgLocksItsInlineMetrics();
 testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad();
 testTappingDefinitionImageOpensLightbox();
 testTapOnGlossaryTextSelectsWord();
