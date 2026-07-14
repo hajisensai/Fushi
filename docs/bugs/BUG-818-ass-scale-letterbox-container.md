@@ -1,0 +1,6 @@
+## BUG-818 · ASS 字号/描边缩放基准误用播放器容器高（应为 fit:contain 视频内容矩形）
+- **报告**：2026-07-15（用户：「一个已知残留修复」——BUG-817 备注记录的 letterbox 占比偏差；mpv/libass 把字幕几何锚定在**视频帧显示尺寸**，我们锚定 overlay 容器 → 窗口比≠视频比（letterbox/pillarbox）时字号/描边/边距整体偏大，方形窗口下可偏大 ~78%）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/video/video_subtitle_overlay.dart` `_assFontScale`/`_scaledMarginX`（修复前）用 `_lastLayoutHeight/_lastLayoutWidth`（容器尺寸）作 PlayResY/X 缩放基准；而 `\pos` 定位（`mapPosFractionToContainer`，`subtitle_pos_mapping.dart`）早已按 fit:contain 内容矩形映射——同一 overlay 里两套几何基准不一致。
+- **[x] ① 已修复** — 抽共享纯函数 `fitVideoContentSize(videoW, videoH, container)`（`subtitle_pos_mapping.dart`，与 `mapPosFractionToContainer` 同一几何、后者改为复用它）；overlay 的 LayoutBuilder 每帧据 controller 首帧分辨率记录 `_lastVideoContentHeight/Width`，`_assFontScale`/`_scaledMarginX` 优先用内容矩形、首帧未解出回退容器（历史行为）。controller 加 `debugVideoWidthOverride/debugVideoHeightOverride` 测试注入钩子（生产恒 null）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_letterbox_scale_test.dart`：方形 640 容器 + 1920×1080 视频 → 字号必须 65×360/1080=21.67（非容器基准 38.5）、描边 2.5×360/1080；分辨率未知回退容器基准。
+- **备注**：与 [[BUG-817]]（Bold=0 假粗体）同一用户会话链。全屏 16:9 显示器 + 窗口比例锁稳态下新旧行为一致（内容矩形=容器）。fit 模式 cover/fill 沿用 contain 几何（与 \pos 定位既有假设一致），极端裁切模式下的进一步保真另行处理。

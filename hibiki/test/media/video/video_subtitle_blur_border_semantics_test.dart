@@ -100,8 +100,8 @@ void main() {
     expect(find.byType(ImageFiltered), findsNothing);
   });
 
-  // ---- BUG-808：ASS Bold=0 不得被用户统一字重（视频页默认 700）假粗体化 ----
-  group('ASS Bold vs unified fontWeight (BUG-808)', () {
+  // ---- BUG-817：ASS Bold=0 不得被用户统一字重（视频页默认 700）假粗体化 ----
+  group('ASS Bold vs unified fontWeight (BUG-817)', () {
     AudioCue cueWithStyle({bool? bold}) => AudioCue()
       ..bookKey = 'b'
       ..chapterHref = 'c'
