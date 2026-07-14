@@ -657,6 +657,47 @@ void main() {
     expect(merged.tagNames, <String>['keepme'],
         reason: '_stampEntry 重建 entry 时透传 tagNames，不丢标签');
   });
+
+  // ── collection-tags Task 9：DB ↔ 清单标签物化（load 读标签 / apply 写标签）──────
+  test('load reads collection tags; apply materializes them', () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final int cid =
+        await db.createMediaCollection('C', collectionType: 'collection');
+    await db.addToCollection(cid, 'video', 'u1');
+    final int t = await db.createTag('日语', 0xFF0000FF);
+    await db.addTagToCollection(cid, t);
+
+    final CollectionManifest manifest = await loadLocalCollectionManifest(db);
+    expect(manifest.collections.single.tagNames, <String>['日语'],
+        reason: 'load 从 DB 读合集标签进清单');
+
+    // 反向：清单里带一个本地没有的标签，apply 应物化到 DB。
+    final HibikiDatabase db2 =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db2.close);
+    final int cid2 =
+        await db2.createMediaCollection('C', collectionType: 'collection');
+    await db2.addToCollection(cid2, 'video', 'u1');
+    await applyCollectionLocalChanges(
+      db2,
+      const CollectionLocalChanges(<CollectionManifestEntry>[
+        CollectionManifestEntry(
+          name: 'C',
+          collectionType: 'collection',
+          members: <CollectionManifestMember>[
+            CollectionManifestMember(
+                mediaType: 'video', entryKey: 'u1', sortIndex: 0),
+          ],
+          tagNames: <String>['N1'],
+        ),
+      ]),
+    );
+    final List<BookTagRow> tags = await db2.getTagsForCollection(cid2);
+    expect(tags.map((BookTagRow t) => t.name), contains('N1'),
+        reason: 'apply 把清单标签物化到 DB（getOrCreate + addTagToCollection）');
+  });
 }
 
 /// 共享云清单（模拟 `__collections__/collections.json`）。

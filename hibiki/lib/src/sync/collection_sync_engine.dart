@@ -496,6 +496,8 @@ Future<CollectionManifest> loadLocalCollectionManifest(
     if (!seen.add(key)) continue; // 历史重名行：取 min id 者（同应用端对齐方向）。
     final List<MediaCollectionItemRow> items =
         await db.getCollectionItems(row.id);
+    // 合集标签进清单（只增不删并集载荷；空清单键由 toJson 省略保幂等）。
+    final List<BookTagRow> rowTags = await db.getTagsForCollection(row.id);
     entries.add(CollectionManifestEntry(
       name: row.name,
       collectionType: row.collectionType,
@@ -523,6 +525,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(
               removedAt: t.removedAt,
             ),
       ],
+      tagNames: <String>[for (final BookTagRow t in rowTags) t.name],
     ));
   }
 
@@ -622,6 +625,12 @@ Future<int> applyCollectionLocalChanges(
               id, e.members[i].mediaType, e.members[i].entryKey, i);
         }
         await db.setCollectionOrderUpdatedAt(id, e.orderUpdatedAt);
+        // 合集标签只增不删（同步语义）：按名 getOrCreate + addTagToCollection。
+        for (final String tagName in e.tagNames) {
+          if (tagName.isEmpty) continue;
+          final int tagId = await db.getOrCreateTagByName(tagName);
+          await db.addTagToCollection(id, tagId);
+        }
       }
       await db.replaceCollectionTombstonesFor(
           e.name, e.collectionType, <CollectionMemberTombstonesCompanion>[
