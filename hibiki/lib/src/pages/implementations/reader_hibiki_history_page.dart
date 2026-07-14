@@ -1099,6 +1099,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         _sortMode,
       ),
     );
+    // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。被标签
+    // 过滤隐藏的合集连同成员从 shelfGroups 移除（成员随合集隐藏，符合按合集标签显隐
+    // 语义）；散书由 filteredBookIdsProvider / filteredSrtBookIdsProvider 另行过滤。
+    final Set<int>? collectionFilter =
+        ref.watch(filteredCollectionIdsProvider).valueOrNull;
+    if (collectionFilter != null) {
+      shelfGroups.removeWhere((CollectionGroup<_ShelfBookSlot> g) =>
+          g.collection != null && !collectionFilter.contains(g.collection!.id));
+    }
     // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
     _visibleCollectionIds = <int>[
       for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
@@ -1295,8 +1304,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 本地成员）。当前书侧合集成员本就全是本地（远端占位卡不进合集，见 _buildShelfMemberCard），
     // 此过滤是防御性对齐口径；行体（itemCount）仍渲染 group.items 全部。
     final int localCount = group.items
-        .where((it) =>
-            it.payload.remote == null && it.payload.remoteSrt == null)
+        .where(
+            (it) => it.payload.remote == null && it.payload.remoteSrt == null)
         .length;
     return Padding(
       // 水平不加 padding：书卡自带 12px 内边距，与网格散卡左缘逐像素对齐。
