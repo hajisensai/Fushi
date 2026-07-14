@@ -574,14 +574,14 @@ class VideoPlayerController extends ChangeNotifier
   int? get durationMs =>
       _debugDurationOverride ?? _player?.state.duration.inMilliseconds;
 
-  /// 测试注入的视频分辨率（widget 测试无真实解码帧；BUG-818 让 overlay 的
+  /// 测试注入的视频分辨率（widget 测试无真实解码帧；BUG-820 让 overlay 的
   /// 视频内容矩形几何可测）。生产恒 null。
   @visibleForTesting
   int? debugVideoWidthOverride;
   @visibleForTesting
   int? debugVideoHeightOverride;
 
-  /// 视频原始分辨率（字幕 `\pos` letterbox 映射 + BUG-818 字号/描边缩放基准用）；
+  /// 视频原始分辨率（字幕 `\pos` letterbox 映射 + BUG-820 字号/描边缩放基准用）；
   /// 未解码时为 null。
   int? get videoWidth => debugVideoWidthOverride ?? _player?.state.width;
   int? get videoHeight => debugVideoHeightOverride ?? _player?.state.height;

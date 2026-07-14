@@ -1,4 +1,4 @@
-## BUG-817 · ASS `Bold=0` 被用户统一字重假粗体化（字号/描边观感全毁）
+## BUG-819 · ASS `Bold=0` 被用户统一字重假粗体化（字号/描边观感全毁）
 - **报告**：2026-07-14（用户：Windows app 内本地视频「字幕大小还是没尊重 ass，描边粗细也没有」「字号不是占比」；离屏真机探针裁决：占比其实正确——fontSize 54.84/期望 55.53、描边 2.11/期望 2.14——但 `weight=w700` 而 ASS 样式 `Bold=0`）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/video/video_subtitle_overlay.dart` `_styleForGrapheme` 字重解析（修复前）：`(respect && cue.bold) ? bold : _fontWeight(widget.fontWeight)`——ASS 明确 `Bold=0`（fansub 对白常态）时回退**用户统一字重**（视频页默认 700）。Fontname（如 FOT-Matisse ProN B）通常未安装 → 回退 CJK 字体再被 Flutter 合成假粗体 → 笔画显著变粗变宽、2.1px 细描边被粗笔画吞掉，观感像「字号变大、描边消失」；mpv 同样缺字体但按 Bold=0 常规字重渲染，对照差异巨大。取证：`tool/run_windows_itest.ps1` 离屏真 app + 真实 ToonsHub E08 MKV + 外挂 .ass，widget 树读出渲染值（evidence `win-itest-20260714-202238-29f138d1`）。
 - **[x] ① 已修复** — cueStyle 存在即字重完全以 ASS 为准：`Bold=0`/缺省 → `FontWeight.normal`，`Bold=1/-1` → bold；仅无 cueStyle（非 ASS / 样式失配）才回退统一字重。

@@ -2349,5 +2349,7 @@
   "video_load_failed_back": "Back",
   "video_quality_loading": "Loading available qualities…",
   "video_quality_load_failed": "Couldn't load qualities for this video.",
-  "loading_slow_message_mobile": "Startup is taking longer than usual — Hibiki may be loading a large library or dictionaries. Please wait a moment, or tap Retry to reload. Your data is safe and won't be lost."
+  "loading_slow_message_mobile": "Startup is taking longer than usual — Hibiki may be loading a large library or dictionaries. Please wait a moment, or tap Retry to reload. Your data is safe and won't be lost.",
+  "delete_collection_also_books": "Also delete the books in it",
+  "delete_collection_also_videos": "Also delete the videos (keeps your original video files)"
 }

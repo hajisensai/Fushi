@@ -317,7 +317,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// [_scaledMarginX] 把 ASS `MarginL`/`MarginR` 按 显示区宽 / PlayResX 缩放成水平边距。
   double? _lastLayoutWidth;
 
-  /// 最近一次 build 的 fit:contain **视频内容矩形**高/宽（BUG-818，与 \pos 定位的
+  /// 最近一次 build 的 fit:contain **视频内容矩形**高/宽（BUG-820，与 \pos 定位的
   /// [mapPosFractionToContainer] 同一几何）。ASS 字号/描边/阴影/边距的缩放基准优先用
   /// 它（mpv/libass 锚定视频帧显示尺寸）；null（首帧未解出分辨率）回退容器宽高。
   double? _lastVideoContentHeight;
@@ -560,7 +560,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 本 builder 早于层内字符 Builder 回调求值，故同帧写入即可被读到。
         _lastLayoutHeight = container.height;
         _lastLayoutWidth = container.width;
-        // BUG-818：字号/描边/边距的缩放基准是 fit:contain 后**视频内容矩形**（与 \pos
+        // BUG-820：字号/描边/边距的缩放基准是 fit:contain 后**视频内容矩形**（与 \pos
         // 定位的 [mapPosFractionToContainer] 同一几何），不是容器——窗口比≠视频比
         // （letterbox/pillarbox）时容器高大于视频显示高，按容器缩放整体偏大、与 mpv
         // 不齐。首帧未解出（分辨率未知）为 null，_assFontScale 回退容器（历史行为）。
@@ -1340,7 +1340,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   }
 
   /// ASS 字号 / 阴影深度是相对 [SubtitleMarkup.playResY] 的绝对像素（TODO-1246）；本因子把
-  /// 它们缩放到 fit:contain 的**视频内容矩形**高（[_lastVideoContentHeight]，BUG-818——
+  /// 它们缩放到 fit:contain 的**视频内容矩形**高（[_lastVideoContentHeight]，BUG-820——
   /// mpv/libass 锚定视频帧显示尺寸；窗口比≠视频比时容器高偏大）；首帧未解出分辨率时
   /// 回退容器高（[_lastLayoutHeight]，历史行为）。缺 playResY / 未布局时返回 1.0。
   double _assFontScale(SubtitleMarkup? markup) {
@@ -1380,7 +1380,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   double? _scaledMarginX(SubtitleMarkup? markup, double? margin) {
     if (margin == null || margin <= 0) return null;
     final double? playResX = markup?.playResX;
-    // BUG-818：与 [_assFontScale] 同源——基准优先视频内容矩形宽，回退容器宽。
+    // BUG-820：与 [_assFontScale] 同源——基准优先视频内容矩形宽，回退容器宽。
     final double? w = _lastVideoContentWidth ?? _lastLayoutWidth;
     final double scale =
         (playResX != null && playResX > 0 && w != null && w > 0)

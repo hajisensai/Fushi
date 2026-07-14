@@ -735,6 +735,19 @@ class ReaderHibikiSource extends ReaderMediaSource {
       // backup MERGE import never resurrects this book from an old backup.
       final int deletedRows = await db.deleteEpubBook(bookKey, tombstone: true);
 
+      // 删除传播（显式确认式）：用户主动删书记一条 sync 删除墓碑，供同步时经 compare
+      // 对话框弹确认后传播到远端（云 __tombstones__ / 互联 host DELETE）。这是「用户
+      // 主动删」路径——host 服务客户端删除请求走 _cleanupBookOnDisk，不经本方法，故不会
+      // 反向再传播。best-effort：记账失败不翻转删除结果。
+      if (deletedRows > 0) {
+        try {
+          await db.writeSyncDeletionTombstone(
+              'book', bookKey, DateTime.now().millisecondsSinceEpoch);
+        } catch (_) {
+          // best-effort：删除墓碑记账失败不影响书已删。
+        }
+      }
+
       // TODO-1359 根因：DB 行（唯一真相源）此刻已删，这本书对用户已经消失。下面的
       // 磁盘副本/偏好清理属于删完再打扫的尾活——Windows 上解压目录若被 WebView
       // baseURI / 封面图句柄 / 杀软占用，dir.delete(recursive:true) 会抛 errno

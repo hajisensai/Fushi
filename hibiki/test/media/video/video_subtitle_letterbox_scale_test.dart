@@ -4,7 +4,7 @@ import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
-/// BUG-818 守卫：ASS 字号/描边的缩放基准必须是 fit:contain 后的**视频内容矩形**
+/// BUG-820 守卫：ASS 字号/描边的缩放基准必须是 fit:contain 后的**视频内容矩形**
 /// （mpv/libass 锚定视频帧显示尺寸，与 `\pos` 定位的 [mapPosFractionToContainer]
 /// 同一几何），不是 overlay 容器——窗口比≠视频比（letterbox）时按容器缩放整体偏大。
 AudioCue _cue() => AudioCue()
@@ -68,7 +68,7 @@ Text _stroke(WidgetTester tester) => tester
 void main() {
   testWidgets(
       'letterboxed container: font/outline scale by video content height, '
-      'not container height (BUG-818)', (WidgetTester tester) async {
+      'not container height (BUG-820)', (WidgetTester tester) async {
     await _pump(tester, videoW: 1920, videoH: 1080);
     // 内容矩形高 = 640×(1080/1920) = 360 → 字号 65×360/1080 = 21.67，
     // 而非容器基准的 65×640/1080 = 38.5（偏大 78%）。
