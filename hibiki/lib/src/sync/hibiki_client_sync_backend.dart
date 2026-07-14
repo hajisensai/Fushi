@@ -137,6 +137,13 @@ class HibikiClientSyncBackend extends SyncBackend
   /// to WAN is quick when you are away from home.
   static const Duration probeTimeout = Duration(seconds: 2);
 
+  /// Bound for a resolved-host library GET (headers + body). [_ensureResolved]
+  /// only bounds the *probe*; once an address is picked, a host that accepts the
+  /// TCP connection but then stalls the response would hang the future forever
+  /// (observed as the video page's endless spinner). Cap the read so a stalled
+  /// host degrades to "failed" instead of an infinite wait.
+  static const Duration listTimeout = Duration(seconds: 15);
+
   final HibikiProbe _probe;
   List<HibikiClientUrl> _candidates = const <HibikiClientUrl>[];
   String? _token;
@@ -1090,15 +1097,23 @@ class HibikiClientSyncBackend extends SyncBackend
   // 视频只远程观看/可选下载，不参与双向同步。Host 的 /stream 端点使用短时
   // token URL，media_kit 可直接播放，不依赖自定义 HTTP header。
 
-  /// 列出对端 host 当前视频清单（直打 `/api/library/videos`）。
+  /// 列出对端 host 当前视频清单（直打 `/api/library/videos`）。老 host 无该端点返回
+  /// 404 时优雅降级返回空表（与 [getRemoteAggregate] / [getRemoteCollectionManifest]
+  /// 的 404 降级同纪律——绝不因老 server 缺端点抛异常让整页占位卡消失/转圈）。请求
+  /// 用 [listTimeout] 封顶，防止 host 接受连接后卡住响应导致视频页无限等待。
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async {
     await _ensureResolved();
     final HttpClientRequest req =
         await _ops!.buildRequest('GET', '$_apiBase/api/library/videos');
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await req.close().timeout(listTimeout);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return const <RemoteVideoInfo>[]; // 老 host 无视频端点：降级空表，不崩不转圈。
+    }
     _ops!.checkStatus(res.statusCode, 'GET /api/library/videos');
-    final String body = await res.transform(utf8.decoder).join();
+    final String body =
+        await res.transform(utf8.decoder).join().timeout(listTimeout);
     final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
     return <RemoteVideoInfo>[
       for (final dynamic e in arr)
