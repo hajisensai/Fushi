@@ -488,6 +488,32 @@ void main() {
         reason: 'BUG-990：有声书下载完成后覆盖层必须清除');
   });
 
+  testWidgets('BUG-991: 书库概览总数含书架上可见的远端占位书', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 1 本本地 SRT 书 + remoteClient 默认 1 本远端书 → 总数应为 2（本地 1 + 远端 1），
+    // 而非旧实现只数本地的 1。
+    shelfSrtBooks = <SrtBook>[
+      SrtBook()
+        ..uid = 'local-srt-uid'
+        ..title = 'Local Book'
+        ..srtPath = '${pathProviderDir.path}/local.srt'
+        ..importedAt = 0
+        ..bookKey = '',
+    ];
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Finder totalFinder =
+        find.byKey(const ValueKey<String>('shelf_overview_total'));
+    expect(totalFinder, findsOneWidget);
+    expect(tester.widget<Text>(totalFinder).data, '2',
+        reason: 'BUG-991：总数 = 本地 1 + 远端占位 1（此前只报本地 1）');
+  });
+
   testWidgets(
       'remote book without audiobook never touches the audiobook wiring '
       '(BUG-406)', (WidgetTester tester) async {
