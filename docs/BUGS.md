@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 798 条。点号进各自文件。
+> 共 799 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-817](bugs/BUG-817-merge-text-image-spread-mispair.md) | ✅ | ✅ | 自动跨页把文本章与固定布局插画章错配成spread导致合并插图失效 |
 | [BUG-816](bugs/BUG-816-backup-export-category-gating.md) | ✅ | ✅ | 导出未按功能类别剥离个人数据(收藏句/音频源路径/字体路径/sync开关/配对token泄漏) |
 | [BUG-815](bugs/BUG-815-init-retry-race.md) | ✅ | ✅ | 看门狗重试与在飞初始化竞态致数据全空(移动端) |
 | [BUG-814](bugs/BUG-814-interconnect-video-list-empty.md) | ✅ | ✅ | 互联开启后手机视频列表为空(host listVideos 每视频串行 ffmpeg 探测超过 client 15s 超时) |
