@@ -327,7 +327,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   Widget _buildCard(HibikiDesignTokens tokens) {
     final Widget card = HibikiPopupSurface(
-      color: appModel.overrideDictionaryColor ?? tokens.surfaces.page,
+      color: (appModel.overrideDictionaryColor ?? tokens.surfaces.page)
+          .withValues(alpha: 1.0),
       child: Column(
         children: [
           // TODO-951 症状B：关闭是「结果」，滑动只是其中一种「触发行为」，二者解耦。
