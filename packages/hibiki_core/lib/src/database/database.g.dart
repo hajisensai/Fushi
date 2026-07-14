@@ -15668,6 +15668,297 @@ class BookCustomCssCompanion extends UpdateCompanion<BookCustomCssRow> {
   }
 }
 
+class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
+    with TableInfo<$SyncDeletionTombstonesTable, SyncDeletionTombstoneRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncDeletionTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaTypeMeta =
+      const VerificationMeta('mediaType');
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+      'media_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _itemKeyMeta =
+      const VerificationMeta('itemKey');
+  @override
+  late final GeneratedColumn<String> itemKey = GeneratedColumn<String>(
+      'item_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+      'deleted_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _remotePublishedAtMeta =
+      const VerificationMeta('remotePublishedAt');
+  @override
+  late final GeneratedColumn<int> remotePublishedAt = GeneratedColumn<int>(
+      'remote_published_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [mediaType, itemKey, deletedAt, remotePublishedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_deletion_tombstones';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<SyncDeletionTombstoneRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_type')) {
+      context.handle(_mediaTypeMeta,
+          mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta));
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('item_key')) {
+      context.handle(_itemKeyMeta,
+          itemKey.isAcceptableOrUnknown(data['item_key']!, _itemKeyMeta));
+    } else if (isInserting) {
+      context.missing(_itemKeyMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(_deletedAtMeta,
+          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
+    } else if (isInserting) {
+      context.missing(_deletedAtMeta);
+    }
+    if (data.containsKey('remote_published_at')) {
+      context.handle(
+          _remotePublishedAtMeta,
+          remotePublishedAt.isAcceptableOrUnknown(
+              data['remote_published_at']!, _remotePublishedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaType, itemKey};
+  @override
+  SyncDeletionTombstoneRow map(Map<String, dynamic> data,
+      {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncDeletionTombstoneRow(
+      mediaType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
+      itemKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}item_key'])!,
+      deletedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}deleted_at'])!,
+      remotePublishedAt: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}remote_published_at'])!,
+    );
+  }
+
+  @override
+  $SyncDeletionTombstonesTable createAlias(String alias) {
+    return $SyncDeletionTombstonesTable(attachedDatabase, alias);
+  }
+}
+
+class SyncDeletionTombstoneRow extends DataClass
+    implements Insertable<SyncDeletionTombstoneRow> {
+  /// 资产种类：'book' | 'audiobook' | 'video' | 'localaudio'。
+  final String mediaType;
+
+  /// 资产跨设备稳定身份：book=bookKey / audiobook=bookKey / video=bookUid /
+  /// localaudio=displayName。
+  final String itemKey;
+
+  /// 本地删除毫秒戳。
+  final int deletedAt;
+
+  /// 已发布到远端的毫秒戳（0 = 尚未发布；发布后置为发布时刻，避免每轮重发）。
+  final int remotePublishedAt;
+  const SyncDeletionTombstoneRow(
+      {required this.mediaType,
+      required this.itemKey,
+      required this.deletedAt,
+      required this.remotePublishedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_type'] = Variable<String>(mediaType);
+    map['item_key'] = Variable<String>(itemKey);
+    map['deleted_at'] = Variable<int>(deletedAt);
+    map['remote_published_at'] = Variable<int>(remotePublishedAt);
+    return map;
+  }
+
+  SyncDeletionTombstonesCompanion toCompanion(bool nullToAbsent) {
+    return SyncDeletionTombstonesCompanion(
+      mediaType: Value(mediaType),
+      itemKey: Value(itemKey),
+      deletedAt: Value(deletedAt),
+      remotePublishedAt: Value(remotePublishedAt),
+    );
+  }
+
+  factory SyncDeletionTombstoneRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncDeletionTombstoneRow(
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      itemKey: serializer.fromJson<String>(json['itemKey']),
+      deletedAt: serializer.fromJson<int>(json['deletedAt']),
+      remotePublishedAt: serializer.fromJson<int>(json['remotePublishedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaType': serializer.toJson<String>(mediaType),
+      'itemKey': serializer.toJson<String>(itemKey),
+      'deletedAt': serializer.toJson<int>(deletedAt),
+      'remotePublishedAt': serializer.toJson<int>(remotePublishedAt),
+    };
+  }
+
+  SyncDeletionTombstoneRow copyWith(
+          {String? mediaType,
+          String? itemKey,
+          int? deletedAt,
+          int? remotePublishedAt}) =>
+      SyncDeletionTombstoneRow(
+        mediaType: mediaType ?? this.mediaType,
+        itemKey: itemKey ?? this.itemKey,
+        deletedAt: deletedAt ?? this.deletedAt,
+        remotePublishedAt: remotePublishedAt ?? this.remotePublishedAt,
+      );
+  SyncDeletionTombstoneRow copyWithCompanion(
+      SyncDeletionTombstonesCompanion data) {
+    return SyncDeletionTombstoneRow(
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      itemKey: data.itemKey.present ? data.itemKey.value : this.itemKey,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      remotePublishedAt: data.remotePublishedAt.present
+          ? data.remotePublishedAt.value
+          : this.remotePublishedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncDeletionTombstoneRow(')
+          ..write('mediaType: $mediaType, ')
+          ..write('itemKey: $itemKey, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('remotePublishedAt: $remotePublishedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(mediaType, itemKey, deletedAt, remotePublishedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncDeletionTombstoneRow &&
+          other.mediaType == this.mediaType &&
+          other.itemKey == this.itemKey &&
+          other.deletedAt == this.deletedAt &&
+          other.remotePublishedAt == this.remotePublishedAt);
+}
+
+class SyncDeletionTombstonesCompanion
+    extends UpdateCompanion<SyncDeletionTombstoneRow> {
+  final Value<String> mediaType;
+  final Value<String> itemKey;
+  final Value<int> deletedAt;
+  final Value<int> remotePublishedAt;
+  final Value<int> rowid;
+  const SyncDeletionTombstonesCompanion({
+    this.mediaType = const Value.absent(),
+    this.itemKey = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.remotePublishedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncDeletionTombstonesCompanion.insert({
+    required String mediaType,
+    required String itemKey,
+    required int deletedAt,
+    this.remotePublishedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : mediaType = Value(mediaType),
+        itemKey = Value(itemKey),
+        deletedAt = Value(deletedAt);
+  static Insertable<SyncDeletionTombstoneRow> custom({
+    Expression<String>? mediaType,
+    Expression<String>? itemKey,
+    Expression<int>? deletedAt,
+    Expression<int>? remotePublishedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaType != null) 'media_type': mediaType,
+      if (itemKey != null) 'item_key': itemKey,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (remotePublishedAt != null) 'remote_published_at': remotePublishedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncDeletionTombstonesCompanion copyWith(
+      {Value<String>? mediaType,
+      Value<String>? itemKey,
+      Value<int>? deletedAt,
+      Value<int>? remotePublishedAt,
+      Value<int>? rowid}) {
+    return SyncDeletionTombstonesCompanion(
+      mediaType: mediaType ?? this.mediaType,
+      itemKey: itemKey ?? this.itemKey,
+      deletedAt: deletedAt ?? this.deletedAt,
+      remotePublishedAt: remotePublishedAt ?? this.remotePublishedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (itemKey.present) {
+      map['item_key'] = Variable<String>(itemKey.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (remotePublishedAt.present) {
+      map['remote_published_at'] = Variable<int>(remotePublishedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncDeletionTombstonesCompanion(')
+          ..write('mediaType: $mediaType, ')
+          ..write('itemKey: $itemKey, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('remotePublishedAt: $remotePublishedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -15733,6 +16024,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $BookTagMembershipTombstonesTable bookTagMembershipTombstones =
       $BookTagMembershipTombstonesTable(this);
   late final $BookCustomCssTable bookCustomCss = $BookCustomCssTable(this);
+  late final $SyncDeletionTombstonesTable syncDeletionTombstones =
+      $SyncDeletionTombstonesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -15778,7 +16071,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         lookupMiningCounters,
         statisticsTombstones,
         bookTagMembershipTombstones,
-        bookCustomCss
+        bookCustomCss,
+        syncDeletionTombstones
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -26380,6 +26674,173 @@ typedef $$BookCustomCssTableProcessedTableManager = ProcessedTableManager<
     ),
     BookCustomCssRow,
     PrefetchHooks Function()>;
+typedef $$SyncDeletionTombstonesTableCreateCompanionBuilder
+    = SyncDeletionTombstonesCompanion Function({
+  required String mediaType,
+  required String itemKey,
+  required int deletedAt,
+  Value<int> remotePublishedAt,
+  Value<int> rowid,
+});
+typedef $$SyncDeletionTombstonesTableUpdateCompanionBuilder
+    = SyncDeletionTombstonesCompanion Function({
+  Value<String> mediaType,
+  Value<String> itemKey,
+  Value<int> deletedAt,
+  Value<int> remotePublishedAt,
+  Value<int> rowid,
+});
+
+class $$SyncDeletionTombstonesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $SyncDeletionTombstonesTable> {
+  $$SyncDeletionTombstonesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get itemKey => $composableBuilder(
+      column: $table.itemKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get remotePublishedAt => $composableBuilder(
+      column: $table.remotePublishedAt,
+      builder: (column) => ColumnFilters(column));
+}
+
+class $$SyncDeletionTombstonesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $SyncDeletionTombstonesTable> {
+  $$SyncDeletionTombstonesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get itemKey => $composableBuilder(
+      column: $table.itemKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get remotePublishedAt => $composableBuilder(
+      column: $table.remotePublishedAt,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncDeletionTombstonesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $SyncDeletionTombstonesTable> {
+  $$SyncDeletionTombstonesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get itemKey =>
+      $composableBuilder(column: $table.itemKey, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get remotePublishedAt => $composableBuilder(
+      column: $table.remotePublishedAt, builder: (column) => column);
+}
+
+class $$SyncDeletionTombstonesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $SyncDeletionTombstonesTable,
+    SyncDeletionTombstoneRow,
+    $$SyncDeletionTombstonesTableFilterComposer,
+    $$SyncDeletionTombstonesTableOrderingComposer,
+    $$SyncDeletionTombstonesTableAnnotationComposer,
+    $$SyncDeletionTombstonesTableCreateCompanionBuilder,
+    $$SyncDeletionTombstonesTableUpdateCompanionBuilder,
+    (
+      SyncDeletionTombstoneRow,
+      BaseReferences<_$HibikiDatabase, $SyncDeletionTombstonesTable,
+          SyncDeletionTombstoneRow>
+    ),
+    SyncDeletionTombstoneRow,
+    PrefetchHooks Function()> {
+  $$SyncDeletionTombstonesTableTableManager(
+      _$HibikiDatabase db, $SyncDeletionTombstonesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncDeletionTombstonesTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncDeletionTombstonesTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncDeletionTombstonesTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> mediaType = const Value.absent(),
+            Value<String> itemKey = const Value.absent(),
+            Value<int> deletedAt = const Value.absent(),
+            Value<int> remotePublishedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncDeletionTombstonesCompanion(
+            mediaType: mediaType,
+            itemKey: itemKey,
+            deletedAt: deletedAt,
+            remotePublishedAt: remotePublishedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String mediaType,
+            required String itemKey,
+            required int deletedAt,
+            Value<int> remotePublishedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncDeletionTombstonesCompanion.insert(
+            mediaType: mediaType,
+            itemKey: itemKey,
+            deletedAt: deletedAt,
+            remotePublishedAt: remotePublishedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SyncDeletionTombstonesTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $SyncDeletionTombstonesTable,
+        SyncDeletionTombstoneRow,
+        $$SyncDeletionTombstonesTableFilterComposer,
+        $$SyncDeletionTombstonesTableOrderingComposer,
+        $$SyncDeletionTombstonesTableAnnotationComposer,
+        $$SyncDeletionTombstonesTableCreateCompanionBuilder,
+        $$SyncDeletionTombstonesTableUpdateCompanionBuilder,
+        (
+          SyncDeletionTombstoneRow,
+          BaseReferences<_$HibikiDatabase, $SyncDeletionTombstonesTable,
+              SyncDeletionTombstoneRow>
+        ),
+        SyncDeletionTombstoneRow,
+        PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -26470,4 +26931,7 @@ class $HibikiDatabaseManager {
               _db, _db.bookTagMembershipTombstones);
   $$BookCustomCssTableTableManager get bookCustomCss =>
       $$BookCustomCssTableTableManager(_db, _db.bookCustomCss);
+  $$SyncDeletionTombstonesTableTableManager get syncDeletionTombstones =>
+      $$SyncDeletionTombstonesTableTableManager(
+          _db, _db.syncDeletionTombstones);
 }
