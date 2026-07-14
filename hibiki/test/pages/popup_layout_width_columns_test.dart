@@ -183,24 +183,30 @@ void main() {
     });
 
     test(
-        '源码守卫：popupDictionaryColumns 桌面默认传 desktopDefault: 3，'
-        '自动展开数不传（沿用共享默认 2）', () {
+        '源码守卫：popupDictionaryColumns 桌面 + 移动默认都传 3，'
+        '自动展开数不传（沿用共享默认 桌面2/移动1）', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
-      // 列数 getter 必须显式抬高桌面默认到 3。
+      // 列数 getter 必须显式把桌面 + 移动默认都抬到 3（宽屏手机也能多列，窄屏视口收敛兜底）。
       final int colAt = src.indexOf('int get popupDictionaryColumns =>');
       expect(colAt, isNonNegative);
       final int colEnd = src.indexOf(');', colAt);
       expect(colEnd, greaterThan(colAt));
-      expect(src.substring(colAt, colEnd).contains('desktopDefault: 3'), isTrue,
+      final String colBody = src.substring(colAt, colEnd);
+      expect(colBody.contains('desktopDefault: 3'), isTrue,
           reason: '「最多列数」桌面默认必须是 3');
-      // 自动展开数 getter 不得抬默认（保持共享默认 2）。
+      expect(colBody.contains('mobileDefault: 3'), isTrue,
+          reason: '「最多列数」移动默认也放宽到 3（宽屏手机多列、窄屏自动收回）');
+      // 自动展开数 getter 不得抬默认（保持共享默认 桌面2 / 移动1）。
       final int expAt = src.indexOf('int get popupAutoExpandDictionaries =>');
       expect(expAt, isNonNegative);
       final int expEnd = src.indexOf(');', expAt);
       expect(expEnd, greaterThan(expAt));
-      expect(src.substring(expAt, expEnd).contains('desktopDefault:'), isFalse,
-          reason: '自动展开数默认不应被列数改动波及（仍走共享默认 2）');
+      final String expBody = src.substring(expAt, expEnd);
+      expect(expBody.contains('desktopDefault:'), isFalse,
+          reason: '自动展开数默认不应被列数改动波及（仍走共享默认 桌面2）');
+      expect(expBody.contains('mobileDefault:'), isFalse,
+          reason: '自动展开数移动默认仍 1（共享默认，不被列数改动波及）');
     });
   });
 }

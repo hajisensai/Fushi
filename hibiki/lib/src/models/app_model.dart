@@ -4139,16 +4139,17 @@ class AppModel with ChangeNotifier {
   }) =>
       hasExplicit ? stored : (isDesktop ? desktopDefault : mobileDefault);
 
-  /// TODO-1357: 查词弹窗默认「最多列数」（桌面未设 3 / 移动未设 1 / 显式遵从）。列数是
+  /// TODO-1357: 查词弹窗默认「最多列数」（桌面 / 移动均未设 3 / 显式遵从）。列数是
   /// 「自动填充、封顶用户值」——真实生效列数由 popup.js 的视口收敛（每列 ≥170px）算出，
-  /// 故桌面默认放宽到 3（宽屏铺满、窄屏自动收回）。所有 `--dict-columns` 注入点
-  /// （app_model / dictionary_popup_webview / popup_settings_injection）都读本 getter，
-  /// 平台默认在此单点收口。
+  /// 故默认统一放宽到 3（宽屏 / 宽屏手机铺满、窄屏自动收回，不再硬塞挤爆）。所有
+  /// `--dict-columns` 注入点（app_model / dictionary_popup_webview /
+  /// popup_settings_injection）都读本 getter，平台默认在此单点收口。
   int get popupDictionaryColumns => resolvePopupDesktopDefault(
         hasExplicit: prefsRepo.hasExplicitPopupDictionaryColumns,
         stored: prefsRepo.popupDictionaryColumns,
         isDesktop: isDesktopPlatform,
         desktopDefault: 3,
+        mobileDefault: 3,
       );
   Future<void> setPopupDictionaryColumns(int columns) =>
       prefsRepo.setPopupDictionaryColumns(columns);
