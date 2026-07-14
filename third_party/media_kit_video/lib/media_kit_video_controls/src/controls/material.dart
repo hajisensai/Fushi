@@ -1207,9 +1207,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                         // host so it re-syncs the subtitle +
                                         // suppresses the lagging post-seek
                                         // position. See PATCHES.md.
-                                        _theme(context)
-                                            .onSeekEnd
-                                            ?.call(target);
+                                        _theme(context).onSeekEnd?.call(target);
                                         _timer = Timer(
                                           _theme(context).controlsHoverDuration,
                                           () {
