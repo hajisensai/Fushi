@@ -100,6 +100,31 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
   /// [didChangeDependencies].
   bool? _lastPushedIsDark;
 
+  /// BUG-792：桌面 flutter_inappwebview_windows fork **没实现** `getSelectedText`
+  /// （webview_channel_delegate.cpp method 分发无该分支 → `NotImplemented()` →
+  /// Dart 侧返回 null），右键「查词/暂存/分享」原先都靠它取选区，桌面上恒空 → 全失效。
+  /// 改用已实现的 `evaluateJavascript` 读顶层文档选区（definition.html 内容不套 iframe，
+  /// 顶层 `window.getSelection()` 即真值；`JSON.stringify` 收口成确定字符串，与
+  /// [ReaderSelectionScripts] 同惯例）。移动端语义与 `getSelectedText` 等价，不回归。
+  static const String _selectedTextJs =
+      "JSON.stringify((window.getSelection && String(window.getSelection())) || '')";
+
+  Future<String> _selectedText() async {
+    final Object? raw =
+        await _controller?.evaluateJavascript(source: _selectedTextJs);
+    if (raw == null) return '';
+    final String trimmed = raw.toString().trim();
+    if (trimmed.isEmpty || trimmed == 'null') return '';
+    try {
+      final Object? decoded = jsonDecode(trimmed);
+      if (decoded is String) return decoded;
+    } catch (_) {
+      // 某些平台已返回裸字符串（非 JSON），直接用原值。
+      return raw.toString();
+    }
+    return '';
+  }
+
   void _pushContent() {
     if (_controller == null || !_ready) return;
 
@@ -183,8 +208,9 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
               id: 1,
               title: t.search,
               action: () async {
-                final text = await _controller?.getSelectedText();
-                if (text != null && text.isNotEmpty) {
+                // BUG-792：见 [_selectedText]，桌面 getSelectedText 恒 null 取不到选区。
+                final String text = await _selectedText();
+                if (text.isNotEmpty) {
                   widget.onSearch(text);
                 }
               },
@@ -194,8 +220,8 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
                 id: 2,
                 title: t.stash,
                 action: () async {
-                  final text = await _controller?.getSelectedText();
-                  if (text != null && text.isNotEmpty) {
+                  final String text = await _selectedText();
+                  if (text.isNotEmpty) {
                     widget.onStash!(text);
                   }
                 },
@@ -205,8 +231,8 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
                 id: 3,
                 title: t.share,
                 action: () async {
-                  final text = await _controller?.getSelectedText();
-                  if (text != null && text.isNotEmpty) {
+                  final String text = await _selectedText();
+                  if (text.isNotEmpty) {
                     widget.onShare!(text);
                   }
                 },

@@ -45,6 +45,26 @@ void main() {
     );
   });
 
+  test(
+      'dictionary browse HTML widget must not read selection via getSelectedText',
+      () {
+    // BUG-792 同根因关联表面：词典浏览页（entry/result/term）的 DictionaryHtmlWidget
+    // 右键「查词/暂存/分享」原用 getSelectedText，桌面上同样恒 null → 失效。内容不套
+    // iframe，改用 evaluateJavascript 读顶层 window.getSelection()。
+    final File htmlWidget = File(
+      'lib/src/pages/implementations/dictionary_structured_content_page.dart',
+    );
+    expect(htmlWidget.existsSync(), isTrue,
+        reason: 'structured content source not found at ${htmlWidget.path}');
+    final String code = stripCommentLines(htmlWidget.readAsStringSync());
+    expect(
+      code.contains('getSelectedText'),
+      isFalse,
+      reason: '词典浏览页不得用 getSelectedText 读选区（桌面 fork 未实现→null）；'
+          '改用 evaluateJavascript 读 window.getSelection()（BUG-792）。',
+    );
+  });
+
   test('popup exposes an iframe-piercing selection reader (BUG-792)', () {
     final String source = file.readAsStringSync();
 
