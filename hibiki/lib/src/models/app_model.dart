@@ -4154,13 +4154,13 @@ class AppModel with ChangeNotifier {
   Future<void> setPopupDictionaryColumns(int columns) =>
       prefsRepo.setPopupDictionaryColumns(columns);
 
-  /// TODO-1357: 自动展开词典数（桌面未设 2 个 / 移动未设 1 个 / 显式遵从）——桌面上与
-  /// 2 列并排即 Niratan 双栏。
-  int get popupAutoExpandDictionaries => resolvePopupDesktopDefault(
-        hasExplicit: prefsRepo.hasExplicitPopupAutoExpandDictionaries,
-        stored: prefsRepo.popupAutoExpandDictionaries,
-        isDesktop: isDesktopPlatform,
-      );
+  /// 自动展开词典数默认「跟随最多列数」（用户拍板 2026-07-14）：未显式设过时默认 =
+  /// 当前 [popupDictionaryColumns]（一行几列就默认展开几本，第一行铺满即展开）；用户
+  /// 显式设过一律遵从其存储值。列数改动会带动本默认（用户没单独设过展开数时）。
+  int get popupAutoExpandDictionaries =>
+      prefsRepo.hasExplicitPopupAutoExpandDictionaries
+          ? prefsRepo.popupAutoExpandDictionaries
+          : popupDictionaryColumns;
   Future<void> setPopupAutoExpandDictionaries(int count) =>
       prefsRepo.setPopupAutoExpandDictionaries(count);
 
