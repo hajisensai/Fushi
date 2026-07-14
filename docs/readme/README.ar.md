@@ -214,6 +214,7 @@ hibiki/                      # Repository root (Melos workspace: hibiki_workspac
 | [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | مرجع الصوت المحلّي والتفاعل مع AnkiDroid |
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | مرجع القارئ والإحصاءات وتوافق المزامنة |
 | [media_kit](https://github.com/media-kit/media-kit) | إطار تشغيل الفيديو في Flutter (نواة libmpv) |
+| [Niratan](https://github.com/W1ght/Niratan) | مجموعة تعلّم اللغات بأسلوب الانغماس لنظام macOS |
 
 ## الترخيص
 

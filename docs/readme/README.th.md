@@ -214,6 +214,7 @@ hibiki ต่อยอดจากโปรเจกต์และระบบ�
 | [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | แหล่งอ้างอิงเสียงในเครื่องและการโต้ตอบกับ AnkiDroid |
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | แหล่งอ้างอิงโปรแกรมอ่าน สถิติ และความเข้ากันได้ของการซิงก์ |
 | [media_kit](https://github.com/media-kit/media-kit) | เฟรมเวิร์กการเล่นวิดีโอของ Flutter (แกนหลัก libmpv) |
+| [Niratan](https://github.com/W1ght/Niratan) | ชุดเครื่องมือเรียนภาษาแบบ immersive สำหรับ macOS |
 
 ## สัญญาอนุญาต
 
