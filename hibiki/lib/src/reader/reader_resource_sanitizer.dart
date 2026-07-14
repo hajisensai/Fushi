@@ -10,8 +10,21 @@ class ReaderResourceSanitizer {
   // text/html. Everything else that ships self-closed in XHTML must be expanded
   // to a paired tag (see [_selfClosingElementPattern] / [sanitizeXhtml]).
   static const Set<String> _voidElements = <String>{
-    'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'keygen',
-    'link', 'meta', 'param', 'source', 'track', 'wbr',
+    'area',
+    'base',
+    'br',
+    'col',
+    'embed',
+    'hr',
+    'img',
+    'input',
+    'keygen',
+    'link',
+    'meta',
+    'param',
+    'source',
+    'track',
+    'wbr',
   };
 
   // XHTML served as text/html: the HTML5 tokenizer IGNORES the self-closing

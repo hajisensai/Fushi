@@ -53,7 +53,6 @@ String buildFrameSettingsJs({
   int sentenceHitStart = -1,
   int sentenceHitLength = 0,
   bool sentenceOnly = false,
-  bool transparent = false,
 }) {
   final String settingsJs = buildPopupSettingsJs(
     appModel: appModel,
@@ -69,22 +68,6 @@ String buildFrameSettingsJs({
   final String cardBgAlphaLine =
       "document.documentElement.style.setProperty('--hibiki-card-bg-alpha', "
       "'${cardBgAlpha.toStringAsFixed(2)}');\n";
-  // 背景逐像素透明「只剩文字」：composition 透明窗 + cardBgAlpha=0 只透了最外层卡，
-  // 而句子条(--surface-variant)、词典结果块(--surface-container*)各画自己的主题填充色
-  // → 看着「还有背景」。透明模式下把这些**填充变量**设成 transparent（文字/边框/高亮
-  // 用的是另一套变量，不受影响），内容块填充随之消失，只剩文字浮在游戏上。settingsJs
-  // 每帧先设好主题变量、本段随后覆盖为透明；关闭透明则不注入、主题变量保持（零残留）。
-  // 走 app 侧渲染脚本而非改 popup.css，避开浏览器扩展三镜像。
-  final String transparentLines = transparent
-      ? 'document.documentElement.style.setProperty("--surface-variant", '
-          '"transparent");\n'
-          '    document.documentElement.style.setProperty('
-          '"--surface-container", "transparent");\n'
-          '    document.documentElement.style.setProperty('
-          '"--surface-container-high", "transparent");\n'
-          '    document.documentElement.style.setProperty('
-          '"--md-surface-container-high", "transparent");\n'
-      : '';
   // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
   // anymore. The flag flips whenever a child card opens/closes on top of THIS
   // frame, but everything else in the body (theme/zoom/entries/sentence) is
@@ -128,7 +111,6 @@ String buildFrameSettingsJs({
     $settingsJs
     $kPopupTopPullReleaseJs
     $cardBgAlphaLine
-    $transparentLines
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.__globalLookupSentence = ${jsonEncode(sentence)};
@@ -277,8 +259,6 @@ String buildStackRenderScript({
   // 帧的 settingsJs；cascade 模式忽略。
   int sentenceHitStart = -1,
   int sentenceHitLength = 0,
-  // 背景逐像素透明「只剩文字」：把内容块填充变量设透明（见 buildFrameSettingsJs）。
-  bool transparent = false,
 }) {
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
@@ -314,8 +294,6 @@ String buildStackRenderScript({
       sentenceHitStart: isPanelRoot ? sentenceHitStart : -1,
       sentenceHitLength: isPanelRoot ? sentenceHitLength : 0,
       sentenceOnly: isPanelRoot && p.sentenceOnly,
-      // 透明「只剩文字」作用于整个面板（root + 嵌套结果），非仅 root。
-      transparent: layoutMode == 'panel' && transparent,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;

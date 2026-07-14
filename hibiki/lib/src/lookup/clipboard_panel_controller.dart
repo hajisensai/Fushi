@@ -257,17 +257,6 @@ class ClipboardPanelController {
     await _channel.setWindowAlpha((model.clipboardPanelOpacity * 100).round());
   }
 
-  /// 背景逐像素透明开关切换即时生效：composition 下透明由卡背景 alpha（cardBgAlpha）
-  /// 承担，重渲当前面板（若正显示）即更新观感；未显示则下一条剪切板更新自然带上
-  /// 新 cardBgAlpha。native setWindowAlpha 在 composition 下已 no-op，故此处只重渲。
-  Future<void> refreshTransparency() async {
-    final AppModel? model = _appModel;
-    if (!_started || model == null) return;
-    if (_visible && _stack.isNotEmpty) {
-      await _renderPanel(model);
-    }
-  }
-
   /// 面板栏 × / root 卡 ×：藏窗即可。BUG-717：不再暂停路由——下一条剪贴板复制
   /// 会经 [update] 的 `!_visible` 分支重开面板（关掉后第二个词照样弹）。
   Future<void> hidePanel() async {
@@ -383,14 +372,9 @@ class ClipboardPanelController {
       maxWidth: maxW,
       maxHeight: maxH,
       layoutMode: 'panel',
-      // 背景逐像素透明（composition 模式）：clipboardPanelTransparent 开启时卡背景
-      // 透明（cardBgAlpha=0），只有文字/注音/高亮实心像素画，其余透到桌面（像字幕）。
-      // 关闭时恒 1.0（不透明卡，保持现观感、零破坏）。native 若回退 windowed（DComp
-      // 不可用），cardBgAlpha=0 会露出黑（透明背景色），但那是无 GPU 的极端环境。
-      cardBgAlpha: model.clipboardPanelTransparent ? 0.0 : 1.0,
-      // 透明「只剩文字」：把句子条/结果块的 surface 填充变量也设透明（cardBgAlpha
-      // 只透了最外层卡，内容块各画自己的主题填充色，不跟着透就看着「还有背景」）。
-      transparent: model.clipboardPanelTransparent,
+      // 卡背景恒不透明（透明面板路线=composition，真机失败已回退；windowed 下卡
+      // 背景透明只会露黑，故恒 1.0）。真透明改走 GDI 悬浮字幕窗（B 路线）另起。
+      cardBgAlpha: 1.0,
       sentenceHitStart: hit.length > 0 ? hit.start : -1,
       sentenceHitLength: hit.length,
     );
