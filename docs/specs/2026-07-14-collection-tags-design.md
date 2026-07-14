@@ -20,7 +20,7 @@
 
 ## 2. 数据层
 
-### 2.1 新表 `CollectionTagMappings`（schema v40 → v41）
+### 2.1 新表 `CollectionTagMappings`（schema v42 → v43）
 
 `packages/hibiki_core/lib/src/database/tables.dart`，与既有三张 tag 关联表同构：
 
@@ -35,10 +35,10 @@
 ### 2.2 迁移
 
 `packages/hibiki_core/lib/src/database/database.dart`：
-- `schemaVersion` 40 → 41（`database.dart:350`）。
-- `onUpgrade` ladder 末尾追加，照 v40 加表模板（`database.dart:834`）：
+- `schemaVersion` 42 → 43（`database.dart:395`）。
+- `onUpgrade` ladder 末尾追加，照最新加表模板 `if (from < 42)`（`database.dart:920`，纯 createTable）：
   ```dart
-  if (from < 41) {
+  if (from < 43) {
     if (!await _tableExists('collection_tag_mappings')) {
       await m.createTable(collectionTagMappings);
     }
@@ -49,15 +49,18 @@
 
 ### 2.3 DAO（`database.dart`，照抄现有 tag 方法签名）
 
-参照 `getTagsForBook`(3672) / `addTagToBook`(3778) / `getBookKeysForAllTags`(3789)：
+参照 `getTagsForBook`(3774) / `addTagToBook`(3881) / `removeTagFromBook`(3888) / `getBookKeysForAllTags`(3899)：
 
 ```dart
 Future<List<BookTagRow>> getTagsForCollection(int collectionId);
 Future<void> addTagToCollection(int collectionId, int tagId);
 Future<void> removeTagFromCollection(int collectionId, int tagId);
-/// 过滤用：collectionId -> 该合集所有 tagId 集合
-Future<Map<int, Set<int>>> getCollectionIdsForAllTags();
+/// 过滤用：含【全部】选中标签的合集 id（AND 语义，仿 getBookKeysForAllTags 的
+/// HAVING COUNT(DISTINCT tag_id) = N）。空集返回空。
+Future<Set<int>> getCollectionIdsForAllTags(Set<int> tagIds);
 ```
+
+注意：`addTagToBook`/`removeTagFromBook` 现在会 upsert/清 `BookTagMembershipTombstones`（tags-sync LWW 脚手架，但同步合并**尚未消费**这些墓碑）。合集标签**不**镜像墓碑逻辑——`addTagToCollection` 只 `INSERT OR IGNORE`、`removeTagFromCollection` 只 `DELETE`（YAGNI：同步不读墓碑，造 `CollectionTagMembershipTombstones` 无消费者）。
 
 ## 3. 编辑 UI
 
@@ -70,17 +73,17 @@ Future<Map<int, Set<int>>> getCollectionIdsForAllTags();
 
 ### 3.2 两个合集详情页各加入口
 
-- `MediaCollectionDetailPage`（playlist，`media_collection_detail_page.dart`）：在 `_rename`/`_delete` 同级菜单加"编辑标签" → `TagPickerPage(collectionId: widget.collection.id)`。
-- `MediaCollectionGridDetailPage`（collection 网格，`media_collection_grid_detail_page.dart`）：同上。
+- `MediaCollectionDetailPage`（playlist，`media_collection_detail_page.dart:266` AppBar `actions`）：在 rename、delete `IconButton` 之间加一个"打标签" `IconButton`（`Icons.sell_outlined`）→ `TagPickerPage(collectionId: widget.collection.id)`。
+- `MediaCollectionGridDetailPage`（collection 网格，`media_collection_grid_detail_page.dart:328` AppBar `actions`）：同上。
+- 注意：两页 rename/delete 挂在 **AppBar `IconButton`**（不是 PopupMenu），故新入口也用 `IconButton`。
 - 两页头部渲染 `HibikiTagChip` 行展示当前标签（与书/视频详情一致；chip 用 `tone: surface`）。编辑返回后刷新（沿现有 `onChanged` / setState 路径）。
 
 ## 4. 过滤联动
 
-`HibikiTagFilterBar` 的选中态是共享 `selectedTagIdsProvider`（`tag_filter_sheet.dart:11`）。视频库（`home_video_page.dart`）与书架（`books.part.dart`）的合集卡片挂上同一判据：
+现有过滤是一组 `FutureProvider` 派生自共享 `selectedTagIdsProvider`（`tag_filter_sheet.dart:11`）：`filteredBookIdsProvider`(:13)、`filteredSrtBookIdsProvider`(:57)、`filteredVideoBookUidsProvider`(:84)。消费者在 `home_video_page.dart:1652` 与 `reader_hibiki_history_page.dart:356/960`，各自 `.where((x) => filterSet.contains(x.id))` 过滤卡片列表。合集照同一范式:
 
-- 拉一份"合集id→标签集合"映射（`getCollectionIdsForAllTags`，随 `allTagsProvider` 同类缓存/失效）。
-- 应用过滤时：合集卡若其标签集合与选中标签集合无交集则隐藏——与普通条目现有过滤判据相同（选中标签集合为空时不隐藏任何卡）。
-- 具体挂点在两页各自组装网格 item 列表处（合集卡与普通条目在同一网格），复用现有"条目是否命中选中标签"的纯函数逻辑，只把数据源从"条目标签"换成"合集标签"。
+- `tag_filter_sheet.dart` 新增 `filteredCollectionIdsProvider`（仿 :13，`tagIds.isEmpty ? null : db.getCollectionIdsForAllTags(tagIds)`）。
+- 合集卡片组装处（视频 `home_video_page.dart` `_buildLocalVideoSlivers` ~:1941；书架 `reader_hibiki_history_page.dart` 网格组装）：`filter == null` 全显，否则 `collectionFilter.contains(collection.id)` 判定合集卡显隐。空选（filter==null）不隐藏任何卡（与现有 `filter == null ? all : ...` 一致）。
 
 ## 5. 跨端同步
 
@@ -88,7 +91,7 @@ Future<Map<int, Set<int>>> getCollectionIdsForAllTags();
 
 合集标签采用**"按标签名并集、不删除传播"**——与现有全部标签同步行为一致：
 - 标签跨端只能按**名**传递（`BookTags.id` 各设备不一致，`sync_manager.dart:17-23`）。
-- 现有书/视频/SRT 标签在备份合并与云盘 sidecar 通道都是**只增不删并集**（`backup_merge_engine.dart:790` `_mergeTagsAndMappings` 用 `NOT EXISTS` 去重；`sync_orchestrator.dart:1966` sidecar「绝不清本地既有标签」）。
+- 现有书/视频/SRT 标签的**同步合并**都是**只增不删并集**（`backup_merge_engine.dart:790` `_mergeTagsAndMappings` 用 `JOIN book_tags ON name` + `INSERT OR IGNORE` 去重；`sync_orchestrator.dart:1966` sidecar「绝不清本地既有标签」）。DB 层虽有 `BookTagMembershipTombstones` 墓碑脚手架，但同步合并**尚未消费**（代码注释 `TODO tags-sync`），故实际同步行为就是只增不删。合集标签与此对齐。
 - **已知限制**：某端把标签从合集移除，不会跨端传播（对端仍保留，或下次同步复活）。与书/视频标签今天的行为完全一致。若日后要"删除也同步"，需加平行 tag 墓碑（本期不做）。
 
 ### 5.2 云盘/互联通道：挂在合集清单 entry
@@ -119,10 +122,10 @@ Future<Map<int, Set<int>>> getCollectionIdsForAllTags();
 
 ## 7. 测试策略
 
-- **DB 单测**（`packages/hibiki_core` test）：新表 CRUD、级联删除（删合集/删标签自动清 mapping）、`getCollectionIdsForAllTags` 正确性、v40→v41 迁移不丢数据。
-- **同步引擎单测**（`hibiki/test` `collection_sync_engine` 现有测试同目录）：manifest tagNames round-trip、两端并集合并、缺字段向后兼容、`_localMatches` 不空转。
+- **DB 单测**（`hibiki/test/database/`，与 `tags_test.dart` 同目录）：新表 CRUD、级联删除（删合集/删标签自动清 mapping）、`getCollectionIdsForAllTags` AND 语义、v42→v43 迁移不丢数据。
+- **同步引擎单测**（`hibiki/test/sync/collection_sync_engine_test.dart` 同目录）：manifest tagNames round-trip、两端并集合并、缺字段向后兼容、`_localMatches` 不空转。
 - **备份合并单测**：`_mergeCollectionTags` 按名并集 + 合集自然键 remap + 墓碑拦截。
-- **迁移守卫**：schema v41 加进现有 drift 迁移测试（若有 golden schema 快照需更新）。
+- **迁移守卫**（`packages/hibiki_core/test/`，仿 `migration_paired_peers_v31_test.dart`）：手写旧 schema 升级到 v43，断言 `user_version == db.schemaVersion` 且旧行零丢失。
 - **过滤纯函数测**：合集卡命中选中标签的判据（无交集隐藏、空选不隐藏）。
 - **真机验收**（发布前，非本期编码内）：视频合集 + 书架合集打标签、过滤、两台设备同步一致。
 
@@ -132,4 +135,4 @@ Future<Map<int, Set<int>>> getCollectionIdsForAllTags();
 - **build_runner**：改 tables.dart 后必须重生成 `database.g.dart`（该文件含 NUL 字节，是 git-binary，勿手改）。
 - **DAO 文件 database.dart 也是 git-binary**：编辑走正常 Dart 方法追加，注意别破坏二进制段。
 - **过滤性能**：`getCollectionIdsForAllTags` 一次性拉全量映射，合集数量级小（几十到几百），可接受；随 `allTagsProvider` 失效重取。
-- **CLAUDE.md 过时**：`packages/hibiki_core/CLAUDE.md` 仍写"28 表/schema 28"，实际 40→本期改 41；顺手不改它（超范围），但实现时表数从 40 张变 41 张。
+- **CLAUDE.md 过时**：`packages/hibiki_core/CLAUDE.md` 仍写"28 表/schema 28"，实际 schema 42→本期改 43；顺手不改它（超范围），但实现时表数 +1。
