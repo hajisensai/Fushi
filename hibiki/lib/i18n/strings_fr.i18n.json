@@ -1471,7 +1471,7 @@
   "video_shader_tier_low_hint": "Accentuation intégrée à mpv (ewa_lanczossharp). Fonctionne sur n'importe quelle vidéo (animation et prise de vue réelle). Aucun téléchargement, charge GPU minimale. Choisissez cette option sur un GPU intégré ou ancien (NVIDIA GTX 1050, AMD RX 560, iGPU Intel).",
   "video_shader_tier_medium_hint": "Anime4K Fast. Idéal pour l'animation, fonctionne aussi sur les films/séries en prise de vue réelle (gain plus faible). Tourne sur les GPU milieu de gamme (NVIDIA GTX 1660 / RTX 3050, AMD RX 6600).",
   "video_shader_tier_high_hint": "Anime4K HQ. Plus net ; idéal pour l'animation, utilisable aussi en prise de vue réelle (gain plus faible). Nécessite un GPU haut milieu de gamme (NVIDIA RTX 4060 / RTX 3070, AMD RX 6700 XT / RX 7700 XT).",
-  "video_shader_tier_ultra_hint": "ArtCNN C4F32. Meilleure qualité pour l'animation HD ; utilisable aussi en prise de vue réelle (gain plus faible). Nécessite un GPU haut de gamme (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). Choisissez un niveau inférieur si votre GPU est moins puissant.",
+  "video_shader_tier_ultra_hint": "Anime4K Mode A (UL, réseau ultra-large). Reconstruction Anime4K la plus puissante ; utilisable aussi en prise de vue réelle (gain plus faible). Nécessite un GPU haut de gamme (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). Choisissez un niveau inférieur si votre GPU est moins puissant.",
   "video_shader_tier_custom_hint": "Sélection de shaders personnalisée. Choisissez un niveau ci-dessus pour revenir à un préréglage.",
   "video_shader_section_advanced": "Avancé (shaders manuels)",
   "video_shader_first_use_download": "Télécharger et activer",

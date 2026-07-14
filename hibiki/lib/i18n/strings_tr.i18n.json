@@ -1471,7 +1471,7 @@
   "video_shader_tier_low_hint": "mpv yerleşik keskinleştirme (ewa_lanczossharp). Her videoda çalışır (anime ve gerçek çekim). İndirme yok, en düşük GPU yükü. Tümleşik veya eski kartlarda (NVIDIA GTX 1050, AMD RX 560, Intel iGPU) bunu seçin.",
   "video_shader_tier_medium_hint": "Anime4K Fast. Anime için en iyi, ancak gerçek çekim film/dizilerde de çalışır (daha az kazanç). Orta seviye GPU'larda çalışır (NVIDIA GTX 1660 / RTX 3050, AMD RX 6600).",
   "video_shader_tier_high_hint": "Anime4K HQ. Daha keskin; anime için en iyi, gerçek çekimde de kullanılabilir (daha az kazanç). Üst-orta seviye bir GPU gerektirir (NVIDIA RTX 4060 / RTX 3070, AMD RX 6700 XT / RX 7700 XT).",
-  "video_shader_tier_ultra_hint": "ArtCNN C4F32. HD anime için en iyi kalite; gerçek çekimde de kullanılabilir (daha az kazanç). Amiral gemisi bir GPU gerektirir (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). GPU'nuz daha zayıfsa daha düşük bir seviye seçin.",
+  "video_shader_tier_ultra_hint": "Anime4K Mode A (UL, ultra büyük ağ). En güçlü Anime4K yeniden yapılandırması; gerçek çekimde de kullanılabilir (daha az kazanç). Amiral gemisi bir GPU gerektirir (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). GPU'nuz daha zayıfsa daha düşük bir seviye seçin.",
   "video_shader_tier_custom_hint": "Özel shader seçimi. Bir hazır ayara geçmek için yukarıdan bir seviye seçin.",
   "video_shader_section_advanced": "Gelişmiş (elle shader)",
   "video_shader_first_use_download": "İndir ve etkinleştir",

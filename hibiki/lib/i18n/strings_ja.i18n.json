@@ -1471,7 +1471,7 @@
   "video_shader_tier_low_hint": "mpv 内蔵のシャープ化（ewa_lanczossharp）。あらゆる映像に有効（アニメ・実写とも）。ダウンロード不要・GPU 負荷最小。内蔵 GPU や古いカード（NVIDIA GTX 1050、AMD RX 560、Intel iGPU）はこれを。",
   "video_shader_tier_medium_hint": "Anime4K Fast。アニメに最も効果的ですが、実写の映画/ドラマでも利用可（効果は控えめ）。ミドルレンジ GPU で動作（NVIDIA GTX 1660 / RTX 3050、AMD RX 6600）。",
   "video_shader_tier_high_hint": "Anime4K HQ。よりシャープ。アニメに最も効果的で、実写でも利用可（効果は控えめ）。アッパーミドル GPU が必要（NVIDIA RTX 4060 / RTX 3070、AMD RX 6700 XT / RX 7700 XT）。",
-  "video_shader_tier_ultra_hint": "ArtCNN C4F32。HD アニメで最高画質。実写でも利用可（効果は控えめ）。フラッグシップ GPU が必要（NVIDIA RTX 4080 / RTX 5090、AMD RX 7900 XTX）。GPU が弱い場合は下の段階を。",
+  "video_shader_tier_ultra_hint": "Anime4K Mode A（UL 超大型ネットワーク再構築）。Anime4K 系で最強の再構築。実写でも利用可（効果は控えめ）。フラッグシップ GPU が必要（NVIDIA RTX 4080 / RTX 5090、AMD RX 7900 XTX）。GPU が弱い場合は下の段階を。",
   "video_shader_tier_custom_hint": "シェーダーをカスタム選択しています。上の段階を選ぶとプリセットに戻ります。",
   "video_shader_section_advanced": "詳細設定（手動シェーダー）",
   "video_shader_first_use_download": "ダウンロードして有効化",

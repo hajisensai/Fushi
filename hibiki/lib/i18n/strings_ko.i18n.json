@@ -1471,7 +1471,7 @@
   "video_shader_tier_low_hint": "mpv 내장 샤프닝(ewa_lanczossharp). 모든 비디오(애니메이션·실사)에 적용됩니다. 다운로드가 필요 없고 GPU 부하가 가장 낮습니다. 내장 그래픽이나 오래된 그래픽카드(NVIDIA GTX 1050, AMD RX 560, Intel iGPU)는 이 단계를 선택하세요.",
   "video_shader_tier_medium_hint": "Anime4K Fast. 애니메이션에 가장 좋고 실사 영화/TV에도 쓸 수 있습니다(개선 폭은 작음). 중급 GPU(NVIDIA GTX 1660 / RTX 3050, AMD RX 6600)에서 동작합니다.",
   "video_shader_tier_high_hint": "Anime4K HQ. 더 선명하며 애니메이션에 가장 좋고 실사에도 쓸 수 있습니다(개선 폭은 작음). 중상급 GPU(NVIDIA RTX 4060 / RTX 3070, AMD RX 6700 XT / RX 7700 XT)가 필요합니다.",
-  "video_shader_tier_ultra_hint": "ArtCNN C4F32. HD 애니메이션 최고 화질이며 실사에도 쓸 수 있습니다(개선 폭은 작음). 플래그십 GPU(NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX)가 필요합니다. GPU가 약하면 더 낮은 단계를 선택하세요.",
+  "video_shader_tier_ultra_hint": "Anime4K Mode A(UL 초대형 네트워크 복원). Anime4K 계열 최강 복원이며 실사에도 쓸 수 있습니다(개선 폭은 작음). 플래그십 GPU(NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX)가 필요합니다. GPU가 약하면 더 낮은 단계를 선택하세요.",
   "video_shader_tier_custom_hint": "사용자 지정 셰이더 조합. 위에서 단계를 선택하면 프리셋으로 전환됩니다.",
   "video_shader_section_advanced": "고급(수동 셰이더)",
   "video_shader_first_use_download": "다운로드하고 활성화",
