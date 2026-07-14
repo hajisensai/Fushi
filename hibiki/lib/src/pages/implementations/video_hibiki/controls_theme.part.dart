@@ -48,6 +48,11 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek
       // bar 把内部 onSeekStart 与本回调合并调用（third_party/media_kit_video）。
       onSeekStart: () => controller.clearSeekTargetSnap(),
+      // BUG-796 后续：进度条拖动/点击落点经 media_kit 内部 player.seek 绕过 controller.seekMs
+      // 的「权威同步 + 在途抑制」——暂停态拖到无字幕段旧字幕不消失（同 ±秒键根因）。fork 在
+      // onSeekEnd 透出落点 target，页面补调 notifyExternalSeek 应用同款保护（不重复 seek）。
+      onSeekEnd: (Duration target) =>
+          controller.notifyExternalSeek(target.inMilliseconds),
       // TODO-669：进度条 hover 缩略图预览。seek bar hover 时 fork 把 hover 比例
       // （轨道内宽权威值）回调给 [_onSeekBarHover]，桌面转发到取帧调度器、移动端不接
       // （触屏无 hover，故仅桌面 theme 接线）。null 时 fork 零行为变化。
@@ -152,6 +157,10 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek
       // bar 把内部 onSeekStart 与本回调合并调用（third_party/media_kit_video）。
       onSeekStart: () => controller.clearSeekTargetSnap(),
+      // BUG-796 后续（同桌面 theme）：进度条落点补调 notifyExternalSeek，暂停态拖到无字幕段
+      // 旧字幕立即消失、不被滞后旧 position 拉回；不重复 seek（进度条内部已 seek）。
+      onSeekEnd: (Duration target) =>
+          controller.notifyExternalSeek(target.inMilliseconds),
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。横滑 seek

@@ -249,4 +249,79 @@ void main() {
       );
     });
   });
+
+  // BUG-796 后续：进度条 seek 落点在途保护补丁（onSeekEnd(target)）必须在 re-vendor 后存活。
+  // 缺任一环，进度条拖到无字幕段（尤其暂停）旧字幕不消失的 bug 复发。
+  group(
+      'BUG-796 follow-up: seek-bar onSeekEnd(target) patch survives re-vendor',
+      () {
+    for (final String path in <String>[controlsPath, mobileControlsPath]) {
+      test('$path theme data class exposes onSeekEnd(Duration) field', () {
+        final String source = File(path).readAsStringSync();
+        expect(
+          source.contains(RegExp(r'void Function\(Duration\)\?\s+onSeekEnd')),
+          isTrue,
+          reason: 'the theme data class must expose a '
+              'void Function(Duration)? onSeekEnd field (BUG-796 follow-up); '
+              'without it the host cannot learn the progress-bar seek target.',
+        );
+      });
+
+      test('$path copyWith carries onSeekEnd', () {
+        final String source = File(path).readAsStringSync();
+        expect(
+          source
+              .contains(RegExp(r'onSeekEnd:\s*onSeekEnd \?\? this\.onSeekEnd')),
+          isTrue,
+          reason: 'copyWith must propagate onSeekEnd (BUG-796 follow-up).',
+        );
+      });
+
+      test('$path seek bar forwards the committed target to onSeekEnd', () {
+        final String source = File(path).readAsStringSync();
+        // The seek-commit point passes the target Duration (duration * slider).
+        expect(
+          source.contains(
+              RegExp(r'widget\.onSeekEnd\?\.call\(duration \* slider\)')),
+          isTrue,
+          reason: 'the seek bar onPointerUp must call '
+              'onSeekEnd(duration * slider) so the host gets the destination '
+              '(BUG-796 follow-up).',
+        );
+        // The widget instantiation forwards the theme callback with the target.
+        expect(
+          source.contains(
+              RegExp(r'_theme\(context\)\s*\.onSeekEnd\s*\?\.call\(target\)')),
+          isTrue,
+          reason: 'the seek bar must be constructed forwarding '
+              '_theme(context).onSeekEnd(target) (BUG-796 follow-up), or the '
+              "host's callback never fires.",
+        );
+      });
+    }
+
+    test('host wires onSeekEnd -> notifyExternalSeek in BOTH control themes',
+        () {
+      final String themeSrc = File(
+        'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart',
+      ).readAsStringSync();
+      final int desktopStart = themeSrc.indexOf('_desktopControlsTheme(');
+      final int mobileStart = themeSrc.indexOf('_mobileControlsTheme(');
+      expect(desktopStart, isNonNegative);
+      expect(mobileStart, isNonNegative);
+      final String desktopBody = themeSrc.substring(desktopStart, mobileStart);
+      final String mobileBody = themeSrc.substring(mobileStart);
+      final RegExp wiring = RegExp(
+        r'onSeekEnd:\s*\(Duration target\)\s*=>\s*'
+        r'controller\.notifyExternalSeek\(target\.inMilliseconds\)',
+      );
+      expect(wiring.hasMatch(desktopBody), isTrue,
+          reason: 'desktop controls theme must wire onSeekEnd to '
+              'notifyExternalSeek (BUG-796 follow-up).');
+      expect(wiring.hasMatch(mobileBody), isTrue,
+          reason: 'mobile controls theme must wire onSeekEnd to '
+              'notifyExternalSeek (BUG-796 follow-up) — progress-bar drag '
+              'affects touch too.');
+    });
+  });
 }

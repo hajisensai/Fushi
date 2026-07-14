@@ -17,4 +17,16 @@
   - **播放态在途保持目标、落地放行**：在途拍旧 position 保持 gap 不回旧句；到达目标落定后放行、自然播放进入下一句正常跟随（不钉死）。
   - **暂停态跳进某句**：立即显示目的地句、旧 position 不显示旧句（权威同步正确性）。
   - `flutter test test/media/video/ test/media/audiobook/` 全绿（2268 passed，2 skip），既有 TODO-565 skipToCue / BUG-074 gap 用例未回归。`flutter analyze` No issues。
-- **备注**：测试宿主无 libmpv（`Player`/`load` 构造即抛），故走 `debugUpdateCueForPosition` + `debugSetIsPlayingForTesting` 纯逻辑单测（与既有 video controller 测试范式一致）。真机复测**待用户**：本地视频**暂停**中按 ±10 秒键跳到无字幕段 → 旧字幕立即消失、跳走后那段静音期无字幕；跳进某句立即显示该句；播放态 ±秒跳转后字幕正常跟随不钉死。进度条**拖动**走 media_kit 内部 seek（绕过 `seekMs`），本修复不覆盖该路径的暂停态 lag（另属既有行为，非本次报告场景）。
+- **备注**：测试宿主无 libmpv（`Player`/`load` 构造即抛），故走 `debugUpdateCueForPosition` + `debugSetIsPlayingForTesting` 纯逻辑单测（与既有 video controller 测试范式一致）。真机复测**待用户**：本地视频**暂停**中按 ±10 秒键跳到无字幕段 → 旧字幕立即消失、跳走后那段静音期无字幕；跳进某句立即显示该句；播放态 ±秒跳转后字幕正常跟随不钉死。~~进度条**拖动**走 media_kit 内部 seek（绕过 `seekMs`），本修复不覆盖该路径~~ → 见下方 follow-up，进度条路径已补齐。
+
+### Follow-up（2026-07-14，用户：「进度条拖动走 media_kit 的问题」）：进度条拖动/点击同病已补齐
+- **同根因不同入口**：进度条（seek bar）在 vendored fork `media_kit_video` 内部直接 `controller(context).player.seek(...)`，绕过 `VideoPlayerController.seekMs`，故 ①无按目标位置权威同步字幕 ②无在途抑制——暂停态拖到无字幕段旧字幕同样不消失（与 ±秒键同 lag）。host 侧无法从任何既有回调拿到拖动**落点位置**（fork 只透出无参 `onSeekStart`）。
+- **[x] 已修复**：
+  - **fork 补丁**（`third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material_desktop.dart` + `material.dart`）：两个 theme data 类新增 `void Function(Duration)? onSeekEnd`（构造 + copyWith）；各 seek bar 内部 `onSeekEnd` 由 `VoidCallback?` **retype** 成 `void Function(Duration)?`，在 `onPointerUp` 提交点传落点 `duration * slider`；实例化处合并 `_theme(context).onSeekEnd?.call(target)`。无回调注入时行为与 pub.dev 一致。见 `third_party/media_kit_video/PATCHES.md`（BUG-796 follow-up 段）。
+  - **控制器**（`video_player_controller.dart`）新增 `notifyExternalSeek(int targetMs)`：`_clearSeekTargetSnap()` → `_beginPlainSeekInFlight(target)` → `_syncCueForPosition(target, persistPosition:false)` 权威同步，**不重复 `player.seek`**（进度条内部已 seek）；随后 tick 复用同一 `_reconcileSeekInFlightPosition` 抑制滞后旧 position。
+  - **host 接线**（`controls_theme.part.dart`）：桌面 + 移动两个 theme 均 `onSeekEnd: (Duration target) => controller.notifyExternalSeek(target.inMilliseconds)`。只在 commit（pointer-up/tap）通知，拖动中间的连续 seek 不通知。
+- **[x] 已加测试**：
+  - `video_player_controller_test.dart` 新增 group「notifyExternalSeek（进度条落点）」2 例：暂停态拖到 gap 立即消失且旧 position 不拉回；拖进某句立即显示、落地后放行不钉死。
+  - `media_kit_video_seekbar_guard_test.dart` 新增源码守卫 group「BUG-796 follow-up」：两 fork 文件的 `onSeekEnd(Duration)` 字段 / copyWith / `onSeekEnd?.call(duration * slider)` / `_theme(context).onSeekEnd?.call(target)`，及 host 两个 theme 的 `onSeekEnd -> notifyExternalSeek` 接线。
+  - `flutter analyze lib/` No issues；`flutter test` 相关目录全绿。
+- **未覆盖**：视频区**横滑 seek 手势**（mobile，`material.dart` 另一处 `player.seek(result)`，TODO-916）同样绕过 `seekMs`，非本次「进度条」报告范围，暂留。真机复测**待用户**：暂停中拖进度条到无字幕段 → 旧字幕立即消失。

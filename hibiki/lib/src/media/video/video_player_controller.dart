@@ -2062,11 +2062,27 @@ class VideoPlayerController extends ChangeNotifier
   /// 公开清除入口（TODO-565 复核退回的必修项）：供**绕过 [seekMs]** 的 seek 路径手动
   /// 作废「主动跳转目标」快照。唯一调用方是页面层 media_kit 进度条（seek bar）——它在
   /// media_kit / vendored fork 内部直接调 `player.seek`，既不经本类 [seekMs]、也不向页面
-  /// 层暴露 onSeek 回调（fork 的 onSeekStart/End 写死给控制条隐藏计时、不透出 theme），
-  /// 故 [seekMs] 的统一清除点覆盖不到它。页面层在进度条交互的可观测点调本方法补清，避免
-  /// 「[skipToCue] 宽限窗口内拖进度条到更早句被误 snap 回旧目标」。
+  /// 层暴露 seek 目标（fork 的 onSeekStart 只透出「开始拖动」信号、无目标位置），故
+  /// [seekMs] 的统一清除点覆盖不到它。页面层在**开始拖动**（fork onSeekStart）时调本方法补清，
+  /// 避免「[skipToCue] 宽限窗口内拖进度条到更早句被误 snap 回旧目标」；拖动**落点**的字幕在途
+  /// 保护由 [notifyExternalSeek] 承载（见其注释）。
   void clearSeekTargetSnap() {
     _clearSeekTargetSnap();
+  }
+
+  /// 外部 seek（media_kit 进度条拖动 / 点击，绕过 [seekMs] 直接 `player.seek`）**落点**通知：
+  /// 页面在 fork 的 `onSeekEnd(target)` 回调里调本方法，补上与 [seekMs] 同款「普通 seek 在途
+  /// 保护」——按 [targetMs] 权威同步一次字幕（gap 立即消失）+ 抑制随后 tick 的滞后旧 position
+  /// （暂停无限保持 / 播放有界宽限），**但不重复 `player.seek`**（进度条内部已 seek）。
+  ///
+  /// 修「进度条拖到无字幕段后旧字幕不消失」（尤其暂停重听时）：进度条走 media_kit 内部 seek，
+  /// [seekMs] 的权威同步 + 在途抑制覆盖不到它，旧字幕会被滞后旧 position 逐拍确认（同 BUG-796
+  /// ±秒键根因）。本方法把同一保护补到进度条落点。
+  void notifyExternalSeek(int targetMs) {
+    final int clampedMs = targetMs.clamp(0, 1 << 30);
+    _clearSeekTargetSnap();
+    _beginPlainSeekInFlight(clampedMs);
+    _syncCueForPosition(clampedMs, persistPosition: false);
   }
 
   /// 主动跳转目标 snap 的纯决策（TODO-565，越界判据 BUG-378 收紧到 endMs）。所有几何在
