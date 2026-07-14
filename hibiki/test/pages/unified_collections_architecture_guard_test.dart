@@ -308,6 +308,30 @@ void main() {
         reason: '列表下标假名次已删（provider 序 = importedAt 倒序，不是访问序）');
   });
 
+  test('BUG-804：继续阅读 hero/概览统计喂全量 EPUB-backed（含有声书），不喂 srt 过滤后的 epubBooks', () {
+    // 有声书 = EPUB 正文 + SRT 字幕同 bookKey，有真实 position/duration 与
+    // lastReadAt。旧实现把 srt 过滤后的 `epubBooks` 喂给 _buildShelfOverviewSection，
+    // 有声书整类被排除，读了有声书回书架「继续阅读」永不更新。守卫：概览 section
+    // 调用点必须传未过滤的 `books`（hibikiBooksProvider 全部 EPUB-backed 行）。
+    final int callAt = historySrc.lastIndexOf('_buildShelfOverviewSection(');
+    expect(callAt, isNonNegative);
+    final String callArgs = historySrc.substring(
+      callAt,
+      (callAt + 80).clamp(0, historySrc.length),
+    );
+    expect(callArgs.contains('books,'), isTrue,
+        reason: 'hero/统计必须吃未过滤的全量 EPUB-backed 列表 books');
+    // 绝不能回退到把 srt 过滤后的 epubBooks 当概览/hero 输入（有声书会被排除）。
+    expect(
+        RegExp(r'_buildShelfOverviewSection\(\s*epubBooks\b')
+            .hasMatch(historySrc),
+        isFalse,
+        reason: 'hero 输入不得是 srt 过滤后的 epubBooks（有声书会被排除，BUG-804 回退）');
+    // 在读/读完/候选分类抽成纯函数 tallyShelfProgress（可单测，见 shelf_sort_test）。
+    expect(historySrc.contains('tallyShelfProgress'), isTrue,
+        reason: '书架概览分类必须走纯函数 tallyShelfProgress（BUG-804 单测锁）');
+  });
+
   test('多端库联合视图 §2.2/§2.6：云视频占位必经 CloudRemoteVideoClient（不自造清单解析）', () {
     // 云后端分支必须经 CloudRemoteVideoClient（唯一清单解析入口）而非在页面里自己
     // ensureNamespace/读 videos.json/构造 RemoteVideoManifest——把解析散进页面即转红。
@@ -344,5 +368,39 @@ void main() {
     // 书侧远端占位给真实 mediaType（epub），不再用私有 remote-book 伪类型（否则永不折叠）。
     expect(historySrc.contains("mediaType: 'remote-book'"), isFalse,
         reason: '远端书占位须给真实 mediaType（epub）才能与本地成员共键折叠');
+  });
+
+  test('BUG-790：视频合集行头集数 = 行体成员数（本地+远端占位同源），全云端合集不再显示「0 集」', () {
+    // 根因：旧口径 localCount = group.items.where(local != null).length 只数本地成员，
+    // 但行体 itemCount = group.items.length 渲染全部成员（含远端未下载占位卡）。全为
+    // 远端剧集的合集行明明有云占位卡却显示「0 集」，与眼前所见割裂（用户实报）。
+    // 修复：行头计数与行体 itemCount 同源。回退到「行头只数本地」或「与 itemCount 异源」
+    // 即转红。
+    final int rowFn = homeSrc.indexOf('Widget _buildVideoCollectionRow(');
+    expect(rowFn, isNonNegative, reason: '缺 _buildVideoCollectionRow');
+    final int rowEnd = homeSrc.indexOf('\n  /// ', rowFn + 1);
+    final String rowSrc =
+        homeSrc.substring(rowFn, rowEnd < 0 ? homeSrc.length : rowEnd);
+
+    // ① 行头计数不得再用「只数本地成员」的过滤式喂 video_playlist_episodes。
+    expect(rowSrc.contains('.where((it) => it.payload.local != null).length'),
+        isFalse,
+        reason: 'BUG-790：不得再用「只数本地」过滤统计行头集数（localCount）');
+    expect(
+        RegExp(r'video_playlist_episodes\(\s*count:\s*\w*[Ll]ocal')
+            .hasMatch(rowSrc),
+        isFalse,
+        reason: 'BUG-790：行头计数不得喂 localCount，须与行体 itemCount 同源');
+
+    // ② 行头 countLabel 的 count 与 itemCount 必须引用同一变量（同源）。
+    final Match? countMatch =
+        RegExp(r'countLabel:\s*t\.video_playlist_episodes\(count:\s*(\w+)\)')
+            .firstMatch(rowSrc);
+    final Match? itemMatch = RegExp(r'itemCount:\s*(\w+)').firstMatch(rowSrc);
+    expect(countMatch, isNotNull, reason: '未找到行头 countLabel 表达式');
+    expect(itemMatch, isNotNull, reason: '未找到 itemCount 表达式');
+    expect(countMatch!.group(1), equals(itemMatch!.group(1)),
+        reason: 'BUG-790：行头集数与行体 itemCount 必须同源（同一变量），'
+            '否则「看得见却 0 集」回潮');
   });
 }

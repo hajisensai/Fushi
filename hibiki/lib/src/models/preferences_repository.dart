@@ -42,7 +42,12 @@ enum DesktopClipboardWindowMode {
 enum DesktopClipboardDestination {
   main('main'),
   panel('panel'),
-  transient('transient');
+  transient('transient'),
+
+  /// 真透明剪切板文字窗：剪贴板文本落进逐像素透明的悬浮文字窗（复用
+  /// FloatingLyricWindow 第二实例，text-only），背景默认全透只露实心文字，点字
+  /// 弹瞬态查词卡。VN/游戏 + Textractor 自动复制场景。Windows-only。
+  textWindow('textWindow');
 
   const DesktopClipboardDestination(this.storageValue);
 
@@ -528,6 +533,19 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setClipboardPanelOpacity(double value) async {
     await setPref('clipboard_panel_opacity', value);
+    notifyListeners();
+  }
+
+  /// 真透明剪切板文字窗的**背景**不透明度（0.0 = 完全透明只露文字，用户默认诉求；
+  /// 拉高则给文字垫一层暗底，亮色游戏上白字看不清时用）。与 [clipboardPanelOpacity]
+  /// （整窗 LWA_ALPHA）不同：这里只影响窗口背景 alpha，文字始终实心。默认 0.0。
+  double get clipboardTextWindowBgOpacity => getPref(
+        'clipboard_text_window_bg_opacity',
+        defaultValue: 0.0,
+      ) as double;
+
+  Future<void> setClipboardTextWindowBgOpacity(double value) async {
+    await setPref('clipboard_text_window_bg_opacity', value);
     notifyListeners();
   }
 
@@ -1241,6 +1259,13 @@ class PreferencesRepository extends ChangeNotifier {
     'https://hoshi-reader.manhhaoo-do.workers.dev/?term={term}&reading={reading}',
   ];
 
+  /// Anki 本地音频服务器（local-audio-yomichan，默认端口 5050）的内置预设 URL。
+  /// 用户装了该服务器后，在「管理音频来源」里打开开关即用；默认关闭——本地第三方
+  /// 服务不经用户同意不参与查词发音（与 hibikiRemote / worker 默认源同策）。
+  /// 由 [_withDefaultAudioSources] 对所有用户「缺则补」为一条 disabled 源。
+  static const String ankiLocalAudioUrl =
+      'http://localhost:5050/?term={term}&reading={reading}';
+
   List<String> get audioSources {
     final result = getPref('audio_sources', defaultValue: defaultAudioSources);
     if (result is List<String>) return result;
@@ -1286,14 +1311,31 @@ class PreferencesRepository extends ChangeNotifier {
   List<AudioSourceConfig> _withDefaultAudioSources(
     List<AudioSourceConfig> sources,
   ) {
-    final bool hasHibikiRemote = sources.any(
+    final List<AudioSourceConfig> result = <AudioSourceConfig>[...sources];
+
+    // hibikiRemote 恒在列首（缺则补），历史行为不变。
+    final bool hasHibikiRemote = result.any(
       (AudioSourceConfig source) => source.kind == AudioSourceKind.hibikiRemote,
     );
-    if (hasHibikiRemote) return sources;
-    return <AudioSourceConfig>[
-      AudioSourceConfig.hibikiRemote(),
-      ...sources,
-    ];
+    if (!hasHibikiRemote) {
+      result.insert(0, AudioSourceConfig.hibikiRemote());
+    }
+
+    // Anki 本地音频服务器（5050）内置预设：对所有用户「缺则补」为一条 disabled 源，
+    // 追加在列尾。用户装了服务器打开开关即用；删掉后下次读取会 disabled 重生，与
+    // hibikiRemote 恒补策略一致（TODO-083 范式）。
+    final bool hasAnki = result.any((AudioSourceConfig source) =>
+        source.kind == AudioSourceKind.remoteAudio &&
+        source.url == ankiLocalAudioUrl);
+    if (!hasAnki) {
+      result.add(AudioSourceConfig.remoteAudio(
+        url: ankiLocalAudioUrl,
+        label: 'Anki',
+        enabled: false,
+      ));
+    }
+
+    return result;
   }
 
   void setAudioSources(List<String> sources) async {

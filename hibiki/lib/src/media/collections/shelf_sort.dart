@@ -139,3 +139,52 @@ T? mostRecentlyReadCandidate<T>(
   }
   return best;
 }
+
+/// 书架概览统计（在读数 / 读完数 / 在读候选列表）。
+///
+/// BUG-804：输入必须是**全量 EPUB-backed 书**——含有声书（EPUB 正文 + SRT
+/// 字幕同 bookKey，走阅读器落 `reader_positions`，有真实 position/duration）。旧
+/// 实现只喂 srt 过滤后的纯 EPUB 列表（`epubBooks`），把有声书整类排除，导致读了
+/// 有声书回书架「继续阅读」hero 永不更新（有声书虽有进度与 lastReadAt 却进不了
+/// 候选）。过滤到纯 EPUB 只为主网格卡去重（有声书渲染成 SRT 卡），与概览统计/
+/// hero 选书无关，不能复用到这里。
+///
+/// 分类：`duration<=0` 跳过（无进度维度，如纯字幕、无 EPUB 正文的书）；
+/// `position>=duration` 计读完；`0<position<duration` 计在读并进候选。
+class ShelfProgressTally<T> {
+  const ShelfProgressTally({
+    required this.reading,
+    required this.finished,
+    required this.inProgress,
+  });
+
+  final int reading;
+  final int finished;
+  final List<T> inProgress;
+}
+
+ShelfProgressTally<T> tallyShelfProgress<T>(
+  Iterable<T> epubBackedBooks,
+  int Function(T) position,
+  int Function(T) duration,
+) {
+  int reading = 0;
+  int finished = 0;
+  final List<T> inProgress = <T>[];
+  for (final T book in epubBackedBooks) {
+    final int dur = duration(book);
+    if (dur <= 0) continue;
+    final int pos = position(book);
+    if (pos >= dur) {
+      finished++;
+    } else if (pos > 0) {
+      reading++;
+      inProgress.add(book);
+    }
+  }
+  return ShelfProgressTally<T>(
+    reading: reading,
+    finished: finished,
+    inProgress: inProgress,
+  );
+}

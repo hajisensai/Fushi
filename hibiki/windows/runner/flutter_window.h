@@ -65,6 +65,19 @@ class FlutterWindow : public Win32Window {
   // Wires the floating_lyric MethodChannel to floating_lyric_window_.
   void RegisterFloatingLyricChannel();
 
+  // The transparent clipboard text window: a SECOND FloatingLyricWindow instance
+  // put in text-only mode (SetTextOnly(true)) — no transport / lock / close
+  // buttons, no resize grip, just draggable + tappable text over a per-pixel
+  // transparent background. Independent of the audiobook lyric strip so both can
+  // be shown at once. Tap lookup routes back over "lookupText" into the in-app
+  // dictionary overlay, exactly like the lyric strip.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      clipboard_text_channel_;
+  std::unique_ptr<FloatingLyricWindow> clipboard_text_window_;
+
+  // Wires the clipboard_text MethodChannel to clipboard_text_window_.
+  void RegisterClipboardTextChannel();
+
   // TODO-617: drives the global lookup overlay (bare WebView2 window). The main
   // Dart engine pushes popupJson over this channel; image:// + JS messages route
   // back. See global_lookup_window.h.

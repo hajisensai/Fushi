@@ -98,4 +98,56 @@ void main() {
       expect(all, hasLength(1));
     });
   });
+
+  // BUG-793：书架据此 Drift `.watch()` 流在任意导入路径落库后自动刷新（provider
+  // 层再 `.distinct` 按集合去重，纯列更新不触发重算）。
+  group('watchEpubBookKeys', () {
+    test('emits inserted bookKey when a book is added', () async {
+      final db = await _openDb();
+      final emissions = <List<String>>[];
+      final sub = db.watchEpubBookKeys().listen(emissions.add);
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(emissions.last, isEmpty, reason: '初始快照：空库');
+
+      await db.insertEpubBook(_book(title: 'My Novel'));
+      await pumpEventQueue();
+      expect(emissions.last, contains('My Novel'),
+          reason: '插入后集合应含新导入书的 bookKey（书架据此刷新）');
+    });
+
+    test('drops removed bookKey on delete', () async {
+      final db = await _openDb();
+      final key = await db.insertEpubBook(_book(title: 'Doomed'));
+      final emissions = <List<String>>[];
+      final sub = db.watchEpubBookKeys().listen(emissions.add);
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(emissions.last, contains('Doomed'));
+
+      await db.deleteEpubBook(key);
+      await pumpEventQueue();
+      expect(emissions.last, isNot(contains('Doomed')));
+    });
+
+    test('key set unchanged on column-only update (dedup source)', () async {
+      final db = await _openDb();
+      final key = await db.insertEpubBook(_book(title: 'Stable'));
+      final emissions = <List<String>>[];
+      final sub = db.watchEpubBookKeys().listen(emissions.add);
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+
+      // 纯列更新（改路径）：即便 Drift 表级失效再发流，key 集合仍是 {Stable}，
+      // provider 的 `.distinct` 据此去重、不重算书架。
+      await db.updateEpubBookPath(key, '/moved/stable.epub');
+      await pumpEventQueue();
+      expect(
+        emissions
+            .every((List<String> e) => e.length == 1 && e.first == 'Stable'),
+        isTrue,
+        reason: '改路径不改变 bookKey 集合',
+      );
+    });
+  });
 }

@@ -1226,6 +1226,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     Directory? framesDir;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    // BUG-809：桌面走 H.264 + .mp4（ffmpeg-min 已编入 libx264+mp4，带帧间压缩把
+    // 30 秒片段从 mjpeg 的 ~200MB 压到几 MB，且 .mp4 通用可直接播放/分享）；移动端
+    // 自编 ffmpeg-kit min 无 libx264，保持 mjpeg + .mov（帧内 JPEG，两端都能编）。
+    final bool useH264 = isDesktop;
+    final String videoExt = useH264 ? 'mp4' : 'mov';
     try {
       final Directory tmpDir = await getTemporaryDirectory();
       final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
@@ -1288,7 +1293,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         highlight: themeColors.sasayaki,
       );
 
-      videoFile = File('$base.mov');
+      videoFile = File('$base.$videoExt');
 
       // M3/M4：优先动态逐帧高亮跟随（多句序列帧 → image2 合成）；任一步失败回退单句静态。
       bool dynamicOk = false;
@@ -1374,7 +1379,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           // TODO-1147：桌面去色度下采样（yuvj444p）保留彩色文字边缘精度；移动端
           // ffmpeg-kit min 的 mjpeg encoder 收 444 需真机验合成不 exit，故保守 420
           // （仍靠 1080×1920 分辨率提升消模糊，不触碰移动合成 exit1 风险）。
+          // BUG-809：桌面 h264/.mp4（pixFmt 被 yuv420p 覆盖），移动 mjpeg/.mov。
           pixFmt: isDesktop ? 'yuvj444p' : 'yuvj420p',
+          h264: useH264,
         );
         if (!synth.isSuccess || synth.outputPath == null) {
           debugPrint(
@@ -1399,9 +1406,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       if (isDesktop) {
         final String? savePath = await FilePicker.platform.saveFile(
           dialogTitle: t.audiobook_export_clip,
-          fileName: 'audiobook_clip_$stamp.mov',
+          // BUG-809：桌面导出 .mp4（h264，通用可直接播放）。
+          fileName: 'audiobook_clip_$stamp.$videoExt',
           type: FileType.custom,
-          allowedExtensions: const <String>['mov'],
+          allowedExtensions: <String>[videoExt],
         );
         if (savePath != null) {
           await File(outPath).copy(savePath);
@@ -1409,7 +1417,13 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         }
       } else {
         await HibikiShare.shareFiles(
-          <XFile>[XFile(outPath, mimeType: 'video/quicktime')],
+          <XFile>[
+            XFile(
+              outPath,
+              // BUG-809：容器与编码器一致（桌面 mp4/h264 / 移动 mov/mjpeg）。
+              mimeType: useH264 ? 'video/mp4' : 'video/quicktime',
+            ),
+          ],
           subject: text,
         );
         if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
@@ -1569,7 +1583,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       height: layout.height,
       fps: fps,
       // TODO-1147：同单图静态路径——桌面 444 / 移动保守 420（见上）。
+      // BUG-809：桌面 h264（帧间压缩把逐句高亮的重复帧压到近零）/ 移动 mjpeg。
       pixFmt: isDesktop ? 'yuvj444p' : 'yuvj420p',
+      h264: isDesktop,
     );
     if (!synth.isSuccess || synth.outputPath == null) {
       debugPrint(

@@ -96,6 +96,49 @@ void main() {
       expect(find.byType(IconButton), findsOneWidget);
     });
 
+    // BUG-807：纯图标按钮（如批量操作栏）以前只把 tooltip 喂给 Semantics，屏幕上
+    // 悬停不弹说明。现用 Material [Tooltip] 包裹，鼠标悬停 / 长按可见用途。
+    testWidgets('plain icon button wraps in a Material Tooltip',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp(
+        HibikiIconButton(
+          icon: Icons.playlist_add,
+          tooltip: 'Combine',
+          onTap: () {},
+        ),
+      ));
+
+      final Tooltip tip = tester.widget<Tooltip>(find.byType(Tooltip));
+      expect(tip.message, 'Combine');
+    });
+
+    testWidgets('wide tap area icon button also wraps in a Material Tooltip',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp(
+        const HibikiIconButton(
+          icon: Icons.settings,
+          tooltip: 'Settings',
+          isWideTapArea: true,
+        ),
+      ));
+
+      final Tooltip tip = tester.widget<Tooltip>(find.byType(Tooltip));
+      expect(tip.message, 'Settings');
+    });
+
+    testWidgets('empty tooltip adds no Tooltip wrapper (no empty hover box)',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp(
+        HibikiIconButton(
+          icon: Icons.add,
+          tooltip: '',
+          onTap: () {},
+        ),
+      ));
+
+      expect(find.byType(Tooltip), findsNothing);
+    });
+
     testWidgets('registers with the focus root and activates on Enter',
         (tester) async {
       bool tapped = false;

@@ -151,6 +151,7 @@ class BackupMergeEngine {
       }
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
+      await _mergeCollectionTags();
       await _mergeProfilesAndChildren();
       await _insertMissing('media_items', 'unique_key');
       await _insertMissing('search_history_items', 'unique_key');
@@ -826,6 +827,27 @@ class BackupMergeEngine {
       'WHERE v.book_uid = sm.video_book_uid) '
       'AND NOT EXISTS (SELECT 1 FROM video_book_tag_mappings AS m '
       'WHERE m.video_book_uid = sm.video_book_uid AND m.tag_id = tt.id)',
+    );
+  }
+
+  /// 合集标签映射 UNION by (合集自然键 + 标签名)。src 的 collection_id 经
+  /// media_collections (name, collection_type) 自然键映射到 target id，tag_id 经
+  /// book_tags.name 映射。JOIN 不命中（被删除墓碑跳过、target 无同名合集）的行天然
+  /// 不插入——尊重墓碑是 JOIN 的副产品。owner 合集与 book_tags 须已合并（本方法在
+  /// [_mergeMediaCollections] 与 [_mergeTagsAndMappings] 之后调用）。
+  Future<void> _mergeCollectionTags() async {
+    if (!await _srcTableExists('collection_tag_mappings')) return; // 旧备份无此表
+    await _db.customStatement(
+      'INSERT INTO collection_tag_mappings (collection_id, tag_id) '
+      'SELECT tc.id, tt.id '
+      'FROM $_srcAlias.collection_tag_mappings AS sm '
+      'JOIN $_srcAlias.media_collections AS sc ON sc.id = sm.collection_id '
+      'JOIN media_collections AS tc '
+      'ON tc.name = sc.name AND tc.collection_type = sc.collection_type '
+      'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
+      'JOIN book_tags AS tt ON tt.name = st.name '
+      'WHERE NOT EXISTS (SELECT 1 FROM collection_tag_mappings AS m '
+      'WHERE m.collection_id = tc.id AND m.tag_id = tt.id)',
     );
   }
 

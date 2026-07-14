@@ -1,117 +1,16 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart'
-    show listFilesInDirectory, listSubdirectories;
 
-/// TODO-949 守卫：安卓「导入视频/有声书文件夹」改走真实路径目录浏览器
-/// （`pickRealDirectoryPath`），而非 SAF content URI。
+/// TODO-949 守卫：安卓「导入视频文件夹/选单个视频」改走**系统原生 SAF 选择器**
+/// （`pickRealDirectory` / `pickRealFile`），原生把 content URI 解析回真实绝对
+/// 路径，而非 app 自绘目录浏览器、也非 SAF content URI 直喂 dart:io。
 ///
-/// 两层：
-/// 1) 纯函数 [listSubdirectories] 行为：在临时真实目录上验证只列直接子目录、
-///    已排序、过滤掉文件、不存在/无权限兜底空——这是浏览器下钻的磁盘真值层。
-/// 2) 源码扫描：两个导入入口必须调统一的 `pickRealDirectoryPath`，且 helper
-///    自身按平台分支（安卓走权限+浏览器，非安卓维持 getDirectoryPath）。
+/// 纯源码扫描守卫：
+/// 1) 两个导入入口必须调统一的 `pickRealDirectoryPath` / `pickRealFilePath`。
+/// 2) helper 自身按平台分支（安卓走权限 + 原生 SAF 通道，非安卓维持 getDirectoryPath /
+///    pickFiles），且自绘浏览器 `_RealPathBrowser` 已彻底移除。
 void main() {
-  group('listSubdirectories pure behaviour', () {
-    late Directory root;
-
-    setUp(() {
-      root = Directory.systemTemp.createTempSync('hibiki_dir_picker_');
-    });
-
-    tearDown(() {
-      if (root.existsSync()) root.deleteSync(recursive: true);
-    });
-
-    test('lists only direct subdirectories, sorted, files excluded', () {
-      Directory('${root.path}/beta').createSync();
-      Directory('${root.path}/alpha').createSync();
-      // 子目录里再建一层，确认不递归。
-      Directory('${root.path}/alpha/nested').createSync();
-      File('${root.path}/movie.mkv').writeAsStringSync('x');
-
-      final List<String> subs = listSubdirectories(root.path);
-
-      expect(subs.length, 2, reason: '只数直接子目录，文件与孙目录都不算');
-      expect(subs[0].endsWith('alpha'), isTrue, reason: '已按路径排序');
-      expect(subs[1].endsWith('beta'), isTrue);
-      expect(
-        subs.any((String s) => s.endsWith('movie.mkv')),
-        isFalse,
-        reason: '文件必须被过滤掉',
-      );
-      expect(
-        subs.any((String s) => s.endsWith('nested')),
-        isFalse,
-        reason: '非递归：孙目录不出现',
-      );
-    });
-
-    test('non-existent directory -> empty (no throw)', () {
-      expect(listSubdirectories('${root.path}/does_not_exist'), isEmpty);
-    });
-  });
-
-  // board 1112：文件模式浏览器的叶子层——列直接子文件、可按扩展名过滤。
-  group('listFilesInDirectory pure behaviour', () {
-    late Directory root;
-
-    setUp(() {
-      root = Directory.systemTemp.createTempSync('hibiki_file_picker_');
-    });
-
-    tearDown(() {
-      if (root.existsSync()) root.deleteSync(recursive: true);
-    });
-
-    test('lists only direct files, sorted, subdirs excluded (no filter)', () {
-      File('${root.path}/b.mkv').writeAsStringSync('x');
-      File('${root.path}/a.mp4').writeAsStringSync('x');
-      Directory('${root.path}/sub').createSync();
-      File('${root.path}/sub/nested.mkv').writeAsStringSync('x');
-
-      final List<String> files = listFilesInDirectory(root.path);
-
-      expect(files.length, 2, reason: '只数直接子文件，目录与孙文件都不算');
-      expect(files[0].endsWith('a.mp4'), isTrue, reason: '已按路径排序');
-      expect(files[1].endsWith('b.mkv'), isTrue);
-      expect(
-        files.any((String s) => s.endsWith('sub')),
-        isFalse,
-        reason: '目录必须被过滤掉',
-      );
-      expect(
-        files.any((String s) => s.endsWith('nested.mkv')),
-        isFalse,
-        reason: '非递归：孙文件不出现',
-      );
-    });
-
-    test('extension filter keeps only matching files (case-insensitive)', () {
-      File('${root.path}/a.srt').writeAsStringSync('x');
-      File('${root.path}/b.ASS').writeAsStringSync('x');
-      File('${root.path}/c.vtt').writeAsStringSync('x');
-      File('${root.path}/d.mkv').writeAsStringSync('x');
-      File('${root.path}/e').writeAsStringSync('x'); // 无扩展名
-
-      final List<String> subs = listFilesInDirectory(
-        root.path,
-        allowedExtensions: const <String>{'srt', 'ass', 'vtt', 'ssa'},
-      );
-
-      expect(
-        subs.map((String s) => s.split(RegExp(r'[\\/]')).last).toSet(),
-        <String>{'a.srt', 'b.ASS', 'c.vtt'},
-        reason: '扩展名大小写不敏感命中，无关/无扩展名文件排除',
-      );
-    });
-
-    test('non-existent directory -> empty (no throw)', () {
-      expect(listFilesInDirectory('${root.path}/nope'), isEmpty);
-    });
-  });
-
   group('source guards: import folder uses unified real-path picker', () {
     test('video_import_dialog._pickFolder calls pickRealDirectoryPath', () {
       final String src = File('lib/src/media/video/video_import_dialog.dart')
@@ -133,13 +32,46 @@ void main() {
       );
     });
 
-    // 注：原「audiobook_import_dialog._pickAudioDir calls pickRealDirectoryPath」
-    // 守卫已于 TODO-1031 作废——按用户「改成只支持一个音频」诉求，有声书导入删除了
-    // 整个目录吞并入口 _pickAudioDir（会把一个文件夹下所有音频聚成一本），改为只保留
-    // 多选文件（多段章节有声书仍可用）。故 audiobook_import_dialog.dart 不再含
-    // pickRealDirectoryPath；视频侧 _pickFolder 的同名守卫（上方）仍有效保留。
+    test('android branch uses native SAF channel, no custom browser', () {
+      final String src =
+          File('lib/src/media/import/real_path_directory_picker.dart')
+              .readAsStringSync();
+      // 安卓改走原生 SAF：必须调 SAF channel 的两个真实路径方法。
+      expect(
+        src.contains("'pickRealDirectory'"),
+        isTrue,
+        reason: '目录选择必须调原生 SAF pickRealDirectory 方法',
+      );
+      expect(
+        src.contains("'pickRealFile'"),
+        isTrue,
+        reason: '文件选择必须调原生 SAF pickRealFile 方法',
+      );
+      expect(
+        src.contains('HibikiChannels.saf'),
+        isTrue,
+        reason: '必须经统一 SAF channel 常量调用原生 handler',
+      );
+      // 自绘目录浏览器 + 其磁盘遍历死函数彻底移除，避免两套并存。
+      expect(
+        src.contains('_RealPathBrowser'),
+        isFalse,
+        reason: '自实现目录浏览器已被原生 SAF 取代，不得残留',
+      );
+      expect(
+        src.contains('showModalBottomSheet'),
+        isFalse,
+        reason: '不再弹自绘选择表单',
+      );
+      expect(
+        src.contains('listSubdirectories') ||
+            src.contains('listFilesInDirectory'),
+        isFalse,
+        reason: '自绘浏览器的磁盘遍历死函数已随浏览器一并移除',
+      );
+    });
 
-    test('helper branches on Android + permission before browsing', () {
+    test('helper branches on Android + permission before picking', () {
       final String src =
           File('lib/src/media/import/real_path_directory_picker.dart')
               .readAsStringSync();
@@ -150,7 +82,7 @@ void main() {
         isTrue,
         reason: '非安卓平台必须保留 getDirectoryPath 行为',
       );
-      // 安卓必须先确保 MANAGE_EXTERNAL_STORAGE 权限，不得静默吞。
+      // 安卓必须先确保 MANAGE_EXTERNAL_STORAGE 权限（下游 dart:io 读盘需要），不得静默吞。
       expect(
         src.contains('requestExternalStoragePermissions') &&
             src.contains('hasExternalStoragePermission'),
@@ -159,10 +91,10 @@ void main() {
       );
     });
 
-    // board 1112：视频本体导入走真实路径文件浏览器（绝对路径不复制到 cache）。
+    // board 1112：视频本体导入走真实路径（绝对路径不复制到 cache）。
     // board 1360：字幕导入回退系统文件选择器（导入即消费、不长期引用绝对路径）。
     test(
-        'video _pickVideo keeps real-path browser, '
+        'video _pickVideo keeps real-path picker, '
         '_pickSubtitle reverts to system picker', () {
       final String src = File('lib/src/media/video/video_import_dialog.dart')
           .readAsStringSync();
@@ -173,7 +105,7 @@ void main() {
       expect(
         pickVideo.contains('pickRealFilePath('),
         isTrue,
-        reason: '单文件视频选择必须走真实路径文件浏览器，'
+        reason: '单文件视频选择必须走真实路径入口，'
             '而非直接 FilePicker.pickFiles（安卓会复制到 cache、清缓存即失效）',
       );
       expect(
@@ -189,7 +121,7 @@ void main() {
       expect(
         pickSubtitle.contains('pickRealFilePath('),
         isFalse,
-        reason: '_pickSubtitle 不得再走真实路径浏览器（board 1360 回退系统选择器）',
+        reason: '_pickSubtitle 不得再走真实路径入口（board 1360 回退系统选择器）',
       );
     });
 
@@ -236,7 +168,7 @@ void main() {
       expect(
         audiobookAlignment.contains('pickRealFilePath('),
         isFalse,
-        reason: '_pickAlignment 不得再走真实路径浏览器（board 1360 回退系统选择器）',
+        reason: '_pickAlignment 不得再走真实路径入口（board 1360 回退系统选择器）',
       );
       expect(
         bookSubtitle.contains('pickSystemFilePath('),
@@ -246,7 +178,7 @@ void main() {
       expect(
         bookSubtitle.contains('pickRealFilePath('),
         isFalse,
-        reason: '_pickSubtitle 不得再走真实路径浏览器（board 1360 回退系统选择器）',
+        reason: '_pickSubtitle 不得再走真实路径入口（board 1360 回退系统选择器）',
       );
     });
 

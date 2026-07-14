@@ -8,7 +8,8 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 
 /// 桌面查词请求的消费面（spec 2026-07-10 §4）。
-enum DesktopLookupConsumer { mainTab, panel, transient }
+/// textWindow = 真透明剪切板文字窗（复用 FloatingLyricWindow 第二实例，text-only）。
+enum DesktopLookupConsumer { mainTab, panel, transient, textWindow }
 
 /// 纯函数：一次 [DesktopLookupService] 请求应落到哪个消费面。
 /// - explicit（悬浮字幕点词回落）恒 mainTab：它本就是覆盖窗不可用时的回落路径，
@@ -31,5 +32,7 @@ DesktopLookupConsumer resolveDesktopLookupConsumer({
       return DesktopLookupConsumer.panel;
     case DesktopClipboardDestination.transient:
       return DesktopLookupConsumer.transient;
+    case DesktopClipboardDestination.textWindow:
+      return DesktopLookupConsumer.textWindow;
   }
 }

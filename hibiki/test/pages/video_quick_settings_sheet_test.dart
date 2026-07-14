@@ -199,7 +199,7 @@ void main() {
         contains('ewa_lanczossharp'));
     expect(t.video_shader_tier_medium_hint, contains('Anime4K'));
     expect(t.video_shader_tier_high_hint, contains('Anime4K'));
-    expect(t.video_shader_tier_ultra_hint, contains('ArtCNN'));
+    expect(t.video_shader_tier_ultra_hint, contains('Anime4K'));
     // TODO-054: 每档（无除外）标注代表性显卡示例（N卡 + A卡），让用户自识别该选哪档。
     // NVIDIA 示例（沿用 TODO-041 既有锚点，保证向后不破坏）。
     expect(t.video_shader_tier_low_hint, contains('GTX'));

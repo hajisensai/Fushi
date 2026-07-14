@@ -372,8 +372,8 @@ class ClipboardPanelController {
       maxWidth: maxW,
       maxHeight: maxH,
       layoutMode: 'panel',
-      // spec §6 真机修正：透明改整窗 LWA_ALPHA，卡背景恒不透明（双重变淡会
-      // 让文字更虚；CSS alpha 基建保留供未来 DComp 逐像素路线复用）。
+      // 卡背景恒不透明（透明面板路线=composition，真机失败已回退；windowed 下卡
+      // 背景透明只会露黑，故恒 1.0）。真透明改走 GDI 悬浮字幕窗（B 路线）另起。
       cardBgAlpha: 1.0,
       sentenceHitStart: hit.length > 0 ? hit.start : -1,
       sentenceHitLength: hit.length,

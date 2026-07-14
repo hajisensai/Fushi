@@ -44,12 +44,18 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
           localBooks.map((EpubBookRow r) => r.bookKey).toSet();
       final List<RemoteBookInfo> withContent =
           books.where((RemoteBookInfo book) => book.hasContent).toList();
+      // 纯 SRT（standalone）远端有声书：仅互联后端有 live 有声书 API。列出对端全部
+      // 有声书，只留 standalone（bookKey 空、身份=uid）且本地无同 uid SrtBook 的项，
+      // 作为可下载占位卡。云盘后端无此 API → 空列表（占位卡不出现，与能力边界一致）。
+      final List<RemoteAudiobookInfo> remoteSrt =
+          await _loadStandaloneRemoteSrtAudiobooks(client);
       return _RemoteBookState(
         books: dedupeRemoteBooks(
           remote: withContent,
           localBookKeys: localKeys,
           keyOf: sanitizeTtuFilename,
         ),
+        srtAudiobooks: remoteSrt,
       );
     } catch (e) {
       // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
@@ -81,6 +87,9 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     final Future<_RemoteBookState?> future = _loadRemoteBooks();
     _rebuild(() {
       _remoteBooksFuture = future;
+      // 合集折叠映射也一并重载：下拉刷新前若后台同步落了新合集成员，只失效书列表
+      // 而不重载 _shelfMapsFuture 会让新成员仍不成组（合集不渲染）。
+      _shelfMapsFuture = _loadShelfMaps();
     });
     await future;
   }
@@ -350,17 +359,30 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
               .log('ReaderHibikiHistoryPage.migrateShelfEntryKey', e, stack);
         }
       }
-      // TODO-1165：按标签名重建远端书标签映射（标签每设备本地，host 按名传来，
-      // 落地端 getOrCreate 后 addTagToBook；只增不删；localBookKey 为 null 即注入
-      // 测试 importer 不返 key 时跳过）。
-      if (localBookKey != null && book.tags.isNotEmpty) {
-        for (final String tagName in book.tags) {
-          if (tagName.isEmpty) continue;
-          final int tagId =
-              await appModel.database.getOrCreateTagByName(tagName);
-          await appModel.database.addTagToBook(localBookKey, tagId);
-        }
+      // tags 稳健档：LWW 合并 host 传来的标签时钟 + 移除墓碑（删除/改名跨端传播、
+      // 防复活）。host 带 tagsAddedAt/tagTombstones（v2）→ mergeRemoteBookTags；旧 host
+      // 只有 tags 名单 → 合成 addedAt=1 退化为「只增 + 尊重本地移除墓碑」（向后兼容）。
+      // localBookKey 为 null（注入测试 importer 不返 key）即跳过。
+      if (localBookKey != null &&
+          (book.tagsAddedAt.isNotEmpty ||
+              book.tagTombstones.isNotEmpty ||
+              book.tags.isNotEmpty)) {
+        final Map<String, int> remoteAddedAt = book.tagsAddedAt.isNotEmpty
+            ? book.tagsAddedAt
+            : <String, int>{
+                for (final String name in book.tags)
+                  if (name.isNotEmpty) name: 1,
+              };
+        await appModel.database.mergeRemoteBookTags(
+          localBookKey,
+          remoteAddedAt: remoteAddedAt,
+          remoteTombstones: book.tagTombstones,
+        );
       }
+      // BUG-813：把该书在 host 端的阅读进度 + 有声书播放断点一并拉回本地，手动下载
+      // 远端书时不再丢「阅读记录」（放在有声书下载之前、独立吞错，保证进度回填不被
+      // 有声书失败连带跳过）。
+      await _downloadRemoteBookProgress(book, client, localBookKey);
       // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。
       await _downloadRemoteAudiobook(book, client, localBookKey);
     } on _RemoteAudiobookException catch (e, stack) {
@@ -397,6 +419,64 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_book_downloaded)),
     );
+  }
+
+  /// EPUB 导入成功后，把该书在 host 端的**阅读进度**（reader_positions）与**有声书
+  /// 播放断点**（prefs）拉回本地（BUG-813）。此前进度双向同步只在整库「立即同步」
+  /// sweep 里对**已在本地**的书跑（[SyncOrchestrator._syncBookProgressLive] /
+  /// `_syncAudiobookPositionLive`），手动下载动作本身零回填 → 下到的书「没有阅读记录」。
+  ///
+  /// 契约与 sweep 同源：用 host 端真实 key [RemoteBookInfo.downloadId] 拉取，写本地用
+  /// 刚导入的 [localBookKey]（标题派生 key 可能漂移，BUG-414）。live progress API 仅
+  /// 存在于互联后端；云盘后端跳过（真实能力边界）。新下载的书本地无既有进度，host
+  /// 侧有记录（updatedAtMs>0）即直接落库。书进度与有声书断点各自 try/catch 吞错，
+  /// 绝不阻断主下载。
+  Future<void> _downloadRemoteBookProgress(
+    RemoteBookInfo book,
+    RemoteBookClient client,
+    String? localBookKey,
+  ) async {
+    if (localBookKey == null) return;
+
+    // 书阅读进度 → reader_positions（新书本地无行，host 有记录即落）。
+    // `remoteBookProgress` 是 [RemoteBookClient] 接口方法（互联 + 云盘后端都实现），
+    // 故不按后端类型门控——两种远端来源下载都能带回阅读进度。
+    try {
+      final RemoteBookProgress remote =
+          await client.remoteBookProgress(book.downloadId);
+      if (remote.updatedAtMs > 0) {
+        await appModel.database.upsertReaderPosition(ReaderPositionsCompanion(
+          bookKey: Value(localBookKey),
+          sectionIndex: Value(remote.sectionIndex),
+          normCharOffset: Value(remote.normCharOffset),
+          charOffset: Value(remote.charOffset),
+          updatedAt: Value(remote.updatedAtMs),
+        ));
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibikiHistoryPage.downloadRemoteBookProgress', e, stack);
+    }
+
+    // 有声书播放断点 → prefs（与 resume/播放写键空间同源，见 sync sweep）。
+    // `remoteAudiobookPosition` 仅互联后端具备（live API），故此段按类型门控。
+    if (book.hasAudiobook && client is HibikiClientSyncBackend) {
+      try {
+        final ({int positionMs, int updatedAtMs}) pos =
+            await client.remoteAudiobookPosition(book.downloadId);
+        if (pos.updatedAtMs > 0) {
+          await appModel.database.setPrefTyped<int>(
+              audiobookPositionPrefKey(localBookKey), pos.positionMs);
+          await appModel.database.setPrefTyped<int>(
+              audiobookPositionAtPrefKey(localBookKey), pos.updatedAtMs);
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+            'ReaderHibikiHistoryPage.downloadRemoteAudiobookPosition',
+            e,
+            stack);
+      }
+    }
   }
 
   /// EPUB 导入成功后，按需补下该书的有声书包（750a 手动下载补音频）。
@@ -485,6 +565,166 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     }
   }
 
+  /// 拉取对端「纯 SRT（standalone）有声书」清单：仅互联后端有 live 有声书 API，
+  /// 只留 standalone（bookKey 空、身份=uid）且本地无同 uid SrtBook 的项作占位卡。
+  /// 云盘后端无此能力 → 空列表（占位卡不出现，与真实能力边界一致，不静默 fail-open）。
+  Future<List<RemoteAudiobookInfo>> _loadStandaloneRemoteSrtAudiobooks(
+    RemoteBookClient client,
+  ) async {
+    if (client is! HibikiClientSyncBackend) {
+      return const <RemoteAudiobookInfo>[];
+    }
+    List<RemoteAudiobookInfo> all;
+    try {
+      all = await client.listRemoteAudiobooks();
+    } catch (e) {
+      debugPrint('[reader-shelf] remote audiobook list failed: $e');
+      return const <RemoteAudiobookInfo>[];
+    }
+    final List<SrtBookRow> localSrt = await appModel.database.getAllSrtBooks();
+    final Set<String> localUids = localSrt.map((SrtBookRow r) => r.uid).toSet();
+    return <RemoteAudiobookInfo>[
+      for (final RemoteAudiobookInfo ab in all)
+        if (ab.isStandaloneSrt &&
+            ab.identity.isNotEmpty &&
+            !localUids.contains(ab.identity))
+          ab,
+    ];
+  }
+
+  /// 纯 SRT 远端有声书占位卡：耳机类型徽章 + 云角标 + 下载按钮/进度。短按/下载按钮
+  /// 走 [_downloadRemoteSrtAudiobook]（拉包 → importAudioDatabasePackage 纯 SRT 分支
+  /// → 落 SrtBooks 行），完成后原地变本地 SRT 卡（重拉远端列表按 uid dedup 隐藏占位）。
+  Widget _buildRemoteSrtCard(RemoteAudiobookInfo book) {
+    final String title = book.title ?? book.identity;
+    final String safeKey = _safeRemoteBookKey(title);
+    final String dlKey = 'srt:${book.identity}';
+    final bool downloading = _downloadingBooks.containsKey(dlKey);
+    final ColorScheme cs = theme.colorScheme;
+    return _bookCardShell(
+      slotAspectRatio: kShelfBookCardAspectRatio,
+      cardKey: ValueKey<String>('remote_srt_card_$safeKey'),
+      focusId: HibikiFocusId('reader-shelf-remote-srt-$safeKey'),
+      onTap: () => _downloadRemoteSrtAudiobook(book),
+      // 长按 / 右键：与短按同为下载入口（远端占位卡无本地副本，唯一动作是下载；
+      // 内部已对同 identity 重复下载去重）。
+      onLongPress: () => _downloadRemoteSrtAudiobook(book),
+      child: _bookCardLayout(
+        title: title,
+        cover: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            _coverPlaceholderIcon(Icons.headphones_outlined),
+            PositionedDirectional(
+              bottom: 6,
+              start: 6,
+              child: _remoteCloudBadge(
+                key: ValueKey<String>('remote_srt_cloud_badge_$safeKey'),
+              ),
+            ),
+          ],
+        ),
+        leadingBadge: KeyedSubtree(
+          key: ValueKey<String>('remote_srt_type_badge_$safeKey'),
+          child: _cardBadge(
+            icon: Icons.headphones_outlined,
+            background: cs.secondaryContainer,
+            foreground: cs.onSecondaryContainer,
+          ),
+        ),
+        coverBadge: downloading
+            ? RemoteDownloadProgressBadge(
+                key: ValueKey<String>('remote_srt_downloading_$safeKey'),
+                progress: _downloadingBooks[dlKey],
+                tooltip: t.remote_book_downloading,
+              )
+            : IconButton.filledTonal(
+                key: ValueKey<String>('remote_srt_download_$safeKey'),
+                tooltip: t.remote_book_download,
+                iconSize: 18,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.download_outlined),
+                onPressed: () => _downloadRemoteSrtAudiobook(book),
+              ),
+      ),
+    );
+  }
+
+  /// 下载纯 SRT 远端有声书：`getRemoteAudiobook(identity=uid)` 拉 `.hibikiaudio` 包 →
+  /// `importAudioDatabasePackage` 纯 SRT 分支落 SrtBooks 行（bookKey 恒空、cue 走 uid）。
+  /// 只互联后端可达（云盘无 live 有声书 API）。完成后刷新书架（占位卡按 uid dedup 隐藏）。
+  Future<void> _downloadRemoteSrtAudiobook(RemoteAudiobookInfo book) async {
+    final RemoteBookClient? client = _remoteBookClient;
+    if (client is! HibikiClientSyncBackend) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_book_unavailable)),
+      );
+      return;
+    }
+    final String dlKey = 'srt:${book.identity}';
+    if (_downloadingBooks.containsKey(dlKey)) return;
+    _rebuild(() => _downloadingBooks[dlKey] = null);
+    File? audioTmp;
+    try {
+      audioTmp = await _remoteSrtDestination(book);
+      await client.getRemoteAudiobook(
+        book.identity,
+        audioTmp,
+        onProgress: (double progress) {
+          if (!mounted) return;
+          _rebuild(() => _downloadingBooks[dlKey] = progress);
+        },
+      );
+      await SyncAssetPackageService(db: appModel.database)
+          .importAudioDatabasePackage(
+        packageFile: audioTmp,
+        audioDatabaseRoot: _audiobookDatabaseRoot(),
+        // 纯 SRT 包无 audiobook 段：importAudioDatabasePackage 走 standalone 分支、
+        // 忽略 bookKeyOverride，bookKey 保持空、身份=uid。
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibikiHistoryPage.downloadRemoteSrtAudiobook', e, stack);
+      if (audioTmp != null) {
+        try {
+          if (audioTmp.existsSync()) audioTmp.deleteSync();
+        } catch (_) {/* best-effort */}
+      }
+      if (mounted) {
+        _rebuild(() => _downloadingBooks.remove(dlKey));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.remote_book_download_failed)),
+        );
+      } else {
+        _downloadingBooks.remove(dlKey);
+      }
+      return;
+    }
+    try {
+      if (audioTmp.existsSync()) audioTmp.deleteSync();
+    } catch (_) {/* best-effort */}
+    if (!mounted) {
+      _downloadingBooks.remove(dlKey);
+      return;
+    }
+    _rebuild(() => _downloadingBooks.remove(dlKey));
+    _refreshSrtBooks(); // 失效本地 SRT provider + 重拉远端（按 uid dedup 隐藏占位）
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.remote_book_downloaded)),
+    );
+  }
+
+  /// 纯 SRT 有声书包下载临时目标文件（`.hibikiaudio`）。
+  Future<File> _remoteSrtDestination(RemoteAudiobookInfo book) async {
+    final Directory temp = await getTemporaryDirectory();
+    final Directory dir =
+        Directory(p.join(temp.path, 'hibiki_remote_audiobooks'));
+    await dir.create(recursive: true);
+    final String safeKey = _safeRemoteBookKey(book.title ?? book.identity);
+    return File(p.join(dir.path, 'srt_$safeKey.hibikiaudio'));
+  }
+
   /// 有声书包下载临时目标文件（`.hibikiaudio`）。
   Future<File> _remoteAudiobookDestination(RemoteBookInfo book) async {
     final Directory temp = await getTemporaryDirectory();
@@ -547,10 +787,15 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
 class _RemoteBookState {
   const _RemoteBookState({
     required this.books,
+    this.srtAudiobooks = const <RemoteAudiobookInfo>[],
     this.failed = false,
   });
 
   final List<RemoteBookInfo> books;
+
+  /// 纯 SRT（standalone）远端有声书（互联后端 listRemoteAudiobooks 的 standalone 项，
+  /// 本地无同 uid 的 SrtBook）。云盘后端无 live 有声书 API → 恒空。
+  final List<RemoteAudiobookInfo> srtAudiobooks;
 
   /// 远端目录拉取失败（离线/未配对/后端不可达）：占位卡不渲染（spec §2.4）。
   final bool failed;

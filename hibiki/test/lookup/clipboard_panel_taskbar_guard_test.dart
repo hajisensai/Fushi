@@ -45,14 +45,20 @@ void main() {
         reason: 'SetTaskbarPresence 必须在面板 channel 注册段里');
   });
 
-  test('两处 CreateWindowExW 都按 taskbar_presence_ 分流 APPWINDOW/TOOLWINDOW', () {
+  test('建窗 ex-style 经 OverlayCreateExStyle 统一分流（两创建点共用、不漂移）', () {
+    // 背景逐像素透明重构：两处 CreateWindowExW 的 ex-style 收进 OverlayCreateExStyle()，
+    // taskbar_presence_ 分流只此一处 → 两创建点结构性一致（预热窗与重建窗任务栏行为
+    // 不可能漂移，比旧的「两处各写一份、靠计数守一致」更强）。
     expect(
         'taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW'
             .allMatches(cpp)
             .length,
-        2,
-        reason: 'ShowAt 懒建与 PrewarmWebView 预热两个创建点必须一致，'
-            '否则预热窗与重建窗任务栏行为漂移');
+        1,
+        reason: 'ex-style 分流收进 OverlayCreateExStyle 单一真相源');
+    expect('OverlayCreateExStyle()'.allMatches(cpp).length,
+        greaterThanOrEqualTo(3),
+        reason: 'ShowAt + PrewarmWebView 两个 CreateWindowExW 都调 '
+            'OverlayCreateExStyle()（+ 定义处 = 至少 3 次出现）');
     expect(
         'window_title_.c_str()'.allMatches(cpp).length, greaterThanOrEqualTo(2),
         reason: '两个创建点都必须用可设置的 window_title_（任务栏按钮文案）');

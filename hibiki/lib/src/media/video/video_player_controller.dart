@@ -263,9 +263,36 @@ class VideoPlayerController extends ChangeNotifier
   /// 自然越过目标句首（情形 1）即作废宽限、恢复正常清除语义。配额耗尽（seek 永不落地，
   /// 慢设备 / libmpv 丢弃，对齐 BUG-179）也放弃保护，绝不永久把高亮钉在旧目标上。
   ///
-  /// 用户**主动** seek（[seekRelative] / 收藏句直接 [seekMs]）走的是别的入口、不置宽限，
-  /// 且 [seekRelative] 显式清宽限+快照——手动 seek 仍能立刻清快照，不被本保护误连坐。
+  /// 用户**主动** seek（[seekRelative] / 收藏句直接 [seekMs]）走的是别的入口、不置本
+  /// **cue-snap** 宽限，且 [seekRelative] 显式清宽限+快照——手动 seek 仍能立刻清快照，不被
+  /// 本保护误连坐。（普通 seek 的在途 lag 由另一套 [_plainSeekTargetMs] 处理，见其注释。）
   int _seekSnapGraceTicksLeft = 0;
+
+  /// 普通 seek（[seekRelative] / [seekToChapter] / 页面收藏句直接 [seekMs]，**非**
+  /// [skipToCue]）的「在途目标位置」（ms，effective 前的原始播放位置）；null = 无在途普通 seek。
+  ///
+  /// **修「±秒等普通跳转到 gap 后旧字幕不消失（尤其暂停重听时）」。** media_kit 的
+  /// `player.state.position` 不随 seek 同步更新（与 [_seekTargetCueIndex] 注释同一 lag），
+  /// **暂停态更是长时间停在旧位置**（有声书 `AudiobookPlayerController._explicitSeekInFlight`
+  /// 同结论：暂停态 positionStream 不推进、`seek` 仍吐旧位置）。125ms tick
+  /// （[updateCueForPosition]）在 seek 落地前逐拍读到旧 position → [JsonAlignmentParser.findCueIndex]
+  /// 反推旧句 → 旧字幕被反复确认、一直挂着。[skipToCue] 用 [_seekTargetCueIndex] 快照抑制了
+  /// 这个 lag，但普通 seek 历史上**有意未置**保护（见 [_seekSnapGraceTicksLeft] 注释末段），
+  /// 于是暴露本 bug。
+  ///
+  /// 修法对齐有声书 `_explicitSeekInFlight` 抑制范式：[seekMs] 一发 seek 就记下目标位置、
+  /// 并立刻按目标位置**权威同步一次字幕**（直接调 [_syncCueForPosition]，不经 tick 的位置
+  /// 调和），字幕即时反映跳转目的地（gap 则消失）；随后 tick 经 [_reconcileSeekInFlightPosition]
+  /// 在 seek 落地前把「读到的旧 position」替换成目标位置——**暂停态无限期保持**（等按播放），
+  /// **播放态给有界宽限**（[_plainSeekGraceTicksLeft]）等真实位置落定后放行。与 [skipToCue]
+  /// 的 [_seekTargetCueIndex] 快照互斥（后者非空时本调和让路、不双重抑制；[skipToCue] 走
+  /// [_rawSeekMs] 也不置本状态）。
+  int? _plainSeekTargetMs;
+
+  /// 普通 seek 在途宽限剩余 tick（仅**播放态**消耗；暂停态无限期保持目标、不计此配额）。
+  /// 复用 [_seekSnapGraceTicks] 同一 2 秒量级：播放态真实位置通常一两拍即落定，配额耗尽
+  /// （慢设备 / 永不落定）也放行真实位置，绝不永久把字幕钉在旧目标上。
+  int _plainSeekGraceTicksLeft = 0;
 
   /// 音画延迟（毫秒）：正值表示"视频比文字先播"，查 cue 时把位置往回拨。
   int _delayMs = 0;
@@ -403,28 +430,13 @@ class VideoPlayerController extends ChangeNotifier
   /// 真落地后由「首次进入引导窗口」立即作废，不会拖到 2 秒。永不落地时 2 秒后放弃保护。
   static const int _seekSnapGraceTicks = 16;
 
+  /// 普通 seek「落地判据」容差（ms）：播放态下真实 position 到达 `目标 − 本容差` 即判
+  /// seek 落定、放行真实位置（普通 seek 无 preRoll、落点≈目标，取 250ms 足够吸收关键帧
+  /// 吸附尾差与一拍 tick 推进）。见 [_reconcileSeekInFlightPosition]。
+  static const int _kPlainSeekLandToleranceMs = 250;
+
   /// 位置持久化回调：整秒变化时调用，由上层（repository）落库。
   Future<void> Function(String bookUid, int positionMs)? onPositionWrite;
-
-  /// TODO-984 诊断日志回调：把视频播放初始化 / 首帧 / libmpv 错误的结构化诊断行
-  /// 交给上层落到 [ErrorLogService]（用户可在「错误日志」页查看 / 上传）。
-  ///
-  /// **为何用回调而非直接依赖 [ErrorLogService]**：控制器是纯播放领域对象，单测里
-  /// 不该耦合 app 级日志服务；页面（[VideoHibikiPage]）在 [load] 前把它接到
-  /// `ErrorLogService.instance.log('VideoHibiki.diag', message)`。null 时所有诊断行
-  /// 静默丢弃（零开销、零行为变化）。仅用于现场定位 Android「闪烁 + 空白无画面」
-  /// （realme 8 / Android 11，TODO-984）：覆盖 hwdec 配置、open、首帧分辨率 / videoParams、
-  /// libmpv error / log 流、缓冲态——拿到日志后据其分支定位（hwdec 失败 / 纹理未建 /
-  /// 解码未出帧 / 轨道问题）。
-  void Function(String message)? onDiagLog;
-
-  /// TODO-1232 冗余诊断降噪开关：默认 false。为 false 时即便 [onDiagLog] 已接（页面
-  /// 常驻接它以便随时能定位黑屏），也只发**关键低频**诊断（load 事实 / libmpv 真
-  /// error / open+textureId / 渲染后端 hwdec·vo·gpu 回读 / 纹理握手 / 首帧出帧 / 黑闪）；
-  /// 正常播放不再把 libmpv verbose 日志、videoParams、buffering 每次变化刷进错误日志。
-  /// 为 true 时才用 verbose 客户端日志级构造 Player 并挂 videoParams / buffering 高频流
-  /// （深挖黑屏/流问题时用）。页面按用户「调试日志」开关（[DebugLogService.enabled]）设置。
-  bool diagVerbose = false;
 
   /// TODO-1119：疑似「Windows 高显卡占用黑屏闪烁」运行时回调。页面（仅在 Windows）在
   /// [load] 前挂它；null 时**完全不采样**（零开销、零行为变化）。判据在
@@ -445,184 +457,6 @@ class VideoPlayerController extends ChangeNotifier
 
   /// hwdec 是否活跃的缓存（黑闪判据前置条件）：null=未查；查不到时 fail-open 视为活跃。
   bool? _flickerHwdecActive;
-
-  /// TODO-984：libmpv `error` / `log` / `videoParams` / `buffering` 流订阅
-  /// （仅 [onDiagLog] 非空、即诊断开启时挂）。每次 [load] 重挂、[dispose] 取消，
-  /// 避免向已释放 player 的流回调写日志。
-  StreamSubscription<String>? _diagErrorSub;
-  StreamSubscription<dynamic>? _diagLogSub;
-  StreamSubscription<dynamic>? _diagVideoParamsSub;
-  StreamSubscription<bool>? _diagBufferingSub;
-
-  /// 首帧分辨率（[videoWidth]/[videoHeight] 流）是否已记过一次诊断行——避免每次分辨率
-  /// 事件刷屏，只记「首次拿到非空尺寸」（=解码真正出帧的信号）。每次 [load] 复位。
-  bool _diagFirstFrameLogged = false;
-
-  /// TODO-1110：Android 视频「无画面」纹理握手诊断。挂在 [VideoController.id]
-  /// （ValueNotifier<int?>）上——`id` 是 media_kit Android 纹理握手**唯一**的 Dart 侧
-  /// 可观测输出：native `VideoOutput.Resize`（`onSurfaceAvailable` 触发）把 texture id
-  /// 回传后 `id` 才从 null 变非空；`id` 非空又是 `vo` 从 `null` 切到 `gpu` 的前置
-  /// （media_kit_video `android_video_controller/real.dart` widListener：`wid==0 → vo=null`）。
-  ///
-  /// **修 TODO-1110 的诊断盲区**：旧诊断只在 `open()` 后**一次性**回读 `vo`——但那一刻
-  /// `vo=null` 是 media_kit **有意**的初始态（`wid` 尚未到），无法区分「vo=null 瞬态
-  /// （正常，纹理稍后就绪）」与「vo=null 永久（纹理握手从未完成＝真正无画面）」。挂 id
-  /// 监听后：id 变非空＝纹理握手成功（此后 `vo=gpu`、画面应出）；一段时间后 id 仍 null＝
-  /// 握手从未完成（surface 从未 available / getSurface 返 null / JNI globalRef 失败），
-  /// 即无画面根因。[onDiagLog] 为空时不挂（零开销）。每次 [load] 重挂、[dispose] 清。
-  VoidCallback? _diagTextureIdListener;
-
-  /// [_diagTextureIdListener] 当前挂靠的 [VideoController]（清监听时需用同一实例）。
-  VideoController? _diagTextureIdController;
-
-  /// 发一条 TODO-984 诊断行（带统一前缀，便于用户在错误日志里筛选 / 上传）。
-  /// [onDiagLog] 为空（诊断未开启 / 单测）时 no-op。
-  void _diag(String message) {
-    onDiagLog?.call('[VIDEO-DIAG] $message');
-  }
-
-  /// TODO-984：解码出第一帧（[videoWidth]/[videoHeight] 首次为非空且 > 0）时记一行诊断。
-  /// 「open 成功但此行永不出现」=解码未真正出帧（hwdec / 解码器 / surface 问题），正是
-  /// 「闪烁 + 空白无画面」的关键判据。只记首次，避免分辨率事件刷屏。
-  void _maybeLogFirstFrame() {
-    if (_diagFirstFrameLogged) return;
-    if (onDiagLog == null) return;
-    final int? w = videoWidth;
-    final int? h = videoHeight;
-    if (w == null || h == null || w <= 0 || h <= 0) return;
-    _diagFirstFrameLogged = true;
-    _diag('first frame decoded: ${w}x$h');
-  }
-
-  /// TODO-984：回读 libmpv 实际生效的渲染相关属性（hwdec / vo / gpu-context /
-  /// gpu-api / current-vo / video-codec / hwdec-current）并各记一行诊断。
-  /// TODO-1232 A2 追加滤镜链 / 滤镜后输出参数（vf / video-out-params/* /
-  /// vo-configured / frame-drop-count / paused-for-cache），用来把 realme 8「mpv 侧
-  /// 全绿仍黑屏」分流成「降位滤镜没生效」vs「vo 上屏后 Flutter 不合成外部纹理」。
-  ///
-  /// 经 `player.platform`（NativePlayer）的 `getProperty`——仅 libmpv 后端有效；非
-  /// libmpv / 属性不可读时单条静默跳过（与 [applyMpvConfigToPlayer] 同 best-effort
-  /// 纪律），绝不抛、不阻塞首帧。每个 await 后用 [_isCurrentLoad] 双判据重校验，过期
-  /// 立即放弃（防向已释放 NativePlayer 读属性 = 原生 UAF，与本文件其它异步 mpv 路径一致）。
-  Future<void> _logMpvRenderProperties(Player player, int loadToken) async {
-    final dynamic native = player.platform;
-    if (native == null) {
-      _diag('mpv render props: platform is null (non-libmpv backend?)');
-      return;
-    }
-    const List<String> props = <String>[
-      'hwdec',
-      'hwdec-current',
-      'vo',
-      'current-vo',
-      'gpu-context',
-      'gpu-api',
-      'video-codec',
-      'video-format',
-      // TODO-1232 A2：滤镜链 + 滤镜后输出参数 —— 用来区分「降位滤镜根本没挂上」与
-      // 「滤镜挂了、vo 也上屏了，但 Flutter/Impeller 侧不合成外部纹理」。realme 8
-      // 上 mpv 侧全绿仍黑屏，需要这一层证据分流根因：
-      //   · `vf`＝当前视频滤镜链（降位 / 缩放滤镜是否真挂进管线；空＝没挂）。
-      //   · `video-out-params/*`＝**滤镜之后**的实际输出参数。`videoParams` 流读的是
-      //     `video-params`（解码器输出，10bit 机型恒 `yuv420p10`），证明不了降位是否
-      //     生效；只有滤镜后的 pixelformat 从 `yuv420p10` 变成 `yuv420p` 才说明降位
-      //     真落地（node 属性经 `mpv_get_property_string` 不可整体字符串化，故逐个读
-      //     `pixelformat` / `w` / `h` 叶子）。
-      'vf',
-      'video-out-params/pixelformat',
-      'video-out-params/w',
-      'video-out-params/h',
-      // vo 是否真被配置起来（`vo-configured`＝渲染输出就绪；结合 texture id 判 Impeller
-      // 合成盲区）；`frame-drop-count`＝丢帧计数；`paused-for-cache`＝是否卡在缓存等待
-      // （另一类「有帧但不显示」的黑屏疑因）。
-      'vo-configured',
-      'frame-drop-count',
-      'paused-for-cache',
-    ];
-    for (final String prop in props) {
-      String value;
-      try {
-        value = (await native.getProperty(prop)).toString();
-      } catch (_) {
-        // 属性不可读 / 非 libmpv：跳过这条，继续下一条（不致命）。
-        continue;
-      }
-      if (!_isCurrentLoad(player, loadToken)) return; // await 期间换片/销毁。
-      _diag('mpv $prop=$value');
-    }
-  }
-
-  /// TODO-1110：挂 [VideoController.id] 监听，把纹理握手的每次状态变化记进诊断日志。
-  ///
-  /// `id`（texture id）从 null 变非空＝native 纹理握手成功（`onSurfaceAvailable` →
-  /// `VideoOutput.Resize`），此后 `vo=gpu` 生效、画面应出；若始终不变非空即握手从未完成
-  /// （无画面根因）。[controller] 为空（非平台后端/测试）或 [onDiagLog] 关闭时 no-op。
-  /// 重复调用先清旧监听再挂（换集复用同一 controller 时避免叠加）。
-  void _attachTextureIdDiag(VideoController? controller) {
-    _detachTextureIdDiag();
-    if (controller == null) return;
-    if (onDiagLog == null) return;
-    _diagTextureIdController = controller;
-    void listener() {
-      _diag('texture id changed: ${controller.id.value ?? 'null(not-created)'} '
-          'rect=${controller.rect.value?.width.toInt()}x'
-          '${controller.rect.value?.height.toInt()}');
-    }
-
-    _diagTextureIdListener = listener;
-    controller.id.addListener(listener);
-    // 记一次初始态（挂监听那一刻 id 通常仍为 null，是 media_kit 的有意初始值）。
-    _diag('texture id initial: '
-        '${controller.id.value ?? 'null(not-created)'}');
-  }
-
-  /// 清除 [_attachTextureIdDiag] 挂的 id 监听（换集重挂 / [dispose]）。
-  void _detachTextureIdDiag() {
-    final VideoController? controller = _diagTextureIdController;
-    final VoidCallback? listener = _diagTextureIdListener;
-    if (controller != null && listener != null) {
-      controller.id.removeListener(listener);
-    }
-    _diagTextureIdController = null;
-    _diagTextureIdListener = null;
-  }
-
-  /// TODO-1110：在首帧就绪 / 有界超时后**再回读一次**渲染属性 + 纹理 id，让诊断日志
-  /// 能区分「vo=null 瞬态」与「vo=null 永久」。
-  ///
-  /// [_logMpvRenderProperties] 在 `open()` 后立刻读一次——那一刻 `vo=null` 是 media_kit
-  /// 的有意初始态（`wid` 未到），无法判断是否为真故障。本方法等 [player] 的首帧渲染完成
-  /// （[VideoController.waitUntilFirstFrameRendered]，纹理握手成功才 complete）或 6 秒
-  /// 超时后再读一次：若此时 texture id 仍 null / vo 仍 null＝握手从未完成（Android 无画面
-  /// 根因）；若 id 非空、vo=gpu＝渲染链已建成（画面应出，问题在别处）。仅 [onDiagLog] 非空
-  /// 时执行；每个 await 后用 [_isCurrentLoad] 双判据重校验，过期立即放弃（防原生 UAF）。
-  Future<void> _logRenderStateAfterFirstFrame(
-      Player player, int loadToken, VideoController? controller) async {
-    if (onDiagLog == null) return;
-    if (controller == null) return;
-    bool firstFrame = true;
-    Object? waitError;
-    try {
-      await controller.waitUntilFirstFrameRendered
-          .timeout(const Duration(seconds: 6));
-    } on TimeoutException {
-      // 6 秒内首帧未渲染出来——正是无画面的强信号，照样回读一次快照定位。
-      firstFrame = false;
-    } catch (e) {
-      // 首帧 Future 直接抛异常（多是 VideoController.create 失败，如 h264 解码器缺失
-      // 抛 UnsupportedError——media_kit 只 debugPrint 吞掉，这里把它显式记进诊断日志）。
-      firstFrame = false;
-      waitError = e;
-    }
-    if (!_isCurrentLoad(player, loadToken)) return; // 等待期间换片/销毁。
-    _diag('render state after '
-        '${firstFrame ? 'first-frame' : (waitError != null ? 'create-error' : '6s-timeout')}: '
-        'textureId=${controller.id.value ?? 'null(not-created)'} '
-        'rect=${controller.rect.value?.width.toInt()}x'
-        '${controller.rect.value?.height.toInt()}'
-        '${waitError != null ? ' error=$waitError' : ''}');
-    await _logMpvRenderProperties(player, loadToken);
-  }
 
   @override
   AudioCue? get currentCue => _currentCue;
@@ -1218,19 +1052,6 @@ class VideoPlayerController extends ChangeNotifier
     _bufferingReadySub = null;
     await _durationReadySub?.cancel();
     _durationReadySub = null;
-    // TODO-984：换集复用 player 时先取消上一片的诊断流订阅，重挂到新 load。
-    await _diagErrorSub?.cancel();
-    _diagErrorSub = null;
-    await _diagLogSub?.cancel();
-    _diagLogSub = null;
-    await _diagVideoParamsSub?.cancel();
-    _diagVideoParamsSub = null;
-    await _diagBufferingSub?.cancel();
-    _diagBufferingSub = null;
-    // TODO-1110：换集复用 player 时清上一片的纹理 id 监听（load 末尾会按新 controller
-    // 重挂；换集通常复用同一 controller，[_attachTextureIdDiag] 内也会先清再挂）。
-    _detachTextureIdDiag();
-    _diagFirstFrameLogged = false;
     _setSubtitleCuesLoading(false);
 
     // 裸 `Player()`：**必须保持 `PlayerConfiguration.pitch == false`（media_kit 默认）**
@@ -1245,23 +1066,7 @@ class VideoPlayerController extends ChangeNotifier
     // 与每次调速无关。**切勿**为「保音高」给这里的 `Player()` 传开启该配置的
     // `PlayerConfiguration`——那会让视频每次调速重写 af 滤镜图、在 Windows 上回归
     // TODO-070 的调速闪退。守卫：`hibiki/test/media/video/video_speed_pitch_guard_test.dart`。
-    // TODO-1232 A2：诊断开启（[onDiagLog] 非空）时用 verbose 客户端日志级构造 Player，
-    // 让 libmpv vo/vd 的 `v` 级行真正流进 `stream.log`。裸 `Player()` 默认
-    // `PlayerConfiguration.logLevel == MPVLogLevel.error` → 构造时
-    // `mpv_request_log_messages(ctx, "error")` 把**客户端订阅级**钉死在 error；后面那句
-    // `setProperty('msg-level', 'vd=v,vo=v,…')` 只改 mpv **内部**日志级、改不动客户端订阅级，
-    // 故 vo/vd 的 verbose 行永远到不了 log 流（TODO-1232 盲区①）。只在诊断开启时提级
-    // （`v` 而非 debug/trace，避免日志量爆炸），非诊断路径仍走裸 `Player()`。
-    // `PlayerConfiguration(logLevel:)` 不碰 `pitch`（默认仍 false），上面的 TODO-116
-    // 视频调速不闪退不变量不受影响（守卫 video_speed_pitch_guard_test）。
-    final Player player = _player ??
-        (onDiagLog != null && diagVerbose
-            ? Player(
-                configuration:
-                    const PlayerConfiguration(logLevel: MPVLogLevel.v),
-              )
-            : Player());
-    final bool playerNewlyCreated = _player == null;
+    final Player player = _player ?? Player();
     if (_player == null) {
       _player = player;
       _videoController = VideoController(player);
@@ -1276,87 +1081,6 @@ class VideoPlayerController extends ChangeNotifier
         unawaited(current.setVolume(_muted ? 0.0 : _lastVolume));
       });
     }
-    // TODO-1110：挂纹理 id 监听（Android 无画面诊断）。放在 controller 就绪后、诊断
-    // 订阅块之前——首个 id 变化（native 纹理握手成功）能被记进日志。换集复用同一
-    // controller 时 [_attachTextureIdDiag] 会先清旧监听再挂，不叠加。
-    _attachTextureIdDiag(_videoController);
-
-    // TODO-984 现场诊断：记录本次 load 的关键事实 + 挂 libmpv error/log/videoParams/
-    // buffering 流监听。仅 [onDiagLog] 非空（页面开了诊断）时执行；否则全静默零开销。
-    // 目标：定位 Android「闪烁 + 空白无画面」（realme 8 / Android 11）——其他 app 播同
-    // 文件正常，故疑点在 hwdec / 纹理(texture) surface / 解码出帧，靠下面的信号区分：
-    //   · open 成功但 width/height 永不就绪 → 解码未出帧（hwdec / 解码器问题）。
-    //   · error 流报 libmpv 错误 → 直接拿到根因字符串。
-    //   · videoParams 反复变化 + buffering 抖动 → surface 反复重建（闪烁）。
-    if (onDiagLog != null) {
-      _diag('load start: bookUid=$bookUid uri=$sourceUri '
-          'cues=${cues.length} hwdec=${mpvConfig.hwdec} '
-          'highQuality=${mpvConfig.highQuality} '
-          'shaders=${shaderPaths.length} '
-          'playerReused=${!playerNewlyCreated} '
-          'platform=${player.platform?.runtimeType}');
-      _diagErrorSub = player.stream.error.listen((String err) {
-        _diag('libmpv error: $err');
-      });
-      _diagLogSub = player.stream.log.listen((dynamic logEntry) {
-        // PlayerLog（prefix/level/text）——只记 warn/error/fatal 级，info/debug 太吵。
-        // 用 dynamic 取属性避免在控制器里硬依赖 media_kit 的 PlayerLog 类型签名。
-        try {
-          final String level = (logEntry.level ?? '').toString();
-          final String low = level.toLowerCase();
-          if (low.contains('error') ||
-              low.contains('warn') ||
-              low.contains('fatal') ||
-              (diagVerbose && low == 'v')) {
-            final String prefix = (logEntry.prefix ?? '').toString();
-            final String text = (logEntry.text ?? '').toString().trim();
-            _diag('libmpv log[$level][$prefix] $text');
-          }
-        } catch (_) {
-          // PlayerLog 形状异常：尽力降级，原样记一行不致命。
-          _diag('libmpv log(raw): $logEntry');
-        }
-      });
-      // TODO-1232：高频/刷屏诊断（videoParams 每次变化 / buffering 每次翻转 / 把 libmpv
-      // 模块日志级提到 verbose 引出的 vo/vd verbose 洪水）只在 verbose 诊断开关开时才挂；
-      // 正常播放不发这些——首帧出帧由 [_maybeLogFirstFrame] 单独低频记，真 error 由上面的
-      // stream.error 捕获，关键渲染后端由 [_logMpvRenderProperties] 一次性回读。
-      if (diagVerbose) {
-        _diagVideoParamsSub = player.stream.videoParams.listen((dynamic vp) {
-          // 视频参数（宽/高/像素格式/旋转等）首次解析就绪——解码出帧的强信号。
-          try {
-            final Object w = vp.w ?? vp.dw ?? '?';
-            final Object h = vp.h ?? vp.dh ?? '?';
-            _diag('videoParams: w=$w h=$h '
-                'pixelformat=${vp.pixelformat ?? '?'} '
-                'hwPixelformat=${vp.hwPixelformat ?? '?'} '
-                'colormatrix=${vp.colormatrix ?? '?'} '
-                'colorlevels=${vp.colorlevels ?? '?'} '
-                'primaries=${vp.primaries ?? '?'} '
-                'rotate=${vp.rotate ?? '?'}');
-          } catch (_) {
-            _diag('videoParams(raw): $vp');
-          }
-        });
-        _diagBufferingSub = player.stream.buffering.listen((bool b) {
-          _diag('buffering=$b');
-        });
-        // 把 libmpv 解码/输出/硬解模块的日志级别提到 verbose，让上面的 `log` 流真的
-        // 携带「HEVC 走 mediacodec / 软解回退」「vo/gpu 创建失败」「GL error」这类关键行
-        // （裸 Player() 默认 error 级，这些 info/v 级行收不到）。只提 vd/vo/ad/hwdec 四个
-        // 模块，避免 all=v 刷屏。runtime 可设属性，仅 libmpv 后端生效，best-effort。
-        final dynamic diagNative = player.platform;
-        if (diagNative != null) {
-          try {
-            await diagNative.setProperty(
-                'msg-level', 'vd=v,vo=v,ad=v,ffmpeg=v');
-          } catch (_) {
-            // 非 libmpv / 不支持：诊断日志退回 error 级，不致命。
-          }
-        }
-      }
-    }
-
     // 下面 8 处连续原生 FFI 下发（`open` / 网络缓存 / `setSubtitleTrack(no)` / 字幕抑制
     // / 着色器 / mpv 配置 / 音量 / 速率）全用方法开头捕获的局部 [player]。这些 await 缺口
     // 内用户随时可能退出页面 / 换集，触发 [dispose]（`_loadToken++` +
@@ -1371,6 +1095,21 @@ class VideoPlayerController extends ChangeNotifier
     // 取 httpHeaders 设 `http-header-fields` 后才真正打开 URL（media_kit-1.2.6 real.dart:2145），
     // 故 header 走 Media 构造参数才赶得上 open。open 后的 [applyHttpHeaderFieldsToPlayer] 保留，
     // 为随后（本方法内、seek/play 之前）外挂的 audio-only 音轨设全局属性（TODO-1280）。
+    // 根治 BUG-801：libmpv 默认 `sub-auto=exact` 会在 `open()` 加载文件时**自动加载与视频
+    // 同名的 sidecar 外挂字幕**（用户放在视频旁的 `<video>.ass/.srt`），把它选成字幕轨、
+    // 经 media_kit 的原生 `SubtitleView` 渲染，与 Hibiki 自己解析同一 .ass 得到的可点
+    // [VideoSubtitleOverlay] **叠成两条同句字幕**（原生较小钉底、overlay 较大随控制条避让）。
+    // 抑制属性（下面 open 之后的 [buildSubtitleSuppressionProperties]）设 `sub-auto=no` 已**太迟**
+    // ——sidecar 在 `open()` 那一刻就已随 `sub-auto=exact` 自动加载并选中。故必须在 **open 之前**
+    // 下发 `sub-auto=no`，让 libmpv 从一开始就不自动加载 sidecar；字幕一律走 Hibiki 自己的解析
+    // （sidecar/内嵌文本轨抽成 cue 走 overlay，图形 PGS 轨由 [selectEmbeddedGraphicTrack]
+    // 显式选轨渲染，均不受 `sub-auto=no` 影响）。open 后仍再下发一次做兜底（内嵌轨 open 后异步
+    // 就绪的重选竞态，BUG-190）。仅 libmpv 后端生效，非 libmpv 静默 no-op（见 helper）。
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSubtitleSuppressionProperties(),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return; // open 前抑制下发后换片/销毁。
     await player.open(
       Media(
         sourceUri,
@@ -1379,9 +1118,6 @@ class VideoPlayerController extends ChangeNotifier
       play: false,
     );
     if (!_isCurrentLoad(player, loadToken)) return; // open 后换片/销毁。
-    _diag('open() returned; textureId='
-        '${_videoController?.id.value ?? 'null(not-created)'} '
-        'durationMs=${player.state.duration.inMilliseconds}');
 
     // 远端 http(s) 直传：注入网络缓存/预读调优（缓解 WiFi 抖动卡顿）。仅网络流生效，
     // 本地文件 no-op（见 [applyNetworkCachePropertiesToPlayer]）。media_kit 默认
@@ -1436,19 +1172,6 @@ class VideoPlayerController extends ChangeNotifier
     _mpvConfig = mpvConfig;
     await applyMpvConfigToPlayer(player, _mpvConfig);
     if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
-    // TODO-984：回读 libmpv 真实生效的 hwdec / vo / gpu-context——「闪烁 + 空白」最常见
-    // 根因是该机型上硬件解码或 vo/gpu 后端回退失败。读取经 NativePlayer.getProperty，
-    // 仅 libmpv 后端有效，best-effort 不阻塞、不致命。
-    if (onDiagLog != null) {
-      await _logMpvRenderProperties(player, loadToken);
-      if (!_isCurrentLoad(player, loadToken)) return;
-      // TODO-1110：上面这次回读发生在 `open()` 后立刻，`vo=null` 是 media_kit 有意的
-      // 初始态（纹理 `wid` 尚未到），不能据此判无画面。故后台再等首帧渲染 / 6 秒超时后
-      // 回读一次纹理 id + vo——那一刻仍 null 才是「纹理握手从未完成」的确凿信号。不阻塞
-      // 播放主流程（unawaited），换片/销毁由方法内 [_isCurrentLoad] 双判据放弃。
-      unawaited(
-          _logRenderStateAfterFirstFrame(player, loadToken, _videoController));
-    }
 
     initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
     _lastVolume = initialVolume;
@@ -1497,11 +1220,9 @@ class VideoPlayerController extends ChangeNotifier
 
     // 订阅视频原始分辨率变化：解码出分辨率后让 overlay 重新做 \pos letterbox 映射。
     _widthSub = player.stream.width.listen((_) {
-      _maybeLogFirstFrame();
       notifyListeners();
     });
     _heightSub = player.stream.height.listen((_) {
-      _maybeLogFirstFrame();
       notifyListeners();
     });
 
@@ -1529,7 +1250,6 @@ class VideoPlayerController extends ChangeNotifier
     // 双判据：换集复用同一 player 实例时单判 `_player == player` 仍成立，会向已被新
     // load 接管的 player 误发 play()；loadToken 才能区分本次 load 是否仍当前（BUG-344）。
     if (autoPlay && _isCurrentLoad(player, loadToken)) {
-      _diag('autoPlay: calling play()');
       await player.play();
     }
 
@@ -1632,10 +1352,6 @@ class VideoPlayerController extends ChangeNotifier
         playing: isPlaying,
       ));
       if (fired) {
-        _diag(
-          'suspected black flicker: delayed=$delayed dropped=$dropped '
-          'window=${windowMs}ms',
-        );
         onSuspectedBlackFlicker?.call();
       }
     } finally {
@@ -1796,7 +1512,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 5. 命中下标与 [_currentCueIndex] 相同时不重复 [notifyListeners]。
   /// 6. 否则更新当前 cue 并通知。
   void updateCueForPosition(int posMs) {
-    _syncCueForPosition(posMs, persistPosition: true);
+    // 普通 seek 在途：把 tick 读到的滞后旧 position 调和成跳转目标位置（见
+    // [_plainSeekTargetMs] / [_reconcileSeekInFlightPosition]），避免旧字幕被反复确认。
+    _syncCueForPosition(_reconcileSeekInFlightPosition(posMs),
+        persistPosition: true);
   }
 
   void _syncCueForPosition(int posMs, {required bool persistPosition}) {
@@ -1966,21 +1685,73 @@ class VideoPlayerController extends ChangeNotifier
     return snappedIdx;
   }
 
-  /// 清「主动跳转目标」快照（[_seekTargetCueIndex]）及其在途 seek 宽限配额，
-  /// 退回纯位置推导。换字幕 / 换片 / 用户主动 seek / 自然越过目标句都汇到这里。
+  /// 清「主动跳转目标」快照（[_seekTargetCueIndex]）及其在途 seek 宽限配额，并一并清普通
+  /// seek 在途状态（[_plainSeekTargetMs]）——退回纯位置推导。换字幕 / 换片 / 用户主动 seek /
+  /// 自然越过目标句都汇到这里，作「seek 追踪状态」的统一复位点。
   void _clearSeekTargetSnap() {
     _seekTargetCueIndex = null;
     _seekSnapGraceTicksLeft = 0;
+    _clearPlainSeekInFlight();
+  }
+
+  /// 记下普通 seek 的在途目标位置并充满播放态宽限（见 [_plainSeekTargetMs]）。
+  void _beginPlainSeekInFlight(int targetMs) {
+    _plainSeekTargetMs = targetMs;
+    _plainSeekGraceTicksLeft = _seekSnapGraceTicks;
+  }
+
+  /// 清普通 seek 在途状态（目标位置 + 宽限），退回读真实 position。
+  void _clearPlainSeekInFlight() {
+    _plainSeekTargetMs = null;
+    _plainSeekGraceTicksLeft = 0;
+  }
+
+  /// 普通 seek 在途位置调和（见 [_plainSeekTargetMs]）：tick 读到的 [rawPosMs] 在 seek
+  /// 落地前是滞后的旧 position；据「已知目标位置」把它替换成目标位置，直到真实位置落定。
+  /// - 与 [skipToCue] 快照（[_seekTargetCueIndex]）互斥：后者非空时让路，返回 [rawPosMs]；
+  /// - 暂停态（positionStream 不推进）：无限期返回目标位置，让字幕停在目的地（gap 则消失）；
+  /// - 播放态：真实位置到达 `目标 − [_kPlainSeekLandToleranceMs]` 即落定、放行真实位置；否则
+  ///   消耗一格宽限继续返回目标，宽限耗尽（慢设备 / 永不落定）也放行真实位置。
+  int _reconcileSeekInFlightPosition(int rawPosMs) {
+    final int? target = _plainSeekTargetMs;
+    if (target == null || _seekTargetCueIndex != null) return rawPosMs;
+    if (!isPlaying) return target;
+    if (rawPosMs >= target - _kPlainSeekLandToleranceMs) {
+      _clearPlainSeekInFlight();
+      return rawPosMs;
+    }
+    if (_plainSeekGraceTicksLeft > 0) {
+      _plainSeekGraceTicksLeft--;
+      return target;
+    }
+    _clearPlainSeekInFlight();
+    return rawPosMs;
   }
 
   /// 公开清除入口（TODO-565 复核退回的必修项）：供**绕过 [seekMs]** 的 seek 路径手动
   /// 作废「主动跳转目标」快照。唯一调用方是页面层 media_kit 进度条（seek bar）——它在
   /// media_kit / vendored fork 内部直接调 `player.seek`，既不经本类 [seekMs]、也不向页面
-  /// 层暴露 onSeek 回调（fork 的 onSeekStart/End 写死给控制条隐藏计时、不透出 theme），
-  /// 故 [seekMs] 的统一清除点覆盖不到它。页面层在进度条交互的可观测点调本方法补清，避免
-  /// 「[skipToCue] 宽限窗口内拖进度条到更早句被误 snap 回旧目标」。
+  /// 层暴露 seek 目标（fork 的 onSeekStart 只透出「开始拖动」信号、无目标位置），故
+  /// [seekMs] 的统一清除点覆盖不到它。页面层在**开始拖动**（fork onSeekStart）时调本方法补清，
+  /// 避免「[skipToCue] 宽限窗口内拖进度条到更早句被误 snap 回旧目标」；拖动**落点**的字幕在途
+  /// 保护由 [notifyExternalSeek] 承载（见其注释）。
   void clearSeekTargetSnap() {
     _clearSeekTargetSnap();
+  }
+
+  /// 外部 seek（media_kit 进度条拖动 / 点击，绕过 [seekMs] 直接 `player.seek`）**落点**通知：
+  /// 页面在 fork 的 `onSeekEnd(target)` 回调里调本方法，补上与 [seekMs] 同款「普通 seek 在途
+  /// 保护」——按 [targetMs] 权威同步一次字幕（gap 立即消失）+ 抑制随后 tick 的滞后旧 position
+  /// （暂停无限保持 / 播放有界宽限），**但不重复 `player.seek`**（进度条内部已 seek）。
+  ///
+  /// 修「进度条拖到无字幕段后旧字幕不消失」（尤其暂停重听时）：进度条走 media_kit 内部 seek，
+  /// [seekMs] 的权威同步 + 在途抑制覆盖不到它，旧字幕会被滞后旧 position 逐拍确认（同 BUG-796
+  /// ±秒键根因）。本方法把同一保护补到进度条落点。
+  void notifyExternalSeek(int targetMs) {
+    final int clampedMs = targetMs.clamp(0, 1 << 30);
+    _clearSeekTargetSnap();
+    _beginPlainSeekInFlight(clampedMs);
+    _syncCueForPosition(clampedMs, persistPosition: false);
   }
 
   /// 主动跳转目标 snap 的纯决策（TODO-565，越界判据 BUG-378 收紧到 endMs）。所有几何在
@@ -2421,12 +2192,33 @@ class VideoPlayerController extends ChangeNotifier
   ///
   /// **「主动跳转目标」快照的统一清除点（TODO-565 复核退回的必修项）。** 经本方法的
   /// 每一次 seek 都先清快照：章节跳转（[seekToChapter]）、相对 seek（[seekRelative]）、
-  /// 收藏句直接跳转（页面层 `seekMs`）都汇于此，落地前用户跳更早句不再被旧 [skipToCue]
-  /// 目标误 snap 回去。**唯一例外是 [skipToCue] 自己**——它要在本 seek **之后**才置
-  /// 快照+宽限，故先调 [seekMs]（在这里把上一个快照清掉）、再置自己的快照，绝不会被
-  /// 本清除点自清（见 [skipToCue] 注释）。进度条拖动经 media_kit 内部 `player.seek`
+  /// 收藏句直接跳转（页面层 `seekMs`）都汇于此（[seekMs] / [_rawSeekMs] 开头都调
+  /// [_clearSeekTargetSnap]），落地前用户跳更早句不再被旧 [skipToCue] 目标误 snap 回去。
+  /// **唯一例外是 [skipToCue] 自己**——它要在本 seek **之后**才置快照+宽限，故先调
+  /// [_rawSeekMs]（在这里把上一个快照清掉）、再置自己的快照，绝不会被本清除点自清
+  /// （见 [skipToCue] 注释）。进度条拖动经 media_kit 内部 `player.seek`
   /// 绕过本方法，由页面层 [clearSeekTargetSnap] 单独清（media_kit seek bar 不暴露回调）。
+  ///
+  /// 除清快照外，本方法还给普通 seek 挂「在途保护」（[_plainSeekTargetMs]）：一发 seek 就按
+  /// 目标位置**权威同步一次字幕**（不等滞后的 player position），字幕即时反映跳转目的地（gap
+  /// 则立即消失），随后 tick 经 [_reconcileSeekInFlightPosition] 抑制旧 position 的瞬态回跳，
+  /// 修「±秒跳转到 gap 后旧字幕不消失」（尤其暂停重听时）。[skipToCue] 自带 cue-snap，走
+  /// [_rawSeekMs] 不吃本保护，避免权威同步先把目标清成 preRoll gap、下一拍才 snap 回而闪烁。
   Future<void> seekMs(int positionMs) async {
+    final int clampedMs = positionMs.clamp(0, 1 << 30);
+    _clearSeekTargetSnap();
+    _beginPlainSeekInFlight(clampedMs);
+    // 权威同步：直接按目标位置算一次字幕（不经 tick 的位置调和），gap 则立即清空。
+    _syncCueForPosition(clampedMs, persistPosition: false);
+    await _player?.seek(Duration(milliseconds: clampedMs));
+  }
+
+  /// 直发 player seek（只清「主动跳转目标」快照，**不**置普通 seek 在途保护）——[skipToCue]
+  /// 专用：它自带 [_seekTargetCueIndex] 快照抑制在途 lag，且需要本清除点先清上一次快照、再由
+  /// 自己在 seek **之后**置新快照（见 [skipToCue] / [_clearSeekTargetSnap] 注释）。若改走会置
+  /// 在途保护的 [seekMs]，seek 前的权威同步会先把目标句清成 preRoll 落点的 gap、下一拍才随
+  /// 快照 snap 回目标，凭空多一次闪烁。
+  Future<void> _rawSeekMs(int positionMs) async {
     _clearSeekTargetSnap();
     await _player?.seek(Duration(milliseconds: positionMs.clamp(0, 1 << 30)));
   }
@@ -2531,11 +2323,12 @@ class VideoPlayerController extends ChangeNotifier
     // snap 回目标句，消除「点第 N 行高亮 N-1」。解析不到下标（cue 不在 _cues）时为 null，
     // 退回纯位置推导。**在 seek 之前先算好**，避免下面 await 期间 _cues 被异步改写。
     final int? targetIndex = _resolveCueIndex(cue);
-    // **顺序关键（TODO-565 复核退回的必修项）**：先 await [seekMs] 发出 seek——[seekMs]
-    // 开头会把**上一个**主动跳转快照清掉（统一清除点），故本句快照必须在它**之后**才置，
-    // 否则会被 [seekMs] 自清成 off-by-one 又复发。await 与同步置快照在单线程事件循环里对
-    // 后续 tick 等价可见（tick 不会插在 await 与置快照之间读到半截状态）。
-    await seekMs(cueSeekTargetMs(
+    // **顺序关键（TODO-565 复核退回的必修项）**：先 await [_rawSeekMs] 发出 seek——它开头
+    // 会把**上一个**主动跳转快照清掉（统一清除点），故本句快照必须在它**之后**才置，否则会被
+    // 自清成 off-by-one 又复发。await 与同步置快照在单线程事件循环里对后续 tick 等价可见
+    // （tick 不会插在 await 与置快照之间读到半截状态）。用 [_rawSeekMs] 而非 [seekMs]：后者
+    // 会挂普通 seek 在途保护 + 权威同步，与本路径自带的 cue-snap 抑制重复且会引入闪烁。
+    await _rawSeekMs(cueSeekTargetMs(
       cueStartMs: cue.startMs,
       delayMs: _delayMs,
       preRollMs: kCueSeekPreRollMs,
@@ -2877,15 +2670,6 @@ class VideoPlayerController extends ChangeNotifier
     _durationReadySub = null;
     unawaited(_audioDeviceSub?.cancel());
     _audioDeviceSub = null;
-    unawaited(_diagErrorSub?.cancel());
-    _diagErrorSub = null;
-    unawaited(_diagLogSub?.cancel());
-    _diagLogSub = null;
-    unawaited(_diagVideoParamsSub?.cancel());
-    _diagVideoParamsSub = null;
-    unawaited(_diagBufferingSub?.cancel());
-    _diagBufferingSub = null;
-    _detachTextureIdDiag();
     // TODO-1212：注销文件句柄释放登记（迁移路径不再触达已销毁的本控制器）。
     final MediaHandleReleaseCallback? registration = _mediaHandleRegistration;
     if (registration != null) {

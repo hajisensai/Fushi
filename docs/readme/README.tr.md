@@ -214,6 +214,7 @@ hibiki aşağıdaki projeler ve ekosistem üzerine kuruludur:
 | [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | Yerel ses ve AnkiDroid etkileşimi referansı |
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Okuyucu, istatistik ve eşitleme uyumluluğu referansı |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter video oynatma çerçevesi (libmpv çekirdeği) |
+| [Niratan](https://github.com/W1ght/Niratan) | macOS için sürükleyici dil öğrenme paketi |
 
 ## Lisans
 

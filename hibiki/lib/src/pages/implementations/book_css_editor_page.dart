@@ -1,21 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/epub/book_css_repository.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
 
-class BookCssEditorPage extends StatefulWidget {
+class BookCssEditorPage extends ConsumerStatefulWidget {
   const BookCssEditorPage({super.key, required this.extractDir});
 
   final String extractDir;
 
   @override
-  State<BookCssEditorPage> createState() => _BookCssEditorPageState();
+  ConsumerState<BookCssEditorPage> createState() => _BookCssEditorPageState();
 }
 
-class _BookCssEditorPageState extends State<BookCssEditorPage> {
+class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage> {
   late BookCssRepository _repo;
   List<CssFileEntry> _entries = [];
   int _selectedIndex = 0;
   bool _loading = true;
+
+  /// 该书 bookKey（按 extractDir 反查；用于把 CSS 编辑记进 book_custom_css 供跨端同步）。
+  /// null = 书未入库（临时/找不到）→ 只存磁盘、不同步（优雅降级）。
+  String? _bookKey;
 
   final Map<int, TextEditingController> _textControllers = {};
   final Map<int, String> _diskContent = {};
@@ -24,7 +32,42 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
   void initState() {
     super.initState();
     _repo = BookCssRepository(widget.extractDir);
+    _resolveBookKey();
     _reload();
+  }
+
+  Future<void> _resolveBookKey() async {
+    try {
+      final row = await ref
+          .read(appProvider)
+          .database
+          .getEpubBookByExtractDir(widget.extractDir);
+      if (mounted) _bookKey = row?.bookKey;
+    } catch (_) {
+      // 反查失败：只存磁盘不同步（不影响编辑器可用）。
+    }
+  }
+
+  /// 把一次 CSS 保存/重置记进 book_custom_css（LWW 时间戳载体），供跨端同步。
+  /// bookKey 未解析（书未入库）时静默跳过——磁盘写照常，只是不参与同步。
+  Future<void> _recordCss(
+    CssFileEntry entry, {
+    required bool reset,
+    String content = '',
+  }) async {
+    final String? bookKey = _bookKey;
+    if (bookKey == null) return;
+    try {
+      final db = ref.read(appProvider).database;
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      if (reset) {
+        await db.markBookCssReset(bookKey, entry.relativePath, now);
+      } else {
+        await db.upsertBookCss(bookKey, entry.relativePath, content, now);
+      }
+    } catch (_) {
+      // best-effort：同步记账失败不影响磁盘保存已成功。
+    }
   }
 
   // BUG-040: the discover-walk + per-file reads run off the UI thread via async
@@ -135,6 +178,8 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
   void _doSave(int index) {
     final String content = _textControllers[index]!.text;
     _repo.saveCss(_entries[index], content);
+    // 记进 book_custom_css（跨端同步的时间戳载体）；磁盘已写、best-effort 记账。
+    unawaited(_recordCss(_entries[index], reset: false, content: content));
     _diskContent[index] = content;
     // BUG-040: no re-walk — saving CSS content can't change the set of .css
     // files, and the modified marker (`isDifferentFromOriginal`) reads disk
@@ -178,6 +223,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
 
     if (hasBackup) {
       _repo.resetFile(_entries[idx]);
+      unawaited(_recordCss(_entries[idx], reset: true));
     }
     final String restored = _repo.readCssSync(_entries[idx]);
     _diskContent[idx] = restored;
@@ -220,7 +266,15 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     );
     if (confirmed != true) return;
 
+    // 重置前捕获「有自定义（.original 存在）」的条目，逐条记重置墓碑（跨端传播重置）。
+    final List<CssFileEntry> customized = <CssFileEntry>[
+      for (final CssFileEntry e in _entries)
+        if (e.hasOriginal) e
+    ];
     _repo.resetAll();
+    for (final CssFileEntry e in customized) {
+      unawaited(_recordCss(e, reset: true));
+    }
     _reload();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -28,6 +28,7 @@ void main() {
       expect(DesktopClipboardDestination.main.storageValue, 'main');
       expect(DesktopClipboardDestination.panel.storageValue, 'panel');
       expect(DesktopClipboardDestination.transient.storageValue, 'transient');
+      expect(DesktopClipboardDestination.textWindow.storageValue, 'textWindow');
     });
   });
 }

@@ -1048,6 +1048,11 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     } else if (!hasDimensions && isSvg) {
         node.dataset.hasAspectRatio = 'false';
         imageContainer.style.width = 'auto';
+        const isGaiji = nodeData?.class === 'gaiji' || Object.prototype.hasOwnProperty.call(nodeData || {}, 'gaiji');
+        if (isGaiji) {
+            imageContainer.style.setProperty('width', 'auto', 'important');
+            imageContainer.style.setProperty('margin-inline-end', '0', 'important');
+        }
         imageContainer.style.minWidth = '1.2em';
         imageContainer.style.height = '1.2em';
         imageContainer.style.fontSize = 'inherit';
@@ -2886,9 +2891,12 @@ function masonrySupported() {
 function dictColumns() {
     // --dict-columns 由宿主注入到 documentElement（app_model / dictionary_popup_webview /
     // popup_settings_injection 三面同源），即使弹窗挂在 shadow root 也从此处读。
-    const raw = getComputedStyle(document.documentElement).getPropertyValue('--dict-columns');
-    const n = Number.parseInt(raw, 10);
-    return Number.isFinite(n) && n > 0 ? n : 1;
+    // 与 CSS grid 的 --dict-columns-effective 同源：masonry 用「视口收敛后的有效列数」
+    //（min(用户设置, 每列 ≥DICT_COLUMN_MIN_WIDTH px 装得下的列数)）。历史 bug：masonry
+    // 直接读 --dict-columns 原始值，无视窄面板收敛 → 用户「最多列数（自动填充）」的自动
+    // 调整对词典方框布局不生效（窄面板照塞满列、卡片互相挤压）。effectiveDictColumns() 是
+    // grid 与 masonry 的单一真值来源，二者不再分叉。
+    return effectiveDictColumns();
 }
 
 function masonryGap() {
@@ -3111,24 +3119,32 @@ function markGlobalLookupExtHit(target) {
 // min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
 // resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
 const DICT_COLUMN_MIN_WIDTH = 170;
+// 视口感知的有效列数（单一真值来源）：min(用户设置 --dict-columns, 每列 ≥DICT_COLUMN_MIN_WIDTH
+// px 装得下的列数)。CSS grid 经 --dict-columns-effective 消费、masonry 经 dictColumns() 消费，
+// 两者都走此函数——绝不再分叉（历史上 masonry 漏了视口收敛，自动调整对方框布局不生效）。
+function effectiveDictColumns() {
+    let configured = 1;
+    try {
+        configured = parseInt(
+            getComputedStyle(document.documentElement)
+                .getPropertyValue('--dict-columns'), 10) || 1;
+    } catch (e) {
+        configured = 1;
+    }
+    if (!(configured > 0)) configured = 1;
+    const width = window.innerWidth || 0;
+    const fit = width > 0
+        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
+        : configured;
+    return Math.min(configured, fit);
+}
 function updateEffectiveDictColumns() {
     const doc = document.documentElement;
     if (!doc || !doc.style || typeof doc.style.setProperty !== 'function') {
         return;
     }
-    let configured = 1;
-    try {
-        configured = parseInt(
-            getComputedStyle(doc).getPropertyValue('--dict-columns'), 10) || 1;
-    } catch (e) {
-        configured = 1;
-    }
-    const width = window.innerWidth || 0;
-    const fit = width > 0
-        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
-        : configured;
     doc.style.setProperty(
-        '--dict-columns-effective', String(Math.min(configured, fit)));
+        '--dict-columns-effective', String(effectiveDictColumns()));
 }
 if (typeof window.addEventListener === 'function'
     && !window.__hibikiDictColsResizeHooked) {
@@ -3616,6 +3632,10 @@ document.addEventListener('click', (e) => {
     }
 
     const _t0 = __hibikiEventTarget(e); const target = _t0?.nodeType === Node.TEXT_NODE ? _t0.parentElement : _t0;
+    // 弹窗尺寸拖拽把手（浏览器扩展 Phase D）是宿主页 body 顶层兄弟 #hibiki-popup-resize-grip，
+    // 不在任何弹窗内部选择器内，点/拖它会落到本函数末尾的 tapOutside 关窗（用户报「拖动关窗」）。
+    // 这里显式豁免：点/拖把手绝不关窗。app 内弹窗文档里无此元素，closest 永不命中 → no-op。
+    if (target?.closest?.('#hibiki-popup-resize-grip')) return;
     // TODO-1189 — audio/mine/favorite are per-entry action buttons; a click on any
     // of them must NEVER reach the document dismiss path. .favorite-button was
     // missing here, so tapping ☆ on a PARENT card fell through to the .entry

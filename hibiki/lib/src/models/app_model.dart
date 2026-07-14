@@ -519,7 +519,12 @@ class AppModel with ChangeNotifier {
 
     if (report.booksImported > 0 ||
         report.audiobooksImported > 0 ||
-        report.localBookProgressPulled > 0) {
+        report.localBookProgressPulled > 0 ||
+        report.collectionsUpdated > 0) {
+      // 合集专属同步（仅 collectionsUpdated>0、无书内容导入）也必须刷新书架 tab：
+      // 否则后台把合集成员落库后，书架非响应式的 _shelfMapsFuture 永不重载，合集
+      // 不成组（书架合集不渲染，直到重启 app）。refreshTab 触发本 tab 的
+      // tabRefreshNotifier，ReaderHibikiHistoryPage 监听后重载合集折叠映射。
       ReaderMediaType.instance.refreshTab();
     }
 
@@ -704,6 +709,12 @@ class AppModel with ChangeNotifier {
   bool get isInitialised => _isInitialised;
   bool _isInitialised = false;
 
+  /// BUG-815: the currently-running [_initialiseOnce] future, or null when no
+  /// init is in flight. [initialise] uses it to serialise concurrent callers so
+  /// a second init can never race the first over the shared [_database] /
+  /// repositories / [_isInitialised]. Cleared when the in-flight run completes.
+  Future<void>? _initInFlight;
+
   /// Non-null if [initialise] threw; UI should display this instead of spinning.
   String? get initError => _initError;
   String? _initError;
@@ -727,6 +738,21 @@ class AppModel with ChangeNotifier {
 
   /// Clears the error state and re-runs [initialise].
   Future<void> retryInitialise() async {
+    // BUG-815: if an init started by main() is still IN FLIGHT — a slow cold
+    // start that merely tripped the 20s loading watchdog, NOT a hang — do NOT
+    // tear down / re-open the DB below. Closing [_database] out from under the
+    // running init and spawning a SECOND concurrent init races them over the
+    // shared _database / repositories / _isInitialised and surfaces as "all data
+    // empty" on the home screen (mobile has no custom data root, so restarting —
+    // a single clean init — restores everything). Await the in-flight attempt
+    // instead: it completes (data appears) or sets _initError (whose own Retry
+    // then runs cleanly, because [initialise]'s whenComplete has cleared
+    // _initInFlight by that point).
+    final Future<void>? inFlight = _initInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
     // A previous attempt may have partially initialised resources. Tear down
     // the ones that would otherwise leak or double-register before re-running
     // (the late fields below are reassigned by initialise()).
@@ -1800,7 +1826,29 @@ class AppModel with ChangeNotifier {
     _databaseDirectory = _appPaths.supportRoot;
   }
 
-  Future<void> initialise() async {
+  /// Public entry point for app initialisation.
+  ///
+  /// BUG-815: serialises initialisation. If a run is already in flight (e.g. the
+  /// loading-watchdog Retry firing while main()'s init is still going on a slow
+  /// cold start), concurrent callers share that single run instead of starting a
+  /// SECOND init that races the first over [_database] / repositories /
+  /// [_isInitialised]. Once the run completes — success OR [_initError] (the body
+  /// catches internally and never rethrows, so this future always resolves
+  /// normally) — the guard clears, so a genuine retry-after-error still starts a
+  /// fresh attempt.
+  Future<void> initialise() {
+    final Future<void>? existing = _initInFlight;
+    if (existing != null) return existing;
+    final Future<void> run = _initialiseOnce();
+    _initInFlight = run;
+    return run.whenComplete(() {
+      if (identical(_initInFlight, run)) _initInFlight = null;
+    });
+  }
+
+  /// One-shot initialisation body. Never call directly — always go through
+  /// [initialise] so the in-flight guard holds.
+  Future<void> _initialiseOnce() async {
     try {
       debugPrint('[Hibiki] init: PackageInfo + DeviceInfo');
 
@@ -4126,33 +4174,41 @@ class AppModel with ChangeNotifier {
 
   /// TODO-1357: 查词弹窗「列数 / 自动展开词典数」的平台三态默认解析（纯函数，供守卫）。
   /// - 用户显式设过（[hasExplicit]）→ 一律遵从其存储值 [stored]（尊重用户）。
-  /// - 从未设过：桌面（pointer:fine，[isDesktop]）→ 默认 2（Niratan 双栏观感）；
-  ///   移动端窄屏 → 默认 1（不硬塞两列 / 两词典，避免窄屏挤爆）。
+  /// - 从未设过：桌面（pointer:fine，[isDesktop]）→ [desktopDefault]；
+  ///   移动端窄屏 → [mobileDefault]（不硬塞多列 / 多词典，避免窄屏挤爆）。
+  /// [desktopDefault] / [mobileDefault] 让列数与自动展开数各定各的平台默认（列数封顶更
+  /// 宽松、由 popup.js 视口收敛兜底；自动展开数保守）。
   static int resolvePopupDesktopDefault({
     required bool hasExplicit,
     required int stored,
     required bool isDesktop,
+    int desktopDefault = 2,
+    int mobileDefault = 1,
   }) =>
-      hasExplicit ? stored : (isDesktop ? 2 : 1);
+      hasExplicit ? stored : (isDesktop ? desktopDefault : mobileDefault);
 
-  /// TODO-1357: 查词弹窗默认列数（桌面未设 2 / 移动未设 1 / 显式遵从）。所有
+  /// TODO-1357: 查词弹窗默认「最多列数」（桌面 / 移动均未设 3 / 显式遵从）。列数是
+  /// 「自动填充、封顶用户值」——真实生效列数由 popup.js 的视口收敛（每列 ≥170px）算出，
+  /// 故默认统一放宽到 3（宽屏 / 宽屏手机铺满、窄屏自动收回，不再硬塞挤爆）。所有
   /// `--dict-columns` 注入点（app_model / dictionary_popup_webview /
   /// popup_settings_injection）都读本 getter，平台默认在此单点收口。
   int get popupDictionaryColumns => resolvePopupDesktopDefault(
         hasExplicit: prefsRepo.hasExplicitPopupDictionaryColumns,
         stored: prefsRepo.popupDictionaryColumns,
         isDesktop: isDesktopPlatform,
+        desktopDefault: 3,
+        mobileDefault: 3,
       );
   Future<void> setPopupDictionaryColumns(int columns) =>
       prefsRepo.setPopupDictionaryColumns(columns);
 
-  /// TODO-1357: 自动展开词典数（桌面未设 2 个 / 移动未设 1 个 / 显式遵从）——桌面上与
-  /// 2 列并排即 Niratan 双栏。
-  int get popupAutoExpandDictionaries => resolvePopupDesktopDefault(
-        hasExplicit: prefsRepo.hasExplicitPopupAutoExpandDictionaries,
-        stored: prefsRepo.popupAutoExpandDictionaries,
-        isDesktop: isDesktopPlatform,
-      );
+  /// 自动展开词典数默认「跟随最多列数」（用户拍板 2026-07-14）：未显式设过时默认 =
+  /// 当前 [popupDictionaryColumns]（一行几列就默认展开几本，第一行铺满即展开）；用户
+  /// 显式设过一律遵从其存储值。列数改动会带动本默认（用户没单独设过展开数时）。
+  int get popupAutoExpandDictionaries =>
+      prefsRepo.hasExplicitPopupAutoExpandDictionaries
+          ? prefsRepo.popupAutoExpandDictionaries
+          : popupDictionaryColumns;
   Future<void> setPopupAutoExpandDictionaries(int count) =>
       prefsRepo.setPopupAutoExpandDictionaries(count);
 
@@ -4252,6 +4308,21 @@ class AppModel with ChangeNotifier {
   double get clipboardPanelOpacity => prefsRepo.clipboardPanelOpacity;
   Future<void> setClipboardPanelOpacity(double v) =>
       prefsRepo.setClipboardPanelOpacity(v);
+  // 真透明剪切板文字窗背景不透明度（0.0 = 全透只露文字）。
+  double get clipboardTextWindowBgOpacity =>
+      prefsRepo.clipboardTextWindowBgOpacity;
+  Future<void> setClipboardTextWindowBgOpacity(double v) =>
+      prefsRepo.setClipboardTextWindowBgOpacity(v);
+
+  /// 真透明剪切板文字窗的文字颜色 = 当前主题 onSurface（跟随明暗/配色方案）。背景
+  /// 仍由 [clipboardTextWindowBgOpacity] 滑杆控制、文字恒实心（满 alpha）。明暗解析
+  /// 与悬浮字幕 app 级样式同款（ThemeMode.system 按浅色，保持两处一致）。
+  int clipboardTextWindowTextColor() {
+    final Brightness brightness =
+        themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light;
+    return buildColorScheme(brightness).onSurface.value;
+  }
+
   String get clipboardPanelRect => prefsRepo.clipboardPanelRect;
   Future<void> setClipboardPanelRect(String v) =>
       prefsRepo.setClipboardPanelRect(v);
@@ -4272,6 +4343,10 @@ class AppModel with ChangeNotifier {
 
   static const List<String> defaultAudioSources =
       PreferencesRepository.defaultAudioSources;
+
+  /// Anki 本地音频服务器（5050）内置预设 URL 的镜像，供 UI（重置默认）引用。
+  static const String ankiLocalAudioUrl =
+      PreferencesRepository.ankiLocalAudioUrl;
 
   List<String> get audioSources => prefsRepo.audioSources;
 

@@ -1,4 +1,4 @@
-﻿import 'package:drift/native.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -84,6 +84,37 @@ void main() {
 
       final row = await db.getSrtBookByUid('srt/1');
       expect(row!.title, 'V2');
+    });
+  });
+
+  // BUG-793：书架有声书列表据此 Drift `.watch()` 流在任意导入路径落库后自动刷新
+  // （provider 层再 `.distinct` 按集合去重）。
+  group('watchSrtBookUids', () {
+    test('emits inserted uid when an audiobook is added', () async {
+      final db = await _openDb();
+      final emissions = <List<String>>[];
+      final sub = db.watchSrtBookUids().listen(emissions.add);
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(emissions.last, isEmpty, reason: '初始快照：空库');
+
+      await db.upsertSrtBook(_srtBook(uid: 'srt/new'));
+      await pumpEventQueue();
+      expect(emissions.last, contains('srt/new'), reason: '插入后集合应含新导入有声书的 uid');
+    });
+
+    test('drops removed uid on delete', () async {
+      final db = await _openDb();
+      await db.upsertSrtBook(_srtBook(uid: 'srt/gone'));
+      final emissions = <List<String>>[];
+      final sub = db.watchSrtBookUids().listen(emissions.add);
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(emissions.last, contains('srt/gone'));
+
+      await db.deleteSrtBookByUid('srt/gone');
+      await pumpEventQueue();
+      expect(emissions.last, isNot(contains('srt/gone')));
     });
   });
 }

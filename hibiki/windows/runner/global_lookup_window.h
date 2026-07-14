@@ -26,6 +26,12 @@
 #include <wil/com.h>
 #pragma warning(pop)
 
+// 剪切板面板背景逐像素透明（composition 模式）：DirectComposition 视觉树承载
+// WebView2 composition controller 的透明像素，配 WS_EX_NOREDIRECTIONBITMAP 真透到桌面。
+#include <d3d11.h>
+#include <dxgi.h>
+#include <dcomp.h>
+
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -153,6 +159,13 @@ class GlobalLookupWindow {
   // 则用于 CreateWindowExW；窗口已存在时经 SetWindowTextW 即时生效。
   void SetWindowTitle(const std::wstring& title);
 
+  // 剪切板面板背景逐像素透明 — 仅面板实例开启：窗口用 WS_EX_NOREDIRECTIONBITMAP
+  // 建、WebView2 走 composition controller + DirectComposition 视觉树，透明像素
+  // 真透到桌面（背景全透 + 文字实心），取代整窗 LWA_ALPHA 的「文字一起变淡」。
+  // 瞬态查词覆盖窗保持默认 false（windowed，行为一字不改）。必须在首次
+  // ShowAt/PrewarmWebView（窗口 + WebView 创建）前设置。
+  void SetCompositionMode(bool composition) { composition_mode_ = composition; }
+
   // spec §6 semi-transparency gate — asks DWM for a Win11 acrylic backdrop
   // behind the window's transparent WebView2 pixels. Returns whether the OS
   // accepted it (Win10 / pre-22H2 -> false; the panel then stays opaque and
@@ -215,6 +228,19 @@ class GlobalLookupWindow {
   bool OwnsLiveWindow() const;
   void ForgetDeadWindow();
   void EnsureWebView();
+  // 背景逐像素透明（composition 模式）辅助：
+  // InitCompositionDevice — 建 D3D11 + DComp 设备（无需 HWND），可在建窗前探测能力；
+  //   失败即 composition_active_=false，回退 windowed（面板照常工作、只是不透明）。
+  // EnsureCompositionTargetVisual — 为 hwnd_ 建 DComp target + 承载 WebView 的 visual。
+  bool InitCompositionDevice();
+  bool EnsureCompositionTargetVisual();
+  // 建窗 ex-style（含 composition 能力探测）：composition_active_ 时带
+  // WS_EX_NOREDIRECTIONBITMAP。ShowAt / PrewarmWebView 共用，避免两处重复。
+  DWORD OverlayCreateExStyle();
+  // 背景逐像素透明（composition）无子 HWND，鼠标消息直达本窗：把它们转发给
+  // composition controller（SendMouseInput），否则透明面板点不动/滚不动。windowed
+  // 瞬态窗的 WebView2 子窗自动收输入，不经此路径。
+  void ForwardCompositionMouse(UINT message, WPARAM wparam, LPARAM lparam);
   void RecoverDeadWebView(const std::string& replay_script);
   // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never
   // swallows it) so the "app-external lookup shows no popup" cause is visible.
@@ -243,11 +269,25 @@ class GlobalLookupWindow {
   // 变大；resize 期间 ApplyRoundedRegion 改用整窗区域，让窗口可见地随拖拽增长，结束
   // 复原 shell 裁剪。面板实例 shell_rects_css_ 为空，此标志对它无副作用。
   bool resizing_ = false;
+  // Phase C（2026-07-14）— 拖拽起始（WM_ENTERSIZEMOVE 那刻）的窗口物理尺寸。瞬态覆盖
+  // 窗恒比可见卡片大一截（reserve-to-edge 级联余量），故 WM_EXITSIZEMOVE 回报「起始+结束」
+  // 两个尺寸，Dart 用二者之差（恒定余量抵消）折算 overlay 增量——绝对窗口尺寸会把余量算
+  // 进去导致尺寸暴涨/卡片甩边（乱跳）。0 = 未在拖拽。
+  int resize_start_w_ = 0;
+  int resize_start_h_ = 0;
   // spec 2026-07-10 — panel-instance data knobs (defaults == the historical
   // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
   bool arm_dismiss_hooks_ = true;
   bool activatable_ = false;
   bool taskbar_presence_ = false;
+  // 背景逐像素透明模式（仅面板实例）：composition controller + DirectComposition。
+  // 默认 false=windowed（瞬态窗与历史行为一字不改）。见 SetCompositionMode。
+  bool composition_mode_ = false;
+  // composition_mode_ 请求下 DComp 设备真的建起来了才为 true：任何 D3D11/DComp/
+  // composition controller 创建失败都回退 composition_active_=false（windowed），
+  // 面板永不因透明改造而黑屏/崩溃（graceful degrade，只是不透明）。窗口样式、
+  // controller 分支、WM_SIZE 都以 composition_active_（而非 _mode_）为准。
+  bool composition_active_ = false;
   std::wstring window_title_ = L"Hibiki Lookup";
   std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
@@ -261,6 +301,16 @@ class GlobalLookupWindow {
   wil::com_ptr<ICoreWebView2Environment> env_;
   wil::com_ptr<ICoreWebView2Controller> controller_;
   wil::com_ptr<ICoreWebView2> webview_;
+
+  // 背景逐像素透明（composition 模式）COM 对象。composition_active_ 时才创建。
+  wil::com_ptr<ID3D11Device> d3d_device_;
+  wil::com_ptr<IDCompositionDevice> dcomp_device_;
+  wil::com_ptr<IDCompositionTarget> dcomp_target_;
+  wil::com_ptr<IDCompositionVisual> dcomp_visual_;
+  wil::com_ptr<ICoreWebView2CompositionController> composition_controller_;
+  // composition 模式下 WebView2 请求的光标（add_CursorChanged 回调更新）；
+  // WM_SETCURSOR 据此 SetCursor，让 hover 链接/文本时光标形状正确。
+  HCURSOR composition_cursor_ = nullptr;
 
   MediaResolver media_resolver_;
   MessageCallback message_cb_;

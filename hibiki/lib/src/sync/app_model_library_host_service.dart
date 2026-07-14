@@ -4,11 +4,6 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
-import 'package:hibiki/src/media/video/video_subtitle_source.dart'
-    show
-        EmbeddedSubtitleTrack,
-        listEmbeddedSubtitleTracks,
-        subtitleFormatForCodec;
 import 'package:hibiki/src/media/video/video_sidecar.dart'
     show findSidecarSubtitle;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
@@ -299,8 +294,30 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     // 抛 StateError → 服务端 404。
     final Set<String> audiobookKeys = await _srtBackedAudiobookKeys();
     final Map<String, List<String>> tagsByBookKey = await _tagNamesByBookKey();
+    // tags 稳健档：host 为每本书带上标签 LWW 时钟（名→加入戳）+ 移除墓碑，供 client
+    // mergeRemoteBookTags 传播 host 侧的删除/改名、防复活（旧 client 忽略这些键、按
+    // tags 名单只增，向后兼容）。逐书查（个人库规模可接受）。
+    final Map<String, Map<String, int>> tagAddedAtByKey =
+        <String, Map<String, int>>{};
+    final Map<String, Map<String, int>> tagTombByKey =
+        <String, Map<String, int>>{};
+    for (final EpubBookRow r in rows) {
+      tagAddedAtByKey[r.bookKey] = await _db.bookTagAddedAtByName(r.bookKey);
+      tagTombByKey[r.bookKey] =
+          await _db.tagTombstonesByName(r.bookKey, 'epub');
+    }
     final Map<String, RemoteCollectionMembership> membership =
         await _primaryCollectionMembership();
+    // BUG-812：srt-backed 有声书（同 bookKey 既有 EpubBooks 又有 SrtBooks 行）加入合集
+    // 时以 **`srt|<uid>`** 存进成员表（本地书架把它当 SRT 卡渲染、经 srt|uid 折叠），
+    // 而非 `epub|<bookKey>`。互联 client 把这类书作为 EPUB 占位卡收下，只查 `epub|bookKey`
+    // 会 miss → RemoteBookInfo.collection=null → 有声书不折进合集。这里补一趟
+    // bookKey→srtUid 映射，供下面按 srt 成员键兜底查归属，让有声书 EPUB 卡也带上
+    // collection（client 经现有注入循环折进合集，与本地书架对称、不依赖后台 sweep）。
+    final Map<String, String> srtUidByBookKey = <String, String>{
+      for (final SrtBookRow s in await _db.getAllSrtBooks())
+        if (s.bookKey.isNotEmpty) s.bookKey: s.uid,
+    };
     return rows.map((EpubBookRow r) {
       // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
       // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
@@ -316,8 +333,15 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         coverPath: coverPath,
         hasAudiobook: audiobookKeys.contains(r.bookKey),
         tags: tagsByBookKey[r.bookKey] ?? const <String>[],
+        tagsAddedAt: tagAddedAtByKey[r.bookKey] ?? const <String, int>{},
+        tagTombstones: tagTombByKey[r.bookKey] ?? const <String, int>{},
         // 合集成员键：epub 条目 mediaType='epub'、entryKey=bookKey（§2.3 任务5.1）。
-        collection: membership['epub|${r.bookKey}'],
+        // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub|bookKey 会 miss，
+        // 回退查 srt|uid（BUG-812）。散卡（两键都无）= null。
+        collection: membership['epub|${r.bookKey}'] ??
+            (srtUidByBookKey[r.bookKey] != null
+                ? membership['srt|${srtUidByBookKey[r.bookKey]}']
+                : null),
       );
     }).toList();
   }
@@ -552,42 +576,91 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   }
 
   /// host 当前可导出的有声书清单。
+  ///
+  /// 两类：
+  /// - **srt-backed**（既有 Audiobooks 又有 SrtBooks 行）：身份键 = bookKey（不变）。
+  /// - **纯 SRT（standalone）有声书**（SrtBooks 行 bookKey 为空、无 Audiobooks 行）：
+  ///   身份键 = uid。旧枚举只遍历 Audiobooks 表，完全遗漏这类书 → 无法跨设备下载。
   @override
   Future<List<RemoteAudiobookInfo>> listAudiobooks() async {
     final List<AudiobookRow> rows = await _db.getAllAudiobooks();
     final List<RemoteAudiobookInfo> result = <RemoteAudiobookInfo>[];
+    final Set<String> emittedUids = <String>{};
     for (final AudiobookRow r in rows) {
       final SrtBookRow? srt = await _db.getSrtBookByBookKey(r.bookKey);
       if (srt == null) continue;
-      result.add(RemoteAudiobookInfo(bookKey: r.bookKey, title: srt.title));
+      result.add(RemoteAudiobookInfo(
+        bookKey: r.bookKey,
+        uid: srt.uid,
+        title: srt.title,
+      ));
+      emittedUids.add(srt.uid);
+    }
+    // 纯 SRT（standalone）有声书：bookKey 为空、不落 Audiobooks 行，身份 = uid。
+    final List<SrtBookRow> srtRows = await _db.getAllSrtBooks();
+    for (final SrtBookRow srt in srtRows) {
+      if (srt.bookKey.isNotEmpty) continue; // srt-backed 已在上面枚举
+      if (!emittedUids.add(srt.uid)) continue; // 去重（防重复 uid）
+      result.add(RemoteAudiobookInfo(
+        bookKey: '',
+        uid: srt.uid,
+        title: srt.title,
+      ));
     }
     return result;
   }
 
-  /// 即时把 bookKey 为 [bookKey] 的有声书打包成临时文件，返回该文件。
+  /// 即时把身份键为 [identity] 的有声书打包成临时文件，返回该文件。
   /// 调用方负责删除返回的临时文件（及其父临时目录）。
-  /// [bookKey] 含路径穿越字符时抛 [ArgumentError]；
-  /// 找不到有声书（Audiobooks 行或 SrtBooks 行缺失）时抛 [StateError]。
+  ///
+  /// [identity] 解析：先按 bookKey 查 Audiobooks（srt-backed），命中即打含 audiobook
+  /// 段的包；否则按 uid 查 SrtBooks（纯 SRT standalone），命中即打无 audiobook 段的
+  /// 纯 SRT 包。两者都查不到抛 [StateError]。含路径穿越字符时抛 [ArgumentError]。
   @override
-  Future<File> exportAudiobook(String bookKey) async {
-    _assertSafeName(bookKey);
+  Future<File> exportAudiobook(String identity) async {
+    _assertSafeName(identity);
 
-    final AudiobookRow? ab = await _db.getAudiobookByBookKey(bookKey);
-    if (ab == null) {
-      throw StateError('audiobook not found for bookKey: $bookKey');
-    }
-    final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
-    if (srt == null) {
-      throw StateError('srtBook not found for bookKey: $bookKey');
+    // srt-backed：identity = bookKey，Audiobooks 行 + SrtBooks 行齐备。
+    final AudiobookRow? ab = await _db.getAudiobookByBookKey(identity);
+    if (ab != null) {
+      final SrtBookRow? srt = await _db.getSrtBookByBookKey(identity);
+      if (srt == null) {
+        throw StateError('srtBook not found for bookKey: $identity');
+      }
+      return _packAudiobook(
+        identity: identity,
+        srtBookUid: srt.uid,
+        bookKey: identity,
+      );
     }
 
+    // 纯 SRT（standalone）：identity = uid，无 Audiobooks 行，bookKey 空。
+    final SrtBookRow? srtStandalone = await _db.getSrtBookByUid(identity);
+    if (srtStandalone != null) {
+      return _packAudiobook(
+        identity: identity,
+        srtBookUid: identity,
+        bookKey: null, // 无 Audiobooks 行 → 打纯 SRT 包
+      );
+    }
+
+    throw StateError('audiobook not found for identity: $identity');
+  }
+
+  /// 打包成 `<identity>.hibikiaudio` 临时文件（srt-backed 传 [bookKey]；纯 SRT 传
+  /// null，包管线据此省略 audiobook 段、cue 走 uid 命名空间）。
+  Future<File> _packAudiobook({
+    required String identity,
+    required String srtBookUid,
+    required String? bookKey,
+  }) async {
     final Directory tmpDir =
         Directory.systemTemp.createTempSync('hibiki_audiobook_export');
-    final File out = File(p.join(tmpDir.path, '$bookKey.hibikiaudio'));
+    final File out = File(p.join(tmpDir.path, '$identity.hibikiaudio'));
     await _packages.exportAudioDatabasePackage(
-      bookKey: bookKey,
-      srtBookUid: srt.uid,
+      srtBookUid: srtBookUid,
       outputFile: out,
+      bookKey: bookKey,
     );
     return out;
   }
@@ -596,9 +669,11 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   /// `Audiobooks` 行查询，不触发 [exportAudiobook] 的整包打包 zip I/O。与
   /// [putAudiobookPosition] 自身用的存在性闸门同一查询。
   @override
-  Future<bool> audiobookExists(String bookKey) async {
-    _assertSafeName(bookKey);
-    return await _db.getAudiobookByBookKey(bookKey) != null;
+  Future<bool> audiobookExists(String identity) async {
+    _assertSafeName(identity);
+    if (await _db.getAudiobookByBookKey(identity) != null) return true;
+    // 纯 SRT standalone：无 Audiobooks 行，按 uid 查 SrtBooks。
+    return await _db.getSrtBookByUid(identity) != null;
   }
 
   /// 把有声书包文件导入 host（解包写 DB + 音频文件）。
@@ -629,35 +704,47 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     _assertSafeName(bookKey);
     await _runExclusive(() async {
       final AudiobookRow? ab = await _db.getAudiobookByBookKey(bookKey);
-      if (ab == null) return; // 幂等：不存在则静默跳过
+      if (ab != null) {
+        // 先取 audioRoot，再删 DB 行（磁盘清理在 DB 删除后，同 deleteBook 顺序）。
+        final String? audioRoot = ab.audioRoot;
 
-      // 先取 audioRoot，再删 DB 行（磁盘清理在 DB 删除后，同 deleteBook 顺序）。
-      final String? audioRoot = ab.audioRoot;
-
-      // 删除 SrtBooks 行（按 bookKey），其关联的 SrtBook 级别 audioCues 由事务处理。
-      // getSrtBookByBookKey 先拿 uid，再用 deleteSrtBookByUid 级联删 audioCue 行。
-      final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
-      if (srt != null) {
-        await _db.deleteSrtBookByUid(srt.uid);
-      }
-
-      // 删除 Audiobooks 行（及其 audioCues 级联，via deleteAudiobookByBookKey）。
-      await _db.deleteAudiobookByBookKey(bookKey);
-
-      // 磁盘音频目录。TODO-935 ①A：仅删 app 内部持久根下的复制目录，绝不递归删
-      // 用户「引用导入」的原始外部目录（按路径是否在 <appDoc>/audiobooks 之外派生）。
-      if (audioRoot != null && audioRoot.isNotEmpty) {
-        final String persistRoot = await AudiobookStorage.audiobooksRootDir();
-        final bool referenced = AudiobookStorage.isReferencedPath(
-          filePath: audioRoot,
-          persistRoot: persistRoot,
-        );
-        if (!referenced) {
-          final Directory dir = Directory(audioRoot);
-          if (dir.existsSync()) await dir.delete(recursive: true);
+        // 删除 SrtBooks 行（按 bookKey），其关联的 SrtBook 级别 audioCues 由事务处理。
+        // getSrtBookByBookKey 先拿 uid，再用 deleteSrtBookByUid 级联删 audioCue 行。
+        final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
+        if (srt != null) {
+          await _db.deleteSrtBookByUid(srt.uid);
         }
+
+        // 删除 Audiobooks 行（及其 audioCues 级联，via deleteAudiobookByBookKey）。
+        await _db.deleteAudiobookByBookKey(bookKey);
+
+        await _deleteAudioRootIfPersisted(audioRoot);
+        return;
       }
+
+      // 纯 SRT standalone：identity = uid，无 Audiobooks 行。按 uid 删 SrtBooks 行
+      // （级联 uid 命名空间的 audioCues）+ 其持久音频目录。
+      final SrtBookRow? srt = await _db.getSrtBookByUid(bookKey);
+      if (srt == null) return; // 幂等：都不存在则静默跳过
+      final String? audioRoot = srt.audioRoot;
+      await _db.deleteSrtBookByUid(srt.uid);
+      await _deleteAudioRootIfPersisted(audioRoot);
     });
+  }
+
+  /// 删除 [audioRoot] 磁盘目录，但仅当它在 app 内部持久根（<appDoc>/audiobooks）下
+  /// —— 绝不递归删用户「引用导入」的原始外部目录（TODO-935 ①A）。
+  Future<void> _deleteAudioRootIfPersisted(String? audioRoot) async {
+    if (audioRoot == null || audioRoot.isEmpty) return;
+    final String persistRoot = await AudiobookStorage.audiobooksRootDir();
+    final bool referenced = AudiobookStorage.isReferencedPath(
+      filePath: audioRoot,
+      persistRoot: persistRoot,
+    );
+    if (!referenced) {
+      final Directory dir = Directory(audioRoot);
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    }
   }
 
   /// 读 host 端有声书 [bookKey] 的播放断点（BUG-471）。真相源是
@@ -692,8 +779,14 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     int positionMs,
     int updatedAtMs,
   ) async {
-    // host 库不存在该有声书 → no-op（防任意 client 上报任意 bookKey 写脏 prefs）。
-    if (await _db.getAudiobookByBookKey(bookKey) == null) return;
+    // host 库不存在该有声书 → no-op（防任意 client 上报任意 key 写脏 prefs）。
+    // srt-backed 按 bookKey 查 Audiobooks；纯 SRT standalone 按 uid 查 SrtBooks。
+    // 进度 pref key = audiobook_pos_<identity>：standalone 的 identity=uid 恰为
+    // SrtBook 进度键，故写穿即写到正确命名空间。
+    if (await _db.getAudiobookByBookKey(bookKey) == null &&
+        await _db.getSrtBookByUid(bookKey) == null) {
+      return;
+    }
     final ({int positionMs, int updatedAtMs}) current =
         await getAudiobookPosition(bookKey);
     final ({int positionMs, int updatedAtMs}) winner =
@@ -770,21 +863,22 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         } catch (_) {
           // stat 失败：保守返回 null
         }
-        // 检查外挂字幕 sidecar
+        // 检查外挂字幕 sidecar（廉价：仅文件存在性探测）。
         final String? sub =
             findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
         if (sub != null && File(sub).existsSync()) {
           hasSubtitle = true;
           subtitleFileName = p.basename(sub);
         }
-        embeddedSubtitleTracks = await _embeddedSubtitleTracksForVideo(
-          videoPath,
-        );
-        if (embeddedSubtitleTracks.any(
-          (RemoteVideoEmbeddedSubtitleTrack track) => track.isText,
-        )) {
-          hasSubtitle = true;
-        }
+        // BUG-814：列表端点**不做**内嵌字幕轨 ffmpeg 探测。旧实现在此逐视频串行
+        // spawn `ffmpeg -i`（每项超时基线 60s、大文件到 1200s、无缓存、每次 GET 全量
+        // 重跑），大库（如 511 个视频）轻易超过 client 的 15s listTimeout → 远端视频
+        // 判空 → 手机整页空。内嵌轨是**播放时**才需要的信息，已由 `/streamurl` 端点
+        // (`hibiki_sync_server.dart` `_embeddedSubtitleTracksForRequest`) 在拉流时按需
+        // 探测并下发（client 唯一消费者 video_hibiki_page 读的是 streamurl 响应，列表
+        // 的 embeddedSubtitleTracks 零消费）。故此处保持 embeddedSubtitleTracks 为空、
+        // hasSubtitle 只反映廉价的外挂 sidecar——列表变纯 DB/stat 读，与 listBooks 对称、
+        // 毫秒返回。
       }
     }
 
@@ -812,6 +906,10 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       episodes: episodes,
       currentEpisode: currentEpisode,
       tags: tags,
+      // tags 稳健档：带上标签 LWW 时钟 + 移除墓碑，供 client mergeRemoteVideoTags 传播
+      // host 侧删除/改名、防复活（旧 client 忽略、按 tags 名单只增）。
+      tagsAddedAt: await _db.videoTagAddedAtByName(row.bookUid),
+      tagTombstones: await _db.tagTombstonesByName(row.bookUid, 'video'),
       collection: collection,
     );
   }
@@ -864,24 +962,6 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     if (episodeIndex >= entries.length) return null;
     final String path = entries[episodeIndex].path;
     return path.isEmpty ? null : path;
-  }
-
-  Future<List<RemoteVideoEmbeddedSubtitleTrack>>
-      _embeddedSubtitleTracksForVideo(
-    String videoPath,
-  ) async {
-    final List<EmbeddedSubtitleTrack> tracks =
-        await listEmbeddedSubtitleTracks(videoPath);
-    return <RemoteVideoEmbeddedSubtitleTrack>[
-      for (final EmbeddedSubtitleTrack track in tracks)
-        RemoteVideoEmbeddedSubtitleTrack(
-          streamIndex: track.streamIndex,
-          codec: track.codec,
-          language: track.language,
-          title: track.title,
-          isText: subtitleFormatForCodec(track.codec) != null,
-        ),
-    ];
   }
 
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。

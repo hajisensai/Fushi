@@ -214,6 +214,7 @@ hibiki được xây dựng dựa trên các dự án và hệ sinh thái sau:
 | [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | Tham chiếu âm thanh cục bộ và tương tác với AnkiDroid |
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Tham chiếu khả năng tương thích trình đọc, thống kê và đồng bộ |
 | [media_kit](https://github.com/media-kit/media-kit) | Framework phát video cho Flutter (lõi libmpv) |
+| [Niratan](https://github.com/W1ght/Niratan) | Bộ công cụ học ngôn ngữ chuyên sâu cho macOS |
 
 ## Giấy phép
 

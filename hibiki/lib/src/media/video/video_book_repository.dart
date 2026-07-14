@@ -42,6 +42,16 @@ class VideoBookRepository {
     }
   }
 
+  /// tags 稳健档 LWW：把远端标签快照（名→加入戳 + 移除墓碑）合并进视频 [bookUid]。
+  /// 删除/改名跨端传播、防复活（见 [HibikiDatabase.mergeRemoteVideoTags]）。
+  Future<void> mergeRemoteVideoTags(
+    String bookUid, {
+    required Map<String, int> remoteAddedAt,
+    Map<String, int> remoteTombstones = const <String, int>{},
+  }) =>
+      _db.mergeRemoteVideoTags(bookUid,
+          remoteAddedAt: remoteAddedAt, remoteTombstones: remoteTombstones);
+
   /// 统一合集 Phase 2：把一个多集播放列表拆成 N 条独立 VideoBooks 行 + 一个 playlist
   /// [MediaCollections]（成员按序）。是「导入时拆集」的单一真相源，与 v38 迁移
   /// `splitPlaylistVideoBooksV38` 落库形状对齐（每集自带 positionMs 进 lastPositionMs；
@@ -100,6 +110,10 @@ class VideoBookRepository {
       _db.getMediaCollectionById(id);
 
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
+
+  /// 监听视频库行集合（uid）变化，供库页在任意导入路径（页内 / 拖拽 / 外部
+  /// 「用 Hibiki 打开」/ 远端下载）落库后自动刷新（BUG-793）。
+  Stream<List<String>> watchVideoBookUids() => _db.watchVideoBookUids();
 
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
   /// （[_repairMovedCoverPaths]）。**只给展示层用**——删除 GC（[collectReferencedAssetPaths]）

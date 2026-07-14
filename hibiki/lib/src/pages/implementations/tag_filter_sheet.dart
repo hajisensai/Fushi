@@ -88,6 +88,14 @@ final filteredVideoBookUidsProvider = FutureProvider<Set<String>?>((ref) async {
   return db.getVideoBookUidsForAllTags(tagIds);
 });
 
+/// 含【全部】选中标签的合集 id（无选中标签时 null = 不过滤）。合集卡按此显隐。
+final filteredCollectionIdsProvider = FutureProvider<Set<int>?>((ref) async {
+  final Set<int> tagIds = ref.watch(selectedTagIdsProvider);
+  if (tagIds.isEmpty) return null;
+  final db = ref.watch(appProvider).database;
+  return db.getCollectionIdsForAllTags(tagIds);
+});
+
 class TagFilterSheet extends ConsumerStatefulWidget {
   const TagFilterSheet({super.key});
 

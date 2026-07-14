@@ -20,14 +20,39 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/utils.dart';
 
+/// BUG-793：EPUB 书 bookKey 集合的响应式来源。`.distinct(listEquals)` 按集合去重
+/// ——插入/删除触发，改作者/封面等纯列更新（集合不变）不触发，避免书架无谓重算。
+/// [hibikiBooksProvider] 订阅它后，任意导入路径落库都自动刷新，无需每个导入点各自
+/// `ref.invalidate`（现存 invalidate 保留为即时刷新兜底，二者不冲突）。
+final _epubBookKeysProvider = StreamProvider<List<String>>((ref) {
+  return ref
+      .watch(appProvider)
+      .database
+      .watchEpubBookKeys()
+      .distinct(listEquals);
+});
+
+/// BUG-793：有声书（SrtBooks）uid 集合的响应式来源，作用同 [_epubBookKeysProvider]。
+final _srtBookUidsProvider = StreamProvider<List<String>>((ref) {
+  return ref
+      .watch(appProvider)
+      .database
+      .watchSrtBookUids()
+      .distinct(listEquals);
+});
+
 final hibikiBooksProvider =
     FutureProvider.family<List<MediaItem>, Language>((ref, language) {
+  // BUG-793：订阅 EPUB 书集合变化，任意导入路径落库后自动重算书架。
+  ref.watch(_epubBookKeysProvider);
   return ReaderHibikiSource.instance.getBooksFromDb(
     appModel: ref.watch(appProvider),
   );
 });
 
 final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
+  // BUG-793：订阅有声书集合变化，任意导入路径落库后自动重算。
+  ref.watch(_srtBookUidsProvider);
   final db = ref.watch(appProvider).database;
   return SrtBookRepository(db).listAll();
 });

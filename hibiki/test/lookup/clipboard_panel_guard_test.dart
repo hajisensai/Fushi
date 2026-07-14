@@ -247,10 +247,18 @@ void main() {
     });
 
     test('面板窗可激活（点击落焦点，滚轮不穿游戏）；瞬态窗保持 NOACTIVATE', () {
+      // 背景逐像素透明重构：activatable_ 分流收进 OverlayCreateExStyle 单一真相源，
+      // ShowAt/PrewarmWebView 两个创建点共用它（不再各写一份），比旧的「两处各写、
+      // 靠计数守一致」更强。
       expect(
         'activatable_ ? 0 : WS_EX_NOACTIVATE'.allMatches(cpp).length,
-        greaterThanOrEqualTo(2),
-        reason: 'ShowAt 与 PrewarmWebView 两处创建点都必须按 activatable_ 分流',
+        greaterThanOrEqualTo(1),
+        reason: 'activatable_ 分流在 OverlayCreateExStyle 里，两创建点共用',
+      );
+      expect(
+        'OverlayCreateExStyle()'.allMatches(cpp).length,
+        greaterThanOrEqualTo(3),
+        reason: '两个 CreateWindowExW 都调 OverlayCreateExStyle()（+ 定义 = ≥3）',
       );
       final int panelChannel = fw.indexOf('RegisterClipboardPanelChannel() {');
       expect(panelChannel, isNonNegative);

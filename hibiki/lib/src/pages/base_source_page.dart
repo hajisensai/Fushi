@@ -649,7 +649,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
     return parkedPopupLayer(
       pos: pos,
-      visible: item.visible,
+      // BUG-797：「选择句子上下文」原生对话框打开期间把弹窗停靠屏外，否则原生平台视图
+      // （WebView2 / Android platform view）盖住 showAppDialog 弹的对话框（层级不对）。
+      visible: item.visible && !_sentenceContextDialogOpen,
       screen: screen,
       child: DictionaryPopupLayer(
         result: item.result,
@@ -771,26 +773,43 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
   }
 
+  /// BUG-797：「制卡·选择句子上下文」原生对话框打开期间置真。查词弹窗是**原生平台视图**
+  /// （桌面 WebView2 / Android platform view），总画在 Flutter overlay 之上——`showAppDialog`
+  /// 弹的对话框在 Flutter overlay 层，会被原生弹窗**盖住**（用户报「层级不对」，对话框被词典
+  /// 弹窗遮住右半边）。对话框期间据此把弹窗 [parkedPopupLayer] 的 `visible` 强制翻假 → 弹窗
+  /// 停靠到屏外（[parkedPopupLayer] 的 BUG-135 停靠语义，webview 仍存活、确认制卡回点照常），
+  /// 让对话框独占屏幕；关闭后复原。
+  bool _sentenceContextDialogOpen = false;
+
   /// BUG-763/766：弹窗点某词条「调整上下文」→ 弹 **app 原生顶层对话框**
   /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内——那受弹窗表面尺寸/半透明
   /// 限制，句子框重叠、显示不全）。复用宿主已有 [onSetSentenceContextToDraft] /
   /// [onSentenceContextPreviewFromDraft] 驱动增减 + 预览（后端零改动）；「确认制卡」回
   /// [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条制卡按钮
   /// （[DictionaryPopupWebViewState.mineEntryByIndex]，复用全部制卡/查重/覆写逻辑）。
+  /// BUG-797：对话框打开期间把弹窗 WebView 停靠屏外（见 [_sentenceContextDialogOpen]），
+  /// 否则原生平台视图盖住对话框。
   Future<void> _openSentenceContextDialog({
     required GlobalKey<DictionaryPopupWebViewState> webViewKey,
     required int entryIndex,
     required String matched,
   }) async {
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => SentenceContextDialog(
-        matched: matched,
-        fetchPreview: onSentenceContextPreviewFromDraft,
-        setContext: onSetSentenceContextToDraft,
-        onConfirm: () => webViewKey.currentState?.mineEntryByIndex(entryIndex),
-      ),
-    );
+    if (!mounted) return;
+    setState(() => _sentenceContextDialogOpen = true);
+    try {
+      await showAppDialog<void>(
+        context: context,
+        builder: (_) => SentenceContextDialog(
+          matched: matched,
+          fetchPreview: onSentenceContextPreviewFromDraft,
+          setContext: onSetSentenceContextToDraft,
+          onConfirm: () =>
+              webViewKey.currentState?.mineEntryByIndex(entryIndex),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sentenceContextDialogOpen = false);
+    }
   }
 
   /// TODO-058：某弹窗层 WebView 渲染完成（`popupRendered`）。先把挂起的冷层翻为

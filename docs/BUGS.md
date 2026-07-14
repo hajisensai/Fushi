@@ -27,13 +27,37 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 775 条。点号进各自文件。
+> 共 799 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-816](bugs/BUG-816-backup-export-category-gating.md) | ✅ | ✅ | 导出未按功能类别剥离个人数据(收藏句/音频源路径/字体路径/sync开关/配对token泄漏) |
+| [BUG-815](bugs/BUG-815-init-retry-race.md) | ✅ | ✅ | 看门狗重试与在飞初始化竞态致数据全空(移动端) |
+| [BUG-814](bugs/BUG-814-interconnect-video-list-empty.md) | ✅ | ✅ | 互联开启后手机视频列表为空(host listVideos 每视频串行 ffmpeg 探测超过 client 15s 超时) |
+| [BUG-813](bugs/BUG-813-interconnect-download-no-reading-progress.md) | ✅ | ✅ | 互联手动下载远端书不带回阅读记录(阅读进度/有声书断点) |
+| [BUG-812](bugs/BUG-812-interconnect-audiobook-not-in-collection.md) | ✅ | ✅ | 互联开启后手机上有声书不进合集(host listBooks 只用 epub\|bookKey 查归属，漏 srt-backed 有声书的 srt\|uid 成员键) |
+| [BUG-811](bugs/BUG-811-remote-video-list-timeout-toast.md) | ✅ | ✅ | 远端视频清单超时把异常原文泄漏进 toast |
+| [BUG-810](bugs/BUG-810-backup-import-overlay-no-progress.md) | ✅ | ✅ | 备份导入复制阶段无进度条遮罩 |
+| [BUG-809](bugs/BUG-809-audiobook-clip-mjpeg-mov-size.md) | ✅ | ✅ | 有声书导出片段桌面仍用mjpeg/.mov无帧间压缩导致30秒200MB且非通用格式 |
+| [BUG-808](bugs/BUG-808-audiobook-clip-highlight-reflow.md) | ✅ | ✅ | 有声书导出片段竖排逐句高亮撑大盒子导致整段文字重新排版抖动 |
 | [BUG-808](bugs/BUG-808-ass-bold0-fake-bold.md) | ✅ | ✅ | ASS `Bold=0` 被用户统一字重假粗体化（字号/描边观感全毁） |
-| [BUG-797](bugs/BUG-797-subtitle-group-element-reuse-flicker.md) | ✅ | ✅ | 双语字幕重叠进出场时在屏字幕元素被跨 cue 复用导致闪烁 |
-| [BUG-796](bugs/BUG-796-ass-blur-border-only.md) | ✅ | ✅ | ASS `\blur` 有描边时整字被糊成一团（应只糊描边、留锐利字面） |
+| [BUG-807](bugs/BUG-807-multiselect-combine-icon-tooltip.md) | ✅ | ✅ | 多选栏组合成系列图标与收藏夹雷同且无tooltip |
+| [BUG-806](bugs/BUG-806-dict-columns-autofit.md) | ✅ | ✅ | 词典最多列数自动调整对方框布局不生效 |
+| [BUG-805](bugs/BUG-805-video-missing-reimport-noop.md) | ✅ | ✅ | 视频缺失态重新导入空操作没反应 |
+| [BUG-804](bugs/BUG-804-shelf-continue-excludes-audiobook.md) | ✅ | ✅ | 书架继续阅读hero排除有声书永不更新 |
+| [BUG-803](bugs/BUG-803-inline-gaiji-width.md) | ✅ | ✅ | 词典行内外字图标撑开相邻链接 |
+| [BUG-802](bugs/BUG-802-popup-copy-search-selection.md) | ✅ | ✅ | 查词弹窗选中后复制/搜索无效 |
+| [BUG-801](bugs/BUG-801-android-native-subtitleview-duplicate.md) | ✅ | ✅ | 安卓视频原生SubtitleView与可点浮层字幕重复(控制条显示时上下两条) |
+| [BUG-800](bugs/BUG-800-subtitle-group-element-reuse-flicker.md) | ✅ | ✅ | 双语字幕重叠进出场时在屏字幕元素被跨 cue 复用导致闪烁 |
+| [BUG-799](bugs/BUG-799-ass-blur-border-only.md) | ✅ | ✅ | ASS `\blur` 有描边时整字被糊成一团（应只糊描边、留锐利字面） |
+| [BUG-798](bugs/BUG-798-exotic-audio-layout-silence.md) | ✅ | ✅ | 特殊多声道音频布局(6.1 FLC)无声 |
+| [BUG-797](bugs/BUG-797-sentence-context-dialog-behind-popup.md) | ✅ | ✅ | 制卡「选择句子上下文」原生对话框被查词弹窗盖住（层级不对） |
+| [BUG-796](bugs/BUG-796-video-seek-gap-subtitle-linger.md) | ✅ | ✅ | 视频普通 seek（±秒键）跳到无字幕段后旧字幕不消失 |
+| [BUG-795](bugs/BUG-795-subtitle-list-empty-hint.md) | ✅ | ✅ | 字幕列表收藏/已选档结果为空误显示未加载字幕 |
+| [BUG-793](bugs/BUG-793-video-import-no-refresh.md) | ✅ | ✅ | 视频导入后库页不自动刷新(外部打开等路径) |
+| [BUG-792](bugs/BUG-792-subtitle-list-hover-popover-close.md) | ✅ | ✅ | 悬停底栏音量/倍速图标误关 push-aside 字幕列表 |
+| [BUG-791](bugs/BUG-791-popup-empty-reading-split.md) | ✅ | ✅ | 查词弹窗同词因空读音拆成两张卡 |
+| [BUG-790](bugs/BUG-790-video-collection-count-remote.md) | ✅ | ✅ | 视频合集行计数只数本地成员导致全云端合集显示0集 |
 | [BUG-789](bugs/BUG-789-reader-chrome-inset-stale-pagination-metrics.md) | ✅ | ✅ | 底栏 inset 后分页终点过期导致章尾不可读 |
 | [BUG-788](bugs/BUG-788-fractional-page-boundary-premature-limit.md) | ✅ | ✅ | 亚像素页距在第31页误判边界提前停翻 |
 | [BUG-787](bugs/BUG-787-vertical-pagination-drift-recurrence.md) | ✅ | ✅ | 竖排累计漂移探针取整假阳性（当前 develop 未复现） |

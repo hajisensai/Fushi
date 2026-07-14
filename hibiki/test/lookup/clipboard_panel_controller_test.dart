@@ -185,12 +185,12 @@ void main() {
           reason: '回传必须走面板自己的 channel，与瞬态窗互不串线');
     });
 
-    test('渲染走 layoutMode panel；透明=整窗 LWA_ALPHA（spec §6 真机修正）', () {
+    test('渲染走 layoutMode panel；卡背景恒不透明（透明路线 composition 失败已回退）', () {
       expect(controllerSrc.contains("layoutMode: 'panel'"), isTrue);
-      expect(controllerSrc.contains('setWindowAlpha'), isTrue,
-          reason: '真透视=整窗 alpha；acrylic 实测经 windowed WebView2 不透明');
+      // 背景透明改走 composition 真机失败已回退 + 透明开关删除：卡背景恒 1.0
+      // （windowed 下卡背景透明只会露黑）。真透明改走 GDI 悬浮字幕窗（B 路线）另起。
       expect(controllerSrc.contains('cardBgAlpha: 1.0'), isTrue,
-          reason: '卡背景恒不透明，避免与整窗 alpha 双重变淡');
+          reason: '卡背景恒不透明，透明开关已删');
       expect(controllerSrc.contains('applyBackdrop'), isFalse,
           reason: 'acrylic backdrop 路线废弃（毛玻璃≠透视），面板不再调用');
     });

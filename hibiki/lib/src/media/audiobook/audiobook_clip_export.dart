@@ -245,17 +245,22 @@ AudiobookClipMultiCueResult classifyAudiobookClipMultiCue({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// TODO-945 M4：把文本图（PNG）+ 音频片段（AAC）合成成一段短视频（mjpeg/.mov）。
+// TODO-945 M4：把文本图 + 音频片段（AAC）合成成一段短视频。
 //
-// D-CODEC（实测捆绑 ffmpeg 只有 gif/mjpeg/png 视频编码器，无 libx264/mpeg4）：
-// 用 `-c:v mjpeg`（Motion JPEG）+ `-c:a aac` 落 `.mov` 容器。GIF 无音轨故排除。
-// 画面是静态文本图 `-loop 1`，音频驱动时长 `-shortest`。
+// 编码器按后端能力分流（[_clipVideoCodecArgs]，BUG-809）：
+// - 桌面 ffmpeg-min 自 `e039cf760`（2026-07-07，TODO-1257）已编入 `libx264`（H.264）+
+//   `mp4` muxer → 桌面用 `-c:v libx264` + `.mp4`：**带帧间压缩**，逐句高亮跟随里大量
+//   重复帧压到近零字节，30 秒片段从旧 mjpeg 的 ~200MB 降到几 MB，且 .mp4 任意播放器/
+//   浏览器/社交平台可直接打开。
+// - 移动端自编 ffmpeg-kit **min** 变体无外部 GPL 库（无 libx264），仍用 `-c:v mjpeg`
+//   （Motion JPEG，帧内 JPEG）+ `.mov` 容器。GIF 无音轨故排除。
+// 两条路径都 `-c:a aac`；单图路径 `-loop 1` + `-shortest`，序列帧路径 `-framerate`。
 //
-// ⚠️ 容器（D-MUXER，BUG-460）：`.mov` 需要 mov muxer。精简 ffmpeg-min build
-// （`--disable-everything`）原本只编入 adts/gif/mjpeg/image2 muxer，没有任何能同时
-// 装视频+音频流的容器，写 `.mov` 会 exit -22（EINVAL）。已把 `mov` 加进
-// `tool/ffmpeg-min/build-ffmpeg-min.sh` 的 MUXERS 白名单（AAC 入 mov 自动经已编入的
-// `aac_adtstoasc` bsf）；本路径依赖重编后的 ffmpeg-min 产物随桌面发布更新。
+// ⚠️ 容器（D-MUXER，BUG-460）：`.mov`/`.mp4` 都需要能同时装视频+音频流的 mov/mp4
+// muxer；精简 ffmpeg-min build（`--disable-everything`）原本只编入 adts/gif/mjpeg/
+// image2 单流 muxer，写这类容器会 exit -22（EINVAL）。`mov`+`mp4` 均已加进
+// `tool/ffmpeg-min/build-ffmpeg-min.sh` 的 MUXERS 白名单（AAC 入 mov/mp4 自动经已编入
+// 的 `aac_adtstoasc` bsf）；本路径依赖重编后的 ffmpeg-min 产物随桌面发布更新。
 // ─────────────────────────────────────────────────────────────────────────
 
 /// 片段视频合成的失败原因。
@@ -329,6 +334,7 @@ List<String> buildFfmpegImageAudioToVideoArgs({
   int height = 1920,
   int fps = 12,
   String pixFmt = 'yuvj444p',
+  bool h264 = false,
 }) {
   // pad 居中黑边：scale 先按比例缩进框内，再 pad 到精确 WxH（偶数维度安全）。
   final String filter = 'scale=$width:$height:'
@@ -345,14 +351,7 @@ List<String> buildFfmpegImageAudioToVideoArgs({
     imagePath,
     '-i',
     audioPath,
-    '-c:v',
-    'mjpeg',
-    // TODO-1147：mjpeg 用近最佳 qscale（-q:v 2）消除默认 qscale 的二次有损；yuvj444p
-    // 去色度下采样（桌面路径）保留彩色文字边缘精度（移动端调用方保守传 yuvj420p）。
-    '-q:v',
-    '2',
-    '-pix_fmt',
-    pixFmt,
+    ..._clipVideoCodecArgs(h264: h264, pixFmt: pixFmt),
     '-r',
     '$fps',
     '-vf',
@@ -361,6 +360,46 @@ List<String> buildFfmpegImageAudioToVideoArgs({
     'aac',
     '-shortest',
     outputPath,
+  ];
+}
+
+/// BUG-809：按后端能力选视频编码器。桌面 ffmpeg-min 自 `e039cf760`（2026-07-07）
+/// 已编入 `libx264`（H.264）+ `mp4` muxer，故桌面导出用 [h264]=true 走 H.264：带
+/// 帧间压缩（P/B 帧），逐句高亮跟随里大量重复帧压到近零字节，30 秒片段从 mjpeg 的
+/// ~200MB 降到几 MB，容器换 `.mp4`（任意播放器/浏览器/社交平台可直接打开）。
+/// 移动端自编 ffmpeg-kit **min** 变体无外部 GPL 库（无 libx264），[h264] 保持 false
+/// 走原 `mjpeg`（帧内 JPEG，体积大但两端都能编）。
+///
+/// - H.264：`-preset veryfast`（桌面导出体感快，文字/纯色底压缩率仍极高）+ `-crf 20`
+///   （高质量近视觉无损）+ `-pix_fmt yuv420p`（最大兼容，非 mjpeg 的 yuvj*）+
+///   `-movflags +faststart`（moov 前置，边下边播/网页直开）。
+/// - mjpeg：`-q:v 2`（近最佳 qscale 消二次有损）+ [pixFmt]（桌面 yuvj444p / 移动
+///   yuvj420p，TODO-1147）。
+List<String> _clipVideoCodecArgs({
+  required bool h264,
+  required String pixFmt,
+}) {
+  if (h264) {
+    return const <String>[
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-crf',
+      '20',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
+    ];
+  }
+  return <String>[
+    '-c:v',
+    'mjpeg',
+    '-q:v',
+    '2',
+    '-pix_fmt',
+    pixFmt,
   ];
 }
 
@@ -439,6 +478,7 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
   int height = 1920,
   int fps = 12,
   String pixFmt = 'yuvj444p',
+  bool h264 = false,
 }) {
   final String filter = 'scale=$width:$height:'
       'force_original_aspect_ratio=decrease,'
@@ -458,13 +498,8 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
     inputPattern,
     '-i',
     audioPath,
-    '-c:v',
-    'mjpeg',
-    // TODO-1147：同单图版——近最佳 qscale + 桌面去色度下采样，消除逐帧模糊。
-    '-q:v',
-    '2',
-    '-pix_fmt',
-    pixFmt,
+    // BUG-809：桌面 h264（带帧间压缩，逐句高亮的大量重复帧压到近零）/ 移动 mjpeg。
+    ..._clipVideoCodecArgs(h264: h264, pixFmt: pixFmt),
     '-vf',
     filter,
     '-c:a',
@@ -487,6 +522,7 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
   int height = 1920,
   int fps = 12,
   String pixFmt = 'yuvj444p',
+  bool h264 = false,
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 3),
 }) async {
@@ -510,6 +546,7 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
         height: height,
         fps: fps,
         pixFmt: pixFmt,
+        h264: h264,
       ),
       timeout,
     );
@@ -562,6 +599,7 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
   int height = 1920,
   int fps = 12,
   String pixFmt = 'yuvj444p',
+  bool h264 = false,
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 3),
 }) async {
@@ -586,6 +624,7 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
         height: height,
         fps: fps,
         pixFmt: pixFmt,
+        h264: h264,
       ),
       timeout,
     );

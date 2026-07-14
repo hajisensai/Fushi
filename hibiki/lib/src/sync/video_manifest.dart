@@ -86,6 +86,8 @@ class RemoteVideoManifestEntry {
     required this.sizeBytes,
     this.importedAtMs = 0,
     this.coverAsset,
+    this.tagsAddedAt = const <String, int>{},
+    this.tagTombstones = const <String, int>{},
   });
 
   /// 跨端身份：`VideoBooks.bookUid`（内容派生、跨端/重导入稳定）。
@@ -104,6 +106,13 @@ class RemoteVideoManifestEntry {
 
   /// 封面在 `__videos__/` 下的资产名（[videoCoverAssetName] 产出）；null = 无封面。
   final String? coverAsset;
+
+  /// tags 稳健档 LWW：该视频当前标签「名→加入戳」（下载端 mergeRemoteVideoTags 用）。
+  /// 可选字段（version 仍为 1）：旧 app 忽略未知键、只读原有字段——不破坏混版舰队。
+  final Map<String, int> tagsAddedAt;
+
+  /// tags 稳健档 LWW：该视频标签移除墓碑「名→移除戳」（跨端传播删除/改名、防复活）。
+  final Map<String, int> tagTombstones;
 
   factory RemoteVideoManifestEntry.fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {
@@ -130,6 +139,8 @@ class RemoteVideoManifestEntry {
       importedAtMs: importedAtMs is int ? importedAtMs : 0,
       coverAsset:
           (coverAsset is String && coverAsset.isNotEmpty) ? coverAsset : null,
+      tagsAddedAt: _parseNameIntMap(json['tagsAddedAt']),
+      tagTombstones: _parseNameIntMap(json['tagTombstones']),
     );
   }
 
@@ -140,7 +151,24 @@ class RemoteVideoManifestEntry {
         'sizeBytes': sizeBytes,
         'importedAtMs': importedAtMs,
         if (coverAsset != null) 'coverAsset': coverAsset,
+        if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
+        if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
       };
+}
+
+/// 解析 `{name: ms}` 映射（值容忍 int/num/数字串；空名/非数值跳过）。非 Map → 空。
+Map<String, int> _parseNameIntMap(Object? raw) {
+  if (raw is! Map) return const <String, int>{};
+  final Map<String, int> out = <String, int>{};
+  raw.forEach((Object? k, Object? v) {
+    final String name = k?.toString() ?? '';
+    if (name.isEmpty) return;
+    final int? ms = v is int
+        ? v
+        : (v is num ? v.toInt() : int.tryParse(v?.toString() ?? ''));
+    if (ms != null) out[name] = ms;
+  });
+  return out;
 }
 
 /// FNV-1a 32-bit 稳定哈希（确定性、无外部依赖，仅用于资产名去歧义，非安全用途）。

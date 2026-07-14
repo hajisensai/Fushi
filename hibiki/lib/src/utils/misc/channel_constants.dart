@@ -31,6 +31,11 @@ abstract final class HibikiChannels {
   // GlobalLookupWindow instance; Windows-only, no Java counterpart needed).
   static const MethodChannel clipboardPanel =
       MethodChannel('$_prefix/clipboard_panel');
+  // 真透明剪切板文字窗：复用 FloatingLyricWindow 的第二实例（text-only 模式，
+  // 逐像素透明背景 + 文字实心），剪贴板文本落这里，点字回 lookupText 弹瞬态卡。
+  // Windows-only，无 Java counterpart。
+  static const MethodChannel clipboardText =
+      MethodChannel('$_prefix/clipboard_text');
   // TODO-1232 A3: render-backend experiment toggle (persist "disable Impeller"
   // so MainActivity can force Skia at the next launch; Android-only).
   static const MethodChannel render = MethodChannel('$_prefix/render');
