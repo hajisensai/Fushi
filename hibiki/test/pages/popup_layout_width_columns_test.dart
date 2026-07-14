@@ -8,8 +8,8 @@ import 'package:hibiki/src/utils/misc/platform_utils.dart';
 ///  - TODO-1352：取消查词页宽屏强制内容宽度上限；放宽弹窗最大宽度滑块上限；外部悬浮
 ///    查词窗宽度统一到用户的 popupMaxWidth（不再硬编码 480）。
 ///  - TODO-1354：音高读音条按 Niratan 改为行内单行（' | ' 分隔），不再 list-style 竖排。
-///  - TODO-1357：桌面查词弹窗默认 2 列 + 默认展开 2 个词典；移动端窄屏默认 1；用户
-///    显式设过一律遵从（三态）。
+///  - TODO-1357 / BUG-805：桌面查词弹窗「最多列数」默认 3（自动填充、视口收敛兜底）、
+///    默认展开 2 个词典；移动端窄屏默认 1；用户显式设过一律遵从（三态）。
 void main() {
   group('TODO-1352 查词页 / 弹窗宽度上限放宽', () {
     test('宽屏查词页取消强制内容宽度上限（dictionary → null 占满，仅留侧向留白）', () {
@@ -125,8 +125,8 @@ void main() {
     });
   });
 
-  group('TODO-1357 桌面默认 2 列 + 2 词典（三态）', () {
-    test('未设过：桌面默认 2、移动默认 1', () {
+  group('TODO-1357/BUG-805 桌面默认列数 3 + 展开 2 词典（三态）', () {
+    test('共享默认（未传 desktopDefault）：桌面 2、移动 1（自动展开数走这条）', () {
       expect(
         AppModel.resolvePopupDesktopDefault(
             hasExplicit: false, stored: 1, isDesktop: true),
@@ -157,6 +157,50 @@ void main() {
             hasExplicit: true, stored: 3, isDesktop: true),
         3,
       );
+    });
+
+    test('desktopDefault / mobileDefault 参数覆盖平台默认（列数与自动展开各定各的）', () {
+      // 列数用 desktopDefault: 3（放宽最多列数，靠视口收敛兜底），移动仍 1。
+      expect(
+        AppModel.resolvePopupDesktopDefault(
+            hasExplicit: false, stored: 1, isDesktop: true, desktopDefault: 3),
+        3,
+        reason: '「最多列数」桌面默认放宽到 3',
+      );
+      expect(
+        AppModel.resolvePopupDesktopDefault(
+            hasExplicit: false, stored: 1, isDesktop: false, desktopDefault: 3),
+        1,
+        reason: '移动端仍默认 1（mobileDefault 未改）',
+      );
+      // 显式设过时 desktopDefault 不参与（尊重用户）。
+      expect(
+        AppModel.resolvePopupDesktopDefault(
+            hasExplicit: true, stored: 2, isDesktop: true, desktopDefault: 3),
+        2,
+        reason: '用户显式设过时忽略平台默认',
+      );
+    });
+
+    test(
+        '源码守卫：popupDictionaryColumns 桌面默认传 desktopDefault: 3，'
+        '自动展开数不传（沿用共享默认 2）', () {
+      final String src =
+          File('lib/src/models/app_model.dart').readAsStringSync();
+      // 列数 getter 必须显式抬高桌面默认到 3。
+      final int colAt = src.indexOf('int get popupDictionaryColumns =>');
+      expect(colAt, isNonNegative);
+      final int colEnd = src.indexOf(');', colAt);
+      expect(colEnd, greaterThan(colAt));
+      expect(src.substring(colAt, colEnd).contains('desktopDefault: 3'), isTrue,
+          reason: '「最多列数」桌面默认必须是 3');
+      // 自动展开数 getter 不得抬默认（保持共享默认 2）。
+      final int expAt = src.indexOf('int get popupAutoExpandDictionaries =>');
+      expect(expAt, isNonNegative);
+      final int expEnd = src.indexOf(');', expAt);
+      expect(expEnd, greaterThan(expAt));
+      expect(src.substring(expAt, expEnd).contains('desktopDefault:'), isFalse,
+          reason: '自动展开数默认不应被列数改动波及（仍走共享默认 2）');
     });
   });
 }

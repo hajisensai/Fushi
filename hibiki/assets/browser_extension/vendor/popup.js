@@ -2890,9 +2890,12 @@ function masonrySupported() {
 function dictColumns() {
     // --dict-columns 由宿主注入到 documentElement（app_model / dictionary_popup_webview /
     // popup_settings_injection 三面同源），即使弹窗挂在 shadow root 也从此处读。
-    const raw = getComputedStyle(document.documentElement).getPropertyValue('--dict-columns');
-    const n = Number.parseInt(raw, 10);
-    return Number.isFinite(n) && n > 0 ? n : 1;
+    // 与 CSS grid 的 --dict-columns-effective 同源：masonry 用「视口收敛后的有效列数」
+    //（min(用户设置, 每列 ≥DICT_COLUMN_MIN_WIDTH px 装得下的列数)）。历史 bug：masonry
+    // 直接读 --dict-columns 原始值，无视窄面板收敛 → 用户「最多列数（自动填充）」的自动
+    // 调整对词典方框布局不生效（窄面板照塞满列、卡片互相挤压）。effectiveDictColumns() 是
+    // grid 与 masonry 的单一真值来源，二者不再分叉。
+    return effectiveDictColumns();
 }
 
 function masonryGap() {
@@ -3115,24 +3118,32 @@ function markGlobalLookupExtHit(target) {
 // min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
 // resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
 const DICT_COLUMN_MIN_WIDTH = 170;
+// 视口感知的有效列数（单一真值来源）：min(用户设置 --dict-columns, 每列 ≥DICT_COLUMN_MIN_WIDTH
+// px 装得下的列数)。CSS grid 经 --dict-columns-effective 消费、masonry 经 dictColumns() 消费，
+// 两者都走此函数——绝不再分叉（历史上 masonry 漏了视口收敛，自动调整对方框布局不生效）。
+function effectiveDictColumns() {
+    let configured = 1;
+    try {
+        configured = parseInt(
+            getComputedStyle(document.documentElement)
+                .getPropertyValue('--dict-columns'), 10) || 1;
+    } catch (e) {
+        configured = 1;
+    }
+    if (!(configured > 0)) configured = 1;
+    const width = window.innerWidth || 0;
+    const fit = width > 0
+        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
+        : configured;
+    return Math.min(configured, fit);
+}
 function updateEffectiveDictColumns() {
     const doc = document.documentElement;
     if (!doc || !doc.style || typeof doc.style.setProperty !== 'function') {
         return;
     }
-    let configured = 1;
-    try {
-        configured = parseInt(
-            getComputedStyle(doc).getPropertyValue('--dict-columns'), 10) || 1;
-    } catch (e) {
-        configured = 1;
-    }
-    const width = window.innerWidth || 0;
-    const fit = width > 0
-        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
-        : configured;
     doc.style.setProperty(
-        '--dict-columns-effective', String(Math.min(configured, fit)));
+        '--dict-columns-effective', String(effectiveDictColumns()));
 }
 if (typeof window.addEventListener === 'function'
     && !window.__hibikiDictColsResizeHooked) {

@@ -139,9 +139,10 @@ void main() {
       expect(slider.max, 4);
       expect(slider.divisions, 3, reason: '1..4 共 4 档 = 3 个 division');
 
-      // 标题 + 实时读数（titleReadout）。TODO-1357：桌面（测试 host = 桌面）未设默认 2 列。
-      expect(find.text('${t.popup_dictionary_max_columns} (2)'), findsOneWidget,
-          reason: 'TODO-1357：桌面默认 2 列，标题带实时读数');
+      // 标题 + 实时读数（titleReadout）。BUG-805：桌面（测试 host = 桌面）未设「最多列数」
+      // 默认放宽到 3（自动填充、由 popup.js 视口收敛兜底）。
+      expect(find.text('${t.popup_dictionary_max_columns} (3)'), findsOneWidget,
+          reason: 'BUG-805：桌面「最多列数」默认 3，标题带实时读数');
 
       // 副标题 = hint + 实验性后缀，渲染成单个 Text。
       final String expectedSubtitle =

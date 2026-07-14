@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 785 条。点号进各自文件。
+> 共 786 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-805](bugs/BUG-805-dict-columns-autofit.md) | ✅ | ✅ | 词典最多列数自动调整对方框布局不生效 |
 | [BUG-803](bugs/BUG-803-inline-gaiji-width.md) | ✅ | ✅ | 词典行内外字图标撑开相邻链接 |
 | [BUG-802](bugs/BUG-802-popup-copy-search-selection.md) | ✅ | ✅ | 查词弹窗选中后复制/搜索无效 |
 | [BUG-801](bugs/BUG-801-android-native-subtitleview-duplicate.md) | ✅ | ✅ | 安卓视频原生SubtitleView与可点浮层字幕重复(控制条显示时上下两条) |
