@@ -6,9 +6,11 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.media.AudioManager;
+import android.provider.DocumentsContract;
 import android.view.KeyEvent;
 import android.view.WindowManager;
 import androidx.annotation.NonNull;
@@ -65,6 +67,11 @@ public class MainActivity extends AudioServiceActivity {
     // BUG-427/TODO-852: install-permission gate result code. Distinct from
     // SAF_PICK_DIR_REQUEST so onActivityResult can tell the two flows apart.
     private static final int INSTALL_PERMISSION_REQUEST = 1002;
+    // Native SAF pickers that RESOLVE the picked content URI to a real
+    // filesystem path (no copy). Distinct from the copy-based 1001 so
+    // onActivityResult routes them to path resolution instead of a tree copy.
+    private static final int SAF_PICK_REAL_DIR_REQUEST = 1003;
+    private static final int SAF_PICK_REAL_FILE_REQUEST = 1004;
     private static MethodChannel floatingLyricChannel;
     private static MethodChannel floatingDictChannel;
 
@@ -300,6 +307,26 @@ public class MainActivity extends AudioServiceActivity {
             });
             return;
         }
+        if (requestCode == SAF_PICK_REAL_DIR_REQUEST
+                || requestCode == SAF_PICK_REAL_FILE_REQUEST) {
+            if (pendingSafResult == null) return;
+            final MethodChannel.Result safResult = pendingSafResult;
+            pendingSafResult = null;
+            if (resultCode != Activity.RESULT_OK || data == null
+                    || data.getData() == null) {
+                safResult.success(null); // user cancelled
+                return;
+            }
+            final Uri pickedUri = data.getData();
+            final boolean isTree = requestCode == SAF_PICK_REAL_DIR_REQUEST;
+            ioExecutor.execute(() -> {
+                final String realPath = resolveSafRealPath(pickedUri, isTree);
+                // null = provider without a real filesystem path (cloud / virtual).
+                new Handler(Looper.getMainLooper()).post(() ->
+                    safResult.success(realPath));
+            });
+            return;
+        }
         if (requestCode == INSTALL_PERMISSION_REQUEST) {
             // BUG-427/TODO-852: returning from the "install unknown apps"
             // setting. resultCode is usually RESULT_CANCELED here (the settings
@@ -497,6 +524,34 @@ public class MainActivity extends AudioServiceActivity {
                         pendingSafDestPath = destPath;
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
                         startActivityForResult(intent, SAF_PICK_DIR_REQUEST);
+                        break;
+                    }
+                    case "pickRealDirectory": {
+                        // Native SAF folder picker; onActivityResult resolves the
+                        // tree URI to a real absolute path (no copy).
+                        if (pendingSafResult != null) {
+                            result.error("BUSY",
+                                "A SAF pick is already in progress", null);
+                            return;
+                        }
+                        pendingSafResult = result;
+                        Intent dirIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                        startActivityForResult(dirIntent, SAF_PICK_REAL_DIR_REQUEST);
+                        break;
+                    }
+                    case "pickRealFile": {
+                        // Native SAF file picker; onActivityResult resolves the
+                        // document URI to a real absolute path (no copy).
+                        if (pendingSafResult != null) {
+                            result.error("BUSY",
+                                "A SAF pick is already in progress", null);
+                            return;
+                        }
+                        pendingSafResult = result;
+                        Intent fileIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        fileIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                        fileIntent.setType("*/*");
+                        startActivityForResult(fileIntent, SAF_PICK_REAL_FILE_REQUEST);
                         break;
                     }
                     default:
@@ -1125,5 +1180,45 @@ public class MainActivity extends AudioServiceActivity {
                 out.write(buf, 0, len);
             }
         }
+    }
+
+    // Resolve a SAF tree/document content URI to a real filesystem absolute path
+    // (no copy). Only the externalstorage provider (device storage / SD card)
+    // maps reliably; cloud / Downloads virtual providers have no real path, so we
+    // return null and let the Dart side cancel (folder) or keep its escape hatch
+    // (file). The app holds MANAGE_EXTERNAL_STORAGE, so dart:io can read the
+    // resolved path directly and the whole downstream stays real-path based.
+    private String resolveSafRealPath(Uri uri, boolean isTree) {
+        try {
+            if (!"com.android.externalstorage.documents".equals(uri.getAuthority())) {
+                return null;
+            }
+            final String docId = isTree
+                ? DocumentsContract.getTreeDocumentId(uri)
+                : DocumentsContract.getDocumentId(uri);
+            final int sep = docId.indexOf(':');
+            if (sep < 0) return null;
+            final String volumeId = docId.substring(0, sep);
+            final String relative = docId.substring(sep + 1);
+            final String root = resolveVolumeRoot(volumeId);
+            if (root == null) return null;
+            final File target = relative.isEmpty()
+                ? new File(root)
+                : new File(root, relative);
+            return target.exists() ? target.getAbsolutePath() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // externalstorage volume id -> real mount root. "primary" is internal
+    // storage; other ids are physical SD cards under /storage/<id> (used only
+    // when present). Both are readable via dart:io under MANAGE_EXTERNAL_STORAGE.
+    private String resolveVolumeRoot(String volumeId) {
+        if ("primary".equalsIgnoreCase(volumeId) || "home".equalsIgnoreCase(volumeId)) {
+            return Environment.getExternalStorageDirectory().getAbsolutePath();
+        }
+        final File volumeRoot = new File("/storage/" + volumeId);
+        return volumeRoot.exists() ? volumeRoot.getAbsolutePath() : null;
     }
 }
