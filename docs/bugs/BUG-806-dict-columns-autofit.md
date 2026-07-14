@@ -1,0 +1,6 @@
+## BUG-806 · 词典最多列数自动调整对方框布局不生效
+- **报告**：2026-07-14（用户：词典列数自动调整没生效）
+- **真实性**：✅ 真 bug — 根因 `hibiki/assets/popup/popup.js` `layoutMasonry()` 用 `dictColumns()` 读原始 `--dict-columns`（用户设的「最多列数」），无视 `updateEffectiveDictColumns()` 算出的视口收敛值 `--dict-columns-effective`。CSS grid 消费 effective 正确，但叠在其上、真正定位词典方框的 masonry 运行时层按原始最多列数硬摆，故窄面板下「自动填充/自动调整列数」对词典方框不生效（照塞满列、卡片互相挤压）。
+- **[x] ① 已修复** — 抽出 `effectiveDictColumns()`（视口收敛：`min(用户设置, floor(视口宽/DICT_COLUMN_MIN_WIDTH))`）作 grid 与 masonry 的单一真值来源；`dictColumns()` 改为 `return effectiveDictColumns()`。三份镜像 `assets/popup/popup.js` / `assets/browser_extension/vendor/popup.js` / `tools/browser-extension/vendor/popup.js` 同步。顺带把「最多列数」默认从 桌面2/移动1 统一放宽到 3（`app_model.dart` `resolvePopupDesktopDefault` 加 `desktopDefault`/`mobileDefault` 参数，列数 getter 两者都传 3——宽屏手机也能多列，窄屏靠视口收敛自动收回；自动展开数不受影响仍 桌面2/移动1），并让「自动展开词典数」设置项仅在「折叠词典显示」开启时显示（`settings_schema_lookup.dart` 加 `visible` 门控）。提交哈希：`6058773c3`。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/popup_dict_masonry_guard_test.dart` 新增守卫：`effectiveDictColumns()` 存在、按 `floor(width/DICT_COLUMN_MIN_WIDTH)` 收敛、`dictColumns()` 委托给它；`hibiki/test/pages/popup_layout_width_columns_test.dart` 新增 `desktopDefault` 参数行为 + 列数 getter 传 `desktopDefault: 3` / 自动展开数不传的源码守卫。
+- **备注**：视觉最终需桌面离屏 / 真机复测（窄面板拖窄时词典方框列数自动收回、不挤压）。撞号规避：initial `bug.dart new` 取到 804，与已合并的 BUG-804/805 撞号，集成合并 PR#120 时重编号为 806。

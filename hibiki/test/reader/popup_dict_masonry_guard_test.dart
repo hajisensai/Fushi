@@ -35,6 +35,32 @@ void main() {
         reason: '列数必须从宿主注入的 --dict-columns 读取，保留已发布的列数设置');
   });
 
+  test('自动调整生效：masonry 的 dictColumns() 用视口收敛的有效列数（BUG-fix）', () {
+    // 根因：masonry 曾直接读原始 --dict-columns（用户设的「最多列数」），无视 CSS grid 那套
+    // 视口收敛（--dict-columns-effective = min(用户值, 每列 ≥170px 装得下的列数)），于是窄
+    // 面板下「自动调整列数」对词典方框布局不生效——照塞满列、卡片互相挤压。修复：抽出
+    // effectiveDictColumns() 作 grid 与 masonry 的单一真值来源，dictColumns() 改用它。
+    expect(js.contains('function effectiveDictColumns('), isTrue,
+        reason: '必须有 effectiveDictColumns() 作视口收敛的单一真值来源');
+    // effectiveDictColumns 必须按视口宽 / 每列最小宽收敛（与 CSS grid 同一公式）。
+    expect(js.contains('DICT_COLUMN_MIN_WIDTH'), isTrue,
+        reason: '有效列数必须按每列最小宽 DICT_COLUMN_MIN_WIDTH 收敛');
+    expect(
+        RegExp(r'Math\.floor\(\s*width\s*/\s*DICT_COLUMN_MIN_WIDTH\s*\)')
+            .hasMatch(js),
+        isTrue,
+        reason: '装得下的列数 = floor(视口宽 / 每列最小宽)');
+    // dictColumns()（masonry 列数来源）必须委托给 effectiveDictColumns，而非读原始值。
+    final int dcAt = js.indexOf('function dictColumns(');
+    expect(dcAt, isNonNegative);
+    final int dcEnd = js.indexOf('\n}', dcAt);
+    expect(dcEnd, greaterThan(dcAt));
+    final String dcBody = js.substring(dcAt, dcEnd);
+    expect(dcBody.contains('effectiveDictColumns()'), isTrue,
+        reason: 'masonry 的 dictColumns() 必须返回 effectiveDictColumns()（视口收敛），'
+            '否则窄面板下自动调整列数不生效');
+  });
+
   test('核心是「最短列打包」：每张卡片放进当前最矮列（无空隙紧密堆）', () {
     // 选列逻辑：遍历列高数组，取更矮的一列。锁住这条 heights[i] < heights[c] 的最短列判据，
     // 防止退回按顺序填列（那会重现行对齐的空隙）。
