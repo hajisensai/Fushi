@@ -556,6 +556,107 @@ void main() {
       expect(ab.canonicalJson(), ba.canonicalJson(), reason: '折叠对顺序不变（收敛前提）');
     });
   });
+
+  // ── collection-tags Task 8：tagNames 全触点透传 + 双活并集（只增不删）──────────
+  test('tagNames union across two devices (add-only)', () {
+    const CollectionManifest local =
+        CollectionManifest(collections: <CollectionManifestEntry>[
+      CollectionManifestEntry(
+        name: 'C',
+        collectionType: 'collection',
+        members: <CollectionManifestMember>[
+          CollectionManifestMember(
+              mediaType: 'video', entryKey: 'u1', sortIndex: 0),
+        ],
+        tagNames: <String>['a'],
+      ),
+    ]);
+    const CollectionManifest remote =
+        CollectionManifest(collections: <CollectionManifestEntry>[
+      CollectionManifestEntry(
+        name: 'C',
+        collectionType: 'collection',
+        members: <CollectionManifestMember>[
+          CollectionManifestMember(
+              mediaType: 'video', entryKey: 'u1', sortIndex: 0),
+        ],
+        tagNames: <String>['b'],
+      ),
+    ]);
+    final CollectionSyncOutcome out = CollectionSyncEngine.merge(
+      local: local,
+      remote: remote,
+      lastSyncedAtMs: 0,
+      nowMs: 1000,
+    );
+    final CollectionManifestEntry merged = out.merged.collections.single;
+    expect(merged.tagNames, <String>['a', 'b'], reason: '双活分支两端标签并集（确定性排序）');
+  });
+
+  test('combinePeers unions tagNames across folded peer files', () {
+    const CollectionManifest peerA = CollectionManifest(
+        lastWrittenAt: 100,
+        collections: <CollectionManifestEntry>[
+          CollectionManifestEntry(
+            name: 'C',
+            collectionType: 'collection',
+            members: <CollectionManifestMember>[
+              CollectionManifestMember(
+                  mediaType: 'video', entryKey: 'u1', sortIndex: 0),
+            ],
+            tagNames: <String>['alpha', 'zebra'],
+          ),
+        ]);
+    const CollectionManifest peerB = CollectionManifest(
+        lastWrittenAt: 200,
+        collections: <CollectionManifestEntry>[
+          CollectionManifestEntry(
+            name: 'C',
+            collectionType: 'collection',
+            members: <CollectionManifestMember>[
+              CollectionManifestMember(
+                  mediaType: 'video', entryKey: 'u1', sortIndex: 0),
+            ],
+            tagNames: <String>['mid'],
+          ),
+        ]);
+    final CollectionManifest union =
+        CollectionSyncEngine.combinePeers(<CollectionManifest>[peerA, peerB]);
+    expect(union.collections.single.tagNames, <String>['alpha', 'mid', 'zebra'],
+        reason: '折叠多端清单时活分支标签并集');
+  });
+
+  test('tagNames survive _stampEntry rebuild when stamping tombstones', () {
+    // 单侧活条目：带标签 + 未发布成员墓碑 → merge 走 l.toEntry() 再经 _stampEntry
+    // 盖 publishedAt。_stampEntry 重建整个 entry，必须透传 tagNames（否则丢标签）。
+    const CollectionManifest local =
+        CollectionManifest(collections: <CollectionManifestEntry>[
+      CollectionManifestEntry(
+        name: 'C',
+        collectionType: 'collection',
+        members: <CollectionManifestMember>[
+          CollectionManifestMember(
+              mediaType: 'video', entryKey: 'u1', sortIndex: 0),
+        ],
+        memberTombstones: <CollectionMemberTombstone>[
+          CollectionMemberTombstone(
+              mediaType: 'video', entryKey: 'gone', removedAt: 500),
+        ],
+        tagNames: <String>['keepme'],
+      ),
+    ]);
+    final CollectionSyncOutcome out = CollectionSyncEngine.merge(
+      local: local,
+      remote: CollectionManifest.empty,
+      lastSyncedAtMs: 0,
+      nowMs: 9999,
+    );
+    final CollectionManifestEntry merged = out.merged.collections.single;
+    expect(merged.memberTombstones.single.publishedAt, 9999,
+        reason: '未发布墓碑经 _stampEntry 盖 now');
+    expect(merged.tagNames, <String>['keepme'],
+        reason: '_stampEntry 重建 entry 时透传 tagNames，不丢标签');
+  });
 }
 
 /// 共享云清单（模拟 `__collections__/collections.json`）。

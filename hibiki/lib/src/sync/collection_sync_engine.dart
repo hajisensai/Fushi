@@ -135,6 +135,8 @@ class CollectionSyncEngine {
                 )
               : t,
       ],
+      // 盖发布戳时重建整个 entry：必须透传 tagNames，否则每轮盖戳都会丢标签。
+      tagNames: e.tagNames,
     );
   }
 
@@ -245,6 +247,8 @@ class CollectionSyncEngine {
             publishedAt: e.value.publishedAt,
           ),
       ],
+      // 双活标签并集（只增不删；确定性排序供 canonicalJson 幂等）。
+      tagNames: <String>{...l.tagNames, ...r.tagNames}.toList()..sort(),
     ));
   }
 
@@ -339,6 +343,12 @@ class CollectionSyncEngine {
         return false;
       }
     }
+    // 标签集合一致？（合并只增不删，本地 ⊊ 合并 ⇒ 需落盘物化新标签）。
+    final Set<String> localTags = l.tagNames;
+    if (localTags.length != m.tagNames.length) return false;
+    for (final String tn in m.tagNames) {
+      if (!localTags.contains(tn)) return false;
+    }
     return true;
   }
 
@@ -370,6 +380,7 @@ class CollectionSyncEngine {
           memberOrder: const <String>[],
           membersByKey: const <String, CollectionManifestMember>{},
           tombstones: const <String, _Tomb>{},
+          tagNames: const <String>{}, // 死合集不带标签。
         );
         continue;
       }
@@ -403,6 +414,7 @@ class CollectionSyncEngine {
         memberOrder: order,
         membersByKey: byKey,
         tombstones: tombs,
+        tagNames: e.tagNames.toSet(),
       );
     }
     return out;
@@ -642,6 +654,7 @@ class _NormalizedEntry {
     required this.memberOrder,
     required this.membersByKey,
     required this.tombstones,
+    required this.tagNames,
   });
 
   final String name;
@@ -662,6 +675,9 @@ class _NormalizedEntry {
 
   /// 成员键 → 墓碑知识（removedAt + publishedAt）。
   final Map<String, _Tomb> tombstones;
+
+  /// 合集标签名集合（只增不删并集载荷；死条目为空——标签只属于活合集）。
+  final Set<String> tagNames;
 
   CollectionManifestEntry toEntry() => CollectionManifestEntry(
         name: name,
@@ -686,6 +702,7 @@ class _NormalizedEntry {
               publishedAt: e.value.publishedAt,
             ),
         ],
+        tagNames: tagNames.toList()..sort(),
       );
 }
 
@@ -723,6 +740,8 @@ class _FoldGroup {
   final Map<String, int> _tombPubMaxDecision =
       <String, int>{}; // 决策用 max(pub??removed)。
 
+  final Set<String> _tagNames = <String>{}; // 各活文件标签并集（只增不删）。
+
   void observe(_NormalizedEntry e, int fileTime) {
     if (e.deletedAt != null) {
       _sawDelete = true;
@@ -736,8 +755,9 @@ class _FoldGroup {
       if (p != null && (_deletePubMin == null || p < _deletePubMin!)) {
         _deletePubMin = p;
       }
-      return; // 归一化后的死条目不携带成员/墓碑。
+      return; // 归一化后的死条目不携带成员/墓碑/标签。
     }
+    _tagNames.addAll(e.tagNames); // 活文件标签并集。
     if (fileTime > _aliveFileTimeMax) _aliveFileTimeMax = fileTime;
     if (e.orderUpdatedAt > _orderUpdatedAtMax) {
       _orderUpdatedAtMax = e.orderUpdatedAt;
@@ -833,6 +853,8 @@ class _FoldGroup {
             publishedAt: e.value.publishedAt,
           ),
       ],
+      // 折叠活分支标签并集（确定性排序）；死分支上方 return 不带标签。
+      tagNames: _tagNames.toList()..sort(),
     ));
   }
 
