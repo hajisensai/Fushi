@@ -438,6 +438,24 @@ class VideoBookTagMappings extends Table {
       ];
 }
 
+// ── collection_tag_mappings ───────────────────────────────────────
+// 合集 ↔ 标签 多对多映射。标签定义复用共享的 [BookTags]，与 EPUB
+// （[BookTagMappings]）、SRT（[SrtBookTagMappings]）、视频（[VideoBookTagMappings]）
+// 共用同一标签池。合集删除 / 标签删除经外键 cascade 自动清理本表。
+@DataClassName('CollectionTagMappingRow')
+class CollectionTagMappings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get collectionId => integer()
+      .references(MediaCollections, #id, onDelete: KeyAction.cascade)();
+  IntColumn get tagId =>
+      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {collectionId, tagId},
+      ];
+}
+
 // ── favorite_words ──────────────────────────────────────────────────
 /// 查词弹窗「收藏」的词条（书内阅读与视频共用同一套，按 [sourceType] 区分）。
 /// 存完整词条（expression/reading/glossary）以支持「再次打开显示已收藏 ✓」的

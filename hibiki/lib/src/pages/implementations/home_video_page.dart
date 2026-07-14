@@ -1980,13 +1980,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
     final List<CollectionGroup<_VideoSlot>> groups =
         _groupVideos(books, remoteVideos, primaryByEntry, memberSortIndex);
+    // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。
+    // 合集卡（及其成员）按此显隐；散卡由 filteredVideoBookUidsProvider 另行过滤。
+    final Set<int>? collectionFilter =
+        ref.watch(filteredCollectionIdsProvider).valueOrNull;
+    bool collectionVisible(int collectionId) =>
+        collectionFilter == null || collectionFilter.contains(collectionId);
     // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
+    // 被标签过滤隐藏的合集不计入可见集，避免全选勾中隐藏合集。
     _visibleCollectionIds = <int>[
       for (final CollectionGroup<_VideoSlot> g in groups)
-        if (g.collection != null) g.collection!.id,
+        if (g.collection != null && collectionVisible(g.collection!.id))
+          g.collection!.id,
     ];
     final bool hasCollectionRows = groups.any(
-      (CollectionGroup<_VideoSlot> g) => g.collection != null,
+      (CollectionGroup<_VideoSlot> g) =>
+          g.collection != null && collectionVisible(g.collection!.id),
     );
     // 零合集：单网格 + 原 EdgeInsets.all 内边距（与旧布局逐像素一致）。
     final EdgeInsetsGeometry gridPadding = hasCollectionRows
@@ -2006,13 +2015,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           sortKey: _groupSortKey(group),
           build: () => _buildVideoSlotCard(slot),
         ));
-      } else {
+      } else if (collectionVisible(group.collection!.id)) {
         slivers.add(
           SliverToBoxAdapter(
             child: _buildVideoCollectionRow(group, cardLayout),
           ),
         );
       }
+      // 标签过滤隐藏的合集：整行连同成员一并跳过（成员随合集隐藏，符合按合集标签显隐语义）。
     }
     loose.sort((_VideoLooseCard a, _VideoLooseCard b) =>
         compareShelfSortKeys(a.sortKey, b.sortKey, _sortMode));

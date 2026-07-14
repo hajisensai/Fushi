@@ -128,6 +128,7 @@ class CollectionManifestEntry {
     this.deletedPublishedAt,
     this.members = const <CollectionManifestMember>[],
     this.memberTombstones = const <CollectionMemberTombstone>[],
+    this.tagNames = const <String>[],
   });
 
   /// 自然键：合集名（跨端身份，同 backup 合并的 (name, collection_type) 对齐）。
@@ -153,6 +154,10 @@ class CollectionManifestEntry {
 
   /// 成员移出墓碑（防对端并集复活；重加清除）。
   final List<CollectionMemberTombstone> memberTombstones;
+
+  /// 合集标签（按名跨端传递；BookTags.id 各端不一致故用名）。只增不删并集，
+  /// 无墓碑（合集标签同步不消费墓碑，见 collection-tags 设计 §5）。
+  final List<String> tagNames;
 
   factory CollectionManifestEntry.fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {
@@ -193,6 +198,14 @@ class CollectionManifestEntry {
         for (final Object? t in rawTombstones)
           CollectionMemberTombstone.fromJson(t),
       ],
+      // tagNames 是 additive 字段（collection-tags §5.2）：旧清单缺它 / 非法 /
+      // 元素非字符串一律降级空列表，绝不因缺字段拒绝解析——读老写新向后兼容。
+      tagNames: json['tagNames'] is List
+          ? <String>[
+              for (final Object? t in (json['tagNames'] as List))
+                if (t is String && t.isNotEmpty) t,
+            ]
+          : const <String>[],
     );
   }
 
@@ -220,6 +233,11 @@ class CollectionManifestEntry {
             if (byType != 0) return byType;
             return a.entryKey.compareTo(b.entryKey);
           });
+    // 标签确定性排序副本（过滤空串）：内容相等 ⇒ 字节相等，供 canonicalJson 幂等。
+    final List<String> sortedTags = <String>[
+      for (final String tn in tagNames)
+        if (tn.isNotEmpty) tn,
+    ]..sort();
     return <String, dynamic>{
       'name': name,
       'collectionType': collectionType,
@@ -232,6 +250,8 @@ class CollectionManifestEntry {
       'memberTombstones': <Map<String, dynamic>>[
         for (final CollectionMemberTombstone t in sortedTombstones) t.toJson(),
       ],
+      // 空时不写 key：无标签合集 JSON 与加特性前逐字节相同，维持 canonicalJson 幂等。
+      if (sortedTags.isNotEmpty) 'tagNames': sortedTags,
     };
   }
 }

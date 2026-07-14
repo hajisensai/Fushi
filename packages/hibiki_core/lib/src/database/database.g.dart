@@ -15668,6 +15668,241 @@ class BookCustomCssCompanion extends UpdateCompanion<BookCustomCssRow> {
   }
 }
 
+class $CollectionTagMappingsTable extends CollectionTagMappings
+    with TableInfo<$CollectionTagMappingsTable, CollectionTagMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CollectionTagMappingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _collectionIdMeta =
+      const VerificationMeta('collectionId');
+  @override
+  late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
+      'collection_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES media_collections (id) ON DELETE CASCADE'));
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
+      'tag_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES book_tags (id) ON DELETE CASCADE'));
+  @override
+  List<GeneratedColumn> get $columns => [id, collectionId, tagId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'collection_tag_mappings';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<CollectionTagMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('collection_id')) {
+      context.handle(
+          _collectionIdMeta,
+          collectionId.isAcceptableOrUnknown(
+              data['collection_id']!, _collectionIdMeta));
+    } else if (isInserting) {
+      context.missing(_collectionIdMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+          _tagIdMeta, tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
+    } else if (isInserting) {
+      context.missing(_tagIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {collectionId, tagId},
+      ];
+  @override
+  CollectionTagMappingRow map(Map<String, dynamic> data,
+      {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CollectionTagMappingRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      collectionId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}collection_id'])!,
+      tagId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
+    );
+  }
+
+  @override
+  $CollectionTagMappingsTable createAlias(String alias) {
+    return $CollectionTagMappingsTable(attachedDatabase, alias);
+  }
+}
+
+class CollectionTagMappingRow extends DataClass
+    implements Insertable<CollectionTagMappingRow> {
+  final int id;
+  final int collectionId;
+  final int tagId;
+  const CollectionTagMappingRow(
+      {required this.id, required this.collectionId, required this.tagId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['collection_id'] = Variable<int>(collectionId);
+    map['tag_id'] = Variable<int>(tagId);
+    return map;
+  }
+
+  CollectionTagMappingsCompanion toCompanion(bool nullToAbsent) {
+    return CollectionTagMappingsCompanion(
+      id: Value(id),
+      collectionId: Value(collectionId),
+      tagId: Value(tagId),
+    );
+  }
+
+  factory CollectionTagMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CollectionTagMappingRow(
+      id: serializer.fromJson<int>(json['id']),
+      collectionId: serializer.fromJson<int>(json['collectionId']),
+      tagId: serializer.fromJson<int>(json['tagId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'collectionId': serializer.toJson<int>(collectionId),
+      'tagId': serializer.toJson<int>(tagId),
+    };
+  }
+
+  CollectionTagMappingRow copyWith({int? id, int? collectionId, int? tagId}) =>
+      CollectionTagMappingRow(
+        id: id ?? this.id,
+        collectionId: collectionId ?? this.collectionId,
+        tagId: tagId ?? this.tagId,
+      );
+  CollectionTagMappingRow copyWithCompanion(
+      CollectionTagMappingsCompanion data) {
+    return CollectionTagMappingRow(
+      id: data.id.present ? data.id.value : this.id,
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionTagMappingRow(')
+          ..write('id: $id, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, collectionId, tagId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CollectionTagMappingRow &&
+          other.id == this.id &&
+          other.collectionId == this.collectionId &&
+          other.tagId == this.tagId);
+}
+
+class CollectionTagMappingsCompanion
+    extends UpdateCompanion<CollectionTagMappingRow> {
+  final Value<int> id;
+  final Value<int> collectionId;
+  final Value<int> tagId;
+  const CollectionTagMappingsCompanion({
+    this.id = const Value.absent(),
+    this.collectionId = const Value.absent(),
+    this.tagId = const Value.absent(),
+  });
+  CollectionTagMappingsCompanion.insert({
+    this.id = const Value.absent(),
+    required int collectionId,
+    required int tagId,
+  })  : collectionId = Value(collectionId),
+        tagId = Value(tagId);
+  static Insertable<CollectionTagMappingRow> custom({
+    Expression<int>? id,
+    Expression<int>? collectionId,
+    Expression<int>? tagId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (collectionId != null) 'collection_id': collectionId,
+      if (tagId != null) 'tag_id': tagId,
+    });
+  }
+
+  CollectionTagMappingsCompanion copyWith(
+      {Value<int>? id, Value<int>? collectionId, Value<int>? tagId}) {
+    return CollectionTagMappingsCompanion(
+      id: id ?? this.id,
+      collectionId: collectionId ?? this.collectionId,
+      tagId: tagId ?? this.tagId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (collectionId.present) {
+      map['collection_id'] = Variable<int>(collectionId.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<int>(tagId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionTagMappingsCompanion(')
+          ..write('id: $id, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -15733,6 +15968,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $BookTagMembershipTombstonesTable bookTagMembershipTombstones =
       $BookTagMembershipTombstonesTable(this);
   late final $BookCustomCssTable bookCustomCss = $BookCustomCssTable(this);
+  late final $CollectionTagMappingsTable collectionTagMappings =
+      $CollectionTagMappingsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -15778,7 +16015,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         lookupMiningCounters,
         statisticsTombstones,
         bookTagMembershipTombstones,
-        bookCustomCss
+        bookCustomCss,
+        collectionTagMappings
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -15879,6 +16117,20 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('media_collection_items', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('media_collections',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('collection_tag_mappings', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('book_tags',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('collection_tag_mappings', kind: UpdateKind.delete),
             ],
           ),
         ],
@@ -19925,6 +20177,24 @@ final class $$BookTagsTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$CollectionTagMappingsTable,
+      List<CollectionTagMappingRow>> _collectionTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.collectionTagMappings,
+          aliasName: 'book_tags__id__collection_tag_mappings__tag_id');
+
+  $$CollectionTagMappingsTableProcessedTableManager
+      get collectionTagMappingsRefs {
+    final manager = $$CollectionTagMappingsTableTableManager(
+            $_db, $_db.collectionTagMappings)
+        .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_collectionTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$BookTagsTableFilterComposer
@@ -20012,6 +20282,29 @@ class $$BookTagsTableFilterComposer
               $removeJoinBuilderFromRootComposer:
                   $removeJoinBuilderFromRootComposer,
             ));
+    return f(composer);
+  }
+
+  Expression<bool> collectionTagMappingsRefs(
+      Expression<bool> Function($$CollectionTagMappingsTableFilterComposer f)
+          f) {
+    final $$CollectionTagMappingsTableFilterComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.collectionTagMappings,
+            getReferencedColumn: (t) => t.tagId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$CollectionTagMappingsTableFilterComposer(
+                  $db: $db,
+                  $table: $db.collectionTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
     return f(composer);
   }
 }
@@ -20130,6 +20423,29 @@ class $$BookTagsTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> collectionTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$CollectionTagMappingsTableAnnotationComposer a)
+          f) {
+    final $$CollectionTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.collectionTagMappings,
+            getReferencedColumn: (t) => t.tagId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$CollectionTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.collectionTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$BookTagsTableTableManager extends RootTableManager<
@@ -20146,7 +20462,8 @@ class $$BookTagsTableTableManager extends RootTableManager<
     PrefetchHooks Function(
         {bool bookTagMappingsRefs,
         bool srtBookTagMappingsRefs,
-        bool videoBookTagMappingsRefs})> {
+        bool videoBookTagMappingsRefs,
+        bool collectionTagMappingsRefs})> {
   $$BookTagsTableTableManager(_$HibikiDatabase db, $BookTagsTable table)
       : super(TableManagerState(
           db: db,
@@ -20192,13 +20509,15 @@ class $$BookTagsTableTableManager extends RootTableManager<
           prefetchHooksCallback: (
               {bookTagMappingsRefs = false,
               srtBookTagMappingsRefs = false,
-              videoBookTagMappingsRefs = false}) {
+              videoBookTagMappingsRefs = false,
+              collectionTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (bookTagMappingsRefs) db.bookTagMappings,
                 if (srtBookTagMappingsRefs) db.srtBookTagMappings,
-                if (videoBookTagMappingsRefs) db.videoBookTagMappings
+                if (videoBookTagMappingsRefs) db.videoBookTagMappings,
+                if (collectionTagMappingsRefs) db.collectionTagMappings
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -20241,6 +20560,19 @@ class $$BookTagsTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.tagId == item.id),
+                        typedResults: items),
+                  if (collectionTagMappingsRefs)
+                    await $_getPrefetchedData<BookTagRow, $BookTagsTable,
+                            CollectionTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$BookTagsTableReferences
+                            ._collectionTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$BookTagsTableReferences(db, table, p0)
+                                .collectionTagMappingsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.tagId == item.id),
                         typedResults: items)
                 ];
               },
@@ -20263,7 +20595,8 @@ typedef $$BookTagsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function(
         {bool bookTagMappingsRefs,
         bool srtBookTagMappingsRefs,
-        bool videoBookTagMappingsRefs})>;
+        bool videoBookTagMappingsRefs,
+        bool collectionTagMappingsRefs})>;
 typedef $$BookTagMappingsTableCreateCompanionBuilder = BookTagMappingsCompanion
     Function({
   Value<int> id,
@@ -24672,6 +25005,25 @@ final class $$MediaCollectionsTableReferences extends BaseReferences<
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$CollectionTagMappingsTable,
+      List<CollectionTagMappingRow>> _collectionTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.collectionTagMappings,
+          aliasName:
+              'media_collections__id__collection_tag_mappings__collection_id');
+
+  $$CollectionTagMappingsTableProcessedTableManager
+      get collectionTagMappingsRefs {
+    final manager = $$CollectionTagMappingsTableTableManager(
+            $_db, $_db.collectionTagMappings)
+        .filter((f) => f.collectionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_collectionTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$MediaCollectionsTableFilterComposer
@@ -24725,6 +25077,29 @@ class $$MediaCollectionsTableFilterComposer
               $removeJoinBuilderFromRootComposer:
                   $removeJoinBuilderFromRootComposer,
             ));
+    return f(composer);
+  }
+
+  Expression<bool> collectionTagMappingsRefs(
+      Expression<bool> Function($$CollectionTagMappingsTableFilterComposer f)
+          f) {
+    final $$CollectionTagMappingsTableFilterComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.collectionTagMappings,
+            getReferencedColumn: (t) => t.collectionId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$CollectionTagMappingsTableFilterComposer(
+                  $db: $db,
+                  $table: $db.collectionTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
     return f(composer);
   }
 }
@@ -24814,6 +25189,29 @@ class $$MediaCollectionsTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> collectionTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$CollectionTagMappingsTableAnnotationComposer a)
+          f) {
+    final $$CollectionTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.collectionTagMappings,
+            getReferencedColumn: (t) => t.collectionId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$CollectionTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.collectionTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$MediaCollectionsTableTableManager extends RootTableManager<
@@ -24827,7 +25225,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
     $$MediaCollectionsTableUpdateCompanionBuilder,
     (MediaCollectionRow, $$MediaCollectionsTableReferences),
     MediaCollectionRow,
-    PrefetchHooks Function({bool mediaCollectionItemsRefs})> {
+    PrefetchHooks Function(
+        {bool mediaCollectionItemsRefs, bool collectionTagMappingsRefs})> {
   $$MediaCollectionsTableTableManager(
       _$HibikiDatabase db, $MediaCollectionsTable table)
       : super(TableManagerState(
@@ -24881,11 +25280,14 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
                     $$MediaCollectionsTableReferences(db, table, e)
                   ))
               .toList(),
-          prefetchHooksCallback: ({mediaCollectionItemsRefs = false}) {
+          prefetchHooksCallback: (
+              {mediaCollectionItemsRefs = false,
+              collectionTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
-                if (mediaCollectionItemsRefs) db.mediaCollectionItems
+                if (mediaCollectionItemsRefs) db.mediaCollectionItems,
+                if (collectionTagMappingsRefs) db.collectionTagMappings
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -24899,6 +25301,19 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
                         managerFromTypedResult: (p0) =>
                             $$MediaCollectionsTableReferences(db, table, p0)
                                 .mediaCollectionItemsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.collectionId == item.id),
+                        typedResults: items),
+                  if (collectionTagMappingsRefs)
+                    await $_getPrefetchedData<MediaCollectionRow,
+                            $MediaCollectionsTable, CollectionTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$MediaCollectionsTableReferences
+                            ._collectionTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$MediaCollectionsTableReferences(db, table, p0)
+                                .collectionTagMappingsRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.collectionId == item.id),
@@ -24921,7 +25336,8 @@ typedef $$MediaCollectionsTableProcessedTableManager = ProcessedTableManager<
     $$MediaCollectionsTableUpdateCompanionBuilder,
     (MediaCollectionRow, $$MediaCollectionsTableReferences),
     MediaCollectionRow,
-    PrefetchHooks Function({bool mediaCollectionItemsRefs})>;
+    PrefetchHooks Function(
+        {bool mediaCollectionItemsRefs, bool collectionTagMappingsRefs})>;
 typedef $$MediaCollectionItemsTableCreateCompanionBuilder
     = MediaCollectionItemsCompanion Function({
   required int collectionId,
@@ -26380,6 +26796,329 @@ typedef $$BookCustomCssTableProcessedTableManager = ProcessedTableManager<
     ),
     BookCustomCssRow,
     PrefetchHooks Function()>;
+typedef $$CollectionTagMappingsTableCreateCompanionBuilder
+    = CollectionTagMappingsCompanion Function({
+  Value<int> id,
+  required int collectionId,
+  required int tagId,
+});
+typedef $$CollectionTagMappingsTableUpdateCompanionBuilder
+    = CollectionTagMappingsCompanion Function({
+  Value<int> id,
+  Value<int> collectionId,
+  Value<int> tagId,
+});
+
+final class $$CollectionTagMappingsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $CollectionTagMappingsTable, CollectionTagMappingRow> {
+  $$CollectionTagMappingsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+      db.mediaCollections.createAlias(
+          'collection_tag_mappings__collection_id__media_collections__id');
+
+  $$MediaCollectionsTableProcessedTableManager get collectionId {
+    final $_column = $_itemColumn<int>('collection_id')!;
+
+    final manager =
+        $$MediaCollectionsTableTableManager($_db, $_db.mediaCollections)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+      db.bookTags.createAlias('collection_tag_mappings__tag_id__book_tags__id');
+
+  $$BookTagsTableProcessedTableManager get tagId {
+    final $_column = $_itemColumn<int>('tag_id')!;
+
+    final manager = $$BookTagsTableTableManager($_db, $_db.bookTags)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$CollectionTagMappingsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $CollectionTagMappingsTable> {
+  $$CollectionTagMappingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  $$MediaCollectionsTableFilterComposer get collectionId {
+    final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableFilterComposer get tagId {
+    final $$BookTagsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableFilterComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CollectionTagMappingsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $CollectionTagMappingsTable> {
+  $$CollectionTagMappingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  $$MediaCollectionsTableOrderingComposer get collectionId {
+    final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableOrderingComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableOrderingComposer get tagId {
+    final $$BookTagsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableOrderingComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CollectionTagMappingsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $CollectionTagMappingsTable> {
+  $$CollectionTagMappingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  $$MediaCollectionsTableAnnotationComposer get collectionId {
+    final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableAnnotationComposer get tagId {
+    final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CollectionTagMappingsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $CollectionTagMappingsTable,
+    CollectionTagMappingRow,
+    $$CollectionTagMappingsTableFilterComposer,
+    $$CollectionTagMappingsTableOrderingComposer,
+    $$CollectionTagMappingsTableAnnotationComposer,
+    $$CollectionTagMappingsTableCreateCompanionBuilder,
+    $$CollectionTagMappingsTableUpdateCompanionBuilder,
+    (CollectionTagMappingRow, $$CollectionTagMappingsTableReferences),
+    CollectionTagMappingRow,
+    PrefetchHooks Function({bool collectionId, bool tagId})> {
+  $$CollectionTagMappingsTableTableManager(
+      _$HibikiDatabase db, $CollectionTagMappingsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CollectionTagMappingsTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CollectionTagMappingsTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CollectionTagMappingsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> collectionId = const Value.absent(),
+            Value<int> tagId = const Value.absent(),
+          }) =>
+              CollectionTagMappingsCompanion(
+            id: id,
+            collectionId: collectionId,
+            tagId: tagId,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int collectionId,
+            required int tagId,
+          }) =>
+              CollectionTagMappingsCompanion.insert(
+            id: id,
+            collectionId: collectionId,
+            tagId: tagId,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$CollectionTagMappingsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({collectionId = false, tagId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (collectionId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.collectionId,
+                    referencedTable: $$CollectionTagMappingsTableReferences
+                        ._collectionIdTable(db),
+                    referencedColumn: $$CollectionTagMappingsTableReferences
+                        ._collectionIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (tagId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.tagId,
+                    referencedTable:
+                        $$CollectionTagMappingsTableReferences._tagIdTable(db),
+                    referencedColumn: $$CollectionTagMappingsTableReferences
+                        ._tagIdTable(db)
+                        .id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$CollectionTagMappingsTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $CollectionTagMappingsTable,
+        CollectionTagMappingRow,
+        $$CollectionTagMappingsTableFilterComposer,
+        $$CollectionTagMappingsTableOrderingComposer,
+        $$CollectionTagMappingsTableAnnotationComposer,
+        $$CollectionTagMappingsTableCreateCompanionBuilder,
+        $$CollectionTagMappingsTableUpdateCompanionBuilder,
+        (CollectionTagMappingRow, $$CollectionTagMappingsTableReferences),
+        CollectionTagMappingRow,
+        PrefetchHooks Function({bool collectionId, bool tagId})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -26470,4 +27209,6 @@ class $HibikiDatabaseManager {
               _db, _db.bookTagMembershipTombstones);
   $$BookCustomCssTableTableManager get bookCustomCss =>
       $$BookCustomCssTableTableManager(_db, _db.bookCustomCss);
+  $$CollectionTagMappingsTableTableManager get collectionTagMappings =>
+      $$CollectionTagMappingsTableTableManager(_db, _db.collectionTagMappings);
 }
