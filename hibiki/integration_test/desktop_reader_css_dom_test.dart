@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -10,6 +11,8 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
+
+import 'test_helpers.dart';
 
 /// Phase 2 Step 3 — desktop T3 effect probe (the last mile T1 can't reach).
 ///
@@ -25,7 +28,8 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 ///   $env:HIBIKI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/desktop_reader_css_dom_test.dart -d windows
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final IntegrationTestWidgetsFlutterBinding binding =
+      IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   const String html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
       '<body><p>本文のテスト文字列</p></body></html>';
@@ -101,5 +105,117 @@ void main() {
     expect(at40, greaterThan(at20),
         reason: 'raising the font-size setting must raise the computed DOM '
             'font-size — proves the generated CSS is applied, not just emitted');
+  });
+
+  testWidgets(
+      'BUG-803: dimensionless inline gaiji ignores a dictionary 15em important '
+      'width in the live WebView engine', (WidgetTester tester) async {
+    final String popupJs = await rootBundle.loadString('assets/popup/popup.js');
+    final String popupCss =
+        await rootBundle.loadString('assets/popup/popup.css');
+    final String dictMediaJs =
+        await rootBundle.loadString('assets/popup/dict-media.js');
+    final Completer<InAppWebViewController> ready =
+        Completer<InAppWebViewController>();
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: InAppWebView(
+          initialData: InAppWebViewInitialData(
+            data: '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+                '<body style="font-size:20px"></body></html>',
+          ),
+          onLoadStop: (InAppWebViewController controller, WebUri? url) {
+            if (!ready.isCompleted) ready.complete(controller);
+          },
+        ),
+      ),
+    ));
+    for (int i = 0; i < 150 && !ready.isCompleted; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(ready.isCompleted, isTrue,
+        reason: 'WebView did not load within 15s');
+    final InAppWebViewController controller = await ready.future;
+
+    await controller.evaluateJavascript(source: '''
+      window.flutter_inappwebview = {
+        callHandler: function() { return Promise.resolve(true); }
+      };
+    ''');
+    await controller.evaluateJavascript(
+      source: '$dictMediaJs\n$popupJs\nwindow.__bug803CreateDefinitionImage = '
+          'createDefinitionImage;',
+    );
+    final Object? raw = await controller.evaluateJavascript(source: '''
+      (function() {
+        try {
+        var base = document.createElement('style');
+        base.textContent = ${jsonEncode(popupCss)};
+        document.head.appendChild(base);
+
+        var dictionary = document.createElement('style');
+        dictionary.textContent =
+          'span[data-sc-img][data-sc-class="gaiji"] .gloss-image-container {' +
+          'width: 15em !important; margin-inline-end: 2em; }';
+        document.head.appendChild(dictionary);
+
+        var row = document.createElement('div');
+        row.style.whiteSpace = 'nowrap';
+        var gaiji = document.createElement('span');
+        gaiji.dataset.scImg = '';
+        gaiji.dataset.scClass = 'gaiji';
+        gaiji.appendChild(window.__bug803CreateDefinitionImage({
+          tag: 'img',
+          path: 'gaiji/対義語.svg',
+          background: false,
+          collapsed: false,
+          collapsible: false,
+          data: {
+            img: '', gaiji: '', class: 'gaiji',
+            alt: '［対義語］', src: 'gaiji/対義語.svg'
+          }
+        }, '明鏡国語辞典 第三版', false));
+        var reference = document.createElement('a');
+        reference.textContent = '以内';
+        row.appendChild(gaiji);
+        row.appendChild(reference);
+        document.body.replaceChildren(row);
+
+        var imageContainer = gaiji.querySelector('.gloss-image-container');
+        var rowRect = row.getBoundingClientRect();
+        var imageRect = imageContainer.getBoundingClientRect();
+        var referenceRect = reference.getBoundingClientRect();
+        return JSON.stringify({
+          imageWidth: imageRect.width,
+          referenceOffset: referenceRect.left - rowRect.left,
+          computedWidth: getComputedStyle(imageContainer).width,
+          inlinePriority: imageContainer.style.getPropertyPriority('width')
+        });
+        } catch (error) {
+          return JSON.stringify({
+            error: String(error),
+            stack: String(error && error.stack),
+            createType: typeof window.__bug803CreateDefinitionImage
+          });
+        }
+      })();
+    ''');
+    await tester.pump(const Duration(seconds: 2));
+    await takeScreenshot(binding, 'bug803_inline_gaiji_webview2_verified');
+
+    final Map<String, dynamic> geometry =
+        jsonDecode(raw?.toString() ?? '{}') as Map<String, dynamic>;
+    debugPrint('[BUG-803] inline gaiji geometry: ${jsonEncode(geometry)}');
+    expect(geometry['error'], isNull,
+        reason: 'the real popup renderer must execute in WebView2');
+    final double imageWidth = (geometry['imageWidth'] as num).toDouble();
+    final double referenceOffset =
+        (geometry['referenceOffset'] as num).toDouble();
+    expect(geometry['inlinePriority'], 'important');
+    expect(imageWidth, lessThan(40),
+        reason: '20px text should keep the inline gaiji near 1.2em, not 15em');
+    expect(referenceOffset, lessThan(100),
+        reason: 'the adjacent 以内 link must remain next to the gaiji label');
   });
 }
