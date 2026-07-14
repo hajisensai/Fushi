@@ -61,5 +61,17 @@ void main() {
       await db.deleteMediaCollectionRaw(cid);
       expect(await db.getCollectionIdsForAllTags({t1}), <int>{});
     });
+
+    test('deleting tag cascades its collection mappings', () async {
+      final db = await _openDb();
+      final int cid =
+          await db.createMediaCollection('C1', collectionType: 'collection');
+      final int t1 = await db.createTag('x', 0xFF000004);
+      await db.addTagToCollection(cid, t1);
+      // 删标签靠 BookTags→collection_tag_mappings 的 tagId FK cascade 自动清映射
+      // （deleteTag 是纯 delete(bookTags)，不手动清映射；设计 §7 显式要求覆盖此路）。
+      await db.deleteTag(t1);
+      expect(await db.getTagsForCollection(cid), isEmpty);
+    });
   });
 }
