@@ -1259,8 +1259,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final double baseFontSize = cueFontPx != null
         ? _scaleAssFontSize(cueFontPx * assFontScale)
         : widget.fontSize;
-    final FontWeight baseWeight = (respect && (cue?.bold ?? false))
-        ? FontWeight.bold
+    // 字重：cueStyle 存在即以 ASS 为准——`Bold=0`（fansub 对白的常态）必须渲染
+    // **常规字重**，不得回退用户统一字重（视频页默认 700）。否则所有 ASS 字幕被
+    // 合成假粗体（Fontname 多半未安装 → 回退字体再被 fake-bold），笔画变粗变宽、
+    // 细描边被吞，观感与 mpv（同缺字体但按 Bold=0 常规渲染）差异巨大——用户报
+    // 「字号/描边没尊重 ASS」的真凶。无 cueStyle（非 ASS / 样式失配）才用统一字重。
+    final FontWeight baseWeight = (respect && cue != null)
+        ? ((cue.bold ?? false) ? FontWeight.bold : FontWeight.normal)
         : _fontWeight(widget.fontWeight);
 
     final TextStyle base = TextStyle(

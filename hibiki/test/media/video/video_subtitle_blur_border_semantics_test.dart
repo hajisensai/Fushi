@@ -99,4 +99,67 @@ void main() {
     await _pump(tester, _cue('あ'), shadowThickness: 5);
     expect(find.byType(ImageFiltered), findsNothing);
   });
+
+  // ---- BUG-808：ASS Bold=0 不得被用户统一字重（视频页默认 700）假粗体化 ----
+  group('ASS Bold vs unified fontWeight (BUG-808)', () {
+    AudioCue cueWithStyle({bool? bold}) => AudioCue()
+      ..bookKey = 'b'
+      ..chapterHref = 'c'
+      ..sentenceIndex = 0
+      ..textFragmentId = '[data-cue-id="0"]'
+      ..text = 'X'
+      ..markup = SubtitleMarkup(
+        plainText: 'X',
+        spans: const <SubtitleSpan>[],
+        cueStyle: SubtitleCueStyle(bold: bold),
+      )
+      ..startMs = 0
+      ..endMs = 5000
+      ..audioFileIndex = 0;
+
+    Future<void> pumpWeight(
+      WidgetTester tester,
+      AudioCue cue, {
+      required bool respect,
+    }) async {
+      final VideoPlayerController c = _stubWithCue(cue);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(
+            controller: c,
+            fontWeight: 700, // 用户统一字重=粗体（视频页默认）
+            respectAssStyle: respect,
+          ),
+        ),
+      ));
+      await tester.pump();
+    }
+
+    testWidgets('Bold=0 renders normal weight even with unified bold 700',
+        (WidgetTester tester) async {
+      await pumpWeight(tester, cueWithStyle(bold: false), respect: true);
+      final Text fill = tester
+          .widgetList<Text>(find.text('X'))
+          .firstWhere((Text t) => t.style?.foreground == null);
+      expect(fill.style?.fontWeight, FontWeight.w400,
+          reason: 'ASS Bold=0 必须常规字重，统一 700 不得渗透（假粗体）');
+    });
+
+    testWidgets('Bold=1 renders bold', (WidgetTester tester) async {
+      await pumpWeight(tester, cueWithStyle(bold: true), respect: true);
+      final Text fill = tester
+          .widgetList<Text>(find.text('X'))
+          .firstWhere((Text t) => t.style?.foreground == null);
+      expect(fill.style?.fontWeight, FontWeight.w700);
+    });
+
+    testWidgets('respect OFF keeps unified weight',
+        (WidgetTester tester) async {
+      await pumpWeight(tester, cueWithStyle(bold: false), respect: false);
+      final Text fill = tester
+          .widgetList<Text>(find.text('X'))
+          .firstWhere((Text t) => t.style?.foreground == null);
+      expect(fill.style?.fontWeight, FontWeight.w700);
+    });
+  });
 }

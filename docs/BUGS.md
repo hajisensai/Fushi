@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 774 条。点号进各自文件。
+> 共 775 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-808](bugs/BUG-808-ass-bold0-fake-bold.md) | ✅ | ✅ | ASS `Bold=0` 被用户统一字重假粗体化（字号/描边观感全毁） |
 | [BUG-797](bugs/BUG-797-subtitle-group-element-reuse-flicker.md) | ✅ | ✅ | 双语字幕重叠进出场时在屏字幕元素被跨 cue 复用导致闪烁 |
 | [BUG-796](bugs/BUG-796-ass-blur-border-only.md) | ✅ | ✅ | ASS `\blur` 有描边时整字被糊成一团（应只糊描边、留锐利字面） |
 | [BUG-789](bugs/BUG-789-reader-chrome-inset-stale-pagination-metrics.md) | ✅ | ✅ | 底栏 inset 后分页终点过期导致章尾不可读 |
