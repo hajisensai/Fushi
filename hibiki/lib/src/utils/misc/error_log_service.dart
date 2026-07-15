@@ -543,6 +543,10 @@ String logMineFailure(MineOutcome outcome) {
 /// 与 [localizeAnkiFetchError] 共享同一组 [AnkiErrorCode] 网络分类。
 String? localizeAnkiMineError(String? code) {
   switch (code) {
+    case AnkiErrorCode.permissionDenied:
+      // BUG-824：AnkiDroid 权限未授予。native 侧已同时弹出系统授权对话框，这里给
+      // 用户一句可读、可操作的提醒，替代 provider 抛出的英文技术原文。
+      return t.anki_error_permission_denied;
     case AnkiErrorCode.connectionRefused:
       return t.anki_error_connection_refused;
     case AnkiErrorCode.connectionTimeout:

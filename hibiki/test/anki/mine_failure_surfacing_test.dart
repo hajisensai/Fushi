@@ -160,6 +160,23 @@ void main() {
       });
     });
 
+    // BUG-824：AnkiDroid 权限未授予码映射成本地化、可操作的提醒，provider 抛出的
+    // 英文技术原文（"CardContentProvider.query /decks"）绝不进 toast。
+    test('permissionDenied maps to the localized actionable toast', () {
+      final MineOutcome outcome = MineOutcome.failure(
+        'AnkiDroid: Permission not granted for: '
+        'CardContentProvider.query /decks (app.hibiki.reader)',
+        errorCode: AnkiErrorCode.permissionDenied,
+      );
+      final String msg = logMineFailure(outcome);
+      expect(msg, t.anki_error_permission_denied);
+      // The raw provider text must NOT reach the user.
+      expect(msg, isNot(contains('CardContentProvider')));
+      expect(msg, isNot(contains('Permission not granted')));
+      // Full diagnostics still reach the error log.
+      expect(ErrorLogService.instance.entries, hasLength(1));
+    });
+
     test('unknown/absent errorCode falls back to the detail toast', () {
       final MineOutcome outcome = MineOutcome.failure(
         'All fields are empty',
@@ -175,6 +192,8 @@ void main() {
       expect(localizeAnkiMineError('SOME_UNMAPPED_CODE'), isNull);
       expect(localizeAnkiMineError(AnkiErrorCode.connectionRefused),
           t.anki_error_connection_refused);
+      expect(localizeAnkiMineError(AnkiErrorCode.permissionDenied),
+          t.anki_error_permission_denied);
     });
   });
 }

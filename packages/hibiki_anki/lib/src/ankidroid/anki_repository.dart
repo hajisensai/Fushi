@@ -254,10 +254,25 @@ class AnkiRepository extends BaseAnkiRepository {
     } on PlatformException catch (e, stack) {
       return MineOutcome.failure(
         'AnkiDroid: ${e.message ?? e.code}',
+        errorCode: _classifyMineError(e),
         error: e,
         stackTrace: stack,
       );
     }
+  }
+
+  /// BUG-824：把 native AnkiDroid 通道抛回的 [PlatformException] 分类成稳定错误码，
+  /// 供 UI 映射本地化文案。权限未授予——native `requirePermission` 守卫返回的
+  /// `PERMISSION_DENIED` 码，或极少数漏守卫时 provider 直接抛出的英文
+  /// «permission not granted» 原文——统一归到 [AnkiErrorCode.permissionDenied]；
+  /// 其余保持未分类（`null`，调用方退回旧的 errorDetail 文案）。
+  static String? _classifyMineError(PlatformException e) {
+    if (e.code == 'PERMISSION_DENIED') return AnkiErrorCode.permissionDenied;
+    final String msg = (e.message ?? '').toLowerCase();
+    if (msg.contains('permission not granted')) {
+      return AnkiErrorCode.permissionDenied;
+    }
+    return null;
   }
 
   /// TODO-270 B：把 native addNote 返回值解析成 note id。新版 native 返回 `Long`
@@ -403,6 +418,7 @@ class AnkiRepository extends BaseAnkiRepository {
       } on PlatformException catch (e, stack) {
         return MineOutcome.failure(
           'AnkiDroid: ${e.message ?? e.code}',
+          errorCode: _classifyMineError(e),
           error: e,
           stackTrace: stack,
         );
