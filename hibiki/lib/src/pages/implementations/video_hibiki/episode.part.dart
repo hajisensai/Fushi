@@ -120,6 +120,18 @@ extension _VideoEpisode on _VideoHibikiPageState {
     // （tick 只整秒写，补这一下避免丢尾部几百 ms）；新页 _init 从该集行 lastPositionMs 续播。
     final String? targetUid = _episodes[index].bookUid;
     if (targetUid == null) return;
+    // BUG-839：全屏播放时 app 全屏路由压在剧集页之上（fullscreen.part.dart 推到 root
+    // navigator）。若不先退，下面的 pushReplacement 会替换掉栈顶的**全屏路由**、把本集页
+    // 漏在栈里 → 每连播一集就残留一层、ESC 需逐层退。故换集前先经既有汇聚点退全屏路由，
+    // 让剧集页回到栈顶，pushReplacement 才正确替换本集页（栈恒平、ESC 一次退出）；并记
+    // wasFullscreen，给新页 initialFullscreen 让其就绪后重进全屏，保持连播全屏沉浸。
+    final BuildContext? fsCtx = _videoControlsContext;
+    final bool wasFullscreen =
+        fsCtx != null && fsCtx.mounted && isFullscreen(fsCtx);
+    if (fsCtx != null && wasFullscreen) {
+      await _exitVideoFullscreen(fsCtx);
+      if (!context.mounted) return;
+    }
     // 捕获 NavigatorState（在 await 前），避免跨 async gap 用 context。
     final NavigatorState navigator = Navigator.of(context);
     final int? curPos = _controller?.positionMs;
@@ -140,6 +152,7 @@ extension _VideoEpisode on _VideoHibikiPageState {
           bookUid: targetUid,
           repo: widget.repo,
           playlistCollectionId: widget.playlistCollectionId,
+          initialFullscreen: wasFullscreen,
         ),
       ),
     );
