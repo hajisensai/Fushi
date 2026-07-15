@@ -2351,5 +2351,6 @@
   "video_quality_load_failed": "无法获取该视频的画质档。",
   "loading_slow_message_mobile": "启动比平常慢，可能在加载较大的书库或词典。请稍候，或点「重试」重新加载——你的数据是安全的，不会丢失。",
   "delete_collection_also_books": "同时删除其中的书",
-  "delete_collection_also_videos": "同时删除其中的视频（保留你的原始视频文件）"
+  "delete_collection_also_videos": "同时删除其中的视频（保留你的原始视频文件）",
+  "video_jimaku_series": "系列"
 }

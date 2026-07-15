@@ -68,4 +68,58 @@ void main() {
       expect(availableLanguages(<JimakuCandidate>[_cand('x.srt')]), isEmpty);
     });
   });
+
+  group('sortJimakuCandidates（消除集数乱序）', () {
+    test('同语言按集号升序，认不出集号排末尾', () {
+      final List<JimakuCandidate> sorted =
+          sortJimakuCandidates(<JimakuCandidate>[
+        _cand('Show - 12.ja.srt'),
+        _cand('Show extras.ja.srt'), // 无集号
+        _cand('Show - 02.ja.srt'),
+        _cand('Show - 09.ja.srt'),
+      ]);
+      expect(
+        sorted.map((JimakuCandidate c) => c.file.name),
+        <String>[
+          'Show - 02.ja.srt',
+          'Show - 09.ja.srt',
+          'Show - 12.ja.srt',
+          'Show extras.ja.srt',
+        ],
+      );
+    });
+
+    test('语言权重优先：ja→zh→en→ko，同集号也按语言分组', () {
+      final List<JimakuCandidate> sorted =
+          sortJimakuCandidates(<JimakuCandidate>[
+        _cand('Show - 01.en.srt'),
+        _cand('Show - 01.zh.srt'),
+        _cand('Show - 01.ja.srt'),
+      ]);
+      expect(
+        sorted.map((JimakuCandidate c) => c.language),
+        <String>['ja', 'zh', 'en'],
+      );
+    });
+
+    test('preferred 语言置顶（用户按系列记忆的语言）', () {
+      final List<JimakuCandidate> sorted = sortJimakuCandidates(
+        <JimakuCandidate>[
+          _cand('Show - 01.ja.srt'),
+          _cand('Show - 01.zh.srt'),
+        ],
+        preferredLanguage: 'zh',
+      );
+      expect(sorted.first.language, 'zh');
+    });
+
+    test('jimakuLanguageRank 权重次序', () {
+      expect(jimakuLanguageRank('ja'), lessThan(jimakuLanguageRank('zh')));
+      expect(jimakuLanguageRank('zh'), lessThan(jimakuLanguageRank('en')));
+      expect(jimakuLanguageRank('en'), lessThan(jimakuLanguageRank('ko')));
+      expect(jimakuLanguageRank(null), greaterThan(jimakuLanguageRank('ko')));
+      expect(jimakuLanguageRank('en', preferred: 'en'),
+          lessThan(jimakuLanguageRank('ja')));
+    });
+  });
 }

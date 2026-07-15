@@ -26,6 +26,53 @@ class JimakuCandidate {
 
   /// 该候选文件名识别出的语言代码（`ja`/`zh`/`en`/`ko`），认不出为 `null`。
   String? get language => detectSubtitleLanguage(file.name);
+
+  /// 从文件名解析出的集号（认不出为 null），用于按集升序排列。
+  int? get episode => file.episode;
+}
+
+/// 语言排序权重：优先语言（[preferred]，用户按系列记忆的语言）→ ja → zh → en → ko →
+/// 其它/认不出。数字越小越靠前。纯函数。
+int jimakuLanguageRank(String? language, {String? preferred}) {
+  if (preferred != null && language == preferred) return -1;
+  switch (language) {
+    case 'ja':
+      return 0;
+    case 'zh':
+      return 1;
+    case 'en':
+      return 2;
+    case 'ko':
+      return 3;
+    default:
+      return 4; // 其它语言 / 认不出
+  }
+}
+
+/// 给候选排序，消除 Jimaku 返回的乱序（用户报「集数是乱的」的根因是全程无排序）。
+///
+/// 排序键（稳定，越靠前越优先）：
+/// 1. 语言权重（[jimakuLanguageRank]，优先语言/ja/zh/en/ko），让常用语言集中在顶部；
+/// 2. 集号升序（[JimakuCandidate.episode]，认不出的集排在有集号的之后）；
+/// 3. 文件名（大小写不敏感）做最终 tie-break，保证确定性。
+///
+/// 纯函数（返回新列表，不改入参），便于单测。
+List<JimakuCandidate> sortJimakuCandidates(
+  List<JimakuCandidate> candidates, {
+  String? preferredLanguage,
+}) {
+  final List<JimakuCandidate> out =
+      List<JimakuCandidate>.of(candidates, growable: false);
+  out.sort((JimakuCandidate a, JimakuCandidate b) {
+    final int la = jimakuLanguageRank(a.language, preferred: preferredLanguage);
+    final int lb = jimakuLanguageRank(b.language, preferred: preferredLanguage);
+    if (la != lb) return la.compareTo(lb);
+    final int ea = a.episode ?? (1 << 30);
+    final int eb = b.episode ?? (1 << 30);
+    if (ea != eb) return ea.compareTo(eb);
+    return a.file.name.toLowerCase().compareTo(b.file.name.toLowerCase());
+  });
+  return out;
 }
 
 /// 按语言代码筛选候选。[language] 为 null（= 全部）时原样返回；非 null 时只留该语言
@@ -140,6 +187,15 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
   /// 上次搜索是否带了集数（用于「该集无结果」时显示「显示全部集」出口）。
   bool _searchedWithEpisode = false;
 
+  /// AniList 对当前 query 的候选系列（romaji/english/native 都能匹上）。用户报「搜索
+  /// 一般用罗马音或者英语」——旧实现只盲取 `media.first`，首条猜错就整个搜空且无从纠正。
+  /// 存全部候选并渲染系列 chip，用户可切换正确的番。空 = AniList 无命中（回退文本搜）。
+  List<AniListMedia> _seriesMatches = const <AniListMedia>[];
+
+  /// 当前选中的 AniList 系列 id（用它按 anilist_id 搜 Jimaku）；null = 未经 AniList
+  /// 解析（纯文本回退）。
+  int? _selectedSeriesId;
+
   @override
   void initState() {
     super.initState();
@@ -186,19 +242,66 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
       _searching = true;
       _searched = false;
       _candidates = const <JimakuCandidate>[];
+      _seriesMatches = const <AniListMedia>[];
+      _selectedSeriesId = null;
     });
 
     final AniListClient anilist = AniListClient();
-    final JimakuClient jimaku = JimakuClient(apiKey: apiKey);
     try {
-      // ① 先经 AniList 把番名解析成 anilist_id（更准）；② 没命中再用文本直接搜 Jimaku。
+      // ① 先经 AniList 把番名解析成候选系列（romaji/english/native 都能匹上）；存全部
+      //   候选供用户消歧，默认取首条（相关度最高）。② AniList 无命中时回退文本直接搜。
       final List<AniListMedia> media = await anilist.searchAnime(query);
+      if (!mounted) return;
+      setState(() => _seriesMatches = media);
+      await _fetchCandidates(
+        anilistId: media.isNotEmpty ? media.first.id : null,
+        queryFallback: query,
+        episode: episode,
+      );
+    } finally {
+      anilist.close();
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  /// 用户点某个系列 chip：以该系列 id 重搜 Jimaku（不再重跑 AniList，保留已展示的候选
+  /// 系列列表）。query/episode 从当前输入框读取，与首搜一致。
+  Future<void> _selectSeries(AniListMedia media) async {
+    if (_selectedSeriesId == media.id || _searching) return;
+    final String apiKey = _apiKeyCtrl.text.trim();
+    if (apiKey.isEmpty) return;
+    final int? episode = int.tryParse(_episodeCtrl.text.trim());
+    setState(() {
+      _searching = true;
+      _candidates = const <JimakuCandidate>[];
+    });
+    try {
+      await _fetchCandidates(
+        anilistId: media.id,
+        queryFallback: _queryCtrl.text.trim(),
+        episode: episode,
+      );
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  /// 用给定 [anilistId]（null 时回退文本 [queryFallback]）搜 Jimaku 条目 → 列文件 →
+  /// 过滤文本字幕 → **排序**（[sortJimakuCandidates]，消除「集数乱序」）→ 落状态。
+  /// 自带 JimakuClient 生命周期（本函数创建并关闭）。
+  Future<void> _fetchCandidates({
+    required int? anilistId,
+    required String queryFallback,
+    required int? episode,
+  }) async {
+    final JimakuClient jimaku = JimakuClient(apiKey: _apiKeyCtrl.text.trim());
+    try {
       final List<JimakuEntry> entries = <JimakuEntry>[];
-      if (media.isNotEmpty) {
-        entries.addAll(await jimaku.searchByAnilistId(media.first.id));
+      if (anilistId != null) {
+        entries.addAll(await jimaku.searchByAnilistId(anilistId));
       }
       if (entries.isEmpty) {
-        entries.addAll(await jimaku.searchByQuery(query));
+        entries.addAll(await jimaku.searchByQuery(queryFallback));
       }
 
       final List<JimakuCandidate> candidates = <JimakuCandidate>[];
@@ -211,21 +314,24 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
           }
         }
       }
+      final List<JimakuCandidate> sorted = sortJimakuCandidates(
+        candidates,
+        preferredLanguage: _selectedLanguage,
+      );
       if (!mounted) return;
       setState(() {
-        _candidates = candidates;
+        _candidates = sorted;
         _searched = true;
         _searchedWithEpisode = episode != null;
+        _selectedSeriesId = anilistId;
         // 记忆语言本次无候选 → 退回「全部」，不空屏（保底）。
         _reconcileSelectedLanguage();
         // 配好 key 且搜出结果后，默认收起 API key 输入区腾出列表空间
         // （用户：「apikey 配完是不是可以缩小显示」）。用户仍可点「修改」展开。
-        _apiKeyCollapsed = candidates.isNotEmpty;
+        _apiKeyCollapsed = sorted.isNotEmpty;
       });
     } finally {
-      anilist.close();
       jimaku.close();
-      if (mounted) setState(() => _searching = false);
     }
   }
 
@@ -303,6 +409,31 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
   void _showAllEpisodes() {
     _episodeCtrl.clear();
     _search();
+  }
+
+  /// AniList 系列消歧 chip 排：AniList 对当前 query 命中 ≥2 个候选番时显示，让用户从
+  /// 罗马音/英文/日文标题里挑对正确的番（旧实现盲取首条，首条猜错就整搜空且无从纠正）。
+  /// 只命中 1 个或 0 个（纯文本回退）时不显示，不占垂直空间。
+  Widget _buildSeriesChips() {
+    if (_seriesMatches.length < 2) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Text(t.video_jimaku_series,
+              style: Theme.of(context).textTheme.labelMedium),
+          for (final AniListMedia media in _seriesMatches)
+            ChoiceChip(
+              label: Text(media.displayTitle),
+              selected: _selectedSeriesId == media.id,
+              onSelected: _searching ? null : (_) => _selectSeries(media),
+            ),
+        ],
+      ),
+    );
   }
 
   /// 语言筛选 chip 排（含「全部」）：仅在搜出结果里出现 ≥1 个可识别语言时显示。
@@ -394,6 +525,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
             ),
           ),
           const SizedBox(height: 12),
+          // 系列消歧 chip 在搜索态之上：切换系列重搜时仍可见，不被 spinner 顶掉。
+          _buildSeriesChips(),
           if (_searching)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
