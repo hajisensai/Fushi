@@ -1,7 +1,7 @@
 ## BUG-834 · 制卡句子音频失败toast只显示ffmpeg版本banner看不到真因
 - **报告**：2026-07-15（用户：截图报「导出卡片失败：sentence audio export failed: ffmpeg exit 1」）
 - **真实性**：✅ 真 bug（诊断截断）。根因 `hibiki/lib/src/media/video/ffmpeg_backend.dart:83`（旧 `_summarizeFfmpegOutput` 从**头**截 500 字）。
-- **[x] ① 已修复** — 提交 `<pending>`
+- **[x] ① 已修复** — 提交 `4688c4a48`（PR #151）
 - **[x] ② 已加自动化测试** — `hibiki/test/media/video/ffmpeg_backend_test.dart`（failureSummary surfaces the tail error line, not the leading banner）
 - **备注**：
 
