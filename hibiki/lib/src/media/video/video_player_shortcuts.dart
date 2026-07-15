@@ -135,8 +135,9 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
 /// (includeRepeats:false) to preserve its previous non-repeating behaviour.
 Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
   HibikiShortcutRegistry registry,
-  VideoPlayerShortcutActions actions,
-) {
+  VideoPlayerShortcutActions actions, {
+  Set<ShortcutAction> exclude = const <ShortcutAction>{},
+}) {
   final Map<ShortcutAction, VoidCallback> callbacks =
       videoActionCallbacks(actions);
   final Map<ShortcutActivator, VoidCallback> result =
@@ -144,6 +145,9 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
   for (final MapEntry<ShortcutAction, VoidCallback> entry
       in callbacks.entries) {
     final ShortcutAction action = entry.key;
+    // 调用点可排除个别动作（如字幕对轴弹窗复用本 map 时排除 Escape / 全屏 / 打开字幕列表 /
+    // 沉浸锁，避免它们拦掉弹窗自身的关闭或在弹窗后面改变布局）。
+    if (exclude.contains(action)) continue;
     // 模糊切换 / 遮蔽循环 / 隐藏切换都是 press-edge-only（按一下翻一次，长按不连发，
     // 与历史 videoToggleSubtitleBlur 同语义）。TODO-840 Part B。
     const Set<ShortcutAction> pressEdgeOnly = <ShortcutAction>{

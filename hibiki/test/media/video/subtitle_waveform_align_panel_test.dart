@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/subtitle_waveform_align_panel.dart';
@@ -30,6 +31,8 @@ Widget _host({
   Future<void> Function(int startMs)? onPlayCue,
   bool Function()? isPlaying,
   Future<void> Function()? onTogglePlayPause,
+  Map<ShortcutActivator, VoidCallback>? keyboardShortcuts,
+  Future<void> Function(int positionMs)? onSeek,
   int Function()? currentPositionMs,
   Listenable? positionListenable,
 }) {
@@ -48,6 +51,8 @@ Widget _host({
             onPlayCue: onPlayCue,
             isPlaying: isPlaying,
             onTogglePlayPause: onTogglePlayPause,
+            keyboardShortcuts: keyboardShortcuts,
+            onSeek: onSeek,
             currentPositionMs: currentPositionMs,
             positionListenable: positionListenable,
           ),
@@ -483,5 +488,45 @@ void main() {
       matching: find.byIcon(Icons.close),
     ));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('keyboard shortcuts: space binding fires inside the zoom dialog',
+      (WidgetTester tester) async {
+    int spaceHits = 0;
+    final Map<ShortcutActivator, VoidCallback> shortcuts =
+        <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.space): () => spaceHits++,
+    };
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      keyboardShortcuts: shortcuts,
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    // 弹窗自动聚焦 → 空格冒泡到 CallbackShortcuts 命中绑定（视频页快捷键在弹窗夺焦后收不到）。
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(spaceHits, 1);
+  });
+
+  testWidgets('waveform tap seeks the playhead to the tapped time',
+      (WidgetTester tester) async {
+    final List<int> seeks = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onSeek: (int ms) async => seeks.add(ms),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    // 点波形近左缘 → seek 到接近 0 的时间；只验证 tap→seek 接线（几何精度不苛求）。
+    final Rect r = tester.getRect(
+        find.byKey(const ValueKey<String>('subtitle-waveform-hscroll')));
+    await tester.tapAt(Offset(r.left + 2, r.top + 20));
+    await tester.pumpAndSettle();
+    expect(seeks, hasLength(1));
+    expect(seeks.single, inInclusiveRange(0, 60000));
+    expect(seeks.single, lessThan(1000)); // 近左缘 → 时间很小
   });
 }

@@ -5118,6 +5118,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onToggleSubtitlePlayPause: () async {
         await _controller?.togglePlayPause();
       },
+      // 波形对轴弹窗内的键盘快捷键：复用视频页 registry 驱动的整表（尊重用户重映射），
+      // 让空格暂停 / 方向键 seek / `,``.` 帧步进等在弹窗打开时照常生效。排除会破坏弹窗
+      // 自身的动作（Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁）。
+      subtitleAlignShortcuts: _controller == null
+          ? null
+          : buildVideoPlayerShortcutsFromRegistry(
+              appModel.shortcutRegistry,
+              _buildVideoShortcutActions(_controller!),
+              exclude: const <ShortcutAction>{
+                ShortcutAction.videoEscape,
+                ShortcutAction.videoToggleFullscreen,
+                ShortcutAction.videoToggleSubtitleList,
+                ShortcutAction.videoToggleImmersiveLock,
+              },
+            ),
+      // 点击字幕波形把播放头跳过去（seek 到该 x 对应的时间，不强制播放，保留当前播放态）。
+      onSeekSubtitleWaveform: (int ms) async {
+        await _controller?.seekMs(ms);
+      },
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
       onSetSubtitleObscureMode: _setSubtitleObscureMode,

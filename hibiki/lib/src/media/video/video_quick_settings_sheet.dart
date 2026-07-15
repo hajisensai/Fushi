@@ -52,6 +52,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.onPlaySubtitleCue,
     this.subtitleIsPlaying,
     this.onToggleSubtitlePlayPause,
+    this.subtitleAlignShortcuts,
+    this.onSeekSubtitleWaveform,
     this.subtitlePositionListenable,
     this.currentSubtitlePositionMs,
     required this.onPreviewSpeed,
@@ -149,6 +151,13 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 波形对轴视图内播放/暂停切换回调。null = 不显示该按钮。
   final Future<void> Function()? onToggleSubtitlePlayPause;
+
+  /// 波形对轴弹窗内生效的键盘快捷键整表（复用视频页 registry 驱动 map，已排除会破坏弹窗
+  /// 的动作）。null = 弹窗内不接管键盘。
+  final Map<ShortcutActivator, VoidCallback>? subtitleAlignShortcuts;
+
+  /// 点击波形空白处把播放头 seek 到对应时间（毫秒）。null = 波形不可点击 seek。
+  final Future<void> Function(int positionMs)? onSeekSubtitleWaveform;
 
   /// 可选：播放位置变化通知源（`VideoPlayerController`），驱动波形面板重绘播放头。
   final Listenable? subtitlePositionListenable;
@@ -1081,6 +1090,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               onPlayCue: widget.onPlaySubtitleCue,
               isPlaying: widget.subtitleIsPlaying,
               onTogglePlayPause: widget.onToggleSubtitlePlayPause,
+              keyboardShortcuts: widget.subtitleAlignShortcuts,
+              onSeek: widget.onSeekSubtitleWaveform,
               positionListenable: widget.subtitlePositionListenable,
               currentPositionMs: widget.currentSubtitlePositionMs,
             ),
