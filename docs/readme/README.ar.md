@@ -12,6 +12,8 @@
 
 [![دليل المستخدم](https://img.shields.io/badge/%F0%9F%93%96%20%D8%AF%D9%84%D9%8A%D9%84%20%D8%A7%D9%84%D9%85%D8%B3%D8%AA%D8%AE%D8%AF%D9%85-0969DA?style=for-the-badge)](../user-guide.ar.md)
 
+**بدون إعداد معقّد** — استورد القواميس والصوت المُوصى بها في خطوة واحدة.
+
 [![تنزيل أحدث إصدار](https://img.shields.io/badge/%E2%AC%87%20%D8%AA%D9%86%D8%B2%D9%8A%D9%84%20%D8%A3%D8%AD%D8%AF%D8%AB%20%D8%A5%D8%B5%D8%AF%D8%A7%D8%B1-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![انضم إلى Discord](https://img.shields.io/badge/%D8%A7%D9%86%D8%B6%D9%85%20%D8%A5%D9%84%D9%89%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 

@@ -12,6 +12,8 @@
 
 [![User Guide](https://img.shields.io/badge/%F0%9F%93%96%20User%20Guide-0969DA?style=for-the-badge)](docs/user-guide.md)
 
+**No fiddly setup** — import the recommended dictionaries and audio in one step.
+
 [![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Join our Discord](https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 

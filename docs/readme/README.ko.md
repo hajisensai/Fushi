@@ -12,6 +12,8 @@
 
 [![사용 설명서](https://img.shields.io/badge/%F0%9F%93%96%20%EC%82%AC%EC%9A%A9%20%EC%84%A4%EB%AA%85%EC%84%9C-0969DA?style=for-the-badge)](../user-guide.ko.md)
 
+**번거로운 설정 없이** — 추천 사전과 오디오를 한 번에 가져오기.
+
 [![최신 버전 다운로드](https://img.shields.io/badge/%E2%AC%87%20%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Discord 참여](https://img.shields.io/badge/Discord%20%EC%B0%B8%EC%97%AC-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 

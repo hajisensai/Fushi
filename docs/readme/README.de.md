@@ -12,6 +12,8 @@
 
 [![Benutzerhandbuch](https://img.shields.io/badge/%F0%9F%93%96%20Benutzerhandbuch-0969DA?style=for-the-badge)](../user-guide.de.md)
 
+**Kein umständliches Einrichten** — empfohlene Wörterbücher und Audio in einem Schritt importieren.
+
 [![Neueste Version herunterladen](https://img.shields.io/badge/%E2%AC%87%20Neueste%20Version%20herunterladen-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Discord beitreten](https://img.shields.io/badge/Discord%20beitreten-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 

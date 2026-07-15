@@ -12,6 +12,8 @@
 
 [![Guia do usuário](https://img.shields.io/badge/%F0%9F%93%96%20Guia%20do%20usu%C3%A1rio-0969DA?style=for-the-badge)](../user-guide.pt-BR.md)
 
+**Sem configuração complicada** — importe os dicionários e o áudio recomendados em uma etapa.
+
 [![Baixar a versão mais recente](https://img.shields.io/badge/%E2%AC%87%20Baixar%20a%20vers%C3%A3o%20mais%20recente-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Entrar no Discord](https://img.shields.io/badge/Entrar%20no%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
