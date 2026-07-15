@@ -39,11 +39,19 @@ class VideoSubtitleHitTester {
 /// TODO-916 症状④：字幕字符之间有 [Wrap] 间隙 + 描边层不计入命中盒，落在字缝/描边
 /// 外缘的点用「精确 [Rect.contains]」会全 miss、查不到词。两段判据消除 miss：
 /// 1. 先精确包含：命中第一个 `contains(point)` 的字符（旧行为，零容差时等价）。
-/// 2. 未命中则取**距点击点最近**的字符，且仅当该距离在合理阈值内才采纳——阈值取该候选
-///    字符的半个宽度（再夹一个最小值 [minTolerance]，防极窄字符阈值过小），保证只在字缝/
-///    描边一字之内兜底，不会跨到隔壁字符或远处误命中。
+/// 2. 未命中则取**距点击点最近**的字符，且仅当该点落在该字符的兜底容差区内才采纳。
 ///
-/// [Rect.zero]（无 RenderBox 的字符）跳过。无任何有效矩形或全部超阈值时返回 -1。
+/// 容差**方向感知**（BUG-824）：字缝在**水平**方向（同一行字符间的 [Wrap] 间隙），
+/// 描边只是四周薄薄一圈。故容差用椭圆而非各向同性圆——
+/// - 水平半轴 [minTolerance]/半字宽取大：跨字缝兜底（TODO-916/971，36px 字半字宽≈18px）；
+/// - 垂直半轴 [edgeTolerance] 只放描边级几像素：字身外上下只需覆盖描边外缘。
+///
+/// 旧实现用各向同性容差 `clamp(半字宽, 10px, ∞)`，把**水平**半字宽（≈18px）原样用到
+/// **垂直向下**，会向下溢出盖住紧贴字幕下方的视频进度条（seek bar）——用户 tap 进度条
+/// 顶部一条带时被顶层字幕识别器赢走竞技场，暂停视频 + 弹查词、seek 被吞（BUG-824）。
+/// 垂直方向本就不该放半字宽的裙边。
+///
+/// [Rect.zero]（无 RenderBox 的字符）跳过。无任何有效矩形或全部超容差时返回 -1。
 @visibleForTesting
 int resolveSubtitleCharHit(
   List<Rect> charRects,
@@ -51,6 +59,9 @@ int resolveSubtitleCharHit(
   // TODO-971：手指比 6px 宽，旧 6.0 下手机字幕点词常落在字缝/描边外缘 miss。
   // 放宽到 10.0，字缝/描边一字之内更易兜底命中（仍夹半字宽，不跨到隔壁字）。
   double minTolerance = 10.0,
+  // BUG-824：垂直兜底半轴。字身外上下只需覆盖描边外缘（默认软阴影半径 3px + 手指余量），
+  // 远小于水平半字宽——避免向下溢出到紧贴字幕下方的进度条轨道。
+  double edgeTolerance = 6.0,
 }) {
   // 第一段：精确包含。
   for (int i = 0; i < charRects.length; i++) {
@@ -58,7 +69,7 @@ int resolveSubtitleCharHit(
     if (r == Rect.zero) continue;
     if (r.contains(point)) return i;
   }
-  // 第二段：最近字符兜底（在该字符半字宽 / [minTolerance] 容差内）。
+  // 第二段：最近字符兜底（在该字符的方向感知椭圆容差区内）。
   int bestIndex = -1;
   double bestDistance = double.infinity;
   for (int i = 0; i < charRects.length; i++) {
@@ -66,11 +77,15 @@ int resolveSubtitleCharHit(
     if (r == Rect.zero) continue;
     final double dx = (point.dx.clamp(r.left, r.right)) - point.dx;
     final double dy = (point.dy.clamp(r.top, r.bottom)) - point.dy;
+    // 用欧氏距离在多个候选里选**最近**的（水平相邻字符的取舍与旧行为一致）。
     final double distance = (dx * dx + dy * dy);
     if (distance >= bestDistance) continue;
-    final double tolerance =
+    // 椭圆判据：水平半轴放宽跨字缝、垂直半轴收紧只覆盖描边（BUG-824）。
+    final double toleranceX =
         (r.width / 2).clamp(minTolerance, double.infinity).toDouble();
-    if (distance <= tolerance * tolerance) {
+    final double nx = dx / toleranceX;
+    final double ny = dy / edgeTolerance;
+    if (nx * nx + ny * ny <= 1.0) {
       bestDistance = distance;
       bestIndex = i;
     }
