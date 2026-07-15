@@ -440,33 +440,47 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
     );
   }
 
-  /// 语言筛选 chip 排（含「全部」）：仅在搜出结果里出现 ≥1 个可识别语言时显示。
-  Widget _buildLanguageChips() {
-    final List<String> langs = availableLanguages(_candidates);
-    if (langs.isEmpty) return const SizedBox.shrink();
+  /// 统一的「标签在上、chip 在下」分区：消除旧版把标题标签塞进同一个 Wrap 里、长
+  /// 番名 chip 换行后标签和 chip 高低错落的丑排版。标签走 labelMedium + onSurfaceVariant
+  /// 弱化，chip 用 8/8 均匀间距。
+  Widget _chipSection(String label, List<Widget> chips) {
+    final ThemeData theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(t.video_jimaku_language,
-              style: Theme.of(context).textTheme.labelMedium),
-          ChoiceChip(
-            label: Text(t.video_jimaku_language_all),
-            selected: _selectedLanguage == null,
-            onSelected: (_) => _selectLanguage(null),
-          ),
-          for (final String lang in langs)
-            ChoiceChip(
-              label: Text(jimakuLanguageLabel(lang)),
-              selected: _selectedLanguage == lang,
-              onSelected: (_) => _selectLanguage(lang),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 2),
+            child: Text(
+              label,
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
+          ),
+          Wrap(spacing: 8, runSpacing: 8, children: chips),
         ],
       ),
     );
+  }
+
+  /// 语言筛选分区（含「全部」）：仅在搜出结果里出现 ≥1 个可识别语言时显示。
+  Widget _buildLanguageChips() {
+    final List<String> langs = availableLanguages(_candidates);
+    if (langs.isEmpty) return const SizedBox.shrink();
+    return _chipSection(t.video_jimaku_language, <Widget>[
+      ChoiceChip(
+        label: Text(t.video_jimaku_language_all),
+        selected: _selectedLanguage == null,
+        onSelected: (_) => _selectLanguage(null),
+      ),
+      for (final String lang in langs)
+        ChoiceChip(
+          label: Text(jimakuLanguageLabel(lang)),
+          selected: _selectedLanguage == lang,
+          onSelected: (_) => _selectLanguage(lang),
+        ),
+    ]);
   }
 
   /// 宽屏两栏的最小内容宽（dp）：≥ 此宽度筛选面板与结果列表左右并排，否则退化为
