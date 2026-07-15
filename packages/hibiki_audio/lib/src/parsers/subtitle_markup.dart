@@ -261,6 +261,138 @@ class SubtitleSpan {
       (blur != null && blur! > 0);
 }
 
+/// `\clip`/`\iclip` 静态裁剪路径的一段命令（归一化分数坐标，与 [SubtitlePos] 同构）。
+/// [op] 为 move/line 时只用 (x1,y1)；cubic 用三控制点 (x1,y1)..(x3,y3)。
+class SubtitleClipSegment {
+  final SubtitleClipOp op;
+  final double x1, y1;
+  final double x2, y2;
+  final double x3, y3;
+  const SubtitleClipSegment.move(this.x1, this.y1)
+      : op = SubtitleClipOp.move,
+        x2 = 0,
+        y2 = 0,
+        x3 = 0,
+        y3 = 0;
+  const SubtitleClipSegment.line(this.x1, this.y1)
+      : op = SubtitleClipOp.line,
+        x2 = 0,
+        y2 = 0,
+        x3 = 0,
+        y3 = 0;
+  const SubtitleClipSegment.cubic(
+      this.x1, this.y1, this.x2, this.y2, this.x3, this.y3)
+      : op = SubtitleClipOp.cubic;
+}
+
+enum SubtitleClipOp { move, line, cubic }
+
+/// ASS `\clip(...)`/`\iclip(...)` 静态裁剪（矩形四参形式已归一成折线段）。
+/// [inverse]=true 为 `\iclip`（挖掉路径区域，其余照画）。本类只存归一化分数
+/// （不引 Flutter）；渲染层按视频内容矩形映射后构建 `Path` 裁剪。
+class SubtitleClip {
+  final bool inverse;
+  final List<SubtitleClipSegment> segments;
+  const SubtitleClip({required this.inverse, required this.segments});
+}
+
+/// 解析 `\clip`/`\iclip` 括号内参数 [inner] → [SubtitleClip]（坐标除以 PlayRes 归一化）。
+///
+/// 两种形式（ASS 规范）：
+/// - 矩形 `x1,y1,x2,y2` → 四段折线；
+/// - 绘图 `[scale,] m/l/b/s/n 命令串`：`m x y` 移动、`l x y ...` 连续直线、
+///   `b x1 y1 x2 y2 x3 y3 ...` 连续三次贝塞尔、`s ...` B 样条按折线近似、`n` 按移动
+///   处理、`c`/`p` 忽略。scale 变体坐标除以 `2^(scale-1)`。
+/// 解析失败 / 空路径 / PlayRes 缺失返回 null（调用方按无裁剪）。
+SubtitleClip? parseAssClip({
+  required bool inverse,
+  required String inner,
+  required double? playResX,
+  required double? playResY,
+}) {
+  if (playResX == null || playResY == null || playResX <= 0 || playResY <= 0) {
+    return null;
+  }
+  final List<SubtitleClipSegment> segments = <SubtitleClipSegment>[];
+
+  // 矩形形式：恰好 4 个纯数字参数。
+  final List<String> csv =
+      inner.split(',').map((String p) => p.trim()).toList();
+  if (csv.length == 4 && csv.every((String p) => double.tryParse(p) != null)) {
+    final double x1 = double.parse(csv[0]) / playResX;
+    final double y1 = double.parse(csv[1]) / playResY;
+    final double x2 = double.parse(csv[2]) / playResX;
+    final double y2 = double.parse(csv[3]) / playResY;
+    return SubtitleClip(inverse: inverse, segments: <SubtitleClipSegment>[
+      SubtitleClipSegment.move(x1, y1),
+      SubtitleClipSegment.line(x2, y1),
+      SubtitleClipSegment.line(x2, y2),
+      SubtitleClipSegment.line(x1, y2),
+    ]);
+  }
+
+  // 绘图形式：可选前导 `scale,`（单个正整数）+ 命令串。
+  String drawing = inner;
+  double divisor = 1.0;
+  final int comma = inner.indexOf(',');
+  if (comma > 0) {
+    final int? scale = int.tryParse(inner.substring(0, comma).trim());
+    if (scale != null && scale >= 1) {
+      drawing = inner.substring(comma + 1);
+      divisor = 1 << (scale - 1) == 0 ? 1.0 : (1 << (scale - 1)).toDouble();
+    }
+  }
+  final List<String> tokens =
+      drawing.split(RegExp(r'\s+')).where((String t) => t.isNotEmpty).toList();
+  int i = 0;
+  String mode = '';
+  final List<double> nums = <double>[];
+  void flushNums() {
+    if (mode == 'm' || mode == 'n') {
+      for (int k = 0; k + 1 < nums.length; k += 2) {
+        segments.add(SubtitleClipSegment.move(
+            nums[k] / divisor / playResX, nums[k + 1] / divisor / playResY));
+      }
+    } else if (mode == 'l' || mode == 's' || mode == 'p') {
+      // s（B 样条）按折线近似；p（延长点）并入折线近似。
+      if (mode == 'p') return;
+      for (int k = 0; k + 1 < nums.length; k += 2) {
+        segments.add(SubtitleClipSegment.line(
+            nums[k] / divisor / playResX, nums[k + 1] / divisor / playResY));
+      }
+    } else if (mode == 'b') {
+      for (int k = 0; k + 5 < nums.length; k += 6) {
+        segments.add(SubtitleClipSegment.cubic(
+          nums[k] / divisor / playResX,
+          nums[k + 1] / divisor / playResY,
+          nums[k + 2] / divisor / playResX,
+          nums[k + 3] / divisor / playResY,
+          nums[k + 4] / divisor / playResX,
+          nums[k + 5] / divisor / playResY,
+        ));
+      }
+    }
+    nums.clear();
+  }
+
+  while (i < tokens.length) {
+    final String t = tokens[i];
+    final double? v = double.tryParse(t);
+    if (v != null) {
+      nums.add(v);
+    } else {
+      flushNums();
+      mode = t.toLowerCase();
+    }
+    i++;
+  }
+  flushNums();
+  if (segments.isEmpty || segments.first.op != SubtitleClipOp.move) {
+    return null;
+  }
+  return SubtitleClip(inverse: inverse, segments: segments);
+}
+
 /// 单条 cue 的**默认样式**：来自 ASS `[V4+ Styles]` 段里该 Dialogue 引用的 Style 行
 /// （字体名 / 主色 / 描边色 / 阴影色 / 描边宽 / 阴影深度 / 对齐 / 竖直边距，TODO-1105）。
 ///
@@ -407,10 +539,10 @@ class SubtitleMarkup {
   /// 叠出一行特效）。渲染层据此分组。
   final int layer;
 
-  /// 本 cue 含 `\clip(...)`（非反向矢量/矩形裁剪，不支持真裁剪）。渲染层据此把多层
-  /// 卡拉 OK 的「点缀拷贝」（有同文本兄弟 cue 时）整条丢弃——libass 里它只在小块路径内
-  /// 露色，画全条反而是错的。`\iclip`（挖掉小块）不置此标志，直接画全部近似。
-  final bool hasClip;
+  /// 本 cue 的 `\clip(...)`/`\iclip(...)` 静态裁剪；null=无。坐标已按 PlayRes 归一化
+  /// 成分数（与 [posFraction] 同构），渲染层映射到视频内容矩形后构建裁剪路径。
+  /// `\t(\clip)` 动画裁剪不支持（取扫描到的最后一个静态值）。
+  final SubtitleClip? clip;
 
   const SubtitleMarkup({
     required this.plainText,
@@ -426,7 +558,7 @@ class SubtitleMarkup {
     this.scale,
     this.move,
     this.layer = 0,
-    this.hasClip = false,
+    this.clip,
   });
 }
 
@@ -448,8 +580,8 @@ class _Transform {
   int? mt1, mt2;
   bool moveSet = false;
 
-  /// 本 cue 是否出现 `\clip(...)`（非反向；见 [SubtitleMarkup.hasClip]）。
-  bool hasClip = false;
+  /// 本 cue 的 `\clip`/`\iclip` 静态裁剪（见 [SubtitleMarkup.clip]）。
+  SubtitleClip? clip;
 }
 
 /// 扫描过程内部可变样式状态。
@@ -694,7 +826,7 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     scale: scale,
     move: move,
     layer: layer,
-    hasClip: xf.hasClip,
+    clip: xf.clip,
   );
 }
 
@@ -933,14 +1065,21 @@ void _applyOverrideBlock(
       continue;
     }
 
-    // \clip(...)：矢量/矩形裁剪不支持真裁剪，记录存在供渲染层丢弃多层卡拉 OK 的
-    // 点缀拷贝（见 [SubtitleMarkup.hasClip]）。\iclip 落到下面忽略（画全部近似）。
-    if (tag.startsWith('clip(')) {
-      xf.hasClip = true;
+    // \clip(...) / \iclip(...)：静态矢量/矩形裁剪 → [SubtitleClip]（归一化分数坐标）。
+    // 支持矩形四参形式与 m/l/b 绘图形式（含 scale 变体）；解析失败按无裁剪。
+    final RegExpMatch? clipM = RegExp(r'^(i?)clip\((.*)\)$').firstMatch(tag);
+    if (clipM != null) {
+      final SubtitleClip? parsed = parseAssClip(
+        inverse: clipM.group(1) == 'i',
+        inner: clipM.group(2)!,
+        playResX: playResX,
+        playResY: playResY,
+      );
+      if (parsed != null) xf.clip = parsed;
       continue;
     }
 
-    // 其余（\k \frx \fry \iclip \xbord \ybord ...）忽略。
+    // 其余（\k \frx \fry \xbord \ybord ...）忽略。
   }
 }
 

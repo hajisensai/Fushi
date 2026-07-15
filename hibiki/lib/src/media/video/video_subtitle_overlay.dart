@@ -587,40 +587,31 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         _lastVideoContentHeight = videoContent?.height;
         _lastVideoContentWidth = videoContent?.width;
 
-        // 多层卡拉 OK 的「\clip 点缀拷贝」丢弃：libass 里带 \clip 的同文本兄弟层只在小块
-        // 路径内露色（点缀），真裁剪不支持时画全条反而把主文字整行盖成点缀色。有同文本
-        // 兄弟 cue（层叠拷贝的判据）才丢；独立 cue 上的 \clip（如整行 wipe）仍照画（忽略
-        // 裁剪近似）。respectAssStyle 关时不改（历史行为）。
-        final List<AudioCue> renderCues = widget.respectAssStyle
-            ? <AudioCue>[
-                for (final AudioCue cue in cues)
-                  if (!((cue.markup?.hasClip ?? false) &&
-                      cues.any((AudioCue o) =>
-                          !identical(o, cue) && o.text == cue.text)))
-                    cue,
-              ]
-            : cues;
-
         // 按 \pos / \an / MarginV 分组：主、副字幕都按各自位置分组（TODO-1341 后续）——同位置
         // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
         // 位置（\pos 或 \an，即 ASS 副字幕）的组遵自带位置；纯 SRT 副字幕（anchor / pos 皆空）
         // 无位置信息才在 [_positionCueGroup] 里回退置顶（翻译参考，避让主字幕底部）。
         final List<(String, List<AudioCue>)> groups =
-            _groupMainCuesByPosition(renderCues);
+            _groupMainCuesByPosition(cues);
 
         final List<(String, Widget)> positioned = <(String, Widget)>[
           for (final (String key, List<AudioCue> group) in groups)
             (
               '${isSecondary ? 's' : 'm'}|$key',
-              _positionCueGroup(
-                context,
-                // 槽位状态键带主/副层前缀：两层各自分组，同形键不得跨层串槽位状态
-                // （TODO-1372）。
-                '${isSecondary ? 's' : 'm'}|$key',
+              _clipGroup(
                 group,
-                isSecondary: isSecondary,
-                blurred: blurred,
-                container: container,
+                videoW,
+                videoH,
+                _positionCueGroup(
+                  context,
+                  // 槽位状态键带主/副层前缀：两层各自分组，同形键不得跨层串槽位状态
+                  // （TODO-1372）。
+                  '${isSecondary ? 's' : 'm'}|$key',
+                  group,
+                  isSecondary: isSecondary,
+                  blurred: blurred,
+                  container: container,
+                ),
               )
             ),
         ];
@@ -640,6 +631,25 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           ],
         );
       },
+    );
+  }
+
+  /// ASS `\clip`/`\iclip` 真裁剪：组内所有 cue 共享同一裁剪（多层卡拉 OK 每层各自成组
+  /// =单 cue 组，天然满足）时，把组的定位盒包进 [ClipPath]。路径坐标是归一化分数
+  /// （PlayRes 空间），映射基准=fit:contain 视频内容矩形（与 \pos / 字号缩放同一几何，
+  /// BUG-820）；组盒填满层边界（局部坐标==overlay 坐标），故绝对路径直接可用。多 cue
+  /// 组裁剪不一致（罕见）不裁（画全部近似，与历史一致）。respectAssStyle 关不裁。
+  Widget _clipGroup(
+      List<AudioCue> group, int? videoW, int? videoH, Widget child) {
+    if (!widget.respectAssStyle) return child;
+    final SubtitleClip? clip = group.first.markup?.clip;
+    if (clip == null) return child;
+    for (final AudioCue cue in group.skip(1)) {
+      if (!identical(cue.markup?.clip, clip)) return child;
+    }
+    return ClipPath(
+      clipper: _AssClipClipper(clip: clip, videoW: videoW, videoH: videoH),
+      child: child,
     );
   }
 
@@ -1585,6 +1595,50 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final Offset topLeft = ro.localToGlobal(Offset.zero);
     return topLeft & ro.size;
   }
+}
+
+/// ASS `\clip`/`\iclip` 的 [CustomClipper]：把 [SubtitleClip] 的归一化分数路径映射到
+/// fit:contain 视频内容矩形（居中 + 黑边偏移，与 `\pos` 定位同一几何），构建 [Path]。
+/// `\iclip` 用全区减路径（挖孔）。视频分辨率未知回退整容器为映射基准（历史近似）。
+class _AssClipClipper extends CustomClipper<Path> {
+  _AssClipClipper({required this.clip, this.videoW, this.videoH});
+
+  final SubtitleClip clip;
+  final int? videoW;
+  final int? videoH;
+
+  @override
+  Path getClip(Size size) {
+    final Size content = (videoW != null && videoH != null)
+        ? (fitVideoContentSize(videoW!, videoH!, size) ?? size)
+        : size;
+    final double ox = (size.width - content.width) / 2;
+    final double oy = (size.height - content.height) / 2;
+    double mx(double fx) => ox + fx * content.width;
+    double my(double fy) => oy + fy * content.height;
+    final Path p = Path();
+    for (final SubtitleClipSegment seg in clip.segments) {
+      switch (seg.op) {
+        case SubtitleClipOp.move:
+          p.moveTo(mx(seg.x1), my(seg.y1));
+        case SubtitleClipOp.line:
+          p.lineTo(mx(seg.x1), my(seg.y1));
+        case SubtitleClipOp.cubic:
+          p.cubicTo(mx(seg.x1), my(seg.y1), mx(seg.x2), my(seg.y2), mx(seg.x3),
+              my(seg.y3));
+      }
+    }
+    p.close();
+    if (!clip.inverse) return p;
+    return Path.combine(
+        PathOperation.difference, Path()..addRect(Offset.zero & size), p);
+  }
+
+  @override
+  bool shouldReclip(covariant _AssClipClipper oldClipper) =>
+      !identical(oldClipper.clip, clip) ||
+      oldClipper.videoW != videoW ||
+      oldClipper.videoH != videoH;
 }
 
 /// TODO-1312：一个已渲染字幕字符的登记项（[_VideoSubtitleOverlayState._charEntries]
