@@ -613,7 +613,22 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       _showOsd(t.video_subtitle_import_unsupported);
       return;
     }
-    await _applyRemoteSubtitle(controller, path);
+    // 复制到 video_subtitles/ 持久目录再应用：远端选择按文件路径持久化（见
+    // _applyRemoteSubtitle），原始 pick 可能是 SAF 临时缓存，退出后失效；复制到 app
+    // 拥有的目录才能在重进时按路径重放。复制失败则退回原路径（尽力而为，不阻断应用）。
+    String applyPath = path;
+    try {
+      final Directory destDir = await AppPaths.videoSubtitlesDirectory();
+      await destDir.create(recursive: true);
+      final String dest = p.join(destDir.path, p.basename(path));
+      if (!p.equals(path, dest)) {
+        await File(path).copy(dest);
+      }
+      applyPath = dest;
+    } catch (_) {
+      // 保留原始 pick 路径应用；本次可播，只是可能不持久。
+    }
+    await _applyRemoteSubtitle(controller, applyPath);
   }
 
   /// 远端模式：把 [path] 字幕文件解析成 cue 并切到 overlay（仅内存，不写本地 DB）。
@@ -640,7 +655,14 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     controller.setCues(cues);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
     if (!mounted) return;
-    _rebuild(() => _currentSubtitleSource = selectedSource ?? path);
+    final String source = selectedSource ?? path;
+    _rebuild(() => _currentSubtitleSource = source);
+    // 持久化用户为该远端集的字幕选择（根因修复：远端字幕原本只进内存、退出即丢）。
+    // 本地已下载/导入的字幕文件路径（Jimaku 落 video_subtitles/、导入亦复制到该目录）可
+    // 在重进时按路径重放；embedded:<n> 等非文件源退出后落回 host 默认，不阻塞当前应用。
+    unawaited(
+      appModel.setRemoteSubtitleSource(widget.bookUid, _currentEpisode, source),
+    );
     _showOsd(t.video_subtitle_switched(label: displayLabel));
   }
 
@@ -702,6 +724,15 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     // 见 [_resolveDeferredYoutubeCaptions]）；仍回填 cue 使「YouTube 字幕」行可再手选。
     _remoteSubtitleUserDismissed = true;
     _rebuild(() => _currentSubtitleSource = null);
+    // 持久化「显式关闭」（off: 哨兵）：重进 _loadRemoteEpisode 时保持关闭，不再自动加载
+    // host 默认字幕（否则用户每次进影片都要重新关一遍）。
+    unawaited(
+      appModel.setRemoteSubtitleSource(
+        widget.bookUid,
+        _currentEpisode,
+        SubtitleSource.offSentinel,
+      ),
+    );
   }
 
   /// TODO-1302 track-list-first：当前有效远端客户端已解析好的 YouTube 字幕轨列表

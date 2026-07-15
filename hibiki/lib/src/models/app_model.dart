@@ -2779,6 +2779,18 @@ class AppModel with ChangeNotifier {
   Future<void> setJimakuPreferredLanguage(String seriesKey, String langCode) =>
       prefsRepo.setJimakuPreferredLanguage(seriesKey, langCode);
 
+  /// 远端/流媒体视频用户手选的字幕来源持久化（退出重进恢复；根因见
+  /// [PreferencesRepository.remoteSubtitleSources]）。
+  String? remoteSubtitleSource(String bookUid, {int episodeIndex = 0}) =>
+      prefsRepo.remoteSubtitleSource(bookUid, episodeIndex: episodeIndex);
+
+  Future<void> setRemoteSubtitleSource(
+    String bookUid,
+    int episodeIndex,
+    String? source,
+  ) =>
+      prefsRepo.setRemoteSubtitleSource(bookUid, episodeIndex, source);
+
   bool get reverseNavigationBar => prefsRepo.reverseNavigationBar;
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
 
