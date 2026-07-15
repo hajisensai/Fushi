@@ -605,13 +605,15 @@ class MediaSourceScanner {
   ) async {
     if (plan.playlists.isEmpty) return 0;
 
-    // 统一合集：拆集后无单条 playlist 行 → 按「同名 playlist 合集是否已存在」判重。
-    // 合集名 = m3u8 basename（与旧 playlistBookUid 同为 basename 派生，去重/同名碰撞
-    // 行为一致），且**不随 manifest 内集路径编辑而变** → 编辑集路径重扫仍幂等，不产生
-    // X (2) 重复（TODO-1237 ②）。在读/解析前判重，未变的文件夹重扫无 per-playlist IO。
-    final Set<String> existingPlaylistNames = <String>{
+    // 统一合集：拆集后无单条 playlist 行 → 用「同名 playlist 合集是否已存在」区分
+    // 首次导入 vs 重扫。合集名 = m3u8 basename（**不随 manifest 内集路径编辑而变** →
+    // 编辑集路径重扫仍幂等，不产生 X (2) 重复，TODO-1237 ②）。首导（不存在）走
+    // importSplitPlaylist；已存在走 reconcileSplitPlaylist 把成员对齐到当前清单
+    // （BUG-830：磁盘上编辑 m3u8 增删某集后合集成员永不更新）。故必须逐个解析清单
+    // （不再「同名即整体跳过」），per-playlist 多读一个小文本清单的开销可接受。
+    final Map<String, int> existingPlaylistIds = <String, int>{
       for (final MediaCollectionRow c in await _db.getAllMediaCollections())
-        if (c.collectionType == 'playlist') c.name,
+        if (c.collectionType == 'playlist') c.name: c.id,
     };
 
     // Temp dir only used by non-local transports (copyToLocal downloads here);
@@ -622,7 +624,6 @@ class MediaSourceScanner {
       for (final ScanPlaylistItem item in plan.playlists) {
         final String collectionName =
             p.basenameWithoutExtension(item.playlistPath);
-        if (existingPlaylistNames.contains(collectionName)) continue;
 
         playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
         final String localM3u8 =
@@ -634,8 +635,21 @@ class MediaSourceScanner {
         final String baseDir = p.dirname(item.playlistPath);
         final List<PlaylistEntry> entries =
             parseM3u8(content: content, baseDir: baseDir);
-        if (entries.isEmpty) continue; // empty / not a playlist: skip silently.
-        existingPlaylistNames.add(collectionName);
+        // 空 / 不可解析清单：跳过（不当成「清单变空 → 清光成员」，避免读盘瞬时失败
+        // 误删已存在合集，保守降级）。
+        if (entries.isEmpty) continue;
+
+        final int? existingId = existingPlaylistIds[collectionName];
+        if (existingId != null) {
+          // 已存在同名 playlist 合集：以当前清单为准对齐成员（增删差异），不重导、
+          // 不计入「新增合集数」；封面首导时已抽，无需重抽。
+          await _videoRepo.reconcileSplitPlaylist(
+            collectionId: existingId,
+            entries: entries,
+            sourceId: sourceId,
+          );
+          continue;
+        }
 
         final ({int collectionId, List<String> episodeUids}) result =
             await _videoRepo.importSplitPlaylist(
@@ -643,6 +657,8 @@ class MediaSourceScanner {
           entries: entries,
           sourceId: sourceId,
         );
+        // 记入 map：同一次扫描里遇到第二个同名清单时走 reconcile，不再重导致重复。
+        existingPlaylistIds[collectionName] = result.collectionId;
 
         // TODO-1237 ①: cover from the first USABLE episode (local ffmpeg only),
         // applied to the first episode row; mobile / any failure -> null cover,

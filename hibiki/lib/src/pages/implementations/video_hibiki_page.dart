@@ -1804,9 +1804,36 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
       String? externalSub;
       List<AudioCue> cues = const <AudioCue>[];
+      // 优先恢复用户上次为该远端集手选的字幕：远端视频无本地 DB 行，字幕只进内存、退出即丢
+      // （用户报「下载字幕没持久化退出影片就没了」的根因）。选择按 <bookUid>#ep 记忆在 prefs
+      // （见 PreferencesRepository.remoteSubtitleSources），这里在落回 host 默认字幕之前重放。
+      final String? persistedSub =
+          appModel.remoteSubtitleSource(widget.bookUid, episodeIndex: index);
+      bool subtitleResolved = false;
+      if (persistedSub != null) {
+        if (SubtitleSource.isOff(persistedSub)) {
+          // 上次显式关闭 → 保持关闭，不加载 host 默认字幕（尊重用户选择）。
+          _currentSubtitleSource = null;
+          subtitleResolved = true;
+        } else if (subtitleFormatForPath(persistedSub) != null &&
+            File(persistedSub).existsSync()) {
+          // 本地已下载/导入的字幕文件仍在磁盘（Jimaku / 手动导入落 video_subtitles/）→ 重放。
+          _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
+          cues = await _loadExternalSubtitleCues(persistedSub, info.id);
+          if (cues.isNotEmpty) {
+            externalSub = persistedSub;
+            _remoteSubtitlePath = persistedSub;
+            subtitleResolved = true;
+          }
+        }
+        // host url / embedded 索引 / 文件已删 → 不在此解析，落回下方 host 默认分支。
+      }
       // TODO-1000：YouTube 等预解析好 cue（timedtext→AudioCue）时直接用，跳过
       // subtitleUrl 下载+解析（YouTube XML 字幕现有解析器不识别）。
-      if (client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty) {
+      if (subtitleResolved) {
+        // 已由持久化选择解析：跳过默认字幕分支。
+      } else if (client is UrlStreamVideoClient &&
+          client.preresolvedCues.isNotEmpty) {
         cues = client.preresolvedCues;
         // TODO-1302：登记 YouTube 字幕轨。预解析 cue 直接注入 overlay，但既不是 host
         // 外挂字幕（不写 _remoteSubtitlePath）也不是内嵌轨枚举（_remoteEmbeddedSubtitleTracks
@@ -5045,6 +5072,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         if (controller == null) return;
         await controller.seekMs(startMs);
         await controller.play();
+      },
+      // 波形对轴视图内的播放/暂停按钮：读实时播放态 + 切换，复用现有播放器（不新建栈）。
+      subtitleIsPlaying: () => _controller?.isPlaying ?? false,
+      onToggleSubtitlePlayPause: () async {
+        await _controller?.togglePlayPause();
       },
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,

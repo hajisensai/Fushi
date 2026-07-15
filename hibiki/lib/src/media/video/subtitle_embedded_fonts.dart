@@ -257,19 +257,33 @@ class SubtitleEmbeddedFontLoader {
   }
 
   /// ffprobe 枚举字体附件流（JSON）。失败返回空列表。
+  ///
+  /// 「失败」含两类，都必须诚实降级为空集、绝不上抛：① ffprobe 跑起来了但退出码非 0
+  /// （`!isSuccess`）；② ffprobe 二进制**根本不存在**（未随桌面产物捆绑且不在 PATH）——
+  /// 此时 [FfmpegBackend.runProbe] 底层 `Process.start` 抛 [ProcessException] 冒上来。
+  /// 内封字体是「有则更好」的可选增强（对齐 mpv/libass 的 attachment 字体），缺 ffprobe
+  /// 是**预期降级**而非应用错误；若放任 [ProcessException] 穿到 [loadForVideo] 的兜底
+  /// catch，会被当成「报错」刷进 [ErrorLogService]（每开一个带内封字体的视频刷一条），
+  /// 与本方法「失败返回空列表」的契约相悖。故在此就地兜住，回退系统字体 fallback。
   Future<List<EmbeddedFontAttachment>> _enumerateFontAttachments(
     String videoPath,
   ) async {
-    final FfmpegRunResult probe = await _backend.runProbe(
-      <String>[
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_streams',
-        '-select_streams', 't', // 只列附件流。
-        videoPath,
-      ],
-      _probeTimeout,
-    );
+    final FfmpegRunResult probe;
+    try {
+      probe = await _backend.runProbe(
+        <String>[
+          '-v', 'quiet',
+          '-print_format', 'json',
+          '-show_streams',
+          '-select_streams', 't', // 只列附件流。
+          videoPath,
+        ],
+        _probeTimeout,
+      );
+    } on ProcessException {
+      // 无 ffprobe 可执行（未捆绑 + 不在 PATH）：预期降级，非错误，不记日志。
+      return const <EmbeddedFontAttachment>[];
+    }
     if (!probe.isSuccess) return const <EmbeddedFontAttachment>[];
     return parseFfprobeFontAttachments(probe.output);
   }

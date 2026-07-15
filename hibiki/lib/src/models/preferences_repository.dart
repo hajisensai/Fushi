@@ -1121,6 +1121,61 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 远端/流媒体视频用户手选的字幕来源（按 `<bookUid>#ep<index>` 记忆）：
+  /// `{ "<key>": "<subtitleSource 四态编码>" }`。
+  ///
+  /// 远端视频没有本地 `VideoBooks` 行可写 `subtitleSource` 列，字幕退出即丢（用户报
+  /// 「下载字幕没持久化退出影片就没了」的根因）。这里比照远端播放进度的 prefs 化范式，
+  /// 用稳定的 `bookUid`（= `RemoteVideoInfo.id`）+ 集下标做 key 把选择落 KV，重进
+  /// `_loadRemoteEpisode` 时优先重放。值是 `_currentSubtitleSource` 的四态编码：
+  /// 本地已下载文件绝对路径 / host `subtitleUrl` / `embedded:<n>` / `off:` 哨兵。
+  ///
+  /// 单一 JSON map 落 KV 表；解析失败回退空 map（与 [jimakuPreferredLanguages] 同款容错）。
+  Map<String, String> get remoteSubtitleSources {
+    final String raw =
+        getPref('video_remote_subtitle', defaultValue: '') as String;
+    if (raw.isEmpty) return <String, String>{};
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((dynamic k, dynamic v) =>
+            MapEntry<String, String>(k.toString(), v.toString()));
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('PreferencesRepository.remoteSubtitleSources.decode', e, stack);
+    }
+    return <String, String>{};
+  }
+
+  /// 远端字幕来源的记忆 key：`<bookUid>#ep<index>`。集下标 0（单集/整书）省略 `#ep`
+  /// 后缀，与远端播放进度 key 的约定一致，避免单集视频徒增后缀。纯函数，便于单测。
+  static String remoteSubtitleKey(String bookUid, int episodeIndex) =>
+      episodeIndex > 0 ? '$bookUid#ep$episodeIndex' : bookUid;
+
+  /// 读某远端视频（[bookUid] + [episodeIndex]）记住的字幕来源；无记忆返回 null。
+  String? remoteSubtitleSource(String bookUid, {int episodeIndex = 0}) =>
+      remoteSubtitleSources[remoteSubtitleKey(bookUid, episodeIndex)];
+
+  /// 记住/清除某远端视频的字幕来源。[source] 为 null 时删除该 key（读改写整 map）。
+  Future<void> setRemoteSubtitleSource(
+    String bookUid,
+    int episodeIndex,
+    String? source,
+  ) async {
+    final Map<String, String> map = remoteSubtitleSources;
+    final String key = remoteSubtitleKey(bookUid, episodeIndex);
+    if (source == null) {
+      if (!map.containsKey(key)) return;
+      map.remove(key);
+    } else {
+      if (map[key] == source) return;
+      map[key] = source;
+    }
+    await setPref('video_remote_subtitle', jsonEncode(map));
+    notifyListeners();
+  }
+
   // ── transcript ───────────────────────────────────────────────────────
 
   bool get isTranscriptPlayerMode =>

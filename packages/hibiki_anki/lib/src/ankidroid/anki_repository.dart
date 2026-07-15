@@ -254,10 +254,25 @@ class AnkiRepository extends BaseAnkiRepository {
     } on PlatformException catch (e, stack) {
       return MineOutcome.failure(
         'AnkiDroid: ${e.message ?? e.code}',
+        errorCode: _classifyMineError(e),
         error: e,
         stackTrace: stack,
       );
     }
+  }
+
+  /// BUG-824：把 native AnkiDroid 通道抛回的 [PlatformException] 分类成稳定错误码，
+  /// 供 UI 映射本地化文案。权限未授予——native `requirePermission` 守卫返回的
+  /// `PERMISSION_DENIED` 码，或极少数漏守卫时 provider 直接抛出的英文
+  /// «permission not granted» 原文——统一归到 [AnkiErrorCode.permissionDenied]；
+  /// 其余保持未分类（`null`，调用方退回旧的 errorDetail 文案）。
+  static String? _classifyMineError(PlatformException e) {
+    if (e.code == 'PERMISSION_DENIED') return AnkiErrorCode.permissionDenied;
+    final String msg = (e.message ?? '').toLowerCase();
+    if (msg.contains('permission not granted')) {
+      return AnkiErrorCode.permissionDenied;
+    }
+    return null;
   }
 
   /// TODO-270 B：把 native addNote 返回值解析成 note id。新版 native 返回 `Long`
@@ -403,6 +418,7 @@ class AnkiRepository extends BaseAnkiRepository {
       } on PlatformException catch (e, stack) {
         return MineOutcome.failure(
           'AnkiDroid: ${e.message ?? e.code}',
+          errorCode: _classifyMineError(e),
           error: e,
           stackTrace: stack,
         );
@@ -695,9 +711,11 @@ class AnkiRepository extends BaseAnkiRepository {
   Future<String?> _addMediaFile(
       String filePath, String preferredName, String mimeType) async {
     try {
+      final String stagedPath =
+          await _stageForMediaProvider(filePath, preferredName);
       final result =
           await _channel.invokeMethod('addFileToMedia', <String, dynamic>{
-        'filename': filePath,
+        'filename': stagedPath,
         'preferredName': preferredName,
         'mimeType': mimeType,
       });
@@ -706,6 +724,35 @@ class AnkiRepository extends BaseAnkiRepository {
       debugPrint('AnkiRepository._addMediaFile $preferredName: $e\n$stack');
       return null;
     }
+  }
+
+  /// BUG-827：把要交给 AnkiDroid 的媒体文件搬进 FileProvider 覆盖得到的根，再返回其
+  /// 路径。AnkiDroid 通过原生 `FileProvider.getUriForFile` 摄取媒体，而 FileProvider
+  /// 只能服务 `provider_paths.xml` 声明过的根（code_cache / files / cache / external*）。
+  /// Dart 的 [Directory.systemTemp] 解析到 app 的 `code_cache`，所以已经写在那里的媒体
+  /// （句子音频 `hibiki_mine_sentence_audio_*`、词典媒体、下载音频、视频制卡封面）都能被
+  /// FileProvider 服务。但**书籍封面**是直接从 EPUB 解压目录取的——解压目录 base 是
+  /// `getApplicationDocumentsDirectory()` = `/data/data/<pkg>/app_flutter`（`files` 的
+  /// 兄弟目录，**不在任何配置根下**）。对该路径调用 `getUriForFile` 会抛
+  /// `IllegalArgumentException「Failed to find configured root」`，被 [_addMediaFile]
+  /// 的 catch 吞掉 → 返回 null → `{card-image}` 恒空（仅 AnkiDroid；AnkiConnect 走 HTTP
+  /// 传字节、书架直接读文件，都不经 FileProvider，故电脑/书架正常）。
+  ///
+  /// 根因修复：源文件若不在 `code_cache`（[Directory.systemTemp]）下，就先 copy 进
+  /// FileProvider 覆盖的 `anki-media` 缓存目录，让**每一种**交给 AnkiDroid 的媒体都落在
+  /// 声明过的根里。已在 temp 下的媒体原样返回（零行为改动、不多余复制）。
+  Future<String> _stageForMediaProvider(
+      String filePath, String preferredName) async {
+    final String tempRoot = Directory.systemTemp.path;
+    if (filePath == tempRoot ||
+        filePath.startsWith('$tempRoot${Platform.pathSeparator}') ||
+        filePath.startsWith('$tempRoot/')) {
+      return filePath;
+    }
+    final Directory cacheDir = await _mediaCacheDir();
+    final File dest = File('${cacheDir.path}/$preferredName');
+    await File(filePath).copy(dest.path);
+    return dest.path;
   }
 
   Future<Directory> _mediaCacheDir() async {

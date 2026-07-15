@@ -7,6 +7,7 @@ import 'package:hibiki/src/media/collections/shelf_sort.dart'
     show naturalCompare;
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
+import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
 import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -145,6 +146,25 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
         icon: const Icon(Icons.sort),
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),
+      ),
+    );
+  }
+
+  /// 「为整个合集获取字幕」：把合集绑定到 AniList 系列后逐集经 Jimaku 批量下载字幕并
+  /// 持久化（本地集落 DB、远端集落 prefs，见 [JimakuBatchDialog]）。
+  Future<void> _fetchCollectionSubtitles() async {
+    if (_members.isEmpty) return;
+    // 用当前 collection 行（可能已在别处更新 anilistId）作对话框初值。
+    final MediaCollectionRow collection =
+        await widget.database.getMediaCollectionById(widget.collection.id) ??
+            widget.collection;
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => JimakuBatchDialog(
+        database: widget.database,
+        collection: collection,
+        members: _members,
       ),
     );
   }
@@ -344,6 +364,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
         title: Text(_name),
         actions: <Widget>[
           _buildSortMenu(),
+          IconButton(
+            tooltip: t.video_jimaku_batch_title,
+            icon: const Icon(Icons.subtitles_outlined),
+            onPressed: _members.isEmpty ? null : _fetchCollectionSubtitles,
+          ),
           IconButton(
             tooltip: t.rename_collection,
             icon: const Icon(Icons.drive_file_rename_outline),

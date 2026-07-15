@@ -126,6 +126,12 @@ extension _VideoEpisode on _VideoHibikiPageState {
     if (curPos != null) {
       await _persistPosition(widget.bookUid, curPos);
     }
+    // BUG-823：本地换集用 pushReplacement，Flutter 语义下旧路由要等新页入场过渡动画
+    // 结束才被移除并 dispose（旧页 dispose 里才 _controller?.dispose() 停播）。过渡窗口
+    // 内旧页 controller 仍在放音，而新页 _init 已新建 player 并 autoPlay 起播 → 两条音轨
+    // 短暂同响（观感：切集时上一个视频还在播）。换集前先 pause 旧播放器，音轨即刻静音，
+    // 不再依赖延迟 dispose。远端换集复用同一 player + open() 顶替，天然不双开，故只本地分支处理。
+    await _controller?.pause();
     if (!context.mounted) return;
     await navigator.pushReplacement<void, void>(
       adaptivePageRoute<void>(

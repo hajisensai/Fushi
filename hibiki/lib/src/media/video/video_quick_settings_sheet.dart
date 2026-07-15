@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
@@ -63,6 +64,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.videoDurationMs = 0,
     this.loadSubtitleWaveform,
     this.onPlaySubtitleCue,
+    this.subtitleIsPlaying,
+    this.onToggleSubtitlePlayPause,
     this.subtitlePositionListenable,
     this.currentSubtitlePositionMs,
     required this.onPreviewSpeed,
@@ -157,6 +160,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// TODO-1244：波形对轴视图的逐句试听回调。点某句 → 播放器 seek 到该句（叠加当前预览
   /// 延迟后的）时间并播放，复用现有播放器。null = 不显示逐句播放按钮。
   final Future<void> Function(int startMs)? onPlaySubtitleCue;
+
+  /// 读当前是否正在播放（驱动波形对轴视图内播放/暂停按钮）。null = 不显示该按钮。
+  final bool Function()? subtitleIsPlaying;
+
+  /// 波形对轴视图内播放/暂停切换回调。null = 不显示该按钮。
+  final Future<void> Function()? onToggleSubtitlePlayPause;
 
   /// 可选：播放位置变化通知源（`VideoPlayerController`），驱动波形面板重绘播放头。
   final Listenable? subtitlePositionListenable;
@@ -1126,6 +1135,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               // 逻辑（页面 _autoAlignSubtitle），成功后经上面的 onCommitDelay 同步权威延迟。
               onAutoAlign: widget.onAutoAlign,
               onPlayCue: widget.onPlaySubtitleCue,
+              isPlaying: widget.subtitleIsPlaying,
+              onTogglePlayPause: widget.onToggleSubtitlePlayPause,
               positionListenable: widget.subtitlePositionListenable,
               currentPositionMs: widget.currentSubtitlePositionMs,
             ),
@@ -2395,93 +2406,76 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     }
   }
 
-  // ── 字幕：模糊 + 外观（字号/背景不透明度/位置 + 重置）─────────────────
-  /// TODO-1059 方案B：字幕背景色离散预设。`color==null` = 「默认（黑）」（走
-  /// [kDefaultSubtitleBackgroundColor] 固定黑）；其余为显式颜色。顺序即选择器顺序，
-  /// 与 [_bgColorOptionIndex] 反查一致。颜色用不透明 ARGB（`0xFF...`），实际可见透明度
-  /// 由 [VideoSubtitleStyle.backgroundOpacity] 决定，故这里存纯色即可。
-  List<({Color? color, String label})> get _bgColorPresets =>
-      <({Color? color, String label})>[
-        (color: null, label: t.video_setting_subtitle_bg_color_default),
-        (
-          color: const Color(0xFFFFFFFF),
-          label: t.video_setting_subtitle_bg_color_white
-        ),
-        (
-          color: const Color(0xFF808080),
-          label: t.video_setting_subtitle_bg_color_gray
-        ),
-        (
-          color: const Color(0xFFD32F2F),
-          label: t.video_setting_subtitle_bg_color_red
-        ),
-        (
-          color: const Color(0xFF1976D2),
-          label: t.video_setting_subtitle_bg_color_blue
-        ),
-        (
-          color: const Color(0xFF388E3C),
-          label: t.video_setting_subtitle_bg_color_green
-        ),
-      ];
-
-  /// 当前 [_style.backgroundColor] 命中的预设下标：null（未设/默认）→ 0；显式色按 ARGB
-  /// 相等匹配；不在预设内（旧数据存了别的色）也回落 0「默认（黑）」（选择器只展示预设，
-  /// 但不覆盖用户存的原值，直到用户主动选一项）。
-  int get _bgColorOptionIndex {
-    final Color? current = _style.backgroundColor;
-    if (current == null) return 0;
-    for (int i = 0; i < _bgColorPresets.length; i++) {
-      final Color? c = _bgColorPresets[i].color;
-      if (c != null && c.toARGB32() == current.toARGB32()) return i;
-    }
-    return 0;
+  // ── 字幕外观颜色取色器（TODO-1326 文字色 / TODO-1059 背景色）─────────────
+  /// 一行「点开调色盘取任意色」的字幕颜色设置行，取代原来的固定预设下拉（用户报
+  /// 「字幕颜色应该支持调色盘」「还有背景」）。行尾显示当前色色块，点整行开对话框内嵌
+  /// [ColorPicker]：拖动经 [onPreview] 实时预览背后字幕，关闭时经 [onCommit] 落盘一次。
+  Widget _buildSubtitleColorRow({
+    required String title,
+    required IconData icon,
+    required Color current,
+    required void Function(Color) onPreview,
+    required void Function(Color) onCommit,
+  }) {
+    return AdaptiveSettingsRow(
+      title: title,
+      icon: icon,
+      showIcon: true,
+      trailing: HibikiColorSwatch(
+        color: current,
+        size: 24,
+        borderColor: Theme.of(context).dividerColor,
+      ),
+      onTap: () => unawaited(_pickSubtitleColor(
+        title: title,
+        initial: current,
+        onPreview: onPreview,
+        onCommit: onCommit,
+      )),
+    );
   }
 
-  // ── 字幕文字颜色离散预设（TODO-1326）──────────────────────────────────
-  /// 字幕**文字**颜色离散预设。首项白色 = [VideoSubtitleStyle.defaults.textColor]
-  /// 默认；其余为高对比显式色（视频画面上易读）。全部为不透明 ARGB（`0xFF...`）显式色，
-  /// 逐字持久化进 [VideoSubtitleStyle.textColor]（编解码/copyWith 早已就位）。顺序即选择器
-  /// 顺序，与 [_textColorOptionIndex] 反查一致。与 [_bgColorPresets] 不同：文字色默认是
-  /// 显式白（非 null），故无「默认=null」项、无需 reset 标志。
-  ///
-  /// 与「尊重 .ass 自带样式」协调：respectAssStyle 开且 cue 带 \c 主色时，overlay 优先用
-  /// ASS 主色（[VideoSubtitleOverlay._styleForGrapheme]），本预设作为**统一外观**基线在
-  /// ASS 无主色 / respect 关时生效——与字号/描边/字重等其它统一外观项同一语义，无冲突。
-  List<({Color color, String label})> get _textColorPresets =>
-      <({Color color, String label})>[
-        (
-          color: const Color(0xFFFFFFFF),
-          label: t.video_setting_subtitle_text_color_white
-        ),
-        (
-          color: const Color(0xFFFFEB3B),
-          label: t.video_setting_subtitle_text_color_yellow
-        ),
-        (
-          color: const Color(0xFF00E5FF),
-          label: t.video_setting_subtitle_text_color_cyan
-        ),
-        (
-          color: const Color(0xFF00E676),
-          label: t.video_setting_subtitle_text_color_green
-        ),
-        (
-          color: const Color(0xFFFF5252),
-          label: t.video_setting_subtitle_text_color_red
-        ),
-      ];
-
-  /// 当前 [_style.textColor] 命中的预设下标：null（旧数据「跟随主题」）→ 0（白，默认）；
-  /// 显式色按 ARGB 相等匹配；不在预设内（旧数据存了别的色）也回落 0（选择器只展示预设，
-  /// 但不覆盖用户存的原值，直到用户主动选一项）。
-  int get _textColorOptionIndex {
-    final Color? current = _style.textColor;
-    if (current == null) return 0;
-    for (int i = 0; i < _textColorPresets.length; i++) {
-      if (_textColorPresets[i].color.toARGB32() == current.toARGB32()) return i;
-    }
-    return 0;
+  /// 弹字幕颜色对话框：内嵌 [ColorPicker] 取任意色。字幕文字/背景色都存**不透明** ARGB
+  /// （背景实际可见透明度另由 backgroundOpacity 滑条控制），故这里强制不透明、关闭 alpha
+  /// 通道。拖动经 [onPreview] 实时预览（不落盘），点「完成」或关闭时经 [onCommit] 落盘一次
+  /// （避免拖动过程每帧写 DB）。
+  Future<void> _pickSubtitleColor({
+    required String title,
+    required Color initial,
+    required void Function(Color) onPreview,
+    required void Function(Color) onCommit,
+  }) async {
+    Color picked = initial;
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: SingleChildScrollView(
+            child: ColorPicker(
+              pickerColor: initial,
+              onColorChanged: (Color c) {
+                // 强制不透明：字幕文字透明无意义；背景透明度另由滑条控制。
+                picked = Color(0xFF000000 | (c.toARGB32() & 0xFFFFFF));
+                onPreview(picked);
+              },
+              portraitOnly: true,
+              enableAlpha: false,
+              displayThumbColor: true,
+              hexInputBar: true,
+              labelTypes: const <ColorLabelType>[],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(t.dialog_done),
+            ),
+          ],
+        );
+      },
+    );
+    onCommit(picked);
   }
 
   Widget _buildSubtitleDetail() {
@@ -2585,28 +2579,19 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 widget.onSubtitleStyleCommit(next);
               },
             ),
-            // 字幕**文字**颜色离散预设选择行（TODO-1326，用户报「字幕没办法改颜色」）。
-            // 此前面板只有字号/字重/描边/背景控件，正文颜色只能是默认白、无处可改。落
-            // [VideoSubtitleStyle.textColor]（编解码/copyWith 早已就位）。与「尊重 .ass 自带
-            // 样式」协调：respectAssStyle 开且 cue 带主色时 overlay 用 ASS 主色，本项作为
-            // 统一外观基线在 respect 关 / ASS 无主色时生效（与字号/描边同语义）。选色即
-            // 落盘 + 实时预览（[_applySubtitleStyle]，与背景色选择行一致）。
-            AdaptiveSettingsPickerRow<int>(
+            // 字幕**文字**颜色取色行（TODO-1326，用户报「字幕颜色应该支持调色盘」）。
+            // 点整行开对话框调色盘取任意色，落 [VideoSubtitleStyle.textColor]（编解码/
+            // copyWith 早已就位）。与「尊重 .ass 自带样式」协调：respectAssStyle 开且 cue
+            // 带主色时 overlay 用 ASS 主色，本项作为统一外观基线在 respect 关 / ASS 无主色
+            // 时生效（与字号/描边同语义）。文字色默认白（非 null），取色器初值即当前色。
+            _buildSubtitleColorRow(
               title: t.video_setting_subtitle_text_color,
               icon: Icons.format_color_text,
-              selected: _textColorOptionIndex,
-              options: <AdaptiveSettingsPickerOption<int>>[
-                for (int i = 0; i < _textColorPresets.length; i++)
-                  AdaptiveSettingsPickerOption<int>(
-                    value: i,
-                    label: _textColorPresets[i].label,
-                  ),
-              ],
-              onChanged: (int index) {
-                _applySubtitleStyle(
-                  _style.copyWith(textColor: _textColorPresets[index].color),
-                );
-              },
+              current: _style.textColor ?? const Color(0xFFFFFFFF),
+              onPreview: (Color c) =>
+                  _previewStyle(_style.copyWith(textColor: c)),
+              onCommit: (Color c) =>
+                  _applySubtitleStyle(_style.copyWith(textColor: c)),
             ),
             AdaptiveSettingsSliderRow(
               title: t.video_setting_subtitle_shadow,
@@ -2640,37 +2625,28 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 _style.copyWith(backgroundOpacity: 0),
               ),
             ),
-            // TODO-1059 方案B：字幕背景**颜色**选择行（用户报「字幕背景没有明显地方
-            // 单独调」）。此前设置面板只有不透明度滑条、没有背景色控件，背景色只能落到
-            // 默认（跟随主题 surface → 浅色泛白，已由方案A改为固定黑）。这里补上离散预设
-            // 色选择，落 [VideoSubtitleStyle.backgroundColor]（编解码/copyWith 早已就位）。
-            // 「默认（黑）」= null（走 [kDefaultSubtitleBackgroundColor] 固定黑）；其余为
-            // 显式颜色，逐字持久化。选背景色不改透明度：透明度为 0 时用户看不到颜色变化，
-            // 故选任一非默认色时把透明度从 0 顶到一个可见基线（0.6），让「选了色」立刻生效。
-            AdaptiveSettingsPickerRow<int>(
+            // TODO-1059：字幕背景**颜色**取色行（用户报「还有背景」也要调色盘）。点整行
+            // 开对话框调色盘取任意色，落 [VideoSubtitleStyle.backgroundColor]（编解码/
+            // copyWith 早已就位）。背景默认 null 走 [kDefaultSubtitleBackgroundColor] 固定
+            // 黑，取色器初值即该固定黑。选背景色不直接改透明度，但透明度为 0 时用户看不到
+            // 颜色变化，故把透明度从 0 顶到可见基线（0.6），让「选了色」立刻生效。
+            _buildSubtitleColorRow(
               title: t.video_setting_subtitle_bg_color,
               icon: Icons.format_color_fill_outlined,
-              selected: _bgColorOptionIndex,
-              options: <AdaptiveSettingsPickerOption<int>>[
-                for (int i = 0; i < _bgColorPresets.length; i++)
-                  AdaptiveSettingsPickerOption<int>(
-                    value: i,
-                    label: _bgColorPresets[i].label,
-                  ),
-              ],
-              onChanged: (int index) {
-                final Color? color = _bgColorPresets[index].color;
-                // 选了具体颜色但当前完全透明 → 顶到可见基线，否则用户「选了色却没反应」。
-                final double opacity =
-                    (color != null && _style.backgroundOpacity <= 0)
-                        ? 0.6
-                        : _style.backgroundOpacity;
-                _applySubtitleStyle(_style.copyWith(
-                  backgroundColor: color,
-                  resetBackgroundColor: color == null,
-                  backgroundOpacity: opacity,
-                ));
-              },
+              current:
+                  _style.backgroundColor ?? kDefaultSubtitleBackgroundColor,
+              onPreview: (Color c) => _previewStyle(_style.copyWith(
+                backgroundColor: c,
+                backgroundOpacity: _style.backgroundOpacity <= 0
+                    ? 0.6
+                    : _style.backgroundOpacity,
+              )),
+              onCommit: (Color c) => _applySubtitleStyle(_style.copyWith(
+                backgroundColor: c,
+                backgroundOpacity: _style.backgroundOpacity <= 0
+                    ? 0.6
+                    : _style.backgroundOpacity,
+              )),
             ),
             AdaptiveSettingsSliderRow(
               title: t.video_setting_subtitle_position,

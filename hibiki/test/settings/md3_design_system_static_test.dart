@@ -881,6 +881,12 @@ void main() {
       'lib/src/pages/implementations/video_shader_dialog.dart':
           'Experimental mpv shader dialog lists imported shader files as '
               'checkbox rows (transient video-subsystem content).',
+      'lib/src/pages/implementations/jimaku_batch_dialog.dart':
+          'Jimaku batch-download member list renders per-episode status icon / '
+              'title / language rows as video-subsystem content (batch subtitle '
+              'download progress), not ordinary page chrome — same reviewed '
+              'content exception class as video_episode_panel / '
+              'video_subtitle_jump_panel and the sibling jimaku_subtitle_dialog.',
       'lib/src/pages/implementations/jimaku_subtitle_dialog.dart':
           'Experimental Jimaku subtitle dialog lists downloadable subtitle '
               'files as transient video-subsystem content rows.',

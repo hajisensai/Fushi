@@ -741,6 +741,13 @@ class AnkiErrorCode {
   /// Mirror of the Java `ANKI_COLLECTION_UNAVAILABLE` channel error code.
   static const String collectionUnavailable = 'ANKI_COLLECTION_UNAVAILABLE';
 
+  /// BUG-824：AnkiDroid 运行时权限（`READ_WRITE_DATABASE`）未授予的稳定分类码。
+  /// native `requirePermission` 守卫返回的 `PERMISSION_DENIED` 码（见
+  /// AnkiChannelHandler.java）映射到这里，让主 app 用本地化、可操作的文案提醒用户
+  /// «请在弹出的系统对话框中授予权限后重试»，而不是把 provider 抛出的英文
+  /// «Permission not granted for: CardContentProvider.query /decks» 直接塞进 toast。
+  static const String permissionDenied = 'ANKI_PERMISSION_DENIED';
+
   /// TODO-752a：AnkiConnect 网络错误的稳定分类码。给用户看的 toast 文案必须由
   /// 主 app 按这些**与 locale 无关、永不乱码**的码映射本地化文案，而不是透传
   /// `SocketException`/`http.ClientException` 的 `toString()`——后者既是英文，又会在

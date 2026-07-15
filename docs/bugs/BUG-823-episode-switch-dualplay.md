@@ -1,0 +1,6 @@
+## BUG-823 · 切换剧集时上一个视频仍在播放（过渡期双音轨）
+- **报告**：2026-07-15（用户：）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/video_hibiki/episode.part.dart:117-140`（`_switchEpisode` 本地分支）。本地播放列表每集是独立 `VideoBooks` 行 → 换集 = `pushReplacement` 到兄弟集单视频页。换集前只 `_persistPosition` 补记位置，**从不 pause/stop 旧 `_controller`**；旧页只有在 `dispose()`（`video_hibiki_page.dart:2889` 的 `_controller?.dispose()`）里才停播。而 Flutter `pushReplacement` 语义下，旧路由要等**新页入场过渡动画结束**才被移除并 dispose。过渡窗口内旧页 controller 仍在放音，新页 `_init` 已新建 player 并 autoPlay 起播（`video_player_controller.dart:1531`）→ **两条音轨短暂同响**，观感即「切集时上一个视频还在播」。仅本地播放列表换集受影响；远端换集（`_isRemote`）复用同一 player + `open()` 顶替旧媒体，天然不双开。
+- **[x] ① 已修复** — `episode.part.dart` 本地分支在 `navigator.pushReplacement` 之前插入 `await _controller?.pause();`，旧音轨在过渡动画开始前即刻静音，不再依赖延迟 dispose。远端分支已 `return`，不受影响。（commit：见提交哈希）
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_episode_switch_pause_guard_test.dart`（源码扫描守卫）：切 `_switchEpisode` 方法体，断言 ① `await _controller?.pause();` 出现在 `navigator.pushReplacement` 之前；② pause 落在 `_loadRemoteEpisode(... return` 之后（只属本地分支，不误伤远端）。撤掉 pause 或挪到 pushReplacement 之后即转红。
+- **备注**：视频页极重（media_kit / 原生 player），无法在 widget 测试里实例化 `VideoHibikiPage` 驱动真实换集，故取「源码扫描守卫」为最强可落地层。真机验证：本地多集播放列表连续换集，确认切集瞬间旧集音轨立即停、无双播叠音。

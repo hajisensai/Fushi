@@ -705,6 +705,12 @@ class MediaCollections extends Table {
   /// 更新的人为改序，两端时间戳互相追赶）。跨端手动序整合集 LWW 的比较键：新者
   /// 整表覆盖成员 sortIndex。默认 0 = 从未手动排序，任何真实改序都能盖过它。
   IntColumn get orderUpdatedAt => integer().withDefault(const Constant(0))();
+
+  /// 该合集绑定的 AniList 系列 id（schema v45，字幕批量下载用）。用户在合集里确认过
+  /// 一次正确的番后快照下来，后续「为整个合集获取字幕」直接按此 id 搜 Jimaku，跳过逐集
+  /// 番名猜测。NULL = 未绑定（回退用合集名经 AniList 现解析）。无损迁移：nullable 无
+  /// default，旧库既有行全 NULL = 行为与旧版一致。
+  IntColumn get anilistId => integer().nullable()();
 }
 
 // ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────

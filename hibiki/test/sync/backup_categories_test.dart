@@ -817,4 +817,259 @@ void main() {
       await restored.close();
     }
   });
+
+  // ── BUG-828: orphan user-data tables gated by content, never leaked ──────
+  //
+  // Seeds a collection membership, a shelf entry and a tag on the source's
+  // 'Bk' book (buildDataSource already inserts epub 'Bk'), plus search history
+  // and every deletion tombstone. The three "always-wipe" tables must vanish
+  // regardless of categories; collections/shelf/tags must FOLLOW the book.
+  Future<void> seedOrphanRows(HibikiDatabase db) async {
+    final int cid = await db.createMediaCollection('C1');
+    await db.addToCollection(cid, 'epub', 'Bk');
+    await db.upsertShelfOrder('epub', 'Bk', 0);
+    final int tid = await db.createTag('T1', 0xFF112233);
+    await db.addTagToBook('Bk', tid);
+    await db.upsertSearchHistoryItem(SearchHistoryItemsCompanion.insert(
+        historyKey: 'dict', searchTerm: '猫', uniqueKey: 'dict:猫'));
+    await db.insertBookTombstone('OldBook');
+    await db.insertStatisticsTombstone('OldBook', 'book');
+    await db.upsertCollectionMemberTombstone(
+        collectionName: 'Gone',
+        collectionType: 'collection',
+        mediaType: 'epub',
+        entryKey: 'X',
+        removedAt: 1);
+  }
+
+  test(
+      'search history is ALWAYS stripped, but a full export KEEPS deletion '
+      'tombstones (they carry to the cross-device merge)', () async {
+    final built = await buildDataSource();
+    await seedOrphanRows(built.db);
+    final zip = p.join(src.path, 'all_in_orphans.zip');
+    await built.service.exportBackup(zip); // null = every category
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'search_history_items'), 0);
+      expect(await countRows(db, 'book_tombstones'), 1,
+          reason: 'books ticked → tombstone travels');
+      expect(await countRows(db, 'statistics_tombstones'), 1,
+          reason: 'statistics ticked → tombstone travels');
+      expect(await countRows(db, 'collection_member_tombstones'), 1,
+          reason: 'book/video content travels → member tombstone travels');
+    } finally {
+      await db.close();
+    }
+  });
+
+  test(
+      'deletion tombstones are stripped when their content category is excluded',
+      () async {
+    final built = await buildDataSource();
+    await seedOrphanRows(built.db);
+    final zip = p.join(src.path, 'no_content_orphans.zip');
+    // Every content category unticked (the "dictionary + audio only" shape).
+    await built.service.exportBackup(zip, categories: <BackupCategory>{});
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'search_history_items'), 0);
+      expect(await countRows(db, 'book_tombstones'), 0);
+      expect(await countRows(db, 'statistics_tombstones'), 0);
+      expect(await countRows(db, 'collection_member_tombstones'), 0);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test(
+      'dangling srt member/shelf (no srt_books row) is stripped in a '
+      'content-excluding export but kept in a full export (merge-union)',
+      () async {
+    // Full export: the srt member survives (cross-device union).
+    final full = await buildDataSource();
+    final int fcid = await full.db.createMediaCollection('SrtCol');
+    await full.db.addToCollection(fcid, 'srt', 'ghost_srt');
+    await full.db.upsertShelfOrder('srt', 'ghost_srt', 0);
+    final fzip = p.join(src.path, 'srt_full.zip');
+    await full.service.exportBackup(fzip);
+    await full.db.close();
+    final HibikiDatabase fdb = await openBackupDb(fzip, dst);
+    try {
+      expect(await countRows(fdb, 'media_collection_items'), 1,
+          reason: 'full export keeps the dangling srt member for merge-union');
+      expect(await countRows(fdb, 'shelf_entries'), 1);
+    } finally {
+      await fdb.close();
+    }
+
+    // Content-excluding export: the dangling srt row is dropped.
+    final none = await buildDataSource();
+    final int ncid = await none.db.createMediaCollection('SrtCol');
+    await none.db.addToCollection(ncid, 'srt', 'ghost_srt');
+    await none.db.upsertShelfOrder('srt', 'ghost_srt', 0);
+    final nzip = p.join(src.path, 'srt_none.zip');
+    await none.service.exportBackup(nzip, categories: <BackupCategory>{});
+    await none.db.close();
+    final HibikiDatabase ndb = await openBackupDb(nzip, dst);
+    try {
+      expect(await countRows(ndb, 'media_collection_items'), 0,
+          reason: 'dangling srt member dropped (no srt_books to resolve)');
+      expect(await countRows(ndb, 'shelf_entries'), 0);
+      expect(await countRows(ndb, 'media_collections'), 0,
+          reason: 'collection emptied by the srt strip is dropped');
+    } finally {
+      await ndb.close();
+    }
+  });
+
+  test(
+      'a full export keeps a member-less, tag-only collection (never treated as '
+      'strip-emptied)', () async {
+    final built = await buildDataSource();
+    final int cid = await built.db.createMediaCollection('TagOnly');
+    final int tid = await built.db.createTag('Genre', 0xFF445566);
+    await built.db.addTagToCollection(cid, tid);
+    final zip = p.join(src.path, 'tagonly.zip');
+    await built.service.exportBackup(zip);
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'media_collections'), 1,
+          reason: 'always-empty tag carrier is preserved, not strip-dropped');
+    } finally {
+      await db.close();
+    }
+  });
+
+  // ── BUG-832: dictionary_history (private) + media_sources (local paths) ──
+  Future<void> seedHistoryAndSources(HibikiDatabase db) async {
+    await db.replaceAllDictionaryHistory(<DictionaryHistoryCompanion>[
+      DictionaryHistoryCompanion.insert(
+          position: 0, resultJson: '{"searchTerm":"猫"}'),
+    ]);
+    await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books', mediaKind: 'book', rootPath: 'D:/books', createdAt: 1));
+    await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Videos',
+        mediaKind: 'video',
+        rootPath: 'D:/videos',
+        createdAt: 1));
+  }
+
+  test(
+      'dictionary_history is always wiped; media_sources are kept in a full '
+      'export (BUG-832)', () async {
+    final built = await buildDataSource();
+    await seedHistoryAndSources(built.db);
+    final zip = p.join(src.path, 'bug832_full.zip');
+    await built.service.exportBackup(zip);
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'dictionary_history'), 0,
+          reason: 'recent lookups are a private trace, never travel');
+      expect(await countRows(db, 'media_sources'), 2,
+          reason: 'full export keeps both library roots for restore');
+    } finally {
+      await db.close();
+    }
+  });
+
+  test(
+      'media_sources follow the content category: book/video roots dropped when '
+      'their category is excluded (BUG-832)', () async {
+    final built = await buildDataSource();
+    await seedHistoryAndSources(built.db);
+    final zip = p.join(src.path, 'bug832_none.zip');
+    await built.service.exportBackup(zip, categories: <BackupCategory>{});
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'dictionary_history'), 0);
+      expect(await countRows(db, 'media_sources'), 0,
+          reason: 'both book & video source roots (local paths) dropped');
+    } finally {
+      await db.close();
+    }
+  });
+
+  test(
+      'excluding only videos drops the video source root but keeps the book one '
+      '(BUG-832)', () async {
+    final built = await buildDataSource();
+    await seedHistoryAndSources(built.db);
+    final zip = p.join(src.path, 'bug832_novideo.zip');
+    await built.service
+        .exportBackup(zip, categories: allExcept(BackupCategory.videos));
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      final rows =
+          await db.customSelect('SELECT media_kind FROM media_sources').get();
+      final kinds = rows.map((r) => r.data['media_kind'] as String).toList();
+      expect(kinds, <String>['book'],
+          reason: 'only the video root is dropped; the book root stays');
+    } finally {
+      await db.close();
+    }
+  });
+
+  test(
+      'collections / shelf / tags FOLLOW their book: kept when the book is '
+      'exported', () async {
+    final built = await buildDataSource();
+    await seedOrphanRows(built.db);
+    final zip = p.join(src.path, 'orphans_kept.zip');
+    await built.service.exportBackup(zip); // book 'Bk' travels
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'media_collections'), 1);
+      expect(await countRows(db, 'media_collection_items'), 1);
+      expect(await countRows(db, 'shelf_entries'), 1);
+      expect(await countRows(db, 'book_tags'), 1);
+      expect(await countRows(db, 'book_tag_mappings'), 1);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test(
+      'collections / shelf / tags are stripped when their book is NOT exported '
+      '(unticking books empties the collection + drains the tag pool)',
+      () async {
+    final built = await buildDataSource();
+    await seedOrphanRows(built.db);
+    final zip = p.join(src.path, 'orphans_stripped.zip');
+    // Book excluded → 'Bk' is stripped → its membership/shelf/tag mapping go,
+    // the now-empty collection is dropped, and the orphaned tag pool row too.
+    await built.service
+        .exportBackup(zip, categories: allExcept(BackupCategory.books));
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'epub_books'), 0, reason: 'book stripped');
+      expect(await countRows(db, 'media_collection_items'), 0);
+      expect(await countRows(db, 'media_collections'), 0,
+          reason: 'empty collection dropped');
+      expect(await countRows(db, 'shelf_entries'), 0);
+      expect(await countRows(db, 'book_tag_mappings'), 0,
+          reason: 'FK cascade cleared the mapping with the book');
+      expect(await countRows(db, 'book_tags'), 0,
+          reason: 'tag pool drained of the now-unreferenced tag');
+    } finally {
+      await db.close();
+    }
+  });
 }

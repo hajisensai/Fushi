@@ -18,19 +18,25 @@ void main() {
     styleSrc = read('lib/src/media/video/video_subtitle_style.dart');
   });
 
-  test('sheet has a background-color picker row wired to backgroundColor', () {
+  test('sheet has a background-color COLOR PICKER row wired to backgroundColor',
+      () {
+    // Yonghu bao "hai you beijing": beijing SE yi cong gudinng yushe xialila
+    // huancheng flutter_colorpicker de ColorPicker (dian hang kai duihuakuang qu
+    // renyi SE). Ben shouwei suoding xin shixian -- tuihui yushe xialila ji hong.
     expect(sheetSrc.contains('video_setting_subtitle_bg_color'), isTrue,
         reason: 'must use the background-color i18n title key');
-    expect(sheetSrc.contains('_bgColorPresets'), isTrue,
-        reason: 'must build background-color presets');
-    expect(sheetSrc.contains('AdaptiveSettingsPickerRow<int>('), isTrue,
-        reason: 'must render the presets via a picker row');
-    expect(
-        sheetSrc.contains('backgroundColor: color') &&
-            sheetSrc.contains('resetBackgroundColor: color == null'),
-        isTrue,
+    expect(sheetSrc.contains('ColorPicker('), isTrue,
+        reason: 'must render an actual color picker (not fixed presets)');
+    expect(sheetSrc.contains('_buildSubtitleColorRow('), isTrue,
+        reason: 'text/background colors share the color-picker row builder');
+    expect(sheetSrc.contains('backgroundColor: c'), isTrue,
+        reason: 'row must commit picked color to backgroundColor');
+    // The old fixed-preset implementation must be fully gone.
+    expect(sheetSrc.contains('_bgColorPresets'), isFalse,
         reason:
-            'row must commit backgroundColor (null -> reset to default black)');
+            'fixed background presets should be removed, replaced by picker');
+    expect(sheetSrc.contains('_bgColorOptionIndex'), isFalse,
+        reason: 'preset reverse-lookup index should be removed with the presets');
   });
 
   test('style default background is fixed translucent black, not theme surface',
