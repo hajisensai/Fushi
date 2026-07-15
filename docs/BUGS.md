@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 825 条。点号进各自文件。
+> 共 826 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-844](bugs/BUG-844-lyrics-shift-hover-lookup.md) | ✅ | ✅ | 歌词模式不支持Shift/悬停查词 |
 | [BUG-843](bugs/BUG-843-top-progress-overlaps-first-line.md) | ✅ | ✅ | 顶部阅读进度毛玻璃pill压住正文首行 |
 | [BUG-842](bugs/BUG-842-popup-native-title-tooltip-flies.md) | ✅ | ✅ | Windows查词弹窗调整上下文等按钮原生title提示飞到窗口角落 |
 | [BUG-841](bugs/BUG-841-subtitle-list-effect-dup.md) | ✅ | ✅ | 字幕列表特效叠加ASS未去重 |

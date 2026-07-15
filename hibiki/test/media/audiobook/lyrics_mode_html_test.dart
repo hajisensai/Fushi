@@ -278,6 +278,68 @@ void main() {
         expect(html, contains('__lyricsFitCues()'));
       });
     });
+
+    // BUG-844: 歌词是独立文档，正文 setup 脚本（含 mousemove→onShiftHover 与
+    // window.__hoverAutoLookup）不注入到这里，导致歌词模式此前完全不支持悬停查词，
+    // 只能点击查词。这里守卫悬停查词监听已镜像正文语义、且 selectText 重写透传
+    // fromHover（否则悬停命中空白误 fire onTapEmpty、同词悬停被 toggle）。
+    group('shift / auto hover lookup parity (BUG-844)', () {
+      String buildHtml() {
+        return LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0), _cue(1)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+        );
+      }
+
+      test('ships a document mousemove listener that fires onShiftHover', () {
+        final String html = buildHtml();
+        // Hover lookup must live in the lyrics document itself (the reader setup
+        // script is not injected here), mirroring webview.part.dart's listener.
+        expect(html, contains("document.addEventListener('mousemove'"));
+        expect(
+          html,
+          contains("window.flutter_inappwebview.callHandler('onShiftHover'"),
+        );
+      });
+
+      test('hover is gated on Shift or the __hoverAutoLookup toggle', () {
+        final String html = buildHtml();
+        // Same gate as the reader body: Shift held OR the "hover to look up"
+        // setting on; neither → reset the throttle anchor and bail.
+        expect(
+          html,
+          contains('!e.shiftKey && !window.__hoverAutoLookup'),
+        );
+      });
+
+      test('hover honours the 8px (64 px^2) movement throttle', () {
+        final String html = buildHtml();
+        // Identical movement threshold to the reader body so a stationary cursor
+        // does not re-fire a lookup every mousemove.
+        expect(html, contains('dx * dx + dy * dy < 64'));
+      });
+
+      test('selectText override forwards fromHover (all args, not just 3)', () {
+        final String html = buildHtml();
+        // The override must pass the 4th fromHover arg through, otherwise a hover
+        // over blank space fires onTapEmpty and a same-word re-hover toggles the
+        // selection off. Forward the whole arguments object.
+        expect(
+          html,
+          contains('origSelectText.apply(window.hoshiSelection, arguments)'),
+        );
+        // The broken 3-arg forwarding must be gone.
+        expect(
+          html,
+          isNot(contains(
+              'origSelectText.call(window.hoshiSelection, x, y, maxLen)')),
+        );
+      });
+    });
   });
 }
 
