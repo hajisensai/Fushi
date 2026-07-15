@@ -22,9 +22,9 @@ Android: chọn **arm64**. Windows: chọn tệp **.exe**.
 
 ## Hướng dẫn cấu hình
 
-### 1. Nhập các từ điển được đề xuất và âm thanh cục bộ (tùy chọn)
+### 1. Nhập các từ điển được đề xuất và âm thanh cục bộ (Rất khuyến khích cho người mới!!! · tùy chọn)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 Trong ứng dụng: Cài đặt -> Đồng bộ & Sao lưu -> nhấn **Nhập bản sao lưu**.
 
