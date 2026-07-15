@@ -5046,6 +5046,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await controller.seekMs(startMs);
         await controller.play();
       },
+      // 波形对轴视图内的播放/暂停按钮：读实时播放态 + 切换，复用现有播放器（不新建栈）。
+      subtitleIsPlaying: () => _controller?.isPlaying ?? false,
+      onToggleSubtitlePlayPause: () async {
+        await _controller?.togglePlayPause();
+      },
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
       onSetSubtitleObscureMode: _setSubtitleObscureMode,
