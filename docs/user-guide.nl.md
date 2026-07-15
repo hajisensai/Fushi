@@ -24,7 +24,7 @@ Android: kies **arm64**. Windows: kies het **.exe**-bestand.
 
 ### 1. Aanbevolen woordenboeken en lokale audio importeren (Sterk aanbevolen voor beginners!!! · optioneel)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 In de app: Instellingen -> Synchronisatie en back-up -> tik op **Back-up importeren**.
 

@@ -24,7 +24,7 @@ Android: выберите **arm64**. Windows: выберите файл **.exe**
 
 ### 1. Импорт рекомендуемых словарей и локального аудио (Настоятельно рекомендуется новичкам!!! · необязательно)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 В приложении: Настройки -> Синхронизация и резервное копирование -> нажмите **Импортировать резервную копию**.
 

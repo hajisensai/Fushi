@@ -24,7 +24,7 @@ Android: **arm64**를 선택하세요. Windows: **.exe** 파일을 선택하세�
 
 ### 1. 추천 사전과 로컬 오디오 가져오기(초보자에게 강력 추천!!! · 선택 사항)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 앱에서: 설정 -> 동기화 및 백업 -> **백업 가져오기**를 탭합니다.
 

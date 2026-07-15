@@ -24,7 +24,7 @@ Android：選擇 **arm64**。Windows：選擇 **.exe** 檔案。
 
 ### 1. 匯入推薦詞典與本機音訊（極其推薦新手使用此方法！！！可選）
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 在 App 中：設定 -> 同步與備份 -> 點擊 **匯入備份**。
 
