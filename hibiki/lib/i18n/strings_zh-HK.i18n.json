@@ -2346,5 +2346,6 @@
   "video_jimaku_series": "Series",
   "video_jimaku_batch_title": "Fetch subtitles for collection",
   "video_jimaku_batch_download": "Download all",
-  "video_jimaku_batch_done": "Subtitles fetched: $done/$total"
+  "video_jimaku_batch_done": "Subtitles fetched: $done/$total",
+  "anki_open_no_card": "No card found for this word in Anki."
 }

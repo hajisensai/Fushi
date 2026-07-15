@@ -247,6 +247,7 @@ html {
 
 .audio-button,
 .favorite-button,
+.open-anki-button,
 .mine-button {
     padding: 0 4px;
     border: none;
@@ -255,6 +256,12 @@ html {
     font-size: 18px;
     opacity: 0.5;
     -webkit-user-select: none;
+}
+
+/* TODO-1360：「在 Anki 中打开卡片」按钮仅在该词已制卡时显示，未制卡时彻底移除（不占位、
+   不可点）——由 setMineState 依真实 data-mined 态切换 .open-anki-hidden。 */
+.open-anki-button.open-anki-hidden {
+    display: none;
 }
 
 /* TODO-1325 #4: 内联 SVG 动作按钮共享基类。顶部发音/收藏/制卡、清空草稿、句子上下文
