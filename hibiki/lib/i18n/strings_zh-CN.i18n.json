@@ -2346,5 +2346,6 @@
   "video_jimaku_series": "系列",
   "video_jimaku_batch_title": "为合集获取字幕",
   "video_jimaku_batch_download": "下载全部",
-  "video_jimaku_batch_done": "字幕已获取：$done/$total"
+  "video_jimaku_batch_done": "字幕已获取：$done/$total",
+  "anki_open_no_card": "在 Anki 中没有找到这个词的卡片。"
 }

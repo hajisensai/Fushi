@@ -80,6 +80,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
     this.onMinedCardAction,
+    this.onOpenInAnki,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onAppendSentence,
@@ -136,6 +137,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 「重验 + 静默」两态行为（Never break userspace）。
   final Future<MinePopupResult> Function(Map<String, String> fields)?
       onMinedCardAction;
+
+  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮回调。宿主据 [expression]/[reading]
+  /// 反查 Anki 全部命中卡并直接跳转打开（单卡直开 / 多卡弹选择 / 无卡 toast）。与
+  /// [onMinedCardAction]（点 ✓ 弹覆写·新增·查看操作单）解耦：本回调只做「查找并在 Anki
+  /// 中打开」，不改卡片。null 时 popup 端点击是 no-op（按钮仅在已制卡时显示）。
+  final Future<void> Function(String expression, String reading)? onOpenInAnki;
 
   /// 切换收藏：返回切换后的新状态（true=已收藏）。供弹窗「☆/★」按钮回调。
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
@@ -1254,6 +1261,29 @@ JSON.stringify((function(){
                   .log('DictPopupWebview.minedCardAction', e, stack);
             }
             return const MinePopupResult().toJson();
+          },
+        );
+
+        // TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮 → popup.js 调本处理器（带
+        // expression/reading）。宿主反查 Anki 命中卡并直接跳转打开。自带 try/catch 永不
+        // 让异常穿过原生桥（BUG-293）；无回传（打开是副作用），返回 null。
+        controller.addJavaScriptHandler(
+          handlerName: 'openInAnki',
+          callback: (args) async {
+            try {
+              if (args.isNotEmpty &&
+                  args[0] is Map &&
+                  widget.onOpenInAnki != null) {
+                final data = args[0] as Map;
+                final expression = (data['expression'] ?? '').toString();
+                final reading = (data['reading'] ?? '').toString();
+                await widget.onOpenInAnki!(expression, reading);
+              }
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('DictPopupWebview.openInAnki', e, stack);
+            }
+            return null;
           },
         );
 

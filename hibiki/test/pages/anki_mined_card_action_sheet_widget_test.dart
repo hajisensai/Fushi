@@ -292,4 +292,57 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(overwriteCalls, 2, reason: '_busy 必须在失败后复位');
   });
+
+  // TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮的编排行为。区别于点 ✓：这里不制卡、
+  // 不覆写，只做「查找并在 Anki 中打开」。单卡直开、多卡弹轻量选择、无卡走 toast 不静默。
+
+  testWidgets('open-in-anki: single match opens that note directly (no sheet)',
+      (tester) async {
+    final repo = _FakeRepo(const [MinedNoteRef(noteId: 555, preview: 'solo')]);
+    await tester.pumpWidget(_host((context) async {
+      await openMinedCardInAnki(
+          context: context, repo: repo, expression: '語', reading: '');
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // 直接打开该卡，不弹选择单（预览不出现）。
+    expect(repo.openedNoteId, 555);
+    expect(find.text('solo'), findsNothing);
+  });
+
+  testWidgets('open-in-anki: multiple matches show a picker; tap opens chosen',
+      (tester) async {
+    final repo = _FakeRepo(const [
+      MinedNoteRef(noteId: 300, preview: 'card A'),
+      MinedNoteRef(noteId: 200, preview: 'card B'),
+    ]);
+    await tester.pumpWidget(_host((context) async {
+      await openMinedCardInAnki(
+          context: context, repo: repo, expression: '語', reading: '');
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // 两张都列出，未打开任何一张。
+    expect(find.text('card A'), findsOneWidget);
+    expect(find.text('card B'), findsOneWidget);
+    expect(repo.openedNoteId, -1);
+    // 点第二张 → 打开 note 200（用户选谁开谁，不默默取最近）。
+    await tester.tap(find.text('card B'));
+    await tester.pumpAndSettle();
+    expect(repo.openedNoteId, 200);
+  });
+
+  testWidgets('open-in-anki: no matches → no open call, no crash (toast path)',
+      (tester) async {
+    final repo = _FakeRepo(const []);
+    await tester.pumpWidget(_host((context) async {
+      await openMinedCardInAnki(
+          context: context, repo: repo, expression: 'gone', reading: '');
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // 探测显示已制卡但现在查不到 → 不打开、不崩（走 toast 提示）。
+    expect(repo.openedNoteId, -1);
+    expect(tester.takeException(), isNull);
+  });
 }
