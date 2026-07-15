@@ -56,6 +56,11 @@ class UpdateChecker {
   static Future<void> scheduleCheck(
     BuildContext context,
     String currentVersion, {
+    // BUG-457/BUG-816-类：本机平台构建号（Android=versionCode，桌面=raw build number）。
+    // beta/debug 通道下若本机安装的是无预发布后缀的 `X.Y.Z`（如本地 `flutter build` 出的
+    // release 包，versionName 直接取 pubspec `1.2.0`），用它还原本机 release sequence 再比较，
+    // 否则同基预发布（`1.2.0-debug.7920`）在 semver 下永远 < `1.2.0`、永判「已是最新」。
+    String? currentBuildNumber,
     bool neverRemind = false,
     bool autoInstall = false,
     bool betaChannel = false,
@@ -78,9 +83,17 @@ class UpdateChecker {
         : betaChannel
             ? UpdateChannel.beta
             : UpdateChannel.stable;
+    // BUG-457：把无后缀的本机版本按通道 + buildNumber 还原成可比的预发布版本；stable 或
+    // 本机已带本通道后缀时原样返回（纯函数，见 effectiveCurrentVersionForUpdateChannel）。
+    final String comparableCurrentVersion =
+        effectiveCurrentVersionForUpdateChannel(
+      version: currentVersion,
+      buildNumber: currentBuildNumber,
+      channel: channel,
+    );
     final Completer<void> completer = Completer<void>();
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _check(context, currentVersion,
+      _check(context, comparableCurrentVersion,
               neverRemind: neverRemind,
               autoInstall: autoInstall,
               channel: channel,
@@ -1516,6 +1529,71 @@ bool isUpdateVersionNewer(
 
   final String remotePrerelease = _prereleasePart(remoteVersion)!;
   return _comparePrerelease(remotePrerelease, localPrerelease) > 0;
+}
+
+/// **纯函数（BUG-457）**：把本机安装版本 [version] 归一成「可与本通道远端预发布比较」的
+/// 版本串。
+///
+/// 根因：beta/debug 通道的远端版本形如 `1.2.0-debug.7920`（预发布），而本机若装的是无后缀
+/// `1.2.0`（本地 `flutter build` 出的 release 包 versionName 直接取 pubspec 基版本），在 semver
+/// 里 `1.2.0-debug.7920 < 1.2.0`（预发布早于正式版）+ [isUpdateVersionNewer] 的「同基需本机
+/// 也是本通道预发布」判据 → 永远判「已是最新」，同基预发布更新永远推不动（用户报「点检查
+/// 更新说最新，实际不是」）。
+///
+/// 修复：本机 versionName 无预发布段时，用平台构建号 [buildNumber] 还原 release sequence，
+/// 重建成 `<base>-<channel>.<seq>` 再参与比较。这样 `1.2.0`（seq 7863）→ `1.2.0-debug.7863`，
+/// 远端 `1.2.0-debug.7920` 正确判为更新。
+///
+/// 不改变以下路径（原样返回归一后的 [version]）：
+/// * stable 通道（正式版比较不涉及预发布还原）。
+/// * 本机 versionName 已带本通道后缀（CI 构建 `1.2.0-debug.7863`，无需还原）。
+/// * 本机带**别通道**预发布后缀 / [buildNumber] 缺失或不可解析（fail-open，绝不误升）。
+///
+/// 生产调用点：[scheduleCheck] 内部（网络路径）+ 设置页手动检查的缓存乐观比较路径。
+String effectiveCurrentVersionForUpdateChannel({
+  required String version,
+  required String? buildNumber,
+  required UpdateChannel channel,
+}) {
+  final String normalized = _stripBuildMetadata(version.trim());
+  if (channel == UpdateChannel.stable) return normalized;
+  // 已经带本通道后缀（CI 预发布包）→ 直接比较，不重建。
+  if (_versionBelongsToChannel(normalized, channel)) return normalized;
+  // 带别通道预发布后缀（如 stable 通道装 beta 包混用）→ 不猜，交由既有严格判据处理。
+  if (_prereleasePart(normalized) != null) return normalized;
+
+  final int? releaseSequence =
+      _releaseSequenceFromPlatformBuildNumber(buildNumber);
+  if (releaseSequence == null) return normalized;
+
+  final String channelName = switch (channel) {
+    UpdateChannel.beta => 'beta',
+    UpdateChannel.debug => 'debug',
+    UpdateChannel.stable => throw StateError('stable handled above'),
+  };
+  return '${_basePart(normalized)}-$channelName.$releaseSequence';
+}
+
+/// **纯函数（BUG-457）**：从平台构建号还原 CI release sequence（= `git rev-list --count HEAD`）。
+///
+/// * Android release APK 的 versionCode = `versionCodeBase(1e9) + 100*seq + abiOffset`
+///   （见 `android/app/build.gradle` TODO-414），故 `>= 1e9` 时反解 `(code-1e9)~/100`，
+///   并校验 abiOffset ∈ [0,3]（现有 ABI 分片偏移）以防误解非 CI 构建号。
+/// * 桌面构建把原始 Flutter build number（= seq）直接透出，`< 1e9` 时原样返回。
+///
+/// 非数字 / 非正 / abiOffset 越界 → 返 null（调用方 fail-open 回退无还原，绝不误升）。
+int? _releaseSequenceFromPlatformBuildNumber(String? buildNumber) {
+  final int? parsed = int.tryParse(buildNumber?.trim() ?? '');
+  if (parsed == null || parsed <= 0) return null;
+
+  const int androidVersionCodeBase = 1000000000;
+  if (parsed < androidVersionCodeBase) return parsed;
+
+  final int adjusted = parsed - androidVersionCodeBase;
+  final int abiOffset = adjusted % 100;
+  if (abiOffset > 3) return null;
+  final int releaseSequence = adjusted ~/ 100;
+  return releaseSequence > 0 ? releaseSequence : null;
 }
 
 bool isVersionNewer(String remote, String local) {

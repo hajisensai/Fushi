@@ -83,8 +83,15 @@ void main() {
     // 堆积），均带 @visibleForTesting / 专用测试覆盖，且必须与下载 / staging 引擎共享同一
     // library 私有作用域（part 契约禁止 part 内 import 无法拆库）。download 净增 ~77 行到
     // 1718，故把 download 天花板从 1700 上调到 1780（留 ~62 行合理余量，与既有余量风格一致）。
+    // BUG-457：又加入「beta/debug 通道用 buildNumber 还原本机已安装 release sequence」的真实
+    // 跨切功能——effectiveCurrentVersionForUpdateChannel（无后缀 X.Y.Z release 包按通道 +
+    // versionCode 还原成 <base>-<channel>.<seq> 再比较，修「装 1.2.0 release 包在 debug 通道
+    // 永判已是最新」）+ _releaseSequenceFromPlatformBuildNumber（Android versionCode / 桌面 raw
+    // build number 反解 seq），须与既有版本比较（isUpdateVersionNewer 等）共享同一 library 私有
+    // 作用域（part 契约禁止 part 内 import 无法拆库）。release 净增 ~77 行到 1709，故把 release
+    // 天花板从 1650 上调到 1720（留 ~11 行合理余量，与既有余量风格一致）。
     const int kDownloadCeiling = 1780;
-    const int kReleaseCeiling = 1650;
+    const int kReleaseCeiling = 1720;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
       final int ceiling = path == download

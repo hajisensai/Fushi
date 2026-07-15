@@ -295,6 +295,131 @@ void main() {
       );
     });
   });
+
+  group('effectiveCurrentVersionForUpdateChannel (BUG-457)', () {
+    test(
+        'debug channel: plain X.Y.Z release restores seq from Android '
+        'versionCode and detects newer debug build', () {
+      // 复现用户设备：versionName=1.2.0（本地 release 包无 -debug 后缀），
+      // versionCode=1000786300 → seq 7863；远端 debug 1.2.0-debug.7920 必须判为更新。
+      final String effective = effectiveCurrentVersionForUpdateChannel(
+        version: '1.2.0',
+        buildNumber: '1000786300',
+        channel: UpdateChannel.debug,
+      );
+      expect(effective, '1.2.0-debug.7863');
+      expect(
+        isUpdateVersionNewer(
+            '1.2.0-debug.7920', effective, UpdateChannel.debug),
+        isTrue,
+        reason: 'installed debug seq 7863 must see debug 7920 as an update',
+      );
+    });
+
+    test('debug channel: same installed seq is not re-offered', () {
+      final String effective = effectiveCurrentVersionForUpdateChannel(
+        version: '1.2.0',
+        buildNumber: '1000792000',
+        channel: UpdateChannel.debug,
+      );
+      expect(effective, '1.2.0-debug.7920');
+      expect(
+        isUpdateVersionNewer(
+            '1.2.0-debug.7920', effective, UpdateChannel.debug),
+        isFalse,
+      );
+    });
+
+    test('desktop build number (raw seq) restores installed beta sequence', () {
+      expect(
+        effectiveCurrentVersionForUpdateChannel(
+          version: '1.0.1',
+          buildNumber: '6095',
+          channel: UpdateChannel.beta,
+        ),
+        '1.0.1-beta.6095',
+      );
+      expect(
+        isUpdateVersionNewer(
+          '1.0.1-beta.6095',
+          effectiveCurrentVersionForUpdateChannel(
+            version: '1.0.1',
+            buildNumber: '6095',
+            channel: UpdateChannel.beta,
+          ),
+          UpdateChannel.beta,
+        ),
+        isFalse,
+        reason: 'installed beta 6095 must not prompt for beta 6095 again',
+      );
+    });
+
+    test('Android ABI versionCode offset is decoded to the release sequence',
+        () {
+      // 1e9 + 100*6095 + 2(abi offset) = 1000609502
+      expect(
+        effectiveCurrentVersionForUpdateChannel(
+          version: '1.0.1',
+          buildNumber: '1000609502',
+          channel: UpdateChannel.beta,
+        ),
+        '1.0.1-beta.6095',
+      );
+    });
+
+    test('stable channel returns normalized version unchanged', () {
+      expect(
+        effectiveCurrentVersionForUpdateChannel(
+          version: '1.2.0+723',
+          buildNumber: '1000786300',
+          channel: UpdateChannel.stable,
+        ),
+        '1.2.0',
+      );
+    });
+
+    test('version already carrying channel suffix is left untouched', () {
+      expect(
+        effectiveCurrentVersionForUpdateChannel(
+          version: '1.2.0-debug.7863',
+          buildNumber: '1000786300',
+          channel: UpdateChannel.debug,
+        ),
+        '1.2.0-debug.7863',
+      );
+    });
+
+    test('missing/unparseable build number fails open (no restore)', () {
+      expect(
+        effectiveCurrentVersionForUpdateChannel(
+          version: '1.2.0',
+          buildNumber: null,
+          channel: UpdateChannel.debug,
+        ),
+        '1.2.0',
+      );
+      expect(
+        effectiveCurrentVersionForUpdateChannel(
+          version: '1.2.0',
+          buildNumber: 'not-a-number',
+          channel: UpdateChannel.debug,
+        ),
+        '1.2.0',
+      );
+    });
+
+    test('foreign-channel prerelease suffix is not rewritten', () {
+      // 本机装 beta 包但切到 debug 通道 → 不猜，交由既有严格判据（不还原）。
+      expect(
+        effectiveCurrentVersionForUpdateChannel(
+          version: '1.2.0-beta.10',
+          buildNumber: '1000786300',
+          channel: UpdateChannel.debug,
+        ),
+        '1.2.0-beta.10',
+      );
+    });
+  });
 }
 
 Map<String, dynamic> _release({
