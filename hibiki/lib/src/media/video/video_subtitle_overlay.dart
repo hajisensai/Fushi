@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart'
+    show BoxHitTestEntry, BoxHitTestResult, RenderProxyBox;
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
@@ -958,6 +960,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         },
         child: content,
       );
+      // 查词优先（BUG-838）：命中字符 glyph 时**吸收**指针（[hitTest] 返回 true），阻止其
+      // 下探到 media_kit 进度条。进度条 seek 走裸 [Listener.onPointerDown/Up]（见 media_kit
+      // `MaterialSeekBar`），**不进手势竞技场**——上面 [RawGestureDetector] 赢竞技场也拦不住
+      // 它，只能在上层截断命中链。点字缝 / 空白仍返回 false、translucent 穿透 → 进度条 seek、
+      // 点画面唤控制条一切照旧（BUG-198/553 non-opaque 穿透纪律不回归）。判据与查词识别器
+      // 同一条（[_hitEntryIndexAt] >= 0），保证「查词命中」与「吸收命中」严格一致。
+      content = _GlyphPriorityHitTest(
+        hitTestChar: (Offset globalPosition) =>
+            _hitEntryIndexAt(globalPosition) >= 0,
+        child: content,
+      );
     }
 
     if (blurred) {
@@ -1851,5 +1864,56 @@ class _SubtitleCharTapRecognizer extends TapGestureRecognizer {
     // 按下点未命中字符 → 不收指针 → 不进竞技场 → media_kit 控制条 onTap 独占胜出。
     if (!hitTestChar(event.position)) return false;
     return super.isPointerAllowed(event);
+  }
+}
+
+/// 查词优先命中层（BUG-838）：把「点在字幕字符 glyph 上」的指针**吸收**在字幕层，让
+/// [hitTest] 返回 true —— 父 [Stack] 就此止步，不再向下命中 media_kit 进度条。
+///
+/// 为何不能只靠手势竞技场：media_kit `MaterialSeekBar` 的 seek 走**裸**
+/// [Listener.onPointerDown]/[Listener.onPointerUp]（`onPointerUp` 里直接
+/// `player.seek(...)`），Listener **不参与手势竞技场**，只要指针在命中路径上就无条件触发。
+/// 因此 [_SubtitleCharTapRecognizer] 赢竞技场也拦不住 seek —— 唯一办法是在更上层（字幕）
+/// 于命中阶段截断，让指针根本到不了下面的 Listener。
+///
+/// 只对**落在字符矩形**（[hitTestChar]，与查词识别器同一判据）的指针吸收；落在字缝 /
+/// 空白 / 盒外返回 false、保持 translucent 穿透 —— 进度条 seek、点画面唤起控制条一切照旧
+/// （BUG-198/553 non-opaque 穿透纪律不回归）。hover（桌面 Shift 查词 / 显形）走外层
+/// `opaque:false` [MouseRegion]（本层的祖先），命中路径始终含它，不受本层截断影响。
+class _GlyphPriorityHitTest extends SingleChildRenderObjectWidget {
+  const _GlyphPriorityHitTest({
+    required this.hitTestChar,
+    required Widget super.child,
+  });
+
+  /// 按**全局**坐标判定该点是否命中某字幕字符（[_hitEntryIndexAt] >= 0）。
+  final bool Function(Offset globalPosition) hitTestChar;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderGlyphPriorityHitTest(hitTestChar);
+
+  @override
+  void updateRenderObject(
+      BuildContext context, _RenderGlyphPriorityHitTest renderObject) {
+    renderObject.hitTestChar = hitTestChar;
+  }
+}
+
+class _RenderGlyphPriorityHitTest extends RenderProxyBox {
+  _RenderGlyphPriorityHitTest(this.hitTestChar);
+
+  bool Function(Offset globalPosition) hitTestChar;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (!size.contains(position)) return false;
+    // 只吸收落在字符 glyph 上的指针；字缝 / 空白 translucent 穿透到下层进度条。
+    if (!hitTestChar(localToGlobal(position))) return false;
+    // 命中字：把子树（[RawGestureDetector] 的 [_SubtitleCharTapRecognizer]）挂进命中链，
+    // 让查词 tap 照常收指针；再登记自身并返回 true —— 截断父 [Stack] 对下层进度条的命中。
+    hitTestChildren(result, position: position);
+    result.add(BoxHitTestEntry(this, position));
+    return true;
   }
 }
