@@ -393,58 +393,71 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
     _search();
   }
 
-  /// AniList 系列消歧 chip 排：AniList 对当前 query 命中 ≥2 个候选番时显示，让用户从
-  /// 罗马音/英文/日文标题里挑对正确的番（旧实现盲取首条，首条猜错就整搜空且无从纠正）。
-  /// 只命中 1 个或 0 个（纯文本回退）时不显示，不占垂直空间。
-  Widget _buildSeriesChips() {
-    if (_seriesMatches.length < 2) return const SizedBox.shrink();
+  /// 统一的「标签在上、chip 在下」分区：消除旧版把标题标签塞进同一个 Wrap 里、长
+  /// 番名 chip 换行后标签和 chip 高低错落的丑排版。标签走 labelMedium + onSurfaceVariant
+  /// 弱化，chip 用 8/8 均匀间距。
+  Widget _chipSection(String label, List<Widget> chips) {
+    final ThemeData theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(t.video_jimaku_series,
-              style: Theme.of(context).textTheme.labelMedium),
-          for (final AniListMedia media in _seriesMatches)
-            ChoiceChip(
-              label: Text(media.displayTitle),
-              selected: _selectedSeriesId == media.id,
-              onSelected: _searching ? null : (_) => _selectSeries(media),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 2),
+            child: Text(
+              label,
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
+          ),
+          Wrap(spacing: 8, runSpacing: 8, children: chips),
         ],
       ),
     );
   }
 
-  /// 语言筛选 chip 排（含「全部」）：仅在搜出结果里出现 ≥1 个可识别语言时显示。
+  /// AniList 系列消歧分区：AniList 对当前 query 命中 ≥2 个候选番时显示，让用户从
+  /// 罗马音/英文/日文标题里挑对正确的番（旧实现盲取首条，首条猜错就整搜空且无从纠正）。
+  /// 只命中 1 个或 0 个（纯文本回退）时不显示，不占垂直空间。长番名 chip 夹 maxWidth +
+  /// 省略号 + tooltip，避免超长标题把整行撑爆。
+  Widget _buildSeriesChips() {
+    if (_seriesMatches.length < 2) return const SizedBox.shrink();
+    return _chipSection(t.video_jimaku_series, <Widget>[
+      for (final AniListMedia media in _seriesMatches)
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 260),
+          child: ChoiceChip(
+            label: Text(
+              media.displayTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            tooltip: media.displayTitle,
+            selected: _selectedSeriesId == media.id,
+            onSelected: _searching ? null : (_) => _selectSeries(media),
+          ),
+        ),
+    ]);
+  }
+
+  /// 语言筛选分区（含「全部」）：仅在搜出结果里出现 ≥1 个可识别语言时显示。
   Widget _buildLanguageChips() {
     final List<String> langs = availableLanguages(_candidates);
     if (langs.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: <Widget>[
-          Text(t.video_jimaku_language,
-              style: Theme.of(context).textTheme.labelMedium),
-          ChoiceChip(
-            label: Text(t.video_jimaku_language_all),
-            selected: _selectedLanguage == null,
-            onSelected: (_) => _selectLanguage(null),
-          ),
-          for (final String lang in langs)
-            ChoiceChip(
-              label: Text(jimakuLanguageLabel(lang)),
-              selected: _selectedLanguage == lang,
-              onSelected: (_) => _selectLanguage(lang),
-            ),
-        ],
+    return _chipSection(t.video_jimaku_language, <Widget>[
+      ChoiceChip(
+        label: Text(t.video_jimaku_language_all),
+        selected: _selectedLanguage == null,
+        onSelected: (_) => _selectLanguage(null),
       ),
-    );
+      for (final String lang in langs)
+        ChoiceChip(
+          label: Text(jimakuLanguageLabel(lang)),
+          selected: _selectedLanguage == lang,
+          onSelected: (_) => _selectLanguage(lang),
+        ),
+    ]);
   }
 
   @override
