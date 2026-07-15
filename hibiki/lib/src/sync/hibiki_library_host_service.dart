@@ -729,6 +729,7 @@ class RemoteVideoInfo {
     this.coverPath,
     this.positionMs = 0,
     this.positionUpdatedAtMs = 0,
+    this.delayMs = 0,
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
     this.tags = const <String>[],
@@ -785,6 +786,10 @@ class RemoteVideoInfo {
   /// 同范式。0 表示无记录。
   final int positionUpdatedAtMs;
 
+  /// host 端该视频的字幕时序偏移（`VideoBooks.delayMs`，毫秒，可负；BUG-833）。设备
+  /// 无关的纯时序设置，跨端语义一致 → 远端播放时应用，使桌面设的字幕调轴在手机跟随。
+  final int delayMs;
+
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
@@ -805,6 +810,7 @@ class RemoteVideoInfo {
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
         if (positionMs > 0) 'positionMs': positionMs,
         if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
+        if (delayMs != 0) 'delayMs': delayMs,
         // 单视频（episodes <=1）向后兼容：不写 episodes/currentEpisode 键。
         if (episodes.length > 1) ...<String, Object?>{
           'episodes': <Map<String, Object?>>[
@@ -826,6 +832,7 @@ class RemoteVideoInfo {
     List<RemoteVideoEmbeddedSubtitleTrack>? embeddedSubtitleTracks,
     int? positionMs,
     int? positionUpdatedAtMs,
+    int? delayMs,
     RemoteCollectionMembership? collection,
   }) =>
       RemoteVideoInfo(
@@ -842,6 +849,7 @@ class RemoteVideoInfo {
         coverPath: coverPath ?? this.coverPath,
         positionMs: positionMs ?? this.positionMs,
         positionUpdatedAtMs: positionUpdatedAtMs ?? this.positionUpdatedAtMs,
+        delayMs: delayMs ?? this.delayMs,
         episodes: episodes,
         currentEpisode: currentEpisode,
         tags: tags,
@@ -871,6 +879,7 @@ class RemoteVideoInfo {
       coverPath: coverPath,
       positionMs: _jsonInt(json['positionMs']) ?? 0,
       positionUpdatedAtMs: _jsonInt(json['positionUpdatedAtMs']) ?? 0,
+      delayMs: _jsonInt(json['delayMs']) ?? 0,
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
       tags: _jsonStringList(json['tags']),

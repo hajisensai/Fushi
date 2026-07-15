@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 814 条。点号进各自文件。
+> 共 815 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-833](bugs/BUG-833-remote-video-resume-and-subtitle-delay-sync.md) | ✅ | ✅ | 互联远端视频不续播(从头)+ 字幕调轴(delay)不同步 |
 | [BUG-832](bugs/BUG-832-video-overview-hero-excludes-remote.md) | ✅ | ✅ | 视频页「继续观看」+「媒体库概览」在只有远端视频时不显示且不计入远端 |
 | [BUG-831](bugs/BUG-831-video-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回视频 tab 不自动拉远端视频(远端视频要手动下拉刷新才出来) |
 | [BUG-830](bugs/BUG-830-shelf-collection-count-excludes-remote.md) | ✅ | ✅ | 书架合集行头「N项」漏算折进合集的远端占位成员(只数本地) |
