@@ -427,7 +427,10 @@ void main() {
         final restored = HibikiDatabase(restoreDir.path);
         try {
           expect(await restored.getAllDictionaryMetadata(), hasLength(1));
-          expect(await restored.getAllDictionaryHistory(), hasLength(1));
+          // BUG-831: recent-lookup history is a private usage trace and is
+          // ALWAYS wiped on export (like search history), so it never travels —
+          // even in a full backup where the dictionary itself is kept.
+          expect(await restored.getAllDictionaryHistory(), isEmpty);
           expect(
             await File('${restoredDictDir.path}/JMdict/blobs.bin')
                 .readAsString(),

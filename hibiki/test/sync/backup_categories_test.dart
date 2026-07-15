@@ -947,6 +947,82 @@ void main() {
     }
   });
 
+  // ── BUG-831: dictionary_history (private) + media_sources (local paths) ──
+  Future<void> seedHistoryAndSources(HibikiDatabase db) async {
+    await db.replaceAllDictionaryHistory(<DictionaryHistoryCompanion>[
+      DictionaryHistoryCompanion.insert(
+          position: 0, resultJson: '{"searchTerm":"猫"}'),
+    ]);
+    await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books', mediaKind: 'book', rootPath: 'D:/books', createdAt: 1));
+    await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Videos',
+        mediaKind: 'video',
+        rootPath: 'D:/videos',
+        createdAt: 1));
+  }
+
+  test(
+      'dictionary_history is always wiped; media_sources are kept in a full '
+      'export (BUG-831)', () async {
+    final built = await buildDataSource();
+    await seedHistoryAndSources(built.db);
+    final zip = p.join(src.path, 'bug831_full.zip');
+    await built.service.exportBackup(zip);
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'dictionary_history'), 0,
+          reason: 'recent lookups are a private trace, never travel');
+      expect(await countRows(db, 'media_sources'), 2,
+          reason: 'full export keeps both library roots for restore');
+    } finally {
+      await db.close();
+    }
+  });
+
+  test(
+      'media_sources follow the content category: book/video roots dropped when '
+      'their category is excluded (BUG-831)', () async {
+    final built = await buildDataSource();
+    await seedHistoryAndSources(built.db);
+    final zip = p.join(src.path, 'bug831_none.zip');
+    await built.service.exportBackup(zip, categories: <BackupCategory>{});
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'dictionary_history'), 0);
+      expect(await countRows(db, 'media_sources'), 0,
+          reason: 'both book & video source roots (local paths) dropped');
+    } finally {
+      await db.close();
+    }
+  });
+
+  test(
+      'excluding only videos drops the video source root but keeps the book one '
+      '(BUG-831)', () async {
+    final built = await buildDataSource();
+    await seedHistoryAndSources(built.db);
+    final zip = p.join(src.path, 'bug831_novideo.zip');
+    await built.service
+        .exportBackup(zip, categories: allExcept(BackupCategory.videos));
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      final rows =
+          await db.customSelect('SELECT media_kind FROM media_sources').get();
+      final kinds = rows.map((r) => r.data['media_kind'] as String).toList();
+      expect(kinds, <String>['book'],
+          reason: 'only the video root is dropped; the book root stays');
+    } finally {
+      await db.close();
+    }
+  });
+
   test(
       'collections / shelf / tags FOLLOW their book: kept when the book is '
       'exported', () async {
