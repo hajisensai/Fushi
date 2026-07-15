@@ -120,4 +120,29 @@ void main() {
       expect(uri.path, '/api/entries/42/files');
     });
   });
+
+  group('parseSubtitleEpisode（字幕文件名集号解析）', () {
+    test('结尾集号带字幕扩展名 + 语言子标签', () {
+      // `.srt` 扩展名 + `.ja` 语言子标签都被剥掉后才能命中破折号集号。
+      expect(parseSubtitleEpisode('[Group] Show - 12.ja.srt'), 12);
+      expect(parseSubtitleEpisode('Show - 05.srt'), 5);
+    });
+
+    test('CJK / EP / SxxEyy 前缀集号', () {
+      expect(parseSubtitleEpisode('第08話.ass'), 8);
+      expect(parseSubtitleEpisode('Show E03.vtt'), 3);
+      expect(parseSubtitleEpisode('Show S02E10.zh-cn.ssa'), 10);
+    });
+
+    test('认不出集号 → null（不误判系列名里的数字）', () {
+      expect(parseSubtitleEpisode('Steins;Gate.srt'), isNull);
+      expect(parseSubtitleEpisode('movie.ja.ass'), isNull);
+    });
+
+    test('JimakuFile.episode 派生自文件名', () {
+      const JimakuFile f =
+          JimakuFile(name: 'Bocchi - 07.ja.srt', url: 'https://x/7');
+      expect(f.episode, 7);
+    });
+  });
 }

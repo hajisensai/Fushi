@@ -12898,6 +12898,12 @@ class $MediaCollectionsTable extends MediaCollections
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _anilistIdMeta =
+      const VerificationMeta('anilistId');
+  @override
+  late final GeneratedColumn<int> anilistId = GeneratedColumn<int>(
+      'anilist_id', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -12906,7 +12912,8 @@ class $MediaCollectionsTable extends MediaCollections
         coverSource,
         sortOrder,
         createdAt,
-        orderUpdatedAt
+        orderUpdatedAt,
+        anilistId
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -12955,6 +12962,10 @@ class $MediaCollectionsTable extends MediaCollections
           orderUpdatedAt.isAcceptableOrUnknown(
               data['order_updated_at']!, _orderUpdatedAtMeta));
     }
+    if (data.containsKey('anilist_id')) {
+      context.handle(_anilistIdMeta,
+          anilistId.isAcceptableOrUnknown(data['anilist_id']!, _anilistIdMeta));
+    }
     return context;
   }
 
@@ -12978,6 +12989,8 @@ class $MediaCollectionsTable extends MediaCollections
           .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
       orderUpdatedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}order_updated_at'])!,
+      anilistId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}anilist_id']),
     );
   }
 
@@ -13013,6 +13026,12 @@ class MediaCollectionRow extends DataClass
   /// 更新的人为改序，两端时间戳互相追赶）。跨端手动序整合集 LWW 的比较键：新者
   /// 整表覆盖成员 sortIndex。默认 0 = 从未手动排序，任何真实改序都能盖过它。
   final int orderUpdatedAt;
+
+  /// 该合集绑定的 AniList 系列 id（schema v45，字幕批量下载用）。用户在合集里确认过
+  /// 一次正确的番后快照下来，后续「为整个合集获取字幕」直接按此 id 搜 Jimaku，跳过逐集
+  /// 番名猜测。NULL = 未绑定（回退用合集名经 AniList 现解析）。无损迁移：nullable 无
+  /// default，旧库既有行全 NULL = 行为与旧版一致。
+  final int? anilistId;
   const MediaCollectionRow(
       {required this.id,
       required this.name,
@@ -13020,7 +13039,8 @@ class MediaCollectionRow extends DataClass
       this.coverSource,
       required this.sortOrder,
       required this.createdAt,
-      required this.orderUpdatedAt});
+      required this.orderUpdatedAt,
+      this.anilistId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -13033,6 +13053,9 @@ class MediaCollectionRow extends DataClass
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<int>(createdAt);
     map['order_updated_at'] = Variable<int>(orderUpdatedAt);
+    if (!nullToAbsent || anilistId != null) {
+      map['anilist_id'] = Variable<int>(anilistId);
+    }
     return map;
   }
 
@@ -13047,6 +13070,9 @@ class MediaCollectionRow extends DataClass
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
       orderUpdatedAt: Value(orderUpdatedAt),
+      anilistId: anilistId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anilistId),
     );
   }
 
@@ -13061,6 +13087,7 @@ class MediaCollectionRow extends DataClass
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       orderUpdatedAt: serializer.fromJson<int>(json['orderUpdatedAt']),
+      anilistId: serializer.fromJson<int?>(json['anilistId']),
     );
   }
   @override
@@ -13074,6 +13101,7 @@ class MediaCollectionRow extends DataClass
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<int>(createdAt),
       'orderUpdatedAt': serializer.toJson<int>(orderUpdatedAt),
+      'anilistId': serializer.toJson<int?>(anilistId),
     };
   }
 
@@ -13084,7 +13112,8 @@ class MediaCollectionRow extends DataClass
           Value<String?> coverSource = const Value.absent(),
           int? sortOrder,
           int? createdAt,
-          int? orderUpdatedAt}) =>
+          int? orderUpdatedAt,
+          Value<int?> anilistId = const Value.absent()}) =>
       MediaCollectionRow(
         id: id ?? this.id,
         name: name ?? this.name,
@@ -13093,6 +13122,7 @@ class MediaCollectionRow extends DataClass
         sortOrder: sortOrder ?? this.sortOrder,
         createdAt: createdAt ?? this.createdAt,
         orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
+        anilistId: anilistId.present ? anilistId.value : this.anilistId,
       );
   MediaCollectionRow copyWithCompanion(MediaCollectionsCompanion data) {
     return MediaCollectionRow(
@@ -13108,6 +13138,7 @@ class MediaCollectionRow extends DataClass
       orderUpdatedAt: data.orderUpdatedAt.present
           ? data.orderUpdatedAt.value
           : this.orderUpdatedAt,
+      anilistId: data.anilistId.present ? data.anilistId.value : this.anilistId,
     );
   }
 
@@ -13120,14 +13151,15 @@ class MediaCollectionRow extends DataClass
           ..write('coverSource: $coverSource, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
-          ..write('orderUpdatedAt: $orderUpdatedAt')
+          ..write('orderUpdatedAt: $orderUpdatedAt, ')
+          ..write('anilistId: $anilistId')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(id, name, collectionType, coverSource,
-      sortOrder, createdAt, orderUpdatedAt);
+      sortOrder, createdAt, orderUpdatedAt, anilistId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -13138,7 +13170,8 @@ class MediaCollectionRow extends DataClass
           other.coverSource == this.coverSource &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt &&
-          other.orderUpdatedAt == this.orderUpdatedAt);
+          other.orderUpdatedAt == this.orderUpdatedAt &&
+          other.anilistId == this.anilistId);
 }
 
 class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
@@ -13149,6 +13182,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<int> sortOrder;
   final Value<int> createdAt;
   final Value<int> orderUpdatedAt;
+  final Value<int?> anilistId;
   const MediaCollectionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -13157,6 +13191,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.orderUpdatedAt = const Value.absent(),
+    this.anilistId = const Value.absent(),
   });
   MediaCollectionsCompanion.insert({
     this.id = const Value.absent(),
@@ -13166,6 +13201,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.sortOrder = const Value.absent(),
     required int createdAt,
     this.orderUpdatedAt = const Value.absent(),
+    this.anilistId = const Value.absent(),
   })  : name = Value(name),
         createdAt = Value(createdAt);
   static Insertable<MediaCollectionRow> custom({
@@ -13176,6 +13212,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Expression<int>? sortOrder,
     Expression<int>? createdAt,
     Expression<int>? orderUpdatedAt,
+    Expression<int>? anilistId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -13185,6 +13222,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (orderUpdatedAt != null) 'order_updated_at': orderUpdatedAt,
+      if (anilistId != null) 'anilist_id': anilistId,
     });
   }
 
@@ -13195,7 +13233,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       Value<String?>? coverSource,
       Value<int>? sortOrder,
       Value<int>? createdAt,
-      Value<int>? orderUpdatedAt}) {
+      Value<int>? orderUpdatedAt,
+      Value<int?>? anilistId}) {
     return MediaCollectionsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -13204,6 +13243,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
+      anilistId: anilistId ?? this.anilistId,
     );
   }
 
@@ -13231,6 +13271,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     if (orderUpdatedAt.present) {
       map['order_updated_at'] = Variable<int>(orderUpdatedAt.value);
     }
+    if (anilistId.present) {
+      map['anilist_id'] = Variable<int>(anilistId.value);
+    }
     return map;
   }
 
@@ -13243,7 +13286,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
           ..write('coverSource: $coverSource, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
-          ..write('orderUpdatedAt: $orderUpdatedAt')
+          ..write('orderUpdatedAt: $orderUpdatedAt, ')
+          ..write('anilistId: $anilistId')
           ..write(')'))
         .toString();
   }
@@ -25264,6 +25308,7 @@ typedef $$MediaCollectionsTableCreateCompanionBuilder
   Value<int> sortOrder,
   required int createdAt,
   Value<int> orderUpdatedAt,
+  Value<int?> anilistId,
 });
 typedef $$MediaCollectionsTableUpdateCompanionBuilder
     = MediaCollectionsCompanion Function({
@@ -25274,6 +25319,7 @@ typedef $$MediaCollectionsTableUpdateCompanionBuilder
   Value<int> sortOrder,
   Value<int> createdAt,
   Value<int> orderUpdatedAt,
+  Value<int?> anilistId,
 });
 
 final class $$MediaCollectionsTableReferences extends BaseReferences<
@@ -25352,6 +25398,9 @@ class $$MediaCollectionsTableFilterComposer
       column: $table.orderUpdatedAt,
       builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<int> get anilistId => $composableBuilder(
+      column: $table.anilistId, builder: (column) => ColumnFilters(column));
+
   Expression<bool> mediaCollectionItemsRefs(
       Expression<bool> Function($$MediaCollectionItemsTableFilterComposer f)
           f) {
@@ -25429,6 +25478,9 @@ class $$MediaCollectionsTableOrderingComposer
   ColumnOrderings<int> get orderUpdatedAt => $composableBuilder(
       column: $table.orderUpdatedAt,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get anilistId => $composableBuilder(
+      column: $table.anilistId, builder: (column) => ColumnOrderings(column));
 }
 
 class $$MediaCollectionsTableAnnotationComposer
@@ -25460,6 +25512,9 @@ class $$MediaCollectionsTableAnnotationComposer
 
   GeneratedColumn<int> get orderUpdatedAt => $composableBuilder(
       column: $table.orderUpdatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get anilistId =>
+      $composableBuilder(column: $table.anilistId, builder: (column) => column);
 
   Expression<T> mediaCollectionItemsRefs<T extends Object>(
       Expression<T> Function($$MediaCollectionItemsTableAnnotationComposer a)
@@ -25540,6 +25595,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             Value<int> sortOrder = const Value.absent(),
             Value<int> createdAt = const Value.absent(),
             Value<int> orderUpdatedAt = const Value.absent(),
+            Value<int?> anilistId = const Value.absent(),
           }) =>
               MediaCollectionsCompanion(
             id: id,
@@ -25549,6 +25605,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             sortOrder: sortOrder,
             createdAt: createdAt,
             orderUpdatedAt: orderUpdatedAt,
+            anilistId: anilistId,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -25558,6 +25615,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             Value<int> sortOrder = const Value.absent(),
             required int createdAt,
             Value<int> orderUpdatedAt = const Value.absent(),
+            Value<int?> anilistId = const Value.absent(),
           }) =>
               MediaCollectionsCompanion.insert(
             id: id,
@@ -25567,6 +25625,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             sortOrder: sortOrder,
             createdAt: createdAt,
             orderUpdatedAt: orderUpdatedAt,
+            anilistId: anilistId,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (

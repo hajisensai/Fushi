@@ -2353,5 +2353,9 @@
   "delete_collection_also_books": "同时删除其中的书",
   "delete_collection_also_videos": "同时删除其中的视频（保留你的原始视频文件）",
   "anki_error_permission_denied": "AnkiDroid 尚未授予卡片访问权限。请在刚弹出的系统授权对话框中允许，然后再次点击按钮制卡。",
-  "video_subtitle_waveform_cue_list": "字幕列表"
+  "video_subtitle_waveform_cue_list": "字幕列表",
+  "video_jimaku_series": "系列",
+  "video_jimaku_batch_title": "为合集获取字幕",
+  "video_jimaku_batch_download": "下载全部",
+  "video_jimaku_batch_done": "字幕已获取：$done/$total"
 }

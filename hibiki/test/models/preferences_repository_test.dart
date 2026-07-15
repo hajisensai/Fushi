@@ -982,4 +982,34 @@ void main() {
       expect(repo.videoBlackFlickerNoticeSuppressed, false);
     });
   });
+
+  group('remoteSubtitleSources（远端字幕持久化）', () {
+    test('remoteSubtitleKey：ep0 省略后缀，ep>0 加 #ep', () {
+      expect(PreferencesRepository.remoteSubtitleKey('bk', 0), 'bk');
+      expect(PreferencesRepository.remoteSubtitleKey('bk', 3), 'bk#ep3');
+    });
+
+    test('set/read 按 bookUid+episode 跨实例 reload 记住', () async {
+      expect(repo.remoteSubtitleSource('bk'), isNull);
+      await repo.setRemoteSubtitleSource('bk', 0, '/data/sub.ja.srt');
+      await repo.setRemoteSubtitleSource('bk', 2, 'off:');
+      expect(repo.remoteSubtitleSource('bk'), '/data/sub.ja.srt');
+      expect(repo.remoteSubtitleSource('bk', episodeIndex: 2), 'off:');
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.remoteSubtitleSource('bk'), '/data/sub.ja.srt',
+          reason: '远端字幕选择必须跨实例记住（否则退出即丢）');
+      expect(repo2.remoteSubtitleSource('bk', episodeIndex: 2), 'off:');
+    });
+
+    test('source=null 删除该 key（不影响其它集）', () async {
+      await repo.setRemoteSubtitleSource('bk', 0, '/a.srt');
+      await repo.setRemoteSubtitleSource('bk', 1, '/b.srt');
+      await repo.setRemoteSubtitleSource('bk', 0, null);
+      expect(repo.remoteSubtitleSource('bk'), isNull);
+      expect(repo.remoteSubtitleSource('bk', episodeIndex: 1), '/b.srt');
+    });
+  });
 }

@@ -60,6 +60,32 @@ Future<HibikiDatabase> _openV34DbWithoutStreamSpecJson() async {
   return db;
 }
 
+/// Opens a `user_version = 44` database whose media_collections table lacks the
+/// anilist_id column, forcing the real `if (from < 45) addColumn(
+/// mediaCollections.anilistId)` onUpgrade branch (合集字幕批量下载) to run.
+Future<HibikiDatabase> _openV44DbWithoutCollectionAnilistId() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        // Minimal media_collections shaped like the v44 schema (no anilist_id).
+        rawDb.execute('CREATE TABLE media_collections ('
+            'id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+            'name TEXT NOT NULL, '
+            "collection_type TEXT NOT NULL DEFAULT 'collection', "
+            'cover_source TEXT, '
+            'sort_order INTEGER NOT NULL DEFAULT 0, '
+            'created_at INTEGER NOT NULL, '
+            'order_updated_at INTEGER NOT NULL DEFAULT 0)');
+        rawDb.execute('INSERT INTO media_collections (id, name, created_at) '
+            "VALUES (1, 'Bocchi the Rock!', 1)");
+        rawDb.execute('PRAGMA user_version = 44');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 /// Opens a `user_version = 35` database whose favorite_words table lacks the
 /// book_key / title columns, forcing the real `if (from < 36) addColumn(
 /// favoriteWords.bookKey / .title)` onUpgrade branch (TODO-1252) to run.
@@ -1051,7 +1077,7 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 44,
+      expect(db.schemaVersion, 45,
           reason: 'global schemaVersion is now 38 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
               'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '
@@ -1124,7 +1150,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 44,
+      expect(db.schemaVersion, 45,
           reason:
               'TODO-1288 bumps schema to v37 (audiobook srt_books self-heal)');
 
@@ -1284,7 +1310,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 44,
+      expect(db.schemaVersion, 45,
           reason: 'global schemaVersion is now 38 (…v35 + TODO-1252 v36 + '
               'TODO-1288 v37 audiobook srt_books self-heal + v38 unified '
               'media_collections); v29->v30 '
@@ -1335,7 +1361,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 44);
+      expect(db.schemaVersion, 45);
     });
 
     test(
@@ -1344,7 +1370,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 44,
+      expect(db.schemaVersion, 45,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1378,7 +1404,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 44,
+      expect(db.schemaVersion, 45,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1418,7 +1444,7 @@ void main() {
     test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 44);
+      expect(db.schemaVersion, 45);
       final cols =
           await db.customSelect("PRAGMA table_info('video_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1447,11 +1473,45 @@ void main() {
       expect(version.read<int>('user_version'), db.schemaVersion);
     });
 
+    test('fresh DB (v45) has media_collections.anilist_id column', () async {
+      final db = await _openDb();
+      expect(db.schemaVersion, 45);
+      final cols =
+          await db.customSelect("PRAGMA table_info('media_collections')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, contains('anilist_id'),
+          reason: 'fresh createAll must include v45 anilist_id');
+    });
+
+    test(
+        'real v44->v45 adds media_collections.anilist_id, preserves rows, '
+        'DAO round-trips', () async {
+      final db = await _openV44DbWithoutCollectionAnilistId();
+      // Opening triggers from<45 addColumn(mediaCollections.anilistId).
+      final cols =
+          await db.customSelect("PRAGMA table_info('media_collections')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, contains('anilist_id'),
+          reason: 'from<45 must addColumn(mediaCollections.anilistId)');
+      // 既有行保留、新列默认 NULL（无损迁移）。
+      final row = await db.getMediaCollectionById(1);
+      expect(row, isNotNull);
+      expect(row!.name, 'Bocchi the Rock!');
+      expect(row.anilistId, isNull);
+      // DAO 绑定/清除往返。
+      await db.setMediaCollectionAnilistId(1, 12345);
+      expect((await db.getMediaCollectionById(1))!.anilistId, 12345);
+      await db.setMediaCollectionAnilistId(1, null);
+      expect((await db.getMediaCollectionById(1))!.anilistId, isNull);
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+    });
+
     test(
         'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 44);
+      expect(db.schemaVersion, 45);
       final cols =
           await db.customSelect("PRAGMA table_info('favorite_words')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();

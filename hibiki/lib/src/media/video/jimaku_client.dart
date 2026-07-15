@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'package:hibiki/src/media/video/video_filename_parser.dart';
+
 /// Jimaku（jimaku.cc）字幕条目：一个番剧/作品。
 class JimakuEntry {
   const JimakuEntry({
@@ -37,6 +39,35 @@ class JimakuFile {
   /// 是否可解析成 cue 的文本字幕（srt/ass/ssa/vtt）。
   bool get isTextSubtitle =>
       const <String>{'srt', 'ass', 'ssa', 'vtt'}.contains(extension);
+
+  /// 从文件名启发式解析出的集号（`第01話`/`E01`/`- 12`/`S01E02` 等）；认不出为 null。
+  /// 用于把「集数乱序」的候选按集号升序排列（见 [sortJimakuFilesByEpisode]）。
+  int? get episode => parseSubtitleEpisode(name);
+}
+
+/// 从字幕文件名启发式解析集号。复用 [parseVideoFilename] 的集号识别规则（`SxxEyy` /
+/// CJK `第N話` / `EP/E` / `- N` / 结尾裸数字），但先剥掉字幕扩展名（srt/ass/ssa/vtt）
+/// 与可选的语言子标签（`.ja` / `.zh-cn` 等），使 `Show - 12.ja.srt` 这类文件名也能
+/// 命中结尾集号（否则 `.srt` 后缀会让「结尾裸数字」规则失配）。纯函数，便于单测。
+int? parseSubtitleEpisode(String fileName) {
+  String stem = fileName;
+  // ① 剥字幕扩展名。
+  final int dot = stem.lastIndexOf('.');
+  if (dot > 0) {
+    final String ext = stem.substring(dot + 1).toLowerCase();
+    if (const <String>{'srt', 'ass', 'ssa', 'vtt'}.contains(ext)) {
+      stem = stem.substring(0, dot);
+    }
+  }
+  // ② 剥可选的语言子标签（如 `name.ja` / `name.zh-cn`），否则它会被当成系列名尾巴。
+  final int dot2 = stem.lastIndexOf('.');
+  if (dot2 > 0) {
+    final String tail = stem.substring(dot2 + 1);
+    if (_languageFromToken(tail) != null) {
+      stem = stem.substring(0, dot2);
+    }
+  }
+  return parseVideoFilename(stem).episode;
 }
 
 /// 解析 Jimaku entries 响应（JSON 数组）为 [JimakuEntry] 列表。纯函数，容错。
@@ -102,6 +133,24 @@ String? detectSubtitleLanguage(String fileName) {
     if (byBracket != null) return byBracket;
   }
   return null;
+}
+
+/// 语言排序权重：优先语言（[preferred]，用户按系列记忆的语言）→ ja → zh → en → ko →
+/// 其它/认不出。数字越小越靠前。纯函数（供对话框排序与合集批量挑最佳字幕共用）。
+int jimakuLanguageRank(String? language, {String? preferred}) {
+  if (preferred != null && language == preferred) return -1;
+  switch (language) {
+    case 'ja':
+      return 0;
+    case 'zh':
+      return 1;
+    case 'en':
+      return 2;
+    case 'ko':
+      return 3;
+    default:
+      return 4; // 其它语言 / 认不出
+  }
 }
 
 /// 把单个语言 token（如 `ja`/`chs`/`zh-cn`）归一到大类代码；认不出返回 `null`。

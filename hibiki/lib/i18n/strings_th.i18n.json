@@ -2353,5 +2353,9 @@
   "delete_collection_also_books": "Also delete the books in it",
   "delete_collection_also_videos": "Also delete the videos (keeps your original video files)",
   "anki_error_permission_denied": "AnkiDroid hasn't granted card access permission. Approve the system permission dialog that just appeared, then tap the button again to export.",
-  "video_subtitle_waveform_cue_list": "Subtitle list"
+  "video_subtitle_waveform_cue_list": "Subtitle list",
+  "video_jimaku_series": "Series",
+  "video_jimaku_batch_title": "Fetch subtitles for collection",
+  "video_jimaku_batch_download": "Download all",
+  "video_jimaku_batch_done": "Subtitles fetched: $done/$total"
 }
