@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 807 条。点号进各自文件。
+> 共 808 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-826](bugs/BUG-826-popup-topbar-overlap-narrow.md) | ✅ | ✅ | 查词弹窗顶栏按钮窄宽时重叠 |
 | [BUG-825](bugs/BUG-825-subtitle-hit-seekbar.md) | ✅ | ✅ | 点视频进度条被误判成点字幕触发查词 |
 | [BUG-824](bugs/BUG-824-ankidroid-mine-permission-prompt.md) | ✅ | ✅ | AnkiDroid 权限未授予制卡失败无明显提醒 |
 | [BUG-823](bugs/BUG-823-episode-switch-dualplay.md) | ✅ | ✅ | 切换剧集时上一个视频仍在播放（过渡期双音轨） |
