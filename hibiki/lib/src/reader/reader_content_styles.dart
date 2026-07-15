@@ -567,6 +567,11 @@ ruby rt, ruby rp {
     -webkit-touch-callout: none !important;
   }
 }
+/* BUG-765 续：移动端选区起止手柄的强调色跟随主题。reader_selection_scripts.dart 里
+   自绘的起/止手柄用 var(--hoshi-sel-handle) 引用本变量；主题切换重注入本 CSS 时手柄
+   颜色自动更新，无需 JS 感知主题。用主题 linkColor（各主题的饱和强调色）而非查词高亮
+   色（0.35 低透明 tint，太淡不适合实心抓手）。 */
+:root { --hoshi-sel-handle: ${linkColor ?? colors.linkColor}; }
 /* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
    priority=1，使其叠在音频(sasayaki, 默认 priority=0)之上 → 重叠处只显示这一层。 */
 ::highlight(hoshi-selection) {

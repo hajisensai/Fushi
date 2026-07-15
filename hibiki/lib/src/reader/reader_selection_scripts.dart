@@ -470,13 +470,25 @@ window.hoshiSelection = {
     return dx * dx + dy * dy;
   },
   getCaretRange: function(x, y) {
+    // BUG-765 续修：`caretPositionFromPoint` 命中「非文本 / 振假名」节点时**不再早退**，
+    // 落到下面的 `elementFromPoint`+最近字符几何兜底。根因：拖选区手柄时手指压在手柄
+    // div 上，即便 `moveSelectionHandle` 已把手柄 `pointer-events:none`，部分 Android
+    // WebView 的 `caretPositionFromPoint` 仍把命中解析到手柄自身 / documentElement
+    // （ELEMENT_NODE）→ getCharacterAtPoint 返回 null → 手柄冻结拖不动。旧代码押注
+    // 「caretPositionFromPoint 尊重 pointer-events」这一脆弱假设，真机不成立。现在只在
+    // 拿到可用文本节点时才走快路，否则统一落到 elementFromPoint（对 pointer-events:none
+    // 稳定生效）解析出的底层文本块里做有界的最近字符扫描，横竖排通吃。
     if (document.caretPositionFromPoint) {
       var pos = document.caretPositionFromPoint(x, y);
-      if (!pos) return null;
-      var range = document.createRange();
-      range.setStart(pos.offsetNode, pos.offset);
-      range.collapse(true);
-      return range;
+      // 命中文本节点走快路（振假名文本仍返回，由 getCharacterAtPoint 自己 reject，
+      // 保持「点振假名不查词」老行为）；命中非文本节点（遮挡的手柄 div /
+      // documentElement）则**不早退**，继续走下面的几何兜底。
+      if (pos && pos.offsetNode && pos.offsetNode.nodeType === Node.TEXT_NODE) {
+        var caretRange = document.createRange();
+        caretRange.setStart(pos.offsetNode, pos.offset);
+        caretRange.collapse(true);
+        return caretRange;
+      }
     }
     var element = document.elementFromPoint(x, y);
     if (!element) return null;
@@ -1295,11 +1307,24 @@ window.hoshiSelection = {
         el = document.createElement('div');
         el.id = 'hoshi-sel-handle-' + which;
         el.setAttribute('data-hoshi-sel-handle', which);
-        el.style.cssText = 'position:fixed;z-index:2147483645;width:24px;height:24px;' +
-          'margin-left:-12px;margin-top:-12px;border-radius:50%;' +
-          'background:rgba(255,138,0,0.98);' +
-          'box-shadow:0 0 0 2px rgba(0,0,0,0.28),0 0 4px rgba(255,138,0,0.9);' +
-          'pointer-events:auto;touch-action:none;display:none;box-sizing:border-box;';
+        // BUG-765 续：外层是 32×32 透明触控盒（比旧 24px 大，改善抓取；不取更大是因为
+        // 1~2 字 CJK 短选区两端相距仅约一个字宽，触控盒过大会几乎完全重叠、反而遮住起
+        // 手柄）。命中区大、视觉小；pointer-events:auto + touch-action:none 让它吃掉浏览器
+        // 滚动手势并可拖。视觉抓手是内层 18px 实心圆钮，用主题色 var(--hoshi-sel-handle)
+        // （reader CSS 从 linkColor 下发，随主题变）+ 白描边（任意背景都可见）+ 单柔和阴
+        // 影，去掉旧的刺眼橙色 + 双重发光 box-shadow（用户投诉「难看」）。
+        el.style.cssText = 'position:fixed;z-index:2147483645;width:32px;height:32px;' +
+          'margin-left:-16px;margin-top:-16px;box-sizing:border-box;' +
+          'background:transparent;border:0;' +
+          'pointer-events:auto;touch-action:none;display:none;';
+        var ball = document.createElement('div');
+        ball.setAttribute('data-hoshi-sel-ball', which);
+        ball.style.cssText = 'position:absolute;left:50%;top:50%;width:18px;height:18px;' +
+          'margin-left:-9px;margin-top:-9px;border-radius:50%;box-sizing:border-box;' +
+          'background:var(--hoshi-sel-handle, #3a5fad);' +
+          'border:2px solid rgba(255,255,255,0.95);' +
+          'box-shadow:0 1px 4px rgba(0,0,0,0.35);pointer-events:none;';
+        el.appendChild(ball);
         document.documentElement.appendChild(el);
         self._wireHandle(el, which);
       }
@@ -1395,20 +1420,22 @@ window.hoshiSelection = {
     var sRect = this._glyphRect(eps.startNode, eps.startOffset);
     var eRect = this._glyphRect(eps.endNode, eps.endOffset);
     var sx, sy, ex, ey;
+    // 圆钮离开文字的间隙（约半个钮），让抓手悬在选区外缘、不压住字。
+    var GAP = 8;
     if (vertical) {
       // vertical-rl: reading runs top->bottom, columns right->left. Start grip
       // above the first glyph, end grip below the last glyph.
       sx = sRect.left + sRect.width / 2;
-      sy = sRect.top;
+      sy = sRect.top - GAP;
       ex = eRect.left + eRect.width / 2;
-      ey = eRect.bottom;
+      ey = eRect.bottom + GAP;
     } else {
       // horizontal: start grip at the lower-left of the first glyph, end grip at
       // the lower-right of the last glyph (below the baseline).
       sx = sRect.left;
-      sy = sRect.bottom;
+      sy = sRect.bottom + GAP;
       ex = eRect.right;
-      ey = eRect.bottom;
+      ey = eRect.bottom + GAP;
     }
     handles.start.style.left = sx + 'px';
     handles.start.style.top = sy + 'px';
