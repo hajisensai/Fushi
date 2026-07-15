@@ -28,6 +28,10 @@ Widget _host({
   Future<void> Function(int delayMs)? onCommitDelay,
   Future<int?> Function()? onAutoAlign,
   Future<void> Function(int startMs)? onPlayCue,
+  bool Function()? isPlaying,
+  Future<void> Function()? onTogglePlayPause,
+  int Function()? currentPositionMs,
+  Listenable? positionListenable,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -42,6 +46,10 @@ Widget _host({
             onCommitDelay: onCommitDelay,
             onAutoAlign: onAutoAlign,
             onPlayCue: onPlayCue,
+            isPlaying: isPlaying,
+            onTogglePlayPause: onTogglePlayPause,
+            currentPositionMs: currentPositionMs,
+            positionListenable: positionListenable,
           ),
         ),
       ),
@@ -285,10 +293,7 @@ void main() {
     await _openZoom(tester);
     final int before = _zoomPainter(tester).previewDelayMs;
     await tester.drag(
-      find.descendant(
-        of: find.byType(SubtitleWaveformZoomView),
-        matching: find.byType(Scrollbar),
-      ),
+      find.byKey(const ValueKey<String>('subtitle-waveform-hscroll')),
       const Offset(-160, 0),
     );
     await tester.pumpAndSettle();
@@ -307,8 +312,9 @@ void main() {
     ));
     await tester.pumpAndSettle();
     await _openZoom(tester);
-    expect(find.text('ohayou'), findsOneWidget);
-    expect(find.text('konbanwa'), findsOneWidget);
+    // 文本同时出现在波形文本条与新加的字幕列表里（各一处）。
+    expect(find.text('ohayou'), findsWidgets);
+    expect(find.text('konbanwa'), findsWidgets);
   });
 
   testWidgets('TODO-1244: empty-text cues render no strip chip',
@@ -333,7 +339,8 @@ void main() {
     await tester.pumpAndSettle();
     await _openZoom(tester);
     expect(find.byIcon(Icons.play_circle_outline), findsWidgets);
-    await tester.tap(find.text('ohayou'));
+    // 文本条与列表都渲染该句；点第一处（波形文本条 chip）即 seek+play。
+    await tester.tap(find.text('ohayou').first);
     await tester.pumpAndSettle();
     expect(played, <int>[1000]);
   });
@@ -352,8 +359,129 @@ void main() {
     await tester.pumpAndSettle();
     await _openZoom(tester);
     expect(_zoomPainter(tester).previewDelayMs, 200);
-    await tester.tap(find.text('ohayou'));
+    await tester.tap(find.text('ohayou').first);
     await tester.pumpAndSettle();
     expect(played, <int>[1200]);
+  });
+
+  testWidgets('cue list: shows all non-empty cues; empty-text cue is skipped',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[
+        _cue(1000, 2000, text: 'ohayou'),
+        _cue(2500, 3000), // 空文本：列表与文本条都跳过。
+        _cue(3000, 4000, text: 'konbanwa'),
+      ],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onPlayCue: (int _) async {},
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final Finder list =
+        find.byKey(const ValueKey<String>('subtitle-waveform-cue-list'));
+    expect(list, findsOneWidget);
+    // 列表里两句都在（文本条另有一份，故用 descendant 限定到列表内各一处）。
+    expect(find.descendant(of: list, matching: find.text('ohayou')),
+        findsOneWidget);
+    expect(find.descendant(of: list, matching: find.text('konbanwa')),
+        findsOneWidget);
+  });
+
+  testWidgets('cue list: tapping a list row seeks+plays that line',
+      (WidgetTester tester) async {
+    final List<int> played = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[
+        _cue(1000, 2000, text: 'ohayou'),
+        _cue(5000, 6000, text: 'konbanwa'),
+      ],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onPlayCue: (int startMs) async => played.add(startMs),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final Finder list =
+        find.byKey(const ValueKey<String>('subtitle-waveform-cue-list'));
+    final Finder row =
+        find.descendant(of: list, matching: find.text('konbanwa'));
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(played, <int>[5000]);
+  });
+
+  testWidgets('no cue list section when all cues are empty-text',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(find.byKey(const ValueKey<String>('subtitle-waveform-cue-list')),
+        findsNothing);
+  });
+
+  testWidgets('play/pause button: hidden without callbacks, shown + toggles',
+      (WidgetTester tester) async {
+    // 无 isPlaying/onTogglePlayPause：不显示播放/暂停按钮。
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(find.byIcon(Icons.pause), findsNothing);
+    // 关掉再用带回调的宿主重开。
+    await tester.tap(find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byIcon(Icons.close),
+    ));
+    await tester.pumpAndSettle();
+
+    bool playing = true;
+    int toggles = 0;
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      isPlaying: () => playing,
+      onTogglePlayPause: () async {
+        toggles++;
+        playing = !playing;
+      },
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    // 播放中显示暂停图标。
+    expect(find.byIcon(Icons.pause), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.pause));
+    await tester.pumpAndSettle();
+    expect(toggles, 1);
+    // 暂停后图标翻成播放。
+    expect(find.byIcon(Icons.play_arrow), findsWidgets);
+  });
+
+  testWidgets('playhead ticker: currentPositionMs drives painter live (~30fps)',
+      (WidgetTester tester) async {
+    int posMs = 1500;
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      currentPositionMs: () => posMs,
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(_zoomPainter(tester).currentPositionMs, 1500);
+    // 位置推进但 controller 未通知（模拟句中）：自驱 ticker 仍在 ~33ms 后刷新播放头。
+    posMs = 1750;
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(_zoomPainter(tester).currentPositionMs, 1750);
+    // 关闭放大视图，停掉 ticker（避免 pending timer 泄漏）。
+    await tester.tap(find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byIcon(Icons.close),
+    ));
+    await tester.pumpAndSettle();
   });
 }

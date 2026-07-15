@@ -67,6 +67,46 @@ class YoutubeResolvedSource {
   bool get isMuxedFallback => audioStreamUrl == null;
 }
 
+/// 一条可选 YouTube 画质档（video-only 流），供播放页画质选择器（用户报「YouTube 没法
+/// 调画质」）列档 + 切档。[height]=分辨率高度（如 1080）、[label]=显示文案（如 `1080p`）、
+/// [videoUrl]=该档 video-only 直链、[codec]=视频编码（挑档时 avc1>vp9>av01 优先）。
+@immutable
+class YoutubeVideoVariant {
+  const YoutubeVideoVariant({
+    required this.height,
+    required this.label,
+    required this.videoUrl,
+    required this.codec,
+  });
+
+  final int height;
+  final String label;
+  final String videoUrl;
+  final String codec;
+}
+
+/// YouTube 画质档集合：各档 video-only 流（[variants]，高→低、每高度一条编码最优）+ 共用
+/// 的最高码率 audio-only 流（[audioStreamUrl]，切档保持同一音轨）+「自动/默认最佳」档下标
+/// （[defaultIndex]，= [pickPlaybackVideoStream] 的选择，供画质菜单的「自动」项与初始高亮
+/// 对齐）。视频无分离流（仅 muxed ≤360p）时 [variants] 为空。
+///
+/// 不带防盗链 header——切档回放的 UA 由播放页复用当前 [UrlStreamVideoClient.httpHeaderFields]
+/// （初始解析已铸的同一 youtube replay UA），与这里现取的 video-only URL 一致。
+@immutable
+class YoutubeVariantSet {
+  const YoutubeVariantSet({
+    required this.variants,
+    required this.audioStreamUrl,
+    required this.defaultIndex,
+  });
+
+  final List<YoutubeVideoVariant> variants;
+  final String? audioStreamUrl;
+  final int defaultIndex;
+
+  bool get isEmpty => variants.isEmpty;
+}
+
 /// 纯函数：识别 YouTube URL（watch / youtu.be / shorts / nocookie）。
 bool isYoutubeUrl(String url) {
   final Uri? u = Uri.tryParse(url.trim());
@@ -367,11 +407,20 @@ Map<String, String> youtubeStreamReplayHeaders() =>
 /// 而 [_pickPlaybackVideoUrl] 只按编码/分辨率挑、不看来源，可能选中 ios/tv 的 403 直链 →
 /// 回归。故此处对**单一** client 调 getManifest（其内部已做首流 HEAD 403 探测：403 抛异常
 /// = 该 client 失败），androidVr 成功即零回归返回，只有它失败才试下一个。全部失败抛最后异常。
+///
+/// 提速（用户报「YouTube 加载巨慢」）：每个 client 的 getManifest 加 [perClientTimeout]
+/// 上限。googlevideo/innertube 偶发 tarpit（限流时连接不完成），旧代码只有外层 40s 总超时
+/// 兜底——首选 androidVr 一旦 tarpit，要等满 40s 才轮到 ios/tv，用户干等到近乎放弃。加
+/// 每 client 超时后，某 client 挂住 [perClientTimeout] 即判失败、立刻试下一个兜底 client，
+/// 常见「androidVr 慢」场景从「等 40s」降到「等 ~perClientTimeout 就换」。取值需保证
+/// 三 client 累计（[perClientTimeout] × 3）不超外层 40s 兜底（13s × 3 = 39s）。超时按普通
+/// client 失败处理（记异常、试下一个），与 403/无流同路径。
 Future<yt.StreamManifest> _getManifestWithClientFallback(
   yt.YoutubeExplode client,
   yt.VideoId videoId,
-  List<yt.YoutubeApiClient> ytClients,
-) async {
+  List<yt.YoutubeApiClient> ytClients, {
+  Duration perClientTimeout = const Duration(seconds: 13),
+}) async {
   Object? lastError;
   for (final yt.YoutubeApiClient api in ytClients) {
     try {
@@ -379,10 +428,11 @@ Future<yt.StreamManifest> _getManifestWithClientFallback(
           await client.videos.streamsClient.getManifest(
         videoId,
         ytClients: <yt.YoutubeApiClient>[api],
-      );
+      ).timeout(perClientTimeout);
       if (manifest.streams.isNotEmpty) return manifest;
     } catch (e) {
-      // 单 client 失败（403 / 无流 / 限流）：记异常、试下一个兜底 client（非致命）。
+      // 单 client 失败（403 / 无流 / 限流 / 本 client 超时）：记异常、试下一个兜底
+      // client（非致命）。超时（[TimeoutException]）与其它失败同路径，快速切下一个。
       lastError = e;
     }
   }
@@ -564,6 +614,111 @@ String _pickPlaybackVideoUrl(yt.StreamManifest manifest) {
     );
   }
   return chosen.url.toString();
+}
+
+/// 纯函数（泛型，可单测）：把 video-only 候选**去重成每个高度一条**（编码最优：avc1>vp9>
+/// av01，同编码非 throttled 优先），按高度**降序**返回被选中的原始元素。供 YouTube 画质
+/// 选择器列档——同一分辨率 YouTube 常同时给 avc1/vp9/av01 多条，画质菜单只需一条/档。
+/// 注入 height/codec/throttled 访问器，核心只依赖三属性，免构造重量级 youtube_explode 对象。
+List<T> dedupeVideoStreamsByHeight<T>(
+  List<T> streams, {
+  required int Function(T stream) heightOf,
+  required String Function(T stream) codecOf,
+  required bool Function(T stream) throttledOf,
+}) {
+  final Map<int, T> best = <int, T>{};
+  for (final T s in streams) {
+    final int h = heightOf(s);
+    final T? cur = best[h];
+    if (cur == null) {
+      best[h] = s;
+      continue;
+    }
+    final int byCodec = youtubeVideoCodecPriority(codecOf(s))
+        .compareTo(youtubeVideoCodecPriority(codecOf(cur)));
+    if (byCodec < 0) {
+      best[h] = s; // 更优编码。
+    } else if (byCodec == 0 && !throttledOf(s) && throttledOf(cur)) {
+      best[h] = s; // 同编码：非 throttled 胜出。
+    }
+  }
+  final List<int> heights = best.keys.toList()
+    ..sort((int a, int b) => b.compareTo(a)); // 高→低。
+  return <T>[for (final int h in heights) best[h] as T];
+}
+
+/// IO：为播放页画质选择器**懒解析** YouTube 各档 video-only 流（用户报「YouTube 没法调
+/// 画质」）。用户点开画质菜单时才调（一次 getManifest），返回 [YoutubeVariantSet]：各档
+/// video-only 流（去重按高度降序）+ 共用 audio-only 流（切档保持同一音轨）+ 防盗链 header
+/// + 「自动/默认最佳」档下标（与 [resolveYoutubeSource] 初始选择同逻辑）。无分离流（仅
+/// muxed）返回空集（播放页据此不显 YouTube 画质档，仍可播）。client 兜底与超时同
+/// [resolveYoutubeSource]（androidVr→ios→tv、每 client 有超时）。
+Future<YoutubeVariantSet> resolveYoutubeVideoVariants(
+  String url, {
+  Duration timeout = const Duration(seconds: 20),
+  List<yt.YoutubeApiClient>? ytClients,
+}) async {
+  final yt.YoutubeExplode client = yt.YoutubeExplode();
+  try {
+    return await _resolveYoutubeVideoVariantsInner(
+      client,
+      url,
+      ytClients ?? kYoutubeManifestClientFallback,
+    ).timeout(timeout);
+  } finally {
+    client.close();
+  }
+}
+
+Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
+  yt.YoutubeExplode client,
+  String url,
+  List<yt.YoutubeApiClient> ytClients,
+) async {
+  final yt.VideoId videoId = yt.VideoId(url);
+  final yt.StreamManifest manifest =
+      await _getManifestWithClientFallback(client, videoId, ytClients);
+  // 无分离流（仅 muxed ≤360p）：无多档可选，返回空集（播放页回退无 YouTube 画质菜单）。
+  if (manifest.videoOnly.isEmpty || manifest.audioOnly.isEmpty) {
+    return const YoutubeVariantSet(
+      variants: <YoutubeVideoVariant>[],
+      audioStreamUrl: null,
+      defaultIndex: -1,
+    );
+  }
+  final List<yt.VideoOnlyStreamInfo> deduped =
+      dedupeVideoStreamsByHeight<yt.VideoOnlyStreamInfo>(
+    manifest.videoOnly.toList(),
+    heightOf: (yt.VideoOnlyStreamInfo s) => s.videoResolution.height,
+    codecOf: (yt.VideoOnlyStreamInfo s) => s.videoCodec,
+    throttledOf: (yt.VideoOnlyStreamInfo s) => s.isThrottled,
+  );
+  final List<YoutubeVideoVariant> variants = <YoutubeVideoVariant>[
+    for (final yt.VideoOnlyStreamInfo s in deduped)
+      YoutubeVideoVariant(
+        height: s.videoResolution.height,
+        label: '${s.videoResolution.height}p',
+        videoUrl: s.url.toString(),
+        codec: s.videoCodec,
+      ),
+  ];
+  // 「自动」档 = 初始播放选择（[pickPlaybackVideoStream]：avc1 优先、≤1080p 最高清），
+  // 按高度回找它在去重表里的下标，供画质菜单「自动」项与初始高亮对齐。
+  final yt.VideoOnlyStreamInfo chosen =
+      pickPlaybackVideoStream<yt.VideoOnlyStreamInfo>(
+    manifest.videoOnly.toList(),
+    heightOf: (yt.VideoOnlyStreamInfo s) => s.videoResolution.height,
+    codecOf: (yt.VideoOnlyStreamInfo s) => s.videoCodec,
+    throttledOf: (yt.VideoOnlyStreamInfo s) => s.isThrottled,
+  );
+  int defaultIndex = variants.indexWhere(
+      (YoutubeVideoVariant v) => v.height == chosen.videoResolution.height);
+  if (defaultIndex < 0) defaultIndex = 0;
+  return YoutubeVariantSet(
+    variants: variants,
+    audioStreamUrl: manifest.audioOnly.withHighestBitrate().url.toString(),
+    defaultIndex: defaultIndex,
+  );
 }
 
 /// 选制卡 GIF/帧的低分辨率视频源：优先 muxed（360p，抽 GIF 实测 ~1.4s），否则最低码率

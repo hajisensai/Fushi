@@ -33,8 +33,8 @@ void main() {
       final String src = file.readAsStringSync();
       expect(src.contains("handler == 'windowMoved'"), isTrue,
           reason: 'overlay 未接 windowMoved 回报——拖完不落库');
-      expect(src.contains('resolveOverlayResizeFromWindow'), isTrue,
-          reason: '倒推未走同源纯函数');
+      expect(src.contains('resolveOverlayResizeFromDelta'), isTrue,
+          reason: '倒推未走同源纯函数（增量折算）');
       expect(src.contains('setOverlayLookupIndependentSize'), isTrue,
           reason: '拖动未解锁 overlay 独立尺寸');
       expect(src.contains('setOverlayLookupMaxWidth'), isTrue);

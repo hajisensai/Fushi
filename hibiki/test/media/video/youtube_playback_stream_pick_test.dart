@@ -20,6 +20,15 @@ _FakeStream _pick(List<_FakeStream> streams, {int maxHeight = 1080}) {
   );
 }
 
+List<_FakeStream> _dedupe(List<_FakeStream> streams) {
+  return dedupeVideoStreamsByHeight<_FakeStream>(
+    streams,
+    heightOf: (_FakeStream s) => s.height,
+    codecOf: (_FakeStream s) => s.codec,
+    throttledOf: (_FakeStream s) => s.throttled,
+  );
+}
+
 void main() {
   group('youtubeVideoCodecPriority', () {
     test('avc1/H.264 最高优先(0)，前缀匹配', () {
@@ -114,6 +123,50 @@ void main() {
 
     test('空列表抛 StateError', () {
       expect(() => _pick(<_FakeStream>[]), throwsStateError);
+    });
+  });
+
+  group('dedupeVideoStreamsByHeight (YouTube 画质档去重)', () {
+    test('每个高度只留一条，按高度降序', () {
+      final List<_FakeStream> streams = <_FakeStream>[
+        const _FakeStream(720, 'avc1.640028'),
+        const _FakeStream(1080, 'avc1.640028'),
+        const _FakeStream(360, 'avc1.640028'),
+        const _FakeStream(480, 'avc1.640028'),
+      ];
+      final List<_FakeStream> out = _dedupe(streams);
+      expect(out.map((_FakeStream s) => s.height).toList(),
+          <int>[1080, 720, 480, 360]);
+    });
+
+    test('同高度多编码 → 每档取编码最优（avc1 胜 vp9/av01）', () {
+      final List<_FakeStream> streams = <_FakeStream>[
+        const _FakeStream(1080, 'av01.0.08M.08'),
+        const _FakeStream(1080, 'vp9'),
+        const _FakeStream(1080, 'avc1.640028'),
+        const _FakeStream(720, 'vp9'),
+        const _FakeStream(720, 'av01.0.08M.08'),
+      ];
+      final List<_FakeStream> out = _dedupe(streams);
+      expect(out.length, 2);
+      expect(out[0].height, 1080);
+      expect(out[0].codec, 'avc1.640028');
+      expect(out[1].height, 720);
+      expect(out[1].codec, 'vp9'); // 无 avc1 时 vp9 胜 av01
+    });
+
+    test('同高度同编码 → 非 throttled 胜出', () {
+      final List<_FakeStream> streams = <_FakeStream>[
+        const _FakeStream(1080, 'avc1.640028', throttled: true),
+        const _FakeStream(1080, 'avc1.640028', throttled: false),
+      ];
+      final List<_FakeStream> out = _dedupe(streams);
+      expect(out.length, 1);
+      expect(out.single.throttled, isFalse);
+    });
+
+    test('空列表 → 空结果', () {
+      expect(_dedupe(<_FakeStream>[]), isEmpty);
     });
   });
 }

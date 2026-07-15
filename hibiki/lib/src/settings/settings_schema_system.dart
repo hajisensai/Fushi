@@ -248,14 +248,23 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   // 在后台校验，结果以既有 onUpToDate / 对话框收口。无缓存（首检/畸形/换通道）才退回
   // 原「正在检查…」提示。
   final String currentVersion = settingsContext.appModel.packageInfo.version;
+  final String currentBuildNumber =
+      settingsContext.appModel.packageInfo.buildNumber;
   final UpdateChannel channel = _channelFromSettings(settingsContext);
+  // BUG-457：缓存乐观比较也用还原后的版本，否则 beta/debug 通道装无后缀 `X.Y.Z` release
+  // 包时，缓存路径同样把同基预发布误判「已是最新」（与网络路径 scheduleCheck 内部还原一致）。
+  final String comparableVersion = effectiveCurrentVersionForUpdateChannel(
+    version: currentVersion,
+    buildNumber: currentBuildNumber,
+    channel: channel,
+  );
   final UpdateCheckCacheEntry? cached = cachedEntryForChannel(
     settingsContext.appModel.updateCheckCache,
     channel,
   );
   if (cached != null) {
-    final bool newer =
-        updateTagIsNewerThanCurrent(cached.latestTag, currentVersion, channel);
+    final bool newer = updateTagIsNewerThanCurrent(
+        cached.latestTag, comparableVersion, channel);
     HibikiToast.show(
       msg: newer
           ? t.update_cached_newer(version: cached.latestTag)
@@ -268,6 +277,7 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
     await UpdateChecker.scheduleCheck(
       settingsContext.context,
       currentVersion,
+      currentBuildNumber: currentBuildNumber,
       neverRemind: false,
       autoInstall: false,
       betaChannel: settingsContext.appModel.updateBetaChannel,

@@ -74,7 +74,17 @@ public class AnkiChannelHandler {
                         } else if (fields == null || fields.isEmpty()) {
                             result.error("INVALID_FIELDS",
                                 "fields is null or empty", null);
-                        } else {
+                        } else if (requirePermission(result)) {
+                            // BUG-824: addNote was the ONLY provider-touching case
+                            // missing the requirePermission guard. Without it an
+                            // ungranted permission let addNote() run straight into
+                            // AddContentApi's internal `/decks` query, which throws a
+                            // raw SecurityException ("Permission not granted for:
+                            // CardContentProvider.query /decks") that escaped the
+                            // IllegalStateException catch below and surfaced as an
+                            // unreadable toast with no way to grant. Guarding here
+                            // returns the clean PERMISSION_DENIED code AND pops the
+                            // system permission dialog, exactly like getDecks et al.
                             try {
                                 // TODO-270 B：返回新建 note 的真实 id（Long），供
                                 // Dart 端 MineOutcome.success(noteId:) 携带，弹窗据此
@@ -268,6 +278,13 @@ public class AnkiChannelHandler {
                         if (filename == null || preferredName == null) {
                             result.error("MISSING_ARG",
                                 "filename and preferredName are required", null);
+                            break;
+                        }
+                        // BUG-824: inserting into AnkiDroid's media provider also
+                        // needs READ_WRITE_DATABASE. Guard it like addNote so an
+                        // ungranted permission returns PERMISSION_DENIED (+ pops the
+                        // system dialog) instead of throwing a raw SecurityException.
+                        if (!requirePermission(result)) {
                             break;
                         }
                         File file = new File(filename);

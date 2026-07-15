@@ -241,4 +241,87 @@ void main() {
         <String>['k1', 'k3'],
         reason: '注入的移出回调应真把 k2 从合集移除（removeFromCollection）');
   });
+
+  // ── 「删除合集」连同成员本体一起删（复选框，默认不删=只解链老行为）───────────
+  Widget wrapPageWithDelete(
+    MediaCollectionRow col,
+    HibikiDatabase db, {
+    Future<void> Function(List<MediaCollectionItemRow> members)?
+        onDeleteMembersMedia,
+  }) =>
+      TranslationProvider(
+        child: MaterialApp(
+          home: MediaCollectionGridDetailPage(
+            database: db,
+            collection: col,
+            memberCardBuilder: cardBuilder,
+            onChanged: () {},
+            onDeleteMembersMedia: onDeleteMembersMedia,
+          ),
+        ),
+      );
+
+  testWidgets('删除合集：未注入删本体回调 → 弹窗无复选框，仅解散容器（老行为零变化）',
+      (WidgetTester tester) async {
+    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    await tester.pumpWidget(wrapPage(s.col, s.db)); // 不传 onDeleteMembersMedia
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip(t.delete_collection));
+    await tester.pumpAndSettle();
+    expect(find.text(t.delete_collection_also_books), findsNothing,
+        reason: '无删本体回调时不应出现「同时删除其中的书」复选框');
+
+    await tester.tap(find.text(t.delete_collection).last); // 确认删除
+    await tester.pumpAndSettle();
+    expect(await s.db.getMediaCollectionById(s.col.id), isNull,
+        reason: '删合集仍只解散容器（deleteMediaCollection）');
+  });
+
+  testWidgets('删除合集：复选框默认不勾 → 回调不触发，只解散容器', (WidgetTester tester) async {
+    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    final List<MediaCollectionItemRow> passed = <MediaCollectionItemRow>[];
+    await tester.pumpWidget(wrapPageWithDelete(
+      s.col,
+      s.db,
+      onDeleteMembersMedia: (List<MediaCollectionItemRow> members) async =>
+          passed.addAll(members),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip(t.delete_collection));
+    await tester.pumpAndSettle();
+    expect(find.text(t.delete_collection_also_books), findsOneWidget,
+        reason: '注入删本体回调后应出现复选框');
+
+    await tester.tap(find.text(t.delete_collection).last); // 不勾直接删
+    await tester.pumpAndSettle();
+    expect(passed, isEmpty, reason: '未勾选复选框不应删成员本体');
+    expect(await s.db.getMediaCollectionById(s.col.id), isNull);
+  });
+
+  testWidgets('删除合集：勾选「同时删除其中的书」→ 回调收到全部成员再解散容器', (WidgetTester tester) async {
+    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    final List<String> passed = <String>[];
+    await tester.pumpWidget(wrapPageWithDelete(
+      s.col,
+      s.db,
+      onDeleteMembersMedia: (List<MediaCollectionItemRow> members) async =>
+          passed.addAll(members.map(
+              (MediaCollectionItemRow r) => '${r.mediaType}|${r.entryKey}')),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip(t.delete_collection));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.delete_collection_also_books)); // 勾选
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.delete_collection).last); // 确认删除
+    await tester.pumpAndSettle();
+
+    expect(passed, <String>['epub|k1', 'epub|k2', 'epub|k3'],
+        reason: '勾选后应把全部成员按 (mediaType,entryKey) 传给删本体回调');
+    expect(await s.db.getMediaCollectionById(s.col.id), isNull,
+        reason: '删成员本体后仍解散容器');
+  });
 }

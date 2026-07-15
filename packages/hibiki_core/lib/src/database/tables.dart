@@ -438,6 +438,24 @@ class VideoBookTagMappings extends Table {
       ];
 }
 
+// ── collection_tag_mappings ───────────────────────────────────────
+// 合集 ↔ 标签 多对多映射。标签定义复用共享的 [BookTags]，与 EPUB
+// （[BookTagMappings]）、SRT（[SrtBookTagMappings]）、视频（[VideoBookTagMappings]）
+// 共用同一标签池。合集删除 / 标签删除经外键 cascade 自动清理本表。
+@DataClassName('CollectionTagMappingRow')
+class CollectionTagMappings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get collectionId => integer()
+      .references(MediaCollections, #id, onDelete: KeyAction.cascade)();
+  IntColumn get tagId =>
+      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {collectionId, tagId},
+      ];
+}
+
 // ── favorite_words ──────────────────────────────────────────────────
 /// 查词弹窗「收藏」的词条（书内阅读与视频共用同一套，按 [sourceType] 区分）。
 /// 存完整词条（expression/reading/glossary）以支持「再次打开显示已收藏 ✓」的
@@ -872,4 +890,32 @@ class BookCustomCss extends Table {
 
   @override
   Set<Column> get primaryKey => {bookKey, relativePath};
+}
+
+// ── sync_deletion_tombstones ────────────────────────────────────────
+// 显式确认式删除传播的墓碑：本地删除一个资产（书/有声书/视频/本地音频）时记一条
+// (mediaType, itemKey, deletedAt)。同步时把墓碑发布到远端（云 __tombstones__ 标记 /
+// 互联 host DELETE），并让 compare 对话框据此双向弹确认（「远端已删 X，本地也删？」/
+// 「你删了 X，远端也删？」）。绝不静默自动删（与 union-only 的安全取舍一致，见
+// sync_orchestrator「Deletes are never propagated」）。重新导入/新增同 (mediaType,
+// itemKey) 清除其墓碑（防「删了又加、墓碑还在」的误删）。范式仿 [BookTombstones]。
+// 与 backup 专用的 [BookTombstones]（只 bookKey+deletedAt、供合并导入防复活）区分：本表
+// 是 sync 通道专用、跨资产统一、带 remotePublishedAt 发布状态。
+@DataClassName('SyncDeletionTombstoneRow')
+class SyncDeletionTombstones extends Table {
+  /// 资产种类：'book' | 'audiobook' | 'video' | 'localaudio'。
+  TextColumn get mediaType => text()();
+
+  /// 资产跨设备稳定身份：book=bookKey / audiobook=bookKey / video=bookUid /
+  /// localaudio=displayName。
+  TextColumn get itemKey => text()();
+
+  /// 本地删除毫秒戳。
+  IntColumn get deletedAt => integer()();
+
+  /// 已发布到远端的毫秒戳（0 = 尚未发布；发布后置为发布时刻，避免每轮重发）。
+  IntColumn get remotePublishedAt => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {mediaType, itemKey};
 }

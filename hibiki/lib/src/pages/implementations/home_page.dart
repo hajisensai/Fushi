@@ -242,6 +242,9 @@ class _HomePageState extends BasePageState<HomePage>
         UpdateChecker.scheduleCheck(
           context,
           appVersion,
+          // BUG-457：beta/debug 通道用 buildNumber 还原本机已安装 release sequence，
+          // 避免无后缀 `X.Y.Z` release 包永判「已是最新」。
+          currentBuildNumber: appModel.packageInfo.buildNumber,
           neverRemind: appModel.updateNeverRemind,
           autoInstall: appModel.updateAutoInstall,
           betaChannel: appModel.updateBetaChannel,

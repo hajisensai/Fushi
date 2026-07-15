@@ -180,7 +180,7 @@ void main() {
       expect(ep1.collection!.sortIndex, 0);
     });
 
-    test('BUG-811: listVideos 对存在的视频文件不做内嵌字幕 ffmpeg 探测（延迟到播放）', () async {
+    test('BUG-814: listVideos 对存在的视频文件不做内嵌字幕 ffmpeg 探测（延迟到播放）', () async {
       final HibikiDatabase db = memDb();
       final Directory tmp =
           Directory.systemTemp.createTempSync('hbk_video_probe');
@@ -200,20 +200,20 @@ void main() {
           videos.firstWhere((RemoteVideoInfo x) => x.id == 'video/probe');
       // 列表端点是纯 DB/stat 读：内嵌轨探测延迟到 /streamurl，列表恒空。
       expect(v.embeddedSubtitleTracks, isEmpty,
-          reason: 'BUG-811：列表不再枚举内嵌字幕轨（避免逐视频 ffmpeg 超时）');
+          reason: 'BUG-814：列表不再枚举内嵌字幕轨（避免逐视频 ffmpeg 超时）');
       // sizeBytes 仍来自廉价 stat（证明文件确被识别为存在、走了 existsSync 分支）。
       expect(v.sizeBytes, 4);
       // 无外挂 sidecar → hasSubtitle 为 false（不再靠内嵌轨点亮）。
       expect(v.hasSubtitle, isFalse);
     });
 
-    test('BUG-811 守卫: host 库服务不得在列表路径引用 ffmpeg 内嵌探测', () {
+    test('BUG-814 守卫: host 库服务不得在列表路径引用 ffmpeg 内嵌探测', () {
       final String src =
           File('lib/src/sync/app_model_library_host_service.dart')
               .readAsStringSync();
       expect(src.contains('listEmbeddedSubtitleTracks'), isFalse,
           reason: 'listVideos 一旦重新引入内嵌字幕 ffmpeg 探测，大库互联视频列表会再次'
-              '超过 client 15s 超时变空（BUG-811 回归）');
+              '超过 client 15s 超时变空（BUG-814 回归）');
     });
   });
 

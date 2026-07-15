@@ -21,6 +21,18 @@ int clipboardTextWindowBgColor(double opacity) {
   return alpha << 24;
 }
 
+/// 「一键透明」按钮的下一档背景不透明度（Luna #7 语义，纯函数便于单测）：当前有
+/// 底色（>0）→ 切到 0（纯透明）；当前已是 0 → 恢复上一档非 0 值 [lastNonZero]，
+/// 从没设过则用 [fallback]。
+double toggledTextWindowBgOpacity({
+  required double current,
+  required double lastNonZero,
+  double fallback = 0.35,
+}) {
+  if (current > 0.0) return 0.0;
+  return lastNonZero > 0.0 ? lastNonZero : fallback;
+}
+
 class ClipboardTextOverlayController {
   ClipboardTextOverlayController._();
   static final ClipboardTextOverlayController instance =
@@ -29,17 +41,26 @@ class ClipboardTextOverlayController {
   /// native 后端仅 Windows（复用 FloatingLyricWindow layered 窗）。
   static bool get isSupported => Platform.isWindows;
 
+  /// 一键透明按钮从「透明」切回时用的默认背景不透明度（用户从没设过非 0 值时）。
+  static const double _defaultBackdropOpacity = 0.35;
+
   AppModel? _appModel;
   bool _started = false;
   bool _visible = false;
 
-  /// main.dart 桌面块启动一次（幂等）：接线 native 点字回调。窗口到首个
+  /// 一键透明按钮记住的上一档非 0 背景不透明度，供从 0 切回时恢复。
+  double _lastNonZeroBgOpacity = _defaultBackdropOpacity;
+
+  /// main.dart 桌面块启动一次（幂等）：接线 native 点字 + 一键透明回调。窗口到首个
   /// textWindow 分区请求才真正显示。
   Future<void> start({required AppModel appModel}) async {
     if (!isSupported || _started) return;
     _started = true;
     _appModel = appModel;
-    ClipboardTextOverlayChannel.setEventHandlers(onLookupText: _onLookup);
+    ClipboardTextOverlayChannel.setEventHandlers(
+      onLookupText: _onLookup,
+      onToggleTransparency: _onToggleTransparency,
+    );
   }
 
   /// 剪贴板请求入口（dispatcher 的 textWindow 分区）：显示透明窗并推入文本。
@@ -63,6 +84,23 @@ class ClipboardTextOverlayController {
       bgColor: _bgColor(),
       textColor: _textColor(),
     );
+  }
+
+  /// 顶栏「一键透明」按钮（Luna #7 语义）：在「当前背景不透明度」与「0（纯透明）」
+  /// 间切换，记住上一档非 0 值供切回；切到 0 之外时更新记忆。写穿 pref 让设置滑杆
+  /// 同步，并即时重刷窗口。
+  Future<void> _onToggleTransparency() async {
+    final AppModel? model = _appModel;
+    if (model == null) return;
+    final double current = model.clipboardTextWindowBgOpacity;
+    if (current > 0.0) _lastNonZeroBgOpacity = current;
+    final double next = toggledTextWindowBgOpacity(
+      current: current,
+      lastNonZero: _lastNonZeroBgOpacity,
+      fallback: _defaultBackdropOpacity,
+    );
+    await model.setClipboardTextWindowBgOpacity(next);
+    await refreshStyle();
   }
 
   /// 切走去向 / 关剪贴板监听时收起窗口（不留孤儿透明窗）。

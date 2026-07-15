@@ -1,0 +1,6 @@
+## BUG-808 · 有声书导出片段竖排逐句高亮撑大盒子导致整段文字重新排版抖动
+- **报告**：2026-07-14（用户：导出的有声书画面会因为高亮动）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/audiobook/audiobook_clip_webview_render.dart:92-96`（改前）——竖排 WebView 渲染模板里只有 `.clip-cue.current` 加 `padding: 0.08em 0.12em`，基础 `.clip-cue` 无 padding。所有 cue 在同一个 `#clip { writing-mode: vertical-rl }` 容器里；逐帧 `__clipSetActive(i)` 切 `.current` 时该句 inline 盒子被 padding 撑大，直接挤动 vertical-rl 流里后续所有 cue 的位置 → 列宽/段落逐帧漂移（用户所见「整段文字重新排版」）。`__clipFit` 只在加载后、高亮之前跑一次，逐帧撑大后不再 fit，故抖动不被收敛。对照：Flutter 横排路径 `audiobook_clip_text_render.dart:532-550` 高亮/非高亮 padding 恒等，只多背景 decoration，故不 reflow——竖排 CSS 漏了这层对称处理。
+- **[x] ① 已修复** — `audiobook_clip_webview_render.dart`：基础 `.clip-cue` 常驻同量 `padding: 0.08em 0.12em` + `border-radius`（`background-color: transparent`），`.clip-cue.current` 只换 `background-color: $HIGHLIGHT`。高亮前后盒子占位尺寸恒等，逐帧只改外观不改布局，reflow 根除（与 Flutter 横排路径同「高亮只改外观」原则）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/audiobook_clip_vertical_webview_guard_test.dart`：`BUG-808: base .clip-cue carries padding, .current only swaps bg (no reflow)`——正则提取生成 HTML 里 `.clip-cue{...}` 与 `.clip-cue.current{...}` 两块，断言基础规则含 `padding`、高亮规则不含 `padding` 只含 `background-color`。
+- **备注**：与 BUG-809（同一导出管线的编码器/容器迁移）同批修复。真机复测：竖排有声书选中多句导出，逐帧高亮跟随时整段文字应稳定不漂移。

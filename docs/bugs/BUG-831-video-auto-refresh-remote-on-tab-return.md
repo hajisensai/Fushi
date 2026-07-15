@@ -1,4 +1,4 @@
-## BUG-818 · 切回视频 tab 不自动拉远端视频(远端视频要手动下拉刷新才出来)
+## BUG-831 · 切回视频 tab 不自动拉远端视频(远端视频要手动下拉刷新才出来)
 - **报告**：2026-07-14（用户：视频加载也有问题）
 - **真实性**：✅ 真 bug/UX。根因：与书架 BUG-816 同病。顶层 tab IndexedStack 保活，`home_video_page.dart` `initState`(179)只 `_remoteFuture = _loadRemoteVideos()` 拉一次；切走再切回不重跑（代码注释 :227-233/:1697 自认「保活后切回不隐式重拉，靠手动下拉」）。别的设备新上传的互联视频、或首载那一刻 host 未上线/超时判空后，视频 tab 就一直空要手动下拉。BUG-811 只拔了 host 端 ffmpeg 探测（真凶），此加载体验缺口未补。
 - **[x] ① 已实现（待真机验证）** — `home_video_page.dart` initState 监听全局 `homeShellTabNotifier`，值=`HomeTab.video` 时 `_onShellTabActivated` 重拉 `_remoteFuture = _loadRemoteVideos()`，dispose 移除监听。配套加 `_lastRemoteState` 缓存：远端 FutureBuilder 重拉期间（waiting、data 暂 null）沿用上次成功态，避免远端占位卡闪空（对称本地 `_videosCache` 与书架 `_lastRemoteState`；失败态不覆盖缓存）。

@@ -480,4 +480,65 @@ void main() {
       expect(docked.width.isFinite && docked.height.isFinite, isTrue);
     });
   });
+
+  group('Phase B 拖拽尺寸冻结原点（anchorPopupTopLeft，2026-07-15）', () {
+    const Size screen = Size(1000, 800);
+    // 词靠右缘：横排贴词定位会把 left 推成 (screen - width - inset)，宽度一变大就左移。
+    const Rect selRight = Rect.fromLTWH(900, 400, 20, 20);
+
+    test('bug 复现：词靠右缘时 maxWidth 变大 → 贴词定位左上角左移', () {
+      final Rect small = calcPopupPosition(
+          selectionRect: selRight, screen: screen, maxWidth: 300);
+      final Rect big = calcPopupPosition(
+          selectionRect: selRight, screen: screen, maxWidth: 600);
+      expect(big.left, lessThan(small.left),
+          reason: '宽度变大时左上角左移——用户报「从右下拖却从左上动」的根源');
+    });
+
+    test('anchorPopupTopLeft 钉死左上角、保留 anchored 尺寸', () {
+      final Rect r = anchorPopupTopLeft(
+        anchored: const Rect.fromLTWH(400, 300, 500, 400),
+        topLeft: const Offset(120, 90),
+        screen: screen,
+        inset: 6,
+      );
+      expect(r.topLeft, const Offset(120, 90));
+      expect(r.width, 500);
+      expect(r.height, 400);
+    });
+
+    test('修复：冻结原点后宽度增大只往右长、左上不动', () {
+      const Offset frozen = Offset(600, 200); // 拖拽起始左上角
+      final Rect small = anchorPopupTopLeft(
+        anchored: calcPopupPosition(
+            selectionRect: selRight, screen: screen, maxWidth: 300),
+        topLeft: frozen,
+        screen: screen,
+        inset: 6,
+      );
+      final Rect big = anchorPopupTopLeft(
+        anchored: calcPopupPosition(
+            selectionRect: selRight, screen: screen, maxWidth: 600),
+        topLeft: frozen,
+        screen: screen,
+        inset: 6,
+      );
+      expect(small.left, big.left, reason: '左上角冻结不动');
+      expect(small.top, big.top);
+      expect(big.width, greaterThan(small.width), reason: '只往右下生长');
+    });
+
+    test('anchorPopupTopLeft 夹住右下不越出屏幕', () {
+      final Rect r = anchorPopupTopLeft(
+        anchored: const Rect.fromLTWH(0, 0, 900, 700),
+        topLeft: const Offset(700, 500),
+        screen: screen,
+        inset: 6,
+      );
+      expect(r.left, 700);
+      expect(r.top, 500);
+      expect(r.right, lessThanOrEqualTo(994.001));
+      expect(r.bottom, lessThanOrEqualTo(794.001));
+    });
+  });
 }

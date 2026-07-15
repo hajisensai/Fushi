@@ -39,11 +39,19 @@ class VideoSubtitleHitTester {
 /// TODO-916 症状④：字幕字符之间有 [Wrap] 间隙 + 描边层不计入命中盒，落在字缝/描边
 /// 外缘的点用「精确 [Rect.contains]」会全 miss、查不到词。两段判据消除 miss：
 /// 1. 先精确包含：命中第一个 `contains(point)` 的字符（旧行为，零容差时等价）。
-/// 2. 未命中则取**距点击点最近**的字符，且仅当该距离在合理阈值内才采纳——阈值取该候选
-///    字符的半个宽度（再夹一个最小值 [minTolerance]，防极窄字符阈值过小），保证只在字缝/
-///    描边一字之内兜底，不会跨到隔壁字符或远处误命中。
+/// 2. 未命中则取**距点击点最近**的字符，且仅当该点落在该字符的兜底容差区内才采纳。
 ///
-/// [Rect.zero]（无 RenderBox 的字符）跳过。无任何有效矩形或全部超阈值时返回 -1。
+/// 容差**方向感知**（BUG-825）：字缝在**水平**方向（同一行字符间的 [Wrap] 间隙），
+/// 描边只是四周薄薄一圈。故容差用椭圆而非各向同性圆——
+/// - 水平半轴 [minTolerance]/半字宽取大：跨字缝兜底（TODO-916/971，36px 字半字宽≈18px）；
+/// - 垂直半轴 [edgeTolerance] 只放描边级几像素：字身外上下只需覆盖描边外缘。
+///
+/// 旧实现用各向同性容差 `clamp(半字宽, 10px, ∞)`，把**水平**半字宽（≈18px）原样用到
+/// **垂直向下**，会向下溢出盖住紧贴字幕下方的视频进度条（seek bar）——用户 tap 进度条
+/// 顶部一条带时被顶层字幕识别器赢走竞技场，暂停视频 + 弹查词、seek 被吞（BUG-825）。
+/// 垂直方向本就不该放半字宽的裙边。
+///
+/// [Rect.zero]（无 RenderBox 的字符）跳过。无任何有效矩形或全部超容差时返回 -1。
 @visibleForTesting
 int resolveSubtitleCharHit(
   List<Rect> charRects,
@@ -51,6 +59,9 @@ int resolveSubtitleCharHit(
   // TODO-971：手指比 6px 宽，旧 6.0 下手机字幕点词常落在字缝/描边外缘 miss。
   // 放宽到 10.0，字缝/描边一字之内更易兜底命中（仍夹半字宽，不跨到隔壁字）。
   double minTolerance = 10.0,
+  // BUG-825：垂直兜底半轴。字身外上下只需覆盖描边外缘（默认软阴影半径 3px + 手指余量），
+  // 远小于水平半字宽——避免向下溢出到紧贴字幕下方的进度条轨道。
+  double edgeTolerance = 6.0,
 }) {
   // 第一段：精确包含。
   for (int i = 0; i < charRects.length; i++) {
@@ -58,7 +69,7 @@ int resolveSubtitleCharHit(
     if (r == Rect.zero) continue;
     if (r.contains(point)) return i;
   }
-  // 第二段：最近字符兜底（在该字符半字宽 / [minTolerance] 容差内）。
+  // 第二段：最近字符兜底（在该字符的方向感知椭圆容差区内）。
   int bestIndex = -1;
   double bestDistance = double.infinity;
   for (int i = 0; i < charRects.length; i++) {
@@ -66,11 +77,15 @@ int resolveSubtitleCharHit(
     if (r == Rect.zero) continue;
     final double dx = (point.dx.clamp(r.left, r.right)) - point.dx;
     final double dy = (point.dy.clamp(r.top, r.bottom)) - point.dy;
+    // 用欧氏距离在多个候选里选**最近**的（水平相邻字符的取舍与旧行为一致）。
     final double distance = (dx * dx + dy * dy);
     if (distance >= bestDistance) continue;
-    final double tolerance =
+    // 椭圆判据：水平半轴放宽跨字缝、垂直半轴收紧只覆盖描边（BUG-825）。
+    final double toleranceX =
         (r.width / 2).clamp(minTolerance, double.infinity).toDouble();
-    if (distance <= tolerance * tolerance) {
+    final double nx = dx / toleranceX;
+    final double ny = dy / edgeTolerance;
+    if (nx * nx + ny * ny <= 1.0) {
       bestDistance = distance;
       bestIndex = i;
     }
@@ -317,6 +332,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// [_scaledMarginX] 把 ASS `MarginL`/`MarginR` 按 显示区宽 / PlayResX 缩放成水平边距。
   double? _lastLayoutWidth;
 
+  /// 最近一次 build 的 fit:contain **视频内容矩形**高/宽（BUG-820，与 \pos 定位的
+  /// [mapPosFractionToContainer] 同一几何）。ASS 字号/描边/阴影/边距的缩放基准优先用
+  /// 它（mpv/libass 锚定视频帧显示尺寸）；null（首帧未解出分辨率）回退容器宽高。
+  double? _lastVideoContentHeight;
+  double? _lastVideoContentWidth;
+
   /// TODO-916 症状④-A（down-snap）：onTapDown 时刻 [_hitEntryIndexAt] 命中的**登记表下标**
   /// （非 grapheme——二维登记后同一 grapheme 下标可能属不同 cue，故锁扁平 entry 下标），
   /// onTapUp 用它经 [_charHitByEntryIndex] 查词，使命中锁定按下时刻（字幕盒尚未被控制条避让
@@ -554,6 +575,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 本 builder 早于层内字符 Builder 回调求值，故同帧写入即可被读到。
         _lastLayoutHeight = container.height;
         _lastLayoutWidth = container.width;
+        // BUG-820：字号/描边/边距的缩放基准是 fit:contain 后**视频内容矩形**（与 \pos
+        // 定位的 [mapPosFractionToContainer] 同一几何），不是容器——窗口比≠视频比
+        // （letterbox/pillarbox）时容器高大于视频显示高，按容器缩放整体偏大、与 mpv
+        // 不齐。首帧未解出（分辨率未知）为 null，_assFontScale 回退容器（历史行为）。
+        final int? videoW = widget.controller.videoWidth;
+        final int? videoH = widget.controller.videoHeight;
+        final Size? videoContent = (videoW != null && videoH != null)
+            ? fitVideoContentSize(videoW, videoH, container)
+            : null;
+        _lastVideoContentHeight = videoContent?.height;
+        _lastVideoContentWidth = videoContent?.width;
 
         // 按 \pos / \an / MarginV 分组：主、副字幕都按各自位置分组（TODO-1341 后续）——同位置
         // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
@@ -562,26 +594,35 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         final List<(String, List<AudioCue>)> groups =
             _groupMainCuesByPosition(cues);
 
-        final List<Widget> positioned = <Widget>[
+        final List<(String, Widget)> positioned = <(String, Widget)>[
           for (final (String key, List<AudioCue> group) in groups)
-            _positionCueGroup(
-              context,
-              // 槽位状态键带主/副层前缀：两层各自分组，同形键不得跨层串槽位状态
-              // （TODO-1372）。
+            (
               '${isSecondary ? 's' : 'm'}|$key',
-              group,
-              isSecondary: isSecondary,
-              blurred: blurred,
-              container: container,
+              _positionCueGroup(
+                context,
+                // 槽位状态键带主/副层前缀：两层各自分组，同形键不得跨层串槽位状态
+                // （TODO-1372）。
+                '${isSecondary ? 's' : 'm'}|$key',
+                group,
+                isSecondary: isSecondary,
+                blurred: blurred,
+                container: container,
+              )
             ),
         ];
 
         // 单组：直接返回该定位盒（历史单字幕盒几何像素级不变）。多组：Stack 叠放，各组用
         // Positioned.fill 填满同一层边界、按各自锚点定位互不重叠（TODO-1341）。
-        if (positioned.length == 1) return positioned.single;
+        // Positioned 按**分组键**挂 key：分组顺序=活跃集发现顺序（cue 文件序号），歌词/
+        // 招牌与对白的序号在文件里交错时，每次换句两组在本列表里对调；无 key 时 Flutter
+        // 按 Stack 位置复用 element——底部组的 [AnimatedPadding] 被喂成顶部组的 padding
+        // 目标（b:75→0 / t:0→15），把两组的 padding 差值**动画播出来**＝每句对白入场从
+        // 底边滑升一次（用户报「字幕跳」，与 BUG-800 同类病但高一层：组间 element 复用）。
+        if (positioned.length == 1) return positioned.single.$2;
         return Stack(
           children: <Widget>[
-            for (final Widget w in positioned) Positioned.fill(child: w),
+            for (final (String key, Widget w) in positioned)
+              Positioned.fill(key: ValueKey<String>(key), child: w),
           ],
         );
       },
@@ -1042,6 +1083,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         );
       }
     }
+    // 缓存屏障（BUG-797 掉帧型闪烁）：\fad/\t/\move 动画期 [_fadeTicker] 每帧 setState、
+    // 播放位置更新也随 controller 通知整树重绘——没有屏障时，上方 Opacity/Transform 每
+    // tick 都把盒内**每字一个**的 ImageFiltered 高斯 saveLayer（双语长句 ~35 个/帧）
+    // 重录重栅格化一遍，掉帧表现为字幕闪/卡。RepaintBoundary 让盒内容成为独立缓存层：
+    // 动画只重合成缓存纹理。放在动画包装层之下、盒（含背景/收藏角标）之上；不改布局/
+    // 命中几何（[_charEntries] 是 build 期登记，与 paint 无关）。
+    box = RepaintBoundary(child: box);
+
     // \frz 旋转 / \fscx\fscy 缩放（+ \t 缩放动画）：绕字幕盒中心变换（TODO-1374）。招牌类
     // 字幕（\pos + \frz/缩放）据此复现 mpv/libass 摆位。Transform 不改布局尺寸（组内堆叠 /
     // 命中登记按未变换盒几何），旋转招牌本就不查词，可接受命中矩形不随旋转。
@@ -1251,8 +1300,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final double baseFontSize = cueFontPx != null
         ? _scaleAssFontSize(cueFontPx * assFontScale)
         : widget.fontSize;
-    final FontWeight baseWeight = (respect && (cue?.bold ?? false))
-        ? FontWeight.bold
+    // 字重：cueStyle 存在即以 ASS 为准——`Bold=0`（fansub 对白的常态）必须渲染
+    // **常规字重**，不得回退用户统一字重（视频页默认 700）。否则所有 ASS 字幕被
+    // 合成假粗体（Fontname 多半未安装 → 回退字体再被 fake-bold），笔画变粗变宽、
+    // 细描边被吞，观感与 mpv（同缺字体但按 Bold=0 常规渲染）差异巨大——用户报
+    // 「字号/描边没尊重 ASS」的真凶。无 cueStyle（非 ASS / 样式失配）才用统一字重。
+    final FontWeight baseWeight = (respect && cue != null)
+        ? ((cue.bold ?? false) ? FontWeight.bold : FontWeight.normal)
         : _fontWeight(widget.fontWeight);
 
     final TextStyle base = TextStyle(
@@ -1310,11 +1364,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   }
 
   /// ASS 字号 / 阴影深度是相对 [SubtitleMarkup.playResY] 的绝对像素（TODO-1246）；本因子把
-  /// 它们缩放到当前字幕显示区高度（[_lastLayoutHeight]，由 build 的 LayoutBuilder 记录）。
-  /// 缺 playResY / 未布局时返回 1.0（不缩放，历史行为）。
+  /// 它们缩放到 fit:contain 的**视频内容矩形**高（[_lastVideoContentHeight]，BUG-820——
+  /// mpv/libass 锚定视频帧显示尺寸；窗口比≠视频比时容器高偏大）；首帧未解出分辨率时
+  /// 回退容器高（[_lastLayoutHeight]，历史行为）。缺 playResY / 未布局时返回 1.0。
   double _assFontScale(SubtitleMarkup? markup) {
     final double? playResY = markup?.playResY;
-    final double? displayH = _lastLayoutHeight;
+    final double? displayH = _lastVideoContentHeight ?? _lastLayoutHeight;
     if (playResY == null ||
         playResY <= 0 ||
         displayH == null ||
@@ -1349,7 +1404,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   double? _scaledMarginX(SubtitleMarkup? markup, double? margin) {
     if (margin == null || margin <= 0) return null;
     final double? playResX = markup?.playResX;
-    final double? w = _lastLayoutWidth;
+    // BUG-820：与 [_assFontScale] 同源——基准优先视频内容矩形宽，回退容器宽。
+    final double? w = _lastVideoContentWidth ?? _lastLayoutWidth;
     final double scale =
         (playResX != null && playResX > 0 && w != null && w > 0)
             ? w / playResX

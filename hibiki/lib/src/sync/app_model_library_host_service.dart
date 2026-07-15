@@ -870,7 +870,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
           hasSubtitle = true;
           subtitleFileName = p.basename(sub);
         }
-        // BUG-811：列表端点**不做**内嵌字幕轨 ffmpeg 探测。旧实现在此逐视频串行
+        // BUG-814：列表端点**不做**内嵌字幕轨 ffmpeg 探测。旧实现在此逐视频串行
         // spawn `ffmpeg -i`（每项超时基线 60s、大文件到 1200s、无缓存、每次 GET 全量
         // 重跑），大库（如 511 个视频）轻易超过 client 的 15s listTimeout → 远端视频
         // 判空 → 手机整页空。内嵌轨是**播放时**才需要的信息，已由 `/streamurl` 端点

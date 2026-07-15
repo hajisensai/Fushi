@@ -29,15 +29,36 @@ void main() {
   });
 
   test('描边外缘垂直方向小幅 miss：在容差内兜底', () {
-    // 字符 0 顶 y=0，点 y=-3（描边上缘外 3px，水平在字符内 x=5）→ 容差内命中 0。
+    // 字符 0 顶 y=0，点 y=-3（描边上缘外 3px，水平在字符内 x=5）→ 垂直容差内命中 0。
     expect(resolveSubtitleCharHit(row(), const Offset(5, -3)), 0);
+    // 字符 0 底 y=20，点 y=23（描边下缘外 3px）→ 垂直容差内命中 0。
+    expect(resolveSubtitleCharHit(row(), const Offset(5, 23)), 0);
   });
 
   test('超出容差：返回 -1（不误命中远处字符）', () {
     // x=50 远在所有字符右侧 > 半字宽 → miss。
     expect(resolveSubtitleCharHit(row(), const Offset(50, 10)), -1);
-    // y=40 远在下方 > 容差（min 6px）→ miss。
+    // y=40 远在下方 > 垂直容差 → miss。
     expect(resolveSubtitleCharHit(row(), const Offset(5, 40)), -1);
+  });
+
+  test('BUG-825：垂直兜底容差是描边级，不放半字宽裙边溢出到进度条', () {
+    // 真实场景：36px 字幕（宽≈36），底行字符紧贴其下方的视频进度条轨道。旧各向同性容差
+    // = clamp(半字宽=18, 10, ∞) = 18px，向下也放 18px 裙边 → tap 落在字符正下方 12~15px
+    // （已在进度条轨道顶部一条带）被误判成点字符、暂停视频弹查词、seek 被吞。
+    final List<Rect> wide = <Rect>[const Rect.fromLTWH(0, 0, 36, 40)];
+    // 字符底 y=40。正下方 15px（y=55，水平在字符内 x=18）：旧 18px 裙边会误命中，
+    // 现垂直容差 6px → 必须 miss，让 tap 穿透到 media_kit 进度条 seek。
+    expect(
+      resolveSubtitleCharHit(wide, const Offset(18, 55)),
+      -1,
+      reason: 'BUG-825：字符正下方 15px 不得被误判命中（否则点进度条→暂停+查词）',
+    );
+    // 正下方 12px（y=52）同样 miss（仍在轨道带内）。
+    expect(resolveSubtitleCharHit(wide, const Offset(18, 52)), -1);
+    // 对照：水平方向半字宽（18px）兜底不受影响——字符右缘外 12px（x=48）仍命中，
+    // 证明只收紧了垂直、没伤水平字缝兜底（TODO-916/971）。
+    expect(resolveSubtitleCharHit(wide, const Offset(48, 20)), 0);
   });
 
   test('Rect.zero（无 RenderBox 的字符）被跳过', () {

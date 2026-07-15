@@ -4,6 +4,7 @@ import 'package:hibiki/src/media/collections/shelf_sort.dart'
     show naturalCompare;
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
+import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -22,6 +23,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     required this.memberCardBuilder,
     required this.onChanged,
     this.onOpenMember,
+    this.onDeleteMembersMedia,
     super.key,
   });
 
@@ -49,6 +51,13 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
 
   /// 改名 / 删除 / 移出成员后刷新书架。
   final VoidCallback onChanged;
+
+  /// 「删除合集」时可选连同成员本体一起删（默认不删，保持只解链语义）。调用方
+  /// （持 AppModel + [ReaderHibikiSource] / [VideoBookRepository]）注入：按每个成员
+  /// (mediaType, entryKey) 删底层书/有声书/视频本体 + 磁盘副本，并释放空间。
+  /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
+  final Future<void> Function(List<MediaCollectionItemRow> members)?
+      onDeleteMembersMedia;
 
   @override
   State<MediaCollectionGridDetailPage> createState() =>
@@ -161,28 +170,100 @@ class _MediaCollectionGridDetailPageState
     widget.onChanged();
   }
 
+  /// 编辑本合集的标签：复用共享标签池的 [TagPickerPage]（合集第 4 路，传
+  /// collectionId）；返回后自增刷新计数，触发 [_buildTagChips] 的 FutureBuilder
+  /// 重取，chip 行立即反映新增/移除。
+  int _tagsRefresh = 0;
+
+  Future<void> _editTags() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => TagPickerPage(collectionId: widget.collection.id),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _tagsRefresh++);
+  }
+
+  /// 详情页头部标签 chip 行：随 [_tagsRefresh] 强制重取本合集标签；空则不占位。
+  Widget _buildTagChips() {
+    return FutureBuilder<List<BookTagRow>>(
+      key: ValueKey<int>(_tagsRefresh),
+      future: widget.database.getTagsForCollection(widget.collection.id),
+      builder: (BuildContext context, AsyncSnapshot<List<BookTagRow>> snap) {
+        final List<BookTagRow> tags = snap.data ?? const <BookTagRow>[];
+        if (tags.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: <Widget>[
+              for (final BookTagRow tag in tags)
+                HibikiTagChip(
+                  label: tag.name,
+                  color: Color(tag.colorValue),
+                  tone: HibikiTagChipTone.surface,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _delete() async {
+    // 仅当调用方注入了删本体回调、且合集当前有成员时，才给用户「连同书一起删」
+    // 选项；否则退回纯解链删除（老行为，零变化）。
+    final bool canDeleteMembers =
+        widget.onDeleteMembersMedia != null && _rows.isNotEmpty;
+    bool alsoDeleteMembers = false;
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.delete_collection),
-        content: Text(t.delete_collection_confirm),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setLocal) => AlertDialog(
+          title: Text(t.delete_collection),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(t.delete_collection_confirm),
+              if (canDeleteMembers) ...<Widget>[
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  value: alsoDeleteMembers,
+                  onChanged: (bool? v) =>
+                      setLocal(() => alsoDeleteMembers = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(t.delete_collection_also_books),
+                ),
+              ],
+            ],
           ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.delete_collection),
-          ),
-        ],
+          actions: <Widget>[
+            adaptiveDialogAction(
+              context: ctx,
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: ctx,
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t.delete_collection),
+            ),
+          ],
+        ),
       ),
     );
     if (ok != true) return;
+    // 先删成员本体（书/有声书/视频 DB 行 + 磁盘副本），再解散容器。删书不动合集引用
+    // 行，故随后的 deleteMediaCollection 负责清掉残留引用 + 写合集级墓碑。
+    if (alsoDeleteMembers && widget.onDeleteMembersMedia != null) {
+      await widget
+          .onDeleteMembersMedia!(List<MediaCollectionItemRow>.of(_rows));
+    }
     await widget.database.deleteMediaCollection(widget.collection.id);
     if (!mounted) return;
     widget.onChanged();
@@ -333,6 +414,11 @@ class _MediaCollectionGridDetailPageState
             onPressed: _rename,
           ),
           IconButton(
+            tooltip: t.tag_label,
+            icon: const Icon(Icons.sell_outlined),
+            onPressed: _editTags,
+          ),
+          IconButton(
             tooltip: t.delete_collection,
             icon: const Icon(Icons.delete_outline),
             onPressed: _delete,
@@ -344,7 +430,13 @@ class _MediaCollectionGridDetailPageState
             ? const Center(child: CircularProgressIndicator())
             : members.isEmpty
                 ? Center(child: Text(t.collection_empty))
-                : _buildMemberGrid(members),
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _buildTagChips(),
+                      Expanded(child: _buildMemberGrid(members)),
+                    ],
+                  ),
       ),
     );
   }

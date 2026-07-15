@@ -68,4 +68,33 @@ void main() {
     expect(identical(tester.element(_fillText('い')), ch1Before), isTrue,
         reason: 'CH1 element must survive group growth');
   });
+
+  testWidgets(
+      'cue box content sits inside an overlay-owned RepaintBoundary '
+      '(fade/transform ticks must not re-rasterize per-char blur layers)',
+      (WidgetTester tester) async {
+    final VideoPlayerController c = VideoPlayerController();
+    addTearDown(c.dispose);
+    c.setCues(<AudioCue>[_cue('あ', start: 0, end: 8000)]);
+    c.debugUpdateCueForPosition(100);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+      ),
+    ));
+    await tester.pump();
+
+    // 盒内容（字符 Text）必须被 overlay 自己的 RepaintBoundary 包住——\fad/\t/\move
+    // 每帧动画在屏障之上，盒内每字 ImageFiltered saveLayer 不随 tick 重录（BUG-797
+    // 掉帧型闪烁的缓存屏障）。
+    final Finder boundaryInOverlay = find.descendant(
+      of: find.byType(VideoSubtitleOverlay),
+      matching: find.byType(RepaintBoundary),
+    );
+    expect(boundaryInOverlay, findsWidgets);
+    expect(
+      find.descendant(of: boundaryInOverlay, matching: _fillText('あ')),
+      findsOneWidget,
+    );
+  });
 }

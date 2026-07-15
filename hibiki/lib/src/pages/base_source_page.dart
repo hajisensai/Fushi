@@ -479,11 +479,23 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// / [popupMaxHeight] 用它临时覆盖偏好实时预览；null = 未拖，用已落库真值。松手清空。
   LookupSize? _popupResizePreview;
 
-  /// 拖把手起手：把当前偏好基准尺寸存入预览态（后续增量累积其上）。
+  /// Phase B 拖拽尺寸的**冻结原点**（2026-07-15）：拖右下把手时把弹窗左上角钉在拖拽起点，
+  /// 只往右下生长（否则贴词定位在词靠右时会把左缘往左推=「从右下拖却从左上动」）。持续到
+  /// 换词（选区变）或关窗；[_popupResizeAnchorSelection] 记它属于哪张卡（哪个选区）。
+  Offset? _popupResizeAnchorTopLeft;
+  Rect? _popupResizeAnchorSelection;
+
+  /// 顶层卡片本帧贴词算出的 rect / 选区缓存，供 [_onPopupResizeStart] 取当前左上角冻结。
+  Rect? _topPopupAnchoredRect;
+  Rect? _topPopupSelectionRect;
+
+  /// 拖把手起手：把当前偏好基准尺寸存入预览态（后续增量累积其上），并冻结顶层卡当前左上角。
   void _onPopupResizeStart() {
     setState(() {
       _popupResizePreview =
           LookupSize(appModel.popupMaxWidth, appModel.popupMaxHeight);
+      _popupResizeAnchorTopLeft = _topPopupAnchoredRect?.topLeft;
+      _popupResizeAnchorSelection = _topPopupSelectionRect;
     });
   }
 
@@ -514,10 +526,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     }
   }
 
-  /// 拖拽被竞技场中途取消：丢弃预览态回到「读真值」，不落偏好。
+  /// 拖拽被竞技场中途取消：丢弃预览态回到「读真值」，不落偏好；一并撤销冻结原点（回贴词）。
   void _onPopupResizeCancel() {
     if (_popupResizePreview == null) return;
-    setState(() => _popupResizePreview = null);
+    setState(() {
+      _popupResizePreview = null;
+      _popupResizeAnchorTopLeft = null;
+      _popupResizeAnchorSelection = null;
+    });
   }
 
   Widget buildDictionary() {
@@ -643,6 +659,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       screen,
       verticalWriting: _layerVerticalWriting(index),
     );
+    // Phase B 拖拽尺寸：缓存顶层卡当前 rect/选区，供 [_onPopupResizeStart] 冻结其左上角。
+    if (isTop) {
+      _topPopupSelectionRect = item.selectionRect;
+      _topPopupAnchoredRect = pos;
+    }
     final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
         Brightness.dark;
 
@@ -942,7 +963,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // 底部固定模式忽略选区放屏幕底部全宽面板。video 家族在 dictionary_page_mixin
     // 用同一个 [resolvePopupRect] 收口（不碰 video_hibiki_page）。reserve/padding/
     // verticalWriting 走本类 getter（子类可 override，如 reader 预留底栏）。
-    return resolvePopupRect(
+    final Rect anchored = resolvePopupRect(
       selectionRect: sel,
       screen: screen,
       bottomDocked: appModel.popupBottomDocked,
@@ -953,6 +974,19 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       topReserve: popupTopReserve,
       verticalWriting: verticalWriting,
     );
+    // Phase B 拖拽尺寸（2026-07-15）：被拖的那张卡（选区匹配）冻结左上角，从右下生长，
+    // 消除「词靠右缘时贴词定位把左缘左移」的 bug。底部固定 dock 模式忽略选区、不冻结。
+    if (!appModel.popupBottomDocked &&
+        _popupResizeAnchorTopLeft != null &&
+        _popupResizeAnchorSelection == sel) {
+      return anchorPopupTopLeft(
+        anchored: anchored,
+        topLeft: _popupResizeAnchorTopLeft!,
+        screen: screen,
+        inset: popupPadding,
+      );
+    }
+    return anchored;
   }
 
   bool get dictionaryPopupShown => _hasVisiblePopup(_popup.entries);

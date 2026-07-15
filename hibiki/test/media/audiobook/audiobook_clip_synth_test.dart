@@ -85,6 +85,28 @@ void main() {
       expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuvj420p']));
       expect(args, isNot(contains('yuvj444p')));
     });
+
+    // BUG-809：桌面 ffmpeg-min 已编入 libx264+mp4，h264=true 走 H.264（带帧间压缩，
+    // 30 秒片段从 mjpeg ~200MB 降到几 MB）+ .mp4 通用容器；mjpeg 的 qscale/yuvj* 不再出现。
+    test('h264=true switches to libx264 + crf + yuv420p + faststart (BUG-809)',
+        () {
+      final List<String> args = buildFfmpegImageAudioToVideoArgs(
+        imagePath: '/i.jpg',
+        audioPath: '/a.m4a',
+        outputPath: '/o.mp4',
+        h264: true,
+      );
+      expect(args, containsAllInOrder(<String>['-c:v', 'libx264']));
+      expect(args, containsAllInOrder(<String>['-crf', '20']));
+      expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuv420p']));
+      expect(args, containsAllInOrder(<String>['-movflags', '+faststart']));
+      expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
+      // H.264 路径绝不掺 mjpeg 的 qscale / yuvj* 色域。
+      expect(args, isNot(contains('mjpeg')));
+      expect(args, isNot(contains('-q:v')));
+      expect(args, isNot(contains('yuvj444p')));
+      expect(args, isNot(contains('yuvj420p')));
+    });
   });
 
   // BUG-543：移动端自编 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），此前
@@ -248,6 +270,29 @@ void main() {
       );
       expect(mobile, containsAllInOrder(<String>['-pix_fmt', 'yuvj420p']));
       expect(mobile, isNot(contains('yuvj444p')));
+    });
+
+    // BUG-809：序列帧路径（逐句高亮跟随）h264=true 同样走 libx264 —— 这是「30 秒
+    // 200MB」的主战场：动态路径把母帧按帧计划复制成大量连续重复帧，mjpeg 每帧都是
+    // 独立整张 JPEG（无帧间压缩）故体积巨大；libx264 的 P 帧把重复帧压到近零字节。
+    test('seq h264=true uses libx264 (interframe compression) + faststart', () {
+      final List<String> args = buildFfmpegImageSeqAudioToVideoArgs(
+        framesDir: '/f',
+        audioPath: '/a.aac',
+        outputPath: '/o.mp4',
+        fps: 24,
+        h264: true,
+      );
+      expect(args, containsAllInOrder(<String>['-c:v', 'libx264']));
+      expect(args, containsAllInOrder(<String>['-crf', '20']));
+      expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuv420p']));
+      expect(args, containsAllInOrder(<String>['-movflags', '+faststart']));
+      // 仍读序列帧（-framerate），不退化成单图 -loop 1。
+      expect(args, containsAllInOrder(<String>['-framerate', '24']));
+      expect(args, isNot(contains('-loop')));
+      // H.264 路径不掺 mjpeg 的 qscale。
+      expect(args, isNot(contains('mjpeg')));
+      expect(args, isNot(contains('-q:v')));
     });
   });
 

@@ -803,6 +803,13 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       // 再关库解压。beginBackupImport notifyListeners → 根 widget 切到 running 遮罩（本
       // 设置页随之卸载，故此后不再依赖 `mounted`/本页 context，改由 appModel 驱动遮罩）。
       appModel.beginBackupImport();
+      // BUG-810: beginBackupImport 只 SCHEDULE 根切换到 running 遮罩（notifyListeners →
+      // markNeedsBuild）。上面注释承诺「遮罩已上屏 → 关库 → 解压」，但不等这帧渲染就直接
+      // closeDatabase + importBackupFiles 的部分同步 decode/DB 工作，会在遮罩首帧 raster
+      // 前占住 UI isolate（await 微任务不 pump 帧）——于是整个复制期屏幕停在旧设置页，没有
+      // 「请勿关闭」遮罩、没有进度条，直到进程重启。await endOfFrame 等这帧真正把遮罩画出来
+      // 再继续（复用 validating→app 切换 [_rootContextAfterOverlay] 已依赖的同一原语）。
+      await WidgetsBinding.instance.endOfFrame;
       await appModel.closeDatabase();
       if (choice.mode == _BackupImportMode.merge) {
         // TODO-888 merge: keep this device's library + settings, only ADD what

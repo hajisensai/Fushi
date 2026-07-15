@@ -695,20 +695,29 @@ class GlobalLookupController {
     if (model == null) {
       return;
     }
+    // native（WM_EXITSIZEMOVE）回报 args=[left, top, width, height, startW, startH]
+    // 均为**窗口物理 px**：[2][3] 是拖拽结束尺寸、[4][5] 是拖拽起始尺寸。要 6 个字段——
+    // 只有真的拖过 grip 才有起始尺寸；用「结束−起始」增量折算抵消恒定级联余量（见
+    // [resolveOverlayResizeFromDelta]），绝不用绝对窗口尺寸倒推（会把余量算进去→暴涨乱跳）。
     final Object? args = message['args'];
-    if (args is! List || args.length < 4) {
+    if (args is! List || args.length < 6) {
       return;
     }
     double num2(Object? v) => (v is num) ? v.toDouble() : 0;
     final double physW = num2(args[2]);
     final double physH = num2(args[3]);
-    if (physW <= 0 || physH <= 0) {
+    final double startW = num2(args[4]);
+    final double startH = num2(args[5]);
+    if (physW <= 0 || physH <= 0 || startW <= 0 || startH <= 0) {
       return;
     }
     final double dpr = _devicePixelRatio();
-    final LookupSize size = resolveOverlayResizeFromWindow(
-      windowPhysicalWidth: physW,
-      windowPhysicalHeight: physH,
+    final LookupSize current = model.overlayLookupEffectiveSize;
+    final LookupSize size = resolveOverlayResizeFromDelta(
+      currentWidth: current.width,
+      currentHeight: current.height,
+      deltaPhysWidth: physW - startW,
+      deltaPhysHeight: physH - startH,
       dpr: dpr,
       uiScale: model.appUiScale,
     );

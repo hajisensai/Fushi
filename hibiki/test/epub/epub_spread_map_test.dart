@@ -430,6 +430,47 @@ void main() {
       });
 
       test(
+          'BUG-817: OPF page-spread must NOT pair a reflowable text page with a '
+          'fixed-layout illustration page (hybrid book), or the illustration is '
+          'consumed by a bogus text|image spread and merge can never absorb it',
+          () {
+        // Real repro from 安達としまむら2 (電撃文庫 hybrid layout): reflowable
+        // text chapters carry OPF page-spread-right, and the fixed-layout SVG
+        // insert illustration that follows carries page-spread-left. The old
+        // `_isSpreadPair` rule paired them on OPF metadata alone → the image was
+        // swallowed into a nonsensical text|image spread, `isAbsorbedImageChapter`
+        // stayed false, and "将插图页并入正文" silently did nothing (the picture
+        // vanished: no standalone page, no inline injection). Pairing must require
+        // BOTH pages be image-only, exactly like the rendition:spread rule.
+        //   ch0 text(right), ch1 image(left), ch2 text — p-009/p-010/p-011.
+        final EpubBook book = _makeBook(
+          count: 3,
+          imageOnly: <bool>[false, true, false],
+          spreadProps: <String?>[
+            'page-spread-right',
+            'page-spread-left',
+            null,
+          ],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'auto',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+        // The text page is never spread-paired with the image.
+        expect(map.entryAt(map.virtualPageForChapter(0)).isSpread, isFalse,
+            reason: '文本章不得与插画章配成 spread');
+        // The illustration is absorbed into the following text chapter's top.
+        expect(map.isAbsorbedImageChapter(1), isTrue,
+            reason: '插画应被 merge 吸收进后随正文，而非被 spread 消费');
+        expect(map.mergedImagesForChapter(2), <int>[1]);
+        // Pages collapse to [ch0 text], [ch2 text + inline img1].
+        expect(map.length, 2);
+        expect(map.entryAt(1).chapterIndex, 2);
+      });
+
+      test(
           'merge folds each leading image run into the next text chapter '
           '(TODO-1174)', () {
         // text, img, img, text, img, text

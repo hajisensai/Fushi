@@ -152,10 +152,10 @@ void main() {
       expect(list.single.toJson()['subtitleFileName'], 'show.ja.vtt');
     });
 
-    test('BUG-811: listVideos 不做内嵌字幕 ffmpeg 探测（即便后端可返回轨也延迟到 /streamurl）',
+    test('BUG-814: listVideos 不做内嵌字幕 ffmpeg 探测（即便后端可返回轨也延迟到 /streamurl）',
         () async {
       // 注入一个「若被探测就会返回 3 轨」的 mock ffmpeg 后端——用来证明 listVideos
-      // 根本没调用它（内嵌轨探测已延迟到播放时的 /streamurl 端点，BUG-811）。
+      // 根本没调用它（内嵌轨探测已延迟到播放时的 /streamurl 端点，BUG-814）。
       setFfmpegBackendForTesting(const _EmbeddedSubtitleProbeBackend());
       final String videoPath = p.join(tmp.path, 'embedded.mkv');
       File(videoPath).writeAsBytesSync(<int>[0, 1, 2, 3]);

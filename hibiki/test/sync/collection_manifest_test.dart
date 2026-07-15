@@ -282,4 +282,36 @@ void main() {
         reason: '空键成员被跳过，只剩合法成员');
     expect(good.memberTombstones, isEmpty, reason: '空键墓碑被跳过');
   });
+
+  // ── 合集标签（collection-tags §5.2）：tagNames additive 字段 codec ──────────
+  test('tagNames round-trips through toJson/fromJson', () {
+    const entry = CollectionManifestEntry(
+      name: 'C',
+      collectionType: 'collection',
+      members: <CollectionManifestMember>[
+        CollectionManifestMember(
+            mediaType: 'video', entryKey: 'u1', sortIndex: 0),
+      ],
+      tagNames: <String>['zebra', 'alpha'],
+    );
+    final decoded = CollectionManifestEntry.fromJson(
+        jsonDecode(jsonEncode(entry.toJson())));
+    expect(decoded.tagNames, <String>['alpha', 'zebra']); // 排序确定性
+  });
+
+  test('missing tagNames decodes to empty (backward compat)', () {
+    final decoded = CollectionManifestEntry.fromJson(<String, dynamic>{
+      'name': 'C',
+      'collectionType': 'collection',
+      'members': <dynamic>[],
+      'memberTombstones': <dynamic>[],
+    });
+    expect(decoded.tagNames, isEmpty);
+  });
+
+  test('empty tagNames omits key (byte-identical to pre-feature)', () {
+    const entry =
+        CollectionManifestEntry(name: 'C', collectionType: 'collection');
+    expect(entry.toJson().containsKey('tagNames'), isFalse);
+  });
 }

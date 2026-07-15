@@ -27,18 +27,34 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 797 条。点号进各自文件。
+> 共 813 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-818](bugs/BUG-818-video-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回视频 tab 不自动拉远端视频(远端视频要手动下拉刷新才出来) |
-| [BUG-817](bugs/BUG-817-shelf-collection-count-excludes-remote.md) | ✅ | ✅ | 书架合集行头「N项」漏算折进合集的远端占位成员(只数本地) |
-| [BUG-816](bugs/BUG-816-shelf-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回书架 tab 不自动拉远端书(远端书+书库概览总数要手动下拉刷新才补齐) |
-| [BUG-815](bugs/BUG-815-shelf-overview-total-excludes-remote.md) | ✅ | ✅ | 书架「书库概览」总数漏算远端书(只数本地卡,不数书架上可见的互联远端占位卡) |
-| [BUG-814](bugs/BUG-814-interconnect-audiobook-download-loading-gap.md) | ✅ | ✅ | 互联下载有声书两阶段之间露出「无转圈的普通书」(空窗期本地卡缺加载指示) |
+| [BUG-831](bugs/BUG-831-video-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回视频 tab 不自动拉远端视频(远端视频要手动下拉刷新才出来) |
+| [BUG-830](bugs/BUG-830-shelf-collection-count-excludes-remote.md) | ✅ | ✅ | 书架合集行头「N项」漏算折进合集的远端占位成员(只数本地) |
+| [BUG-829](bugs/BUG-829-shelf-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回书架 tab 不自动拉远端书(远端书+书库概览总数要手动下拉刷新才补齐) |
+| [BUG-828](bugs/BUG-828-interconnect-audiobook-download-loading-gap.md) | ✅ | ✅ | 互联下载有声书两阶段之间露出「无转圈的普通书」(空窗期本地卡缺加载指示) |
+| [BUG-827](bugs/BUG-827-android-mine-cover-fileprovider.md) | ✅ | ✅ | 安卓阅读器制卡书籍封面缺失(FileProvider 未覆盖 app_flutter 解压目录) |
+| [BUG-826](bugs/BUG-826-popup-topbar-overlap-narrow.md) | ✅ | ✅ | 查词弹窗顶栏按钮窄宽时重叠 |
+| [BUG-825](bugs/BUG-825-subtitle-hit-seekbar.md) | ✅ | ✅ | 点视频进度条被误判成点字幕触发查词 |
+| [BUG-824](bugs/BUG-824-ankidroid-mine-permission-prompt.md) | ✅ | ✅ | AnkiDroid 权限未授予制卡失败无明显提醒 |
+| [BUG-823](bugs/BUG-823-episode-switch-dualplay.md) | ✅ | ✅ | 切换剧集时上一个视频仍在播放（过渡期双音轨） |
+| [BUG-822](bugs/BUG-822-subtitle-group-order-padding-slide.md) | ✅ | ✅ | 换句时字幕组序翻转致避让 padding 动画重播（每句对白入场滑跳） |
+| [BUG-821](bugs/BUG-821-debug-update-check-plain-version.md) | ✅ | ✅ | beta/debug通道装无后缀X.Y.Z包永判已是最新 |
+| [BUG-820](bugs/BUG-820-ass-scale-letterbox-container.md) | ✅ | ✅ | ASS 字号/描边缩放基准误用播放器容器高（应为 fit:contain 视频内容矩形） |
+| [BUG-819](bugs/BUG-819-ass-bold0-fake-bold.md) | ✅ | ✅ | ASS `Bold=0` 被用户统一字重假粗体化（字号/描边观感全毁） |
+| [BUG-818](bugs/BUG-818-popup-surface-translucent-wallpaper.md) | ✅ | ✅ | 查词浮窗卡片背景半透明透出壁纸浅色下看不清 |
+| [BUG-817](bugs/BUG-817-merge-text-image-spread-mispair.md) | ✅ | ✅ | 自动跨页把文本章与固定布局插画章错配成spread导致合并插图失效 |
+| [BUG-816](bugs/BUG-816-backup-export-category-gating.md) | ✅ | ✅ | 导出未按功能类别剥离个人数据(收藏句/音频源路径/字体路径/sync开关/配对token泄漏) |
+| [BUG-815](bugs/BUG-815-init-retry-race.md) | ✅ | ✅ | 看门狗重试与在飞初始化竞态致数据全空(移动端) |
+| [BUG-814](bugs/BUG-814-interconnect-video-list-empty.md) | ✅ | ✅ | 互联开启后手机视频列表为空(host listVideos 每视频串行 ffmpeg 探测超过 client 15s 超时) |
 | [BUG-813](bugs/BUG-813-interconnect-download-no-reading-progress.md) | ✅ | ✅ | 互联手动下载远端书不带回阅读记录(阅读进度/有声书断点) |
 | [BUG-812](bugs/BUG-812-interconnect-audiobook-not-in-collection.md) | ✅ | ✅ | 互联开启后手机上有声书不进合集(host listBooks 只用 epub\|bookKey 查归属，漏 srt-backed 有声书的 srt\|uid 成员键) |
-| [BUG-811](bugs/BUG-811-interconnect-video-list-empty.md) | ✅ | ✅ | 互联开启后手机视频列表为空(host listVideos 每视频串行 ffmpeg 探测超过 client 15s 超时) |
+| [BUG-811](bugs/BUG-811-remote-video-list-timeout-toast.md) | ✅ | ✅ | 远端视频清单超时把异常原文泄漏进 toast |
+| [BUG-810](bugs/BUG-810-backup-import-overlay-no-progress.md) | ✅ | ✅ | 备份导入复制阶段无进度条遮罩 |
+| [BUG-809](bugs/BUG-809-audiobook-clip-mjpeg-mov-size.md) | ✅ | ✅ | 有声书导出片段桌面仍用mjpeg/.mov无帧间压缩导致30秒200MB且非通用格式 |
+| [BUG-808](bugs/BUG-808-audiobook-clip-highlight-reflow.md) | ✅ | ✅ | 有声书导出片段竖排逐句高亮撑大盒子导致整段文字重新排版抖动 |
 | [BUG-807](bugs/BUG-807-multiselect-combine-icon-tooltip.md) | ✅ | ✅ | 多选栏组合成系列图标与收藏夹雷同且无tooltip |
 | [BUG-806](bugs/BUG-806-dict-columns-autofit.md) | ✅ | ✅ | 词典最多列数自动调整对方框布局不生效 |
 | [BUG-805](bugs/BUG-805-video-missing-reimport-noop.md) | ✅ | ✅ | 视频缺失态重新导入空操作没反应 |

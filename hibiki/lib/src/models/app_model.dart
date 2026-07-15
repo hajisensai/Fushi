@@ -709,6 +709,12 @@ class AppModel with ChangeNotifier {
   bool get isInitialised => _isInitialised;
   bool _isInitialised = false;
 
+  /// BUG-815: the currently-running [_initialiseOnce] future, or null when no
+  /// init is in flight. [initialise] uses it to serialise concurrent callers so
+  /// a second init can never race the first over the shared [_database] /
+  /// repositories / [_isInitialised]. Cleared when the in-flight run completes.
+  Future<void>? _initInFlight;
+
   /// Non-null if [initialise] threw; UI should display this instead of spinning.
   String? get initError => _initError;
   String? _initError;
@@ -732,6 +738,21 @@ class AppModel with ChangeNotifier {
 
   /// Clears the error state and re-runs [initialise].
   Future<void> retryInitialise() async {
+    // BUG-815: if an init started by main() is still IN FLIGHT — a slow cold
+    // start that merely tripped the 20s loading watchdog, NOT a hang — do NOT
+    // tear down / re-open the DB below. Closing [_database] out from under the
+    // running init and spawning a SECOND concurrent init races them over the
+    // shared _database / repositories / _isInitialised and surfaces as "all data
+    // empty" on the home screen (mobile has no custom data root, so restarting —
+    // a single clean init — restores everything). Await the in-flight attempt
+    // instead: it completes (data appears) or sets _initError (whose own Retry
+    // then runs cleanly, because [initialise]'s whenComplete has cleared
+    // _initInFlight by that point).
+    final Future<void>? inFlight = _initInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
     // A previous attempt may have partially initialised resources. Tear down
     // the ones that would otherwise leak or double-register before re-running
     // (the late fields below are reassigned by initialise()).
@@ -1805,7 +1826,29 @@ class AppModel with ChangeNotifier {
     _databaseDirectory = _appPaths.supportRoot;
   }
 
-  Future<void> initialise() async {
+  /// Public entry point for app initialisation.
+  ///
+  /// BUG-815: serialises initialisation. If a run is already in flight (e.g. the
+  /// loading-watchdog Retry firing while main()'s init is still going on a slow
+  /// cold start), concurrent callers share that single run instead of starting a
+  /// SECOND init that races the first over [_database] / repositories /
+  /// [_isInitialised]. Once the run completes — success OR [_initError] (the body
+  /// catches internally and never rethrows, so this future always resolves
+  /// normally) — the guard clears, so a genuine retry-after-error still starts a
+  /// fresh attempt.
+  Future<void> initialise() {
+    final Future<void>? existing = _initInFlight;
+    if (existing != null) return existing;
+    final Future<void> run = _initialiseOnce();
+    _initInFlight = run;
+    return run.whenComplete(() {
+      if (identical(_initInFlight, run)) _initInFlight = null;
+    });
+  }
+
+  /// One-shot initialisation body. Never call directly — always go through
+  /// [initialise] so the in-flight guard holds.
+  Future<void> _initialiseOnce() async {
     try {
       debugPrint('[Hibiki] init: PackageInfo + DeviceInfo');
 

@@ -7,8 +7,8 @@ import 'package:hibiki/src/utils/misc/channel_constants.dart';
 /// TODO-1232 A3：渲染后端（Impeller vs Skia）实验开关的 Dart 侧门面。
 ///
 /// 背景：realme 8（Mali-G76 / Android 11）上视频「能播但恒黑」——mpv 侧解码 /
-/// 纹理握手 / `vo=gpu` 全绿（见 `[VIDEO-DIAG]` 诊断日志），疑为 Flutter Impeller
-/// 在该 ROM 上合成 media_kit 外部纹理（SurfaceTexture）静默失败。本开关让用户免
+/// 纹理握手 / `vo=gpu` 全绿，疑为 Flutter Impeller 在该 ROM 上合成 media_kit 外部
+/// 纹理（SurfaceTexture）静默失败。本开关让用户免
 /// adb、免重新出包即可切到 Skia 渲染后端自证：若关掉 Impeller 后画面正常＝坐实
 /// Impeller/Mali 合成层，据此根治（如换纹理路径），而非继续在 mpv 侧空转。
 ///
@@ -71,13 +71,13 @@ class RenderBackendService {
   bool _activeImpellerDisabled = false;
   bool _activeSnapshotTaken = false;
 
-  /// 本次运行实际生效的渲染后端（供 `[VIDEO-DIAG]` 诊断头自证测的是哪个后端）。
+  /// 本次运行实际生效的渲染后端（Skia 降级开关的可见性据此门控：仅本次真跑 Impeller
+  /// 时才提供「切 Skia」入口）。
   bool get activeImpellerDisabled => _activeImpellerDisabled;
 
-  /// 诊断日志用的后端标签：`n/a`（非 Android / channel 未接线，此开关不适用）、
-  /// `skia`（本次运行已关 Impeller）、`impeller`（本次运行跑 Impeller）。让用户导出的
-  /// `[VIDEO-DIAG]` 日志能**无歧义**自证「测的是 Skia 还是 Impeller」——是 realme 8
-  /// 「纹理握手全绿仍黑屏」定 Impeller 合成层根因、以及关 Impeller 后复测是否解决的判据。
+  /// 本次运行渲染后端标签：`n/a`（非 Android / channel 未接线，此开关不适用）、
+  /// `skia`（本次运行已关 Impeller）、`impeller`（本次运行跑 Impeller）。用于设置页
+  /// 自证当前跑哪个后端（realme 8「纹理握手全绿仍黑屏」定 Impeller 合成层根因的判据）。
   String get activeBackendLabel =>
       !_supported ? 'n/a' : (_activeImpellerDisabled ? 'skia' : 'impeller');
 

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/utils.dart' show t;
@@ -20,6 +21,7 @@ class LoadingWatchdogView extends StatelessWidget {
     required this.timedOut,
     required this.colorScheme,
     required this.onRetry,
+    this.isMobile,
   });
 
   /// 是否已超过看门狗时限仍未初始化完成（true 显示逃生 UI，false 显示转圈）。
@@ -31,6 +33,10 @@ class LoadingWatchdogView extends StatelessWidget {
   /// 用户点「重试」的回调（由 State 复位看门狗并调 `retryInitialise`）。
   final VoidCallback onRetry;
 
+  /// BUG-815：是否移动端（决定超时说明文案）。null 时按 [defaultTargetPlatform]
+  /// 解析（生产默认）；测试可显式传值断言桌面 / 移动两套文案。
+  final bool? isMobile;
+
   @override
   Widget build(BuildContext context) {
     if (!timedOut) {
@@ -38,6 +44,14 @@ class LoadingWatchdogView extends StatelessWidget {
         child: CircularProgressIndicator(color: colorScheme.primary),
       );
     }
+    // BUG-815: the desktop copy explains the dropped custom-drive data root +
+    // "start with the default location" escape. On mobile there is NO custom
+    // data root (AppPaths._resolveDataRoot returns null off desktop), so that
+    // wording is both irrelevant and alarming — Retry never changes any location
+    // there. Pick a mobile-appropriate copy that reassures the data is safe.
+    final bool mobile = isMobile ??
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -57,7 +71,7 @@ class LoadingWatchdogView extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              t.loading_slow_message,
+              mobile ? t.loading_slow_message_mobile : t.loading_slow_message,
               style: TextStyle(
                 fontSize: 13,
                 color: colorScheme.onSurfaceVariant,

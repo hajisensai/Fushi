@@ -24,12 +24,13 @@ void main() {
     expect(find.text(t.loading_slow_title), findsNothing);
   });
 
-  testWidgets('超时 → 显示说明 + 重试按钮（逃生口出现）', (WidgetTester tester) async {
+  testWidgets('超时(桌面) → 显示掉线盘说明 + 重试按钮（逃生口出现）', (WidgetTester tester) async {
     bool retried = false;
     await tester.pumpWidget(wrap(LoadingWatchdogView(
       timedOut: true,
       colorScheme: cs,
       onRetry: () => retried = true,
+      isMobile: false,
     )));
 
     expect(find.byType(CircularProgressIndicator), findsNothing,
@@ -41,5 +42,25 @@ void main() {
     await tester.tap(find.text(t.retry));
     await tester.pump();
     expect(retried, isTrue, reason: '点重试须触发 onRetry（复位看门狗 + retryInitialise）');
+  });
+
+  // BUG-815：移动端没有自定义数据根（AppPaths._resolveDataRoot 非桌面恒 null），
+  // 桌面那套「数据存储位置设在未连接网络盘 / 用默认位置启动」文案在手机上既不适用
+  // 又吓人（重试根本不换位置）。移动端必须改显不提「默认位置」的安心文案。
+  testWidgets('超时(移动端) → 显示移动端安心文案，不含桌面『默认位置』说明 (BUG-815)',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(LoadingWatchdogView(
+      timedOut: true,
+      colorScheme: cs,
+      onRetry: () {},
+      isMobile: true,
+    )));
+
+    expect(find.text(t.loading_slow_title), findsOneWidget);
+    expect(find.text(t.loading_slow_message_mobile), findsOneWidget,
+        reason: '移动端须显示 loading_slow_message_mobile');
+    expect(find.text(t.loading_slow_message), findsNothing,
+        reason: '移动端不得再显示桌面掉线盘 / 默认位置文案');
+    expect(find.text(t.retry), findsOneWidget);
   });
 }

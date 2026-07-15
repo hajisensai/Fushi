@@ -80,24 +80,26 @@ LookupSize resolveDraggedLookupSize({
   return LookupSize(width, height);
 }
 
-/// Phase C（2026-07-13）— 「app 外瞬态覆盖查词窗」被拖角调整尺寸后，native 模态
-/// size 循环结束回报**最终窗口物理像素**尺寸，本函数把它倒推回 overlay 场景的
-/// 「基准（未缩放）最大宽高」并 clamp。app 内拖拽写 [resolveDraggedLookupSize]（增量
-/// 折算），覆盖窗走这里（绝对窗口尺寸折算）——两者都不引入第二套「固定尺寸」概念，
-/// 只是把同一「最大宽高」真值换一种输入编辑。
+/// Phase C（2026-07-14 修订）— 「app 外瞬态覆盖查词窗」被拖角调整尺寸，用**增量**折算。
 ///
-/// 正向链（controller 算窗口物理尺寸，见 global_lookup_controller）：
-/// `cardW = overlayEffective.width × appUiScale`，再 `× dpr` 传 native 建窗，
-/// 故单卡窗口物理宽 ≈ `overlayLogicalW × uiScale × dpr`。倒推即：
-/// `overlayLogicalW = 窗口物理宽 / dpr / uiScale`。
+/// 关键：瞬态覆盖窗因 reserve-to-edge 级联余量恒比可见卡片大一截（那段被 region 裁掉
+/// 不可见），故**绝对窗口尺寸不能直接当卡片尺寸倒推**——会把余量算进去，折算出的
+/// overlay 尺寸系统性暴涨（常顶到上限/工作区），卡片爆炸放大并被甩到工作区角（用户报
+/// 的「乱跳」根因）。native 回报拖拽**起始与结束**的窗口物理尺寸，本函数用二者之差
+/// （恒定余量在相减中抵消，与余量的具体值/方向无关）折算回 overlay 场景「基准（未缩放）
+/// 最大宽高」的增量，叠加到当前值：
+///   `new = clamp(current + (physEnd - physStart) / dpr / uiScale)`
 ///
-/// [dpr] / [uiScale] 非正时按 1 兜底（不除零、不反向缩放）。结果先**下取整**到整
-/// 逻辑像素（避免一次拖拽因四舍五入把值顶上去 / 多次往返累积漂移），再 clamp 到
-/// [kLookupPopupMinWidth]..[kLookupPopupMaxHeight]——与滑杆同一 min/max 单一同源。
-/// 纯函数（含 dpr、uiScale、下取整、clamp 边界），直接单测。
-LookupSize resolveOverlayResizeFromWindow({
-  required double windowPhysicalWidth,
-  required double windowPhysicalHeight,
+/// 正向链：`cardW = overlayLogicalW × uiScale`，再 `× dpr` 传 native 建窗；故窗口物理
+/// 增量 `Δphys = ΔoverlayLogicalW × uiScale × dpr`，倒推 `ΔoverlayLogicalW = Δphys /
+/// dpr / uiScale`。[dpr]/[uiScale] 非正按 1 兜底（不除零、不反向）。与滑杆同一 min/max
+/// 单一同源。不下取整——增量模型每次独立于真实起始尺寸，flooring 会在多次拖拽累积下漂。
+/// 纯函数，直接单测。
+LookupSize resolveOverlayResizeFromDelta({
+  required double currentWidth,
+  required double currentHeight,
+  required double deltaPhysWidth,
+  required double deltaPhysHeight,
   required double dpr,
   required double uiScale,
   double minWidth = kLookupPopupMinWidth,
@@ -108,10 +110,9 @@ LookupSize resolveOverlayResizeFromWindow({
   final double d = dpr > 0 ? dpr : 1.0;
   final double s = uiScale > 0 ? uiScale : 1.0;
   final double width =
-      (windowPhysicalWidth / d / s).floorToDouble().clamp(minWidth, maxWidth);
-  final double height = (windowPhysicalHeight / d / s)
-      .floorToDouble()
-      .clamp(minHeight, maxHeight);
+      (currentWidth + deltaPhysWidth / d / s).clamp(minWidth, maxWidth);
+  final double height =
+      (currentHeight + deltaPhysHeight / d / s).clamp(minHeight, maxHeight);
   return LookupSize(width, height);
 }
 

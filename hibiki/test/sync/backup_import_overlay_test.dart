@@ -277,6 +277,26 @@ void main() {
     });
 
     test(
+        'backup.part：beginBackupImport 与 closeDatabase 之间必须 await endOfFrame '
+        '（BUG-810：等 running 遮罩真上屏再关库，否则复制期无遮罩/无进度条）', () {
+      final String src =
+          readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
+              .readAsStringSync();
+      final int beginIdx = src.indexOf('appModel.beginBackupImport()');
+      final int closeIdx = src.indexOf('await appModel.closeDatabase()');
+      final int frameIdx =
+          src.indexOf('await WidgetsBinding.instance.endOfFrame', beginIdx);
+      expect(beginIdx, greaterThan(0));
+      expect(closeIdx, greaterThan(beginIdx));
+      // beginBackupImport 只 SCHEDULE 根切换；不等帧就关库 + 同步解压会在遮罩首帧
+      // raster 前占住 UI isolate → 复制期屏幕停在旧页面无「请勿关闭」遮罩、无进度条。
+      expect(frameIdx, greaterThan(beginIdx),
+          reason: 'beginBackupImport 后必须 await endOfFrame 等遮罩上屏');
+      expect(frameIdx, lessThan(closeIdx),
+          reason: 'endOfFrame 必须在 closeDatabase 之前（遮罩→上屏→关库）');
+    });
+
+    test(
         'backup.part：成功走 completeBackupImport / 失败走 failBackupImport；删除旧的 500ms 自动退出',
         () {
       final String src =

@@ -63,6 +63,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.videoDurationMs = 0,
     this.loadSubtitleWaveform,
     this.onPlaySubtitleCue,
+    this.subtitleIsPlaying,
+    this.onToggleSubtitlePlayPause,
     this.subtitlePositionListenable,
     this.currentSubtitlePositionMs,
     required this.onPreviewSpeed,
@@ -157,6 +159,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// TODO-1244：波形对轴视图的逐句试听回调。点某句 → 播放器 seek 到该句（叠加当前预览
   /// 延迟后的）时间并播放，复用现有播放器。null = 不显示逐句播放按钮。
   final Future<void> Function(int startMs)? onPlaySubtitleCue;
+
+  /// 读当前是否正在播放（驱动波形对轴视图内播放/暂停按钮）。null = 不显示该按钮。
+  final bool Function()? subtitleIsPlaying;
+
+  /// 波形对轴视图内播放/暂停切换回调。null = 不显示该按钮。
+  final Future<void> Function()? onToggleSubtitlePlayPause;
 
   /// 可选：播放位置变化通知源（`VideoPlayerController`），驱动波形面板重绘播放头。
   final Listenable? subtitlePositionListenable;
@@ -1126,6 +1134,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               // 逻辑（页面 _autoAlignSubtitle），成功后经上面的 onCommitDelay 同步权威延迟。
               onAutoAlign: widget.onAutoAlign,
               onPlayCue: widget.onPlaySubtitleCue,
+              isPlaying: widget.subtitleIsPlaying,
+              onTogglePlayPause: widget.onToggleSubtitlePlayPause,
               positionListenable: widget.subtitlePositionListenable,
               currentPositionMs: widget.currentSubtitlePositionMs,
             ),

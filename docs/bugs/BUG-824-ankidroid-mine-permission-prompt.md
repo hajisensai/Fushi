@@ -1,0 +1,11 @@
+## BUG-824 · AnkiDroid 权限未授予制卡失败无明显提醒
+- **报告**：2026-07-15（用户：截图 制卡 toast「导出卡片失败：AnkiDroid: Permission not granted for: CardContentProvider.query /decks (app.hibiki.reader)」）
+- **真实性**：✅ 真 bug。根因 `hibiki/android/app/src/main/java/app/hibiki/reader/AnkiChannelHandler.java:70`（`case "addNote"`）——它是**唯一**漏了 `requirePermission(result)` 守卫的 provider 访问分支（`getDecks`/`getModelList`/`notesInfo`/`updateNoteFields`/`findNotesByContent`/`createNoteType`/`createDeck` 全有）。权限未授予时 addNote 不校验直接跑 → `AddContentApi.addNote` 内部走 `findDeckIdByName → getDeckList()` 查 ContentProvider `/decks` → AnkiDroid provider 抛原始 `SecurityException`（不是 `IllegalStateException`，逃过 line 91 的 catch）→ 冒泡成 PlatformException → Dart `anki_repository.dart:254` 拼成 `AnkiDroid: ${e.message}` → 走 `card_export_failed_detail` 塞进一闪而过、技术味十足的 toast，用户既看不懂也没被引导授权。
+- **[x] ① 已修复** — 两层根因修复：
+  - native `AnkiChannelHandler.java`：给 `case "addNote"` 与 `case "addFileToMedia"` 补 `requirePermission(result)` 守卫。权限缺失时干净返回 `PERMISSION_DENIED` 码**并同时弹出系统授权对话框**（`requirePermission` 内已调 `ankiDroid.requestPermission`）——这就是「明显提醒」。
+  - Dart `anki_repository.dart`：新增 `_classifyMineError(PlatformException)`，把 `code=='PERMISSION_DENIED'`（或极少数漏守卫时 provider 直接抛的英文 `permission not granted` 原文）分类成 `AnkiErrorCode.permissionDenied`（`anki_models.dart` 新增码），mineEntry / updateMinedNote 两处 catch 带上 errorCode。
+  - `error_log_service.dart` `localizeAnkiMineError`：新增 `permissionDenied` case → 本地化可操作文案 `anki_error_permission_denied`（17 语言，经 `tool/i18n_sync.dart` 生成 + `dart run slang`）。技术原文只进错误日志，不进 toast。
+- **[x] ② 已加自动化测试** —
+  - `packages/hibiki_anki/test/ankidroid_permission_denied_test.dart`：mock 通道验 PERMISSION_DENIED / 原始 provider 文案 → `errorCode==permissionDenied`，无关异常保持 null；updateMinedNote 同款；**源码扫描守卫**断言 native `addNote`/`addFileToMedia` 两 case 含 `requirePermission(result)`（防守卫再被删回归）。
+  - `hibiki/test/anki/mine_failure_surfacing_test.dart`：`permissionDenied` 码 → 本地化 toast，且 `CardContentProvider`/`Permission not granted` 原文绝不进 toast；`localizeAnkiMineError` 映射断言。
+- **备注**：未做 App 内 Flutter 弹窗（用户确认「可读 toast + 自动弹系统授权框」即可）。5 个制卡入口经统一 `describeMineOutcome → logMineFailure` 路由，改动一处全覆盖。待真机复测：AnkiDroid 撤销权限后制卡 → 应弹系统授权框 + 可读提醒，授予后重试成功。

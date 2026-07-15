@@ -1148,6 +1148,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         _sortMode,
       ),
     );
+    // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。被标签
+    // 过滤隐藏的合集连同成员从 shelfGroups 移除（成员随合集隐藏，符合按合集标签显隐
+    // 语义）；散书由 filteredBookIdsProvider / filteredSrtBookIdsProvider 另行过滤。
+    final Set<int>? collectionFilter =
+        ref.watch(filteredCollectionIdsProvider).valueOrNull;
+    if (collectionFilter != null) {
+      shelfGroups.removeWhere((CollectionGroup<_ShelfBookSlot> g) =>
+          g.collection != null && !collectionFilter.contains(g.collection!.id));
+    }
     // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
     _visibleCollectionIds = <int>[
       for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
@@ -1509,9 +1518,52 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             _shelfMapsFuture = _loadShelfMaps();
             if (mounted) setState(() {});
           },
+          onDeleteMembersMedia: _deleteCollectionMembersMedia,
         ),
       ),
     );
+  }
+
+  /// 「删除合集」时连同成员本体一起删：按 (mediaType, entryKey) 分派到删书/删视频。
+  /// 复用批量删除同一分派纪律（[_batchDeleteConfirm]）——epub 直接删；srt 先 findByUid
+  /// 拿 bookKey 删本体再删 srt 行；video 逐个删并末尾一次 compact。删书本身各自 VACUUM。
+  Future<void> _deleteCollectionMembersMedia(
+    List<MediaCollectionItemRow> members,
+  ) async {
+    bool anyVideo = false;
+    for (final MediaCollectionItemRow m in members) {
+      switch (m.mediaType) {
+        case 'epub':
+          await ReaderHibikiSource.instance.deleteBook(
+            db: appModel.database,
+            bookKey: m.entryKey,
+            appModel: appModel,
+          );
+        case 'srt':
+          final SrtBookRepository repo = SrtBookRepository(appModel.database);
+          final SrtBook? book = await repo.findByUid(m.entryKey);
+          if (book != null) {
+            if (book.bookKey.isNotEmpty) {
+              await ReaderHibikiSource.instance.deleteBook(
+                db: appModel.database,
+                bookKey: book.bookKey,
+                appModel: appModel,
+              );
+            }
+            await repo.delete(m.entryKey);
+          }
+        case 'video':
+          // 混合合集里若混入视频成员：删视频 DB 行 + app 拥有副本，保留原始视频文件。
+          await _videoRepo.deleteVideoBookAndReclaimAssets(
+            m.entryKey,
+            compactDatabase: false,
+          );
+          anyVideo = true;
+      }
+    }
+    if (anyVideo) {
+      await _videoRepo.compactAfterVideoDeleteBestEffort();
+    }
   }
 
   /// 系列详情页按成员行渲染卡片：epub → 经书架 provider 找 MediaItem；srt → 经 uid

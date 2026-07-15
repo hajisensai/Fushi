@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/video/audio_energy_probe.dart';
@@ -44,6 +46,8 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
     this.onCommitDelay,
     this.onAutoAlign,
     this.onPlayCue,
+    this.isPlaying,
+    this.onTogglePlayPause,
     this.positionListenable,
     this.currentPositionMs,
     super.key,
@@ -80,6 +84,13 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
   /// null = 不显示逐句播放按钮（无播放器 / 只读）。由页面传 `(ms) => seek+play`，复用现有
   /// 播放器，不新建音频栈。
   final Future<void> Function(int startMs)? onPlayCue;
+
+  /// 读当前是否正在播放（驱动放大视图内播放/暂停按钮图标）。null = 不显示该按钮。
+  final bool Function()? isPlaying;
+
+  /// 播放/暂停切换回调（放大视图内的播放条按钮点击）。复用现有播放器，不新建音频栈。
+  /// null = 不显示该按钮。
+  final Future<void> Function()? onTogglePlayPause;
 
   /// 可选：播放位置变化的通知源（如 VideoPlayerController），用于重绘播放头。
   final Listenable? positionListenable;
@@ -146,6 +157,8 @@ class _SubtitleWaveformAlignPanelState
         onCommitDelay: widget.onCommitDelay,
         onAutoAlign: widget.onAutoAlign,
         onPlayCue: widget.onPlayCue,
+        isPlaying: widget.isPlaying,
+        onTogglePlayPause: widget.onTogglePlayPause,
         positionListenable: widget.positionListenable,
         currentPositionMs: widget.currentPositionMs,
       ),
@@ -248,6 +261,8 @@ class SubtitleWaveformZoomView extends StatefulWidget {
     this.onCommitDelay,
     this.onAutoAlign,
     this.onPlayCue,
+    this.isPlaying,
+    this.onTogglePlayPause,
     this.positionListenable,
     this.currentPositionMs,
     super.key,
@@ -277,6 +292,12 @@ class SubtitleWaveformZoomView extends StatefulWidget {
   /// TODO-1244：逐句试听回调。文本条每句的播放按钮点击时把播放器 seek 到该句（叠加当前
   /// 预览延迟后的）时间并播放。null = 不显示播放按钮。
   final Future<void> Function(int startMs)? onPlayCue;
+
+  /// 读当前是否正在播放（驱动播放/暂停按钮图标）。null = 不显示播放/暂停按钮。
+  final bool Function()? isPlaying;
+
+  /// 播放/暂停切换回调。null = 不显示播放/暂停按钮。
+  final Future<void> Function()? onTogglePlayPause;
 
   /// 可选：播放位置变化通知源，驱动播放头重绘。
   final Listenable? positionListenable;
@@ -345,15 +366,122 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   int _cachedBucketCount = -1;
   List<double> _cachedBuckets = const <double>[];
 
+  /// 播放条平滑刷新（根因修复「播放条更新太慢」）：`VideoPlayerController` 只在字幕**换句**
+  /// 时 `notifyListeners`（`_syncCueForPosition` 的 `changed` 判据），播放头/列表若只靠它重绘
+  /// 就会在句中冻结数秒。本视图自驱一个 ~30fps 定时器读实时位置喂 [_livePositionMs]，播放头
+  /// 与字幕列表高亮走它——与整页节流的通知解耦，句中也平滑推进。仅 [currentPositionMs] 非空
+  /// 时启动；位置无变化不写 notifier（暂停/静止时零重建）。
+  Timer? _positionTicker;
+  final ValueNotifier<int> _livePositionMs = ValueNotifier<int>(-1);
+
+  /// 字幕列表滚动控制器（随播放自动滚到当前句）。
+  final ScrollController _listController = ScrollController();
+
+  /// 上次自动滚动到的列表行下标（仅在当前句变化时滚一次，避免每帧抖动）。
+  int _lastAutoScrollIndex = -1;
+
+  /// 字幕列表固定行高（逻辑像素）：给定 itemExtent 让虚拟化与自动滚动定位都是 O(1)。
+  static const double _listItemExtent = 54.0;
+
+  /// 字幕列表可视区高度（逻辑像素）。
+  static const double _cueListHeight = 240.0;
+
+  /// 字幕列表展示行：只收有文本的 cue（与波形文本条一致，空文本句不入列表）。cue 不可变、
+  /// 弹窗生命周期内固定，故 initState 一次算好。每项保留在 [SubtitleWaveformZoomView.cues]
+  /// 里的原始下标，用于与 [_currentCueIndex] 的高亮下标对齐 + 自动滚动定位。
+  final List<int> _displayCueIndices = <int>[];
+
+  /// 原始 cue 下标 -> 列表行位置（自动滚动把当前句滚到居中时用）。
+  final Map<int, int> _origToDisplayRow = <int, int>{};
+
   @override
   void initState() {
     super.initState();
     // 横向滚动时重建：文本条按新视口裁剪出可见 cue 片段（[_cullMarginPx] 余量）。
     _scrollController.addListener(_onScroll);
+    // 字幕列表展示行（过滤空文本）：cue 弹窗内不变，一次算好。
+    for (int i = 0; i < widget.cues.length; i++) {
+      if (widget.cues[i].text.trim().isEmpty) continue;
+      _origToDisplayRow[i] = _displayCueIndices.length;
+      _displayCueIndices.add(i);
+    }
+    // 自驱播放头刷新：仅在能读到播放位置时启动。
+    if (widget.currentPositionMs != null) {
+      _livePositionMs.value = widget.currentPositionMs!.call();
+      _positionTicker = Timer.periodic(
+        const Duration(milliseconds: 33),
+        (_) => _onPositionTick(),
+      );
+    }
   }
 
   void _onScroll() {
     if (mounted) setState(() {});
+  }
+
+  /// 30fps tick：读实时位置，仅在变化时写 [_livePositionMs]（驱动播放头+列表高亮重绘），
+  /// 并按需把列表自动滚到当前句。
+  void _onPositionTick() {
+    final int Function()? read = widget.currentPositionMs;
+    if (read == null) return;
+    final int posMs = read();
+    if (posMs == _livePositionMs.value) return;
+    _livePositionMs.value = posMs;
+    _maybeAutoScrollCueList(posMs);
+  }
+
+  /// 当前句下标（按有效时间 = 位置 - 当前预览延迟，落在 cue [startMs,endMs] 内）。
+  /// 二分找「起点 <= 有效时间」的最后一句，再校验未越过其终点；gap 内返回 -1。
+  int _currentCueIndex(int posMs) {
+    final List<AudioCue> cues = widget.cues;
+    if (cues.isEmpty || posMs < 0) return -1;
+    final int effectiveMs = posMs - (_dragMs ?? _delayMs);
+    int lo = 0;
+    int hi = cues.length - 1;
+    int ans = -1;
+    while (lo <= hi) {
+      final int mid = (lo + hi) >> 1;
+      if (cues[mid].startMs <= effectiveMs) {
+        ans = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (ans >= 0 && effectiveMs <= cues[ans].endMs) return ans;
+    return -1;
+  }
+
+  /// 播放中当前句变化时把列表滚到该句居中（用户暂停/手动浏览时不抢滚动）。
+  void _maybeAutoScrollCueList(int posMs) {
+    if (!(widget.isPlaying?.call() ?? false)) return;
+    final int idx = _currentCueIndex(posMs);
+    if (idx < 0 || idx == _lastAutoScrollIndex) return;
+    _lastAutoScrollIndex = idx;
+    final int? row = _origToDisplayRow[idx]; // 空文本当前句不在列表：不滚。
+    if (row == null || !_listController.hasClients) return;
+    final double target =
+        (row * _listItemExtent - _cueListHeight / 2 + _listItemExtent / 2)
+            .clamp(0.0, _listController.position.maxScrollExtent);
+    _listController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  /// 毫秒 -> `m:ss` / `h:mm:ss` 时间标签。
+  String _formatTime(int ms) {
+    final int totalSec = (ms < 0 ? 0 : ms) ~/ 1000;
+    final int h = totalSec ~/ 3600;
+    final int m = (totalSec % 3600) ~/ 60;
+    final int s = totalSec % 60;
+    final String ss = s.toString().padLeft(2, '0');
+    if (h > 0) {
+      final String mm = m.toString().padLeft(2, '0');
+      return '$h:$mm:$ss';
+    }
+    return '$m:$ss';
   }
 
   /// cue 边界（start/end 混合，未加延迟）。painter 内部叠加延迟画竖线。
@@ -377,6 +505,10 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   @override
   void dispose() {
+    _positionTicker?.cancel();
+    _positionTicker = null;
+    _livePositionMs.dispose();
+    _listController.dispose();
     _scrollController.removeListener(_onScroll);
     _delayController.dispose();
     _scrollController.dispose();
@@ -463,7 +595,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     final double gap = tokens.spacing.gap;
 
     return HibikiDialogFrame(
-      maxWidth: 720,
+      maxWidth: 980,
+      maxHeightFactor: 0.9,
+      scrollable: true,
       padding: EdgeInsets.all(tokens.spacing.page),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -483,6 +617,10 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           _buildScrollableWaveform(cs),
           SizedBox(height: gap / 2),
           _buildViewControls(cs),
+          if (_displayCueIndices.isNotEmpty) ...<Widget>[
+            SizedBox(height: gap),
+            _buildCueList(theme, cs),
+          ],
           if (widget.onCommitDelay != null) ...<Widget>[
             Divider(height: gap * 2, color: cs.outlineVariant),
             _buildDelayControls(theme, cs, tokens),
@@ -591,18 +729,19 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           );
         }
 
-        final Widget painted = (widget.positionListenable != null &&
-                widget.currentPositionMs != null)
-            ? AnimatedBuilder(
-                animation: widget.positionListenable!,
-                builder: (BuildContext _, __) => CustomPaint(
+        // 播放头走自驱 [_livePositionMs]（30fps），不再依赖被换句节流的整页通知——句中也
+        // 平滑推进（修「播放条更新太慢」）。无 [currentPositionMs] 时不画播放头。
+        final Widget painted = widget.currentPositionMs != null
+            ? ValueListenableBuilder<int>(
+                valueListenable: _livePositionMs,
+                builder: (BuildContext _, int posMs, __) => CustomPaint(
                   size: Size(contentWidth, _waveHeight),
-                  painter: buildPainter(widget.currentPositionMs!.call()),
+                  painter: buildPainter(posMs),
                 ),
               )
             : CustomPaint(
                 size: Size(contentWidth, _waveHeight),
-                painter: buildPainter(widget.currentPositionMs?.call() ?? -1),
+                painter: buildPainter(-1),
               );
 
         final Widget strip = _buildCueStrip(
@@ -621,6 +760,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           ),
           clipBehavior: Clip.antiAlias,
           child: Scrollbar(
+            key: const ValueKey<String>('subtitle-waveform-hscroll'),
             controller: _scrollController,
             thumbVisibility: true,
             child: SingleChildScrollView(
@@ -760,13 +900,34 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     );
   }
 
-  /// 视图控件行（缩放 + 跳到播放头）：只改查看，不改延迟。
+  /// 视图控件行（播放/暂停 + 缩放 + 跳到播放头）：只改查看/播放态，不改延迟。
   Widget _buildViewControls(ColorScheme cs) {
     final bool canJump =
         widget.currentPositionMs != null && (widget.currentPositionMs!() >= 0);
     return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
       children: <Widget>[
+        if (widget.onTogglePlayPause != null && widget.isPlaying != null)
+          // 播放态翻转即时反映：监听 positionListenable（controller 在 stream.playing 翻转时
+          // notifyListeners），无则退回自驱 [_livePositionMs]。
+          AnimatedBuilder(
+            animation: widget.positionListenable ?? _livePositionMs,
+            builder: (BuildContext _, __) {
+              final bool playing = widget.isPlaying!.call();
+              return IconButton.filledTonal(
+                icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+                tooltip: playing
+                    ? t.shortcut_action_video_pause
+                    : t.shortcut_action_video_play,
+                // 立即本地重建以翻转图标（不等 controller 的 stream.playing 异步回来）；
+                // 外部空格暂停等仍靠上面的 positionListenable 通知刷新。
+                onPressed: () async {
+                  await widget.onTogglePlayPause!.call();
+                  if (mounted) setState(() {});
+                },
+              );
+            },
+          ),
+        const Spacer(),
         if (canJump)
           TextButton.icon(
             onPressed: _jumpToPlayhead,
@@ -782,6 +943,128 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           icon: const Icon(Icons.zoom_in),
           tooltip: t.video_subtitle_waveform_zoom_in,
           onPressed: _zoom >= _maxZoom ? null : () => _zoomBy(1.5),
+        ),
+      ],
+    );
+  }
+
+  /// 字幕列表：按时间顺序竖排全部 cue，每行=播放图标 + 时间戳 + 句文本。点击任意行把播放器
+  /// seek 到该句（叠加当前预览延迟）并播放（[onPlayCue]），当前句高亮、播放中自动滚动跟随。
+  /// 高亮/跟随走自驱 [_livePositionMs]（30fps），与播放头同源、句中平滑。
+  Widget _buildCueList(ThemeData theme, ColorScheme cs) {
+    final bool canPlay = widget.onPlayCue != null;
+    final List<AudioCue> cues = widget.cues;
+    return Column(
+      key: const ValueKey<String>('subtitle-waveform-cue-list'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6.0),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.subtitles_outlined, size: 18, color: cs.primary),
+              const SizedBox(width: 6),
+              Text(
+                t.video_subtitle_waveform_cue_list,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          height: _cueListHeight,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: cs.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: ValueListenableBuilder<int>(
+            valueListenable: _livePositionMs,
+            builder: (BuildContext _, int posMs, __) {
+              final int activeIdx = _currentCueIndex(posMs);
+              return Scrollbar(
+                controller: _listController,
+                thumbVisibility: true,
+                child: ListView.builder(
+                  controller: _listController,
+                  itemExtent: _listItemExtent,
+                  itemCount: _displayCueIndices.length,
+                  itemBuilder: (BuildContext _, int row) {
+                    final int i = _displayCueIndices[row];
+                    final AudioCue cue = cues[i];
+                    final String text = cue.text.trim();
+                    final int rawSeekMs = cue.startMs + (_dragMs ?? _delayMs);
+                    final int seekMs = rawSeekMs < 0 ? 0 : rawSeekMs;
+                    final bool active = i == activeIdx;
+                    return Material(
+                      color: active
+                          ? cs.primaryContainer.withValues(alpha: 0.55)
+                          : Colors.transparent,
+                      child: InkWell(
+                        onTap: canPlay
+                            ? () => widget.onPlayCue!.call(seekMs)
+                            : null,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10.0, vertical: 6.0),
+                          child: Row(
+                            children: <Widget>[
+                              if (canPlay)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8.0),
+                                  child: Icon(
+                                    active
+                                        ? Icons.play_arrow
+                                        : Icons.play_circle_outline,
+                                    size: 18,
+                                    color: active
+                                        ? cs.primary
+                                        : cs.onSurfaceVariant,
+                                  ),
+                                ),
+                              SizedBox(
+                                width: 52,
+                                child: Text(
+                                  _formatTime(cue.startMs),
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                    fontFeatures: const <FontFeature>[
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  text,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: active
+                                        ? cs.onPrimaryContainer
+                                        : cs.onSurface,
+                                    height: 1.2,
+                                    fontWeight: active
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
         ),
       ],
     );

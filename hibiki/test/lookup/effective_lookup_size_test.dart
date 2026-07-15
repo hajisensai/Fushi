@@ -71,52 +71,64 @@ void main() {
       expect(independent(2000, 1600), const LookupSize(640, 480));
     });
 
-    test('resolveOverlayResizeFromWindow — 覆盖窗拖角倒推 + 解锁真值', () {
-      // 正向：cardW = overlayLogicalW × uiScale，窗口物理宽 = cardW × dpr。
-      // 取 overlayLogicalW=600, uiScale=1.25, dpr=1.5 → 物理宽 = 600×1.25×1.5 = 1125。
-      final LookupSize size = resolveOverlayResizeFromWindow(
-        windowPhysicalWidth: 1125,
-        windowPhysicalHeight: 900, // 480×1.25×1.5 = 900 → 逻辑高 480
+    test('resolveOverlayResizeFromDelta — 增量折算叠加到当前值', () {
+      // 拖大：物理增量 +Δ → 逻辑增量 = Δ/dpr/uiScale。
+      // current=600, Δphys=+450, dpr=1.5, uiScale=1.25 → +450/1.5/1.25 = +240 → 840。
+      final LookupSize size = resolveOverlayResizeFromDelta(
+        currentWidth: 600,
+        currentHeight: 480,
+        deltaPhysWidth: 450,
+        deltaPhysHeight: -180, // -180/1.5/1.25 = -96 → 480-96 = 384
         dpr: 1.5,
         uiScale: 1.25,
       );
-      expect(size, const LookupSize(600, 480));
+      expect(size, const LookupSize(840, 384));
     });
 
-    test('resolveOverlayResizeFromWindow — dpr/uiScale 非正按 1 兜底（不除零）', () {
-      final LookupSize size = resolveOverlayResizeFromWindow(
-        windowPhysicalWidth: 800,
-        windowPhysicalHeight: 600,
+    test('resolveOverlayResizeFromDelta — 恒定级联余量在相减中抵消（150% 例）', () {
+      // 关键：不管起始窗口比卡片大多少（reserve-to-edge 余量），只要用「结束−起始」增量，
+      // 余量作为常量被减掉。仅拖动那段 Δphys 决定尺寸变化——150% 下也精确。
+      const double uiScale = 1.5, dpr = 1.5;
+      // 用户把窗口物理宽拖大 90px（= 逻辑 90/1.5/1.5 = 40）。
+      final LookupSize size = resolveOverlayResizeFromDelta(
+        currentWidth: 400,
+        currentHeight: 360,
+        deltaPhysWidth: 90,
+        deltaPhysHeight: 0,
+        dpr: dpr,
+        uiScale: uiScale,
+      );
+      expect(size, const LookupSize(440, 360));
+    });
+
+    test('resolveOverlayResizeFromDelta — dpr/uiScale 非正按 1 兜底（不除零）', () {
+      final LookupSize size = resolveOverlayResizeFromDelta(
+        currentWidth: 500,
+        currentHeight: 400,
+        deltaPhysWidth: 100,
+        deltaPhysHeight: -50,
         dpr: 0,
         uiScale: -1,
       );
-      expect(size, const LookupSize(800, 600));
+      expect(size, const LookupSize(600, 350));
     });
 
-    test('resolveOverlayResizeFromWindow — 下取整到整逻辑像素', () {
-      // 900.9 / 1 / 1 = 900.9 → floor 900；700.2 → 700。
-      final LookupSize size = resolveOverlayResizeFromWindow(
-        windowPhysicalWidth: 900.9,
-        windowPhysicalHeight: 700.2,
-        dpr: 1,
-        uiScale: 1,
-      );
-      expect(size, const LookupSize(900, 700));
-    });
-
-    test('resolveOverlayResizeFromWindow — clamp 到滑杆同源 min/max', () {
-      // 过小 → 夹到 (250,200)；过大 → 夹到 (2000,1600)。
-      final LookupSize tiny = resolveOverlayResizeFromWindow(
-        windowPhysicalWidth: 10,
-        windowPhysicalHeight: 10,
+    test('resolveOverlayResizeFromDelta — clamp 到滑杆同源 min/max', () {
+      final LookupSize tiny = resolveOverlayResizeFromDelta(
+        currentWidth: 260,
+        currentHeight: 210,
+        deltaPhysWidth: -9999,
+        deltaPhysHeight: -9999,
         dpr: 1,
         uiScale: 1,
       );
       expect(
           tiny, const LookupSize(kLookupPopupMinWidth, kLookupPopupMinHeight));
-      final LookupSize huge = resolveOverlayResizeFromWindow(
-        windowPhysicalWidth: 99999,
-        windowPhysicalHeight: 99999,
+      final LookupSize huge = resolveOverlayResizeFromDelta(
+        currentWidth: 1900,
+        currentHeight: 1500,
+        deltaPhysWidth: 9999,
+        deltaPhysHeight: 9999,
         dpr: 1,
         uiScale: 1,
       );
@@ -124,12 +136,14 @@ void main() {
           huge, const LookupSize(kLookupPopupMaxWidth, kLookupPopupMaxHeight));
     });
 
-    test('resolveOverlayResizeFromWindow — 拖出的尺寸即解锁独立键的写入值', () {
-      // 语义验证：倒推值直接作为 overlayLookupMaxWidth/Height 写入，effective 在
+    test('resolveOverlayResizeFromDelta — 拖出的尺寸即解锁独立键的写入值', () {
+      // 语义验证：增量折算后的值直接作为 overlayLookupMaxWidth/Height 写入，effective 在
       // independent=true 下即读它——拖拽与滑杆写同一真值。
-      final LookupSize dragged = resolveOverlayResizeFromWindow(
-        windowPhysicalWidth: 1400,
-        windowPhysicalHeight: 1000,
+      final LookupSize dragged = resolveOverlayResizeFromDelta(
+        currentWidth: 400,
+        currentHeight: 360,
+        deltaPhysWidth: 600, // /2/1 = +300 → 700
+        deltaPhysHeight: 280, // /2/1 = +140 → 500
         dpr: 2,
         uiScale: 1,
       );

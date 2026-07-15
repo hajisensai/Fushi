@@ -7,23 +7,26 @@ import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
 import 'package:hibiki/utils.dart';
 
 class TagPickerPage extends ConsumerStatefulWidget {
-  /// 三种媒体三选一，共用同一标签池，按非空字段分派：
-  /// EPUB 书传 [bookKey]（书主键）；SRT 书传 [srtBookId]（自增主键）且
-  /// [isSrtBook]=true；视频书传 [videoBookUid]（video_books 的 book_uid）。
+  /// 四种目标四选一，共用同一标签池，按非空字段分派：
+  /// EPUB 书传 [bookKey]；SRT 书传 [srtBookId] 且 [isSrtBook]=true；视频书传
+  /// [videoBookUid]；合集传 [collectionId]（media_collections 主键）。
   const TagPickerPage({
     this.bookKey,
     this.srtBookId,
     this.videoBookUid,
+    this.collectionId,
     this.isSrtBook = false,
     super.key,
   }) : assert(
-          videoBookUid != null ||
+          collectionId != null ||
+              videoBookUid != null ||
               (isSrtBook ? srtBookId != null : bookKey != null),
-          'bookKey for EPUB, srtBookId for SRT, videoBookUid for video',
+          'one of: collectionId / videoBookUid / srtBookId / bookKey',
         );
   final String? bookKey;
   final int? srtBookId;
   final String? videoBookUid;
+  final int? collectionId;
   final bool isSrtBook;
 
   @override
@@ -44,20 +47,29 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   bool get _isVideo => widget.videoBookUid != null;
 
+  bool get _isCollection => widget.collectionId != null;
+
   /// 读当前媒体已挂的标签（按媒体类型分派到对应 DB 查询）。
   Future<List<BookTagRow>> _currentTags() {
+    if (_isCollection) return _db.getTagsForCollection(widget.collectionId!);
     if (_isVideo) return _db.getTagsForVideoBook(widget.videoBookUid!);
     if (widget.isSrtBook) return _db.getTagsForSrtBook(widget.srtBookId!);
     return _db.getTagsForBook(widget.bookKey!);
   }
 
   Future<void> _addTag(int tagId) {
+    if (_isCollection) {
+      return _db.addTagToCollection(widget.collectionId!, tagId);
+    }
     if (_isVideo) return _db.addTagToVideoBook(widget.videoBookUid!, tagId);
     if (widget.isSrtBook) return _db.addTagToSrtBook(widget.srtBookId!, tagId);
     return _db.addTagToBook(widget.bookKey!, tagId);
   }
 
   Future<void> _removeTag(int tagId) {
+    if (_isCollection) {
+      return _db.removeTagFromCollection(widget.collectionId!, tagId);
+    }
     if (_isVideo) {
       return _db.removeTagFromVideoBook(widget.videoBookUid!, tagId);
     }

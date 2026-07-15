@@ -246,8 +246,19 @@ class EpubSpreadMap {
     final EpubChapter a = book.chapters[i];
     final EpubChapter b = book.chapters[i + 1];
 
-    // OPF metadata: explicit left+right pair.
-    if (_isSpreadPair(a.spreadProperty, b.spreadProperty)) return true;
+    // OPF metadata: explicit left+right pair — but only between two fixed-layout
+    // illustration pages. BUG-817: hybrid books (e.g. 電撃文庫 light novels) also
+    // stamp page-spread-left/right on *reflowable text* pages; pairing a text page
+    // with the following fixed-layout illustration page swallowed the image into a
+    // nonsensical text|image spread, which then acted as a merge barrier so the
+    // illustration was never absorbed into the prose ("将插图页并入正文" no-op, the
+    // picture vanishing entirely). Require both image-only, matching the two rules
+    // below, so only genuine two-page illustration spreads pair.
+    if (_isSpreadPair(a.spreadProperty, b.spreadProperty) &&
+        book.isImageOnlyChapter(i) &&
+        book.isImageOnlyChapter(i + 1)) {
+      return true;
+    }
 
     // Book-level rendition:spread with image-only chapters.
     if (book.renditionSpread != null &&

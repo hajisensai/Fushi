@@ -6,6 +6,7 @@ import 'package:hibiki/src/platform/floating_overlay_channel.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 typedef ClipboardTextLookupHandler = void Function(String text, int index);
+typedef ClipboardTextTransparencyHandler = void Function();
 
 /// 真透明剪切板文字窗的 MethodChannel 绑定（Windows-only）。
 ///
@@ -30,33 +31,47 @@ class ClipboardTextOverlayChannel extends FloatingOverlayChannel {
   bool get isSupported => platformOverride ?? Platform.isWindows;
 
   static ClipboardTextLookupHandler? _onLookupText;
+  static ClipboardTextTransparencyHandler? _onToggleTransparency;
 
-  static void setEventHandlers({ClipboardTextLookupHandler? onLookupText}) {
+  static void setEventHandlers({
+    ClipboardTextLookupHandler? onLookupText,
+    ClipboardTextTransparencyHandler? onToggleTransparency,
+  }) {
     _onLookupText = onLookupText;
+    _onToggleTransparency = onToggleTransparency;
     _instance.channel.setMethodCallHandler(_handleNativeCall);
   }
 
   static void clearEventHandlers() {
     _onLookupText = null;
+    _onToggleTransparency = null;
     _instance.channel.setMethodCallHandler(null);
   }
 
   static Future<void> _handleNativeCall(MethodCall call) async {
-    if (call.method != 'lookupText') return;
-    final Object? args = call.arguments;
-    String text = '';
-    int index = 0;
-    if (args is Map) {
-      text = args['text']?.toString() ?? '';
-      final Object? indexValue = args['index'];
-      if (indexValue is int) {
-        index = indexValue;
-      } else if (indexValue is num) {
-        index = indexValue.toInt();
-      }
-    }
-    if (text.trim().isNotEmpty) {
-      _onLookupText?.call(text, index);
+    switch (call.method) {
+      case 'lookupText':
+        final Object? args = call.arguments;
+        String text = '';
+        int index = 0;
+        if (args is Map) {
+          text = args['text']?.toString() ?? '';
+          final Object? indexValue = args['index'];
+          if (indexValue is int) {
+            index = indexValue;
+          } else if (indexValue is num) {
+            index = indexValue.toInt();
+          }
+        }
+        if (text.trim().isNotEmpty) {
+          _onLookupText?.call(text, index);
+        }
+        break;
+      case 'toggleTransparency':
+        _onToggleTransparency?.call();
+        break;
+      default:
+        break;
     }
   }
 

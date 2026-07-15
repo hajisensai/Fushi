@@ -89,10 +89,18 @@ body {
   font-weight: 700;
   text-align: start;
 }
-.clip-cue.current {
-  background-color: $HIGHLIGHT;
+/* BUG-808：每个 cue 都常驻同一 padding/border-radius（背景透明），逐句高亮时
+   `.current` 只换 background-color，不改盒子占位尺寸。否则在 vertical-rl 流里只有
+   高亮句加 padding 会把它撑大、挤动后续所有句 → 整段文字逐帧重新排版抖动。这与
+   Flutter 横排路径（audiobook_clip_text_render.dart，高亮/非高亮 padding 恒等）
+   同一「高亮只改外观不改布局」原则。 */
+.clip-cue {
   border-radius: 0.18em;
   padding: 0.08em 0.12em;
+  background-color: transparent;
+}
+.clip-cue.current {
+  background-color: $HIGHLIGHT;
 }
 .clip-img {
   display: block;
