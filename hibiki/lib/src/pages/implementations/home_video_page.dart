@@ -2,6 +2,9 @@ import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
+// BUG-994：监听全局 tab 信号，切回视频 tab 自动重拉远端。
+import 'package:hibiki/src/pages/implementations/home_page.dart'
+    show homeShellTabNotifier, HomeTab;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -147,6 +150,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 全页 spinner，用户报「一直在刷新」）。仅首载（缓存空）才显示加载圈。
   List<VideoBookRow>? _videosCache;
 
+  /// BUG-994：上次成功的远端视频态。自动刷新/重拉（_remoteFuture 换新→waiting、data
+  /// 暂为 null）期间沿用，避免远端占位卡整批闪一下（对称本地 [_videosCache]、书架
+  /// `_lastRemoteState`）。失败态不覆盖缓存。
+  _RemoteVideoState? _lastRemoteState;
+
   /// 统一合集：本会话已尝试后台抽封面的 bookUid（避免每次刷新对同一行重试 ffmpeg）。
   final Set<String> _coverBackfillAttempted = <String>{};
 
@@ -186,14 +194,29 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub =
         widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
+    // BUG-994：顶层 tab IndexedStack 保活后，切回视频 tab 不再隐式重拉远端 → 远端视频
+    // 要手动下拉刷新才出来（与书架 BUG-816 同病）。监听全局 tab 信号，切回视频 tab 时
+    // 自动重拉一次远端视频（_lastRemoteState 缓存顶住 waiting、不闪屏）。
+    homeShellTabNotifier.addListener(_onShellTabActivated);
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
     }());
   }
 
+  /// 切回视频 tab 时自动重拉远端视频（BUG-994）。非视频 tab 的切换忽略。
+  void _onShellTabActivated() {
+    if (!mounted) return;
+    if (homeShellTabNotifier.value == HomeTab.video) {
+      setState(() {
+        _remoteFuture = _loadRemoteVideos();
+      });
+    }
+  }
+
   @override
   void dispose() {
+    homeShellTabNotifier.removeListener(_onShellTabActivated);
     _videoUidsSub?.cancel();
     assert(() {
       HomeVideoPage.debugRefreshVideos = null;
@@ -1722,8 +1745,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             // 后端返回 client，故 remoteSnap 天然只含互联视频，不为云视频造假入口。
             // 离线/未配对/拉取失败（state==null 或 failed）→ 占位卡不出现（只剩本地）；
             // 「显示远端条目」开关关闭 / 标签筛选激活时同样不混排（远端视频无本地标签）。
+            // BUG-994：自动刷新/重拉期间（future→waiting、data 暂 null）沿用上次成功态，
+            // 避免远端占位卡整批闪一下（对称本地 _videosCache）。失败态不覆盖缓存。
+            final _RemoteVideoState? snapState = remoteSnap.data;
+            if (snapState != null && !snapState.failed) {
+              _lastRemoteState = snapState;
+            }
             final List<RemoteVideoInfo> remoteVideos =
-                _visibleRemoteVideos(remoteSnap.data, filter);
+                _visibleRemoteVideos(snapState ?? _lastRemoteState, filter);
             // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
             // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
             // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——

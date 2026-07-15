@@ -1,0 +1,6 @@
+## BUG-994 · 切回视频 tab 不自动拉远端视频(远端视频要手动下拉刷新才出来)
+- **报告**：2026-07-14（用户：视频加载也有问题）
+- **真实性**：✅ 真 bug/UX。根因：与书架 BUG-992 同病。顶层 tab IndexedStack 保活，`home_video_page.dart` `initState`(179)只 `_remoteFuture = _loadRemoteVideos()` 拉一次；切走再切回不重跑（代码注释 :227-233/:1697 自认「保活后切回不隐式重拉，靠手动下拉」）。别的设备新上传的互联视频、或首载那一刻 host 未上线/超时判空后，视频 tab 就一直空要手动下拉。BUG-811 只拔了 host 端 ffmpeg 探测（真凶），此加载体验缺口未补。
+- **[x] ① 已实现（待真机验证）** — `home_video_page.dart` initState 监听全局 `homeShellTabNotifier`，值=`HomeTab.video` 时 `_onShellTabActivated` 重拉 `_remoteFuture = _loadRemoteVideos()`，dispose 移除监听。配套加 `_lastRemoteState` 缓存：远端 FutureBuilder 重拉期间（waiting、data 暂 null）沿用上次成功态，避免远端占位卡闪空（对称本地 `_videosCache` 与书架 `_lastRemoteState`；失败态不覆盖缓存）。
+- **[x] ② 已加自动化测试** — `test/pages/home_tab_keepalive_guard_test.dart` 源码守卫：断言视频页 + 书架页都 `homeShellTabNotifier.addListener`/`removeListener` 且各自 `HomeTab.video`/`HomeTab.books`。（视频页 widget 测试因既有 timer 泄漏无法稳定跑，故用确定性源码守卫；tab-notifier 自动刷新机制的行为验证由书架 BUG-992 的 widget 测试 `reader_remote_interconnect_test.dart` 覆盖。）
+- **备注**：取 818 避让 origin/develop 已用的 808-810。**未真机验证，勿宣称已修好。** 残留：host `listVideos` 仍每视频 ~5 次串行 DB 读（getVideoPosition/tag 时钟），511 视频大库仍可能逼近 client 15s 超时——若真机视频仍空,再按批量预取优化(另开单 BUG-819)。视频页概览「总数」仍只数本地(BUG-815 视频版),另计。
