@@ -133,6 +133,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   VideoSubtitleListFilter? _cachedFilter;
   List<int> _cachedVisibleIndexes = const <int>[];
   Map<int, int> _cachedVisibleIndexByRawIndex = const <int, int>{};
+
+  /// BUG-839：特效叠加 / 多层 ASS 用多条 Dialogue 事件渲染**同一句可见文本**（不同
+  /// layer / style / 位置做描边、辉光、逐字变色等特效），画面 overlay 有意全渲染各层
+  /// （TODO-1312），但字幕列表按 `(startMs, 文本)` 折叠这些重复，只保留首条**代表行**，
+  /// 一句话不再在列表里出现多行。双语（同时间、文本不同）文本不同不折叠，日/中各占一行。
+  /// [_cachedDedupIndexes] 是代表行的 raw 下标（升序，`setCues` 已排序）；
+  /// [_cachedRepresentativeByRaw] 把**每个** raw 下标（含被折叠的重复）映射到其代表行的
+  /// raw 下标，供当前播放句落在重复项时把高亮 / 自动滚动定位到那唯一渲染的代表行。
+  List<AudioCue>? _cachedDedupCues;
+  int _cachedDedupCuesLength = -1;
+  List<int> _cachedDedupIndexes = const <int>[];
+  Map<int, int> _cachedRepresentativeByRaw = const <int, int>{};
   List<AudioCue>? _cachedSelectedCues;
   int _cachedSelectedCuesLength = -1;
   int _cachedSelectedCount = 0;
@@ -212,7 +224,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     super.initState();
     _lastControllerCueIndex = widget.controller.currentCueIndex;
     _lastSubtitleCuesLoading = widget.controller.isSubtitleCuesLoading;
-    final int initialRawIndex = widget.controller.currentCueIndex;
+    // BUG-839：当前句可能落在被折叠的重复项上——追踪其**代表行** raw（列表渲染的唯一行），
+    // 否则高亮 / 滚动定位不到（rowKey 按代表行 raw 挂）。
+    final int initialRawIndex =
+        _representativeRaw(widget.controller.currentCueIndex);
     _scrollTargetRawIndex =
         _isCurrentCueVisible(initialRawIndex) ? initialRawIndex : null;
     _retainRowKeyFor(_scrollTargetRawIndex);
@@ -232,10 +247,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _lastControllerCueIndex = widget.controller.currentCueIndex;
       _lastSubtitleCuesLoading = widget.controller.isSubtitleCuesLoading;
       _lastScrolledIndex = -1;
+      final int currentRep =
+          _representativeRaw(widget.controller.currentCueIndex);
       _scrollTargetRawIndex =
-          _isCurrentCueVisible(widget.controller.currentCueIndex)
-              ? widget.controller.currentCueIndex
-              : null;
+          _isCurrentCueVisible(currentRep) ? currentRep : null;
       _rowKeys.clear();
       _retainRowKeyFor(_scrollTargetRawIndex);
       _scheduleScrollToCurrentCue();
@@ -260,7 +275,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _lastControllerCueIndex = currentIndex;
     _lastSubtitleCuesLoading = cuesLoading;
     setState(() {
-      _scrollTargetRawIndex = currentIndex >= 0 ? currentIndex : null;
+      // BUG-839：追踪代表行 raw（当前句可能是被折叠的重复项）。
+      _scrollTargetRawIndex =
+          currentIndex >= 0 ? _representativeRaw(currentIndex) : null;
       _retainRowKeyFor(_scrollTargetRawIndex);
     });
     if (cueChanged) _scheduleScrollToCurrentCue();
@@ -278,10 +295,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   void _scrollToCurrentCueIfNeeded() {
     if (!_autoScroll) return;
-    final int currentIndex = widget.controller.currentCueIndex;
+    final int rawIndex = widget.controller.currentCueIndex;
     final List<AudioCue> cues = widget.controller.cues;
-    if (currentIndex < 0 || currentIndex >= cues.length) return;
+    if (rawIndex < 0 || rawIndex >= cues.length) return;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
+    // BUG-839：当前句若是被折叠的重复项，定位到其代表行（列表渲染的唯一行、rowKey 所在）。
+    final int currentIndex = _representativeRaw(rawIndex);
     final int visibleIndex =
         _visibleIndexForRawIndex(currentIndex, visibleIndexes);
     if (visibleIndex < 0 || visibleIndex == _lastScrolledIndex) return;
@@ -378,9 +397,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         _cachedSelectedCuesLength == cues.length) {
       return _cachedSelectedCount;
     }
+    // BUG-839：只数去重后的代表行，与 selected 档实际渲染的行一一对应。
     int count = 0;
-    for (final AudioCue cue in cues) {
-      if (_isCueSelectedForCard(cue)) count++;
+    for (final int i in _dedupedRawIndexes(cues)) {
+      if (_isCueSelectedForCard(cues[i])) count++;
     }
     _cachedSelectedCues = cues;
     _cachedSelectedCuesLength = cues.length;
@@ -393,11 +413,51 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 谓词，故数量与列表完全一致。这是已删的「本集收藏」面板顶部计数 header 的归宿：收藏
   /// 统计并入字幕列表收藏档。
   int _favoriteCueCount(List<AudioCue> cues) {
+    // BUG-839：只数去重后的代表行，与 favorites 档实际渲染的行一一对应。
     int count = 0;
-    for (final AudioCue cue in cues) {
-      if (widget.isCueFavorited(cue)) count++;
+    for (final int i in _dedupedRawIndexes(cues)) {
+      if (widget.isCueFavorited(cues[i])) count++;
     }
     return count;
+  }
+
+  /// BUG-839：按 `(startMs, 文本)` 折叠重复 cue，返回代表行 raw 下标（升序）并同步
+  /// 刷新 [_cachedRepresentativeByRaw]（每个 raw → 其代表行 raw）。按 cues 身份 + 长度
+  /// 记忆化（`setCues` 换列表即失效；[_clearCueCaches] 亦清）。特效叠加 / 多层同句拷贝
+  /// 同 start 同文本 → 折叠成一行；双语文本不同 → 各自保留。
+  List<int> _dedupedRawIndexes(List<AudioCue> cues) {
+    if (identical(_cachedDedupCues, cues) &&
+        _cachedDedupCuesLength == cues.length) {
+      return _cachedDedupIndexes;
+    }
+    final List<int> reps = <int>[];
+    final Map<String, int> firstByKey = <String, int>{};
+    final Map<int, int> repByRaw = <int, int>{};
+    for (int i = 0; i < cues.length; i++) {
+      final AudioCue cue = cues[i];
+      final String key = '${cue.startMs} ${cue.text}';
+      final int? rep = firstByKey[key];
+      if (rep == null) {
+        firstByKey[key] = i;
+        repByRaw[i] = i;
+        reps.add(i);
+      } else {
+        repByRaw[i] = rep;
+      }
+    }
+    _cachedDedupCues = cues;
+    _cachedDedupCuesLength = cues.length;
+    _cachedDedupIndexes = reps;
+    _cachedRepresentativeByRaw = repByRaw;
+    return reps;
+  }
+
+  /// 把任意 raw 下标（可能是被折叠的重复项）映射到其代表行 raw 下标（BUG-839）。当前
+  /// 播放句落在重复拷贝上时，用它把高亮 / 自动滚动定位到唯一渲染的代表行。
+  int _representativeRaw(int rawIndex) {
+    if (rawIndex < 0) return rawIndex;
+    _dedupedRawIndexes(widget.controller.cues);
+    return _cachedRepresentativeByRaw[rawIndex] ?? rawIndex;
   }
 
   List<int> _visibleCueIndexes(List<AudioCue> cues) {
@@ -417,21 +477,24 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         _cachedFilter == _filter) {
       return _cachedVisibleIndexes;
     }
+    // BUG-839：三档都以**去重后**的代表行为基（特效叠加同句拷贝只出一行）；收藏 / 已选
+    // 再在代表行上过滤，计数 chip 走同一去重集合（[_favoriteCueCount] / [_selectedCueCount]）
+    // 故数量与列表一致。
+    final List<int> base = _dedupedRawIndexes(cues);
     late final List<int> indexes;
     switch (_filter) {
       case VideoSubtitleListFilter.all:
-        indexes =
-            List<int>.generate(cues.length, (int i) => i, growable: false);
+        indexes = base;
         break;
       case VideoSubtitleListFilter.favorites:
         indexes = <int>[
-          for (int i = 0; i < cues.length; i++)
+          for (final int i in base)
             if (widget.isCueFavorited(cues[i])) i,
         ];
         break;
       case VideoSubtitleListFilter.selected:
         indexes = <int>[
-          for (int i = 0; i < cues.length; i++)
+          for (final int i in base)
             if (_isCueSelectedForCard(cues[i])) i,
         ];
         break;
@@ -451,10 +514,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   }
 
   int _visibleIndexForRawIndex(int rawIndex, List<int> visibleIndexes) {
-    if (_filter == VideoSubtitleListFilter.all) {
-      return rawIndex >= 0 && rawIndex < visibleIndexes.length ? rawIndex : -1;
-    }
-    return _cachedVisibleIndexByRawIndex[rawIndex] ?? -1;
+    // BUG-839：去重后 `all` 档不再是恒等映射（重复项被折叠、raw 下标有跳空），三档统一走
+    // raw→代表行→可见位置映射；当前句落在被折叠的重复项时，定位到其代表行。
+    final int rep = _cachedRepresentativeByRaw[rawIndex] ?? rawIndex;
+    return _cachedVisibleIndexByRawIndex[rep] ?? -1;
   }
 
   bool _isCurrentCueVisible(int rawIndex) {
@@ -491,6 +554,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedSelectedCues = null;
     _cachedSelectedCuesLength = -1;
     _cachedSelectedCount = 0;
+    _cachedDedupCues = null;
+    _cachedDedupCuesLength = -1;
+    _cachedDedupIndexes = const <int>[];
+    _cachedRepresentativeByRaw = const <int, int>{};
   }
 
   void _retainRowKeyFor(int? rawIndex) {
@@ -513,7 +580,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final ColorScheme cs = widget.colorScheme;
     final List<AudioCue> cues = widget.controller.cues;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
-    final int currentIndex = widget.controller.currentCueIndex;
+    // BUG-839：当前句可能是被折叠的重复项——映射到其代表行 raw（列表渲染的唯一行）供高亮
+    // 与 rowKey 保留，否则当前句落在重复拷贝时整行都不高亮。
+    final int currentIndex =
+        _representativeRaw(widget.controller.currentCueIndex);
     _retainRowKeyFor(currentIndex >= 0 ? currentIndex : _scrollTargetRawIndex);
     final bool showLoading =
         cues.isEmpty && widget.controller.isSubtitleCuesLoading;

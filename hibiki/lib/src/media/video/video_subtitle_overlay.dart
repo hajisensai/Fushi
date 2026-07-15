@@ -676,6 +676,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         order.add((key, group));
       }
     }
+    // BUG-840：跨组底部碰撞避让。`_positionKey` 把底部基线折叠组（渲染在同一
+    // `max(bottomPadding, ...)` 基线）还按 Layer / MarginL/R 拆成多组时，双语对白（日文一
+    // 层 + 中文一层、或水平边距各异）会各自成组、又都锚到同一底基线 → 叠印糊字。libass 语义：
+    // 同位不同文本的底部事件竖排避让、不叠印。修复：把**文本两两互异**的底部基线折叠组合并进
+    // 一个堆叠组（竖排分行）；同文本的多层拷贝（卡拉OK特效层，BUG-833，通常 \pos / 顶部锚点，
+    // 不落底部基线桶）不合并，仍各自成组同位叠画出特效。
+    final List<(String, List<AudioCue>)> grouped =
+        _mergeBottomBaselineGroups(order);
     // 组内按 MarginV 升序稳定排序：折进同一基线桶的底部双语（JP MarginV=4 + CH MarginV=30）
     // 竖排堆叠时，MarginV 小的贴锚点（底部锚组 slot0 在底）、大的在上，复现 libass「MarginV
     // 越大离底越远」的相对次序，不再依赖字幕文件里 JP/CH 的书写先后（本 BUG 的次序保证）。
@@ -686,7 +694,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       return (mv == null || mv <= 0) ? 0 : mv;
     }
 
-    for (final (String, List<AudioCue>) entry in order) {
+    for (final (String, List<AudioCue>) entry in grouped) {
       final List<AudioCue> group = entry.$2;
       if (group.length < 2) continue;
       // 稳定排序（List.sort 非稳定）：以原始下标做 tie-break，保证同 MarginV 保持发现次序。
@@ -696,7 +704,87 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         return c != 0 ? c : byIndex.indexOf(a).compareTo(byIndex.indexOf(b));
       });
     }
-    return order;
+    return grouped;
+  }
+
+  /// BUG-840：把**文本两两互异**的底部基线折叠组合并进一个堆叠组（跨组底部碰撞避让）。
+  ///
+  /// 「底部基线折叠」= 无 \pos / \move、竖直锚点=底部、且 MarginV 会被 [_paddingFor] 的
+  /// `max(bottomPadding, scaledMarginV)` 夹回同一底基线（MarginV 空 / <=0 / <= bottomPadding）。
+  /// 这些组全部渲染在同一 y——双语对白（日文层 + 中文层、或 MarginL/R 各异）被
+  /// [_positionKey] 按 Layer / 水平边距拆成多组时会叠印糊字。按**水平锚点**分桶（左/中/右对齐
+  /// 各成一栏，不横向混排），桶内若全部文本互异（双语 / 多行不同翻译）→ 合并成一个竖排堆叠组，
+  /// 键归一为不含 Layer / MarginL/R 的底部基线桶（跨帧稳定，[_syncGroupSlots] 槽位身份不漂移）。
+  /// 桶内出现重复文本（同句多层拷贝=卡拉OK特效层，应同位叠画不拆行）则整桶不合并，保持
+  /// [_positionKey] 原分组（各层同位叠画，BUG-833 不回归）。非底部 / 带显式位置的组原样保留。
+  List<(String, List<AudioCue>)> _mergeBottomBaselineGroups(
+    List<(String, List<AudioCue>)> order,
+  ) {
+    bool isBottomBaselineFolded(AudioCue cue) {
+      final SubtitleMarkup? m = cue.markup;
+      if (m == null) return true; // 纯 SRT / 无 markup：底部居中、无 MarginV → 折叠
+      if (m.posFraction != null) return false;
+      if (widget.respectAssStyle && m.move != null) return false;
+      final SubtitleVAlign v = m.anchor?.vertical ?? SubtitleVAlign.bottom;
+      if (v != SubtitleVAlign.bottom) return false;
+      final double? mv = m.cueStyle?.marginV;
+      if (mv == null || mv <= 0) return true;
+      return mv <= widget.bottomPadding;
+    }
+
+    // 按水平锚点分桶收集底部基线折叠组的 order 下标（组内 cue 同键、同折叠态，取代表判断）。
+    final Map<int, List<int>> bucketsByAh = <int, List<int>>{};
+    for (int i = 0; i < order.length; i++) {
+      final AudioCue rep = order[i].$2.first;
+      if (!isBottomBaselineFolded(rep)) continue;
+      final int ah =
+          (rep.markup?.anchor?.horizontal ?? SubtitleHAlign.center).index;
+      (bucketsByAh[ah] ??= <int>[]).add(i);
+    }
+
+    // 需合并的桶：>=2 组且桶内文本两两互异。keepInto[drop]=keep（首组），mergedCues[keep]=并集。
+    final Map<int, int> dropInto = <int, int>{};
+    final Map<int, List<AudioCue>> mergedCues = <int, List<AudioCue>>{};
+    final Map<int, int> mergedAh = <int, int>{};
+    bucketsByAh.forEach((int ah, List<int> idxs) {
+      if (idxs.length < 2) return;
+      final Set<String> seen = <String>{};
+      bool distinct = true;
+      for (final int i in idxs) {
+        for (final AudioCue cue in order[i].$2) {
+          if (!seen.add(cue.text)) {
+            distinct = false;
+            break;
+          }
+        }
+        if (!distinct) break;
+      }
+      if (!distinct) return;
+      final int keep = idxs.first;
+      final List<AudioCue> union = <AudioCue>[];
+      for (final int i in idxs) {
+        union.addAll(order[i].$2);
+        if (i != keep) dropInto[i] = keep;
+      }
+      mergedCues[keep] = union;
+      mergedAh[keep] = ah;
+    });
+    if (dropInto.isEmpty) return order;
+
+    // 重建 order：keep 位置换成合并组（键归一），drop 位置跳过，其余原样、保持发现顺序。
+    final List<(String, List<AudioCue>)> out = <(String, List<AudioCue>)>[];
+    for (int i = 0; i < order.length; i++) {
+      if (dropInto.containsKey(i)) continue;
+      final List<AudioCue>? union = mergedCues[i];
+      if (union != null) {
+        final String key =
+            'a:${SubtitleVAlign.bottom.index}:${mergedAh[i]}:-1:-1:-1';
+        out.add((key, union));
+      } else {
+        out.add(order[i]);
+      }
+    }
+    return out;
   }
 
   /// 一条 cue 的「有效定位」分组键（TODO-1341）：有 \pos 时按分数（+ 锚点），否则按锚点
