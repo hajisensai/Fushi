@@ -8,11 +8,11 @@
   "notes": "Automated desktop debug-channel build from develop @ cc12682. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.2.0-debug.7995-dbde0c3-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.7995-dbde0c3-debug.apk",
-      "releaseSequence": 7995,
-      "tag": "v1.2.0-debug.7995+dbde0c3",
-      "version": "1.2.0-debug.7995"
+      "name": "hibiki-1.2.0-debug.7998-603f29a-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.7998-603f29a-debug.apk",
+      "releaseSequence": 7998,
+      "tag": "v1.2.0-debug.7998+603f29a",
+      "version": "1.2.0-debug.7998"
     },
     {
       "name": "hibiki-1.2.0-debug.7998-ios.ipa",
