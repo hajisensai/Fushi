@@ -112,4 +112,21 @@ void main() {
     expect(md5s.length, greaterThanOrEqualTo(4),
         reason: 'each full jar must stay MD5-pinned.');
   });
+
+  test('Android fork only downloads jars for Flutter target platforms', () {
+    final String gradle =
+        fork('media_kit_libs_android_video/android/build.gradle');
+    expect(gradle.contains('findProperty("target-platform")'), isTrue,
+        reason: 'the vendored downloader must read Flutter\'s '
+            '`-Ptarget-platform` value instead of fetching every ABI.');
+    expect(gradle.contains('"android-x64": "x86_64"'), isTrue,
+        reason:
+            'android-x64 must map to the x86_64 libmpv jar used by the AVD.');
+    expect(
+        gradle.contains(
+            'filesToDownload.findAll { fileInfo -> targetAbis.contains(fileInfo.abi) }'),
+        isTrue,
+        reason: 'irrelevant ARM jars must not be downloaded for an x64-only '
+            'emulator build (BUG-817).');
+  });
 }

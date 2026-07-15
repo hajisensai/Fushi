@@ -68,11 +68,28 @@ task downloadDependencies(type: Exec) {
         // them (full .so is ~4MB larger — the extra decoders). MD5s recomputed
         // from the downloaded full jars.
         def filesToDownload = [
-            ["url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-arm64-v8a.jar", "md5": "86f2c8faeb66af1878b3a16f67831cb3", "destination": file("$buildDir/v1.1.11/full-arm64-v8a.jar")],
-            ["url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-armeabi-v7a.jar", "md5": "93542d40e44f3afad3aa773674e8eaa5", "destination": file("$buildDir/v1.1.11/full-armeabi-v7a.jar")],
-            ["url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-x86_64.jar", "md5": "44b7efdbaf3626d6b24afaf5d497a369", "destination": file("$buildDir/v1.1.11/full-x86_64.jar")],
-            ["url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-x86.jar", "md5": "e69a9bbd7fb587deb33dd10fecc2fecc", "destination": file("$buildDir/v1.1.11/full-x86.jar")]
+            ["abi": "arm64-v8a", "url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-arm64-v8a.jar", "md5": "86f2c8faeb66af1878b3a16f67831cb3", "destination": file("$buildDir/v1.1.11/full-arm64-v8a.jar")],
+            ["abi": "armeabi-v7a", "url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-armeabi-v7a.jar", "md5": "93542d40e44f3afad3aa773674e8eaa5", "destination": file("$buildDir/v1.1.11/full-armeabi-v7a.jar")],
+            ["abi": "x86_64", "url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-x86_64.jar", "md5": "44b7efdbaf3626d6b24afaf5d497a369", "destination": file("$buildDir/v1.1.11/full-x86_64.jar")],
+            ["abi": "x86", "url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-x86.jar", "md5": "e69a9bbd7fb587deb33dd10fecc2fecc", "destination": file("$buildDir/v1.1.11/full-x86.jar")]
         ]
+
+        def flutterPlatformToAbi = [
+            "android-arm": "armeabi-v7a",
+            "android-arm64": "arm64-v8a",
+            "android-x64": "x86_64",
+            "android-x86": "x86"
+        ]
+        def requestedPlatforms = (project.findProperty("target-platform") ?: "")
+            .toString()
+            .split(",")
+            .findAll { !it.isEmpty() }
+        def targetAbis = requestedPlatforms.collect { flutterPlatformToAbi[it] }
+            .findAll { it != null }
+            .toSet()
+        if (!targetAbis.isEmpty()) {
+            filesToDownload = filesToDownload.findAll { fileInfo -> targetAbis.contains(fileInfo.abi) }
+        }
 
         filesToDownload.each { fileInfo ->
             def destFile = fileInfo.destination
