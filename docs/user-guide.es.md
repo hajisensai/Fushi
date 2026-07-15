@@ -24,7 +24,7 @@ Android: elige **arm64**. Windows: elige el archivo **.exe**.
 
 ### 1. Importar los diccionarios recomendados y el audio local (Muy recomendado para principiantes!!! · opcional)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 En la aplicación: Ajustes -> Sincronización y copia de seguridad -> toca **Importar copia de seguridad**.
 

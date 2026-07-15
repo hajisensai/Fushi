@@ -24,7 +24,7 @@ https://github.com/hajisensai/hibiki/releases/latest
 
 ### 1. استيراد القواميس المُوصى بها والصوت المحلي (يُوصى به بشدة للمبتدئين!!! · اختياري)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 داخل التطبيق: الإعدادات -> المزامنة والنسخ الاحتياطي -> اضغط على **استيراد نسخة احتياطية**.
 
