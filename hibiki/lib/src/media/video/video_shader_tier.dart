@@ -14,8 +14,9 @@ import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 /// - [low]   = 低：内置缩放 on（ewa_lanczossharp，零下载）+ 无 GLSL。
 /// - [medium]= 中：内置缩放 on + Anime4K Fast（Mode A Fast，中低端 GPU 可跑）。
 /// - [high]  = 高：内置缩放 on + Anime4K HQ（Mode A HQ，需较强 GPU）。
-/// - [ultra] = 极高：内置缩放 on + Anime4K Mode A UL（Ultra Large 超大网络重建链，MIT，
-///   与高档同宗、网络更深，是 Anime4K 家族最强重建档；需旗舰 GPU）。
+/// - [ultra] = 极高：内置缩放 on + Anime4K Mode A VL + 额外去模糊修复（高档 VL 链再叠一个
+///   Restore_CNN_Soft_VL 去模糊/降噪 pass，MIT，需较强 GPU；BUG-836：UL 大 pass 越过 ANGLE
+///   的 GL_MAX_VERTEX_ATTRIBS=16 会黑屏，故极高用 VL 类文件而非 UL）。
 enum VideoShaderTier {
   off,
   low,
@@ -80,7 +81,7 @@ final List<VideoShaderTierSpec> kVideoShaderTiers = <VideoShaderTierSpec>[
     tier: VideoShaderTier.ultra,
     id: 'ultra',
     highQuality: true,
-    preset: kAnime4kUlPreset,
+    preset: kAnime4kUltraDeblurPreset,
   ),
 ];
 

@@ -44,6 +44,51 @@ void main() {
           result.failureSummary, contains(r'C:\Hibiki\ffmpeg.exe -> ffmpeg'));
       expect(result.failureSummary, contains('The application was unable'));
     });
+
+    // BUG-835：Android 制卡句子音频（ffmpeg-kit）失败时，toast/日志只显示 ffmpeg
+    // version + configuration banner，真因（末尾的 Error/Invalid/... 行）被从头截
+    // 断吃掉。failureSummary 必须从**尾段**抽真因，而不是从头截 500 字。
+    test('failureSummary surfaces the tail error line, not the leading banner',
+        () {
+      // 复刻移动端 ffmpeg-kit n6.0 日志：超长 banner 在前（configuration 独占 >500
+      // 字），真正的失败行在末尾。旧实现从头截 500 字 → 永远只剩 banner。
+      final String longConfig = 'configuration: '
+          '${List<String>.filled(60, '--enable-decoder=some_long_name').join(' ')}';
+      final String output = <String>[
+        'ffmpeg version n6.0 Copyright (c) 2000-2023 the FFmpeg developers',
+        'built with Android (9352603, based on r450784d1) clang version 14.0.7',
+        longConfig,
+        "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '/data/user/0/app/cache/book.m4b':",
+        '  Duration: 00:03:12.00, start: 0.000000, bitrate: 128 kb/s',
+        '  Stream #0:0(und): Audio: aac (LC), 44100 Hz, stereo, fltp, 128 kb/s',
+        '[aac @ 0x7f] Error while opening encoder - maybe incorrect parameters',
+        'Conversion failed!',
+      ].join('\n');
+
+      final FfmpegRunResult result = FfmpegRunResult(
+        returnCode: 1,
+        output: output,
+        executable: 'ffmpeg-kit',
+        attemptedExecutables: const <String>['ffmpeg-kit'],
+      );
+
+      final String summary = result.failureSummary;
+      // 真因（尾段错误行）必须出现——从尾向首取第一条含错误关键词的行
+      // （'Conversion failed!' 命中 'failed'），而非开头 banner。
+      expect(summary, contains('Conversion failed!'),
+          reason: 'The real ffmpeg failure line (tail) must survive '
+              'summarization instead of the leading banner.');
+      // banner（version 行）不得成为唯一显示内容——旧的从头截断正是只剩它。
+      expect(summary.contains('ffmpeg version n6.0'), isFalse,
+          reason: 'The leading version banner must not crowd out the real '
+              'error (old head-truncation showed only the banner).');
+      expect(summary.contains('configuration:'), isFalse,
+          reason: 'The long configuration banner must not be surfaced instead '
+              'of the tail error (BUG-835).');
+      // 仍带执行上下文。
+      expect(summary, contains('executable=ffmpeg-kit'));
+      expect(summary, contains('ffmpeg exit 1'));
+    });
   });
 
   group('resolveFfmpegBackend', () {

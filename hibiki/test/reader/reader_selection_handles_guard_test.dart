@@ -174,4 +174,41 @@ void main() {
           reason: '长按 arm 白名单必须排除起止手柄元素');
     });
   });
+
+  group('BUG-765 续修：getCaretRange caretPositionFromPoint 命中非文本节点不早退', () {
+    test('caretPositionFromPoint 仅在文本节点走快路，非文本落几何兜底', () {
+      final String body = _between(
+          js, 'getCaretRange: function', 'getCharacterAtPoint: function');
+      // 命中判据必须校验 TEXT_NODE（旧代码 if(!pos) return 无条件早退，押注
+      // caretPositionFromPoint 尊重 pointer-events，真机不成立 → 拖手柄冻结）。
+      expect(body, contains('nodeType === Node.TEXT_NODE'),
+          reason: 'caretPositionFromPoint 结果必须校验是文本节点才走快路');
+      // 非文本节点（遮挡的手柄 div / documentElement）不得早退，必须落到下方
+      // elementFromPoint + 最近字符几何兜底（对 pointer-events:none 稳定生效）。
+      final int caretIdx = body.indexOf('caretPositionFromPoint');
+      final int fallbackIdx = body.indexOf('elementFromPoint');
+      expect(caretIdx, greaterThanOrEqualTo(0));
+      expect(fallbackIdx, greaterThan(caretIdx),
+          reason: 'elementFromPoint 几何兜底必须在 caretPositionFromPoint 之后可达（非早退）');
+      // 不得再有「拿到 pos 就无条件 setStart 返回」的旧早退。
+      expect(body, isNot(contains('if (!pos) return null;')),
+          reason: '旧无条件早退必须移除，改为 TEXT_NODE 校验 + 兜底');
+    });
+  });
+
+  group('BUG-765 续修：手柄外观（主题色 + 触控盒 + 内层圆钮，去刺眼橙）', () {
+    test('手柄用主题变量 var(--hoshi-sel-handle) 上色，不再硬编码刺眼橙 + 发光', () {
+      final String body = _between(
+          js, 'ensureSelectionHandles: function', '_wireHandle: function');
+      expect(body, contains('var(--hoshi-sel-handle'),
+          reason: '圆钮颜色须走主题变量（reader CSS 从 linkColor 下发，随主题变）');
+      // 内层实心圆钮存在（外层是透明触控盒）。
+      expect(body, contains("'data-hoshi-sel-ball'"), reason: '须有内层视觉圆钮元素');
+      // 旧刺眼橙 + 双重发光 box-shadow 必须移除。
+      expect(body, isNot(contains('rgba(255,138,0,0.98)')),
+          reason: '旧刺眼橙背景必须移除');
+      expect(body, isNot(contains('0 0 4px rgba(255,138,0,0.9)')),
+          reason: '旧橙色发光 box-shadow 必须移除');
+    });
+  });
 }

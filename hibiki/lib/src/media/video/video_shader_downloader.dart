@@ -175,36 +175,44 @@ final Anime4kPreset kAnime4kFastPreset =
 final Anime4kPreset kAnime4kHqPreset =
     kAnime4kPresets.firstWhere((Anime4kPreset p) => p.id == 'mode_a_hq');
 
-/// 「极高」档：Anime4K Mode A **UL（Ultra Large 超大网络）重建链**（bloc97/Anime4K，
-/// MIT，需旗舰 GPU）。
+/// 「极高」档：Anime4K Mode A **VL + 额外去模糊修复**（高档 VL 链之上再叠一个
+/// `Restore_CNN_Soft_VL` 去模糊/降噪 pass，对 web 压制番做双重修复）。bloc97/Anime4K，MIT。
 ///
-/// **为什么回到 Anime4K UL 而非 ArtCNN**（用户诉求）：极高必须与「高档 = Anime4K Mode A
-/// HQ」同宗、单调更强，而不是换到另一血统（ArtCNN）让用户觉得「极高只是不一样、不是更强」。
-/// UL 变体把「高档」的 VL（Very Large）重建/上采样网络换成更大的 UL 网络——同一条
-/// Restore(重建) + Upscale 结构，网络更深、修复/上采样更强，是 Anime4K 家族里最强的
-/// 「重建」档。链结构照官方 Mode A HQ 模板，只把 Restore/首次 Upscale 提到 UL。
+/// **为什么不是 Ultra Large（UL）**（BUG-836 根因，Windows 实机坐实）：媒体渲染五平台统一
+/// 走 media_kit 的 libmpv **render API（`ra_gl`）**，Windows 上是 **ANGLE 提供的 OpenGL ES
+/// 3.0** 上下文（即便旗舰 RTX 5090 也报 GLSL ES 3.00）。mpv 的经典 GL 渲染器给用户着色器
+/// pass 里**每个绑定纹理配一个 `vertex_texcoord` 顶点属性**；Anime4K UL 的 Restore/Upscale
+/// 大 pass 绑定 15~16 个纹理 → 需要 `vertex_texcoord0..15` + 顶点位置 = 17 个属性，**越过
+/// `GL_MAX_VERTEX_ATTRIBS`=16**（GL/GLES 通用下限）→ 链接失败（`shader link log status=0:
+/// Too many attributes (vertex_texcoord15)`）→ 该 pass 出不了帧 → **整屏黑**。该上限对 ra_gl
+/// 后端在**所有平台**都成立（非 Windows 独有），故 UL 在 hibiki 里根本无法渲染，全局弃用。
 ///
-/// **反查无歧义**：文件集 {Clamp, Restore_CNN_**UL**, Upscale_CNN_x2_**UL**, AutoDownscale
-/// x2/x4, Upscale_CNN_x2_VL} 与「高档」{…, Restore_CNN_**VL**, …, Upscale_CNN_x2_**M**}
-/// 不相等（UL 独有 Restore_UL/Upscale_UL；高独有 Restore_VL/Upscale_M）→ [tierFromState]
-/// 集合相等反查两档不会相互命中（守卫见 video_shader_tier_test.dart）。
+/// 极高 = 高档 VL 链 + 额外 `Restore_CNN_Soft_VL`：全为 VL 类文件（每 pass 属性数在 ANGLE
+/// 上限内，Windows 实机验证无 `Too many attributes`、正常出帧）；双重修复 → 强于高档。
 ///
-/// 全部落盘文件均在 bloc97/Anime4K master 分支存在（联网核对 2026-07-14：Restore_CNN_UL /
-/// Upscale_CNN_x2_UL / Upscale_CNN_x2_VL 均返回 200）。经 [downloadAnime4kFiles] 同款多镜像
-/// 下载，默认 repo=bloc97/Anime4K、ref=master（与中/高档同源，无需覆写）。
-const Anime4kPreset kAnime4kUlPreset = Anime4kPreset(
-  id: 'mode_a_ul',
-  name: 'Anime4K Mode A (UL)',
+/// **反查无歧义**：文件集 {Clamp, Restore_CNN_VL, **Restore_CNN_Soft_VL**, Upscale_CNN_x2_VL,
+/// AutoDownscale x2/x4, Upscale_CNN_x2_M} 比「高档」多一个 Restore_CNN_Soft_VL、其余相同 →
+/// 两集合不相等 → [tierFromState] 集合相等反查两档不会相互命中（守卫见
+/// video_shader_tier_test.dart）。
+///
+/// 全部落盘文件均在 bloc97/Anime4K master 分支存在（联网核对 2026-07-15：Restore_CNN_VL /
+/// Restore_CNN_Soft_VL / Upscale_CNN_x2_VL / Upscale_CNN_x2_M 均返回 200）。经
+/// [downloadAnime4kFiles] 同款多镜像下载，默认 repo=bloc97/Anime4K、ref=master（与中/高档同源）。
+const Anime4kPreset kAnime4kUltraDeblurPreset = Anime4kPreset(
+  id: 'mode_a_deblur_vl',
+  name: 'Anime4K Mode A (VL + Deblur)',
   description:
-      'Strongest Anime4K reconstruction (Ultra Large network restore + upscale). '
-      'Needs a flagship GPU.',
+      'Strongest reconstruction that renders on media_kit (ANGLE/GLES): High '
+      'tier VL chain plus an extra deblur/denoise restore pass. Needs a strong '
+      'GPU. (Anime4K UL cannot link on the OpenGL ES backend — see BUG-836.)',
   shaders: <Anime4kShaderFile>[
     Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
-    Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_UL.glsl'),
-    Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_UL.glsl'),
+    Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_VL.glsl'),
+    Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl'),
+    Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl'),
     Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl'),
     Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl'),
-    Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl'),
+    Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl'),
   ],
 );
 
