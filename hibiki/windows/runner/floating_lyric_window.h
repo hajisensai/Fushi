@@ -218,6 +218,13 @@ class FloatingLyricWindow {
   // Position lock: drag disabled, everything else (lookup + controls) still
   // works. Toggled by the lock button or SetLocked() over the channel.
   bool locked_ = false;
+  // Always-on-top state. The window is created WS_EX_TOPMOST, so it starts true;
+  // the text-only Luna toolbar's pin button toggles it (mirrors LunaTranslator's
+  // window-always-on-top button). Every window-Z SetWindowPos derives its
+  // insert-after handle from this so drag / resize / re-show never silently
+  // re-assert topmost after the user pinned it off. The audiobook lyric strip
+  // never toggles it, so its behaviour is unchanged.
+  bool topmost_ = true;
   UINT dpi_ = 96;
 
   // Logical (96-DPI) strip size. Mutable so the bottom-right resize grip can
