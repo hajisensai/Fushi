@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 804 条。点号进各自文件。
+> 共 805 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-823](bugs/BUG-823-ankidroid-mine-permission-prompt.md) | ✅ | ✅ | AnkiDroid 权限未授予制卡失败无明显提醒 |
 | [BUG-822](bugs/BUG-822-subtitle-group-order-padding-slide.md) | ✅ | ✅ | 换句时字幕组序翻转致避让 padding 动画重播（每句对白入场滑跳） |
 | [BUG-821](bugs/BUG-821-debug-update-check-plain-version.md) | ✅ | ✅ | beta/debug通道装无后缀X.Y.Z包永判已是最新 |
 | [BUG-820](bugs/BUG-820-ass-scale-letterbox-container.md) | ✅ | ✅ | ASS 字号/描边缩放基准误用播放器容器高（应为 fit:contain 视频内容矩形） |
