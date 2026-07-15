@@ -33,6 +33,29 @@ int normalizeAutoHideChromeMillis(int value) {
 /// Default auto-hide duration: 3 seconds (TODO-975 decision #1).
 const int kDefaultAutoHideChromeMillis = 3000;
 
+/// Font size (logical px) of the top progress pill text (historical `12`).
+const double kTopProgressFontSize = 12;
+
+/// Vertical padding (logical px) on EACH side of the frosted pill's content,
+/// added by BUG-547 / TODO-1136 (the `EdgeInsets.symmetric(vertical: …)` in
+/// `_buildTopProgressBar`). Shared here so the reserved strip height below and
+/// the pill both read the SAME constant — the frosted layer added this padding
+/// but the old reserve never counted it, so the taller pill sat over the first
+/// body line in squeeze mode (BUG-470-adjacent overlap, all platforms).
+const double kTopProgressPillVerticalPadding = 3;
+
+/// Reserved strip height (logical px) for the top progress pill in squeeze mode.
+///
+/// Must be ≥ the pill's rendered height so the body text never sits under it
+/// (the 铁律 in this file's header). The pill's height = a text line box +
+/// [kTopProgressPillVerticalPadding] on both sides:
+///  * `kTopProgressFontSize * 1.5` is the historical line-box estimate (a real
+///    font's ascent+descent overflow the em box by ~1.17–1.4×; 1.5 keeps slack).
+///  * `+ 2 * kTopProgressPillVerticalPadding` counts the frosted pill padding
+///    that BUG-547 added but forgot to reserve for.
+const double kTopProgressStripHeight =
+    kTopProgressFontSize * 1.5 + 2 * kTopProgressPillVerticalPadding;
+
 /// Reserved height (logical px) for the top progress strip.
 ///
 ///  * Progress disabled / not yet measured (`showTopProgress == false`) -> 0,

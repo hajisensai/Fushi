@@ -1776,7 +1776,14 @@ extension _ReaderChrome on _ReaderHibikiPageState {
               filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
               child: Container(
                 color: frostedFill,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                // TODO-975 铁律：pill 上下内边距与预留高 [_infoStripHeight]
+                // （= [kTopProgressStripHeight]）共享同一常量
+                // [kTopProgressPillVerticalPadding]，pill 实高绝不超预留（BUG-547
+                // 曾只加 padding 未同步预留 → 压住正文首行）。
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: kTopProgressPillVerticalPadding,
+                ),
                 child: Text(
                   '$_progressCurrentChars / $_progressTotalChars'
                   '  ${(ratio * 100).toStringAsFixed(2)}%',
