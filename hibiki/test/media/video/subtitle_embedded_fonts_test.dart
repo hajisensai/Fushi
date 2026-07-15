@@ -7,13 +7,13 @@ import 'package:hibiki/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
-/// BUG-829：模拟「ffprobe 二进制根本不存在」——[CliFfmpegBackend] 底层 `Process.start`
-/// 会抛 [ProcessException]（`系统找不到指定的文件。`）。用于验证枚举附件时被就地兜住、
-/// 降级空集且不刷错误日志。
-class _MissingFfprobeBackend implements FfmpegBackend {
+/// BUG-829：模拟「ffmpeg/ffprobe 二进制根本不存在」——[CliFfmpegBackend] 底层
+/// `Process.start` 会抛 [ProcessException]（`系统找不到指定的文件。`）。枚举附件现走
+/// ffmpeg（`run`），用于验证连 ffmpeg 都缺时被就地兜住、降级空集且不刷错误日志。
+class _MissingBinaryBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
-      throw const ProcessException('ffmpeg', <String>[]);
+      throw const ProcessException('ffmpeg', <String>[], '系统找不到指定的文件。', 2);
 
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
@@ -130,8 +130,76 @@ void main() {
     });
   });
 
-  group('SubtitleEmbeddedFontLoader missing-ffprobe degrade (BUG-829)', () {
-    test('缺 ffprobe（ProcessException）时降级空集且不刷错误日志', () async {
+  group('parseFfmpegFontAttachments (BUG-829: ffprobe-free 枚举)', () {
+    test(
+        'keeps font attachments, skips non-font, ordinal counts all '
+        'attachment streams', () {
+      const String log = '''
+Input #0, matroska,webm, from 'video.mkv':
+  Metadata:
+    title           : Show
+  Duration: 00:24:00.00, start: 0.000, bitrate: 3000 kb/s
+    Stream #0:0: Video: h264 (High), yuv420p, 1920x1080
+    Stream #0:1(jpn): Audio: aac (LC), 48000 Hz, stereo
+    Stream #0:2(jpn): Subtitle: ass (default)
+    Stream #0:3: Attachment: ttf
+        Metadata:
+          filename        : matisse.ttf
+          mimetype        : application/x-truetype-font
+    Stream #0:4: Attachment: otf
+        Metadata:
+          filename        : hyxuansong.otf
+    Stream #0:5: Attachment: none
+        Metadata:
+          filename        : cover.jpg
+          mimetype        : image/jpeg
+    Stream #0:6: Attachment: ttf
+        Metadata:
+          filename        : noto.TTC
+''';
+      final List<EmbeddedFontAttachment> fonts =
+          parseFfmpegFontAttachments(log);
+      // matisse(ord0) + hyxuansong(ord1) + noto.TTC(ord3) are fonts; cover(ord2) not.
+      expect(fonts.map((EmbeddedFontAttachment f) => f.attachmentOrdinal),
+          <int>[0, 1, 3]);
+      expect(fonts.map((EmbeddedFontAttachment f) => f.fileName),
+          <String>['matisse.ttf', 'hyxuansong.otf', 'noto.TTC']);
+    });
+
+    test('font detected by mimetype even when codec token missing', () {
+      const String log = '''
+    Stream #0:3: Attachment: none
+        Metadata:
+          filename        : embedded
+          mimetype        : application/x-font-ttf
+''';
+      final List<EmbeddedFontAttachment> fonts =
+          parseFfmpegFontAttachments(log);
+      expect(fonts, hasLength(1));
+      expect(fonts.single.attachmentOrdinal, 0);
+      expect(fonts.single.fileName, 'embedded');
+    });
+
+    test('no attachment / empty log → empty list (no throw)', () {
+      expect(parseFfmpegFontAttachments(''), isEmpty);
+      expect(
+        parseFfmpegFontAttachments(
+            '    Stream #0:0: Video: h264\n    Stream #0:1: Audio: aac'),
+        isEmpty,
+      );
+      // 非字体附件（封面图）不计入。
+      expect(
+        parseFfmpegFontAttachments('    Stream #0:2: Attachment: none\n'
+            '        Metadata:\n'
+            '          filename        : cover.png\n'
+            '          mimetype        : image/png'),
+        isEmpty,
+      );
+    });
+  });
+
+  group('SubtitleEmbeddedFontLoader missing-binary degrade (BUG-829)', () {
+    test('缺 ffmpeg（ProcessException）时降级空集且不刷错误日志', () async {
       final Directory dir =
           Directory.systemTemp.createTempSync('hibiki_embfont_');
       addTearDown(() {
@@ -146,20 +214,20 @@ void main() {
       final int before = ErrorLogService.instance.entries.length;
 
       final SubtitleEmbeddedFontLoader loader =
-          SubtitleEmbeddedFontLoader(backend: _MissingFfprobeBackend());
+          SubtitleEmbeddedFontLoader(backend: _MissingBinaryBackend());
       final Set<String> families = await loader.loadForVideo(video.path);
 
-      // 无 ffprobe → 无附件 → 空集，回退系统字体 fallback（不崩）。
+      // 无 ffmpeg → 无附件 → 空集，回退系统字体 fallback（不崩）。
       expect(families, isEmpty);
 
-      // 关键回归：缺 ffprobe 二进制是预期降级，绝不作为「错误」刷进 ErrorLogService。
+      // 关键回归：缺可执行文件是预期降级，绝不作为「错误」刷进 ErrorLogService。
       final List<ErrorLogEntry> entries = ErrorLogService.instance.entries;
-      expect(entries.length, before, reason: '缺 ffprobe 不应新增任何错误日志条目');
+      expect(entries.length, before, reason: '缺 ffmpeg 不应新增任何错误日志条目');
       expect(
         entries.where((ErrorLogEntry e) =>
             e.source == 'SubtitleEmbeddedFontLoader.loadForVideo'),
         isEmpty,
-        reason: 'loadForVideo 不应把「无 ffprobe」记成错误',
+        reason: 'loadForVideo 不应把「无 ffmpeg」记成错误',
       );
     });
   });

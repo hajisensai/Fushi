@@ -95,6 +95,74 @@ bool _isFontAttachment({
   return ext == '.ttf' || ext == '.otf' || ext == '.ttc';
 }
 
+/// 匹配 ffmpeg `-i` 日志里一条附件流行 `Stream #0:N: Attachment: <codec>`
+/// （codec 可为空 / `none`；跳过可选的 `[0x..]` 流 id 与 `(lang)` 段）。
+final RegExp _ffmpegAttachmentStreamPattern = RegExp(
+  r'Stream #\d+:\d+(?:\[0x[0-9a-fA-F]+\])?(?:\([^)]*\))?: Attachment:\s*([A-Za-z0-9_]*)',
+);
+
+/// 匹配 ffmpeg 任意 `Stream #N:M ...` 行——附件 metadata 块扫到下一条 Stream 即止。
+final RegExp _ffmpegAnyStreamPattern = RegExp(r'Stream #\d+:\d+');
+
+/// 匹配附件 metadata 块里的 `filename : <值>` / `mimetype : <值>` 行（大小写不敏感）。
+final RegExp _ffmpegAttachmentFilenamePattern =
+    RegExp(r'^\s*filename\s*:\s*(.+?)\s*$', caseSensitive: false);
+final RegExp _ffmpegAttachmentMimetypePattern =
+    RegExp(r'^\s*mimetype\s*:\s*(.+?)\s*$', caseSensitive: false);
+
+/// 从 `ffmpeg -i <video>` 的 stderr 日志解析出**字体**附件流列表（纯函数，可单测）。
+///
+/// 与 [parseFfprobeFontAttachments] 判据一致（codec/MIME/文件名扩展名任一命中字体），
+/// 但**不依赖 ffprobe**：桌面 ffprobe 常未随产物捆绑、也不在 PATH，而 ffmpeg 已被内嵌
+/// 字幕枚举（`parseSubtitleStreamsFromFfmpegLog`）与附件抽取（`-dump_attachment`）复用，
+/// 是「哪台机器能列内嵌字幕，就能列内嵌字体」的单一可用工具（BUG-829：改用 ffmpeg 后
+/// 内封字体真正生效，而非仅静默降级）。ffmpeg 日志格式：
+/// ```
+///   Stream #0:3: Attachment: ttf
+///       Metadata:
+///         filename        : matisse.ttf
+///         mimetype        : application/x-truetype-font
+/// ```
+/// [attachmentOrdinal] 按**附件流**出现序递增（每条 Attachment 流 +1，字体与非字体都计），
+/// 对应 `-dump_attachment:t:<ordinal>` 的 `t:` 相对索引。解析失败/无附件返回空列表。
+List<EmbeddedFontAttachment> parseFfmpegFontAttachments(String ffmpegLog) {
+  final List<String> lines = const LineSplitter().convert(ffmpegLog);
+  final List<EmbeddedFontAttachment> result = <EmbeddedFontAttachment>[];
+  int ordinal = 0; // 附件流相对序号（只在 Attachment 流上递增）。
+  for (int i = 0; i < lines.length; i++) {
+    final RegExpMatch? m = _ffmpegAttachmentStreamPattern.firstMatch(lines[i]);
+    if (m == null) continue;
+    final int thisOrdinal = ordinal;
+    ordinal++;
+
+    final String codecName = (m.group(1) ?? '').toLowerCase();
+    String fileName = '';
+    String mime = '';
+    // 向后扫该附件流的 metadata 块（更深缩进的独立行），到下一条 Stream 行为止。
+    for (int j = i + 1; j < lines.length; j++) {
+      if (_ffmpegAnyStreamPattern.hasMatch(lines[j])) break;
+      final RegExpMatch? fn =
+          _ffmpegAttachmentFilenamePattern.firstMatch(lines[j]);
+      if (fn != null && fileName.isEmpty) fileName = fn.group(1)!.trim();
+      final RegExpMatch? mt =
+          _ffmpegAttachmentMimetypePattern.firstMatch(lines[j]);
+      if (mt != null && mime.isEmpty) mime = mt.group(1)!.trim().toLowerCase();
+    }
+
+    if (_isFontAttachment(
+      codecName: codecName,
+      mimetype: mime,
+      fileName: fileName,
+    )) {
+      result.add(EmbeddedFontAttachment(
+        attachmentOrdinal: thisOrdinal,
+        fileName: fileName.isEmpty ? 'attachment_$thisOrdinal' : fileName,
+      ));
+    }
+  }
+  return result;
+}
+
 /// 从 sfnt 字体字节（ttf/otf/ttc）解析所有声明的 **family 名**（纯函数，可单测）。
 ///
 /// 读 `name` 表的 nameID 1（Family）与 16（Typographic/Preferred Family）——ASS `Fontname`
@@ -194,9 +262,10 @@ String? _decodeNameRecord(int platformId, Uint8List raw) {
 ///
 /// 背景：Hibiki 自绘渲染字幕（为逐字查词，不走 libass），故不像 mpv 那样自动加载 MKV
 /// 内嵌字体 → 商用日文字体缺失时 fallback 替换、观感与 mpv 差。本加载器补上这条链路：
-/// ffprobe 枚举附件 → ffmpeg `-dump_attachment` 抽到临时目录 → 解析每个字体的 sfnt
+/// ffmpeg `-i` 枚举附件 → ffmpeg `-dump_attachment` 抽到临时目录 → 解析每个字体的 sfnt
 /// name 表拿 family 名 → [FontLoader] 注册。注册后 overlay 的 `_styleForGrapheme` 用
-/// `cue.fontName` 作 `fontFamily` 即可命中（无需改 overlay）。
+/// `cue.fontName` 作 `fontFamily` 即可命中（无需改 overlay）。全程只用 ffmpeg（与内嵌
+/// 字幕枚举同一可用工具），不依赖桌面常缺的 ffprobe（BUG-829）。
 ///
 /// 降级链（任一失败都不崩、回退系统字体）：非本地文件 / 无 ffmpeg / 无附件 / 解析失败
 /// → 返回空集，overlay 继续走既有 CJK fallback。
@@ -256,36 +325,31 @@ class SubtitleEmbeddedFontLoader {
     return families;
   }
 
-  /// ffprobe 枚举字体附件流（JSON）。失败返回空列表。
+  /// 用 ffmpeg `-i` 枚举字体附件流（解析其 stderr 日志）。失败返回空列表。
   ///
-  /// 「失败」含两类，都必须诚实降级为空集、绝不上抛：① ffprobe 跑起来了但退出码非 0
-  /// （`!isSuccess`）；② ffprobe 二进制**根本不存在**（未随桌面产物捆绑且不在 PATH）——
-  /// 此时 [FfmpegBackend.runProbe] 底层 `Process.start` 抛 [ProcessException] 冒上来。
-  /// 内封字体是「有则更好」的可选增强（对齐 mpv/libass 的 attachment 字体），缺 ffprobe
-  /// 是**预期降级**而非应用错误；若放任 [ProcessException] 穿到 [loadForVideo] 的兜底
-  /// catch，会被当成「报错」刷进 [ErrorLogService]（每开一个带内封字体的视频刷一条），
-  /// 与本方法「失败返回空列表」的契约相悖。故在此就地兜住，回退系统字体 fallback。
+  /// **只用 ffmpeg**（与内嵌字幕枚举同一工具、同一 backend），不用 ffprobe：桌面 ffprobe
+  /// 常未随产物捆绑、也不在 PATH，旧的 `runProbe` 路径会因 `Process.start` 抛
+  /// [ProcessException]，内封字体在缺 ffprobe 的机器上**根本枚举不到**（BUG-829）。改走
+  /// ffmpeg 后，「能列内嵌字幕的机器就能列内嵌字体」，内封字体真正生效。
+  ///
+  /// `-i` 无输出文件恒非 0 退出，但流信息已写 stderr（= [FfmpegRunResult.output]），故
+  /// **只看 output 不看退出码**（与 `parseSubtitleStreamsFromFfmpegLog` 调用点一致）。
+  /// 连 ffmpeg 都缺（[ProcessException]）时就地兜住返回空集：这是预期降级、非应用错误，
+  /// 不放它穿到 [loadForVideo] 兜底 catch 被当「报错」刷进 [ErrorLogService]。
   Future<List<EmbeddedFontAttachment>> _enumerateFontAttachments(
     String videoPath,
   ) async {
     final FfmpegRunResult probe;
     try {
-      probe = await _backend.runProbe(
-        <String>[
-          '-v', 'quiet',
-          '-print_format', 'json',
-          '-show_streams',
-          '-select_streams', 't', // 只列附件流。
-          videoPath,
-        ],
+      probe = await _backend.run(
+        <String>['-hide_banner', '-i', videoPath],
         _probeTimeout,
       );
     } on ProcessException {
-      // 无 ffprobe 可执行（未捆绑 + 不在 PATH）：预期降级，非错误，不记日志。
+      // 连 ffmpeg 也无可执行：预期降级，非错误，不记日志。
       return const <EmbeddedFontAttachment>[];
     }
-    if (!probe.isSuccess) return const <EmbeddedFontAttachment>[];
-    return parseFfprobeFontAttachments(probe.output);
+    return parseFfmpegFontAttachments(probe.output);
   }
 
   /// 一次 ffmpeg 调用把所有字体附件抽到 [tempDir]（`-dump_attachment:t:<ordinal>`）。
