@@ -53,46 +53,79 @@ void main() {
       expect(high.shaderFileNames, contains('Anime4K_Upscale_CNN_x2_VL.glsl'));
     });
 
-    test('极高 = Anime4K Mode A UL（Ultra Large 超大网络重建，MIT）：内置缩放 on + UL 链', () {
+    test('极高 = Anime4K Mode A VL + 额外去模糊修复：内置缩放 on + VL 类链（非 UL）', () {
       final VideoShaderTierSpec ultra = shaderTierSpec(VideoShaderTier.ultra);
       expect(ultra.highQuality, isTrue);
-      expect(ultra.preset, same(kAnime4kUlPreset));
-      expect(ultra.preset!.id, 'mode_a_ul');
-      // 极高绑 UL 变体：Restore/首次 Upscale 用超大网络，比高档 VL 更强、同宗更单调。
-      expect(ultra.shaderFileNames, contains('Anime4K_Restore_CNN_UL.glsl'));
-      expect(ultra.shaderFileNames, contains('Anime4K_Upscale_CNN_x2_UL.glsl'));
+      expect(ultra.preset, same(kAnime4kUltraDeblurPreset));
+      expect(ultra.preset!.id, 'mode_a_deblur_vl');
+      // 极高在高档 VL 链之上叠一个 Soft_VL 去模糊 pass（双重修复，强于高档）。
+      expect(ultra.shaderFileNames, contains('Anime4K_Restore_CNN_VL.glsl'));
+      expect(
+          ultra.shaderFileNames, contains('Anime4K_Restore_CNN_Soft_VL.glsl'));
+      expect(ultra.shaderFileNames, contains('Anime4K_Upscale_CNN_x2_VL.glsl'));
+    });
+
+    // BUG-834 回归守卫：极高**绝不能**用 Anime4K UL 变体——UL 的 Restore/Upscale 大 pass
+    // 绑定纹理数越过 media_kit ra_gl（Windows ANGLE / GLES）的 GL_MAX_VERTEX_ATTRIBS=16 →
+    // 链接失败「Too many attributes」→ 整屏黑（Windows 实机坐实）。任何档位都不许下发 UL。
+    test('BUG-834: 任何档位都不下发 Anime4K UL 变体（越 ANGLE 顶点属性上限 → 黑屏）', () {
+      const List<String> banned = <String>[
+        'Anime4K_Restore_CNN_UL.glsl',
+        'Anime4K_Upscale_CNN_x2_UL.glsl',
+      ];
+      for (final VideoShaderTierSpec spec in kVideoShaderTiers) {
+        for (final String bad in banned) {
+          expect(spec.shaderFileNames, isNot(contains(bad)),
+              reason:
+                  '档位 ${spec.id} 含 $bad —— UL 在 ANGLE/GLES 后端链接失败会黑屏（BUG-834）');
+        }
+      }
     });
   });
 
-  group('kAnime4kUlPreset（极高档 Ultra Large 重建链）', () {
-    test('来自 bloc97/Anime4K（MIT），默认 master 分支，Mode A UL 结构', () {
-      expect(kAnime4kUlPreset.repo, 'bloc97/Anime4K');
-      expect(kAnime4kUlPreset.ref, 'master');
-      // Clamp → Restore_UL → Upscale_UL → AutoDownscale x2/x4 → Upscale_VL。
+  group('kAnime4kUltraDeblurPreset（极高档 VL + 去模糊链）', () {
+    test('来自 bloc97/Anime4K（MIT），默认 master 分支，Mode A VL + Soft_VL 结构', () {
+      expect(kAnime4kUltraDeblurPreset.repo, 'bloc97/Anime4K');
+      expect(kAnime4kUltraDeblurPreset.ref, 'master');
+      // Clamp → Restore_VL → Restore_Soft_VL → Upscale_VL → AutoDownscale x2/x4 → Upscale_M。
       expect(
-          kAnime4kUlPreset.shaders
+          kAnime4kUltraDeblurPreset.shaders
               .map((Anime4kShaderFile s) => s.repoPath)
               .toList(),
           <String>[
             'glsl/Restore/Anime4K_Clamp_Highlights.glsl',
-            'glsl/Restore/Anime4K_Restore_CNN_UL.glsl',
-            'glsl/Upscale/Anime4K_Upscale_CNN_x2_UL.glsl',
+            'glsl/Restore/Anime4K_Restore_CNN_VL.glsl',
+            'glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl',
+            'glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl',
             'glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl',
             'glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl',
-            'glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl',
+            'glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl',
           ]);
+    });
+
+    test('极高文件集与高档互异（多一个 Soft_VL）→ tierFromState 反查无歧义', () {
+      final Set<String> ultra =
+          shaderFilesForTier(VideoShaderTier.ultra).toSet();
+      final Set<String> high = shaderFilesForTier(VideoShaderTier.high).toSet();
+      expect(ultra, isNot(equals(high)));
+      expect(
+          ultra.difference(high), <String>{'Anime4K_Restore_CNN_Soft_VL.glsl'},
+          reason: '极高应恰好比高档多一个 Soft_VL 去模糊 pass');
+      // 反查：极高的底层状态命中极高档，不误判为高档或自定义。
+      expect(tierFromState(highQuality: true, enabledShaders: ultra.toList()),
+          VideoShaderTier.ultra);
     });
 
     test('镜像 URL 用 Anime4K repo + master 分支（与中/高档同源，无需覆写）', () {
       final List<String> urls = anime4kMirrorUrls(
-        'glsl/Restore/Anime4K_Restore_CNN_UL.glsl',
-        repo: kAnime4kUlPreset.repo,
-        ref: kAnime4kUlPreset.ref,
+        'glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl',
+        repo: kAnime4kUltraDeblurPreset.repo,
+        ref: kAnime4kUltraDeblurPreset.ref,
       );
       expect(urls.first,
-          'https://cdn.jsdelivr.net/gh/bloc97/Anime4K@master/glsl/Restore/Anime4K_Restore_CNN_UL.glsl');
+          'https://cdn.jsdelivr.net/gh/bloc97/Anime4K@master/glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl');
       expect(urls.last,
-          'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_UL.glsl');
+          'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl');
     });
   });
 
@@ -132,7 +165,7 @@ void main() {
           VideoShaderTier.high);
     });
 
-    test('内置 on + Anime4K UL 全集 → 极高', () {
+    test('内置 on + 极高（VL + Soft_VL）全集 → 极高', () {
       expect(
           tierFromState(
               highQuality: true,
@@ -141,7 +174,7 @@ void main() {
     });
 
     test('反查唯一：高/极高文件集互不相等，(highQuality, shaderSet) 两两不重复', () {
-      // 极高=Anime4K UL、高=Anime4K A HQ 文件集不同（UL vs VL 变体）→ 反查无歧义。
+      // 极高=高档 VL 链 + Soft_VL、高=Anime4K A HQ 文件集不同（极高多一个 Soft_VL）→ 反查无歧义。
       final Set<String> highSet =
           shaderFilesForTier(VideoShaderTier.high).toSet();
       final Set<String> ultraSet =
@@ -168,7 +201,7 @@ void main() {
       expect(
           tierFromState(
               highQuality: false,
-              enabledShaders: <String>['Anime4K_Restore_CNN_UL.glsl']),
+              enabledShaders: <String>['Anime4K_Restore_CNN_VL.glsl']),
           isNull);
     });
   });

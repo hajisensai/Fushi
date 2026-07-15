@@ -1471,7 +1471,7 @@
   "video_shader_tier_low_hint": "mpv 內建銳化（ewa_lanczossharp）。對任何影片都有效（動畫與真人皆可），無需下載、GPU 負載最低。集顯或舊顯卡（N卡 GTX 1050、A卡 RX 560、Intel 核顯）選這檔。",
   "video_shader_tier_medium_hint": "Anime4K Fast。對動畫效果最佳，真人電影/電視劇也能用（提升較小）。中端 GPU 可跑（N卡 GTX 1660 / RTX 3050，A卡 RX 6600）。",
   "video_shader_tier_high_hint": "Anime4K HQ。更銳利，對動畫效果最佳，真人內容也可用（提升較小）。需要中高端 GPU（N卡 RTX 4060 / RTX 3070，A卡 RX 6700 XT / RX 7700 XT）。",
-  "video_shader_tier_ultra_hint": "Anime4K Mode A（UL 超大網絡重建）。Anime4K 家族最強重建——比「高」網絡更深，重建/升頻更強；真人內容也可用（提升較小）。需要旗艦 GPU（N卡 RTX 4080 / RTX 5090，A卡 RX 7900 XTX）。顯卡較弱請往低檔選。",
+  "video_shader_tier_ultra_hint": "Anime4K Mode A（VL + 額外去模糊/降噪修復）。影片渲染器實際能跑的最強重建——在「高」檔 VL 鏈之上再疊一個修復 pass，對壓制源更狠；真人內容也可用（提升較小）。推薦較強 GPU（N卡 RTX 5090，A卡 RX 7900 XTX），顯卡較弱請往低檔選。",
   "video_shader_tier_custom_hint": "自訂着色器組合。點按上方檔位可切回預設。",
   "video_shader_section_advanced": "進階（手動着色器）",
   "video_shader_first_use_download": "一鍵下載並啟用",
