@@ -735,7 +735,13 @@ window.hoshiSelection = {
     for (var i = 0; i < prevCount; i++) {
       var before = this.charBefore(anchorNode, anchorOffset);
       if (!before) break;
-      var ctx = this.getSentenceContext(before.node, before.offset + 1);
+      // BUG-829：必须用 before.offset 本身定位上一句，别再往后挪一位。charBefore 在同节点内
+      // 返回 anchorOffset-1；若把它加回一位就等于 anchorOffset = 当前句首光标，
+      // getSentenceContext 于是再解析出「当前句」、anchor 原地不动 → 前文每次都拿到同一句
+      // （当前句）重复。before.offset 落在上一句最后一个字符（通常是其句号）上，才正确落进
+      // 上一句。与向后循环 getSentenceContext(after.node, after.offset) 对称（后者本就不挪位，
+      // 故「后加一句」一直正常）。
+      var ctx = this.getSentenceContext(before.node, before.offset);
       if (!ctx.sentence) {
         anchorNode = ctx.sStartNode;
         anchorOffset = ctx.sStartOffset;
