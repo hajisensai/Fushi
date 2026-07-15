@@ -135,6 +135,24 @@ String? detectSubtitleLanguage(String fileName) {
   return null;
 }
 
+/// 语言排序权重：优先语言（[preferred]，用户按系列记忆的语言）→ ja → zh → en → ko →
+/// 其它/认不出。数字越小越靠前。纯函数（供对话框排序与合集批量挑最佳字幕共用）。
+int jimakuLanguageRank(String? language, {String? preferred}) {
+  if (preferred != null && language == preferred) return -1;
+  switch (language) {
+    case 'ja':
+      return 0;
+    case 'zh':
+      return 1;
+    case 'en':
+      return 2;
+    case 'ko':
+      return 3;
+    default:
+      return 4; // 其它语言 / 认不出
+  }
+}
+
 /// 把单个语言 token（如 `ja`/`chs`/`zh-cn`）归一到大类代码；认不出返回 `null`。
 String? _languageFromToken(String rawToken) {
   final String token = rawToken.trim().toLowerCase();

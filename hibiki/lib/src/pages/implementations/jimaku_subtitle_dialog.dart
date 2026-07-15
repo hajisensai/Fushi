@@ -31,24 +31,6 @@ class JimakuCandidate {
   int? get episode => file.episode;
 }
 
-/// 语言排序权重：优先语言（[preferred]，用户按系列记忆的语言）→ ja → zh → en → ko →
-/// 其它/认不出。数字越小越靠前。纯函数。
-int jimakuLanguageRank(String? language, {String? preferred}) {
-  if (preferred != null && language == preferred) return -1;
-  switch (language) {
-    case 'ja':
-      return 0;
-    case 'zh':
-      return 1;
-    case 'en':
-      return 2;
-    case 'ko':
-      return 3;
-    default:
-      return 4; // 其它语言 / 认不出
-  }
-}
-
 /// 给候选排序，消除 Jimaku 返回的乱序（用户报「集数是乱的」的根因是全程无排序）。
 ///
 /// 排序键（稳定，越靠前越优先）：

@@ -2352,5 +2352,8 @@
   "loading_slow_message_mobile": "Startup is taking longer than usual — Hibiki may be loading a large library or dictionaries. Please wait a moment, or tap Retry to reload. Your data is safe and won't be lost.",
   "delete_collection_also_books": "Also delete the books in it",
   "delete_collection_also_videos": "Also delete the videos (keeps your original video files)",
-  "video_jimaku_series": "Series"
+  "video_jimaku_series": "Series",
+  "video_jimaku_batch_title": "Fetch subtitles for collection",
+  "video_jimaku_batch_download": "Download all",
+  "video_jimaku_batch_done": "Subtitles fetched: $done/$total"
 }
