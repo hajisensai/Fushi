@@ -333,6 +333,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     this.initialCueStartMs,
     this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
+    this.initialFullscreen = false,
     super.key,
   })  : remoteInfo = null,
         remoteClient = null;
@@ -348,6 +349,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   })  : bookUid = info.id,
         remoteInfo = info,
         remoteClient = client,
+        initialFullscreen = false,
         playlistCollectionId = null;
 
   final String bookUid;
@@ -362,6 +364,11 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   final int? initialCueStartMs;
   final int? initialEpisodeIndex;
   final bool initialSubtitleListVisible;
+
+  /// BUG-839：作为「从全屏页连播/换集而来」的新页打开——首帧就绪后自动重进全屏路由，
+  /// 保持连播全屏沉浸不被换集打断。仅本地 pushReplacement 换集在换集前处于全屏时置真
+  /// （见 [_VideoEpisode._switchEpisode]）；首开 / 远端恒 false。
+  final bool initialFullscreen;
 
   /// 打开视频播放页的**唯一入口**：在路由层用 [HibikiAppUiScaleNeutralizer] 把整页中和
   /// （与阅读器 [ReaderHibikiSource.buildLaunchPage] 同范式）。
@@ -378,6 +385,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     int? initialCueStartMs,
     int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
+    bool initialFullscreen = false,
   }) =>
       HibikiAppUiScaleNeutralizer(
         child: VideoHibikiPage(
@@ -387,6 +395,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
           initialCueStartMs: initialCueStartMs,
           initialEpisodeIndex: initialEpisodeIndex,
           initialSubtitleListVisible: initialSubtitleListVisible,
+          initialFullscreen: initialFullscreen,
         ),
       );
 
@@ -1174,6 +1183,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 对话框/遮罩压住（`isCurrent`），避免切窗返回时抢走全屏内对话框的焦点。
   PageRoute<void>? _videoFullscreenRoute;
 
+  /// BUG-839：`initialFullscreen` 新页「首帧就绪后重进全屏」的一次性闸门 + 有界重试计数。
+  /// controls 首建帧（设 [_videoControlsContext]）可能晚于就绪帧，故就绪后逐帧重试到
+  /// context 可用再进全屏；失败/缺失态或超过上限则放弃，避免死循环（见
+  /// [_scheduleInitialFullscreenIfNeeded]）。
+  bool _didInitialFullscreen = false;
+  int _initialFullscreenRetries = 0;
+
   /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
   VideoWatchTracker? _watchTracker;
 
@@ -1641,6 +1657,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _controller?.removeListener(_promoteVideoReadyOnFirstFrame);
     if (!mounted) return;
     setState(() => _videoReadyToShow = true);
+    // BUG-839：慢路径就绪后触发「换集保持全屏」的重进全屏（仅 initialFullscreen 新页生效）。
+    _scheduleInitialFullscreenIfNeeded();
   }
 
   Future<void> _init() async {
@@ -2536,6 +2554,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _videoReadyToShow = controller.isReadyForFirstPaint;
       }
     });
+    // BUG-839：快路径（本地文件 load 即出画）就绪后触发「换集保持全屏」的重进全屏
+    // （仅 initialFullscreen 新页生效；慢路径由 [_promoteVideoReady] 触发）。
+    if (isInitialVideoOpen && _videoReadyToShow) {
+      _scheduleInitialFullscreenIfNeeded();
+    }
     if (isInitialVideoOpen && !_videoReadyToShow) {
       // load() 已返回但首帧尚未解码出画：进入「准备」阶段，页级加载态保持到首帧
       // 就绪，而非立刻把画面让给 media_kit 触发第二个缓冲圈（TODO-1276）。
