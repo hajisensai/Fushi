@@ -244,10 +244,14 @@ bool FloatingLyricWindow::Show(HWND owner) {
 
     // The strip must be mouse-interactive immediately so the first click after
     // entering the bar cannot fall through to the app below. WS_EX_NOACTIVATE
-    // keeps that click from stealing keyboard focus.
+    // keeps that click from stealing keyboard focus. The text-only clipboard
+    // window uses WS_EX_APPWINDOW so it shows in the taskbar / Alt+Tab as a
+    // selectable window (the transparent overlay is otherwise easy to lose); the
+    // lyric strip keeps WS_EX_TOOLWINDOW to stay off the taskbar.
+    const DWORD taskbar_ex = text_only_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW;
     hwnd_ = CreateWindowExW(
-        WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-        kWindowClassName, L"Hibiki Lyric", WS_POPUP, x, y, width, height,
+        WS_EX_LAYERED | WS_EX_TOPMOST | taskbar_ex | WS_EX_NOACTIVATE,
+        kWindowClassName, window_title_.c_str(), WS_POPUP, x, y, width, height,
         nullptr, nullptr, GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {
       return false;
@@ -326,6 +330,16 @@ void FloatingLyricWindow::ApplyStyleWidth() {
                target_px, rc.bottom - rc.top,
                SWP_NOMOVE | SWP_NOACTIVATE);
   ClampCurrentPositionToWindowMonitor();
+}
+
+void FloatingLyricWindow::SetWindowTitle(const std::wstring& title) {
+  if (title.empty()) {
+    return;
+  }
+  window_title_ = title;
+  if (hwnd_ != nullptr) {
+    SetWindowTextW(hwnd_, window_title_.c_str());
+  }
 }
 
 void FloatingLyricWindow::UpdateLabels(const Labels& labels) {

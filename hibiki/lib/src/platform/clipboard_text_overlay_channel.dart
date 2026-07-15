@@ -89,6 +89,7 @@ class ClipboardTextOverlayChannel extends FloatingOverlayChannel {
     int bgColor = 0x00000000,
     int windowWidth = 0,
     bool clickLookupEnabled = true,
+    String windowTitle = '',
   }) {
     return _instance.showImpl(<String, Object?>{
       'fontSize': fontSize,
@@ -96,6 +97,7 @@ class ClipboardTextOverlayChannel extends FloatingOverlayChannel {
       'bgColor': bgColor,
       'windowWidth': windowWidth,
       'clickLookupEnabled': clickLookupEnabled,
+      'windowTitle': windowTitle,
     });
   }
 
