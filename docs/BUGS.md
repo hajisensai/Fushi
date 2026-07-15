@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 806 条。点号进各自文件。
+> 共 807 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-825](bugs/BUG-825-backup-orphan-tables-leak.md) | ✅ | ✅ | 备份导出泄漏合集/标签/书架/搜索历史/删除墓碑等未受类别控制的孤儿表 |
 | [BUG-824](bugs/BUG-824-ankidroid-mine-permission-prompt.md) | ✅ | ✅ | AnkiDroid 权限未授予制卡失败无明显提醒 |
 | [BUG-823](bugs/BUG-823-episode-switch-dualplay.md) | ✅ | ✅ | 切换剧集时上一个视频仍在播放（过渡期双音轨） |
 | [BUG-822](bugs/BUG-822-subtitle-group-order-padding-slide.md) | ✅ | ✅ | 换句时字幕组序翻转致避让 padding 动画重播（每句对白入场滑跳） |
