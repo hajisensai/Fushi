@@ -252,10 +252,14 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       if (!_isRemote) const Divider(height: 1),
       if (!_isRemote)
         ExpansionTile(
+          // TODO-1350：副字幕入口的 leading 图标要和上面字幕轨 ListTile 的图标同一
+          // 缩进（ListTile 默认水平 16px）。此前 tilePadding: EdgeInsets.zero 把表头
+          // 图标顶到最左边、比其它行图标偏左没对齐（用户报「副字幕图标位置不对」）；
+          // 去掉该覆盖走 ExpansionTile 默认 16px 缩进即与兄弟行对齐。childrenPadding
+          // 保持零：展开项本身是带默认 contentPadding 的 ListTile，各自缩进已对齐。
           leading: const Icon(Icons.subtitles_outlined),
           title: Text(t.video_secondary_subtitle_sources),
           subtitle: Text(t.video_secondary_subtitle_hint),
-          tilePadding: EdgeInsets.zero,
           childrenPadding: EdgeInsets.zero,
           shape: const Border(),
           collapsedShape: const Border(),
