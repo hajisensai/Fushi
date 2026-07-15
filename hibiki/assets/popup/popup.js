@@ -391,6 +391,9 @@ const ICON_PATHS = {
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     // tune（Niratan「调整上下文」按钮：打开制卡前句子上下文调整模态）
     tune: 'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
+    // open_in_new（TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮，直接跳去
+    // Anki 定位该词的已存在卡；仅 data-mined 时显示）
+    openInAnki: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
 };
 
 function iconSvg(name) {
@@ -2097,6 +2100,11 @@ function createEntryHeader(entry, idx) {
         } else {
             mineButton.classList.remove('latest');
         }
+        // TODO-1360：「在 Anki 中打开卡片」按钮的可见性跟随真实制卡态——已制卡（✓）时
+        // 显示、可制卡（+）时隐藏。与 mineButton 同源于 data-mined，绝不装饰。
+        if (openAnkiButton) {
+            openAnkiButton.classList.toggle('open-anki-hidden', !isMined);
+        }
     };
     const mineButton = el('button', {
         className: 'mine-button',
@@ -2211,6 +2219,33 @@ function createEntryHeader(entry, idx) {
         }
     });
     buttonsContainer.appendChild(mineButton);
+
+    // TODO-1360：「在 Anki 中打开卡片」按钮——仅当该词已制卡（data-mined）时显示。点击
+    // 让宿主据 expression/reading 反查 Anki 全部命中卡并直接跳转打开（单卡直开 / 多卡弹
+    // 选择 / 无卡提示）。与制卡 ✓ 解耦：✓ 仍走覆写·新增·查看的操作单，本按钮只做「查找并
+    // 在 Anki 中打开」这一件事。初始隐藏，由 setMineState 据真实制卡态切换可见性。
+    const openAnkiButton = el('button', {
+        className: 'inline-action-button open-anki-button open-anki-hidden',
+        onclick: async () => {
+            // 单飞守卫：跳转是异步（反查 + 打开 Anki），避免连点重复触发。始终在
+            // finally 释放，绝不永久禁用（与 mineButton 单飞同源）。
+            if (openAnkiButton.dataset.busy === '1') return;
+            openAnkiButton.dataset.busy = '1';
+            openAnkiButton.disabled = true;
+            try {
+                await window.flutter_inappwebview.callHandler(
+                    'openInAnki', { expression, reading });
+            } catch (e) {
+                // 跳转失败不能卡死按钮；记日志并恢复可点（宿主侧另有 toast 反馈）。
+                console.error('open-anki button: openInAnki failed', e);
+            } finally {
+                openAnkiButton.dataset.busy = '';
+                openAnkiButton.disabled = false;
+            }
+        }
+    });
+    setButtonIcon(openAnkiButton, 'openInAnki');
+    buttonsContainer.appendChild(openAnkiButton);
     // Lookup-time detection: query Anki's real card existence for THIS word as
     // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
     //

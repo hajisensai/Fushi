@@ -769,6 +769,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 中打开），命中多张让用户选哪张。reader 覆写 onMineFromPopup/onUpdateFromPopup
         // 做真实制卡/覆盖（基类无操作）。
         onMinedCardAction: onMinedCardActionFromPopup,
+        // TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮 → 反查命中卡直接跳转打开。
+        onOpenInAnki: onOpenInAnkiFromPopup,
         // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：仅支持草稿的表面（reader 覆写
         // [supportsSentenceDraft]=true）传入回调；其余表面传 null，弹窗不渲染「+句」。
         onAppendSentence:
@@ -1110,6 +1112,19 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       },
     );
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
+  }
+
+  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮的 reader/有声书车道入口（与
+  /// [DictionaryPageMixin.onOpenInAnki] 对称）。据当前词条 expression/reading 反查命中
+  /// 卡并直接跳转打开（单卡直开 / 多卡弹选择 / 无卡 toast），不制卡、不覆写。
+  Future<void> onOpenInAnkiFromPopup(String expression, String reading) async {
+    final repo = ref.read(ankiRepositoryProvider);
+    await openMinedCardInAnki(
+      context: context,
+      repo: repo,
+      expression: expression,
+      reading: reading,
+    );
   }
 
   /// 收藏/制卡计入统计时的来源标识。阅读器（EPUB）/有声书都归书籍统计
