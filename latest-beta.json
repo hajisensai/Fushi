@@ -5,7 +5,7 @@
   "channel": "beta",
   "prerelease": true,
   "releaseSequence": 8024,
-  "notes": "Manual desktop beta/test build from develop @ 8082046. Beta/test releases are prerelease and never Latest.",
+  "notes": "Manual Apple beta/test build from develop @ 8082046. Beta/test releases are prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.2.0-beta.8024-arm64-v8a.apk",
@@ -27,6 +27,20 @@
       "releaseSequence": 8024,
       "tag": "v1.2.0-beta.8024",
       "version": "1.2.0-beta.8024"
+    },
+    {
+      "name": "hibiki-1.2.0-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.2.0-beta.8024/hibiki-1.2.0-ios.ipa",
+      "releaseSequence": 8024,
+      "tag": "v1.2.0-beta.8024",
+      "version": "1.2.0"
+    },
+    {
+      "name": "hibiki-1.2.0-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.2.0-beta.8024/hibiki-1.2.0-macos.zip",
+      "releaseSequence": 8024,
+      "tag": "v1.2.0-beta.8024",
+      "version": "1.2.0"
     },
     {
       "name": "hibiki-1.2.0-windows-setup.exe",
