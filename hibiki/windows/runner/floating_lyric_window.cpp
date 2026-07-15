@@ -208,7 +208,7 @@ void FloatingLyricWindow::ClampCurrentPositionToWindowMonitor() {
   const POINT clamped =
       ClampOriginToWorkArea(rc.left, rc.top, width, height, mi.rcWork);
   if (clamped.x != rc.left || clamped.y != rc.top) {
-    SetWindowPos(hwnd_, HWND_TOPMOST, clamped.x, clamped.y, 0, 0,
+    SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, clamped.x, clamped.y, 0, 0,
                  SWP_NOSIZE | SWP_NOACTIVATE);
   }
 }
@@ -255,7 +255,7 @@ bool FloatingLyricWindow::Show(HWND owner) {
   }
 
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
-  SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+  SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   visible_ = true;
   RequestRender();
@@ -322,7 +322,8 @@ void FloatingLyricWindow::ApplyStyleWidth() {
   if (target_px == current_px) {
     return;
   }
-  SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, target_px, rc.bottom - rc.top,
+  SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0,
+               target_px, rc.bottom - rc.top,
                SWP_NOMOVE | SWP_NOACTIVATE);
   ClampCurrentPositionToWindowMonitor();
 }
@@ -425,7 +426,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
           new_x = clamped.x;
           new_y = clamped.y;
         }
-        SetWindowPos(hwnd_, HWND_TOPMOST, new_x, new_y, 0, 0,
+        SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, new_x, new_y, 0, 0,
                      SWP_NOSIZE | SWP_NOACTIVATE);
         return 0;
       }
@@ -474,6 +475,16 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
         if (on_lock_) {
           on_lock_(locked_);
         }
+        RequestRender();
+        return 0;
+      }
+      if (action == "topmost") {
+        // The text-only Luna toolbar pin button: toggle always-on-top locally
+        // (LunaTranslator #36). Handled natively — no Dart round-trip — and every
+        // window-Z SetWindowPos reads topmost_ so the new state sticks.
+        topmost_ = !topmost_;
+        SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         RequestRender();
         return 0;
       }
@@ -792,9 +803,10 @@ void FloatingLyricWindow::Render() {
         grip_h / 2.0f, grip_h / 2.0f);
     render_target_->FillRoundedRectangle(grip_rect, grip_brush.Get());
 
-    // Lock + one-click-transparency buttons appear only on hover, right-aligned
-    // (transparency then lock). Their hit areas in ControlActionAt() are gated
-    // on hovered_ too, so a click can never hit an invisible button.
+    // Transparency + pin(topmost) + lock buttons appear only on hover,
+    // right-aligned (transparency, topmost, lock — lock rightmost). Their hit
+    // areas in ControlActionAt() are gated on hovered_ too, so a click can never
+    // hit an invisible button.
     if (hovered_) {
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_bg;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_fg;
@@ -806,7 +818,8 @@ void FloatingLyricWindow::Render() {
       render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
                                             tb_active.GetAddressOf());
       const float lock_x = width - t_pad - t_btn;
-      const float trans_x = lock_x - t_gap - t_btn;
+      const float top_x = lock_x - t_gap - t_btn;
+      const float trans_x = top_x - t_gap - t_btn;
       auto draw_tbtn = [&](float bx, const wchar_t* glyph, bool active) {
         D2D1_ROUNDED_RECT br = D2D1::RoundedRect(
             D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn), ScaleForDpi(6),
@@ -826,6 +839,7 @@ void FloatingLyricWindow::Render() {
         }
       };
       draw_tbtn(trans_x, L"◐", false);  // one-click background transparency
+      draw_tbtn(top_x, L"\U0001F4CC", topmost_);  // pin: always-on-top
       draw_tbtn(lock_x, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);  // lock
     }
   } else {
@@ -944,9 +958,13 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
       return std::string();
     }
     const float lock_x = width - pad - btn;
-    const float trans_x = lock_x - gap - btn;
+    const float top_x = lock_x - gap - btn;
+    const float trans_x = top_x - gap - btn;
     if (x >= lock_x && x <= lock_x + btn) {
       return "lock";
+    }
+    if (x >= top_x && x <= top_x + btn) {
+      return "topmost";
     }
     if (x >= trans_x && x <= trans_x + btn) {
       return "toggleTransparency";
