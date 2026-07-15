@@ -228,6 +228,34 @@ Rect resolvePopupRect({
   );
 }
 
+/// Phase B 拖拽尺寸（2026-07-15）— 把贴词算出的 [anchored] rect 的**原点钉回**
+/// [topLeft]（拖拽起始时那张卡的左上角），只保留其尺寸并夹住不越出屏幕（右下不出界）。
+///
+/// 根因：[calcPopupPosition] 在词靠右缘（横排）或词在右侧（竖排）时，弹窗左缘由
+/// 「词位置 − 宽度」推出（右缘锚在词），故宽度一变大 left 就左移。用户拖**右下**把手时
+/// 期望「左上不动、右下生长」（标准 resize），左移就成了「从右下拖却从左上动」的 bug。
+/// 拖拽期间及被拖的这张卡后续渲染都用本函数把原点冻结在拖拽起点——消除该特殊情况，且
+/// 松手不回跳（尺寸落偏好后同一选区仍读冻结原点，直到换词/关窗）。
+///
+/// [inset] = 屏幕边距（popupPadding）。尺寸取 [anchored] 的（已按当前 max/预览 + 屏幕
+/// clamp），再从冻结原点二次夹住确保右/下不出屏。
+Rect anchorPopupTopLeft({
+  required Rect anchored,
+  required Offset topLeft,
+  required Size screen,
+  required double inset,
+}) {
+  final double maxLeft = (screen.width - inset).clamp(0.0, screen.width);
+  final double maxTop = (screen.height - inset).clamp(0.0, screen.height);
+  final double left = topLeft.dx.clamp(inset.clamp(0.0, maxLeft), maxLeft);
+  final double top = topLeft.dy.clamp(inset.clamp(0.0, maxTop), maxTop);
+  final double width = anchored.width
+      .clamp(0.0, (screen.width - inset - left).clamp(0.0, screen.width));
+  final double height = anchored.height
+      .clamp(0.0, (screen.height - inset - top).clamp(0.0, screen.height));
+  return Rect.fromLTWH(left, top, width, height);
+}
+
 /// 把一个弹窗层 [child] 按 [pos] 摆放；隐藏层（[visible]=false，即 BUG-094 常驻热槽 /
 /// TODO-058 挂起冷层）停到屏幕右外侧 `(screen.width + 8, 0)` 继续预热。
 ///

@@ -145,7 +145,7 @@ mixin DictionaryPageMixin {
     // 家族（video/首页/texthooker）不预留 reserve、不竖排避让（全用默认），盒子尺寸
     // 随界面大小放大（同 base 的 popupMaxWidth/Height）。Phase B 拖把手时用预览态
     // [_popupResizePreview] 临时覆盖偏好实时预览（松手落库，见 [_onMixinPopupResizeEnd]）。
-    return resolvePopupRect(
+    final Rect anchored = resolvePopupRect(
       selectionRect: selectionRect,
       screen: screen,
       bottomDocked: mixinAppModel.popupBottomDocked,
@@ -154,19 +154,43 @@ mixin DictionaryPageMixin {
       maxHeight: (_popupResizePreview?.height ?? mixinAppModel.popupMaxHeight) *
           mixinAppModel.appUiScale,
     );
+    // Phase B 拖拽尺寸（2026-07-15）：被拖的那张卡（选区匹配）冻结左上角，从右下生长，
+    // 消除「词靠右缘时贴词定位把左缘左移」的 bug（同 base_source_page）。dock 模式不冻结。
+    if (!mixinAppModel.popupBottomDocked &&
+        _popupResizeAnchorTopLeft != null &&
+        _popupResizeAnchorSelection == selectionRect) {
+      return anchorPopupTopLeft(
+        anchored: anchored,
+        topLeft: _popupResizeAnchorTopLeft!,
+        screen: screen,
+        inset: 6.0,
+      );
+    }
+    return anchored;
   }
 
   /// Phase B 尺寸拖拽的预览态（基准逻辑像素，未缩放）。非空 = 正在拖右下角把手；
   /// null = 未拖，用已落库真值。reader 家族的对应态在 [BaseSourcePageState]。
   LookupSize? _popupResizePreview;
 
-  /// 拖把手起手：存当前偏好基准尺寸为预览起点。
+  /// Phase B 拖拽尺寸的**冻结原点**（2026-07-15，同 base_source_page）：拖右下把手时把
+  /// 弹窗左上角钉在拖拽起点、只往右下生长，持续到换词/关窗。[_popupResizeAnchorSelection]
+  /// 记它属于哪张卡；[_topPopupAnchoredRect]/[_topPopupSelectionRect] 是供起手取当前左上角
+  /// 的顶层卡缓存。
+  Offset? _popupResizeAnchorTopLeft;
+  Rect? _popupResizeAnchorSelection;
+  Rect? _topPopupAnchoredRect;
+  Rect? _topPopupSelectionRect;
+
+  /// 拖把手起手：存当前偏好基准尺寸为预览起点，并冻结顶层卡当前左上角。
   void _onMixinPopupResizeStart() {
     setState(() {
       _popupResizePreview = LookupSize(
         mixinAppModel.popupMaxWidth,
         mixinAppModel.popupMaxHeight,
       );
+      _popupResizeAnchorTopLeft = _topPopupAnchoredRect?.topLeft;
+      _popupResizeAnchorSelection = _topPopupSelectionRect;
     });
   }
 
@@ -196,10 +220,14 @@ mixin DictionaryPageMixin {
     }
   }
 
-  /// 拖拽被竞技场中途取消：丢弃预览态回到「读真值」，不落偏好。
+  /// 拖拽被竞技场中途取消：丢弃预览态回到「读真值」，不落偏好；一并撤销冻结原点（回贴词）。
   void _onMixinPopupResizeCancel() {
     if (_popupResizePreview == null) return;
-    setState(() => _popupResizePreview = null);
+    setState(() {
+      _popupResizePreview = null;
+      _popupResizeAnchorTopLeft = null;
+      _popupResizeAnchorSelection = null;
+    });
   }
 
   /// Mines the current dictionary entry to Anki.
@@ -502,6 +530,11 @@ mixin DictionaryPageMixin {
   }) {
     final DictionaryPopupEntry entry = controller.entries[index];
     final Rect pos = _calcMixinPopupPosition(entry.selectionRect, screen);
+    // Phase B 拖拽尺寸：缓存顶层卡当前 rect/选区，供 [_onMixinPopupResizeStart] 冻结左上角。
+    if (index == controller.entries.length - 1) {
+      _topPopupSelectionRect = entry.selectionRect;
+      _topPopupAnchoredRect = pos;
+    }
     final bool isDark =
         (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).brightness ==
             Brightness.dark;
