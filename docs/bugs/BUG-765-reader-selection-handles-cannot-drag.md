@@ -4,3 +4,10 @@
 - **[x] ① 已修复** — `moveSelectionHandle` 在 hit-test 前把两个手柄临时 `pointer-events:none`、取字后还原（`savedStartPe`/`savedEndPe`），使手指坐标穿透到底下字符。全程仍只改 `this.selection` + CSS Custom Highlight，绝不碰原生选区（不复活 TODO-1279 双选区）。提交：cc6484e87
 - **[x] ② 已加自动化测试** — `hibiki/test/reader/reader_selection_handles_guard_test.dart` 补 `moveSelectionHandle` 在 hit-test 期间置 `pointer-events`='none' 再还原的守卫。
 - **备注**：真机验证待用户（长按拖选后，拖两端手柄能实时调整选区）。次因假设（Android 手势竞技场抢 fresh touchstart）未处理——主因单独即足以造成冻结，若真机仍有边缘拖动被抢再单列。
+
+### 复发续修（2026-07-15，用户真机反馈「还是拖不动」+「手柄难看」，竖排横排都有）
+- **真根因**：cc6484e87 的 `pointer-events:none` 修复押注「Android WebView 的 `caretPositionFromPoint` 尊重 pointer-events 从而看穿手柄」——真机不成立。`getCaretRange`（`reader_selection_scripts.dart` :472）在 `caretPositionFromPoint` 路径上**无条件早退**（`if (!pos) return null;` 后直接 `setStart` 返回），即便手柄已 `pointer-events:none`，部分 Android WebView 的 `caretPositionFromPoint` 仍把命中解析到手柄自身 / `documentElement`（ELEMENT_NODE）→ `getCharacterAtPoint` 见非文本节点返回 null → `moveSelectionHandle` 早退 → 选区永不更新 = 仍拖不动。`pointer-events` 那层是脆弱兼容层，不是根因。
+- **[x] ① 根因修复** — `getCaretRange` 改为**只在命中文本节点时才走 `caretPositionFromPoint` 快路**（`pos.offsetNode.nodeType === Node.TEXT_NODE`），命中非文本节点（遮挡的手柄 div）**不再早退**，落到已有的 `elementFromPoint`+最近字符几何兜底（对 `pointer-events:none` 稳定生效，扫描有界于底层文本块）。横竖排通吃。原 `pointer-events:none` 临时熄灭保留作双保险（让 `elementFromPoint` 解析到底层文本块而非手柄）。
+- **[x] ② 手柄外观重设计** — 去掉刺眼橙 `rgba(255,138,0,0.98)` + 双重发光 box-shadow（用户「难看」）。改：外层 32×32 透明触控盒（旧 24px→更好抓）承 `pointer-events:auto`+`touch-action:none`；内层 18px 实心圆钮，主题色 `var(--hoshi-sel-handle)`（`reader_content_styles.dart` 从主题 `linkColor` 下发 `:root` 变量，主题切换自动跟随）+ 白描边（任意背景可见）+ 单柔和阴影。`positionSelectionHandles` 加 8px 向外间隙让圆钮悬在选区外缘不压字。
+- **[x] ③ 自动化测试** — `reader_selection_handles_guard_test.dart` 补：`getCaretRange` 校验 `Node.TEXT_NODE` 且 `elementFromPoint` 兜底在 `caretPositionFromPoint` 之后可达（非早退）；手柄用 `var(--hoshi-sel-handle)` + 内层 `data-hoshi-sel-ball` 且移除旧橙色/发光。`reader_content_styles_test.dart` 补：注入 CSS 下发 `--hoshi-sel-handle`。提交：<pending>
+- **备注**：仍待用户真机复验（拖两端手柄实时调整选区 + 新外观），横排 / 竖排 vertical-rl 均需验。

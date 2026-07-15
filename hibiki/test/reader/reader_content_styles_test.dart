@@ -61,6 +61,13 @@ void main() {
     test('contains light theme background by default', () {
       expect(css, contains('#fff'));
     });
+
+    test('BUG-765 续：下发选区手柄主题色变量 --hoshi-sel-handle', () {
+      // 移动端自绘选区起/止手柄用 var(--hoshi-sel-handle) 上色，须由本 CSS 从主题
+      // linkColor 下发，主题切换重注入时手柄自动跟随。
+      expect(css, contains('--hoshi-sel-handle:'),
+          reason: '注入 CSS 必须定义 --hoshi-sel-handle 供手柄引用');
+    });
   });
 
   group('ReaderContentStyles.css theme overrides', () {
