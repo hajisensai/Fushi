@@ -468,7 +468,12 @@ html.global-lookup .mine-button:not(:disabled) {
     cursor: default;
 }
 
-.audio-hint {
+/* BUG-842：.hoshi-btn-tip 是内联动作按钮（调整上下文 / 清空已加句子 等）的 DOM 悬停/
+   聚焦提示，取代会在离屏 WebView2（DComp visual→WGC→texture）上飞到窗口角落的原生
+   title。与 .audio-hint 共用视觉；由 popup.js setInlineButtonTip / __hoshiShowButtonTip
+   按屏幕坐标定位。 */
+.audio-hint,
+.hoshi-btn-tip {
     position: fixed;
     z-index: 10000;
     max-width: 220px;
@@ -486,7 +491,8 @@ html.global-lookup .mine-button:not(:disabled) {
     transition: opacity 0.18s ease;
 }
 
-.audio-hint.visible {
+.audio-hint.visible,
+.hoshi-btn-tip.visible {
     opacity: 1;
 }
 

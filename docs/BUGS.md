@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 823 条。点号进各自文件。
+> 共 824 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-842](bugs/BUG-842-popup-native-title-tooltip-flies.md) | ✅ | ✅ | Windows查词弹窗调整上下文等按钮原生title提示飞到窗口角落 |
 | [BUG-841](bugs/BUG-841-subtitle-list-effect-dup.md) | ✅ | ✅ | 字幕列表特效叠加ASS未去重 |
 | [BUG-840](bugs/BUG-840-bilingual-bottom-overlap.md) | ✅ | ✅ | 双语底部对白跨层/边距重叠 |
 | [BUG-839](bugs/BUG-839-fullscreen-autoplay-esc-stack.md) | ✅ | ✅ | 全屏连播换集漏栈致ESC逐层回退 |
