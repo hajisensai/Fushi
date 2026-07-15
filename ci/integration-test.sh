@@ -112,8 +112,8 @@ cd "$REPO_ROOT/hibiki"
 
 # ── Build once ──
 if [ "$SKIP_BUILD" = false ]; then
-  echo ">>> Building debug APK (once)..."
-  if ! "$FLUTTER" build apk --debug; then
+  echo ">>> Building x86_64 debug APK for the emulator (once)..."
+  if ! "$FLUTTER" build apk --debug --target-platform android-x64; then
     echo ">>> FAIL: build failed." >&2
     exit 1
   fi
