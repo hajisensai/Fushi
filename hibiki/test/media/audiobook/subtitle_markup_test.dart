@@ -49,11 +49,16 @@ void main() {
       expect(m.posFraction!.yFraction, closeTo(0.5, 1e-9));
     });
 
-    test('karaoke/animation/drawing tags are dropped with no style', () {
+    test('karaoke syllables become spans; drawing tag drops with no style',
+        () {
       final SubtitleMarkup m =
           parseSubtitleMarkup(r'{\k50}あ{\t(0,500,\fscx120)}い{\p1}');
       expect(m.plainText, 'あい');
-      expect(m.spans, isEmpty);
+      // \k50 起卡拉 OK 建模：两个 grapheme 都在音节 span 里（\t 块不清 karaoke 态）。
+      expect(m.spans, isNotEmpty);
+      expect(m.spans.first.kMode, 'k');
+      expect(m.spans.first.kStartCs, 0);
+      expect(m.spans.first.kDurCs, 50);
       expect(m.posFraction, isNull);
     });
 

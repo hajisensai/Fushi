@@ -399,6 +399,11 @@ class AssParser {
       marginV: number('marginv'),
       marginL: number('marginl'),
       marginR: number('marginr'),
+      secondaryColorArgb: color('secondarycolour'),
+      spacingPx: number('spacing'),
+      angleDeg: number('angle'),
+      scaleXPct: number('scalex'),
+      scaleYPct: number('scaley'),
     );
   }
 }

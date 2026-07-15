@@ -518,6 +518,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               final SubtitleMarkup? m = c.markup;
               return m?.fade != null ||
                   m?.move != null ||
+                  (m?.transitions.isNotEmpty ?? false) ||
+                  (m?.spans.any((SubtitleSpan sp) => sp.kMode != null) ??
+                      false) ||
                   (m?.scale?.isAnimated ?? false);
             }));
 
@@ -1043,7 +1046,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               blurred: blurred,
             ));
           }
-          return _buildSubtitleChar(chars[i], i, markup);
+          return _buildSubtitleChar(chars[i], i, markup, cue);
         },
       );
     }
@@ -1139,22 +1142,59 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 层，历史几何不变）。缩放动画按 cue 内已播放时长逐帧插值（由 [_syncFadeTicker] 驱动）。
   Widget _applyAssTransform(Widget box, AudioCue cue, SubtitleMarkup? markup) {
     if (!widget.respectAssStyle || markup == null) return box;
-    final double? rot = markup.rotationDeg;
+    // Z 旋转基线：行内 \frz 优先，缺省回退样式表 Angle（0/缺省不旋转）。
+    final double? styleAngle = markup.cueStyle?.angleDeg;
+    double? rot = markup.rotationDeg ??
+        ((styleAngle != null && styleAngle != 0) ? styleAngle : null);
+    // \t(\frz) 旋转动画：从基线折叠到目标（逐帧，_syncFadeTicker 驱动）。
+    final int? posMs = widget.controller.effectivePositionMs;
+    final int elapsed = (posMs ?? cue.startMs) - cue.startMs;
+    final int durMs = cue.endMs - cue.startMs;
+    for (final SubtitleTransition tr in markup.transitions) {
+      if (tr.frzToDeg == null) continue;
+      final double from = rot ?? 0;
+      rot = from + (tr.frzToDeg! - from) * tr.progressAt(elapsed, durMs);
+    }
     final SubtitleScale? sc = markup.scale;
-    if (rot == null && sc == null) return box;
-    double sx = 1.0;
-    double sy = 1.0;
+    // 样式表 ScaleX/ScaleY（百分比）作为基线缩放；行内 \fscx\fscy（sc）按 ASS 语义
+    // **覆盖**样式值而非叠乘。
+    final double styleSx = (markup.cueStyle?.scaleXPct ?? 100) / 100.0;
+    final double styleSy = (markup.cueStyle?.scaleYPct ?? 100) / 100.0;
+    final double? frx = markup.rotationXDeg;
+    final double? fry = markup.rotationYDeg;
+    final double? fax = markup.shearX;
+    final double? fay = markup.shearY;
+    final bool hasStyleScale = styleSx != 1.0 || styleSy != 1.0;
+    if (rot == null &&
+        sc == null &&
+        !hasStyleScale &&
+        frx == null &&
+        fry == null &&
+        fax == null &&
+        fay == null) {
+      return box;
+    }
+    double sx = styleSx;
+    double sy = styleSy;
     if (sc != null) {
-      final int? posMs = widget.controller.effectivePositionMs;
-      final int elapsed = (posMs ?? cue.startMs) - cue.startMs;
-      final (double a, double b) = sc.scaleAt(elapsed, cue.endMs - cue.startMs);
+      final (double a, double b) = sc.scaleAt(elapsed, durMs);
       sx = a;
       sy = b;
     }
     final Matrix4 m = Matrix4.identity();
+    // \frx/\fry 3D 旋转：加透视项（近似 libass 观感）；符号与 \frz 同取负
+    // （ASS 逆时针为正 vs Flutter 顺时针）。
+    if (frx != null || fry != null) {
+      m.setEntry(3, 2, 0.0015);
+      if (frx != null) m.rotateX(-frx * math.pi / 180.0);
+      if (fry != null) m.rotateY(-fry * math.pi / 180.0);
+    }
     // ASS \frz 逆时针为正；Flutter rotateZ 顺时针为正，故取负。
     if (rot != null) m.rotateZ(-rot * math.pi / 180.0);
-    if (sc != null) m.scale(sx, sy, 1.0);
+    // \fax/\fay 切变（VSFilter：x' = x + fax·y / y' = y + fay·x）。
+    if (fax != null) m.setEntry(0, 1, fax);
+    if (fay != null) m.setEntry(1, 0, fay);
+    if (sx != 1.0 || sy != 1.0) m.scale(sx, sy, 1.0);
     return Transform(alignment: Alignment.center, transform: m, child: box);
   }
 
@@ -1185,10 +1225,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 字面+柔光晕）；\bord==0 才糊整个字形（字面边缘发虚）。此前无条件把合成字形
   /// （描边+填充+阴影）整体 [ImageFiltered]，带描边的 `{\blur5}` 对白被糊成一团不可读。
   /// 命中矩形不因层数变化（ImageFiltered / Stack 不改布局），逐字查词照常。
-  Widget _buildSubtitleChar(String char, int i, SubtitleMarkup? markup) {
-    final TextStyle fillStyle = _styleForGrapheme(i, markup);
+  Widget _buildSubtitleChar(
+      String char, int i, SubtitleMarkup? markup, AudioCue cue) {
+    // \t 动画 / 卡拉 OK 需要 cue 内已播放时长（逐帧重算由 _syncFadeTicker 驱动）。
+    final int? posMs = widget.controller.effectivePositionMs;
+    final int elapsedMs = (posMs ?? cue.startMs) - cue.startMs;
+    final int durMs = cue.endMs - cue.startMs;
+    final TextStyle fillStyle =
+        _styleForGrapheme(i, markup, elapsedMs: elapsedMs, durMs: durMs);
     final bool respect = widget.respectAssStyle && markup != null;
-    final double sigma = _blurSigmaFor(i, markup);
+    final double sigma =
+        _blurSigmaFor(i, markup, elapsedMs: elapsedMs, durMs: durMs);
     final Widget glyph;
     if (!respect) {
       // 默认统一外观：Niratan 柔和投影。fillStyle 在非 respect 下 shadows==null，直接挂软
@@ -1203,7 +1250,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       );
     } else {
       // 尊重 .ass：\bord/\3c 真描边 + \shad ASS 硬投影（TODO-1105/1246），保持原样。
-      final (Color strokeColor, double strokeWidth) = _resolveStroke(i, markup);
+      final (Color strokeColor, double strokeWidth) =
+          _resolveStroke(i, markup, elapsedMs: elapsedMs, durMs: durMs);
       final Paint? strokePaint =
           buildSubtitleStrokePaint(strokeColor, strokeWidth);
       if (strokePaint == null) {
@@ -1254,10 +1302,18 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 覆盖第 [i] 个 grapheme 的 `\blur`/`\be` 换算成 Flutter 高斯模糊 sigma（逻辑像素）。
   /// respectAssStyle 关 / 无 blur 返回 0。真换算（含 libass `2/sqrt(ln256)` 因子 + 夹范围）
   /// 委托纯函数 [assBlurValueToSigma]（可单测），本方法只负责取 span 的 `\blur` 值 + 缩放。
-  double _blurSigmaFor(int i, SubtitleMarkup? markup) {
+  double _blurSigmaFor(int i, SubtitleMarkup? markup,
+      {int? elapsedMs, int? durMs}) {
     if (!widget.respectAssStyle || markup == null) return 0;
-    final double? blur = _spanAt(i, markup)?.blur;
-    if (blur == null || blur <= 0) return 0;
+    double blur = _spanAt(i, markup)?.blur ?? 0;
+    // \t(\blur) 动画：从静态基线逐段折叠到目标（p 已含 accel）。
+    if (elapsedMs != null && durMs != null) {
+      for (final SubtitleTransition tr in markup.transitions) {
+        if (tr.blurTo == null) continue;
+        blur = blur + (tr.blurTo! - blur) * tr.progressAt(elapsedMs, durMs);
+      }
+    }
+    if (blur <= 0) return 0;
     return assBlurValueToSigma(blur, _assFontScale(markup));
   }
 
@@ -1267,7 +1323,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// respectAssStyle 开：描边色取 span.\3c ?? cueStyle.OutlineColour ?? 统一色；描边宽取
   /// span.\bord ?? cueStyle.Outline ?? 统一宽（TODO-1105，行内覆盖 cue 默认覆盖统一样式），
   /// 且 ASS 描边宽按 显示区高/PlayResY 与字号同源缩放（TODO-1246，见下）。
-  (Color, double) _resolveStroke(int i, SubtitleMarkup? markup) {
+  (Color, double) _resolveStroke(int i, SubtitleMarkup? markup,
+      {int? elapsedMs, int? durMs}) {
     final Color baseColor =
         widget.shadowColor ?? Theme.of(context).colorScheme.shadow;
     final double baseWidth = widget.shadowThickness;
@@ -1276,6 +1333,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     }
     final SubtitleSpan? span = _spanAt(i, markup);
     final SubtitleCueStyle? cue = markup.cueStyle;
+    // \ko 卡拉 OK：音节点亮前不画描边（宽 0 → 单层 fill）。
+    if (span?.kMode == 'ko' &&
+        elapsedMs != null &&
+        elapsedMs < (span!.kStartCs ?? 0) * 10) {
+      return (baseColor, 0);
+    }
     final int? outlineArgb = span?.outlineColorArgb ?? cue?.outlineColorArgb;
     // ASS `Outline`/`\bord` 描边宽是相对 PlayResY 的**绝对像素**（`ScaledBorderAndShadow: yes`
     // 时随画面缩放，anime .ass 普遍如此），必须与字号（BUG-604 已按 显示区高/PlayResY 缩放）
@@ -1284,7 +1347,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 样式」名不副实（用户报开关无明显区别；TODO-1246）。回退到用户统一描边宽（[baseWidth]，
     // 已是逻辑像素）时不缩放。缩放结果夹到 [0.5, 24] 防 PlayResY 缺失/异常时描边消失或撑爆
     // （与 _resolveAssShadows 阴影深度夹同量级）。
-    final double? outlineWidthAss = span?.outlineWidthPx ?? cue?.outlineWidthPx;
+    double? outlineWidthAss = span?.outlineWidthPx ?? cue?.outlineWidthPx;
+    // \t(\bord) 动画：从静态基线（无则 0）折叠到目标宽（ASS px，缩放前）。
+    if (elapsedMs != null && durMs != null) {
+      for (final SubtitleTransition tr in markup.transitions) {
+        if (tr.bordTo == null) continue;
+        final double from = outlineWidthAss ?? 0;
+        outlineWidthAss =
+            from + (tr.bordTo! - from) * tr.progressAt(elapsedMs, durMs);
+      }
+    }
     final double outlineWidth = outlineWidthAss != null
         ? (outlineWidthAss * _assFontScale(markup)).clamp(0.5, 24.0).toDouble()
         : baseWidth;
@@ -1312,7 +1384,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// respectAssStyle 开：字体名 / 主色 / 字号 / 粗斜下删线优先取 .ass 值（行内 span >
   /// [SubtitleCueStyle] cue 默认 > 用户统一样式，TODO-1105）。字体缺字时仍挂
   /// [_kSubtitleCjkFallback] 兜底。
-  TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup) {
+  TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup,
+      {int? elapsedMs, int? durMs}) {
     final bool respect = widget.respectAssStyle && markup != null;
     final SubtitleCueStyle? cue = respect ? markup.cueStyle : null;
     final SubtitleSpan? span = _spanAt(i, markup);
@@ -1350,6 +1423,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // 项，故一条列表覆盖全平台、无需平台分支（TODO-088）。
       fontFamilyFallback: _kSubtitleCjkFallback,
       fontWeight: baseWeight,
+      // 样式表 Spacing 字间距（px，PlayRes 空间）与字号同源缩放；行内 \fsp 在 span
+      // 分支覆盖。respect 关恒 null（历史像素级不变）。
+      letterSpacing: (respect && cue?.spacingPx != null)
+          ? cue!.spacingPx! * assFontScale
+          : null,
       // cueStyle 的斜体 / 下划线 / 删除线（respect 时）作为基线，行内 span 可再覆盖。
       fontStyle: (respect && (cue?.italic ?? false)) ? FontStyle.italic : null,
       decoration: (respect) ? _cueDecoration(cue) : null,
@@ -1357,7 +1435,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // 的硬投影（TODO-1246）。respect 关或无阴影时为 null，与历史像素级一致。
       shadows: respect ? _resolveAssShadows(span, cue, assFontScale) : null,
     );
-    if (span == null) return base;
+    if (span == null) {
+      // 无行内 span：仍要施加行级 \t 颜色/透明度动画（若有）。
+      return _applyDynamicFill(base, baseColor, markup, respect,
+          span: null, cueStyle: cue, elapsedMs: elapsedMs, durMs: durMs);
+    }
 
     final List<TextDecoration> decos = <TextDecoration>[];
     if (span.underline) decos.add(TextDecoration.underline);
@@ -1372,11 +1454,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     if (fillOp != null) {
       spanColor = (spanColor ?? baseColor).withValues(alpha: fillOp);
     }
-    return base.copyWith(
+    final TextStyle merged = base.copyWith(
       fontFamily: spanFontFamily,
       fontStyle: span.italic ? FontStyle.italic : null,
       fontWeight: span.bold ? FontWeight.bold : null,
       color: spanColor,
+      // 行内 \fsp 字间距（respect 时）覆盖样式表 Spacing，与字号同源缩放。
+      letterSpacing: (respect && span.letterSpacingPx != null)
+          ? span.letterSpacingPx! * assFontScale
+          : null,
       // 行内字号（respect 时）同按 ASS 缩放；respect 关时保持历史裸像素（旧 span 行为）。
       fontSize: span.fontSizePx != null
           ? (respect
@@ -1385,6 +1471,71 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           : base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
     );
+    return _applyDynamicFill(merged, spanColor ?? baseColor, markup, respect,
+        span: span, cueStyle: cue, elapsedMs: elapsedMs, durMs: durMs);
+  }
+
+  /// 在最终填充样式上施加**随播放位置变化**的颜色/透明度（逐帧由 _syncFadeTicker 驱动）：
+  ///
+  /// - 卡拉 OK（span 的 \k/\kf/\ko）：音节点亮前用样式表 SecondaryColour（缺省不变色），
+  ///   `\k` 到点瞬切主色、`\kf`（含 \K）在音节窗口内从副色渐变到主色（扫填近似）、
+  ///   `\ko` 只作用描边（见 [_resolveStroke]），填充不变。
+  /// - `\t` 通用动画：按段折叠 `\c` 颜色插值与 `\1a`/`\alpha` 透明度插值（p 已含 accel）。
+  ///
+  /// respect 关 / 无动态 → 原样返回（零改动）。
+  TextStyle _applyDynamicFill(
+    TextStyle st,
+    Color effColor,
+    SubtitleMarkup? markup,
+    bool respect, {
+    required SubtitleSpan? span,
+    required SubtitleCueStyle? cueStyle,
+    int? elapsedMs,
+    int? durMs,
+  }) {
+    if (!respect || markup == null || elapsedMs == null || durMs == null) {
+      return st;
+    }
+    Color c = effColor;
+    bool changed = false;
+    // 卡拉 OK 音节变色。
+    final String? kMode = span?.kMode;
+    if (kMode == 'k' || kMode == 'kf') {
+      final int startMs = (span!.kStartCs ?? 0) * 10;
+      final int syllMs = (span.kDurCs ?? 0) * 10;
+      final int? secArgb = cueStyle?.secondaryColorArgb;
+      if (secArgb != null) {
+        final Color secondary = Color(secArgb);
+        if (elapsedMs < startMs) {
+          c = secondary;
+          changed = true;
+        } else if (kMode == 'kf' &&
+            syllMs > 0 &&
+            elapsedMs < startMs + syllMs) {
+          final double p = (elapsedMs - startMs) / syllMs;
+          c = Color.lerp(secondary, c, p)!;
+          changed = true;
+        }
+      }
+    }
+    // \t 颜色 / 透明度折叠。
+    double? alphaAcc;
+    for (final SubtitleTransition tr in markup.transitions) {
+      final double p = tr.progressAt(elapsedMs, durMs);
+      if (tr.colorToArgb != null && p > 0) {
+        c = Color.lerp(c, Color(tr.colorToArgb!), p)!;
+        changed = true;
+      }
+      if (tr.alphaTo != null) {
+        final double from = alphaAcc ?? c.a;
+        alphaAcc = from + (tr.alphaTo! - from) * p;
+      }
+    }
+    if (alphaAcc != null) {
+      c = c.withValues(alpha: alphaAcc.clamp(0.0, 1.0));
+      changed = true;
+    }
+    return changed ? st.copyWith(color: c) : st;
   }
 
   /// [SubtitleCueStyle] 的下划线 / 删除线合成 [TextDecoration]（respect 基线用）；都无则 null。

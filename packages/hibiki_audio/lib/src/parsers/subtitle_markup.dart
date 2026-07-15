@@ -227,6 +227,16 @@ class SubtitleSpan {
   /// 只留模糊描边成辉光。`\alpha` 按主填充近似（描边/阴影 alpha 不单独建模）。
   final double? fillOpacity;
 
+  /// `\fsp` 字间距（px，PlayRes 空间）；null=默认（回退样式表 Spacing）。
+  final double? letterSpacingPx;
+
+  /// 卡拉 OK 音节（`\k`/`\kf`/`\K`/`\ko`）：本段从 cue 起点第 [kStartCs] 厘秒起、
+  /// 历时 [kDurCs] 厘秒点亮。null=非卡拉 OK 段。[kMode]：'k'=瞬时切主色、
+  /// 'kf'=渐变过渡（扫填近似）、'ko'=点亮前无描边。
+  final String? kMode;
+  final int? kStartCs;
+  final int? kDurCs;
+
   const SubtitleSpan({
     required this.startGrapheme,
     required this.endGrapheme,
@@ -243,6 +253,10 @@ class SubtitleSpan {
     this.shadowDepthPx,
     this.blur,
     this.fillOpacity,
+    this.letterSpacingPx,
+    this.kMode,
+    this.kStartCs,
+    this.kDurCs,
   });
 
   bool get hasStyle =>
@@ -258,7 +272,82 @@ class SubtitleSpan {
       outlineWidthPx != null ||
       shadowDepthPx != null ||
       fillOpacity != null ||
+      letterSpacingPx != null ||
+      kMode != null ||
       (blur != null && blur! > 0);
+}
+
+/// `\t(...)` 通用动画（一段）：在 cue 内 [t1Ms,t2Ms]（相对 cue 起点毫秒；null=整条
+/// cue 时长）按 `p = ((t-t1)/(t2-t1))^accel` 插值到目标值。只建模本项目支持的维度；
+/// 缩放动画沿用既有 [SubtitleScale] 通道（历史兼容），不入本类。
+class SubtitleTransition {
+  final int? t1Ms;
+  final int? t2Ms;
+  final double accel;
+
+  /// `\1a`/`\alpha` 目标不透明度 0..1；null=本段不动 alpha。
+  final double? alphaTo;
+
+  /// `\c`/`\1c` 目标主色（0xFFRRGGBB）；null=不动。
+  final int? colorToArgb;
+
+  /// `\blur`/`\be` 目标模糊；null=不动。
+  final double? blurTo;
+
+  /// `\bord` 目标描边宽（px）；null=不动。
+  final double? bordTo;
+
+  /// `\frz` 目标旋转角（度）；null=不动。
+  final double? frzToDeg;
+
+  const SubtitleTransition({
+    this.t1Ms,
+    this.t2Ms,
+    this.accel = 1.0,
+    this.alphaTo,
+    this.colorToArgb,
+    this.blurTo,
+    this.bordTo,
+    this.frzToDeg,
+  });
+
+  bool get hasTarget =>
+      alphaTo != null ||
+      colorToArgb != null ||
+      blurTo != null ||
+      bordTo != null ||
+      frzToDeg != null;
+
+  /// 本段在 [elapsedMs]（cue 内已播放毫秒）的进度 0..1（accel 已施加）。
+  double progressAt(int elapsedMs, int cueDurationMs) {
+    final int t1 = t1Ms ?? 0;
+    final int t2 = t2Ms ?? cueDurationMs;
+    if (t2 <= t1) return elapsedMs >= t2 ? 1.0 : 0.0;
+    final double raw = ((elapsedMs - t1) / (t2 - t1)).clamp(0.0, 1.0);
+    if (accel == 1.0 || raw <= 0 || raw >= 1) return raw;
+    return _pow(raw, accel);
+  }
+
+  static double _pow(double base, double exp) {
+    // 纯 Dart pow（不引 dart:math 泛型歧义）：accel 常见 0.5~3，精度足够。
+    if (exp == 2.0) return base * base;
+    if (exp == 0.5) {
+      // 牛顿法开方两轮足够视觉精度。
+      double x = base;
+      x = (x + base / x) / 2;
+      x = (x + base / x) / 2;
+      return x;
+    }
+    // 通用：exp 的整数部分连乘 + 小数部分线性近似（视觉动画容差内）。
+    final int ip = exp.floor();
+    double r = 1.0;
+    for (int i = 0; i < ip; i++) {
+      r *= base;
+    }
+    final double frac = exp - ip;
+    if (frac > 0) r *= 1.0 + (base - 1.0) * frac;
+    return r.clamp(0.0, 1.0);
+  }
 }
 
 /// `\clip`/`\iclip` 静态裁剪路径的一段命令（归一化分数坐标，与 [SubtitlePos] 同构）。
@@ -447,6 +536,19 @@ class SubtitleCueStyle {
   /// `MarginR` 右边距（px，PlayResX 坐标系）；null=默认。见 [marginL]。
   final double? marginR;
 
+  /// `SecondaryColour`（BGR→0xFFRRGGBB）副色——卡拉 OK 音节点亮前的文字色；null=默认。
+  final int? secondaryColorArgb;
+
+  /// `Spacing` 字间距（px）；null=默认。
+  final double? spacingPx;
+
+  /// `Angle` 样式级 Z 轴旋转（度，ASS 逆时针为正）；null/0=不旋转。
+  final double? angleDeg;
+
+  /// `ScaleX`/`ScaleY` 样式级缩放（百分比，100=不缩放）；null=默认。
+  final double? scaleXPct;
+  final double? scaleYPct;
+
   const SubtitleCueStyle({
     this.fontName,
     this.primaryColorArgb,
@@ -463,6 +565,11 @@ class SubtitleCueStyle {
     this.marginV,
     this.marginL,
     this.marginR,
+    this.secondaryColorArgb,
+    this.spacingPx,
+    this.angleDeg,
+    this.scaleXPct,
+    this.scaleYPct,
   });
 
   /// Dialogue 行级 Margin 列（MarginL/MarginR/MarginV，>0 才覆盖，0=沿用样式默认，ASS
@@ -488,6 +595,11 @@ class SubtitleCueStyle {
       marginV: marginV ?? this.marginV,
       marginL: marginL ?? this.marginL,
       marginR: marginR ?? this.marginR,
+      secondaryColorArgb: secondaryColorArgb,
+      spacingPx: spacingPx,
+      angleDeg: angleDeg,
+      scaleXPct: scaleXPct,
+      scaleYPct: scaleYPct,
     );
   }
 }
@@ -539,6 +651,17 @@ class SubtitleMarkup {
   /// 叠出一行特效）。渲染层据此分组。
   final int layer;
 
+  /// `\t(...)` 通用动画段列表（按出现顺序；同维后段覆盖前段的目标）。空=无动画。
+  final List<SubtitleTransition> transitions;
+
+  /// `\frx`/`\fry` 3D 旋转（度，ASS 语义）；null=无。渲染层用带透视的 Matrix4。
+  final double? rotationXDeg;
+  final double? rotationYDeg;
+
+  /// `\fax`/`\fay` 切变因子；null=无。
+  final double? shearX;
+  final double? shearY;
+
   /// 本 cue 的 `\clip(...)`/`\iclip(...)` 静态裁剪；null=无。坐标已按 PlayRes 归一化
   /// 成分数（与 [posFraction] 同构），渲染层映射到视频内容矩形后构建裁剪路径。
   /// `\t(\clip)` 动画裁剪不支持（取扫描到的最后一个静态值）。
@@ -559,6 +682,11 @@ class SubtitleMarkup {
     this.move,
     this.layer = 0,
     this.clip,
+    this.transitions = const <SubtitleTransition>[],
+    this.rotationXDeg,
+    this.rotationYDeg,
+    this.shearX,
+    this.shearY,
   });
 }
 
@@ -582,6 +710,18 @@ class _Transform {
 
   /// 本 cue 的 `\clip`/`\iclip` 静态裁剪（见 [SubtitleMarkup.clip]）。
   SubtitleClip? clip;
+
+  /// `\frx`/`\fry` 3D 旋转、`\fax`/`\fay` 切变（行级）。
+  double? frxDeg;
+  double? fryDeg;
+  double? faxShear;
+  double? fayShear;
+
+  /// `\t(...)` 通用动画段（按出现顺序累积）。
+  final List<SubtitleTransition> transitions = <SubtitleTransition>[];
+
+  /// 卡拉 OK 音节起点累计（厘秒）：每个 \k 段的起点=之前所有 \k 时长之和。
+  int kAccumCs = 0;
 }
 
 /// 扫描过程内部可变样式状态。
@@ -599,6 +739,10 @@ class _Style {
   double? shadowDepthPx;
   double? blur;
   double? fillOpacity;
+  double? letterSpacingPx;
+  String? kMode;
+  int? kStartCs;
+  int? kDurCs;
 
   _Style clone() => _Style()
     ..italic = italic
@@ -613,7 +757,11 @@ class _Style {
     ..outlineWidthPx = outlineWidthPx
     ..shadowDepthPx = shadowDepthPx
     ..blur = blur
-    ..fillOpacity = fillOpacity;
+    ..fillOpacity = fillOpacity
+    ..letterSpacingPx = letterSpacingPx
+    ..kMode = kMode
+    ..kStartCs = kStartCs
+    ..kDurCs = kDurCs;
 
   /// Clears every accumulated inline override, returning to the "no override"
   /// state (ASS `\r` reset-tag semantics, TODO-1246). A segment reset this way
@@ -634,6 +782,10 @@ class _Style {
     shadowDepthPx = null;
     blur = null;
     fillOpacity = null;
+    letterSpacingPx = null;
+    kMode = null;
+    kStartCs = null;
+    kDurCs = null;
   }
 
   bool get hasStyle =>
@@ -649,6 +801,8 @@ class _Style {
       outlineWidthPx != null ||
       shadowDepthPx != null ||
       fillOpacity != null ||
+      letterSpacingPx != null ||
+      kMode != null ||
       (blur != null && blur! > 0);
 }
 
@@ -770,6 +924,10 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
         shadowDepthPx: seg.style.shadowDepthPx,
         blur: seg.style.blur,
         fillOpacity: seg.style.fillOpacity,
+        letterSpacingPx: seg.style.letterSpacingPx,
+        kMode: seg.style.kMode,
+        kStartCs: seg.style.kStartCs,
+        kDurCs: seg.style.kDurCs,
       ));
     }
     plain.write(seg.text);
@@ -827,6 +985,11 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     move: move,
     layer: layer,
     clip: xf.clip,
+    transitions: List<SubtitleTransition>.unmodifiable(xf.transitions),
+    rotationXDeg: xf.frxDeg,
+    rotationYDeg: xf.fryDeg,
+    shearX: xf.faxShear,
+    shearY: xf.fayShear,
   );
 }
 
@@ -1079,24 +1242,131 @@ void _applyOverrideBlock(
       continue;
     }
 
+    // \fsp<px>：字间距（可负/小数）。
+    final RegExpMatch? fsp = RegExp(r'^fsp(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (fsp != null) {
+      style.letterSpacingPx = double.parse(fsp.group(1)!);
+      continue;
+    }
+
+    // \frx / \fry：3D 旋转（度）。\frz 已在上方处理（frz? 的 z 可选不会误吞 x/y）。
+    final RegExpMatch? frx = RegExp(r'^frx(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (frx != null) {
+      xf.frxDeg = double.parse(frx.group(1)!);
+      continue;
+    }
+    final RegExpMatch? fry = RegExp(r'^fry(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (fry != null) {
+      xf.fryDeg = double.parse(fry.group(1)!);
+      continue;
+    }
+
+    // \fax / \fay：切变因子。
+    final RegExpMatch? fax = RegExp(r'^fax(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (fax != null) {
+      xf.faxShear = double.parse(fax.group(1)!);
+      continue;
+    }
+    final RegExpMatch? fay = RegExp(r'^fay(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (fay != null) {
+      xf.fayShear = double.parse(fay.group(1)!);
+      continue;
+    }
+
+    // \k / \K / \kf / \ko<cs>：卡拉 OK 音节计时（厘秒）。本块起的文字段=一个音节：
+    // 起点=之前音节时长累计，点亮方式 k=瞬切 / K=kf=渐变扫填近似 / ko=点亮前无描边。
+    final RegExpMatch? kar =
+        RegExp(r'^(k|K|kf|ko)(\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (kar != null) {
+      final String mode = switch (kar.group(1)!) {
+        'K' || 'kf' => 'kf',
+        'ko' => 'ko',
+        _ => 'k',
+      };
+      final int dur = double.parse(kar.group(2)!).round();
+      style.kMode = mode;
+      style.kStartCs = xf.kAccumCs;
+      style.kDurCs = dur;
+      xf.kAccumCs += dur;
+      continue;
+    }
+
     // 其余（\k \frx \fry \xbord \ybord ...）忽略。
   }
 }
 
-/// 解析 `\t(...)` 内部（TODO-1374）：形如 `t1,t2[,accel],<子标签>` 或纯 `<子标签>`。仅取
-/// 时间边界 (t1,t2) 与 `\fscx`/`\fscy` 目标倍数（本项目支持的动画维度：缩放弹入）；accel 与
-/// 其它子标签（颜色/位置渐变等）忽略，取终值近似。
+/// 解析 `\t(...)` 内部：形如 `t1,t2[,accel],<子标签>`、`accel,<子标签>` 或纯 `<子标签>`。
+///
+/// 缩放（`\fscx`/`\fscy`）沿用既有 [SubtitleScale] 通道（TODO-1374 历史兼容）；其余
+/// 支持维度（`\1a`/`\alpha` 透明度、`\c`/`\1c` 颜色、`\blur`/`\be`、`\bord`、`\frz`）
+/// 归一成一段 [SubtitleTransition] 追加进 [_Transform.transitions]，渲染层按
+/// `p=((t-t1)/(t2-t1))^accel` 逐帧插值。不支持的子标签（\pos 渐变等）忽略。
 void _parseTransition(String inner, _Transform xf) {
+  int? t1;
+  int? t2;
+  double accel = 1.0;
+  String rest = inner;
   final RegExpMatch? times =
-      RegExp(r'^\s*(-?\d+)\s*,\s*(-?\d+)\s*,').firstMatch(inner);
+      RegExp(r'^\s*(-?\d+)\s*,\s*(-?\d+)\s*(?:,\s*(-?\d+(?:\.\d+)?)\s*)?,')
+          .firstMatch(inner);
   if (times != null) {
-    xf.tStartMs = int.parse(times.group(1)!);
-    xf.tEndMs = int.parse(times.group(2)!);
+    t1 = int.parse(times.group(1)!);
+    t2 = int.parse(times.group(2)!);
+    if (times.group(3) != null) accel = double.parse(times.group(3)!);
+    rest = inner.substring(times.end);
+  } else {
+    // 纯加速度形式：`accel,<子标签>`。
+    final RegExpMatch? onlyAccel =
+        RegExp(r'^\s*(-?\d+(?:\.\d+)?)\s*,').firstMatch(inner);
+    if (onlyAccel != null) {
+      accel = double.parse(onlyAccel.group(1)!);
+      rest = inner.substring(onlyAccel.end);
+    }
   }
-  final RegExpMatch? tx = RegExp(r'\\fscx(\d+(?:\.\d+)?)').firstMatch(inner);
+  // 历史缩放通道（整条 cue 只支持一段缩放动画，后段覆盖）。
+  if (times != null) {
+    xf.tStartMs = t1;
+    xf.tEndMs = t2;
+  }
+  final RegExpMatch? tx = RegExp(r'\\fscx(\d+(?:\.\d+)?)').firstMatch(rest);
   if (tx != null) xf.tScaleX = double.parse(tx.group(1)!) / 100.0;
-  final RegExpMatch? ty = RegExp(r'\\fscy(\d+(?:\.\d+)?)').firstMatch(inner);
+  final RegExpMatch? ty = RegExp(r'\\fscy(\d+(?:\.\d+)?)').firstMatch(rest);
   if (ty != null) xf.tScaleY = double.parse(ty.group(1)!) / 100.0;
+
+  // 通用动画维度。
+  double? alphaTo;
+  int? colorTo;
+  double? blurTo;
+  double? bordTo;
+  double? frzTo;
+  final RegExpMatch? ta =
+      RegExp(r'\\(?:1a|alpha)&?H?([0-9A-Fa-f]{1,2})&?').firstMatch(rest);
+  if (ta != null) {
+    alphaTo =
+        (1.0 - int.parse(ta.group(1)!, radix: 16) / 255.0).clamp(0.0, 1.0);
+  }
+  final RegExpMatch? tc =
+      RegExp(r'\\1?c&H([0-9A-Fa-f]{1,8})&?').firstMatch(rest);
+  if (tc != null) colorTo = assColorToArgb(tc.group(1)!);
+  final RegExpMatch? tb =
+      RegExp(r'\\(?:blur|be)(\d+(?:\.\d+)?)').firstMatch(rest);
+  if (tb != null) blurTo = double.parse(tb.group(1)!);
+  final RegExpMatch? tbo = RegExp(r'\\bord(\d+(?:\.\d+)?)').firstMatch(rest);
+  if (tbo != null) bordTo = double.parse(tbo.group(1)!);
+  final RegExpMatch? tfrz = RegExp(r'\\frz?(-?\d+(?:\.\d+)?)').firstMatch(rest);
+  if (tfrz != null) frzTo = double.parse(tfrz.group(1)!);
+
+  final SubtitleTransition tr = SubtitleTransition(
+    t1Ms: t1,
+    t2Ms: t2,
+    accel: accel,
+    alphaTo: alphaTo,
+    colorToArgb: colorTo,
+    blurTo: blurTo,
+    bordTo: bordTo,
+    frzToDeg: frzTo,
+  );
+  if (tr.hasTarget) xf.transitions.add(tr);
 }
 
 /// ASS 颜色十六进制（BGR，可省前导零）→ 0xFFRRGGBB。
