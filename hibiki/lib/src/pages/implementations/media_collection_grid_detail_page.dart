@@ -230,13 +230,21 @@ class _MediaCollectionGridDetailPageState
               Text(t.delete_collection_confirm),
               if (canDeleteMembers) ...<Widget>[
                 const SizedBox(height: 8),
-                CheckboxListTile(
-                  value: alsoDeleteMembers,
-                  onChanged: (bool? v) =>
-                      setLocal(() => alsoDeleteMembers = v ?? false),
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: Text(t.delete_collection_also_books),
+                InkWell(
+                  onTap: () =>
+                      setLocal(() => alsoDeleteMembers = !alsoDeleteMembers),
+                  child: Row(
+                    children: <Widget>[
+                      Checkbox(
+                        value: alsoDeleteMembers,
+                        onChanged: (bool? v) =>
+                            setLocal(() => alsoDeleteMembers = v ?? false),
+                      ),
+                      Expanded(
+                        child: Text(t.delete_collection_also_books),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ],
