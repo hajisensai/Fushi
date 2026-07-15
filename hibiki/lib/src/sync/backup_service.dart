@@ -946,6 +946,22 @@ class BackupService {
         );
       }
 
+      // BUG-828: strip the "orphan" user-data tables that NO backup category
+      // governed — before this they leaked unconditionally into every backup
+      // (a "dictionary + local-audio only" export still carried the user's
+      // collections, shelf, tags, search history and deletion tombstones).
+      // Gated on the CATEGORY choice, not on row-resolution: a full export keeps
+      // every collection/tag/tombstone (so the cross-device merge-union in
+      // [BackupMergeEngine] still propagates memberships whose book lives on
+      // another device), while a content-excluding export drops the rows that
+      // belong to the unticked content.
+      await _stripOrphanUserDataTables(
+        tmpDir.path,
+        includeBooks: includeBooks,
+        includeVideos: includeVideos,
+        includeStatistics: includeStatistics,
+      );
+
       // BUG-816: content-registry preference rows follow their OWNING content
       // category, not `settings` — strip favorites when `books` is unticked,
       // the font registry when `fonts` is, and the local-audio registry (incl.
@@ -1318,6 +1334,147 @@ class BackupService {
           await db.customStatement('DELETE FROM $table');
         }
       }
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Strips the "orphan" user-data tables that no [BackupCategory] governs from
+  /// the standalone DB copy (BUG-828). Before this they leaked unconditionally
+  /// into every backup, so a "dictionary + local-audio only" export still
+  /// carried the user's collections, shelf, tags, search history and deletion
+  /// tombstones.
+  ///
+  /// The strip is gated on the user's CATEGORY choice, NOT on row-resolution —
+  /// this is the crux. A membership can legitimately point at a book that lives
+  /// on ANOTHER device: [BackupMergeEngine] reads `media_collections` /
+  /// `media_collection_items` / `book_tags` FROM THE BACKUP to propagate the
+  /// multi-device union, so a full export must keep them even when the pointed-at
+  /// book has no local row. Row-resolution stripping would gut exactly that
+  /// feature. Gating on the ticked categories instead means:
+  ///   - full export (books + videos ticked) → nothing content-following is
+  ///     stripped, the union still travels;
+  ///   - content-excluding export → only the rows belonging to the UNTICKED
+  ///     content are dropped.
+  ///
+  /// Groups:
+  /// 1. ALWAYS wiped — `search_history_items`: pure search terms, no content to
+  ///    follow, and never wanted on another device.
+  /// 2. CATEGORY-GATED, `media_type`-keyed rows — collection memberships, shelf
+  ///    entries and the per-item deletion markers (`book_tag_membership_tombstones`,
+  ///    `sync_deletion_tombstones`) are logical (non-DB-FK) references, so
+  ///    stripping a book does NOT cascade to them. When a content category is
+  ///    unticked we drop its `media_type` rows explicitly. `srt` has no category,
+  ///    but since `srt_books` is never category-stripped a content-excluding
+  ///    export drops only srt member/shelf rows that DON'T resolve to an
+  ///    `srt_books` row (dangling); a full export keeps every srt row for the
+  ///    merge-union. A collection is dropped ONLY when the strip left it with no
+  ///    members (tracked via
+  ///    [hadMembers]) — a legitimately member-less, tag-only collection is
+  ///    preserved (its `collection_tag_mappings` cascade with it if it IS
+  ///    dropped). `book_tags` is drained of pool rows no longer referenced by any
+  ///    surviving mapping, INCLUDING `collection_tag_mappings` (a tag may label a
+  ///    collection without labelling a book); the per-content mapping tables were
+  ///    FK-cascade-cleared by [_retainBooks] / [_retainVideos].
+  /// 3. CATEGORY-GATED whole-table deletion tombstones — `book_tombstones`
+  ///    (books), `statistics_tombstones` (statistics), `collection_member_tombstones`
+  ///    (once no book/video content travels). Merge reads the IMPORTING device's
+  ///    OWN tombstones (not the backup's), so this never weakens resurrection
+  ///    suppression.
+  ///
+  /// Runs AFTER [_retainBooks] / [_retainVideos] so tag-mapping cascades and the
+  /// pool drain observe the final content set. Every DELETE is FK-safe (verified
+  /// with `foreign_key_check` against a real v44 export copy).
+  static Future<void> _stripOrphanUserDataTables(
+    String dbDirectory, {
+    required bool includeBooks,
+    required bool includeVideos,
+    required bool includeStatistics,
+  }) async {
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      // (1) Always-wipe: search history never travels.
+      await db.customStatement('DELETE FROM search_history_items');
+
+      // Snapshot which collections had members BEFORE the gated member strip so
+      // we can drop only the ones the strip emptied (never an always-empty,
+      // tag-only collection).
+      final hadMembersRows = await db
+          .customSelect(
+              'SELECT DISTINCT collection_id AS id FROM media_collection_items')
+          .get();
+      final List<int> hadMembers =
+          hadMembersRows.map((r) => r.data['id'] as int).toList();
+
+      // (2) Category-gated content rows. Each unticked content category drops
+      // its own `media_type`-keyed rows across the shared tables (collection
+      // memberships, shelf entries, and the per-item deletion markers). srt has
+      // no category (always exported), so its rows always stay.
+      Future<void> stripForMediaType(String mediaType) async {
+        for (final String table in const <String>[
+          'media_collection_items',
+          'shelf_entries',
+          'book_tag_membership_tombstones',
+          'sync_deletion_tombstones',
+        ]) {
+          await db.customStatement(
+              'DELETE FROM $table WHERE media_type = ?', [mediaType]);
+        }
+      }
+
+      if (!includeBooks) await stripForMediaType('epub');
+      if (!includeVideos) await stripForMediaType('video');
+      // srt has no category checkbox, but `srt_books` is never category-stripped,
+      // so a srt member/shelf row whose `entry_key` has no `srt_books.uid` match
+      // is genuinely dangling (deleted, or cross-device srt content absent from
+      // this backup). In a CONTENT-EXCLUDING export drop those to honour
+      // "collections carry only exported content"; a FULL export keeps them so
+      // the merge-union still propagates cross-device srt memberships.
+      if (!includeBooks || !includeVideos) {
+        const String srtDangling = "media_type = 'srt' AND entry_key NOT IN "
+            '(SELECT uid FROM srt_books WHERE uid IS NOT NULL)';
+        await db.customStatement(
+            'DELETE FROM media_collection_items WHERE $srtDangling');
+        await db
+            .customStatement('DELETE FROM shelf_entries WHERE $srtDangling');
+      }
+      // Drop collections the strip emptied — but keep always-empty tag-only
+      // collections (a member-less collection is a valid tag-union carrier).
+      if (hadMembers.isNotEmpty && (!includeBooks || !includeVideos)) {
+        final String ids = hadMembers.join(',');
+        await db.customStatement(
+          'DELETE FROM media_collections WHERE id IN ($ids) AND id NOT IN '
+          '(SELECT DISTINCT collection_id FROM media_collection_items)',
+        );
+      }
+      // Drain the shared tag pool of rows no longer referenced by ANY surviving
+      // mapping — the three per-content book mappings AND `collection_tag_mappings`
+      // (a tag can label a collection without labelling any book, so this union
+      // must include it or a collection-only tag would be wrongly drained).
+      // Content mappings for excluded content were FK-cascade-cleared above.
+      await db.customStatement(
+        'DELETE FROM book_tags WHERE id NOT IN ('
+        'SELECT tag_id FROM book_tag_mappings '
+        'UNION SELECT tag_id FROM srt_book_tag_mappings '
+        'UNION SELECT tag_id FROM video_book_tag_mappings '
+        'UNION SELECT tag_id FROM collection_tag_mappings)',
+      );
+
+      // (3) Category-gated deletion tombstones.
+      if (!includeBooks) {
+        await db.customStatement('DELETE FROM book_tombstones');
+      }
+      if (!includeStatistics) {
+        await db.customStatement('DELETE FROM statistics_tombstones');
+      }
+      if (!includeBooks && !includeVideos) {
+        // Collection member-removal markers carry no signal once no book/video
+        // content travels.
+        await db.customStatement('DELETE FROM collection_member_tombstones');
+      }
+
       await db.customStatement('VACUUM');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
