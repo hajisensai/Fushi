@@ -38,7 +38,7 @@ Anki — vernoemd naar 暗記 (あんき) — is wereldwijd het meest gebruikte 
 
 Links: [Officiële Anki-website](https://apps.ankiweb.net/) · [Handleiding (Chinees)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(Chinees)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Afbeelding: illustratie / legenda]*
+![Anki-downloadpagina](static-assets/user-guide/anki-download.png)
 
 Je kunt Anki elk materiaal geven dat je wilt onthouden, en het stelt je in staat de beste retentie te bereiken met de minste studietijd.
 

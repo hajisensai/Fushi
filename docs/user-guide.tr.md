@@ -38,7 +38,7 @@ Anki — adını 暗記 (あんき) sözcüğünden alır — dünyada en yaygı
 
 Bağlantılar: [Anki resmi sitesi](https://apps.ankiweb.net/) · [Kılavuz (Çince)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [SSS](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(Çince)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Görsel: çizim / açıklama]*
+![Anki indirme sayfası](static-assets/user-guide/anki-download.png)
 
 Ezberlemek istediğiniz her materyali Anki'ye verebilirsiniz; en az çalışma süresiyle en iyi kalıcılığı elde etmenizi sağlar.
 

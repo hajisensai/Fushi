@@ -42,7 +42,7 @@ Anki -- named after 暗記 (あんき) -- is the world's most widely used [Space
 
 Links: [Anki official site](https://apps.ankiweb.net/) · [Manual (Chinese)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(Chinese)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Image: illustration / legend]*
+![Anki download page](static-assets/user-guide/anki-download.png)
 
 You can give Anki any material you want to memorize, and it lets you achieve the best retention with the least study time.
 

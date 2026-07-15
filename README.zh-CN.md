@@ -10,7 +10,7 @@
 
 [English](README.md) | **简体中文** | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
-[使用文档](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [下载最新版本](https://github.com/hajisensai/hibiki/releases) · [OneDrive 镜像](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) | [加入 Discord 社区](https://discord.gg/WhjwyGmm7f)
+[使用文档](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [下载最新版本](https://github.com/hajisensai/hibiki/releases) | [加入 Discord 社区](https://discord.gg/WhjwyGmm7f)
 
 > **看你想看的，语言顺手就学会了。**
 
@@ -137,9 +137,14 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/hajisensai/hibiki/releases) 或 [OneDrive 镜像](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) 下载最新版本，支持 Android APK 和 Windows 安装包。
->
-> OneDrive 镜像面向 GitHub 访问缓慢或受限的地区。
+从 [GitHub Releases](https://github.com/hajisensai/hibiki/releases) 下载最新版本，支持 Android APK 和 Windows 安装包。
+
+<details open>
+<summary>📖 <b>无需繁琐配置</b>：推荐词典与本地音频一键导入即用。</summary>
+
+<a href="https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb"><img src="docs/static-assets/user-guide/config-tutorial.zh-CN.png" alt="配置教程 — 导入推荐词典和音频" width="420"></a>
+
+</details>
 
 > 最低 Android 7.0（API 24）。
 
