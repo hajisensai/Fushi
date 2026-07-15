@@ -684,6 +684,21 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// 顶栏 = 可选的 [headerWidget]（reader 音频控制 / video 句子收藏星标）叠加
   /// 左端返回按钮（[onBack]）/ 右端关闭按钮（[onClose]）。三者都空时返回 null。
+  ///
+  /// BUG-822：旧实现用 [Stack] 把三组按钮各自 [Align] 叠在同一水平带上——左端 A−/A+、
+  /// 全宽居中的 [headerWidget]（音频控制最多 4 颗按钮 ≈ 144px）、右端关闭。这是「重叠即
+  /// 设计」：三层互不预留空间，弹窗宽度收窄到 [kLookupPopupMinWidth]（250）或 UI 缩放放大
+  /// 时，居中的音频行向两侧张开压到 A−/A+ 与关闭按钮上，视觉上按钮相互重叠。
+  ///
+  /// 改成一条 [Row] 顺序排布：左簇（返回/A−/A+）→ 弹性居中的 header → 右簇（关闭）。左右
+  /// 簇定宽钉在两端，中段用 [Expanded] 吃掉剩余宽度并让 header 在其中 [Center] 居中——header
+  /// 被夹在两簇之间的有界宽度里，Row 顺序排布天然不重叠（消除特殊情况）。header 自身在窄宽
+  /// 下的收缩由内容侧负责（reader 音频行用 `FittedBox(scaleDown)` 等比缩小，见
+  /// `buildPopupAudioControls`），本层只给它有界宽度、不再全宽居中压到两侧。[Center] 给
+  /// header 的是 loose 约束（0..剩余宽），故 header 即便是贪婪/无限宽（`double.infinity`）也
+  /// 被夹到剩余宽，绝不抛无界宽异常；同时保住 [ReaderChromeScaler] 需要的有界宽（UI 缩放
+  /// 不失效）。header 缺省（app 外覆盖窗）时中段退化成 [Spacer]，行为与旧的「只有 A−/A+ +
+  /// 关闭」一致。
   Widget? _buildTopBar(BuildContext context) {
     if (headerWidget == null && onClose == null && onBack == null) {
       return null;
@@ -691,56 +706,50 @@ class DictionaryPopupLayer extends StatelessWidget {
 
     final String backTooltip =
         MaterialLocalizations.of(context).backButtonTooltip;
-    final List<Widget> actions = <Widget>[
-      // TODO-1353 复诉：左端固定渲染 A−/A+ 手动字号按钮（back 按钮存在时排它后面）。
-      // Ctrl+滚轮不可发现、触屏没有 Ctrl+滚轮，这对按钮是弹窗内容缩放的可见入口。
-      Align(
-        alignment: Alignment.centerLeft,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (onBack != null)
-              HibikiIconButton(
-                icon: Icons.arrow_back,
-                size: 20,
-                tooltip: backTooltip,
-                constraints: _topActionConstraints,
-                padding: EdgeInsets.zero,
-                onTap: onBack,
-              ),
-            _buildZoomFontButton(context, zoomIn: false),
-            _buildZoomFontButton(context, zoomIn: true),
-          ],
-        ),
-      ),
-      if (onClose != null)
-        Align(
-          alignment: Alignment.centerRight,
-          child: HibikiIconButton(
+
+    // 左簇：返回（可选）+ A−/A+ 字号按钮（TODO-1353）。定宽，钉在行首。
+    final Widget leftCluster = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (onBack != null)
+          HibikiIconButton(
+            icon: Icons.arrow_back,
+            size: 20,
+            tooltip: backTooltip,
+            constraints: _topActionConstraints,
+            padding: EdgeInsets.zero,
+            onTap: onBack,
+          ),
+        _buildZoomFontButton(context, zoomIn: false),
+        _buildZoomFontButton(context, zoomIn: true),
+      ],
+    );
+
+    // 右簇：关闭按钮（可选）。定宽，钉在行尾。缺省时用 0 宽占位保持 Row 结构一致。
+    final Widget rightCluster = onClose != null
+        ? HibikiIconButton(
             icon: Icons.close,
             size: 20,
             tooltip: t.dialog_close,
             constraints: _topActionConstraints,
             padding: EdgeInsets.zero,
             onTap: onClose,
-          ),
-        ),
-    ];
+          )
+        : const SizedBox.shrink();
 
-    if (headerWidget == null) {
-      return SizedBox(
-        height: 40,
-        child: Stack(children: actions),
-      );
-    }
+    // 中段：header 在左右簇之间的剩余（有界）宽度里居中，永不压到两侧按钮。收缩交给
+    // 内容侧（reader 音频行内部 FittedBox），本层只负责「夹在中间、给有界宽」。
+    final Widget middle = headerWidget == null
+        ? const Spacer()
+        : Expanded(child: Center(child: headerWidget!));
 
-    return Stack(
-      alignment: Alignment.center,
-      children: <Widget>[
-        headerWidget!,
-        Positioned.fill(child: Stack(children: actions)),
-      ],
+    final Widget bar = Row(
+      children: <Widget>[leftCluster, middle, rightCluster],
     );
+
+    // 无 header 的层（app 外覆盖窗/嵌套返回层）保持旧的 40 高度；有 header 时高度由
+    // header 自身（[ReaderChromeScaler] 跟随 UI 缩放）决定。
+    return headerWidget == null ? SizedBox(height: 40, child: bar) : bar;
   }
 
   /// TODO-1353 复诉：弹窗顶栏可见的 A−/A+ 手动字号按钮。点按经

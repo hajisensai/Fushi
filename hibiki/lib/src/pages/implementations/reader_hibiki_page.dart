@@ -2990,67 +2990,76 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           // 「有词条」时才画（无结果/搜索中悬空的多余横线消除）。
           child: Container(
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                HibikiIconButton(
-                  icon: _currentSentenceIsFavorited
-                      ? Icons.star
-                      : Icons.star_border,
-                  size: 20,
-                  enabledColor: _currentSentenceIsFavorited
-                      ? theme.colorScheme.primary
-                      : null,
-                  onTap: _toggleFavoriteSentence,
-                  tooltip: t.action_favorite,
-                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                ),
-                if (hasAudio) ...[
-                  SizedBox(width: tokens.spacing.gap),
+            // BUG-823：查词弹窗顶栏收窄时按钮曾相互重叠。顶栏改由 [DictionaryPopupLayer]
+            // 用 Row 把本 header 夹在左右按钮簇之间的有界宽度里居中（不再全宽居中压两侧）。
+            // 但音频行是固定尺寸按钮，窄宽下会溢出该有界区被裁切；用 [FittedBox]
+            // (`scaleDown`) 把整行等比缩小到刚好放下——绝不横向溢出/裁切，也不重叠。
+            // `mainAxisSize: min` 让行取按钮总宽（有限内在宽），FittedBox 才能量到并缩放。
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
                   HibikiIconButton(
-                    icon: Icons.replay_outlined,
+                    icon: _currentSentenceIsFavorited
+                        ? Icons.star
+                        : Icons.star_border,
                     size: 20,
-                    onTap: hasCue
-                        ? () {
-                            final AudioCue? cue = _lookupCue;
-                            if (cue == null) return;
-                            ctrl.playCueOnce(cue);
-                          }
+                    enabledColor: _currentSentenceIsFavorited
+                        ? theme.colorScheme.primary
                         : null,
-                    tooltip: t.repeat_cue,
+                    onTap: _toggleFavoriteSentence,
+                    tooltip: t.action_favorite,
                     padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   ),
-                  SizedBox(width: tokens.spacing.gap),
-                  HibikiIconButton(
-                    icon: ctrl.isPlaying
-                        ? Icons.pause_outlined
-                        : Icons.play_arrow_outlined,
-                    size: 24,
-                    onTap: ctrl.togglePlayPause,
-                    tooltip: ctrl.isPlaying ? t.pause : t.play,
-                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  ),
-                  SizedBox(width: tokens.spacing.gap),
-                  HibikiIconButton(
-                    icon: Icons.play_circle_outline,
-                    size: 20,
-                    onTap: hasCue
-                        ? () {
-                            final AudioCue? cue = _lookupCue;
-                            if (cue == null) return;
-                            ctrl.playCueAndContinue(cue);
-                            clearDictionaryResult();
-                          }
-                        : null,
-                    tooltip: t.play_from_cue,
-                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  ),
-                  // TODO-954：导出片段入口已从查词弹窗 header 迁到「文字选区右键菜单」
-                  // （Windows Flutter 菜单 / 移动端原生 ContextMenu），见
-                  // chrome.part.dart `_showReaderTextContextMenu` 与 webview.part.dart。
-                  // 这里只保留播放控制，避免弹窗里塞与查词无关的导出按钮。
+                  if (hasAudio) ...[
+                    SizedBox(width: tokens.spacing.gap),
+                    HibikiIconButton(
+                      icon: Icons.replay_outlined,
+                      size: 20,
+                      onTap: hasCue
+                          ? () {
+                              final AudioCue? cue = _lookupCue;
+                              if (cue == null) return;
+                              ctrl.playCueOnce(cue);
+                            }
+                          : null,
+                      tooltip: t.repeat_cue,
+                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                    ),
+                    SizedBox(width: tokens.spacing.gap),
+                    HibikiIconButton(
+                      icon: ctrl.isPlaying
+                          ? Icons.pause_outlined
+                          : Icons.play_arrow_outlined,
+                      size: 24,
+                      onTap: ctrl.togglePlayPause,
+                      tooltip: ctrl.isPlaying ? t.pause : t.play,
+                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                    ),
+                    SizedBox(width: tokens.spacing.gap),
+                    HibikiIconButton(
+                      icon: Icons.play_circle_outline,
+                      size: 20,
+                      onTap: hasCue
+                          ? () {
+                              final AudioCue? cue = _lookupCue;
+                              if (cue == null) return;
+                              ctrl.playCueAndContinue(cue);
+                              clearDictionaryResult();
+                            }
+                          : null,
+                      tooltip: t.play_from_cue,
+                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                    ),
+                    // TODO-954：导出片段入口已从查词弹窗 header 迁到「文字选区右键菜单」
+                    // （Windows Flutter 菜单 / 移动端原生 ContextMenu），见
+                    // chrome.part.dart `_showReaderTextContextMenu` 与 webview.part.dart。
+                    // 这里只保留播放控制，避免弹窗里塞与查词无关的导出按钮。
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
