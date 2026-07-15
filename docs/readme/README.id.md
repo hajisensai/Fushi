@@ -12,6 +12,8 @@
 
 [![Panduan Pengguna](https://img.shields.io/badge/%F0%9F%93%96%20Panduan%20Pengguna-0969DA?style=for-the-badge)](../user-guide.id.md)
 
+**Tanpa pengaturan rumit** — impor kamus dan audio yang direkomendasikan dalam satu langkah.
+
 [![Unduh versi terbaru](https://img.shields.io/badge/%E2%AC%87%20Unduh%20versi%20terbaru-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Gabung Discord](https://img.shields.io/badge/Gabung%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 

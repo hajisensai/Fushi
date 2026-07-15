@@ -12,6 +12,8 @@
 
 [![使い方ガイド](https://img.shields.io/badge/%F0%9F%93%96%20%E4%BD%BF%E3%81%84%E6%96%B9%E3%82%AC%E3%82%A4%E3%83%89-0969DA?style=for-the-badge)](../user-guide.ja.md)
 
+**面倒な設定は不要** — 推奨辞書と音声をワンステップでインポート。
+
 [![最新版をダウンロード](https://img.shields.io/badge/%E2%AC%87%20%E6%9C%80%E6%96%B0%E7%89%88%E3%82%92%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Discord に参加](https://img.shields.io/badge/Discord%20%E3%81%AB%E5%8F%82%E5%8A%A0-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
