@@ -98,6 +98,82 @@ class VideoBookRepository {
     return (collectionId: collectionId, episodeUids: epUids);
   }
 
+  /// 统一合集：把**已存在**的 playlist 合集 [collectionId] 的成员对齐到当前 m3u8 清单
+  /// [entries]（增删差异同步）。补 [importSplitPlaylist] 只在首次导入落库、之后再没有
+  /// 任何路径拿「当前清单」对账成员表的缺口（BUG-830：磁盘上编辑 m3u8 增删某集后，
+  /// 合集成员永不更新）。
+  ///
+  /// 对齐以**清单为准**、按集的**稳定基身份** [coreSingleVideoBookUid]（取文件名去
+  /// 扩展名、与目录/绝对路径无关，见 hibiki_core `video_book_uid`）匹配，**不是**按
+  /// 完整 `videoPath`：同一集换目录（相对路径改绝对 / 移动文件夹）基身份不变 → 判为
+  /// 「未变」不增删、不误制孤儿行（对齐首导 uid 派生规则与重扫 relocation 幂等契约）。
+  /// - 清单有、成员没有的基身份 → 建独立 VideoBook 行（uid 同 [importSplitPlaylist] 去重）
+  ///   + `addToCollection`；
+  /// - 成员有、清单已删的基身份 → **只 `removeFromCollection` 解绑，不删 VideoBook 本体**
+  ///   （保留其观看进度；条目脱离合集后作为独立视频存在，非破坏性）。
+  ///
+  /// 先加后删：整批替换时先加新集让合集非空，再删旧集，绝不让合集瞬时空掉被
+  /// [HibikiDatabase.removeFromCollection] 的「移空自删」误删。已在清单里的集不重建
+  /// （不重跑 [importSplitPlaylist]，避免 [coreUniqueVideoBookUid] 撞已存在 uid 加后缀
+  /// 造重复行——这正是重扫从前整体跳过的原因）。返回 (新增, 移除) 计数。
+  Future<({int added, int removed})> reconcileSplitPlaylist({
+    required int collectionId,
+    required List<PlaylistEntry> entries,
+    int? sourceId,
+  }) async {
+    // 当前成员 bookUid → 其稳定基身份（用于与清单按基身份对齐）。
+    final List<MediaCollectionItemRow> items =
+        await _db.getCollectionItems(collectionId);
+    final Map<String, String> memberBaseByUid = <String, String>{};
+    for (final MediaCollectionItemRow item in items) {
+      if (item.mediaType != 'video') continue;
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(item.entryKey);
+      if (row != null) {
+        memberBaseByUid[item.entryKey] = coreSingleVideoBookUid(row.videoPath);
+      }
+    }
+    final Set<String> memberBases = memberBaseByUid.values.toSet();
+    final Set<String> manifestBases = entries
+        .map((PlaylistEntry e) => coreSingleVideoBookUid(e.path))
+        .toSet();
+
+    int added = 0;
+    int removed = 0;
+    final Set<String> taken =
+        (await listAll()).map((VideoBookRow r) => r.bookUid).toSet();
+    await _db.transaction(() async {
+      // 先加：清单有、成员没有的基身份。
+      for (final PlaylistEntry e in entries) {
+        final String base = coreSingleVideoBookUid(e.path);
+        if (memberBases.contains(base)) continue;
+        final String uid = coreUniqueVideoBookUid(base, taken);
+        taken.add(uid);
+        await saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(uid),
+            title: Value(e.title.isNotEmpty
+                ? e.title
+                : p.basenameWithoutExtension(e.path)),
+            videoPath: Value(e.path),
+            lastPositionMs: Value(e.positionMs),
+            embeddedSubtitleTrack: const Value<int?>(0),
+            importedAt: Value(DateTime.now()),
+          ),
+          sourceId: sourceId,
+        );
+        await _db.addToCollection(collectionId, 'video', uid);
+        added++;
+      }
+      // 后删：成员有、清单已删的基身份（只解绑，保留 VideoBook 本体）。
+      for (final MapEntry<String, String> m in memberBaseByUid.entries) {
+        if (manifestBases.contains(m.value)) continue;
+        await _db.removeFromCollection(collectionId, 'video', m.key);
+        removed++;
+      }
+    });
+    return (added: added, removed: removed);
+  }
+
   Future<VideoBookRow?> getByBookUid(String bookUid) =>
       _db.getVideoBookByBookUid(bookUid);
 

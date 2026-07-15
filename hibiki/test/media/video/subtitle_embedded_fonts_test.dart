@@ -1,7 +1,24 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/media/video/subtitle_embedded_fonts.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:path/path.dart' as p;
+
+/// BUG-829：模拟「ffprobe 二进制根本不存在」——[CliFfmpegBackend] 底层 `Process.start`
+/// 会抛 [ProcessException]（`系统找不到指定的文件。`）。用于验证枚举附件时被就地兜住、
+/// 降级空集且不刷错误日志。
+class _MissingFfprobeBackend implements FfmpegBackend {
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
+      throw const ProcessException('ffmpeg', <String>[]);
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      throw const ProcessException('ffprobe', <String>[], '系统找不到指定的文件。', 2);
+}
 
 void _u16(List<int> out, int v) {
   out.add((v >> 8) & 0xFF);
@@ -110,6 +127,40 @@ void main() {
       expect(parseFfprobeFontAttachments('not json'), isEmpty);
       expect(parseFfprobeFontAttachments('{"streams":[]}'), isEmpty);
       expect(parseFfprobeFontAttachments('{"foo":1}'), isEmpty);
+    });
+  });
+
+  group('SubtitleEmbeddedFontLoader missing-ffprobe degrade (BUG-829)', () {
+    test('缺 ffprobe（ProcessException）时降级空集且不刷错误日志', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_embfont_');
+      addTearDown(() {
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      // loadForVideo 要求本地文件存在才会去枚举附件。
+      final File video = File(p.join(dir.path, 'clip.mkv'))
+        ..writeAsBytesSync(<int>[0]);
+
+      final int before = ErrorLogService.instance.entries.length;
+
+      final SubtitleEmbeddedFontLoader loader =
+          SubtitleEmbeddedFontLoader(backend: _MissingFfprobeBackend());
+      final Set<String> families = await loader.loadForVideo(video.path);
+
+      // 无 ffprobe → 无附件 → 空集，回退系统字体 fallback（不崩）。
+      expect(families, isEmpty);
+
+      // 关键回归：缺 ffprobe 二进制是预期降级，绝不作为「错误」刷进 ErrorLogService。
+      final List<ErrorLogEntry> entries = ErrorLogService.instance.entries;
+      expect(entries.length, before, reason: '缺 ffprobe 不应新增任何错误日志条目');
+      expect(
+        entries.where((ErrorLogEntry e) =>
+            e.source == 'SubtitleEmbeddedFontLoader.loadForVideo'),
+        isEmpty,
+        reason: 'loadForVideo 不应把「无 ffprobe」记成错误',
+      );
     });
   });
 }
