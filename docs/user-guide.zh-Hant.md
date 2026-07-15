@@ -38,7 +38,7 @@ Anki——得名於「暗記（あんき）」——是全世界使用最廣泛�
 
 連結：[Anki 官方網站](https://apps.ankiweb.net/) · [手冊（中文）](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [（中文）](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[圖片：示意 / 圖例]*
+![Anki 下載頁面](static-assets/user-guide/anki-download.png)
 
 你可以把任何想記住的素材交給 Anki，它能讓你用最少的學習時間達到最佳的記憶效果。
 

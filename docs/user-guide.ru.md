@@ -38,7 +38,7 @@ Anki — название происходит от 暗記 (あんき) — эт�
 
 Ссылки: [Официальный сайт Anki](https://apps.ankiweb.net/) · [Руководство (китайский)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [ЧаВо](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(китайский)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Изображение: иллюстрация / легенда]*
+![Страница загрузки Anki](static-assets/user-guide/anki-download.png)
 
 Вы можете передать Anki любой материал, который хотите запомнить, и он позволит добиться наилучшего запоминания при минимальном времени обучения.
 

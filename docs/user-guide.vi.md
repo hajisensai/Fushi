@@ -38,7 +38,7 @@ Anki — được đặt tên theo 暗記 (あんき) — là [hệ thống lặ
 
 Liên kết: [Trang chính thức của Anki](https://apps.ankiweb.net/) · [Sổ tay (tiếng Trung)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [Câu hỏi thường gặp](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(tiếng Trung)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Hình ảnh: minh họa / chú giải]*
+![Trang tải xuống Anki](static-assets/user-guide/anki-download.png)
 
 Bạn có thể đưa cho Anki bất kỳ tài liệu nào bạn muốn ghi nhớ, và nó giúp bạn đạt được khả năng ghi nhớ tốt nhất với thời gian học ít nhất.
 

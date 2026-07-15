@@ -38,7 +38,7 @@ Anki — dinamai dari 暗記 (あんき) — adalah [sistem pengulangan berjarak
 
 Tautan: [Situs resmi Anki](https://apps.ankiweb.net/) · [Manual (Tionghoa)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(Tionghoa)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Gambar: ilustrasi / keterangan]*
+![Halaman unduh Anki](static-assets/user-guide/anki-download.png)
 
 Anda dapat memberikan materi apa pun yang ingin Anda hafal kepada Anki, dan ia memungkinkan Anda mencapai retensi terbaik dengan waktu belajar paling sedikit.
 

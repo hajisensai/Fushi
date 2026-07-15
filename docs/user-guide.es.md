@@ -38,7 +38,7 @@ Anki —cuyo nombre proviene de 暗記 (あんき)— es el [sistema de repetici
 
 Enlaces: [Sitio oficial de Anki](https://apps.ankiweb.net/) · [Manual (chino)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [Preguntas frecuentes](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(chino)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Imagen: ilustración / leyenda]*
+![Página de descarga de Anki](static-assets/user-guide/anki-download.png)
 
 Puedes darle a Anki cualquier material que quieras memorizar, y te permite lograr la mejor retención con el menor tiempo de estudio.
 

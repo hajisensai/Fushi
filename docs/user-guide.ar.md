@@ -38,7 +38,7 @@ https://github.com/hajisensai/hibiki/releases/latest
 
 الروابط: [موقع Anki الرسمي](https://apps.ankiweb.net/) · [الدليل (بالصينية)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [الأسئلة الشائعة](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(بالصينية)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[صورة: توضيح / مفتاح الرموز]*
+![صفحة تنزيل Anki](static-assets/user-guide/anki-download.png)
 
 يمكنك أن تعطي Anki أي مادة تريد حفظها، فيتيح لك تحقيق أفضل احتفاظ بالمعلومات بأقل وقت دراسة.
 
