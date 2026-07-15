@@ -48,6 +48,30 @@ void main() {
     });
   });
 
+  group('toggledTextWindowBgOpacity（一键透明 0↔上一档）', () {
+    test('有底色 → 切到 0', () {
+      expect(
+        toggledTextWindowBgOpacity(current: 0.35, lastNonZero: 0.35),
+        0.0,
+      );
+    });
+
+    test('已 0 → 恢复上一档非 0', () {
+      expect(
+        toggledTextWindowBgOpacity(current: 0.0, lastNonZero: 0.6),
+        0.6,
+      );
+    });
+
+    test('已 0 且从没设过 → 用 fallback', () {
+      expect(
+        toggledTextWindowBgOpacity(
+            current: 0.0, lastNonZero: 0.0, fallback: 0.35),
+        0.35,
+      );
+    });
+  });
+
   group('ClipboardTextOverlayChannel native events', () {
     test('点字事件转发 text + index', () async {
       String? text;
@@ -80,6 +104,17 @@ void main() {
       });
 
       expect(fired, isFalse);
+    });
+
+    test('一键透明事件转发（顶栏透明按钮）', () async {
+      int fired = 0;
+      ClipboardTextOverlayChannel.setEventHandlers(
+        onToggleTransparency: () => fired++,
+      );
+
+      await invokeFromNative('toggleTransparency');
+
+      expect(fired, 1);
     });
   });
 

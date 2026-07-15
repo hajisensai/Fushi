@@ -816,8 +816,6 @@ void FlutterWindow::RegisterClipboardTextChannel() {
           "app.hibiki.reader/clipboard_text",
           &flutter::StandardMethodCodec::GetInstance());
 
-  // Only the word-lookup tap is wired: text-only mode never emits control / lock
-  // events (ControlActionAt short-circuits), so those callbacks are unnecessary.
   clipboard_text_window_->SetLookupCallback(
       [this](const std::string& text, int char_index) {
         flutter::EncodableMap map{
@@ -828,6 +826,14 @@ void FlutterWindow::RegisterClipboardTextChannel() {
         clipboard_text_channel_->InvokeMethod(
             "lookupText",
             std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+  // The only control action the text-only toolbar emits is "toggleTransparency"
+  // (the lock button toggles the drag lock natively). Forward it to Dart so the
+  // controller can flip the background-opacity pref (one-click transparency).
+  clipboard_text_window_->SetControlCallback(
+      [this](const std::string& action) {
+        clipboard_text_channel_->InvokeMethod(
+            action, std::make_unique<flutter::EncodableValue>());
       });
 
   clipboard_text_channel_->SetMethodCallHandler(
