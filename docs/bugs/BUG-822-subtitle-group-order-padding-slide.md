@@ -1,0 +1,6 @@
+## BUG-822 · 换句时字幕组序翻转致避让 padding 动画重播（每句对白入场滑跳）
+- **报告**：2026-07-15（用户：「还是会跳」，给出精确复现点 E08 外挂 .ass 22:22；此前 BUG-800 挂槽位身份 key 后仍跳）
+- **真实性**：✅ 真 bug。离屏真机探针（真 MKV+外挂 .ass 实际播放，帧级记录几何）实测：**每条新对白入场从底边 854 滑升到 778（76px、约 170ms 减速）**，且逐帧 dump 显示两个 [AnimatedPadding]（底部对白组 b=75 / 顶部 ED 歌词组 t=15）在每次换句时于 Stack 子列表**互换顺序**。根因 `hibiki/lib/src/media/video/video_subtitle_overlay.dart` `_buildSubtitleLayer`（修复前）：位置分组的 `Positioned.fill` 子节点**无 key**，分组顺序=活跃集发现顺序（cue 文件序号）——ED 歌词与对白的序号在 .ass 里交错，每换一句两组对调 → Flutter 按 Stack 位置复用 element → 底部组的 AnimatedPadding（TODO-129 控制条避让，200ms easeOut）被喂成顶部组的 padding 目标（b:75→0 / t:0→15），把差值动画播出来＝每句滑跳。与 [[BUG-800]] 同类病（无 key 位置复用）但高一层：**组间** element 复用；BUG-800 只修了组内槽位。
+- **[x] ① 已修复** — 组 `Positioned.fill` 按分组键挂 `ValueKey`（与 `_groupSlots` 的 slotKey 同源，含主/副层前缀）：组序翻转只移动 element，AnimatedPadding 各守各的 padding 目标，不再重播。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_group_order_stability_test.dart`：交错序号（对白0/顶部歌词1/对白2）+ controlsVisible 非空启用 AnimatedPadding 路径，换句翻转组序后断言：顶部歌词 element 原样保留（identical）、新对白入场位置立即到位（前后帧 closeTo）、顶部歌词全程不动。修复前红（element 被窃用+位置漂移）、修复后绿。
+- **备注**：真机复测证据：修复前探针 `win-itest-20260715-112103` / `win-itest-*-jp2`（滑动 854→778 逐帧可见），修复后同探针滑动消失（见修复提交说明）。姊妹链：[[BUG-799]]（\blur 只糊描边）[[BUG-800]]（组内槽位 key+RepaintBoundary）[[BUG-819]]（Bold=0 假粗体）[[BUG-820]]（内容矩形缩放基准）。

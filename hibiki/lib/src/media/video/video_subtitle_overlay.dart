@@ -579,26 +579,35 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         final List<(String, List<AudioCue>)> groups =
             _groupMainCuesByPosition(cues);
 
-        final List<Widget> positioned = <Widget>[
+        final List<(String, Widget)> positioned = <(String, Widget)>[
           for (final (String key, List<AudioCue> group) in groups)
-            _positionCueGroup(
-              context,
-              // 槽位状态键带主/副层前缀：两层各自分组，同形键不得跨层串槽位状态
-              // （TODO-1372）。
+            (
               '${isSecondary ? 's' : 'm'}|$key',
-              group,
-              isSecondary: isSecondary,
-              blurred: blurred,
-              container: container,
+              _positionCueGroup(
+                context,
+                // 槽位状态键带主/副层前缀：两层各自分组，同形键不得跨层串槽位状态
+                // （TODO-1372）。
+                '${isSecondary ? 's' : 'm'}|$key',
+                group,
+                isSecondary: isSecondary,
+                blurred: blurred,
+                container: container,
+              )
             ),
         ];
 
         // 单组：直接返回该定位盒（历史单字幕盒几何像素级不变）。多组：Stack 叠放，各组用
         // Positioned.fill 填满同一层边界、按各自锚点定位互不重叠（TODO-1341）。
-        if (positioned.length == 1) return positioned.single;
+        // Positioned 按**分组键**挂 key：分组顺序=活跃集发现顺序（cue 文件序号），歌词/
+        // 招牌与对白的序号在文件里交错时，每次换句两组在本列表里对调；无 key 时 Flutter
+        // 按 Stack 位置复用 element——底部组的 [AnimatedPadding] 被喂成顶部组的 padding
+        // 目标（b:75→0 / t:0→15），把两组的 padding 差值**动画播出来**＝每句对白入场从
+        // 底边滑升一次（用户报「字幕跳」，与 BUG-800 同类病但高一层：组间 element 复用）。
+        if (positioned.length == 1) return positioned.single.$2;
         return Stack(
           children: <Widget>[
-            for (final Widget w in positioned) Positioned.fill(child: w),
+            for (final (String key, Widget w) in positioned)
+              Positioned.fill(key: ValueKey<String>(key), child: w),
           ],
         );
       },
