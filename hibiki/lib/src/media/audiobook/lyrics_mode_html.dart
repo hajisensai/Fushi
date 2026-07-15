@@ -410,6 +410,24 @@ _lc.addEventListener('pointerup', function(e) {
   _lyTapEnd(e.clientX, e.clientY);
 }, {passive: false});
 
+// ── BUG-843: 桌面 Shift-悬停 / 纯悬停查词 ──
+// 歌词是独立文档，正文 setup 脚本（含 mousemove→onShiftHover 与 window.__hoverAutoLookup）
+// 不注入到这里，导致歌词模式此前完全不支持悬停查词（只有点击查词）。这里镜像正文
+// webview.part.dart 的 mousemove 监听：Shift 按住或开了「悬停即查词」开关时，鼠标越过
+// 8px 门限即回 Dart onShiftHover（→ _selectTextAt(fromHover:true)，命中被重写的
+// selectText 写入 cue 元数据、同源查词管线）。命中空白/同词由 selectText 的 fromHover
+// 短路处理，不闪不叠层。__hoverAutoLookup 初值由 Dart 在歌词页就绪时下发。
+var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
+document.addEventListener('mousemove', function(e) {
+  if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
+  var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
+  if (dx * dx + dy * dy < 64) return;
+  _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;
+  if (window.flutter_inappwebview) {
+    window.flutter_inappwebview.callHandler('onShiftHover', e.clientX, e.clientY);
+  }
+}, {passive: true});
+
 // ── 中键点句 → seek 到该 cue 并播放（标准 click 不触发中键，单列 mousedown）──
 _lc.addEventListener('mousedown', function(e) {
   if (e.button === 0) return;
@@ -424,7 +442,12 @@ _lc.addEventListener('mousedown', function(e) {
 // ── 歌词模式：覆写 selection 回调，附加 cue 元数据 ──
 (function() {
   var origSelectText = window.hoshiSelection.selectText;
-  window.hoshiSelection.selectText = function(x, y, maxLen) {
+  // BUG-843: 必须透传全部实参（含第 4 个 fromHover）。旧重写只声明 (x,y,maxLen)、
+  // 只转发 3 参，把 Shift-悬停/纯悬停查词路径（selectInvocation 传 fromHover=true）
+  // 的 fromHover 吞成 undefined → origSelectText 当成真点击：命中空白误 fire
+  // onTapEmpty（关弹窗/唤底栏闪烁）、同词再悬停被 toggle 掉选区。用 apply 原样转发
+  // 整个 arguments，语义与正文选区完全一致。
+  window.hoshiSelection.selectText = function(x, y, maxLen, fromHover) {
     var hitEl = document.elementFromPoint(x, y);
     var cueEl = hitEl ? hitEl.closest('.cue') : null;
     if (cueEl) {
@@ -435,7 +458,7 @@ _lc.addEventListener('mousedown', function(e) {
     } else {
       window.__lyricsCueContext = null;
     }
-    return origSelectText.call(window.hoshiSelection, x, y, maxLen);
+    return origSelectText.apply(window.hoshiSelection, arguments);
   };
 })();
 
