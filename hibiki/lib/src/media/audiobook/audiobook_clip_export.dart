@@ -3,9 +3,9 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
+// BUG-835：extractFfmpegFailureReason 的正准实现在 ffmpeg_backend.dart（与
+// FfmpegBackend 同层），直接从这里取，不再经 video_clip_exporter 转口。
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki/src/media/video/video_clip_exporter.dart'
-    show extractFfmpegFailureReason;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 

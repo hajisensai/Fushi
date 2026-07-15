@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 816 条。点号进各自文件。
+> 共 817 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-835](bugs/BUG-835-ffmpeg-failure-summary-tail.md) | ✅ | ✅ | 制卡句子音频失败toast只显示ffmpeg版本banner看不到真因 |
 | [BUG-834](bugs/BUG-834-remote-card-timer-leak.md) | ✅ | ✅ | HomeVideoPage的videoBooks watch订阅dispose取消时遗留drift缓存保留Timer致isolate不退出+CI全量单测挂死60min |
 | [BUG-833](bugs/BUG-833-ass-karaoke-layers-stacked.md) | ✅ | ✅ | OP 多层卡拉 OK 同句三层被竖排堆叠成「三个字幕」 |
 | [BUG-832](bugs/BUG-832-backup-media-sources-dict-history-leak.md) | ✅ | ✅ | 备份导出泄漏 media_sources 本地路径与 dictionary_history 查词记录 |

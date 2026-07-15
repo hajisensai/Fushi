@@ -80,8 +80,89 @@ String _formatFfmpegReturnCode(int? returnCode) {
   return 'ffmpeg exit $returnCode';
 }
 
+/// 从 ffmpeg 日志里抽取「真正的失败原因行」，供 [FfmpegRunResult.failureSummary]
+/// 与失败 OSD 显示。
+///
+/// 根因（TODO-910 / BUG-835）：ffmpeg 的日志**开头恒是 banner**——version /
+/// `built with` / `configuration:` / 库版本，`-hide_banner` 只去版本行，`-i` 的
+/// 输入/流信息也在开头。真正的失败行（`Conversion failed!` /
+/// `Stream map '0:a:3' matches no streams` / `Could not open file` /
+/// `Invalid data found` / `Encoder ... not found` 等）出现在日志**末尾**。旧的
+/// [_summarizeFfmpegOutput] 从头截断 500 字 → 用户与日志只看到没用的 banner
+/// （移动端 ffmpeg-kit 的 configuration 极长，500 字全被 banner 吃满），真因永远
+/// 被截掉。本函数从尾段抽真因，让失败摘要可读。
+///
+/// 策略（从尾往头扫，跳过 banner/进度/Metadata 噪声行）：
+/// 1. 拆成非空行（去掉行内首尾空白）。
+/// 2. **优先**：自尾向首找第一条「含错误关键词」的行，返回它。
+/// 3. **退化**：无任何错误关键词行（如只有 banner），返回最后一条非噪声信息行
+///    （跳过 `Input #` / `Metadata:` / `Stream #` / `Duration:` / `ffmpeg version`
+///    / `built with` / `configuration:` / `lib*` 版本行 / 纯进度 `frame=` 等）；
+///    全是噪声则返回最后一条非空行。
+/// 4. 全空 → 空串（调用方据此不追加 detail）。
+String extractFfmpegFailureReason(String stderr) {
+  final List<String> lines = stderr
+      .split('\n')
+      .map((String l) => l.trim())
+      .where((String l) => l.isNotEmpty)
+      .toList();
+  if (lines.isEmpty) return '';
+
+  const List<String> errorMarkers = <String>[
+    'error',
+    'failed',
+    'invalid',
+    'could not',
+    'cannot',
+    'no such',
+    'matches no streams',
+    'unable',
+    'permission denied',
+    'not found',
+    'unsupported',
+    'unrecognized',
+    'unknown',
+    'does not contain',
+  ];
+  for (int i = lines.length - 1; i >= 0; i--) {
+    final String lower = lines[i].toLowerCase();
+    if (errorMarkers.any(lower.contains)) {
+      return lines[i];
+    }
+  }
+
+  // 退化：无错误关键词（典型是被截断的纯 banner）。返回最后一条非噪声信息行。
+  bool isNoise(String line) {
+    final String lower = line.toLowerCase();
+    return line.startsWith('Input #') ||
+        line.startsWith('Output #') ||
+        line.startsWith('Stream #') ||
+        line.startsWith('Metadata:') ||
+        line.startsWith('Duration:') ||
+        lower.startsWith('frame=') ||
+        lower.startsWith('size=') ||
+        lower.contains('encoder') ||
+        lower.startsWith('ffmpeg version') ||
+        lower.startsWith('built with') ||
+        lower.startsWith('configuration:') ||
+        lower.startsWith('lib');
+  }
+
+  for (int i = lines.length - 1; i >= 0; i--) {
+    if (!isNoise(lines[i])) return lines[i];
+  }
+  return lines.last;
+}
+
+/// 把 ffmpeg 日志压成一行给 [FfmpegRunResult.failureSummary] 显示。
+///
+/// BUG-835：不再从**头**截断（那永远是 banner，真因在尾段）。先用
+/// [extractFfmpegFailureReason] 抽出末尾的真因行；抽不出才退化到整段压平。再折成
+/// 单行并限长，避免超长 configuration 撑爆 toast。
 String _summarizeFfmpegOutput(String output) {
-  final String oneLine = output.trim().replaceAll(RegExp(r'\s+'), ' ');
+  final String reason = extractFfmpegFailureReason(output);
+  final String chosen = reason.isNotEmpty ? reason : output.trim();
+  final String oneLine = chosen.replaceAll(RegExp(r'\s+'), ' ').trim();
   const int maxLength = 500;
   if (oneLine.length <= maxLength) return oneLine;
   return '${oneLine.substring(0, maxLength)}...';
