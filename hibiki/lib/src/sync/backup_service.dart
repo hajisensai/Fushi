@@ -1360,13 +1360,16 @@ class BackupService {
   ///     content are dropped.
   ///
   /// Groups:
-  /// 1. ALWAYS wiped — `search_history_items`: pure search terms, no content to
-  ///    follow, and never wanted on another device.
-  /// 2. CATEGORY-GATED, `media_type`-keyed rows — collection memberships, shelf
+  /// 1. ALWAYS wiped — `search_history_items` and `dictionary_history`: private
+  ///    usage traces (search terms / recent lookups + rendered result JSON) with
+  ///    no content to follow, never wanted on another device (BUG-832).
+  /// 2. CATEGORY-GATED, `media_kind`/`media_type`-keyed rows — collection memberships, shelf
   ///    entries and the per-item deletion markers (`book_tag_membership_tombstones`,
   ///    `sync_deletion_tombstones`) are logical (non-DB-FK) references, so
   ///    stripping a book does NOT cascade to them. When a content category is
-  ///    unticked we drop its `media_type` rows explicitly. `srt` has no category,
+  ///    unticked we drop its `media_type` rows explicitly, plus its
+  ///    `media_sources` library-root rows (`media_kind` 'book'/'video'; local
+  ///    paths that leak the device's folder layout). `srt` has no category,
   ///    but since `srt_books` is never category-stripped a content-excluding
   ///    export drops only srt member/shelf rows that DON'T resolve to an
   ///    `srt_books` row (dangling); a full export keeps every srt row for the
@@ -1395,8 +1398,12 @@ class BackupService {
   }) async {
     final HibikiDatabase db = HibikiDatabase(dbDirectory);
     try {
-      // (1) Always-wipe: search history never travels.
+      // (1) Always-wipe: search history and recent dictionary lookups are
+      // private usage traces (BUG-832) — no content to follow, never wanted on
+      // another device (dictionary_history also stores each lookup's rendered
+      // result JSON, so it is both private and bulky).
       await db.customStatement('DELETE FROM search_history_items');
+      await db.customStatement('DELETE FROM dictionary_history');
 
       // Snapshot which collections had members BEFORE the gated member strip so
       // we can drop only the ones the strip emptied (never an always-empty,
@@ -1426,6 +1433,20 @@ class BackupService {
 
       if (!includeBooks) await stripForMediaType('epub');
       if (!includeVideos) await stripForMediaType('video');
+      // media_sources holds local library ROOT PATHS (e.g. D:/books, D:/videos)
+      // — a privacy leak in a content-excluding backup and useless without the
+      // content it indexes (BUG-832). Its `media_kind` is 'book' | 'video'; drop
+      // the kind whose category is unticked. `epub_books`/`video_books.source_id
+      // → media_sources` is `onDelete: setNull` and those content rows are
+      // already stripped when the category is excluded, so this is FK-safe.
+      if (!includeBooks) {
+        await db.customStatement(
+            "DELETE FROM media_sources WHERE media_kind = 'book'");
+      }
+      if (!includeVideos) {
+        await db.customStatement(
+            "DELETE FROM media_sources WHERE media_kind = 'video'");
+      }
       // srt has no category checkbox, but `srt_books` is never category-stripped,
       // so a srt member/shelf row whose `entry_key` has no `srt_books.uid` match
       // is genuinely dangling (deleted, or cross-device srt content absent from
