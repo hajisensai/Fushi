@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 795 条。点号进各自文件。
+> 共 796 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-817](bugs/BUG-817-shelf-collection-count-excludes-remote.md) | ✅ | ✅ | 书架合集行头「N项」漏算折进合集的远端占位成员(只数本地) |
 | [BUG-816](bugs/BUG-816-shelf-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回书架 tab 不自动拉远端书(远端书+书库概览总数要手动下拉刷新才补齐) |
 | [BUG-815](bugs/BUG-815-shelf-overview-total-excludes-remote.md) | ✅ | ✅ | 书架「书库概览」总数漏算远端书(只数本地卡,不数书架上可见的互联远端占位卡) |
 | [BUG-814](bugs/BUG-814-interconnect-audiobook-download-loading-gap.md) | ✅ | ✅ | 互联下载有声书两阶段之间露出「无转圈的普通书」(空窗期本地卡缺加载指示) |

@@ -131,6 +131,54 @@ void main() {
     );
   });
 
+  testWidgets('BUG-817: 合集行头计数含折进合集的远端占位成员（不再只数本地）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int cid = await db.createMediaCollection('CountShow',
+        collectionType: 'collection');
+
+    // 合集本地无成员，2 本远端书折进它 → 行头计数应为 2（旧实现只数本地=0）。
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(
+          title: 'Remote A',
+          hasContent: true,
+          collection: RemoteCollectionMembership(
+            collectionName: 'CountShow',
+            collectionType: 'collection',
+            sortIndex: 0,
+          ),
+        ),
+        RemoteBookInfo(
+          title: 'Remote B',
+          hasContent: true,
+          collection: RemoteCollectionMembership(
+            collectionName: 'CountShow',
+            collectionType: 'collection',
+            sortIndex: 1,
+          ),
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+
+    final Finder collectionRow =
+        find.byKey(ValueKey<String>('reader_shelf_collection_row_$cid'));
+    expect(collectionRow, findsOneWidget, reason: '本地合集横排行必须渲染');
+    expect(
+      find.descendant(
+        of: collectionRow,
+        matching: find.text(t.series_item_count(n: 2)),
+      ),
+      findsOneWidget,
+      reason: 'BUG-817：行头计数含折进合集的远端成员（2），非只数本地（0）',
+    );
+  });
+
   testWidgets('远端书归属解析不到本地合集 → 散卡降级（进散卡网格）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
