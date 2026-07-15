@@ -88,4 +88,23 @@ void main() {
     expect(RegExp(r'HomeTab\.books').hasMatch(bookSrc), isTrue,
         reason: 'BUG-992：切回书架 tab（HomeTab.books）才重拉');
   });
+
+  test('BUG-995: 视频页概览+继续观看在只有远端视频时也显示并计入远端', () {
+    final String videoSrc =
+        File('lib/src/pages/implementations/home_video_page.dart')
+            .readAsStringSync();
+    // 概览门控必须含 remoteVideos（否则无本地视频时整块消失）。
+    expect(videoSrc.contains('all.isNotEmpty || remoteVideos.isNotEmpty'),
+        isTrue,
+        reason: 'BUG-995：概览门控必须并入 remoteVideos');
+    // _buildOverviewSection 必须接收 remoteVideos 并把它们并进概览 entries。
+    expect(
+        RegExp(r'_buildOverviewSection\(\s*[\s\S]*?List<RemoteVideoInfo>')
+            .hasMatch(videoSrc),
+        isTrue,
+        reason: 'BUG-995：_buildOverviewSection 必须接收 remoteVideos 计入总数/继续观看');
+    // 远端 hero 变体必须存在（远端续播走 _openRemote）。
+    expect(videoSrc.contains('_buildContinueHeroRemote'), isTrue,
+        reason: 'BUG-995：只看远端视频时继续观看 hero 走远端变体');
+  });
 }
