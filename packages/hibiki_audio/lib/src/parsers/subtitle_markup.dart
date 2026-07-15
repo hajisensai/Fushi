@@ -222,6 +222,11 @@ class SubtitleSpan {
   /// 本类只存 ASS 原值（不引 Flutter），换算成多少逻辑像素由 video 层按字号定。
   final double? blur;
 
+  /// `\1a`/`\alpha` 主填充不透明度 0..1（ASS alpha 00=不透明 FF=全透明，已换算成
+  /// op=1-a/255）；null=默认不透明。多层卡拉 OK 的光晕层用 `\1a&HFF&` 把填充抹透明、
+  /// 只留模糊描边成辉光。`\alpha` 按主填充近似（描边/阴影 alpha 不单独建模）。
+  final double? fillOpacity;
+
   const SubtitleSpan({
     required this.startGrapheme,
     required this.endGrapheme,
@@ -237,6 +242,7 @@ class SubtitleSpan {
     this.outlineWidthPx,
     this.shadowDepthPx,
     this.blur,
+    this.fillOpacity,
   });
 
   bool get hasStyle =>
@@ -251,6 +257,7 @@ class SubtitleSpan {
       shadowColorArgb != null ||
       outlineWidthPx != null ||
       shadowDepthPx != null ||
+      fillOpacity != null ||
       (blur != null && blur! > 0);
 }
 
@@ -395,6 +402,16 @@ class SubtitleMarkup {
   /// 渲染层按 cue 内时间插值定位。
   final SubtitleMove? move;
 
+  /// ASS Dialogue 的 `Layer` 列；srt/vtt 恒 0。libass 语义：**碰撞（竖排避让）只发生在
+  /// 同层事件之间**，不同层各按自带位置叠画（多层卡拉 OK：光晕层+主文字层+点缀层同位
+  /// 叠出一行特效）。渲染层据此分组。
+  final int layer;
+
+  /// 本 cue 含 `\clip(...)`（非反向矢量/矩形裁剪，不支持真裁剪）。渲染层据此把多层
+  /// 卡拉 OK 的「点缀拷贝」（有同文本兄弟 cue 时）整条丢弃——libass 里它只在小块路径内
+  /// 露色，画全条反而是错的。`\iclip`（挖掉小块）不置此标志，直接画全部近似。
+  final bool hasClip;
+
   const SubtitleMarkup({
     required this.plainText,
     required this.spans,
@@ -408,6 +425,8 @@ class SubtitleMarkup {
     this.rotationDeg,
     this.scale,
     this.move,
+    this.layer = 0,
+    this.hasClip = false,
   });
 }
 
@@ -428,6 +447,9 @@ class _Transform {
   double? mx1, my1, mx2, my2;
   int? mt1, mt2;
   bool moveSet = false;
+
+  /// 本 cue 是否出现 `\clip(...)`（非反向；见 [SubtitleMarkup.hasClip]）。
+  bool hasClip = false;
 }
 
 /// 扫描过程内部可变样式状态。
@@ -444,6 +466,7 @@ class _Style {
   double? outlineWidthPx;
   double? shadowDepthPx;
   double? blur;
+  double? fillOpacity;
 
   _Style clone() => _Style()
     ..italic = italic
@@ -457,7 +480,8 @@ class _Style {
     ..shadowColorArgb = shadowColorArgb
     ..outlineWidthPx = outlineWidthPx
     ..shadowDepthPx = shadowDepthPx
-    ..blur = blur;
+    ..blur = blur
+    ..fillOpacity = fillOpacity;
 
   /// Clears every accumulated inline override, returning to the "no override"
   /// state (ASS `\r` reset-tag semantics, TODO-1246). A segment reset this way
@@ -477,6 +501,7 @@ class _Style {
     outlineWidthPx = null;
     shadowDepthPx = null;
     blur = null;
+    fillOpacity = null;
   }
 
   bool get hasStyle =>
@@ -491,6 +516,7 @@ class _Style {
       shadowColorArgb != null ||
       outlineWidthPx != null ||
       shadowDepthPx != null ||
+      fillOpacity != null ||
       (blur != null && blur! > 0);
 }
 
@@ -504,7 +530,10 @@ class _Style {
 /// / `\fscx`\`\fscy`(+`\t`) 缩放 / `\move` 运动（TODO-1374）。其余不支持的标签（卡拉OK `\k`、
 /// 3D 旋转 `\frx`/`\fry`、`\clip`、绘图 `\p` 正文等）静默删除，既不显示控制码也不产出样式。
 SubtitleMarkup parseSubtitleMarkup(String raw,
-    {double? playResX, double? playResY, SubtitleCueStyle? cueStyle}) {
+    {double? playResX,
+    double? playResY,
+    SubtitleCueStyle? cueStyle,
+    int layer = 0}) {
   final List<({String text, _Style style})> segments =
       <({String text, _Style style})>[];
   final StringBuffer cur = StringBuffer();
@@ -608,6 +637,7 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
         outlineWidthPx: seg.style.outlineWidthPx,
         shadowDepthPx: seg.style.shadowDepthPx,
         blur: seg.style.blur,
+        fillOpacity: seg.style.fillOpacity,
       ));
     }
     plain.write(seg.text);
@@ -663,6 +693,8 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     rotationDeg: xf.rotationDeg,
     scale: scale,
     move: move,
+    layer: layer,
+    hasClip: xf.hasClip,
   );
 }
 
@@ -890,7 +922,25 @@ void _applyOverrideBlock(
       continue;
     }
 
-    // 其余（\k \frx \fry \clip \xbord \ybord ...）忽略。
+    // \1a&HXX& / \alpha&HXX&：主填充透明度（ASS alpha 00=不透明 FF=全透明）→
+    // op=1-a/255。\alpha 一次设四通道，按主填充近似（描边/阴影 alpha 不单独建模，
+    // 多层卡拉 OK 光晕层 `\1a&HFF&` 抹透明填充、留模糊描边成辉光）；\2a/\3a/\4a 忽略。
+    final RegExpMatch? a1 =
+        RegExp(r'^(?:1a|alpha)&?H?([0-9A-Fa-f]{1,2})&?$').firstMatch(tag);
+    if (a1 != null) {
+      style.fillOpacity =
+          (1.0 - int.parse(a1.group(1)!, radix: 16) / 255.0).clamp(0.0, 1.0);
+      continue;
+    }
+
+    // \clip(...)：矢量/矩形裁剪不支持真裁剪，记录存在供渲染层丢弃多层卡拉 OK 的
+    // 点缀拷贝（见 [SubtitleMarkup.hasClip]）。\iclip 落到下面忽略（画全部近似）。
+    if (tag.startsWith('clip(')) {
+      xf.hasClip = true;
+      continue;
+    }
+
+    // 其余（\k \frx \fry \iclip \xbord \ybord ...）忽略。
   }
 }
 

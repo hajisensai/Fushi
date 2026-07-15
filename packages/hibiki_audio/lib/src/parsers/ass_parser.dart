@@ -113,6 +113,8 @@ class AssParser {
     int marginLCol = -1;
     int marginRCol = -1;
     int marginVCol = -1;
+    // Layer 列（libass：碰撞只发生在同层事件之间，多层卡拉 OK 靠不同层同位叠画）。
+    int layerCol = -1;
     // 脚本坐标系分辨率（[Script Info]）：\pos 归一化 + MarginL/R（PlayResX）与字号/阴影
     // （PlayResY）缩放基准；缺省按 ASS 规范 384×288。
     double? playResX;
@@ -205,6 +207,7 @@ class AssParser {
         marginLCol = cols.indexOf('marginl');
         marginRCol = cols.indexOf('marginr');
         marginVCol = cols.indexOf('marginv');
+        layerCol = cols.indexOf('layer');
         continue;
       }
 
@@ -257,11 +260,16 @@ class AssParser {
         // markup 负责剥离 {...} override 块、转换 \N/\n/\h 软换行，并解析
         // \an/\pos/行内样式；缺 PlayRes 时按 ASS 规范回退 384×288。cueStyle 作为
         // 行内 span 之下的基线透传（TODO-1105）。
+        // Layer 列（缺列/解析失败按 0，srt/vtt 同义）。
+        final int layer = (layerCol >= 0 && layerCol < parts.length)
+            ? (int.tryParse(parts[layerCol].trim()) ?? 0)
+            : 0;
         final SubtitleMarkup markup = parseSubtitleMarkup(
           rawText,
           playResX: playResX ?? 384,
           playResY: playResY ?? 288,
           cueStyle: cueStyle,
+          layer: layer,
         );
         final String text = markup.plainText;
         if (text.isEmpty) {

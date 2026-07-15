@@ -572,12 +572,26 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         _lastVideoContentHeight = videoContent?.height;
         _lastVideoContentWidth = videoContent?.width;
 
+        // 多层卡拉 OK 的「\clip 点缀拷贝」丢弃：libass 里带 \clip 的同文本兄弟层只在小块
+        // 路径内露色（点缀），真裁剪不支持时画全条反而把主文字整行盖成点缀色。有同文本
+        // 兄弟 cue（层叠拷贝的判据）才丢；独立 cue 上的 \clip（如整行 wipe）仍照画（忽略
+        // 裁剪近似）。respectAssStyle 关时不改（历史行为）。
+        final List<AudioCue> renderCues = widget.respectAssStyle
+            ? <AudioCue>[
+                for (final AudioCue cue in cues)
+                  if (!((cue.markup?.hasClip ?? false) &&
+                      cues.any((AudioCue o) =>
+                          !identical(o, cue) && o.text == cue.text)))
+                    cue,
+              ]
+            : cues;
+
         // 按 \pos / \an / MarginV 分组：主、副字幕都按各自位置分组（TODO-1341 后续）——同位置
         // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
         // 位置（\pos 或 \an，即 ASS 副字幕）的组遵自带位置；纯 SRT 副字幕（anchor / pos 皆空）
         // 无位置信息才在 [_positionCueGroup] 里回退置顶（翻译参考，避让主字幕底部）。
         final List<(String, List<AudioCue>)> groups =
-            _groupMainCuesByPosition(cues);
+            _groupMainCuesByPosition(renderCues);
 
         final List<(String, Widget)> positioned = <(String, Widget)>[
           for (final (String key, List<AudioCue> group) in groups)
@@ -677,15 +691,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final SubtitleAnchor? a = markup?.anchor;
     final int av = (a?.vertical ?? SubtitleVAlign.bottom).index;
     final int ah = (a?.horizontal ?? SubtitleHAlign.center).index;
+    // ASS Layer 纳入键（libass 语义：碰撞/竖排堆叠**只发生在同层事件之间**，不同层各按
+    // 自带位置叠画）。多层卡拉 OK（同句歌词拆光晕层+主文字层+点缀层，Layer 3/4/5）分属
+    // 不同组、同锚点同位叠出一行特效，不再被裹挟进一个 Column 竖排成「三个字幕」。
+    // Layer 0（srt/vtt/无 Layer 列）不加后缀，既有分组键与槽位状态字面不变。
+    final int layer = markup?.layer ?? 0;
+    final String lk = layer != 0 ? ':L$layer' : '';
     if (pf != null) {
       return 'p:${pf.xFraction.toStringAsFixed(4)},'
-          '${pf.yFraction.toStringAsFixed(4)}:$av:$ah';
+          '${pf.yFraction.toStringAsFixed(4)}:$av:$ah$lk';
     }
     // \move（TODO-1374）：自带绝对位置（起点）→ 各自成组走绝对定位，不与锚点 cue 同组。
     final SubtitleMove? move = widget.respectAssStyle ? markup?.move : null;
     if (move != null) {
       return 'mv:${move.x1Fraction.toStringAsFixed(4)},'
-          '${move.y1Fraction.toStringAsFixed(4)}:$av:$ah';
+          '${move.y1Fraction.toStringAsFixed(4)}:$av:$ah$lk';
     }
     // MarginV（同锚点内不同竖直边距）纳入键：消除旧「同锚点不同 MarginV 被裹挟进一个
     // Column 挤在一起」的降级（OP/ED 标题与多行歌词那样各在其 authored 高度）。
@@ -717,7 +737,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final double mrRaw = markup?.cueStyle?.marginR ?? 0;
     final int ml = mlRaw > 0 ? mlRaw.round() : -1;
     final int mr = mrRaw > 0 ? mrRaw.round() : -1;
-    return 'a:$av:$ah:$mv:$ml:$mr';
+    return 'a:$av:$ah:$mv:$ml:$mr$lk';
   }
 
   /// TODO-1372/BUG-698：把一组的当前活动 cue 对齐进跨帧槽位表（不变量见 [_groupSlots]），
@@ -1319,11 +1339,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     if (span.strike) decos.add(TextDecoration.lineThrough);
     // 行内 \fn 字体（respect 时）：优先于 base 的 cue 字体 / 统一字体。
     final String? spanFontFamily = (respect ? span.fontName : null);
+    // \1a/\alpha 主填充透明度（respect 时）：施于最终生效的填充色（行内 \c 优先，否则
+    // 基线色）。多层卡拉 OK 光晕层 `\1a&HFF&` 抹透明填充、只留模糊描边成辉光；描边层
+    // 由 [_buildSubtitleChar] 单独构建，不受本透明度影响（ASS \1a 仅主填充语义）。
+    final double? fillOp = respect ? span.fillOpacity : null;
+    Color? spanColor = span.colorArgb != null ? Color(span.colorArgb!) : null;
+    if (fillOp != null) {
+      spanColor = (spanColor ?? baseColor).withValues(alpha: fillOp);
+    }
     return base.copyWith(
       fontFamily: spanFontFamily,
       fontStyle: span.italic ? FontStyle.italic : null,
       fontWeight: span.bold ? FontWeight.bold : null,
-      color: span.colorArgb != null ? Color(span.colorArgb!) : null,
+      color: spanColor,
       // 行内字号（respect 时）同按 ASS 缩放；respect 关时保持历史裸像素（旧 span 行为）。
       fontSize: span.fontSizePx != null
           ? (respect
