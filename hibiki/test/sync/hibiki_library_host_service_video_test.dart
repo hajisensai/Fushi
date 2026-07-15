@@ -176,6 +176,24 @@ void main() {
       expect(list.single.subtitleFileName, isNull);
     });
 
+    test('BUG-996: listVideos 下发字幕时序偏移 delayMs（远端播放跟随桌面调轴）', () async {
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/delayed',
+        title: 'Delayed',
+        videoPath: '/tmp/delayed.mp4',
+        delayMs: const Value(-1500),
+      ));
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+      expect(list.single.delayMs, -1500,
+          reason: 'host 的 VideoBooks.delayMs 必须下发给远端');
+      // toJson/fromJson 往返保真；delayMs==0 不写键的向后兼容。
+      expect(RemoteVideoInfo.fromJson(list.single.toJson()).delayMs, -1500);
+      const RemoteVideoInfo zero = RemoteVideoInfo(id: 'x', title: 'X');
+      expect(zero.toJson().containsKey('delayMs'), isFalse);
+      expect(RemoteVideoInfo.fromJson(zero.toJson()).delayMs, 0);
+    });
+
     test('toJson/fromJson 往返一致', () {
       const RemoteVideoInfo info = RemoteVideoInfo(
         id: 'video/test',
@@ -514,8 +532,28 @@ void main() {
       expect(progress.positionMs, 360000,
           reason:
               'host self-play progress must be readable via getVideoPosition');
-      // 旧数据无时间戳：返回 0，任何带时间戳的远端进度都能盖过它。
+      // 无 importedAt 且无 prefs 戳：返回 0（该行未设 importedAt）。
       expect(progress.updatedAtMs, 0);
+    });
+
+    test('BUG-996: lastPositionMs 回退用 importedAt 作下界时间戳', () async {
+      // host 本机播放只写 lastPositionMs（无 remote_position prefs），但行有 importedAt。
+      final DateTime imported =
+          DateTime.fromMillisecondsSinceEpoch(1700000000000);
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/legacy',
+        title: 'Legacy',
+        videoPath: '/tmp/legacy.mp4',
+        lastPositionMs: const Value(900746),
+        importedAt: Value(imported),
+      ));
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+
+      final ({int positionMs, int updatedAtMs}) progress =
+          await svc.getVideoPosition('video/legacy');
+      expect(progress.positionMs, 900746);
+      // BUG-996：不再恒 0——用 importedAt 作下界戳，host 真进度不被无效本地断点吃掉。
+      expect(progress.updatedAtMs, imported.millisecondsSinceEpoch);
     });
 
     test('prefs progress wins over lastPositionMs', () async {

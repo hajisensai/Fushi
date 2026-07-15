@@ -1,0 +1,11 @@
+## BUG-996 · 互联远端视频不续播(从头)+ 字幕调轴(delay)不同步
+- **报告**：2026-07-15（用户：没观看视频的时候好像没同步进度，点远端视频重新开始播放；字幕调轴之类的也没同步）
+- **真实性**：✅ 两个真 bug。
+  - **续播从头**：host 本机看过的视频进度落 `VideoBooks.lastPositionMs`（无时间戳列），`getVideoPosition` 回退它时硬编码 `updatedAtMs=0`（`app_model_library_host_service.dart:1029`）。跨设备 LWW「取较新时间戳」：手机播过一次即写带 `DateTime.now()` 的本地断点（`video_hibiki_page.dart:_persistRemotePosition`），此后本地恒赢 host 的「无戳」进度；若本地断点被慢远端流恢复守护耗尽兜底污染成 ~0（BUG-179），reopen 时 `local(~0, now)` 完胜 `host(真进度, 0)` → 从头播放。（生产库实证：6 个视频 last_position_ms>0、2 个 delay_ms≠0。）
+  - **字幕调轴不同步**：`RemoteVideoInfo` 无 `delayMs` 字段，host 不下发 `VideoBooks.delayMs`，client 远端播放 `_initRemote` 硬编码 `_delayMs=0`（`video_hibiki_page.dart:1747`）——通道 `controller.setDelayMs` 已就绪，只是值恒 0。
+- **[x] ① 已修复**
+  - 续播主修(client)：`_persistRemotePosition` 位置 `< 5000ms`（近起点、未真观看）时不落本地带戳断点也不上报 host，消灭 ~0 断点污染盖过 host 真进度的失败路径。
+  - 续播补修(host)：`getVideoPosition` 回退 `lastPositionMs` 时用 `importedAt` 作下界时间戳（非 0），让 host 真进度不被无效本地断点恒吃；client 真更近才看过仍会赢（语义可接受）。
+  - 字幕调轴：`RemoteVideoInfo` 加 `delayMs`（ctor/field/toJson `if!=0`/fromJson/copyWith，向后兼容）；host `_videoInfoFromRow` 填 `delayMs: row.delayMs`；client `_initRemote` 改 `_delayMs = info.delayMs`。范围只做 delayMs（字幕源/音轨跨端 streamIndex 映射不保证一致，另计）。
+- **[x] ② 已加自动化测试** — `test/sync/hibiki_library_host_service_video_test.dart`：listVideos 下发 delayMs=-1500 + toJson/fromJson 往返 + delayMs==0 不写键向后兼容；getVideoPosition 回退 lastPositionMs 用 importedAt 作时间戳（非 0）。
+- **备注**：取 833。**未真机验证，勿宣称已修好。** 真机复测：①桌面看到 15 分钟→手机开该视频续到 15 分钟；②桌面设字幕 delay→手机开同一视频 delay 跟随。**host 侧修复需桌面跑本 build 作 host（生产版无）**。

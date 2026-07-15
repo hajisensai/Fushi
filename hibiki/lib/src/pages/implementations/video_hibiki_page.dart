@@ -1859,7 +1859,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
     _currentAudioTrackId = null;
-    _delayMs = 0;
+    // BUG-996：远端播放跟随 host 下发的字幕时序偏移（此前恒 0，字幕调轴不同步）。
+    // 通道已就绪——_applyLoad 里 controller.setDelayMs(_delayMs) 会应用它。
+    _delayMs = info.delayMs;
     _playbackSpeed = _readPersistedSpeed();
     _playbackVolume = _readPersistedVolume();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
@@ -2154,6 +2156,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _persistRemotePosition(String uid, int posMs) async {
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     final int clamped = posMs < 0 ? 0 : posMs;
+    // BUG-996：位置低于「真观看」阈值（近视频起点）时不落本地带戳断点、也不上报 host。
+    // 否则慢远端流 resume 未落地（BUG-179 恢复守护耗尽兜底到 ~0）时写入的 ~0 断点带
+    // now 戳，会在 LWW 里完胜 host 的真进度（host `lastPositionMs` 派生进度 updatedAtMs=0）
+    // → 下次打开从头播放。近起点不算有效进度，跳过不写即可。
+    const int kMeaningfulRemoteWatchMs = 5000;
+    if (clamped < kMeaningfulRemoteWatchMs) return;
     // TODO-885: 按当前集 key 落库 + 上报（_currentEpisode 是状态真相；单视频恒 0 回退
     // 整书 key，与旧 prefs 兼容）。
     final int episodeIndex = _currentEpisode;
