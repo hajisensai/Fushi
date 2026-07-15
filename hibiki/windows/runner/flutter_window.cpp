@@ -858,6 +858,10 @@ void FlutterWindow::RegisterClipboardTextChannel() {
           clipboard_text_window_->UpdateStyle(StyleFromArgs(args));
           clipboard_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
+          // Localised taskbar / Alt+Tab label (seeds the title before the first
+          // Show creates the window, retitles it thereafter).
+          clipboard_text_window_->SetWindowTitle(
+              WideFromValue(args, "windowTitle", L""));
           const bool shown = clipboard_text_window_->Show(GetHandle());
           result->Success(flutter::EncodableValue(shown));
         } else if (method == "hide") {

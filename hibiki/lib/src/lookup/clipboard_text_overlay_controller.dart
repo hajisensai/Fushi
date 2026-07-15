@@ -7,6 +7,7 @@
 
 import 'dart:io' show Platform;
 
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/platform/clipboard_text_overlay_channel.dart';
@@ -72,6 +73,7 @@ class ClipboardTextOverlayController {
     await ClipboardTextOverlayChannel.show(
       bgColor: _bgColor(),
       textColor: _textColor(),
+      windowTitle: t.clipboard_text_window_title,
     );
     await ClipboardTextOverlayChannel.updateText(text);
     _visible = true;

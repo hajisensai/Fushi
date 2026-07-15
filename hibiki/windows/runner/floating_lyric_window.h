@@ -128,6 +128,13 @@ class FloatingLyricWindow {
     hook_text_mode_ = enabled;
     if (enabled) text_only_ = true;
   }
+  // Window title = the taskbar / Alt+Tab label. The text-only clipboard window
+  // shows in the taskbar (WS_EX_APPWINDOW) so the fully transparent overlay is
+  // always a selectable window the user can find / raise; this sets its label
+  // (localised, pushed from Dart). No-op visual for the lyric strip, which keeps
+  // WS_EX_TOOLWINDOW and never appears in the taskbar. Call before Show to seed
+  // the CreateWindowExW title; later calls retitle the live window.
+  void SetWindowTitle(const std::wstring& title);
   // Position lock: when locked the strip can no longer be dragged, but word
   // lookup taps and the playback-control buttons keep working (mirrors the
   // Android FloatingLyricService position lock — drag-only restriction).
@@ -237,6 +244,8 @@ class FloatingLyricWindow {
 
   std::wstring text_;
   std::string context_id_;
+  // Taskbar / Alt+Tab label; seeds CreateWindowExW and retitles the live window.
+  std::wstring window_title_ = L"Hibiki Lyric";
   int highlight_start_ = -1;
   int highlight_length_ = 0;
   // TODO-708 P4: 块内当前行区间（UTF-16）。-1/0 = 无行标记（不 dim）。
