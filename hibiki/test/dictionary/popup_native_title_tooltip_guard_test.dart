@@ -49,7 +49,7 @@ void main() {
       expect(js, contains("className: 'hoshi-btn-tip'"),
           reason: 'DOM 提示元素类名为 hoshi-btn-tip');
       // 监听只挂一次（refresh 反复调用不叠加）。
-      expect(js, contains("dataset.hoshiTipBound"),
+      expect(js, contains('dataset.hoshiTipBound'),
           reason: '用 dataset 标志保证监听只挂一次');
     });
 
