@@ -114,8 +114,15 @@ String _themeVariablesJs({
 /// dictionary font is configured. Shared so the app-outside window applies the
 /// SAME font the in-app popup does.
 String dictionaryFontStyleJs(AppModel appModel) {
-  final ReaderSettings? settings = ReaderHibikiSource.readerSettings;
-  if (settings == null) return '';
+  // BUG: `ReaderHibikiSource.readerSettings` is only populated while a book /
+  // reader is open. In the app-external clipboard-lookup flow (VN / game, no
+  // book), it is null, so the user's configured dictionary font was never
+  // injected and popup.css's hard-coded "Hiragino Sans" fell back to the system
+  // font. The dictionary font list is persisted in the DB (`dict_fonts`), so
+  // read it through a DB-backed ReaderSettings when no reader is live — the
+  // overlay then applies the SAME font whether or not a book is open.
+  final ReaderSettings settings =
+      ReaderHibikiSource.readerSettings ?? ReaderSettings(appModel.database);
   final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
     settings.dictionaryFonts,
     allowedDirectories: <String>[
