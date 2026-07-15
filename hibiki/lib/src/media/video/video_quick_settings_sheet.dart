@@ -27,20 +27,6 @@ import 'package:hibiki/utils.dart';
 /// 低相关一律不改 delayMs 仅提示，翻开关最坏只是「低置信」提示（降级非破坏）。
 const bool _kSubtitleAutoAlignButtonEnabled = true;
 
-/// 视频设置面板内的主题切换选项（TODO-1350）：复用全局 `themePresets`（含护眼米色
-/// `ecru-theme` / 跟随系统），让用户在视频里也能切换整个 app 的配色主题。`key` 是
-/// [ThemeNotifier] 的持久化主题键（`system-theme` / 预设键 / `custom-theme:<id>`），
-/// `label` 是已本地化的显示名。
-class VideoThemeOption {
-  const VideoThemeOption({required this.key, required this.label});
-
-  /// 持久化主题键，选中后原样交给 `setAppThemeKey`。
-  final String key;
-
-  /// 已本地化的显示名。
-  final String label;
-}
-
 /// 视频播放设置面板：宽窗用「顶部横向分类 chip 行 + 下方详情」上下分栏
 /// （TODO-556：大分类从左栏移到顶栏横向 chip；详情独占整宽并独立滚动，分类条固定在
 /// 顶部），窄窗降级单列 push。书籍设置面板仍保持左右 master-detail，互不影响。
@@ -114,9 +100,6 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.initialCategory,
     this.audioTrackSection,
     this.subtitleTrackSection,
-    this.themeOptions = const <VideoThemeOption>[],
-    this.currentThemeKey,
-    this.onSelectThemeKey,
     this.onSubtitleCategoryShown,
     super.key,
   });
@@ -309,15 +292,6 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// TODO-1351：字幕轨/字幕源切换区（`字幕` 分类顶部），由视频页构建（外挂字幕 + 打开
   /// 字幕文件 + 关闭 + 内嵌/远端源）。null = 不显示（如无 controller / 测试）。
   final Widget? subtitleTrackSection;
-
-  /// TODO-1350：可选主题列表（跟随系统 + 预设 + 当前自定义），空 = 不显示主题切换行。
-  final List<VideoThemeOption> themeOptions;
-
-  /// TODO-1350：当前生效的主题键（用于高亮当前项）。
-  final String? currentThemeKey;
-
-  /// TODO-1350：切主题回调（交给 `setAppThemeKey` 落盘 + 重建全局主题）。null = 不显示。
-  final Future<void> Function(String key)? onSelectThemeKey;
 
   /// TODO-1350（字幕轨即时加载）：进入「字幕」分类时回调，让视频页（重新）枚举当前视频
   /// 的字幕源填 [subtitleTrackSection]（内嵌轨 + 外挂 + 副字幕内嵌轨）。这样字幕轨列表在
@@ -615,6 +589,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   Widget _buildTopCategoryBar(String selectedId) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Wrap(
+      // 大分类 chip 行整体居中（用户诉求）：一行放不下换行时每行也居中，视觉更聚焦，
+      // 不再左对齐贴边。
+      alignment: WrapAlignment.center,
+      runAlignment: WrapAlignment.center,
       spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
@@ -763,14 +741,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     }
   }
 
-  // ── 播放：音画延迟 + 倍速 ──────────────────────────────────────────────
+  // ── 播放：倍速 + 画面 + 手势 ───────────────────────────────────────────
+  // 主题切换行已移除（主题属于全局「外观」设置，视频画面自动继承 app 主题，无需在此
+  // 重复暴露一套「视频主题」；自定义主题也在「外观」里创建/编辑）。字幕调轴 + 句尾自动
+  // 暂停已按语义归位到「字幕」分类（都是字幕驱动的行为）。
   Widget _buildPlaybackDetail() {
     return _settingsSection(
       children: <Widget>[
-        // TODO-1350：主题切换行——复用全局 themePresets（含护眼米色 / 跟随系统），让用户
-        // 在视频里也能切整个 app 的配色主题。仅当调用方给了选项 + 回调时显示。
-        if (widget.themeOptions.isNotEmpty && widget.onSelectThemeKey != null)
-          _buildThemeRow(),
         // TODO-1158：HLS 多档画质入口（仅当前流是 HLS master 时显示）。点开画质侧栏。
         if (widget.qualityOptionCount > 0 && widget.onOpenQuality != null)
           ListTile(
@@ -806,46 +783,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               await widget.onLockWindowAspectRatioChanged(value);
             },
           ),
-        _buildDelayRow(),
         _buildSpeedRow(),
         _buildLongPressSpeedRow(),
         _buildImmersiveModeRow(),
         _buildSeekSecondsRow(),
         _buildDoubleTapRow(),
         _buildSpeedStepRow(),
-        _buildPauseAtSubtitleEndRow(),
       ],
-    );
-  }
-
-  /// TODO-1350：主题切换行。用离散单选（下拉）列出跟随系统 + 预设主题（含护眼米色）+
-  /// 当前自定义主题；选中即经 [VideoQuickSettingsSheet.onSelectThemeKey] 落盘 + 重建
-  /// 全局主题。`selected` 用当前主题键在 `themeOptions` 里反查下标，命中不到（罕见）回
-  /// 落 -1 → 不高亮（picker 容忍 selected 不在项内）。
-  Widget _buildThemeRow() {
-    final List<VideoThemeOption> options = widget.themeOptions;
-    int selectedIndex = -1;
-    for (int i = 0; i < options.length; i++) {
-      if (options[i].key == widget.currentThemeKey) {
-        selectedIndex = i;
-        break;
-      }
-    }
-    return AdaptiveSettingsPickerRow<int>(
-      title: t.video_setting_theme,
-      subtitle: t.video_setting_theme_hint,
-      icon: Icons.palette_outlined,
-      controlBelow: true,
-      materialWidth: double.infinity,
-      selected: selectedIndex,
-      options: <AdaptiveSettingsPickerOption<int>>[
-        for (int i = 0; i < options.length; i++)
-          AdaptiveSettingsPickerOption<int>(value: i, label: options[i].label),
-      ],
-      onChanged: (int index) async {
-        if (index < 0 || index >= options.length) return;
-        await widget.onSelectThemeKey!(options[index].key);
-      },
     );
   }
 
@@ -2501,6 +2445,16 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           ),
           SizedBox(height: gap),
         ],
+        // 字幕调轴 + 句尾自动暂停归到「字幕」分类（用户诉求）：两者都是字幕驱动的行为，
+        // 之前误挂在「播放」分类。调轴含滑条 / ±步进 / 数值输入 / 波形对轴 / 自动对轴，
+        // 权威值经 _commitDelay → onSetDelay 落盘；句尾自动暂停按字幕 cue 边界暂停。
+        _settingsSection(
+          children: <Widget>[
+            _buildDelayRow(),
+            _buildPauseAtSubtitleEndRow(),
+          ],
+        ),
+        SizedBox(height: gap),
         _settingsSection(
           children: <Widget>[
             // TODO-840 Part B：遮蔽模式三态（不遮蔽 / 模糊 / 隐藏）。chips 分段、焦点

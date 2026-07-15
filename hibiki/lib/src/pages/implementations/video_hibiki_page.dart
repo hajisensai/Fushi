@@ -5173,34 +5173,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // TODO-1350（字幕轨即时加载）：进入「字幕」分类时（重新）枚举当前视频字幕源，让
       // 字幕轨列表在打开分类那一刻就加载，不再依赖「字幕轨」按钮预填 / 关掉重开。
       onSubtitleCategoryShown: _ensureSubtitleMenuSourcesLoaded,
-      // TODO-1350：视频内也能切整个 app 的配色主题（跟随系统 + 预设含护眼米色 + 当前
-      // 自定义），复用全局 themePresets / setAppThemeKey。
-      themeOptions: _buildVideoThemeOptions(),
-      currentThemeKey: appModel.appThemeKey,
-      onSelectThemeKey: (String key) async {
-        await appModel.setAppThemeKey(key);
-        if (mounted) _rebuild(() {});
-      },
+      // 主题不再在视频设置里单列：主题属于全局「外观」设置，视频画面自动继承 app 主题
+      // （含自定义主题），无需在此重复暴露「视频主题」。
     );
-  }
-
-  /// TODO-1350：构建视频设置面板的主题选项：跟随系统 + 全部预设主题（含护眼米色
-  /// `ecru-theme`）；当前若是自定义主题，把它也并进列表以便高亮当前选择。
-  List<VideoThemeOption> _buildVideoThemeOptions() {
-    final String currentKey = appModel.appThemeKey;
-    final List<VideoThemeOption> options = <VideoThemeOption>[
-      VideoThemeOption(key: 'system-theme', label: t.theme_system),
-      for (final String key in AppModel.themePresets.keys)
-        VideoThemeOption(key: key, label: AppModel.themeLabel(key)),
-    ];
-    if (!options.any((VideoThemeOption o) => o.key == currentKey)) {
-      options.add(VideoThemeOption(
-        key: currentKey,
-        label: appModel.activeCustomThemeEntry?.name ??
-            AppModel.themeLabel(currentKey),
-      ));
-    }
-    return options;
   }
 
   /// TODO-1232 / BUG-597：播放器设置面板「切 Skia 并重启」降级行的动作。视频「有声无画」
