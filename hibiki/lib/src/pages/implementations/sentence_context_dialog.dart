@@ -137,11 +137,13 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
     final String text = _current;
     final String matched = widget.matched;
     final ColorScheme scheme = theme.colorScheme;
-    final TextStyle base = theme.textTheme.bodyMedium ?? const TextStyle();
+    // 当前句整句半粗（对齐 Niratan `.body.weight(.semibold)`），命中词再加重 + 底色。
+    final TextStyle base = (theme.textTheme.bodyMedium ?? const TextStyle())
+        .copyWith(fontWeight: FontWeight.w500);
     final TextStyle hl = base.copyWith(
       color: scheme.primary,
-      fontWeight: FontWeight.w600,
-      backgroundColor: scheme.primary.withValues(alpha: 0.18),
+      fontWeight: FontWeight.w700,
+      backgroundColor: scheme.primary.withValues(alpha: 0.30),
     );
     if (text.isEmpty) {
       return Text('', style: base);
@@ -184,10 +186,12 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     // 走共享 MD3 卡片外壳（HibikiCard）而非裸 Container+BoxDecoration：
     // 当前句用更高一档的容器令牌 surfaces.search + primary 描边区分，上/下句用
-    // surfaces.card。非当前句保留 transparent 1px 描边，令三个框内容起点严格对齐
-    // （等价旧的透明 Border.all，避免仅当前句多 1px 内缩）。
-    return HibikiCard(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    // surfaces.card。非当前句保留 transparent 1px 描边，令内容起点严格对齐
+    // （等价旧的透明 Border.all，避免仅当前句多 1px 内缩）。对齐 Niratan 原设计：
+    // 当前句留白更足（12）、上下文句收一档（10）。
+    final Widget card = HibikiCard(
+      padding:
+          EdgeInsets.symmetric(horizontal: 12, vertical: current ? 12 : 10),
       color: current ? tokens.surfaces.search : tokens.surfaces.card,
       borderColor: current ? tokens.surfaces.primary : Colors.transparent,
       child: Column(
@@ -198,33 +202,110 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
             style: theme.textTheme.labelSmall
                 ?.copyWith(color: scheme.onSurfaceVariant),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 4),
           child,
         ],
       ),
     );
+    if (current) return card;
+    // 非当前句略缩略淡，做出「当前句浮在上下文之上」的层次（Niratan 卡叠效果）。
+    return Opacity(
+      opacity: 0.82,
+      child: Transform.scale(scale: 0.975, child: card),
+    );
   }
 
-  Widget _sentencesText(ThemeData theme, List<String> sentences) {
-    if (sentences.isEmpty) {
-      return Text(
+  Widget _sentenceText(ThemeData theme, String sentence) =>
+      Text(sentence, style: theme.textTheme.bodyMedium);
+
+  Widget _emptyText(ThemeData theme) => Text(
         t.popup_ctx_box_empty,
         style: theme.textTheme.bodyMedium?.copyWith(
           fontStyle: FontStyle.italic,
           color: theme.colorScheme.onSurfaceVariant,
         ),
       );
+
+  /// 把某个方向的句子列表铺成「一句一张卡」——不再 `join('\n')` 把整方向挤进一个框
+  /// （旧写法在前文有重复/多句时糊成一坨、看不出边界）。空列表退化成一张「(无)」卡，
+  /// 保留该方向标签的存在感。对齐目标设计：每条上下文句独立成卡、各带方向标签。
+  List<Widget> _directionCards(
+    ThemeData theme, {
+    required String label,
+    required List<String> sentences,
+  }) {
+    if (sentences.isEmpty) {
+      return <Widget>[_box(theme, label: label, child: _emptyText(theme))];
     }
-    return Text(sentences.join('\n'), style: theme.textTheme.bodyMedium);
+    return <Widget>[
+      for (final String s in sentences)
+        _box(theme, label: label, child: _sentenceText(theme, s)),
+    ];
   }
+
+  /// ±上下文按钮：图标（−/+）+ 文案的描边按钮。保持 [OutlinedButton] 语义。
+  Widget _adjustButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+  }) =>
+      OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+      );
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+
+    // 一句一卡：前文各句 → 当前句（高亮卡）→ 后文各句，卡间统一 6px 留白。
+    final List<Widget> cards = <Widget>[
+      ..._directionCards(theme, label: t.popup_ctx_box_prev, sentences: _prev),
+      _box(
+        theme,
+        label: t.popup_ctx_box_current,
+        current: true,
+        child: _highlightedCurrent(theme),
+      ),
+      ..._directionCards(theme, label: t.popup_ctx_box_next, sentences: _next),
+    ];
+    final List<Widget> spacedCards = <Widget>[];
+    for (int i = 0; i < cards.length; i++) {
+      if (i > 0) spacedCards.add(const SizedBox(height: 6));
+      spacedCards.add(cards[i]);
+    }
+
     return AlertDialog(
-      title: Text(t.popup_ctx_modal_title),
+      // 标题区对齐 Niratan header：小 eyebrow 在上、大标题在下，右侧一个关闭 X（=取消）。
+      title: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  t.popup_ctx_modal_eyebrow,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 3),
+                Text(t.popup_ctx_modal_title),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: t.popup_ctx_cancel,
+            onPressed: _busy ? null : _cancel,
+            icon: const Icon(Icons.close, size: 20),
+          ),
+        ],
+      ),
       content: SizedBox(
-        width: 420,
+        width: 460,
         child: _loading
             ? const SizedBox(
                 height: 80,
@@ -238,8 +319,8 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Text(
                       t.popup_ctx_modal_count.replaceAll('%d', '$_total'),
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      style: theme.textTheme.labelLarge
+                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   ),
                   Flexible(
@@ -247,63 +328,69 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          _box(
-                            theme,
-                            label: t.popup_ctx_box_prev,
-                            child: _sentencesText(theme, _prev),
-                          ),
-                          const SizedBox(height: 8),
-                          _box(
-                            theme,
-                            label: t.popup_ctx_box_current,
-                            current: true,
-                            child: _highlightedCurrent(theme),
-                          ),
-                          const SizedBox(height: 8),
-                          _box(
-                            theme,
-                            label: t.popup_ctx_box_next,
-                            child: _sentencesText(theme, _next),
-                          ),
-                        ],
+                        children: spacedCards,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
+                  const SizedBox(height: 14),
+                  // ±上下文：前一组靠左、后一组靠右（对齐 Niratan rangeControls 的
+                  // 「Remove/Add Previous … Remove/Add Next」分组）。各半区内用 Wrap
+                  // 兜底换行，窄屏不会溢出。
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      OutlinedButton(
-                        onPressed: _busy || _prev.isEmpty
-                            ? null
-                            : () => _adjust(prevDir: true, plus: false),
-                        child: Text(t.popup_ctx_prev_minus),
+                      Expanded(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: <Widget>[
+                            _adjustButton(
+                              icon: Icons.remove,
+                              label: t.popup_ctx_prev_minus,
+                              onPressed: _busy || _prev.isEmpty
+                                  ? null
+                                  : () => _adjust(prevDir: true, plus: false),
+                            ),
+                            _adjustButton(
+                              icon: Icons.add,
+                              label: t.popup_ctx_prev_plus,
+                              onPressed: _busy || _prevAtMax
+                                  ? null
+                                  : () => _adjust(prevDir: true, plus: true),
+                            ),
+                          ],
+                        ),
                       ),
-                      OutlinedButton(
-                        onPressed: _busy || _prevAtMax
-                            ? null
-                            : () => _adjust(prevDir: true, plus: true),
-                        child: Text(t.popup_ctx_prev_plus),
-                      ),
-                      OutlinedButton(
-                        onPressed: _busy || _next.isEmpty
-                            ? null
-                            : () => _adjust(prevDir: false, plus: false),
-                        child: Text(t.popup_ctx_next_minus),
-                      ),
-                      OutlinedButton(
-                        onPressed: _busy || _nextAtMax
-                            ? null
-                            : () => _adjust(prevDir: false, plus: true),
-                        child: Text(t.popup_ctx_next_plus),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.end,
+                          children: <Widget>[
+                            _adjustButton(
+                              icon: Icons.remove,
+                              label: t.popup_ctx_next_minus,
+                              onPressed: _busy || _next.isEmpty
+                                  ? null
+                                  : () => _adjust(prevDir: false, plus: false),
+                            ),
+                            _adjustButton(
+                              icon: Icons.add,
+                              label: t.popup_ctx_next_plus,
+                              onPressed: _busy || _nextAtMax
+                                  ? null
+                                  : () => _adjust(prevDir: false, plus: true),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ],
               ),
       ),
+      // 底部动作对齐 Niratan footer：右下角 Cancel + Confirm Mining（主按钮）。
       actions: <Widget>[
         TextButton(
           onPressed: _busy ? null : _cancel,
