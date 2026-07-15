@@ -22,9 +22,9 @@ Android: Wähle **arm64**. Windows: Wähle die **.exe**-Datei.
 
 ## Einrichtungs-Tutorial
 
-### 1. Empfohlene Wörterbücher und lokales Audio importieren (optional)
+### 1. Empfohlene Wörterbücher und lokales Audio importieren (Sehr empfehlenswert für Einsteiger!!! · optional)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 In der App: Einstellungen -> Synchronisierung & Sicherung -> tippe auf **Sicherung importieren**.
 

@@ -22,9 +22,9 @@ Android：**arm64** を選んでください。Windows：**.exe** ファイル�
 
 ## 設定チュートリアル
 
-### 1. 推奨辞書とローカル音声をインポートする（任意）
+### 1. 推奨辞書とローカル音声をインポートする（初心者に強くおすすめ！！！・任意）
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 アプリ内で：設定 -> 同期とバックアップ -> **バックアップをインポート** をタップします。
 
