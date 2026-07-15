@@ -359,7 +359,7 @@
         'position:fixed;left:0;top:0;right:0;height:28px;' +
         'display:flex;align-items:center;z-index:2147483001;' +
         'pointer-events:auto;user-select:none;-webkit-user-select:none;' +
-        'background:rgba(120,120,128,0.10);border-radius:10px 10px 0 0;}' +
+        'background:rgba(120,120,128,0.18);border-radius:10px 10px 0 0;}' +
         '#global-lookup-panel-bar .panel-grip{' +
         'flex:1;height:100%;cursor:move;display:flex;align-items:center;' +
         'padding-left:10px;font-family:"Segoe UI",sans-serif;font-size:11px;' +
@@ -371,16 +371,16 @@
         'width:24px;height:24px;line-height:24px;text-align:center;' +
         'margin-right:4px;font-family:"Segoe UI Symbol","Segoe UI",sans-serif;' +
         'font-size:14px;cursor:pointer;border-radius:12px;' +
-        'background:rgba(120,120,128,0.16);color:rgba(60,60,67,0.75);}' +
+        'background:rgba(120,120,128,0.30);color:rgba(60,60,67,0.92);}' +
         '#global-lookup-panel-bar .panel-btn:hover{' +
-        'background:rgba(120,120,128,0.28);color:rgba(60,60,67,0.95);}' +
+        'background:rgba(120,120,128,0.42);color:rgba(60,60,67,1);}' +
         // BUG-768 — dark-window variant (stamped via data-theme in renderStack):
         // light glyph + light chip so the buttons don't vanish on a dark surface.
         '#global-lookup-panel-bar[data-theme="dark"] .panel-btn{' +
         'background:rgba(235,235,245,0.14);color:rgba(235,235,245,0.72);}' +
         '#global-lookup-panel-bar[data-theme="dark"] .panel-btn:hover{' +
         'background:rgba(235,235,245,0.24);color:rgba(235,235,245,0.95);}' +
-        '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.45;}' +
+        '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.62;}' +
         // Bottom-right resize grip (posts beginWindowResize).
         '#global-lookup-panel-resize{' +
         'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
