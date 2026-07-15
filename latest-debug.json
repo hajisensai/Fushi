@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "1.2.0-debug.8032",
-  "tag": "v1.2.0-debug.8032+71649e3",
+  "version": "1.2.0-debug.8034",
+  "tag": "v1.2.0-debug.8034+bb66190",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 8032,
-  "notes": "Automated Apple debug-channel build from develop @ 71649e3. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 8034,
+  "notes": "Automated desktop debug-channel build from main @ bb66190. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.2.0-debug.8030-e4c12ce-debug.apk",
@@ -29,11 +29,11 @@
       "version": "1.2.0-debug.8032"
     },
     {
-      "name": "hibiki-1.2.0-debug.8032-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8032-windows-setup.exe",
-      "releaseSequence": 8032,
-      "tag": "v1.2.0-debug.8032+71649e3",
-      "version": "1.2.0-debug.8032"
+      "name": "hibiki-1.2.0-debug.8034-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8034-windows-setup.exe",
+      "releaseSequence": 8034,
+      "tag": "v1.2.0-debug.8034+bb66190",
+      "version": "1.2.0-debug.8034"
     }
   ]
 }
