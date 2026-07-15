@@ -768,15 +768,18 @@ sub_b/ep2.mp4
     // reintroduce X (2) single-video folder-scan duplicates.
     expect(src.contains('existingPaths.add(normalizeVideoPath'), isTrue,
         reason: 'single-video scan must skip already-imported physical paths');
-    // TODO-1237 ② / 统一合集 Phase 2: _importPlaylists dedups by the STABLE
-    // playlist COLLECTION name (m3u8 basename), skipping an already-imported
-    // manifest instead of suffixing an X (2) duplicate. Guard the name-skip
-    // wiring so a future edit can't regress to a volatile first-episode-path key.
-    expect(
-        src.contains(
-            'if (existingPlaylistNames.contains(collectionName)) continue;'),
-        isTrue,
-        reason: 'playlist scan must skip an already-imported collection name');
+    // TODO-1237 ② / 统一合集 Phase 2 / BUG-830: _importPlaylists keys on the
+    // STABLE playlist COLLECTION name (m3u8 basename). First import splits into
+    // per-episode rows + a collection; a re-scan of an ALREADY-imported manifest
+    // RECONCILES its members to the current manifest (add/remove diff) instead of
+    // suffixing an X (2) duplicate. Guard the name-keyed collection map + the
+    // reconcile wiring so a future edit can neither regress to a volatile
+    // first-episode-path key nor drop the member-sync that BUG-830 restored.
+    expect(src.contains('existingPlaylistIds[collectionName]'), isTrue,
+        reason: 'playlist scan must key dedup by stable collection name');
+    expect(src.contains('reconcileSplitPlaylist('), isTrue,
+        reason: 'a re-scanned existing playlist must reconcile members to the '
+            'current manifest (BUG-830), not silently skip');
     expect(src.contains('importSplitPlaylist('), isTrue,
         reason:
             'playlist scan must split into per-episode rows + a collection');

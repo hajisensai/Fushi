@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 810 条。点号进各自文件。
+> 共 812 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-830](bugs/BUG-830-playlist-collection-not-reconciled.md) | ✅ | ✅ | m3u8播放列表增删视频后合集成员不更新 |
+| [BUG-829](bugs/BUG-829-ffprobe-missing-logged-as-error.md) | ✅ | ✅ | 内封字幕字体枚举缺 ffprobe 被当错误记日志 |
 | [BUG-828](bugs/BUG-828-backup-orphan-tables-leak.md) | ✅ | ✅ | 备份导出泄漏合集/标签/书架/搜索历史/删除墓碑等未受类别控制的孤儿表 |
 | [BUG-827](bugs/BUG-827-android-mine-cover-fileprovider.md) | ✅ | ✅ | 安卓阅读器制卡书籍封面缺失(FileProvider 未覆盖 app_flutter 解压目录) |
 | [BUG-826](bugs/BUG-826-popup-topbar-overlap-narrow.md) | ✅ | ✅ | 查词弹窗顶栏按钮窄宽时重叠 |
