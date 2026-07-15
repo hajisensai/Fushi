@@ -140,9 +140,12 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 Download the latest release from [GitHub Releases](https://github.com/hajisensai/hibiki/releases) — Android APK and Windows installer are available.
 
-> 📖 New to hibiki? The [User Guide](docs/user-guide.md) walks you through importing the recommended dictionaries and audio database.
+<details open>
+<summary>📖 <b>No fiddly setup</b> — import the recommended dictionaries and audio in one step.</summary>
 
-<a href="docs/user-guide.md"><img src="docs/static-assets/user-guide/import-backup.png" alt="Import recommended dictionaries and audio — see the User Guide" width="360"></a>
+<a href="docs/user-guide.md"><img src="docs/static-assets/user-guide/config-tutorial.en.png" alt="Configuration tutorial — import recommended dictionaries and audio" width="360"></a>
+
+</details>
 
 > Requires Android 7.0 (API 24) or higher.
 

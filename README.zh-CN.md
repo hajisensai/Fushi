@@ -139,9 +139,12 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 从 [GitHub Releases](https://github.com/hajisensai/hibiki/releases) 下载最新版本，支持 Android APK 和 Windows 安装包。
 
-> 📖 第一次用 hibiki？[使用文档](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) 里有导入推荐词典和音频数据库的教程。
+<details open>
+<summary>📖 <b>无需繁琐配置</b>：推荐词典与本地音频一键导入即用。</summary>
 
-<a href="https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb"><img src="docs/static-assets/user-guide/import-backup.png" alt="导入推荐词典和音频 — 见使用文档" width="360"></a>
+<a href="https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb"><img src="docs/static-assets/user-guide/config-tutorial.zh-CN.png" alt="配置教程 — 导入推荐词典和音频" width="420"></a>
+
+</details>
 
 > 最低 Android 7.0（API 24）。
 
