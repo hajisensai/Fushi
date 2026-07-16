@@ -63,8 +63,6 @@ class FakeClipboardService implements PlatformClipboardService {
 class FakePermissionService implements PlatformPermissionService {
   bool hasExternalStorage = true;
   bool hasCamera = true;
-  bool overlaysAllowed = false;
-  bool requestOverlayCalled = false;
 
   @override
   Future<bool> hasExternalStoragePermission() async => hasExternalStorage;
@@ -77,20 +75,11 @@ class FakePermissionService implements PlatformPermissionService {
 
   @override
   Future<bool> requestCameraPermission() async => hasCamera;
-
-  @override
-  Future<bool> canDrawOverlays() async => overlaysAllowed;
-
-  @override
-  Future<void> requestOverlayPermission() async {
-    requestOverlayCalled = true;
-  }
 }
 
 class FakeDeviceInfoService implements PlatformDeviceInfoService {
   int? sdk;
   String? model = 'test-device';
-  String? os = 'test-os';
   String? maker;
 
   @override
@@ -98,9 +87,6 @@ class FakeDeviceInfoService implements PlatformDeviceInfoService {
 
   @override
   Future<String?> get deviceModel async => model;
-
-  @override
-  Future<String?> get osVersion async => os;
 
   @override
   Future<String?> get manufacturer async => maker;

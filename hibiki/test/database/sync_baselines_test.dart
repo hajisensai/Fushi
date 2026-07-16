@@ -32,10 +32,4 @@ void main() {
     expect(await db.getSyncBaseline('BookA', 'progress'), 1000);
     expect(await db.getSyncBaseline('BookA', 'audiobook'), 500);
   });
-
-  test('deleteSyncBaselines removes all dimensions for asset', () async {
-    await db.setSyncBaseline('BookA', 'progress', 1000);
-    await db.deleteSyncBaselines('BookA');
-    expect(await db.getSyncBaseline('BookA', 'progress'), isNull);
-  });
 }

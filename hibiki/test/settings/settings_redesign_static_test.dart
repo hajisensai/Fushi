@@ -192,7 +192,6 @@ void main() {
     expect(schemaSource, isNot(contains('adaptiveAlertDialog(')));
     expect(syncSource, isNot(contains('adaptiveAlertDialog(')));
     expect(combined, contains('showSettingsConfirmationDialog('));
-    expect(combined, contains('showSettingsProgressDialog('));
   });
 
   test('settings renderers use shared MD3 spacing tokens', () {

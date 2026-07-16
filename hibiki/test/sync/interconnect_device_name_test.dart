@@ -24,8 +24,6 @@ class _FakeDeviceInfo implements PlatformDeviceInfoService {
   @override
   Future<int?> get sdkVersion async => null;
   @override
-  Future<String?> get osVersion async => null;
-  @override
   Future<String?> get manufacturer async => null;
 }
 
