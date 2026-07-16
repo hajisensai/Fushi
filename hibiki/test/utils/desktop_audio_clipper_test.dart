@@ -980,6 +980,67 @@ void main() {
     });
   });
 
+  group('extractEmbeddedSubtitlesViaFfmpeg 毒轨逐轨回退 (BUG-863)', () {
+    tearDown(() => ffmpeg.setFfmpegBackendForTesting(null));
+
+    test('单遍被一条 output-open 毒轨整批击穿时，逐轨回退保住其余好轨', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_poison_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String video = '${dir.path}/in.mkv';
+      // 只需存在（extractEmbeddedSubtitlesViaFfmpeg 用 existsSync 门控输入）。
+      File(video).writeAsStringSync('fake-container');
+      final _FakePoisonFfmpegBackend fake =
+          _FakePoisonFfmpegBackend(poisonIndex: 1);
+      ffmpeg.setFfmpegBackendForTesting(fake);
+
+      final Map<int, String> outputs = <int, String>{
+        0: '${dir.path}/sub_0.srt',
+        1: '${dir.path}/sub_1.srt', // 毒轨：ffmpeg 在 output-open 阶段 EINVAL
+        2: '${dir.path}/sub_2.ass',
+      };
+      final Map<int, String> written = await extractEmbeddedSubtitlesViaFfmpeg(
+        inputPath: video,
+        outputs: outputs,
+      );
+
+      // 好轨 0/2 保住；毒轨 1 只损失自己（不再整批 0 条）。
+      expect(written.keys.toSet(), <int>{0, 2});
+      expect(File(outputs[0]!).existsSync(), isTrue);
+      expect(File(outputs[2]!).existsSync(), isTrue);
+      expect(File(outputs[1]!).existsSync(), isFalse);
+
+      // 第一趟单遍全轨（含毒轨→整批失败），随后对 3 条缺失轨各跑一次逐轨。
+      expect(fake.passes.first.keys.toSet(), <int>{0, 1, 2},
+          reason: '第一趟必须是单遍全轨');
+      expect(fake.passes.length, 4, reason: '单遍 + 3 条逐轨回退');
+      for (final Map<int, String> p in fake.passes.skip(1)) {
+        expect(p.length, 1, reason: '回退每趟只抽一条轨');
+      }
+    });
+
+    test('单遍全部成功时不触发逐轨回退（common path 零开销）', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clean_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String video = '${dir.path}/in.mkv';
+      File(video).writeAsStringSync('fake-container');
+      final _FakePoisonFfmpegBackend fake =
+          _FakePoisonFfmpegBackend(poisonIndex: -1); // 无毒轨
+      ffmpeg.setFfmpegBackendForTesting(fake);
+
+      final Map<int, String> written = await extractEmbeddedSubtitlesViaFfmpeg(
+        inputPath: video,
+        outputs: <int, String>{
+          0: '${dir.path}/s0.srt',
+          1: '${dir.path}/s1.srt',
+        },
+      );
+      expect(written.keys.toSet(), <int>{0, 1});
+      expect(fake.passes.length, 1, reason: '单遍成功 → 不跑逐轨回退');
+    });
+  });
+
   group('extractEmbeddedCoverViaFfmpeg', () {
     test('returns null when the audio file does not exist', () async {
       expect(
@@ -1148,4 +1209,59 @@ class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
     Duration timeout,
   ) async =>
       const ffmpeg.FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
+}
+
+/// Simulates the BUG-863 defect: ffmpeg initialises EVERY output encoder before
+/// writing any packet, so a demux pass that includes a track whose codec it
+/// cannot transcode ([poisonIndex]) aborts at output-open with EINVAL (-22) and
+/// writes NOTHING (all-or-nothing). A pass WITHOUT the poison track demuxes every
+/// requested track to a non-empty file. [passes] records the `0:s:N`→outputPath
+/// map of each invocation so a test can assert the single pass ran first, then
+/// per-track fallback for the still-missing tracks.
+class _FakePoisonFfmpegBackend implements ffmpeg.FfmpegBackend {
+  _FakePoisonFfmpegBackend({required this.poisonIndex});
+
+  final int poisonIndex;
+  final List<Map<int, String>> passes = <Map<int, String>>[];
+
+  Map<int, String> _parseMaps(List<String> args) {
+    final Map<int, String> map = <int, String>{};
+    final RegExp mapPattern = RegExp(r'^0:s:(\d+)$');
+    for (int i = 0; i + 2 < args.length; i++) {
+      if (args[i] != '-map') continue;
+      final RegExpMatch? m = mapPattern.firstMatch(args[i + 1]);
+      if (m == null) continue;
+      map[int.parse(m.group(1)!)] = args[i + 2];
+    }
+    return map;
+  }
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> run(
+    List<String> args,
+    Duration timeout,
+  ) async {
+    final Map<int, String> pass = _parseMaps(args);
+    passes.add(pass);
+    if (pass.containsKey(poisonIndex)) {
+      // Output-open abort: batch dies before any packet lands.
+      return const ffmpeg.FfmpegRunResult(
+        returnCode: -22,
+        output: 'Error opening output files: Invalid argument',
+      );
+    }
+    pass.forEach((int idx, String out) {
+      File(out)
+        ..createSync(recursive: true)
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
+    });
+    return const ffmpeg.FfmpegRunResult(returnCode: 0, output: '');
+  }
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runProbe(
+    List<String> args,
+    Duration timeout,
+  ) async =>
+      throw UnimplementedError('runProbe not used by subtitle extraction');
 }
