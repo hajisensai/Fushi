@@ -1,0 +1,10 @@
+## BUG-845 · 分页模式改字号/边距/主题不实时生效需重开书
+- **报告**：2026-07-16（用户：修改布局设置比如上下边距不立即生效，必须退出书籍重开才应用）
+- **真实性**：✅ 真 bug。Windows 离屏 runner 真实阅读器 WebView 复现：分页（默认）模式下走产品路径 `setTtuMarginTop/Bottom` / `setTtuFontSize` 后不重开，`getComputedStyle(document.body)` 的 padding/font-size 纹丝不动，`#hoshi-reader-style` 的 textContent 从不含新值。
+  - 根因链：`_applyStylesLive`（`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:2445`）在有 `window.hoshiReader` 时**不**在内联 eval 里换 CSS（`:2476` 仅 `!window.hoshiReader` 才裸套），换 CSS 全权交给 `_reanchorForStyleChange` → `beginStyleReanchorInvocation`（`hibiki/lib/src/reader/reader_pagination_scripts.dart:720`）。
+  - 该 invocation 是 `(typeof window.hoshiReader.beginStyleReanchor === 'function') ? …beginStyleReanchor(el, css) : -1`。而 `beginStyleReanchor`/`commitStyleReanchor` **只定义在连续 shell** `_continuousShellScript`（旧 `reader_pagination_scripts.dart:3206/3231`），**分页 shell** `_paginatedShellScript`（`:1747`，机器默认 view mode）整体缺席。
+  - 结果：分页模式 `beginStyleReanchor` 非函数 → invocation 恒返 -1、CSS 从不写进 `#hoshi-reader-style` → 所有纯 CSS 设置（字号/上下左右边距/行距/主题/段间距等）**不实时生效**，重开书（重跑 `_computeStyleTag` 生成整页 HTML）才应用。连续模式无此问题。
+  - 硬证据（readback 诊断）：`{"hasEl":true,"hasBegin":false,"didInit":true,...}`——元素在、`beginStyleReanchor` 不是函数。字号对照组同样不生效（证明是共享通道断，非边距专属）。
+- **[x] ① 已修复** — 把 `beginStyleReanchor`/`commitStyleReanchor`/`_resetImageMaxVars` 补进分页 shell（`reader_pagination_scripts.dart` `_paginatedShellScript`，与连续 shell 同构；连续专属的 `_readContinuousScroll` 用 `typeof` 兜底传 null——分页精确锚不用 hint，其 `scrollToCharOffset` 内部保 page-stable）。连续 shell 不动 = 对已工作路径零回归。并修正 `:718` 误导注释（原称"两 shell 都存在（_sharedJs）"，实为各自定义且曾单 shell）。提交：<待填>
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/reader_style_reanchor_both_shells_guard_test.dart`（源码/生成器守卫：对分页+连续两模式 `shellScript` 断言都含 `beginStyleReanchor: function` / `commitStyleReanchor: function`，锁住单 shell 遗漏复发）；`hibiki/integration_test/reader_margin_live_apply_itest.dart`（真机行为：改边距/字号不重开断言 `#hoshi-reader-style` 与 computed padding/font-size 即时变化）。提交：<待填>
+- **备注**：VN（experimental 隐藏第三视图）shell 同样缺 `beginStyleReanchor`，属同类潜在问题，非本次报告范围、未修（VN 滚动原语与分页/连续不同，需单独验证）。守卫测试暂只覆盖分页/连续两个正式模式。
