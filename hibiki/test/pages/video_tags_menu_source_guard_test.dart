@@ -1,15 +1,17 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'reader_history_source_corpus.dart';
 
 /// 源码守卫：锁定「视频长按弹菜单 + 视频纳入共享标签系统」的修复，防止回归到
 /// 「长按 == 打开（无菜单）」「视频卡无标签」的旧行为。
 ///
-/// 用源码扫描而非整页 widget pump，因为两处视频表面（视频 tab [HomeVideoPage] /
-/// 书架 [reader_hibiki_history_page]）都依赖完整 AppModel + DB，整页启动成本高且
-/// 脆弱；这里的不变式（onLongPress 不指向打开、存在标签/封面/删除菜单项、卡片渲染
-/// 标签 provider）正是用户报的 bug 的精确反面，源码扫描足以守住。
+/// 用源码扫描而非整页 widget pump，因为视频表面（视频 tab [HomeVideoPage]）依赖
+/// 完整 AppModel + DB，整页启动成本高且脆弱；这里的不变式（onLongPress 不指向打开、
+/// 存在标签/封面/删除菜单项、卡片渲染标签 provider）正是用户报的 bug 的精确反面，
+/// 源码扫描足以守住。
+///
+/// 注：书架侧视频卡/长按面板已随「书架视频分区」死路径清理一并删除（视频归视频
+/// tab 独占），故原「书架」分组已移除，只留视频 tab 分组。
 String _read(String relative) {
   final File f = File(relative);
   if (!f.existsSync()) {
@@ -43,7 +45,6 @@ String _methodBody(String source, String signature) {
 void main() {
   final String homeVideoSrc =
       _read('lib/src/pages/implementations/home_video_page.dart');
-  final String shelfSrc = readReaderHistorySource();
 
   group('视频 tab（HomeVideoPage）长按菜单 + 标签', () {
     final String src = homeVideoSrc;
@@ -142,81 +143,6 @@ void main() {
       expect(addVideoTagBody.contains('tag_added_to_video'), isTrue);
       expect(addVideoTagBody.contains('tag_added_to_book'), isFalse,
           reason: '视频加标签成功不能复用“书籍”文案');
-    });
-  });
-
-  group('书架（reader_hibiki_history_page）视频卡长按菜单 + 标签', () {
-    final String src = shelfSrc;
-
-    test('视频卡 onLongPress 走菜单，不再等于打开播放页', () {
-      expect(src.contains('onLongPress: () => _showVideoBookDialog(book)'),
-          isTrue);
-      expect(src.contains('onLongPress: () => _openVideoBook(book)'), isFalse,
-          reason: '书架视频卡长按不能再只是打开（无菜单）');
-    });
-
-    test('视频卡渲染标签 + 可拖标签到卡 + 面板五项管理动作', () {
-      expect(src.contains('_buildVideoBookTagLabels(book.bookUid)'), isTrue);
-      expect(src.contains('onTagDropped: (tag) => _addTagToVideoBook'), isTrue);
-      final String dialogBody = _methodBody(
-        src,
-        'void _showVideoBookDialog(VideoBookRow book)',
-      );
-
-      expect(dialogBody.contains('showModalBottomSheet'), isFalse,
-          reason: '_showVideoBookDialog 不得再弹旧底部小栏');
-      expect(dialogBody.contains('showAppDialog'), isTrue);
-      expect(dialogBody.contains('MediaItemDialogFrame'), isTrue,
-          reason: '书架视频长按必须复用 TODO-455 的共享封面背景 frame');
-      expect(dialogBody.contains('_openVideoTagPicker(book.bookUid)'), isTrue);
-      expect(dialogBody.contains('_renameVideoBook(book)'), isTrue);
-      expect(dialogBody.contains('_pickVideoCover(book)'), isTrue);
-      expect(dialogBody.contains('_pickVideoSubtitle(book)'), isTrue);
-      expect(dialogBody.contains('_confirmDeleteVideoBook(book)'), isTrue);
-      expect(dialogBody.contains('_openVideoBook(book)'), isFalse,
-          reason: '播放仍由卡片点击负责，长按面板不放播放按钮');
-      expect(dialogBody.contains('dialog_read'), isFalse);
-    });
-
-    test('书架视频字幕 picker 保留 srt/vtt/ass/ssa 白名单', () {
-      final String pickerBody = _methodBody(
-        src,
-        'Future<void> _pickVideoSubtitle(VideoBookRow book)',
-      );
-
-      expect(
-        pickerBody.contains(
-            "allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa']"),
-        isTrue,
-      );
-    });
-
-    test('视频筛选改为按命中 bookUid 过滤（不再整组隐藏）', () {
-      expect(src.contains('filteredVideoBookUidsProvider'), isTrue);
-      // 旧实现：hasActiveFilter 时把 videoBooks 直接置空隐藏。
-      expect(
-        src.contains('(hasActiveFilter || appModel.experimentalVideoEnabled)'),
-        isFalse,
-        reason: '不应再用 hasActiveFilter 整组隐藏视频',
-      );
-    });
-
-    test('视频拖拽加标签成功提示使用视频文案，书籍入口保留书籍文案', () {
-      final String addVideoTagBody = _methodBody(
-        src,
-        'Future<void> _addTagToVideoBook(String bookUid, BookTagRow tag)',
-      );
-      final String addBookTagBody = _methodBody(
-        src,
-        'Future<void> _addTagToBook(String bookKey, BookTagRow tag)',
-      );
-
-      expect(addVideoTagBody.contains('tag_added_to_video'), isTrue);
-      expect(addVideoTagBody.contains('tag_added_to_book'), isFalse,
-          reason: '书架视频加标签成功不能复用“书籍”文案');
-      expect(addBookTagBody.contains('tag_added_to_book'), isTrue,
-          reason: '普通书籍加标签成功仍然使用书籍文案');
-      expect(addBookTagBody.contains('tag_added_to_video'), isFalse);
     });
   });
 }

@@ -17,7 +17,6 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
-import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
 import 'package:hibiki/src/media/video/video_library_overview.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -1587,11 +1586,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   @override
   Widget build(BuildContext context) {
-    final AppModel appModel = ref.watch(appProvider);
-    // 导入入口与书架一致：编译期常量或运行时实验开关任一开启即放出。能进到本页
-    // 通常意味着实验开关已开，这里仍按同一规则判定，保持单一真相。
-    final bool canImport =
-        kVideoImportEnabled || appModel.experimentalVideoEnabled;
+    // 「视频」tab 已毕业为常驻：导入入口恒放出（原 `kVideoImportEnabled ||
+    // experimentalVideoEnabled`，后者已删且恒 true，故门控恒真）。仍 watch
+    // appProvider 保持与 AppModel 变化的重建订阅不变。
+    ref.watch(appProvider);
+    const bool canImport = true;
     final List<BookTagRow> allTags =
         ref.watch(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
     // 页头/布局与书架 [reader_hibiki_history_page]、词典 [home_dictionary_page]

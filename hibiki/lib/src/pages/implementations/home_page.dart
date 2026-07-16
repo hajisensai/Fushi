@@ -448,10 +448,11 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   /// 当前可见的顶层 tab，按视觉顺序：书架 →（视频）→ 词典 →（文本钩子）→ 设置。
-  /// 视频仅在实验开关开启时插入（位于书架与词典之间）；文本钩子仅在其开关开启时插入
-  /// （位于词典与设置之间）。底栏/侧栏的位置索引由此列表导出。
+  /// 视频 tab 已毕业为常驻（原 experimentalVideoEnabled 恒 true，位于书架与词典
+  /// 之间）；文本钩子仅在其开关开启时插入（位于词典与设置之间）。底栏/侧栏的位置
+  /// 索引由此列表导出。
   List<HomeTab> _activeTabs() => homeActiveTabs(
-        videoEnabled: appModel.experimentalVideoEnabled,
+        videoEnabled: true,
         texthookerEnabled: appModel.texthookerEnabled,
       );
 
