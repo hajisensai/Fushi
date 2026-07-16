@@ -62,6 +62,22 @@ SettingsDestination buildSystemDestination() {
             icon: Icons.system_update_outlined,
             onTap: _checkUpdateNow,
           ),
+          // TODO-1310：应用内查看更新日志。推 ChangelogPage，在线拉本仓库 GitHub
+          // releases 列表并用 Markdown 渲染各版本说明；customProxy 透传设置里现有的
+          // 更新代理项，与「立即检查更新」同源。
+          SettingsNavigationItem(
+            id: 'system.view_changelog',
+            title: t.settings_view_changelog,
+            icon: Icons.history_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => ChangelogPage(
+                  customProxy: settingsContext.appModel.updateCustomProxy,
+                ),
+              );
+            },
+          ),
           SettingsSwitchItem(
             id: 'system.update_never_remind',
             title: t.update_never_remind,
