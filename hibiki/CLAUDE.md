@@ -98,7 +98,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 64 个页面实现，主要包括：
 - `home_page.dart` / `home_reader_page.dart` / `home_dictionary_page.dart` -- 首页。
-- `reader_hibiki_page.dart` (~7300 行) -- 核心阅读器页面：
+- `reader_hibiki_page.dart` (~3200 行主体 + `reader_hibiki/` 下 8 个域 part 文件) -- 核心阅读器页面：
   - **WebView 架构**: `InAppWebView` + `hoshi.local` 虚拟域名拦截（`shouldInterceptRequest`），EPUB HTML/CSS/字体/图片全部经过安全校验后在拦截器中提供。
   - **分页系统**: JS 端 `hoshiReader` 分页引擎 + Dart 端 `ReaderPaginationScripts`，支持分页/连续两种模式。
   - **文本选择**: JS `onTextSelected` → Dart `ReaderSelectionData` → 词典查询 → 浮层展示。
