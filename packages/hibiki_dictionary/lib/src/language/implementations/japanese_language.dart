@@ -9,8 +9,6 @@ import 'package:hibiki_dictionary/src/language/ruby_text.dart';
 import '../../engine/hoshidicts.dart';
 import '../../formats/yomichan_dictionary_format.dart';
 import '../../models/dictionary_entry.dart';
-import '../../models/dictionary_operations_params.dart';
-import '../../models/dictionary_search_result.dart';
 import '../language.dart';
 import '../language_utils.dart';
 
@@ -26,7 +24,6 @@ class JapaneseLanguage extends Language {
           textDirection: TextDirection.ltr,
           isSpaceDelimited: false,
           textBaseline: TextBaseline.ideographic,
-          prepareSearchResults: prepareSearchResultsJapaneseLanguage,
           helloWorld: 'こんにちは世界',
           standardFormat: YomichanFormat.instance,
           defaultFontFamily: 'NotoSansJP',
@@ -66,28 +63,6 @@ class JapaneseLanguage extends Language {
       _matchLengthCache.remove(_matchLengthCache.keys.first);
     }
     return len;
-  }
-
-  @override
-  DictionarySearchResult? prepareSearchResultsDirect({
-    required String searchTerm,
-    required int maximumDictionarySearchResults,
-    required int maximumDictionaryTermsInResult,
-  }) {
-    if (!HoshiDicts.isInitialized) return null;
-
-    final results = HoshiDicts.instance.lookup(
-      searchTerm,
-      maxResults: maximumDictionarySearchResults,
-    );
-
-    if (results.isEmpty) return null;
-
-    return buildResultFromLookup(
-      searchTerm: searchTerm,
-      results: results,
-      maximumTerms: maximumDictionaryTermsInResult,
-    );
   }
 
   @override
@@ -341,9 +316,4 @@ class JapaneseLanguage extends Language {
 
     return widget;
   }
-}
-
-Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
-    DictionarySearchParams params) async {
-  return prepareSearchResultsStandard(params);
 }

@@ -9,7 +9,6 @@ import 'package:hibiki_core/hibiki_core.dart';
 import '../engine/hoshidicts.dart';
 import '../formats/dictionary_format.dart';
 import '../models/dictionary_entry.dart';
-import '../models/dictionary_operations_params.dart';
 import '../models/dictionary_search_result.dart';
 import 'language_utils.dart';
 
@@ -31,7 +30,6 @@ abstract class Language {
     required this.helloWorld,
     required this.standardFormat,
     required this.defaultFontFamily,
-    this.prepareSearchResults = prepareSearchResultsStandard,
   });
 
   /// The name of the language, as known to native speakers.
@@ -76,24 +74,6 @@ abstract class Language {
   /// Testing text for the language's basic use. This is useful for testing
   /// and pre-loading the database for use.
   final String helloWorld;
-
-  /// Overrides the base search function and implements search specific to
-  /// a language.
-  final Future<DictionarySearchResult?> Function(DictionarySearchParams params)
-      prepareSearchResults;
-
-  /// Direct search using the HoshiDicts singleton (no isolate).
-  DictionarySearchResult? prepareSearchResultsDirect({
-    required String searchTerm,
-    required int maximumDictionarySearchResults,
-    required int maximumDictionaryTermsInResult,
-  }) {
-    return prepareSearchResultsDirectStandard(
-      searchTerm: searchTerm,
-      maximumDictionarySearchResults: maximumDictionarySearchResults,
-      maximumDictionaryTermsInResult: maximumDictionaryTermsInResult,
-    );
-  }
 
   /// A standard format that dictionaries of this language can be found in.
   /// This is only to set this as the default last selected format on first
@@ -456,8 +436,6 @@ String buildLookupEntryExtra(HoshiLookupResult r, HoshiGlossaryEntry g) {
   });
 }
 
-const int defaultDictionaryLookupScanLength = 16;
-
 DictionarySearchResult buildResultFromLookup({
   required String searchTerm,
   required List<HoshiLookupResult> results,
@@ -643,53 +621,4 @@ String buildPopupJsonFromLookup({
   }
   sb.write(']');
   return sb.toString();
-}
-
-Future<DictionarySearchResult?> prepareSearchResultsStandard(
-    DictionarySearchParams params) async {
-  if (params.dictionaryPaths.isEmpty) return null;
-
-  return HoshiDicts.withPaths(params.dictionaryPaths, (hoshi) {
-    final results = hoshi.lookup(
-      params.searchTerm,
-      maxResults: params.maximumDictionarySearchResults,
-    );
-    if (results.isEmpty) return null;
-    return buildResultFromLookup(
-      searchTerm: params.searchTerm,
-      results: results,
-      maximumTerms: params.maximumDictionaryTermsInResult,
-    );
-  });
-}
-
-DictionarySearchResult? prepareSearchResultsDirectStandard({
-  required String searchTerm,
-  required int maximumDictionarySearchResults,
-  required int maximumDictionaryTermsInResult,
-}) {
-  if (!HoshiDicts.isInitialized) return null;
-
-  final swFfi = Stopwatch()..start();
-  final results = HoshiDicts.instance.lookup(
-    searchTerm,
-    maxResults: maximumDictionarySearchResults,
-  );
-  swFfi.stop();
-  debugPrint(
-      '[dict-perf]   ffi lookup: ${swFfi.elapsedMilliseconds}ms results=${results.length}');
-
-  if (results.isEmpty) return null;
-
-  final swBuild = Stopwatch()..start();
-  final built = buildResultFromLookup(
-    searchTerm: searchTerm,
-    results: results,
-    maximumTerms: maximumDictionaryTermsInResult,
-  );
-  swBuild.stop();
-  debugPrint(
-      '[dict-perf]   buildResultFromLookup: ${swBuild.elapsedMilliseconds}ms entries=${built.entries.length}');
-
-  return built;
 }

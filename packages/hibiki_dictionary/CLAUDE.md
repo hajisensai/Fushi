@@ -22,7 +22,7 @@
 - `DictionaryDownloader` -- 在线词典下载支持。
 - `Language`（abstract）/ `JapaneseLanguage` -- 语言处理抽象与实现（当前 `targetLanguage` 钉死日语，`EnglishLanguage` / `ChineseLanguage` 子类已移除）。
 - `LanguageUtils` -- 通用语言工具（kana 检测、分词等）。
-- `DictionaryEntry` / `DictionarySearchResult` / `StructuredContent` -- 查询结果数据模型。
+- `DictionaryEntry` / `DictionarySearchResult` -- 查询结果数据模型。
 - `DictionaryOperationsParams` -- 词典操作参数。
 
 ## 关键依赖与配置
@@ -32,7 +32,6 @@
 - `kana_kit: ^2.0.0` -- 假名/罗马字转换。
 - `ruby_text` -- 注音文字渲染。
 - `archive / async_zip / flutter_archive` -- 压缩包处理（词典导入）。
-- `dart_mappable` -- 数据模型序列化（StructuredContent）。
 - `dio` -- HTTP 下载。
 
 ## 数据模型
@@ -40,7 +39,6 @@
 - `HoshiTermResult` -- FFI 查询返回的词条结果（expression / reading / glossaries / frequencies / pitches）。
 - `DictionaryEntry` -- Dart 层的词典条目。
 - `DictionarySearchResult` -- 搜索结果集合。
-- `StructuredContent` -- Yomichan 结构化内容解析（支持 HTML 渲染）。
 - 词典元数据存储在 `hibiki_core` 的 `DictionaryMetadata` 表。
 
 ## 测试与质量
