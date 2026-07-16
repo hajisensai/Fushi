@@ -24,6 +24,9 @@ class _RecordingService extends AnkiConnectService {
   final List<String> storedFilenames = <String>[];
   final List<({int noteId, Map<String, String> fields})> updateCalls =
       <({int noteId, Map<String, String> fields})>[];
+  // BUG-858: capture the fields addNote received so tests can assert the
+  // new-card render still DROPS empty fields (keepEmpty=false, unchanged).
+  final List<Map<String, String>> addNoteCalls = <Map<String, String>>[];
 
   @override
   Future<void> storeMediaFile({
@@ -42,8 +45,10 @@ class _RecordingService extends AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
-  }) async =>
-      addNoteId;
+  }) async {
+    addNoteCalls.add(Map<String, String>.from(fields));
+    return addNoteId;
+  }
 
   @override
   Future<bool> isDuplicate({
@@ -295,6 +300,111 @@ void main() {
       );
 
       expect(outcome.result, MineResult.error);
+      expect(service.updateCalls, isEmpty);
+    });
+  });
+
+  // BUG-858: overwrite must integral-replace every mapped field, including a
+  // {sentence} field that renders empty (stale-selection at overwrite time).
+  // Old code dropped empty fields on overwrite → sentence silently preserved,
+  // so "只覆盖图片和语音、原文不覆盖". New: overwrite keeps empty fields (clears
+  // the stale sentence), while NEW cards (mineEntry) still drop empties.
+  group('BUG-858: overwrite integral-replaces mapped fields', () {
+    AnkiSettings settingsWithSentence() => const AnkiSettings(
+          selectedDeckId: 1,
+          selectedNoteTypeId: 2,
+          availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+          availableNoteTypes: <AnkiNoteType>[
+            AnkiNoteType(
+                id: 2,
+                name: 'Hibiki',
+                fields: <String>['Expression', 'Sentence']),
+          ],
+          fieldMappings: <String, String>{
+            'Expression': '{expression}',
+            'Sentence': '{sentence}',
+          },
+          allowDupes: true,
+        );
+
+    test('overwrite writes an empty Sentence field to clear a stale sentence',
+        () async {
+      final service = _RecordingService();
+      final repo =
+          _ConfiguredRepo(service: service, settings: settingsWithSentence());
+
+      // Overwrite when the live selection sentence is gone (context.sentence '').
+      final MineOutcome outcome = await repo.updateMinedNote(
+        noteId: 5,
+        rawPayloadJson: _payload,
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.success);
+      expect(service.updateCalls, hasLength(1));
+      final Map<String, String> fields = service.updateCalls.single.fields;
+      // Expression still overwrites; Sentence is PRESENT-but-empty (cleared),
+      // not silently dropped/preserved.
+      expect(fields['Expression'], '勉強');
+      expect(fields.containsKey('Sentence'), isTrue,
+          reason: 'overwrite must send the Sentence field so it is replaced');
+      expect(fields['Sentence'], '');
+    });
+
+    test('overwrite writes the new non-empty sentence', () async {
+      final service = _RecordingService();
+      final repo =
+          _ConfiguredRepo(service: service, settings: settingsWithSentence());
+
+      final MineOutcome outcome = await repo.updateMinedNote(
+        noteId: 5,
+        rawPayloadJson: _payload,
+        context: const AnkiMiningContext(sentence: '新しい例文'),
+      );
+
+      expect(outcome.result, MineResult.success);
+      expect(service.updateCalls.single.fields['Sentence'], '新しい例文');
+    });
+
+    test('new-card mineEntry still DROPS an empty Sentence field (unchanged)',
+        () async {
+      final service = _RecordingService();
+      final repo =
+          _ConfiguredRepo(service: service, settings: settingsWithSentence());
+
+      final MineOutcome outcome = await repo.mineEntry(
+        rawPayloadJson: _payload,
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.success);
+      expect(service.addNoteCalls, hasLength(1));
+      final Map<String, String> fields = service.addNoteCalls.single;
+      expect(fields['Expression'], '勉強');
+      expect(fields.containsKey('Sentence'), isFalse,
+          reason: 'new cards drop empty fields — keepEmpty=false unchanged');
+    });
+
+    test('overwrite still refused when ALL mapped fields render empty',
+        () async {
+      final service = _RecordingService();
+      // Only a Sentence mapping; empty sentence → the whole render is blank →
+      // refuse (would wipe the entire card), same guard as before.
+      final repo = _ConfiguredRepo(
+        service: service,
+        settings: settingsWithSentence().copyWith(
+          fieldMappings: const <String, String>{'Sentence': '{sentence}'},
+        ),
+      );
+
+      final MineOutcome outcome = await repo.updateMinedNote(
+        noteId: 5,
+        rawPayloadJson: '{"expression":"","reading":""}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorDetail, contains('empty'));
       expect(service.updateCalls, isEmpty);
     });
   });
