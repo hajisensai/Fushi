@@ -2349,5 +2349,7 @@
   "settings_view_changelog": "查看更新日志",
   "changelog_empty": "未获取到更新日志，请检查网络或代理设置。",
   "changelog_open_releases": "打开发布页",
-  "changelog_prerelease": "预发布"
+  "changelog_prerelease": "预发布",
+  "collection_clear_scope": "清空范围",
+  "collection_clear_confirm": "确定清空所选收藏？此操作不可撤销。"
 }
