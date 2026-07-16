@@ -527,17 +527,21 @@ class _BatchTagIntentRow extends StatelessWidget {
     final Color keepColor = colors.onSurfaceVariant;
 
     Widget segmentLabel(String text, _BatchTagIntent intent, Color color) {
-      // 三段共享一行、每段仅得 ~90dp（手机窄弹窗），双字标签必须锁死单行，
-      // 否则 SegmentedButton 会把「保持」竖排成「保/持」（原缺陷）。softWrap
-      // 关掉后文字一律横排；配合下方 Expanded 铺满行宽 + 收紧内边距保证放得下。
-      return Text(
-        text,
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.visible,
-        style: TextStyle(
-          fontSize: 12,
-          color: selected == intent ? color : null,
+      // SegmentedButton 把每段标签包进 Flexible 且每段等宽 tight 分到 行宽/3
+      // （Flutter segmented_button.dart）。窄弹窗/大字号下这份宽度可能放不下
+      // 双字标签：softWrap 竖排（原缺陷）或 overflow 裁字都不可接受。
+      // 用 FittedBox(scaleDown)：放得下保持原字号，放不下整体等比缩小——始终
+      // 横排单行且显示完整文字，绝不竖排、绝不裁字。
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          text,
+          maxLines: 1,
+          softWrap: false,
+          style: TextStyle(
+            fontSize: 12,
+            color: selected == intent ? color : null,
+          ),
         ),
       );
     }

@@ -112,16 +112,54 @@ void main() {
     // 无 RenderFlex overflow / 布局异常。
     expect(tester.takeException(), isNull);
 
-    // 每个语义标签都锁死单行、关闭软换行——从根上杜绝「保/持」竖排。
+    // 每个语义标签都锁死单行、关闭软换行、并包在 FittedBox(scaleDown) 里——
+    // 从根上杜绝「保/持」竖排，且放不下时等比缩小而非裁字。
     for (final String label in <String>[
       t.batch_tag_keep,
       t.batch_tag_add,
       t.batch_tag_remove,
     ]) {
-      final Text widget = tester.widget<Text>(find.text(label));
+      final Finder textFinder = find.text(label);
+      final Text widget = tester.widget<Text>(textFinder);
       expect(widget.maxLines, 1, reason: '$label 应单行');
       expect(widget.softWrap, isFalse, reason: '$label 应关闭软换行（横排不竖排）');
+      final FittedBox box = tester.widget<FittedBox>(
+        find.ancestor(of: textFinder, matching: find.byType(FittedBox)),
+      );
+      expect(box.fit, BoxFit.scaleDown, reason: '$label 应 scaleDown 缩放兜底');
     }
+  });
+
+  testWidgets('极窄宽度 + 大字号下三段文字完整不裁不溢出（FittedBox 缩放兜底）', (
+    WidgetTester tester,
+  ) async {
+    // 病态最窄场景：正文仅 220dp（每段 ~55dp）叠加 1.6x 文本缩放。FittedBox
+    // 应把双字标签等比缩小塞进去，完整字符仍在（find.text 命中）、无 overflow。
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(1.6)),
+            child: Scaffold(
+              body: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 220,
+                  child: buildBatchTagIntentRowForTesting(tag: tag()),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: '极窄下也不得 RenderFlex 溢出');
+    // 完整文字仍在（缩小但不裁字）。
+    expect(find.text(t.batch_tag_keep), findsOneWidget);
+    expect(find.text(t.batch_tag_add), findsOneWidget);
+    expect(find.text(t.batch_tag_remove), findsOneWidget);
   });
 
   test('源码守卫：三段不再用同款横杠且 remove 文字也染错误红', () {
