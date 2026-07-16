@@ -1447,7 +1447,12 @@ class HibikiSchemeSwatch extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: tokens.radii.chipRadius,
-        child: CustomPaint(
+        // 滚动性能：色卡常摆在非懒的 Wrap/Column（如阅读设置抽屉的主题选择器、
+        // buildThemeSelector 的 Wrap）里。父级 SingleChildScrollView 滚动时会重绘
+        // 整棵子树，令 SchemeDiagonalPainter.paint() 每帧重跑 → 掉帧。给画布包一层
+        // RepaintBoundary，让每张色卡各自栅格化进缓存层，滚动只合成、不重绘。
+        child: RepaintBoundary(
+          child: CustomPaint(
           // TODO-1320: pin the painting surface to the card size. A childless
           // CustomPaint with the default `size: Size.zero` collapses to zero
           // under the LOOSE constraints the parent AnimatedContainer hands down
@@ -1482,6 +1487,7 @@ class HibikiSchemeSwatch extends StatelessWidget {
                     child: badge,
                   ),
                 ),
+          ),
         ),
       ),
     );
