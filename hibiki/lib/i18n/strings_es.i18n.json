@@ -2349,5 +2349,7 @@
   "settings_view_changelog": "View changelog",
   "changelog_empty": "No changelog found. Check your network or proxy settings.",
   "changelog_open_releases": "Open releases page",
-  "changelog_prerelease": "Prerelease"
+  "changelog_prerelease": "Prerelease",
+  "collection_clear_scope": "Clear scope",
+  "collection_clear_confirm": "Permanently delete the selected collections? This can't be undone."
 }
