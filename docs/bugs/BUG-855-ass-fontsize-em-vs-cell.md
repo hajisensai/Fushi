@@ -1,0 +1,6 @@
+## BUG-855 · ASS Fontsize 被当 em 用，字号比 mpv 整体大一截
+- **报告**：2026-07-16（用户：「字号有问题，是不是吃了什么界面大小」→追问确认症状=「比 mpv 大/小一截、估计所有布局都有」。排查证实与「界面大小」无关——视频页整页被 HibikiAppUiScaleNeutralizer 中和回净缩放 1.0，纹理与字幕同空间）
+- **真实性**：✅ 真 bug。根因：**字号语义错位**。libass 为模仿 VSFilter/GDI，用 `FT_SIZE_REQUEST_TYPE_REAL_DIM` 申请字号且以 OS/2 usWinAscent+usWinDescent 作字面高基准——ASS `Fontsize` 等于字体 **cell 高**（win 上升部+下降部）；Flutter `TextStyle.fontSize` 是 **em**。真字体度量（离屏真机 TextPainter）：Yu Gothic cell/em=1.60、Meiryo=1.50、MS Gothic=1.00——把 Fontsize 直接当 em 用，CJK 回退字体下比 mpv 大 50-60%，所有平台所有布局一致（用户「都有」吻合）。
+- **[x] ① 已修复** — `_assFontSizeToEm`：用 TextPainter 实测「目标字体+回退链+字重/斜体」的自然行高系数 k=cell/em（Skia/DWrite 的 ascent+descent 即 usWin 度量，与 libass 同源），ASS 字号（cueStyle Fontsize 与行内 \fs 两路径）换算 em' = px/k 再下发；按 (family|weight|italic) 进程内缓存；异常度量（k∉(0.5,2.0)）回退不校准。离屏真机取证：E08 Text_JP(65@1080) 在 922 高显示区由未校准 55.5px 校准为 29.8px（k=1.86，实际回退字体）。
+- **[x] ② 已加自动化测试** — 既有字号断言（`video_subtitle_letterbox_scale_test.dart` 65×360/1080=21.67 等）在测试字体（FlutterTest，cell/em=1.0）下像素不变=校准中性守卫；真字体效果经离屏真机探针取证（见上）。
+- **备注**：字体缺失时 mpv/libass 的回退字体与 Flutter 的回退链不同（DirectWrite fontselect vs 我们的 CJK 链），两边像素级一致本质不可达；本修复保证**字体存在时**与 mpv 精确同高、缺失时同语义近似。与「界面大小」无关（已排除）。姊妹链：[[BUG-819]] [[BUG-820]]。

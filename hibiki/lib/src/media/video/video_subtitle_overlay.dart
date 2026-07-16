@@ -338,6 +338,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   double? _lastVideoContentHeight;
   double? _lastVideoContentWidth;
 
+  /// ASS 字号语义校准缓存：key=(family|weight|italic)，value=k=cell/em（见
+  /// [_assFontSizeToEm]）。字体解析结果进程内不变，跨 cue/跨帧复用。
+  final Map<String, double> _fontCellFactorCache = <String, double>{};
+
   /// TODO-916 症状④-A（down-snap）：onTapDown 时刻 [_hitEntryIndexAt] 命中的**登记表下标**
   /// （非 grapheme——二维登记后同一 grapheme 下标可能属不同 cue，故锁扁平 entry 下标），
   /// onTapUp 用它经 [_charHitByEntryIndex] 查词，使命中锁定按下时刻（字幕盒尚未被控制条避让
@@ -1400,9 +1404,6 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // cueStyle 无字号时回退用户统一样式（已含 subtitleScreenScaleFactor）。
     final double assFontScale = respect ? _assFontScale(markup) : 1.0;
     final double? cueFontPx = respect ? cue?.fontSizePx : null;
-    final double baseFontSize = cueFontPx != null
-        ? _scaleAssFontSize(cueFontPx * assFontScale)
-        : widget.fontSize;
     // 字重：cueStyle 存在即以 ASS 为准——`Bold=0`（fansub 对白的常态）必须渲染
     // **常规字重**，不得回退用户统一字重（视频页默认 700）。否则所有 ASS 字幕被
     // 合成假粗体（Fontname 多半未安装 → 回退字体再被 fake-bold），笔画变粗变宽、
@@ -1411,6 +1412,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final FontWeight baseWeight = (respect && cue != null)
         ? ((cue.bold ?? false) ? FontWeight.bold : FontWeight.normal)
         : _fontWeight(widget.fontWeight);
+    final bool baseItalic = respect && (cue?.italic ?? false);
+    // ASS 字号 → em：先按 PlayRes 占比缩放，再按字体 cell/em 系数校准
+    // （libass REAL_DIM 语义，见 [_assFontSizeToEm]），最后夹上限。
+    final double baseFontSize = cueFontPx != null
+        ? _scaleAssFontSize(_assFontSizeToEm(
+            cueFontPx * assFontScale, baseFontFamily, baseWeight, baseItalic))
+        : widget.fontSize;
 
     final TextStyle base = TextStyle(
       color: baseColor,
@@ -1429,7 +1437,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           ? cue!.spacingPx! * assFontScale
           : null,
       // cueStyle 的斜体 / 下划线 / 删除线（respect 时）作为基线，行内 span 可再覆盖。
-      fontStyle: (respect && (cue?.italic ?? false)) ? FontStyle.italic : null,
+      fontStyle: baseItalic ? FontStyle.italic : null,
       decoration: (respect) ? _cueDecoration(cue) : null,
       // ASS 阴影（Shadow 深度 + BackColour；行内 span 覆盖 cueStyle 默认）映射成向右下
       // 的硬投影（TODO-1246）。respect 关或无阴影时为 null，与历史像素级一致。
@@ -1463,10 +1471,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       letterSpacing: (respect && span.letterSpacingPx != null)
           ? span.letterSpacingPx! * assFontScale
           : null,
-      // 行内字号（respect 时）同按 ASS 缩放；respect 关时保持历史裸像素（旧 span 行为）。
+      // 行内字号（respect 时）同按 ASS 缩放 + cell/em 校准；respect 关时保持历史
+      // 裸像素（旧 span 行为）。
       fontSize: span.fontSizePx != null
           ? (respect
-              ? _scaleAssFontSize(span.fontSizePx! * assFontScale)
+              ? _scaleAssFontSize(_assFontSizeToEm(
+                  span.fontSizePx! * assFontScale,
+                  spanFontFamily ?? baseFontFamily,
+                  span.bold ? FontWeight.bold : baseWeight,
+                  span.italic || baseItalic))
               : span.fontSizePx!)
           : base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
@@ -1566,6 +1579,38 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       return 1.0;
     }
     return displayH / playResY;
+  }
+
+  /// libass/VSFilter 的字号语义（`FT_SIZE_REQUEST_TYPE_REAL_DIM`）：ASS `Fontsize`
+  /// 等于字体**上升部+下降部（cell 高）**，不是 em；Flutter `TextStyle.fontSize` 是
+  /// em。常见 CJK 字体 cell≈1.1~1.25 em——直接把 Fontsize 当 em 用会比 mpv 整体大
+  /// 一截（用户报「字号比 mpv 大/小一截、各布局都有」的根因）。本方法用 [TextPainter]
+  /// 实测「目标字体+回退链」在指定字重/斜体下的自然行高系数 k=cell/em（不设 height
+  /// 覆盖=字体自然度量），返回 em' = px/k，使渲染 cell 高 == ASS 请求的 Fontsize。
+  /// 结果按 (family|weight|italic) 缓存；测试字体（FlutterTest）k=1.0，既有测试像素
+  /// 不变。异常度量（k∉(0.5,2.0)）回退 1.0 不校准。
+  double _assFontSizeToEm(
+      double px, String? family, FontWeight weight, bool italic) {
+    final String key = '${family ?? ''}|${weight.index}|${italic ? 1 : 0}';
+    final double k = _fontCellFactorCache.putIfAbsent(key, () {
+      final TextPainter tp = TextPainter(
+        text: TextSpan(
+          text: 'Ｍぽ',
+          style: TextStyle(
+            fontSize: 100,
+            fontFamily: family,
+            fontFamilyFallback: _kSubtitleCjkFallback,
+            fontWeight: weight,
+            fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final double factor = tp.height / 100.0;
+      tp.dispose();
+      return (factor.isFinite && factor > 0.5 && factor < 2.0) ? factor : 1.0;
+    });
+    return px / k;
   }
 
   /// 缩放后的 ASS 字号夹到合理范围：下限 8px、上限 = 显示区高的 40%（防 PlayResY 缺失 /

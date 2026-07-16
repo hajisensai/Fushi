@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 819 条。点号进各自文件。
+> 共 820 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-855](bugs/BUG-855-ass-fontsize-em-vs-cell.md) | ✅ | ✅ | ASS Fontsize 被当 em 用，字号比 mpv 整体大一截 |
 | [BUG-837](bugs/BUG-837-video-fullscreen-desktop-lock.md) | ✅ | ✅ | 桌面视频全屏独占锁死桌面无法切到其他软件 |
 | [BUG-836](bugs/BUG-836-video-ultra-anime4k-ul-windows-black.md) | ✅ | ✅ | 视频画质增强极高档(Anime4K UL)在 Windows ANGLE 后端黑屏 |
 | [BUG-835](bugs/BUG-835-ffmpeg-failure-summary-tail.md) | ✅ | ✅ | 制卡句子音频失败toast只显示ffmpeg版本banner看不到真因 |
