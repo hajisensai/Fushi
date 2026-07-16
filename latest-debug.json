@@ -5,7 +5,7 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 8092,
-  "notes": "Automated desktop debug-channel build from develop @ 0609ea8. Push releases are always prerelease and never Latest.",
+  "notes": "Automated Apple debug-channel build from develop @ 0609ea8. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.2.0-debug.8091-29bab5f-debug.apk",
@@ -15,18 +15,18 @@
       "version": "1.2.0-debug.8091"
     },
     {
-      "name": "hibiki-1.2.0-debug.8091-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8091-ios.ipa",
-      "releaseSequence": 8091,
-      "tag": "v1.2.0-debug.8091+29bab5f",
-      "version": "1.2.0-debug.8091"
+      "name": "hibiki-1.2.0-debug.8092-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8092-ios.ipa",
+      "releaseSequence": 8092,
+      "tag": "v1.2.0-debug.8092+0609ea8",
+      "version": "1.2.0-debug.8092"
     },
     {
-      "name": "hibiki-1.2.0-debug.8091-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8091-macos.zip",
-      "releaseSequence": 8091,
-      "tag": "v1.2.0-debug.8091+29bab5f",
-      "version": "1.2.0-debug.8091"
+      "name": "hibiki-1.2.0-debug.8092-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8092-macos.zip",
+      "releaseSequence": 8092,
+      "tag": "v1.2.0-debug.8092+0609ea8",
+      "version": "1.2.0-debug.8092"
     },
     {
       "name": "hibiki-1.2.0-debug.8092-windows-setup.exe",
