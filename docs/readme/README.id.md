@@ -10,7 +10,12 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[Panduan Pengguna](../user-guide.id.md) | [Unduh versi terbaru](https://github.com/hajisensai/hibiki/releases)
+[![Panduan Pengguna](https://img.shields.io/badge/%F0%9F%93%96%20Panduan%20Pengguna-0969DA?style=for-the-badge)](../user-guide.id.md)
+
+**Tanpa pengaturan rumit** — impor kamus dan audio yang direkomendasikan dalam satu langkah.
+
+[![Unduh versi terbaru](https://img.shields.io/badge/%E2%AC%87%20Unduh%20versi%20terbaru-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Gabung Discord](https://img.shields.io/badge/Gabung%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Tonton apa yang ingin kamu tonton, lalu bahasanya ikut terkuasai.**
 

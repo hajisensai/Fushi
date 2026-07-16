@@ -278,6 +278,118 @@ void main() {
         expect(html, contains('__lyricsFitCues()'));
       });
     });
+
+    // BUG-844: 歌词是独立文档，正文 setup 脚本（含 mousemove→onShiftHover 与
+    // window.__hoverAutoLookup）不注入到这里，导致歌词模式此前完全不支持悬停查词，
+    // 只能点击查词。这里守卫悬停查词监听已镜像正文语义、且 selectText 重写透传
+    // fromHover（否则悬停命中空白误 fire onTapEmpty、同词悬停被 toggle）。
+    group('shift / auto hover lookup parity (BUG-844)', () {
+      String buildHtml() {
+        return LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0), _cue(1)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+        );
+      }
+
+      test('ships a document mousemove listener that fires onShiftHover', () {
+        final String html = buildHtml();
+        // Hover lookup must live in the lyrics document itself (the reader setup
+        // script is not injected here), mirroring webview.part.dart's listener.
+        expect(html, contains("document.addEventListener('mousemove'"));
+        expect(
+          html,
+          contains("window.flutter_inappwebview.callHandler('onShiftHover'"),
+        );
+      });
+
+      test('hover is gated on Shift or the __hoverAutoLookup toggle', () {
+        final String html = buildHtml();
+        // Same gate as the reader body: Shift held OR the "hover to look up"
+        // setting on; neither → reset the throttle anchor and bail.
+        expect(
+          html,
+          contains('!e.shiftKey && !window.__hoverAutoLookup'),
+        );
+      });
+
+      test('hover honours the 8px (64 px^2) movement throttle', () {
+        final String html = buildHtml();
+        // Identical movement threshold to the reader body so a stationary cursor
+        // does not re-fire a lookup every mousemove.
+        expect(html, contains('dx * dx + dy * dy < 64'));
+      });
+
+      test('selectText override forwards fromHover (all args, not just 3)', () {
+        final String html = buildHtml();
+        // The override must pass the 4th fromHover arg through, otherwise a hover
+        // over blank space fires onTapEmpty and a same-word re-hover toggles the
+        // selection off. Forward the whole arguments object.
+        expect(
+          html,
+          contains('origSelectText.apply(window.hoshiSelection, arguments)'),
+        );
+        // The broken 3-arg forwarding must be gone.
+        expect(
+          html,
+          isNot(contains(
+              'origSelectText.call(window.hoshiSelection, x, y, maxLen)')),
+        );
+      });
+    });
+
+    // BUG-852: 听力沉浸模糊只盖 .cue.current，前后文（.cue.near-* 与远处 .cue）照样
+    // 清晰可读、可预读，沉浸失效。修复=把 blur 门控从 .cue.current 放宽到整个 .cue，
+    // 逐句 hover / 点击（.revealed）才显形，与视频字幕整篇遮罩语义一致。
+    group('BUG-852 listening blur hides all cues (not just current)', () {
+      String buildBlurHtml() => LyricsModeHtml.generate(
+            cues: <AudioCue>[_cue(0), _cue(1), _cue(2), _cue(3), _cue(4)],
+            currentIndex: 2,
+            backgroundColor: 'rgba(255,255,255,1.00)',
+            textColor: 'rgba(0,0,0,1.00)',
+            accentColor: 'rgba(255,220,0,1.00)',
+            fontSize: 20,
+            blur: true,
+          );
+
+      test('blur filter is gated on all .cue, not .cue.current only', () {
+        final String html = buildBlurHtml();
+
+        // The blur must be applied through `body.lyrics-blur .cue { ... }` so it
+        // covers the current cue AND all preceding/following cues.
+        final String blurRule = _cssBlock(html, 'body.lyrics-blur .cue {');
+        expect(blurRule, contains('filter: blur(8px)'));
+
+        // Regression guard: the blur must NOT be re-narrowed to only the current
+        // cue — that was the bug (前后文暴露).
+        expect(html, isNot(contains('body.lyrics-blur .cue.current {')));
+        expect(
+          html,
+          isNot(contains('body.lyrics-blur .cue.current:hover')),
+        );
+      });
+
+      test('any cue reveals (unblurs) on hover or .revealed, not current-only',
+          () {
+        final String html = buildBlurHtml();
+
+        // Reveal selectors must match any cue, so tapping/hovering a non-current
+        // (前后文) line unblurs it just like the current line.
+        expect(html, contains('body.lyrics-blur .cue:hover'));
+        expect(html, contains('body.lyrics-blur .cue.revealed'));
+      });
+
+      test('runtime blur toggle still only flips the body class', () {
+        final String html = buildBlurHtml();
+        // The live toggle drives blur purely via the body.lyrics-blur class, so
+        // the broadened CSS selector governs which cues blur — no per-cue JS.
+        expect(html, contains("document.body.classList.add('lyrics-blur')"));
+        expect(html, contains("document.body.classList.remove('lyrics-blur')"));
+      });
+    });
   });
 }
 

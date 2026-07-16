@@ -224,6 +224,7 @@
 
 .audio-button,
 .favorite-button,
+.open-anki-button,
 .mine-button {
     padding: 0 4px;
     border: none;
@@ -232,6 +233,12 @@
     font-size: 18px;
     opacity: 0.5;
     -webkit-user-select: none;
+}
+
+/* TODO-1360：「在 Anki 中打开卡片」按钮仅在该词已制卡时显示，未制卡时彻底移除（不占位、
+   不可点）——由 setMineState 依真实 data-mined 态切换 .open-anki-hidden。 */
+.open-anki-button.open-anki-hidden {
+    display: none;
 }
 
 /* TODO-1325 #4: 内联 SVG 动作按钮共享基类。顶部发音/收藏/制卡、清空草稿、句子上下文
@@ -424,7 +431,12 @@
     cursor: default;
 }
 
-.audio-hint {
+/* BUG-842：.hoshi-btn-tip 是内联动作按钮（调整上下文 / 清空已加句子 等）的 DOM 悬停/
+   聚焦提示，取代会在离屏 WebView2（DComp visual→WGC→texture）上飞到窗口角落的原生
+   title。与 .audio-hint 共用视觉；由 popup.js setInlineButtonTip / __hoshiShowButtonTip
+   按屏幕坐标定位。 */
+.audio-hint,
+.hoshi-btn-tip {
     position: fixed;
     z-index: 10000;
     max-width: 220px;
@@ -442,7 +454,8 @@
     transition: opacity 0.18s ease;
 }
 
-.audio-hint.visible {
+.audio-hint.visible,
+.hoshi-btn-tip.visible {
     opacity: 1;
 }
 
@@ -829,6 +842,9 @@
     line-height: 1;
     padding-top: 0.55em;
     vertical-align: baseline;
+    /* BUG-850: when .ruby-reserve widens the unit to the reading width, centre
+       the base kanji under its reading (the absolute rt is already centred). */
+    text-align: center;
 }
 
 :where(.glossary-group, .glossary-content) rt {
@@ -840,6 +856,50 @@
     text-align: center;
     white-space: nowrap;
     line-height: 1;
+}
+
+/* BUG-850 (horizontal reserve — completes the compaction's missing axis): the
+   <rt> above is position:absolute, so it reserves NO horizontal room and a
+   reading wider than its kanji (明鏡-style 逐字 ruby, e.g. 教<rt>きょう</rt>法<rt>ほう</rt>)
+   used to overhang and collide with the NEXT base's reading (the "few px spill"
+   BUG-345 accepted becomes a full overlap for >=3-kana readings). postProcessRuby
+   injects an in-flow, zero-height twin of the reading (.ruby-reserve) into each
+   .ruby-unit, so the unit's shrink-to-fit width grows to max(kanji, reading);
+   the base then centres under its reading and adjacent readings never overlap.
+   The twin is height:0 so the base keeps its own baseline (the BUG-108/363
+   vertical reserve is unchanged) and every length is font-size-relative, so it
+   stays zoom-immune. Units whose reading fits its kanji keep the old compaction.
+   The twin is aria-hidden + user-select:none so it never affects ruby lookup
+   selection (BUG-110/123/125/129). */
+:where(.glossary-group, .glossary-content) .ruby-reserve {
+    display: block;
+    width: -webkit-max-content;
+    width: max-content;
+    height: 0;
+    overflow: hidden;
+    font-size: 0.5em;
+    line-height: 1;
+    white-space: nowrap;
+    visibility: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* BUG-851: dark-mode legibility for dictionary inline-coloured tags (明鏡 の
+   「使い方」用法タグ等). These arrive from the dictionary as structured content
+   carrying an inline background-color designed for a WHITE page (a pale pastel),
+   which setStructuredContentElementStyle passes straight through with no
+   dark-mode treatment. On the black dark surface the pale chip floats and the
+   inherited light body text on it is illegible. In dark mode only, re-tone any
+   dict-provided inline background on a TEXT structured-content node to the same
+   subtle neutral chip the app's own glossary tags use, and restore legible
+   text. Scoped to `[class^="gloss-sc-"]` so the image mask
+   (.gloss-image-background, which also carries an inline background-color) is
+   never touched; !important is required to beat the node's own inline style.
+   Light mode is left alone — the dict pastel reads fine on white. */
+:where(#entries-container)[data-theme="dark"] :where(.glossary-group, .glossary-content) [class^="gloss-sc-"][style*="background"] {
+    background-color: rgba(128, 128, 128, 0.2) !important;
+    color: var(--text-color) !important;
 }
 
 .dict-label {

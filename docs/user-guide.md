@@ -26,9 +26,9 @@ Android: choose **arm64**. Windows: choose the **.exe** file.
 
 ## Configuration Tutorial
 
-### 1. Import recommended dictionaries and local audio (optional)
+### 1. Import recommended dictionaries and local audio (Highly recommended for beginners!!! · optional)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 In the app: Settings -> Sync & Backup -> tap **Import Backup**.
 
@@ -42,7 +42,7 @@ Anki -- named after 暗記 (あんき) -- is the world's most widely used [Space
 
 Links: [Anki official site](https://apps.ankiweb.net/) · [Manual (Chinese)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(Chinese)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Image: illustration / legend]*
+![Anki download page](static-assets/user-guide/anki-download.png)
 
 You can give Anki any material you want to memorize, and it lets you achieve the best retention with the least study time.
 

@@ -22,9 +22,9 @@ Android: **arm64**를 선택하세요. Windows: **.exe** 파일을 선택하세�
 
 ## 설정 튜토리얼
 
-### 1. 추천 사전과 로컬 오디오 가져오기(선택 사항)
+### 1. 추천 사전과 로컬 오디오 가져오기(초보자에게 강력 추천!!! · 선택 사항)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 앱에서: 설정 -> 동기화 및 백업 -> **백업 가져오기**를 탭합니다.
 
@@ -38,7 +38,7 @@ Anki——「暗記(あんき)」에서 유래——는 전 세계에서 가장 
 
 링크: [Anki 공식 사이트](https://apps.ankiweb.net/) · [매뉴얼(중국어)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(중국어)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[이미지: 일러스트 / 범례]*
+![Anki 다운로드 페이지](static-assets/user-guide/anki-download.png)
 
 외우고 싶은 자료를 Anki에 맡기면, 최소한의 학습 시간으로 최고의 기억 유지 효과를 얻을 수 있습니다.
 

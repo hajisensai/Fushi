@@ -384,6 +384,19 @@ mixin DictionaryPageMixin {
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 
+  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮的车道入口（视频/首页/独立查词，
+  /// 与 reader 车道 [BaseSourcePageState.onOpenInAnkiFromPopup] 对称）。据 [expression]/
+  /// [reading] 反查命中卡并直接跳转打开（单卡直开 / 多卡弹选择 / 无卡 toast）。
+  Future<void> onOpenInAnki(String expression, String reading) async {
+    final repo = ref.read(ankiRepositoryProvider);
+    await openMinedCardInAnki(
+      context: context,
+      repo: repo,
+      expression: expression,
+      reading: reading,
+    );
+  }
+
   /// 把一次成功制卡计入统计（按 [dictionarySourceType]）。
   ///
   /// 视频页等覆写 [onMineEntry]、绕过基类成功分支的页面，在自己的成功路径上
@@ -645,6 +658,7 @@ mixin DictionaryPageMixin {
         onDuplicateCheck: checkDuplicate,
         onOverwriteTargetNoteId: findOverwriteTargetNoteId,
         onMinedCardAction: onMinedCardAction,
+        onOpenInAnki: onOpenInAnki,
         onFavoriteEntry: onFavoriteEntry,
         onFavoriteCheck: onFavoriteCheck,
         // TODO-270 E：支持草稿的表面（视频覆写 [onAppendSentenceToDraft] 返回非空）

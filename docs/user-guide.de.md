@@ -22,9 +22,9 @@ Android: Wähle **arm64**. Windows: Wähle die **.exe**-Datei.
 
 ## Einrichtungs-Tutorial
 
-### 1. Empfohlene Wörterbücher und lokales Audio importieren (optional)
+### 1. Empfohlene Wörterbücher und lokales Audio importieren (Sehr empfehlenswert für Einsteiger!!! · optional)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 In der App: Einstellungen -> Synchronisierung & Sicherung -> tippe auf **Sicherung importieren**.
 
@@ -38,7 +38,7 @@ Anki – benannt nach 暗記 (あんき) – ist das weltweit am weitesten verbr
 
 Links: [Offizielle Anki-Website](https://apps.ankiweb.net/) · [Handbuch (Chinesisch)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(Chinesisch)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Bild: Illustration / Legende]*
+![Anki-Downloadseite](static-assets/user-guide/anki-download.png)
 
 Du kannst Anki beliebiges Material geben, das du dir merken möchtest, und es ermöglicht dir, mit der geringsten Lernzeit die beste Behaltensleistung zu erzielen.
 

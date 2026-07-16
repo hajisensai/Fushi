@@ -126,6 +126,11 @@ class BookmarkRepository {
     await (_db.delete(_db.bookmarks)..where((tbl) => tbl.id.equals(id))).go();
   }
 
+  /// 清空全部书签（所有书籍）。收藏夹「清空」面板的书签范围走这里，一次性删表。
+  Future<void> clearAllBookmarks() async {
+    await _db.delete(_db.bookmarks).go();
+  }
+
   Future<void> removeBookmark(String bookKey, int index) async {
     final bookmarks = await getBookmarks(bookKey);
     if (index < 0 || index >= bookmarks.length) return;

@@ -22,9 +22,9 @@ Android：選擇 **arm64**。Windows：選擇 **.exe** 檔案。
 
 ## 設定教學
 
-### 1. 匯入推薦詞典與本機音訊（可選）
+### 1. 匯入推薦詞典與本機音訊（極其推薦新手使用此方法！！！可選）
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 在 App 中：設定 -> 同步與備份 -> 點擊 **匯入備份**。
 
@@ -38,7 +38,7 @@ Anki——得名於「暗記（あんき）」——是全世界使用最廣泛�
 
 連結：[Anki 官方網站](https://apps.ankiweb.net/) · [手冊（中文）](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [（中文）](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[圖片：示意 / 圖例]*
+![Anki 下載頁面](static-assets/user-guide/anki-download.png)
 
 你可以把任何想記住的素材交給 Anki，它能讓你用最少的學習時間達到最佳的記憶效果。
 

@@ -61,9 +61,9 @@ class LyricsModeHtml {
             'calc(45vh + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
     // JS 端轴标记：true=竖排横滚（用 scrollBy 增量绕开 vertical-rl 负向 scrollX）。
     final String verticalJs = vertical ? 'true' : 'false';
-    // TODO-908：听力沉浸模糊。blur=true 时给 body 挂 `lyrics-blur` class，CSS 只对
-    // 当前句（.cue.current）盖 8px 高斯模糊；hover 或点击（.revealed）显形。模糊维度
-    // 与 writing-mode 正交——blur CSS 只作用在 cue 元素上，与轴/竖排无关。
+    // TODO-908 / BUG-852：听力沉浸模糊。blur=true 时给 body 挂 `lyrics-blur` class，CSS
+    // 对**所有**句（.cue）盖 8px 高斯模糊；单独 hover 或点击（.revealed）才显形。模糊
+    // 维度与 writing-mode 正交——blur CSS 只作用在 cue 元素上，与轴/竖排无关。
     final String blurBodyClass = blur ? ' class="lyrics-blur"' : '';
 
     return '''
@@ -137,16 +137,18 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
 .cue.near-1 { opacity: 0.55; transform: scale(1.05); }
 .cue.near-2 { opacity: 0.35; }
 .cue.near-3 { opacity: 0.25; }
-/* TODO-908: 听力沉浸模糊 —— body.lyrics-blur 时只对当前句盖 8px 高斯模糊，
-   hover 或点击显形（.revealed）。与视频字幕的 ImageFilter.blur(sigma:8) 等价。
-   仅作用 .cue（与 writing-mode 正交，不碰 TODO-907 轴 CSS）。 */
-body.lyrics-blur .cue.current {
+/* TODO-908 / BUG-852: 听力沉浸模糊 —— body.lyrics-blur 时对**所有**句（.cue，含
+   当前句与前后文 near-*）盖 8px 高斯模糊；单独 hover 或点击（.revealed）才显形。
+   之前只盖 .cue.current，前后文照样能读、可预读，沉浸失效——听力模糊的语义是整篇
+   不可预读，必须盖全部 cue。与视频字幕的 ImageFilter.blur(sigma:8) 等价。仅作用
+   .cue（与 writing-mode 正交，不碰 TODO-907 轴 CSS）。 */
+body.lyrics-blur .cue {
   filter: blur(8px);
   transition: filter 0.2s ease-out, opacity 0.35s ease-out,
       transform 0.3s ease-out, color 0.3s ease-out;
 }
-body.lyrics-blur .cue.current:hover,
-body.lyrics-blur .cue.current.revealed {
+body.lyrics-blur .cue:hover,
+body.lyrics-blur .cue.revealed {
   filter: blur(0);
 }
 ::highlight(hoshi-selection) {
@@ -410,6 +412,24 @@ _lc.addEventListener('pointerup', function(e) {
   _lyTapEnd(e.clientX, e.clientY);
 }, {passive: false});
 
+// ── BUG-844: 桌面 Shift-悬停 / 纯悬停查词 ──
+// 歌词是独立文档，正文 setup 脚本（含 mousemove→onShiftHover 与 window.__hoverAutoLookup）
+// 不注入到这里，导致歌词模式此前完全不支持悬停查词（只有点击查词）。这里镜像正文
+// webview.part.dart 的 mousemove 监听：Shift 按住或开了「悬停即查词」开关时，鼠标越过
+// 8px 门限即回 Dart onShiftHover（→ _selectTextAt(fromHover:true)，命中被重写的
+// selectText 写入 cue 元数据、同源查词管线）。命中空白/同词由 selectText 的 fromHover
+// 短路处理，不闪不叠层。__hoverAutoLookup 初值由 Dart 在歌词页就绪时下发。
+var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
+document.addEventListener('mousemove', function(e) {
+  if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
+  var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
+  if (dx * dx + dy * dy < 64) return;
+  _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;
+  if (window.flutter_inappwebview) {
+    window.flutter_inappwebview.callHandler('onShiftHover', e.clientX, e.clientY);
+  }
+}, {passive: true});
+
 // ── 中键点句 → seek 到该 cue 并播放（标准 click 不触发中键，单列 mousedown）──
 _lc.addEventListener('mousedown', function(e) {
   if (e.button === 0) return;
@@ -424,7 +444,12 @@ _lc.addEventListener('mousedown', function(e) {
 // ── 歌词模式：覆写 selection 回调，附加 cue 元数据 ──
 (function() {
   var origSelectText = window.hoshiSelection.selectText;
-  window.hoshiSelection.selectText = function(x, y, maxLen) {
+  // BUG-844: 必须透传全部实参（含第 4 个 fromHover）。旧重写只声明 (x,y,maxLen)、
+  // 只转发 3 参，把 Shift-悬停/纯悬停查词路径（selectInvocation 传 fromHover=true）
+  // 的 fromHover 吞成 undefined → origSelectText 当成真点击：命中空白误 fire
+  // onTapEmpty（关弹窗/唤底栏闪烁）、同词再悬停被 toggle 掉选区。用 apply 原样转发
+  // 整个 arguments，语义与正文选区完全一致。
+  window.hoshiSelection.selectText = function(x, y, maxLen, fromHover) {
     var hitEl = document.elementFromPoint(x, y);
     var cueEl = hitEl ? hitEl.closest('.cue') : null;
     if (cueEl) {
@@ -435,7 +460,7 @@ _lc.addEventListener('mousedown', function(e) {
     } else {
       window.__lyricsCueContext = null;
     }
-    return origSelectText.call(window.hoshiSelection, x, y, maxLen);
+    return origSelectText.apply(window.hoshiSelection, arguments);
   };
 })();
 
@@ -498,8 +523,8 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
   __lyricsFitCues();
 };
 
-// ── 实时模糊开关（TODO-908，仿 __lyricsUpdateStyle，不重建整页） ──
-// on=true 给 body 挂 lyrics-blur（CSS 只模糊当前句，hover/点击显形）；off 摘掉并
+// ── 实时模糊开关（TODO-908 / BUG-852，仿 __lyricsUpdateStyle，不重建整页） ──
+// on=true 给 body 挂 lyrics-blur（CSS 模糊所有句，逐句 hover/点击显形）；off 摘掉并
 // 清掉所有遗留的 .revealed，回到无模糊态。
 window.__lyricsSetBlur = function(on) {
   if (on) {

@@ -44,9 +44,6 @@ VideoQuickSettingsSheet _sheet({
   String? initialCategory,
   Widget? audioTrackSection,
   Widget? subtitleTrackSection,
-  List<VideoThemeOption> themeOptions = const <VideoThemeOption>[],
-  String? currentThemeKey,
-  void Function(String key)? onSelectThemeKey,
   VoidCallback? onSubtitleCategoryShown,
   VoidCallback? onSwitchToSkiaRenderer,
 }) {
@@ -56,11 +53,6 @@ VideoQuickSettingsSheet _sheet({
     subtitleTrackSection: subtitleTrackSection,
     onSubtitleCategoryShown: onSubtitleCategoryShown,
     onSwitchToSkiaRenderer: onSwitchToSkiaRenderer,
-    themeOptions: themeOptions,
-    currentThemeKey: currentThemeKey,
-    onSelectThemeKey: onSelectThemeKey == null
-        ? null
-        : (String key) async => onSelectThemeKey(key),
     initialDelayMs: initialDelayMs,
     initialSpeed: 1.0,
     initialSubtitleObscureMode: VideoSubtitleObscureMode.none,
@@ -330,7 +322,8 @@ void main() {
     await _pump(tester, _sheet());
 
     // 顶栏 chip 按 id key 命中（TODO-1351 起「图标 + 完整文字」）；默认选中
-    // playback → 下方详情顶部用大标题标出当前分类 + 显示音画延迟 + 倍速。
+    // playback → 下方详情顶部用大标题标出当前分类 + 显示倍速（字幕调轴已按语义
+    // 移到「字幕」分类，playback 不再显示）。
     for (final String id in <String>[
       'playback',
       'shaders',
@@ -343,8 +336,9 @@ void main() {
     }
     // 选中分类（playback）标签出现两处：顶栏 chip 完整文字（TODO-1351）+ 详情区大标题。
     expect(find.text(t.video_settings_cat_playback), findsNWidgets(2));
-    expect(find.text(t.video_setting_av_delay), findsOneWidget);
     expect(find.text(t.video_setting_speed), findsOneWidget);
+    expect(find.text(t.video_setting_av_delay), findsNothing,
+        reason: '字幕调轴已移到「字幕」分类，播放分类不再显示');
     // 上下分栏无 push：无返回箭头。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
@@ -678,15 +672,15 @@ void main() {
     await _pump(tester, _sheet());
     await tester.pumpAndSettle();
 
-    // 回退 push 主页：默认 playback 详情（音画延迟）不再随分栏展开。
-    expect(find.text(t.video_setting_av_delay), findsNothing,
+    // 回退 push 主页：默认 playback 详情（倍速）不再随分栏展开。
+    expect(find.text(t.video_setting_speed), findsNothing,
         reason: '高度低于阈值时应回退 push，而非保持 master-detail 显示右详情');
     // push 主页仍列出分类导航行。
     expect(find.text(t.video_settings_cat_playback), findsOneWidget);
 
     // 点分类 → push 子页 + 返回箭头（证明走的是窄窗 push 语义）。
     await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
-    expect(find.text(t.video_setting_av_delay), findsOneWidget);
+    expect(find.text(t.video_setting_speed), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
 
@@ -695,19 +689,19 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 窄窗主页：只列分类导航行，详情未展开（音画延迟未显示）。
+    // 窄窗主页：只列分类导航行，详情未展开（倍速未显示）。
     expect(find.text(t.video_settings_cat_playback), findsOneWidget);
-    expect(find.text(t.video_setting_av_delay), findsNothing);
+    expect(find.text(t.video_setting_speed), findsNothing);
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
     // push 进「播放」→ 详情 + 返回箭头；返回回主页。
     await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
-    expect(find.text(t.video_setting_av_delay), findsOneWidget);
+    expect(find.text(t.video_setting_speed), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pumpAndSettle();
-    expect(find.text(t.video_setting_av_delay), findsNothing);
+    expect(find.text(t.video_setting_speed), findsNothing);
   });
 
   testWidgets('scaled settings side panel stays inside a narrow viewport',
@@ -731,7 +725,7 @@ void main() {
     await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
 
     expect(tester.takeException(), isNull);
-    expect(find.text(t.video_setting_av_delay), findsOneWidget);
+    expect(find.text(t.video_setting_speed), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
 
@@ -850,11 +844,13 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int? delay;
     await _pump(tester, _sheet(onSetDelay: (int v) => delay = v));
+    // 字幕调轴已归到「字幕」分类。
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
-    // 播放详情只有延迟行 + 倍速行，chevron_right 仅出现在「+50ms」按钮
-    // （导航行的 chevron 在别的分类，playback 无导航行）。顶栏分类条在窄宽窗
-    // （如 1000px；desktop 面板 maxWidth 900 更窄）会换行成两行、把详情下推，故先
-    // ensureVisible 把按钮滚进可点区域再点，不依赖顶栏恰好单行的脆弱位置假设。
+    // 字幕详情里 chevron_right 仅出现在字幕调轴的「+50ms」按钮（picker 行用下拉箭头、
+    // 非 chevron_right）。顶栏分类条在窄宽窗（如 1000px；desktop 面板 maxWidth 900 更窄）
+    // 会换行成两行、把详情下推，故先 ensureVisible 把按钮滚进可点区域再点，不依赖顶栏
+    // 恰好单行的脆弱位置假设。
     await tester.ensureVisible(find.byIcon(Icons.chevron_right));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.chevron_right));
@@ -894,8 +890,8 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 默认 playback 详情里字幕调轴行在（证明确在 playback 分类），但降级行不渲染。
-    expect(find.text(t.video_setting_av_delay), findsOneWidget);
+    // 默认 playback 详情里倍速行在（证明确在 playback 分类），但降级行不渲染。
+    expect(find.text(t.video_setting_speed), findsOneWidget);
     expect(find.text(t.video_render_skia_fix_title), findsNothing,
         reason: '无 onSwitchToSkiaRenderer 回调时不应渲染「切 Skia」降级行');
   });
@@ -909,15 +905,17 @@ void main() {
     expect(t.video_setting_subtitle_sync_input, 'Offset (ms)');
   });
 
-  testWidgets('字幕调轴提供可拉滑条 + 数值输入框（playback 详情）', (tester) async {
+  testWidgets('字幕调轴提供可拉滑条 + 数值输入框（字幕分类）', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet(initialDelayMs: 1200));
+    // 字幕调轴已归到「字幕」分类。
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     // 标题正名为「字幕调轴」。
     expect(find.text(t.video_setting_av_delay), findsOneWidget);
 
-    // playback 详情里有一条可拉滑条（字幕调轴），把手按当前值定位。
+    // 字幕详情里有一条可拉滑条（字幕调轴），把手按当前值定位。
     final Finder delayRow = find.widgetWithText(
       AdaptiveSettingsRow,
       t.video_setting_av_delay,
@@ -944,6 +942,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int? delay;
     await _pump(tester, _sheet(onSetDelay: (int v) => delay = v));
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     final Finder delayRow = find.widgetWithText(
       AdaptiveSettingsRow,
@@ -964,6 +963,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int? delay;
     await _pump(tester, _sheet(onSetDelay: (int v) => delay = v));
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     final Finder delayRow = find.widgetWithText(
       AdaptiveSettingsRow,
@@ -995,6 +995,7 @@ void main() {
           return null;
         }),
       );
+      await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
       // 字幕调轴行存在（手动对轴照常可用）。
       expect(find.text(t.video_setting_av_delay), findsOneWidget);
@@ -1055,6 +1056,7 @@ void main() {
           onAutoAlign: () async => 750,
         ),
       );
+      await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
       final Finder delayRow = find.widgetWithText(
         AdaptiveSettingsRow,
@@ -1103,6 +1105,7 @@ void main() {
           onAutoAlign: () async => null,
         ),
       );
+      await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
       final Finder delayRow = find.widgetWithText(
         AdaptiveSettingsRow,
@@ -1132,6 +1135,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pump(tester, _sheet());
+      await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
       expect(find.text(t.video_setting_av_delay), findsOneWidget);
       expect(
@@ -1160,11 +1164,11 @@ void main() {
 
   // TODO-1315 回归守卫（BUG-623）：字幕调轴的「波形对轴」入口在 sheet 集成层
   // 必须可达——有字幕 cue + 可抽波形（本地视频路径 => loadSubtitleWaveform 非空）时，进
-  // 「播放」分类详情就能看到并点到入口按钮。历史上入口曾因挂载时预探测、探测为空即收起
-  // 而「进不去」（用户报「字幕调轴入口也没了」）；这里锁死「入口在 playback 详情常驻可达」，
+  // 「字幕」分类详情就能看到并点到入口按钮。历史上入口曾因挂载时预探测、探测为空即收起
+  // 而「进不去」（用户报「字幕调轴入口也没了」）；这里锁死「入口在字幕详情常驻可达」，
   // 且**挂载不预探测**（懒抽保留）。此前 _sheet 从不传波形参数，本入口在 sheet 层无守卫。
   testWidgets(
-    'TODO-1315 guard: 波形对轴入口在 playback 详情可达且挂载不预探测',
+    'TODO-1315 guard: 波形对轴入口在字幕详情可达且挂载不预探测',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1180,13 +1184,13 @@ void main() {
         ),
       );
 
-      // 宽窗默认选中 playback；字幕调轴行 + 波形对轴入口都在，且入口可命中。
+      // 切到「字幕」分类：字幕调轴行 + 波形对轴入口都在，且入口可命中。
+      await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
       expect(find.text(t.video_setting_av_delay), findsOneWidget);
       final Finder entry = find.byKey(waveEntryKey);
       await tester.ensureVisible(entry);
       await tester.pumpAndSettle();
-      expect(entry, findsOneWidget,
-          reason: 'TODO-1315：波形对轴入口必须在 playback 详情可达');
+      expect(entry, findsOneWidget, reason: 'TODO-1315：波形对轴入口必须在字幕详情可达');
       // 懒抽保留：挂载 + 单纯可见不得触发 ffmpeg 探测。
       expect(probes, 0, reason: 'TODO-1315：入口挂载/可见不得预探测波形（点击才抽）');
     },
@@ -1195,7 +1199,7 @@ void main() {
   // TODO-1315 回归守卫：窄窗（移动端）导航路径同样可达——主页点「播放」分类 push 详情，
   // 详情里能滚到并点到波形对轴入口（移动端正是「进不去」的报障平台）。
   testWidgets(
-    'TODO-1315 guard: 窄窗导航到 playback 后波形对轴入口可达',
+    'TODO-1315 guard: 窄窗导航到字幕分类后波形对轴入口可达',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(400, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1208,14 +1212,13 @@ void main() {
         ),
       );
 
-      // 主页分类导航行 → push playback 详情。
-      await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
+      // 主页分类导航行 → push 字幕详情。
+      await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
       expect(find.text(t.video_setting_av_delay), findsOneWidget);
       final Finder entry = find.byKey(waveEntryKey);
       await tester.ensureVisible(entry);
       await tester.pumpAndSettle();
-      expect(entry, findsOneWidget,
-          reason: 'TODO-1315：窄窗 playback 详情里波形对轴入口必须可达');
+      expect(entry, findsOneWidget, reason: 'TODO-1315：窄窗字幕详情里波形对轴入口必须可达');
     },
   );
 
@@ -1260,7 +1263,7 @@ void main() {
       ),
       scale: 2.0,
     );
-    await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     final Finder delayRow = find.widgetWithText(
       AdaptiveSettingsRow,
@@ -2366,35 +2369,22 @@ void main() {
       expect(find.text(t.video_audio_track_empty), findsOneWidget);
     });
 
-    testWidgets('TODO-1350：提供主题选项+回调时播放分类显示主题切换行', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1000, 800));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      String? picked;
-      await _pump(
-        tester,
-        _sheet(
-          themeOptions: const <VideoThemeOption>[
-            VideoThemeOption(key: 'system-theme', label: 'System'),
-            VideoThemeOption(key: 'ecru-theme', label: 'Ecru'),
-            VideoThemeOption(key: 'dark-theme', label: 'Dark'),
-          ],
-          currentThemeKey: 'system-theme',
-          onSelectThemeKey: (String key) => picked = key,
-        ),
-      );
-      // 播放（视频）分类默认选中，主题切换行标题可见。
-      expect(find.text(t.video_setting_theme), findsWidgets,
-          reason: '提供主题选项 + 回调时主题切换行须显示');
-      // 行是 int 索引的离散单选，回调仍连着（选中态不崩）。
-      expect(picked, isNull);
-    });
-
-    testWidgets('TODO-1350：不提供主题选项时不显示主题切换行', (tester) async {
+    // 主题切换行已从视频设置移除（用户诉求「哪有单独的一个主题的说法」）：主题属于全局
+    // 「外观」设置，视频画面自动继承 app 主题（含自定义主题），不在视频面板重复暴露一套。
+    testWidgets('视频设置不再单列主题切换行（主题归全局「外观」）', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pump(tester, _sheet());
-      expect(find.text(t.video_setting_theme), findsNothing,
-          reason: '无主题选项时不渲染主题切换行');
+      // 播放分类默认选中；遍历所有分类都不应出现「视频主题」行。
+      for (final ({String id, String label}) cat
+          in <({String id, String label})>[
+        (id: 'playback', label: t.video_settings_cat_playback),
+        (id: 'subtitle', label: t.video_settings_cat_subtitle),
+      ]) {
+        await _tapCategory(tester, cat.id, cat.label);
+        expect(find.text(t.video_setting_theme), findsNothing,
+            reason: '${cat.id} 分类不应出现视频主题切换行（主题归全局外观）');
+      }
     });
 
     testWidgets('TODO-1350：字幕文字颜色 + 背景颜色在字幕设置里可调', (tester) async {
@@ -2415,27 +2405,55 @@ void main() {
           reason: '字幕背景颜色须可调');
     });
 
-    test('源码守卫：设置面板含音频分类 + 主题行 + 轨/主题接线（TODO-1350/1351）', () {
+    test('源码守卫：设置面板含音频分类 + 轨接线 + 主题行已移除（TODO-1351）', () {
       final String src =
           File('lib/src/media/video/video_quick_settings_sheet.dart')
               .readAsStringSync();
       // 视频/音频/字幕 tab：音频分类 id + 详情构建器。
       expect(src, contains("id: 'audio'"), reason: '顶栏须含「音频」分类（收音频轨切换）');
       expect(src, contains('_buildAudioDetail('), reason: '音频分类须有详情构建器');
-      // 轨切换区 + 主题行接线。
+      // 轨切换区接线。
       expect(src, contains('widget.audioTrackSection'),
           reason: '音频分类须渲染页面传入的音轨切换区');
       expect(src, contains('widget.subtitleTrackSection'),
           reason: '字幕分类须渲染页面传入的字幕轨切换区');
-      expect(src, contains('_buildThemeRow('),
-          reason: '播放分类须有主题切换行（TODO-1350）');
-      expect(src, contains('onSelectThemeKey'),
-          reason: '主题切换须回调 onSelectThemeKey');
+      // 主题切换行已移除：主题归全局「外观」设置，视频画面继承 app 主题，不在此重复暴露。
+      expect(src, isNot(contains('_buildThemeRow(')),
+          reason: '视频设置不应再有独立主题切换行（主题归全局外观）');
+      expect(src, isNot(contains('onSelectThemeKey')),
+          reason: '主题切换回调应随主题行一并移除');
+      expect(src, isNot(contains('VideoThemeOption')),
+          reason: '视频主题选项模型应随主题行一并移除');
       // 字幕颜色/背景（TODO-1350）可调。
       expect(src, contains('video_setting_subtitle_text_color'),
           reason: '字幕文字颜色须可调');
       expect(src, contains('video_setting_subtitle_bg_color'),
           reason: '字幕背景颜色须可调');
+    });
+
+    // 字幕调轴 + 句尾自动暂停已按语义归到「字幕」分类（用户诉求）：两者都是字幕驱动的
+    // 行为，之前误挂在「播放」。守住归位不回潮：_buildSubtitleDetail 里调这两行，
+    // _buildPlaybackDetail 里不再调。
+    test('源码守卫：字幕调轴 + 句尾自动暂停在字幕分类，不在播放分类', () {
+      final String src =
+          File('lib/src/media/video/video_quick_settings_sheet.dart')
+              .readAsStringSync();
+      final int subtitleIdx = src.indexOf('Widget _buildSubtitleDetail()');
+      final int playbackIdx = src.indexOf('Widget _buildPlaybackDetail()');
+      final int audioIdx = src.indexOf('Widget _buildAudioDetail()');
+      expect(subtitleIdx, greaterThan(0));
+      expect(playbackIdx, greaterThan(0));
+      expect(audioIdx, greaterThan(playbackIdx),
+          reason: '_buildAudioDetail 紧随 _buildPlaybackDetail（用于界定播放段落）');
+      final String playbackBody = src.substring(playbackIdx, audioIdx);
+      expect(playbackBody, isNot(contains('_buildDelayRow(')),
+          reason: '字幕调轴不应再在播放分类');
+      expect(playbackBody, isNot(contains('_buildPauseAtSubtitleEndRow(')),
+          reason: '句尾自动暂停不应再在播放分类');
+      final String subtitleBody = src.substring(subtitleIdx);
+      expect(subtitleBody, contains('_buildDelayRow('), reason: '字幕调轴须归到字幕分类');
+      expect(subtitleBody, contains('_buildPauseAtSubtitleEndRow('),
+          reason: '句尾自动暂停须归到字幕分类');
     });
 
     test('源码守卫：外面浮的音轨/字幕轨侧栏已删，按钮改开设置面板对应 tab（TODO-1351）', () {

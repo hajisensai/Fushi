@@ -22,9 +22,9 @@ https://github.com/hajisensai/hibiki/releases/latest
 
 ## دليل الإعداد
 
-### 1. استيراد القواميس المُوصى بها والصوت المحلي (اختياري)
+### 1. استيراد القواميس المُوصى بها والصوت المحلي (يُوصى به بشدة للمبتدئين!!! · اختياري)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 داخل التطبيق: الإعدادات -> المزامنة والنسخ الاحتياطي -> اضغط على **استيراد نسخة احتياطية**.
 
@@ -38,7 +38,7 @@ https://github.com/hajisensai/hibiki/releases/latest
 
 الروابط: [موقع Anki الرسمي](https://apps.ankiweb.net/) · [الدليل (بالصينية)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [الأسئلة الشائعة](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(بالصينية)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[صورة: توضيح / مفتاح الرموز]*
+![صفحة تنزيل Anki](static-assets/user-guide/anki-download.png)
 
 يمكنك أن تعطي Anki أي مادة تريد حفظها، فيتيح لك تحقيق أفضل احتفاظ بالمعلومات بأقل وقت دراسة.
 

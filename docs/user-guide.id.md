@@ -22,9 +22,9 @@ Android: pilih **arm64**. Windows: pilih berkas **.exe**.
 
 ## Tutorial Konfigurasi
 
-### 1. Mengimpor kamus yang direkomendasikan dan audio lokal (opsional)
+### 1. Mengimpor kamus yang direkomendasikan dan audio lokal (Sangat direkomendasikan untuk pemula!!! · opsional)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 Di dalam aplikasi: Pengaturan -> Sinkronisasi & Cadangan -> ketuk **Impor Cadangan**.
 
@@ -38,7 +38,7 @@ Anki — dinamai dari 暗記 (あんき) — adalah [sistem pengulangan berjarak
 
 Tautan: [Situs resmi Anki](https://apps.ankiweb.net/) · [Manual (Tionghoa)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(Tionghoa)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Gambar: ilustrasi / keterangan]*
+![Halaman unduh Anki](static-assets/user-guide/anki-download.png)
 
 Anda dapat memberikan materi apa pun yang ingin Anda hafal kepada Anki, dan ia memungkinkan Anda mencapai retensi terbaik dengan waktu belajar paling sedikit.
 

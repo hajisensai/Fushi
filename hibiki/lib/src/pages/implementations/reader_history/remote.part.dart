@@ -305,7 +305,8 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
         remoteCoverFetcherFor(_remoteBookClient);
     if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
       return Image(
-        image: RemoteCoverImage(coverUrl, fetcher),
+        // BUG-847：按稳定书 identifier（title）磁盘缓存，冷启动/滚动不重下。
+        image: RemoteCoverImage(coverUrl, fetcher, cacheKey: book.title),
         key: ValueKey<String>('remote_book_cover_$safeKey'),
         alignment: Alignment.topCenter,
         fit: _bookCardCoverFit,

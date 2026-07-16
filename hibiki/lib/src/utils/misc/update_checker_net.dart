@@ -780,3 +780,52 @@ UpdateDownloadAttemptFailure? selectRepresentativeDownloadFailure(
   }
   return failures.first;
 }
+
+/// 「更新日志」页数据源（TODO-1310，应用内查看历史发布说明）：拉取本仓库全部
+/// GitHub releases（含各版本 `tag_name` / `published_at` / Markdown `body` /
+/// `prerelease` 标记 / `html_url`），复用与「检查更新」完全相同的私有 HTTP 管线
+/// （[UpdateChecker._httpGetStringFromGitHubRepos]）——自动继承多镜像回退、系统/自定义
+/// 代理注入（[applyUpdateProxy]）、每候选整体超时、`kGitHubRepoFallbacks` 旧库回退。
+/// `draft` 草稿被过滤（未发布，用户不该看到）。
+///
+/// ⚠️ `api.github.com/.../releases` 列表 API 经任何公共 gh 代理都会 403（BUG-292），
+/// 且无 302 网页等价物，故纯 GFW 无代理环境会拿到空列表；网络/解析异常同样收敛为
+/// 空列表（记诊断日志、不抛）。返回空列表对 UI 一律等价于「无数据」，调用方给
+/// 「拉取失败/请检查网络或代理」空态并提供「打开发布页」逃生口即可。
+Future<List<Map<String, dynamic>>> fetchAllGitHubReleases({
+  String customProxy = '',
+  int perPage = 30,
+}) async {
+  final HttpClient client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 10);
+  try {
+    await applyUpdateProxy(client, userProxy: customProxy);
+    final String? body = await UpdateChecker._httpGetStringFromGitHubRepos(
+      client,
+      (String repo) =>
+          'https://api.github.com/repos/$repo/releases?per_page=$perPage',
+      headers: const <String, String>{'Accept': 'application/vnd.github+json'},
+    );
+    if (body == null) return const <Map<String, dynamic>>[];
+    return parseGitHubReleasesResponse(body);
+  } catch (e, stack) {
+    ErrorLogService.instance.log('fetchAllGitHubReleases', e, stack);
+    return const <Map<String, dynamic>>[];
+  } finally {
+    client.close();
+  }
+}
+
+/// 解析 GitHub `releases` 列表 API 响应体（[fetchAllGitHubReleases] 的纯解析核心，
+/// 抽出便于单测）：期望顶层是 release 对象数组，逐元素保留 `Map`、过滤 `draft==true`
+/// 的草稿；顶层非数组（如错误对象 `{"message":...}`）返回空列表。**不吞 JSON 语法
+/// 错误**——`jsonDecode` 抛出交由调用方的 try 收敛为空列表并记日志。
+@visibleForTesting
+List<Map<String, dynamic>> parseGitHubReleasesResponse(String body) {
+  final dynamic decoded = jsonDecode(body);
+  if (decoded is! List) return const <Map<String, dynamic>>[];
+  return decoded
+      .whereType<Map<String, dynamic>>()
+      .where((Map<String, dynamic> release) => release['draft'] != true)
+      .toList(growable: false);
+}

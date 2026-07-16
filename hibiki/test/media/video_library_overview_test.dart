@@ -129,6 +129,105 @@ void main() {
     expect(byUid.heroUid, 'a');
   });
 
+  // ---- BUG-848：hero 合集感知 Next-Up ----
+
+  test('合集 Next-Up：最近活动是已完成集时 hero 前进到下一集（复现截图 S01E06→S01E10）', () {
+    final DateTime d715 = DateTime(2026, 7, 15);
+    final DateTime d716 = DateTime(2026, 7, 16);
+    final DateTime d623 = DateTime(2026, 6, 23);
+    final VideoLibraryOverview o = computeVideoLibraryOverview(
+      entries: <VideoOverviewEntry>[
+        entry(uid: 'e06', positionMs: 31 * 60 * 1000), // 在读 31:00，7-15
+        entry(uid: 'e09', completed: true), // 已完成，7-16（最近活动）
+        entry(uid: 'e10', positionMs: 5 * 1000), // 在读 0:05，6-23
+      ],
+      lastWatchedByUid: <String, DateTime>{
+        'e06': d715,
+        'e09': d716,
+        'e10': d623,
+      },
+      collectionByUid: const <String, int>{'e06': 1, 'e09': 1, 'e10': 1},
+      sortIndexByUid: const <String, int>{'e06': 6, 'e09': 9, 'e10': 10},
+      now: DateTime(2026, 7, 17),
+    );
+    // 旧逻辑会停在更旧的在读集 e06；新逻辑前进到最靠后的有痕迹集 e10。
+    expect(o.heroUid, 'e10');
+    // 「上次观看」显示整组最近活动 7-16，而非 e10 自身的 6-23（修正观感）。
+    expect(o.heroLastWatched, d716);
+  });
+
+  test('合集 Next-Up：看完最后有痕迹集后前进到全新下一集', () {
+    final VideoLibraryOverview o = computeVideoLibraryOverview(
+      entries: <VideoOverviewEntry>[
+        entry(uid: 'a1', completed: true), // 已完成
+        entry(uid: 'a2'), // 全新（无痕迹）
+      ],
+      lastWatchedByUid: <String, DateTime>{'a1': DateTime(2026, 7, 16)},
+      collectionByUid: const <String, int>{'a1': 1, 'a2': 1},
+      sortIndexByUid: const <String, int>{'a1': 1, 'a2': 2},
+      now: DateTime(2026, 7, 17),
+    );
+    expect(o.heroUid, 'a2');
+    expect(o.heroLastWatched, DateTime(2026, 7, 16));
+  });
+
+  test('合集：整季看完（续播目标仍已完成）→ 该合集不产 hero', () {
+    final VideoLibraryOverview o = computeVideoLibraryOverview(
+      entries: <VideoOverviewEntry>[
+        entry(uid: 'b1', completed: true),
+        entry(uid: 'b2', completed: true),
+      ],
+      lastWatchedByUid: <String, DateTime>{
+        'b1': DateTime(2026, 7, 10),
+        'b2': DateTime(2026, 7, 16),
+      },
+      collectionByUid: const <String, int>{'b1': 1, 'b2': 1},
+      sortIndexByUid: const <String, int>{'b1': 1, 'b2': 2},
+      now: DateTime(2026, 7, 17),
+    );
+    expect(o.heroUid, isNull);
+  });
+
+  test('合集：整季无任何观看痕迹 → 不进继续观看（不劝从头开始）', () {
+    final VideoLibraryOverview o = computeVideoLibraryOverview(
+      entries: <VideoOverviewEntry>[entry(uid: 'c1'), entry(uid: 'c2')],
+      lastWatchedByUid: const <String, DateTime>{},
+      collectionByUid: const <String, int>{'c1': 1, 'c2': 1},
+      sortIndexByUid: const <String, int>{'c1': 1, 'c2': 2},
+      now: DateTime(2026, 7, 17),
+    );
+    expect(o.heroUid, isNull);
+  });
+
+  test('合集单元 vs 散卡：按各自最近活跃时间跨单元择优', () {
+    final VideoLibraryOverview o = computeVideoLibraryOverview(
+      entries: <VideoOverviewEntry>[
+        entry(uid: 'solo', positionMs: 1000), // 散卡在读，活跃 7-10
+        entry(uid: 'e09', completed: true), // 合集：完成 7-16（更近）
+        entry(uid: 'e10', positionMs: 5000), // 下一集在读
+      ],
+      lastWatchedByUid: <String, DateTime>{
+        'solo': DateTime(2026, 7, 10),
+        'e09': DateTime(2026, 7, 16),
+        'e10': DateTime(2026, 6, 23),
+      },
+      collectionByUid: const <String, int>{'e09': 1, 'e10': 1},
+      sortIndexByUid: const <String, int>{'e09': 9, 'e10': 10},
+      now: DateTime(2026, 7, 17),
+    );
+    expect(o.heroUid, 'e10'); // 合集活跃 7-16 胜过散卡 7-10
+  });
+
+  test('远端同步进度（sync 已写入 lastPositionMs）照常参选 hero（BUG-848 #2 本地部分）', () {
+    // sync 对有本地行的视频把远端胜者写进 lastPositionMs；此处等价于 positionMs>0。
+    final VideoLibraryOverview o = computeVideoLibraryOverview(
+      entries: <VideoOverviewEntry>[entry(uid: 'synced', positionMs: 42000)],
+      lastWatchedByUid: const <String, DateTime>{},
+      now: DateTime(2026, 7, 17),
+    );
+    expect(o.heroUid, 'synced');
+  });
+
   test('formatVideoPosition：m:ss 与 h:mm:ss', () {
     expect(formatVideoPosition(0), '0:00');
     expect(formatVideoPosition(59 * 1000), '0:59');

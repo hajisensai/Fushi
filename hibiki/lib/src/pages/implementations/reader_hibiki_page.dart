@@ -1104,7 +1104,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 走这个 getter，保证视觉高度与预留高度恒等。
   double get _readerChromeHeight => ReaderChromeScaler.scaledHeight(
       _readerChromeBaseHeight, _readerChromeScale);
-  static const double _infoFontSize = 12;
+  static const double _infoFontSize = kTopProgressFontSize;
 
   int? _progressCurrentChars;
   int? _progressTotalChars;
@@ -1356,8 +1356,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _progressTotalChars! > 0 &&
       ReaderHibikiSource.instance.showTopProgressBar;
 
-  /// 顶部进度信息条的自然高度（历史 `_infoFontSize * 1.5`）。
-  static const double _infoStripHeight = _infoFontSize * 1.5;
+  /// 顶部进度信息条的预留高（单一真相源 [kTopProgressStripHeight]）。历史值为裸
+  /// `_infoFontSize * 1.5`，未计入 BUG-547 毛玻璃 pill 后加的上下内边距，导致挤压模式
+  /// 下 pill 实高（文字行盒 + 6px 内边距）超出预留、压住正文首行；现改为共享
+  /// [kTopProgressStripHeight]（行盒估计 + pill 内边距）。
+  static const double _infoStripHeight = kTopProgressStripHeight;
 
   /// TODO-975 决策#2：顶部进度是否悬浮（点击唤出 + 自动收起 + 不占预留）。
   bool get _topProgressFloating =>

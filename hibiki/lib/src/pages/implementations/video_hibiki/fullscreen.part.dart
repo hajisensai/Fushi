@@ -45,6 +45,41 @@ extension _VideoFullscreen on _VideoHibikiPageState {
         : _pushNeutralizedVideoFullscreen(context);
   }
 
+  /// BUG-839：从全屏页连播/换集而来的新页（[VideoHibikiPage.initialFullscreen]）在首帧
+  /// 就绪后自动重进全屏路由，保持连播全屏沉浸不被换集打断。
+  ///
+  /// 换集本地分支（[_VideoEpisode._switchEpisode]）先退旧页全屏路由再 `pushReplacement`
+  /// 到本集页（否则 `pushReplacement` 会误替换栈顶全屏路由、漏栈旧集页，致 ESC 逐层退）；
+  /// 新页则由本方法在就绪后重进全屏，端到端观感 = 换集全程全屏、ESC 一次退出。
+  ///
+  /// 一次性（[_didInitialFullscreen]）；仅桌面（移动端无全屏路由，[_pushNeutralizedVideoFullscreen]
+  /// 本就 no-op）。controls 首建帧才设 [_videoControlsContext]、可能晚于就绪帧，故 context
+  /// 未就绪时逐帧重试，带上限（失败/缺失态或超时放弃，杜绝死循环）。两条就绪路径
+  /// （快路径直接翻真 / 慢路径 [_promoteVideoReady]）都调它，一次性闸门去重。
+  void _scheduleInitialFullscreenIfNeeded() {
+    if (_didInitialFullscreen) return;
+    if (!widget.initialFullscreen || isMobilePlatform) {
+      _didInitialFullscreen = true;
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_didInitialFullscreen || !mounted) return;
+      // 失败/缺失态 controls 永不建 → context 永为 null；超时兜底防逐帧死循环。
+      if (_failed || _missingResource || _initialFullscreenRetries > 30) {
+        _didInitialFullscreen = true;
+        return;
+      }
+      final BuildContext? ctx = _videoControlsContext;
+      if (ctx == null || !ctx.mounted) {
+        _initialFullscreenRetries++;
+        _scheduleInitialFullscreenIfNeeded();
+        return;
+      }
+      _didInitialFullscreen = true;
+      if (!isFullscreen(ctx)) unawaited(_pushNeutralizedVideoFullscreen(ctx));
+    });
+  }
+
   Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {
     if (_videoFullscreenTransitioning || isFullscreen(context)) return;
     if (!context.mounted) return;

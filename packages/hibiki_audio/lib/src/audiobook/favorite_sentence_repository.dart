@@ -196,4 +196,9 @@ class FavoriteSentenceRepository {
       jsonEncode(sentences.map((s) => s.toJson()).toList()),
     );
   }
+
+  /// 清空全部收藏句。收藏夹「清空」面板的收藏句范围走这里，直接删掉承载偏好键。
+  Future<void> clear() async {
+    await _db.deletePref(_key);
+  }
 }

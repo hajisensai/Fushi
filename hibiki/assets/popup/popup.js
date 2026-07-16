@@ -223,7 +223,8 @@ function refreshSentenceContextPicker(picker) {
 // 给用户一个明确、可见的「回到只制当前句」入口。
 function refreshClearDraftButton(button) {
     if (!button) return;
-    button.title = window.i18nClearSentenceDraftTooltip || '清空已加句子';
+    // BUG-842：改用 DOM 提示，去掉会在离屏 WebView2 飞走的原生 title（幂等，只挂一次监听）。
+    setInlineButtonTip(button, window.i18nClearSentenceDraftTooltip || '清空已加句子');
     button.hidden = (sentenceCtxPrev + sentenceCtxNext) <= 0;
 }
 
@@ -391,6 +392,9 @@ const ICON_PATHS = {
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     // tune（Niratan「调整上下文」按钮：打开制卡前句子上下文调整模态）
     tune: 'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
+    // open_in_new（TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮，直接跳去
+    // Anki 定位该词的已存在卡；仅 data-mined 时显示）
+    openInAnki: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
 };
 
 function iconSvg(name) {
@@ -1888,6 +1892,78 @@ function showAudioError(button) {
     }, 1500);
 }
 
+// BUG-842：Windows 桌面查词弹窗是 WebView2 离屏合成（CompositionController→DirectComposition
+// visual→WGC 捕获→Flutter texture，再经 HibikiAppUiScale 的 FittedBox 拉伸）。HTML `title`
+// 的原生工具提示是 WebView2 生成的独立 top-level OS 窗口，按「父 HWND 原点 + WebView 内部未
+// 拉伸的逻辑坐标」定位，与纹理真正合成的位置（弹窗卡片）错位，于是提示「飞」到窗口角落。
+// 同型的原生右键菜单错位已由 dictionary_popup_webview.dart 换 Flutter showMenu 规避，但 title
+// 无法拦截/重定位。这里给内联动作按钮改用 DOM 内自绘提示（随纹理正确合成），并去掉原生
+// title。复用 .audio-hint 的视觉（popup.css 里 .hoshi-btn-tip 与其共用规则）。
+let __hoshiBtnTipEl = null;
+let __hoshiBtnTipHideTimer = 0;
+function __hoshiShowButtonTip(button) {
+    const text = button && button.dataset ? button.dataset.hoshiTip : '';
+    if (!text) return;
+    if (__hoshiBtnTipHideTimer) {
+        clearTimeout(__hoshiBtnTipHideTimer);
+        __hoshiBtnTipHideTimer = 0;
+    }
+    if (!__hoshiBtnTipEl || !__hoshiBtnTipEl.isConnected) {
+        __hoshiBtnTipEl = el('div', { className: 'hoshi-btn-tip' });
+        __hibikiOverlayParent().appendChild(__hoshiBtnTipEl);
+    }
+    __hoshiBtnTipEl.textContent = text;
+    __hoshiBtnTipEl.classList.remove('visible'); // 先复位再量尺寸定位
+    // 先量尺寸再定位：按钮行在弹窗顶部，优先置于按钮下方居中；下方放不下再翻到上方，
+    // 并夹在视口内。锚定屏幕坐标而非视口边缘，in-app 全窗弹窗与 app 外覆盖窗都可见。
+    const btnRect = button.getBoundingClientRect();
+    const tipRect = __hoshiBtnTipEl.getBoundingClientRect();
+    let left = btnRect.left + btnRect.width / 2 - tipRect.width / 2;
+    left = Math.max(4, Math.min(left, window.innerWidth - tipRect.width - 4));
+    let top = btnRect.bottom + 6;
+    if (top + tipRect.height > window.innerHeight - 4) {
+        top = btnRect.top - tipRect.height - 6;
+    }
+    __hoshiBtnTipEl.style.left = left + 'px';
+    __hoshiBtnTipEl.style.top = Math.max(4, top) + 'px';
+    requestAnimationFrame(() => {
+        if (__hoshiBtnTipEl) __hoshiBtnTipEl.classList.add('visible');
+    });
+}
+function __hoshiHideButtonTip() {
+    if (!__hoshiBtnTipEl) return;
+    __hoshiBtnTipEl.classList.remove('visible');
+    if (__hoshiBtnTipHideTimer) clearTimeout(__hoshiBtnTipHideTimer);
+    __hoshiBtnTipHideTimer = setTimeout(() => {
+        if (__hoshiBtnTipEl) {
+            __hoshiBtnTipEl.remove();
+            __hoshiBtnTipEl = null;
+        }
+        __hoshiBtnTipHideTimer = 0;
+    }, 220);
+}
+// 给内联动作按钮挂 DOM 悬停/聚焦提示（替代会在离屏 WebView2 上飞走的原生 title）。
+// 设 aria-label 保留可访问性、显式移除 title（关键：不再依赖原生工具提示）。用
+// dataset 标志保证监听器只挂一次——refresh 时可反复调用刷新文案而不叠加监听。
+function setInlineButtonTip(button, text) {
+    if (!button) return;
+    button.removeAttribute('title');
+    if (!text) {
+        delete button.dataset.hoshiTip;
+        button.removeAttribute('aria-label');
+        return;
+    }
+    button.dataset.hoshiTip = text;
+    button.setAttribute('aria-label', text);
+    if (button.dataset.hoshiTipBound === '1') return;
+    button.dataset.hoshiTipBound = '1';
+    button.addEventListener('pointerenter', function() { __hoshiShowButtonTip(button); });
+    button.addEventListener('focus', function() { __hoshiShowButtonTip(button); });
+    button.addEventListener('pointerleave', __hoshiHideButtonTip);
+    button.addEventListener('blur', __hoshiHideButtonTip);
+    button.addEventListener('pointerdown', __hoshiHideButtonTip);
+}
+
 // TODO-1251: 当词条本来就没有配置音频源（resolveWordAudio 返回 null）时，旧行为只瞬间
 // 把 ♪ 闪成 ✕ 再静默恢复，读起来像「点了没反应/出错了」，用户不知道是「这个
 // 词没有发音」。这里在按钮旁弹一个短暂的本地化提示（i18nNoAudioAvailable，宿主经
@@ -1898,7 +1974,9 @@ function showNoAudioHint(button) {
     const message = window.i18nNoAudioAvailable || '暂无发音';
     setButtonIcon(button, 'audioOff');
     button.classList.add('audio-unavailable');
-    button.title = message;
+    // BUG-842：原生 title 在离屏 WebView2 上会飞到窗口角落，且这里已有自绘 .audio-hint
+    // 提示，故只保留 aria-label（可访问性），不设 title。
+    button.setAttribute('aria-label', message);
     // 移除可能残留的旧提示，避免叠加。
     const stale = __hibikiRootNode().querySelector('.audio-hint');
     if (stale) stale.remove();
@@ -2097,6 +2175,11 @@ function createEntryHeader(entry, idx) {
         } else {
             mineButton.classList.remove('latest');
         }
+        // TODO-1360：「在 Anki 中打开卡片」按钮的可见性跟随真实制卡态——已制卡（✓）时
+        // 显示、可制卡（+）时隐藏。与 mineButton 同源于 data-mined，绝不装饰。
+        if (openAnkiButton) {
+            openAnkiButton.classList.toggle('open-anki-hidden', !isMined);
+        }
     };
     const mineButton = el('button', {
         className: 'mine-button',
@@ -2211,6 +2294,33 @@ function createEntryHeader(entry, idx) {
         }
     });
     buttonsContainer.appendChild(mineButton);
+
+    // TODO-1360：「在 Anki 中打开卡片」按钮——仅当该词已制卡（data-mined）时显示。点击
+    // 让宿主据 expression/reading 反查 Anki 全部命中卡并直接跳转打开（单卡直开 / 多卡弹
+    // 选择 / 无卡提示）。与制卡 ✓ 解耦：✓ 仍走覆写·新增·查看的操作单，本按钮只做「查找并
+    // 在 Anki 中打开」这一件事。初始隐藏，由 setMineState 据真实制卡态切换可见性。
+    const openAnkiButton = el('button', {
+        className: 'inline-action-button open-anki-button open-anki-hidden',
+        onclick: async () => {
+            // 单飞守卫：跳转是异步（反查 + 打开 Anki），避免连点重复触发。始终在
+            // finally 释放，绝不永久禁用（与 mineButton 单飞同源）。
+            if (openAnkiButton.dataset.busy === '1') return;
+            openAnkiButton.dataset.busy = '1';
+            openAnkiButton.disabled = true;
+            try {
+                await window.flutter_inappwebview.callHandler(
+                    'openInAnki', { expression, reading });
+            } catch (e) {
+                // 跳转失败不能卡死按钮；记日志并恢复可点（宿主侧另有 toast 反馈）。
+                console.error('open-anki button: openInAnki failed', e);
+            } finally {
+                openAnkiButton.dataset.busy = '';
+                openAnkiButton.disabled = false;
+            }
+        }
+    });
+    setButtonIcon(openAnkiButton, 'openInAnki');
+    buttonsContainer.appendChild(openAnkiButton);
     // Lookup-time detection: query Anki's real card existence for THIS word as
     // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
     //
@@ -2280,7 +2390,6 @@ function createEntryHeader(entry, idx) {
     if (window.sentenceContextPreviewEnabled) {
         const adjustBtn = el('button', {
             className: 'inline-action-button ctx-adjust-button',
-            title: (window.i18nCtx && window.i18nCtx.adjust) || '',
             onclick: function() {
                 // BUG-763/766：改弹 app 原生顶层对话框（不再画在查词弹窗 WebView 内）。
                 // entryIndex 用点击时的稳定 DOM 序（:scope > .entry），与确认制卡回点的
@@ -2298,6 +2407,8 @@ function createEntryHeader(entry, idx) {
             },
         });
         setButtonIcon(adjustBtn, 'tune');
+        // BUG-842：DOM 提示替代原生 title（离屏 WebView2 上原生 title 会飞到窗口角落）。
+        setInlineButtonTip(adjustBtn, (window.i18nCtx && window.i18nCtx.adjust) || '');
         buttonsContainer.appendChild(adjustBtn);
     }
 
@@ -2701,6 +2812,19 @@ function postProcessRuby(container) {
             }
             if (sib && isEl(sib, 'RT')) {
                 unit.appendChild(sib);
+                // BUG-850: reserve horizontal room equal to the reading. The <rt>
+                // is position:absolute (no inline width), so a reading wider than
+                // its kanji would overhang and collide with the next base's
+                // reading. This zero-height, in-flow twin of the reading text
+                // grows the per-base unit's shrink-to-fit width to the reading
+                // width (popup.css .ruby-reserve), while the base stays on its
+                // own baseline. aria-hidden + user-select:none keep it out of
+                // accessibility and ruby lookup selection (BUG-110/123/125/129).
+                const reserve = document.createElement('span');
+                reserve.className = 'ruby-reserve';
+                reserve.setAttribute('aria-hidden', 'true');
+                reserve.textContent = sib.textContent;
+                unit.insertBefore(reserve, unit.firstChild);
             }
         }
     });

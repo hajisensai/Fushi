@@ -22,9 +22,9 @@ Android: выберите **arm64**. Windows: выберите файл **.exe**
 
 ## Руководство по настройке
 
-### 1. Импорт рекомендуемых словарей и локального аудио (необязательно)
+### 1. Импорт рекомендуемых словарей и локального аудио (Настоятельно рекомендуется новичкам!!! · необязательно)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 В приложении: Настройки -> Синхронизация и резервное копирование -> нажмите **Импортировать резервную копию**.
 
@@ -38,7 +38,7 @@ Anki — название происходит от 暗記 (あんき) — эт�
 
 Ссылки: [Официальный сайт Anki](https://apps.ankiweb.net/) · [Руководство (китайский)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [ЧаВо](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(китайский)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Изображение: иллюстрация / легенда]*
+![Страница загрузки Anki](static-assets/user-guide/anki-download.png)
 
 Вы можете передать Anki любой материал, который хотите запомнить, и он позволит добиться наилучшего запоминания при минимальном времени обучения.
 

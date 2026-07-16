@@ -22,9 +22,9 @@ Android: elige **arm64**. Windows: elige el archivo **.exe**.
 
 ## Tutorial de configuración
 
-### 1. Importar los diccionarios recomendados y el audio local (opcional)
+### 1. Importar los diccionarios recomendados y el audio local (Muy recomendado para principiantes!!! · opcional)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 En la aplicación: Ajustes -> Sincronización y copia de seguridad -> toca **Importar copia de seguridad**.
 
@@ -38,7 +38,7 @@ Anki —cuyo nombre proviene de 暗記 (あんき)— es el [sistema de repetici
 
 Enlaces: [Sitio oficial de Anki](https://apps.ankiweb.net/) · [Manual (chino)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [Preguntas frecuentes](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(chino)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Imagen: ilustración / leyenda]*
+![Página de descarga de Anki](static-assets/user-guide/anki-download.png)
 
 Puedes darle a Anki cualquier material que quieras memorizar, y te permite lograr la mejor retención con el menor tiempo de estudio.
 

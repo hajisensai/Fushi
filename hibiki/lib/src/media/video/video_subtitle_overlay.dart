@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart'
+    show BoxHitTestEntry, BoxHitTestResult, RenderProxyBox;
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
@@ -678,6 +680,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         order.add((key, group));
       }
     }
+    // BUG-840：跨组底部碰撞避让。`_positionKey` 把底部基线折叠组（渲染在同一
+    // `max(bottomPadding, ...)` 基线）还按 Layer / MarginL/R 拆成多组时，双语对白（日文一
+    // 层 + 中文一层、或水平边距各异）会各自成组、又都锚到同一底基线 → 叠印糊字。libass 语义：
+    // 同位不同文本的底部事件竖排避让、不叠印。修复：把**文本两两互异**的底部基线折叠组合并进
+    // 一个堆叠组（竖排分行）；同文本的多层拷贝（卡拉OK特效层，BUG-833，通常 \pos / 顶部锚点，
+    // 不落底部基线桶）不合并，仍各自成组同位叠画出特效。
+    final List<(String, List<AudioCue>)> grouped =
+        _mergeBottomBaselineGroups(order);
     // 组内按 MarginV 升序稳定排序：折进同一基线桶的底部双语（JP MarginV=4 + CH MarginV=30）
     // 竖排堆叠时，MarginV 小的贴锚点（底部锚组 slot0 在底）、大的在上，复现 libass「MarginV
     // 越大离底越远」的相对次序，不再依赖字幕文件里 JP/CH 的书写先后（本 BUG 的次序保证）。
@@ -688,7 +698,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       return (mv == null || mv <= 0) ? 0 : mv;
     }
 
-    for (final (String, List<AudioCue>) entry in order) {
+    for (final (String, List<AudioCue>) entry in grouped) {
       final List<AudioCue> group = entry.$2;
       if (group.length < 2) continue;
       // 稳定排序（List.sort 非稳定）：以原始下标做 tie-break，保证同 MarginV 保持发现次序。
@@ -698,7 +708,87 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         return c != 0 ? c : byIndex.indexOf(a).compareTo(byIndex.indexOf(b));
       });
     }
-    return order;
+    return grouped;
+  }
+
+  /// BUG-840：把**文本两两互异**的底部基线折叠组合并进一个堆叠组（跨组底部碰撞避让）。
+  ///
+  /// 「底部基线折叠」= 无 \pos / \move、竖直锚点=底部、且 MarginV 会被 [_paddingFor] 的
+  /// `max(bottomPadding, scaledMarginV)` 夹回同一底基线（MarginV 空 / <=0 / <= bottomPadding）。
+  /// 这些组全部渲染在同一 y——双语对白（日文层 + 中文层、或 MarginL/R 各异）被
+  /// [_positionKey] 按 Layer / 水平边距拆成多组时会叠印糊字。按**水平锚点**分桶（左/中/右对齐
+  /// 各成一栏，不横向混排），桶内若全部文本互异（双语 / 多行不同翻译）→ 合并成一个竖排堆叠组，
+  /// 键归一为不含 Layer / MarginL/R 的底部基线桶（跨帧稳定，[_syncGroupSlots] 槽位身份不漂移）。
+  /// 桶内出现重复文本（同句多层拷贝=卡拉OK特效层，应同位叠画不拆行）则整桶不合并，保持
+  /// [_positionKey] 原分组（各层同位叠画，BUG-833 不回归）。非底部 / 带显式位置的组原样保留。
+  List<(String, List<AudioCue>)> _mergeBottomBaselineGroups(
+    List<(String, List<AudioCue>)> order,
+  ) {
+    bool isBottomBaselineFolded(AudioCue cue) {
+      final SubtitleMarkup? m = cue.markup;
+      if (m == null) return true; // 纯 SRT / 无 markup：底部居中、无 MarginV → 折叠
+      if (m.posFraction != null) return false;
+      if (widget.respectAssStyle && m.move != null) return false;
+      final SubtitleVAlign v = m.anchor?.vertical ?? SubtitleVAlign.bottom;
+      if (v != SubtitleVAlign.bottom) return false;
+      final double? mv = m.cueStyle?.marginV;
+      if (mv == null || mv <= 0) return true;
+      return mv <= widget.bottomPadding;
+    }
+
+    // 按水平锚点分桶收集底部基线折叠组的 order 下标（组内 cue 同键、同折叠态，取代表判断）。
+    final Map<int, List<int>> bucketsByAh = <int, List<int>>{};
+    for (int i = 0; i < order.length; i++) {
+      final AudioCue rep = order[i].$2.first;
+      if (!isBottomBaselineFolded(rep)) continue;
+      final int ah =
+          (rep.markup?.anchor?.horizontal ?? SubtitleHAlign.center).index;
+      (bucketsByAh[ah] ??= <int>[]).add(i);
+    }
+
+    // 需合并的桶：>=2 组且桶内文本两两互异。keepInto[drop]=keep（首组），mergedCues[keep]=并集。
+    final Map<int, int> dropInto = <int, int>{};
+    final Map<int, List<AudioCue>> mergedCues = <int, List<AudioCue>>{};
+    final Map<int, int> mergedAh = <int, int>{};
+    bucketsByAh.forEach((int ah, List<int> idxs) {
+      if (idxs.length < 2) return;
+      final Set<String> seen = <String>{};
+      bool distinct = true;
+      for (final int i in idxs) {
+        for (final AudioCue cue in order[i].$2) {
+          if (!seen.add(cue.text)) {
+            distinct = false;
+            break;
+          }
+        }
+        if (!distinct) break;
+      }
+      if (!distinct) return;
+      final int keep = idxs.first;
+      final List<AudioCue> union = <AudioCue>[];
+      for (final int i in idxs) {
+        union.addAll(order[i].$2);
+        if (i != keep) dropInto[i] = keep;
+      }
+      mergedCues[keep] = union;
+      mergedAh[keep] = ah;
+    });
+    if (dropInto.isEmpty) return order;
+
+    // 重建 order：keep 位置换成合并组（键归一），drop 位置跳过，其余原样、保持发现顺序。
+    final List<(String, List<AudioCue>)> out = <(String, List<AudioCue>)>[];
+    for (int i = 0; i < order.length; i++) {
+      if (dropInto.containsKey(i)) continue;
+      final List<AudioCue>? union = mergedCues[i];
+      if (union != null) {
+        final String key =
+            'a:${SubtitleVAlign.bottom.index}:${mergedAh[i]}:-1:-1:-1';
+        out.add((key, union));
+      } else {
+        out.add(order[i]);
+      }
+    }
+    return out;
   }
 
   /// 一条 cue 的「有效定位」分组键（TODO-1341）：有 \pos 时按分数（+ 锚点），否则按锚点
@@ -960,6 +1050,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             },
           ),
         },
+        child: content,
+      );
+      // 查词优先（BUG-838）：命中字符 glyph 时**吸收**指针（[hitTest] 返回 true），阻止其
+      // 下探到 media_kit 进度条。进度条 seek 走裸 [Listener.onPointerDown/Up]（见 media_kit
+      // `MaterialSeekBar`），**不进手势竞技场**——上面 [RawGestureDetector] 赢竞技场也拦不住
+      // 它，只能在上层截断命中链。点字缝 / 空白仍返回 false、translucent 穿透 → 进度条 seek、
+      // 点画面唤控制条一切照旧（BUG-198/553 non-opaque 穿透纪律不回归）。判据与查词识别器
+      // 同一条（[_hitEntryIndexAt] >= 0），保证「查词命中」与「吸收命中」严格一致。
+      content = _GlyphPriorityHitTest(
+        hitTestChar: (Offset globalPosition) =>
+            _hitEntryIndexAt(globalPosition) >= 0,
         child: content,
       );
     }
@@ -1896,5 +1997,56 @@ class _SubtitleCharTapRecognizer extends TapGestureRecognizer {
     // 按下点未命中字符 → 不收指针 → 不进竞技场 → media_kit 控制条 onTap 独占胜出。
     if (!hitTestChar(event.position)) return false;
     return super.isPointerAllowed(event);
+  }
+}
+
+/// 查词优先命中层（BUG-838）：把「点在字幕字符 glyph 上」的指针**吸收**在字幕层，让
+/// [hitTest] 返回 true —— 父 [Stack] 就此止步，不再向下命中 media_kit 进度条。
+///
+/// 为何不能只靠手势竞技场：media_kit `MaterialSeekBar` 的 seek 走**裸**
+/// [Listener.onPointerDown]/[Listener.onPointerUp]（`onPointerUp` 里直接
+/// `player.seek(...)`），Listener **不参与手势竞技场**，只要指针在命中路径上就无条件触发。
+/// 因此 [_SubtitleCharTapRecognizer] 赢竞技场也拦不住 seek —— 唯一办法是在更上层（字幕）
+/// 于命中阶段截断，让指针根本到不了下面的 Listener。
+///
+/// 只对**落在字符矩形**（[hitTestChar]，与查词识别器同一判据）的指针吸收；落在字缝 /
+/// 空白 / 盒外返回 false、保持 translucent 穿透 —— 进度条 seek、点画面唤起控制条一切照旧
+/// （BUG-198/553 non-opaque 穿透纪律不回归）。hover（桌面 Shift 查词 / 显形）走外层
+/// `opaque:false` [MouseRegion]（本层的祖先），命中路径始终含它，不受本层截断影响。
+class _GlyphPriorityHitTest extends SingleChildRenderObjectWidget {
+  const _GlyphPriorityHitTest({
+    required this.hitTestChar,
+    required Widget super.child,
+  });
+
+  /// 按**全局**坐标判定该点是否命中某字幕字符（[_hitEntryIndexAt] >= 0）。
+  final bool Function(Offset globalPosition) hitTestChar;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderGlyphPriorityHitTest(hitTestChar);
+
+  @override
+  void updateRenderObject(
+      BuildContext context, _RenderGlyphPriorityHitTest renderObject) {
+    renderObject.hitTestChar = hitTestChar;
+  }
+}
+
+class _RenderGlyphPriorityHitTest extends RenderProxyBox {
+  _RenderGlyphPriorityHitTest(this.hitTestChar);
+
+  bool Function(Offset globalPosition) hitTestChar;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (!size.contains(position)) return false;
+    // 只吸收落在字符 glyph 上的指针；字缝 / 空白 translucent 穿透到下层进度条。
+    if (!hitTestChar(localToGlobal(position))) return false;
+    // 命中字：把子树（[RawGestureDetector] 的 [_SubtitleCharTapRecognizer]）挂进命中链，
+    // 让查词 tap 照常收指针；再登记自身并返回 true —— 截断父 [Stack] 对下层进度条的命中。
+    hitTestChildren(result, position: position);
+    result.add(BoxHitTestEntry(this, position));
+    return true;
   }
 }

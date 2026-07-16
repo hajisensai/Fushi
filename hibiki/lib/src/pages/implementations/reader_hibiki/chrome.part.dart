@@ -293,6 +293,23 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           ],
         ),
       ),
+      // BUG-854：选区菜单补「收藏」——与桌面底栏 / 查词弹窗顶栏的收藏句子
+      // （`_toggleFavoriteSentence`）同一后端，仅入口不同。触屏从不建原生选区
+      // （TODO-1279），旧菜单只有查词 / 复制 / 导出，无从收藏当前句；此项填平缺口。
+      PopupMenuItem<String>(
+        value: 'favorite',
+        height: kMinInteractiveDimension * menuScale,
+        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.star_border, size: 18.0 * menuScale),
+            SizedBox(width: 12.0 * menuScale),
+            Text(t.action_favorite,
+                style: TextStyle(fontSize: 14.0 * menuScale)),
+          ],
+        ),
+      ),
       if (hasAudio)
         PopupMenuItem<String>(
           value: 'export',
@@ -351,6 +368,20 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       case 'copy':
         await Clipboard.setData(ClipboardData(text: selectedText));
         HibikiToast.show(msg: t.copied_to_clipboard);
+        return;
+      case 'favorite':
+        // BUG-854：右键收藏也走「原生选区 → 查词状态」补写（与 search 同源），确保
+        // _toggleFavoriteSentence 读到的 currentSentence / 句级区间非空；解析失败退回
+        // 选中文本本身满足非空契约。
+        final ReaderSelectionData? favSel =
+            await _fillLookupStateFromNativeSelection();
+        if (!mounted) return;
+        if (favSel == null) {
+          appModel.currentMediaSource?.setCurrentSentence(
+            selection: HibikiTextSelection(text: selectedText),
+          );
+        }
+        await _toggleFavoriteSentence();
         return;
       case 'export':
         await _exportAudiobookClipFromSelection();
@@ -424,6 +455,23 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           ],
         ),
       ),
+      // BUG-854：选区菜单补「收藏」——与桌面底栏 / 查词弹窗顶栏的收藏句子
+      // （`_toggleFavoriteSentence`）同一后端，仅入口不同。触屏从不建原生选区
+      // （TODO-1279），旧菜单只有查词 / 复制 / 导出，无从收藏当前句；此项填平缺口。
+      PopupMenuItem<String>(
+        value: 'favorite',
+        height: kMinInteractiveDimension * menuScale,
+        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.star_border, size: 18.0 * menuScale),
+            SizedBox(width: 12.0 * menuScale),
+            Text(t.action_favorite,
+                style: TextStyle(fontSize: 14.0 * menuScale)),
+          ],
+        ),
+      ),
       if (hasAudio)
         PopupMenuItem<String>(
           value: 'export',
@@ -469,6 +517,15 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       case 'copy':
         await Clipboard.setData(ClipboardData(text: data.text));
         HibikiToast.show(msg: t.copied_to_clipboard);
+        await _clearReaderAppSelection();
+        return;
+      case 'favorite':
+        // BUG-854：拖选是 app 自绘选区（无原生选区），从菜单 payload 填查词状态
+        // （currentSentence 非空契约 + 句级区间），与「导出片段」共用
+        // _fillLookupStateFromSelectionData，再走既有收藏句子后端；收藏完清掉选区高亮。
+        await _fillLookupStateFromSelectionData(data,
+            extractNativeImages: false);
+        await _toggleFavoriteSentence();
         await _clearReaderAppSelection();
         return;
       case 'export':
@@ -1776,7 +1833,14 @@ extension _ReaderChrome on _ReaderHibikiPageState {
               filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
               child: Container(
                 color: frostedFill,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                // TODO-975 铁律：pill 上下内边距与预留高 [_infoStripHeight]
+                // （= [kTopProgressStripHeight]）共享同一常量
+                // [kTopProgressPillVerticalPadding]，pill 实高绝不超预留（BUG-547
+                // 曾只加 padding 未同步预留 → 压住正文首行）。
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: kTopProgressPillVerticalPadding,
+                ),
                 child: Text(
                   '$_progressCurrentChars / $_progressTotalChars'
                   '  ${(ratio * 100).toStringAsFixed(2)}%',

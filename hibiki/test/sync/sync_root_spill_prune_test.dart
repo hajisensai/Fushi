@@ -53,6 +53,22 @@ void main() {
       expect(isTtuPerBookFileName('progress_2_0_x.json'), isFalse);
       expect(isTtuPerBookFileName('progression.json'), isFalse);
     });
+
+    test('matches title-PREFIXED spill (slash-less folderId fusion, BUG-845)',
+        () {
+      // A book folderId cached without its trailing slash fuses the file name
+      // onto the title: `<root>/屍人荘の殺人` + `audioBook_1_6_….json` becomes a
+      // root-level `屍人荘の殺人audioBook_1_6_….json`. The marker is matched
+      // anywhere in the name, so these are swept too.
+      expect(isTtuPerBookFileName('屍人荘の殺人$_spilledAudioBook'), isTrue);
+      expect(isTtuPerBookFileName('屍人荘の殺人$_spilledProgress'), isTrue);
+      expect(isTtuPerBookFileName('屍人荘の殺人$_spilledStatistics'), isTrue);
+      expect(isTtuPerBookFileName('屍人荘の殺人$_spilledCover'), isTrue);
+      // A title with punctuation still fuses and is still caught.
+      expect(isTtuPerBookFileName('A B.C!cover_1_6.png'), isTrue);
+      // But a bare title with no fused marker is still safe.
+      expect(isTtuPerBookFileName('屍人荘の殺人progression.json'), isFalse);
+    });
   });
 
   group('SyncOrchestrator.pruneRootSpill', () {
@@ -135,6 +151,55 @@ void main() {
           await store.findAsset('root/屍人荘の殺人', _spilledProgress);
       expect(nested, isNotNull,
           reason: 'a per-book file inside its own folder is legitimate');
+    });
+
+    test('sweeps title-PREFIXED spill while keeping the book folder (BUG-845)',
+        () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // The book folder is intact; the slash-less folderId fusion left several
+      // churned title-prefixed audioBook copies as direct root children.
+      await store.ensureFolder('root', '屍人荘の殺人');
+      await seedFile(store, 'root/屍人荘の殺人', _spilledAudioBook);
+      await seedFile(store, 'root', '屍人荘の殺人$_spilledAudioBook');
+      await seedFile(store, 'root',
+          '屍人荘の殺人audioBook_1_6_1700000009999_43.5.json');
+      await seedFile(store, 'root', '屍人荘の殺人$_spilledCover');
+
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final SyncOrchestrator orchestrator = SyncOrchestrator(
+        db: db,
+        backend: FakeSyncBackend(store),
+        dictionaryResourceRoot: tmp,
+        audioDatabaseRoot: tmp,
+        tempDir: tmp,
+        syncStats: false,
+        syncAudioBookPosition: false,
+        syncContent: false,
+        syncAudioBookFiles: false,
+        syncDictionary: false,
+        syncLocalAudio: false,
+      );
+
+      final SyncRunReport report = SyncRunReport();
+      await orchestrator.pruneRootSpill('root', report);
+
+      expect(report.rootSpillFilesRemoved, 3,
+          reason: 'every title-prefixed root spill copy is swept');
+      expect(report.errors, isEmpty);
+
+      final Set<String> rootNames = (await store.listChildren('root'))
+          .map((AssetEntry e) => e.name)
+          .toSet();
+      // The book folder survives; no title-prefixed spill remains at root.
+      expect(rootNames, contains('屍人荘の殺人'));
+      expect(rootNames.any(isTtuPerBookFileName), isFalse);
+      // The legitimate in-folder file is untouched.
+      final AssetEntry? nested =
+          await store.findAsset('root/屍人荘の殺人', _spilledAudioBook);
+      expect(nested, isNotNull);
     });
 
     test('clean root is a no-op (idempotent)', () async {

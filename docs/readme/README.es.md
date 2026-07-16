@@ -10,7 +10,12 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | **Español** | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[Guía de usuario](../user-guide.es.md) | [Descargar la última versión](https://github.com/hajisensai/hibiki/releases)
+[![Guía de usuario](https://img.shields.io/badge/%F0%9F%93%96%20Gu%C3%ADa%20de%20usuario-0969DA?style=for-the-badge)](../user-guide.es.md)
+
+**Sin configuración engorrosa** — importa los diccionarios y el audio recomendados en un solo paso.
+
+[![Descargar la última versión](https://img.shields.io/badge/%E2%AC%87%20Descargar%20la%20%C3%BAltima%20versi%C3%B3n-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Únete a Discord](https://img.shields.io/badge/%C3%9Anete%20a%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Mira lo que quieras mirar y aprende el idioma sobre la marcha.**
 

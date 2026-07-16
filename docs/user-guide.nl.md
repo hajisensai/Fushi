@@ -22,9 +22,9 @@ Android: kies **arm64**. Windows: kies het **.exe**-bestand.
 
 ## Configuratiehandleiding
 
-### 1. Aanbevolen woordenboeken en lokale audio importeren (optioneel)
+### 1. Aanbevolen woordenboeken en lokale audio importeren (Sterk aanbevolen voor beginners!!! · optioneel)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 In de app: Instellingen -> Synchronisatie en back-up -> tik op **Back-up importeren**.
 
@@ -38,7 +38,7 @@ Anki — vernoemd naar 暗記 (あんき) — is wereldwijd het meest gebruikte 
 
 Links: [Officiële Anki-website](https://apps.ankiweb.net/) · [Handleiding (Chinees)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(Chinees)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Afbeelding: illustratie / legenda]*
+![Anki-downloadpagina](static-assets/user-guide/anki-download.png)
 
 Je kunt Anki elk materiaal geven dat je wilt onthouden, en het stelt je in staat de beste retentie te bereiken met de minste studietijd.
 

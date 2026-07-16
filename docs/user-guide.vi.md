@@ -22,9 +22,9 @@ Android: chọn **arm64**. Windows: chọn tệp **.exe**.
 
 ## Hướng dẫn cấu hình
 
-### 1. Nhập các từ điển được đề xuất và âm thanh cục bộ (tùy chọn)
+### 1. Nhập các từ điển được đề xuất và âm thanh cục bộ (Rất khuyến khích cho người mới!!! · tùy chọn)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 Trong ứng dụng: Cài đặt -> Đồng bộ & Sao lưu -> nhấn **Nhập bản sao lưu**.
 
@@ -38,7 +38,7 @@ Anki — được đặt tên theo 暗記 (あんき) — là [hệ thống lặ
 
 Liên kết: [Trang chính thức của Anki](https://apps.ankiweb.net/) · [Sổ tay (tiếng Trung)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [Câu hỏi thường gặp](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(tiếng Trung)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Hình ảnh: minh họa / chú giải]*
+![Trang tải xuống Anki](static-assets/user-guide/anki-download.png)
 
 Bạn có thể đưa cho Anki bất kỳ tài liệu nào bạn muốn ghi nhớ, và nó giúp bạn đạt được khả năng ghi nhớ tốt nhất với thời gian học ít nhất.
 

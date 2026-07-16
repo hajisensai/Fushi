@@ -22,9 +22,9 @@ Android: เลือก **arm64** Windows: เลือกไฟล์ **.exe**
 
 ## บทแนะนำการตั้งค่า
 
-### 1. นำเข้าพจนานุกรมที่แนะนำและไฟล์เสียงในเครื่อง (ไม่บังคับ)
+### 1. นำเข้าพจนานุกรมที่แนะนำและไฟล์เสียงในเครื่อง (แนะนำอย่างยิ่งสำหรับมือใหม่!!! · ไม่บังคับ)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 ในแอป: การตั้งค่า -> ซิงค์และสำรองข้อมูล -> แตะ **นำเข้าข้อมูลสำรอง**
 
@@ -38,7 +38,7 @@ Anki — ตั้งชื่อตาม 暗記 (あんき) — เป็น [
 
 ลิงก์: [เว็บไซต์ทางการของ Anki](https://apps.ankiweb.net/) · [คู่มือ (จีน)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [คำถามที่พบบ่อย](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(จีน)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[รูปภาพ: ภาพประกอบ / คำอธิบาย]*
+![หน้าดาวน์โหลด Anki](static-assets/user-guide/anki-download.png)
 
 คุณสามารถป้อนเนื้อหาใดก็ตามที่ต้องการจดจำให้กับ Anki และมันจะช่วยให้คุณจดจำได้ดีที่สุดด้วยเวลาเรียนน้อยที่สุด
 

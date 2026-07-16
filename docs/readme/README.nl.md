@@ -10,7 +10,12 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | **Nederlands** | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[Gebruikershandleiding](../user-guide.nl.md) | [Nieuwste versie downloaden](https://github.com/hajisensai/hibiki/releases)
+[![Gebruikershandleiding](https://img.shields.io/badge/%F0%9F%93%96%20Gebruikershandleiding-0969DA?style=for-the-badge)](../user-guide.nl.md)
+
+**Geen omslachtige configuratie** — importeer de aanbevolen woordenboeken en audio in één stap.
+
+[![Nieuwste versie downloaden](https://img.shields.io/badge/%E2%AC%87%20Nieuwste%20versie%20downloaden-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Word lid van Discord](https://img.shields.io/badge/Word%20lid%20van%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Kijk waar je zin in hebt en pik de taal onderweg op.**
 

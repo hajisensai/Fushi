@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart'
+    show LogicalKeyboardKey, PhysicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
@@ -158,4 +160,29 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
     }
   }
   return result;
+}
+
+/// BUG-853 / TODO-847 对齐（视频版）：Windows 微软 IME 激活时裸 Space 的 [logicalKey]
+/// 会被引擎改写成 [LogicalKeyboardKey.process]，视频页两条空格「播放/暂停」路径
+/// （media_kit controls 的 `keyboardShortcuts` 与页级 `_withPageSpaceOverride`）都用
+/// `SingleActivator(LogicalKeyboardKey.space)` 匹配 [logicalKey]，故 IME 下按空格暂停
+/// 失效。本谓词在 KeyEvent 层按**物理键**还原 Space 语义：仅当无修饰键 +
+/// `logicalKey == process` + `physicalKey == space` + 无文本框 composing 时返回 true，
+/// 命中后由调用方触发 togglePlayPause。
+///
+/// 与 [resolveReaderSpaceOverride] 同范式：纯谓词、无平台/时序副作用，可单测。只识别
+/// `process`（IME 专有逻辑键）不识别裸 `space`——裸 Space 走既有 SingleActivator 路径
+/// 不变（Never break userspace），本谓词仅补 IME 场景这条既有实现覆盖不到的死角。
+/// [hasEditableFocus] 为 true（文本框正在 composing）时返回 false，避免 IME 变换候选词
+/// 时按空格误触暂停。Space 物理键在所有常见键盘布局上物理位一致，回退稳定。
+bool isVideoImeSpacePlayPause({
+  required LogicalKeyboardKey logicalKey,
+  required PhysicalKeyboardKey physicalKey,
+  required bool hasModifier,
+  required bool hasEditableFocus,
+}) {
+  if (hasModifier) return false;
+  if (hasEditableFocus) return false;
+  return logicalKey == LogicalKeyboardKey.process &&
+      physicalKey == PhysicalKeyboardKey.space;
 }

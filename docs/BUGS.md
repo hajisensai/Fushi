@@ -27,11 +27,28 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 820 条。点号进各自文件。
+> 共 837 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-855](bugs/BUG-855-ass-fontsize-em-vs-cell.md) | ✅ | ✅ | ASS Fontsize 被当 em 用，字号比 mpv 整体大一截 |
+| [BUG-854](bugs/BUG-854-selection-menu-favorite.md) | ✅ | ✅ | 移动端选区菜单缺少收藏项 |
+| [BUG-853](bugs/BUG-853-video-ime-space-pause.md) | ✅ | ✅ | 日语输入法激活时视频页按空格无法暂停 |
+| [BUG-852](bugs/BUG-852-lyrics-blur-exposes-context.md) | ✅ | ✅ | 歌词模式模糊只盖当前句，前后文暴露 |
+| [BUG-851](bugs/BUG-851-dict-dark-usage-tag-washed.md) | ✅ | ✅ | ダークモードで辞書の使い方タグがライト背景のまま浮く |
+| [BUG-850](bugs/BUG-850-dict-ruby-hspacing-overlap.md) | ✅ | ✅ | 辞書例文の逐字ルビが横方向に重なる |
+| [BUG-849](bugs/BUG-849-reader-paginated-live-style.md) | ✅ | ✅ | 分页模式改字号/边距/主题不实时生效需重开书 |
+| [BUG-848](bugs/BUG-848-continue-watching-nextup-hero.md) | ✅ | ✅ | 继续观看hero不前进下一集停在旧集/不认远端进度 |
+| [BUG-847](bugs/BUG-847-remote-cover-disk-cache.md) | ✅ | ✅ | 远端封面无磁盘缓存每次冷启动重下 |
+| [BUG-846](bugs/BUG-846-nested-update-channels.md) | ✅ | ✅ | 测试版/调试版通道应收到正式版更新（嵌套合集） |
+| [BUG-845](bugs/BUG-845-webdav-folder-slash-spill.md) | ✅ | ✅ | WebDAV book folderId 缺尾斜杠致进度文件溢出根目录并删除对端 in-folder 副本 |
+| [BUG-844](bugs/BUG-844-lyrics-shift-hover-lookup.md) | ✅ | ✅ | 歌词模式不支持Shift/悬停查词 |
+| [BUG-843](bugs/BUG-843-top-progress-overlaps-first-line.md) | ✅ | ✅ | 顶部阅读进度毛玻璃pill压住正文首行 |
+| [BUG-842](bugs/BUG-842-popup-native-title-tooltip-flies.md) | ✅ | ✅ | Windows查词弹窗调整上下文等按钮原生title提示飞到窗口角落 |
+| [BUG-841](bugs/BUG-841-subtitle-list-effect-dup.md) | ✅ | ✅ | 字幕列表特效叠加ASS未去重 |
+| [BUG-840](bugs/BUG-840-bilingual-bottom-overlap.md) | ✅ | ✅ | 双语底部对白跨层/边距重叠 |
+| [BUG-839](bugs/BUG-839-fullscreen-autoplay-esc-stack.md) | ✅ | ✅ | 全屏连播换集漏栈致ESC逐层回退 |
+| [BUG-838](bugs/BUG-838-video-subtitle-lookup-seek-steal.md) | ✅ | ✅ | 视频字幕点字查词被进度条隐形热区抢成seek跳走 |
 | [BUG-837](bugs/BUG-837-video-fullscreen-desktop-lock.md) | ✅ | ✅ | 桌面视频全屏独占锁死桌面无法切到其他软件 |
 | [BUG-836](bugs/BUG-836-video-ultra-anime4k-ul-windows-black.md) | ✅ | ✅ | 视频画质增强极高档(Anime4K UL)在 Windows ANGLE 后端黑屏 |
 | [BUG-835](bugs/BUG-835-ffmpeg-failure-summary-tail.md) | ✅ | ✅ | 制卡句子音频失败toast只显示ffmpeg版本banner看不到真因 |

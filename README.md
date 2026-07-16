@@ -10,7 +10,12 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
-[User Guide](docs/user-guide.md) | [Download Latest](https://github.com/hajisensai/hibiki/releases) · [OneDrive Mirror](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) | [Join our Discord](https://discord.gg/WhjwyGmm7f)
+[![User Guide](https://img.shields.io/badge/%F0%9F%93%96%20User%20Guide-0969DA?style=for-the-badge)](docs/user-guide.md)
+
+**No fiddly setup** — import the recommended dictionaries and audio in one step.
+
+[![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Join our Discord](https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Watch what you want to watch, and pick up the language along the way.**
 
@@ -138,9 +143,14 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from [GitHub Releases](https://github.com/hajisensai/hibiki/releases) or the [OneDrive mirror](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) — Android APK and Windows installer are available.
->
-> The OneDrive mirror is provided for regions where GitHub is slow or unreachable.
+Download the latest release from [GitHub Releases](https://github.com/hajisensai/hibiki/releases) — Android APK and Windows installer are available.
+
+<details open>
+<summary>📖 <b>No fiddly setup</b> — import the recommended dictionaries and audio in one step.</summary>
+
+<a href="docs/user-guide.md"><img src="docs/static-assets/user-guide/config-tutorial.en.png" alt="Configuration tutorial — import recommended dictionaries and audio" width="360"></a>
+
+</details>
 
 > Requires Android 7.0 (API 24) or higher.
 

@@ -401,6 +401,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     required this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
     this.onMinedCardAction,
+    this.onOpenInAnki,
     this.onUpdateEntry,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
@@ -473,6 +474,10 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 命中多张让用户选。透传给 [DictionaryPopupWebView]。null 时回退旧两态行为。
   final Future<MinePopupResult> Function(Map<String, String> fields)?
       onMinedCardAction;
+
+  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮回调，透传给
+  /// [DictionaryPopupWebView]。宿主据 expression/reading 反查并直接在 Anki 中打开命中卡。
+  final Future<void> Function(String expression, String reading)? onOpenInAnki;
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
   final Future<bool> Function(String expression, String reading)?
       onFavoriteCheck;
@@ -823,6 +828,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onDuplicateCheck: onDuplicateCheck,
             onOverwriteTargetNoteId: onOverwriteTargetNoteId,
             onMinedCardAction: onMinedCardAction,
+            onOpenInAnki: onOpenInAnki,
             onFavoriteEntry: onFavoriteEntry,
             onFavoriteCheck: onFavoriteCheck,
             onAppendSentence: onAppendSentence,

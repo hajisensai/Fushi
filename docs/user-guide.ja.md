@@ -22,9 +22,9 @@ Android：**arm64** を選んでください。Windows：**.exe** ファイル�
 
 ## 設定チュートリアル
 
-### 1. 推奨辞書とローカル音声をインポートする（任意）
+### 1. 推奨辞書とローカル音声をインポートする（初心者に強くおすすめ！！！・任意）
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 アプリ内で：設定 -> 同期とバックアップ -> **バックアップをインポート** をタップします。
 
@@ -38,7 +38,7 @@ Anki——「暗記（あんき）」に由来します——は世界で最も�
 
 リンク：[Anki 公式サイト](https://apps.ankiweb.net/) · [マニュアル（中国語）](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [FAQ](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [（中国語）](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[画像：イメージ / 凡例]*
+![Anki ダウンロードページ](static-assets/user-guide/anki-download.png)
 
 覚えたい素材を Anki に渡せば、最小限の学習時間で最良の定着を得ることができます。
 

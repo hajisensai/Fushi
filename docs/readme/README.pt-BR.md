@@ -10,7 +10,12 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | **Português** | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[Guia do usuário](../user-guide.pt-BR.md) | [Baixar a versão mais recente](https://github.com/hajisensai/hibiki/releases)
+[![Guia do usuário](https://img.shields.io/badge/%F0%9F%93%96%20Guia%20do%20usu%C3%A1rio-0969DA?style=for-the-badge)](../user-guide.pt-BR.md)
+
+**Sem configuração complicada** — importe os dicionários e o áudio recomendados em uma etapa.
+
+[![Baixar a versão mais recente](https://img.shields.io/badge/%E2%AC%87%20Baixar%20a%20vers%C3%A3o%20mais%20recente-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Entrar no Discord](https://img.shields.io/badge/Entrar%20no%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Assista ao que você quer assistir e aprenda o idioma no caminho.**
 

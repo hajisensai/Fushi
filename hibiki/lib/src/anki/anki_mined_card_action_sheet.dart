@@ -379,3 +379,125 @@ Future<AnkiCardMutationResult> runAnkiMinedCardAction({
   );
   return (ankiConnect: result.ankiConnect, noteId: result.noteId);
 }
+
+/// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮的宿主侧编排（两条查词车道共用，
+/// 杜绝漂移）。据 [expression]/[reading] 反查 Anki 全部命中卡，直接跳转打开：
+///   - 无命中（探测显示已制卡但现在查不到 / 被删）→ toast 提示，不静默。
+///   - 命中 1 张 → 直接 [BaseAnkiRepository.openNoteInAnki]（AnkiConnect guiBrowse /
+///     AnkiDroid ACTION_VIEW），失败 toast。
+///   - 命中多张（同词多卡）→ 弹轻量选择让用户选一张打开（单一职责，不复用覆写/新增
+///     的 [showAnkiMinedCardActionSheet]）。
+/// 与点 ✓ 的 [runAnkiMinedCardAction] 解耦：本编排不制卡、不覆写，只做「查找并打开」。
+Future<void> openMinedCardInAnki({
+  required BuildContext context,
+  required BaseAnkiRepository repo,
+  required String expression,
+  required String reading,
+}) async {
+  final matches = await repo.findMatchingNotes(expression, reading);
+  if (matches.isEmpty) {
+    HibikiToast.show(msg: t.anki_open_no_card);
+    return;
+  }
+  if (matches.length == 1) {
+    final ok = await repo.openNoteInAnki(matches.first.noteId);
+    if (!ok) {
+      HibikiToast.show(msg: t.anki_note_open_failed);
+    }
+    return;
+  }
+  if (!context.mounted) return;
+  await showAnkiOpenNotePicker(context: context, matches: matches, repo: repo);
+}
+
+/// TODO-1360：同词命中多张卡时的轻量选择——只列预览行，点任意一张在 Anki 中打开。
+/// 不带覆写/新增（那是点 ✓ 的职责），保持本入口「查找并打开」单一语义。
+Future<void> showAnkiOpenNotePicker({
+  required BuildContext context,
+  required List<MinedNoteRef> matches,
+  required BaseAnkiRepository repo,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (sheetContext) => _OpenNotePicker(matches: matches, repo: repo),
+  );
+}
+
+class _OpenNotePicker extends StatefulWidget {
+  const _OpenNotePicker({required this.matches, required this.repo});
+
+  final List<MinedNoteRef> matches;
+  final BaseAnkiRepository repo;
+
+  @override
+  State<_OpenNotePicker> createState() => _OpenNotePickerState();
+}
+
+class _OpenNotePickerState extends State<_OpenNotePicker> {
+  bool _busy = false;
+
+  Future<void> _open(int noteId) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    // openNoteInAnki 是 best-effort（返回 bool，不抛），但保守起见仍守 _busy 复位。
+    final ok = await widget.repo.openNoteInAnki(noteId);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() => _busy = false);
+      HibikiToast.show(msg: t.anki_note_open_failed);
+      return;
+    }
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final matches = widget.matches;
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+            child: Text(t.anki_mined_card_title,
+                style: theme.textTheme.titleMedium),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text(
+              t.anki_mined_multiple_matches(count: matches.length),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          const Divider(height: 1),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: matches.length,
+              itemBuilder: (context, i) {
+                final note = matches[i];
+                final preview =
+                    note.preview.isEmpty ? '#${note.noteId}' : note.preview;
+                return ListTile(
+                  title: Text(preview,
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: _busy ? null : () => _open(note.noteId),
+                );
+              },
+            ),
+          ),
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: LinearProgressIndicator(),
+            ),
+        ],
+      ),
+    );
+  }
+}

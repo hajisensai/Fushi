@@ -660,31 +660,58 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     setState(() => _items.remove(item));
   }
 
-  /// 当前列表中是否存在制卡历史条目（TODO-633 W1）。AppBar 的「清空制卡历史」按钮
-  /// 仅在为真时显示——没有制卡句时不渲染该按钮（避免对空集合提供清空入口）。
-  bool get _hasMinedItems =>
-      _items.any((item) => item.type == _CollectionType.mined);
+  /// 当前列表中出现过的收藏类型（书签/收藏句/制卡句/收藏词），按 [_CollectionType]
+  /// 声明顺序稳定排序。清空面板只列出真实存在的类型——空类型不给清空入口。
+  List<_CollectionType> get _presentClearTypes => _CollectionType.values
+      .where((type) => _items.any((item) => item.type == type))
+      .toList();
 
-  /// 清空全部制卡历史（TODO-633 W1）：弹 adaptive 确认对话框（复用 [CollectionDeleteDialog]
-  /// 的销毁确认范式，message 用 [Translations] 的 `collection_mined_clear_confirm`），
-  /// 确认后调 [HibikiDatabase.clearMinedSentences] 一次性删表，再本地移除所有
-  /// [_CollectionType.mined] 项刷新列表（与单条 [_deleteItem] 同样走本地 setState，
-  /// 不重跑昂贵的 [_load] 音频解析）。仅清空制卡句，不触碰书签 / 收藏句。
-  Future<void> _clearMinedHistory() async {
+  /// 打开「清空」范围面板：勾选要清空的收藏类型（默认全不勾，避免误删），确认后再走
+  /// [CollectionDeleteDialog] 二次销毁确认，最后按勾选批量清空。取代旧的「仅制卡句」
+  /// 特例——书签/收藏句/收藏词现在都能批量清空。
+  Future<void> _openClearSheet() async {
+    final List<_CollectionType> available = _presentClearTypes;
+    if (available.isEmpty) return;
+
+    final Set<_CollectionType>? scopes =
+        await showModalBottomSheet<Set<_CollectionType>>(
+      context: context,
+      builder: (ctx) => _ClearSheet(availableTypes: available),
+    );
+    if (scopes == null || scopes.isEmpty || !mounted) return;
+
     final bool confirmed = await showAppDialog<bool>(
           context: context,
           builder: (ctx) => CollectionDeleteDialog(
-            message: t.collection_mined_clear_confirm,
+            message: t.collection_clear_confirm,
             onConfirm: () => Navigator.pop(ctx, true),
           ),
         ) ??
         false;
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
 
-    await appModel.database.clearMinedSentences();
+    await _clearScopes(scopes);
+  }
+
+  /// 按勾选的类型批量清空 DB，再本地移除对应项刷新列表（与单条 [_deleteItem] 同样走
+  /// 本地 setState，不重跑昂贵的 [_load] 音频解析）。每类只删自己那张表/偏好键，互不牵连。
+  Future<void> _clearScopes(Set<_CollectionType> scopes) async {
+    final db = appModel.database;
+    if (scopes.contains(_CollectionType.bookmark)) {
+      await BookmarkRepository(db).clearAllBookmarks();
+    }
+    if (scopes.contains(_CollectionType.sentence)) {
+      await FavoriteSentenceRepository(db).clear();
+    }
+    if (scopes.contains(_CollectionType.mined)) {
+      await db.clearMinedSentences();
+    }
+    if (scopes.contains(_CollectionType.word)) {
+      await db.clearAllFavoriteWords();
+    }
     if (!mounted) return;
     setState(() {
-      _items.removeWhere((item) => item.type == _CollectionType.mined);
+      _items.removeWhere((item) => scopes.contains(item.type));
     });
   }
 
@@ -1016,12 +1043,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             icon: Icons.ios_share_outlined,
             onTap: _openExportSheet,
           ),
-        // TODO-633 W1: 仅当存在制卡句条目时显示「清空制卡历史」。
-        if (!_loading && _hasMinedItems)
+        // 只要列表非空就显示「清空」；点开可选范围面板（书签/收藏句/制卡句/收藏词），
+        // 按勾选批量清空。取代旧的「仅制卡句才显示、只清制卡」特例。
+        if (!_loading && _items.isNotEmpty)
           HibikiIconButton(
             tooltip: t.dialog_clear,
             icon: Icons.delete_sweep_outlined,
-            onTap: _clearMinedHistory,
+            onTap: _openClearSheet,
           ),
       ],
       body: _loading
@@ -1639,6 +1667,113 @@ class _ExportSheetState extends State<_ExportSheet> {
           icon: const Icon(Icons.ios_share_outlined, size: 18),
           label: Text(t.dialog_export),
           onPressed: _canExport ? _confirm : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// 「清空」范围面板（镜像 [_ExportSheet] 的可勾选多选 + 底部确认按钮范式）：只列出
+/// 当前收藏夹里真实存在的类型（书签/收藏句/制卡句/收藏词），默认**全不勾**（销毁操作
+/// 需用户显式勾选，杜绝一进面板就误清全部），底部「清空」按钮红色破坏性样式、未勾时
+/// `onPressed: null` 灰掉。确认返回勾选的 [_CollectionType] 集合（取消返回 null）。
+/// 焦点驱动可达：勾选项是共享 [HibikiListItem]（leading [Checkbox]，整行 Tab → Enter
+/// 翻转），确认是 [FilledButton]。
+class _ClearSheet extends StatefulWidget {
+  const _ClearSheet({required this.availableTypes});
+
+  final List<_CollectionType> availableTypes;
+
+  @override
+  State<_ClearSheet> createState() => _ClearSheetState();
+}
+
+class _ClearSheetState extends State<_ClearSheet> {
+  final Set<_CollectionType> _selected = <_CollectionType>{};
+
+  bool get _canClear => _selected.isNotEmpty;
+
+  String _labelFor(_CollectionType type) {
+    switch (type) {
+      case _CollectionType.bookmark:
+        return t.collection_bookmark;
+      case _CollectionType.sentence:
+        return t.collection_sentence;
+      case _CollectionType.mined:
+        return t.collection_mined;
+      case _CollectionType.word:
+        return t.collection_word;
+    }
+  }
+
+  void _toggle(_CollectionType type, bool on) {
+    setState(() {
+      if (on) {
+        _selected.add(type);
+      } else {
+        _selected.remove(type);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return HibikiModalSheetFrame(
+      title: t.dialog_clear,
+      maxHeightFactor: 0.72,
+      scrollable: true,
+      bodyPadding: EdgeInsets.fromLTRB(
+        0,
+        tokens.spacing.gap,
+        0,
+        tokens.spacing.gap,
+      ),
+      footerPadding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.card,
+        tokens.spacing.card,
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+            child: Text(
+              t.collection_clear_scope,
+              style: tokens.type.listSubtitle.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          for (final _CollectionType type in widget.availableTypes)
+            HibikiListItem(
+              selected: _selected.contains(type),
+              onTap: () => _toggle(type, !_selected.contains(type)),
+              leading: Checkbox(
+                value: _selected.contains(type),
+                onChanged: (bool? v) => _toggle(type, v ?? false),
+              ),
+              title: Text(_labelFor(type)),
+            ),
+        ],
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: colors.error,
+            foregroundColor: colors.onError,
+          ),
+          icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+          label: Text(t.dialog_clear),
+          onPressed: _canClear
+              ? () => Navigator.pop(context, Set<_CollectionType>.of(_selected))
+              : null,
         ),
       ),
     );

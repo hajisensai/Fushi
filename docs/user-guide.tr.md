@@ -22,9 +22,9 @@ Android: **arm64** seçin. Windows: **.exe** dosyasını seçin.
 
 ## Yapılandırma Eğitimi
 
-### 1. Önerilen sözlükleri ve yerel sesi içe aktarma (isteğe bağlı)
+### 1. Önerilen sözlükleri ve yerel sesi içe aktarma (Yeni başlayanlara şiddetle önerilir!!! · isteğe bağlı)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
 
 Uygulamada: Ayarlar -> Eşitleme ve Yedekleme -> **Yedeği İçe Aktar** öğesine dokunun.
 
@@ -38,7 +38,7 @@ Anki — adını 暗記 (あんき) sözcüğünden alır — dünyada en yaygı
 
 Bağlantılar: [Anki resmi sitesi](https://apps.ankiweb.net/) · [Kılavuz (Çince)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/) · [SSS](https://eaa9gdwuyv7.feishu.cn/wiki/YeOSwsG7giLuQxkcDFscUXVZn2f) [(Çince)](https://open-spaced-repetition.github.io/anki-manual-zh-CN/)
 
-*[Görsel: çizim / açıklama]*
+![Anki indirme sayfası](static-assets/user-guide/anki-download.png)
 
 Ezberlemek istediğiniz her materyali Anki'ye verebilirsiniz; en az çalışma süresiyle en iyi kalıcılığı elde etmenizi sağlar.
 
