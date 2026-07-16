@@ -129,7 +129,7 @@ void main() {
     expect(byUid.heroUid, 'a');
   });
 
-  // ---- BUG-847：hero 合集感知 Next-Up ----
+  // ---- BUG-848：hero 合集感知 Next-Up ----
 
   test('合集 Next-Up：最近活动是已完成集时 hero 前进到下一集（复现截图 S01E06→S01E10）', () {
     final DateTime d715 = DateTime(2026, 7, 15);
@@ -218,7 +218,7 @@ void main() {
     expect(o.heroUid, 'e10'); // 合集活跃 7-16 胜过散卡 7-10
   });
 
-  test('远端同步进度（sync 已写入 lastPositionMs）照常参选 hero（BUG-847 #2 本地部分）', () {
+  test('远端同步进度（sync 已写入 lastPositionMs）照常参选 hero（BUG-848 #2 本地部分）', () {
     // sync 对有本地行的视频把远端胜者写进 lastPositionMs；此处等价于 positionMs>0。
     final VideoLibraryOverview o = computeVideoLibraryOverview(
       entries: <VideoOverviewEntry>[entry(uid: 'synced', positionMs: 42000)],

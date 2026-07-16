@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/storage/app_paths.dart';
 
-/// 远端封面读盘缓存（BUG-846）。
+/// 远端封面读盘缓存（BUG-847）。
 ///
 /// [RemoteCoverImage] 原本只依赖 Flutter 进程内 [ImageCache]（纯内存）：冷启动即把所有
 /// 远端封面全部重新网络拉取，滚动被 LRU 淘汰后滚回来也重下，低内存模式进后台还整清。

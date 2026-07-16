@@ -9,7 +9,7 @@ export 'package:hibiki/src/sync/remote_cover_fetcher.dart';
 
 /// 对「互联」远端封面 URL 复用钉扎客户端拉取的 [ImageProvider]（TODO-1235）。
 ///
-/// 缓存分两层（BUG-846）：
+/// 缓存分两层（BUG-847）：
 ///  1. **进程内 [ImageCache]**：键取 [cacheKey]（稳定 id，非易变 [coverUrl]），故换 IP /
 ///     http↔https 让 URL 变化也不会在内存里重复占位；[cacheKey] 为空时退回按 [coverUrl] 键控。
 ///  2. **磁盘读盘缓存 [RemoteCoverCache]**：[cacheKey] 非空时 [_loadAsync] 先查

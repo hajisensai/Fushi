@@ -34,8 +34,8 @@
 | [BUG-851](bugs/BUG-851-dict-dark-usage-tag-washed.md) | ✅ | ✅ | ダークモードで辞書の使い方タグがライト背景のまま浮く |
 | [BUG-850](bugs/BUG-850-dict-ruby-hspacing-overlap.md) | ✅ | ✅ | 辞書例文の逐字ルビが横方向に重なる |
 | [BUG-849](bugs/BUG-849-reader-paginated-live-style.md) | ✅ | ✅ | 分页模式改字号/边距/主题不实时生效需重开书 |
-| [BUG-847](bugs/BUG-848-continue-watching-nextup-hero.md) | ✅ | ✅ | 继续观看hero不前进下一集停在旧集/不认远端进度 |
-| [BUG-846](bugs/BUG-847-remote-cover-disk-cache.md) | ✅ | ✅ | 远端封面无磁盘缓存每次冷启动重下 |
+| [BUG-848](bugs/BUG-848-continue-watching-nextup-hero.md) | ✅ | ✅ | 继续观看hero不前进下一集停在旧集/不认远端进度 |
+| [BUG-847](bugs/BUG-847-remote-cover-disk-cache.md) | ✅ | ✅ | 远端封面无磁盘缓存每次冷启动重下 |
 | [BUG-846](bugs/BUG-846-nested-update-channels.md) | ✅ | ✅ | 测试版/调试版通道应收到正式版更新（嵌套合集） |
 | [BUG-845](bugs/BUG-845-webdav-folder-slash-spill.md) | ✅ | ✅ | WebDAV book folderId 缺尾斜杠致进度文件溢出根目录并删除对端 in-folder 副本 |
 | [BUG-844](bugs/BUG-844-lyrics-shift-hover-lookup.md) | ✅ | ✅ | 歌词模式不支持Shift/悬停查词 |

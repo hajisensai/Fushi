@@ -6,7 +6,7 @@
 ///   推导（v39 起按 bookUid 键控；迁移前遗留 NULL-uid 行由页面按 title 回退合并
 ///   后传入）；无统计行的视频退回 importedAt 排序，且不显示「上次观看」。
 ///
-/// BUG-847：hero 选集**合集感知**（复用 [continueMemberIndex] 的 Jellyfin Next-Up 语义）。
+/// BUG-848：hero 选集**合集感知**（复用 [continueMemberIndex] 的 Jellyfin Next-Up 语义）。
 /// 旧逻辑逐集独立、排除所有已完成集：看完某集后 hero 反被踢出候选、回退到更旧的在读集。
 /// 现按「合集为单元」——组内跑 [continueMemberIndex]（看完最后有痕迹的一集 → 前进下一集），
 /// 单元活跃时间取成员观看时间戳最大值，再跨单元挑最近活跃者。散卡视频各自成单元（仅
@@ -52,7 +52,7 @@ class VideoLibraryOverview {
   /// 近 7 天导入数（importedAt 距 now < 7 天；importedAt 为空不计）。
   final int recentImports;
 
-  /// 继续观看续播目标 uid（Next-Up，BUG-847）：把库拆成「单元」（合集 / 散卡），每个
+  /// 继续观看续播目标 uid（Next-Up，BUG-848）：把库拆成「单元」（合集 / 散卡），每个
   /// 单元推一个续播目标（合集走 [continueMemberIndex]：看完最后有痕迹一集 → 下一集；散卡
   /// 仅在读时），再跨单元挑「最近活跃」者。全无候选 = null（hero 区整体隐藏）。
   final String? heroUid;

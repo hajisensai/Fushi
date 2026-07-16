@@ -1734,7 +1734,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               case final DateTime at)
             r.bookUid: at,
       },
-      // BUG-847：合集分组 + 组内序（去 'video|' 前缀投影成 uid 键控），驱动 hero 的
+      // BUG-848：合集分组 + 组内序（去 'video|' 前缀投影成 uid 键控），驱动 hero 的
       // Next-Up 选集（看完一集 → 前进下一集）。
       collectionByUid: <String, int>{
         for (final VideoBookRow r in all)
@@ -2347,7 +2347,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         remoteCoverFetcherFor(_remoteVideoClient);
     if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
       return Image(
-        // BUG-846：按稳定 video.id 磁盘缓存（非易变 coverUrl），冷启动/滚动不重下。
+        // BUG-847：按稳定 video.id 磁盘缓存（非易变 coverUrl），冷启动/滚动不重下。
         image: RemoteCoverImage(coverUrl, fetcher, cacheKey: video.id),
         key: ValueKey<String>('remote_video_cover_$safeKey'),
         // TODO-616 phase C: 同上，远端云视频封面也用 contain 完整显示不裁切。
