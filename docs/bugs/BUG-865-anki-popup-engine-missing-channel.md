@@ -1,0 +1,12 @@
+## BUG-865 · 外部查词面制卡 MissingPluginException 副engine未注册anki channel
+- **报告**：2026-07-16（用户：截图 toast「导出卡片失败：AnkiDroid: unexpected error: MissingPluginException(No imple...」）
+- **真实性**：✅ 真 bug。根因 `hibiki/android/app/src/main/java/app/hibiki/reader/PopupEngineHolder.kt:90` — 副 FlutterEngine（`popupMain`）只调 `FloatingDictPluginRegistrant.registerWith(engine)` 注册插件 + `/popup` channel，**未注册** `app.hibiki.reader/anki` MethodChannel（唯一注册在 `MainActivity.configureFlutterEngine` → `AnkiChannelHandler.register`，`MainActivity.java:475`）。
+  - 数据流：app 外查词面（剪贴板 / 悬浮 / 选区弹窗 = `PopupDictionaryPage`，跑在 popupMain 副 engine）点「＋」制卡 → `AnkiRepository._mineEntryInner` → `_channel.invokeMethod('addNote')`（`packages/hibiki_anki/lib/src/ankidroid/anki_repository.dart`）→ 该 engine 上 channel 无 handler → 抛 `MissingPluginException`。`MissingPluginException` 不是 `PlatformException` 子类，逃过 addNote 内层 `on PlatformException` catch，命中 `mineEntry` 外层 `catch (e)` → 包成 `'AnkiDroid: unexpected error: $e'` → `error_log_service.dart` 拼成「导出卡片失败：…」toast。
+  - 诱因：BUG-774（`7a0e83b3c`）解禁了 app 外查词面上原被 CSS 隐藏的制卡「＋」按钮，使这条路径首次可达。
+- **[x] ① 已修复** — 让 anki channel 在副 engine 也注册。`AnkiChannelHandler` 里唯一真正需要 `Activity` 的只有运行时权限弹窗（`ActivityCompat.requestPermissions`），其余全部 `Context` 即可（`AnkiDroidHelper` 内部已 `getApplicationContext()`；`AddContentApi`/`FileProvider`/`grantUriPermission`/`getContentResolver`/`startActivity(NEW_TASK)` 均 Context）。
+  - `AnkiChannelHandler.java`：新增 `AnkiChannelHandler(@NonNull Context, @Nullable Activity)` 构造器（存 `applicationContext` + 可空 `activity`），旧 `AnkiChannelHandler(Activity)` 委托 `this(activity, activity)`（主 engine 不变）；把 lambda/helper 里 `activity.*` 全改 `context.*`；`requirePermission` 与 `requestAnkidroidPermissions` 对 `activity==null` 优雅降级（不弹框，回 `PERMISSION_DENIED`，避免 NPE）。
+  - `FloatingDictPluginRegistrant.registerWith(FlutterEngine, Context)`：新增 Context 参数，注册 `new AnkiChannelHandler(context, null)`。
+  - `PopupEngineHolder.ensureEngine`：调 `registerWith(engine, context.applicationContext)`。
+  - 提交：（见 PR）
+- **[x] ② 已加自动化测试** — `hibiki/test/android/anki_popup_engine_channel_guard_test.dart`：源码扫描守卫，断言 ①`FloatingDictPluginRegistrant.registerWith` 带 Context 参数且注册 `AnkiChannelHandler`、②`PopupEngineHolder` 向 registrant 传 context、③`AnkiChannelHandler` 有 `(Context, @Nullable Activity)` 构造器且对 `activity==null` 权限降级。真机 channel 注册跑原生层测不了，守注册机制防回归。
+- **备注**：与 BUG-146（popup 副 engine registrant 缺 dev 插件）同类；与 BUG-390（WebView 半销毁 evaluateJavascript per-instance channel 被摘）无关。真机需在 Android 上从剪贴板/悬浮/选区弹窗制卡验证不再 toast MissingPluginException、卡片真入 AnkiDroid。

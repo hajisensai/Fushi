@@ -87,7 +87,9 @@ object PopupEngineHolder {
         if (cache.get(ENGINE_ID) != null) return false
 
         val engine = FlutterEngine(context.applicationContext, null, false)
-        FloatingDictPluginRegistrant.registerWith(engine)
+        // BUG-865：传 applicationContext 让 registrant 也注册 anki channel，使 popupMain
+        // 副 engine 上的 app 外查词面制卡不再抛 MissingPluginException。
+        FloatingDictPluginRegistrant.registerWith(engine, context.applicationContext)
 
         val ch = MethodChannel(engine.dartExecutor.binaryMessenger, ChannelNames.POPUP)
         ch.setMethodCallHandler { call, result ->

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 845 条。点号进各自文件。
+> 共 846 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-865](bugs/BUG-865-anki-popup-engine-missing-channel.md) | ✅ | ✅ | 外部查词面制卡 MissingPluginException 副engine未注册anki channel |
 | [BUG-864](bugs/BUG-864-gdrive-sync-transient-no-retry.md) | ✅ | ✅ | Google Drive 聚合同步瞬时网络超时不重试整轮放弃 |
 | [BUG-863](bugs/BUG-863-embedded-sub-poison-track.md) | ✅ | ✅ | 内嵌字幕单遍抽取被一条毒轨整批击穿 |
 | [BUG-861](bugs/BUG-861-video-shift-hover-switch.md) | ✅ | ✅ | 视频按住Shift无法连续切换查词 |
