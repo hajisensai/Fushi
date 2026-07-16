@@ -1223,8 +1223,6 @@ class AppModel with ChangeNotifier {
   Stream<void> get playPauseHeadsetActionStream =>
       audioCtrl.playPauseHeadsetActionStream;
 
-  Stream<bool> get creatorActiveStream => audioCtrl.creatorActiveStream;
-
   /// Used to check whether or not the app is currently using a media source.
   bool get isMediaOpen => _currentMediaSource != null;
 

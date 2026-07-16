@@ -11,8 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///   2. 每一处把 DictionaryPopupWebView 挂在全局缩放下的活跃表面，都用中和器包裹。
 ///
 /// 悬浮词典（floating_dict_page → DictionaryPopupNative）是原生渲染、且 floating_dict_main
-/// 不套 HibikiAppUiScale，故不在此列。native 渲染链 DictionaryResultPage→DictionaryHtmlWidget
-/// 全仓无构造点（死代码），同样不纳入。
+/// 不套 HibikiAppUiScale，故不在此列。
 void main() {
   String read(String p) => File(p).readAsStringSync();
 
