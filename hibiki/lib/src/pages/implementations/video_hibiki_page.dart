@@ -445,6 +445,11 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   }) =>
       topVisibleIndex <= 0 && hitSubtitle;
 
+  /// Shift-悬停在查词浮层 barrier 上「连续切换查词」的移动节流阈值（像素，BUG-861）。
+  /// 与字幕盒 [VideoSubtitleOverlay] 的 `_kShiftHoverThresholdPx` / 阅读器 barrier hover
+  /// 的 8px 同构：鼠标移动未超此阈值不重复查词，越过阈值 + 命中新字符才换词。
+  static const double barrierHoverThresholdPx = 8;
+
   /// 长按横向拖动连续调速的映射系数（TODO-338）：每 px 横向位移改变多少倍速。
   /// 200px ≈ 1.0x，故拖半屏（~600px）≈ ±3x，覆盖 [longPressDragMinSpeed]..
   /// [longPressDragMaxSpeed] 全程而手感不过敏。
@@ -3225,6 +3230,77 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  /// Shift-悬停在 barrier 上「连续切换查词」的节流锚 + 去重键（TODO-756a，与阅读器
+  /// [ReaderHibikiPage.onDismissBarrierHover] 同语义）。[Offset.zero] / 空句 / -1 表示
+  /// 未进入（松开 Shift / 离开时复位），下次按 Shift 进入即触发。
+  Offset _barrierHoverLastPos = Offset.zero;
+  String _barrierHoverLastSentence = '';
+  int _barrierHoverLastGrapheme = -1;
+
+  /// 桌面 Shift-鼠标悬停在查词浮层 dismiss barrier 上「连续切换查词」（BUG-861，与阅读器
+  /// [ReaderHibikiPage.onDismissBarrierHover] 同语义）。
+  ///
+  /// 根因：首次查词打开浮层后，全屏 dismiss barrier（[_buildPopupOverlay]）盖在字幕之上，
+  /// 字幕盒自己的 [MouseRegion.onHover]（[VideoSubtitleOverlay] 的 `_handleShiftHover`）被
+  /// barrier 遮住收不到 hover——barrier 是此时**唯一**还能接 hover 的入口。阅读器早已在
+  /// barrier 外层挂 `Listener(onPointerHover: onDismissBarrierHover)` 转发换词，视频页此前
+  /// 只有 `GestureDetector`（无 hover 转发），故「按住 Shift 连续切换查词」在首弹后失效。
+  ///
+  /// 门控与字幕盒 `_handleShiftHover` 一致（TODO-756a/b）：按住 Shift 或开了「悬停即查词」
+  /// 才换词；8px 平方阈值节流（与 `_kShiftHoverThresholdPx` 同构）避免每像素抖动都查；
+  /// 命中同一字符（同句同 grapheme）短路去重，避免同词反复 `replaceStack` 闪烁 / 刷 FFI。
+  /// 换词经 [_handleSubtitleLookupTap] → [_lookupAt]（`replaceStack: true` 复用热槽无缝替换）。
+  void _onDismissBarrierHover(PointerHoverEvent event) {
+    if (!HardwareKeyboard.instance.isShiftPressed &&
+        !ReaderHibikiSource.instance.hoverAutoLookup) {
+      // 未按 Shift 且未开「悬停即查词」：复位节流锚 + 去重键，使下次按 Shift 进入即触发。
+      _barrierHoverLastPos = Offset.zero;
+      _barrierHoverLastSentence = '';
+      _barrierHoverLastGrapheme = -1;
+      return;
+    }
+    final double dx = event.position.dx - _barrierHoverLastPos.dx;
+    final double dy = event.position.dy - _barrierHoverLastPos.dy;
+    if (_barrierHoverLastPos != Offset.zero &&
+        dx * dx + dy * dy <
+            VideoHibikiPage.barrierHoverThresholdPx *
+                VideoHibikiPage.barrierHoverThresholdPx) {
+      return;
+    }
+    _barrierHoverLastPos = event.position;
+    // 命中反查复用与 barrier 点击换词（[_onDismissBarrierTap]）同一命中句柄，全局坐标契约
+    // 一致（[PointerHoverEvent.position] 已是全局坐标）。
+    final SubtitleCharHit? hit = _subtitleHitTester.hitTest(event.position);
+    // 非嵌套（仅顶层可见）且命中字幕字符才换词——与点 barrier 换词的
+    // [shouldSwitchWordOnBarrierTap] 同门控（嵌套态换词会误把整栈 replaceStack 替换掉）。
+    if (!VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+      topVisibleIndex: _topVisiblePopupIndex,
+      hitSubtitle: hit != null,
+    )) {
+      return;
+    }
+    _handleSubtitleHoverLookup(hit!.sentence, hit.graphemeIndex, hit.charRect);
+  }
+
+  /// 悬停查词的统一去重入口（BUG-861）：字幕盒自己的 [MouseRegion]（`onCharHover` →
+  /// `_handleShiftHover`）与浮层 barrier（[_onDismissBarrierHover]）两条 hover 路径都汇聚
+  /// 到这里。首弹后 barrier 盖不住的字符可能被两条路径同时命中，用「同句同 grapheme」短路
+  /// 去重，保证一次移动只换一次词（否则同词双 `replaceStack` 会闪烁 / 重复刷 FFI）。点击查词
+  /// （`onCharTap` → [_handleSubtitleLookupTap]）不经此入口，故重复点同字仍照常重查。
+  void _handleSubtitleHoverLookup(
+    String sentence,
+    int graphemeIndex,
+    Rect charRect,
+  ) {
+    if (sentence == _barrierHoverLastSentence &&
+        graphemeIndex == _barrierHoverLastGrapheme) {
+      return;
+    }
+    _barrierHoverLastSentence = sentence;
+    _barrierHoverLastGrapheme = graphemeIndex;
+    _handleSubtitleLookupTap(sentence, graphemeIndex, charRect);
+  }
+
   /// BUG-094: seed one persistent, hidden warm popup slot on open so its
   /// [DictionaryPopupWebView] cold-loads popup.html/JS/CSS ONCE while idle and
   /// is reused warm for every lookup — no per-lookup cold-load (white flash) in
@@ -3316,6 +3392,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 字 / 字幕条另一句切换查词走 _lookupAt(replaceStack)，栈不空，草稿不被清。
       _miningDraft.clear();
       _refocusVideo();
+      // BUG-861：查词会话结束，复位悬停切词去重键，使关掉浮层后再次悬停同一字符能重查。
+      _barrierHoverLastPos = Offset.zero;
+      _barrierHoverLastSentence = '';
+      _barrierHoverLastGrapheme = -1;
     }
   }
 
@@ -3407,29 +3487,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 // 并支持点同句另一字切换查词)。仅剩隐藏热槽时不拦，放行给视频。
                 if (_hasVisiblePopup || _popup.isSearchingUi)
                   Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      // onTapUp（带坐标）而非 onTap：点到同句另一个字幕字符时切换查词
-                      // 并保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
-                      onTapUp: (TapUpDetails d) =>
-                          _onDismissBarrierTap(d.globalPosition),
-                      // TODO-1052：桌面对齐手机——在 barrier 上水平拖过阈关一层
-                      // （_popNestedPopupAt，逐层关）。仅当滑动关闭开关开启时挂横拖识别
-                      // （否则只 onTapUp，与旧行为一致）。竞技场天然分流：单击走 onTapUp、
-                      // 横拖走 onHorizontalDrag*，互斥不冲突（与 base_source_page 同范式）。
-                      onHorizontalDragStart:
-                          ReaderHibikiSource.instance.enableSwipeToClose
-                              ? _onDismissBarrierHorizontalDragStart
-                              : null,
-                      onHorizontalDragUpdate:
-                          ReaderHibikiSource.instance.enableSwipeToClose
-                              ? _onDismissBarrierHorizontalDragUpdate
-                              : null,
-                      onHorizontalDragEnd:
-                          ReaderHibikiSource.instance.enableSwipeToClose
-                              ? _onDismissBarrierHorizontalDragEnd
-                              : null,
-                      child: const ColoredBox(color: Colors.transparent),
+                    // BUG-861：barrier 外层挂 Listener 转发 hover——首弹后 barrier 盖住字幕，
+                    // 字幕盒 MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
+                    // 还能接 hover 的入口（与 reader onDismissBarrierHover 同语义）。
+                    child: Listener(
+                      onPointerHover: _onDismissBarrierHover,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        // onTapUp（带坐标）而非 onTap：点到同句另一个字幕字符时切换查词
+                        // 并保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
+                        onTapUp: (TapUpDetails d) =>
+                            _onDismissBarrierTap(d.globalPosition),
+                        // TODO-1052：桌面对齐手机——在 barrier 上水平拖过阈关一层
+                        // （_popNestedPopupAt，逐层关）。仅当滑动关闭开关开启时挂横拖识别
+                        // （否则只 onTapUp，与旧行为一致）。竞技场天然分流：单击走 onTapUp、
+                        // 横拖走 onHorizontalDrag*，互斥不冲突（与 base_source_page 同范式）。
+                        onHorizontalDragStart:
+                            ReaderHibikiSource.instance.enableSwipeToClose
+                                ? _onDismissBarrierHorizontalDragStart
+                                : null,
+                        onHorizontalDragUpdate:
+                            ReaderHibikiSource.instance.enableSwipeToClose
+                                ? _onDismissBarrierHorizontalDragUpdate
+                                : null,
+                        onHorizontalDragEnd:
+                            ReaderHibikiSource.instance.enableSwipeToClose
+                                ? _onDismissBarrierHorizontalDragEnd
+                                : null,
+                        child: const ColoredBox(color: Colors.transparent),
+                      ),
                     ),
                   ),
                 // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
