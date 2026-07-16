@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "1.2.0-debug.8079",
-  "tag": "v1.2.0-debug.8079+5ad419b",
+  "version": "1.2.0-debug.8081",
+  "tag": "v1.2.0-debug.8081+1a78f29",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 8079,
-  "notes": "Automated release-signed debug-channel build from develop @ 5ad419b. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 8081,
+  "notes": "Automated release-signed debug-channel build from develop @ 1a78f29. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.2.0-debug.8063-ios.ipa",
@@ -29,11 +29,11 @@
       "version": "1.2.0-debug.8077"
     },
     {
-      "name": "hibiki-1.2.0-debug.8079-5ad419b-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8079-5ad419b-debug.apk",
-      "releaseSequence": 8079,
-      "tag": "v1.2.0-debug.8079+5ad419b",
-      "version": "1.2.0-debug.8079"
+      "name": "hibiki-1.2.0-debug.8081-1a78f29-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8081-1a78f29-debug.apk",
+      "releaseSequence": 8081,
+      "tag": "v1.2.0-debug.8081+1a78f29",
+      "version": "1.2.0-debug.8081"
     }
   ]
 }
