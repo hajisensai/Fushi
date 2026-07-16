@@ -159,10 +159,19 @@ class HibikiMasterDetailSettingsSheet extends StatelessWidget {
             return SingleChildScrollView(
               key: narrowKey(),
               padding: narrowPadding(context, constraints),
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                alignment: Alignment.topCenter,
-                child: narrowChild(context, constraints),
+              // 滚动性能：窄窗（含手机 bottom sheet）用一个非懒的
+              // SingleChildScrollView + Column（BUG-037/042 刻意非懒，保证滚动
+              // 范围恒定）。但 SingleChildScrollView 滚动时会重绘整棵子树，正文里
+              // 未加 RepaintBoundary 的 CustomPaint（如主题色卡 HibikiSchemeSwatch
+              // 的 SchemeDiagonalPainter）每帧都会重跑 paint() → 滚动掉帧。这里把
+              // 整块正文包一层 RepaintBoundary：正文只栅格化一次进缓存层，滚动仅
+              // 按偏移合成该层、不再重绘子树。不改布局/滚动语义，纯合成优化。
+              child: RepaintBoundary(
+                child: AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  alignment: Alignment.topCenter,
+                  child: narrowChild(context, constraints),
+                ),
               ),
             );
           },
