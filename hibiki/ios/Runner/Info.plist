@@ -63,7 +63,7 @@
 		     渲染钉在 60fps 上限，读书/滚动在 120Hz 机型上明显掉刷新率。true =
 		     允许高于 60fps 的帧率，交由系统按内容需求调度。 -->
 		<key>CADisableMinimumFrameDurationOnPhone</key>
-		<true/>
+		<false/>
 		<key>UIApplicationSceneManifest</key>
 			<dict>
 				<key>UIApplicationSupportsMultipleScenes</key>

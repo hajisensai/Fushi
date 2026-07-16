@@ -177,12 +177,17 @@ void main() {
       await tester.pumpWidget(buildPage());
       await tester.pumpAndSettle();
 
-      // 点清空按钮 → 弹确认对话框（文案 = collection_mined_clear_confirm）。
+      // 点清空按钮 → 弹可选范围面板 _ClearSheet（TODO-633/BUG-181 后清空走勾选范围）。
       await tester.tap(clearButton());
       await tester.pumpAndSettle();
-      expect(find.text(t.collection_mined_clear_confirm), findsOneWidget);
-
-      // 确认（CollectionDeleteDialog 的销毁动作 = dialog_delete）。
+      // 勾选「制卡」范围。
+      await tester.tap(find.text(t.collection_mined).last);
+      await tester.pumpAndSettle();
+      // 点面板底部清空按钮（FilledButton = dialog_clear），面板 pop。
+      await tester.tap(find.widgetWithText(FilledButton, t.dialog_clear).last);
+      await tester.pumpAndSettle();
+      // 再弹 CollectionDeleteDialog 二次确认（文案 = collection_clear_confirm）。
+      expect(find.text(t.collection_clear_confirm), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, t.dialog_delete).last);
       await tester.pumpAndSettle();
 
@@ -202,8 +207,11 @@ void main() {
 
       await tester.tap(clearButton());
       await tester.pumpAndSettle();
-
-      // 取消（CollectionDeleteDialog 的关闭动作 = dialog_close）。
+      // 勾选「制卡」→ 面板清空 → 二次确认对话框，然后取消（dialog_close）保留数据。
+      await tester.tap(find.text(t.collection_mined).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, t.dialog_clear).last);
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(TextButton, t.dialog_close).last);
       await tester.pumpAndSettle();
 

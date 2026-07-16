@@ -48,9 +48,9 @@ void main() {
 
       expect(html, contains('filter: blur(8px)'));
       expect(html, contains('class="lyrics-blur"'));
-      expect(html, contains('body.lyrics-blur .cue.current'));
-      expect(html, contains('body.lyrics-blur .cue.current:hover'));
-      expect(html, contains('.cue.current.revealed'));
+      expect(html, contains('body.lyrics-blur .cue'));
+      expect(html, contains('body.lyrics-blur .cue:hover'));
+      expect(html, contains('.cue.revealed'));
       expect(html, contains('window.__lyricsSetBlur'));
     });
 
