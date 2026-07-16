@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 843 条。点号进各自文件。
+> 共 845 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-864](bugs/BUG-864-gdrive-sync-transient-no-retry.md) | ✅ | ✅ | Google Drive 聚合同步瞬时网络超时不重试整轮放弃 |
+| [BUG-863](bugs/BUG-863-embedded-sub-poison-track.md) | ✅ | ✅ | 内嵌字幕单遍抽取被一条毒轨整批击穿 |
 | [BUG-861](bugs/BUG-861-video-shift-hover-switch.md) | ✅ | ✅ | 视频按住Shift无法连续切换查词 |
 | [BUG-860](bugs/BUG-860-popup-link-overflow.md) | ✅ | ✅ | 查词弹窗长URL链接出框 |
 | [BUG-859](bugs/BUG-859-global-lookup-nested-popup-position.md) | ✅ | ✅ | 全局查词嵌套弹窗弹出位置不对 |

@@ -8,6 +8,7 @@ import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_transient_error.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -122,7 +123,19 @@ class GoogleDriveHandler {
     return _cachedApi!;
   }
 
-  Future<T> _call<T>(Future<T> Function(drive.DriveApi api) fn) async {
+  /// Every Drive request funnels through here. Wraps [_callOnce] (which owns the
+  /// auth-refresh single retry) in a bounded transient-error retry-with-backoff:
+  /// a `SocketException` / timeout (信号灯超时) on any op — folder ensure, list,
+  /// JSON download, overwrite-by-name upload — recovers in place instead of
+  /// throwing raw past `_wrapErrors` and abandoning the whole sync round with
+  /// zero retries (BUG-864). Permanent errors (auth / scope / 4xx) are not
+  /// transient, so [retryTransientSync] re-throws them immediately without
+  /// burning attempts; the retried ops are all idempotent so a repeat is safe.
+  Future<T> _call<T>(Future<T> Function(drive.DriveApi api) fn) {
+    return retryTransientSync<T>(() => _callOnce<T>(fn));
+  }
+
+  Future<T> _callOnce<T>(Future<T> Function(drive.DriveApi api) fn) async {
     try {
       return await fn(await _api());
     } on GoogleDriveAuthError {
