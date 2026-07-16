@@ -2402,6 +2402,13 @@ void main() {
     final String deleteDialog = _functionSource(
       source,
       'Future<void> showDictionaryDeleteDialog(Dictionary dictionary)',
+      '  /// 「清空全部词典 / 删除单本词典」共用的确认对话框流程',
+    );
+    // 清空/删除两个确认流程已收敛到共用 helper（原为两份逐字复制的构造样板），
+    // MD3 对话框铬件断言随之锚到 helper 本体；两个入口只需保证仍委托给它。
+    final String confirmHelper = _functionSource(
+      source,
+      'Future<void> _showDictionaryActionConfirmDialog({',
       '  Future<void> _importDictionaryFiles()',
     );
     final String confirmationFrame = _sectionSource(
@@ -2416,9 +2423,11 @@ void main() {
     );
 
     for (final String dialogSource in <String>[clearDialog, deleteDialog]) {
-      expect(dialogSource, contains('DictionaryConfirmationDialog('));
+      expect(dialogSource, contains('_showDictionaryActionConfirmDialog('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
+    expect(confirmHelper, contains('DictionaryConfirmationDialog('));
+    expect(confirmHelper, isNot(contains('adaptiveAlertDialog(')));
 
     for (final String dialogSource in <String>[
       confirmationFrame,
