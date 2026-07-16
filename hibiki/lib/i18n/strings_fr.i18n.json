@@ -2347,5 +2347,9 @@
   "video_jimaku_batch_title": "Fetch subtitles for collection",
   "video_jimaku_batch_download": "Download all",
   "video_jimaku_batch_done": "Subtitles fetched: $done/$total",
-  "anki_open_no_card": "No card found for this word in Anki."
+  "anki_open_no_card": "No card found for this word in Anki.",
+  "settings_view_changelog": "View changelog",
+  "changelog_empty": "No changelog found. Check your network or proxy settings.",
+  "changelog_open_releases": "Open releases page",
+  "changelog_prerelease": "Prerelease"
 }
