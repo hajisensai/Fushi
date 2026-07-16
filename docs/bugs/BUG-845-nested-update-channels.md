@@ -10,7 +10,7 @@
     - `_fetchReleasesForChannel` 改为按合集把每个准入轨道各拉一次并合并（抽出 `_fetchReleasesForExactChannel` 保留单轨原逻辑）。
     - `isUpdateVersionNewer` 换成「嵌套准入 + 纯 semver + 同基跨轨守卫」：正式版成品可推给同基预发布用户（核心诉求）；同基跨轨预发布不回灌（保留 BUG-480 case A/B）。
     - `selectUpdateReleaseForCurrentPlatform` 先按「最新优先」排序（同基预发布轨优先于 stable，让 beta/debug 用户留在本轨而非塌回 stable）再择一；`selectAsset` 改传 **release 自身轨道**（stable 包无 `-debug.` 后缀，否则 debug 用户拿不到并入合集的 stable 包）。
-  - 提交：<待填>
+  - 提交：`1be4a82cf`
 - **[x] ② 已加自动化测试** —— `hibiki/test/utils/misc/version_comparison_test.dart`：
   - `BUG-845 nested update channels (isUpdateVersionNewer)`：beta 收更高基/同基成品 stable、停滞 beta 收 stable 补丁、debug 收 stable+beta、stable 不收预发布、beta **不**收 debug、同基跨轨仍禁。
   - `BUG-845 releaseEligibleForChannel`：三通道嵌套准入。
