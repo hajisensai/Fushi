@@ -64,6 +64,24 @@ String requireBookFolderName(String bookTitle) {
   return name;
 }
 
+/// Path-style backends (WebDAV, Hibiki interconnect) use a book/namespace
+/// folderId as a bare path PREFIX: a child is addressed as `folderId + name`
+/// with NO separator inserted (see `WebDavOps.uploadJson`). The prefix therefore
+/// MUST end with `/`, or `folderId + fileName` fuses the two into a sibling of
+/// the folder — `<root>/<title>audioBook_1_6_….json` lands directly in the sync
+/// root with the title glued to the file name instead of inside
+/// `<root>/<title>/` (BUG-845, a re-report of BUG-619 / BUG-653's spill).
+///
+/// `ensureBookFolder` appends the slash when it CREATES a folder, but folder ids
+/// also enter the cache from server PROPFIND hrefs
+/// (`cacheBookFolderIds` / `restoreCache`), and some WebDAV servers (e.g.
+/// Nutstore / 坚果云) return collection hrefs WITHOUT a trailing slash. Run every
+/// such id through this before caching or returning it so the invariant "a
+/// cached folderId ends with `/`" holds by construction — and any already
+/// poisoned persisted cache self-heals the next time it is loaded.
+String ensureFolderIdTrailingSlash(String folderId) =>
+    folderId.endsWith('/') ? folderId : '$folderId/';
+
 abstract class SyncBackend implements SyncAssetStore {
   // ── Auth ──────────────────────────────────────────────────────────
 

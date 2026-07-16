@@ -35,22 +35,31 @@ String progressFileName(int timestampMs, double progress) =>
 String audioBookFileName(int timestampMs, double positionSec) =>
     'audioBook_1_6_${timestampMs}_$positionSec.json';
 
-/// The ッツ per-book file names that legitimately live ONLY inside a book's
-/// folder (`<root>/<sanitizedTitle>/`): the churning progress / statistics /
-/// audioBook JSON plus the book cover. Every one starts with its type followed
-/// by the `_1_6` schema marker, then `_` (JSON) or `.` (cover extension).
+/// The ッツ per-book files that legitimately live ONLY inside a book's folder
+/// (`<root>/<sanitizedTitle>/`): the churning progress / statistics / audioBook
+/// JSON plus the book cover. Each carries its type followed by the `_1_6` schema
+/// marker, then `_` (JSON) or `.` (cover extension).
 ///
-/// A file matching this pattern sitting as a *direct child of the sync root* is
-/// spill: the old empty-title `ensureBookFolder('')` collapsed `<root>/<''>/`
-/// onto the root itself, scattering these files next to real book folders
-/// (BUG-619 / TODO-1329 stopped the source). Because their timestamp filenames
-/// churn every export and the single-file `findSyncFileByPrefix` dedup only
-/// ever tracks one, spilled copies pile up into many (`丢很多份`, TODO-1340).
-/// Used to detect and sweep that residue — callers MUST additionally require the
-/// entry to be a non-folder direct child of the root (a book's own folder may be
-/// named anything, so name alone is not enough).
+/// A file whose name CONTAINS this marker sitting as a *direct child of the sync
+/// root* is spill in one of two shapes seen in the wild:
+///  - **bare** `audioBook_1_6_….json` — the old empty-title `ensureBookFolder('')`
+///    collapsed `<root>/<''>/` onto the root itself (BUG-619 / TODO-1329 stopped
+///    that source);
+///  - **title-prefixed** `<title>audioBook_1_6_….json` — a book folderId cached
+///    WITHOUT its trailing slash made `folderId + fileName` fuse into
+///    `<root>/<title>audioBook_…` (BUG-845; the write source is now fixed at
+///    `ensureFolderIdTrailingSlash`).
+///
+/// Both are orphaned spill; their timestamp filenames churn every export and the
+/// single-file `findSyncFileByPrefix` dedup only tracks one, so copies pile up
+/// into many (`丢很多份`, TODO-1340). The `type_1_6[._]` marker is specific
+/// enough that only Hibiki's per-book files carry it, so the pattern is matched
+/// ANYWHERE in the name (not just anchored) to also catch the title-prefixed
+/// shape. Used to detect and sweep that residue — callers MUST additionally
+/// require the entry to be a non-folder direct child of the root (a book's own
+/// folder may be named anything, so name alone is not enough).
 final RegExp _ttuPerBookFilePattern =
-    RegExp(r'^(?:progress|statistics|audioBook|cover)_1_6[._]');
+    RegExp(r'(?:progress|statistics|audioBook|cover)_1_6[._]');
 
 bool isTtuPerBookFileName(String fileName) =>
     _ttuPerBookFilePattern.hasMatch(fileName);

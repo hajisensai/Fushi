@@ -103,7 +103,11 @@ class WebDavSyncBackend extends SyncBackend {
     final sanitized = requireBookFolderName(bookTitle);
 
     if (_titleToFolderId.containsKey(sanitized)) {
-      return _titleToFolderId[sanitized]!;
+      // A cached id may have entered slash-less from a server PROPFIND href
+      // (some WebDAV servers omit the trailing slash on collection hrefs).
+      // Normalize on return so `folderId + fileName` never fuses the file into
+      // the root as `<title>audioBook_…` (BUG-845).
+      return ensureFolderIdTrailingSlash(_titleToFolderId[sanitized]!);
     }
 
     final path = '$rootFolderId${Uri.encodeComponent(sanitized)}/';
@@ -285,9 +289,15 @@ class WebDavSyncBackend extends SyncBackend {
     String? rootFolderId,
     Map<String, String>? titleToFolderId,
   }) {
-    _rootFolderId = rootFolderId;
+    // Persisted ids may have been stored slash-less (from a server href); heal
+    // them on load so every cached folderId ends with `/` (BUG-845).
+    _rootFolderId = rootFolderId == null
+        ? null
+        : ensureFolderIdTrailingSlash(rootFolderId);
     if (titleToFolderId != null) {
-      _titleToFolderId.addAll(titleToFolderId);
+      titleToFolderId.forEach((title, id) {
+        _titleToFolderId[title] = ensureFolderIdTrailingSlash(id);
+      });
     }
   }
 
@@ -300,7 +310,11 @@ class WebDavSyncBackend extends SyncBackend {
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {
     for (final f in folders) {
-      _titleToFolderId[f.name] = f.id;
+      // listBooks maps DriveFile.id = the server's collection href, which some
+      // WebDAV servers return WITHOUT a trailing slash. Normalize before caching
+      // so a later `folderId + fileName` write cannot spill into the root
+      // (BUG-845).
+      _titleToFolderId[f.name] = ensureFolderIdTrailingSlash(f.id);
     }
   }
 
@@ -308,7 +322,9 @@ class WebDavSyncBackend extends SyncBackend {
   void evictFolderId(String folderId) {
     // 按值反查逐出书名→folderId 缓存里指向 [folderId] 的条目，消除删书后陈旧态
     // （BUG-202）。路径式后端的 folderId 是按名派生的路径，逐出仍是廉价正确性。
-    _titleToFolderId.removeWhere((_, id) => id == folderId);
+    // 缓存值已统一规范化为带尾斜杠（BUG-845），入参也归一后再比，避免尾斜杠差异漏逐出。
+    final normalized = ensureFolderIdTrailingSlash(folderId);
+    _titleToFolderId.removeWhere((_, id) => id == normalized);
   }
 
   // ── SyncAssetStore ────────────────────────────────────────────────
