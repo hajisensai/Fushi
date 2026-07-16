@@ -103,4 +103,55 @@ void main() {
           'correct under any popup zoom (BUG-108 reserve + BUG-363 zoom-immunity)',
     );
   });
+
+  // BUG-846: the compaction above (absolute rt → base box collapses to the kanji
+  // width) reserves the vertical axis via padding-top but reserves NOTHING on the
+  // horizontal axis, so a reading wider than its kanji (明鏡-style 逐字 ruby, e.g.
+  // 教<rt>きょう</rt>法<rt>ほう</rt>) overhangs and collides with the next base's
+  // reading — the "few px spill" BUG-345 accepted became a full overlap for
+  // >=3-kana readings. The fix injects an in-flow, zero-height twin of the
+  // reading (.ruby-reserve) into each .ruby-unit so the unit's shrink-to-fit
+  // width grows to max(kanji, reading); the base centres under its reading and
+  // adjacent readings never overlap. Ruby geometry can't render headless, so
+  // guard both halves of the contract in source.
+  test(
+      'popup.css reserves horizontal room via an in-flow, zero-height '
+      '.ruby-reserve sized to the reading (BUG-846)', () {
+    final RegExp reserveRule = RegExp(
+      r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*\.ruby-reserve\s*\{([^}]*)\}',
+    );
+    final RegExpMatch? match = reserveRule.firstMatch(css);
+    expect(match, isNotNull,
+        reason: 'popup.css must scope a .ruby-reserve block to the glossary '
+            'surfaces — that in-flow twin is what widens the per-base unit to '
+            'the reading width so adjacent furigana cannot overlap (BUG-846)');
+    final String body = match!.group(1)!;
+    expect(RegExp(r'width\s*:\s*(-webkit-)?max-content').hasMatch(body), isTrue,
+        reason: '.ruby-reserve must be width:max-content so it shrink-wraps to '
+            'the reading and drives the unit width (BUG-846)');
+    expect(RegExp(r'height\s*:\s*0\b').hasMatch(body), isTrue,
+        reason: '.ruby-reserve must be height:0 so it reserves horizontal room '
+            'WITHOUT shifting the base off its baseline — the BUG-108/363 '
+            'vertical reserve must stay unchanged (BUG-846)');
+    expect(RegExp(r'font-size\s*:\s*0?\.5em').hasMatch(body), isTrue,
+        reason:
+            '.ruby-reserve must match the rt font-size (0.5em) so its width '
+            'equals the rendered reading width (BUG-846)');
+  });
+
+  test(
+      'postProcessRuby injects a .ruby-reserve twin of the reading into each '
+      'unit, hidden from selection (BUG-846)', () {
+    final String js = File('assets/popup/popup.js').readAsStringSync();
+    expect(js.contains("className = 'ruby-reserve'"), isTrue,
+        reason: 'postProcessRuby must create the .ruby-reserve twin (BUG-846)');
+    expect(js.contains('reserve.textContent = sib.textContent'), isTrue,
+        reason:
+            'the reserve must copy the reading text so its width equals the '
+            'rt width (BUG-846)');
+    expect(js.contains("setAttribute('aria-hidden', 'true')"), isTrue,
+        reason:
+            'the reserve must be aria-hidden so it never affects ruby lookup '
+            'selection or accessibility (BUG-110/123/125/129)');
+  });
 }

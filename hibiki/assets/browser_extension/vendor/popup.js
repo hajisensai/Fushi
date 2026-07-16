@@ -2812,6 +2812,19 @@ function postProcessRuby(container) {
             }
             if (sib && isEl(sib, 'RT')) {
                 unit.appendChild(sib);
+                // BUG-846: reserve horizontal room equal to the reading. The <rt>
+                // is position:absolute (no inline width), so a reading wider than
+                // its kanji would overhang and collide with the next base's
+                // reading. This zero-height, in-flow twin of the reading text
+                // grows the per-base unit's shrink-to-fit width to the reading
+                // width (popup.css .ruby-reserve), while the base stays on its
+                // own baseline. aria-hidden + user-select:none keep it out of
+                // accessibility and ruby lookup selection (BUG-110/123/125/129).
+                const reserve = document.createElement('span');
+                reserve.className = 'ruby-reserve';
+                reserve.setAttribute('aria-hidden', 'true');
+                reserve.textContent = sib.textContent;
+                unit.insertBefore(reserve, unit.firstChild);
             }
         }
     });
