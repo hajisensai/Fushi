@@ -527,8 +527,14 @@ class _BatchTagIntentRow extends StatelessWidget {
     final Color keepColor = colors.onSurfaceVariant;
 
     Widget segmentLabel(String text, _BatchTagIntent intent, Color color) {
+      // 三段共享一行、每段仅得 ~90dp（手机窄弹窗），双字标签必须锁死单行，
+      // 否则 SegmentedButton 会把「保持」竖排成「保/持」（原缺陷）。softWrap
+      // 关掉后文字一律横排；配合下方 Expanded 铺满行宽 + 收紧内边距保证放得下。
       return Text(
         text,
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.visible,
         style: TextStyle(
           fontSize: 12,
           color: selected == intent ? color : null,
@@ -536,77 +542,81 @@ class _BatchTagIntentRow extends StatelessWidget {
       );
     }
 
+    // 收紧每段横向内边距（默认 ~12dp/侧太宽，在窄弹窗里把 icon+双字挤到换行）。
+    // 只在本弹窗局部覆盖，不动全局 kSettingsSegmentedStyle。
+    final ButtonStyle segmentedStyle = kSettingsSegmentedStyle.copyWith(
+      padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+        EdgeInsets.symmetric(horizontal: 6),
+      ),
+    );
+
     return AdaptiveSettingsRow(
       title: tag.name,
       icon: cupertino ? CupertinoIcons.tag : Icons.sell_outlined,
       controlBelow: true,
-      trailing: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 300),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: tagColor,
-                shape: BoxShape.circle,
-              ),
-              child: const SizedBox(width: 12, height: 12),
+      // controlBelow 下 trailing 独占整行；用 Expanded 让三段铺满行宽（不再被
+      // mainAxisSize.min + maxWidth:300 挤到 ~270 触发压缩换行）。
+      trailing: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: tagColor,
+              shape: BoxShape.circle,
             ),
-            SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-            Flexible(
-              child: adaptiveSegmentedButton<_BatchTagIntent>(
-                context: context,
-                segments: [
-                  ButtonSegment<_BatchTagIntent>(
-                    value: _BatchTagIntent.keep,
-                    tooltip: t.batch_tag_keep,
-                    label: segmentLabel(
-                        t.batch_tag_keep, _BatchTagIntent.keep, keepColor),
-                    icon: Icon(
-                      cupertino
-                          ? CupertinoIcons.minus_circle
-                          : Icons.remove_circle_outline,
-                      size: 16,
-                      color:
-                          selected == _BatchTagIntent.keep ? keepColor : null,
-                    ),
+            child: const SizedBox(width: 12, height: 12),
+          ),
+          SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
+          Expanded(
+            child: adaptiveSegmentedButton<_BatchTagIntent>(
+              context: context,
+              segments: [
+                ButtonSegment<_BatchTagIntent>(
+                  value: _BatchTagIntent.keep,
+                  tooltip: t.batch_tag_keep,
+                  label: segmentLabel(
+                      t.batch_tag_keep, _BatchTagIntent.keep, keepColor),
+                  icon: Icon(
+                    cupertino
+                        ? CupertinoIcons.minus_circle
+                        : Icons.remove_circle_outline,
+                    size: 16,
+                    color: selected == _BatchTagIntent.keep ? keepColor : null,
                   ),
-                  ButtonSegment<_BatchTagIntent>(
-                    value: _BatchTagIntent.add,
-                    tooltip: t.batch_tag_add,
-                    label: segmentLabel(
-                        t.batch_tag_add, _BatchTagIntent.add, addColor),
-                    icon: Icon(
-                      cupertino ? CupertinoIcons.add_circled : Icons.add_circle,
-                      size: 16,
-                      color: selected == _BatchTagIntent.add ? addColor : null,
-                    ),
+                ),
+                ButtonSegment<_BatchTagIntent>(
+                  value: _BatchTagIntent.add,
+                  tooltip: t.batch_tag_add,
+                  label: segmentLabel(
+                      t.batch_tag_add, _BatchTagIntent.add, addColor),
+                  icon: Icon(
+                    cupertino ? CupertinoIcons.add_circled : Icons.add_circle,
+                    size: 16,
+                    color: selected == _BatchTagIntent.add ? addColor : null,
                   ),
-                  ButtonSegment<_BatchTagIntent>(
-                    value: _BatchTagIntent.remove,
-                    tooltip: t.batch_tag_remove,
-                    label: segmentLabel(t.batch_tag_remove,
-                        _BatchTagIntent.remove, removeColor),
-                    icon: Icon(
-                      cupertino
-                          ? CupertinoIcons.minus_circle_fill
-                          : Icons.do_not_disturb_on,
-                      size: 16,
-                      color: selected == _BatchTagIntent.remove
-                          ? removeColor
-                          : null,
-                    ),
+                ),
+                ButtonSegment<_BatchTagIntent>(
+                  value: _BatchTagIntent.remove,
+                  tooltip: t.batch_tag_remove,
+                  label: segmentLabel(
+                      t.batch_tag_remove, _BatchTagIntent.remove, removeColor),
+                  icon: Icon(
+                    cupertino
+                        ? CupertinoIcons.minus_circle_fill
+                        : Icons.do_not_disturb_on,
+                    size: 16,
+                    color:
+                        selected == _BatchTagIntent.remove ? removeColor : null,
                   ),
-                ],
-                selected: {selected},
-                onSelectionChanged: (values) {
-                  if (values.isNotEmpty) onChanged(values.first);
-                },
-                style: kSettingsSegmentedStyle,
-              ),
+                ),
+              ],
+              selected: {selected},
+              onSelectionChanged: (values) {
+                if (values.isNotEmpty) onChanged(values.first);
+              },
+              style: segmentedStyle,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
