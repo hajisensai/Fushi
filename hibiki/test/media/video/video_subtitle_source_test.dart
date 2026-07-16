@@ -904,8 +904,13 @@ TODO016 imported subtitle survives reopen.
       );
 
       expect(cues, isEmpty);
-      expect(backend.extractCount, 2,
-          reason: 'failed prewarm must clear in-flight state for fallback.');
+      // BUG-863: 批量抽取失败(exit-22 毒轨)后逐轨回退——prewarm 与 manual 各做
+      // 「1 次批量 + 每 missing 轨 1 次单轨重试」。broken 视频 2 轨 → 每阶段 3 次，
+      // 共 6 次。in-flight 仍在失败后清干净(否则 fallback 阶段不会重跑)，本测试的
+      // 原意「失败 prewarm 不阻塞后续 manual fallback」仍成立,仅次数随逐轨回退变。
+      expect(backend.extractCount, 6,
+          reason: 'failed prewarm clears in-flight; per-track fallback (BUG-863) '
+              'retries each missing track, so prewarm(3)+manual(3)=6.');
     });
   });
 
