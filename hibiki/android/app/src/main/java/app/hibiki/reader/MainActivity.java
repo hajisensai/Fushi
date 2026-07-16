@@ -134,6 +134,45 @@ public class MainActivity extends AudioServiceActivity {
         super.onCreate(savedInstanceState);
 
         disableSystemFocusHighlight();
+        requestHighestRefreshRate();
+    }
+
+    // 主动向系统请求本窗口的最高刷新率显示模式。Flutter/WebView 阅读器本身不会
+    // 请求高刷，很多机型（尤其自适应刷新/省电策略下）会把没表态的第三方 App 钉在
+    // 60Hz 甚至更低，读书时整屏明显掉刷新率。这里在 getSupportedModes() 里挑一个
+    // 与当前分辨率相同、刷新率最高的模式，写进 window.preferredDisplayModeId（等价
+    // 于 flutter_displaymode 的原生做法，但不引入依赖）。只声明偏好、交由系统调度；
+    // 拿不到 / 无更高模式 / 任意异常都安全退化为系统默认，never break userspace。
+    private void requestHighestRefreshRate() {
+        try {
+            android.view.Display display;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                display = getDisplay();
+            } else {
+                display = getWindowManager().getDefaultDisplay();
+            }
+            if (display == null) return;
+            android.view.Display.Mode current = display.getMode();
+            android.view.Display.Mode[] modes = display.getSupportedModes();
+            if (modes == null || modes.length == 0) return;
+            int bestModeId = 0;
+            float bestRate = current.getRefreshRate();
+            for (android.view.Display.Mode mode : modes) {
+                // 只在与当前分辨率一致的模式里挑，避免顺带改了分辨率。
+                if (mode.getPhysicalWidth() == current.getPhysicalWidth()
+                        && mode.getPhysicalHeight() == current.getPhysicalHeight()
+                        && mode.getRefreshRate() > bestRate + 1f) {
+                    bestRate = mode.getRefreshRate();
+                    bestModeId = mode.getModeId();
+                }
+            }
+            if (bestModeId == 0) return; // 当前已是最高刷新率模式。
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.preferredDisplayModeId = bestModeId;
+            getWindow().setAttributes(lp);
+        } catch (Exception e) {
+            android.util.Log.w("hibiki-refresh", "request high refresh rate failed", e);
+        }
     }
 
     // BUG-195: On API 26+ every View defaults to defaultFocusHighlightEnabled=true,
