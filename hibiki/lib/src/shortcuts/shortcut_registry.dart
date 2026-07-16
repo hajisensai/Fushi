@@ -100,7 +100,6 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     //   * audiobookPrevSentence 旧键盘 Ctrl+Left（gamepad 空）→ 新增手柄 B。
     //   * audiobookNextSentence 旧键盘 Ctrl+Right（gamepad 空）→ 新增手柄 X。
     //   * readerDismissDict 旧键盘 Esc（gamepad B）→ 去掉手柄 B（B 让位给上一句）。
-    //   * readerToggleBookmark 旧键盘 Ctrl+D（gamepad X）→ 去掉手柄 X（X 让位给下一句）。
     if (from < 2) {
       // 全部「仅手柄改动」：键盘默认未变，用平台无关的 keyboard-untouched 判据。
       _restoreGamepadDefaultIfKeyboardUntouched(
@@ -111,8 +110,6 @@ class HibikiShortcutRegistry extends ChangeNotifier {
           ShortcutAction.audiobookNextSentence, defaults);
       _restoreGamepadDefaultIfKeyboardUntouched(
           ShortcutAction.readerDismissDict, defaults);
-      _restoreGamepadDefaultIfKeyboardUntouched(
-          ShortcutAction.readerToggleBookmark, defaults);
     }
     // v2 -> v3（TODO-700 T6/T7）：新增 dpadUp/Down/Left/Right（gamepad scope）+
     // readerEnterCaret（reader scope）。这些是**全新 action**，老快照里根本没有它们的

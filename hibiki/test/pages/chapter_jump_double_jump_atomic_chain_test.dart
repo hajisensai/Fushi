@@ -110,7 +110,7 @@ void main() {
   test('onSearchJump 跨章走 preciseLocateJs 队列、删除 !ok 早退', () {
     final String body = slice(
       'onSearchJump: (BookSearchResult result, String query) async {',
-      'bookmarks: bookmarks,',
+      'favoriteSentences: favorites,',
     );
     // 跨章必须把定位排进导航链（preciseLocateJs），而不是导航后抢发。
     expect(body, contains('preciseLocateJs:'), reason: '跨章搜索定位必须排进导航的原子恢复链');
@@ -121,17 +121,7 @@ void main() {
         reason: '删掉 !ok 早退——定位随恢复落定 settle 之后确定性应用，不再靠第二次点');
   });
 
-  test('书签/收藏/字符跨章跳转把分数烘进 _navigateToChapterAndWait(progress:)', () {
-    final String bm =
-        slice('onJumpToBookmark: (bm) async {', 'onDeleteBookmark:');
-    expect(bm, contains('_navigateToChapterAndWait('),
-        reason: '书签跨章走 navigate-with-baked-progress');
-    expect(bm, contains('progress: progress,'), reason: '书签把目标分数烘进导航');
-    // 跨章分支不得再有滞后的独立 restoreProgress（那正是被 settle-reflow 冲掉的旧路径）。
-    // 同章分支仍保留一条 restoreProgress（既有正常路径），故恰好 1 次。
-    expect('hoshiReader.restoreProgress('.allMatches(bm).length, 1,
-        reason: '书签只在同章分支保留一条 restoreProgress 调用，跨章分支不再滞后抢发');
-
+  test('收藏/字符跨章跳转把分数烘进 _navigateToChapterAndWait(progress:)', () {
     // TODO-1308 问题②（BUG-696）：收藏跳转从「烘分数」升级为「烘绝对字符锚」——
     // fav.normCharOffset 是 getNormalizedOffset 的章内绝对可匹配字符索引（不是
     // 0-10000 分数），跨章烘进 _navigateToChapterAndWait(charOffset:)、同章直接

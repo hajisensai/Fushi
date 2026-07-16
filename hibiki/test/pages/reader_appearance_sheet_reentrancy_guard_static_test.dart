@@ -5,8 +5,8 @@ import 'reader_hibiki_page_source_corpus.dart';
 void main() {
   // BUG-026: 快速连点底栏「调整」会弹出两个面板。
   //
-  // 根因：_showAppearanceSheet 在按钮按下到真正 show 之间还有两次 await（查书签
-  // bmRepo.getBookmarks + 查收藏 favRepo.getAll）。这两次 await 期间事件循环让出，
+  // 根因：_showAppearanceSheet 在按钮按下到真正 show 之间还有 await（查收藏
+  // favRepo.getAll）。该 await 期间事件循环让出，
   // 快速第二次点击会再次进入 _showAppearanceSheet，越过入口的 null 守卫、也走到
   // showModalBottomSheet/showAppDialog → 两个面板叠加。
   //
@@ -19,7 +19,7 @@ void main() {
   final String sheet = _functionSource(
     stripped,
     '  Future<void> _showAppearanceSheet(',
-    '  Future<void> _addBookmarkAtCurrentPosition() async',
+    '  String _currentChapterLabel() {',
   );
 
   test('_showAppearanceSheet bails on re-entry (no double sheet on fast taps)',

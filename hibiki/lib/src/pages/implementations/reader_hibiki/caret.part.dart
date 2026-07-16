@@ -558,9 +558,6 @@ extension _ReaderCaret on _ReaderHibikiPageState {
         }
         unawaited(_showAppearanceSheet(initialSubPage: 'location'));
         return KeyEventResult.handled;
-      case ShortcutAction.readerToggleBookmark:
-        _addBookmarkAtCurrentPosition();
-        return KeyEventResult.handled;
       case ShortcutAction.readerToggleFurigana:
         // Mirror the double-tap furigana toggle so a gamepad (R3) can show/hide
         // furigana without a pointer double-tap the WebView can't synthesise.

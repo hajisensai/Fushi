@@ -79,7 +79,6 @@ void main() {
                 toc: const [],
                 readerProgress: const (1, 3),
                 onJumpSection: (_) async {},
-                onBookmark: () async {},
                 onExitReader: () {},
                 webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
@@ -155,7 +154,6 @@ void main() {
                 toc: const [],
                 readerProgress: const (1, 3),
                 onJumpSection: (_) async {},
-                onBookmark: () async {},
                 onExitReader: () {},
                 webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
@@ -207,7 +205,6 @@ void main() {
                 toc: const [],
                 readerProgress: const (1, 3),
                 onJumpSection: (_) async {},
-                onBookmark: () async {},
                 onExitReader: () {
                   exitCount += 1;
                 },
@@ -265,7 +262,6 @@ void main() {
                 toc: const [],
                 readerProgress: const (1, 3),
                 onJumpSection: (_) async {},
-                onBookmark: () async {},
                 onExitReader: () {},
                 webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
@@ -318,19 +314,10 @@ void main() {
                 ],
                 readerProgress: const (1, 2),
                 onJumpSection: (_) async {},
-                onBookmark: () async {},
                 onExitReader: () {},
                 webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
                 ref: ref,
-                bookmarks: [
-                  Bookmark(
-                    sectionIndex: 1,
-                    normCharOffset: 120,
-                    label: 'Saved page',
-                    createdAt: DateTime(2026, 5, 25, 12),
-                  ),
-                ],
                 favoriteSentences: [
                   FavoriteSentence(
                     text: 'A highlighted sentence from the current book.',
@@ -341,8 +328,6 @@ void main() {
                     createdAt: DateTime(2026, 5, 25, 12),
                   ),
                 ],
-                onJumpToBookmark: (_) async {},
-                onDeleteBookmark: (_) async {},
                 onJumpToFavorite: (_) async {},
                 onDeleteFavorite: (_) async {},
                 isHibikiReader: true,
@@ -359,7 +344,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Opening'), findsOneWidget);
-    expect(find.text('Saved page'), findsOneWidget);
     expect(find.textContaining('A highlighted sentence'), findsOneWidget);
     expect(find.byType(ListTile), findsNothing);
     expect(find.byType(ExpansionTile), findsNothing);

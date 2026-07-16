@@ -37,7 +37,6 @@ void main() {
         ShortcutAction.readerLookupAtCursor,
         ShortcutAction.readerShiftLookup,
         ShortcutAction.readerCreateCardFromPopup,
-        ShortcutAction.readerToggleBookmark,
         ShortcutAction.readerToggleChrome,
         ShortcutAction.readerOpenMenu,
         ShortcutAction.readerDismissDict,

@@ -283,7 +283,7 @@ void main() {
     final String lyricsActionSource = _between(
       source,
       'label: widget.lyricsMode ? t.book_mode : t.lyrics_mode',
-      'label: t.action_bookmark',
+      'label: t.action_exit',
     );
     expect(lyricsActionSource, contains('widget.onToggleLyricsMode!()'));
 

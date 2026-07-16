@@ -65,7 +65,6 @@ enum ShortcutAction {
   // = _showAppearanceSheet(initialSubPage: 'location')。
   readerOpenNavigation(ShortcutScope.reader, 'reader_open_navigation'),
   readerDismissDict(ShortcutScope.reader, 'reader_dismiss_dict'),
-  readerToggleBookmark(ShortcutScope.reader, 'reader_toggle_bookmark'),
   readerToggleFurigana(ShortcutScope.reader, 'reader_toggle_furigana'),
   readerLookupAtCursor(ShortcutScope.reader, 'reader_lookup_at_cursor'),
   readerShiftLookup(ShortcutScope.reader, 'reader_shift_lookup'),
