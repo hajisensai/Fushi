@@ -1,8 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart'
+    show epubSectionsFromExtractDir, parseCuesForFormat;
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
-    show BookImportDialog, writeEpubBackedSrtBook;
+    show
+        BookImportDialog,
+        ImportDialogFrame,
+        summarizeAudiobookHealth,
+        writeEpubBackedSrtBook;
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:path/path.dart' as p;
@@ -14,8 +20,6 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
@@ -230,29 +234,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
                 onPressed: () => Navigator.pop(context),
                 child: Text(t.dialog_cancel),
               ),
-              adaptiveDialogAction(
-                context: context,
-                isDefaultAction: true,
-                onPressed: importing ? null : _doImport,
-                child: importing
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: tokens.spacing.gap * 2,
-                            height: tokens.spacing.gap * 2,
-                            child: adaptiveIndicator(
-                              context: context,
-                              strokeWidth: 2,
-                              color: tokens.surfaces.primary,
-                            ),
-                          ),
-                          SizedBox(width: tokens.spacing.gap),
-                          Text(t.dialog_importing),
-                        ],
-                      )
-                    : Text(t.dialog_import),
-              ),
+              buildImportAction(context, onImport: _doImport),
             ]
           : [
               adaptiveDialogAction(
@@ -489,10 +471,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   // ── 文件/目录选择 ────────────────────────────────────────────────────────────
 
-  static final Set<String> _audioExtensions = AudiobookStorage.audioExtensions
-      .map((String ext) => ext.replaceFirst('.', ''))
-      .toSet();
-
   Future<void> _pickAudioFiles() async {
     if (_pickerActive) return;
     _pickerActive = true;
@@ -502,7 +480,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       final List<String> paths = await pickRealFilePaths(
         context: context,
         appModel: appModel,
-        allowedExtensions: _audioExtensions,
+        allowedExtensions: AudiobookStorage.audioExtensionsNoDot,
       );
       if (!mounted) return;
       paths.sort(compareAudioFilePath);
@@ -584,16 +562,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       return const <EpubSection>[];
     }
     try {
-      final String extractDir = widget.extractDir!;
-      final EpubBook book = EpubParser.parseFromExtracted(extractDir);
-      return List<EpubSection>.generate(
-        book.chapters.length,
-        (i) => EpubSection(
-          index: i,
-          href: book.chapters[i].href,
-          text: book.chapterPlainText(i),
-        ),
-      );
+      return epubSectionsFromExtractDir(widget.extractDir!);
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.loadSections', e, stack);
       debugPrint('[hibiki-audiobook] probe loadSections failed: $e');
@@ -603,23 +572,17 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   /// 只 parse 不落库 —— 导入尚未 commit，不能污染 Isar。正式导入走 _parseCues。
   Future<List<AudioCue>> _parseCuesForProbe() async {
-    final String? p = _alignmentPath;
-    if (p == null) return const <AudioCue>[];
-    final File f = File(p);
-    final String ext = p.split('.').last.toLowerCase();
+    final String? path = _alignmentPath;
+    if (path == null) return const <AudioCue>[];
+    final String ext = path.split('.').last.toLowerCase();
+    // probe 口径与 matcher 管线一致：仅 srt/lrc/vtt/ass；其余（含 ssa/smil/json/
+    // 未知扩展名）返回空——与收敛前的显式四分支 + default 空返回逐位等价
+    // （公共函数 default 落 SRT，故必须先用 supportedFormats 门控）。
+    if (!SasayakiRematch.supportedFormats.contains(ext)) {
+      return const <AudioCue>[];
+    }
     try {
-      switch (ext) {
-        case 'srt':
-          return await SrtParser.parse(srtFile: f, bookKey: widget.bookKey);
-        case 'lrc':
-          return await LrcParser.parse(lrcFile: f, bookKey: widget.bookKey);
-        case 'vtt':
-          return await VttParser.parse(vttFile: f, bookKey: widget.bookKey);
-        case 'ass':
-          return await AssParser.parse(assFile: f, bookKey: widget.bookKey);
-        default:
-          return const <AudioCue>[];
-      }
+      return await parseCuesForFormat(File(path), widget.bookKey, 0);
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.parseCues', e, stack);
       debugPrint('[hibiki-audiobook] probe parseCues failed: $e');
@@ -818,7 +781,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
       if (mounted) {
         final String? tail =
-            parsed != null ? _summarizeHealth(parsed.health) : null;
+            parsed != null ? summarizeAudiobookHealth(parsed.health) : null;
         final String msg = tail == null
             ? t.audiobook_import_success
             : '${t.audiobook_import_success} · $tail';
@@ -899,16 +862,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
     try {
       reportProgress(0.2, t.import_step_reading_idb);
-      final String extractDir = widget.extractDir!;
-      final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
-      final List<EpubSection> sections = List<EpubSection>.generate(
-        epubBook.chapters.length,
-        (i) => EpubSection(
-          index: i,
-          href: epubBook.chapters[i].href,
-          text: epubBook.chapterPlainText(i),
-        ),
-      );
+      final List<EpubSection> sections =
+          epubSectionsFromExtractDir(widget.extractDir!);
       if (sections.isEmpty) {
         return AudiobookHealth.failed(
           reason: 'EPUB has 0 chapters',
@@ -954,14 +909,18 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     bool useFragmentHealth = false;
     String formatLabel = format;
 
-    if (format == 'srt') {
-      cues = await SrtParser.parse(srtFile: alignFile, bookKey: widget.bookKey);
-    } else if (format == 'lrc') {
-      cues = await LrcParser.parse(lrcFile: alignFile, bookKey: widget.bookKey);
-    } else if (format == 'vtt') {
-      cues = await VttParser.parse(vttFile: alignFile, bookKey: widget.bookKey);
-    } else if (format == 'ass' || format == 'ssa') {
-      cues = await AssParser.parse(assFile: alignFile, bookKey: widget.bookKey);
+    const Set<String> subtitleFormats = <String>{
+      'srt',
+      'lrc',
+      'vtt',
+      'ass',
+      'ssa',
+    };
+    if (subtitleFormats.contains(format)) {
+      // 四个字幕分支收敛到公共 parseCuesForFormat：按文件扩展名分派，与原
+      // 显式分支逐字节等价（持久化副本保留原 basename/扩展名，见
+      // AudiobookStorage.persistFileWithProgress 的碰撞改名逻辑）。
+      cues = await parseCuesForFormat(alignFile, widget.bookKey, 0);
     } else if (format == 'json') {
       cues = await JsonAlignmentParser.parse(
           jsonFile: alignFile, bookKey: widget.bookKey);
@@ -1015,22 +974,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       ratePct: pct,
       reason: '$intact/${cues.length} cues have fragment id',
     );
-  }
-
-  /// 把 [AudiobookHealth] 压成一段 toast 尾巴；notApplicable/unrun 返回 null
-  /// 省掉冗余提示。
-  String? _summarizeHealth(AudiobookHealth h) {
-    switch (h.kind) {
-      case HealthKind.ok:
-      case HealthKind.partial:
-      case HealthKind.failed:
-        final int p = h.ratePct ?? 0;
-        return t.health_match_summary(pct: p);
-      case HealthKind.notApplicable:
-      case HealthKind.unrun:
-      case HealthKind.running:
-        return null;
-    }
   }
 
   void _enterReplaceSubtitleMode(Audiobook ab) {
@@ -1105,38 +1048,11 @@ class AudiobookImportDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-
-    return HibikiDialogFrame(
-      maxWidth: 560,
-      maxHeightFactor: 0.86,
-      scrollable: false,
-      child: HibikiModalSheetFrame(
-        title: title,
-        leadingIcon: Icons.headphones_outlined,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        scrollable: true,
-        body: content,
-        footer: actions.isEmpty
-            ? null
-            : Wrap(
-                alignment: WrapAlignment.end,
-                spacing: tokens.spacing.gap,
-                runSpacing: tokens.spacing.gap,
-                children: actions,
-              ),
-      ),
+    return ImportDialogFrame(
+      title: title,
+      leadingIcon: Icons.headphones_outlined,
+      body: content,
+      actions: actions,
     );
   }
 }

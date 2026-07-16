@@ -3,8 +3,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart'
     show AudiobookImportDialog;
 
 import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/epub/epub_parser.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart'
+    show epubSectionsFromExtractDir;
 import 'package:hibiki/utils.dart';
 
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
@@ -238,15 +238,7 @@ class SasayakiRematch {
     required String extractDir,
   }) async {
     try {
-      final EpubBook book = EpubParser.parseFromExtracted(extractDir);
-      return List<EpubSection>.generate(
-        book.chapters.length,
-        (i) => EpubSection(
-          index: i,
-          href: book.chapters[i].href,
-          text: book.chapterPlainText(i),
-        ),
-      );
+      return epubSectionsFromExtractDir(extractDir);
     } catch (e, stack) {
       ErrorLogService.instance.log('SasayakiRematch.loadSections', e, stack);
       debugPrint('[hibiki-audiobook] loadSections failed: $e');
@@ -267,15 +259,7 @@ class SasayakiRematch {
         HibikiToast.show(msg: t.sasayaki_no_stored_cues);
         return;
       }
-      final EpubBook book = EpubParser.parseFromExtracted(extractDir);
-      final List<EpubSection> sections = List<EpubSection>.generate(
-        book.chapters.length,
-        (i) => EpubSection(
-          index: i,
-          href: book.chapters[i].href,
-          text: book.chapterPlainText(i),
-        ),
-      );
+      final List<EpubSection> sections = epubSectionsFromExtractDir(extractDir);
       if (sections.isEmpty) {
         HibikiToast.show(msg: t.sasayaki_no_chapters);
         return;
