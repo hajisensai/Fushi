@@ -57,7 +57,6 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
-import 'package:hibiki/src/reader/reader_gamepad_immersive.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/reader/reader_top_progress.dart';
 import 'package:hibiki/src/reader/ttu_toc_flatten.dart';
@@ -1271,11 +1270,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 两栏唤出/收起联动）。改 _chromeTransientVisible 不改预留高 → 不需重锚。
   bool _chromeTransientVisible = false;
   Timer? _chromeAutoHideTimer;
-  // TODO-728: true when the chrome was hidden BY the gamepad-present auto-immersive
-  // path (not by the user). Used so that losing the controller restores the
-  // chrome ONLY if the gamepad hid it; a manual toggle clears this flag and takes
-  // ownership (a later controller-gone event then does not fight the user).
-  bool _chromeHiddenByGamepad = false;
   double _lastSyncedWidth = 0;
   double _lastSyncedHeight = 0;
   // TODO-690 / BUG-399：桌面拖窗口边框 resize 的尾沿防抖。阅读器树内的透明
@@ -1490,26 +1484,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         },
       ));
     };
-    // TODO-728: controller presence changes drive the reader's auto-immersive
-    // mode. The AppModel bridge already gates on gamepadAutoImmersive, so this
-    // only fires when the user opted in.
-    ReaderHibikiSource.onGamepadPresenceChanged = (bool present) {
-      if (!mounted) return;
-      _applyGamepadPresence(present);
-    };
-    // TODO-973: seed from the global single source of truth so a reader opened
-    // while a controller is ALREADY present (the rising edge fired before this
-    // page attached) starts immersive too — the live callback above only carries
-    // future edges. Set the fields directly (NOT via _applyGamepadPresence, which
-    // calls setState — illegal in initState): this is exactly
-    // resolveGamepadImmersive(present:true, showChrome:true, hiddenByGamepad:false)
-    // so the first build already renders chrome-hidden + gamepad-owned. Value
-    // already reflects the gamepadAutoImmersive preference, so this is inert for
-    // opted-out users.
-    if (appModelNoUpdate.gamepadImmersiveActive.value) {
-      _showChrome = false;
-      _chromeHiddenByGamepad = true;
-    }
     _initBook();
   }
 
@@ -1897,7 +1871,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     ReaderHibikiSource.onLayoutReloadLive = null;
     ReaderHibikiSource.onChromeReloadLive = null;
     ReaderHibikiSource.onChromeReanchorLive = null;
-    ReaderHibikiSource.onGamepadPresenceChanged = null;
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {

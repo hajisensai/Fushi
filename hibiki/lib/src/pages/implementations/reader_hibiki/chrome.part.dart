@@ -95,7 +95,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       return;
     }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
-    // wheelPageTurnInterval(450)、音量键 volumePageTurningSpeed(100)、键盘/手柄 0。
+    // wheelPageTurnInterval(450)、音量键固定 defaultScrollingSpeed(100)、键盘/手柄 0。
     // 时间戳语义（与音量键旧 _lastVolumeKeyTime / HBK-AUDIT-120 一致）：读 throttleMs
     // 时即生效，无残留 timer。**只盖在 _paginate 入口**——内部跨章（_handlePageTurnLimit）
     // 已在闸门内、不重复节流，故分页到章末经 _paginate 仍翻得过去（不自吞，4 必补点 #1）。
@@ -816,43 +816,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   // ── Bottom Chrome ─────────────────────────────────────────────────
 
-  // TODO-728: single sink that makes the chrome visible/hidden. Shared by the
-  // user toggle ([_toggleChrome]) and the gamepad-presence path
-  // ([_applyGamepadPresence]). It ONLY flips _showChrome + reapplies insets +
-  // requestFocus() -- it NEVER touches the focus model beyond the same cheap
-  // requestFocus() the old _toggleChrome did (TODO-700 invariant: focus stays on
-  // the reading content; the bottom bar remains ExcludeFocus and out of the
-  // traversal pool). No-op when already in the requested state so a redundant
-  // gamepad event does not re-run the WebView inset eval.
-  void _setChromeVisible(bool visible) {
-    if (_showChrome == visible) return;
-    _rebuild(() {
-      _showChrome = visible;
-    });
-    _applyChromeInsets();
-    // BUG-712 ①：chrome 可见性是 JS 侧点词门控镜像的一半，翻转即同步。
-    _syncTapGateJs();
-    _focusNode.requestFocus();
-  }
-
-  /// TODO-728: applies the gamepad auto-immersive rule. [present] true while a
-  /// controller is in use, false once it is gone. Hiding is recorded in
-  /// [_chromeHiddenByGamepad] so only a gamepad-driven hide is auto-restored when
-  /// the controller leaves; a manual toggle in between clears the flag and wins.
-  void _applyGamepadPresence(bool present) {
-    final GamepadImmersiveState next = resolveGamepadImmersive(
-      present: present,
-      showChrome: _showChrome,
-      hiddenByGamepad: _chromeHiddenByGamepad,
-    );
-    _chromeHiddenByGamepad = next.hiddenByGamepad;
-    _setChromeVisible(next.showChrome);
-  }
-
   void _toggleChrome() {
-    // A manual toggle takes ownership: clear the gamepad-hide flag so a later
-    // controller-gone event does not override the user's explicit choice.
-    _chromeHiddenByGamepad = false;
     _rebuild(() {
       _showChrome = !_showChrome;
     });

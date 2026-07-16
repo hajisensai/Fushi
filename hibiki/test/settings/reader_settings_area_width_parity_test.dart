@@ -48,9 +48,6 @@ class _WidthTestAppModel extends AppModel {
 
   @override
   bool get reverseReaderBottomBar => false;
-
-  @override
-  bool get gamepadAutoImmersive => false;
 }
 
 SettingsDestination _oneSwitchDestination() {

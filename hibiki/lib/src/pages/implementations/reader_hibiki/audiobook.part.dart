@@ -187,13 +187,13 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     );
     VolumeKeyChannel.instance.setInterceptEnabled(true);
     debugPrint('[ReaderHibiki] volume key handlers installed '
-        '(inverted=${src.volumePageTurningInverted}, '
-        'speed=${src.volumePageTurningSpeed}ms)');
+        '(inverted=${src.volumePageTurningInverted})');
   }
 
   void _onVolumeKey({required bool isUp}) {
     final ReaderHibikiSource src = ReaderHibikiSource.instance;
-    final int speedMs = src.volumePageTurningSpeed;
+    // 音量键翻页/句子导航共用固定节流（原可调「翻页速度」已移除，TODO-737）。
+    final int speedMs = ReaderHibikiSource.defaultScrollingSpeed;
     final bool inverted = src.volumePageTurningInverted;
     final bool goForward = inverted ? isUp : !isUp;
 
@@ -216,8 +216,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       return;
     }
 
-    // TODO-737: 翻页分支的节流归一到 _paginate 入口时间戳闸门（throttleMs:
-    // volumePageTurningSpeed），与滚轮共用 _lastPaginateTime，删音量键自有翻页节流。
+    // TODO-737: 翻页分支的节流归一到 _paginate 入口时间戳闸门（固定 throttleMs =
+    // defaultScrollingSpeed），与滚轮共用 _lastPaginateTime，删音量键自有翻页节流。
     _paginate(
       goForward
           ? ReaderNavigationDirection.forward
