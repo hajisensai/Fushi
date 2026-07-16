@@ -85,8 +85,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
   'lookup/Bottom-docked popup':
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  // 持久化/焦点/写穿由 settings_flatten_anki_profile_test 覆盖；真正加标签的消费点在
+  // 制卡路径 reader_hibiki/mining.part.dart 与 video_hibiki/lookup_mining.part.dart 的
+  // bookTitleTag（读 appModel.autoAddBookNameToTags）。原 tags_field_auto_add_book_test
+  // 测的是已删死契约 TagsField.onCreatorOpenAction，已随该契约删除。
   'cardCreation/Auto-add book title to tags':
-      'test/creator/tags_field_auto_add_book_test.dart',
+      'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
+          'reader_hibiki/mining.part.dart & video_hibiki/lookup_mining.part.dart (bookTitleTag)',
   // TODO-757: 压缩制卡媒体开关。写 AppModel.compressMiningMedia（prefsRepo），
   // 焦点遍历能切到并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非
   // reader CSS / 主题树），无适用探针；由专项纯函数 + pref round-trip 守卫覆盖。

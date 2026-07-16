@@ -6,7 +6,6 @@ import 'package:progress_indicators/progress_indicators.dart';
 import 'package:gap/gap.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/creator.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
@@ -32,18 +31,6 @@ class ImageField extends ImageExportField {
 
   @override
   String getLocalisedLabel(AppModel appModel) => t.creator_field_image;
-
-  @override
-  String? onCreatorOpenAction({
-    required WidgetRef ref,
-    required AppModel appModel,
-    required CreatorModel creatorModel,
-    required DictionaryEntry entry,
-    required bool creatorJustLaunched,
-    required String? dictionaryName,
-  }) {
-    return null;
-  }
 
   @override
   Widget buildTopWidget({

@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/models.dart';
 
 /// An entity that represents a broad characteristic of an item being
@@ -60,22 +58,5 @@ abstract class Field {
   String getLocalisedDescription(AppModel appModel) {
     return descriptionLocalisation[appModel.appLocale.toLanguageTag()] ??
         description;
-  }
-
-  /// Return the value that this field must have upon opening the Card Creator.
-  /// For example, the Sentence field must provide the current context or the
-  /// sentence that is stored in the app state, while the Image field may be
-  /// used to return a snapshot of the current app context.
-  String? onCreatorOpenAction({
-    required WidgetRef ref,
-    required AppModel appModel,
-    required CreatorModel creatorModel,
-    required DictionaryEntry entry,
-    required bool creatorJustLaunched,
-    required String? dictionaryName,
-  }) {
-    throw UnimplementedError(
-      'Field must generate a value upon opening creator',
-    );
   }
 }
