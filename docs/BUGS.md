@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 834 条。点号进各自文件。
+> 共 835 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-853](bugs/BUG-853-video-ime-space-pause.md) | ✅ | ✅ | 日语输入法激活时视频页按空格无法暂停 |
 | [BUG-852](bugs/BUG-852-lyrics-blur-exposes-context.md) | ✅ | ✅ | 歌词模式模糊只盖当前句，前后文暴露 |
 | [BUG-851](bugs/BUG-851-dict-dark-usage-tag-washed.md) | ✅ | ✅ | ダークモードで辞書の使い方タグがライト背景のまま浮く |
 | [BUG-850](bugs/BUG-850-dict-ruby-hspacing-overlap.md) | ✅ | ✅ | 辞書例文の逐字ルビが横方向に重なる |

@@ -70,7 +70,7 @@ import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 // TODO-1342：视频播放器手柄映射。GamepadButtonIntent（桌面轮询派发）+ GamepadButton
 // （原生按键归一）+ ShortcutAction/ShortcutScope（video 作用域绑定解析）。
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent;
+    show GamepadButtonIntent, focusedEditableText;
 import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
@@ -3726,6 +3726,40 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         : KeyEventResult.ignored;
   }
 
+  /// BUG-853 / TODO-847 对齐：Windows 微软 IME 激活时裸 Space 的 `logicalKey` 被引擎
+  /// 改写成 [LogicalKeyboardKey.process]，视频页两条空格「播放/暂停」路径
+  /// （media_kit controls 的 `keyboardShortcuts` 与页级 [_withPageSpaceOverride]）都用
+  /// `SingleActivator(LogicalKeyboardKey.space)` 匹配 `logicalKey`，故 IME 下按空格既不
+  /// 被内层消费、也不被页级兜底消费，最终上浮到本最外层 [Focus]（[_wrapVideoGamepadControls]
+  /// 是 [_videoFocusNode] 及所有子焦点节点的祖先，冒泡最后到这里）。这里按**物理键**
+  /// 还原 Space 语义，触发与 [_withPageSpaceOverride] 完全一致的 togglePlayPause（同样
+  /// 经 [_runWhenImmersiveAllowsFullControls] 尊重沉浸锁门控）。
+  ///
+  /// 纯识别逻辑抽到可单测的 [isVideoImeSpacePlayPause]。文本框正在 composing 时
+  /// （[focusedEditableText] 非空）不接管，避免 IME 变换候选词按空格误触暂停。只识别
+  /// `process`（IME 专有逻辑键），裸 Space 仍走既有 SingleActivator 路径不变
+  /// （Never break userspace）。
+  bool _handleVideoImeSpacePlayPause(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return false;
+    final bool hasModifier = HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isShiftPressed ||
+        HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+    final bool hit = isVideoImeSpacePlayPause(
+      logicalKey: event.logicalKey,
+      physicalKey: event.physicalKey,
+      hasModifier: hasModifier,
+      hasEditableFocus: focusedEditableText() != null,
+    );
+    if (!hit) return false;
+    _runWhenImmersiveAllowsFullControls(
+      () => unawaited(controller.playOrPause()),
+    );
+    return true;
+  }
+
   /// TODO-1342：把整页子树包进手柄输入层。外层 [Actions] 接桌面轮询派发的
   /// [GamepadButtonIntent]；内层 [Focus] 只旁观 Android 原生手柄按键的冒泡（不夺焦、
   /// 不参与焦点遍历，故不干扰 [_videoFocusNode] 的键盘持焦与既有 [autofocus] 时序）。
@@ -3740,7 +3774,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       child: Focus(
         canRequestFocus: false,
         skipTraversal: true,
-        onKeyEvent: _handleVideoGamepadNativeKey,
+        onKeyEvent: (FocusNode node, KeyEvent event) {
+          // BUG-853：IME 改写成 process 的裸空格上浮到此，先按物理键还原播放/暂停；
+          // 其余键交回手柄原生入口，行为不变。
+          if (_handleVideoImeSpacePlayPause(event)) {
+            return KeyEventResult.handled;
+          }
+          return _handleVideoGamepadNativeKey(node, event);
+        },
         child: child,
       ),
     );
