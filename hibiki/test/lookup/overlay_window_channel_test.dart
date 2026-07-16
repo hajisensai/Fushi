@@ -82,6 +82,9 @@ void main() {
         'workH': 1400,
         'cursorWorkX': 120,
         'cursorWorkY': 80,
+        // BUG-852 — 光标显示器 dpr（native 用 FlutterDesktopGetDpiForMonitor
+        // 上报）；Dart 必须用它（而非主窗口 dpr）把上面的物理 px 换算成 CSS px。
+        'monitorDpr': 1.25,
       };
     });
     const OverlayWindowChannel panel =
@@ -93,5 +96,21 @@ void main() {
     expect(r.workHeight, 1400);
     expect(r.cursorWorkX, 120);
     expect(r.cursorWorkY, 80);
+    expect(r.monitorDpr, 1.25);
+  });
+
+  test('showAt 旧 native 回复（无 monitorDpr 键）回退 0', () async {
+    // BUG-852 — 旧 native / 查询失败：monitorDpr 缺省 0，controller 据此回退主窗口
+    // dpr（行为与修复前逐字节一致，Never break userspace）。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(HibikiChannels.clipboardPanel,
+            (MethodCall call) async {
+      return <String, Object?>{'ok': true, 'workW': 1920, 'workH': 1040};
+    });
+    const OverlayWindowChannel panel =
+        OverlayWindowChannel(HibikiChannels.clipboardPanel);
+    final GlobalLookupShowResult r =
+        await panel.showAt(x: 0, y: 0, width: 380, height: 520);
+    expect(r.monitorDpr, 0);
   });
 }

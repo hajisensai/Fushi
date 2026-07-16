@@ -124,15 +124,19 @@ String buildFrameSettingsJs({
 /// [frame] supplies the stack identity/linkage (id, parentIndex); [result]
 /// supplies the per-frame entries; [anchorRect] is the screen-space CSS px
 /// anchor (the cursor for the root, the clicked word for a child) the card
-/// cascades off of via [computeFrameRect]; [isVertical] selects the vertical-
-/// writing (left/right) cascade. anchorRect null falls back to the placeholder
-/// fan-out offset ([kGlobalLookupCascadeStep]).
+/// cascades off of via [computeFrameRect]. anchorRect null falls back to the
+/// placeholder fan-out offset ([kGlobalLookupCascadeStep]).
+///
+/// BUG-852 — there is deliberately NO vertical-writing flag here: every
+/// anchored frame is a word inside a popup card (always horizontal text), so
+/// the cascade is always horizontal, mirroring the in-app
+/// `base_source_page._layerVerticalWriting` gate (nested-from-popup layers
+/// never inherit the book's writing mode).
 class GlobalLookupFramePayload {
   const GlobalLookupFramePayload({
     required this.frame,
     required this.result,
     this.anchorRect,
-    this.isVertical = false,
     this.sentence = '',
     this.sentenceOnly = false,
   });
@@ -152,24 +156,7 @@ class GlobalLookupFramePayload {
   /// Screen-space CSS px anchor rect (selection / clicked word). Null when the
   /// caller has no anchor yet (placeholder cascade offset is used instead).
   final Rect? anchorRect;
-
-  /// Vertical-writing book (the cascade goes left/right instead of up/down).
-  final bool isVertical;
 }
-
-/// TODO-938 — resolves the cascade vertical-writing flag for a global-lookup
-/// stack from the active reader's [ReaderSettings.writingMode]. The
-/// bare-WebView2 overlay can pop up over ANY foreground app, so there may be no
-/// active reader (no book open) — in that case [writingMode] is null and we
-/// fall back to false (horizontal cascade), exactly as before. When a
-/// vertical-writing book IS the last-active reader, nested lookup cards cascade
-/// left/right instead of up/down, matching the in-app reader's own判据
-/// ([ReaderContentStyles] uses the same `writingMode.startsWith('vertical')`).
-/// This is the ONE field the app-outside path still hardcoded; everything else
-/// (theme/zoom/font/flags) already flows through the shared
-/// [buildPopupSettingsJs] (TODO-895).
-bool isVerticalFromWritingMode(String? writingMode) =>
-    writingMode?.startsWith('vertical') ?? false;
 
 /// Deterministic placeholder cascade offset (CSS px) per stack depth, used ONLY
 /// when a frame has no real [GlobalLookupFramePayload.anchorRect] yet (defensive
@@ -311,7 +298,6 @@ String buildStackRenderScript({
       screenHeight: screenHeight,
       maxWidth: maxWidth,
       maxHeight: maxHeight,
-      isVertical: p.isVertical,
       selectionScreenOffset: selectionScreenOffset,
       rootShellOffset: rootShellOffset,
     );
@@ -352,7 +338,6 @@ Map<String, Object?> _frameRectMap({
   required double screenHeight,
   required double maxWidth,
   required double maxHeight,
-  required bool isVertical,
   Offset selectionScreenOffset = Offset.zero,
   ({double left, double top}) rootShellOffset = (left: 0.0, top: 0.0),
 }) {
@@ -367,13 +352,18 @@ Map<String, Object?> _frameRectMap({
     // the cascade math, then shift the result back to window-local for the host
     // shell. computeFrameRect stays a pure single-domain function (unchanged).
     final Rect shiftedAnchor = anchorRect.shift(selectionScreenOffset);
+    // BUG-852 — isVertical is ALWAYS false: the anchor is a word inside a popup
+    // card (horizontal text), so the child cascades above/below it, mirroring
+    // the in-app nested gate (base_source_page._layerVerticalWriting). The
+    // former TODO-938/BUG-453 writingMode wiring put vertical-book users' child
+    // cards left/right of the word at a fixed maxHeight (wrong position).
     final GlobalLookupFrameRect r = computeFrameRect(
       selectionRect: shiftedAnchor,
       screenW: screenWidth,
       screenH: screenHeight,
       maxWidth: maxWidth,
       maxHeight: maxHeight,
-      isVertical: isVertical,
+      isVertical: false,
     );
     return <String, Object?>{
       'left': r.left - selectionScreenOffset.dx,
@@ -382,24 +372,22 @@ Map<String, Object?> _frameRectMap({
       'height': r.height,
     };
   }
-  // TODO-1189 — anchorless fallback. The old diagonal (left=top=offset) IGNORED
-  // the writing mode and stepped every layer DOWN-RIGHT, so a vertical-writing
-  // cascade drifted over the following kana columns. Step along the writing
-  // mode's SECONDARY axis only (never diagonally), mirroring computeFrameRect's
-  // real cascade axis: horizontal writing stacks DOWN (top), vertical writing
-  // stacks to the RIGHT (left) — the same side computeFrameRect prefers via
-  // showOnRight. The root (depth 0) still lands at the window origin (offset 0),
-  // so a single-frame lookup is unchanged. This branch is only reached when a
-  // frame has no real anchorRect (host failed to re-anchor); with an anchor the
-  // geometry comes from computeFrameRect above.
+  // TODO-1189 / BUG-852 — anchorless fallback steps every layer DOWN only
+  // (never diagonally), mirroring computeFrameRect's real cascade axis. The
+  // cascade is always horizontal (see the BUG-852 note on
+  // [GlobalLookupFramePayload]), so the former vertical (rightward) fan-out
+  // branch is gone. The root (depth 0) still lands at the window origin
+  // (offset 0), so a single-frame lookup is unchanged. This branch is only
+  // reached when a frame has no real anchorRect (host failed to re-anchor);
+  // with an anchor the geometry comes from computeFrameRect above.
   // TODO-1231（BUG-583/670 续）——anchorless 卡（根卡 depth 0 + 防御性 fan-out）以
   // rootShellOffset 为基底：根卡从「恒钉 window-local (0,0) = 光标+8」改为「光标+8
   // 经工作区钳位」（见 computeRootShellOffset），光标四周空间充足时偏移 (0,0) 逐字节
   // 等于旧几何；防御性 fan-out（host 未能 re-anchor 的子卡）跟随根卡基底以保持贴近。
   final double offset = kGlobalLookupCascadeStep * depth;
   return <String, Object?>{
-    'left': rootShellOffset.left + (isVertical ? offset : 0.0),
-    'top': rootShellOffset.top + (isVertical ? 0.0 : offset),
+    'left': rootShellOffset.left,
+    'top': rootShellOffset.top + offset,
     'width': maxWidth,
     'height': maxHeight,
   };

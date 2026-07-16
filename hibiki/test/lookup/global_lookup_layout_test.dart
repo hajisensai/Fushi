@@ -815,15 +815,11 @@ void main() {
           reason: 'the render builder must clamp the root via the pure helper');
       expect(body.contains('rootShellOffset: rootShellOffset'), isTrue,
           reason: 'the offset must be threaded into _frameRectMap');
-      expect(
-          body.contains(
-              "'left': rootShellOffset.left + (isVertical ? offset : 0.0)"),
-          isTrue,
+      // BUG-852 — the fan-out is horizontal-only (down): the former vertical
+      // (rightward) branch is gone with the writingMode wiring.
+      expect(body.contains("'left': rootShellOffset.left,"), isTrue,
           reason: 'the anchorless branch must base its left on the root clamp');
-      expect(
-          body.contains(
-              "'top': rootShellOffset.top + (isVertical ? 0.0 : offset)"),
-          isTrue,
+      expect(body.contains("'top': rootShellOffset.top + offset,"), isTrue,
           reason: 'the anchorless branch must base its top on the root clamp');
     });
   });

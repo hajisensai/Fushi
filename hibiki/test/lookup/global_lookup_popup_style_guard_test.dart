@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/global_lookup_render.dart';
 
 /// TODO-867 P2 — guards for the app-OUTSIDE global-lookup popup styling.
 ///
@@ -462,46 +461,90 @@ void main() {
     });
   });
 
-  group('TODO-938 — vertical cascade wired from writingMode', () {
-    // App-OUTSIDE global lookup popped its nested cards with isVertical
-    // HARDCODED false, so a vertical-writing book's lookup cards always cascaded
-    // up/down (horizontal-writing layout). The render styling itself is already
-    // shared with the in-app popup (TODO-895); this was the one布局参数 still
-    // hardcoded. The fix reads the active reader's writingMode (same接口/判据 as
-    // the in-app reader) with a null fallback for the over-another-app case.
-    test('isVerticalFromWritingMode: vertical modes -> true', () {
-      expect(isVerticalFromWritingMode('vertical-rl'), isTrue);
-      expect(isVerticalFromWritingMode('vertical-lr'), isTrue);
-    });
-
-    test('isVerticalFromWritingMode: horizontal / null / empty -> false', () {
-      expect(isVerticalFromWritingMode('horizontal-tb'), isFalse,
-          reason: 'horizontal book cascades up/down');
-      expect(isVerticalFromWritingMode(null), isFalse,
-          reason: 'no active reader (lookup over another app) -> horizontal');
-      expect(isVerticalFromWritingMode(''), isFalse);
-    });
-
-    test('controller no longer hardcodes isVertical:false; reads writingMode',
-        () {
+  group('BUG-852 — overlay cascade is ALWAYS horizontal (supersedes TODO-938)',
+      () {
+    // BUG-453/TODO-938 wired the READER's writingMode into the overlay cascade
+    // "for in-app parity" — but the in-app reference had already gated vertical
+    // placement to the ROOT layer only (base_source_page._layerVerticalWriting:
+    // `index == 0 && …`, 2026-06-08): nested-from-popup layers are ALWAYS
+    // horizontal because a popup card's content is always horizontal text. The
+    // overlay's only isVertical consumers were exactly those nested cards, so
+    // the wiring mis-placed every nested card for vertical-book users (child
+    // popped left/right of the word at a fixed maxHeight). These guards lock
+    // the corrected truth: no writingMode reaches the overlay cascade.
+    test('controller does not read writingMode for the cascade', () {
       final String controller =
           read('lib/src/lookup/global_lookup_controller.dart');
-      // The dead `isVertical: false,` literal in the stack payload must be gone.
-      expect(controller.contains('isVertical: false'), isFalse,
-          reason: 'the hardcoded false cascade flag must be removed');
-      // It must now derive the flag from the active reader writingMode via the
-      // shared判据 helper.
-      // Whitespace-collapsed so dart format line-wrapping at the `(` can't break
-      // the match (the call is long and the formatter splits the argument).
       final String controllerFlat = controller.replaceAll(RegExp(r'\s+'), ' ');
       expect(
-        controllerFlat.contains(
-            'isVerticalFromWritingMode( ReaderHibikiSource.readerSettings?.writingMode)'),
-        isTrue,
-        reason: 'cascade vertical flag must come from the reader writingMode',
+        controllerFlat.contains('isVerticalFromWritingMode('),
+        isFalse,
+        reason: 'the writingMode→cascade wiring (BUG-453) must stay removed — '
+            'nested overlay cards anchor at words inside a HORIZONTAL popup '
+            'card (in-app parity: base_source_page._layerVerticalWriting '
+            'forces nested layers horizontal)',
       );
-      expect(controller.contains('isVertical: isVertical'), isTrue,
-          reason: 'the resolved flag must feed the frame payload');
+      expect(controller.contains('isVertical:'), isFalse,
+          reason: 'the frame payload no longer carries a vertical flag');
+    });
+
+    test('render anchors nested cards with isVertical: false', () {
+      final String render = read('lib/src/lookup/global_lookup_render.dart');
+      final String renderFlat = render.replaceAll(RegExp(r'\s+'), ' ');
+      expect(
+        renderFlat.contains('isVertical: false,'),
+        isTrue,
+        reason: 'computeFrameRect must be fed the horizontal cascade '
+            '(anchors are words inside a horizontal popup card)',
+      );
+      expect(render.contains('isVerticalFromWritingMode'), isFalse,
+          reason: 'the writingMode helper must stay deleted (dead wiring)');
+      expect(render.contains('this.isVertical'), isFalse,
+          reason: 'GlobalLookupFramePayload must not re-grow a vertical flag');
+    });
+
+    test('controller converts the work-area domain with the MONITOR dpr', () {
+      // BUG-852（多显示器混缩放）— native showAt 上报光标显示器的物理 px 工作区
+      // + monitorDpr；覆盖窗 WebView2 按它自己所在显示器的缩放光栅化，故换算成
+      // CSS px 必须用 monitorDpr（0 = native 查询失败，回退主窗口 dpr）。有人把
+      // 除数改回主窗口 dpr（修复前行为）本测试转红。
+      final String controller =
+          read('lib/src/lookup/global_lookup_controller.dart');
+      final String flat = controller.replaceAll(RegExp(r'\s+'), ' ');
+      expect(
+        flat.contains('shown.monitorDpr > 0 ? shown.monitorDpr : dpr'),
+        isTrue,
+        reason: 'work-area conversion must prefer the anchor monitor dpr',
+      );
+      expect(flat.contains('shown.workWidth / workDpr'), isTrue,
+          reason: 'workWidth must be divided by the monitor dpr');
+      expect(flat.contains('shown.cursorWorkX / workDpr'), isTrue,
+          reason: 'cursorWorkX must be divided by the monitor dpr');
+    });
+
+    test('native showAt reports the anchor monitor dpr', () {
+      final String cpp = read('windows/runner/flutter_window.cpp');
+      expect(
+        cpp.contains('FlutterDesktopGetDpiForMonitor(monitor) / 96.0'),
+        isTrue,
+        reason: 'showAt must report the cursor monitor dpr for the CSS px '
+            'conversion (BUG-852 mixed-scale multi-monitor)',
+      );
+      expect(cpp.contains('"monitorDpr"'), isTrue,
+          reason: 'the reply map must carry the monitorDpr key');
+    });
+
+    test('native RevealStack folds the work-area clamp into the layer shift',
+        () {
+      // BUG-852 — RevealStack 的工作区钳位可能悄悄移动窗口原点；layer shift 若仍按
+      // 「意图原点」计算，整条级联（根+嵌套）在屏上平移钳位差量。钳位差量必须折进
+      // commitLayerShift 实参。
+      final String cpp = read('windows/runner/global_lookup_window.cpp');
+      final String flat = cpp.replaceAll(RegExp(r'\s+'), ' ');
+      expect(flat.contains('bbox_left + clamp_dx_css'), isTrue,
+          reason: 'the X clamp delta must be folded into commitLayerShift');
+      expect(flat.contains('bbox_top + clamp_dy_css'), isTrue,
+          reason: 'the Y clamp delta must be folded into commitLayerShift');
     });
   });
 

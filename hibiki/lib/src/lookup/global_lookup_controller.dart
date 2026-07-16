@@ -530,15 +530,22 @@ class GlobalLookupController {
               width: w0,
               height: h0,
               atCursor: false);
-      // TODO-893 — convert the native physical-px work area to CSS px (the
-      // cascade layout domain) with the same dpr used for window geometry, so
-      // _renderStack's computeFrameRect reasons about the real monitor.
-      _screenWorkW = shown.workWidth > 0 ? shown.workWidth / dpr : 0;
-      _screenWorkH = shown.workHeight > 0 ? shown.workHeight / dpr : 0;
+      // TODO-893 / BUG-852 — convert the native physical-px work area to CSS px
+      // (the cascade layout domain) with the ANCHOR MONITOR's dpr reported by
+      // showAt. The main-window dpr (used for the initial off-screen size
+      // above) is only correct when the overlay lands on the same-scale
+      // monitor; on a mixed-scale setup the overlay WebView2 rasterizes at its
+      // own monitor's scale, so dividing by the main dpr put the work-area
+      // domain in the wrong CSS scale (mis-placed nested cards + broken
+      // reserve-to-edge clamp invariant). Fall back to the main dpr when the
+      // native monitor query failed (monitorDpr 0).
+      final double workDpr = shown.monitorDpr > 0 ? shown.monitorDpr : dpr;
+      _screenWorkW = shown.workWidth > 0 ? shown.workWidth / workDpr : 0;
+      _screenWorkH = shown.workHeight > 0 ? shown.workHeight / workDpr : 0;
       // TODO-893 v2 (symptom 3) — same dpr boundary: the native cursor/work
       // offset is physical px; convert to CSS px for the cascade layout domain.
-      _cursorWorkX = dpr > 0 ? shown.cursorWorkX / dpr : 0;
-      _cursorWorkY = dpr > 0 ? shown.cursorWorkY / dpr : 0;
+      _cursorWorkX = workDpr > 0 ? shown.cursorWorkX / workDpr : 0;
+      _cursorWorkY = workDpr > 0 ? shown.cursorWorkY / workDpr : 0;
       // TODO-1345 (BUG-583) / TODO-1231 (BUG-670 deep cascade) — reserve cascade
       // headroom ALL THE WAY to the cursor monitor's work-area edge so a subsequent
       // up/left child at ANY depth (child / grandchild / a card taller than one
@@ -1100,11 +1107,15 @@ class GlobalLookupController {
     }
     final List<GlobalLookupFramePayload> payloads =
         <GlobalLookupFramePayload>[];
-    // TODO-938 — pop the cascade left/right when the last-active reader is a
-    // vertical-writing book; null (no book open / lookup over another app)
-    // falls back to the horizontal cascade. Same判据 as the in-app reader.
-    final bool isVertical = isVerticalFromWritingMode(
-        ReaderHibikiSource.readerSettings?.writingMode);
+    // BUG-852 — the cascade is ALWAYS horizontal. Every anchored frame in this
+    // stack is a word inside a popup CARD (whose content is always horizontal
+    // text); the root is anchorless (cursor-placed). The in-app reference forces
+    // exactly this (base_source_page._layerVerticalWriting: index == 0 && …—
+    // nested-from-popup layers never inherit the book's vertical writing), so
+    // the former TODO-938/BUG-453 wiring that fed the READER's writingMode into
+    // the overlay cascade mis-placed every nested card for vertical-book users
+    // (child popped left/right of the word at a fixed maxHeight instead of
+    // below/above it).
     for (final GlobalLookupFrame frame in _stack.frames) {
       final DictionarySearchResult? result = _frameResults[frame.id];
       if (result == null) {
@@ -1121,7 +1132,6 @@ class GlobalLookupController {
         frame: frame,
         result: result,
         anchorRect: _frameAnchors[frame.id],
-        isVertical: isVertical,
         sentence: (isRoot && _showSentenceBanner) ? _currentSentence : '',
       ));
     }
