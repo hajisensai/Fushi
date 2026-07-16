@@ -239,7 +239,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // resolveReaderArrowPageTurn 的 reverse 参数），由专项纯函数测试覆盖。
   'reading/Reverse arrow-key page turn direction':
       'test/reader/reader_space_pause_test.dart',
-  'reading/Volume key page turning speed': 'DEVICE: native volume-key throttle',
   'reading/Mouse wheel page-turn interval':
       'DEVICE: WebView wheel page-turn throttle',
   'reading/Swipe page-turn sensitivity':
@@ -334,11 +333,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // not reader CSS / theme tree); covered by pure-fn mapping + tap-toggle guard.
   'reading/Progress position':
       'test/reader/reader_top_progress_test.dart + test/media/sources/reader_chrome_prefs_728_test.dart',
-  // TODO-728: gamepad auto-immersive. Effect point is GamepadService presence ->
-  // reader _applyGamepadPresence chrome hide/restore (desktop gamepad, no render
-  // tree); covered by the presence + ownership unit tests.
-  'reading/Auto-immersive on gamepad':
-      'test/shortcuts/gamepad_presence_test.dart + test/reader/reader_gamepad_immersive_test.dart',
 };
 
 /// 焦点驱动的 settings schema **全分组**覆盖测试（Phase 1 Task 4）。

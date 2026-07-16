@@ -47,7 +47,7 @@ extension _ReaderLookup on _ReaderHibikiPageState {
 
   /// BUG-712 ①：把点词门控（chrome 可见性 / highlightOnTap）只读镜像同步进阅读器
   /// JS 的 `window.__hoshiTapGate`。Dart 是唯一写者：初始值随 setup 脚本注入，
-  /// 之后 chrome 翻转（[_setChromeVisible] / [_toggleChrome]）与设置热更新
+  /// 之后 chrome 翻转（[_toggleChrome]）与设置热更新
   /// （onSettingsChangedLive）各刷一次。JS 侧据此在 tap 命中时直接 selectText
   /// （砍掉 onTap→Dart→eval 来回）；镜像缺失时 JS 回落旧 onTap 链，行为安全。
   /// fire-and-forget：半销毁 WebView 的 eval 异常就地吞掉（同 [_selectTextAt] 成例）。

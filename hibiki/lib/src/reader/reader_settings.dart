@@ -505,10 +505,6 @@ class ReaderSettings {
   Future<void> toggleInvertAudiobookSkipDirection() => _set<bool>(
       'invert_audiobook_skip_direction', !invertAudiobookSkipDirection);
 
-  int get volumePageTurningSpeed => _get<int>('volume_page_turning_speed', 100);
-  Future<void> setVolumePageTurningSpeed(int v) =>
-      _set<int>('volume_page_turning_speed', v);
-
   // ── Custom fonts (catalog + per-target refs) ─────────────────────
   //
   // TODO-225 / TODO-221A: fonts now persist as a shared `font_catalog` plus

@@ -236,9 +236,6 @@ class _NoticeTestAppModel extends AppModel {
 
   @override
   bool get reverseReaderBottomBar => false;
-
-  @override
-  bool get gamepadAutoImmersive => false;
 }
 
 class _StubSettingsContext implements SettingsContext {
