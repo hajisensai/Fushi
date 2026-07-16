@@ -681,10 +681,7 @@ class BackupService {
     try {
       input = InputFileStream(zipPath);
       final Archive archive = ZipDecoder().decodeBuffer(input);
-      final ArchiveFile? metaFile = archive.findFile(_metaName);
-      final BackupMeta? meta = metaFile == null
-          ? null
-          : BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
+      final BackupMeta? meta = _readBackupMeta(archive);
       final List<String> names = archive.files
           .where((ArchiveFile f) => f.isFile)
           .map((ArchiveFile f) => f.name)
@@ -1649,10 +1646,7 @@ class BackupService {
     try {
       input = InputFileStream(zipPath);
       final archive = ZipDecoder().decodeBuffer(input);
-      final metaFile = archive.findFile(_metaName);
-      if (metaFile == null) return null;
-      final metaJson = utf8.decode(metaFile.content as List<int>);
-      final meta = BackupMeta.tryParse(metaJson);
+      final BackupMeta? meta = _readBackupMeta(archive);
       if (meta == null) return null;
       if (archive.findFile(_dbName) == null) return null;
       return meta;
@@ -1718,23 +1712,13 @@ class BackupService {
       final dbFile = archive.findFile(_dbName);
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
 
-      // TODO-1183: determinate progress across every streamed byte. Total is the
-      // sum of all content entry sizes; each streamed chunk advances the bar.
-      final int totalBytes = _totalContentBytes(archive);
-      int writtenBytes = 0;
-      void reportBytes(int deltaBytes) {
-        writtenBytes += deltaBytes;
-        final double fraction = writtenBytes / totalBytes;
-        onProgress?.call(fraction > 1.0 ? 1.0 : fraction);
-      }
+      // TODO-1183: determinate progress across every streamed byte.
+      final void Function(int deltaBytes) reportBytes =
+          _archiveByteProgress(archive, onProgress);
 
       // Parse the source-device content roots so book/audio paths can be
       // rebased onto this device after the trees are restored.
-      BackupMeta? meta;
-      final ArchiveFile? metaFile = archive.findFile(_metaName);
-      if (metaFile != null) {
-        meta = BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
-      }
+      final BackupMeta? meta = _readBackupMeta(archive);
       // TODO-1193: a backup that unticked `settings` / `profiles` carries an
       // EMPTY settings / profiles layer BY CHOICE. On an overwrite import the DB
       // is replaced wholesale, so without a guard those empty layers would WIPE
@@ -1994,33 +1978,13 @@ class BackupService {
       //     are content, so they come from the backup in BOTH import modes →
       //     always rebase. No-op for a legacy backup (meta has no roots).
       if (meta != null) {
-        await _rebaseContentPaths(
+        await _rebaseAllPaths(
           dbDirectory: dbDirectory,
           meta: meta,
           newBooksRoot: booksRootDirectory,
           newAudiobooksRoot: effAudiobooksRoot,
-        );
-        // Custom-font config is content too (the files come from the backup),
-        // so rebase its stored paths onto this device's font root. No-op for a
-        // legacy backup (meta has no fontsRoot) or a keep-settings import where
-        // the preserved local paths aren't under the source root.
-        await _rebaseFontPaths(
-          dbDirectory: dbDirectory,
-          meta: meta,
           newFontsRoot: effFontsRoot,
-        );
-        // Local-audio DBs are content (their files come from the backup), so
-        // rebase the stored `local_audio_dbs` pref paths onto this device's
-        // support directory. No-op for a legacy/db-only backup (no
-        // localAudioRoot in meta).
-        await _rebaseLocalAudioPaths(
-          dbDirectory: dbDirectory,
-          meta: meta,
           newLocalAudioRoot: effLocalAudioRoot,
-        );
-        await _rebaseVideoPaths(
-          dbDirectory: dbDirectory,
-          meta: meta,
           newVideosRoot: effVideosRoot,
         );
       }
@@ -2109,19 +2073,10 @@ class BackupService {
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
 
       // TODO-1183: determinate progress across every streamed byte.
-      final int totalBytes = _totalContentBytes(archive);
-      int writtenBytes = 0;
-      void reportBytes(int deltaBytes) {
-        writtenBytes += deltaBytes;
-        final double fraction = writtenBytes / totalBytes;
-        onProgress?.call(fraction > 1.0 ? 1.0 : fraction);
-      }
+      final void Function(int deltaBytes) reportBytes =
+          _archiveByteProgress(archive, onProgress);
 
-      BackupMeta? meta;
-      final ArchiveFile? metaFile = archive.findFile(_metaName);
-      if (metaFile != null) {
-        meta = BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
-      }
+      final BackupMeta? meta = _readBackupMeta(archive);
 
       // 1) Extract the backup DB to a sibling temp file (NEVER overwrite the
       //    live DB). Drop any stale merge-src/-wal/-shm from a prior crash.
@@ -2226,25 +2181,13 @@ class BackupService {
       //    roots. Device-local rows aren't under the backup's source root, so
       //    rebasePath leaves them untouched (a no-op for them).
       if (meta != null) {
-        await _rebaseContentPaths(
+        await _rebaseAllPaths(
           dbDirectory: dbDirectory,
           meta: meta,
           newBooksRoot: booksRootDirectory,
           newAudiobooksRoot: audiobooksRootDirectory,
-        );
-        await _rebaseFontPaths(
-          dbDirectory: dbDirectory,
-          meta: meta,
           newFontsRoot: fontsRootDirectory,
-        );
-        await _rebaseLocalAudioPaths(
-          dbDirectory: dbDirectory,
-          meta: meta,
           newLocalAudioRoot: dbDirectory,
-        );
-        await _rebaseVideoPaths(
-          dbDirectory: dbDirectory,
-          meta: meta,
           newVideosRoot: videosRootDirectory,
         );
       }
@@ -2292,11 +2235,7 @@ class BackupService {
       // TODO-1261: the merge only materialises REACHABLE video rows (streaming
       // or a local file the backup carried), so the preview must count with the
       // same predicate. The carried set is the packed video files (meta.videoFiles).
-      BackupMeta? meta;
-      final ArchiveFile? metaFile = archive.findFile(_metaName);
-      if (metaFile != null) {
-        meta = BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
-      }
+      final BackupMeta? meta = _readBackupMeta(archive);
       final Set<String> carriedVideoSourcePaths =
           meta?.videoFiles.keys.toSet() ?? const <String>{};
 
@@ -3215,6 +3154,46 @@ class BackupService {
     if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
   }
 
+  /// Rebases every stored absolute path carried by the backup DB (which points
+  /// at the SOURCE device's roots) onto THIS device's roots, in the fixed
+  /// content → fonts → local-audio → videos order shared by the overwrite and
+  /// merge imports. Custom-font config and local-audio DB paths are content
+  /// too (their files come from the backup). Each underlying rebase is a no-op
+  /// when the meta carries no matching source root (legacy backup) or the new
+  /// root is null — e.g. a keep-settings import whose preserved local paths
+  /// aren't under the source root, or an unticked import category.
+  static Future<void> _rebaseAllPaths({
+    required String dbDirectory,
+    required BackupMeta meta,
+    required String? newBooksRoot,
+    required String? newAudiobooksRoot,
+    required String? newFontsRoot,
+    required String? newLocalAudioRoot,
+    required String? newVideosRoot,
+  }) async {
+    await _rebaseContentPaths(
+      dbDirectory: dbDirectory,
+      meta: meta,
+      newBooksRoot: newBooksRoot,
+      newAudiobooksRoot: newAudiobooksRoot,
+    );
+    await _rebaseFontPaths(
+      dbDirectory: dbDirectory,
+      meta: meta,
+      newFontsRoot: newFontsRoot,
+    );
+    await _rebaseLocalAudioPaths(
+      dbDirectory: dbDirectory,
+      meta: meta,
+      newLocalAudioRoot: newLocalAudioRoot,
+    );
+    await _rebaseVideoPaths(
+      dbDirectory: dbDirectory,
+      meta: meta,
+      newVideosRoot: newVideosRoot,
+    );
+  }
+
   /// Rebases the imported DB's stored absolute content paths from the backup's
   /// source roots ([BackupMeta.booksRoot] / [BackupMeta.audiobooksRoot]) onto
   /// this device's [newBooksRoot] / [newAudiobooksRoot]. No-op for a legacy
@@ -3541,6 +3520,32 @@ class BackupService {
       total += f.size;
     }
     return total > 0 ? total : 1;
+  }
+
+  /// TODO-1183: determinate progress across every streamed byte. Total is the
+  /// sum of all content entry sizes ([_totalContentBytes]); each streamed
+  /// chunk advances the bar, clamped at 1.0. Returns the `onBytes` callback
+  /// shared by the overwrite- and merge-import extraction helpers.
+  static void Function(int deltaBytes) _archiveByteProgress(
+    Archive archive,
+    void Function(double progress)? onProgress,
+  ) {
+    final int totalBytes = _totalContentBytes(archive);
+    int writtenBytes = 0;
+    return (int deltaBytes) {
+      writtenBytes += deltaBytes;
+      final double fraction = writtenBytes / totalBytes;
+      onProgress?.call(fraction > 1.0 ? 1.0 : fraction);
+    };
+  }
+
+  /// Parses the source-device manifest (`backup_meta.json`) carried by
+  /// [archive]. Null for a legacy backup without one (or an unparseable one).
+  /// Only the tiny meta entry is materialized.
+  static BackupMeta? _readBackupMeta(Archive archive) {
+    final ArchiveFile? metaFile = archive.findFile(_metaName);
+    if (metaFile == null) return null;
+    return BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
   }
 
   // ── TODO-1183: streaming, off-UI-isolate backup extraction ───────────────
