@@ -836,18 +836,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
-  static String _formatDuration(Duration d) {
-    final int totalSeconds = d.inSeconds;
-    final int hours = totalSeconds ~/ 3600;
-    final int minutes = (totalSeconds % 3600) ~/ 60;
-    final int seconds = totalSeconds % 60;
-    final String ss = seconds.toString().padLeft(2, '0');
-    final String mm = minutes.toString().padLeft(2, '0');
-    if (hours > 0) {
-      return '$hours:$mm:$ss';
-    }
-    return '$mm:$ss';
-  }
+  static String _formatDuration(Duration d) => HibikiTimeFormat.clockPadded(d);
 
   Future<void> _doSearch() async {
     final String query = _searchController.text.trim();

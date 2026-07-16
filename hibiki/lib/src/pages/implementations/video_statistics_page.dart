@@ -4,6 +4,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:hibiki/src/pages/implementations/stat_shared.dart';
 import 'package:hibiki/src/pages/implementations/video_stat_aggregates.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -95,8 +96,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         counters.map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount)),
         now,
       );
-      _videoCounters = _aggregateCountersByTitle(counters);
-      _videoFavorites = _aggregateFavoritesByTitle(favs);
+      _videoCounters = aggregateStatCountersByTitle(counters);
+      _videoFavorites = aggregateStatFavoritesByTitle(favs);
       // 视频来源收藏语句（source==video），旧条目无 dateKey 不参与分桶。
       final List<FavoriteSentence> favSentences =
           await FavoriteSentenceRepository(db).getAll();
@@ -123,7 +124,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   Future<void> _loadHourlyData() async {
     final db = appModelNoUpdate.database;
-    final todayKey = _dateKey(DateTime.now());
+    final todayKey = statTodayKey();
     final rows = await db.getVideoHourlyLogsForDate(todayKey);
     _hourlyMs = List.filled(24, 0);
     for (final row in rows) {
@@ -131,46 +132,6 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         _hourlyMs[row.hour] = row.watchTimeMs;
       }
     }
-  }
-
-  /// TODO-1204：查词/制卡计数行按 title 聚合成 (查词数, 制卡数)，供 per-video tile
-  /// 展示（无书查词 title 空跳过，只进汇总）。
-  Map<String, ({int lookups, int mines})> _aggregateCountersByTitle(
-      List<LookupMiningCounterRow> rows) {
-    final Map<String, ({int lookups, int mines})> out =
-        <String, ({int lookups, int mines})>{};
-    for (final LookupMiningCounterRow r in rows) {
-      if (r.title.isEmpty) continue;
-      final ({int lookups, int mines}) prev =
-          out[r.title] ?? (lookups: 0, mines: 0);
-      out[r.title] = (
-        lookups: prev.lookups + r.lookupCount,
-        mines: prev.mines + r.mineCount,
-      );
-    }
-    return out;
-  }
-
-  /// TODO-1252：收藏活行按 [FavoriteWordRow.title] 聚合成每个视频的收藏数，供 per-video
-  /// tile 展示（无书收藏 title 空跳过，只进汇总）。
-  Map<String, int> _aggregateFavoritesByTitle(List<FavoriteWordRow> rows) {
-    final Map<String, int> out = <String, int>{};
-    for (final FavoriteWordRow r in rows) {
-      if (r.title.isEmpty) continue;
-      out[r.title] = (out[r.title] ?? 0) + 1;
-    }
-    return out;
-  }
-
-  static String _dateKey(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  static String _formatTime(int ms) {
-    final totalMin = ms ~/ 60000;
-    if (totalMin < 60) return t.stat_format_minutes(n: totalMin);
-    final h = totalMin ~/ 60;
-    final m = totalMin % 60;
-    return t.stat_format_hours_minutes(h: h, m: m);
   }
 
   @override
@@ -212,7 +173,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildSummaryCards()),
-        SliverToBoxAdapter(child: _buildHourlyChart()),
+        SliverToBoxAdapter(
+            child: buildStatHourlyChartSection(context, _hourlyMs)),
         SliverToBoxAdapter(child: _buildDailyChart()),
         SliverToBoxAdapter(
           child: Padding(
@@ -320,7 +282,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                     )),
             SizedBox(height: tokens.spacing.gap),
             // 删字数后以观看时长为主数字。
-            Text(_formatTime(ms),
+            Text(formatStatTime(ms),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       color: colorScheme.onSurface,
                       fontWeight: FontWeight.bold,
@@ -338,38 +300,6 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                 style: subStyle),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHourlyChart() {
-    final tokens = HibikiDesignTokens.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(t.stat_today_hourly,
-              style: Theme.of(context).textTheme.titleMedium),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          SizedBox(
-            height: 140,
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: StatHourlyChartPainter(
-                hourlyMs: _hourlyMs,
-                barColor: colorScheme.tertiary,
-                barRadius: tokens.radii.chipCorner,
-                labelColor: colorScheme.onSurfaceVariant,
-                labelStyle: tokens.type.metadata.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
-        ],
       ),
     );
   }
@@ -479,7 +409,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                   ),
                   SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
                   Text(
-                    _formatTime(video.ms),
+                    formatStatTime(video.ms),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),

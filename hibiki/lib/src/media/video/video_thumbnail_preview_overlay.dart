@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/video/video_thumbnail_preview_controller.dart';
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
 /// 把 hover 比例 [fraction]（`[0,1]`）映射成浮层左边缘 x（相对 seek bar 轨道左缘）。
 ///
@@ -25,15 +26,8 @@ double thumbnailPreviewLeft(
 }
 
 /// 把毫秒格式化成 `mm:ss` / `h:mm:ss`（>=1 小时带小时）。负值 clamp 到 0。纯函数。
-String formatThumbnailTimestamp(int ms) {
-  final int totalSec = (ms < 0 ? 0 : ms) ~/ 1000;
-  final int h = totalSec ~/ 3600;
-  final int m = (totalSec % 3600) ~/ 60;
-  final int s = totalSec % 60;
-  String two(int v) => v.toString().padLeft(2, '0');
-  if (h > 0) return '$h:${two(m)}:${two(s)}';
-  return '${two(m)}:${two(s)}';
-}
+String formatThumbnailTimestamp(int ms) =>
+    HibikiTimeFormat.clockPadded(Duration(milliseconds: ms < 0 ? 0 : ms));
 
 /// 视频进度条 hover 缩略图预览浮层（TODO-669，方案 A）。
 ///

@@ -1,3 +1,4 @@
+import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -19,9 +20,6 @@ class VideoStatsAggregate {
   List<VideoStatBookData> byVideo = <VideoStatBookData>[];
 }
 
-String _dateKey(DateTime d) =>
-    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
 /// 纯函数：把视频观看统计行 + 完成时间戳列表聚合成 [VideoStatsAggregate]。
 /// 与 reading_statistics_page 的 `_computeAggregates` 同构，但抽成纯函数可单测。
 VideoStatsAggregate computeVideoStats({
@@ -30,9 +28,9 @@ VideoStatsAggregate computeVideoStats({
   required DateTime now,
 }) {
   final agg = VideoStatsAggregate();
-  final todayKey = _dateKey(now);
-  final weekAgoKey = _dateKey(now.subtract(const Duration(days: 7)));
-  final monthAgoKey = _dateKey(now.subtract(const Duration(days: 30)));
+  final todayKey = statDateKey(now);
+  final weekAgoKey = statDateKey(now.subtract(const Duration(days: 7)));
+  final monthAgoKey = statDateKey(now.subtract(const Duration(days: 30)));
 
   final dailyMap = <String, StatDayData>{};
   final bookMap = <String, VideoStatBookData>{};
@@ -64,7 +62,7 @@ VideoStatsAggregate computeVideoStats({
   // 最近 30 天补齐空日期，按日期升序。
   final thirtyDaysAgo = now.subtract(const Duration(days: 29));
   for (int i = 0; i < 30; i++) {
-    final key = _dateKey(thirtyDaysAgo.add(Duration(days: i)));
+    final key = statDateKey(thirtyDaysAgo.add(Duration(days: i)));
     agg.daily.add(dailyMap[key] ?? StatDayData(dateKey: key));
   }
   // 删字数后按观看时长排行（字数仍在 DB/聚合里保留，只是不再展示/排序）。
@@ -72,7 +70,7 @@ VideoStatsAggregate computeVideoStats({
 
   // 完成数按时间戳落入区间（天然去重：completedAt 只记首次）。
   for (final c in completed) {
-    final key = _dateKey(c);
+    final key = statDateKey(c);
     agg.allCompleted++;
     if (key == todayKey) agg.todayCompleted++;
     if (key.compareTo(weekAgoKey) >= 0) agg.weekCompleted++;

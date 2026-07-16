@@ -904,8 +904,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     BackupMergePreview? preview,
     BackupContentSummary summary,
   ) async {
-    final dateStr =
-        '${meta.createdAt.year}-${meta.createdAt.month.toString().padLeft(2, '0')}-${meta.createdAt.day.toString().padLeft(2, '0')}';
+    final String dateStr = HibikiTimeFormat.dayKey(meta.createdAt);
     // Default: OVERWRITE (Never break userspace — the existing behavior), and
     // within overwrite, keep this device's settings (importSettings=false).
     _BackupImportMode mode = _BackupImportMode.overwrite;

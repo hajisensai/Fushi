@@ -74,6 +74,11 @@ class ReaderVisualNovelScripts {
     );
   }
 
+  // 注意：ReaderPaginationScripts._jsStringLiteral 是另一份独立实现（jsonEncode、
+  // 双引号输出）。两侧输出字节形式各被测试钉死（本文件单引号 →
+  // test/reader/vn_shell_smoke_test.dart；分页双引号 →
+  // test/reader/reader_pagination_scripts_test.dart），刻意不共享；本实现已转义
+  // 单引号字面量全部语法破坏字符（\ ' \n \r），改动时必须保持 JS 语法安全。
   static String _jsStringLiteral(String value) {
     final String escaped = value
         .replaceAll(r'\', r'\\')

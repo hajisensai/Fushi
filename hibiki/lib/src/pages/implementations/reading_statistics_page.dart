@@ -5,6 +5,7 @@ import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:hibiki/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:hibiki/src/pages/implementations/stat_ring.dart';
+import 'package:hibiki/src/pages/implementations/stat_shared.dart';
 import 'package:hibiki/src/pages/implementations/stat_summary.dart';
 import 'package:hibiki/src/pages/implementations/stat_trends.dart';
 import 'package:hibiki/utils.dart';
@@ -129,8 +130,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         counters.map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount)),
         now,
       );
-      _bookCounters = _aggregateCountersByTitle(counters);
-      _bookFavorites = _aggregateFavoritesByTitle(favs);
+      _bookCounters = aggregateStatCountersByTitle(counters);
+      _bookFavorites = aggregateStatFavoritesByTitle(favs);
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
       // 旧条目无 dateKey（null）→ 不参与按日分桶（whereType 过滤掉）。
       final List<FavoriteSentence> favSentences =
@@ -152,7 +153,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   Future<void> _loadHourlyData() async {
     final db = appModelNoUpdate.database;
-    final todayKey = _dateKey(DateTime.now());
+    final todayKey = statTodayKey();
     final rows = await db.getHourlyLogsForDate(todayKey);
     _hourlyMs = List.filled(24, 0);
     for (final row in rows) {
@@ -162,43 +163,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     }
   }
 
-  /// TODO-1204：把查词/制卡计数行按 [LookupMiningCounterRow.title] 聚合成
-  /// (查词数, 制卡数)，供 per-book tile 展示。无书查词（title 空）不入 tile，只进
-  /// 汇总面板。聚合键与字数/时长 tile 的 title 一致。
-  Map<String, ({int lookups, int mines})> _aggregateCountersByTitle(
-      List<LookupMiningCounterRow> rows) {
-    final Map<String, ({int lookups, int mines})> out =
-        <String, ({int lookups, int mines})>{};
-    for (final LookupMiningCounterRow r in rows) {
-      if (r.title.isEmpty) continue;
-      final ({int lookups, int mines}) prev =
-          out[r.title] ?? (lookups: 0, mines: 0);
-      out[r.title] = (
-        lookups: prev.lookups + r.lookupCount,
-        mines: prev.mines + r.mineCount,
-      );
-    }
-    return out;
-  }
-
-  /// TODO-1252：把收藏活行按 [FavoriteWordRow.title] 聚合成每本书的收藏数，供 per-book
-  /// tile 展示。无书收藏（title 空）不入 tile，只进汇总面板。聚合键与查词/制卡 tile 的
-  /// title 一致。
-  Map<String, int> _aggregateFavoritesByTitle(List<FavoriteWordRow> rows) {
-    final Map<String, int> out = <String, int>{};
-    for (final FavoriteWordRow r in rows) {
-      if (r.title.isEmpty) continue;
-      out[r.title] = (out[r.title] ?? 0) + 1;
-    }
-    return out;
-  }
-
   void _computeAggregates() {
     final now = DateTime.now();
-    final todayKey = _dateKey(now);
-    final weekAgoKey = _dateKey(now.subtract(const Duration(days: 7)));
-    final prevWeekAgoKey = _dateKey(now.subtract(const Duration(days: 14)));
-    final monthAgoKey = _dateKey(now.subtract(const Duration(days: 30)));
+    final todayKey = statDateKey(now);
+    final weekAgoKey = statDateKey(now.subtract(const Duration(days: 7)));
+    final prevWeekAgoKey = statDateKey(now.subtract(const Duration(days: 14)));
+    final monthAgoKey = statDateKey(now.subtract(const Duration(days: 30)));
 
     _todayChars = 0;
     _todayMs = 0;
@@ -251,7 +221,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     _dailyData = [];
     for (int i = 0; i < 30; i++) {
       final d = thirtyDaysAgo.add(Duration(days: i));
-      final key = _dateKey(d);
+      final key = statDateKey(d);
       _dailyData.add(dailyMap[key] ?? StatDayData(dateKey: key));
     }
 
@@ -300,17 +270,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       case _BookSort.speed:
         return b.cph;
     }
-  }
-
-  static String _dateKey(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  static String _formatTime(int ms) {
-    final totalMin = ms ~/ 60000;
-    if (totalMin < 60) return t.stat_format_minutes(n: totalMin);
-    final h = totalMin ~/ 60;
-    final m = totalMin % 60;
-    return t.stat_format_hours_minutes(h: h, m: m);
   }
 
   static String _formatChars(int chars) {
@@ -412,7 +371,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 ),
                 SliverToBoxAdapter(child: _buildSummaryCards()),
                 SliverToBoxAdapter(child: _buildGoalPanel()),
-                SliverToBoxAdapter(child: _buildHourlyChart()),
+                SliverToBoxAdapter(
+                    child: buildStatHourlyChartSection(context, _hourlyMs)),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(card,
@@ -623,7 +583,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                       fontWeight: FontWeight.bold,
                     )),
             SizedBox(height: tokens.spacing.gap / 2),
-            Text(_formatTime(ms), style: subStyle),
+            Text(formatStatTime(ms), style: subStyle),
             SizedBox(height: tokens.spacing.gap / 2),
             Text('${t.stat_lookup}: $lookup', style: subStyle),
             SizedBox(height: tokens.spacing.gap / 2),
@@ -835,7 +795,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return _card(
       title: t.stat_today,
       trailing: Text(
-        _dateKey(DateTime.now()),
+        statTodayKey(),
         style: tokens.type.metadata.copyWith(color: scheme.onSurfaceVariant),
       ),
       child: Column(
@@ -859,7 +819,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 color: scheme.tertiary,
                 trackColor: scheme.surfaceContainerHighest,
                 value: '${(timeFrac * 100).round()}%',
-                detail: _formatTime(_todayMs),
+                detail: formatStatTime(_todayMs),
                 caption: t.stat_metric_time,
               ),
             ],
@@ -1089,38 +1049,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _buildHourlyChart() {
-    final tokens = HibikiDesignTokens.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(t.stat_today_hourly,
-              style: Theme.of(context).textTheme.titleMedium),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          SizedBox(
-            height: 140,
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: StatHourlyChartPainter(
-                hourlyMs: _hourlyMs,
-                barColor: colorScheme.tertiary,
-                barRadius: tokens.radii.chipCorner,
-                labelColor: colorScheme.onSurfaceVariant,
-                labelStyle: tokens.type.metadata.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
-        ],
-      ),
-    );
-  }
-
   Widget _buildByBookHeader() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
@@ -1231,7 +1159,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                   ),
                   SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
                   Text(
-                    '${_formatChars(book.chars)} · ${_formatTime(book.ms)}',
+                    '${_formatChars(book.chars)} · ${formatStatTime(book.ms)}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),

@@ -322,11 +322,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   }
 
   /// 本地化无关的简洁时间格式（YYYY-MM-DD HH:MM）；不引 intl，跨 17 语言一致。
-  String _formatTime(DateTime time) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${time.year}-${two(time.month)}-${two(time.day)} '
-        '${two(time.hour)}:${two(time.minute)}';
-  }
+  String _formatTime(DateTime time) => HibikiTimeFormat.dateHourMinute(time);
 
   /// 拖拽重排后逐行回写 sortOrder（与 DAO orderBy(sortOrder, id) 对齐）。
   Future<void> _persistOrder() async {

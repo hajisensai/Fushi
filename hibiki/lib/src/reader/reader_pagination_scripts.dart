@@ -662,9 +662,6 @@ class ReaderPaginationScripts {
     return null;
   }
 
-  static String applySasayakiCuesInvocation(String cuesJson) =>
-      'window.hoshiReader && window.hoshiReader.applySasayakiCues($cuesJson)';
-
   static String highlightSasayakiCueInvocation(
     String cueId, {
     required bool reveal,
@@ -680,18 +677,12 @@ class ReaderPaginationScripts {
   static String clearSearchHighlightInvocation() =>
       'window.hoshiReader.clearSearchHighlight()';
 
-  static String getFirstVisibleCharOffsetInvocation() =>
-      'window.hoshiReader && window.hoshiReader.getFirstVisibleCharOffset()';
-
   /// Returns the current page / total pages within the loaded chapter as a JSON
   /// string (`{"currentPage":N,"totalPages":M}`), or the literal `"null"` when
   /// the reader is in a non-paged mode (continuous) where pages don't apply.
   static String pageInfoInvocation() =>
       'JSON.stringify((window.hoshiReader && window.hoshiReader.pageInfo) '
       '? window.hoshiReader.pageInfo() : null)';
-
-  static String scrollToCharOffsetInvocation(int charOffset) =>
-      'window.hoshiReader && window.hoshiReader.scrollToCharOffset($charOffset)';
 
   static String setChromeInsetsInvocation(double topPx, double bottomPx) =>
       'window.hoshiReader && window.hoshiReader.setChromeInsets($topPx, $bottomPx)';
@@ -3420,6 +3411,11 @@ $_sharedInitBoot
 </script>''';
   }
 
+  // 注意：ReaderVisualNovelScripts._jsStringLiteral 是另一份独立实现（手写转义、
+  // 单引号输出）。两侧输出字节形式各被测试钉死（本文件双引号 →
+  // test/reader/reader_pagination_scripts_test.dart；VN 单引号 →
+  // test/reader/vn_shell_smoke_test.dart），刻意不共享；改任一侧转义逻辑时必须
+  // 同步核对另一侧仍是语法安全的 JS 字符串字面量转义。
   static String _jsStringLiteral(String value) {
     return jsonEncode(value);
   }

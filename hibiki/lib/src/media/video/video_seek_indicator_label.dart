@@ -1,3 +1,5 @@
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
+
 /// TODO-916 症状①：视频横滑 seek 居中 HUD 的纯文本格式化。
 ///
 /// media_kit fork（third_party/media_kit_video）的 `seekIndicatorBuilder` 只回传
@@ -31,16 +33,6 @@ class VideoSeekIndicatorLabel {
   }
 
   /// 把非负 [value] 格式化成时钟串：不足 1 小时 `M:SS`（分不补前导零，如 `9:05`），
-  /// 满 1 小时 `H:MM:SS`。负值由调用方先取绝对值。
-  static String clock(Duration value) {
-    final int totalSeconds = value.inSeconds;
-    final int hours = totalSeconds ~/ 3600;
-    final int minutes = (totalSeconds % 3600) ~/ 60;
-    final int seconds = totalSeconds % 60;
-    String two(int v) => v.toString().padLeft(2, '0');
-    if (hours > 0) {
-      return '$hours:${two(minutes)}:${two(seconds)}';
-    }
-    return '$minutes:${two(seconds)}';
-  }
+  /// 满 1 小时 `H:MM:SS`。负值由调用方先取绝对值。委托 [HibikiTimeFormat.clock]。
+  static String clock(Duration value) => HibikiTimeFormat.clock(value);
 }
