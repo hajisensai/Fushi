@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "1.2.0-debug.8039",
-  "tag": "v1.2.0-debug.8039+7fe13fd",
+  "version": "1.2.0-debug.8041",
+  "tag": "v1.2.0-debug.8041+29ac294",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 8039,
-  "notes": "Automated release-signed debug-channel build from develop @ 7fe13fd. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 8041,
+  "notes": "Automated release-signed debug-channel build from develop @ 29ac294. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.2.0-debug.8034-ios.ipa",
@@ -29,11 +29,11 @@
       "version": "1.2.0-debug.8034"
     },
     {
-      "name": "hibiki-1.2.0-debug.8039-7fe13fd-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8039-7fe13fd-debug.apk",
-      "releaseSequence": 8039,
-      "tag": "v1.2.0-debug.8039+7fe13fd",
-      "version": "1.2.0-debug.8039"
+      "name": "hibiki-1.2.0-debug.8041-29ac294-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8041-29ac294-debug.apk",
+      "releaseSequence": 8041,
+      "tag": "v1.2.0-debug.8041+29ac294",
+      "version": "1.2.0-debug.8041"
     }
   ]
 }
