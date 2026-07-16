@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 840 条。点号进各自文件。
+> 共 841 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-859](bugs/BUG-859-global-lookup-nested-popup-position.md) | ✅ | ✅ | 全局查词嵌套弹窗弹出位置不对 |
 | [BUG-858](bugs/BUG-858-anki-overwrite-sentence.md) | ✅ | ✅ | Anki 覆盖卡片只覆盖图片和语音，原文句子未覆盖 |
 | [BUG-857](bugs/BUG-857-horizontal-swipe-direction-not-flipped.md) | ✅ | ✅ | 横排滑动翻页方向未随书写方向翻转（和竖排一样，应与日语相反） |
 | [BUG-856](bugs/BUG-856-mobile-swipe-insensitive-lookup.md) | ✅ | ✅ | 手机滑动翻页迟钝且短滑误触查词 |

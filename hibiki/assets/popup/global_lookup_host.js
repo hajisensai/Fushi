@@ -1178,6 +1178,20 @@
     // real layer transform is re-applied by this lookup's first commitLayerShift.
     layerOffsetLeft = 0;
     layerOffsetTop = 0;
+    // BUG-859 — reset the layer's DOM transform IN LOCK-STEP with the shadow
+    // offsets above. Resetting only the variables left the previous lookup's
+    // translate (layer.style.left/top) applied while shellCoveredByOrigin /
+    // frameIdAtPoint reasoned against the zeroed offsets: the reveal gate was
+    // defeated (a stale-shifted card counted as covered) and any reveal that
+    // bypasses commitLayerShift (legacy Reveal / ready-safety fallback) showed
+    // the fresh root displaced by the stale shift. The normal revealStack path
+    // re-applies the correct transform via commitLayerShift, so this is a no-op
+    // there (style already 0 for a fresh down-right cascade).
+    var layerEl = document.getElementById(LAYER_ID);
+    if (layerEl) {
+      layerEl.style.left = '0px';
+      layerEl.style.top = '0px';
+    }
     // TODO-1345 (BUG-583 深层根因续) — drop the previous lookup's reserved cascade
     // floor so it can never leak into a fresh lookup (a new lookup re-computes its
     // own floor from the new cursor position and pushes it via the next renderStack).
@@ -1613,6 +1627,14 @@
   // stack race). Only a click OUTSIDE every shell (true gap) dismisses the root.
   // Returns whether the click hit any shell (C++ uses it for logging).
   function handleGlobalClick(x, y) {
+    // BUG-859 — persistent panel semantics: a blank click never dismisses the
+    // clipboard panel (mirrors the onHostPointerDown panel guard). Without this
+    // a forwarded gap-click would post dismissPopupAt(0) against the panel —
+    // and the panel root's percentage/calc() shell size parses to a 100×0 box
+    // in frameIdAtPoint, so EVERY panel click would mis-read as a gap.
+    if (layoutMode === 'panel') {
+      return true;
+    }
     var frameId = frameIdAtPoint(x, y);
     if (frameId != null) {
       return true; // Card hit: popup.js owns the per-layer decision.

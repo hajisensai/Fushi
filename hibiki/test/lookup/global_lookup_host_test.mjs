@@ -1819,4 +1819,54 @@ function flushTimers() {
   assert.strictEqual(dismiss.args[0], 0, 'dismiss targets the root (index 0)');
 }
 
+// B1. BUG-859: beginLookup resets the layer's DOM transform IN LOCK-STEP with
+//     the layerOffset shadow variables. A previous lookup's up/left cascade
+//     leaves layer.style shifted (commitLayerShift); resetting only the
+//     variables defeated shellCoveredByOrigin (stale-shifted card counted as
+//     covered) and any reveal that bypasses commitLayerShift (legacy Reveal /
+//     ready-safety fallback) painted the fresh root displaced by the stale
+//     shift.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1,
+        frame: { left: 0, top: 0, width: 100, height: 80 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0,
+        frame: { left: -40, top: -60, width: 100, height: 80 }, settingsJs: '' },
+    ],
+  });
+  // C++ RevealStack applies the compensating shift for the up/left cascade.
+  host.commitLayerShift(-40, -60);
+  const layer = document.getElementById('global-lookup-host-layer');
+  assert.strictEqual(layer.style.left, '40px', 'precondition: layer shifted');
+  assert.strictEqual(layer.style.top, '60px', 'precondition: layer shifted');
+  // A NEW lookup begins: the DOM transform must reset together with the
+  // shadow offsets, not linger from the previous cascade.
+  host.beginLookup('global-lookup-root');
+  assert.strictEqual(layer.style.left, '0px',
+    'BUG-859: beginLookup resets the layer DOM transform (left)');
+  assert.strictEqual(layer.style.top, '0px',
+    'BUG-859: beginLookup resets the layer DOM transform (top)');
+}
+
+// B2. BUG-859: panel mode never dismisses on a hook-forwarded gap click (the
+//     persistent panel has no click-outside-dismiss semantics; additionally the
+//     panel root's percentage/calc() shell size parses to a 100×0 box in
+//     frameIdAtPoint, so EVERY panel click would mis-read as a gap and close
+//     the panel).
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [descriptor('panel-root', -1)],
+    layoutMode: 'panel',
+  });
+  hostPostLog = [];
+  const hit = host.handleGlobalClick(5000, 5000);
+  assert.strictEqual(hit, true,
+    'BUG-859: panel mode swallows the global click (no gap semantics)');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
+    'BUG-859: panel mode never posts dismissPopupAt from the global hook');
+}
+
 console.log('global_lookup_host_test: PASS');

@@ -452,6 +452,8 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   // the window. Clamp to the cursor monitor work area like Reveal/ResizeTo.
   int x = pending_x_ + dx;
   int y = pending_y_ + dy;
+  const int intended_x = x;
+  const int intended_y = y;
   POINT cursor = {pending_x_, pending_y_};
   HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
   MONITORINFO mi = {};
@@ -479,11 +481,26 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   // BEFORE the window moved (the cross-vsync "几何跳动"). bbox_left/top are
   // window-local CSS px (the host negates them for the layer translate).
   // std::to_wstring on a double yields a plain decimal literal JS parses.
+  //
+  // BUG-859 — fold any work-area CLAMP delta into the layer shift. The clamp
+  // above can silently move the window origin off the intended (pending + dx/dy)
+  // position; the host's layer shift was computed against the INTENDED origin,
+  // so an un-reported clamp shifted every card (root + nested) on screen by the
+  // clamp amount. Adding the delta (converted to CSS px with this window's own
+  // dpr, matching the host's coordinate scale) keeps on-screen positions exact:
+  // screen = clampedOrigin + dpr·(−(bbox+delta) + shell) = intended + dpr·shell.
+  // The Dart reserve-to-edge floor normally makes the clamp a no-op (delta 0 →
+  // byte-identical script), so this only engages in the degraded cases (stale
+  // work-area data, monitor scale changes mid-lookup).
   if (webview_ != nullptr) {
+    const double dpr = GetDpiForWindow(hwnd_) / 96.0;
+    const double clamp_dx_css = dpr > 0 ? (x - intended_x) / dpr : 0.0;
+    const double clamp_dy_css = dpr > 0 ? (y - intended_y) / dpr : 0.0;
     std::wstring shift_script =
         L"window.__globalLookupHost && "
         L"window.__globalLookupHost.commitLayerShift(" +
-        std::to_wstring(bbox_left) + L", " + std::to_wstring(bbox_top) + L");";
+        std::to_wstring(bbox_left + clamp_dx_css) + L", " +
+        std::to_wstring(bbox_top + clamp_dy_css) + L");";
     webview_->ExecuteScript(shift_script.c_str(), nullptr);
   }
   // Arm the click-outside dismiss hooks now that the stack is on-screen (the
