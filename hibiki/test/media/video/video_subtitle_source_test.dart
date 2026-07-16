@@ -882,15 +882,20 @@ TODO016 imported subtitle survives reopen.
           reason: 'manual switch for prewarmed next episode must hit cache');
     });
 
-    test('prewarm failures complete without affecting later manual fallback',
+    test(
+        'transient (timeout) prewarm failure clears in-flight state so manual '
+        'selection retries (BUG-863: timeouts are NOT negatively cached)',
         () async {
       final File video = File(p.join(tempDir.path, 'broken.mkv'))
         ..writeAsStringSync('fake video bytes');
+      // returnCode null == ffmpeg timed out (SIGKILL) — transient, retryable.
       final _FakeFfmpegBackend backend =
-          _FakeFfmpegBackend(extractReturnCode: 1, writeOutputs: false);
+          _FakeFfmpegBackend(extractReturnCode: null, writeOutputs: false);
       setFfmpegBackendForTesting(backend);
 
       await prewarmEmbeddedSubtitleCache(video.path);
+      final int afterPrewarm = backend.extractCount;
+      expect(afterPrewarm, greaterThan(0));
 
       final List<AudioCue> cues = await loadCuesForSource(
         const SubtitleSource.embedded(
@@ -904,13 +909,45 @@ TODO016 imported subtitle survives reopen.
       );
 
       expect(cues, isEmpty);
-      // BUG-863: 批量抽取失败(exit-22 毒轨)后逐轨回退——prewarm 与 manual 各做
-      // 「1 次批量 + 每 missing 轨 1 次单轨重试」。broken 视频 2 轨 → 每阶段 3 次，
-      // 共 6 次。in-flight 仍在失败后清干净(否则 fallback 阶段不会重跑)，本测试的
-      // 原意「失败 prewarm 不阻塞后续 manual fallback」仍成立,仅次数随逐轨回退变。
-      expect(backend.extractCount, 6,
-          reason: 'failed prewarm clears in-flight; per-track fallback (BUG-863) '
-              'retries each missing track, so prewarm(3)+manual(3)=6.');
+      // A timeout leaves no `.unsupported` sentinel, and the failed prewarm
+      // cleared the in-flight future, so manual selection re-attempts.
+      expect(backend.extractCount, greaterThan(afterPrewarm),
+          reason: 'transient prewarm failure must clear in-flight state so a '
+              'later manual selection can retry.');
+    });
+
+    test(
+        'definitive prewarm failure is negatively cached — manual selection '
+        'does not re-read the container (BUG-863)', () async {
+      final File video = File(p.join(tempDir.path, 'exotic.mkv'))
+        ..writeAsStringSync('fake video bytes');
+      // Non-zero, non-timeout exit == ffmpeg definitively rejected the track
+      // (a codec the bundled build can't decode).
+      final _FakeFfmpegBackend backend =
+          _FakeFfmpegBackend(extractReturnCode: 1, writeOutputs: false);
+      setFfmpegBackendForTesting(backend);
+
+      await prewarmEmbeddedSubtitleCache(video.path);
+      final int afterPrewarm = backend.extractCount;
+      expect(afterPrewarm, greaterThan(0),
+          reason: 'prewarm probes + attempts (batch + per-track fallback).');
+
+      final List<AudioCue> cues = await loadCuesForSource(
+        const SubtitleSource.embedded(
+          streamIndex: 0,
+          label: '内封 0: jpn / subrip',
+          language: 'jpn',
+          codec: 'subrip',
+        ),
+        video.path,
+        'video_book_x://book/exotic',
+      );
+
+      expect(cues, isEmpty);
+      // The undecodable tracks were sentinel-ed, so the manual path skips them
+      // instead of re-reading the whole container and re-logging.
+      expect(backend.extractCount, afterPrewarm,
+          reason: 'a definitively-rejected track must not be re-extracted.');
     });
   });
 
@@ -1545,7 +1582,9 @@ class _FakeFfmpegBackend implements FfmpegBackend {
         writeOutputs = true,
         _blockExtract = true;
 
-  final int extractReturnCode;
+  /// ffmpeg exit code for extraction runs. `null` models a timeout (SIGKILL),
+  /// which is transient and must NOT be negatively cached (BUG-863).
+  final int? extractReturnCode;
   final bool writeOutputs;
   final bool _blockExtract;
 

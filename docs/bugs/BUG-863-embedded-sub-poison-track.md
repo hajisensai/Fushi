@@ -10,4 +10,7 @@
   - 1045 行原注释「一个坏轨仍能让其它轨写出」的假设只在**写包阶段**失败时成立；output-open 阶段的 EINVAL 发生在写包之前，击穿该兜底。
 - **[x] ① 已修复** — `desktop_audio_clipper.dart` `extractEmbeddedSubtitlesViaFfmpeg`：单遍 `written.length < outputs.length` 时对每条仍缺失的轨用 `buildFfmpegSubtitleArgs` 逐轨重抽（沿用同一 size-scaled `timeout`，非单片 30s），毒轨只损失自己；单遍全成功零开销不进回退。（提交见 PR）
 - **[x] ② 已加自动化测试** — `hibiki/test/utils/desktop_audio_clipper_test.dart` 新增组「毒轨逐轨回退 (BUG-863)」：注入 `_FakePoisonFfmpegBackend`（模拟 output-open 整批 EINVAL），断言 3 轨含毒轨 1 时结果为 `{0,2}`（好轨保住、毒轨只损失自己）、单遍 + 3 条逐轨共 4 趟；另断言无毒轨时单遍成功不触发回退（零开销）。
+- **[x] ③ 增强·负缓存哨兵**（补合 `fix/embedded-sub-batch-einval` `901b0d977`，原以旧号 BUG-818 记录）——
+  逐轨回退中一条轨 ffmpeg **确定性**非零、非超时退出（该 build 无解码器的 codec）时，在其输出旁写 `.unsupported` 哨兵（`kUnsupportedEmbeddedSubtitleSentinelSuffix`）；后续 prewarm 遇哨兵直接跳过，不再重读整（可能数 GB）容器、不再刷同一条 exit -22 错误日志。超时（`returnCode == null`）**绝不写**哨兵，保持 BUG-104 可重试。逐轨回退仍保留 develop 已落的批量超时门（`result.returnCode != null`，超时批次不逐轨重试以免把 1 次超时放大成 N 次）。同批仅当**全轨**为空才 `_reportFfmpegFailure`，被救回一部分不再刷错误日志。
+  测试：`hibiki/test/utils/desktop_audio_clipper_test.dart` 新增组「per-track fallback (BUG-863)」（`_MinBuildFakeFfmpegBackend`：坏轨 → 好轨保住 / 单遍全好不回退 / 全坏空结果）；`hibiki/test/media/video/video_subtitle_source_test.dart` 断言确定性失败写哨兵后 manual 不再重抽、超时不写哨兵仍可重试。
 - **备注**：日志同批还有一条 Google Drive 同步瞬时超时不重试，另见 BUG-864。

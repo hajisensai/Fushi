@@ -1136,6 +1136,16 @@ Future<void> _extractAllEmbeddedSubtitles(
         p.join(cacheDir.path, 'sub_${track.streamIndex}${_ext(fmt)}');
     final File cached = File(outputPath);
     if (cached.existsSync() && cached.lengthSync() > 0) continue;
+    // BUG-863 negative cache: a track already rejected as undecodable by the
+    // bundled ffmpeg leaves an `.unsupported` sentinel (written by the extractor
+    // only on a definitive, non-timeout failure). Skip it so we don't re-read
+    // the whole (possibly multi-GB) container and re-log the same failure on
+    // every prewarm. The sentinel lives in the cache dir, keyed by video
+    // size+mtime, so replacing the file in place still re-attempts extraction.
+    if (File('$outputPath$kUnsupportedEmbeddedSubtitleSentinelSuffix')
+        .existsSync()) {
+      continue;
+    }
     outputs[track.streamIndex] = outputPath;
   }
   if (outputs.isEmpty) return;
