@@ -458,12 +458,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
   String _buildReaderSetupScript({String? sasayakiCuesJson}) {
     final ReaderSettings s = _settings!;
-    // TODO-113: 滑动翻页距离阈值随灵敏度系数缩放。基础值 72px（纯距离触发）/ 36px
-    // （配合速度的快速短滑触发），系数 1.0 = 原手感，越大越迟钝（需滑得更远）。
+    // TODO-113: 滑动翻页距离阈值随灵敏度系数缩放。基础值 44px（纯距离触发）/ 22px
+    // （配合速度的快速短滑触发），系数 1.0 = 默认「轻快」手感，越大越迟钝（需滑得更远）。
     final ({int dist, int fastDist}) swipeThresholds =
         ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
     final int swipeDistThreshold = swipeThresholds.dist;
     final int swipeFastDistThreshold = swipeThresholds.fastDist;
+    // 查词「原地轻点」半径（固定，不随灵敏度缩放）：与翻页距离阈值解耦，杜绝短滑误查词。
+    const int tapSlop = ReaderSettings.tapSlopPx;
     // BUG-239: 连续模式靠原生滚动（滚动轴 = 书写轴），章间切换走边界手势 IIFE。
     // _gestureEnd 的 onSwipe（90% 整屏跳页）只在分页模式有意义；连续模式回传会与
     // 原生滚动产生轴向冲突，故注入 continuousMode 标志在 _gestureEnd 内门控。
@@ -846,14 +848,13 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       } else {
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
-    } else if (absDx < $swipeDistThreshold && absDy < $swipeDistThreshold) {
-      // TODO-971: 消除「20~72px 漂移既不算 tap 也不算 swipe」的死区。旧判据
-      // `absDx<20 && absDy<20 && elapsed<500` 把稳而慢 / 略有漂移的点词手势整个丢
-      // 掉（用户报「单词难点中」）。把 tap 上界从 20px 放宽到 swipe 距离阈值
-      // （$swipeDistThreshold），并去掉 500ms 时限：在「翻页阈值」以内的非翻页手势
-      // 一律当点击查词。仍保留 swipe 阈值上界，使连续模式的整页竖向滚动拖拽（dy 远
-      // 超阈值）不会被误判成 tap 触发查词（保留原 20px 时「大拖拽不查词」的语义、
-      // 只是把可点击区从 20px 扩到 72px）。
+    } else if (absDx <= $tapSlop && absDy <= $tapSlop) {
+      // BUG-手机翻短了会查词：查词框与翻页距离阈值**解耦**。旧判据把上界取成
+      // swipe 距离阈值（72px），于是任何够不到翻页阈值的横滑（如 50px）都落进这里被
+      // 当成点词。改成固定的「原地轻点」半径 $tapSlop（28px，两轴各 ≤）：只有真正
+      // 原地轻点才查词；横向主导、超出此半径却够不到翻页阈值的短滑落到本 if 之外
+      // → **空操作**（既不翻页也不查词），彻底切断短滑误查词。TODO-971 真正治好慢
+      // 点词的是去掉 500ms 时限（保留），不是把框放大到 72（那步是副作用，现回收）。
       var tapEl = document.elementFromPoint(x, y);
       if (_hoshiRevealBlurredImage(tapEl)) {
         if (e && e.preventDefault) e.preventDefault();
@@ -1690,14 +1691,22 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             final String dir = args[0] as String;
             final bool invert =
                 ReaderHibikiSource.instance.invertSwipeDirection;
+            // BUG-横排滑动翻页方向不随书写方向翻转：滑动/鼠标拖动翻页此前只看
+            // invertSwipeDirection 开关，不看书写方向，横排与竖排共用同一套映射。
+            // 键盘方向键早已用 `leftIsForward = rtl ^ reverse` 按书写方向翻转
+            // （resolveReaderArrowPageTurn），滑动却漏了。改用同构的纯谓词
+            // swipeLeftIsForward(invert ^ rtl)：竖排(rtl=true)默认手感不变，横排
+            // (rtl=false)整体反转——向左滑=前进（LTR 下一页在右，推内容向左露出）。
+            final bool leftIsForward =
+                swipeLeftIsForward(invert: invert, rtl: _isRtlReading);
             if (dir == 'left') {
-              _paginate(invert
-                  ? ReaderNavigationDirection.backward
-                  : ReaderNavigationDirection.forward);
-            } else if (dir == 'right') {
-              _paginate(invert
+              _paginate(leftIsForward
                   ? ReaderNavigationDirection.forward
                   : ReaderNavigationDirection.backward);
+            } else if (dir == 'right') {
+              _paginate(leftIsForward
+                  ? ReaderNavigationDirection.backward
+                  : ReaderNavigationDirection.forward);
             }
           },
         );
