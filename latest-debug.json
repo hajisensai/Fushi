@@ -8,18 +8,18 @@
   "notes": "Automated desktop debug-channel build from develop @ c7c5718. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.2.0-debug.8065-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8065-ios.ipa",
-      "releaseSequence": 8065,
-      "tag": "v1.2.0-debug.8065+cfc2ba8",
-      "version": "1.2.0-debug.8065"
+      "name": "hibiki-1.2.0-debug.8076-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8076-ios.ipa",
+      "releaseSequence": 8076,
+      "tag": "v1.2.0-debug.8076+6af892c",
+      "version": "1.2.0-debug.8076"
     },
     {
-      "name": "hibiki-1.2.0-debug.8065-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8065-macos.zip",
-      "releaseSequence": 8065,
-      "tag": "v1.2.0-debug.8065+cfc2ba8",
-      "version": "1.2.0-debug.8065"
+      "name": "hibiki-1.2.0-debug.8076-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8076-macos.zip",
+      "releaseSequence": 8076,
+      "tag": "v1.2.0-debug.8076+6af892c",
+      "version": "1.2.0-debug.8076"
     },
     {
       "name": "hibiki-1.2.0-debug.8081-1a78f29-debug.apk",
