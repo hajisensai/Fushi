@@ -1,0 +1,6 @@
+## BUG-860 · 查词弹窗长URL链接出框
+- **报告**：2026-07-16（用户：截图）
+- **真实性**：✅ 真 bug。根因 `hibiki/assets/popup/popup.css` 的顶层 `a { color }` 规则只有颜色、**无任何断词规则**（原 `assets/popup/popup.css:561-563`）。词典条目里的超链接（`linkifyUrls` 把正文裸 URL 包成 `<a>`，见 `assets/popup/popup.js`；以及 Yomitan 结构化内容 `href` 节点）在默认 `white-space:normal` 下对无空格 URL 找不到断点。一条无空格长 URL（`itazuraneko.neocities.org/grammar/donnatoki/mainentries.html#わりに（は）`）撑大 `.glossary-group` 描边卡（`min-width:0` 的 1fr grid track，`assets/popup/popup.css` `.glossary-group`）的 min-content，视觉上突破右边界「出框」。
+- **[x] ① 已修复** — 在 popup.css 顶层 `a` 规则加 `overflow-wrap: anywhere;`（只在没有其它断点时才任意处折行，正常带空格文本不受影响；并缩小 min-content 使卡片不被撑宽；作用于全部 `<a>`，图片链接内无文本零副作用）。三镜像同步：`hibiki/assets/popup/popup.css` + `hibiki/assets/browser_extension/vendor/popup.css` + `tools/browser-extension/vendor/popup.css`，并重跑 `node tools/browser-extension/scripts/generate-content-css.mjs` 生成两份 `content.css`（byte-identical 已核 md5）。提交见本分支。
+- **[x] ② 已加自动化测试** — `hibiki/test/dictionary/popup_link_overflow_wrap_guard_test.dart`：断言三镜像 popup.css 的顶层 `a{}` 规则都含 `overflow-wrap:anywhere`（或等效 word-break），且两份 content.css 也继承该规则（防止漏跑生成脚本）。与 parity 守卫（`test/build/browser_extension_popup_parity_guard_test.dart`）一并通过。
+- **备注**：`overflow-wrap:anywhere` 优于 `word-break:break-all`——后者会对 CJK 正文强行逐字断行，前者只对「否则会溢出」的无断点内容生效，语义精确。真机验证待用户在查词弹窗打开含长 URL 参考链接的词条复测。
