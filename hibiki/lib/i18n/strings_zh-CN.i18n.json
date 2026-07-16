@@ -2144,8 +2144,6 @@
   "media_source_network_remote_path": "远端路径",
   "media_source_network_label_optional": "显示名（可选）",
   "media_source_network_missing_fields": "请填写主机、用户名、远端路径，以及密码或私钥",
-  "render_impeller_disable_toggle": "关闭 Impeller（改用 Skia 渲染）",
-  "render_impeller_disable_hint": "改用 Skia 渲染后端。视频能播放但画面恒黑时可尝试；重启 App 后生效。",
   "render_restart_required": "重启 App 后生效",
   "handlebar_card_image": "卡片图片（封面 / 视频 GIF）",
   "video_subtitle_youtube_captions": "YouTube 字幕",

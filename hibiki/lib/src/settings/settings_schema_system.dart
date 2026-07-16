@@ -216,30 +216,6 @@ SettingsDestination buildSystemDestination() {
                 DebugLogService.instance.entries.isNotEmpty,
             builder: (_) => const DebugLogPage(),
           ),
-          // TODO-1232 A3：关闭 Impeller（改用 Skia 渲染）实验开关。仅 Android 有效
-          // （Impeller shell arg 由 MainActivity 在下次启动注入），故 Android-only。
-          // 用来自证 realme 8「视频能播但恒黑」是否为 Impeller/Mali 合成层问题：
-          // 关掉后若不黑＝坐实，据此根治。全局默认仍是 Impeller，本开关只在用户
-          // 主动打开时于**下次启动**翻转，属产品安全的试验路径（非默认全局关）。
-          SettingsSwitchItem(
-            id: 'diagnostics.disable_impeller',
-            title: t.render_impeller_disable_toggle,
-            subtitle:
-                t.render_impeller_disable_hint + t.settings_experimental_suffix,
-            icon: Icons.animation_outlined,
-            // 仅在 native 渲染后端 channel 已接线处显示（当前 = Android，见
-            // RenderBackendService.init）；非 Android channel 缺失即隐藏。
-            visible: (_) => RenderBackendService.instance.isSupported,
-            value: (_) => RenderBackendService.instance.impellerDisabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              final bool ok = await RenderBackendService.instance
-                  .setImpellerDisabled(value);
-              settingsContext.refresh();
-              if (ok) {
-                HibikiToast.show(msg: t.render_restart_required);
-              }
-            },
-          ),
         ],
       ),
     ],
