@@ -6,8 +6,10 @@ import 'package:http/http.dart' as http;
 import 'package:hibiki/src/sync/desktop_oauth.dart';
 import 'package:hibiki/src/sync/pkce_oauth.dart';
 import 'package:hibiki/src/sync/sync_http.dart';
+import 'package:hibiki/src/sync/book_folder_cache_mixin.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -18,7 +20,8 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// Auth: OAuth 2.0 PKCE flow.
 /// Redirect URI: `hibiki://auth/onedrive`
-class OneDriveSyncBackend extends SyncBackend {
+class OneDriveSyncBackend extends SyncBackend
+    with SyncBackendFileTrioMixin, BookFolderCacheMixin {
   OneDriveSyncBackend._();
   static final OneDriveSyncBackend instance = OneDriveSyncBackend._();
 
@@ -40,8 +43,6 @@ class OneDriveSyncBackend extends SyncBackend {
   String? _accessToken;
   String? _refreshToken;
   String? _email;
-  String? _rootFolderId;
-  final Map<String, String> _titleToFolderId = {};
 
   /// Shared OAuth 2.0 PKCE token exchange (verifier/challenge + code/refresh).
   /// OneDrive requires the `scope` param echoed on token refresh.
@@ -272,14 +273,14 @@ class OneDriveSyncBackend extends SyncBackend {
 
   @override
   Future<String> findOrCreateRootFolder() async {
-    if (_rootFolderId != null) return _rootFolderId!;
+    if (rootFolderIdCache != null) return rootFolderIdCache!;
 
     // Try to find existing folder.
     try {
       final resp = await _graphGet('/me/drive/root:/$_rootFolderName');
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      _rootFolderId = json['id'] as String;
-      return _rootFolderId!;
+      rootFolderIdCache = json['id'] as String;
+      return rootFolderIdCache!;
     } on SyncBackendError catch (e) {
       if (!e.isRetryable) rethrow; // Only catch 404.
     }
@@ -293,8 +294,8 @@ class OneDriveSyncBackend extends SyncBackend {
       '@microsoft.graph.conflictBehavior': 'fail',
     });
     final json = jsonDecode(resp.body) as Map<String, dynamic>;
-    _rootFolderId = json['id'] as String;
-    return _rootFolderId!;
+    rootFolderIdCache = json['id'] as String;
+    return rootFolderIdCache!;
   }
 
   @override
@@ -317,8 +318,8 @@ class OneDriveSyncBackend extends SyncBackend {
   }) async {
     final sanitized = requireBookFolderName(bookTitle);
 
-    if (_titleToFolderId.containsKey(sanitized)) {
-      return _titleToFolderId[sanitized]!;
+    if (titleToFolderIdCache.containsKey(sanitized)) {
+      return titleToFolderIdCache[sanitized]!;
     }
 
     // Find the existing book folder first (idempotent); only create on 404.
@@ -343,7 +344,7 @@ class OneDriveSyncBackend extends SyncBackend {
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
       folderId = json['id'] as String;
     }
-    _titleToFolderId[sanitized] = folderId;
+    titleToFolderIdCache[sanitized] = folderId;
 
     if (coverData != null) {
       try {
@@ -383,26 +384,10 @@ class OneDriveSyncBackend extends SyncBackend {
     );
   }
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 OneDrive 的下载原语（Graph item content GET + jsonDecode）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _downloadItemJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _downloadItemJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _downloadItemJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _downloadItemJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -597,43 +582,10 @@ class OneDriveSyncBackend extends SyncBackend {
   }
 
   // ── Cache ─────────────────────────────────────────────────────────
-
-  @override
-  void clearCache() {
-    _rootFolderId = null;
-    _titleToFolderId.clear();
-  }
-
-  @override
-  void restoreCache({
-    String? rootFolderId,
-    Map<String, String>? titleToFolderId,
-  }) {
-    _rootFolderId = rootFolderId;
-    if (titleToFolderId != null) {
-      _titleToFolderId.addAll(titleToFolderId);
-    }
-  }
-
-  @override
-  String? get cachedRootFolderId => _rootFolderId;
-
-  @override
-  Map<String, String> get cachedFolderIds => Map.unmodifiable(_titleToFolderId);
-
-  @override
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final f in folders) {
-      _titleToFolderId[f.name] = f.id;
-    }
-  }
-
-  @override
-  void evictFolderId(String folderId) {
-    // 按值反查逐出书名→folderId 缓存里指向 [folderId] 的条目，消除删书后陈旧态
-    // （BUG-202）。路径式后端的 folderId 是按名派生的路径，逐出仍是廉价正确性。
-    _titleToFolderId.removeWhere((_, id) => id == folderId);
-  }
+  // clearCache / restoreCache / cachedRootFolderId / cachedFolderIds /
+  // cacheBookFolderIds / evictFolderId 全由 BookFolderCacheMixin 提供。OneDrive 是
+  // ID 式后端，folderId 是 Graph item id（不透明定位符），normalizeCachedFolderId
+  // 用默认恒等。
 
   // ── Private helpers ───────────────────────────────────────────────
 

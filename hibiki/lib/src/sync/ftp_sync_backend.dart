@@ -5,14 +5,17 @@ import 'dart:math';
 
 import 'package:ftpconnect/ftpconnect.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/sync/book_folder_cache_mixin.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
-class FtpSyncBackend extends SyncBackend {
+class FtpSyncBackend extends SyncBackend
+    with SyncBackendFileTrioMixin, BookFolderCacheMixin {
   FtpSyncBackend._();
   static final FtpSyncBackend instance = FtpSyncBackend._();
 
@@ -61,9 +64,6 @@ class FtpSyncBackend extends SyncBackend {
   String? _password;
   bool _useTls = false;
   bool _connected = false;
-
-  String? _rootFolderId;
-  final Map<String, String> _titleToFolderId = {};
 
   // Collision-proof temp-file naming (HBK-AUDIT-087). A millisecond timestamp
   // is not unique: two ops in the same ms — or a second isolate/app instance
@@ -157,7 +157,7 @@ class FtpSyncBackend extends SyncBackend {
 
   @override
   Future<String> findOrCreateRootFolder() => _opLock.withLock(() async {
-        if (_rootFolderId != null) return _rootFolderId!;
+        if (rootFolderIdCache != null) return rootFolderIdCache!;
 
         await _ensureConnected();
         try {
@@ -170,7 +170,7 @@ class FtpSyncBackend extends SyncBackend {
             }
           }
           await _client!.changeDirectory(_homeDir);
-          _rootFolderId = _rootPath;
+          rootFolderIdCache = _rootPath;
           return _rootPath;
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
@@ -210,8 +210,8 @@ class FtpSyncBackend extends SyncBackend {
       _opLock.withLock(() async {
         final sanitized = requireBookFolderName(bookTitle);
 
-        if (_titleToFolderId.containsKey(sanitized)) {
-          return _titleToFolderId[sanitized]!;
+        if (titleToFolderIdCache.containsKey(sanitized)) {
+          return titleToFolderIdCache[sanitized]!;
         }
 
         final folderPath = '$rootFolderId/$sanitized';
@@ -227,7 +227,7 @@ class FtpSyncBackend extends SyncBackend {
             }
           }
           await _client!.changeDirectory(_homeDir);
-          _titleToFolderId[sanitized] = folderPath;
+          titleToFolderIdCache[sanitized] = folderPath;
 
           if (coverData != null) {
             try {
@@ -285,26 +285,10 @@ class FtpSyncBackend extends SyncBackend {
         }
       });
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 FTP 的下载原语（已加锁的 temp-file → utf8 → jsonDecode）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _downloadJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -603,43 +587,9 @@ class FtpSyncBackend extends SyncBackend {
   }
 
   // ── Cache ─────────────────────────────────────────────────────────
-
-  @override
-  void clearCache() {
-    _rootFolderId = null;
-    _titleToFolderId.clear();
-  }
-
-  @override
-  void restoreCache({
-    String? rootFolderId,
-    Map<String, String>? titleToFolderId,
-  }) {
-    _rootFolderId = rootFolderId;
-    if (titleToFolderId != null) {
-      _titleToFolderId.addAll(titleToFolderId);
-    }
-  }
-
-  @override
-  String? get cachedRootFolderId => _rootFolderId;
-
-  @override
-  Map<String, String> get cachedFolderIds => Map.unmodifiable(_titleToFolderId);
-
-  @override
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final f in folders) {
-      _titleToFolderId[f.name] = f.id;
-    }
-  }
-
-  @override
-  void evictFolderId(String folderId) {
-    // 按值反查逐出书名→folderId 缓存里指向 [folderId] 的条目，消除删书后陈旧态
-    // （BUG-202）。路径式后端的 folderId 是按名派生的路径，逐出仍是廉价正确性。
-    _titleToFolderId.removeWhere((_, id) => id == folderId);
-  }
+  // clearCache / restoreCache / cachedRootFolderId / cachedFolderIds /
+  // cacheBookFolderIds / evictFolderId 全由 BookFolderCacheMixin 提供。FTP 是
+  // ID 式后端，folderId 是不透明路径定位符，normalizeCachedFolderId 用默认恒等。
 
   // ── Credentials ───────────────────────────────────────────────────
 
