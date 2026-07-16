@@ -86,7 +86,6 @@ Future<void> _pumpSheet(
               toc: const <TtuTocEntry>[],
               readerProgress: const (1, 3),
               onJumpSection: (_) async {},
-              onBookmark: () async {},
               onExitReader: () {},
               webViewController: _FakeInAppWebViewController(),
               appModel: _testAppModel(),

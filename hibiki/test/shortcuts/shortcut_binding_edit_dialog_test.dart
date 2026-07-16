@@ -21,7 +21,7 @@ void main() {
   Future<void> pumpDialog(
     WidgetTester tester,
     HibikiShortcutRegistry registry, {
-    ShortcutAction action = ShortcutAction.readerToggleBookmark,
+    ShortcutAction action = ShortcutAction.readerToggleFurigana,
   }) async {
     await tester.pumpWidget(
       TranslationProvider(
@@ -47,7 +47,7 @@ void main() {
   Future<void> pumpDialogWithGlobalNav(
     WidgetTester tester,
     HibikiShortcutRegistry registry, {
-    ShortcutAction action = ShortcutAction.readerToggleBookmark,
+    ShortcutAction action = ShortcutAction.readerToggleFurigana,
   }) async {
     final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
@@ -83,7 +83,7 @@ void main() {
   Future<void> pumpDialogHost(
     WidgetTester tester,
     HibikiShortcutRegistry registry, {
-    ShortcutAction action = ShortcutAction.readerToggleBookmark,
+    ShortcutAction action = ShortcutAction.readerToggleFurigana,
   }) async {
     await tester.pumpWidget(
       TranslationProvider(
@@ -158,7 +158,7 @@ void main() {
     // exit book), so trying to bind it to another reader action must ask before
     // moving ownership.
     await pumpDialog(tester, buildRegistry(),
-        action: ShortcutAction.readerToggleBookmark);
+        action: ShortcutAction.readerToggleFurigana);
     await startCapture(tester);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -187,7 +187,7 @@ void main() {
     await pumpDialogHost(
       tester,
       registry,
-      action: ShortcutAction.readerToggleBookmark,
+      action: ShortcutAction.readerToggleFurigana,
     );
     await startCapture(tester);
 
@@ -207,7 +207,7 @@ void main() {
     );
     expect(
       registry
-          .bindingsFor(ShortcutAction.readerToggleBookmark)
+          .bindingsFor(ShortcutAction.readerToggleFurigana)
           .keyboardBindings,
       contains(escape),
     );
@@ -220,7 +220,7 @@ void main() {
     await pumpDialogHost(
       tester,
       registry,
-      action: ShortcutAction.readerToggleBookmark,
+      action: ShortcutAction.readerToggleFurigana,
     );
     await startCapture(tester);
 
@@ -246,7 +246,7 @@ void main() {
     );
     expect(
       registry
-          .bindingsFor(ShortcutAction.readerToggleBookmark)
+          .bindingsFor(ShortcutAction.readerToggleFurigana)
           .keyboardBindings,
       isNot(contains(escape)),
     );
@@ -259,7 +259,7 @@ void main() {
     await pumpDialogHost(
       tester,
       registry,
-      action: ShortcutAction.readerToggleBookmark,
+      action: ShortcutAction.readerToggleFurigana,
     );
 
     await tester.tap(find.text(t.shortcut_gamepad).last);
@@ -286,7 +286,7 @@ void main() {
       contains(dpadRight),
     );
     expect(
-      registry.bindingsFor(ShortcutAction.readerToggleBookmark).gamepadBindings,
+      registry.bindingsFor(ShortcutAction.readerToggleFurigana).gamepadBindings,
       isNot(contains(dpadRight)),
     );
   });

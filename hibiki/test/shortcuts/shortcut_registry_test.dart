@@ -100,7 +100,7 @@ void main() {
       );
 
       registry.updateBindingWithReassignments(
-        ShortcutAction.readerToggleBookmark,
+        ShortcutAction.readerToggleFurigana,
         const ShortcutBindingSet(keyboardBindings: <InputBinding>[binding]),
         removeKeyboardConflicts: <InputBinding>[binding],
       );
@@ -115,7 +115,7 @@ void main() {
           modifiers: {},
           scope: ShortcutScope.reader,
         ),
-        ShortcutAction.readerToggleBookmark,
+        ShortcutAction.readerToggleFurigana,
       );
     });
 
@@ -128,7 +128,7 @@ void main() {
       );
 
       registry.updateBindingWithReassignments(
-        ShortcutAction.readerToggleBookmark,
+        ShortcutAction.readerToggleFurigana,
         const ShortcutBindingSet(gamepadBindings: <GamepadBinding>[binding]),
         removeGamepadConflicts: <GamepadBinding>[binding],
       );
@@ -139,7 +139,7 @@ void main() {
       );
       expect(
         registry.resolveGamepad(GamepadButton.rb, scope: ShortcutScope.reader),
-        ShortcutAction.readerToggleBookmark,
+        ShortcutAction.readerToggleFurigana,
       );
     });
 

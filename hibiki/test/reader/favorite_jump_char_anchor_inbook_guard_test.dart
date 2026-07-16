@@ -60,15 +60,6 @@ void main() {
         reason: '同章收藏跳转必须直接 restoreToCharOffset（与冷启动 charAnchor 同构）');
   });
 
-  test('根因①：书签跳转的 /10000 保留（书签 normCharOffset 才是真 0-10000 分数）', () {
-    final int start = chrome.indexOf('onJumpToBookmark: (bm) async {');
-    expect(start, greaterThanOrEqualTo(0));
-    final int end = chrome.indexOf('onDeleteBookmark:', start);
-    final String bm = chrome.substring(start, end);
-    expect(bm.contains('bm.normCharOffset / 10000.0'), isTrue,
-        reason: '书签写入端存的是 0-10000 分数，跳转端 /10000 是正确口径，不得连带改掉');
-  });
-
   test('根因①：导航链路必须能运输字符锚（_navigateToChapterAndWait 带 charOffset/charOffsetEnd）',
       () {
     final String n = norm(nav);

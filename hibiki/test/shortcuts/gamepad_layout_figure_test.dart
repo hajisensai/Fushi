@@ -274,7 +274,7 @@ void main() {
         'actions', (WidgetTester tester) async {
       final HibikiShortcutRegistry registry = buildRegistry();
       registry.updateBinding(
-        ShortcutAction.readerToggleBookmark,
+        ShortcutAction.readerToggleFurigana,
         const ShortcutBindingSet(
           gamepadBindings: <GamepadBinding>[
             GamepadBinding(GamepadButton.dpadUp),
@@ -296,14 +296,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(tapped, GamepadButton.dpadUp,
           reason: 'the up arm must route its own button identity');
-      expect(tappedActions, contains(ShortcutAction.readerToggleBookmark));
+      expect(tappedActions, contains(ShortcutAction.readerToggleFurigana));
     });
 
     testWidgets('a bound button renders highlighted (bound=true)',
         (WidgetTester tester) async {
       final HibikiShortcutRegistry registry = buildRegistry();
       registry.updateBinding(
-        ShortcutAction.readerToggleBookmark,
+        ShortcutAction.readerToggleFurigana,
         const ShortcutBindingSet(
           gamepadBindings: <GamepadBinding>[GamepadBinding(GamepadButton.a)],
         ),
@@ -324,7 +324,7 @@ void main() {
         (WidgetTester tester) async {
       final HibikiShortcutRegistry registry = buildRegistry();
       registry.updateBinding(
-        ShortcutAction.readerToggleBookmark,
+        ShortcutAction.readerToggleFurigana,
         const ShortcutBindingSet(
           gamepadBindings: <GamepadBinding>[GamepadBinding(GamepadButton.a)],
         ),
@@ -343,7 +343,7 @@ void main() {
       await tester.tap(find.byKey(const Key('gamepad_btn_A')));
       await tester.pumpAndSettle();
       expect(tapped, GamepadButton.a);
-      expect(tappedActions, contains(ShortcutAction.readerToggleBookmark));
+      expect(tappedActions, contains(ShortcutAction.readerToggleFurigana));
     });
 
     testWidgets('unbound tap routes onEmptyGamepadTap (key-first assignment)',

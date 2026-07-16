@@ -101,14 +101,6 @@ class ShortcutDefaults {
       _key(LogicalKeyboardKey.escape),
     ]),
 
-    // TODO-700 T2：书签切换手柄默认从 X 让位 —— 用户裁定 X=下一句（audiobookNext）。
-    // 书签仍可用键盘 Ctrl+D 或底栏书签按钮；只是 gamepad X 默认改给句子导航，避免与
-    // audiobookNextSentence 的 X 在 reader 组里互相遮蔽（no-shadow 守卫）。用户仍可在
-    // 设置里把书签重新绑到任意手柄键。
-    ShortcutAction.readerToggleBookmark: _kb([
-      _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl}),
-    ]),
-
     // R3 toggles furigana (gamepad-only; keyboard furigana stays in settings).
     ShortcutAction.readerToggleFurigana: _kb([], [_gR3]),
     // Reader lookup/card actions now live in the remappable registry instead
@@ -185,10 +177,9 @@ class ShortcutDefaults {
       _gL3
     ]),
     // TODO-700 T2：句子导航补手柄默认 —— X=下一句 / B=上一句（用户意图）。reader+
-    // audiobook 同组，reader scope 先解析；readerDismissDict 已不再占 B（T2 上面挪走），
-    // readerToggleBookmark 占 X 在 reader scope —— 但 X 在两组里若同时存在会被遮蔽，
-    // 故下面 readerToggleBookmark 的 X 也已让位（见其默认）。这里 B/X 落在 audiobook
-    // scope，reader scope 无 B/X 占用 → 不被遮蔽，且阅读器内 B 不退书（约束2/4）。
+    // audiobook 同组，reader scope 先解析；readerDismissDict 已不再占 B（T2 上面挪走）。
+    // 这里 B/X 落在 audiobook scope，reader scope 无 B/X 占用 → 不被遮蔽，且阅读器内 B
+    // 不退书（约束2/4）。
     ShortcutAction.audiobookNextSentence: _kb([
       _key(LogicalKeyboardKey.arrowRight, {ModifierKey.ctrl}),
     ], [

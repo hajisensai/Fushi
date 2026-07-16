@@ -30,16 +30,12 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     required this.toc,
     required this.readerProgress,
     required this.onJumpSection,
-    required this.onBookmark,
     required this.onExitReader,
     required this.webViewController,
     required this.appModel,
     required this.ref,
     this.pageProgress,
     this.onThemeChanged,
-    this.bookmarks = const [],
-    this.onJumpToBookmark,
-    this.onDeleteBookmark,
     this.favoriteSentences = const [],
     this.onDeleteFavorite,
     this.onJumpToFavorite,
@@ -77,7 +73,6 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final (int section, int total)? readerProgress;
   final (int current, int total)? pageProgress;
   final Future<void> Function(int sectionIndex) onJumpSection;
-  final Future<void> Function() onBookmark;
   final VoidCallback onExitReader;
   final InAppWebViewController webViewController;
   final AppModel appModel;
@@ -86,9 +81,6 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// settings so [SettingsContext] always has a real [WidgetRef].
   final WidgetRef ref;
   final Future<void> Function()? onThemeChanged;
-  final List<Bookmark> bookmarks;
-  final Future<void> Function(Bookmark bookmark)? onJumpToBookmark;
-  final Future<void> Function(Bookmark bookmark)? onDeleteBookmark;
   final List<FavoriteSentence> favoriteSentences;
   final Future<void> Function(FavoriteSentence fav)? onDeleteFavorite;
   final Future<void> Function(FavoriteSentence fav)? onJumpToFavorite;
@@ -159,7 +151,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 纯按窗口宽高确定性判定（>= 共享常量阈值），与视频设置同条件。
   bool _isWide = false;
 
-  late List<Bookmark> _bookmarks = List<Bookmark>.of(widget.bookmarks);
   late List<FavoriteSentence> _favorites =
       List<FavoriteSentence>.of(widget.favoriteSentences);
 
@@ -730,10 +721,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           SizedBox(height: sectionGap),
           _buildTocSection(context, theme),
         ],
-        if (_bookmarks.isNotEmpty) ...[
-          SizedBox(height: sectionGap),
-          _buildBookmarkSection(context, theme),
-        ],
         if (_favorites.isNotEmpty) ...[
           SizedBox(height: sectionGap),
           _buildFavoritesSection(context, theme),
@@ -1075,32 +1062,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                     Navigator.of(context).pop();
                     await widget.onJumpSection(entry.index);
                   },
-          ),
-      ],
-    );
-  }
-
-  Widget _buildBookmarkSection(BuildContext context, ThemeData theme) {
-    final DateFormat fmt = DateFormat('MM/dd HH:mm');
-    return AdaptiveSettingsSection(
-      title: '${t.action_bookmark} (${_bookmarks.length})',
-      children: [
-        for (final Bookmark bookmark in _bookmarks)
-          _InBookBookmarkRow(
-            bookmark: bookmark,
-            dateLabel: fmt.format(bookmark.createdAt),
-            onTap: () async {
-              Navigator.of(context).pop();
-              await widget.onJumpToBookmark?.call(bookmark);
-            },
-            onDelete: () async {
-              await widget.onDeleteBookmark?.call(bookmark);
-              if (mounted) {
-                setState(() {
-                  _bookmarks = List<Bookmark>.of(_bookmarks)..remove(bookmark);
-                });
-              }
-            },
           ),
       ],
     );
@@ -1651,17 +1612,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         Expanded(
           child: _actionBtn(
             context,
-            icon: Icons.bookmark_add_outlined,
-            label: t.action_bookmark,
-            onTap: () async {
-              Navigator.of(context).pop();
-              await widget.onBookmark();
-            },
-          ),
-        ),
-        Expanded(
-          child: _actionBtn(
-            context,
             icon: Icons.exit_to_app_outlined,
             label: t.action_exit,
             onTap: () {
@@ -1887,44 +1837,6 @@ class _InBookSearchResultRow extends StatelessWidget {
       borderRadius: tokens.radii.controlRadius,
       onTap: onTap,
       child: child,
-    );
-  }
-}
-
-class _InBookBookmarkRow extends StatelessWidget {
-  const _InBookBookmarkRow({
-    required this.bookmark,
-    required this.dateLabel,
-    required this.onTap,
-    required this.onDelete,
-  });
-
-  final Bookmark bookmark;
-  final String dateLabel;
-  final VoidCallback onTap;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final String pageInfo =
-        bookmark.pageInChapter != null && bookmark.totalPagesInChapter != null
-            ? ' - ${bookmark.pageInChapter}/${bookmark.totalPagesInChapter}'
-            : '';
-
-    return AdaptiveSettingsRow(
-      title: '${bookmark.label}$pageInfo',
-      subtitle: dateLabel,
-      icon: isCupertinoPlatform(context)
-          ? CupertinoIcons.bookmark
-          : Icons.bookmark_outline,
-      onTap: onTap,
-      trailing: _InBookIconButton(
-        materialIcon: Icons.delete_outline,
-        cupertinoIcon: CupertinoIcons.delete,
-        tooltip: t.options_delete,
-        destructive: true,
-        onPressed: onDelete,
-      ),
     );
   }
 }
