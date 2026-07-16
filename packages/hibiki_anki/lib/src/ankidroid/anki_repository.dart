@@ -298,6 +298,7 @@ class AnkiRepository extends BaseAnkiRepository {
     required AnkiSettings settings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
+    bool keepEmpty = false,
   }) async {
     final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
       context.coverPath != null
@@ -354,6 +355,7 @@ class AnkiRepository extends BaseAnkiRepository {
         payload: mediaPayload,
         context: mediaContext,
         dictionaryMediaTags: dictionaryMediaTags,
+        keepEmpty: keepEmpty,
       ),
       audioWarning: remoteAudio.failureReason,
     );
@@ -367,7 +369,10 @@ class AnkiRepository extends BaseAnkiRepository {
   /// 保证**返回** [MineOutcome] 而非抛出（供调用方统一 switch 处理 toast/UI）。
   /// 不新增卡片、不改 tag、不查重（更新语义）——与 AnkiConnect 后端对称。
   ///
-  /// 渲染出的 fields 为空（什么都没渲染出来）时拒绝更新，避免把已有卡片清空。
+  /// BUG-856：覆盖=整体替换。keepEmpty 保留所有映射字段（含渲染为空的）。native
+  /// `updateNoteFields` 只覆盖给出的字段——不发空字段则句子瞬时选区为空时旧句被静默
+  /// 保留（表现为「只覆盖图片和语音」），故发送空值以真正清空。仅当所有字段皆空白时
+  /// 拒绝（会清空整卡），部分有内容时照常整体替换。
   @override
   Future<MineOutcome> updateMinedNote({
     required int noteId,
@@ -394,11 +399,13 @@ class AnkiRepository extends BaseAnkiRepository {
         settings: settings,
         payload: payload,
         context: context,
+        keepEmpty: true,
       );
       final Map<String, String> fields = rendered.fields;
 
-      // 渲染为空说明没有任何字段映射命中，更新会把已有卡片清空——拒绝。
-      if (fields.isEmpty) {
+      // 所有映射字段渲染皆空白（含无字段映射）说明会把整卡清空——拒绝。部分字段
+      // 有内容时按覆盖语义整体替换（空字段随之清空，见 BUG-856）。
+      if (fields.values.every((String v) => v.trim().isEmpty)) {
         return MineOutcome.failure(
           'All fields are empty — refusing to clear an existing card. '
           'Check your note type field mappings.',

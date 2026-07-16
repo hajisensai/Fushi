@@ -323,12 +323,21 @@ abstract class BaseAnkiRepository {
 
   /// 按 [fieldMappings] 渲染卡片字段：模板渲染 → 替换词典媒体占位符 → HTML 规范化。
   /// 两 backend 共用同一逻辑（原先在两个 repo 各有一份 byte 级重复实现）。
+  ///
+  /// BUG-856：[keepEmpty] 区分「新建」与「覆盖」语义。
+  /// - 新建（默认 false）：渲染为空的字段直接跳过——新卡该字段本就空白，无意义。
+  /// - 覆盖（true）：**保留所有映射字段**（含渲染为空的），使 `updateNoteFields`
+  ///   按 id 真正整体替换。否则句子（`{sentence}` 取瞬时选区状态，覆盖那刻可能已空）
+  ///   会被这里过滤掉、字段名不进 map，两后端 native 都「未给出的字段保留旧值」，
+  ///   表现为「只覆盖图片和语音、原文句子不更新」。用户选定语义：覆盖=整体替换，
+  ///   句子为空则随之清空（`updateMinedNote` 另有「全部字段皆空 → 拒绝清整卡」总守卫）。
   @protected
   Map<String, String> buildMinedFields({
     required Map<String, String> fieldMappings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
     required Map<String, String> dictionaryMediaTags,
+    bool keepEmpty = false,
   }) {
     final fields = <String, String>{};
     for (final entry in fieldMappings.entries) {
@@ -337,7 +346,7 @@ abstract class BaseAnkiRepository {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
       value = normalizeAnkiDictionaryHtml(value);
-      if (value.trim().isNotEmpty) {
+      if (keepEmpty || value.trim().isNotEmpty) {
         fields[entry.key] = value;
       }
     }

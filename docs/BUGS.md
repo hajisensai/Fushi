@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 837 条。点号进各自文件。
+> 共 838 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-856](bugs/BUG-856-anki-overwrite-sentence.md) | ✅ | ✅ | Anki 覆盖卡片只覆盖图片和语音，原文句子未覆盖 |
 | [BUG-855](bugs/BUG-855-ass-fontsize-em-vs-cell.md) | ✅ | ✅ | ASS Fontsize 被当 em 用，字号比 mpv 整体大一截 |
 | [BUG-854](bugs/BUG-854-selection-menu-favorite.md) | ✅ | ✅ | 移动端选区菜单缺少收藏项 |
 | [BUG-853](bugs/BUG-853-video-ime-space-pause.md) | ✅ | ✅ | 日语输入法激活时视频页按空格无法暂停 |
