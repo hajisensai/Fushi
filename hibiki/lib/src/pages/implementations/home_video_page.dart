@@ -53,6 +53,7 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
@@ -3067,59 +3068,23 @@ class _VideoBatchTagPickerDialogState
 
   @override
   Widget build(BuildContext context) {
-    final bool canApply = _addTagIds.isNotEmpty || _removeTagIds.isNotEmpty;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
-      maxWidth: 520,
-      maxHeightFactor: 0.86,
-      scrollable: false,
-      child: HibikiModalSheetFrame(
-        title: t.batch_tag_title,
-        leadingIcon: Icons.sell_outlined,
-        scrollable: true,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: ListView.builder(
-          shrinkWrap: true,
-          itemCount: widget.allTags.length,
-          itemBuilder: (BuildContext _, int i) {
-            final BookTagRow tag = widget.allTags[i];
-            return _VideoBatchTagIntentRow(
-              tag: tag,
-              selected: _tagIntent(tag),
-              onChanged: (_VideoBatchTagIntent intent) =>
-                  _setTagIntent(tag, intent),
-            );
-          },
-        ),
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: context,
-              isDefaultAction: true,
-              onPressed: canApply ? _apply : null,
-              child: Text(t.batch_tag_apply),
-            ),
-          ],
-        ),
+    // 对话框 chrome（520 宽 / 取消·应用底栏）与书架批量打标签弹窗共用
+    // [BatchTagPickerDialogFrame]；此处只注入视频侧的三态标签行与 apply 落库回调。
+    return BatchTagPickerDialogFrame(
+      canApply: _addTagIds.isNotEmpty || _removeTagIds.isNotEmpty,
+      onApply: _apply,
+      body: ListView.builder(
+        shrinkWrap: true,
+        itemCount: widget.allTags.length,
+        itemBuilder: (BuildContext _, int i) {
+          final BookTagRow tag = widget.allTags[i];
+          return _VideoBatchTagIntentRow(
+            tag: tag,
+            selected: _tagIntent(tag),
+            onChanged: (_VideoBatchTagIntent intent) =>
+                _setTagIntent(tag, intent),
+          );
+        },
       ),
     );
   }

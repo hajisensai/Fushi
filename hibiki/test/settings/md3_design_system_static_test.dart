@@ -73,9 +73,6 @@ void main() {
     'lib/src/utils/components/hibiki_list_tile.dart': <String>[
       'HibikiListItem',
     ],
-    'lib/src/utils/components/hibiki_bottom_sheet.dart': <String>[
-      'HibikiListItem',
-    ],
     'lib/src/utils/components/hibiki_text_selection_controls.dart': <String>[
       'HibikiCard',
       'HibikiOverflowMenu',
@@ -99,10 +96,6 @@ void main() {
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
       'HibikiPageScaffold',
       'HibikiCard',
-      'HibikiDesignTokens',
-    ],
-    'lib/src/utils/components/hibiki_search_history.dart': <String>[
-      'HibikiListItem',
       'HibikiDesignTokens',
     ],
     'lib/src/pages/implementations/collections_page.dart': <String>[
@@ -310,10 +303,6 @@ void main() {
         'dense: true',
         'fontSize:',
       ],
-      'lib/src/utils/components/hibiki_bottom_sheet.dart': <String>[
-        'ListTile(',
-        'dense: true',
-      ],
       'lib/src/utils/components/hibiki_text_selection_controls.dart': <String>[
         'toolbarBuilder: (context, child) => Card(',
         'PopupMenuButton',
@@ -352,10 +341,6 @@ void main() {
         'const SizedBox(height: 8)',
         'const SizedBox(height: 12)',
         'const SizedBox(height: 24)',
-      ],
-      'lib/src/utils/components/hibiki_search_history.dart': <String>[
-        'fontSize:',
-        'TextStyle(',
       ],
       'lib/src/utils/components/settings_shared.dart': <String>[
         'surfaceContainerLowest',
@@ -1225,12 +1210,21 @@ void main() {
       'enum _BatchTagIntent',
     );
 
+    expect(deleteDialog, contains('HibikiDialogFrame('));
+    expect(deleteDialog, contains('HibikiModalSheetFrame('));
+    // 批量标签对话框的 MD3 chrome 已抽到与视频 tab 共用的
+    // BatchTagPickerDialogFrame；切片断言走共享外壳，再对共享外壳文件
+    // 断言真实 chrome，保证 MD3 保证传递闭环。
+    expect(batchTagDialog, contains('BatchTagPickerDialogFrame('));
+    final String sharedBatchTagFrame = File(
+      'lib/src/utils/components/batch_tag_dialog_frame.dart',
+    ).readAsStringSync();
+    expect(sharedBatchTagFrame, contains('HibikiDialogFrame('));
+    expect(sharedBatchTagFrame, contains('HibikiModalSheetFrame('));
     for (final String dialogSource in <String>[
       deleteDialog,
       batchTagDialog,
     ]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
   });
