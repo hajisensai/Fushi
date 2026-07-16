@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 775 条。点号进各自文件。
+> 共 776 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-818](bugs/BUG-818-embedded-sub-batch-einval.md) | ✅ | ✅ | 内嵌字幕批量抽取 ffmpeg exit -22：一条不可解码轨拖垮整批 |
 | [BUG-817](bugs/BUG-817-emulator-builds-unused-arm-abis.md) | ✅ | ✅ | 手机模拟器集成构建误编ARM导致SQLite下载超时 |
 | [BUG-816](bugs/BUG-816-video-exit-systemui-navbar.md) | ✅ | ✅ | 退出视频后底部导航栏残留隐藏（系统栏未还原） |
 | [BUG-790](bugs/BUG-790-inline-gaiji-width.md) | ✅ | ✅ | 词典行内外字图标撑开相邻链接 |
