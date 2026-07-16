@@ -15,6 +15,7 @@
 library;
 
 import 'package:hibiki/src/media/collections/collection_continue.dart';
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
 /// 一条视频行参与概览推导的最小投影（页面从 `VideoBookRow` 映射；测试直接构造）。
 class VideoOverviewEntry {
@@ -180,19 +181,9 @@ int _heroRank(
   return b.bookUid.compareTo(a.bookUid);
 }
 
-/// 毫秒 → `m:ss` / `h:mm:ss`（视频「已看至」外显；无共享格式化器，本处即真相源）。
-String formatVideoPosition(int positionMs) {
-  final int totalSeconds = positionMs ~/ 1000;
-  final int hours = totalSeconds ~/ 3600;
-  final int minutes = (totalSeconds % 3600) ~/ 60;
-  final int seconds = totalSeconds % 60;
-  final String ss = seconds.toString().padLeft(2, '0');
-  if (hours > 0) {
-    final String mm = minutes.toString().padLeft(2, '0');
-    return '$hours:$mm:$ss';
-  }
-  return '$minutes:$ss';
-}
+/// 毫秒 → `m:ss` / `h:mm:ss`（视频「已看至」外显）。委托 [HibikiTimeFormat.clock]。
+String formatVideoPosition(int positionMs) =>
+    HibikiTimeFormat.clock(Duration(milliseconds: positionMs));
 
 /// `VideoWatchStatistics` 行投影（键 + lastModified 毫秒）→ 每键最近观看时间
 /// 映射。键 = bookUid（v39 新行）或 title（迁移遗留 NULL-uid 行的回退键），

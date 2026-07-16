@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/i18n/strings.g.dart';
@@ -57,21 +56,5 @@ class MeaningField extends Field {
     });
 
     return meaningBuffer.toString().trim();
-  }
-
-  @override
-  String? onCreatorOpenAction({
-    required WidgetRef ref,
-    required AppModel appModel,
-    required CreatorModel creatorModel,
-    required DictionaryEntry entry,
-    required bool creatorJustLaunched,
-    required String? dictionaryName,
-  }) {
-    return flattenMeanings(
-      appModel: appModel,
-      entries: [entry],
-      prependDictionaryNames: false,
-    );
   }
 }

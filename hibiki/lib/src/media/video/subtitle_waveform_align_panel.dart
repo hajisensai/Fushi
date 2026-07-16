@@ -492,18 +492,8 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   }
 
   /// 毫秒 -> `m:ss` / `h:mm:ss` 时间标签。
-  String _formatTime(int ms) {
-    final int totalSec = (ms < 0 ? 0 : ms) ~/ 1000;
-    final int h = totalSec ~/ 3600;
-    final int m = (totalSec % 3600) ~/ 60;
-    final int s = totalSec % 60;
-    final String ss = s.toString().padLeft(2, '0');
-    if (h > 0) {
-      final String mm = m.toString().padLeft(2, '0');
-      return '$h:$mm:$ss';
-    }
-    return '$m:$ss';
-  }
+  String _formatTime(int ms) =>
+      HibikiTimeFormat.clock(Duration(milliseconds: ms < 0 ? 0 : ms));
 
   /// cue 边界（start/end 混合，未加延迟）。painter 内部叠加延迟画竖线。
   List<int> get _cueBoundariesMs {

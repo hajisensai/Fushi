@@ -22,23 +22,11 @@ import 'package:hibiki/src/sync/webdav_ops.dart';
 /// throws [SyncAuthError] if the server rejects the token.
 typedef HibikiProbe = Future<bool> Function(String url, String token);
 
-/// Picks the first reachable URL from [candidates] (in order, skipping
-/// disabled ones). A [SyncAuthError] from a probe propagates immediately —
-/// every candidate shares one token, so one rejection means all fail. Throws
-/// a retryable [SyncBackendError] when no enabled candidate is reachable.
-Future<String> resolveReachableHibikiUrl(
-  List<HibikiClientUrl> candidates,
-  String token,
-  HibikiProbe probe,
-) async {
-  final HibikiClientUrl chosen =
-      await resolveReachableHibikiCandidate(candidates, token, probe);
-  return chosen.url;
-}
-
-/// TODO-961 M1: 同 [resolveReachableHibikiUrl] 的探测逻辑，但返回选中的
+/// TODO-961 M1: 按顺序探测 [candidates]（跳过 disabled），返回第一个可达的
 /// [HibikiClientUrl]（而非裸 URL），让调用方能取到该地址的钉扎指纹（https 走 pinned
-/// client）。指纹是地址身份的一部分，故必须随选中地址一起流出。
+/// client）。探测中的 [SyncAuthError] 立即向上传播——所有候选共用一个 token，一次拒绝
+/// 即全部失败；无可达候选时抛可重试的 [SyncBackendError]。指纹是地址身份的一部分，
+/// 故必须随选中地址一起流出。
 Future<HibikiClientUrl> resolveReachableHibikiCandidate(
   List<HibikiClientUrl> candidates,
   String token,
@@ -490,9 +478,8 @@ class HibikiClientSyncBackend extends SyncBackend
   }) {
     // Heal slash-less persisted ids on load so every cached folderId ends with
     // `/` (BUG-845): `folderId + fileName` must never spill into the root.
-    _rootFolderId = rootFolderId == null
-        ? null
-        : ensureFolderIdTrailingSlash(rootFolderId);
+    _rootFolderId =
+        rootFolderId == null ? null : ensureFolderIdTrailingSlash(rootFolderId);
     if (titleToFolderId != null) {
       titleToFolderId.forEach((title, id) {
         _titleToFolderId[title] = ensureFolderIdTrailingSlash(id);

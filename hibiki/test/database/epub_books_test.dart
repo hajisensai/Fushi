@@ -59,14 +59,6 @@ void main() {
       expect(all, hasLength(2));
     });
 
-    test('updateEpubBookTitle is unsupported (rename = re-key)', () async {
-      final db = await _openDb();
-      final key = await db.insertEpubBook(_book(title: 'Old'));
-
-      expect(() => db.updateEpubBookTitle(key, 'New'),
-          throwsA(isA<UnsupportedError>()));
-    });
-
     test('updateEpubBookPath changes the epub path', () async {
       final db = await _openDb();
       final key = await db.insertEpubBook(_book());
@@ -85,17 +77,6 @@ void main() {
 
       expect(deleted, 1);
       expect(await db.getEpubBook(key), isNull);
-    });
-
-    test('insertEpubBookOrIgnore silently ignores duplicate key', () async {
-      final db = await _openDb();
-      await db.insertEpubBook(_book(title: 'Unique'));
-
-      // Same bookKey → ignored, no throw.
-      await db.insertEpubBookOrIgnore(_book(title: 'Unique'));
-
-      final all = await db.getAllEpubBooks();
-      expect(all, hasLength(1));
     });
   });
 

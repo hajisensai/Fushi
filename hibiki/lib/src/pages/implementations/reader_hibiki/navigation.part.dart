@@ -1178,8 +1178,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     if (_sessionCharsRead <= 0 || _book == null) return;
     final DateTime now = DateTime.now();
     final int elapsedMs = now.difference(_sessionStartTime).inMilliseconds;
-    final String dateKey =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final String dateKey = statDateKey(now);
     final int charsRead = _sessionCharsRead;
     final String title = _book!.title;
     _sessionCharsRead = 0;

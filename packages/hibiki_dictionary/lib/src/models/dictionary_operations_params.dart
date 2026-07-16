@@ -77,31 +77,3 @@ class UpdateDictionaryHistoryParams extends IsolateParams {
   final int newPosition;
   final int maximumDictionaryHistoryItems;
 }
-
-class DictionarySearchParams extends IsolateParams {
-  DictionarySearchParams({
-    required this.searchTerm,
-    required this.maximumDictionarySearchResults,
-    required this.maximumDictionaryTermsInResult,
-    required this.searchWithWildcards,
-    required this.dictionaryPaths,
-    required super.sendPort,
-    required super.directoryPath,
-  });
-
-  final String searchTerm;
-  final int maximumDictionarySearchResults;
-  final int maximumDictionaryTermsInResult;
-  final bool searchWithWildcards;
-  final List<String> dictionaryPaths;
-
-  @override
-  bool operator ==(Object other) =>
-      other is DictionarySearchParams &&
-      searchTerm == other.searchTerm &&
-      maximumDictionaryTermsInResult == other.maximumDictionaryTermsInResult &&
-      searchWithWildcards == other.searchWithWildcards;
-
-  @override
-  int get hashCode => searchTerm.hashCode;
-}

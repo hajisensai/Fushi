@@ -447,49 +447,12 @@ class ReaderHistoryBatchTagDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = Translations.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-
-    return HibikiDialogFrame(
-      maxWidth: 520,
-      maxHeightFactor: 0.86,
-      scrollable: false,
-      child: HibikiModalSheetFrame(
-        title: t.batch_tag_title,
-        leadingIcon: Icons.sell_outlined,
-        scrollable: true,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: body,
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: [
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: context,
-              isDefaultAction: true,
-              onPressed: canApply ? onApply : null,
-              child: Text(t.batch_tag_apply),
-            ),
-          ],
-        ),
-      ),
+    // 与视频 tab 批量打标签弹窗共用 [BatchTagPickerDialogFrame] chrome；本壳保留为书架侧
+    // 公开测试入口（reader_history_batch_tag_dialog_test 直接构造它验证紧凑窗口不溢出）。
+    return BatchTagPickerDialogFrame(
+      body: body,
+      canApply: canApply,
+      onApply: onApply,
     );
   }
 }

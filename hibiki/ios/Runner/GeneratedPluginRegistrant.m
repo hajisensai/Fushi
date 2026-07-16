@@ -42,12 +42,6 @@
 @import device_info_plus;
 #endif
 
-#if __has_include(<document_file_save_plus/DocumentFileSavePlusPlugin.h>)
-#import <document_file_save_plus/DocumentFileSavePlusPlugin.h>
-#else
-@import document_file_save_plus;
-#endif
-
 #if __has_include(<external_app_launcher/LaunchexternalappPlugin.h>)
 #import <external_app_launcher/LaunchexternalappPlugin.h>
 #else
@@ -88,12 +82,6 @@
 #import <flutter_exit_app/FlutterExitAppPlugin.h>
 #else
 @import flutter_exit_app;
-#endif
-
-#if __has_include(<flutter_image_compress/ImageCompressPlugin.h>)
-#import <flutter_image_compress/ImageCompressPlugin.h>
-#else
-@import flutter_image_compress;
 #endif
 
 #if __has_include(<flutter_inappwebview_ios/InAppWebViewFlutterPlugin.h>)
@@ -231,7 +219,6 @@
   [SwiftBonsoirPlugin registerWithRegistrar:[registry registrarForPlugin:@"SwiftBonsoirPlugin"]];
   [ClipboardWatcherPlugin registerWithRegistrar:[registry registrarForPlugin:@"ClipboardWatcherPlugin"]];
   [FPPDeviceInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPDeviceInfoPlusPlugin"]];
-  [DocumentFileSavePlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"DocumentFileSavePlusPlugin"]];
   [LaunchexternalappPlugin registerWithRegistrar:[registry registrarForPlugin:@"LaunchexternalappPlugin"]];
   [ExternalPathPlugin registerWithRegistrar:[registry registrarForPlugin:@"ExternalPathPlugin"]];
   [FFmpegKitFlutterPlugin registerWithRegistrar:[registry registrarForPlugin:@"FFmpegKitFlutterPlugin"]];
@@ -239,7 +226,6 @@
   [FlutterArchivePlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterArchivePlugin"]];
   [FlutterCharsetDetectorPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterCharsetDetectorPlugin"]];
   [FlutterExitAppPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterExitAppPlugin"]];
-  [ImageCompressPlugin registerWithRegistrar:[registry registrarForPlugin:@"ImageCompressPlugin"]];
   [InAppWebViewFlutterPlugin registerWithRegistrar:[registry registrarForPlugin:@"InAppWebViewFlutterPlugin"]];
   [FlutterLogsPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterLogsPlugin"]];
   [FlutterNativeSplashPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterNativeSplashPlugin"]];

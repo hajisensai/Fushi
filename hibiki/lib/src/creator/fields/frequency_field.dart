@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -177,21 +176,6 @@ class FrequencyField extends Field {
       }
     }
     return groups;
-  }
-
-  @override
-  String? onCreatorOpenAction({
-    required WidgetRef ref,
-    required AppModel appModel,
-    required CreatorModel creatorModel,
-    required DictionaryEntry entry,
-    required bool creatorJustLaunched,
-    required String? dictionaryName,
-  }) {
-    return getFrequency(
-      appModel: appModel,
-      entry: entry,
-    );
   }
 }
 

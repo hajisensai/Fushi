@@ -99,47 +99,6 @@ Future<bool> showSettingsConfirmationDialog(
   return confirmed == true;
 }
 
-Future<void> showSettingsProgressDialog(
-  SettingsContext settingsContext, {
-  required String message,
-}) {
-  return showAppDialog<void>(
-    context: settingsContext.context,
-    barrierDismissible: false,
-    builder: (BuildContext ctx) {
-      final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-      return PopScope(
-        canPop: false,
-        child: HibikiDialogFrame(
-          maxWidth: 360,
-          maxHeightFactor: 0.72,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.card,
-          ),
-          scrollable: false,
-          child: HibikiModalSheetFrame(
-            bodyPadding: EdgeInsets.all(tokens.spacing.card),
-            body: Row(
-              children: <Widget>[
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: adaptiveIndicator(context: ctx, strokeWidth: 2),
-                ),
-                SizedBox(width: tokens.spacing.gap + 4),
-                Expanded(
-                  child: Text(message, style: tokens.type.listSubtitle),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    },
-  );
-}
-
 void notifyReaderSettingsChanged(SettingsContext settingsContext) {
   ReaderHibikiSource.onSettingsChangedLive?.call();
   settingsContext.refresh();
@@ -193,22 +152,6 @@ Future<void> setKeepScreenAwake(
     debugPrint('[Hibiki] wakelock toggle failed: $e');
   }
   notifyReaderSettingsChanged(settingsContext);
-}
-
-Future<void> confirmDebugChannel(
-  SettingsContext settingsContext,
-  bool value,
-) async {
-  if (value) {
-    final bool confirmed = await showSettingsConfirmationDialog(
-      settingsContext,
-      title: t.update_debug_channel,
-      body: t.update_debug_channel_warning,
-    );
-    if (!confirmed) return;
-  }
-  await settingsContext.appModel.setUpdateDebugChannel(value);
-  settingsContext.refresh();
 }
 
 Future<void> setUpdateChannel(

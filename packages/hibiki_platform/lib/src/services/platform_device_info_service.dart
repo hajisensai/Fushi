@@ -1,7 +1,6 @@
 abstract class PlatformDeviceInfoService {
   Future<int?> get sdkVersion;
   Future<String?> get deviceModel;
-  Future<String?> get osVersion;
 
   /// Device manufacturer (Android `Build.MANUFACTURER`, e.g. `OPPO` /
   /// `realme` / `OnePlus`; casing is vendor-defined). `null` on platforms

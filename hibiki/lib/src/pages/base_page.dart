@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 
@@ -59,33 +58,6 @@ abstract class BasePageState<T extends BasePage> extends ConsumerState<T> {
 
   /// Shortcut for accessing the app-wide theme.
   ThemeData get theme => Theme.of(context);
-
-  /// Get the selection controls for a [SelectableText].
-  MaterialTextSelectionControls get selectionControls =>
-      HibikiTextSelectionControls(
-        searchAction: onSearch,
-        stashAction: onStash,
-        shareAction: onShare,
-        allowCopy: true,
-        allowSelectAll: true,
-        allowCut: true,
-        allowPaste: true,
-      );
-
-  /// Action to perform upon using the Search context option.
-  void onSearch(String searchTerm, {String? sentence = ''}) async {
-    await appModel.openPopupDictionaryLookup(searchTerm: searchTerm);
-  }
-
-  /// Action to perform upon using the Share context option.
-  void onShare(String searchTerm, {String? sentence = ''}) async {
-    Share.share(searchTerm);
-  }
-
-  /// Action to perform upon using the Stash context option.
-  void onStash(String searchTerm) {
-    appModel.addToStash(terms: [searchTerm]);
-  }
 
   // build() is intentionally NOT implemented here — it is abstract (inherited
   // from State). Subclasses must provide it; a missing override is now a

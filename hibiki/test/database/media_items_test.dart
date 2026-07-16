@@ -65,25 +65,6 @@ void main() {
       expect(all.single.title, 'V2');
     });
 
-    test('getMediaItemsByType filters correctly', () async {
-      final db = await _openDb();
-      await db.upsertMediaItem(_item(typeId: 'reader', uniqueKey: 'uk1'));
-      await db.upsertMediaItem(_item(typeId: 'dict', uniqueKey: 'uk2'));
-
-      final readers = await db.getMediaItemsByType('reader');
-      expect(readers, hasLength(1));
-      expect(readers.single.mediaTypeIdentifier, 'reader');
-    });
-
-    test('getMediaItemsBySource filters correctly', () async {
-      final db = await _openDb();
-      await db.upsertMediaItem(_item(sourceId: 'hoshi', uniqueKey: 'uk1'));
-      await db.upsertMediaItem(_item(sourceId: 'other', uniqueKey: 'uk2'));
-
-      final items = await db.getMediaItemsBySource('hoshi');
-      expect(items, hasLength(1));
-    });
-
     test('deleteMediaItemByUniqueKey removes the item', () async {
       final db = await _openDb();
       await db.upsertMediaItem(_item());
@@ -122,7 +103,7 @@ void main() {
 
       await db.trimMediaHistory('reader', 2);
 
-      final remaining = await db.getMediaItemsByType('reader');
+      final remaining = await db.getAllMediaItems();
       expect(remaining.length, lessThanOrEqualTo(2));
     });
   });

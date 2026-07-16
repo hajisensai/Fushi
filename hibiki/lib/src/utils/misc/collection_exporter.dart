@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/utils/misc/hibiki_share.dart';
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 
@@ -129,11 +130,7 @@ const String _utf8Bom = '﻿';
 
 const String _csvNewline = '\r\n';
 
-String _formatDateTime(DateTime dt) {
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
-      '${two(dt.hour)}:${two(dt.minute)}';
-}
+String _formatDateTime(DateTime dt) => HibikiTimeFormat.dateHourMinute(dt);
 
 /// CSV（RFC4180）字段转义：含逗号/引号/换行的字段加双引号包裹并把内部 `"` 翻倍。
 String _csvEscape(String field) {

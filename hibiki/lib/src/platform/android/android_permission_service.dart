@@ -24,11 +24,4 @@ class AndroidPermissionService implements PlatformPermissionService {
     final status = await Permission.camera.request();
     return status.isGranted;
   }
-
-  @override
-  Future<bool> canDrawOverlays() => Permission.systemAlertWindow.isGranted;
-
-  @override
-  Future<void> requestOverlayPermission() =>
-      Permission.systemAlertWindow.request();
 }

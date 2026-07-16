@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/video/video_playback_source.dart';
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
 /// 完成判定纯函数：进度 ≥ 90% 且尚未完成、且时长已知。
 bool shouldMarkCompleted(int? positionMs, int? durationMs, bool already) {
@@ -43,8 +44,7 @@ List<(String, int, int)> splitWatchTime(DateTime start, DateTime now) {
   return <(String, int, int)>[(_dateKey(start), start.hour, elapsed)];
 }
 
-String _dateKey(DateTime d) =>
-    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+String _dateKey(DateTime d) => HibikiTimeFormat.dayKey(d);
 
 /// 视频观看统计采集器：观看时长（仅播放时累加）+ 字幕字数（单调去重）+ 完成标记。
 ///

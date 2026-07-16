@@ -10,8 +10,5 @@ class DesktopDeviceInfoService implements PlatformDeviceInfoService {
   Future<String?> get deviceModel async => Platform.localHostname;
 
   @override
-  Future<String?> get osVersion async => Platform.operatingSystemVersion;
-
-  @override
   Future<String?> get manufacturer async => null;
 }

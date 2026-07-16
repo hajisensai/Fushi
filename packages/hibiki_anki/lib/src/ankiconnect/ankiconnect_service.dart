@@ -4,10 +4,9 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import '../anki_models.dart';
-import '../anki_service.dart';
 import '../lapis_note_type.dart';
 
-class AnkiConnectService implements AnkiService {
+class AnkiConnectService {
   final String host;
   final int port;
 
@@ -240,7 +239,6 @@ class AnkiConnectService implements AnkiService {
     return result.cast<String>();
   }
 
-  @override
   Future<bool> isAvailable() async {
     try {
       await _request('version');
@@ -267,17 +265,14 @@ class AnkiConnectService implements AnkiService {
     }
   }
 
-  @override
   Future<List<String>> getDeckNames() async {
     return _asStringList(await _request('deckNames'), 'deckNames');
   }
 
-  @override
   Future<List<String>> getModelNames() async {
     return _asStringList(await _request('modelNames'), 'modelNames');
   }
 
-  @override
   Future<List<String>> getModelFields(String modelName) async {
     return _asStringList(
       await _request('modelFieldNames', {'modelName': modelName}),
@@ -285,7 +280,6 @@ class AnkiConnectService implements AnkiService {
     );
   }
 
-  @override
   Future<int?> addNote({
     required String deckName,
     required String modelName,
@@ -313,7 +307,6 @@ class AnkiConnectService implements AnkiService {
     return result is int ? result : int.tryParse(result.toString());
   }
 
-  @override
   Future<bool> isDuplicate({
     required String deckName,
     required String fieldName,
@@ -386,7 +379,6 @@ class AnkiConnectService implements AnkiService {
   // `{note: {id, fields}}`，只覆盖给出的字段，其余保留。带固定 [noteId]，重发
   // 幂等（同 id + 同 fields 结果一致），故不列入 [_nonIdempotentActions]——可像
   // storeMediaFile 一样在连接掉线时安全重试。
-  @override
   Future<void> updateNoteFields(int noteId, Map<String, String> fields) async {
     await _request('updateNoteFields', {
       'note': {
@@ -401,7 +393,6 @@ class AnkiConnectService implements AnkiService {
   // fields: {<name>: {value, order}}}`。我们只取 `fields` 拍平成 `name → value`。
   // note 不存在时 AnkiConnect 返回一个空对象项（无 noteId/fields）；这里统一以
   // 「无 fields」当作不存在返回 `null`。
-  @override
   Future<Map<String, String>?> notesInfo(int noteId) async {
     final result = await _request('notesInfo', {
       'notes': [noteId],

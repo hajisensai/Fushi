@@ -1,7 +1,6 @@
 import 'dart:async' show unawaited;
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,13 +20,10 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
-import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 // BUG-813：构造 ReaderPositionsCompanion 回填下载书的阅读进度需要 drift 的 Value（
 // hibiki_core 未再导出它）。
@@ -61,6 +57,7 @@ import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
 
 part 'reader_history/card_widgets.part.dart';
 part 'reader_history/remote.part.dart';
@@ -186,9 +183,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   // 供 SRT 卡按 bookKey 复用同一进度，无需重复读 DB / 重算。
   Map<String, ({int position, int duration})> _epubProgressByBookKey = const {};
 
-  // 视频书单独分区：无 Riverpod provider，按需载入 state 并在导入后刷新。
-  List<VideoBookRow> _videoBooks = const [];
-  Future<List<VideoBookRow>>? _videoBooksFuture;
   Future<_RemoteBookState?>? _remoteBooksFuture;
 
   /// 排序交互重设计层次 A：当前排序方式（偏好 `shelf_sort_mode` 持久化，默认
@@ -353,7 +347,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   child: books.when(
                     data: (bookList) {
                       _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
-                      _videoBooksFuture ??= _loadVideoBooks();
                       _remoteBooksFuture ??= _loadRemoteBooks();
                       _shelfMapsFuture ??= _loadShelfMaps();
                       final Set<String>? filterSet = filteredIds.valueOrNull;
@@ -370,17 +363,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                       return FutureBuilder<Map<String, _AudiobookInfo>>(
                         future: _batchAudiobookInfoFuture,
                         builder: (context, abSnapshot) =>
-                            FutureBuilder<List<VideoBookRow>>(
-                          future: _videoBooksFuture,
-                          builder: (context, videoSnapshot) =>
-                              FutureBuilder<_RemoteBookState?>(
-                            future: _remoteBooksFuture,
-                            builder: (context, remoteSnapshot) =>
-                                FutureBuilder<void>(
-                              future: _shelfMapsFuture,
-                              builder: (context, _) =>
-                                  buildBody(filtered, remoteSnapshot),
-                            ),
+                            FutureBuilder<_RemoteBookState?>(
+                          future: _remoteBooksFuture,
+                          builder: (context, remoteSnapshot) =>
+                              FutureBuilder<void>(
+                            future: _shelfMapsFuture,
+                            builder: (context, _) =>
+                                buildBody(filtered, remoteSnapshot),
                           ),
                         ),
                       );
@@ -973,18 +962,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     } else {
       srtBooks = allSrtBooks;
     }
-    // 实验视频 tab 启用时，视频归「视频」tab 独占，书架不再显示视频分区（用户反馈：
-    // 书架是书的地方）；开关关闭（无视频 tab）时书架照旧显示，保持向后兼容。
-    // 视频现已纳入共享标签系统：筛选激活时按命中的 bookUid 过滤（不再整组隐藏）。
-    final Set<String>? videoFilter =
-        ref.watch(filteredVideoBookUidsProvider).valueOrNull;
-    final List<VideoBookRow> videoBooks = appModel.experimentalVideoEnabled
-        ? const <VideoBookRow>[]
-        : (videoFilter == null
-            ? _videoBooks
-            : _videoBooks
-                .where((VideoBookRow b) => videoFilter.contains(b.bookUid))
-                .toList());
+    // 视频归「视频」tab（HomeVideoPage）独占，书架不再显示视频分区（用户反馈：
+    // 书架是书的地方）。已导入视频只在视频 tab 呈现；书架拖入视频仍可导入（经
+    // _handleShelfDrop → VideoImportDialog），落库后同样只在视频 tab 可见。
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
     // 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5）：把「远端有、本地无」的书
@@ -1119,10 +1099,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
     _epubProgressByBookKey = epubProgressByBookKey;
-    if (epubBooks.isEmpty &&
-        srtBooks.isEmpty &&
-        videoBooks.isEmpty &&
-        remoteBooks.isEmpty) {
+    if (epubBooks.isEmpty && srtBooks.isEmpty && remoteBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
               child: HibikiPlaceholderMessage(
@@ -1132,7 +1109,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             )
           : buildPlaceholder();
     }
-    if (hasActiveFilter && epubBooks.isEmpty && videoBooks.isEmpty) {
+    if (hasActiveFilter && epubBooks.isEmpty) {
       return RawScrollbar(
         thumbVisibility: true,
         thickness: 3,
@@ -1205,7 +1182,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 ),
               // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
               // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
-              // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
+              // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频不再进书架
+              // （归「视频」tab 独占）。
               // 合集 group 渲染成全宽横排行（CollectionShelfRow）集中在前，
               // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。多端库联合
               // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
@@ -1216,19 +1194,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   epubCoverUrisByBookKey,
                   constraints,
                 ),
-              if (videoBooks.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                    child: _buildSectionHeader(t.shelf_video_section)),
-                SliverGrid.builder(
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: _gridExtent(context, constraints),
-                    // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
-                    childAspectRatio: kShelfVideoCardAspectRatio,
-                  ),
-                  itemCount: videoBooks.length,
-                  itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
-                ),
-              ],
             ],
           ),
         ),
@@ -1573,24 +1538,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         }
       }
     }
-  }
-
-  Widget _buildSectionHeader(String label) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsetsDirectional.fromSTEB(
-        tokens.spacing.rowHorizontal * 0.75,
-        tokens.spacing.gap,
-        tokens.spacing.rowHorizontal * 0.75,
-        tokens.spacing.gap / 4,
-      ),
-      child: Text(
-        label,
-        // Shared MD3 section label (labelLarge / primary / w600) — same role as
-        // the settings detail section headers, replacing the ad-hoc styling.
-        style: tokens.type.sectionLabel,
-      ),
-    );
   }
 
   Future<bool> _confirmMediaDelete({

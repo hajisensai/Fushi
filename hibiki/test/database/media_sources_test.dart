@@ -107,21 +107,6 @@ void main() {
       expect(row!.label, 'New');
     });
 
-    test('upsertMediaSource updates in place by id (no duplicate)', () async {
-      final db = await _openDb();
-      final id = await db.insertMediaSource(_source(label: 'V1'));
-      await db.upsertMediaSource(MediaSourcesCompanion(
-        id: Value(id),
-        label: const Value('V2'),
-        mediaKind: const Value('book'),
-        rootPath: const Value('/srv/media'),
-        createdAt: const Value(1000),
-      ));
-      final all = await db.getAllMediaSources();
-      expect(all, hasLength(1));
-      expect(all.single.label, 'V2');
-    });
-
     test('deleteMediaSource removes the row', () async {
       final db = await _openDb();
       final id = await db.insertMediaSource(_source());

@@ -5,18 +5,8 @@ import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
-String formatCueTimestamp(int startMs) {
-  final int total = startMs < 0 ? 0 : startMs ~/ 1000;
-  final int hours = total ~/ 3600;
-  final int minutes = (total % 3600) ~/ 60;
-  final int seconds = total % 60;
-  final String ss = seconds.toString().padLeft(2, '0');
-  if (hours > 0) {
-    final String mm = minutes.toString().padLeft(2, '0');
-    return '$hours:$mm:$ss';
-  }
-  return '$minutes:$ss';
-}
+String formatCueTimestamp(int startMs) =>
+    HibikiTimeFormat.clock(Duration(milliseconds: startMs < 0 ? 0 : startMs));
 
 /// 字幕列表行**时间戳列宽度**（TODO-567 / TODO-1200）。纯函数，页面与测试同源。
 ///

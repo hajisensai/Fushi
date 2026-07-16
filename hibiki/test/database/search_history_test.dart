@@ -23,21 +23,17 @@ void main() {
     await db.upsertSearchHistoryItem(
       _historyItem('dictionary_media_type', '猫'),
     );
-    final firstRow = await db.getSearchHistoryByUniqueKey(
-      'dictionary_media_type/猫',
-    );
+    final firstRow =
+        (await db.getSearchHistory('dictionary_media_type')).single;
 
     await db.upsertSearchHistoryItem(
       _historyItem('dictionary_media_type', '猫'),
     );
 
     final rows = await db.getSearchHistory('dictionary_media_type');
-    final secondRow = await db.getSearchHistoryByUniqueKey(
-      'dictionary_media_type/猫',
-    );
 
     expect(rows, hasLength(1));
     expect(rows.single.searchTerm, '猫');
-    expect(secondRow!.id, greaterThan(firstRow!.id));
+    expect(rows.single.id, greaterThan(firstRow.id));
   });
 }

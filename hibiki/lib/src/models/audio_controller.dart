@@ -42,15 +42,10 @@ class AudioController {
   final StreamController<void> _playPauseHeadsetController =
       StreamController.broadcast();
 
-  Stream<bool> get creatorActiveStream => _creatorActiveController.stream;
-  final StreamController<bool> _creatorActiveController =
-      StreamController.broadcast();
-
   HibikiAudioHandler? get audioHandler => _audioHandler;
   HibikiAudioHandler? _audioHandler;
 
   void emitMediaPause() => _mediaPauseController.add(null);
-  void emitCreatorActive(bool active) => _creatorActiveController.add(active);
 
   Future<void> initialiseHandler() async {
     if (_audioHandler != null) return;
@@ -92,7 +87,6 @@ class AudioController {
   void dispose() {
     _mediaPauseController.close();
     _playPauseHeadsetController.close();
-    _creatorActiveController.close();
     _playController.close();
     _seekController.close();
     _rewindController.close();

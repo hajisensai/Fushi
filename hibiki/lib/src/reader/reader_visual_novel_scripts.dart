@@ -74,6 +74,11 @@ class ReaderVisualNovelScripts {
     );
   }
 
+  // 注意：ReaderPaginationScripts._jsStringLiteral 是另一份独立实现（jsonEncode、
+  // 双引号输出）。两侧输出字节形式各被测试钉死（本文件单引号 →
+  // test/reader/vn_shell_smoke_test.dart；分页双引号 →
+  // test/reader/reader_pagination_scripts_test.dart），刻意不共享；本实现已转义
+  // 单引号字面量全部语法破坏字符（\ ' \n \r），改动时必须保持 JS 语法安全。
   static String _jsStringLiteral(String value) {
     final String escaped = value
         .replaceAll(r'\', r'\\')
@@ -485,17 +490,6 @@ class ReaderVisualNovelScripts {
       return ids;
     },
 
-    idsForTextNode: function(node) {
-      var ids = new Set();
-      var current = node ? node.parentNode : null;
-      while (current) {
-        mergeIds(ids, ownIdsForNode(current));
-        if (current === this.root) break;
-        current = current.parentNode;
-      }
-      return ids;
-    },
-
     idsForMediaUnit: function(renderRoot, mediaNode) {
       if (renderRoot === mediaNode) return this.idsForNode(renderRoot);
       var ids = this.idsForNode(mediaNode);
@@ -670,19 +664,6 @@ class ReaderVisualNovelScripts {
 
     rubyRootForTextNode: function(node) {
       return closestAncestor(node, this.root, 'ruby');
-    },
-
-    rubyRoots: function() {
-      var roots = [];
-      var seen = new WeakSet();
-      for (var i = 0; i < this.textEntries.length; i++) {
-        var root = this.textEntries[i].rubyRoot;
-        if (root && !seen.has(root)) {
-          seen.add(root);
-          roots.push(root);
-        }
-      }
-      return roots;
     }
   };
 
@@ -870,14 +851,6 @@ window.hoshiReader = {
   readerCssVariable: function(name) {
     return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   },
-  setRevealSpeed: function(speed) {
-    var parsed = Number(speed);
-    this.revealSpeed = Number.isFinite(parsed) ? Math.min(120, Math.max(0, parsed)) : 0;
-    if (!this.revealComplete) {
-      this.clearRevealTimer();
-      this.scheduleRevealTick();
-    }
-  },
   isEInkMode: function() {
     return this.readerCssVariable('--hoshi-reader-eink-mode') === '1';
   },
@@ -914,22 +887,6 @@ window.hoshiReader = {
   },
   isMatchableChar: function(char) {
     return this.textSemantics().isMatchableChar(char);
-  },
-  textOffsetForCharCount: function(node, targetCount) {
-    var text = node.textContent || '';
-    var count = 0;
-    var offset = 0;
-    var fallbackOffset = 0;
-    while (offset < text.length) {
-      var char = String.fromCodePoint(text.codePointAt(offset));
-      if (this.isMatchableChar(char)) {
-        if (count >= targetCount) return offset;
-        fallbackOffset = offset;
-        count += 1;
-      }
-      offset += char.length;
-    }
-    return fallbackOffset;
   },
   createWalker: function(rootNode) {
     var root = rootNode || this.screen || document.body;
@@ -1163,10 +1120,6 @@ window.hoshiReader = {
     var screenEnd = this.screenEndCharCount(screen);
     if (end <= start) return start >= screenStart && start <= screenEnd;
     return end > screenStart && start < screenEnd;
-  },
-  progressTargetCharCount: function(progress) {
-    var clamped = Math.min(1, Math.max(0, Number(progress) || 0));
-    return Math.ceil(this.totalChapterChars * clamped);
   },
   assignScreenProgressAnchors: function() {
     if (!this.screens || !this.screens.length) return;
@@ -2702,9 +2655,6 @@ window.hoshiReader = {
     this.notifyRestoreComplete();
     return true;
   },
-  setNativeSelectionActive: function(active) {
-    this.nativeSelectionActive = !!active;
-  },
   sasayakiCueSignature: function(cues) {
     var items = Array.isArray(cues) ? cues : [];
     return JSON.stringify(items.map((cue) => ({
@@ -2767,11 +2717,6 @@ window.hoshiReader = {
     }
     return this.rangeMap.collectMatchableCueRanges(normalized);
   },
-  currentScreenRangesForSasayakiCue: function(cue) {
-    var start = this.sasayakiCueStart(cue);
-    var end = this.sasayakiCueEnd(cue);
-    return this.rangeMap.collectMatchableSegments(start, end);
-  },
   rememberSasayakiCueSources: function(cueRanges) {
     for (var i = 0; i < cueRanges.length; i++) {
       this.cueSourceRanges.set(cueRanges[i].id, cueRanges[i]);
@@ -2779,10 +2724,6 @@ window.hoshiReader = {
   },
   sasayakiInlineTargetsForCue: function(cueId) {
     return this.cueWrappers.get(cueId) || [];
-  },
-  hasSasayakiCueTarget: function(cueId) {
-    return (this.cueGeometryRanges.get(cueId) || []).length > 0 ||
-      (this.cueWrappers.get(cueId) || []).length > 0;
   },
   wrapSasayakiCueRanges: function(cueRanges) {
     var wrapped = new Map();
@@ -2939,42 +2880,6 @@ window.hoshiReader = {
     }
     this.buildNodeOffsets();
     if (this.activeCueId) this.refreshSasayakiCuePresentation();
-  },
-  sasayakiMediaStopsBetweenScreens: function(startIndex, endIndex) {
-    if (!this.screens || !this.screens.length) return [];
-    if (startIndex === endIndex) return [];
-    var step = startIndex < endIndex ? 1 : -1;
-    var stops = [];
-    for (var i = startIndex; i !== endIndex; i += step) {
-      if (this.screens[i] && this.screens[i].mediaStop) {
-        stops.push({ screenIndex: i });
-      }
-    }
-    return stops;
-  },
-  sasayakiMediaStopsBeforeCue: function(cue) {
-    var cueObject = this.sasayakiCueForInput(cue);
-    var targetIndex = this.screenIndexForSasayakiCue(cueObject);
-    if (targetIndex < 0) return [];
-    return this.sasayakiMediaStopsBetweenScreens(this.currentScreenIndex, targetIndex);
-  },
-  sasayakiMediaStopsToChapterEnd: function() {
-    if (!this.screens || !this.screens.length) return [];
-    var stops = [];
-    for (var i = this.currentScreenIndex; i < this.screens.length; i++) {
-      if (this.screens[i] && this.screens[i].mediaStop) {
-        stops.push({ screenIndex: i });
-      }
-    }
-    return stops;
-  },
-  showSasayakiMediaStop: function(stop) {
-    var index = Number(stop && stop.screenIndex);
-    if (!Number.isFinite(index) || !this.screens || !this.screens.length) return null;
-    var safeIndex = Math.min(Math.max(0, Math.floor(index)), this.screens.length - 1);
-    if (!this.screens[safeIndex].mediaStop) return null;
-    this.renderScreen(safeIndex, true);
-    return this.calculateProgress();
   },
   highlightSasayakiCue: function(cue, reveal) {
     var cueObject = this.sasayakiCueForInput(cue);
