@@ -90,8 +90,13 @@ void main() {
     // build number 反解 seq），须与既有版本比较（isUpdateVersionNewer 等）共享同一 library 私有
     // 作用域（part 契约禁止 part 内 import 无法拆库）。release 净增 ~77 行到 1709，故把 release
     // 天花板从 1650 上调到 1720（留 ~11 行合理余量，与既有余量风格一致）。
+    // BUG-845：再加入「嵌套更新合集」（越激进通道合集越大：stable⊆beta⊆debug，让 beta/debug
+    // 用户能收到更新的正式版/更高基版本，永不掉队）——_channelsAdmittedBy / _channelAdmitsVersion
+    // / _sameChannelTrack / releaseEligibleForChannel / _compareReleaseRecency 等跨切判据，须与
+    // 既有版本比较共享同一 library 私有作用域。release 净增 ~120 行到 1830，故把 release 天花板
+    // 从 1720 上调到 1900（留 ~70 行合理余量，与既有余量风格一致）。
     const int kDownloadCeiling = 1780;
-    const int kReleaseCeiling = 1720;
+    const int kReleaseCeiling = 1900;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
       final int ceiling = path == download

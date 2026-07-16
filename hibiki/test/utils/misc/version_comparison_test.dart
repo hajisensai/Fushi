@@ -420,6 +420,241 @@ void main() {
       );
     });
   });
+
+  // BUG-845：嵌套合集——越激进的通道合集越大（stable⊆beta⊆debug）。测试版/调试版应能
+  // 收到更新的正式版/更高基版本，永不掉队；但更保守的通道不得反向收到更激进轨道。
+  group('BUG-845 nested update channels (isUpdateVersionNewer)', () {
+    test('beta channel receives a higher-base stable release', () {
+      expect(
+        isUpdateVersionNewer('1.3.0', '1.2.0-beta.5', UpdateChannel.beta),
+        isTrue,
+        reason: 'beta 用户应收到更高基版本的正式版',
+      );
+    });
+
+    test('beta channel receives the finished same-base stable release', () {
+      // beta 用户在 1.2.0-beta.5，正式版 1.2.0 出了（成品早于预发布？不——预发布早于成品，
+      // semver 里 1.2.0 > 1.2.0-beta.5）→ 应领到成品 1.2.0（用户原始诉求）。
+      expect(
+        isUpdateVersionNewer('1.2.0', '1.2.0-beta.5', UpdateChannel.beta),
+        isTrue,
+        reason: 'beta 用户应领到同基的成品正式版',
+      );
+    });
+
+    test('stranded beta gets newer stable patch when beta paused', () {
+      // beta 停在 1.2.0-beta.5，正式版继续发补丁 1.2.1 → 不再被卡死。
+      expect(
+        isUpdateVersionNewer('1.2.1', '1.2.0-beta.5', UpdateChannel.beta),
+        isTrue,
+      );
+    });
+
+    test('debug channel receives stable and beta (largest 合集)', () {
+      expect(
+        isUpdateVersionNewer('1.3.0', '1.2.0-debug.100', UpdateChannel.debug),
+        isTrue,
+        reason: 'debug 用户应收到更高基正式版',
+      );
+      expect(
+        isUpdateVersionNewer('1.2.0', '1.2.0-debug.100', UpdateChannel.debug),
+        isTrue,
+        reason: 'debug 用户应领到同基成品正式版',
+      );
+      expect(
+        isUpdateVersionNewer(
+          '1.3.0-beta.1',
+          '1.2.0-debug.100',
+          UpdateChannel.debug,
+        ),
+        isTrue,
+        reason: 'debug 合集含 beta 轨：更高基 beta 也应收到',
+      );
+    });
+
+    test('stable channel never receives prereleases (smallest 合集)', () {
+      expect(
+        isUpdateVersionNewer('1.3.0-beta.1', '1.2.0', UpdateChannel.stable),
+        isFalse,
+        reason: '正式版通道合集只含 stable，不收 beta',
+      );
+      expect(
+        isUpdateVersionNewer('1.3.0-debug.1', '1.2.0', UpdateChannel.stable),
+        isFalse,
+        reason: '正式版通道不收 debug',
+      );
+    });
+
+    test('beta channel does NOT receive debug builds (debug ∉ beta 合集)', () {
+      // 关键不对称：debug 只在 debug 合集里；beta 用户拿不到 debug 预发布。
+      expect(
+        isUpdateVersionNewer(
+          '1.3.0-debug.1',
+          '1.2.0-beta.5',
+          UpdateChannel.beta,
+        ),
+        isFalse,
+        reason: 'beta 合集={stable,beta}，不含 debug 轨',
+      );
+    });
+
+    test('same-base cross-track prerelease still blocked (BUG-480 preserved)',
+        () {
+      // 嵌套放开的只是「正向收更稳定轨/更高基」；同基跨轨预发布互推仍禁。
+      expect(
+        isUpdateVersionNewer(
+          '1.2.0-debug.200',
+          '1.2.0-beta.100',
+          UpdateChannel.debug,
+        ),
+        isFalse,
+        reason: '同基 beta 装机不得被同基 debug 跨轨回灌',
+      );
+    });
+  });
+
+  group('BUG-845 releaseEligibleForChannel (nested admission)', () {
+    test('beta 合集 admits stable + beta, rejects debug', () {
+      expect(
+        releaseEligibleForChannel(
+          _release(tag: 'v1.2.0', prerelease: false),
+          UpdateChannel.beta,
+        ),
+        isTrue,
+      );
+      expect(
+        releaseEligibleForChannel(
+          _release(tag: 'v1.3.0-beta.1', prerelease: true),
+          UpdateChannel.beta,
+        ),
+        isTrue,
+      );
+      expect(
+        releaseEligibleForChannel(
+          _release(tag: 'v1.3.0-debug.1+abc1234', prerelease: true),
+          UpdateChannel.beta,
+        ),
+        isFalse,
+      );
+    });
+
+    test('debug 合集 admits all three tracks', () {
+      expect(
+        releaseEligibleForChannel(
+          _release(tag: 'v1.2.0', prerelease: false),
+          UpdateChannel.debug,
+        ),
+        isTrue,
+      );
+      expect(
+        releaseEligibleForChannel(
+          _release(tag: 'v1.3.0-beta.1', prerelease: true),
+          UpdateChannel.debug,
+        ),
+        isTrue,
+      );
+      expect(
+        releaseEligibleForChannel(
+          _release(tag: 'v1.3.0-debug.1+abc1234', prerelease: true),
+          UpdateChannel.debug,
+        ),
+        isTrue,
+      );
+    });
+
+    test('stable 合集 admits only stable', () {
+      expect(
+        releaseEligibleForChannel(
+          _release(tag: 'v1.2.0', prerelease: false),
+          UpdateChannel.stable,
+        ),
+        isTrue,
+      );
+      expect(
+        releaseEligibleForChannel(
+          _release(tag: 'v1.3.0-beta.1', prerelease: true),
+          UpdateChannel.stable,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('BUG-845 selectUpdateReleaseForCurrentPlatform (union + ordering)', () {
+    AndroidUpdater arm64Updater() =>
+        AndroidUpdater(abiProvider: () async => <String>['arm64-v8a']);
+
+    test('beta user picks higher-base beta over same-base stable', () async {
+      // beta 轨领先（1.3.0-beta.1）时选 beta，而非因 stable 1.2.0 排前而误选旧版。
+      final UpdateReleaseSelection? sel =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[
+          _relWithApks('v1.2.0',
+              prerelease: false, apks: <String>['hibiki-1.2.0-arm64-v8a.apk']),
+          _relWithApks('v1.3.0-beta.1',
+              prerelease: true, apks: <String>['hibiki-1.3.0-arm64-v8a.apk']),
+        ],
+        currentVersion: '1.2.0-beta.5',
+        channel: UpdateChannel.beta,
+        updater: arm64Updater(),
+      );
+      expect(sel?.version, '1.3.0-beta.1');
+    });
+
+    test('stranded beta user falls back to newer stable', () async {
+      // beta 停在 1.2.0-beta.5（latest beta == 本机），正式版补丁 1.2.1 出 → 选 stable。
+      final UpdateReleaseSelection? sel =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[
+          _relWithApks('v1.2.1',
+              prerelease: false, apks: <String>['hibiki-1.2.1-arm64-v8a.apk']),
+          _relWithApks('v1.2.0-beta.5',
+              prerelease: true, apks: <String>['hibiki-1.2.0-arm64-v8a.apk']),
+        ],
+        currentVersion: '1.2.0-beta.5',
+        channel: UpdateChannel.beta,
+        updater: arm64Updater(),
+      );
+      expect(sel?.version, '1.2.1');
+    });
+
+    test('debug user can install a stable release asset (non-debug apk name)',
+        () async {
+      // selectAsset 按 release 自身轨道过滤 asset：stable 包无 -debug 后缀，debug 用户
+      // 仍能选到它（否则会因不含 -debug 被误拒、拿不到 stable 更新）。
+      final UpdateReleaseSelection? sel =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[
+          _relWithApks('v1.3.0',
+              prerelease: false, apks: <String>['hibiki-1.3.0-arm64-v8a.apk']),
+        ],
+        currentVersion: '1.2.0-debug.100',
+        channel: UpdateChannel.debug,
+        updater: arm64Updater(),
+      );
+      expect(sel?.version, '1.3.0');
+      expect(sel?.asset?.name, 'hibiki-1.3.0-arm64-v8a.apk');
+    });
+
+    test('debug user stays on debug track over same-base stable', () async {
+      // 同基场景：debug 轨更前沿构建优先于同基成品 stable，避免塌回 stable 后再也收不到
+      // 后续 debug 构建。
+      final UpdateReleaseSelection? sel =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[
+          _relWithApks('v1.2.0',
+              prerelease: false, apks: <String>['hibiki-1.2.0-arm64-v8a.apk']),
+          _relWithApks('v1.2.0-debug.200+abc1234',
+              prerelease: true,
+              apks: <String>['hibiki-1.2.0-abc1234-debug.apk']),
+        ],
+        currentVersion: '1.2.0-debug.100',
+        channel: UpdateChannel.debug,
+        updater: arm64Updater(),
+      );
+      expect(sel?.version, '1.2.0-debug.200');
+    });
+  });
 }
 
 Map<String, dynamic> _release({
@@ -431,4 +666,25 @@ Map<String, dynamic> _release({
       'tag_name': tag,
       'prerelease': prerelease,
       'draft': draft,
+    };
+
+Map<String, dynamic> _relWithApks(
+  String tag, {
+  required bool prerelease,
+  required List<String> apks,
+}) =>
+    <String, dynamic>{
+      'tag_name': tag,
+      'prerelease': prerelease,
+      'draft': false,
+      'body': '',
+      'html_url': 'https://github.com/hajisensai/hibiki/releases/tag/$tag',
+      'assets': <Map<String, dynamic>>[
+        for (final String name in apks)
+          <String, dynamic>{
+            'name': name,
+            'browser_download_url':
+                'https://github.com/hajisensai/hibiki/releases/download/$tag/$name',
+          },
+      ],
     };

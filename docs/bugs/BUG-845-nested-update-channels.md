@@ -1,0 +1,20 @@
+## BUG-845 · 测试版/调试版通道应收到正式版更新（嵌套合集）
+- **报告**：2026-07-16（用户：）
+- **真实性**：✅ 真 bug —— 更新通道原为**互斥孤岛**，beta/debug 用户永远收不到正式版/更保守轨道的更新，beta 开发暂停而正式版继续发补丁时会被永久卡死。根因见下。
+- **[x] ① 已修复** —— 根因在 `hibiki/lib/src/utils/misc/update_checker_release.dart`：
+  - 拉取层 `_fetchReleasesForChannel:474`：beta/debug 分支只拉本通道 manifest/API，从不拉 stable。
+  - 判定层 `isUpdateVersionNewer:1486`（旧）：`if (!_versionBelongsToChannel(remoteVersion, channel)) return false;` 要求远端**恰好**属于本通道，正式版无 `-beta/-debug` 后缀 → 被判 false。
+  - 两道闸门共同把 beta/debug 用户锁死在本轨。源于 BUG-480「正式版/测试版/调试版更新不能混」的过宽实现。
+  - **修复=嵌套超集模型**（越激进通道合集越大：`stable ⊆ beta ⊆ debug`）：
+    - 新增 `_channelsAdmittedBy` / `_channelAdmitsVersion` / `_sameChannelTrack` / `releaseEligibleForChannel` / `_compareReleaseRecency`。
+    - `_fetchReleasesForChannel` 改为按合集把每个准入轨道各拉一次并合并（抽出 `_fetchReleasesForExactChannel` 保留单轨原逻辑）。
+    - `isUpdateVersionNewer` 换成「嵌套准入 + 纯 semver + 同基跨轨守卫」：正式版成品可推给同基预发布用户（核心诉求）；同基跨轨预发布不回灌（保留 BUG-480 case A/B）。
+    - `selectUpdateReleaseForCurrentPlatform` 先按「最新优先」排序（同基预发布轨优先于 stable，让 beta/debug 用户留在本轨而非塌回 stable）再择一；`selectAsset` 改传 **release 自身轨道**（stable 包无 `-debug.` 后缀，否则 debug 用户拿不到并入合集的 stable 包）。
+  - 提交：<待填>
+- **[x] ② 已加自动化测试** —— `hibiki/test/utils/misc/version_comparison_test.dart`：
+  - `BUG-845 nested update channels (isUpdateVersionNewer)`：beta 收更高基/同基成品 stable、停滞 beta 收 stable 补丁、debug 收 stable+beta、stable 不收预发布、beta **不**收 debug、同基跨轨仍禁。
+  - `BUG-845 releaseEligibleForChannel`：三通道嵌套准入。
+  - `BUG-845 selectUpdateReleaseForCurrentPlatform`：beta 优先本轨领先版、停滞 beta 落回 stable、debug 能装 stable 包（非 `-debug` 命名）、debug 同基留本轨。
+  - 结构守卫 `update_checker_structure_guard_test.dart` release 天花板 1720→1900。
+  - 全量 `test/utils/misc/` + `test/settings/` 814 测试绿。
+- **备注**：与 BUG-480 关系——嵌套只放开「正向收更稳定轨/更高基」，同基跨轨预发布互推的铁律经 `_sameChannelTrack` 守卫**保留**。与 BUG-821（`effectiveCurrentVersionForUpdateChannel` 从 buildNumber 还原本机 seq，已在 develop）正交且正确组合：debug 用户仍优先留 debug 轨。待用户真机复测（beta/debug 通道设备点检查更新确认能收到更新的正式版）。
