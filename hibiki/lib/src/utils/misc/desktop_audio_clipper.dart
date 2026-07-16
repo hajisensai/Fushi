@@ -1027,6 +1027,34 @@ List<String> buildFfmpegMultiSubtitleArgs({
 /// timeout (see `subtitleExtractTimeoutForBytes`). Never throws for the caller:
 /// missing input / absent ffmpeg / error all yield an empty map (no-subtitle
 /// fallback, not a crash).
+/// Suffix of the negative-cache sentinel written next to an embedded-subtitle
+/// output when a track is rejected DEFINITIVELY (ffmpeg ran and returned a
+/// non-zero, non-timeout exit — a codec the bundled build can't decode). Lets
+/// callers skip re-reading the whole container for that track on later passes.
+/// Deliberately NOT written on timeouts (`returnCode == null`), which are
+/// transient (IO contention on a huge interleaved container, BUG-104) and must
+/// stay retryable. Lives beside the cache file, whose directory is keyed by the
+/// video's size+mtime, so replacing the file in place re-attempts extraction.
+/// BUG-818.
+const String kUnsupportedEmbeddedSubtitleSentinelSuffix = '.unsupported';
+
+/// Returns the subset of [outputs] that ffmpeg actually wrote (file exists and
+/// is non-empty), deleting empty stubs left behind by a failed/aborted run.
+Map<int, String> _collectWrittenSubtitles(Map<int, String> outputs) {
+  final Map<int, String> written = <int, String>{};
+  outputs.forEach((int idx, String out) {
+    final File f = File(out);
+    if (f.existsSync() && f.lengthSync() > 0) {
+      written[idx] = out;
+    } else if (f.existsSync()) {
+      try {
+        f.deleteSync();
+      } catch (_) {}
+    }
+  });
+  return written;
+}
+
 Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
   required String inputPath,
   required Map<int, String> outputs,
@@ -1042,19 +1070,59 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
       buildFfmpegMultiSubtitleArgs(inputPath: inputPath, outputs: outputs),
       timeout,
     );
-    // Filter by what actually landed: even a non-zero exit (one bad track) can
-    // leave the other tracks written — keep them, drop empty stubs.
-    final Map<int, String> written = <int, String>{};
-    outputs.forEach((int idx, String out) {
-      final File f = File(out);
-      if (f.existsSync() && f.lengthSync() > 0) {
-        written[idx] = out;
-      } else if (f.existsSync()) {
-        try {
-          f.deleteSync();
-        } catch (_) {}
+    // Filter by what actually landed, dropping empty stubs.
+    final Map<int, String> written = _collectWrittenSubtitles(outputs);
+
+    // BUG-818: the single-pass batch is all-or-nothing at *output-binding* time.
+    // ffmpeg wires up EVERY `-map … out` before decoding a single packet, so one
+    // track it can't process — a text codec the bundled `--disable-everything`
+    // min-ffmpeg lacks a decoder for (ttml / eia_608·CEA-708 / dvb_teletext /
+    // hdmv_text / sami …, all of which `subtitleFormatForCodec` fail-opens to
+    // `.srt`) — aborts the whole command with AVERROR(EINVAL) ("Error opening
+    // output files: Invalid argument", exit -22) BEFORE any file is written. The
+    // good subrip/ass tracks in the same batch are lost too → the user sees NO
+    // embedded subtitles at all. When the batch didn't yield every requested
+    // track, retry the missing ones ONE AT A TIME: a bad track then fails in
+    // isolation (fast, at binding — no full container read) while every good
+    // track still lands. The batch stays the fast path for the common all-good
+    // case; this only runs on failure.
+    if (written.length < outputs.length) {
+      for (final MapEntry<int, String> entry in outputs.entries) {
+        if (written.containsKey(entry.key)) continue;
+        final FfmpegRunResult single = await _runFfmpeg(
+          buildFfmpegSubtitleArgs(
+            inputPath: inputPath,
+            streamIndex: entry.key,
+            outputPath: entry.value,
+          ),
+          timeout,
+        );
+        final File f = File(entry.value);
+        if (single.returnCode == 0 && f.existsSync() && f.lengthSync() > 0) {
+          written[entry.key] = entry.value;
+          continue;
+        }
+        if (f.existsSync()) {
+          try {
+            f.deleteSync();
+          } catch (_) {}
+        }
+        // Definitive rejection (ran, non-zero, non-timeout → the codec is
+        // undecodable by this build): negatively cache so future passes skip
+        // this track instead of re-reading the container and re-logging. A
+        // timeout (returnCode null) is transient and stays retryable.
+        final int? rc = single.returnCode;
+        if (rc != null && rc != 0) {
+          try {
+            File('${entry.value}$kUnsupportedEmbeddedSubtitleSentinelSuffix')
+                .writeAsStringSync('');
+          } catch (_) {}
+        }
       }
-    });
+    }
+
+    // Only a genuinely empty result (every track un-extractable) is worth an
+    // error log; a partial batch rescued by the per-track fallback is a success.
     if (written.isEmpty) {
       _reportFfmpegFailure(
         'extractEmbeddedSubtitlesViaFfmpeg',
