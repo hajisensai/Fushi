@@ -73,7 +73,8 @@ class HibikiSettingsSubPageHeader extends StatelessWidget {
 /// **范围收窄**：只抽外壳骨架，宽窗内部布局两边发散（阅读器是左右 master-detail
 /// [MaterialSupportingPaneLayout]，视频是顶部横向分类条 + 下方详情），故宽窗内容由调
 /// 用方经 [wideBuilder] 提供；窄窗主/子页内容由 [narrowChild] 提供，padding 也由调用方
-/// 经 [narrowPadding] 算（阅读器 `page + gap/2`、视频 `page + gap`，**不可统一**），
+/// 经 [narrowPadding] 算（阅读器 `page + gap/2`、视频 `page + gap`，**不可统一**；
+/// 各点相同的「底部 = card + gap + 键盘 inset」公式共享自 [paneInsets]），
 /// 复用主/子页切换 Element 的 [narrowKey] 也由调用方决定（阅读器带 key、视频不带）。
 ///
 /// 宽窗判定使用确定性几何判据（窗口宽且高都 >= 共享阈值常量
@@ -126,6 +127,27 @@ class HibikiMasterDetailSettingsSheet extends StatelessWidget {
   /// 窄窗 [AnimatedSize] 的内容（调用方按 [subPageActive] 选 main / sub 页）。
   final Widget Function(BuildContext context, BoxConstraints constraints)
       narrowChild;
+
+  /// 主/子 pane 内边距共享公式（TODO-344，阅读器 / 视频两张 sheet 的 narrow +
+  /// wide 共 4 个使用点同款）：水平两侧对称 [horizontal]、顶部 [top]，底部恒为
+  /// `card + gap + 键盘 viewInsets.bottom`（键盘弹起时内容不被遮挡）。
+  /// 水平 / 顶部由调用方按各自 spacing 语汇传入（阅读器 `page + gap/2` / `gap/2`、
+  /// 视频 `page + gap` / `card`，**不可统一**，见类注释）。
+  static EdgeInsets paneInsets(
+    BuildContext context, {
+    required double horizontal,
+    required double top,
+  }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return EdgeInsets.fromLTRB(
+      horizontal,
+      top,
+      horizontal,
+      tokens.spacing.card +
+          tokens.spacing.gap +
+          MediaQuery.of(context).viewInsets.bottom,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

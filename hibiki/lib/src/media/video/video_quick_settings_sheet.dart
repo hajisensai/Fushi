@@ -460,19 +460,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       narrowKey: () => null,
       // TODO-344：四边按 MD3 spacing 放宽，消除「上下左右贴死」。水平用
       // page + gap（24），垂直顶部用 card（16）让内容离 sheet header / 分栏
-      // divider 留出呼吸位，底部叠 card + gap + 键盘 inset。全部走 token，无裸值。
+      // divider 留出呼吸位，底部叠 card + gap + 键盘 inset（共享公式
+      // [HibikiMasterDetailSettingsSheet.paneInsets]）。全部走 token，无裸值。
       narrowPadding: (BuildContext context, BoxConstraints constraints) {
-        final double viewInsetsBottom =
-            MediaQuery.of(context).viewInsets.bottom;
-        final double horizontalInset = tokens.spacing.page + tokens.spacing.gap;
-        final double topInset = tokens.spacing.card;
-        final double bottomInset =
-            tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom;
-        return EdgeInsets.fromLTRB(
-          horizontalInset,
-          topInset,
-          horizontalInset,
-          bottomInset,
+        return HibikiMasterDetailSettingsSheet.paneInsets(
+          context,
+          horizontal: tokens.spacing.page + tokens.spacing.gap,
+          top: tokens.spacing.card,
         );
       },
       narrowChild: (BuildContext context, BoxConstraints constraints) {
@@ -481,29 +475,26 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       // 宽窗顶部横向分类条 + 下方详情上下分栏（TODO-556）——阅读器走左右
       // master-detail，两边发散，故 Column / _buildTopCategoryBar 等留在此回调里。
       wideBuilder: (BuildContext context, BoxConstraints constraints) {
-        final double viewInsetsBottom =
-            MediaQuery.of(context).viewInsets.bottom;
         final double horizontalInset = tokens.spacing.page + tokens.spacing.gap;
         final double topInset = tokens.spacing.card;
-        final double bottomInset =
-            tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom;
         final String selectedId = _subPage ?? 'playback';
         final Color dividerColor = isCupertinoPlatform(context)
             ? CupertinoColors.separator.resolveFrom(context)
             : tokens.surfaces.outline;
         // 顶部分类条 padding：水平 + 顶部按 token 留白，底部留 gap/2 与下方
-        // 分隔线呼吸（不吃 bottomInset，键盘 inset 留给详情区）。
+        // 分隔线呼吸（不吃底部键盘 inset，那份留给详情区）。
         final EdgeInsets wideCategoryPadding = EdgeInsets.fromLTRB(
           horizontalInset,
           topInset,
           horizontalInset,
           tokens.spacing.gap / 2,
         );
-        final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
-          horizontalInset,
-          topInset,
-          horizontalInset,
-          bottomInset,
+        // 详情区四边走共享公式（底部 = card + gap + 键盘 inset）。
+        final EdgeInsets widePrimaryPadding =
+            HibikiMasterDetailSettingsSheet.paneInsets(
+          context,
+          horizontal: horizontalInset,
+          top: topInset,
         );
         // TODO-556：大分类从左栏 master-detail 改成「顶部横向分类 chip 行（固定）
         // + 下方全宽详情（独立滚动）」。顶部 chip 行钉在 sheet 顶部、随详情滚动
