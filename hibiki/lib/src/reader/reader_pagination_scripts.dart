@@ -715,8 +715,10 @@ class ReaderPaginationScripts {
   /// 同步采锚 + 换 CSS（[jsonCss] 须是已 jsonEncode 的 JS 字符串字面量）+ 失效 metrics +
   /// 重置 image-max + 置 `_reanchorPending` + 暂存锚。返回采到的字符偏移；-1 = 无锚 / 已有
   /// 重锚在飞 / pagination 未就绪（无 hoshiReader 或非 reader 页）→ 调用方跳过提交阶段并
-  /// 自行裸套 CSS 兜底。`beginStyleReanchor` 在分页/连续两 shell 都存在（_sharedJs），分页/
-  /// 连续各自的 getFirstVisibleCharOffset/scrollToCharOffset 经 `this` 解析（连续含 A-2 兜底）。
+  /// 自行裸套 CSS 兜底。`beginStyleReanchor` 分页/连续两 shell **各自定义**（不在 _sharedJs，
+  /// 因 scrollToCharOffset 签名两 shell 不同）；曾只加进连续 shell、分页缺席致改字号/边距/主题
+  /// 等纯 CSS 设置在分页模式不实时生效（守卫见 reader_style_reanchor_both_shells_guard_test）。
+  /// 分页/连续各自的 getFirstVisibleCharOffset/scrollToCharOffset 经 `this` 解析（连续含 A-2 兜底）。
   static String beginStyleReanchorInvocation(String jsonCss) =>
       '(window.hoshiReader && '
       "typeof window.hoshiReader.beginStyleReanchor === 'function') "
@@ -2431,6 +2433,50 @@ $_sharedJs
         self._reanchorPending = false;
       }
     });
+  },
+  // TODO-736 B-1 续（分页缺席根因修复，BUG-849）：样式变更两阶段重锚在分页 shell 曾整体
+  // 缺席，导致 beginStyleReanchorInvocation 恒走 `:-1` 兜底、CSS 从不换 → 分页模式下改
+  // 字号/边距/主题等纯 CSS 设置不实时生效、必须重开书。补齐与连续 shell 同语义的三方法，
+  // 用分页原生 hint 原语：reflow 前记 getPagePosition(getScrollContext())（分页 ±1 列保持
+  // 原页，与 setChromeInsets 的成熟重锚同源），配分页 2 参 scrollToCharOffset(off, hint)。
+  // 连续 shell 的对应版本另用 _readContinuousScroll（内容轴 raw scroll），各自 this 解析。
+  _resetImageMaxVars: function() {
+    var box = this._imageMaxBox();
+    document.documentElement.style.setProperty('--hoshi-image-max-width', box.w + 'px');
+    document.documentElement.style.setProperty('--hoshi-image-max-height', box.h + 'px');
+  },
+  beginStyleReanchor: function(styleEl, css) {
+    if (!this.didInitialize) { if (styleEl) styleEl.textContent = css; return -1; }
+    if (this._reanchorPending === true) {
+      if (styleEl) styleEl.textContent = css;
+      this._resetImageMaxVars();
+      return -1;
+    }
+    var charOffset = this.getFirstVisibleCharOffset();
+    // reflow 前记页内位置作 hint：分页 ±1 列时 scrollToCharOffset 保持原页
+    // （getPagePosition 是分页专属；连续 shell 版改用内容轴 scroll）。
+    var hint = this.getPagePosition(this.getScrollContext());
+    if (styleEl) styleEl.textContent = css;
+    if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
+    this._resetImageMaxVars();
+    if (charOffset < 0) return -1;
+    this._reanchorPending = true;
+    this._styleReanchorOffset = charOffset;
+    this._styleReanchorHint = hint;
+    return charOffset;
+  },
+  commitStyleReanchor: function() {
+    var off = this._styleReanchorOffset;
+    if (off === undefined || off < 0) return false;
+    var hint = this._styleReanchorHint;
+    try {
+      this.scrollToCharOffset(off, hint);
+    } finally {
+      this._styleReanchorOffset = undefined;
+      this._styleReanchorHint = undefined;
+      this._reanchorPending = false;
+    }
+    return true;
   }
 };
 window.hoshiReader._contentSize = function() {
