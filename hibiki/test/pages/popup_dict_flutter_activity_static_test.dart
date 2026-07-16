@@ -10,7 +10,8 @@ void main() {
     final String src = File(holderPath).readAsStringSync();
     expect(src,
         contains('FlutterEngine(context.applicationContext, null, false)'));
-    expect(src, contains('FloatingDictPluginRegistrant.registerWith(engine)'));
+    expect(src,
+        contains('FloatingDictPluginRegistrant.registerWith(engine, context.applicationContext)'));
     expect(src, isNot(contains('GeneratedPluginRegistrant')));
     expect(src, contains('"popupMain"'));
     expect(src, contains('executeDartEntrypoint'));
