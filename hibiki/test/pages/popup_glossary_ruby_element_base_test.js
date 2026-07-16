@@ -53,6 +53,7 @@ function mkEl(tag) {
     get firstChild() { return this.childNodes[0] || null; },
     get nextSibling() { return siblingOf(this, 1); },
     appendChild(c) { if (c.parentNode) c.parentNode._remove(c); c.parentNode = this; this.childNodes.push(c); return c; },
+    insertBefore(c, ref) { if (c.parentNode) c.parentNode._remove(c); c.parentNode = this; const i = ref ? this.childNodes.indexOf(ref) : -1; if (i >= 0) this.childNodes.splice(i, 0, c); else this.childNodes.push(c); return c; },
     append(...nodes) { for (const n of nodes) this.appendChild(typeof n === 'string' ? mkText(n) : n); },
     _remove(c) { const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1); c.parentNode = null; },
     replaceWith(...nodes) { replaceChild(this, nodes); },
