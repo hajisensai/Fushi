@@ -61,9 +61,9 @@ class LyricsModeHtml {
             'calc(45vh + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
     // JS 端轴标记：true=竖排横滚（用 scrollBy 增量绕开 vertical-rl 负向 scrollX）。
     final String verticalJs = vertical ? 'true' : 'false';
-    // TODO-908：听力沉浸模糊。blur=true 时给 body 挂 `lyrics-blur` class，CSS 只对
-    // 当前句（.cue.current）盖 8px 高斯模糊；hover 或点击（.revealed）显形。模糊维度
-    // 与 writing-mode 正交——blur CSS 只作用在 cue 元素上，与轴/竖排无关。
+    // TODO-908 / BUG-852：听力沉浸模糊。blur=true 时给 body 挂 `lyrics-blur` class，CSS
+    // 对**所有**句（.cue）盖 8px 高斯模糊；单独 hover 或点击（.revealed）才显形。模糊
+    // 维度与 writing-mode 正交——blur CSS 只作用在 cue 元素上，与轴/竖排无关。
     final String blurBodyClass = blur ? ' class="lyrics-blur"' : '';
 
     return '''
@@ -137,16 +137,18 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
 .cue.near-1 { opacity: 0.55; transform: scale(1.05); }
 .cue.near-2 { opacity: 0.35; }
 .cue.near-3 { opacity: 0.25; }
-/* TODO-908: 听力沉浸模糊 —— body.lyrics-blur 时只对当前句盖 8px 高斯模糊，
-   hover 或点击显形（.revealed）。与视频字幕的 ImageFilter.blur(sigma:8) 等价。
-   仅作用 .cue（与 writing-mode 正交，不碰 TODO-907 轴 CSS）。 */
-body.lyrics-blur .cue.current {
+/* TODO-908 / BUG-852: 听力沉浸模糊 —— body.lyrics-blur 时对**所有**句（.cue，含
+   当前句与前后文 near-*）盖 8px 高斯模糊；单独 hover 或点击（.revealed）才显形。
+   之前只盖 .cue.current，前后文照样能读、可预读，沉浸失效——听力模糊的语义是整篇
+   不可预读，必须盖全部 cue。与视频字幕的 ImageFilter.blur(sigma:8) 等价。仅作用
+   .cue（与 writing-mode 正交，不碰 TODO-907 轴 CSS）。 */
+body.lyrics-blur .cue {
   filter: blur(8px);
   transition: filter 0.2s ease-out, opacity 0.35s ease-out,
       transform 0.3s ease-out, color 0.3s ease-out;
 }
-body.lyrics-blur .cue.current:hover,
-body.lyrics-blur .cue.current.revealed {
+body.lyrics-blur .cue:hover,
+body.lyrics-blur .cue.revealed {
   filter: blur(0);
 }
 ::highlight(hoshi-selection) {
@@ -521,8 +523,8 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
   __lyricsFitCues();
 };
 
-// ── 实时模糊开关（TODO-908，仿 __lyricsUpdateStyle，不重建整页） ──
-// on=true 给 body 挂 lyrics-blur（CSS 只模糊当前句，hover/点击显形）；off 摘掉并
+// ── 实时模糊开关（TODO-908 / BUG-852，仿 __lyricsUpdateStyle，不重建整页） ──
+// on=true 给 body 挂 lyrics-blur（CSS 模糊所有句，逐句 hover/点击显形）；off 摘掉并
 // 清掉所有遗留的 .revealed，回到无模糊态。
 window.__lyricsSetBlur = function(on) {
   if (on) {

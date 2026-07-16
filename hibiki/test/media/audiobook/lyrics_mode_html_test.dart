@@ -340,6 +340,56 @@ void main() {
         );
       });
     });
+
+    // BUG-852: 听力沉浸模糊只盖 .cue.current，前后文（.cue.near-* 与远处 .cue）照样
+    // 清晰可读、可预读，沉浸失效。修复=把 blur 门控从 .cue.current 放宽到整个 .cue，
+    // 逐句 hover / 点击（.revealed）才显形，与视频字幕整篇遮罩语义一致。
+    group('BUG-852 listening blur hides all cues (not just current)', () {
+      String buildBlurHtml() => LyricsModeHtml.generate(
+            cues: <AudioCue>[_cue(0), _cue(1), _cue(2), _cue(3), _cue(4)],
+            currentIndex: 2,
+            backgroundColor: 'rgba(255,255,255,1.00)',
+            textColor: 'rgba(0,0,0,1.00)',
+            accentColor: 'rgba(255,220,0,1.00)',
+            fontSize: 20,
+            blur: true,
+          );
+
+      test('blur filter is gated on all .cue, not .cue.current only', () {
+        final String html = buildBlurHtml();
+
+        // The blur must be applied through `body.lyrics-blur .cue { ... }` so it
+        // covers the current cue AND all preceding/following cues.
+        final String blurRule = _cssBlock(html, 'body.lyrics-blur .cue {');
+        expect(blurRule, contains('filter: blur(8px)'));
+
+        // Regression guard: the blur must NOT be re-narrowed to only the current
+        // cue — that was the bug (前后文暴露).
+        expect(html, isNot(contains('body.lyrics-blur .cue.current {')));
+        expect(
+          html,
+          isNot(contains('body.lyrics-blur .cue.current:hover')),
+        );
+      });
+
+      test('any cue reveals (unblurs) on hover or .revealed, not current-only',
+          () {
+        final String html = buildBlurHtml();
+
+        // Reveal selectors must match any cue, so tapping/hovering a non-current
+        // (前后文) line unblurs it just like the current line.
+        expect(html, contains('body.lyrics-blur .cue:hover'));
+        expect(html, contains('body.lyrics-blur .cue.revealed'));
+      });
+
+      test('runtime blur toggle still only flips the body class', () {
+        final String html = buildBlurHtml();
+        // The live toggle drives blur purely via the body.lyrics-blur class, so
+        // the broadened CSS selector governs which cues blur — no per-cue JS.
+        expect(html, contains("document.body.classList.add('lyrics-blur')"));
+        expect(html, contains("document.body.classList.remove('lyrics-blur')"));
+      });
+    });
   });
 }
 
