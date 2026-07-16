@@ -87,6 +87,43 @@ void main() {
     expect(removeLabel.style?.color, errorColor, reason: '红色应扩到整段（含文字标签），不只图标');
   });
 
+  testWidgets('窄弹窗宽度下三段文字横排单行（不再竖排成「保/持」且不溢出）', (
+    WidgetTester tester,
+  ) async {
+    // 复刻手机窄弹窗：正文可用宽度 ~300dp。修复前三段被 mainAxisSize.min +
+    // maxWidth:300 压到 ~270，双字标签竖排换行；修复后铺满行宽 + 单行锁定。
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 300,
+                child: buildBatchTagIntentRowForTesting(tag: tag()),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 无 RenderFlex overflow / 布局异常。
+    expect(tester.takeException(), isNull);
+
+    // 每个语义标签都锁死单行、关闭软换行——从根上杜绝「保/持」竖排。
+    for (final String label in <String>[
+      t.batch_tag_keep,
+      t.batch_tag_add,
+      t.batch_tag_remove,
+    ]) {
+      final Text widget = tester.widget<Text>(find.text(label));
+      expect(widget.maxLines, 1, reason: '$label 应单行');
+      expect(widget.softWrap, isFalse, reason: '$label 应关闭软换行（横排不竖排）');
+    }
+  });
+
   test('源码守卫：三段不再用同款横杠且 remove 文字也染错误红', () {
     final String src = readReaderHistorySource();
 
