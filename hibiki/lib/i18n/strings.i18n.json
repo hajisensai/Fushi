@@ -1623,7 +1623,7 @@
   "browser_extension_step_dev_mode": "Turn on \"Developer mode\" (toggle in the top-right corner).",
   "browser_extension_step_load_unpacked": "Click \"Load unpacked\".",
   "browser_extension_step_pick_folder": "Select the extension folder below (its path is already copied to your clipboard).",
-  "browser_extension_step_done_auto": "Done. Hibiki's Yomitan API server is now on and the extension is auto-configured to connect to it — no host/port/token to fill in.",
+  "browser_extension_step_done_auto": "Done. The extension is already set up to connect to Hibiki for lookups — nothing to fill in by hand.",
   "browser_extension_enable_server_first": "Tip: enable \"Yomitan API server\" and set an API key above first, so the extension is auto-configured with a working connection.",
   "copied": "Copied",
   "shortcut_action_global_toggle_fullscreen": "Toggle fullscreen",
