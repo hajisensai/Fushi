@@ -12,6 +12,7 @@ import 'package:hibiki/src/sync/book_folder_cache_mixin.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
+import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -113,7 +114,7 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
 class HibikiClientSyncBackend extends SyncBackend
-    with SyncBackendFileTrioMixin, BookFolderCacheMixin
+    with SyncBackendFileTrioMixin, BookFolderCacheMixin, SyncAssetStoreDefaults
     implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
   HibikiClientSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
@@ -147,6 +148,13 @@ class HibikiClientSyncBackend extends SyncBackend
   // 无分隔符，故缓存里的 folderId 必须以 `/` 结尾（BUG-845）。覆写归一钩子为补尾斜杠。
   @override
   String normalizeCachedFolderId(String id) => ensureFolderIdTrailingSlash(id);
+
+  // interconnect must settle on a reachable host before any per-asset op, so the
+  // base [putAsset]/[getAsset] defaults await this readiness hook. The path-style
+  // findAsset override and the folder-op methods below still call
+  // [_ensureResolved] directly (same idempotent gate, unchanged from before).
+  @override
+  Future<void> ensureAssetReady() => _ensureResolved();
 
   /// Test seam: force address resolution without performing a folder op.
   @visibleForTesting
@@ -414,29 +422,13 @@ class HibikiClientSyncBackend extends SyncBackend
     final response = await request.close();
     _ops!.checkStatus(response.statusCode, 'GET $fileId');
 
-    final contentLength = response.contentLength;
-    final sink = destination.openWrite();
-    int bytesReceived = 0;
-    bool success = false;
-    try {
-      await for (final chunk in response) {
-        sink.add(chunk);
-        bytesReceived += chunk.length;
-        if (contentLength > 0) {
-          onProgress?.call(bytesReceived / contentLength);
-        }
-      }
-      success = true;
-    } finally {
-      await sink.close();
-      if (!success) {
-        try {
-          destination.deleteSync();
-        } catch (e) {
-          debugPrint('[hibiki-client] failed to clean up temp file: $e');
-        }
-      }
-    }
+    await writeStreamToFile(
+      response,
+      destination,
+      response.contentLength,
+      onProgress,
+      debugTag: 'hibiki-client',
+    );
   }
 
   @override
@@ -502,36 +494,6 @@ class HibikiClientSyncBackend extends SyncBackend
     final path = '$namespaceId${Uri.encodeComponent(name)}';
     if (!await _ops!.headFile(path)) return null;
     return AssetEntry(id: path, name: name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await _ensureResolved();
-    await uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await _ensureResolved();
-    await downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
   }
 
   @override

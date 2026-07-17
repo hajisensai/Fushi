@@ -21,7 +21,10 @@ import 'package:url_launcher/url_launcher.dart';
 /// Auth: OAuth 2.0 PKCE flow.
 /// Folder IDs are path strings like `/hibiki-data/BookTitle`.
 class DropboxSyncBackend extends SyncBackend
-    with SyncBackendFileTrioMixin, BookFolderCacheMixin {
+    with
+        SyncBackendFileTrioMixin,
+        BookFolderCacheMixin,
+        SyncAssetStoreDefaults {
   DropboxSyncBackend._();
   static final DropboxSyncBackend instance = DropboxSyncBackend._();
 
@@ -457,27 +460,12 @@ class DropboxSyncBackend extends SyncBackend
           'Download failed: HTTP ${streamedResp.statusCode}');
     }
 
-    final totalBytes = streamedResp.contentLength ?? -1;
-    final sink = destination.openWrite();
-    int bytesReceived = 0;
-    bool success = false;
-    try {
-      await for (final chunk in streamedResp.stream) {
-        sink.add(chunk);
-        bytesReceived += chunk.length;
-        if (totalBytes > 0) {
-          onProgress?.call(bytesReceived / totalBytes);
-        }
-      }
-      success = true;
-    } finally {
-      await sink.close();
-      if (!success) {
-        try {
-          destination.deleteSync();
-        } catch (_) {/* best-effort: failure is non-critical here */}
-      }
-    }
+    await writeStreamToFile(
+      streamedResp.stream,
+      destination,
+      streamedResp.contentLength ?? -1,
+      onProgress,
+    );
   }
 
   @override
@@ -534,41 +522,6 @@ class DropboxSyncBackend extends SyncBackend
               isFolder: e['.tag'] == 'folder',
             ))
         .toList();
-  }
-
-  @override
-  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
-    final file = await findContentFile(namespaceId, name);
-    if (file == null) return null;
-    return AssetEntry(id: file.id, name: file.name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
   }
 
   @override

@@ -5,6 +5,7 @@ import 'package:hibiki/src/sync/book_folder_cache_mixin.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
+import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -12,7 +13,10 @@ import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
 
 class WebDavSyncBackend extends SyncBackend
-    with SyncBackendFileTrioMixin, BookFolderCacheMixin {
+    with
+        SyncBackendFileTrioMixin,
+        BookFolderCacheMixin,
+        SyncAssetStoreDefaults {
   WebDavSyncBackend._();
   static final WebDavSyncBackend instance = WebDavSyncBackend._();
 
@@ -233,29 +237,13 @@ class WebDavSyncBackend extends SyncBackend
     final response = await request.close();
     _ops!.checkStatus(response.statusCode, 'GET $fileId');
 
-    final contentLength = response.contentLength;
-    final sink = destination.openWrite();
-    int bytesReceived = 0;
-    bool success = false;
-    try {
-      await for (final chunk in response) {
-        sink.add(chunk);
-        bytesReceived += chunk.length;
-        if (contentLength > 0) {
-          onProgress?.call(bytesReceived / contentLength);
-        }
-      }
-      success = true;
-    } finally {
-      await sink.close();
-      if (!success) {
-        try {
-          destination.deleteSync();
-        } catch (e) {
-          debugPrint('[webdav] failed to clean up temp file: $e');
-        }
-      }
-    }
+    await writeStreamToFile(
+      response,
+      destination,
+      response.contentLength,
+      onProgress,
+      debugTag: 'webdav',
+    );
   }
 
   @override
@@ -306,34 +294,6 @@ class WebDavSyncBackend extends SyncBackend
     final path = '$namespaceId${Uri.encodeComponent(name)}';
     if (!await _ops!.headFile(path)) return null;
     return AssetEntry(id: path, name: name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) {
-    return uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) {
-    return downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
   }
 
   @override

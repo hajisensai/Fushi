@@ -15,7 +15,10 @@ import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
 class FtpSyncBackend extends SyncBackend
-    with SyncBackendFileTrioMixin, BookFolderCacheMixin {
+    with
+        SyncBackendFileTrioMixin,
+        BookFolderCacheMixin,
+        SyncAssetStoreDefaults {
   FtpSyncBackend._();
   static final FtpSyncBackend instance = FtpSyncBackend._();
 
@@ -474,44 +477,6 @@ class FtpSyncBackend extends SyncBackend
               isRetryable: true);
         }
       });
-
-  @override
-  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
-    // Delegates to the already-locking findContentFile; do not re-wrap.
-    final file = await findContentFile(namespaceId, name);
-    if (file == null) return null;
-    return AssetEntry(id: file.id, name: file.name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) {
-    // Delegates to the already-locking uploadContentFile; do not re-wrap.
-    return uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) {
-    // Delegates to the already-locking downloadContentFile; do not re-wrap.
-    return downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
-  }
 
   @override
   Future<Object?> getJsonAsset(String assetId) {

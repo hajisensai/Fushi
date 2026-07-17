@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -56,4 +57,48 @@ Future<http.Response> streamUpload(
     throw SyncBackendError('Upload failed reading file: $pumpError');
   }
   return http.Response.fromStream(streamed);
+}
+
+/// Drain a download [stream] into [destination], reporting transfer progress as
+/// a 0..1 fraction against [totalBytes] (progress is suppressed when
+/// [totalBytes] <= 0, i.e. the server sent no Content-Length).
+///
+/// The symmetric counterpart of [streamUpload]. On any failure mid-stream the
+/// partially-written file is deleted so a truncated blob never masquerades as a
+/// complete download; the delete itself is best-effort. When [debugTag] is
+/// non-null a cleanup failure is logged as `[<tag>] failed to clean up temp
+/// file: …` (webdav / hibiki-client keep that diagnostic); when it is null the
+/// cleanup failure is swallowed silently (dropbox / onedrive, where it is
+/// non-critical).
+Future<void> writeStreamToFile(
+  Stream<List<int>> stream,
+  File destination,
+  int totalBytes,
+  void Function(double fraction)? onProgress, {
+  String? debugTag,
+}) async {
+  final IOSink sink = destination.openWrite();
+  int bytesReceived = 0;
+  bool success = false;
+  try {
+    await for (final List<int> chunk in stream) {
+      sink.add(chunk);
+      bytesReceived += chunk.length;
+      if (totalBytes > 0) {
+        onProgress?.call(bytesReceived / totalBytes);
+      }
+    }
+    success = true;
+  } finally {
+    await sink.close();
+    if (!success) {
+      try {
+        destination.deleteSync();
+      } catch (e) {
+        if (debugTag != null) {
+          debugPrint('[$debugTag] failed to clean up temp file: $e');
+        }
+      }
+    }
+  }
 }
