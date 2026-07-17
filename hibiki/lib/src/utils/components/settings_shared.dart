@@ -119,12 +119,21 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     this.title,
     this.color,
     this.contentPadding = EdgeInsets.zero,
+    this.titleTrailing,
+    this.onTitleTap,
   });
 
   final Widget child;
   final String? title;
   final Color? color;
   final EdgeInsetsGeometry contentPadding;
+
+  /// 内嵌标题右侧的尾随控件（如折叠 section 的展开箭头）。仅当 [title] 非空时渲染。
+  final Widget? titleTrailing;
+
+  /// 非空时把内嵌标题头变成可点击 + 可焦点驱动（Enter/手柄 A）的整头，用于折叠
+  /// section 的展开/收起。为空时标题头是纯装饰文字，行为不变。
+  final VoidCallback? onTitleTap;
 
   @override
   Widget build(BuildContext context) {
@@ -171,33 +180,69 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     HibikiDesignTokens tokens,
     bool cupertino,
   ) {
-    if (cupertino) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-        child: Text(
-          title!.toUpperCase(),
-          style: tokens.type.metadata.copyWith(
-            color: CupertinoColors.secondaryLabel.resolveFrom(context),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
-    }
+    final Widget label = cupertino
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Text(
+              title!.toUpperCase(),
+              style: tokens.type.metadata.copyWith(
+                color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          )
+        : SettingsSectionHeader(
+            title!,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+          );
 
-    return SettingsSectionHeader(
-      title!,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+    if (onTitleTap == null) return label;
+
+    // 折叠头：标题 + 尾随箭头拼成整头，整头可点、可焦点驱动展开/收起。焦点驱动走
+    // 与设置行一致的 _SettingsRowFocusTarget（Enter/手柄 A 触发 Activate），保证纯
+    // 手柄/键盘用户也能展开折叠 section；无焦点根时退回平台原生可点组件。
+    final Widget header = Row(
+      children: <Widget>[
+        Expanded(child: label),
+        if (titleTrailing != null)
+          Padding(
+            padding:
+                EdgeInsets.only(right: cupertino ? 12 : tokens.spacing.gap),
+            child: titleTrailing!,
+          ),
+      ],
     );
+    final bool hasFocusRoot =
+        HibikiFocusRoot.maybeControllerOf(context) != null;
+    final Widget tappable = cupertino
+        ? GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTitleTap,
+            child: header,
+          )
+        : InkWell(onTap: onTitleTap, child: header);
+    if (!hasFocusRoot) {
+      return cupertino
+          ? HibikiFocusable(
+              onTap: onTitleTap!,
+              borderRadius: BorderRadius.zero,
+              child: header,
+            )
+          : tappable;
+    }
+    return _SettingsRowFocusTarget(onTap: onTitleTap!, child: tappable);
   }
 }
 
-class AdaptiveSettingsSection extends StatelessWidget {
+class AdaptiveSettingsSection extends StatefulWidget {
   const AdaptiveSettingsSection({
     required this.children,
     super.key,
     this.title,
     this.titlePlacement = SettingsSectionTitlePlacement.outside,
     this.surfaceColor,
+    this.collapsible = false,
+    this.initiallyExpanded = true,
   });
 
   final String? title;
@@ -205,35 +250,100 @@ class AdaptiveSettingsSection extends StatelessWidget {
   final SettingsSectionTitlePlacement titlePlacement;
   final Color? surfaceColor;
 
+  /// 为 true 时内嵌标题头带展开箭头、可点击折叠本 section 的内容。仅在标题内嵌
+  /// （[SettingsSectionTitlePlacement.inside]）且 [title] 非空时才成立；否则退回
+  /// 普通静态渲染。默认 false，保证所有既有调用点行为不变。
+  final bool collapsible;
+
+  /// 折叠 section 的初始展开态；仅 [collapsible] 为 true 时有意义。搜索命中折叠
+  /// section 内的项时由上层传 true 强制展开定位。
+  final bool initiallyExpanded;
+
+  @override
+  State<AdaptiveSettingsSection> createState() =>
+      _AdaptiveSettingsSectionState();
+}
+
+class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
+  late bool _expanded = widget.initiallyExpanded;
+
+  @override
+  void didUpdateWidget(AdaptiveSettingsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 搜索命中折叠 section 时，上层把 initiallyExpanded 由 false 翻成 true——同一
+    // widget 身份下的 rebuild 里据此强制展开定位；用户手动收/展的态在无此翻转时保留。
+    if (widget.collapsible &&
+        widget.initiallyExpanded &&
+        !oldWidget.initiallyExpanded) {
+      _expanded = true;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (children.isEmpty) return const SizedBox.shrink();
+    if (widget.children.isEmpty) return const SizedBox.shrink();
 
     final bool cupertino = isCupertinoPlatform(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final bool titleInside =
-        titlePlacement == SettingsSectionTitlePlacement.inside;
-    final List<Widget> rows = _withDividers(context, children);
-    final Widget group = AdaptiveSettingsSurface(
-      title: titleInside ? title : null,
-      color: surfaceColor,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: rows,
-      ),
+        widget.titlePlacement == SettingsSectionTitlePlacement.inside;
+    final bool collapsible = widget.collapsible &&
+        titleInside &&
+        (widget.title?.isNotEmpty ?? false);
+    final List<Widget> rows = _withDividers(context, widget.children);
+    final Widget rowsColumn = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: rows,
     );
+
+    final Widget group;
+    if (collapsible) {
+      group = AdaptiveSettingsSurface(
+        title: widget.title,
+        color: widget.surfaceColor,
+        onTitleTap: () => setState(() => _expanded = !_expanded),
+        titleTrailing: AnimatedRotation(
+          turns: _expanded ? 0.5 : 0.0,
+          duration: const Duration(milliseconds: 180),
+          child: Icon(
+            cupertino ? CupertinoIcons.chevron_down : Icons.expand_more,
+            size: cupertino ? 16 : 22,
+            color: cupertino
+                ? CupertinoColors.tertiaryLabel.resolveFrom(context)
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        // 收起时行不入树（不可聚焦、不参与焦点驱动），只保留标题头；用 AnimatedSize
+        // 平滑高度过渡，ClipRect 防过渡帧溢出。
+        child: ClipRect(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child:
+                _expanded ? rowsColumn : const SizedBox(width: double.infinity),
+          ),
+        ),
+      );
+    } else {
+      group = AdaptiveSettingsSurface(
+        title: titleInside ? widget.title : null,
+        color: widget.surfaceColor,
+        child: rowsColumn,
+      );
+    }
 
     return Padding(
       padding: EdgeInsets.only(bottom: cupertino ? 14 : 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          if (!titleInside && title != null && title!.isNotEmpty)
+          if (!titleInside && widget.title != null && widget.title!.isNotEmpty)
             cupertino
                 ? Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
                     child: Text(
-                      title!.toUpperCase(),
+                      widget.title!.toUpperCase(),
                       style: tokens.type.metadata.copyWith(
                         color:
                             CupertinoColors.secondaryLabel.resolveFrom(context),
@@ -242,7 +352,7 @@ class AdaptiveSettingsSection extends StatelessWidget {
                     ),
                   )
                 : SettingsSectionHeader(
-                    title!,
+                    widget.title!,
                     padding: const EdgeInsets.only(bottom: 6),
                   ),
           group,

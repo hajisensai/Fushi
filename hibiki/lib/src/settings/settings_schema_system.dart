@@ -172,6 +172,7 @@ SettingsDestination buildSystemDestination() {
       ),
       SettingsSection(
         title: t.settings_destination_diagnostics,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'diagnostics.error_log',

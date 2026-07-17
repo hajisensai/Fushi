@@ -65,6 +65,7 @@ SettingsDestination buildListeningDestination() {
       // 媒体通知平铺同级，一个子功能占了「有声书」分区 2/3 的行数。
       SettingsSection(
         title: t.section_floating_lyric,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'listening.floating_lyric',
@@ -114,7 +115,6 @@ SettingsDestination buildListeningDestination() {
           SettingsStepperItem(
             id: 'listening.floating_lyric_text_opacity',
             title: t.floating_lyric_text_opacity,
-            subtitle: t.floating_lyric_text_opacity_hint,
             icon: Icons.opacity_outlined,
             visible: (_) => Platform.isAndroid || Platform.isWindows,
             min: 0,
@@ -134,7 +134,6 @@ SettingsDestination buildListeningDestination() {
           SettingsStepperItem(
             id: 'listening.floating_lyric_button_bg_opacity',
             title: t.floating_lyric_button_bg_opacity,
-            subtitle: t.floating_lyric_button_bg_opacity_hint,
             icon: Icons.smart_button_outlined,
             visible: (_) => Platform.isAndroid || Platform.isWindows,
             min: 0,
@@ -157,7 +156,6 @@ SettingsDestination buildListeningDestination() {
           SettingsStepperItem(
             id: 'listening.floating_lyric_bg_opacity',
             title: t.floating_lyric_bg_opacity,
-            subtitle: t.floating_lyric_bg_opacity_hint,
             icon: Icons.gradient_outlined,
             visible: (_) => Platform.isAndroid || Platform.isWindows,
             min: 0,

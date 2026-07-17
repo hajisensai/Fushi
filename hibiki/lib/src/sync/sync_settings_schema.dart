@@ -10,6 +10,8 @@ import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_lookup.dart'
+    show buildManageAudioSourcesItem, buildRemoteDictionaryLookupItem;
 import 'package:hibiki/src/startup/media_handle_registry.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/storage/data_root_migrator.dart';
@@ -235,21 +237,9 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncVideoFilesEnabled(value);
             },
           ),
-          // 多端库联合视图（spec 2026-07-12 §2.1/§2.4）：书架/视频页主网格是否把
-          // 「远端有、本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。
-          // 纯显示偏好（PreferencesRepository），默认开；关闭时占位卡全部不渲染。离线/
-          // 未配对/后端不可达时占位卡本就不出现，与本开关正交。
-          SettingsSwitchItem(
-            id: 'sync.show_remote_entries',
-            title: t.sync_show_remote_entries,
-            subtitle: t.sync_show_remote_entries_warning,
-            icon: Icons.devices_other_outlined,
-            value: (SettingsContext ctx) =>
-                ctx.appModel.prefsRepo.showRemoteEntries,
-            onChanged: (SettingsContext ctx, bool value) async {
-              await ctx.appModel.prefsRepo.setShowRemoteEntries(value);
-            },
-          ),
+          // 远端占位卡开关抽成共享 builder：同步内容分类与 Hibiki 互联分类共享同一份
+          // 定义（占位卡渲染的是互联对端的远端条目，逻辑上属互联，故互联分类也提供）。
+          buildShowRemoteEntriesItem(),
         ],
       ),
       // ── Group 4: Manual sync actions — global ────────────────────────
@@ -298,6 +288,7 @@ SettingsDestination buildSyncBackupDestination() {
       // ── Group 5: Local backup — independent of sync ──────────────────
       SettingsSection(
         title: t.sync_section_backup,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.backup_export',
@@ -319,6 +310,7 @@ SettingsDestination buildSyncBackupDestination() {
       SettingsSection(
         title: t.settings_section_data_storage,
         visible: (SettingsContext ctx) => isDesktopPlatform,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.data_storage_location',
@@ -397,7 +389,39 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
+      // 互联相关配置镜像：这些项散落在查词/同步分类，但逻辑上都作用于互联对端
+      // （远端词典查询直连对端词典、音频来源含互联音频源 hibikiRemote、远端占位卡
+      // 渲染对端条目）。在互联分类也提供同一入口，用户配互联时一站式可改（原分类
+      // 保留，共享同一 builder 单一真相源，非复制）。与其它互联 section 一致，仅在
+      // 互联被选为同步方式时可见。
+      SettingsSection(
+        title: t.interconnect_section_related,
+        visible: interconnectActive,
+        items: <SettingsItem>[
+          buildRemoteDictionaryLookupItem(),
+          buildManageAudioSourcesItem(),
+          buildShowRemoteEntriesItem(),
+        ],
+      ),
     ],
+  );
+}
+
+/// 远端占位卡开关。同步内容分类与 Hibiki 互联分类共享同一份定义（单一真相源）：
+/// 多端库联合视图（spec 2026-07-12 §2.1/§2.4），书架/视频页主网格是否把「远端有、
+/// 本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。纯显示偏好
+/// （PreferencesRepository），默认开；关闭时占位卡全部不渲染。离线/未配对/后端不可达
+/// 时占位卡本就不出现，与本开关正交。id 沿用 `sync.` 前缀（非持久化 key）。
+SettingsItem buildShowRemoteEntriesItem() {
+  return SettingsSwitchItem(
+    id: 'sync.show_remote_entries',
+    title: t.sync_show_remote_entries,
+    subtitle: t.sync_show_remote_entries_warning,
+    icon: Icons.devices_other_outlined,
+    value: (SettingsContext ctx) => ctx.appModel.prefsRepo.showRemoteEntries,
+    onChanged: (SettingsContext ctx, bool value) async {
+      await ctx.appModel.prefsRepo.setShowRemoteEntries(value);
+    },
   );
 }
 
