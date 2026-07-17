@@ -828,6 +828,18 @@ class ReaderPaginationScripts {
   isVertical: function() {
     return window.getComputedStyle(document.body).writingMode === "vertical-rl";
   },
+  // wave1 去重：content-box 尺寸探针（body clientWidth/Height 扣 padding）。曾在分页/连续
+  // 两 shell 尾部各挂一份逐字相同的 window.hoshiReader._contentSize = function(){...}；上移进
+  // _sharedJs 作对象字面量属性，两 shell 经 $_sharedJs 各得一份、字节等价（_imageMaxBox 经
+  // this._contentSize() 调用，属性先于 initialize 求值，定义先于使用）。
+  _contentSize: function() {
+    var cs = getComputedStyle(document.body);
+    var pl = parseFloat(cs.paddingLeft) || 0;
+    var pr = parseFloat(cs.paddingRight) || 0;
+    var pt = parseFloat(cs.paddingTop) || 0;
+    var pb = parseFloat(cs.paddingBottom) || 0;
+    return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
+  },
   // TODO-1285（图片挤压根因修复）：每页多列(pageColumns>=2)时 multicol 把「turn 轴」
   // （横排=宽 / 竖排=高）切成 N 个子列，但图片 max 约束过去恒用整 content-box（cs.w/cs.h）
   // → 整页插图按整页 turn 轴撑开，远超单个子列 → 溢出本列、盖住相邻列正文（用户报「图片
@@ -2470,14 +2482,6 @@ $_sharedJs
     return true;
   }
 };
-window.hoshiReader._contentSize = function() {
-  var cs = getComputedStyle(document.body);
-  var pl = parseFloat(cs.paddingLeft) || 0;
-  var pr = parseFloat(cs.paddingRight) || 0;
-  var pt = parseFloat(cs.paddingTop) || 0;
-  var pb = parseFloat(cs.paddingBottom) || 0;
-  return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
-};
 // TODO-792/753 诊断取证（纯只读，零行为改动）：竖排翻页「文字越翻越偏 / 叠加漂移」。
 // 根因候选（代数已证 contentBox==columnWidth 成对，故 δ 是亚像素级，与横排 TODO-753
 // 同源）：竖排 getScrollContext 的 contentBox = injectedV − parseFloat(paddingTop) −
@@ -3278,14 +3282,6 @@ $_sharedJs
     }
     return true;
   }
-};
-window.hoshiReader._contentSize = function() {
-  var cs = getComputedStyle(document.body);
-  var pl = parseFloat(cs.paddingLeft) || 0;
-  var pr = parseFloat(cs.paddingRight) || 0;
-  var pt = parseFloat(cs.paddingTop) || 0;
-  var pb = parseFloat(cs.paddingBottom) || 0;
-  return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
 };
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
