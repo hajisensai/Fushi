@@ -1025,6 +1025,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                           controller: controller,
                           onTapCue: _handleSubtitleJumpTap,
                           onLookupCue: _handleSubtitleListLookup,
+                          // BUG-872：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
+                          // 「点列表下一个词」切换查词而非吞成关闭浮层。
+                          hitTester: _subtitleListHitTester,
                           onCopyCue: _copyCueText,
                           onFavoriteCue: _toggleFavoriteCueForVideo,
                           isCueFavorited: _isCueFavorited,
