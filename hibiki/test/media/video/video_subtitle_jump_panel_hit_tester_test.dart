@@ -5,7 +5,7 @@ import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
-// BUG-872：查词浮层打开时，根 Overlay 的全屏 dismiss barrier 盖在推挤式字幕列表侧栏之上、
+// BUG-874：查词浮层打开时，根 Overlay 的全屏 dismiss barrier 盖在推挤式字幕列表侧栏之上、
 // 抢走点击 → 点列表里下一个词只会关浮层。修复让 barrier 先用 [VideoSubtitleListHitTester]
 // 反查是否点到了列表某行某字符，是则切换查词。本测试在最强可落地层（widget）钉死这条反查：
 // 绑定句柄 → 对某行字符全局坐标 hitTest 返回正确 (cue, grapheme, charRect)，行外返回 null。
@@ -77,7 +77,7 @@ Rect _unionRects(Iterable<Rect> rects) {
 }
 
 void main() {
-  group('subtitle grapheme offset helpers (BUG-872 shared with barrier hit)',
+  group('subtitle grapheme offset helpers (BUG-874 shared with barrier hit)',
       () {
     test('start/end offsets track UTF-16 lengths incl. multi-unit graphemes',
         () {
@@ -113,7 +113,7 @@ void main() {
     });
   });
 
-  group('VideoSubtitleListHitTester wiring (BUG-872)', () {
+  group('VideoSubtitleListHitTester wiring (BUG-874)', () {
     testWidgets(
         'panel binds a hit tester that reverse-hits a row char to '
         '(cue, grapheme, charRect)', (WidgetTester tester) async {

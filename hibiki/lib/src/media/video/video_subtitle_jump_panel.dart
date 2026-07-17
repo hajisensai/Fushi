@@ -37,12 +37,12 @@ typedef SubtitleListCharHit = ({int graphemeIndex, Rect charRect});
 
 /// 命中字幕列表某行某字符：整条 [cue] + grapheme 下标 + 该字符的全局屏幕矩形。
 /// 比 [SubtitleListCharHit] 多带所属 [cue]，供查词浮层 dismiss barrier 直接切换查词
-/// （BUG-872）。
+/// （BUG-874）。
 typedef SubtitleListHit = ({AudioCue cue, int graphemeIndex, Rect charRect});
 
 /// 给上层（查词浮层的 dismiss barrier）按全局坐标反查「点到的是字幕列表哪行哪个字符」
 /// 用的句柄。[VideoSubtitleJumpPanel] 每帧 build 把命中实现绑进来；上层持有同一对象、
-/// 调 [hitTest]（BUG-872）。
+/// 调 [hitTest]（BUG-874）。
 ///
 /// 与画面底部内嵌字幕的 `VideoSubtitleHitTester`（`video_subtitle_overlay.dart`）同范式：
 /// 查词浮层打开时，根 Overlay 的全屏 dismiss barrier 盖在**推挤式字幕列表侧栏**之上、抢走
@@ -63,7 +63,7 @@ class VideoSubtitleListHitTester {
 }
 
 /// 字幕文本每个 grapheme 的 UTF-16 起始偏移（按 [String.characters] 顺序）。列表行内 tap 的
-/// `hitAt` 与 [subtitleListCharHitFromParagraph] 共用（消除重复，BUG-872）。
+/// `hitAt` 与 [subtitleListCharHitFromParagraph] 共用（消除重复，BUG-874）。
 @visibleForTesting
 List<int> subtitleGraphemeStartOffsets(String text) {
   final List<int> starts = <int>[];
@@ -113,7 +113,7 @@ Rect _subtitleUnionBoxes(List<TextBox> boxes) {
 }
 
 /// 在一个已布局的行文本 [RenderParagraph] 上，按行内 [localPosition] 反查命中的字符
-/// （BUG-872，供 [VideoSubtitleListHitTester] 用）。逻辑与 [VideoSubtitleJumpPanel] 行内 tap
+/// （BUG-874，供 [VideoSubtitleListHitTester] 用）。逻辑与 [VideoSubtitleJumpPanel] 行内 tap
 /// 的 `hitAt` 同构（同一 grapheme 映射 + 选区盒并集 + 1px 容差），只是取位置 / 选区盒改用
 /// 实时 [RenderParagraph]（免重建 TextPainter），并去掉 caret 兜底（miss 落回 dismiss，安全）。
 ///
@@ -198,7 +198,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final void Function(AudioCue cue, int graphemeIndex, Rect charRect)?
       onLookupCue;
 
-  /// 可选：按全局坐标反查列表字符命中的句柄（BUG-872）。非 null 时面板每帧把当前可见行的
+  /// 可选：按全局坐标反查列表字符命中的句柄（BUG-874）。非 null 时面板每帧把当前可见行的
   /// 命中实现绑进去，供查词浮层 dismiss barrier「点列表下一个词切换查词、保持浮层」。null
   /// （测试 / 无查词能力）时不绑，行为与历史一致。
   final VideoSubtitleListHitTester? hitTester;
@@ -243,7 +243,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// [GlobalKey] map 按历史 visibleIndex 无限制增长。
   final Map<int, GlobalKey> _rowKeys = <int, GlobalKey>{};
 
-  /// BUG-872：当前已构建（可见）行的文本 [RenderParagraph] 命中登记表，键为 ListView.builder
+  /// BUG-874：当前已构建（可见）行的文本 [RenderParagraph] 命中登记表，键为 ListView.builder
   /// 的 **builder 下标 i**（同一时刻每 i 唯一，稳定不撞 GlobalKey）。逐行在 [_buildRow] 里把
   /// 行文本 [RichText] 的 [GlobalKey]（[_rowTextKeys]）与所属 cue（[_rowHitCues]）登记进来；
   /// [_hitTestRows] 遍历本表、用各行 RenderParagraph 反查全局坐标命中的字符。行滚出屏后
@@ -383,14 +383,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   @override
   void dispose() {
-    // BUG-872：面板卸载（侧栏隐藏）时解绑命中句柄，避免 barrier 调到已失效的实现。
+    // BUG-874：面板卸载（侧栏隐藏）时解绑命中句柄，避免 barrier 调到已失效的实现。
     widget.hitTester?.unbind();
     widget.controller.removeListener(_onControllerChanged);
     _scrollController.dispose();
     super.dispose();
   }
 
-  /// BUG-872：按全局坐标反查当前可见行里命中的字符，返回 `(cue, grapheme, charRect)`。
+  /// BUG-874：按全局坐标反查当前可见行里命中的字符，返回 `(cue, grapheme, charRect)`。
   /// 供 [VideoSubtitleListHitTester] 绑定给查词浮层 dismiss barrier。无查词能力 / 无命中
   /// 返回 null（barrier 落回原 dismiss）。遍历 [_rowTextKeys]：滚出屏的行 `currentContext`
   /// 为 null 自动跳过；先粗判点落在哪行的段落框内，再逐字符精查。
@@ -731,7 +731,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   @override
   Widget build(BuildContext context) {
-    // BUG-872：把当前可见行的命中实现绑给查词浮层 dismiss barrier；每帧重置行 cue 登记表，
+    // BUG-874：把当前可见行的命中实现绑给查词浮层 dismiss barrier；每帧重置行 cue 登记表，
     // 仅本帧真正构建（itemBuilder 调用）的行回填，避免读到上一帧的旧 cue。
     widget.hitTester?.bindHitTest(_hitTestRows);
     _rowHitCues.clear();
@@ -987,7 +987,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   }
 
   Widget _buildRow(ColorScheme cs, AudioCue cue, int index, bool selected) {
-    // BUG-872：可查词时给本行文本一个稳定 [GlobalKey]（按 builder 下标）并登记所属 cue，供
+    // BUG-874：可查词时给本行文本一个稳定 [GlobalKey]（按 builder 下标）并登记所属 cue，供
     // [_hitTestRows] 反查。不可查词（onLookupCue==null）时不登记，行为与历史一致。
     final GlobalKey? textKey = widget.onLookupCue == null
         ? null
@@ -1111,7 +1111,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           required Offset localPosition,
           required Offset globalPosition,
         }) {
-          // BUG-872：grapheme 映射 / 选区盒并集用顶层纯 helper（与 barrier 反查
+          // BUG-874：grapheme 映射 / 选区盒并集用顶层纯 helper（与 barrier 反查
           // [subtitleListCharHitFromParagraph] 同源），此处仅 caret 兜底沿用 TextPainter。
           final List<int> starts = subtitleGraphemeStartOffsets(cue.text);
           final List<int> ends = subtitleGraphemeEndOffsets(cue.text);
@@ -1183,7 +1183,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             widget.onTapCue(cue);
           },
           child: RichText(
-            // BUG-872：稳定 key 让 [_hitTestRows] 能按 builder 下标取到本行 RenderParagraph
+            // BUG-874：稳定 key 让 [_hitTestRows] 能按 builder 下标取到本行 RenderParagraph
             // 反查字符命中（供查词浮层 dismiss barrier 切换查词）。
             key: textKey,
             text: textSpan,

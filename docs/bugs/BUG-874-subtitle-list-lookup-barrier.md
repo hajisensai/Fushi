@@ -1,4 +1,4 @@
-## BUG-872 · 查词浮层打开时点字幕列表下一个词被 dismiss barrier 吞掉，必须先关弹窗
+## BUG-874 · 查词浮层打开时点字幕列表下一个词被 dismiss barrier 吞掉，必须先关弹窗
 - **报告**：2026-07-18（用户：）
 - **真实性**：✅ 真 bug。视频页查词浮层打开时，根 Overlay 的全屏 dismiss barrier（`Positioned.fill`）盖在**推挤式字幕列表侧栏**（`VideoSubtitleJumpPanel`，Row 兄弟列）之上、抢走手势竞技场。`_onDismissBarrierTap`（`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:3192`）只用 `_subtitleHitTester`（`VideoSubtitleHitTester`）反查**画面底部内嵌字幕**的字符命中，**从不反查侧栏列表**。于是浮层开着时点列表里下一个词：barrier 先赢 → 侧栏行 `onTapUp` 不触发 → hit==null → 落到 `_popNestedPopupAt(0)` 只关掉当前浮层。用户必须先把浮层 ✕ 掉，再点一次才真正查到下一个词。底部内嵌字幕本就有「点字换词、保持暂停」的对称支持（barrier 反查 `_subtitleHitTester`），侧栏列表缺这条。
 - **[x] ① 已修复** — 新增 `VideoSubtitleListHitTester` 句柄（`hibiki/lib/src/media/video/video_subtitle_jump_panel.dart`），`VideoSubtitleJumpPanel` 每帧把「屏幕坐标→(cue, grapheme, charRect)」的命中实现绑进来（逐可见行经其 `RenderParagraph` 反查）。`_onDismissBarrierTap` 在底部字幕 miss 后再查列表句柄，命中即走 `_handleSubtitleListLookup`（→ `_lookupAt` 的 `replaceStack`）切换查词、保持浮层与暂停，未命中才落回原 dismiss。纯增量：miss 行为与原来完全一致。提交：bbedef78b

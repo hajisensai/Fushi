@@ -1212,7 +1212,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 字符」，是则切换查词、保持暂停（见 [_onDismissBarrierTap] / [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester _subtitleHitTester = VideoSubtitleHitTester();
 
-  /// 字幕**列表侧栏**字符命中句柄（BUG-872）：与 [_subtitleHitTester] 对称。查词浮层的
+  /// 字幕**列表侧栏**字符命中句柄（BUG-874）：与 [_subtitleHitTester] 对称。查词浮层的
   /// dismiss barrier 盖在推挤式字幕列表侧栏之上、抢走点击，故 barrier 在底部字幕 miss 后再
   /// 用本句柄反查「点到的是不是列表里某行某个字符」，是则切换查词、保持浮层（见
   /// [_onDismissBarrierTap] / [VideoSubtitleListHitTester]）。
@@ -3345,7 +3345,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _handleSubtitleLookupTap(hit!.sentence, hit.graphemeIndex, hit.charRect);
       return;
     }
-    // BUG-872：底部字幕没命中，再反查**字幕列表侧栏**——barrier 全屏盖在推挤式侧栏之上、
+    // BUG-874：底部字幕没命中，再反查**字幕列表侧栏**——barrier 全屏盖在推挤式侧栏之上、
     // 抢走点击，故点列表里下一个词若不在此反查就只会关掉浮层。命中某行某字符即切换查词
     // （[_handleSubtitleListLookup] → [_lookupAt] 的 `replaceStack`，保持浮层与暂停）。这是
     // 列表行文本明确点在某字符上的显式换词意图，不吃底部字幕那条的嵌套门控
