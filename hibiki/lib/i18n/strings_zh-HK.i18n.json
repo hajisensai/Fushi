@@ -1931,5 +1931,7 @@
   "interconnect_inactive_note": "Hibiki Interconnect is not the active sync method",
   "interconnect_inactive_note_hint": "Select Hibiki Interconnect under Sync & backup - Sync method to use these settings",
   "interconnect_section_client": "Connect to other devices",
-  "interconnect_moved_note": "Connection & server settings are in the Hibiki Interconnect category"
+  "interconnect_moved_note": "Connection & server settings are in the Hibiki Interconnect category",
+  "settings_search_hint": "Search settings",
+  "settings_search_no_results": "No matching settings"
 }

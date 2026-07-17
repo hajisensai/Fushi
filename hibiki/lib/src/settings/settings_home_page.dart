@@ -6,8 +6,10 @@ import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
+import 'package:hibiki/src/settings/settings_search.dart';
 import 'package:hibiki/utils.dart';
 
 class SettingsHomePage extends BasePage {
@@ -32,6 +34,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
   SettingsDestinationId _selectedDestinationId =
       SettingsDestinationId.appearance;
 
+  // 设置搜索：跨全部分类按标题/副标题/分区/分类名过滤配置项，点结果跳转到
+  // 对应分类并滚动定位（SettingsSearchReveal）。
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +48,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     ErrorLogService.instance.removeListener(_onLogChanged);
     DebugLogService.instance.removeListener(_onLogChanged);
     super.dispose();
@@ -79,7 +87,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
 
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        if (constraints.maxWidth >= 720) {
+        final bool wide = constraints.maxWidth >= 720;
+        if (wide) {
           // 宽屏主从：导航栏贴最左、详情填满整宽（平板友好，不再居中留白）。
           return _buildWideLayout(
             settingsContext: settingsContext,
@@ -87,20 +96,139 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
             destinations: destinations,
           );
         }
-        // 窄屏单列：居中限宽（单列阅读更舒适）。
+        // 窄屏单列：居中限宽（单列阅读更舒适）。搜索时结果列表整体替换分类列表。
         return DesktopContentLayout(
           kind: DesktopContentKind.settings,
-          child: renderer.buildHomePage(
-            settingsContext: settingsContext,
-            destinations: destinations,
-            selectedDestinationId: _selectedDestinationId,
-            onDestinationSelected: _selectDestination,
-            embedded: widget.embedded,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _buildSearchField(),
+              Expanded(
+                child: _searchQuery.trim().isEmpty
+                    ? renderer.buildHomePage(
+                        settingsContext: settingsContext,
+                        destinations: destinations,
+                        selectedDestinationId: _selectedDestinationId,
+                        onDestinationSelected: _selectDestination,
+                        embedded: widget.embedded,
+                      )
+                    : _buildSearchResults(
+                        settingsContext: settingsContext,
+                        destinations: destinations,
+                        wide: false,
+                      ),
+              ),
+            ],
           ),
         );
       },
     );
     return _buildEmbeddedShell(content);
+  }
+
+  Widget _buildSearchField() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        0,
+      ),
+      // Material(transparency)：设置主页也会在 Cupertino 皮肤下渲染（隐藏内部
+      // 能力），彼时树里没有 Material 祖先，裸 TextField 会 assert；透明 Material
+      // 只提供 ink/装饰上下文，不改观感。
+      child: Material(
+        type: MaterialType.transparency,
+        child: TextField(
+          controller: _searchController,
+          decoration: InputDecoration(
+            hintText: t.settings_search_hint,
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _searchQuery.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.clear),
+                    tooltip: t.clear,
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                  ),
+            isDense: true,
+            border: OutlineInputBorder(
+              // MD3 守卫：圆角一律走 design tokens，不自持字面量。
+              borderRadius: tokens.radii.controlRadius,
+            ),
+          ),
+          onChanged: (String value) => setState(() => _searchQuery = value),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchResults({
+    required SettingsContext settingsContext,
+    required List<SettingsDestination> destinations,
+    required bool wide,
+  }) {
+    final List<SettingsSearchEntry> results = filterSettingsEntries(
+      flattenVisibleSettings(destinations, settingsContext),
+      _searchQuery,
+    );
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    if (results.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.all(tokens.spacing.page),
+        child: Center(child: Text(t.settings_search_no_results)),
+      );
+    }
+    final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        tokens.spacing.page + mediaPadding.bottom,
+      ),
+      children: <Widget>[
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            for (final SettingsSearchEntry entry in results)
+              HibikiListItem(
+                leading: Icon(entry.item.icon ?? entry.destination.icon),
+                title: Text(entry.item.title),
+                titleMaxLines: 2,
+                subtitle: Text(
+                  entry.sectionTitle == null
+                      ? entry.destination.title
+                      : '${entry.destination.title} › ${entry.sectionTitle}',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openSearchResult(entry, wide: wide),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 点搜索结果：登记滚动定位挂点、清空搜索，宽屏切主从选中分类，窄屏 push
+  /// 详情页；目标行由 SettingsSchemaItem 消费挂点后滚入视口并闪烁高亮。
+  void _openSearchResult(SettingsSearchEntry entry, {required bool wide}) {
+    SettingsSearchReveal.pendingItemId = entry.item.id;
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      if (wide) _selectedDestinationId = entry.destination.id;
+    });
+    if (!wide) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => SettingsDetailPage(destination: entry.destination),
+        ),
+      );
+    }
   }
 
   Widget _buildEmbeddedShell(Widget content) {
@@ -159,12 +287,41 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
       dividerColor: dividerColor,
       supporting: Container(
         color: navPaneColor,
-        child: renderer.buildDestinationList(
-          settingsContext: settingsContext,
-          destinations: destinations,
-          selectedDestinationId: _selectedDestinationId,
-          onDestinationSelected: _selectDestination,
-          pushRoutes: false, // master-detail keeps selection in-pane.
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _buildSearchField(),
+            Expanded(
+              // Cupertino 的 buildDestinationList 是不可滚动的
+              // CupertinoListSection（Material 自带 ListView）；分类数增长 +
+              // 搜索框占高后，在有界 pane 里必须由外层补滚动，否则 RenderFlex
+              // 溢出（BUG-009 同源）。
+              child: _searchQuery.trim().isEmpty
+                  ? (cupertino
+                      ? SingleChildScrollView(
+                          child: renderer.buildDestinationList(
+                            settingsContext: settingsContext,
+                            destinations: destinations,
+                            selectedDestinationId: _selectedDestinationId,
+                            onDestinationSelected: _selectDestination,
+                            pushRoutes: false,
+                          ),
+                        )
+                      : renderer.buildDestinationList(
+                          settingsContext: settingsContext,
+                          destinations: destinations,
+                          selectedDestinationId: _selectedDestinationId,
+                          onDestinationSelected: _selectDestination,
+                          pushRoutes:
+                              false, // master-detail keeps selection in-pane.
+                        ))
+                  : _buildSearchResults(
+                      settingsContext: settingsContext,
+                      destinations: destinations,
+                      wide: true,
+                    ),
+            ),
+          ],
         ),
       ),
       // 详情面板的身份就是当前 destination：用 KeyedSubtree 按 id 编码，
