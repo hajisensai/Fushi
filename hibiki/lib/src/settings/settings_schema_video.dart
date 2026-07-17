@@ -197,11 +197,9 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
-        ],
-      ),
-      SettingsSection(
-        title: t.video_settings_cat_controls,
-        items: <SettingsItem>[
+          // 「重置控件布局」原独占一个「控件」section（仅此一项）；单项撑一个分区
+          // 是欠填充结构，并入「播放」尾部（t.video_settings_cat_controls key 仍被
+          // 播放页快捷设置面板使用，勿删）。
           SettingsActionItem(
             id: 'video.controls.reset_layout',
             title: t.video_control_reset_layout,

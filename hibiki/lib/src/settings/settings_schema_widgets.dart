@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_search.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 
@@ -83,7 +84,7 @@ class SettingsSchemaItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return switch (item) {
+    final Widget row = switch (item) {
       SettingsNavigationItem navigation => _routeRow(context, navigation),
       SettingsActionItem action => _action(action),
       SettingsSwitchItem toggle => _switch(toggle),
@@ -94,6 +95,13 @@ class SettingsSchemaItem extends StatelessWidget {
       SettingsStepperItem stepper => _stepper(stepper),
       SettingsCustomItem custom => custom.builder(settingsContext),
     };
+    // 设置搜索跳转落点：本项是待定位目标时消费一次性挂点，包上滚动定位 +
+    // 闪烁高亮（见 SettingsSearchReveal）。消费即清除，后续 rebuild 不再包装。
+    if (SettingsSearchReveal.pendingItemId == item.id) {
+      SettingsSearchReveal.pendingItemId = null;
+      return SettingsRevealTarget(child: row);
+    }
+    return row;
   }
 
   Widget _routeRow(

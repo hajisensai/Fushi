@@ -111,11 +111,9 @@ SettingsDestination buildSystemDestination() {
       SettingsSection(
         title: t.settings_destination_system,
         items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'appearance.language',
-            icon: Icons.translate_outlined,
-            builder: buildLanguageSelector,
-          ),
+          // 「界面语言」（id 'appearance.language'）已归位到「外观 · 界面」分区
+          //（与主题/明暗/缩放并列）；id 前缀本就是 appearance，此前放系统分类
+          // 是历史错配。
           SettingsCustomItem(
             id: 'system.app_version',
             icon: Icons.info_outline,

@@ -1076,12 +1076,19 @@ void main() {
   testWidgets(
       'BUG-009 R2: cupertino desktop embedded settings expose a back-arrow exit '
       'and do not overflow', (WidgetTester tester) async {
+    // 默认选中分类改为「外观」后，首屏详情会渲染读 prefsRepo 的开关行
+    //（反转导航栏/启动词典 tab），故 harness 需要 prefs-backed AppModel
+    //（轻量 _RendererTestAppModel 无 prefsRepo 会空指针）。
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(db);
     await tester.pumpWidget(
       _harness(
         // 复现用户场景：Windows 主机 + 外观强制 iOS(Cupertino) 覆盖。
         platform: TargetPlatform.windows,
         designSystemTheme:
             const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+        appModel: appModel,
         builder: (SettingsContext _) =>
             SettingsHomePage(embedded: true, onBack: () {}),
       ),

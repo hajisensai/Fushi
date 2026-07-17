@@ -42,7 +42,7 @@ class _MiscellaneousSettingsPageState
     );
 
     final SettingsDestination destination = SettingsDestination(
-      id: SettingsDestinationId.appearance,
+      id: SettingsDestinationId.appIcon,
       title: t.app_icon_label,
       icon: Icons.widgets_outlined,
       sections: const <SettingsSection>[],

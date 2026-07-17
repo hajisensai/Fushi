@@ -23,7 +23,6 @@ export 'src/pages/implementations/dictionary_settings_dialog_page.dart';
 export 'src/pages/implementations/local_audio_sources_dialog.dart';
 export 'src/pages/implementations/media_sources_dialog.dart';
 export 'src/pages/implementations/audio_recorder_page.dart';
-export 'src/pages/implementations/switch_settings_page.dart';
 export 'src/pages/implementations/media_item_edit_dialog_page.dart';
 export 'src/pages/implementations/changelog_page.dart';
 export 'src/pages/implementations/crash_dump_page.dart';
