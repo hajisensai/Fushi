@@ -47,6 +47,15 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
           _readerContentReady = true;
           _hasEverLoaded = true;
         });
+        // BUG-867：兜底超时是「JS 侧 hoshiReader 迟迟不回 onRestoreComplete」时的最终解锁，
+        // 光翻 _readerContentReady 不够——_restoreInFlight / _isNavigatingToChapter /
+        // _restoreCompleter 仍悬空，_paginationInFlight（chrome.part.dart）恒真：遮罩摘掉、
+        // 书看似打开，但翻页永久被守卫吞掉、进度不再保存。这里连同解开导航态，与
+        // _navigateToChapterAndWait 的等待超时收尾（本文件 _restoreCompleter.future.timeout
+        // onTimeout）同构：清 _isNavigatingToChapter，_failNavigation 清 _restoreInFlight
+        // 并 complete(false)+清空 completer，让等待方立即返回而非各等各的 10s 超时。
+        _isNavigatingToChapter = false;
+        _failNavigation();
         // TODO-1229 第三次复诉：兜底超时也算内容就绪，消费 pending 并 stamp 冷却窗，
         // 避免惯性跨章后旗子悬空到下一次真实导航才被清（那会造成一次假冷却）。
         _noteChapterTurnSettledIfPending();
