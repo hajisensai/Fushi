@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
-/// BUG-874：竖排有声书读到「句首是行尾单字」的 cue 时凭空前翻一页、下一句又翻回。
+/// BUG-875：竖排有声书读到「句首是行尾单字」的 cue 时凭空前翻一页、下一句又翻回。
 ///
 /// 根因：`reader_pagination_scripts.dart` 的 `scrollToRange`（cue-follow +
 /// search-highlight 共用落页路径）用起始边 `rect.top`（竖排）`alignToPage`(floor) 落页，
@@ -33,7 +33,7 @@ void main() {
         viewportExtent: viewportExtent,
       );
 
-  group('BUG-874 句首落在 client 视口内即不翻页（消除页底 pitch/视口失配）', () {
+  group('BUG-875 句首落在 client 视口内即不翻页（消除页底 pitch/视口失配）', () {
     test('句首行尾单字：rect.top 落 [pageStep, viewportExtent) 带内 → 不翻页（原症状页）', () {
       // 停在第 2 页（currentScroll=2000）。句首单字在列底：rect.top=1200，越过
       // pageStep(1000) 但仍在 viewportExtent(1500) 内 = 视觉在本页底部。
@@ -82,7 +82,7 @@ void main() {
     });
   });
 
-  group('BUG-874 源码守卫：scrollToRange 必须有 client 视口可见短路', () {
+  group('BUG-875 源码守卫：scrollToRange 必须有 client 视口可见短路', () {
     final String scripts = File(
       'lib/src/reader/reader_pagination_scripts.dart',
     ).readAsStringSync();
@@ -107,7 +107,7 @@ void main() {
       expect(
         RegExp(r'startEdge\s*<\s*context\.viewportExtent').hasMatch(body),
         isTrue,
-        reason: '页底 pitch/视口失配的可见短路缺失 → BUG-874 竖排行尾单字翻页抖动回归',
+        reason: '页底 pitch/视口失配的可见短路缺失 → BUG-875 竖排行尾单字翻页抖动回归',
       );
     });
   });

@@ -1541,7 +1541,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         for (final FavoriteSentence favorite in _favorites)
           _InBookFavoriteRow(
             favorite: favorite,
-            // BUG-874 附带（用户反馈）：收藏行右侧加「阅读位置」百分比（如 78.6%），
+            // BUG-875 附带（用户反馈）：收藏行右侧加「阅读位置」百分比（如 78.6%），
             // 让用户不放音频 / 不复制文本也能一眼看出这条收藏在书里的位置。位置解析
             // 失败（章字符账本未就绪）时不追加、只显示原元信息。
             metaLabel: _favoriteMetaLabel(favorite, fmt),

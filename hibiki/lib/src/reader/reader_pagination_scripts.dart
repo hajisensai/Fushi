@@ -191,7 +191,7 @@ class ReaderPaginationScripts {
     return (safe / pageSize).floorToDouble() * pageSize;
   }
 
-  /// JS `scrollToRange` reveal 决策的纯 Dart 影子（BUG-874）。
+  /// JS `scrollToRange` reveal 决策的纯 Dart 影子（BUG-875）。
   ///
   /// 返回值：`null` = 不翻页（句首已在本页可见 / pageSize 非法 / 目标==当前）；
   /// 非空 = 应翻到的目标 scroll。
@@ -2028,7 +2028,7 @@ $_sharedJs
           + ' scrollHeight=' + document.body.scrollHeight);
       } catch (e) {}
     }
-    // BUG-874（竖排行尾单字凭空翻页根因修复）：pageStep（列周期 = N×(used 列宽+gap)）
+    // BUG-875（竖排行尾单字凭空翻页根因修复）：pageStep（列周期 = N×(used 列宽+gap)）
     // 因 chrome inset / body padding 可比 client 视口 extent 小最多半页（见 getScrollContext
     // 的 physicalMaxScroll 注释「两者因此可相差半页」）。当一句 cue 的**句首**是一行的**行尾
     // 单字**（竖排=列底），其首段 rect 的起始边 rect.top 落在 [pageStep, viewportExtent) 这条

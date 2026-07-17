@@ -1,4 +1,4 @@
-## BUG-874 · 竖排有声书读到「句首是行尾单字」的句子时凭空前翻一页、下一句又翻回
+## BUG-875 · 竖排有声书读到「句首是行尾单字」的句子时凭空前翻一页、下一句又翻回
 - **报告**：2026-07-18（用户：）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/reader/reader_pagination_scripts.dart` `scrollToRange`（cue-follow + search-highlight 共用落页原语，旧行 1975）用起始边 `rect.top`（竖排）`alignToPage`(floor) 落页，但 `pageStep`（列周期 = N×(used 列宽+gap)）因 chrome inset / body padding 可比 client 视口 `viewportExtent` 小最多半页（见同文件 `getScrollContext` 的 `physicalMaxScroll` 注释「两者因此可相差半页」）。
   - 现象：竖排（vertical-rl）有声书跟读时，遇到某句 **句首恰是一行行尾的单字**（竖排=列底只容下一个字、其余绕到下一行/列）时，读到该句 WebView 凭空**前翻一页**（用户看不到当前句也看不到高亮标记），读到下一句又**翻回**正确页。可靠复现。
