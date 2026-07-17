@@ -4,6 +4,15 @@ import 'package:flutter/material.dart';
 
 enum HibikiDesignSystem { auto, material, cupertino, macos }
 
+/// macOS 标准标题栏高度（逻辑像素）。`main.dart` 无条件启用透明标题栏 +
+/// full-size content view（macos_ui ToolBar 的硬性前提），Flutter 内容会整块
+/// 延伸到红黄绿交通灯按钮下方；而 macOS full-size content view 下 embedder 不把
+/// 交通灯上报为 `MediaQuery.padding.top`（上报 0），所以普通 `SafeArea` 挡不住。
+/// Material 桌面壳需要用它给 `SafeArea.minimum` 预留顶部内边距，让交通灯落在这条
+/// 保留带里、不再压住导航 rail / 返回按钮（BUG-869）。交通灯直径 12pt、约在
+/// y=[6,18]，28pt 足以完全让位。macos_ui 原生壳由 MacosWindow 自处理让位，不用它。
+const double kMacTitleBarHeight = 28.0;
+
 @immutable
 class HibikiDesignSystemTheme extends ThemeExtension<HibikiDesignSystemTheme> {
   const HibikiDesignSystemTheme(this.designSystem);
