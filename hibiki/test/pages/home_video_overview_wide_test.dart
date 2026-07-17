@@ -14,6 +14,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
+import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -24,7 +25,7 @@ import '../helpers/test_platform_services.dart';
 /// 顶部概览条宽窗分支曾用裸 Row(crossAxisAlignment: stretch)——它在
 /// SliverToBoxAdapter 的无界高度下强制子项无限高，首帧即抛
 /// `BoxConstraints forces an infinite height`。修复 = IntrinsicHeight 收界。
-/// 本测试锁死：宽窗 + hero 候选渲染不抛、且 hero 与统计三格真实可见。
+/// 本测试锁死：宽窗 + hero 候选渲染不抛、且 hero 与观看活动热力图真实可见。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -105,8 +106,9 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text(t.video_continue_watching), findsOneWidget);
-    expect(find.text(t.video_library_overview), findsOneWidget);
-    expect(find.text(t.video_stat_unfinished), findsOneWidget);
+    // 概览右侧改为「观看活动」热力图（取代旧的总数/未完成/近7天三格）。
+    expect(find.text(t.video_watch_activity), findsOneWidget);
+    expect(find.byType(StatContributionHeatmap), findsOneWidget);
   });
 
   testWidgets('窄窗 + 续看候选：纵向堆叠分支同样不抛', (WidgetTester tester) async {

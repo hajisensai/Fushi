@@ -1933,5 +1933,7 @@
   "interconnect_section_client": "连接到其他设备",
   "interconnect_moved_note": "互联连接与本机服务器设置在「Hibiki 互联」分类",
   "settings_search_hint": "搜索设置",
-  "settings_search_no_results": "没有匹配的设置项"
+  "settings_search_no_results": "没有匹配的设置项",
+  "reading_activity": "阅读活动",
+  "video_watch_activity": "观看活动"
 }

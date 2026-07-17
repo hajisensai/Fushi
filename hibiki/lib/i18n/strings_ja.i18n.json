@@ -1933,5 +1933,7 @@
   "interconnect_section_client": "Connect to other devices",
   "interconnect_moved_note": "Connection & server settings are in the Hibiki Interconnect category",
   "settings_search_hint": "Search settings",
-  "settings_search_no_results": "No matching settings"
+  "settings_search_no_results": "No matching settings",
+  "reading_activity": "Reading activity",
+  "video_watch_activity": "Watch activity"
 }

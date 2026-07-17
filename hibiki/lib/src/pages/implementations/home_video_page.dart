@@ -53,6 +53,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
+import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
@@ -170,6 +171,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// NULL-uid 行按 title 回退。与 [_loadLibraryMaps] 同批预取。
   Map<String, DateTime> _watchAtByUid = const <String, DateTime>{};
   Map<String, DateTime> _legacyWatchAtByTitle = const <String, DateTime>{};
+
+  /// 每日观看时长（dateKey → 毫秒之和），驱动顶部概览的观看热力图（GitHub 式）。
+  /// 与 [_watchAtByUid] 同批从 watch-stats 全量行聚合（[_loadLibraryMaps]）。
+  Map<String, int> _watchMsByDay = const <String, int>{};
 
   @override
   void initState() {
@@ -295,6 +300,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           if (r.bookUid == null) (r.title, r.lastModified),
       ],
     );
+    // 每日观看时长聚合（dateKey → sum watchTimeMs），供顶部观看热力图。同一批
+    // watchRows 复用，不再单独查库。
+    final Map<String, int> watchMsByDay = <String, int>{};
+    for (final VideoWatchStatisticRow r in watchRows) {
+      watchMsByDay[r.dateKey] = (watchMsByDay[r.dateKey] ?? 0) + r.watchTimeMs;
+    }
     if (mounted) {
       setState(() {
         _sortMode = sortMode;
@@ -305,6 +316,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         _primaryCollectionByEntry = primaryMap;
         _watchAtByUid = watchByUid;
         _legacyWatchAtByTitle = legacyByTitle;
+        _watchMsByDay = watchMsByDay;
       });
     }
   }
@@ -1718,12 +1730,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// UI v2 Phase B：顶部概览条 =「继续观看 hero」+「媒体库概览」统计。
+  /// UI v2 Phase B：顶部概览条 =「继续观看 hero」+「观看活动热力图」。
   ///
-  /// 数据全部内存推导（[computeVideoLibraryOverview]）：hero = 有痕迹未看完中
-  /// 最近看过的一条（watch-stats → importedAt 回退）；统计 = 总数 / 未完成 /
-  /// 近 7 天导入。**不显示百分比**（VideoBooks 无总时长列，不造假）。宽 ≥720
-  /// 并排、窄屏纵向堆叠；无 hero 候选时只渲染统计。
+  /// hero = 有痕迹未看完中最近看过的一条（[computeVideoLibraryOverview]，
+  /// watch-stats → importedAt 回退）。右侧不再是「总数/未完成/近7天导入」三格状态
+  /// 计数（用户反馈：那是状态非统计），改成 GitHub 式观看时长热力图（[_watchMsByDay]，
+  /// 整卡点开完整视频统计页）。宽 ≥720 并排、窄屏纵向堆叠；无 hero 候选时只渲染热力图。
   Widget _buildOverviewSection(List<VideoBookRow> all) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final VideoLibraryOverview overview = computeVideoLibraryOverview(
@@ -1768,7 +1780,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         }
       }
     }
-    final Widget stats = _buildOverviewStats(overview, tokens);
+    final Widget stats = _buildWatchHeatmapCard(tokens);
     final Widget? heroCard =
         hero == null ? null : _buildContinueHero(hero, overview, tokens);
     return Padding(
@@ -1877,11 +1889,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 媒体库概览统计：总数 / 未完成 / 近 7 天导入 三格。
-  Widget _buildOverviewStats(
-    VideoLibraryOverview overview,
-    HibikiDesignTokens tokens,
-  ) {
+  /// 顶部观看活动热力图卡（GitHub 式贡献图）：按每日观看时长 [_watchMsByDay] 铺
+  /// 最近数周方格，整卡可点开完整视频统计页。取代旧的「总数/未完成/近7天导入」三格
+  /// 状态计数——那是状态而非统计（用户反馈），热力图直观展示观看活跃度。
+  Widget _buildWatchHeatmapCard(HibikiDesignTokens tokens) {
+    final StatHeatmapModel model = buildStatHeatmap(
+      valueByDateKey: _watchMsByDay,
+      now: DateTime.now(),
+    );
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: tokens.surfaces.group,
@@ -1896,56 +1911,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Text(t.video_library_overview, style: tokens.type.sectionLabel),
+            Text(t.video_watch_activity, style: tokens.type.sectionLabel),
             SizedBox(height: tokens.spacing.gap),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: _buildOverviewStatCell(
-                    t.video_stat_total_videos,
-                    overview.total,
-                    tokens,
-                  ),
-                ),
-                Expanded(
-                  child: _buildOverviewStatCell(
-                    t.video_stat_unfinished,
-                    overview.unfinished,
-                    tokens,
-                  ),
-                ),
-                Expanded(
-                  child: _buildOverviewStatCell(
-                    t.video_stat_recent_imports,
-                    overview.recentImports,
-                    tokens,
-                  ),
-                ),
-              ],
+            StatContributionHeatmap(
+              model: model,
+              baseColor: tokens.surfaces.primary,
+              emptyColor: tokens.surfaces.card,
+              onTap: _openStatistics,
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildOverviewStatCell(
-    String label,
-    int value,
-    HibikiDesignTokens tokens,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text('$value', style: tokens.type.pageTitle),
-        SizedBox(height: tokens.spacing.gap / 2),
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: tokens.type.metadata,
-        ),
-      ],
     );
   }
 
