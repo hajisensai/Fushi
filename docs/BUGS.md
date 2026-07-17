@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 851 条。点号进各自文件。
+> 共 852 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-876](bugs/BUG-876-favorite-jump-missing-offset-text-fallback.md) | ✅ | ✅ | 书内点收藏「有时」跳不到句子位置（normCharOffset 缺失时静默失败/落章首） |
 | [BUG-875](bugs/BUG-875-reader-vertical-single-char-line-end-flip.md) | ✅ | ✅ | 竖排有声书读到「句首是行尾单字」的句子时凭空前翻一页、下一句又翻回 |
 | [BUG-869](bugs/BUG-869-fscx-line-level-squash.md) | ✅ | ✅ | 静态 \fscx/\fscy 被按行级「最后值生效」建模，句尾/前缀压扁标签把整行压扁 |
 | [BUG-868](bugs/BUG-868-reader-content-ready-timeout-pagination-wedge.md) | ✅ | ✅ | 开EPUB偶发卡住·内容就绪兜底超时漏复位导航态致翻页永久失效 |

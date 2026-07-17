@@ -1979,21 +1979,38 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         (normCharOffset != null && favLen != null && favLen > 0)
             ? normCharOffset + favLen
             : -1;
+    // BUG-876（「点收藏有时跳不过去」根因修复）：normCharOffset 可能缺失——收藏写入端
+    // （`_toggleFavoriteSentence`）的 `sentenceRange?.offset` 依赖 JS getNormalizedOffset
+    // 解析出章内偏移，跨 ruby / 复杂节点的选区可能返 null → 存 null。此时旧跳转：同章
+    // `restoreToCharOffset` 被 `normCharOffset != null` 门吞成**静默 no-op**（什么都不动），
+    // 跨章 charOffset=null → progress 0 落**章首**——正是用户报的「有时能跳、有时跳不过去」
+    // （能否跳取决于该条收藏写入时有没有拿到 offset）。收藏条目**总有文本**，故缺 offset 时
+    // 回退到与「搜索跳转」同一条 by-text 定位原语 `scrollToSearchMatch`（按句文本在章内命中，
+    // 不依赖脆弱的持久化 offset；整句文本在章内通常唯一，hint=0 即命中）。有效 offset 仍走
+    // 精确 `restoreToCharOffset` / 字符锚导航（现有正常路径逐字节不变，向后兼容既有可跳收藏）。
+    final String favText = fav.text.trim();
+    final bool useOffset = normCharOffset != null;
+    final String? textLocateJs = useOffset || favText.isEmpty
+        ? null
+        : ReaderPaginationScripts.scrollToSearchMatchInvocation(favText, 0);
     if (fav.sectionIndex != _currentChapter) {
       await _navigateToChapterAndWait(
         fav.sectionIndex!,
         manual: true,
-        charOffset: normCharOffset,
+        charOffset: useOffset ? normCharOffset : null,
         charOffsetEnd: charOffsetEnd,
+        preciseLocateJs: textLocateJs,
       );
       return;
     }
     if (!mounted || _controller == null) return;
-    if (normCharOffset != null) {
+    if (useOffset) {
       await _controller!.evaluateJavascript(
         source: 'window.hoshiReader && window.hoshiReader'
             '.restoreToCharOffset($normCharOffset, $charOffsetEnd);',
       );
+    } else if (textLocateJs != null) {
+      await _controller!.evaluateJavascript(source: textLocateJs);
     }
   }
 
