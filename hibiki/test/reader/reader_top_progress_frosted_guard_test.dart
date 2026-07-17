@@ -64,6 +64,15 @@ void main() {
       reason:
           'the frosted pill must pad the text so it does not touch the edge',
     );
+
+    // Ported verbatim from reader_top_progress_theme_guard_test.dart: the
+    // progress must not resurrect a hard-coded text color helper. Operates on
+    // the full `src`, not the sliced body.
+    expect(
+      src,
+      isNot(contains('Color _infoTextColor()')),
+      reason: 'do not keep a hard-coded progress text color helper',
+    );
   });
 }
 

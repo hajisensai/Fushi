@@ -180,6 +180,131 @@ void main() {
       expect(source, isNot(contains('Spacing.of(context)')));
     });
   });
+
+  group('example_sentences_dialog_md3_static', () {
+    test('example sentences dialog uses shared MD3 dialog and card chrome', () {
+      final String source = File(
+        'lib/src/pages/implementations/example_sentences_dialog_page.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('HibikiDialogFrame('));
+      expect(source, contains('HibikiModalSheetFrame('));
+      expect(source, contains('HibikiCard('));
+      expect(source, contains('HibikiDesignTokens.of(context)'));
+      expect(source, isNot(contains('adaptiveAlertDialog(')));
+      expect(source, isNot(contains('Spacing.of(context)')));
+      expect(source, isNot(contains('GestureDetector(')));
+      expect(source, isNot(contains('Container(')));
+    });
+  });
+
+  group('profile_management_dialog_md3_static', () {
+    test('profile management dialogs use shared MD3 dialog chrome and tokens',
+        () {
+      final String source = File(
+        'lib/src/pages/implementations/profile_management_page.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('HibikiDialogFrame('));
+      expect(source, contains('HibikiModalSheetFrame('));
+      expect(source, contains('HibikiDesignTokens.of(context)'));
+      expect(source, contains('insetPadding: EdgeInsets.symmetric('));
+      expect(source, contains('horizontal: tokens.spacing.card'));
+      expect(source, contains('vertical: tokens.spacing.card'));
+      expect(source, isNot(contains('adaptiveAlertDialog(')));
+      expect(
+        source,
+        isNot(
+          contains('const EdgeInsets.symmetric(horizontal: 16, vertical: 16)'),
+        ),
+      );
+    });
+
+    test('profile action buttons use shared MD3 icon buttons', () {
+      final String source = File(
+        'lib/src/pages/implementations/profile_management_page.dart',
+      ).readAsStringSync();
+
+      final int actionStart = source.indexOf('class _ProfileActionButton');
+      final int deleteStart = source.indexOf('@visibleForTesting', actionStart);
+      final String actionSource = source.substring(actionStart, deleteStart);
+
+      expect(actionSource, contains('HibikiIconButton('));
+      expect(actionSource, isNot(contains('return IconButton(')));
+      expect(actionSource, isNot(contains('VisualDensity.compact')));
+    });
+  });
+
+  group('switch_settings_dialog_md3_static', () {
+    test('switch settings dialog uses shared MD3 dialog chrome', () {
+      final String source = File(
+        'lib/src/pages/implementations/switch_settings_page.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('HibikiDialogFrame('));
+      expect(source, contains('HibikiModalSheetFrame('));
+      expect(source, contains('HibikiDesignTokens.of(context)'));
+      expect(source, isNot(contains('adaptiveAlertDialog(')));
+      expect(source, isNot(contains('contentPadding: const EdgeInsets')));
+    });
+  });
+
+  group('tag_management_dialog_md3_static', () {
+    test('tag management dialogs use shared MD3 dialog chrome and tokens', () {
+      final String source = File(
+        'lib/src/pages/implementations/tag_management_page.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('HibikiDialogFrame('));
+      expect(source, contains('HibikiModalSheetFrame('));
+      expect(source, contains('HibikiDesignTokens.of(context)'));
+      expect(source, contains('insetPadding: EdgeInsets.symmetric('));
+      expect(source, contains('horizontal: tokens.spacing.card'));
+      expect(source, contains('vertical: tokens.spacing.card'));
+      expect(source, isNot(contains('adaptiveAlertDialog(')));
+      expect(
+        source,
+        isNot(
+          contains('const EdgeInsets.symmetric(horizontal: 16, vertical: 16)'),
+        ),
+      );
+      expect(
+        source,
+        isNot(
+          contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 8)'),
+        ),
+      );
+    });
+  });
+
+  group('text_segmentation_dialog_md3_static', () {
+    test('text segmentation dialog uses shared MD3 dialog and chip chrome', () {
+      final String source = File(
+        'lib/src/pages/implementations/text_segmentation_dialog_page.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('HibikiDialogFrame('));
+      expect(source, contains('HibikiModalSheetFrame('));
+      expect(source, contains('HibikiSelectableChip('));
+      expect(source, isNot(contains('adaptiveAlertDialog(')));
+      expect(source, isNot(contains('Spacing.of(context)')));
+      expect(source, isNot(contains('Container(')));
+    });
+  });
+
+  group('websocket_dialog_md3_static', () {
+    test('websocket dialog uses shared MD3 dialog chrome', () {
+      final String source = File(
+        'lib/src/pages/implementations/websocket_dialog_page.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('HibikiDialogFrame('));
+      expect(source, contains('HibikiModalSheetFrame('));
+      expect(source, contains('HibikiDesignTokens.of(context)'));
+      expect(source, isNot(contains('adaptiveAlertDialog(')));
+      expect(source, isNot(contains('Spacing.of(context)')));
+    });
+  });
 }
 
 String _between(String source, String start, String end) {
