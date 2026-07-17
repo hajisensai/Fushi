@@ -1458,6 +1458,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           );
         },
         favoriteSentences: favorites,
+        favoritePositionLabel: _favoritePositionLabel,
         onDeleteFavorite: (fav) async {
           await favRepo.removeById(fav.id);
           _invalidateFavoriteSentenceCache();
@@ -1994,6 +1995,23 @@ extension _ReaderChrome on _ReaderHibikiPageState {
             '.restoreToCharOffset($normCharOffset, $charOffsetEnd);',
       );
     }
+  }
+
+  /// 收藏面板每行的「阅读位置」标签（如 `78.6%`）。用本次阅读会话已建好的每章字符
+  /// 账本（`_chapterCumulativeChars` / `_chapterCharCounts`，与顶栏进度同源）把收藏的
+  /// (章节, 章内偏移) 折算成全书进度分数（[favoriteBookProgressFraction]）。账本未就绪
+  /// / 无 sectionIndex / 折算失败时返回 null（不显示，绝不显示错误位置）。
+  String? _favoritePositionLabel(FavoriteSentence fav) {
+    final int? section = fav.sectionIndex;
+    if (section == null) return null;
+    final double? fraction = favoriteBookProgressFraction(
+      cumulativeChars: _chapterCumulativeChars,
+      charCounts: _chapterCharCounts,
+      sectionIndex: section,
+      normCharOffset: fav.normCharOffset,
+    );
+    if (fraction == null) return null;
+    return '${(fraction * 100).toStringAsFixed(1)}%';
   }
 }
 
