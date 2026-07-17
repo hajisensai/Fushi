@@ -1869,6 +1869,10 @@ namespace flutter_inappwebview_plugin
       event = COREWEBVIEW2_POINTER_EVENT_KIND_DOWN;
       pointerFlags =
         POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT;
+      // BUG-871: the first contact to go down owns "primary" for its lifetime.
+      if (primaryTouchPointerId_ == -1) {
+        primaryTouchPointerId_ = pointer;
+      }
       break;
     case InAppWebViewPointerEventKind::Enter:
       event = COREWEBVIEW2_POINTER_EVENT_KIND_ENTER;
@@ -1885,6 +1889,18 @@ namespace flutter_inappwebview_plugin
       pointerFlags =
         POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT;
       break;
+    }
+
+    // BUG-871: mark the primary contact so Chromium recognises a pan/scroll
+    // manipulation from injected touch (a second finger stays non-primary — two
+    // primaries is an invalid pointer frame). Clear the primary on its own up so a
+    // later gesture can claim it again; onPointerCancel forwards an up too so a
+    // cancelled contact can never strand the primary id.
+    if (pointer == primaryTouchPointerId_) {
+      pointerFlags |= POINTER_FLAG_PRIMARY;
+      if (eventKind == InAppWebViewPointerEventKind::Up) {
+        primaryTouchPointerId_ = -1;
+      }
     }
 
     POINT point;
