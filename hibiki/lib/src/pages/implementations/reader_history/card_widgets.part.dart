@@ -63,12 +63,6 @@ const double kShelfTitleFooterHeight = 40.0;
 /// 绝对像素的必然结果，不是 bug。
 const double kShelfBookCardAspectRatio = 160 / 260;
 
-/// Video shelf card slot aspect ratio (width / height).
-///
-/// 视频缩略图本身是 16:9 横构图，卡槽收窄到书封比例反而更难看（缩略图两侧裁切或
-/// 大片留白），故视频卡保留原值 176/250=0.704，不随 TODO-786 收窄。
-const double kShelfVideoCardAspectRatio = 176 / 250;
-
 /// card domain methods extracted via part-of (TODO-587); shared private scope.
 extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   Widget _tagChip(BookTagRow tag) {
@@ -190,9 +184,9 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     required VoidCallback onTap,
     required VoidCallback onLongPress,
     required Widget child,
-    // TODO-786：卡槽宽高比由调用点显式传入——书/有声书/SRT/远端用
-    // [kShelfBookCardAspectRatio]，视频卡用 [kShelfVideoCardAspectRatio]。参数化而非
-    // bool isVideo，避免在壳里硬编码媒体类型分支。
+    // TODO-786：卡槽宽高比由调用点显式传入——书/有声书/SRT/远端统一用
+    // [kShelfBookCardAspectRatio]（书架视频分区死路径已删，视频卡归「视频」tab）。
+    // 参数化而非在壳里硬编码媒体类型分支。
     required double slotAspectRatio,
     Key? cardKey,
     HibikiFocusId? focusId,

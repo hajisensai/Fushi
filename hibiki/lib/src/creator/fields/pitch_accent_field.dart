@@ -37,16 +37,6 @@ class PitchAccentField extends Field {
   /// Extra value key for pitch-category HTML.
   static const String pitchCategoriesExtraKey = 'pitchCategories';
 
-  /// Extracts pitch values returned by the popup mining JavaScript.
-  static Map<String, String> extraValuesFromMineFields(
-    Map<String, String> fields,
-  ) {
-    return {
-      pitchPositionsExtraKey: fields[pitchPositionsExtraKey] ?? '',
-      pitchCategoriesExtraKey: fields[pitchCategoriesExtraKey] ?? '',
-    };
-  }
-
   /// Builds pitch extra values from a dictionary entry.
   static Map<String, String> extraValuesFromEntry({
     required AppModel appModel,
