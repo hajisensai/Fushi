@@ -27,7 +27,10 @@ class SettingsHomePage extends BasePage {
 }
 
 class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
-  SettingsDestinationId _selectedDestinationId = SettingsDestinationId.reading;
+  // 默认选中 schema 首个分类（外观），与宽屏导航列表的视觉首项一致；
+  // 若首项被平台门控隐藏，build 里的兜底会自动落到第一个可见分类。
+  SettingsDestinationId _selectedDestinationId =
+      SettingsDestinationId.appearance;
 
   @override
   void initState() {

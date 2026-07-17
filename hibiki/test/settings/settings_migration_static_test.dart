@@ -10,10 +10,8 @@ void main() {
     'anki_settings_page.dart': <String>[
       'AdaptiveSettingsSection',
     ],
-    'switch_settings_page.dart': <String>[
-      'AdaptiveSettingsSection',
-      'AdaptiveSettingsSwitchRow',
-    ],
+    // switch_settings_page.dart：schema 重构后零引用的孤儿页，已删除
+    //（设置开关统一走 SettingsSwitchItem schema 渲染）。
     // TODO-317: miscellaneous_settings_page.dart now exports the no-scaffold
     // MiscellaneousSettingsBody and projects it through the unified settings
     // detail shell (buildSettingsDetailShell), mirroring AnkiSettingsBody — so
@@ -33,7 +31,6 @@ void main() {
   };
   final Set<String> noLegacySwitchRows = <String>{
     'anki_settings_page.dart',
-    'switch_settings_page.dart',
     'miscellaneous_settings_page.dart',
     'custom_fonts_page.dart',
     'custom_theme_page.dart',

@@ -40,6 +40,13 @@ SettingsDestination buildAppearanceDestination() {
             icon: Icons.format_size_outlined,
             builder: buildAppUiScaleSelector,
           ),
+          // 「界面语言」从系统分类归位到这里：它改的是界面呈现语言，与主题/明暗/
+          // 缩放同属界面外观；id/持久化 key 不变（本就带 appearance 前缀）。
+          SettingsCustomItem(
+            id: 'appearance.language',
+            icon: Icons.translate_outlined,
+            builder: buildLanguageSelector,
+          ),
         ],
       ),
       SettingsSection(
