@@ -185,7 +185,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const r = await fetch(base + '/api/lookup/dictionary', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
-          body: JSON.stringify({ term: msg.term, record: msg.record === true }),
+          body: JSON.stringify({
+            term: msg.term,
+            record: msg.record === true,
+            // BUG-871: popup HTML already contains the entries; only bestLength is
+            // consumed from result, so avoid transferring the full duplicate result.
+            popupOnly: true,
+          }),
         });
         const data = r.ok ? await r.json() : null;
         sendResponse({ ok: r.ok, status: r.status, data });

@@ -163,6 +163,32 @@ void main() {
       expect(j['popupJson'], contains('走る'));
     });
 
+    test('popupOnly returns only bestLength while default keeps full result',
+        () async {
+      await startServer(apiKey: 'k123');
+
+      final Map<String, dynamic> compact = await _json(await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{
+          'term': '見る',
+          'record': false,
+          'popupOnly': true,
+        },
+        auth: _basic('k123'),
+      ));
+      expect(compact['result'], <String, dynamic>{'bestLength': 0});
+      expect(compact['popupJson'], contains('見る'));
+
+      final Map<String, dynamic> full = await _json(await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{'term': '見る', 'record': false},
+        auth: _basic('k123'),
+      ));
+      expect((full['result'] as Map<String, dynamic>)['searchTerm'], '見る');
+    });
+
     test(
         'lookup response carries popup size vars from themeColorsProvider '
         '(TODO-1185)', () async {
