@@ -205,6 +205,7 @@ class AppPaths {
     'mpv_shaders',
     'remote_videos',
     'videos',
+    'anime_downloads',
     'custom_fonts',
     'hibikiExport',
     'browser',
