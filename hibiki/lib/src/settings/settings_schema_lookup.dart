@@ -9,6 +9,7 @@ import 'package:hibiki/src/lookup/browser_extension_installer.dart';
 import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
+import 'package:hibiki/src/mining/galgame_audio_capture_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -326,6 +327,15 @@ SettingsDestination buildLookupDestination() {
       SettingsSection(
         title: t.settings_section_lookup_clipboard,
         items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'lookup.galgame_audio_capture',
+            title: t.galgame_audio_capture,
+            subtitle: t.galgame_audio_capture_hint,
+            icon: Icons.graphic_eq,
+            visible: (SettingsContext settingsContext) =>
+                GalgameAudioCaptureController.isSupported,
+            builder: (_) => const GalgameAudioCapturePage(),
+          ),
           SettingsSwitchItem(
             id: 'lookup.desktop_clipboard',
             title: t.desktop_clipboard_enabled,

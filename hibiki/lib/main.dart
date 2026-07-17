@@ -399,6 +399,7 @@ void main([List<String> args = const <String>[]]) {
           }
           DesktopLookupDispatcher.instance.start(appModel: appModel);
           await appModel.applyDesktopClipboardLifecycle();
+          await appModel.applyGalgameAudioCaptureLifecycle();
         } catch (e) {
           debugPrint('[Hibiki] global lookup start failed (non-fatal): $e');
         }

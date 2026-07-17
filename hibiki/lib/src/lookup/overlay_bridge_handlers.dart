@@ -15,6 +15,7 @@ import 'dart:convert';
 
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/mining/galgame_audio_capture_controller.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
@@ -46,6 +47,7 @@ bool maybeHandleOverlayDeferredBridge({
   required Map<String, Object?> message,
   required OverlayBridgeResolver resolveBridge,
   String sentenceContext = '',
+  String? audioOccurrenceId,
 }) {
   switch (handler) {
     case 'resolveWordAudio':
@@ -60,8 +62,8 @@ bool maybeHandleOverlayDeferredBridge({
           model, handler! as String, message, resolveBridge));
       return true;
     case 'mineEntry':
-      unawaited(
-          _handleMineBridge(model, message, resolveBridge, sentenceContext));
+      unawaited(_handleMineBridge(
+          model, message, resolveBridge, sentenceContext, audioOccurrenceId));
       return true;
     case 'duplicateCheck':
       unawaited(_handleDuplicateBridge(model, message, resolveBridge));
@@ -70,8 +72,8 @@ bool maybeHandleOverlayDeferredBridge({
       unawaited(_handleOverwriteTargetBridge(model, message, resolveBridge));
       return true;
     case 'updateEntry':
-      unawaited(
-          _handleUpdateBridge(model, message, resolveBridge, sentenceContext));
+      unawaited(_handleUpdateBridge(
+          model, message, resolveBridge, sentenceContext, audioOccurrenceId));
       return true;
     default:
       return false;
@@ -228,6 +230,7 @@ Future<void> _handleMineBridge(
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
   String sentenceContext,
+  String? audioOccurrenceId,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -242,7 +245,8 @@ Future<void> _handleMineBridge(
     };
     final String expression = fields['expression'] ?? '';
     if (model != null && expression.isNotEmpty) {
-      reply = await _mineEntry(model, fields, sentenceContext);
+      reply =
+          await _mineEntry(model, fields, sentenceContext, audioOccurrenceId);
     }
   } catch (e, st) {
     glog('mine: EXCEPTION $e\n$st');
@@ -260,27 +264,47 @@ Future<void> _handleMineBridge(
 /// [kStatSourceBook]), and returns the popup.js-shaped {ankiConnect, noteId}
 /// reply. Gaiji bytes are flushed to the Anki media cache first
 /// ([writeDictionaryMediaCache]) so dictionary media embeds rather than
-/// degrading to alt text. App-external lookup has NO screenshot /
-/// sentence-audio media context (the source text lives in another app), but the
-/// SENTENCE itself is the surface's captured text ([sentenceContext] — 剪贴板全文
-/// for the clipboard panel, UIA 前台句 for the transient overlay), resolved via
-/// [resolveMineSentence]. `{sentence}` bolds the matched word from
-/// `payload.matched`, same as in-app onMineEntry.
+/// degrading to alt text. App-external lookup has no screenshot context; when
+/// the request came from a captured VN clipboard occurrence, its process audio
+/// is exported into `sasayakiAudioPath`. The SENTENCE itself is the surface's
+/// captured text ([sentenceContext] — 剪贴板全文 for the clipboard panel, UIA 前台句
+/// for the transient overlay), resolved via [resolveMineSentence]. `{sentence}`
+/// bolds the matched word from `payload.matched`, same as in-app onMineEntry.
 Future<Map<String, Object?>> _mineEntry(
   AppModel model,
   Map<String, String> fields,
   String sentenceContext,
+  String? audioOccurrenceId,
 ) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final String sentence = resolveMineSentence(fields, sentenceContext);
   final BaseAnkiRepository repo = model.platformServices.createAnkiRepository();
-  final MineOutcome outcome = await repo.mineEntry(
-    rawPayloadJson: jsonEncode(fields),
-    context: AnkiMiningContext(
-      sentence: sentence,
-      source: AnkiMiningSource.book,
-    ),
-  );
+  GalgameAudioClip? sentenceAudio;
+  if (audioOccurrenceId != null) {
+    try {
+      sentenceAudio = await GalgameAudioCaptureController.instance
+          .exportOccurrence(audioOccurrenceId);
+    } on GalgameAudioCaptureException catch (e) {
+      glog('mine: sentence audio export failed: $e');
+      return const <String, Object?>{
+        'ankiConnect': false,
+        'noteId': null,
+      };
+    }
+  }
+  late final MineOutcome outcome;
+  try {
+    outcome = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(
+        sentence: sentence,
+        source: AnkiMiningSource.book,
+        sasayakiAudioPath: sentenceAudio?.path,
+      ),
+    );
+  } finally {
+    await sentenceAudio?.dispose();
+  }
   // 与 in-app onMineEntry 同判据：仅 MineResult.success 回 ankiConnect=true +
   // noteId（AnkiConnect 非空进「最新可改」态；AnkiDroid 恒 null=优雅降级）。
   final bool success = outcome.result == MineResult.success;
@@ -394,6 +418,7 @@ Future<void> _handleUpdateBridge(
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
   String sentenceContext,
+  String? audioOccurrenceId,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -414,7 +439,8 @@ Future<void> _handleUpdateBridge(
     };
     final String expression = fields['expression'] ?? '';
     if (model != null && noteId != null && expression.isNotEmpty) {
-      reply = await _updateEntry(model, noteId, fields, sentenceContext);
+      reply = await _updateEntry(
+          model, noteId, fields, sentenceContext, audioOccurrenceId);
     }
   } catch (e, st) {
     glog('update: EXCEPTION $e\n$st');
@@ -435,17 +461,37 @@ Future<Map<String, Object?>> _updateEntry(
   int noteId,
   Map<String, String> fields,
   String sentenceContext,
+  String? audioOccurrenceId,
 ) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final BaseAnkiRepository repo = model.platformServices.createAnkiRepository();
-  final MineOutcome outcome = await repo.updateMinedNote(
-    noteId: noteId,
-    rawPayloadJson: jsonEncode(fields),
-    context: AnkiMiningContext(
-      sentence: resolveMineSentence(fields, sentenceContext),
-      source: AnkiMiningSource.book,
-    ),
-  );
+  GalgameAudioClip? sentenceAudio;
+  if (audioOccurrenceId != null) {
+    try {
+      sentenceAudio = await GalgameAudioCaptureController.instance
+          .exportOccurrence(audioOccurrenceId);
+    } on GalgameAudioCaptureException catch (e) {
+      glog('update: sentence audio export failed: $e');
+      return const <String, Object?>{
+        'ankiConnect': false,
+        'noteId': null,
+      };
+    }
+  }
+  late final MineOutcome outcome;
+  try {
+    outcome = await repo.updateMinedNote(
+      noteId: noteId,
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(
+        sentence: resolveMineSentence(fields, sentenceContext),
+        source: AnkiMiningSource.book,
+        sasayakiAudioPath: sentenceAudio?.path,
+      ),
+    );
+  } finally {
+    await sentenceAudio?.dispose();
+  }
   final bool success = outcome.result == MineResult.success;
   return <String, Object?>{
     'ankiConnect': success,

@@ -125,6 +125,7 @@ class GlobalLookupController {
   // sentence still feeds mining even when the banner is suppressed. Empty when
   // no sentence was captured. Reset per lookup in _lookupExternal.
   String _currentSentence = '';
+  String? _currentAudioOccurrenceId;
 
   // 用户 2026-07-12 — 整句横幅（框）只给「剪切板自动唤出的瞬态窗」显示；手动
   // 快捷键查词不显示（其整句仍进制卡 sentence，只是不贴横幅）。与 _currentSentence
@@ -397,6 +398,7 @@ class GlobalLookupController {
     String sentence = '',
     Rect? anchorScreenRect,
     bool showSentenceBanner = true,
+    String? audioOccurrenceId,
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
@@ -419,7 +421,8 @@ class GlobalLookupController {
     await _lookupExternal(term,
         sentence: sentence,
         anchorScreenRect: anchorScreenRect,
-        showSentenceBanner: showSentenceBanner);
+        showSentenceBanner: showSentenceBanner,
+        audioOccurrenceId: audioOccurrenceId);
     return true;
   }
 
@@ -439,6 +442,7 @@ class GlobalLookupController {
     required String sentence,
     Rect? anchorScreenRect,
     bool showSentenceBanner = true,
+    String? audioOccurrenceId,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -458,6 +462,7 @@ class GlobalLookupController {
       // not look like a user dismissal.
       GlobalLookupChannel.hide(notify: false);
       _currentSentence = sentence;
+      _currentAudioOccurrenceId = audioOccurrenceId;
       _showSentenceBanner = showSentenceBanner;
 
       final DictionarySearchResult result = await model.searchDictionary(
@@ -826,6 +831,7 @@ class GlobalLookupController {
       // UIA 捕获的前台句即句子上下文：制卡 `{sentence}` 用它兜底（JS 不发
       // sentence）。与句子横幅同一 `_currentSentence`（嵌套子查词无句 → ''）。
       sentenceContext: _currentSentence,
+      audioOccurrenceId: _currentAudioOccurrenceId,
     )) {
       return;
     }

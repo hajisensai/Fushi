@@ -15,6 +15,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/mining/galgame_audio_capture_controller.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
@@ -92,6 +93,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   Timer? _debounceTimer;
   String _sourceLookupText = '';
   int _searchGeneration = 0;
+  String? _audioOccurrenceId;
 
   bool _historyWritten = false;
 
@@ -209,11 +211,20 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   void _runDesktopLookup(DesktopLookupRequest request) {
     if (!mounted) return;
+    _audioOccurrenceId = request.audioOccurrenceId;
     if (request.foregroundPolicy ==
         DesktopLookupForegroundPolicy.bringToFront) {
       unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
     }
     if (mounted) _search(request.text, autoRead: false);
+  }
+
+  @override
+  Future<GalgameAudioClip?> resolveSentenceAudioForMining() async {
+    final String? occurrenceId = _audioOccurrenceId;
+    if (occurrenceId == null) return null;
+    return GalgameAudioCaptureController.instance
+        .exportOccurrence(occurrenceId);
   }
 
   void _onFocusChanged() {
@@ -539,6 +550,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   void _onQueryChanged(String query) {
     _debounceTimer?.cancel();
     _historyWritten = false;
+    _audioOccurrenceId = null;
     if (query.isEmpty) {
       _clearSearch();
       return;

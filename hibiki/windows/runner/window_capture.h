@@ -15,7 +15,9 @@ namespace hibiki {
 // 一个可捕获的外部顶层窗口：native 句柄 + UTF-8 标题。
 struct ExternalWindow {
   HWND hwnd = nullptr;
+  DWORD process_id = 0;
   std::string title;  // UTF-8
+  std::string executable_path;  // UTF-8, empty when access is denied
 };
 
 // 单帧窗口捕获结果：成功带 PNG 字节，失败带人类可读原因。

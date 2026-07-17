@@ -9,6 +9,7 @@ import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/mining/galgame_audio_capture_controller.dart';
 import 'package:hibiki/src/sync/clipboard_dedupe.dart';
 import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
@@ -31,12 +32,18 @@ class DesktopLookupRequest {
     required this.origin,
     this.foregroundPolicy = DesktopLookupForegroundPolicy.bringToFront,
     this.showSourcePanel = true,
+    this.audioOccurrenceId,
   });
 
   final String text;
   final DesktopLookupOrigin origin;
   final DesktopLookupForegroundPolicy foregroundPolicy;
   final bool showSourcePanel;
+
+  /// Native process-audio marker for this concrete clipboard occurrence.
+  /// It is intentionally independent from [text], because adjacent VN lines
+  /// can contain identical strings.
+  final String? audioOccurrenceId;
 }
 
 /// 桌面剪贴板 + 全局热键查词触发器。单例 ChangeNotifier（仿 TexthookerService）。
@@ -65,6 +72,8 @@ class DesktopLookupService extends ChangeNotifier
   DesktopLookupRequest? get pendingRequest => _pendingRequest;
   String? get pendingText => _pendingRequest?.text;
   String? _lastText;
+  String? _lastClipboardOccurrenceText;
+  String? _lastClipboardOccurrenceId;
 
   /// BUG-700 / TODO-1385：监听生命周期用**引用计数**而非裸 `bool _running`。
   ///
@@ -112,6 +121,7 @@ class DesktopLookupService extends ChangeNotifier
         DesktopLookupForegroundPolicy.bringToFront,
     bool showSourcePanel = true,
     bool dedupe = true,
+    String? audioOccurrenceId,
   }) {
     // BUG-442：剪贴板/热键/显式查词的统一入口。所有来源在排队前先按同一码点上限
     // 截断（用 characters 不切碎代理对 / 字素簇），避免超长串一路流到逐字渲染的
@@ -126,6 +136,7 @@ class DesktopLookupService extends ChangeNotifier
         origin: origin,
         foregroundPolicy: foregroundPolicy,
         showSourcePanel: showSourcePanel,
+        audioOccurrenceId: audioOccurrenceId,
       );
       notifyListeners();
       return;
@@ -138,6 +149,7 @@ class DesktopLookupService extends ChangeNotifier
       origin: origin,
       foregroundPolicy: foregroundPolicy,
       showSourcePanel: showSourcePanel,
+      audioOccurrenceId: audioOccurrenceId,
     );
     notifyListeners();
   }
@@ -165,6 +177,8 @@ class DesktopLookupService extends ChangeNotifier
   void debugReset() {
     _pendingRequest = null;
     _lastText = null;
+    _lastClipboardOccurrenceText = null;
+    _lastClipboardOccurrenceId = null;
     // BUG-700：跑过 start()/stop() 的用例可能留下非零计数 + 已挂的 Dart 侧监听器，
     // 若不清会漏进后续用例。仅在确有累计计数时同步摘除监听并归零（未 start 的用例
     // 计数恒 0，此块跳过，行为不变）。removeListener 对未注册的监听器是安全 no-op。
@@ -294,7 +308,7 @@ class DesktopLookupService extends ChangeNotifier
     _deferredDuringCapture.clear();
     for (final String text in deferred) {
       if (selfInflicted.contains(text.trim())) continue;
-      submitText(text);
+      _acceptClipboardText(text);
     }
   }
 
@@ -319,17 +333,41 @@ class DesktopLookupService extends ChangeNotifier
       return;
     }
     if (clipboardIgnores.consume(text)) return;
-    submitText(text);
+    _acceptClipboardText(text);
+  }
+
+  void _acceptClipboardText(String text) {
+    // Marker creation deliberately happens before text dedupe: a repeated VN
+    // line is still a new audio occurrence and closes the previous segment.
+    final String? occurrenceId =
+        GalgameAudioCaptureController.instance.markClipboardOccurrence();
+    final String normalized = _capLookupInput(text).trim();
+    _lastClipboardOccurrenceText = normalized;
+    _lastClipboardOccurrenceId = occurrenceId;
+    _queueLookupRequest(
+      text,
+      origin: DesktopLookupOrigin.clipboard,
+      foregroundPolicy: DesktopLookupForegroundPolicy.none,
+      // Text dedupe must not collapse two concrete VN occurrences. The second
+      // marker closes the first clip and must replace the occurrence carried by
+      // the lookup surfaces even when Luna copied the exact same line again.
+      dedupe: occurrenceId == null,
+      audioOccurrenceId: occurrenceId,
+    );
   }
 
   Future<void> _onHotKey() async {
     final String? text = await _readClipboardText();
     if (text == null || text.trim().isEmpty) return;
     _lastText = null; // 热键强制查（即便与上次相同）
+    final String normalized = _capLookupInput(text).trim();
     _queueLookupRequest(
       text,
       origin: DesktopLookupOrigin.hotkey,
       dedupe: false,
+      audioOccurrenceId: normalized == _lastClipboardOccurrenceText
+          ? _lastClipboardOccurrenceId
+          : null,
     );
   }
 

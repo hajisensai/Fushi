@@ -47,6 +47,7 @@ class ClipboardTextOverlayController {
   AppModel? _appModel;
   bool _started = false;
   bool _visible = false;
+  String? _audioOccurrenceId;
 
   /// 一键透明按钮记住的上一档非 0 背景不透明度，供从 0 切回时恢复。
   double _lastNonZeroBgOpacity = _defaultBackdropOpacity;
@@ -69,6 +70,7 @@ class ClipboardTextOverlayController {
     if (!_started) return;
     final String text = request.text.trim();
     if (text.isEmpty) return;
+    _audioOccurrenceId = request.audioOccurrenceId;
     await ClipboardTextOverlayChannel.show(
       bgColor: _bgColor(),
       textColor: _textColor(),
@@ -127,6 +129,7 @@ class ClipboardTextOverlayController {
       appModel: model,
       text: text,
       index: index,
+      audioOccurrenceId: _audioOccurrenceId,
     );
   }
 }

@@ -1933,5 +1933,15 @@
   "interconnect_section_client": "Connect to other devices",
   "interconnect_moved_note": "Connection & server settings are in the Hibiki Interconnect category",
   "settings_search_hint": "Search settings",
-  "settings_search_no_results": "No matching settings"
+  "settings_search_no_results": "No matching settings",
+  "galgame_audio_capture": "Galgame sentence audio",
+  "galgame_audio_capture_hint": "Capture game audio and attach the current line to Anki cards",
+  "galgame_audio_capture_enabled": "Capture sentence audio",
+  "galgame_audio_capture_enabled_hint": "Keep a rolling audio buffer for the selected game process",
+  "galgame_audio_capture_process": "Game audio process",
+  "galgame_audio_capture_no_windows": "No capturable windows found",
+  "galgame_audio_capture_starting": "Starting audio capture…",
+  "galgame_audio_capture_unavailable": "The configured game is not running",
+  "galgame_audio_capture_stopped": "Audio capture is stopped",
+  "galgame_audio_capture_running": "Capturing: $name"
 }

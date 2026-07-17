@@ -38,9 +38,12 @@ void main() {
         dispatcherSrc.indexOf('case DesktopLookupConsumer.panel:');
     final String tail = dispatcherSrc.substring(panelCase);
     expect(tail.contains('clearPending'), isTrue);
-    expect(tail.contains('lookupText(request.text, sentence: request.text)'),
-        isTrue,
+    expect(tail.contains('lookupText(request.text'), isTrue,
         reason: '整句作 root 卡句子横幅 + 制卡 sentence 字段');
+    expect(tail.contains('sentence: request.text'), isTrue);
+    expect(
+        tail.contains('audioOccurrenceId: request.audioOccurrenceId'), isTrue,
+        reason: '瞬态覆盖窗制卡必须沿用该次剪贴板事件的音频 marker');
   });
 
   test('main.dart 启动顺序：dispatcher 先挂监听，再启剪贴板服务', () {

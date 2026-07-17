@@ -21,7 +21,12 @@ void main() {
       messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
         expect(call.method, 'listWindows');
         return <Object?>[
-          <Object?, Object?>{'hwnd': 111, 'title': 'ゲーム'},
+          <Object?, Object?>{
+            'hwnd': 111,
+            'pid': 4242,
+            'title': 'ゲーム',
+            'executablePath': r'C:\Games\vn.exe',
+          },
           <Object?, Object?>{'hwnd': 222, 'title': 'Browser'},
           <Object?, Object?>{'title': 'no-handle'}, // 无 hwnd -> 跳过
         ];
@@ -29,7 +34,9 @@ void main() {
       final windows = await WindowCaptureChannel.listWindows();
       expect(windows.length, 2);
       expect(windows[0].hwnd, 111);
+      expect(windows[0].pid, 4242);
       expect(windows[0].title, 'ゲーム');
+      expect(windows[0].executablePath, r'C:\Games\vn.exe');
       expect(windows[1].hwnd, 222);
     });
 

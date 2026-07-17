@@ -38,6 +38,7 @@ Future<bool> tryFloatingLyricGlobalLookup({
   required AppModel appModel,
   required String text,
   required int index,
+  String? audioOccurrenceId,
 }) async {
   if (!GlobalLookupController.isSupported) {
     return false;
@@ -50,6 +51,9 @@ Future<bool> tryFloatingLyricGlobalLookup({
   if (searchTerm.isEmpty) {
     return false;
   }
-  return GlobalLookupController.instance
-      .lookupText(searchTerm, sentence: text.trim());
+  return GlobalLookupController.instance.lookupText(
+    searchTerm,
+    sentence: text.trim(),
+    audioOccurrenceId: audioOccurrenceId,
+  );
 }

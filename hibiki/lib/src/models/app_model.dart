@@ -83,6 +83,8 @@ import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/immersion_capture_channel.dart';
 import 'package:hibiki/src/mining/youtube_clip_miner.dart';
+import 'package:hibiki/src/mining/galgame_audio_capture_controller.dart';
+import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
@@ -4251,6 +4253,36 @@ class AppModel with ChangeNotifier {
       prefsRepo.desktopClipboardDestination;
   Future<void> setDesktopClipboardDestination(DesktopClipboardDestination v) =>
       prefsRepo.setDesktopClipboardDestination(v);
+
+  bool get galgameAudioCaptureEnabled => prefsRepo.galgameAudioCaptureEnabled;
+  String get galgameAudioExecutablePath => prefsRepo.galgameAudioExecutablePath;
+  String get galgameAudioWindowTitle => prefsRepo.galgameAudioWindowTitle;
+
+  Future<void> setGalgameAudioCaptureEnabled(bool value) async {
+    await prefsRepo.setGalgameAudioCaptureEnabled(value);
+    if (value) {
+      await applyGalgameAudioCaptureLifecycle();
+    } else {
+      await GalgameAudioCaptureController.instance.stop();
+    }
+  }
+
+  Future<bool> selectGalgameAudioTarget(ExternalWindowInfo window) async {
+    await prefsRepo.setGalgameAudioTarget(
+      executablePath: window.executablePath,
+      windowTitle: window.title,
+    );
+    await prefsRepo.setGalgameAudioCaptureEnabled(true);
+    return GalgameAudioCaptureController.instance.start(window);
+  }
+
+  Future<void> applyGalgameAudioCaptureLifecycle() =>
+      GalgameAudioCaptureController.instance.restore(
+        enabled: galgameAudioCaptureEnabled,
+        executablePath: galgameAudioExecutablePath,
+        windowTitle: galgameAudioWindowTitle,
+      );
+
   double get clipboardPanelOpacity => prefsRepo.clipboardPanelOpacity;
   Future<void> setClipboardPanelOpacity(double v) =>
       prefsRepo.setClipboardPanelOpacity(v);

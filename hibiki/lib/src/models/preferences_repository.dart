@@ -523,6 +523,29 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get galgameAudioCaptureEnabled =>
+      getPref('galgame_audio_capture_enabled', defaultValue: false) as bool;
+
+  String get galgameAudioExecutablePath =>
+      getPref('galgame_audio_executable_path', defaultValue: '') as String;
+
+  String get galgameAudioWindowTitle =>
+      getPref('galgame_audio_window_title', defaultValue: '') as String;
+
+  Future<void> setGalgameAudioCaptureEnabled(bool value) async {
+    await setPref('galgame_audio_capture_enabled', value);
+    notifyListeners();
+  }
+
+  Future<void> setGalgameAudioTarget({
+    required String executablePath,
+    required String windowTitle,
+  }) async {
+    await setPref('galgame_audio_executable_path', executablePath);
+    await setPref('galgame_audio_window_title', windowTitle);
+    notifyListeners();
+  }
+
   // spec §6 真机修正（2026-07-10 第二轮）：透明机制改整窗 LWA_ALPHA（真透视，
   // 整窗含文字统一变淡）。85% 是「能看清底下游戏 + 面板正文可读」的平衡点；
   // 滑杆 50%-100% 可调。

@@ -1933,5 +1933,15 @@
   "interconnect_section_client": "连接到其他设备",
   "interconnect_moved_note": "互联连接与本机服务器设置在「Hibiki 互联」分类",
   "settings_search_hint": "搜索设置",
-  "settings_search_no_results": "没有匹配的设置项"
+  "settings_search_no_results": "没有匹配的设置项",
+  "galgame_audio_capture": "Galgame 句子音频",
+  "galgame_audio_capture_hint": "捕获游戏音频并将当前台词写入 Anki 卡片",
+  "galgame_audio_capture_enabled": "捕获句子音频",
+  "galgame_audio_capture_enabled_hint": "为选定的游戏进程持续保留音频缓存",
+  "galgame_audio_capture_process": "游戏音频进程",
+  "galgame_audio_capture_no_windows": "没有找到可捕获的窗口",
+  "galgame_audio_capture_starting": "正在启动音频捕获…",
+  "galgame_audio_capture_unavailable": "已配置的游戏未运行",
+  "galgame_audio_capture_stopped": "音频捕获已停止",
+  "galgame_audio_capture_running": "正在捕获：$name"
 }

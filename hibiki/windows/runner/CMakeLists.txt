@@ -28,6 +28,7 @@ add_executable(${BINARY_NAME} WIN32
   "foreground_selection.cpp"
   "global_lookup_window.cpp"
   "main.cpp"
+  "process_audio_capture.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "window_capture.cpp"
@@ -71,6 +72,8 @@ target_link_libraries(${BINARY_NAME} PRIVATE uiautomationcore.lib)
 # (RoInitialize / RoGetActivationFactory / WindowsCreateStringReference) and WIC
 # for PNG encode.
 target_link_libraries(${BINARY_NAME} PRIVATE d3d11 dxgi runtimeobject windowscodecs)
+# Per-process render loopback activation and WASAPI capture.
+target_link_libraries(${BINARY_NAME} PRIVATE mmdevapi)
 # 剪切板面板背景逐像素透明（global_lookup_window composition 模式）：DirectComposition
 # 视觉树承载 WebView2 composition controller 的透明像素，dxguid 提供 DComp/DXGI IID。
 target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)

@@ -12,6 +12,10 @@
 #include "global_lookup_window.h"
 #include "win32_window.h"
 
+namespace hibiki {
+class ProcessAudioCapture;
+}
+
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
  public:
@@ -107,6 +111,13 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_capture_channel_;
   void RegisterWindowCaptureChannel();
+
+  // Windows process-loopback sentence-audio capture. PCM stays in the native
+  // ring buffer; Dart only marks occurrences and requests WAV exports.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      process_audio_capture_channel_;
+  std::unique_ptr<hibiki::ProcessAudioCapture> process_audio_capture_;
+  void RegisterProcessAudioCaptureChannel();
 
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.

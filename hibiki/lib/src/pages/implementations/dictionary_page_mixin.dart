@@ -9,6 +9,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:hibiki/src/lookup/effective_lookup_size.dart';
+import 'package:hibiki/src/mining/galgame_audio_capture_controller.dart';
 import 'package:hibiki/src/pages/base_source_page.dart'
     show lookupHighlightCharCount;
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
@@ -87,6 +88,10 @@ mixin DictionaryPageMixin {
   /// 草稿，返回清空后的句数（恒 0）。默认 null = 不支持（与 [onAppendSentenceToDraft]
   /// 对称，纯查词页不渲染清空入口）。视频页覆写返回非空闭包清掉 [MiningSentenceDraft]。
   Future<int> Function()? get onClearSentenceDraftToDraft => null;
+
+  /// Optional sentence-audio lease for app-external clipboard mining. The
+  /// default keeps every existing reader/video/plain lookup path unchanged.
+  Future<GalgameAudioClip?> resolveSentenceAudioForMining() async => null;
 
   /// Niratan「制卡前调整·选择句子上下文」（视频/首页查词车道）：弹窗打开模态时拉取当前
   /// 草稿真实上下文句 + 当前正查句 + 词偏移做预览。默认 null = 不支持（纯查词页无草稿）。
@@ -254,20 +259,34 @@ mixin DictionaryPageMixin {
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final miningContext = AnkiMiningContext(
-      sentence: fields['sentence'] ?? '',
-      source: _miningSource,
-    );
-    // TODO-1325 #6：制卡可能要走网络（AnkiConnect）+ 下音频，先弹「制卡中…」蓝色
-    // pending toast 给即时反馈；结果 toast 会顶替它。
     HibikiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
-    final outcome = await repo.mineEntry(
-      rawPayloadJson: jsonEncode(fields),
-      context: miningContext,
+    GalgameAudioClip? sentenceAudio;
+    try {
+      sentenceAudio = await resolveSentenceAudioForMining();
+    } on GalgameAudioCaptureException {
+      HibikiToast.showMine(
+        msg: t.audio_clip_failed,
+        status: MineToastStatus.failed,
+      );
+      return const MinePopupResult();
+    }
+    final miningContext = AnkiMiningContext(
+      sentence: fields['sentence'] ?? '',
+      source: _miningSource,
+      sasayakiAudioPath: sentenceAudio?.path,
     );
+    MineOutcome outcome;
+    try {
+      outcome = await repo.mineEntry(
+        rawPayloadJson: jsonEncode(fields),
+        context: miningContext,
+      );
+    } finally {
+      await sentenceAudio?.dispose();
+    }
     // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
     final String deckName = outcome.result == MineResult.success
         ? (await repo.loadSettings()).selectedDeckName ?? ''
@@ -300,20 +319,35 @@ mixin DictionaryPageMixin {
     Map<String, String> fields,
   ) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final miningContext = AnkiMiningContext(
-      sentence: fields['sentence'] ?? '',
-      source: _miningSource,
-    );
-    // TODO-1325 #6：覆写同样先弹 pending。
     HibikiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
-    final outcome = await repo.updateMinedNote(
-      noteId: noteId,
-      rawPayloadJson: jsonEncode(fields),
-      context: miningContext,
+    GalgameAudioClip? sentenceAudio;
+    try {
+      sentenceAudio = await resolveSentenceAudioForMining();
+    } on GalgameAudioCaptureException {
+      HibikiToast.showMine(
+        msg: t.audio_clip_failed,
+        status: MineToastStatus.failed,
+      );
+      return const MinePopupResult();
+    }
+    final miningContext = AnkiMiningContext(
+      sentence: fields['sentence'] ?? '',
+      source: _miningSource,
+      sasayakiAudioPath: sentenceAudio?.path,
     );
+    MineOutcome outcome;
+    try {
+      outcome = await repo.updateMinedNote(
+        noteId: noteId,
+        rawPayloadJson: jsonEncode(fields),
+        context: miningContext,
+      );
+    } finally {
+      await sentenceAudio?.dispose();
+    }
     // 覆盖路径走收口的单一真相（overwrite=true → card_overwritten + 不记账）。
     final String deckName = outcome.result == MineResult.success
         ? (await repo.loadSettings()).selectedDeckName ?? ''

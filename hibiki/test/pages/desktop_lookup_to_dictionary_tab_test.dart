@@ -168,8 +168,8 @@ void main() {
     expect(readStart, isNonNegative);
     final String clipboardBody = src.substring(clipboardStart, hotKeyStart);
     final String hotKeyBody = src.substring(hotKeyStart, readStart);
-    expect(clipboardBody.contains('submitText(text)'), isTrue,
-        reason: '剪贴板命中仍要排队查词请求');
+    expect(clipboardBody.contains('_acceptClipboardText(text)'), isTrue,
+        reason: '剪贴板命中必须先标记音频 occurrence，再排队查词请求');
     expect(hotKeyBody.contains('_queueLookupRequest'), isTrue,
         reason: '热键命中仍要排队查词请求');
     expect(clipboardBody.contains('bringPendingLookupToFront'), isFalse,

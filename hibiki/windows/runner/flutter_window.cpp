@@ -24,6 +24,7 @@
 #include "external_video_handoff.h"
 #include "flutter/generated_plugin_registrant.h"
 #include "foreground_selection.h"
+#include "process_audio_capture.h"
 #include "window_capture.h"
 
 #pragma comment(lib, "windowscodecs.lib")
@@ -539,6 +540,7 @@ bool FlutterWindow::OnCreate() {
   RegisterClipboardPanelChannel();
   RegisterForegroundSelectionChannel();
   RegisterWindowCaptureChannel();
+  RegisterProcessAudioCaptureChannel();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
@@ -1379,6 +1381,11 @@ void FlutterWindow::RegisterWindowCaptureChannel() {
                      reinterpret_cast<intptr_t>(w.hwnd)))},
                 {flutter::EncodableValue("title"),
                  flutter::EncodableValue(w.title)},
+                {flutter::EncodableValue("pid"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(w.process_id))},
+                {flutter::EncodableValue("executablePath"),
+                 flutter::EncodableValue(w.executable_path)},
             }));
           }
           result->Success(flutter::EncodableValue(std::move(list)));
@@ -1417,6 +1424,116 @@ void FlutterWindow::RegisterWindowCaptureChannel() {
             delete pending;
           }
         }).detach();
+      });
+}
+
+void FlutterWindow::RegisterProcessAudioCaptureChannel() {
+  process_audio_capture_ = std::make_unique<hibiki::ProcessAudioCapture>();
+  process_audio_capture_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/process_audio_capture",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  process_audio_capture_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        auto int_arg = [args](const char* key, int64_t fallback) {
+          if (args == nullptr) return fallback;
+          const auto it = args->find(flutter::EncodableValue(key));
+          return it == args->end()
+                     ? fallback
+                     : it->second.TryGetLongValue().value_or(fallback);
+        };
+        auto string_arg = [args](const char* key) {
+          if (args == nullptr) return std::string();
+          const auto it = args->find(flutter::EncodableValue(key));
+          if (it == args->end()) return std::string();
+          const auto* value = std::get_if<std::string>(&it->second);
+          return value == nullptr ? std::string() : *value;
+        };
+        auto encode_result = [](const hibiki::ProcessAudioCaptureResult& value) {
+          return flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("ok"),
+               flutter::EncodableValue(value.ok)},
+              {flutter::EncodableValue("error"),
+               flutter::EncodableValue(value.error)},
+              {flutter::EncodableValue("path"),
+               flutter::EncodableValue(value.path)},
+              {flutter::EncodableValue("sampleRate"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(value.sample_rate))},
+              {flutter::EncodableValue("channels"),
+               flutter::EncodableValue(static_cast<int>(value.channels))},
+              {flutter::EncodableValue("startFrame"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(value.start_frame))},
+              {flutter::EncodableValue("endFrame"),
+               flutter::EncodableValue(static_cast<int64_t>(value.end_frame))},
+          });
+        };
+
+        if (call.method_name() == "start") {
+          const int64_t pid = int_arg("pid", 0);
+          const int64_t seconds = int_arg("bufferSeconds", 120);
+          if (pid <= 0 || seconds <= 0) {
+            result->Error("bad_args", "pid and bufferSeconds must be positive");
+            return;
+          }
+          result->Success(encode_result(process_audio_capture_->Start(
+              static_cast<DWORD>(pid), static_cast<uint32_t>(seconds))));
+          return;
+        }
+        if (call.method_name() == "stop") {
+          process_audio_capture_->Stop();
+          hibiki::ProcessAudioCaptureResult stopped;
+          stopped.ok = true;
+          result->Success(encode_result(stopped));
+          return;
+        }
+        if (call.method_name() == "mark") {
+          result->Success(encode_result(
+              process_audio_capture_->Mark(string_arg("occurrenceId"))));
+          return;
+        }
+        if (call.method_name() == "exportWav") {
+          const int64_t pre_roll = int_arg("preRollMs", 450);
+          const int64_t max_clip = int_arg("maxClipMs", 30000);
+          if (pre_roll < 0 || max_clip <= 0) {
+            result->Error("bad_args", "invalid audio clip bounds");
+            return;
+          }
+          result->Success(encode_result(process_audio_capture_->ExportWav(
+              string_arg("occurrenceId"), string_arg("outputPath"),
+              static_cast<uint32_t>(pre_roll),
+              static_cast<uint32_t>(max_clip))));
+          return;
+        }
+        if (call.method_name() == "status") {
+          const hibiki::ProcessAudioCaptureStatus status =
+              process_audio_capture_->Status();
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("running"),
+               flutter::EncodableValue(status.running)},
+              {flutter::EncodableValue("pid"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(status.process_id))},
+              {flutter::EncodableValue("sampleRate"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(status.sample_rate))},
+              {flutter::EncodableValue("channels"),
+               flutter::EncodableValue(static_cast<int>(status.channels))},
+              {flutter::EncodableValue("bufferedSeconds"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(status.buffered_seconds))},
+              {flutter::EncodableValue("error"),
+               flutter::EncodableValue(status.error)},
+          }));
+          return;
+        }
+        result->NotImplemented();
       });
 }
 
@@ -1482,6 +1599,9 @@ bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (process_audio_capture_ != nullptr) {
+    process_audio_capture_->Stop();
+  }
   if (icon_big_ != nullptr) {
     DestroyIcon(icon_big_);
     icon_big_ = nullptr;
@@ -1493,6 +1613,8 @@ void FlutterWindow::OnDestroy() {
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
+  process_audio_capture_channel_.reset();
+  process_audio_capture_.reset();
 
   Win32Window::OnDestroy();
 }

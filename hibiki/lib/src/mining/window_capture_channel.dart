@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 ///
 /// native 侧（`hibiki/windows/runner/window_capture.cpp`）注册 `window_capture`
 /// channel，暴露两个方法：
-///   - `listWindows` -> `List<Map>`：每项 `{hwnd:int, title:String}`。
+///   - `listWindows` -> `List<Map>`：每项包含窗口句柄、PID、标题与进程路径。
 ///   - `captureWindow` -> `Map`：`{pngBytes:Uint8List}` 或 `{error:String}`。
 ///
 /// native 缺失（未构建 / 非 Windows / 旧 Windows 无 WGC）时，两个方法都以
@@ -62,13 +62,24 @@ abstract final class WindowCaptureChannel {
 
 /// 一个可捕获的外部顶层窗口：native HWND（作为 [int] 传回）+ 窗口标题。
 class ExternalWindowInfo {
-  const ExternalWindowInfo({required this.hwnd, required this.title});
+  const ExternalWindowInfo({
+    required this.hwnd,
+    required this.title,
+    this.pid = 0,
+    this.executablePath = '',
+  });
 
   /// native 窗口句柄 HWND，作为整数在 MethodChannel 上传输（回传 native 时原样带回）。
   final int hwnd;
 
+  /// 窗口所属进程。进程音频捕获以它作为 Application Loopback 目标。
+  final int pid;
+
   /// 窗口标题（GetWindowText），供 UI 展示与选择。
   final String title;
+
+  /// 进程可执行文件绝对路径；权限不足时为空。
+  final String executablePath;
 
   /// 从 native map 解析；缺 `hwnd`（无有效句柄）返回 null（跳过该项）。
   static ExternalWindowInfo? fromMap(Map<Object?, Object?> m) {
@@ -79,15 +90,21 @@ class ExternalWindowInfo {
     return ExternalWindowInfo(
       hwnd: h,
       title: (m['title'] as String?) ?? '',
+      pid: (m['pid'] as int?) ?? 0,
+      executablePath: (m['executablePath'] as String?) ?? '',
     );
   }
 
   @override
   bool operator ==(Object other) =>
-      other is ExternalWindowInfo && other.hwnd == hwnd && other.title == title;
+      other is ExternalWindowInfo &&
+      other.hwnd == hwnd &&
+      other.pid == pid &&
+      other.title == title &&
+      other.executablePath == executablePath;
 
   @override
-  int get hashCode => Object.hash(hwnd, title);
+  int get hashCode => Object.hash(hwnd, pid, title, executablePath);
 }
 
 /// [WindowCaptureChannel.captureWindow] 的结果：成功带 PNG 字节，失败带人类可读原因。

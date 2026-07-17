@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 32895 (1935 per locale)
+/// Strings: 33065 (1945 per locale)
 ///
-/// Built on 2026-07-17 at 10:58 UTC
+/// Built on 2026-07-17 at 16:15 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2612,6 +2612,20 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Connection & server settings are in the Hibiki Interconnect category';
   String get settings_search_hint => 'Search settings';
   String get settings_search_no_results => 'No matching settings';
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  String get galgame_audio_capture_process => 'Game audio process';
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -7005,6 +7019,30 @@ class _StringsAr extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -11471,6 +11509,30 @@ class _StringsDe extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -15953,6 +16015,30 @@ class _StringsEs extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -20446,6 +20532,30 @@ class _StringsFr extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -24866,6 +24976,30 @@ class _StringsId extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -29334,6 +29468,30 @@ class _StringsIt extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -33607,6 +33765,30 @@ class _StringsJa extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -37883,6 +38065,30 @@ class _StringsKo extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -42329,6 +42535,30 @@ class _StringsNl extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -46790,6 +47020,30 @@ class _StringsPtBr extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -51234,6 +51488,30 @@ class _StringsRu extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -55623,6 +55901,30 @@ class _StringsTh extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -60044,6 +60346,30 @@ class _StringsTr extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -64452,6 +64778,30 @@ class _StringsVi extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 // Path: <root>
@@ -68553,6 +68903,27 @@ class _StringsZhCn extends _StringsEn {
   String get settings_search_hint => '搜索设置';
   @override
   String get settings_search_no_results => '没有匹配的设置项';
+  @override
+  String get galgame_audio_capture => 'Galgame 句子音频';
+  @override
+  String get galgame_audio_capture_hint => '捕获游戏音频并将当前台词写入 Anki 卡片';
+  @override
+  String get galgame_audio_capture_enabled => '捕获句子音频';
+  @override
+  String get galgame_audio_capture_enabled_hint => '为选定的游戏进程持续保留音频缓存';
+  @override
+  String get galgame_audio_capture_process => '游戏音频进程';
+  @override
+  String get galgame_audio_capture_no_windows => '没有找到可捕获的窗口';
+  @override
+  String get galgame_audio_capture_starting => '正在启动音频捕获…';
+  @override
+  String get galgame_audio_capture_unavailable => '已配置的游戏未运行';
+  @override
+  String get galgame_audio_capture_stopped => '音频捕获已停止';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      '正在捕获：${name}';
 }
 
 // Path: <root>
@@ -72745,6 +73116,30 @@ class _StringsZhHk extends _StringsEn {
   String get settings_search_hint => 'Search settings';
   @override
   String get settings_search_no_results => 'No matching settings';
+  @override
+  String get galgame_audio_capture => 'Galgame sentence audio';
+  @override
+  String get galgame_audio_capture_hint =>
+      'Capture game audio and attach the current line to Anki cards';
+  @override
+  String get galgame_audio_capture_enabled => 'Capture sentence audio';
+  @override
+  String get galgame_audio_capture_enabled_hint =>
+      'Keep a rolling audio buffer for the selected game process';
+  @override
+  String get galgame_audio_capture_process => 'Game audio process';
+  @override
+  String get galgame_audio_capture_no_windows => 'No capturable windows found';
+  @override
+  String get galgame_audio_capture_starting => 'Starting audio capture…';
+  @override
+  String get galgame_audio_capture_unavailable =>
+      'The configured game is not running';
+  @override
+  String get galgame_audio_capture_stopped => 'Audio capture is stopped';
+  @override
+  String galgame_audio_capture_running({required Object name}) =>
+      'Capturing: ${name}';
 }
 
 /// Flat map(s) containing all translations.
@@ -76703,6 +77098,26 @@ extension on _StringsEn {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -80659,6 +81074,26 @@ extension on _StringsAr {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -84636,6 +85071,26 @@ extension on _StringsDe {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -88612,6 +89067,26 @@ extension on _StringsEs {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -92594,6 +93069,26 @@ extension on _StringsFr {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -96558,6 +97053,26 @@ extension on _StringsId {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -100537,6 +101052,26 @@ extension on _StringsIt {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -104478,6 +105013,26 @@ extension on _StringsJa {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -108423,6 +108978,26 @@ extension on _StringsKo {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -112395,6 +112970,26 @@ extension on _StringsNl {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -116364,6 +116959,26 @@ extension on _StringsPtBr {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -120338,6 +120953,26 @@ extension on _StringsRu {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -124296,6 +124931,26 @@ extension on _StringsTh {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -128263,6 +128918,26 @@ extension on _StringsTr {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -132225,6 +132900,26 @@ extension on _StringsVi {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }
@@ -136155,6 +136850,26 @@ extension on _StringsZhCn {
         return '搜索设置';
       case 'settings_search_no_results':
         return '没有匹配的设置项';
+      case 'galgame_audio_capture':
+        return 'Galgame 句子音频';
+      case 'galgame_audio_capture_hint':
+        return '捕获游戏音频并将当前台词写入 Anki 卡片';
+      case 'galgame_audio_capture_enabled':
+        return '捕获句子音频';
+      case 'galgame_audio_capture_enabled_hint':
+        return '为选定的游戏进程持续保留音频缓存';
+      case 'galgame_audio_capture_process':
+        return '游戏音频进程';
+      case 'galgame_audio_capture_no_windows':
+        return '没有找到可捕获的窗口';
+      case 'galgame_audio_capture_starting':
+        return '正在启动音频捕获…';
+      case 'galgame_audio_capture_unavailable':
+        return '已配置的游戏未运行';
+      case 'galgame_audio_capture_stopped':
+        return '音频捕获已停止';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => '正在捕获：${name}';
       default:
         return null;
     }
@@ -140091,6 +140806,26 @@ extension on _StringsZhHk {
         return 'Search settings';
       case 'settings_search_no_results':
         return 'No matching settings';
+      case 'galgame_audio_capture':
+        return 'Galgame sentence audio';
+      case 'galgame_audio_capture_hint':
+        return 'Capture game audio and attach the current line to Anki cards';
+      case 'galgame_audio_capture_enabled':
+        return 'Capture sentence audio';
+      case 'galgame_audio_capture_enabled_hint':
+        return 'Keep a rolling audio buffer for the selected game process';
+      case 'galgame_audio_capture_process':
+        return 'Game audio process';
+      case 'galgame_audio_capture_no_windows':
+        return 'No capturable windows found';
+      case 'galgame_audio_capture_starting':
+        return 'Starting audio capture…';
+      case 'galgame_audio_capture_unavailable':
+        return 'The configured game is not running';
+      case 'galgame_audio_capture_stopped':
+        return 'Audio capture is stopped';
+      case 'galgame_audio_capture_running':
+        return ({required Object name}) => 'Capturing: ${name}';
       default:
         return null;
     }

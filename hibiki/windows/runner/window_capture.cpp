@@ -59,6 +59,20 @@ std::string WideToUtf8(const std::wstring& w) {
   return out;
 }
 
+std::string ProcessImagePath(DWORD process_id) {
+  if (process_id == 0) return std::string();
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               process_id);
+  if (process == nullptr) return std::string();
+  std::wstring path(32768, L'\0');
+  DWORD size = static_cast<DWORD>(path.size());
+  const BOOL ok = QueryFullProcessImageNameW(process, 0, path.data(), &size);
+  CloseHandle(process);
+  if (!ok || size == 0) return std::string();
+  path.resize(size);
+  return WideToUtf8(path);
+}
+
 // RoGetActivationFactory 薄封装：用类名的 WCHAR 字面量取激活工厂接口 [I]。
 template <typename I>
 HRESULT GetActivationFactory(const wchar_t* class_name, I** out) {
@@ -107,7 +121,9 @@ BOOL CALLBACK EnumProc(HWND hwnd, LPARAM lparam) {
   }
   ExternalWindow w;
   w.hwnd = hwnd;
+  GetWindowThreadProcessId(hwnd, &w.process_id);
   w.title = WideToUtf8(title);
+  w.executable_path = ProcessImagePath(w.process_id);
   ctx->out->push_back(std::move(w));
   return TRUE;
 }

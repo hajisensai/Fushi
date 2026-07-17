@@ -1,5 +1,8 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/lookup/overlay_bridge_handlers.dart';
+import 'package:hibiki/src/mining/galgame_audio_capture_controller.dart';
+import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/platform/desktop/desktop_clipboard_service.dart';
 import 'package:hibiki/src/platform/desktop/desktop_device_info_service.dart';
@@ -78,6 +81,24 @@ Future<void> _pumpUntil(bool Function() done) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  const MethodChannel audioChannel =
+      MethodChannel('app.hibiki.reader/process_audio_capture');
+  final TestDefaultBinaryMessenger messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  final GalgameAudioCaptureController capture =
+      GalgameAudioCaptureController.instance;
+
+  setUp(() {
+    capture.debugReset();
+    GalgameAudioCaptureController.debugIsSupportedOverride = true;
+  });
+
+  tearDown(() {
+    messenger.setMockMethodCallHandler(audioChannel, null);
+    capture.debugReset();
+    GalgameAudioCaptureController.debugIsSupportedOverride = null;
+  });
+
   test('clipboard sentence context reaches AnkiMiningContext.sentence',
       () async {
     final _CapturingAnkiRepo repo = _CapturingAnkiRepo();
@@ -126,6 +147,92 @@ void main() {
     await _pumpUntil(() => repo.captured != null);
     expect(repo.captured!.sentence, 'JS が明示的に送った文',
         reason: 'JS 非空 sentence 优先，context 只是兜底（future-proof）');
+  });
+
+  test('audio occurrence reaches AnkiMiningContext.sasayakiAudioPath',
+      () async {
+    messenger.setMockMethodCallHandler(audioChannel, (MethodCall call) async {
+      if (call.method == 'start' || call.method == 'mark') {
+        return <String, Object?>{'ok': true};
+      }
+      if (call.method == 'exportWav') {
+        final Map<Object?, Object?> args =
+            call.arguments! as Map<Object?, Object?>;
+        return <String, Object?>{
+          'ok': true,
+          'path': args['outputPath']! as String,
+        };
+      }
+      return <String, Object?>{'ok': true};
+    });
+    expect(
+      await capture.start(
+        const ExternalWindowInfo(hwnd: 1, pid: 77, title: 'VN'),
+      ),
+      isTrue,
+    );
+    final String occurrence = capture.markClipboardOccurrence()!;
+    final _CapturingAnkiRepo repo = _CapturingAnkiRepo();
+
+    maybeHandleOverlayDeferredBridge(
+      model: _desktopModel(repo),
+      handler: 'mineEntry',
+      message: _mineMessage(<String, Object?>{
+        'expression': 'voice',
+        'dictionaryMedia': '',
+      }),
+      resolveBridge: (int id, Object? value) async {},
+      sentenceContext: 'voiced sentence',
+      audioOccurrenceId: occurrence,
+    );
+
+    await _pumpUntil(() => repo.captured != null);
+    expect(repo.captured, isNotNull);
+    expect(repo.captured!.sasayakiAudioPath, endsWith('.wav'));
+  });
+
+  test('audio export failure aborts mining instead of creating a silent card',
+      () async {
+    messenger.setMockMethodCallHandler(audioChannel, (MethodCall call) async {
+      if (call.method == 'start' || call.method == 'mark') {
+        return <String, Object?>{'ok': true};
+      }
+      if (call.method == 'exportWav') {
+        return <String, Object?>{
+          'ok': false,
+          'error': 'audio marker has expired',
+        };
+      }
+      return <String, Object?>{'ok': true};
+    });
+    expect(
+      await capture.start(
+        const ExternalWindowInfo(hwnd: 1, pid: 77, title: 'VN'),
+      ),
+      isTrue,
+    );
+    final String occurrence = capture.markClipboardOccurrence()!;
+    final _CapturingAnkiRepo repo = _CapturingAnkiRepo();
+    Object? reply;
+
+    maybeHandleOverlayDeferredBridge(
+      model: _desktopModel(repo),
+      handler: 'mineEntry',
+      message: _mineMessage(<String, Object?>{
+        'expression': 'voice',
+        'dictionaryMedia': '',
+      }),
+      resolveBridge: (int id, Object? value) async => reply = value,
+      sentenceContext: 'voiced sentence',
+      audioOccurrenceId: occurrence,
+    );
+
+    await _pumpUntil(() => reply != null);
+    expect(repo.captured, isNull);
+    expect(
+      reply,
+      <String, Object?>{'ankiConnect': false, 'noteId': null},
+    );
   });
 
   test('empty context + no JS sentence -> empty (never crashes)', () async {

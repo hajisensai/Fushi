@@ -87,6 +87,7 @@ class ClipboardPanelController {
   final Map<String, Rect?> _frameAnchors = <String, Rect?>{};
   int _frameSeq = 0;
   String _currentSentence = '';
+  String? _currentAudioOccurrenceId;
 
   /// 「关自动查词」纯文字态：面板只显示句子横幅（逐字可点）、不显示词典结果块。
   /// [_showTextOnly] 置 true；任何真查词（自动查词 / 点句中字 / 嵌套子查词）置
@@ -168,6 +169,7 @@ class ClipboardPanelController {
   Future<void> update(DesktopLookupRequest request) async {
     final AppModel? model = _appModel;
     if (!_started || model == null) return;
+    _currentAudioOccurrenceId = request.audioOccurrenceId;
     // 「关自动查词」纯文字态：只显示复制到的句子文字（逐字可点），不自动 searchDictionary、
     // 不弹释义、不朗读、不记查词计数。用户点句中字才走 panelSentenceLookup 手动查
     // （那条路径重置 _sentenceOnly=false，释义正常出）。总开关 desktopClipboardEnabled
@@ -399,6 +401,7 @@ class ClipboardPanelController {
       // 剪贴板全文即句子上下文：制卡 `{sentence}` 用它兜底（JS 不发 sentence）。
       // 与句子横幅同一 `_currentSentence`，落实 spec §2 的「兼作制卡 sentence」。
       sentenceContext: _currentSentence,
+      audioOccurrenceId: _currentAudioOccurrenceId,
     )) {
       return;
     }
