@@ -14,6 +14,7 @@ String _manifestJson({
   String channel = 'beta',
   bool prerelease = true,
   String notes = 'Beta build notes',
+  int? releaseSequence,
   List<Map<String, dynamic>>? assets,
 }) {
   return jsonEncode(<String, dynamic>{
@@ -23,6 +24,7 @@ String _manifestJson({
     'channel': channel,
     'prerelease': prerelease,
     'notes': notes,
+    if (releaseSequence != null) 'releaseSequence': releaseSequence,
     'assets': assets ??
         <Map<String, dynamic>>[
           <String, dynamic>{
@@ -78,8 +80,23 @@ void main() {
       );
     });
 
-    test('stable does not use a manifest (302 path), returns null', () {
-      expect(manifestUrlForChannel(UpdateChannel.stable), isNull);
+    test('stable now uses latest-stable.json manifest (BUG-846 谁后用谁)', () {
+      // BUG-846：stable 也读 manifest 拿正式版 releaseSequence（跨轨序号比较用）；读不到
+      // 才回退 302。故 manifestUrlForChannel(stable) 不再返 null。
+      expect(manifestUrlForChannel(UpdateChannel.stable), kStableManifestUrl);
+      expect(
+        kStableManifestUrl,
+        'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-stable.json',
+      );
+      expect(
+        manifestUrlsForChannel(UpdateChannel.stable),
+        const <String, String>{
+          'hajisensai/hibiki':
+              'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-stable.json',
+          'hdjsadgfwtg/hibiki':
+              'https://raw.githubusercontent.com/hdjsadgfwtg/hibiki/update-manifest/latest-stable.json',
+        },
+      );
     });
   });
 
@@ -113,6 +130,35 @@ void main() {
       final Map<String, dynamic> release =
           buildReleaseFromManifest(_manifestJson())!;
       expect(releaseMatchesUpdateChannel(release, UpdateChannel.beta), isTrue);
+    });
+
+    test('BUG-846: top-level releaseSequence is surfaced for 谁后用谁', () {
+      // stable manifest（tag 无预发布串带不了 seq）靠顶层 releaseSequence 提供跨轨比较序号。
+      final Map<String, dynamic> release = buildReleaseFromManifest(
+        _manifestJson(
+          tag: 'v1.2.0',
+          version: '1.2.0',
+          channel: 'formal',
+          prerelease: false,
+          releaseSequence: 7850,
+          assets: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'hibiki-1.2.0-arm64-v8a.apk',
+              'browser_download_url':
+                  'https://github.com/hajisensai/hibiki/releases/download/v1.2.0/hibiki-1.2.0-arm64-v8a.apk',
+            },
+          ],
+        ),
+      )!;
+      expect(release['releaseSequence'], 7850);
+      expect(
+          releaseMatchesUpdateChannel(release, UpdateChannel.stable), isTrue);
+    });
+
+    test('BUG-846: absent releaseSequence leaves the key unset (302 保守)', () {
+      final Map<String, dynamic> release =
+          buildReleaseFromManifest(_manifestJson())!;
+      expect(release.containsKey('releaseSequence'), isFalse);
     });
 
     test('legacy manifest source keeps legacy release page fallback', () {

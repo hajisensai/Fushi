@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 849 条。点号进各自文件。
+> 共 850 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-869](bugs/BUG-869-update-channel-pingpong.md) | ✅ | ✅ | 调试版与正式版来回更新 |
 | [BUG-868](bugs/BUG-868-reader-content-ready-timeout-pagination-wedge.md) | ✅ | ✅ | 开EPUB偶发卡住·内容就绪兜底超时漏复位导航态致翻页永久失效 |
 | [BUG-867](bugs/BUG-867-ass-fontname-gdi-fullname.md) | ✅ | ✅ | 装了字幕指定字体 hibiki 仍用回退字体（ASS Fontname=GDI 全名解析缺失） |
 | [BUG-866](bugs/BUG-866-reader-live-margin-theme-gate.md) | ✅ | ✅ | 阅读器余白/主题改完不实时生效须退出重进(样式重锚就绪门控静默丢CSS) |
