@@ -1,0 +1,11 @@
+## BUG-871 · Windows 触屏手指滑不动查词弹窗：注入触点缺 POINTER_FLAG_PRIMARY
+- **报告**：2026-07-17（用户：适配一下 win 端触屏）BUG-870 后续（触摸路径，非触控板/滚轮）
+- **真实性**：✅ 真 bug（根因高置信，需真触屏终验）。桌面弹窗触摸链路：Flutter `Listener.onPointerDown/Move/Up`（kind==touch）→ `_setPointerUpdate` → method channel → native `InAppWebView::setPointerUpdate`（`packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview.cpp:1853`）→ `CreateCoreWebView2PointerInfo` + `put_PointerKind(PT_TOUCH)` + `SendPointerInput`。
+  - 根因 `in_app_webview.cpp:1868-1887`（原）：`put_PointerFlags` 只给 `POINTER_FLAG_DOWN/UPDATE | INRANGE | INCONTACT`，**从不置 `POINTER_FLAG_PRIMARY`**（fork 首提 04a256993 逐字从上游引入、此后未改；全 fork grep 零命中 PRIMARY）。合成注入的触点没有系统给的 primary 标记，而 Chromium 只从 primary 触点启动平移/滚动 manipulation → 单指拖动**不滚动**，只有离散 tap/长按/分页 JS 滑动能中（这些不依赖平移 manipulation）。微软 microsoft-ui-xaml 的 WebView2 控件正是按 `IsPrimary()` 把 PRIMARY 打进 pointer info 再 `SendPointerInput`（WebSearch 权威实现佐证）。
+  - blast radius：`setPointerUpdate` 由所有 Windows `InAppWebView` 共用（弹窗 + 阅读器**连续模式**触摸滚动 + 视频 + 首页词典）——连续模式触摸滚动多半同因坏，本修一并覆盖；分页阅读器走 JS 滑动翻页不受影响。弹窗 JS/CSS 侧（`touch-action:auto`、passive touch 监听）不阻挡滚动，Flutter 手势竞技场也不吞触摸（Windows fork 的 `CustomPlatformView` 不接 `gestureRecognizers`，`Listener` 被动转发）。
+- **[x] ① 已修复** —
+  - Native `in_app_webview.cpp setPointerUpdate`：跟踪首个活跃触点 `primaryTouchPointerId_`（`in_app_webview.h`，-1=无）——首个 Down 认领 primary；`pointer == primaryTouchPointerId_` 时 `pointerFlags |= POINTER_FLAG_PRIMARY`，其 Up 时释放（-1）。第二指保持非 primary（两个 primary 是非法指针帧）。primary 用途聚焦单指滚动，故不做「primary 抬起后提升次指」。
+  - Dart `custom_platform_view.dart onPointerCancel`：kind==touch 时转发一个 `InAppWebViewPointerEventKind.up`（原来触摸 cancel 完全不通知 native → primary id 被搁死、下个手势启动不了；这本身也是潜伏 bug——WebView2 会一直以为手指还按着）。
+- **[x] ② 已加自动化测试** —
+  - 源码扫描守卫 `hibiki/test/build/popup_touch_primary_pointer_guard_test.dart`：读 vendored `.cpp` 断言 `primaryTouchPointerId_` 跟踪 + `POINTER_FLAG_PRIMARY` + `pointer == primaryTouchPointerId_` + `= -1` 释放；读 vendored `.dart` 断言 onPointerCancel 对 touch 转发 up。native 窗口无法在测试宿主跑，钉死防 re-vendor 回归。
+- **备注**：native C++ 改动隔离在 Windows fork，需 `flutter build windows` 真机编译，**真手指滑动滚动待用户真 Windows 触屏终验**（本机无触屏；「必须 PRIMARY」有 microsoft-ui-xaml 实现 + WebView2 文档佐证但无仓库内规范硬证）。子代理提议的离屏实证探针（method-channel 注入 setPointerUpdate 序列 → `debugEval('window.scrollY')` 断言位移）可在真 WebView2 build 下证实/证伪，留作真机验证手段。与 BUG-870（触控板/滚轮 wheel 路径）同 worktree/PR，属「Windows 弹窗滚动输入适配」同一主题。

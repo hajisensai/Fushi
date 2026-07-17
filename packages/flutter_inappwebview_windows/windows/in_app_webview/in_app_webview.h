@@ -197,6 +197,22 @@ namespace flutter_inappwebview_plugin
     POINT lastCursorPos_ = { 0, 0 };
     VirtualKeyState virtualKeys_;
 
+    // BUG-870: per-axis sub-unit remainder carried across sendScroll() calls. A
+    // precision touchpad delivers small per-frame scroll deltas; without this the
+    // static_cast<short>(delta * 6) in sendScroll truncated any frame whose scaled
+    // magnitude was < 1 to 0 and dropped it, so slow touchpad scrolling sent no
+    // wheel at all ("can't scroll"). Always < 1 whole wheel unit, so no reset is
+    // needed. Single-threaded (platform-thread method-channel), no lock required.
+    double scrollResidualX_ = 0.0;
+    double scrollResidualY_ = 0.0;
+
+    // BUG-871: id of the first active touch contact, flagged POINTER_FLAG_PRIMARY
+    // for its whole lifetime. Injected touch (SendPointerInput) carries no
+    // system-assigned primary, and Chromium starts a pan/scroll manipulation only
+    // from the primary contact — without this a finger drag never scrolls the
+    // WebView, only discrete tap/long-press land. -1 = no active primary.
+    int32_t primaryTouchPointerId_ = -1;
+
     std::map<UINT64, std::shared_ptr<NavigationAction>> navigationActions_ = {};
     // 已被 shouldInterceptRequest 注入 2xx 响应的主框架 document URL（去 fragment）。
     // 用于 NavigationCompleted 纠正 hoshi.local 这类自定义拦截域的 DNS 假失败。

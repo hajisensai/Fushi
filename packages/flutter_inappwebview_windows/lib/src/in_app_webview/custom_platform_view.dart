@@ -450,6 +450,19 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                     },
                     onPointerCancel: (ev) {
                       _pointerKind = ev.kind;
+                      // BUG-871: a cancelled touch must still send an up to the
+                      // WebView, else the native primary-contact id is stranded
+                      // (POINTER_FLAG_PRIMARY tracking) and the next gesture can
+                      // no longer start a pan/scroll manipulation.
+                      if (ev.kind == PointerDeviceKind.touch) {
+                        _controller._setPointerUpdate(
+                            InAppWebViewPointerEventKind.up,
+                            ev.pointer,
+                            ev.localPosition,
+                            ev.size,
+                            ev.pressure);
+                        return;
+                      }
                       final button = _downButtons.remove(ev.pointer);
                       if (button != null) {
                         _controller._setPointerButtonState(button, false);
