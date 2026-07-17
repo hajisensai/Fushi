@@ -214,11 +214,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (mounted) _refresh();
   }
 
-  void _refresh() {
+  /// 刷新库页。默认只刷**本地**（书架列表 + 分组映射 + 封面自愈）；远端互联清单
+  /// 不因本地播放/导入/标签变化而改变，故不重拉，避免「看完视频返回→远端卡整片闪空
+  /// 重新加载」（远端那层 FutureBuilder 无缓存顶值，future 一换即清空重拉）。
+  /// 只有真正改变远端来源的路径（[_openManageSources]）才传 `remote: true` 重拉清单；
+  /// 用户主动刷新走下拉 [_pullToRefresh]。
+  void _refresh({bool remote = false}) {
     setState(() {
       // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
       _future = widget.repo.listForShelf();
-      _remoteFuture = _loadRemoteVideos();
+      if (remote) _remoteFuture = _loadRemoteVideos();
     });
     _loadLibraryMaps();
     _maybeBackfillCovers();
@@ -709,7 +714,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       context: context,
       builder: (_) => const MediaSourcesDialog(mediaKind: 'video'),
     );
-    if (mounted) _refresh();
+    // 管理互联源可能新增/切换/移除远端 host，远端清单需重拉。
+    if (mounted) _refresh(remote: true);
   }
 
   /// 拖放到视频 tab 时的处理：分类文件 → 局部坐标转屏幕坐标命中卡片 → 决策意图。
@@ -1681,11 +1687,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 builder: (BuildContext context, BoxConstraints constraints) {
                   final HibikiDesignTokens tokens =
                       HibikiDesignTokens.of(context);
+                  // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
+                  // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
+                  // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
                   final ({int columns, double cardWidth}) cardLayout =
                       unifiedShelfCardLayout(
                     availableWidth:
                         constraints.maxWidth - tokens.spacing.card * 2,
-                    targetWidth: 240,
+                    targetWidth:
+                        readerShelfGridExtentForWidth(constraints.maxWidth),
                   );
                   return CustomScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -2188,10 +2198,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         title: collection.name,
         countLabel: t.video_playlist_episodes(count: memberCount),
         itemCount: memberCount,
-        // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout；218 = 封面区 + 标题 +
-        // Phase D 观看进度行）。
+        // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout + _videoCardExtent：
+        // 16:9 封面 + 标题 + Phase D 观看进度行，随卡宽联动）。
         itemWidth: cardLayout.cardWidth,
-        rowHeight: 218,
+        rowHeight: _videoCardExtent(cardLayout.cardWidth),
         initialIndex: continueIdx,
         headerFocusId: HibikiFocusId('home-video-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
@@ -2576,6 +2586,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 连续散视频段落的 [SliverGrid]（TODO-654：随主 [CustomScrollView] 滚动；
   /// 网格 delegate 与远端区一致）。UI v2 Phase C 后合集不再进网格（渲染成全宽
   /// 横排行），本网格只装散视频单卡。
+  /// 视频卡总高 = 16:9 封面高（[cardWidth] × 9/16）+ 文字块（标题 2 行 + 观看进度行
+  /// + 内边距）。文字块 [_kVideoCardTextBlock] = 83，在 cardWidth=240 时回到旧的固定
+  /// 218，向后兼容；卡变窄时封面等比缩，不再出现固定卡高下的封面上下留白。散卡网格
+  /// [mainAxisExtent] 与合集横排行 [CollectionShelfRow.rowHeight] 共用此高，保持逐像素同尺寸。
+  static double _videoCardExtent(double cardWidth) =>
+      cardWidth * 9 / 16 + _kVideoCardTextBlock;
+
+  /// 视频卡封面下方文字块的固定高度（标题 2 行 + 观看进度行 + 内边距）。
+  static const double _kVideoCardTextBlock = 83;
+
   Widget _buildLooseVideoGridSliver(
     List<_VideoLooseCard> loose,
     EdgeInsetsGeometry padding,
@@ -2585,11 +2605,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       padding: padding,
       sliver: SliverGrid.builder(
         // FixedCrossAxisCount + 统一卡宽（unifiedShelfCardLayout）：散卡 cell 与
-        // 合集横排行成员卡逐像素同尺寸（用户实报合集卡大一截）。
-        // mainAxisExtent 218 = 封面区 + 标题 + Phase D 观看进度行。
+        // 合集横排行成员卡逐像素同尺寸（用户实报合集卡大一截）。卡高随卡宽按
+        // 16:9 封面联动（_videoCardExtent），窄卡不再残留固定 218 的封面上下留白。
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: cardLayout.columns,
-          mainAxisExtent: 218,
+          mainAxisExtent: _videoCardExtent(cardLayout.cardWidth),
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
