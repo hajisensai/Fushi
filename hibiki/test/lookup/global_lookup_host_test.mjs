@@ -1711,7 +1711,7 @@ function flushTimers() {
     layoutMode: 'panel',
   });
   const bar = document.getElementById('global-lookup-panel-bar');
-  const [grip, pinBtn, closeBtn] = bar.children;
+  const [grip, pinBtn, blockBtn, closeBtn] = bar.children;
   const fakeEvent = { preventDefault() {}, stopPropagation() {} };
 
   hostPostLog = [];
@@ -1735,6 +1735,29 @@ function flushTimers() {
   assert.ok(
     pinBtn.className.indexOf('panel-pin-off') < 0,
     'setPanelPinnedVisual(true) restores the pinned visual (Dart pref sync)',
+  );
+
+  // 防截屏按钮：默认开（盾牌亮）；首点关 -> posts panelBlockCapture(false) + 变暗；
+  // setPanelBlockCaptureVisual(true) 从 Dart pref 恢复亮态。
+  assert.ok(
+    blockBtn.className.indexOf('panel-block') >= 0 &&
+      blockBtn.className.indexOf('panel-block-off') < 0,
+    'block-capture default on (shield bright)',
+  );
+  hostPostLog = [];
+  blockBtn._listeners['pointerdown'][0](fakeEvent);
+  const blockMsg = hostPostLog.find((m) => m.handler === 'panelBlockCapture');
+  assert.ok(blockMsg, 'block button posts panelBlockCapture');
+  assert.strictEqual(
+    blockMsg.args[0], false, 'default on -> first tap turns capture-block off');
+  assert.ok(
+    blockBtn.className.indexOf('panel-block-off') >= 0,
+    'capture-block-off visual applied',
+  );
+  host.setPanelBlockCaptureVisual(true);
+  assert.ok(
+    blockBtn.className.indexOf('panel-block-off') < 0,
+    'setPanelBlockCaptureVisual(true) restores blocked visual (Dart pref sync)',
   );
 
   hostPostLog = [];

@@ -209,20 +209,18 @@ void main() {
       // （_showTextOnly），不自动查词、不弹释义；点句中字才手动查。
       final int updAt = controllerSrc.indexOf('Future<void> update(');
       expect(updAt, greaterThan(0));
-      final int gateAt =
-          controllerSrc.indexOf('if (!model.desktopClipboardAutoLookup)', updAt);
+      final int gateAt = controllerSrc.indexOf(
+          'if (!model.desktopClipboardAutoLookup)', updAt);
       final int textOnlyAt =
           controllerSrc.indexOf('_showTextOnly(model, request.text)', gateAt);
-      expect(gateAt, greaterThan(updAt),
-          reason: 'update 必须在关自动查词时早退到纯文字态');
+      expect(gateAt, greaterThan(updAt), reason: 'update 必须在关自动查词时早退到纯文字态');
       expect(textOnlyAt, greaterThan(gateAt));
       // _showTextOnly 里没有 searchDictionary（纯文字态绝不自动查词）。
       final int fnAt = controllerSrc.indexOf('Future<void> _showTextOnly(');
       expect(fnAt, greaterThan(0));
       final int fnEnd = controllerSrc.indexOf('\n  }', fnAt);
       final String body = controllerSrc.substring(fnAt, fnEnd);
-      expect(body.contains('searchDictionary'), isFalse,
-          reason: '纯文字态不得自动查词');
+      expect(body.contains('searchDictionary'), isFalse, reason: '纯文字态不得自动查词');
       expect(body.contains('_sentenceOnly = true'), isTrue,
           reason: '纯文字态须置 sentenceOnly，渲染脚本据此摘掉 No results 块');
     });
@@ -240,6 +238,47 @@ void main() {
       expect(
         dispatcherSrc.contains('ClipboardPanelController.instance.update'),
         isTrue,
+      );
+    });
+
+    test('防截屏：panelBlockCapture 桥切 native + 落 pref（默认开）', () {
+      // 面板栏 🛡 按钮：_onJsMessage 处理 panelBlockCapture，切 native display
+      // affinity（_channel.setBlockCapture）并落 pref（setClipboardPanelBlockCapture）。
+      expect(controllerSrc.contains("case 'panelBlockCapture':"), isTrue,
+          reason: '面板栏防截屏按钮必须有 _onJsMessage 分支');
+      expect(controllerSrc.contains('_channel.setBlockCapture(block)'), isTrue,
+          reason: '切换必须调 native SetWindowDisplayAffinity');
+      expect(controllerSrc.contains('setClipboardPanelBlockCapture(block)'),
+          isTrue,
+          reason: '切换必须持久化到 pref');
+      // 显示面板时按 pref 应用一次（默认开）。
+      expect(
+        controllerSrc
+            .contains('setBlockCapture(model.clipboardPanelBlockCapture)'),
+        isTrue,
+        reason: '_showPanel 必须按 pref 给面板窗设防截屏',
+      );
+    });
+
+    test('防截屏 pref 默认开（隐私优先）', () {
+      final String prefsSrc =
+          File('lib/src/models/preferences_repository.dart').readAsStringSync();
+      expect(
+        prefsSrc.contains(
+            "getPref('clipboard_panel_block_capture', defaultValue: true)"),
+        isTrue,
+        reason: '防截屏 pref 必须默认 true（用户要求「默认打开」）',
+      );
+    });
+
+    test('抬前台：已显示分支每次查词 raise（不抢焦点）', () {
+      // 功能 B：面板已显示时（update / _showTextOnly 的 else 分支）每次查词把窗口
+      // 抬到 z 序最上，pin 决定是否置顶。native RaiseToFront 全程 SWP_NOACTIVATE。
+      expect(
+        controllerSrc
+            .contains('_channel.raise(topmost: model.clipboardPanelPinned)'),
+        isTrue,
+        reason: '已显示时新查词必须抬前台（修复被别的窗压住看不到），按 pin 决定置顶',
       );
     });
 

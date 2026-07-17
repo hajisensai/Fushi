@@ -162,6 +162,11 @@
   // SetTopmost applies it); Dart syncs this visual via setPanelPinnedVisual on
   // panel show so the bar icon matches the remembered pref.
   var panelPinnedVisual = true;
+  // Panel block-capture VISUAL state（防截屏）. Truth source is the Dart pref
+  // clipboardPanelBlockCapture (native SetWindowDisplayAffinity applies it);
+  // Dart syncs this visual via setPanelBlockCaptureVisual. Default true =
+  // capture blocked (shield bright); toggled off dims the shield (panel-block-off).
+  var panelBlockCaptureVisual = true;
 
   // Post a message to C++ (and on to Dart) via the TOP-LEVEL chrome.webview
   // bridge. Mirrors the adapter envelope { handler, args } so _onJsMessage routes
@@ -381,6 +386,8 @@
         '#global-lookup-panel-bar[data-theme="dark"] .panel-btn:hover{' +
         'background:rgba(235,235,245,0.24);color:rgba(235,235,245,0.95);}' +
         '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.45;}' +
+        // 防截屏按钮关闭态（允许截图）时同样调暗，与 pin-off 一致。
+        '#global-lookup-panel-bar .panel-btn.panel-block-off{opacity:0.45;}' +
         // Bottom-right resize grip (posts beginWindowResize).
         '#global-lookup-panel-resize{' +
         'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
@@ -444,6 +451,28 @@
     pinBtn.addEventListener('pointerdown', onPin, true);
     bar.appendChild(pinBtn);
 
+    // 防截屏按钮（🛡）：切换 SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)。
+    // 默认开（盾牌亮）= 面板不进截图/录屏；关（盾牌变暗）= 允许被截。视觉态由
+    // Dart 经 setPanelBlockCaptureVisual 同步（与 pin 同一范式）。
+    var blockBtn = document.createElement('div');
+    blockBtn.className =
+        'panel-btn panel-block' + (panelBlockCaptureVisual ? '' : ' panel-block-off');
+    blockBtn.setAttribute('role', 'button');
+    blockBtn.setAttribute('aria-label', 'Block screen capture');
+    blockBtn.textContent = '🛡';
+    var onBlock = function (event) {
+      if (event) {
+        if (typeof event.stopPropagation === 'function') {
+          event.stopPropagation();
+        }
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+      }
+      setPanelBlockCaptureVisual(!panelBlockCaptureVisual);
+      postToHost('panelBlockCapture', [panelBlockCaptureVisual]);
+    };
+    blockBtn.addEventListener('pointerdown', onBlock, true);
+    bar.appendChild(blockBtn);
+
     var closeBtn = document.createElement('div');
     closeBtn.className = 'panel-btn panel-close';
     closeBtn.setAttribute('role', 'button');
@@ -495,6 +524,26 @@
       if (kid && String(kid.className).indexOf('panel-pin') >= 0) {
         kid.className =
             'panel-btn panel-pin' + (panelPinnedVisual ? '' : ' panel-pin-off');
+        return;
+      }
+    }
+  }
+
+  // 防截屏 — 把 🛡 按钮视觉态同步到 Dart pref（真相源；native
+  // SetWindowDisplayAffinity 应用真正的捕获排除）。与 setPanelPinnedVisual 同构。
+  function setPanelBlockCaptureVisual(block) {
+    panelBlockCaptureVisual = !!block;
+    var bar = document.getElementById &&
+        document.getElementById('global-lookup-panel-bar');
+    if (!bar) {
+      return;
+    }
+    var kids = bar.children || [];
+    for (var i = 0; i < kids.length; i++) {
+      var kid = kids[i];
+      if (kid && String(kid.className).indexOf('panel-block') >= 0) {
+        kid.className = 'panel-btn panel-block' +
+            (panelBlockCaptureVisual ? '' : ' panel-block-off');
         return;
       }
     }
@@ -1798,6 +1847,7 @@
     dismissRootWithSlide: dismissRootWithSlide,
     // spec 2026-07-10 — panel-mode hooks (no-ops in cascade mode).
     setPanelPinnedVisual: setPanelPinnedVisual,
+    setPanelBlockCaptureVisual: setPanelBlockCaptureVisual,
     _frames: frames,
     // TODO-1188 — exposed for the node bridge-routing harness only (never used to
     // drive behaviour): the live globalId -> {frameId, localId} route map.

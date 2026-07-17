@@ -207,6 +207,21 @@ class OverlayWindowChannel {
         'pinned': pinned,
       });
 
+  /// 防截屏 — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：面板对用户可见
+  /// 但从截图 / 录屏 / 屏幕共享里排除。Only wired on the clipboard-panel channel.
+  Future<void> setBlockCapture(bool block) =>
+      _channel.invokeMethod<void>('setBlockCapture', <String, Object?>{
+        'block': block,
+      });
+
+  /// 面板抬前台 — 把已显示的面板重排到 z 序最上，绝不激活（不抢当前前台窗口
+  /// 焦点）。[topmost]=true（已 pin）直接置顶，false 则顶到非置顶带最上。
+  /// Only wired on the clipboard-panel channel.
+  Future<void> raise({required bool topmost}) =>
+      _channel.invokeMethod<void>('raise', <String, Object?>{
+        'topmost': topmost,
+      });
+
   /// 面板任务栏图标 — 任务栏按钮 / Alt-Tab 项的窗口标题（本地化文案）。
   /// 窗口创建前设置则用于创建，已创建则即时更新。Only wired on the
   /// clipboard-panel channel.
