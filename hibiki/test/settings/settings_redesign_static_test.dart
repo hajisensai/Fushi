@@ -359,18 +359,20 @@ void main() {
   test('popup instant scroll is a global lookup display setting', () {
     final String lookupSource =
         readNormalizedSource('lib/src/settings/settings_schema_lookup.dart');
+    // 「查词显示」拆成「词条内容 / 弹窗窗口」两组后，popup_instant_scroll 归弹窗
+    // 窗口组；组尾还有带 ReaderPlacement 的滑动关闭手势对（TODO-436/625，本就
+    // 该出现在书内快捷面板），故切片上界取到滑动关闭项之前，只覆盖
+    // instant_scroll 所在的窗口尺寸/停靠段。
     final int displayStart = lookupSource.indexOf(
-      'title: t.settings_section_lookup_display',
+      'title: t.settings_section_lookup_popup_window',
     );
-    // lookup destination 函数体在 buildLookupDestination 内闭合，其后是查词字段 helper；
-    // 用第一个 helper 函数签名作为切片上界，覆盖整段 lookup_display section。
-    final int helperStart =
-        lookupSource.indexOf('Widget _buildYomitanApiKeyField(');
+    final int swipeStart =
+        lookupSource.indexOf("id: 'reading_controls.enable_swipe_to_close'");
     expect(displayStart, isNonNegative);
-    expect(helperStart, greaterThan(displayStart));
+    expect(swipeStart, greaterThan(displayStart));
 
     final String displaySource =
-        lookupSource.substring(displayStart, helperStart);
+        lookupSource.substring(displayStart, swipeStart);
     expect(displaySource, contains("id: 'lookup.popup_instant_scroll'"));
     expect(displaySource, contains('t.popup_instant_scroll'));
     expect(displaySource, contains('popupInstantScroll'));

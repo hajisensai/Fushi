@@ -43,6 +43,30 @@ SettingsDestination buildListeningDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'listening.volume_key_sentence_nav',
+            title: t.volume_key_sentence_nav,
+            icon: Icons.skip_next_outlined,
+            // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
+            visible: (_) => Platform.isAndroid,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 10,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.volumeKeySentenceNavEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleVolumeKeySentenceNavEnabled();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+        ],
+      ),
+      // 悬浮歌词全家桶（总开关 + 7 个样式/行为子项）独立成组：原先与后台播放/
+      // 媒体通知平铺同级，一个子功能占了「有声书」分区 2/3 的行数。
+      SettingsSection(
+        title: t.section_floating_lyric,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
             id: 'listening.floating_lyric',
             title: t.show_floating_lyric,
             subtitle: t.floating_lyric_hint,
@@ -233,23 +257,6 @@ SettingsDestination buildListeningDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setFloatingLyricClickLookup(value);
               settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'listening.volume_key_sentence_nav',
-            title: t.volume_key_sentence_nav,
-            icon: Icons.skip_next_outlined,
-            // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
-            visible: (_) => Platform.isAndroid,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 10,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.volumeKeySentenceNavEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.readerSource.toggleVolumeKeySentenceNavEnabled();
-              notifyReaderSettingsChanged(settingsContext);
             },
           ),
         ],

@@ -644,8 +644,6 @@
   "settings_destination_sync_backup": "Đồng bộ & Sao lưu (Thử nghiệm)",
   "settings_destination_system": "Hệ thống",
   "settings_section_app_shell": "Ứng dụng",
-  "settings_section_lookup_behavior": "Hành vi tra cứu",
-  "settings_section_lookup_display": "Hiển thị kết quả",
   "settings_section_update_channel": "Kênh cập nhật",
   "spread_auto": "Tự động",
   "spread_direction": "Hướng trải trang",
@@ -1918,5 +1916,14 @@
   "changelog_open_releases": "Open releases page",
   "changelog_prerelease": "Prerelease",
   "collection_clear_scope": "Clear scope",
-  "collection_clear_confirm": "Permanently delete the selected collections? This can't be undone."
+  "collection_clear_confirm": "Permanently delete the selected collections? This can't be undone.",
+  "settings_section_lookup_audio": "Pronunciation & feedback",
+  "settings_section_lookup_integrations": "External integrations",
+  "settings_section_lookup_clipboard": "Clipboard & global lookup",
+  "settings_section_lookup_content": "Entry content",
+  "settings_section_lookup_popup_window": "Popup window",
+  "settings_section_reader_chrome": "Reader interface",
+  "settings_section_page_turn_input": "Page turning & interaction",
+  "section_floating_lyric": "Floating lyric",
+  "settings_section_lookup_trigger": "Lookup trigger"
 }

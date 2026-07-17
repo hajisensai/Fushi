@@ -497,24 +497,12 @@ SettingsDestination buildReadingDestination() {
           ),
         ],
       ),
+      // 原「导航」13 项混杂平铺，拆两组：阅读界面（进度条/悬浮 chrome/底栏提示/
+      // 常亮）与翻页与交互（点击高亮/音量翻页/滚轮/滑动灵敏度）。纯展示重组：
+      // item id、持久化 key、ReaderPlacement 全部不变（快捷面板分组不动）。
       SettingsSection(
-        title: t.section_navigation,
+        title: t.settings_section_reader_chrome,
         items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'reading_controls.highlight_on_tap',
-            title: t.highlight_on_tap,
-            icon: Icons.touch_app_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 0,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.highlightOnTap,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.readerSource.toggleHighlightOnTap();
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
           SettingsSwitchItem(
             id: 'reading_controls.show_top_progress_bar',
             title: t.show_top_progress_bar,
@@ -651,6 +639,38 @@ SettingsDestination buildReadingDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'reading_controls.keep_screen_awake',
+            title: t.keep_screen_awake,
+            icon: Icons.lightbulb_outline,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 7,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.keepScreenAwake,
+            onChanged: setKeepScreenAwake,
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.settings_section_page_turn_input,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'reading_controls.highlight_on_tap',
+            title: t.highlight_on_tap,
+            icon: Icons.touch_app_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 0,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.highlightOnTap,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleHighlightOnTap();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          SettingsSwitchItem(
             id: 'reading_controls.volume_page_turning',
             title: t.volume_button_page_turning,
             // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
@@ -709,18 +729,6 @@ SettingsDestination buildReadingDestination() {
                   .setSwipePageTurnSensitivity(value);
               notifyReaderSettingsChanged(settingsContext);
             },
-          ),
-          SettingsSwitchItem(
-            id: 'reading_controls.keep_screen_awake',
-            title: t.keep_screen_awake,
-            icon: Icons.lightbulb_outline,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 7,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.keepScreenAwake,
-            onChanged: setKeepScreenAwake,
           ),
         ],
       ),

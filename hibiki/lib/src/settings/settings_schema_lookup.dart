@@ -178,8 +178,11 @@ SettingsDestination buildLookupDestination() {
           ),
         ],
       ),
+      // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
+      // 剪贴板与全局查词 / 朗读与反馈。纯展示重组：item id、持久化 key、
+      // onChanged、ReaderPlacement 全部不变。
       SettingsSection(
-        title: t.settings_section_lookup_behavior,
+        title: t.settings_section_lookup_trigger,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.auto_search',
@@ -207,6 +210,45 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // TODO-756b：“鼠标悬停即自动查词”。开启后无需按住 Shift，鼠标悬停在字幕/正文
+          // 字符上即查词（与 TODO-756a 的 Shift-悬停同链路）；关闭退回 756a 的 Shift+悬停。
+          // 悬停是桌面鼠标行为、移动端无 OS hover，故仅桌面显示（DesktopLookupService.isDesktop）。
+          SettingsSwitchItem(
+            id: 'lookup.hover_auto_lookup',
+            title: t.hover_auto_lookup,
+            subtitle: t.hover_auto_lookup_hint,
+            icon: Icons.ads_click_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 5,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.hoverAutoLookup,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource
+                  .setHoverAutoLookup(value: value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          SettingsCustomItem(
+            id: 'lookup.auto_search_debounce_delay',
+            icon: Icons.timer_outlined,
+            builder: _buildSearchDebounceField,
+          ),
+          SettingsCustomItem(
+            id: 'lookup.maximum_terms',
+            icon: Icons.format_list_numbered_outlined,
+            builder: _buildMaximumTermsField,
+          ),
+        ],
+      ),
+      // 外部集成：远程查词 / Yomitan API / texthooker——都是「让别的程序或设备
+      // 参与查词」的接线项，与本机查词触发行为分开。
+      SettingsSection(
+        title: t.settings_section_lookup_integrations,
+        items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.remote_lookup',
             title: t.remote_dict_lookup,
@@ -277,6 +319,13 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+        ],
+      ),
+      // 剪贴板与全局查词：桌面剪贴板监听全家桶（总开关 + 去向/窗口模式/不透明度）
+      // 和 app 外全局查词的上下文抓取，仅桌面平台可见的一整条链路。
+      SettingsSection(
+        title: t.settings_section_lookup_clipboard,
+        items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.desktop_clipboard',
             title: t.desktop_clipboard_enabled,
@@ -504,6 +553,12 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+        ],
+      ),
+      // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
+      SettingsSection(
+        title: t.settings_section_lookup_audio,
+        items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
@@ -558,86 +613,13 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
-          // TODO-756b：“鼠标悬停即自动查词”。开启后无需按住 Shift，鼠标悬停在字幕/正文
-          // 字符上即查词（与 TODO-756a 的 Shift-悬停同链路）；关闭退回 756a 的 Shift+悬停。
-          // 悬停是桌面鼠标行为、移动端无 OS hover，故仅桌面显示（DesktopLookupService.isDesktop）。
-          SettingsSwitchItem(
-            id: 'lookup.hover_auto_lookup',
-            title: t.hover_auto_lookup,
-            subtitle: t.hover_auto_lookup_hint,
-            icon: Icons.ads_click_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 5,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.hoverAutoLookup,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource
-                  .setHoverAutoLookup(value: value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗的手势
-          // 行为，归「查词」分组（与查词朗读/暂停/音量并列），同时出现在阅读器快捷设置
-          // 的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让桌面在
-          // 弹窗正文区（全屏 barrier）水平拖过阈关一层（TODO-716，对齐手机手势）。
-          // Windows/Linux 默认关闭（鼠标框选正文与滑动手势同形易误触），其余平台默认
-          // 开启；任何平台均可用弹窗顶栏的 X 关闭。
-          SettingsSwitchItem(
-            id: 'reading_controls.enable_swipe_to_close',
-            title: t.enable_swipe_to_close,
-            icon: Icons.swipe_left_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 3,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.enableSwipeToClose,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setEnableSwipeToClose(value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          // TODO-625：滑动关闭的灵敏度阈值，与上面的"允许水平滑动关闭查词弹窗"开关
-          // 配套，同属查词弹窗手势行为（ReaderGroup.lookup，紧邻开关），与开关相邻摆放。
-          // id/偏好 key 沿用 'reading_controls.' 前缀作向后兼容（持久化无关展示分类）。
-          SettingsSliderItem(
-            id: 'reading_controls.dismiss_swipe_sensitivity',
-            title: t.dismiss_swipe_sensitivity,
-            icon: Icons.swipe_down_outlined,
-            min: 0.1,
-            max: 1,
-            divisions: 9,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 4,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.dismissSwipeSensitivity,
-            label: (double value) => value.toStringAsFixed(1),
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.readerSource
-                  .setDismissSwipeSensitivity(value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          SettingsCustomItem(
-            id: 'lookup.auto_search_debounce_delay',
-            icon: Icons.timer_outlined,
-            builder: _buildSearchDebounceField,
-          ),
-          SettingsCustomItem(
-            id: 'lookup.maximum_terms',
-            icon: Icons.format_list_numbered_outlined,
-            builder: _buildMaximumTermsField,
-          ),
         ],
       ),
+      // 原「查词显示」17 项拆两组：词条内容（词典结果怎么渲染）/ 弹窗窗口
+      //（弹窗容器的尺寸与交互，含从行为区移来的滑动关闭手势对——它们改的是
+      // 弹窗窗口的关闭手势，与尺寸/停靠为伍）。
       SettingsSection(
-        title: t.settings_section_lookup_display,
+        title: t.settings_section_lookup_content,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.collapse_dictionaries',
@@ -735,6 +717,11 @@ SettingsDestination buildLookupDestination() {
             icon: Icons.format_size,
             builder: _buildDictionaryFontSizeField,
           ),
+        ],
+      ),
+      SettingsSection(
+        title: t.settings_section_lookup_popup_window,
+        items: <SettingsItem>[
           SettingsSliderItem(
             id: 'lookup.popup_max_width',
             // TODO-1352: 放宽查词弹窗最大宽度的强制上限（1000→2000），让宽屏 / 4K 下
@@ -891,6 +878,50 @@ SettingsDestination buildLookupDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setPopupBottomDocked(value);
               settingsContext.refresh();
+            },
+          ),
+          // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗窗口的
+          // 关闭手势，与弹窗尺寸/停靠同组；同时经 ReaderPlacement 出现在阅读器快捷
+          // 设置的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让
+          // 桌面在弹窗正文区（全屏 barrier）水平拖过阈关一层（TODO-716，对齐手机手势）。
+          // Windows/Linux 默认关闭（鼠标框选正文与滑动手势同形易误触），其余平台默认
+          // 开启；任何平台均可用弹窗顶栏的 X 关闭。
+          SettingsSwitchItem(
+            id: 'reading_controls.enable_swipe_to_close',
+            title: t.enable_swipe_to_close,
+            icon: Icons.swipe_left_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 3,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.enableSwipeToClose,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setEnableSwipeToClose(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // TODO-625：滑动关闭的灵敏度阈值，与上面的"允许水平滑动关闭查词弹窗"开关
+          // 配套，同属查词弹窗手势行为（ReaderGroup.lookup，紧邻开关），与开关相邻摆放。
+          // id/偏好 key 沿用 'reading_controls.' 前缀作向后兼容（持久化无关展示分类）。
+          SettingsSliderItem(
+            id: 'reading_controls.dismiss_swipe_sensitivity',
+            title: t.dismiss_swipe_sensitivity,
+            icon: Icons.swipe_down_outlined,
+            min: 0.1,
+            max: 1,
+            divisions: 9,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 4,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.dismissSwipeSensitivity,
+            label: (double value) => value.toStringAsFixed(1),
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.readerSource
+                  .setDismissSwipeSensitivity(value);
+              notifyReaderSettingsChanged(settingsContext);
             },
           ),
         ],

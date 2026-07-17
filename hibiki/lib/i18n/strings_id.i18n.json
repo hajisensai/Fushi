@@ -644,8 +644,6 @@
   "settings_destination_sync_backup": "Sinkronisasi & Cadangan (Eksperimental)",
   "settings_destination_system": "Sistem",
   "settings_section_app_shell": "Aplikasi",
-  "settings_section_lookup_behavior": "Perilaku Pencarian",
-  "settings_section_lookup_display": "Tampilan Hasil",
   "settings_section_update_channel": "Saluran Pembaruan",
   "spread_auto": "Otomatis",
   "spread_direction": "Arah Bentangan",
@@ -1918,5 +1916,14 @@
   "changelog_open_releases": "Open releases page",
   "changelog_prerelease": "Prerelease",
   "collection_clear_scope": "Clear scope",
-  "collection_clear_confirm": "Permanently delete the selected collections? This can't be undone."
+  "collection_clear_confirm": "Permanently delete the selected collections? This can't be undone.",
+  "settings_section_lookup_audio": "Pronunciation & feedback",
+  "settings_section_lookup_integrations": "External integrations",
+  "settings_section_lookup_clipboard": "Clipboard & global lookup",
+  "settings_section_lookup_content": "Entry content",
+  "settings_section_lookup_popup_window": "Popup window",
+  "settings_section_reader_chrome": "Reader interface",
+  "settings_section_page_turn_input": "Page turning & interaction",
+  "section_floating_lyric": "Floating lyric",
+  "settings_section_lookup_trigger": "Lookup trigger"
 }
