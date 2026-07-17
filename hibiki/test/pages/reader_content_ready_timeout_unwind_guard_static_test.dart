@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-867 源码守卫：打开 EPUB 偶发「看似打开、翻页永久失效、进度不保存」。
+/// BUG-868 源码守卫：打开 EPUB 偶发「看似打开、翻页永久失效、进度不保存」。
 ///
 /// 根因 = 内容就绪兜底看门狗 `_startContentReadyTimeout` 的超时回调只翻
 /// `_readerContentReady = true` 摘掉遮罩，却漏了复位导航态

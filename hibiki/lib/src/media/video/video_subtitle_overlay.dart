@@ -1496,8 +1496,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final SubtitleSpan? span = _spanAt(i, markup);
 
     // 基线字体 / 颜色 / 字号：respect 时先叠 cueStyle（V4+ Styles）默认，否则恒用户统一样式。
-    final String? baseFontFamily =
-        (respect ? cue?.fontName : null) ?? widget.fontFamily;
+    // ASS Fontname 是 GDI 全名（家族+字重后缀）：先解析成真实可用的家族名+字重覆盖
+    // （[_resolveAssFontFamily]，装了字幕字体就真用它——与 libass/PotPlayer 行为对齐）；
+    // 解析不到（未装）沿用原名字符串进回退链（历史行为，CJK 链兜底）。
+    final ({String family, FontWeight? weight})? resolvedBase =
+        respect ? _resolveAssFontFamily(cue?.fontName) : null;
+    final String? baseFontFamily = resolvedBase?.family ??
+        (respect ? cue?.fontName : null) ??
+        widget.fontFamily;
     final Color baseColor = (respect && cue?.primaryColorArgb != null)
         ? Color(cue!.primaryColorArgb!)
         : (widget.textColor ?? Theme.of(context).colorScheme.onSurface);
@@ -1510,9 +1516,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 合成假粗体（Fontname 多半未安装 → 回退字体再被 fake-bold），笔画变粗变宽、
     // 细描边被吞，观感与 mpv（同缺字体但按 Bold=0 常规渲染）差异巨大——用户报
     // 「字号/描边没尊重 ASS」的真凶。无 cueStyle（非 ASS / 样式失配）才用统一字重。
-    final FontWeight baseWeight = (respect && cue != null)
-        ? ((cue.bold ?? false) ? FontWeight.bold : FontWeight.normal)
-        : _fontWeight(widget.fontWeight);
+    // 字重：真字体的命名面字重（如 `... B` → w700）优先——那正是作者点名的面；其次
+    // ASS Bold 语义（BUG-819：Bold=0 恒常规，不吃统一字重防假粗体）；无 cueStyle 才
+    // 回退用户统一字重。
+    final FontWeight baseWeight = resolvedBase?.weight ??
+        ((respect && cue != null)
+            ? ((cue.bold ?? false) ? FontWeight.bold : FontWeight.normal)
+            : _fontWeight(widget.fontWeight));
     final bool baseItalic = respect && (cue?.italic ?? false);
     // ASS 字号 → em：先按 PlayRes 占比缩放，再按字体 cell/em 系数校准
     // （libass REAL_DIM 语义，见 [_assFontSizeToEm]），最后夹上限。
@@ -1553,8 +1563,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final List<TextDecoration> decos = <TextDecoration>[];
     if (span.underline) decos.add(TextDecoration.underline);
     if (span.strike) decos.add(TextDecoration.lineThrough);
-    // 行内 \fn 字体（respect 时）：优先于 base 的 cue 字体 / 统一字体。
-    final String? spanFontFamily = (respect ? span.fontName : null);
+    // 行内 \fn 字体（respect 时）：优先于 base 的 cue 字体 / 统一字体；同样先按 GDI
+    // 全名解析成真实家族（装了就用真字体）。
+    final ({String family, FontWeight? weight})? resolvedSpan =
+        respect ? _resolveAssFontFamily(span.fontName) : null;
+    final String? spanFontFamily =
+        resolvedSpan?.family ?? (respect ? span.fontName : null);
     // \1a/\alpha 主填充透明度（respect 时）：施于最终生效的填充色（行内 \c 优先，否则
     // 基线色）。多层卡拉 OK 光晕层 `\1a&HFF&` 抹透明填充、只留模糊描边成辉光；描边层
     // 由 [_buildSubtitleChar] 单独构建，不受本透明度影响（ASS \1a 仅主填充语义）。
@@ -1566,7 +1580,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final TextStyle merged = base.copyWith(
       fontFamily: spanFontFamily,
       fontStyle: span.italic ? FontStyle.italic : null,
-      fontWeight: span.bold ? FontWeight.bold : null,
+      fontWeight: resolvedSpan?.weight ?? (span.bold ? FontWeight.bold : null),
       color: spanColor,
       // 行内 \fsp 字间距（respect 时）覆盖样式表 Spacing，与字号同源缩放。
       letterSpacing: (respect && span.letterSpacingPx != null)
@@ -1680,6 +1694,59 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       return 1.0;
     }
     return displayH / playResY;
+  }
+
+  /// 字体存在性探测缓存：key=family，value=是否解析到真实字体（而非引擎默认回退）。
+  final Map<String, bool> _fontExistsCache = <String, bool>{};
+
+  /// [family] 是否真实存在（Skia 能解析出该家族，而非落到引擎默认字体）。
+  ///
+  /// Flutter 无系统字体枚举 API，用双测量近似：同一探针串分别以 [family] 与一个必不
+  /// 存在的哨兵家族测量（都**不带**回退链），全部度量（宽/高）一致 → 判定 [family]
+  /// 缺失（两者都落到引擎默认字体）。任一度量不同 → 存在。极小概率误判（真字体与
+  /// 引擎默认度量完全一致），后果只是沿用现状回退，安全。测试环境（FlutterTest 所有
+  /// 家族同字体）恒判缺失 → 走既有回退路径，既有测试像素不变。
+  bool _fontFamilyExists(String family) {
+    return _fontExistsCache.putIfAbsent(family, () {
+      (double, double) measure(String? fam) {
+        final TextPainter tp = TextPainter(
+          text: TextSpan(
+            text: 'あ永Aw1。',
+            style: TextStyle(fontSize: 100, fontFamily: fam),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final double w = tp.width;
+        final double h = tp.height;
+        tp.dispose();
+        return (w, h);
+      }
+
+      final (double w1, double h1) = measure(family);
+      final (double w2, double h2) = measure('HibikiNoSuchFontSentinel7f3a');
+      return (w1 - w2).abs() > 0.25 || (h1 - h2).abs() > 0.25;
+    });
+  }
+
+  /// 解析 ASS `Fontname` 到「可解析的 Flutter 家族名 + 字重覆盖」。
+  ///
+  /// ASS 存的是 GDI **全名**（家族+字重后缀，如 `FOT-Matisse ProN B` = 家族
+  /// `FOT-Matisse ProN` 的 Bold 面；libass/GDI/PotPlayer 按全名解析）；Flutter
+  /// `fontFamily` 需要 DirectWrite **家族名**——全名查不到就静默掉进回退链，用户装了
+  /// 字体也不生效（本修复的用户报告）。顺序尝试：①原名（有些字体全名即家族名注册）
+  /// ②剥尾部字重后缀（B/DB/EB/H/L/UL/M/R/Bold/Light/…/W\d+）后的家族名+映射字重。
+  /// 找不到返回 null（调用方沿用统一回退链与 cueStyle 字重语义，BUG-819 不回归）。
+  ({String family, FontWeight? weight})? _resolveAssFontFamily(String? name) {
+    if (name == null || name.isEmpty) return null;
+    String base = name.startsWith('@') ? name.substring(1) : name;
+    if (_fontFamilyExists(base)) return (family: base, weight: null);
+    final int sp = base.lastIndexOf(' ');
+    if (sp <= 0) return null;
+    final FontWeight? w = assFontWeightFromSuffix(base.substring(sp + 1));
+    if (w == null) return null;
+    final String fam = base.substring(0, sp).trimRight();
+    if (fam.isEmpty || !_fontFamilyExists(fam)) return null;
+    return (family: fam, weight: w);
   }
 
   /// libass/VSFilter 的字号语义（`FT_SIZE_REQUEST_TYPE_REAL_DIM`）：ASS `Fontsize`
@@ -1892,6 +1959,32 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final Offset topLeft = ro.localToGlobal(Offset.zero);
     return topLeft & ro.size;
   }
+}
+
+/// GDI 全名尾部**字重后缀** → [FontWeight]；不是字重后缀返回 null。纯函数可单测。
+/// 覆盖日本字厂惯用后缀（B/DB/EB/H/L/UL/M/R）与 W1..W9 数字权（森泽/フォントワークス）。
+@visibleForTesting
+FontWeight? assFontWeightFromSuffix(String suffix) {
+  return switch (suffix.toUpperCase()) {
+    'B' || 'BOLD' => FontWeight.w700,
+    'DB' || 'SB' || 'SEMIBOLD' || 'DEMIBOLD' => FontWeight.w600,
+    'EB' || 'EXTRABOLD' || 'H' || 'HEAVY' || 'BLACK' => FontWeight.w800,
+    'U' || 'UB' || 'ULTRA' => FontWeight.w900,
+    'M' || 'MEDIUM' => FontWeight.w500,
+    'R' || 'REGULAR' || 'NORMAL' => FontWeight.w400,
+    'L' || 'LIGHT' => FontWeight.w300,
+    'EL' || 'UL' || 'THIN' => FontWeight.w200,
+    _ => switch (RegExp(r'^[Ww](\d)$').firstMatch(suffix)?.group(1)) {
+        '1' || '2' => FontWeight.w200,
+        '3' => FontWeight.w300,
+        '4' => FontWeight.w400,
+        '5' => FontWeight.w500,
+        '6' => FontWeight.w600,
+        '7' => FontWeight.w700,
+        '8' || '9' => FontWeight.w800,
+        _ => null,
+      },
+  };
 }
 
 /// ASS `\clip`/`\iclip` 的 [CustomClipper]：把 [SubtitleClip] 的归一化分数路径映射到

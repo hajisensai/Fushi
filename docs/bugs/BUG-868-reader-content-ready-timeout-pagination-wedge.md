@@ -1,4 +1,4 @@
-## BUG-867 · 开EPUB偶发卡住·内容就绪兜底超时漏复位导航态致翻页永久失效
+## BUG-868 · 开EPUB偶发卡住·内容就绪兜底超时漏复位导航态致翻页永久失效
 
 - **报告**：2026-07-17（用户：）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/reader_hibiki/navigation.part.dart:41-58`（`_startContentReadyTimeout` 超时回调）+ `chrome.part.dart:39-40`（`_paginationInFlight` getter）。
