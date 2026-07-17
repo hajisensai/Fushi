@@ -163,6 +163,22 @@ void main() {
       expect(j['popupJson'], contains('走る'));
     });
 
+    test('/api/extension/status identifies Hibiki on the configured port',
+        () async {
+      await startServer(apiKey: 'k123');
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/extension/status',
+        <String, dynamic>{},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      final Map<String, dynamic> j = await _json(resp);
+      expect(j['app'], 'hibiki');
+      expect(j['ready'], true);
+      expect(j['port'], server.port);
+    });
+
     test('popupOnly returns only bestLength while default keeps full result',
         () async {
       await startServer(apiKey: 'k123');

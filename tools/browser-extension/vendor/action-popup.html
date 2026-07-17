@@ -90,6 +90,25 @@
     }
     .hp-del:hover { background: rgba(211, 47, 47, 0.85); color: #fff; opacity: 1; }
     .hp-empty { padding: 20px 14px 24px; text-align: center; opacity: 0.6; }
+    .hp-connection {
+      display: grid;
+      grid-template-columns: 9px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      margin: 0 14px 10px;
+      padding: 9px 10px;
+      border: 1px solid rgba(128, 128, 128, 0.25);
+      border-radius: 8px;
+      background: rgba(128, 128, 128, 0.08);
+    }
+    .hp-connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #d49a42; }
+    .hp-connection[data-tone="good"] .hp-connection-dot { background: #78c79f; }
+    .hp-connection[data-tone="danger"] .hp-connection-dot { background: #e06f68; }
+    .hp-connection-copy { min-width: 0; }
+    .hp-connection-title { display: block; overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .hp-connection-detail { display: block; overflow: hidden; margin-top: 1px; opacity: .55; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .hp-settings-link { border: 0; padding: 4px; color: inherit; background: transparent; cursor: pointer; opacity: .72; }
+    .hp-settings-link:hover { opacity: 1; }
     /* TODO-1219：网飞字幕列表面板开关（扩展弹窗入口，方案 B）。独立页脚区，不属于上方 1270 制卡队列。 */
     .hp-settings { border-top: 1px solid rgba(128, 128, 128, 0.22); padding: 10px 14px 12px; }
     .hp-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -103,6 +122,14 @@
     <span class="hp-title">Hibiki 制卡队列</span>
     <span class="hp-count" id="hp-count"></span>
   </div>
+  <div class="hp-connection" id="hp-connection" data-tone="loading" title="点击齿轮打开完整设置">
+    <span class="hp-connection-dot" aria-hidden="true"></span>
+    <span class="hp-connection-copy">
+      <span class="hp-connection-title" id="hp-connection-title">正在检测 Hibiki…</span>
+      <span class="hp-connection-detail" id="hp-connection-detail">查词与字幕服务</span>
+    </span>
+    <button class="hp-settings-link" id="hp-open-options" type="button" title="打开扩展设置" aria-label="打开扩展设置">⚙</button>
+  </div>
   <button class="hp-gen" id="hp-gen" type="button">开始生成 / 录制</button>
   <div class="hp-list" id="hp-list"></div>
   <div class="hp-settings">
@@ -112,6 +139,7 @@
     </label>
     <div class="hp-toggle-hint">面板在视频播放页侧栏（网飞整集 · 其他站点实时采集）</div>
   </div>
+  <script src="../connection-diagnostics.js"></script>
   <script src="action-popup.js"></script>
 </body>
 </html>

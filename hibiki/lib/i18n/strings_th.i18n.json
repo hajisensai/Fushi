@@ -1933,5 +1933,6 @@
   "interconnect_section_client": "Connect to other devices",
   "interconnect_moved_note": "Connection & server settings are in the Hibiki Interconnect category",
   "settings_search_hint": "Search settings",
-  "settings_search_no_results": "No matching settings"
+  "settings_search_no_results": "No matching settings",
+  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki."
 }

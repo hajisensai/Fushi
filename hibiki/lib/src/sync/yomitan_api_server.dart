@@ -222,6 +222,12 @@ class YomitanApiServer {
         return _handleDuplicate(request);
       case '/api/extension/popup-size':
         return _handleExtensionPopupSize(request);
+      case '/api/extension/status':
+        return _json(<String, dynamic>{
+          'app': 'hibiki',
+          'ready': true,
+          'port': port,
+        });
       case '/api/youtube/captions':
         return _handleYoutubeCaptions(request);
       case '/api/subtitle/parse':
