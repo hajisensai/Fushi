@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 853 条。点号进各自文件。
+> 共 854 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-873](bugs/BUG-873-macos-trafficlight-overlap.md) | ✅ | ✅ | macOS 交通灯按钮与顶部导航/返回按钮重叠 |
 | [BUG-872](bugs/BUG-872-update-channel-pingpong.md) | ✅ | ✅ | 调试版与正式版来回更新 |
 | [BUG-871](bugs/BUG-871-win-touch-popup-scroll-primary.md) | ✅ | ✅ | Windows 触屏手指滑不动查词弹窗：注入触点缺 POINTER_FLAG_PRIMARY |
 | [BUG-870](bugs/BUG-870-popup-touchpad-scroll-native.md) | ✅ | ✅ | 查词弹窗触控板滚不动 / 很难滚：native sendScroll 无残差截断 + JS 0.24 过度降速 |

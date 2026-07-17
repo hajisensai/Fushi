@@ -717,6 +717,12 @@ class _HomePageState extends BasePageState<HomePage>
       return Scaffold(
         resizeToAvoidBottomInset: false,
         body: SafeArea(
+          // macOS 透明标题栏 + full-size content view 下，交通灯不计入
+          // MediaQuery.padding，返回箭头会被压在按钮下方。预留标题栏高度作为
+          // SafeArea 下限，让顶部内容整体让位（BUG-869）。其它平台 top=0 无影响。
+          minimum: EdgeInsets.only(
+            top: Platform.isMacOS ? kMacTitleBarHeight : 0,
+          ),
           child: FocusTraversalGroup(
             child: _buildSettingsTabContent(showBackButton: true),
           ),
@@ -746,6 +752,12 @@ class _HomePageState extends BasePageState<HomePage>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: SafeArea(
+        // macOS 交通灯保留带：透明标题栏 + full-size content view 下交通灯不计入
+        // SafeArea，导航 rail 顶部会被红黄绿按钮压住。预留标题栏高度作为下限，
+        // 把整行内容下移一条标题栏（BUG-869）。其它平台 top=0，零影响。
+        minimum: EdgeInsets.only(
+          top: Platform.isMacOS ? kMacTitleBarHeight : 0,
+        ),
         // Two traversal groups so Tab / Shift+Tab walk each region as one block
         // in visual order (whole rail, then whole content) instead of zig-zagging
         // between the rail and the content pane row-by-row.
