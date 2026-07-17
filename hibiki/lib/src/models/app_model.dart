@@ -41,6 +41,10 @@ import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/media/torrent/anime_download_config.dart';
+import 'package:hibiki/src/media/torrent/anime_download_importer.dart';
+import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
+import 'package:hibiki/src/media/torrent/anime_download_service.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -2079,6 +2083,13 @@ class AppModel with ChangeNotifier {
         ErrorLogService.instance
             .log('AppModel.maybeAutoUpdateDictionaries', e, s);
       }));
+      // 番剧下载：启动 qb 完成监听 + 自动入库（fire-and-forget；未配置 qb 时每
+      // tick 直接返回，无网络开销，绝不阻塞/中断 init）。
+      unawaited(
+          startAnimeDownloadService().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance
+            .log('AppModel.startAnimeDownloadService', e, s);
+      }));
       notifyListeners();
     } on HibikiDatabaseDowngradeException catch (e, stack) {
       // The DB is newer than this build. drift refused to open it WITHOUT
@@ -2729,6 +2740,35 @@ class AppModel with ChangeNotifier {
   String get jimakuApiKey => prefsRepo.jimakuApiKey;
 
   Future<void> setJimakuApiKey(String key) => prefsRepo.setJimakuApiKey(key);
+
+  /// qBittorrent WebUI 连接配置（番剧下载）；null = 未配置未启用。
+  QbConnectionConfig? get qbConnectionConfig => prefsRepo.qbConnectionConfig;
+
+  Future<void> setQbConnectionConfig(QbConnectionConfig? config) =>
+      prefsRepo.setQbConnectionConfig(config);
+
+  /// 番剧下载：计划存储（选种对话框写计划/暂存字幕，与完成监听服务共用同一实例）。
+  AnimeDownloadPlanStore? _animeDownloadPlanStore;
+  AnimeDownloadPlanStore? get animeDownloadPlanStore => _animeDownloadPlanStore;
+
+  /// 番剧下载：qb 完成监听 + 自动入库服务（app 生命周期常驻；未配置时每 tick 空转）。
+  AnimeDownloadService? _animeDownloadService;
+  AnimeDownloadService? get animeDownloadService => _animeDownloadService;
+
+  /// 启动番剧下载完成监听。幂等（重复调用不重建）；失败由调用方记日志，不破坏 init。
+  Future<void> startAnimeDownloadService() async {
+    if (_animeDownloadService != null) return;
+    final Directory baseDir =
+        await AppPaths.documentsSubdirectory('anime_downloads');
+    final AnimeDownloadPlanStore store =
+        AnimeDownloadPlanStore(baseDir: baseDir);
+    _animeDownloadPlanStore = store;
+    _animeDownloadService = AnimeDownloadService(
+      store: store,
+      configProvider: () => prefsRepo.qbConnectionConfig,
+      importer: buildAnimeDownloadImporter(database),
+    )..start();
+  }
 
   /// 每系列记住的 Jimaku 字幕语言偏好（TODO-674）。
   Map<String, String> get jimakuPreferredLanguages =>

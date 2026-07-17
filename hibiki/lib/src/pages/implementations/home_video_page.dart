@@ -26,6 +26,7 @@ import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
 import 'package:hibiki/src/media/collections/batch_combine.dart';
@@ -701,6 +702,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       builder: (_) => VideoImportDialog(repo: widget.repo),
     );
     if (bookUid != null) _refresh();
+  }
+
+  /// 打开「番剧下载」选种对话框。关闭后刷新列表（完成钩子可能已自动入库新视频，
+  /// 「边下边播」也会立即入库）。
+  Future<void> _openAnimeDownload() async {
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => const AnimeDownloadDialog(),
+    );
+    if (mounted) _refresh();
   }
 
   /// 打开「管理来源」对话框（视频来源库）。关闭后刷新列表（扫描可能新增视频）。
@@ -2395,6 +2406,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             label: t.video_import_action,
             icon: Icons.add,
             onTap: _openImport,
+          ),
+        if (canImport)
+          HibikiIconButton(
+            tooltip: t.anime_download_title,
+            label: t.anime_download_title,
+            icon: Icons.travel_explore,
+            onTap: _openAnimeDownload,
           ),
         if (canImport)
           HibikiIconButton(

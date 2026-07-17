@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -920,6 +921,20 @@ class PreferencesRepository extends ChangeNotifier {
   Future<void> setVideoDanmakuConfig(DandanplayConfig config) async {
     DandanplayConfig.current = config;
     await setPref('video_danmaku_config', DandanplayConfig.encode(config));
+    notifyListeners();
+  }
+
+  /// qBittorrent WebUI 连接配置（地址/账密/分类，JSON；见 [QbConnectionConfig]）。
+  /// 番剧下载走外部 qb 实例，本配置为空视为功能未启用。
+  QbConnectionConfig? get qbConnectionConfig => decodeQbConnectionConfig(
+        getPref('qb_connection_config', defaultValue: '') as String,
+      );
+
+  Future<void> setQbConnectionConfig(QbConnectionConfig? config) async {
+    await setPref(
+      'qb_connection_config',
+      config == null ? '' : encodeQbConnectionConfig(config),
+    );
     notifyListeners();
   }
 

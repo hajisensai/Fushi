@@ -9,6 +9,9 @@ class AniListMedia {
     this.romaji,
     this.english,
     this.native,
+    this.coverUrl,
+    this.episodes,
+    this.seasonYear,
   });
 
   /// AniList 媒体 id（用于到 Jimaku 按 anilist_id 查字幕）。
@@ -16,6 +19,15 @@ class AniListMedia {
   final String? romaji;
   final String? english;
   final String? native;
+
+  /// 封面图 URL（`coverImage.large`）；旧响应/缺字段为 null。
+  final String? coverUrl;
+
+  /// 总集数（连载中/未知为 null）。
+  final int? episodes;
+
+  /// 放送年份（未知为 null），搜番消歧显示用。
+  final int? seasonYear;
 
   /// 菜单显示用标题：优先罗马字 → 英文 → 日文 → id。
   String get displayTitle => (romaji?.isNotEmpty ?? false)
@@ -45,11 +57,15 @@ List<AniListMedia> parseAniListSearchResponse(String body) {
       final dynamic id = m['id'];
       if (id is! int) continue;
       final dynamic title = m['title'];
+      final dynamic cover = m['coverImage'];
       out.add(AniListMedia(
         id: id,
         romaji: title is Map ? title['romaji'] as String? : null,
         english: title is Map ? title['english'] as String? : null,
         native: title is Map ? title['native'] as String? : null,
+        coverUrl: cover is Map ? cover['large'] as String? : null,
+        episodes: m['episodes'] is int ? m['episodes'] as int : null,
+        seasonYear: m['seasonYear'] is int ? m['seasonYear'] as int : null,
       ));
     }
     return out;
@@ -71,6 +87,9 @@ query ($search: String) {
     media(search: $search, type: ANIME) {
       id
       title { romaji english native }
+      coverImage { large }
+      episodes
+      seasonYear
     }
   }
 }''';
