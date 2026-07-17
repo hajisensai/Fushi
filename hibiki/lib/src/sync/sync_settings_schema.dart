@@ -112,40 +112,18 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _SftpConfigWidget(settingsContext: ctx),
           ),
+          // 互联的 client 连接配置 / LAN 发现 / 本机作为服务器已整体拆到独立的
+          // 「Hibiki 互联」一级分类（buildInterconnectDestination，本库同文件）。
+          // 选中互联后端时这里只留一行指引，避免用户在同步页找不到配置入口。
           SettingsCustomItem(
-            id: 'sync.hibiki_server_config',
+            id: 'sync.interconnect_pointer',
             icon: Icons.devices_outlined,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType == SyncBackendType.hibikiServer,
-            builder: (SettingsContext ctx) =>
-                _HibikiServerConfigWidget(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
-            id: 'sync.lan_devices',
-            icon: Icons.wifi_find_outlined,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.hibikiServer,
-            builder: (SettingsContext ctx) =>
-                _LanDiscoveryWidget(settingsContext: ctx),
-          ),
-        ],
-      ),
-      // ── Group 2: This device as a sync server ─────────────────────────
-      // Hosting this device as a server is only meaningful for the Hibiki P2P
-      // interconnect ("Hibiki 互联") — the other backends sync your own data
-      // outward and never serve it. Gate the whole group on that backend so it
-      // matches the hibiki_server_config / lan_devices items in Group 1.
-      SettingsSection(
-        title: t.sync_section_host_server,
-        footer: t.sync_section_host_server_footer,
-        visible: (SettingsContext ctx) =>
-            _syncSettings(ctx).backendType == SyncBackendType.hibikiServer,
-        items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'sync.server_mode',
-            icon: Icons.router_outlined,
-            builder: (SettingsContext ctx) =>
-                _ServerModeWidget(settingsContext: ctx),
+            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
+              title: t.interconnect_moved_note,
+              icon: Icons.devices_outlined,
+            ),
           ),
         ],
       ),
@@ -348,6 +326,74 @@ SettingsDestination buildSyncBackupDestination() {
             visible: (SettingsContext ctx) => isDesktopPlatform,
             builder: (SettingsContext ctx) =>
                 _DataRootWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// Hibiki 互联独立一级分类：设备直连（client 连接配置 + LAN 发现）与本机作为
+/// 服务器（host 模式）。与 [buildSyncBackupDestination] 同库定义，共享
+/// `_syncSettings` 私有状态与全部互联 widget；配置区可见性仍以「互联被选为
+/// 同步方式」门控（与拆分前在同步分类内的行为一致，零行为变化），未启用时
+/// 只显示一行指引说明去哪里启用。
+SettingsDestination buildInterconnectDestination() {
+  bool interconnectActive(SettingsContext ctx) =>
+      _syncSettings(ctx).backendType == SyncBackendType.hibikiServer;
+  return SettingsDestination(
+    id: SettingsDestinationId.interconnect,
+    title: t.settings_destination_interconnect,
+    summary: t.interconnect_summary,
+    icon: Icons.devices_outlined,
+    sections: <SettingsSection>[
+      // 指引：互联未被选为同步方式时，配置区隐藏，说明启用入口。
+      SettingsSection(
+        visible: (SettingsContext ctx) => !interconnectActive(ctx),
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'interconnect.inactive_note',
+            icon: Icons.info_outline,
+            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
+              title: t.interconnect_inactive_note,
+              subtitle: t.interconnect_inactive_note_hint,
+              icon: Icons.info_outline,
+            ),
+          ),
+        ],
+      ),
+      // 连接到其他设备：client 连接配置（URL/token/配对）+ LAN 自动发现。
+      // item id 沿用 'sync.' 前缀（历史命名，非持久化 key，保持稳定便于排查）。
+      SettingsSection(
+        title: t.interconnect_section_client,
+        visible: interconnectActive,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.hibiki_server_config',
+            icon: Icons.devices_outlined,
+            builder: (SettingsContext ctx) =>
+                _HibikiServerConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.lan_devices',
+            icon: Icons.wifi_find_outlined,
+            builder: (SettingsContext ctx) =>
+                _LanDiscoveryWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
+      // 本机作为服务器：host 模式开关（与 client 角色互斥，见 _SyncSettingsState
+      // 的 roleRevision 互斥锁）。
+      SettingsSection(
+        title: t.sync_section_host_server,
+        footer: t.sync_section_host_server_footer,
+        visible: interconnectActive,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.server_mode',
+            icon: Icons.router_outlined,
+            builder: (SettingsContext ctx) =>
+                _ServerModeWidget(settingsContext: ctx),
           ),
         ],
       ),

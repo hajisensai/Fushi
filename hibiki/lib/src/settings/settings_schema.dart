@@ -22,6 +22,9 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
     buildVideoDestination(),
     buildListeningDestination(),
     buildSyncBackupDestination(),
+    // Hibiki 互联从同步分类拆出的独立一级分类（构建函数在 sync_settings_schema
+    // 同库，与同步共享私有状态）。
+    buildInterconnectDestination(),
     buildSystemDestination(),
   ];
 }

@@ -13,9 +13,16 @@ enum SettingsDestinationId {
   listening,
   syncBackup,
   system,
+  // Hibiki P2P 互联（设备直连 + 本机作为服务器）；从 syncBackup 拆出的
+  // 独立一级分类（构建函数在 sync_settings_schema.dart 同库，共享私有状态）。
+  interconnect,
   // Synthetic destination for the reader quick-settings dialog; its own id so
   // it never collides with the real reading destination (HBK-AUDIT-131).
   readerQuickSettings,
+  // Synthetic destination for the pushed app-icon sub-page
+  // (MiscellaneousSettingsPage)；own id so the shell no longer borrows
+  // `appearance` for content that isn't the appearance destination.
+  appIcon,
 }
 
 /// 书内快捷面板的分组维度，与全局 [SettingsDestinationId] 正交。

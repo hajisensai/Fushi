@@ -35,53 +35,42 @@ void main() {
         s.items.map((SettingsItem i) => i.id).toList();
 
     test(
-        'regroups into five intent-based sections + a desktop data-storage tail',
+        'regroups into four intent-based sections + a desktop data-storage tail',
         () {
-      // TODO-935 E2 appends a sixth, desktop-only "data storage location"
-      // section AFTER the original five so the index contract below (0..4)
-      // stays byte-for-byte intact (Never break userspace).
-      expect(dest.sections, hasLength(6));
+      // 互联（client 配置 / LAN 发现 / host 模式）已拆到独立的
+      // buildInterconnectDestination（见下方 group），同步分类剩：
+      // method / content / actions / backup + 桌面 data-storage 尾巴。
+      expect(dest.sections, hasLength(5));
       // The appended section is desktop-gated and carries only the data-root row.
-      expect(dest.sections[5].visible, isNotNull,
+      expect(dest.sections[4].visible, isNotNull,
           reason: 'data-storage section must be desktop-only gated');
-      expect(idsOf(dest.sections[5]), <String>['sync.data_storage_location']);
+      expect(idsOf(dest.sections[4]), <String>['sync.data_storage_location']);
     });
 
-    test('group 1 (sync method) holds selector + scoped account/config/LAN',
-        () {
+    test('group 1 (sync method) holds selector + scoped account/config', () {
       expect(idsOf(dest.sections[0]), <String>[
         'sync.mode',
         'sync.account_status',
         'sync.webdav_config',
         'sync.ftp_config',
         'sync.sftp_config',
-        'sync.hibiki_server_config',
-        'sync.lan_devices',
+        // 互联配置移出后留下的指引行（仅选中互联后端时可见）。
+        'sync.interconnect_pointer',
       ]);
     });
 
-    test('selector is unconditional; account + LAN are backend-gated', () {
+    test('selector is unconditional; account + interconnect pointer are gated',
+        () {
       final SettingsSection method = dest.sections[0];
       SettingsItem byId(String id) =>
           method.items.firstWhere((SettingsItem i) => i.id == id);
       expect(byId('sync.mode').visible, isNull);
       expect(byId('sync.account_status').visible, isNotNull);
-      expect(byId('sync.lan_devices').visible, isNotNull);
-    });
-
-    test('host-server group is standalone with an explanatory footer', () {
-      expect(dest.sections[1].footer, isNotNull);
-      expect(idsOf(dest.sections[1]), <String>['sync.server_mode']);
-    });
-
-    test('host-server group is backend-gated (Hibiki interconnect only)', () {
-      // Hosting only makes sense for the Hibiki P2P backend, so the whole
-      // section carries a visibility predicate instead of being always shown.
-      expect(dest.sections[1].visible, isNotNull);
+      expect(byId('sync.interconnect_pointer').visible, isNotNull);
     });
 
     test('content / actions / backup groups remain global', () {
-      expect(idsOf(dest.sections[2]), <String>[
+      expect(idsOf(dest.sections[1]), <String>[
         'sync.auto_sync',
         'sync.statistics',
         'sync.dictionary',
@@ -92,12 +81,12 @@ void main() {
         // 多端库联合视图（spec §2.1）：「显示远端条目」占位卡混排开关（纯显示偏好）。
         'sync.show_remote_entries',
       ]);
-      expect(idsOf(dest.sections[3]), <String>[
+      expect(idsOf(dest.sections[2]), <String>[
         'sync.server_mode_note',
         'sync.sync_now',
         'sync.compare',
       ]);
-      expect(idsOf(dest.sections[4]),
+      expect(idsOf(dest.sections[3]),
           <String>['sync.backup_export', 'sync.backup_import']);
     });
 
@@ -109,7 +98,7 @@ void main() {
       // host mode — same gate as sync_now / compare (BUG-084). The remaining
       // "what to sync" switches are content-scope settings that still apply to
       // client mode, so they stay unconditional (always shown).
-      final SettingsSection content = dest.sections[2];
+      final SettingsSection content = dest.sections[1];
       SettingsItem byId(String id) =>
           content.items.firstWhere((SettingsItem i) => i.id == id);
       expect(byId('sync.auto_sync').visible, isNotNull,
@@ -118,14 +107,20 @@ void main() {
         'sync.statistics',
         'sync.dictionary',
         'sync.local_audio',
-        'sync.content',
-        'sync.audiobook_files',
-        // 视频文件上传现在两条通道都实现（云后端 __videos__ 伪装资产；互联走 host 上传
-        // 端点 _syncVideosLive），故与其它「同步什么」开关一样全后端无条件可见。
-        'sync.video_files',
       ]) {
         expect(byId(id).visible, isNull,
             reason: '$id is a content-scope setting, global to every backend');
+      }
+      // a147a28ca：三个「上传X文件」开关都是 OUTBOUND——互联 host 无 outbound
+      // sync，host 模式下纯空转，随 auto_sync 的 !_isHostingInterconnect 门控隐藏
+      //（client 模式仍可见）。基底提交改了源码未同步本断言，这里按其意图更新。
+      for (final String id in <String>[
+        'sync.content',
+        'sync.audiobook_files',
+        'sync.video_files',
+      ]) {
+        expect(byId(id).visible, isNotNull,
+            reason: '$id is an outbound upload switch, hidden while hosting');
       }
     });
 
@@ -162,7 +157,7 @@ void main() {
       // A pure Hibiki host has no outbound sync, so "sync now" / "compare" must
       // be hidden in server mode and an explanatory note shown instead — every
       // one of the three carries a visibility predicate (none is unconditional).
-      final SettingsSection actions = dest.sections[3];
+      final SettingsSection actions = dest.sections[2];
       SettingsItem byId(String id) =>
           actions.items.firstWhere((SettingsItem i) => i.id == id);
       expect(byId('sync.sync_now').visible, isNotNull,
@@ -219,6 +214,35 @@ void main() {
           .map((SettingsItem i) => i.id)
           .toList();
       expect(allIds, isNot(contains('sync.smb_config')));
+    });
+  });
+
+  group('buildInterconnectDestination structure', () {
+    late SettingsDestination dest;
+    setUpAll(() => dest = buildInterconnectDestination());
+
+    List<String> idsOf(SettingsSection s) =>
+        s.items.map((SettingsItem i) => i.id).toList();
+
+    test('is its own top-level destination (not inside syncBackup)', () {
+      expect(dest.id, SettingsDestinationId.interconnect);
+      expect(dest.sections, hasLength(3));
+    });
+
+    test('inactive note + client config + host server, all backend-gated', () {
+      // 指引行只在互联未被选为同步方式时可见；两个配置区反向门控——
+      // 与拆分前在同步分类内 backendType == hibikiServer 的行为一致。
+      expect(idsOf(dest.sections[0]), <String>['interconnect.inactive_note']);
+      expect(dest.sections[0].visible, isNotNull);
+      expect(idsOf(dest.sections[1]),
+          <String>['sync.hibiki_server_config', 'sync.lan_devices']);
+      expect(dest.sections[1].visible, isNotNull);
+      expect(idsOf(dest.sections[2]), <String>['sync.server_mode']);
+      expect(dest.sections[2].visible, isNotNull);
+    });
+
+    test('host-server group keeps its explanatory footer', () {
+      expect(dest.sections[2].footer, isNotNull);
     });
   });
 }
