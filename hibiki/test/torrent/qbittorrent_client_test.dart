@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
+import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -316,7 +317,7 @@ void main() {
           return http.Response(body, 200);
         }),
       );
-      final List<QbTorrentInfo> infos =
+      final List<TorrentSnapshot> infos =
           await client.fetchTorrents(category: 'hibiki-anime');
       expect(infos, hasLength(1));
       expect(infos.first.hash, 'aaa111');
@@ -333,7 +334,7 @@ void main() {
       final String body = jsonEncode(<Map<String, dynamic>>[
         <String, dynamic>{'hash': 'h1', 'progress': 1, 'state': 'downloading'},
       ]);
-      final List<QbTorrentInfo> infos = parseQbTorrentInfos(body);
+      final List<TorrentSnapshot> infos = parseQbTorrentInfos(body);
       expect(infos.single.progress, 1.0);
     });
 
@@ -342,7 +343,7 @@ void main() {
       expect(parseQbTorrentInfos('{"a":1}'), isEmpty);
       expect(parseQbTorrentInfos('[1, "x", null]'), isEmpty);
       // 缺 hash 的条目跳过；其余字段缺省用安全默认值。
-      final List<QbTorrentInfo> infos =
+      final List<TorrentSnapshot> infos =
           parseQbTorrentInfos('[{"name":"no hash"},{"hash":"h2"}]');
       expect(infos, hasLength(1));
       expect(infos.single.hash, 'h2');
@@ -357,13 +358,13 @@ void main() {
     });
   });
 
-  group('QbTorrentInfo.isComplete', () {
-    QbTorrentInfo make({
+  group('TorrentSnapshot.isComplete', () {
+    TorrentSnapshot make({
       double progress = 0,
       String state = 'downloading',
       int amountLeft = -1,
     }) {
-      return QbTorrentInfo(
+      return TorrentSnapshot(
         hash: 'h',
         name: 'n',
         progress: progress,
@@ -430,7 +431,7 @@ void main() {
           return http.Response(body, 200);
         }),
       );
-      final List<QbTorrentFile> files =
+      final List<TorrentFileEntry> files =
           await client.fetchTorrentFiles('aaa111');
       expect(files, hasLength(2));
       expect(files.first.name, 'Season 01/EP01.mkv');
@@ -445,7 +446,7 @@ void main() {
     test('tolerates bad JSON and missing fields', () {
       expect(parseQbTorrentFiles('not json'), isEmpty);
       expect(parseQbTorrentFiles('{"a":1}'), isEmpty);
-      final List<QbTorrentFile> files =
+      final List<TorrentFileEntry> files =
           parseQbTorrentFiles('[{"size":1},{"name":"only-name.mkv"}]');
       expect(files, hasLength(1));
       expect(files.single.name, 'only-name.mkv');

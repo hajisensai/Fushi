@@ -10,7 +10,9 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
+import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
+import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 
 const String _kHash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -48,14 +50,14 @@ class _FakeQb {
     return http.Response('not found', 404);
   });
 
-  QBittorrentClient newClient(QbConnectionConfig config) {
+  TorrentBackend newBackend(QbConnectionConfig config) {
     factoryCalls++;
-    return QBittorrentClient(
+    return QbTorrentBackend(QBittorrentClient(
       baseUrl: config.baseUrl,
       username: config.username,
       password: config.password,
       client: mock,
-    );
+    ));
   }
 }
 
@@ -97,7 +99,7 @@ AnimeDownloadPlan _plan({
 void main() {
   group('resolveVideoAbsolutePaths', () {
     test('join savePath 并过滤视频扩展名', () {
-      const QbTorrentInfo info = QbTorrentInfo(
+      const TorrentSnapshot info = TorrentSnapshot(
         hash: _kHash,
         name: 'torrent',
         progress: 1,
@@ -107,12 +109,13 @@ void main() {
         amountLeft: 0,
       );
       final List<String> videos =
-          resolveVideoAbsolutePaths(info, const <QbTorrentFile>[
-        QbTorrentFile(
+          resolveVideoAbsolutePaths(info, const <TorrentFileEntry>[
+        TorrentFileEntry(
             name: 'Show/Show - 01.mkv', size: 1, progress: 1, index: 0),
-        QbTorrentFile(
+        TorrentFileEntry(
             name: 'Show/Show - 02.MP4', size: 1, progress: 1, index: 1),
-        QbTorrentFile(name: 'Show/readme.txt', size: 1, progress: 1, index: 2),
+        TorrentFileEntry(
+            name: 'Show/readme.txt', size: 1, progress: 1, index: 2),
       ]);
       expect(videos, <String>[
         p.join('/dl', 'Show/Show - 01.mkv'),
@@ -121,7 +124,7 @@ void main() {
     });
 
     test('files 为空退化用 contentPath 单文件；非视频扩展则空', () {
-      const QbTorrentInfo single = QbTorrentInfo(
+      const TorrentSnapshot single = TorrentSnapshot(
         hash: _kHash,
         name: 'torrent',
         progress: 1,
@@ -130,10 +133,10 @@ void main() {
         contentPath: '/dl/movie.mkv',
         amountLeft: 0,
       );
-      expect(resolveVideoAbsolutePaths(single, const <QbTorrentFile>[]),
+      expect(resolveVideoAbsolutePaths(single, const <TorrentFileEntry>[]),
           <String>['/dl/movie.mkv']);
 
-      const QbTorrentInfo nonVideo = QbTorrentInfo(
+      const TorrentSnapshot nonVideo = TorrentSnapshot(
         hash: _kHash,
         name: 'torrent',
         progress: 1,
@@ -142,7 +145,7 @@ void main() {
         contentPath: '/dl/archive.zip',
         amountLeft: 0,
       );
-      expect(resolveVideoAbsolutePaths(nonVideo, const <QbTorrentFile>[]),
+      expect(resolveVideoAbsolutePaths(nonVideo, const <TorrentFileEntry>[]),
           isEmpty);
     });
   });
@@ -260,7 +263,7 @@ void main() {
           if (importerOverride != null) return importerOverride!(plan, videos);
           return const AnimeDownloadImportOutcome(collectionId: 42);
         },
-        clientFactory: qb.newClient,
+        backendFactory: qb.newBackend,
         interval: const Duration(hours: 1),
       );
     }

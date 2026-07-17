@@ -2,85 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-/// qBittorrent 列表接口返回的单个种子信息（`/api/v2/torrents/info`）。
-class QbTorrentInfo {
-  const QbTorrentInfo({
-    required this.hash,
-    required this.name,
-    required this.progress,
-    required this.state,
-    required this.savePath,
-    required this.contentPath,
-    required this.amountLeft,
-  });
-
-  /// 种子 infohash（小写十六进制），后续查文件列表用。
-  final String hash;
-
-  /// 种子显示名。
-  final String name;
-
-  /// 下载进度 0.0 ~ 1.0。
-  final double progress;
-
-  /// qBittorrent 状态字符串（`downloading` / `uploading` / `stalledUP` 等）。
-  final String state;
-
-  /// 保存目录（JSON 键 `save_path`）。
-  final String savePath;
-
-  /// 内容根路径：单文件为文件路径，多文件为目录（JSON 键 `content_path`）。
-  final String contentPath;
-
-  /// 剩余待下载字节数（JSON 键 `amount_left`）；解析不出为 -1（= 未知，不当作完成）。
-  final int amountLeft;
-
-  /// 做种/完成类状态：数据已全部落盘，只在做种或做种停止。
-  static const Set<String> _seedingStates = <String>{
-    'uploading',
-    'stalledUP',
-    'pausedUP',
-    'stoppedUP',
-    'queuedUP',
-    'forcedUP',
-  };
-
-  /// 错误类状态：即使进度显示 100% 也不视为可用完成态。
-  static const Set<String> _errorStates = <String>{
-    'error',
-    'missingFiles',
-  };
-
-  /// 是否已下载完成：state 属于做种类直接算完成；否则要求进度打满
-  /// （`progress >= 1.0` 或 `amountLeft == 0`）且 state 不是 error 类。
-  bool get isComplete {
-    if (_seedingStates.contains(state)) return true;
-    if (_errorStates.contains(state)) return false;
-    return progress >= 1.0 || amountLeft == 0;
-  }
-}
-
-/// qBittorrent 文件列表接口返回的单个文件（`/api/v2/torrents/files`）。
-class QbTorrentFile {
-  const QbTorrentFile({
-    required this.name,
-    required this.size,
-    required this.progress,
-    required this.index,
-  });
-
-  /// 种子内相对路径（如 `Season 01/EP01.mkv`）。
-  final String name;
-
-  /// 文件大小（字节）。
-  final int size;
-
-  /// 该文件的下载进度 0.0 ~ 1.0。
-  final double progress;
-
-  /// 文件在种子内的序号（JSON 键 `index`）；缺省 -1。
-  final int index;
-}
+import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 
 /// 归一化 qBittorrent WebUI base URL：去掉尾部所有 `/`。纯函数，便于单测。
 String normalizeQbBaseUrl(String raw) {
@@ -104,18 +26,19 @@ String? extractSidCookie(String? setCookieHeader) {
   return sid;
 }
 
-/// 解析 `/api/v2/torrents/info` 响应（JSON 数组）。纯函数，容错：
-/// 坏 JSON / 非数组返回空列表；缺 `hash` 的条目跳过；其余字段缺省用安全默认值。
-List<QbTorrentInfo> parseQbTorrentInfos(String body) {
+/// 解析 `/api/v2/torrents/info` 响应（JSON 数组）为中性 [TorrentSnapshot]。
+/// 纯函数，容错：坏 JSON / 非数组返回空列表；缺 `hash` 的条目跳过；
+/// 其余字段缺省用安全默认值（`save_path` / `content_path` / `amount_left`）。
+List<TorrentSnapshot> parseQbTorrentInfos(String body) {
   try {
     final dynamic json = jsonDecode(body);
-    if (json is! List) return const <QbTorrentInfo>[];
-    final List<QbTorrentInfo> out = <QbTorrentInfo>[];
+    if (json is! List) return const <TorrentSnapshot>[];
+    final List<TorrentSnapshot> out = <TorrentSnapshot>[];
     for (final dynamic e in json) {
       if (e is! Map) continue;
       final dynamic hash = e['hash'];
       if (hash is! String || hash.isEmpty) continue;
-      out.add(QbTorrentInfo(
+      out.add(TorrentSnapshot(
         hash: hash,
         name: e['name'] is String ? e['name'] as String : '',
         progress: e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
@@ -128,22 +51,23 @@ List<QbTorrentInfo> parseQbTorrentInfos(String body) {
     }
     return out;
   } catch (_) {
-    return const <QbTorrentInfo>[];
+    return const <TorrentSnapshot>[];
   }
 }
 
-/// 解析 `/api/v2/torrents/files` 响应（JSON 数组）。纯函数，容错：
-/// 坏 JSON / 非数组返回空列表；缺 `name` 的条目跳过；`index` 缺省 -1。
-List<QbTorrentFile> parseQbTorrentFiles(String body) {
+/// 解析 `/api/v2/torrents/files` 响应（JSON 数组）为中性 [TorrentFileEntry]。
+/// 纯函数，容错：坏 JSON / 非数组返回空列表；缺 `name` 的条目跳过；
+/// `index` 缺省 -1。
+List<TorrentFileEntry> parseQbTorrentFiles(String body) {
   try {
     final dynamic json = jsonDecode(body);
-    if (json is! List) return const <QbTorrentFile>[];
-    final List<QbTorrentFile> out = <QbTorrentFile>[];
+    if (json is! List) return const <TorrentFileEntry>[];
+    final List<TorrentFileEntry> out = <TorrentFileEntry>[];
     for (final dynamic e in json) {
       if (e is! Map) continue;
       final dynamic name = e['name'];
       if (name is! String || name.isEmpty) continue;
-      out.add(QbTorrentFile(
+      out.add(TorrentFileEntry(
         name: name,
         size: e['size'] is int ? e['size'] as int : 0,
         progress: e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
@@ -152,7 +76,7 @@ List<QbTorrentFile> parseQbTorrentFiles(String body) {
     }
     return out;
   } catch (_) {
-    return const <QbTorrentFile>[];
+    return const <TorrentFileEntry>[];
   }
 }
 
@@ -254,25 +178,25 @@ class QBittorrentClient {
   }
 
   /// 列种子：`GET /api/v2/torrents/info`，[category] 非空时只列该分类。
-  Future<List<QbTorrentInfo>> fetchTorrents({String? category}) async {
+  Future<List<TorrentSnapshot>> fetchTorrents({String? category}) async {
     final http.Response? res = await _request(
       'GET',
       '/api/v2/torrents/info',
       query: category == null ? null : <String, String>{'category': category},
     );
-    if (res == null || res.statusCode != 200) return const <QbTorrentInfo>[];
+    if (res == null || res.statusCode != 200) return const <TorrentSnapshot>[];
     return parseQbTorrentInfos(res.body);
   }
 
   /// 列某个种子内的文件：`GET /api/v2/torrents/files?hash=<h>`。
-  Future<List<QbTorrentFile>> fetchTorrentFiles(String hash) async {
-    if (hash.isEmpty) return const <QbTorrentFile>[];
+  Future<List<TorrentFileEntry>> fetchTorrentFiles(String hash) async {
+    if (hash.isEmpty) return const <TorrentFileEntry>[];
     final http.Response? res = await _request(
       'GET',
       '/api/v2/torrents/files',
       query: <String, String>{'hash': hash},
     );
-    if (res == null || res.statusCode != 200) return const <QbTorrentFile>[];
+    if (res == null || res.statusCode != 200) return const <TorrentFileEntry>[];
     return parseQbTorrentFiles(res.body);
   }
 

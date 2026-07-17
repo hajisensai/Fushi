@@ -10,7 +10,9 @@ import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
+import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
+import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -299,23 +301,23 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     );
     await store.save(plan);
 
-    // ③ 推 qBittorrent（顺序下载 + 首尾块优先，支持边下边播）。
-    final QBittorrentClient qb = QBittorrentClient(
+    // ③ 推种子后端（顺序下载 + 首尾块优先，支持边下边播）。
+    final TorrentBackend backend = QbTorrentBackend(QBittorrentClient(
       baseUrl: config.baseUrl,
       username: config.username,
       password: config.password,
-    );
+    ));
     bool pushed = false;
     try {
-      await qb.ensureCategory(config.category);
-      pushed = await qb.addTorrents(
-        <String>[torrent.magnet],
+      await backend.prepareCategory(config.category);
+      pushed = await backend.addTorrent(
+        torrent.magnet,
         category: config.category,
-        sequentialDownload: true,
+        sequential: true,
         firstLastPiecePrio: true,
       );
     } finally {
-      qb.close();
+      backend.close();
     }
     if (!pushed) {
       await store.delete(planId);

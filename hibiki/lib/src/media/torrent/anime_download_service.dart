@@ -5,7 +5,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
+import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
+import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 
 /// 入库回调的结果：入库成功后新合集的 id（回填进计划）。
@@ -15,14 +17,14 @@ class AnimeDownloadImportOutcome {
   final int collectionId;
 }
 
-/// 把 qBittorrent 文件列表解析为视频绝对路径列表。纯函数。
+/// 把种子文件列表解析为视频绝对路径列表。纯函数。
 ///
 /// [files] 非空：`savePath` join 种子内相对路径 `name`，按扩展名
 /// （[kVideoExtensions]）过滤出视频；为空（老版本 qb / 接口失败）退化用
-/// [QbTorrentInfo.contentPath] 当单文件（仍要求视频扩展名，否则返回空）。
+/// [TorrentSnapshot.contentPath] 当单文件（仍要求视频扩展名，否则返回空）。
 List<String> resolveVideoAbsolutePaths(
-  QbTorrentInfo info,
-  List<QbTorrentFile> files,
+  TorrentSnapshot info,
+  List<TorrentFileEntry> files,
 ) {
   if (files.isEmpty) {
     final String ext = p.extension(info.contentPath).toLowerCase();
@@ -32,7 +34,7 @@ List<String> resolveVideoAbsolutePaths(
     return const <String>[];
   }
   final List<String> out = <String>[];
-  for (final QbTorrentFile f in files) {
+  for (final TorrentFileEntry f in files) {
     if (kVideoExtensions.contains(p.extension(f.name).toLowerCase())) {
       out.add(p.join(info.savePath, f.name));
     }
@@ -90,7 +92,7 @@ String sidecarPathFor(String videoAbsolutePath, PlanSubtitle sub) {
   return p.join(dir, '$stem$langSegment$ext');
 }
 
-/// 番剧下载完成监听服务：周期轮询 qBittorrent，对完成的计划落位字幕 sidecar
+/// 番剧下载完成监听服务：周期轮询种子后端，对完成的计划落位字幕 sidecar
 /// 并调用入库回调（骨架对齐 `VideoWatchTracker` 的 start/stop + Timer.periodic）。
 ///
 /// 职责边界：**不直接碰 Drift/仓库**——入库逻辑经 [importer] 回调注入
@@ -103,22 +105,23 @@ class AnimeDownloadService {
       AnimeDownloadPlan plan,
       List<String> videoAbsolutePaths,
     ) importer,
-    QBittorrentClient Function(QbConnectionConfig config)? clientFactory,
+    TorrentBackend Function(QbConnectionConfig config)? backendFactory,
     this.interval = const Duration(seconds: 20),
   })  : _configProvider = configProvider,
         _importer = importer,
-        _clientFactory = clientFactory ?? _defaultClientFactory;
+        _backendFactory = backendFactory ?? _defaultBackendFactory;
 
-  /// 种子在 qBittorrent 里消失（用户手动删除）后，计划保留等待的时长；
+  /// 种子在后端里消失（用户手动删除）后，计划保留等待的时长；
   /// 超过（按 [AnimeDownloadPlan.createdAtMs] 判断）标 failed。
   static const Duration torrentMissingTimeout = Duration(hours: 48);
 
-  static QBittorrentClient _defaultClientFactory(QbConnectionConfig config) {
-    return QBittorrentClient(
+  /// 默认后端工厂：外接 qBittorrent WebUI（AppModel 不传工厂时走这里）。
+  static TorrentBackend _defaultBackendFactory(QbConnectionConfig config) {
+    return QbTorrentBackend(QBittorrentClient(
       baseUrl: config.baseUrl,
       username: config.username,
       password: config.password,
-    );
+    ));
   }
 
   final AnimeDownloadPlanStore store;
@@ -127,7 +130,7 @@ class AnimeDownloadService {
     AnimeDownloadPlan plan,
     List<String> videoAbsolutePaths,
   ) _importer;
-  final QBittorrentClient Function(QbConnectionConfig config) _clientFactory;
+  final TorrentBackend Function(QbConnectionConfig config) _backendFactory;
   final Duration interval;
 
   Timer? _timer;
@@ -179,13 +182,13 @@ class AnimeDownloadService {
       }
     }
     if (plan == null) return false;
-    final QBittorrentClient client = _clientFactory(config);
+    final TorrentBackend client = _backendFactory(config);
     try {
-      final List<QbTorrentInfo> torrents = await client.fetchTorrents(
+      final List<TorrentSnapshot> torrents = await client.listTorrents(
         category: config.category.isEmpty ? null : config.category,
       );
-      QbTorrentInfo? info;
-      for (final QbTorrentInfo t in torrents) {
+      TorrentSnapshot? info;
+      for (final TorrentSnapshot t in torrents) {
         if (t.hash.toLowerCase() == plan.id.toLowerCase()) {
           info = t;
           break;
@@ -193,8 +196,7 @@ class AnimeDownloadService {
       }
       if (info == null) return false;
       // 预检：元数据未解析（文件列表还空）时不入库、不动计划状态。
-      final List<QbTorrentFile> files =
-          await client.fetchTorrentFiles(info.hash);
+      final List<TorrentFileEntry> files = await client.listFiles(info.hash);
       if (resolveVideoAbsolutePaths(info, files).isEmpty) return false;
       await _finishPlan(client, plan, info);
     } catch (_) {
@@ -223,18 +225,18 @@ class AnimeDownloadService {
     // 没有等待中的计划就不建连接。
     if (pending.isEmpty) return;
 
-    final QBittorrentClient client = _clientFactory(config);
+    final TorrentBackend client = _backendFactory(config);
     try {
-      final List<QbTorrentInfo> torrents = await client.fetchTorrents(
+      final List<TorrentSnapshot> torrents = await client.listTorrents(
         category: config.category.isEmpty ? null : config.category,
       );
-      final Map<String, QbTorrentInfo> byHash = <String, QbTorrentInfo>{
-        for (final QbTorrentInfo t in torrents) t.hash.toLowerCase(): t,
+      final Map<String, TorrentSnapshot> byHash = <String, TorrentSnapshot>{
+        for (final TorrentSnapshot t in torrents) t.hash.toLowerCase(): t,
       };
       final int nowMs = DateTime.now().millisecondsSinceEpoch;
 
       for (final AnimeDownloadPlan plan in pending) {
-        final QbTorrentInfo? info = byHash[plan.id.toLowerCase()];
+        final TorrentSnapshot? info = byHash[plan.id.toLowerCase()];
         if (info == null) {
           // 用户在 qb 里删了种子：超时标 failed，否则等下轮（可能刚添加还没上列表）。
           if (nowMs - plan.createdAtMs > torrentMissingTimeout.inMilliseconds) {
@@ -256,11 +258,11 @@ class AnimeDownloadService {
   /// 单个计划的完成处理：解析视频路径 → 字幕 sidecar 落位 → 入库回调 →
   /// 状态落盘（成功 imported + collectionId；失败 failed，不重试）。
   Future<void> _finishPlan(
-    QBittorrentClient client,
+    TorrentBackend client,
     AnimeDownloadPlan plan,
-    QbTorrentInfo info,
+    TorrentSnapshot info,
   ) async {
-    final List<QbTorrentFile> files = await client.fetchTorrentFiles(info.hash);
+    final List<TorrentFileEntry> files = await client.listFiles(info.hash);
     final List<String> videos = resolveVideoAbsolutePaths(info, files);
 
     // 先落 sidecar 再入库：播放器按 sidecar 自动发现即可认到字幕，
