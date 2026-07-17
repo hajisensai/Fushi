@@ -108,6 +108,13 @@ class FlutterWindow : public Win32Window {
       window_capture_channel_;
   void RegisterWindowCaptureChannel();
 
+  // galgame 一键制卡 A 阶段（docs/specs/galgame-mining，仅 Windows）：WASAPI loopback
+  // 采集系统混音进环形缓冲。start/stop 管采集，grabRecent 拉最近 N 毫秒 PCM。
+  // 见 audio_loopback_capture.cpp / .h。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      audio_loopback_channel_;
+  void RegisterAudioLoopbackChannel();
+
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);

@@ -23,6 +23,7 @@
 
 #include "external_video_handoff.h"
 #include "flutter/generated_plugin_registrant.h"
+#include "audio_loopback_capture.h"
 #include "foreground_selection.h"
 #include "window_capture.h"
 
@@ -539,6 +540,7 @@ bool FlutterWindow::OnCreate() {
   RegisterClipboardPanelChannel();
   RegisterForegroundSelectionChannel();
   RegisterWindowCaptureChannel();
+  RegisterAudioLoopbackChannel();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
@@ -1429,6 +1431,82 @@ void FlutterWindow::RegisterWindowCaptureChannel() {
             delete pending;
           }
         }).detach();
+      });
+}
+
+// galgame 一键制卡 A 阶段 — audio_loopback channel（仅 Windows）。start 打开 WASAPI
+// loopback 采集进环形缓冲（同步握手拿格式）；grabRecent 拉最近 N 毫秒 PCM；stop 释放。
+// 采集/环形缓冲逻辑在 AudioLoopbackCapture 单例（见 audio_loopback_capture.cpp）。native
+// 内部全程 HRESULT 校验，失败以 error map fail-open（Dart 侧 LoopbackGalAudioSource 降级）。
+void FlutterWindow::RegisterAudioLoopbackChannel() {
+  audio_loopback_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/audio_loopback",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  audio_loopback_channel_->SetMethodCallHandler(
+      [](const flutter::MethodCall<flutter::EncodableValue>& call,
+         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+             result) {
+        const std::string& method = call.method_name();
+        auto format_map = [](const hibiki::LoopbackFormat& f) {
+          return flutter::EncodableMap{
+              {flutter::EncodableValue("sampleRate"),
+               flutter::EncodableValue(f.sample_rate)},
+              {flutter::EncodableValue("channels"),
+               flutter::EncodableValue(f.channels)},
+              {flutter::EncodableValue("bitsPerSample"),
+               flutter::EncodableValue(f.bits_per_sample)},
+              {flutter::EncodableValue("isFloat"),
+               flutter::EncodableValue(f.is_float)},
+          };
+        };
+        if (method == "start") {
+          const hibiki::LoopbackFormat f =
+              hibiki::AudioLoopbackCapture::Instance().Start();
+          if (!f.ok) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(
+                     std::string("loopback start failed"))}}));
+            return;
+          }
+          result->Success(flutter::EncodableValue(format_map(f)));
+          return;
+        }
+        if (method == "stop") {
+          hibiki::AudioLoopbackCapture::Instance().Stop();
+          result->Success();
+          return;
+        }
+        if (method == "grabRecent") {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          int back_ms = 0;
+          if (args != nullptr) {
+            const auto it = args->find(flutter::EncodableValue("backMs"));
+            if (it != args->end()) {
+              back_ms = static_cast<int>(
+                  it->second.TryGetLongValue().value_or(0));
+            }
+          }
+          std::vector<uint8_t> pcm;
+          const hibiki::LoopbackFormat f =
+              hibiki::AudioLoopbackCapture::Instance().GrabRecent(back_ms, pcm);
+          if (!f.ok || pcm.empty()) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("no audio buffered"))}}));
+            return;
+          }
+          flutter::EncodableMap out = format_map(f);
+          out[flutter::EncodableValue("pcm")] =
+              flutter::EncodableValue(std::move(pcm));
+          result->Success(flutter::EncodableValue(std::move(out)));
+          return;
+        }
+        result->NotImplemented();
       });
 }
 
