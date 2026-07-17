@@ -1925,5 +1925,11 @@
   "settings_section_reader_chrome": "阅读界面",
   "settings_section_page_turn_input": "翻页与交互",
   "section_floating_lyric": "悬浮歌词",
-  "settings_section_lookup_trigger": "查词触发"
+  "settings_section_lookup_trigger": "查词触发",
+  "settings_destination_interconnect": "Hibiki 互联",
+  "interconnect_summary": "设备间直连同步与本机作为服务器",
+  "interconnect_inactive_note": "Hibiki 互联未启用为同步方式",
+  "interconnect_inactive_note_hint": "在「同步与备份 → 同步方式」中选择 Hibiki 互联后，这里的配置才会生效",
+  "interconnect_section_client": "连接到其他设备",
+  "interconnect_moved_note": "互联连接与本机服务器设置在「Hibiki 互联」分类"
 }

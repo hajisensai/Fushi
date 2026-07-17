@@ -1925,5 +1925,11 @@
   "settings_section_reader_chrome": "Reader interface",
   "settings_section_page_turn_input": "Page turning & interaction",
   "section_floating_lyric": "Floating lyric",
-  "settings_section_lookup_trigger": "Lookup trigger"
+  "settings_section_lookup_trigger": "Lookup trigger",
+  "settings_destination_interconnect": "Hibiki Interconnect",
+  "interconnect_summary": "Direct device-to-device sync & host this device as a server",
+  "interconnect_inactive_note": "Hibiki Interconnect is not the active sync method",
+  "interconnect_inactive_note_hint": "Select Hibiki Interconnect under Sync & backup - Sync method to use these settings",
+  "interconnect_section_client": "Connect to other devices",
+  "interconnect_moved_note": "Connection & server settings are in the Hibiki Interconnect category"
 }
