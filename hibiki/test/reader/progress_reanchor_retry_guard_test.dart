@@ -2,62 +2,69 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-493 (TODO-1053 Bug B) 源码守卫：重锚时序竞态致进度概率不显示。
+/// BUG-493 (TODO-1053 Bug B) 源码守卫：重锚时序竞态致进度概率不显示——事件驱动版。
 ///
 /// 恢复完成后 _reanchorContinuousAfterRestore 的 begin 同步置 JS 侧 _reanchorPending=true，
 /// 紧跟的首发 _refreshProgress() 撞上 → stableProgressInvocation 返 null → 早退 → 顶部进度条
-/// 隐藏，只剩 10s 轮询（要滑一下/查词滚 DOM 才补触发到 100%）。TODO-933 的 onAfterCommit 只
-/// 覆盖「重锚 commit 成功」一条；gate 不放行 / begin 采不到锚 / 已有别处重锚在飞等逃逸路径下
-/// commit 与 onAfterCommit 都不跑 → 进度仍锁死。
+/// 隐藏。旧修复在 Dart 侧武装 120ms×8 有界轮询重试兜「清旗时机不可知」；根因是
+/// _reanchorPending 的 true→false 转换发生在 JS 侧却无回调通知 Dart。
 ///
-/// 根因修复：_refreshProgress 读到「真实文本章却返 null」（重锚在飞瞬态）时武装一次有界短延迟
-/// 重试，重锚一清旗即补到真值，覆盖所有逃逸路径；拿到真实快照即撤销并复位。本守卫盯死重试
-/// 接线点存在、只对文本章武装、拿快照即撤销、dispose 清理。
+/// 根因修复（轮询 → 事件）：JS 侧把 _reanchorPending 的写入收敛到单一 setter
+/// `_setReanchorPending`（_sharedJs，两 shell 共用），true→false（重锚 settle）那一刻
+/// callHandler('onReanchorSettled') 通知 Dart；Dart 侧（webview.part.dart）注册该 handler，
+/// 收到即补刷一次进度。任何一处清旗（含 commit 成功之外的逃逸路径）都会通知，轮询重试
+/// 机制整体删除。本守卫盯死：清旗单点化（除 setter 外无直接赋值）、settle 通知存在、
+/// Dart handler 接线、轮询不复活、onAfterCommit 补刷仍在。
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
-  test('_refreshProgress null 分支武装重锚重试（不再无条件早退丢进度）', () {
-    final String nav = read(
-        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart');
-    // null 结果不再一律 return，而是先武装重试。
-    expect(nav, contains('if (result == null) {'),
-        reason: 'null 结果单独分支处理，供武装重试');
-    expect(nav, contains('_maybeArmProgressReanchorRetry();'),
-        reason: 'null（重锚在飞瞬态）时武装一次重试');
-    // 拿到真实快照即撤销待重试并复位计数。
-    expect(nav, contains('_cancelProgressReanchorRetry();'),
-        reason: '真实快照落地即撤销待重试');
+  test('JS 侧 _reanchorPending 写入单点化（唯一赋值在 _setReanchorPending 内）', () {
+    final String js = read('lib/src/reader/reader_pagination_scripts.dart');
+    expect(js, contains('_setReanchorPending: function(value)'),
+        reason: '_sharedJs 必须定义清旗单点 setter（两 shell 共用）');
+    // 赋值（非 ===/!== 比较）只允许 setter 内那一处：`this._reanchorPending = value === true;`。
+    final RegExp assignment = RegExp(r'\._reanchorPending\s*=(?![=])');
+    final int assignments = assignment.allMatches(js).length;
+    expect(assignments, 1,
+        reason: '除 _setReanchorPending 内部外不得有任何 _reanchorPending 直接赋值——'
+            '直接赋值会绕过 true→false 的 settle 通知，进度重新锁死等 10s 轮询');
   });
 
-  test('重试只对真实文本章武装、有界、coalesce（图片章 null 是稳态不重试）', () {
-    final String nav = read(
-        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart');
-    // 图片/封面章的 null 是稳态 → 跳过，避免空转。
-    expect(
-        nav, contains('if (book.isImageOnlyChapter(_currentChapter)) return;'),
-        reason: '纯图片章 null 是稳态，不武装重试');
-    // 有界：达到上限不再排队（常量在 part 文件里带类名限定、经 dart format 可能折行，
-    // 故对空白归一后再匹配逻辑内容）。
-    final String navFlat = nav.replaceAll(RegExp(r'\s+'), ' ');
-    expect(
-        navFlat,
-        contains(
-            'if (_progressReanchorRetryCount >= _ReaderHibikiPageState._kProgressRetryMax) {'),
-        reason: '有界重试，超界回落 10s 轮询');
-    // coalesce：已武装不重复排队。
-    expect(nav, contains('if (_progressReanchorRetryTimer != null) return;'),
-        reason: '已武装不重复排队（coalesce）');
+  test('JS 侧 true→false 转换必须 callHandler(onReanchorSettled) 通知 Dart', () {
+    final String js = read('lib/src/reader/reader_pagination_scripts.dart');
+    final int start = js.indexOf('_setReanchorPending: function(value)');
+    expect(start, greaterThan(-1));
+    final int end = js.indexOf('\n  },', start);
+    expect(end, greaterThan(start));
+    final String body = js.substring(start, end);
+    expect(body, contains("callHandler('onReanchorSettled')"),
+        reason: 'settle（true→false）必须经 bridge 通知 Dart 补刷进度');
+    // 只在真的发生 true→false 转换时通知（置 true / false→false 不得刷屏）。
+    expect(body, contains('this._reanchorPending === true'),
+        reason: '通知必须以「旧值为 true」为前提（true→false 转换判定）');
   });
 
-  test('重试字段声明 + dispose 清理定时器', () {
+  test('Dart 侧注册 onReanchorSettled handler 并补刷进度', () {
+    final String webview =
+        read('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
+    expect(webview, contains("handlerName: 'onReanchorSettled'"),
+        reason: 'webview.part.dart 必须注册 settle 通知 handler');
+    final int start = webview.indexOf("handlerName: 'onReanchorSettled'");
+    final String body = webview.substring(start, start + 400);
+    expect(body, contains('_refreshProgress()'),
+        reason: '收到 settle 通知必须补刷一次进度（替代轮询重试的职责）');
+  });
+
+  test('旧的轮询重试机制不得复活（120ms×8 兜底已被事件驱动替代）', () {
+    final String nav = read(
+        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart');
     final String page =
         read('lib/src/pages/implementations/reader_hibiki_page.dart');
-    expect(page, contains('Timer? _progressReanchorRetryTimer;'),
-        reason: '重试定时器字段必须存在');
-    expect(page, contains('static const int _kProgressRetryMax'),
-        reason: '重试上限常量必须存在（有界）');
-    expect(page, contains('_progressReanchorRetryTimer?.cancel();'),
-        reason: 'dispose 必须清理重试定时器（防泄漏）');
+    expect(nav, isNot(contains('_maybeArmProgressReanchorRetry')),
+        reason: '轮询重试武装点已删（根因已在 JS 侧事件化）');
+    expect(page, isNot(contains('Timer? _progressReanchorRetryTimer')),
+        reason: '重试定时器字段已删');
+    expect(page, isNot(contains('_kProgressRetryMax')), reason: '重试上限常量已删');
   });
 
   test('onAfterCommit 补刷仍在（重锚 commit 成功路径不回归）', () {
@@ -67,7 +74,8 @@ void main() {
     // `_reanchorPending` + 打 B-3 settle 窗之后，先应用排队的章内精确定位
     // （_applyPendingPreciseLocate，跨章搜索跳转的 scrollToSearchMatch），再
     // _refreshProgress 补刷。TODO-933 的 commit 成功补刷路径（_refreshProgress）必须
-    // 保留，与 BUG-493 的 null 分支重试互补；空白归一后比对逻辑内容（dart format 折行）。
+    // 保留（在精确定位之后刷，进度反映 locate 后位置；onReanchorSettled 事件发生在
+    // locate 之前，二者互补）；空白归一后比对逻辑内容（dart format 折行）。
     final String chromeFlat = chrome.replaceAll(RegExp(r'\s+'), ' ');
     expect(
         chromeFlat,

@@ -244,9 +244,20 @@ void main() {
     expect(e, greaterThan(s),
         reason: 'scrollToRange 之后须有 contentLastPageScroll');
     final String fn = source.substring(s, e);
-    // 仅竖排门控：横排亚像素 δ 已由 TODO-753 修复，竖排 pitchDelta=0 另有来源（reveal 累积），
-    // 探针只在竖排打，避免横排噪声刷屏。
-    expect(fn.contains('if (context.vertical) {'), isTrue, reason: '探针须只在竖排打');
+    // 仅竖排门控 + 调试日志构建期门控：横排亚像素 δ 已由 TODO-753 修复，探针只在竖排打；
+    // TODO-792 修复落地后探针保留但加 `${DebugLogService.instance.enabled}` 构建期注入
+    // 门控（与 [806-TAP] 同模式），默认 off，不再常驻热路径刷屏。
+    expect(
+        fn.contains(
+            r'if (${DebugLogService.instance.enabled} && context.vertical) {'),
+        isTrue,
+        reason: '探针须只在「调试日志开启 && 竖排」打（[792-REVEAL] 与 [792-REVEAL-RB] 两处）');
+    expect(
+        r'if (${DebugLogService.instance.enabled} && context.vertical) {'
+            .allMatches(fn)
+            .length,
+        2,
+        reason: '[792-REVEAL] 主探针与 [792-REVEAL-RB] rAF 复读探针都必须门控');
     expect(fn.contains("console.log('[792-REVEAL]'"), isTrue,
         reason: '逐句探针行标签 [792-REVEAL]，走 console.log 与 [753-DIAG] 同管道');
     // 核心判据字段：delta = anchor − targetScroll（有界震荡=floor 不累积；单调增长=坐实累积）。

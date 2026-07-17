@@ -63,7 +63,9 @@ void main() {
       expect(body, contains('getPagePosition'),
           reason: 'reflow 前须记 getPagePosition 作 scrollToCharOffset 的 hintScroll'
               '（分页 ±1 列保持原页；连续 mode 经 typeof 守卫自然 undefined）。');
-      expect(body, contains('_reanchorPending = true'),
+      // BUG-493：置旗改走清旗单点 setter（_setReanchorPending，见
+      // progress_reanchor_retry_guard_test），语义不变。
+      expect(body, contains('_setReanchorPending(true)'),
           reason:
               'beginStyleReanchor 必须置 _reanchorPending（挡住 reflow 归零 scroll 污染落库）。');
       expect(body, isNot(contains('requestAnimationFrame')),
@@ -87,7 +89,8 @@ void main() {
           reason: '不得退回粗粒度连续分数（TODO-736 B-2）。');
       expect(body, isNot(contains('scrollToProgressPaged(')),
           reason: '不得退回粗粒度分页分数（BUG-109）。');
-      expect(body, contains('_reanchorPending = false'),
+      // BUG-493：清旗改走单点 setter（true→false 转换经 onReanchorSettled 通知 Dart）。
+      expect(body, contains('_setReanchorPending(false)'),
           reason: 'commitStyleReanchor 必须在 finally 清 _reanchorPending。');
     });
   });

@@ -114,9 +114,11 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
             _audiobookController!.allBookCuesSnapshot.isNotEmpty
                 ? _audiobookController!.allBookCueIdx
                 : _audiobookController!.currentCueIdx;
+        // 首次进入提示改挂「歌词文档就绪」事件（webview.part.dart 的
+        // _onChapterLoadComplete 歌词分支消费此旗），替代旧的裸 delay 100ms——
+        // 那只是猜 loadData 何时渲染完，慢机上会把对话框弹在空白页上。
+        _pendingLyricsHintOnReady = true;
         await _loadLyricsPage();
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        _showLyricsModeHintIfNeeded();
       } else {
         await _resolveAndApplyProfile(appModelNoUpdate.database);
         await _exitLyricsMode();
@@ -289,6 +291,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     }
 
     _lyricsPageReady = false;
+    _pendingLyricsHintOnReady = false;
     _lyricsCueIndexOffset = 0;
     _lyricsCueWindowUsesAllBookCues = false;
     _lyricsCueList = const [];

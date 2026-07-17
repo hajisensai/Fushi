@@ -162,14 +162,15 @@ void main() {
       // 关键时序：采样首个可见字符 → 置旗 → 暂存锚。置旗必须发生（挡住 reflow 归零 scroll）。
       expect(body.contains('getFirstVisibleCharOffset()'), isTrue,
           reason: 'begin 必须用 getFirstVisibleCharOffset 采样精确锚');
-      expect(body.contains('this._reanchorPending = true'), isTrue,
+      // BUG-493：置旗改走清旗单点 setter（_setReanchorPending，语义不变）。
+      expect(body.contains('this._setReanchorPending(true)'), isTrue,
           reason: 'begin 必须置 _reanchorPending=true，否则 reflow 归零 scroll 会经 '
               'onReaderScroll 落库 progress≈0 弹回章首（TODO-693 根因）');
       expect(body.contains('this._uiScaleReanchorOffset = charOffset'), isTrue,
           reason: 'begin 必须暂存锚供 commit 阶段提交');
       // 时序：置旗在暂存之前/同段，且无可用锚时早返回不置旗。
       final int idxOffsetInvalid = body.indexOf('charOffset < 0) return -1');
-      final int idxSetPending = body.indexOf('this._reanchorPending = true');
+      final int idxSetPending = body.indexOf('this._setReanchorPending(true)');
       expect(idxOffsetInvalid, greaterThanOrEqualTo(0),
           reason: '无可用锚（caretRangeFromPoint 失败）必须早返回 -1，不置旗');
       expect(idxOffsetInvalid, lessThan(idxSetPending),
@@ -191,7 +192,8 @@ void main() {
       // finally 清旗 + 清暂存，保证异常路径也不卡死 _reanchorPending（HBK-REG-004 同形）。
       expect(body.contains('finally'), isTrue,
           reason: 'commit 必须在 finally 清旗，异常路径也不能卡死 _reanchorPending');
-      expect(body.contains('this._reanchorPending = false'), isTrue,
+      // BUG-493：清旗改走单点 setter（true→false 转换经 onReanchorSettled 通知 Dart 补刷进度）。
+      expect(body.contains('this._setReanchorPending(false)'), isTrue,
           reason: 'commit 必须清 _reanchorPending，否则后续滚动回传被永久挡住');
       expect(body.contains('this._uiScaleReanchorOffset = undefined'), isTrue,
           reason: 'commit 必须清暂存锚，避免下次缩放误用旧锚');
