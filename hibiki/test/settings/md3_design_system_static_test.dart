@@ -867,6 +867,12 @@ void main() {
       'lib/src/pages/implementations/jimaku_subtitle_dialog.dart':
           'Experimental Jimaku subtitle dialog lists downloadable subtitle '
               'files as transient video-subsystem content rows.',
+      'lib/src/pages/implementations/anime_download_dialog.dart':
+          'Anime download dialog lists Nyaa torrent candidates (release group / '
+              'resolution / seeders / subtitle-coverage badges) and per-episode '
+              'Jimaku subtitle rows plus a download-task list as transient '
+              'video-subsystem content — the same reviewed content exception '
+              'class as the sibling jimaku_subtitle_dialog / jimaku_batch_dialog.',
       'lib/src/anki/anki_mined_card_action_sheet.dart':
           'TODO-1007/1008 mined-card action sheet lists matching Anki notes '
               'as transient content rows (note preview + per-note overwrite/view '

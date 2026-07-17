@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -750,7 +751,104 @@ SettingsDestination buildVideoDestination() {
           ),
         ],
       ),
+      SettingsSection(
+        title: t.section_video_anime_download,
+        items: <SettingsItem>[
+          // 番剧下载走外部 qBittorrent 实例（WebUI API），Hibiki 不内嵌 BT 引擎。
+          // 四项都是纯 pref（一个 JSON 配置），URL 留空 = 功能未启用。
+          SettingsCustomItem(
+            id: 'video.anime_download.qb_url',
+            builder: _buildQbUrlField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.qb_username',
+            builder: _buildQbUsernameField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.qb_password',
+            builder: _buildQbPasswordField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.qb_category',
+            builder: _buildQbCategoryField,
+          ),
+        ],
+      ),
     ],
+  );
+}
+
+/// 读改写 qbConnectionConfig（纯 pref）：取当前（null 视为空配置）→ [mutate] → 落盘。
+Future<void> _commitQbConfig(
+  SettingsContext settingsContext,
+  QbConnectionConfig Function(QbConnectionConfig config) mutate,
+) async {
+  final QbConnectionConfig current =
+      settingsContext.appModel.qbConnectionConfig ?? const QbConnectionConfig();
+  await settingsContext.appModel.setQbConnectionConfig(mutate(current));
+  settingsContext.refresh();
+}
+
+Widget _buildQbUrlField(SettingsContext settingsContext) {
+  return SettingsSecretField(
+    title: t.video_setting_qb_url,
+    icon: Icons.download_outlined,
+    initialValue: settingsContext.appModel.qbConnectionConfig?.baseUrl ?? '',
+    keyboardType: TextInputType.url,
+    hintText: t.video_setting_qb_url_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) => c.copyWith(baseUrl: value.trim()),
+      );
+    },
+  );
+}
+
+Widget _buildQbUsernameField(SettingsContext settingsContext) {
+  return SettingsSecretField(
+    title: t.video_setting_qb_username,
+    icon: Icons.person_outline,
+    initialValue: settingsContext.appModel.qbConnectionConfig?.username ?? '',
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) => c.copyWith(username: value.trim()),
+      );
+    },
+  );
+}
+
+Widget _buildQbPasswordField(SettingsContext settingsContext) {
+  return SettingsSecretField(
+    title: t.video_setting_qb_password,
+    icon: Icons.password_outlined,
+    initialValue: settingsContext.appModel.qbConnectionConfig?.password ?? '',
+    obscureText: true,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) => c.copyWith(password: value),
+      );
+    },
+  );
+}
+
+Widget _buildQbCategoryField(SettingsContext settingsContext) {
+  return SettingsSecretField(
+    title: t.video_setting_qb_category,
+    icon: Icons.label_outline,
+    initialValue:
+        settingsContext.appModel.qbConnectionConfig?.category ?? 'hibiki',
+    hintText: t.video_setting_qb_category_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) => c.copyWith(
+          category: value.trim().isEmpty ? 'hibiki' : value.trim(),
+        ),
+      );
+    },
   );
 }
 
