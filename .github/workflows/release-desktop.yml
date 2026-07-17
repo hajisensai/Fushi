@@ -67,6 +67,7 @@ jobs:
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -84,6 +85,11 @@ jobs:
           PRERELEASE=true
           MAKE_LATEST=false
           PUBLISH_MANAGED_RELEASE=false
+          # BUG-869: manifest-only publish flag decoupled from
+          # PUBLISH_MANAGED_RELEASE (see release.yml) so the `release` event can
+          # emit latest-stable.json without re-touching the manual Release.
+          PUBLISH_MANIFEST=false
+          MANIFEST_CHANNEL=""
 
           case "$EVENT" in
             push)
@@ -122,12 +128,25 @@ jobs:
             release)
               CHANNEL=github-release
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
+              # BUG-869: a manually-published NON-prerelease Release IS the formal
+              # stable release → emit latest-stable.json (with releaseSequence) for
+              # in-China stable clients. Manifest-only; never touches the Release.
+              if [ "${RELEASE_IS_PRERELEASE}" = "false" ]; then
+                MANIFEST_CHANNEL=formal
+                PUBLISH_MANIFEST=true
+                PRERELEASE=false
+              fi
               ;;
             *)
               echo "::error title=Unsupported event::$EVENT is not a desktop release event."
               exit 1
               ;;
           esac
+
+          # BUG-869: push / workflow_dispatch unchanged — MANIFEST_CHANNEL follows
+          # CHANNEL and manifest publishes whenever the managed release does.
+          if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
+          if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
 
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in
@@ -182,6 +201,8 @@ jobs:
             echo "prerelease=$PRERELEASE"
             echo "make_latest=$MAKE_LATEST"
             echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
+            echo "publish_manifest=$PUBLISH_MANIFEST"
+            echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
@@ -637,12 +658,14 @@ jobs:
       # not cascade a run. Merges this platform's assets into any same-tag
       # manifest the Android workflow already pushed (concurrent, dedupe by name).
       - name: Publish mirror update manifest (desktop assets)
-        if: steps.channel.outputs.publish_managed_release == 'true'
+        # BUG-869: gate on publish_manifest + manifest_channel so the `release`
+        # event emits latest-stable.json without re-touching the manual Release.
+        if: steps.channel.outputs.publish_manifest == 'true'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          CHANNEL: ${{ steps.channel.outputs.channel }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
           TAG: ${{ steps.channel.outputs.tag }}
           # TODO-1049: manifest `tag` keeps the versioned/seq TAG for client
           # version comparison; asset URLs resolve under DOWNLOAD_TAG (the actual
@@ -679,6 +702,7 @@ jobs:
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -696,6 +720,11 @@ jobs:
           PRERELEASE=true
           MAKE_LATEST=false
           PUBLISH_MANAGED_RELEASE=false
+          # BUG-869: manifest-only publish flag decoupled from
+          # PUBLISH_MANAGED_RELEASE (see release.yml) so the `release` event can
+          # emit latest-stable.json without re-touching the manual Release.
+          PUBLISH_MANIFEST=false
+          MANIFEST_CHANNEL=""
 
           case "$EVENT" in
             push)
@@ -734,6 +763,14 @@ jobs:
             release)
               CHANNEL=github-release
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
+              # BUG-869: a manually-published NON-prerelease Release IS the formal
+              # stable release → emit latest-stable.json (with releaseSequence) for
+              # in-China stable clients. Manifest-only; never touches the Release.
+              if [ "${RELEASE_IS_PRERELEASE}" = "false" ]; then
+                MANIFEST_CHANNEL=formal
+                PUBLISH_MANIFEST=true
+                PRERELEASE=false
+              fi
               ;;
             *)
               echo "::error title=Unsupported event::$EVENT is not an Apple release event."
@@ -785,6 +822,8 @@ jobs:
             echo "prerelease=$PRERELEASE"
             echo "make_latest=$MAKE_LATEST"
             echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
+            echo "publish_manifest=$PUBLISH_MANIFEST"
+            echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
@@ -1054,12 +1093,14 @@ jobs:
             hibiki/build/release-artifacts/hibiki-*-macos.zip
             hibiki/build/release-artifacts/hibiki-*-ios.ipa
       - name: Publish mirror update manifest (Apple assets)
-        if: steps.channel.outputs.publish_managed_release == 'true'
+        # BUG-869: gate on publish_manifest + manifest_channel so the `release`
+        # event emits latest-stable.json without re-touching the manual Release.
+        if: steps.channel.outputs.publish_manifest == 'true'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          CHANNEL: ${{ steps.channel.outputs.channel }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
           TAG: ${{ steps.channel.outputs.tag }}
           DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}
           PRERELEASE: ${{ steps.channel.outputs.prerelease }}

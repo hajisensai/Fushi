@@ -84,6 +84,7 @@ jobs:
         INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
         INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
         RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+        RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
       run: |
         set -euo pipefail
         PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//')
@@ -124,6 +125,14 @@ jobs:
         BUILD_SPLIT_RELEASE_APK=false
         NEEDS_RELEASE_KEYSTORE=false
         PUBLISH_MANAGED_RELEASE=false
+        # BUG-869: manifest-only publish flag, decoupled from
+        # PUBLISH_MANAGED_RELEASE so the `release` event can emit
+        # latest-stable.json WITHOUT re-running the softprops managed-release
+        # create/upsert (which would touch the user's manually-created Release).
+        # MANIFEST_CHANNEL is the channel handed to publish_update_manifest.sh
+        # (debug|beta|formal) that decides the latest-<channel>.json filename.
+        PUBLISH_MANIFEST=false
+        MANIFEST_CHANNEL=""
 
         case "$EVENT" in
           push)
@@ -179,12 +188,29 @@ jobs:
             FILES="hibiki/build/release-artifacts/hibiki-*.apk"
             BUILD_SPLIT_RELEASE_APK=true
             NEEDS_RELEASE_KEYSTORE=true
+            # BUG-869: a manually-published, NON-prerelease GitHub Release IS the
+            # formal stable release. Emit latest-stable.json (with releaseSequence)
+            # so in-China stable clients can read the seq for "谁后用谁" comparison.
+            # This writes ONLY the data-file manifest; it never creates/modifies
+            # the Release (PUBLISH_MANAGED_RELEASE stays false). A manual PRERELEASE
+            # (beta via the UI) is left alone so it can never pollute stable.
+            if [ "${RELEASE_IS_PRERELEASE}" = "false" ]; then
+              MANIFEST_CHANNEL=formal
+              PUBLISH_MANIFEST=true
+              PRERELEASE=false
+            fi
             ;;
           *)
             echo "::error title=Unsupported event::$EVENT is not a release channel event."
             exit 1
             ;;
         esac
+
+        # BUG-869: push / workflow_dispatch keep existing behavior — MANIFEST_CHANNEL
+        # follows CHANNEL (debug|beta|formal) and the manifest publishes whenever the
+        # managed release does. Only the `release` event opts in above independently.
+        if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
+        if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
 
         BUILD_VERSION_NAME="${TAG#v}"
         BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
@@ -241,6 +267,8 @@ jobs:
           echo "android_build_number=$ANDROID_BUILD_NUMBER"
           echo "release_sequence=$RELEASE_SEQUENCE"
           echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
+          echo "publish_manifest=$PUBLISH_MANIFEST"
+          echo "manifest_channel=$MANIFEST_CHANNEL"
           echo "files=$FILES"
           echo "body<<EOF"
           echo "$BODY"
@@ -715,12 +743,15 @@ jobs:
     # absent from this workflow's push trigger (main/develop only) so it does
     # not cascade a run.
     - name: Publish mirror update manifest (Android assets)
-      if: steps.channel.outputs.publish_managed_release == 'true'
+      # BUG-869: gate on publish_manifest (decoupled from publish_managed_release)
+      # and use manifest_channel so the `release` event emits latest-stable.json
+      # without re-touching the manually-created Release.
+      if: steps.channel.outputs.publish_manifest == 'true'
       shell: bash
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}
-        CHANNEL: ${{ steps.channel.outputs.channel }}
+        CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
         TAG: ${{ steps.channel.outputs.tag }}
         # TODO-1049: manifest `tag` keeps the versioned/seq TAG for client
         # version comparison; asset URLs resolve under DOWNLOAD_TAG (the actual

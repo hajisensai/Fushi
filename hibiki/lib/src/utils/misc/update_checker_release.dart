@@ -83,17 +83,18 @@ class UpdateChecker {
         : betaChannel
             ? UpdateChannel.beta
             : UpdateChannel.stable;
-    // BUG-457：把无后缀的本机版本按通道 + buildNumber 还原成可比的预发布版本；stable 或
-    // 本机已带本通道后缀时原样返回（纯函数，见 effectiveCurrentVersionForUpdateChannel）。
-    final String comparableCurrentVersion =
-        effectiveCurrentVersionForUpdateChannel(
+    // BUG-846「谁后用谁」：算出本机 release sequence（beta/debug 版本串已带 `-<channel>.<seq>`
+    // 直接取；无后缀 `X.Y.Z`（正式版包 / 本地 build）用平台构建号反解），透到比较层做跨轨
+    // 序号全序比较。**不再**把本机版本伪造成 `<base>-<channel>.<seq>` 串——那会把真正的正式版
+    // 安装误标成预发布轨，触发正式↔调试来回更新（BUG-846 乒乓根因）。
+    final int? currentReleaseSeq = currentReleaseSequence(
       version: currentVersion,
       buildNumber: currentBuildNumber,
-      channel: channel,
     );
     final Completer<void> completer = Completer<void>();
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _check(context, comparableCurrentVersion,
+      _check(context, currentVersion,
+              currentReleaseSeq: currentReleaseSeq,
               neverRemind: neverRemind,
               autoInstall: autoInstall,
               channel: channel,
@@ -226,6 +227,8 @@ class UpdateChecker {
   static Future<void> _check(
     BuildContext context,
     String currentVersion, {
+    // BUG-846「谁后用谁」：本机 release sequence（跨轨全序比较用）。null = 取不到（同基保守）。
+    int? currentReleaseSeq,
     bool neverRemind = false,
     bool autoInstall = false,
     UpdateChannel channel = UpdateChannel.stable,
@@ -271,6 +274,7 @@ class UpdateChecker {
           await selectUpdateReleaseForCurrentPlatform(
         releases,
         currentVersion: currentVersion,
+        currentReleaseSeq: currentReleaseSeq,
         channel: channel,
         updater: updater,
       );
@@ -309,7 +313,11 @@ class UpdateChecker {
       }
 
       // selection 非空即已按 asset 版本判定为「比本机新」；这里保留防御性再判一次。
-      if (!isUpdateVersionNewer(version, currentVersion, channel)) {
+      // BUG-846：远端 seq 用所选 release 顶层 releaseSequence（正式版无预发布串靠它），
+      // 本机 seq 用透传下来的 currentReleaseSeq，与选择阶段同源。
+      if (!isUpdateVersionNewer(version, currentVersion, channel,
+          remoteSeq: json['releaseSequence'] as int?,
+          localSeq: currentReleaseSeq)) {
         // 已是最新（TODO-898）。
         onUpToDate?.call();
         return;
@@ -493,6 +501,16 @@ class UpdateChecker {
     UpdateChannel channel,
   ) async {
     if (channel == UpdateChannel.stable) {
+      // BUG-846「谁后用谁」：正式版**优先**读 `latest-stable.json` 镜像清单——它顶层带
+      // `releaseSequence`（CI `merge_update_manifest.py` 写入），是客户端唯一能拿到正式版
+      // release sequence 的来源，据此才能与同基预发布按「谁后构建谁赢」比较。**回退**到原
+      // 302 跳转 / API 直连（拿不到 seq，同基保守不 churn）。手动 GitHub Release 未发 manifest
+      // 时自然走回退，fail-open。
+      final Map<String, dynamic>? manifestRelease =
+          await _fetchChannelReleaseFromManifest(client, channel);
+      if (manifestRelease != null) {
+        return <Map<String, dynamic>>[manifestRelease];
+      }
       final Map<String, dynamic>? release = await _fetchStableRelease(client);
       return release == null
           ? const <Map<String, dynamic>>[]
@@ -1068,10 +1086,14 @@ class UpdateChecker {
       final UpdateChannel channel = channelForUpdateVersion(version);
       final List<Map<String, dynamic>> releases =
           await _fetchReleasesForChannel(client, channel);
+      // BUG-846：重取仅为换同版本的新下载 URL；本机 seq 从下载目标 [version] 串自取
+      // （预发布串自带 seq；正式版无 buildNumber 上下文 → null → 同基保守，不影响换 URL）。
       final UpdateReleaseSelection? selection =
           await selectUpdateReleaseForCurrentPlatform(
         releases,
         currentVersion: version,
+        currentReleaseSeq:
+            currentReleaseSequence(version: version, buildNumber: null),
         channel: channel,
         updater: updater,
       );
@@ -1303,12 +1325,21 @@ const String kDebugManifestUrl =
 const String kLegacyDebugManifestUrl =
     'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-debug.json';
 
+/// stable 通道镜像清单（BUG-846「谁后用谁」）。CI `publish_update_manifest.sh` 的 formal 分支
+/// 已生成 `latest-stable.json`（`merge_update_manifest.py` 写顶层 `releaseSequence`）。客户端读它
+/// 才能拿到正式版 release sequence，与同基预发布按「谁后构建谁赢」比较；读不到（手动 GitHub
+/// Release 未发 manifest）则回退 302 跳转（无 seq，同基保守不 churn）。与 beta/debug 同构。
+const String kStableManifestUrl =
+    'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/latest-stable.json';
+const String kLegacyStableManifestUrl =
+    'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-stable.json';
+
 /// CI 生成镜像清单时识别的 schema 版本（TODO-705）。客户端只认该版本；
 /// 未来结构不兼容的变更递增该号，旧客户端不识别则安全回退 API 直连。
 const int kUpdateManifestSchemaVersion = 1;
 
-/// **纯函数**：按通道返回镜像清单 URL（TODO-705）。beta/debug 有 manifest；
-/// stable 走 302 跳转、不走 manifest（返 null）。
+/// **纯函数**：按通道返回镜像清单 URL（TODO-705 / BUG-846）。三通道均有 manifest
+/// （stable 读它拿正式版 seq；读不到再回退 302）。
 @visibleForTesting
 String? manifestUrlForChannel(UpdateChannel channel) {
   final Map<String, String> urls = manifestUrlsForChannel(channel);
@@ -1327,7 +1358,10 @@ Map<String, String> manifestUrlsForChannel(UpdateChannel channel) {
         kGitHubRepo: kDebugManifestUrl,
         kLegacyGitHubRepo: kLegacyDebugManifestUrl,
       },
-    UpdateChannel.stable => const <String, String>{},
+    UpdateChannel.stable => const <String, String>{
+        kGitHubRepo: kStableManifestUrl,
+        kLegacyGitHubRepo: kLegacyStableManifestUrl,
+      },
   };
 }
 
@@ -1372,6 +1406,9 @@ Map<String, dynamic>? buildReleaseFromManifest(
   final String body0 =
       decoded['notes'] is String ? decoded['notes'] as String : '';
   final bool prerelease = decoded['prerelease'] == true;
+  // TODO-1205 / BUG-846：透传顶层 `releaseSequence`（CI `merge_update_manifest.py` 写的
+  // 全平台最大 seq）。正式版无预发布串带不了 seq，跨轨「谁后用谁」比较全靠它。
+  final Object? topReleaseSeq = decoded['releaseSequence'];
 
   final List<Map<String, dynamic>> assets = <Map<String, dynamic>>[];
   final Object? assetsRaw = decoded['assets'];
@@ -1412,6 +1449,7 @@ Map<String, dynamic>? buildReleaseFromManifest(
     'draft': false,
     'body': body0,
     'html_url': '${stableReleasesHtmlUrlForRepo(repo)}/tag/$tag',
+    if (topReleaseSeq is int) 'releaseSequence': topReleaseSeq,
     'assets': assets,
   };
 }
@@ -1430,14 +1468,17 @@ class _StableRedirectTag {
 Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
   List<Map<String, dynamic>> releases, {
   required String currentVersion,
+  // BUG-846「谁后用谁」：本机 release sequence（跨轨全序比较用）。null = 取不到（同基保守）。
+  int? currentReleaseSeq,
   required UpdateChannel channel,
   required PlatformUpdater updater,
 }) async {
   // BUG-846：合集是多轨并集（beta/debug 用户会同时拿到 stable/beta/debug 的 latest），
   // 必须先按「最新优先」排序再取第一个可用于本平台的更新，否则按拉取顺序会误选更旧的
   // release（如 beta 用户 beta 轨已到 1.3.0-beta.1，却因 stable 1.2.0 排在前而误选 1.2.0）。
-  // 排序键：基版本降序 → 同基预发布轨优先于正式版（debug>beta>stable，让 beta/debug 用户
-  // 停留本轨而非同基塌回 stable）→ 同基同轨预发布序号降序。
+  // 排序键=「谁后构建谁赢」：基版本降序 → 同基按 release sequence 降序（三通道同尺，正式版
+  // seq 从 manifest 顶层 releaseSequence 取，预发布 seq 即版本串尾号）。与 isUpdateVersionNewer
+  // 同尺，消除「排序偏预发布轨 vs 判据偏正式版」不一致这个乒乓根源。
   final List<Map<String, dynamic>> ordered = releases
       .where((Map<String, dynamic> r) => releaseEligibleForChannel(r, channel))
       .toList()
@@ -1446,7 +1487,10 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
           normalizeReleaseVersionTag(a['tag_name'] as String? ?? '') ?? '';
       final String vb =
           normalizeReleaseVersionTag(b['tag_name'] as String? ?? '') ?? '';
-      return _compareReleaseRecency(vb, va); // 降序：新的在前
+      // 降序：新的在前。seq 从各自 release map 顶层取（正式版 302 回退无 → null）。
+      return _compareReleaseRecency(vb, va,
+          seqA: b['releaseSequence'] as int?,
+          seqB: a['releaseSequence'] as int?);
     });
 
   UpdateReleaseSelection? fallback;
@@ -1456,7 +1500,12 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
     if (topVersion == null || topVersion.isEmpty) continue;
     // 粗过滤：顶层 tag 是全平台最大 seq（TODO-1173），连它都不比本机新，
     // 本 release 对任何平台都无更新。保留这层既避开 up-to-date 时多余的 selectAsset。
-    if (!isUpdateVersionNewer(topVersion, currentVersion, channel)) continue;
+    // BUG-846：远端 seq 用本 release 顶层 releaseSequence（正式版无预发布串靠它）。
+    if (!isUpdateVersionNewer(topVersion, currentVersion, channel,
+        remoteSeq: release['releaseSequence'] as int?,
+        localSeq: currentReleaseSeq)) {
+      continue;
+    }
 
     final List<Map<String, dynamic>> assetMaps =
         (release['assets'] as List<dynamic>? ?? <dynamic>[])
@@ -1477,7 +1526,9 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
         asset == null ? null : normalizeReleaseVersionTag(asset.version ?? '');
     final String effectiveVersion = assetVersion ?? topVersion;
     if (asset != null &&
-        !isUpdateVersionNewer(effectiveVersion, currentVersion, channel)) {
+        !isUpdateVersionNewer(effectiveVersion, currentVersion, channel,
+            remoteSeq: release['releaseSequence'] as int?,
+            localSeq: currentReleaseSeq)) {
       // 顶层更新但本平台 asset 已是本机版本（或更旧）→ 对本机不是更新，跳过。
       continue;
     }
@@ -1543,45 +1594,59 @@ bool releaseEligibleForChannel(
 bool updateTagIsNewerThanCurrent(
   String tag,
   String current,
-  UpdateChannel channel,
-) =>
-    isUpdateVersionNewer(tag, current, channel);
+  UpdateChannel channel, {
+  int? remoteSeq,
+  int? localSeq,
+}) =>
+    isUpdateVersionNewer(tag, current, channel,
+        remoteSeq: remoteSeq, localSeq: localSeq);
+
+/// **纯函数**：取版本的 release sequence（= `git rev-list --count HEAD`，三通道同一把尺）。
+/// 预发布串 `-beta.<seq>` / `-debug.<seq>` 的尾段数字**就是** seq（CI `TAG=v${VERSION}-<ch>.${SEQ}`）；
+/// 正式版无预发布段，seq 由 [explicitSeq]（manifest 顶层 `releaseSequence` / 本机 versionCode 反解）
+/// 提供。都取不到 → null（同基无法判先后 → 调用方保守不更新，绝不 churn）。
+int? _releaseSeqOf(String version, int? explicitSeq) {
+  final String? pre = _prereleasePart(_stripBuildMetadata(version));
+  if (pre != null) {
+    final int? seq = int.tryParse(pre.split('.').last);
+    if (seq != null) return seq;
+  }
+  return explicitSeq;
+}
 
 @visibleForTesting
 bool isUpdateVersionNewer(
   String remote,
   String local,
-  UpdateChannel channel,
-) {
+  UpdateChannel channel, {
+  // BUG-846「谁后用谁」：跨轨全序比较用的 release sequence。远端正式版无预发布串带不了 seq，
+  // 靠 [remoteSeq]（manifest 顶层）；本机正式版靠 [localSeq]（versionCode 反解）。预发布串自带。
+  int? remoteSeq,
+  int? localSeq,
+}) {
   final String remoteVersion = _stripBuildMetadata(remote.trim());
   final String localVersion = _stripBuildMetadata(local.trim());
 
   // BUG-846 嵌套合集准入：越激进的通道合集越大——stable 只收 stable；beta 收
   // {stable,beta}；debug 收 {stable,beta,debug}。远端版本所属轨道若不在本通道合集里，
-  // 一律不是更新（把旧的「远端必须**恰好**属于本通道」钝刀换成嵌套准入，让 beta/debug
-  // 用户能收到更新的正式版/更高基版本，永不掉队）。
+  // 一律不是更新（让 beta/debug 用户能收到更新的正式版/更高基版本，永不掉队）。
   if (!_channelAdmitsVersion(remoteVersion, channel)) return false;
 
+  // 基版本不同：高基永远更新（pubspec 基版本随 commit 单调递增，高基=更晚构建）。
   final int baseCompare = _compareBaseVersion(remoteVersion, localVersion);
   if (baseCompare != 0) return baseCompare > 0;
 
-  // 同基版本：正式版成品优先，同基跨轨预发布不回灌（保留 BUG-480 铁律）。
-  final String? remotePrerelease = _prereleasePart(remoteVersion);
-  final String? localPrerelease = _prereleasePart(localVersion);
+  // 同基：按 release sequence「谁后构建谁赢」（BUG-846 正式↔调试来回更新根治）。序号跨三
+  // 通道同尺（都是 git rev-list --count HEAD），故正式版/beta/debug 同基可直接比先后，不再
+  // 用 semver 的「正式版>预发布」——那与「预发布轨更晚构建」矛盾，正是乒乓根源。
+  final int? rSeq = _releaseSeqOf(remoteVersion, remoteSeq);
+  final int? lSeq = _releaseSeqOf(localVersion, localSeq);
+  if (rSeq != null && lSeq != null) return rSeq > lSeq;
 
-  // 远端是正式版成品：只要本地是同基的预发布就算更新——预发布**早于**其正式版，beta/debug
-  // 用户理应领到成品 stable（BUG-846 核心诉求）。本地也是同基正式版 → 版本相同，非更新。
-  if (remotePrerelease == null) return localPrerelease != null;
-
-  // 远端是预发布、本地是同基正式版：semver 里预发布 < 正式版，是回退，不推
-  // （BUG-480 case A：正式版装机误开通道，绝不被同基预发布回灌）。
-  if (localPrerelease == null) return false;
-
-  // 双方同基预发布：只在**同一轨**（都 beta 或都 debug）按序号严格递进才算更新；
-  // 跨轨（beta↔debug）同基不互推（BUG-480 case B：beta 装机误开 debug 通道，绝不被同基
-  // debug 预发布跨轨回灌——跨轨同基先后无意义）。
-  if (!_sameChannelTrack(remotePrerelease, localPrerelease)) return false;
-  return _comparePrerelease(remotePrerelease, localPrerelease) > 0;
+  // 任一侧序号未知（如正式版仅走 302 拿不到 seq，或本机构建号缺失）：同基无法判先后 →
+  // 保守不更新。绝不在无法证实「远端更晚」时把用户在同基的两个轨道间来回推；等基版本上升
+  // （上面 baseCompare>0）再更新。fail-open：不误升。
+  return false;
 }
 
 /// BUG-846 嵌套合集：用户通道 [channel] 能接纳的所有轨道（含更保守的轨道），从最保守
@@ -1602,14 +1667,6 @@ List<UpdateChannel> _channelsAdmittedBy(UpdateChannel channel) {
   };
 }
 
-/// 通道稳定度 rank：stable=0 < beta=1 < debug=2。同基版本选择时预发布轨优先于正式版，
-/// 让 beta/debug 用户停留在本轨而非同基塌回 stable（BUG-846）。
-int _channelTrackRank(UpdateChannel channel) => switch (channel) {
-      UpdateChannel.stable => 0,
-      UpdateChannel.beta => 1,
-      UpdateChannel.debug => 2,
-    };
-
 /// BUG-846：远端 [version] 所属轨道是否被 [channel] 的嵌套合集接纳。轨道由
 /// [channelForUpdateVersion] 推断（正式版 → stable，`-beta.N`/`-debug.N` → 对应轨），
 /// 与既有判据同一套 pattern，不新造。
@@ -1618,62 +1675,25 @@ bool _channelAdmitsVersion(String version, UpdateChannel channel) {
       .contains(channelForUpdateVersion(version));
 }
 
-/// 两个预发布串是否同一轨（都 beta 或都 debug）。用于同基版本判断能否按序号递进；
-/// 跨轨同基不互推（保留 BUG-480 铁律）。
-bool _sameChannelTrack(String remotePrerelease, String localPrerelease) {
-  for (final UpdateChannel track in const <UpdateChannel>[
-    UpdateChannel.beta,
-    UpdateChannel.debug,
-  ]) {
-    if (_prereleaseBelongsToChannel(remotePrerelease, track) &&
-        _prereleaseBelongsToChannel(localPrerelease, track)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/// **纯函数（BUG-457）**：把本机安装版本 [version] 归一成「可与本通道远端预发布比较」的
-/// 版本串。
+/// **纯函数（BUG-846「谁后用谁」）**：本机安装版本的 release sequence，供跨轨全序比较。
 ///
-/// 根因：beta/debug 通道的远端版本形如 `1.2.0-debug.7920`（预发布），而本机若装的是无后缀
-/// `1.2.0`（本地 `flutter build` 出的 release 包 versionName 直接取 pubspec 基版本），在 semver
-/// 里 `1.2.0-debug.7920 < 1.2.0`（预发布早于正式版）+ [isUpdateVersionNewer] 的「同基需本机
-/// 也是本通道预发布」判据 → 永远判「已是最新」，同基预发布更新永远推不动（用户报「点检查
-/// 更新说最新，实际不是」）。
+/// beta/debug 包版本串已带 `-<channel>.<seq>` → 直接取尾号；无后缀 `X.Y.Z`（正式版包 / 本地
+/// `flutter build`）→ 用平台构建号 [buildNumber]（Android versionCode / 桌面 raw build number）
+/// 反解（[_releaseSequenceFromPlatformBuildNumber]）。取不到 → null（同基无法判先后 → 保守）。
 ///
-/// 修复：本机 versionName 无预发布段时，用平台构建号 [buildNumber] 还原 release sequence，
-/// 重建成 `<base>-<channel>.<seq>` 再参与比较。这样 `1.2.0`（seq 7863）→ `1.2.0-debug.7863`，
-/// 远端 `1.2.0-debug.7920` 正确判为更新。
-///
-/// 不改变以下路径（原样返回归一后的 [version]）：
-/// * stable 通道（正式版比较不涉及预发布还原）。
-/// * 本机 versionName 已带本通道后缀（CI 构建 `1.2.0-debug.7863`，无需还原）。
-/// * 本机带**别通道**预发布后缀 / [buildNumber] 缺失或不可解析（fail-open，绝不误升）。
+/// **不再**把无后缀正式版伪造成 `<base>-<channel>.<seq>` 串（旧 `effectiveCurrentVersionFor…`
+/// 的做法）——那会把真正的正式版安装误标成本通道预发布轨，触发正式↔调试来回更新（BUG-846
+/// 乒乓根因）。现在只提取序号、不改轨道标签，正式版仍是正式版。
 ///
 /// 生产调用点：[scheduleCheck] 内部（网络路径）+ 设置页手动检查的缓存乐观比较路径。
-String effectiveCurrentVersionForUpdateChannel({
+int? currentReleaseSequence({
   required String version,
   required String? buildNumber,
-  required UpdateChannel channel,
 }) {
-  final String normalized = _stripBuildMetadata(version.trim());
-  if (channel == UpdateChannel.stable) return normalized;
-  // 已经带本通道后缀（CI 预发布包）→ 直接比较，不重建。
-  if (_versionBelongsToChannel(normalized, channel)) return normalized;
-  // 带别通道预发布后缀（如 stable 通道装 beta 包混用）→ 不猜，交由既有严格判据处理。
-  if (_prereleasePart(normalized) != null) return normalized;
-
-  final int? releaseSequence =
-      _releaseSequenceFromPlatformBuildNumber(buildNumber);
-  if (releaseSequence == null) return normalized;
-
-  final String channelName = switch (channel) {
-    UpdateChannel.beta => 'beta',
-    UpdateChannel.debug => 'debug',
-    UpdateChannel.stable => throw StateError('stable handled above'),
-  };
-  return '${_basePart(normalized)}-$channelName.$releaseSequence';
+  return _releaseSeqOf(
+    _stripBuildMetadata(version.trim()),
+    _releaseSequenceFromPlatformBuildNumber(buildNumber),
+  );
 }
 
 /// **纯函数（BUG-457）**：从平台构建号还原 CI release sequence（= `git rev-list --count HEAD`）。
@@ -1711,23 +1731,20 @@ bool isVersionNewer(String remote, String local) {
   return _comparePrerelease(remotePrerelease, localPrerelease) > 0;
 }
 
-/// BUG-846 候选新旧比较（供合集并集选择排序，非「是否更新」判定）：`>0` 表示 [a] 比
-/// [b] 更新。基版本降序主导；同基时预发布轨更前沿（debug>beta>stable）者更新——让
-/// beta/debug 用户在同基场景优先跟本轨的预发布，而非塌回同基正式版；同基同轨按预发布
-/// 序号。注意：这只决定「若都算更新，谁排前面」，真正能否升级仍由 [isUpdateVersionNewer]
-/// 逐个把关（同基跨轨/回退在那里被拒）。
-int _compareReleaseRecency(String a, String b) {
+/// BUG-846「谁后用谁」候选新旧比较（供合集并集选择排序，非「是否更新」判定）：`>0` 表示
+/// [a] 比 [b] 更新。基版本降序主导；同基按 release sequence（`git rev-list --count HEAD`，三
+/// 通道同尺）降序——正式版 seq 由 [seqA]/[seqB]（manifest 顶层 releaseSequence）提供，预发布
+/// seq 即版本串尾号。序号缺失（正式版 302 回退无 seq）→ 同基视为并列（稳定排序保原序）。
+/// 与 [isUpdateVersionNewer] 同尺，消除「排序偏预发布轨 vs 判据偏正式版」不一致这个乒乓根源。
+int _compareReleaseRecency(String a, String b, {int? seqA, int? seqB}) {
   final String va = _stripBuildMetadata(a.trim());
   final String vb = _stripBuildMetadata(b.trim());
   final int baseCompare = _compareBaseVersion(va, vb);
   if (baseCompare != 0) return baseCompare;
-  final int rankA = _channelTrackRank(channelForUpdateVersion(va));
-  final int rankB = _channelTrackRank(channelForUpdateVersion(vb));
-  if (rankA != rankB) return rankA.compareTo(rankB);
-  final String? pa = _prereleasePart(va);
-  final String? pb = _prereleasePart(vb);
-  if (pa == null || pb == null) return 0;
-  return _comparePrerelease(pa, pb);
+  final int? ra = _releaseSeqOf(va, seqA);
+  final int? rb = _releaseSeqOf(vb, seqB);
+  if (ra != null && rb != null) return ra.compareTo(rb);
+  return 0;
 }
 
 String _stripBuildMetadata(String version) => version.split('+').first;
@@ -1794,15 +1811,6 @@ bool _releaseTagMatchesChannel(String tag, UpdateChannel channel) {
   return switch (channel) {
     UpdateChannel.beta => _kBetaReleaseTagPattern.hasMatch(normalized),
     UpdateChannel.debug => _kDebugReleaseTagPattern.hasMatch(normalized),
-    UpdateChannel.stable => false,
-  };
-}
-
-bool _prereleaseBelongsToChannel(String prerelease, UpdateChannel channel) {
-  final String normalized = prerelease.trim();
-  return switch (channel) {
-    UpdateChannel.beta => _kBetaVersionPattern.hasMatch('0.0.0-$normalized'),
-    UpdateChannel.debug => _kDebugVersionPattern.hasMatch('0.0.0-$normalized'),
     UpdateChannel.stable => false,
   };
 }

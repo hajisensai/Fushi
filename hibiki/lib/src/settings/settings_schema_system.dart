@@ -241,12 +241,12 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   final String currentBuildNumber =
       settingsContext.appModel.packageInfo.buildNumber;
   final UpdateChannel channel = _channelFromSettings(settingsContext);
-  // BUG-457：缓存乐观比较也用还原后的版本，否则 beta/debug 通道装无后缀 `X.Y.Z` release
-  // 包时，缓存路径同样把同基预发布误判「已是最新」（与网络路径 scheduleCheck 内部还原一致）。
-  final String comparableVersion = effectiveCurrentVersionForUpdateChannel(
+  // BUG-846「谁后用谁」：缓存乐观比较用本机 release sequence（无后缀 `X.Y.Z` 正式版包 /
+  // beta/debug 包都能取到），与网络路径 scheduleCheck 同源。远端 seq 从缓存的 latestTag 串
+  // 自取（beta/debug 带尾号；正式版无 → 保守走基版本比较，网络刷新随后收口）。
+  final int? currentReleaseSeq = currentReleaseSequence(
     version: currentVersion,
     buildNumber: currentBuildNumber,
-    channel: channel,
   );
   final UpdateCheckCacheEntry? cached = cachedEntryForChannel(
     settingsContext.appModel.updateCheckCache,
@@ -254,7 +254,8 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   );
   if (cached != null) {
     final bool newer = updateTagIsNewerThanCurrent(
-        cached.latestTag, comparableVersion, channel);
+        cached.latestTag, currentVersion, channel,
+        localSeq: currentReleaseSeq);
     HibikiToast.show(
       msg: newer
           ? t.update_cached_newer(version: cached.latestTag)
