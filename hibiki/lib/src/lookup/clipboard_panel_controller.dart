@@ -202,6 +202,13 @@ class ClipboardPanelController {
         _visible = false;
         await _showPanel(model);
         if (seq != _updateSeq) return;
+      } else {
+        // 已显示：每次查词把面板抬到 z 序最上，不抢焦点（游戏/浏览器仍持键盘
+        // 焦点）。已 pin 直接置顶，否则顶到非置顶带最上——修复「面板被别的窗
+        // 压住时，新剪贴板查词只原地更新、看不到」。_showPanel 分支已在 reveal
+        // 时置顶，故只在这里补。
+        await _channel.raise(topmost: model.clipboardPanelPinned);
+        if (seq != _updateSeq) return;
       }
       await _renderPanel(model);
       glog('panel: updated "${request.text.length} chars" '
@@ -227,6 +234,11 @@ class ClipboardPanelController {
     if (!_visible || !await _channel.isShowing()) {
       _visible = false;
       await _showPanel(model);
+      if (seq != _updateSeq) return;
+    } else {
+      // 已显示：纯文字态也把面板抬到 z 序最上（每次剪贴板更新即前台，不抢焦点），
+      // 与自动查词路径口径一致。
+      await _channel.raise(topmost: model.clipboardPanelPinned);
       if (seq != _updateSeq) return;
     }
     await _renderPanel(model);
@@ -306,6 +318,9 @@ class ClipboardPanelController {
     // 真机实测它经 windowed WebView2 呈现为不透明，且毛玻璃≠「看见底下」。
     await _channel.setWindowAlpha((model.clipboardPanelOpacity * 100).round());
     await _channel.setPinned(model.clipboardPanelPinned);
+    // 防截屏：按 pref（默认开）给面板窗设 display affinity。窗口重建后 native
+    // 侧 ApplyBlockCapture 自动重加，这里每次显示再确认一次（pref 可能已改）。
+    await _channel.setBlockCapture(model.clipboardPanelBlockCapture);
     // pin 视觉态同步折进 _renderPanel 的渲染脚本（审查修正：native
     // pending_json_ 是单槽缓存，独立发送会被随后的栈渲染覆盖丢失）。
     glog('panel: shown rect=$_panelRect '
@@ -383,7 +398,12 @@ class ClipboardPanelController {
     final String pinVisualJs = 'window.__globalLookupHost && '
         'window.__globalLookupHost.setPanelPinnedVisual('
         '${model.clipboardPanelPinned});';
-    await _channel.render('$script\n$pinVisualJs');
+    // 防截屏按钮视觉态同样并进同一渲染脚本（native pending_json_ 单槽缓存，
+    // 独立脚本会互相覆盖），保证 🛡 图标与卡片、pin 同帧就位。
+    final String blockCaptureVisualJs = 'window.__globalLookupHost && '
+        'window.__globalLookupHost.setPanelBlockCaptureVisual('
+        '${model.clipboardPanelBlockCapture});';
+    await _channel.render('$script\n$pinVisualJs\n$blockCaptureVisualJs');
   }
 
   void _onJsMessage(Map<String, Object?> message) {
@@ -425,6 +445,13 @@ class ClipboardPanelController {
             args is List && args.isNotEmpty && args.first == true;
         unawaited(_channel.setPinned(pinned));
         unawaited(model?.setClipboardPanelPinned(pinned));
+      case 'panelBlockCapture':
+        // 防截屏按钮：切 native display affinity + 落 pref（默认开）。
+        final Object? args = message['args'];
+        final bool block =
+            args is List && args.isNotEmpty && args.first == true;
+        unawaited(_channel.setBlockCapture(block));
+        unawaited(model?.setClipboardPanelBlockCapture(block));
       case 'panelClose':
         unawaited(hidePanel());
       case 'dismissPopupAt':

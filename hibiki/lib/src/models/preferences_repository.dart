@@ -566,6 +566,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 防截屏（剪贴板面板，Windows）—— 面板窗设 SetWindowDisplayAffinity
+  /// (WDA_EXCLUDEFROMCAPTURE)，对用户可见但从截图 / 录屏 / 屏幕共享排除。
+  /// 默认 true（隐私优先）；面板栏 🛡 按钮切换。
+  bool get clipboardPanelBlockCapture =>
+      getPref('clipboard_panel_block_capture', defaultValue: true) as bool;
+
+  Future<void> setClipboardPanelBlockCapture(bool value) async {
+    await setPref('clipboard_panel_block_capture', value);
+    notifyListeners();
+  }
+
   final int defaultSearchDebounceDelay = 100;
 
   int get searchDebounceDelay => getPref('auto_search_debounce_delay',

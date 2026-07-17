@@ -13,6 +13,20 @@
 
 #pragma comment(lib, "Shlwapi.lib")
 
+// 防截屏 — SetWindowDisplayAffinity 的 WDA_EXCLUDEFROMCAPTURE 需 Win10 2004+ SDK。
+// 老 SDK 头文件里没有这些常量时兜底定义（运行时 Win10<2004 会让 API 返回失败，
+// ApplyBlockCapture 再回退 WDA_MONITOR）。SetWindowDisplayAffinity 本体在 user32，
+// windows.h 已声明。
+#ifndef WDA_NONE
+#define WDA_NONE 0x00000000
+#endif
+#ifndef WDA_MONITOR
+#define WDA_MONITOR 0x00000001
+#endif
+#ifndef WDA_EXCLUDEFROMCAPTURE
+#define WDA_EXCLUDEFROMCAPTURE 0x00000011
+#endif
+
 using Microsoft::WRL::Callback;
 using Microsoft::WRL::Make;
 
@@ -338,6 +352,9 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
     if (hwnd_ == nullptr) {
       return false;
     }
+    // 防截屏 — 新窗口一建立就按最后一次 SetBlockCapture 的值置 display affinity，
+    // 故 ForgetDeadWindow / 崩溃恢复重建后仍然生效（默认 false = 不影响）。
+    ApplyBlockCapture();
     EnsureWebView();
   } else {
     SetWindowPos(hwnd_, HWND_TOPMOST, off_x, 0, width, height, SWP_NOACTIVATE);
@@ -377,6 +394,8 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   if (hwnd_ == nullptr) {
     return;
   }
+  // 防截屏 — 预热窗同样一建立就套用（见 ShowAt 同名调用）。
+  ApplyBlockCapture();
   EnsureWebView();
   // Show off-screen (so WebView2 lays out + navigates and NavigationCompleted
   // fires -> webview_ready_) but keep visible_ false: the click-outside hooks
@@ -653,6 +672,47 @@ void GlobalLookupWindow::SetTopmost(bool topmost) {
   // 此标志兜底防回归；与 Reveal/RevealStack 的 SetWindowPos 口径一致。
   SetWindowPos(hwnd_, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+}
+
+void GlobalLookupWindow::SetBlockCapture(bool block) {
+  block_capture_ = block;
+  ApplyBlockCapture();
+}
+
+void GlobalLookupWindow::ApplyBlockCapture() {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  // WDA_EXCLUDEFROMCAPTURE：窗口对用户可见但从截图 / 录屏 / 屏幕共享里排除
+  // （查词内容不外泄）。Win10<2004 该值不被支持 -> API 失败，回退 WDA_MONITOR
+  // （被捕获处画成黑块，同样不泄露内容）。关闭时 WDA_NONE 恢复正常可截。
+  if (!block_capture_) {
+    SetWindowDisplayAffinity(hwnd_, WDA_NONE);
+    return;
+  }
+  if (!SetWindowDisplayAffinity(hwnd_, WDA_EXCLUDEFROMCAPTURE)) {
+    SetWindowDisplayAffinity(hwnd_, WDA_MONITOR);
+  }
+}
+
+void GlobalLookupWindow::RaiseToFront(bool topmost) {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  // 每次查词把已显示的面板重排到 z 序最上，绝不激活（SWP_NOACTIVATE，不抢当前
+  // 前台窗口键盘焦点）。SWP_NOOWNERZORDER 兜底不连带 owner（面板现无 owner，
+  // 与 SetTopmost/Reveal 口径一致）。
+  const UINT flags =
+      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+  if (topmost) {
+    // 已 pin：直接顶到置顶带最上。
+    SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0, flags);
+    return;
+  }
+  // 未 pin：裸 HWND_TOP 在别的 app 处于前台时可能被前台锁拒绝，故先短暂置顶
+  // 再撤销——面板落到「非置顶带最上、仍压在前台游戏/浏览器之上」，且全程不激活。
+  SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0, flags);
+  SetWindowPos(hwnd_, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
 }
 
 void GlobalLookupWindow::SetWindowAlpha(int percent) {

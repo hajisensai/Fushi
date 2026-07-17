@@ -178,6 +178,20 @@ class GlobalLookupWindow {
   // or activating. No-op before the window exists.
   void SetTopmost(bool topmost);
 
+  // 防截屏（剪贴板面板） — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：
+  // 窗口对用户可见，但被排除在截图 / 录屏 / 屏幕共享捕获之外（内容不外泄）。
+  // 记住 [block] 到 block_capture_，窗口重建（ForgetDeadWindow → 新 hwnd）后由
+  // CreateWindowExW 之后的 ApplyBlockCapture() 自动重加。默认 false（瞬态查词
+  // 覆盖窗不受影响）；面板实例的 Dart 控制器在显示时按 pref 置 true。
+  void SetBlockCapture(bool block);
+
+  // 面板抬前台 — 每次查词把已显示的面板重排到 z 序最上，绝不激活（不抢当前
+  // 前台窗口的键盘焦点）。[topmost]=true（已 pin）直接 HWND_TOPMOST；false
+  // 时用 TOPMOST→NOTOPMOST 弹一下，绕过前台锁把面板顶到非置顶带最上（裸
+  // HWND_TOP 在别的 app 处于前台时可能被系统拒绝）。No-op before the window
+  // exists.
+  void RaiseToFront(bool topmost);
+
   // spec §6 真机修正 — WHOLE-WINDOW opacity via WS_EX_LAYERED +
   // SetLayeredWindowAttributes(LWA_ALPHA). Real-device finding: the acrylic
   // backdrop chain renders user-visibly OPAQUE through the windowed WebView2
@@ -227,6 +241,10 @@ class GlobalLookupWindow {
   // WebView2 proxies so the next ShowAt/PrewarmWebView rebuilds from scratch.
   bool OwnsLiveWindow() const;
   void ForgetDeadWindow();
+  // 防截屏 — 把 block_capture_ 应用到当前 hwnd_（SetWindowDisplayAffinity）。
+  // 每次 CreateWindowExW 之后调用一次，故窗口重建（ForgetDeadWindow / 崩溃恢复）
+  // 后依然按最后一次 SetBlockCapture 的值生效。No-op before the window exists.
+  void ApplyBlockCapture();
   void EnsureWebView();
   // 背景逐像素透明（composition 模式）辅助：
   // InitCompositionDevice — 建 D3D11 + DComp 设备（无需 HWND），可在建窗前探测能力；
@@ -280,6 +298,9 @@ class GlobalLookupWindow {
   bool arm_dismiss_hooks_ = true;
   bool activatable_ = false;
   bool taskbar_presence_ = false;
+  // 防截屏当前请求值（真相源是 Dart pref；窗口重建后 ApplyBlockCapture 用它重加）。
+  // 默认 false：只有面板实例的控制器会按 pref 置 true，瞬态覆盖窗恒不受影响。
+  bool block_capture_ = false;
   // 背景逐像素透明模式（仅面板实例）：composition controller + DirectComposition。
   // 默认 false=windowed（瞬态窗与历史行为一字不改）。见 SetCompositionMode。
   bool composition_mode_ = false;

@@ -1278,6 +1278,18 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
           clipboard_panel_window_->SetTopmost(
               BoolFromValue(args, "pinned", true));
           result->Success();
+        } else if (method == "setBlockCapture") {
+          // 防截屏 — WDA_EXCLUDEFROMCAPTURE：面板对用户可见但不进截图 / 录屏 /
+          // 屏幕共享。默认 true（Dart pref clipboardPanelBlockCapture 默认开）。
+          clipboard_panel_window_->SetBlockCapture(
+              BoolFromValue(args, "block", true));
+          result->Success();
+        } else if (method == "raise") {
+          // 面板抬前台 — 每次查词把已显示的面板重排到 z 序最上，不抢焦点；
+          // topmost（已 pin）直接置顶，否则顶到非置顶带最上（见 RaiseToFront）。
+          clipboard_panel_window_->RaiseToFront(
+              BoolFromValue(args, "topmost", false));
+          result->Success();
         } else if (method == "setWindowTitle") {
           // 面板任务栏图标 — Dart 传本地化标题（任务栏按钮 / Alt-Tab 项）。
           clipboard_panel_window_->SetWindowTitle(

@@ -4275,6 +4275,9 @@ class AppModel with ChangeNotifier {
   bool get clipboardPanelPinned => prefsRepo.clipboardPanelPinned;
   Future<void> setClipboardPanelPinned(bool v) =>
       prefsRepo.setClipboardPanelPinned(v);
+  bool get clipboardPanelBlockCapture => prefsRepo.clipboardPanelBlockCapture;
+  Future<void> setClipboardPanelBlockCapture(bool v) =>
+      prefsRepo.setClipboardPanelBlockCapture(v);
 
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
