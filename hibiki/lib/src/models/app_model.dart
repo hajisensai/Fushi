@@ -624,24 +624,6 @@ class AppModel with ChangeNotifier {
   /// Keyboard / gamepad shortcut bindings, persisted in preferences.
   final HibikiShortcutRegistry shortcutRegistry = HibikiShortcutRegistry();
 
-  /// TODO-973: the SINGLE source of truth for "a controller is driving
-  /// auto-immersive mode right now". `true` once a controller is present AND the
-  /// user opted into [gamepadAutoImmersive]; `false` otherwise. Every chrome host
-  /// that should yield to controller immersion — the global bottom bar / side
-  /// rail ([adaptiveBottomBar]/[adaptiveNavRail]) and the video page — listens to
-  /// this so they all hide together, instead of the presence signal reaching only
-  /// the open reader (which used to leave the app-level bottom bar visible behind
-  /// the reader and never touched the video page). A [ValueNotifier] (not the
-  /// coarse [notifyListeners]) so hosts can rebuild precisely and tests can drive
-  /// the rising/falling edge directly.
-  ///
-  /// Reader ownership is unchanged: the reader still drives its own chrome through
-  /// [ReaderHibikiSource.onGamepadPresenceChanged] + its `_chromeHiddenByGamepad`
-  /// restore semantics (never fight a manual toggle). This notifier is the global
-  /// READ surface, fed from the same gated presence callback, so the reader's
-  /// behaviour is byte-for-byte preserved (Never break userspace).
-  final ValueNotifier<bool> gamepadImmersiveActive = ValueNotifier<bool>(false);
-
   /// TODO-1375：媒体（阅读器 / 视频）是否打开的**可靠**通知源，专供 macOS 原生壳的
   /// 根 sidebar 显隐门控（main.dart 的 MacosWindow）。根因：sidebar 过去直接读
   /// `isMediaOpen`（= `_currentMediaSource != null`）在 MaterialApp.builder 里求值，
@@ -660,27 +642,11 @@ class AppModel with ChangeNotifier {
   late final GamepadService gamepadService = GamepadService(
     navigatorKey: navigatorKey,
     registry: shortcutRegistry,
-    // TODO-728/TODO-973: bridge controller presence to the global immersive
-    // state, gated on the user preference so it is inert unless opted in.
-    onPresenceChanged: _onGamepadPresenceChanged,
     // TODO-1113 P3: lets the pointer route keep the ring lit on a mouse DOWN that
     // carries focus to a target while focus navigation is enabled (hover/move
     // still hide it). Live-read so toggling the preference takes effect at once.
     focusNavigationEnabled: () => experimentalFocusNavigationEnabled,
   );
-
-  /// TODO-973: the one place controller presence becomes app state. Gated on the
-  /// [gamepadAutoImmersive] preference: when the user has NOT opted in, immersive
-  /// state stays false no matter what the controller does (so nothing — bottom
-  /// bar, reader, video — ever auto-hides; Never break userspace for opted-out
-  /// users). When opted in, [present] sets the global [gamepadImmersiveActive]
-  /// single source of truth AND forwards to the open reader (which keeps its own
-  /// hide/restore ownership semantics).
-  void _onGamepadPresenceChanged(bool present) {
-    gamepadImmersiveActive.value = present && gamepadAutoImmersive;
-    if (!gamepadAutoImmersive) return;
-    ReaderHibikiSource.onGamepadPresenceChanged?.call(present);
-  }
 
   /// Resets the focus highlight to touch mode on every route push/pop so a ring
   /// lit by keyboard/gamepad navigation on one page is not carried onto the next
@@ -1256,8 +1222,6 @@ class AppModel with ChangeNotifier {
 
   Stream<void> get playPauseHeadsetActionStream =>
       audioCtrl.playPauseHeadsetActionStream;
-
-  Stream<bool> get creatorActiveStream => audioCtrl.creatorActiveStream;
 
   /// Used to check whether or not the app is currently using a media source.
   bool get isMediaOpen => _currentMediaSource != null;
@@ -2629,12 +2593,6 @@ class AppModel with ChangeNotifier {
   Future<void> setStartupDefaultDictionaryTab(bool value) =>
       prefsRepo.setStartupDefaultDictionaryTab(value);
 
-  /// 「视频」功能现已毕业为常驻：首页底栏永久显示「视频」tab、视频页导入入口
-  /// 永久放出、书架不再重复显示视频分区。功能仍标记为实验性（底栏图标徽标 +
-  /// 视频页提示横幅），但不再受设置开关门控——故此处恒为 true，保持所有调用点
-  /// （home_page 底栏 / home_video_page 导入 / 书架视频区门控）逻辑不变。
-  bool get experimentalVideoEnabled => true;
-
   /// 启用的 mpv 着色器（JSON 字符串数组；见 video_shader_manager.dart）。
   String get videoShadersEnabled => prefsRepo.videoShadersEnabled;
 
@@ -2797,29 +2755,6 @@ class AppModel with ChangeNotifier {
   bool get reverseReaderBottomBar => prefsRepo.reverseReaderBottomBar;
   void toggleReverseReaderBottomBar() =>
       prefsRepo.toggleReverseReaderBottomBar();
-
-  // TODO-728: gamepad-present auto-immersive preference, delegated to prefsRepo
-  // (mirrors showMediaNotification). Default false.
-  bool get gamepadAutoImmersive => prefsRepo.gamepadAutoImmersive;
-  void toggleGamepadAutoImmersive() {
-    prefsRepo.toggleGamepadAutoImmersive();
-    _recomputeGamepadImmersive();
-  }
-
-  Future<void> setGamepadAutoImmersive(bool value) async {
-    await prefsRepo.setGamepadAutoImmersive(value);
-    _recomputeGamepadImmersive();
-  }
-
-  /// TODO-973: re-derive the global [gamepadImmersiveActive] single source of
-  /// truth from CURRENT controller presence + the (possibly just-changed)
-  /// [gamepadAutoImmersive] preference. Called when the preference toggles
-  /// MID-presence — the presence callback only fires on rising/falling edges, so
-  /// without this, opting out while a controller is active would leave the bars
-  /// hidden until the controller goes idle. Reuses the same presence path so the
-  /// reader stays in sync too (forwarding is a no-op when nothing changed).
-  void _recomputeGamepadImmersive() =>
-      _onGamepadPresenceChanged(gamepadService.gamepadPresent);
 
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
@@ -4116,7 +4051,6 @@ class AppModel with ChangeNotifier {
     incognitoNotifier.dispose();
     databaseCloseNotifier.dispose();
     homeDictionaryTabRequest.dispose();
-    gamepadImmersiveActive.dispose();
     mediaOpenNotifier.dispose();
     // session 的控制流订阅引用 audioCtrl 的 stream，须在 audioCtrl.dispose 前拆。
     audiobookSession.dispose();

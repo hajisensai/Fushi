@@ -12,10 +12,4 @@ class DesktopPermissionService implements PlatformPermissionService {
 
   @override
   Future<bool> requestCameraPermission() async => true;
-
-  @override
-  Future<bool> canDrawOverlays() async => false;
-
-  @override
-  Future<void> requestOverlayPermission() async {}
 }

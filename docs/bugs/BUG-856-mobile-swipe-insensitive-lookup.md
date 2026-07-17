@@ -1,0 +1,11 @@
+## BUG-856 · 手机滑动翻页迟钝且短滑误触查词
+- **报告**：2026-07-16（用户：qqbotxiaoxiao）
+- **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/pages/implementations/reader_hibiki/webview.part.dart:844,851`（旧 `_gestureEnd` 把查词框上界直接取成翻页距离阈值 `$swipeDistThreshold`=72px），阈值本身在 `hibiki/lib/src/reader/reader_settings.dart:411-412`（`baseSwipeDistPx=72 / baseSwipeFastDistPx=36`）。
+- **[x] ① 已修复** — 提交 <PENDING>
+  - 根因：分页触摸 `_gestureEnd` 里「翻页」与「查词」共用同一个 72px：翻页需 `absDx≥72`（或快滑 `≥36 且 900px/s`），而查词分支是 `absDx<72 && absDy<72`。两个 72 相同 → **没有死区**：① 72px 在手机上太长 → 「要滑很长才翻」；② 任何够不到 72 的横滑（如 50px）落进查词分支 → 「翻短了会查词」。
+  - 修复：
+    - 降低默认翻页距离阈值（`reader_settings.dart`）`baseSwipeDistPx 72→44`、`baseSwipeFastDistPx 36→22`（「轻快」档，灵敏度系数仍可上调回旧手感）。
+    - 新增固定「原地轻点」半径常量 `ReaderSettings.tapSlopPx=28`（**不随灵敏度缩放**），注入为 `$tapSlop`。
+    - `_gestureEnd` 查词分支由 `absDx<$swipeDistThreshold && absDy<$swipeDistThreshold` 改为 `absDx<=$tapSlop && absDy<=$tapSlop`：只有两轴 ≤28px 的原地轻点才查词；横向主导、超 28px 却够不到翻页阈值的短滑落到两分支之外 → **空操作**（既不翻页也不查词），切断短滑误查词。TODO-971 慢点词由「去掉 500ms 时限」保住（保留），不靠 72px 大框（副作用，回收）。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/reader_paged_touch_swipe_behavior_test.js`（新增可控时钟建模速度：慢 30px 横滑=死区无查词、快 30px flick=翻页、小 25px 点=查词；vertical drag 死区）+ `hibiki/test/reader/swipe_page_turn_sensitivity_test.dart`（阈值 44/22 及缩放 + `tapSlopPx==28` 守卫）。
+- **备注**：触摸「手感」需用户真机复测；单测/harness 只锁逻辑判据。与 [[BUG-857]]（横排滑动方向）同 PR、同一次真机验证。

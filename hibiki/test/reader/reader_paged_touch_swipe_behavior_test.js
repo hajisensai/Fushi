@@ -65,6 +65,16 @@ function makeHarness(continuousMode) {
   const taps = [];
   let currentDispatch = null;
 
+  // Controllable clock so tests can model gesture DURATION (hence velocity):
+  // _gestureEnd computes `velocity = absDx / elapsed * 1000`. With the real Date
+  // every synchronous dispatch has elapsed≈0 → velocity≈infinity, which would
+  // make the fast-swipe path fire for any absDx>=fastDist and make a "slow short
+  // drag = dead zone" case untestable. advance(ms) between touchstart and
+  // touchend sets `elapsed`, so a slow drift stays below the 900px/s fast gate.
+  let clockMs = 1000;
+  function FakeDate() {}
+  FakeDate.now = function () { return clockMs; };
+
   const body = { writingMode: 'horizontal-tb' };
   const fakeElement = {
     tagName: 'P',
@@ -123,7 +133,7 @@ function makeHarness(continuousMode) {
 
   const sandbox = {
     Node: { TEXT_NODE: 3 },
-    Date,
+    Date: FakeDate,
     Math,
     URL,
     document: documentObj,
@@ -142,8 +152,9 @@ function makeHarness(continuousMode) {
     .replace(/\$vnMode/g, 'false')
     .replace(/\$vnClickAdvance/g, 'false')
     .replace(/\$hoverAutoLookup/g, 'false')
-    .replace(/\$swipeDistThreshold/g, '72')
-    .replace(/\$swipeFastDistThreshold/g, '36')
+    .replace(/\$swipeDistThreshold/g, '44')
+    .replace(/\$swipeFastDistThreshold/g, '22')
+    .replace(/\$tapSlop/g, '28')
     // BUG-712 ①: the tap-gate mirror line
     // `window.__hoshiTapGate = { chrome: $_showChrome, lookup:
     // ${ReaderHibikiSource.instance.highlightOnTap}, maxLen: 400 };` is emitted
@@ -167,7 +178,9 @@ function makeHarness(continuousMode) {
     }
   }
 
-  return { dispatch, swipes, taps };
+  function advance(ms) { clockMs += ms; }
+
+  return { dispatch, swipes, taps, advance };
 }
 
 function pointerEvt(type, x, y, button, buttons) {
@@ -197,7 +210,7 @@ function touchEvt(x, y) {
   h.dispatch('touchstart', touchEvt(200, 300));
   h.dispatch('pointermove', pointerEvt('touch', 150, 300, -1, 1));
   h.dispatch('pointermove', pointerEvt('touch', 80, 300, -1, 1));
-  h.dispatch('touchend', touchEvt(80, 300)); // dx = -120 (> 72)
+  h.dispatch('touchend', touchEvt(80, 300)); // dx = -120 (> 44)
   h.dispatch('pointerup', pointerEvt('touch', 80, 300, 0, 0));
   // The page turn must come from the touchend path; pointerup must stay silent.
   // Reverting the fix makes touchend emit nothing (swipe lost to the pointer
@@ -250,42 +263,41 @@ function touchEvt(x, y) {
   );
 })();
 
-// TODO-971: PAGED mode, a 30px drift (below the 72px swipe threshold but above
-// the old 20px tap upper-bound) must be treated as a TAP, not silently dropped.
-// Pre-fix `_gestureEnd` had `else if (absDx < 20 && absDy < 20 && elapsed < 500)`
-// for the tap branch, so a 20~72px drift hit neither swipe nor tap -> the word
-// lookup was lost ("单词点不中"). The fix drops the 20px /
-// 500ms gate: anything that did NOT trigger a page swipe is a tap.
+// BUG-手机翻短了会查词: PAGED mode, a SLOW ~30px horizontal drift is a short,
+// under-powered swipe -- it must be a DEAD ZONE (no page turn, and crucially NO
+// word lookup). dx=30 is beyond the 28px tap-slop (so not a tap) yet below the
+// 44px pure-distance swipe threshold, and the slow duration keeps velocity under
+// the 900px/s fast gate. Pre-fix the tap box == the 72px swipe threshold, so this
+// fell into the tap branch and fired a spurious lookup ("翻短了会查词").
 (function () {
   const h = makeHarness(false);
   h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
   h.dispatch('touchstart', touchEvt(200, 300));
+  h.advance(300); // slow drift: velocity = 30/300*1000 = 100px/s (< 900)
   h.dispatch('pointermove', pointerEvt('touch', 215, 305, -1, 1));
-  h.dispatch('touchend', touchEvt(230, 308)); // dx = +30 (>20, <72), dy = +8
+  h.dispatch('touchend', touchEvt(230, 308)); // dx = +30 (>28 slop, <44 dist), dy = +8
   h.dispatch('pointerup', pointerEvt('touch', 230, 308, 0, 0));
   assert.deepStrictEqual(
     h.swipes, [],
-    'a 30px drift must NOT page-turn (below swipe threshold); got '
+    'a slow 30px horizontal drift must NOT page-turn (below swipe distance); got '
       + JSON.stringify(h.swipes),
   );
   assert.deepStrictEqual(
-    h.taps, [230],
-    'a 30px drift (no swipe) must be treated as a tap, not dropped; got '
-      + JSON.stringify(h.taps),
+    h.taps, [],
+    'a slow 30px horizontal drift must be a DEAD ZONE, never a word lookup '
+      + '(fixes 翻短了会查词); got ' + JSON.stringify(h.taps),
   );
 })();
 
-// TODO-971 guard: a LARGE vertical drag (dy=120, above the 72px swipe distance)
-// is a scroll/drag gesture, NOT a tap. The fix caps the tap window at the swipe
-// distance threshold so continuous-mode scroll drags don't fire a spurious word
-// lookup. (Vertical-dominant means absDx<absDy so the swipe branch never fires;
-// without the cap this would wrongly emit onTap.)
+// A LARGE vertical drag (dy=120) is a scroll/drag gesture, NOT a tap: absDy
+// exceeds the 28px tap-slop so the tap branch is skipped, and absDx<absDy keeps
+// the swipe branch off -> dead zone, no spurious lookup.
 (function () {
   const h = makeHarness(false);
   h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
   h.dispatch('touchstart', touchEvt(200, 300));
   h.dispatch('pointermove', pointerEvt('touch', 205, 240, -1, 1));
-  h.dispatch('touchend', touchEvt(208, 180)); // dx = +8, dy = -120 (>72)
+  h.dispatch('touchend', touchEvt(208, 180)); // dx = +8, dy = -120 (>28 slop)
   h.dispatch('pointerup', pointerEvt('touch', 208, 180, 0, 0));
   assert.deepStrictEqual(
     h.swipes, [], 'a vertical drag must not page-turn; got '
@@ -293,7 +305,45 @@ function touchEvt(x, y) {
   );
   assert.deepStrictEqual(
     h.taps, [],
-    'a large (>72px) drag is a scroll, not a tap; must NOT emit onTap; got '
+    'a large vertical drag is a scroll, not a tap; must NOT emit onTap; got '
+      + JSON.stringify(h.taps),
+  );
+})();
+
+// BUG-手机翻页迟钝: a FAST short flick (dx=30 over 20ms -> 1500px/s) must turn the
+// page via the fast-swipe gate (absDx>=22 fastDist AND velocity>=900), so users
+// no longer have to drag a long way. dx=30 is below the 44px pure-distance
+// threshold; only the fast path makes it a page turn.
+(function () {
+  const h = makeHarness(false);
+  h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
+  h.dispatch('touchstart', touchEvt(200, 300));
+  h.advance(20); // fast flick: velocity = 30/20*1000 = 1500px/s (>= 900)
+  h.dispatch('pointermove', pointerEvt('touch', 185, 300, -1, 1));
+  h.dispatch('touchend', touchEvt(170, 300)); // dx = -30 (leftward), dy = 0
+  h.dispatch('pointerup', pointerEvt('touch', 170, 300, 0, 0));
+  assert.deepStrictEqual(
+    h.swipes, ['left@touchend'],
+    'a fast 30px flick must page-turn via the fast gate; got '
+      + JSON.stringify(h.swipes),
+  );
+})();
+
+// A small horizontal tap (dx=25, within the 28px slop) is still a word lookup:
+// the tap box stays generous enough for normal finger jitter, so on-text tapping
+// keeps working (the TODO-971 "单词点不中" concern is preserved by the removed
+// 500ms time gate, not by a 72px box).
+(function () {
+  const h = makeHarness(false);
+  h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
+  h.dispatch('touchstart', touchEvt(200, 300));
+  h.advance(300); // slow, so the fast-swipe gate never fires
+  h.dispatch('touchend', touchEvt(225, 306)); // dx = +25 (<=28 slop), dy = +6
+  h.dispatch('pointerup', pointerEvt('touch', 225, 306, 0, 0));
+  assert.deepStrictEqual(h.swipes, [], 'a small tap must not page-turn');
+  assert.deepStrictEqual(
+    h.taps, [225],
+    'a small (<=28px) horizontal tap must still report onTap (word lookup); got '
       + JSON.stringify(h.taps),
   );
 })();

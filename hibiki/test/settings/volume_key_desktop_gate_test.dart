@@ -1,9 +1,9 @@
 // TODO-1155：桌面隐藏「音量键」相关配置。VolumeKeyChannel 是 Android-only（桌面/iOS
-// 无实现），故音量键翻页开关 / 翻页速度 / 音量键句子导航三项在非 Android 上无意义，必须
-// 隐藏。渲染层 buildSectionRows 走 SettingsSection.visibleCopy(isVisible) 过滤，一处 visible
+// 无实现），故音量键翻页开关 / 音量键句子导航两项在非 Android 上无意义，必须隐藏。
+// 渲染层 buildSectionRows 走 SettingsSection.visibleCopy(isVisible) 过滤，一处 visible
 // 即同时隐藏主页设置页与阅读器快捷面板投影。
 //
-// 守卫：① 三项都带 visible 门控（非「总是显示」）；② 门控恰为 Platform.isAndroid（源码扫描）。
+// 守卫：① 两项都带 visible 门控（非「总是显示」）；② 门控恰为 Platform.isAndroid（源码扫描）。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -22,17 +22,12 @@ void main() {
   }
 
   group('音量键三项 desktop 门控（TODO-1155）', () {
-    test('reading：音量键翻页 + 翻页速度两项都带 visible 门控（非总是显示）', () {
+    test('reading：音量键翻页开关带 visible 门控（非总是显示）', () {
       final SettingsDestination reading = buildReadingDestination();
       expect(
         itemById(reading, 'reading_controls.volume_page_turning').visible,
         isNotNull,
         reason: '音量键翻页开关必须平台门控，桌面不显示',
-      );
-      expect(
-        itemById(reading, 'reading_controls.volume_page_turning_speed').visible,
-        isNotNull,
-        reason: '音量键翻页速度必须平台门控，桌面不显示',
       );
     });
 
@@ -67,14 +62,13 @@ void main() {
       );
     }
 
-    test('reading schema：两项门控为 Platform.isAndroid + 有 dart:io import', () {
+    test('reading schema：翻页开关门控为 Platform.isAndroid + 有 dart:io import', () {
       final String src =
           readSource('lib/src/settings/settings_schema_reading.dart')
               .readAsStringSync();
       expect(src.contains("import 'dart:io'"), isTrue,
           reason: 'reading schema 需 import dart:io 用 Platform');
       expectAndroidGate(src, 'reading_controls.volume_page_turning');
-      expectAndroidGate(src, 'reading_controls.volume_page_turning_speed');
     });
 
     test('listening schema：句子导航门控为 Platform.isAndroid', () {

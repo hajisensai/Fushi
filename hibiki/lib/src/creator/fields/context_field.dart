@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
@@ -26,20 +24,4 @@ class ContextField extends Field {
 
   @override
   String getLocalisedLabel(AppModel appModel) => t.creator_field_context;
-
-  @override
-  String? onCreatorOpenAction({
-    required WidgetRef ref,
-    required AppModel appModel,
-    required CreatorModel creatorModel,
-    required DictionaryEntry entry,
-    required bool creatorJustLaunched,
-    required String? dictionaryName,
-  }) {
-    if (appModel.currentMediaItem != null) {
-      return appModel.currentMediaItem!.title;
-    } else {
-      return '';
-    }
-  }
 }

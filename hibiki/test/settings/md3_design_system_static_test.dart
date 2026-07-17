@@ -73,9 +73,6 @@ void main() {
     'lib/src/utils/components/hibiki_list_tile.dart': <String>[
       'HibikiListItem',
     ],
-    'lib/src/utils/components/hibiki_bottom_sheet.dart': <String>[
-      'HibikiListItem',
-    ],
     'lib/src/utils/components/hibiki_text_selection_controls.dart': <String>[
       'HibikiCard',
       'HibikiOverflowMenu',
@@ -99,10 +96,6 @@ void main() {
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
       'HibikiPageScaffold',
       'HibikiCard',
-      'HibikiDesignTokens',
-    ],
-    'lib/src/utils/components/hibiki_search_history.dart': <String>[
-      'HibikiListItem',
       'HibikiDesignTokens',
     ],
     'lib/src/pages/implementations/collections_page.dart': <String>[
@@ -255,9 +248,6 @@ void main() {
       'HibikiTagChip',
       'HibikiDesignTokens',
     ],
-    'lib/src/pages/implementations/placeholder_source_page.dart': <String>[
-      'HibikiTransientScaffold',
-    ],
     'lib/src/utils/misc/hibiki_toast.dart': <String>[
       'HibikiDesignTokens',
     ],
@@ -310,10 +300,6 @@ void main() {
         'dense: true',
         'fontSize:',
       ],
-      'lib/src/utils/components/hibiki_bottom_sheet.dart': <String>[
-        'ListTile(',
-        'dense: true',
-      ],
       'lib/src/utils/components/hibiki_text_selection_controls.dart': <String>[
         'toolbarBuilder: (context, child) => Card(',
         'PopupMenuButton',
@@ -352,10 +338,6 @@ void main() {
         'const SizedBox(height: 8)',
         'const SizedBox(height: 12)',
         'const SizedBox(height: 24)',
-      ],
-      'lib/src/utils/components/hibiki_search_history.dart': <String>[
-        'fontSize:',
-        'TextStyle(',
       ],
       'lib/src/utils/components/settings_shared.dart': <String>[
         'surfaceContainerLowest',
@@ -469,9 +451,6 @@ void main() {
         'BoxDecoration(',
         'BorderRadius.circular(8)',
         'padding: const EdgeInsets.all(8)',
-      ],
-      'lib/src/pages/implementations/placeholder_source_page.dart': <String>[
-        'Scaffold(',
       ],
       'lib/src/pages/implementations/floating_dict_page.dart': <String>[
         'Scaffold(',
@@ -626,8 +605,6 @@ void main() {
       'lib/src/pages/implementations/video_statistics_page.dart':
           'Video statistics charts/metric bars mirror reading_statistics_page: '
               'progress-bar track surface is chart content, not page chrome.',
-      'lib/src/pages/implementations/dictionary_term_page.dart':
-          'Dictionary article surface is content chrome, not ordinary page rows.',
       'lib/src/pages/implementations/dictionary_popup_native.dart':
           'Dictionary popup chip/content typography is dense lookup content.',
       'lib/src/pages/implementations/dictionary_popup_webview.dart':
@@ -910,8 +887,6 @@ void main() {
           'Shared text-selection toolbar owns its transient surface.',
       'lib/src/utils/misc/update_checker_ui.dart':
           'Update checker migrated card shell is already covered by local guard.',
-      'lib/src/utils/misc/mokuro_payload.dart':
-          'Debug payload string logs parsed reader font size.',
       'lib/src/reader/reader_pagination_scripts.dart':
           'Injected reader JavaScript receives content font size.',
       'lib/src/storage/data_root_migration_view.dart':
@@ -1225,12 +1200,21 @@ void main() {
       'enum _BatchTagIntent',
     );
 
+    expect(deleteDialog, contains('HibikiDialogFrame('));
+    expect(deleteDialog, contains('HibikiModalSheetFrame('));
+    // 批量标签对话框的 MD3 chrome 已抽到与视频 tab 共用的
+    // BatchTagPickerDialogFrame；切片断言走共享外壳，再对共享外壳文件
+    // 断言真实 chrome，保证 MD3 保证传递闭环。
+    expect(batchTagDialog, contains('BatchTagPickerDialogFrame('));
+    final String sharedBatchTagFrame = File(
+      'lib/src/utils/components/batch_tag_dialog_frame.dart',
+    ).readAsStringSync();
+    expect(sharedBatchTagFrame, contains('HibikiDialogFrame('));
+    expect(sharedBatchTagFrame, contains('HibikiModalSheetFrame('));
     for (final String dialogSource in <String>[
       deleteDialog,
       batchTagDialog,
     ]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
   });
@@ -1568,31 +1552,21 @@ void main() {
     final String confirmationDialog = _functionSource(
       source,
       'Future<bool> showSettingsConfirmationDialog(',
-      'Future<void> showSettingsProgressDialog(',
-    );
-    final String progressDialog = _functionSource(
-      source,
-      'Future<void> showSettingsProgressDialog(',
       'void notifyReaderSettingsChanged(',
     );
 
-    for (final String dialogSource in <String>[
+    expect(confirmationDialog, contains('HibikiDialogFrame('));
+    expect(confirmationDialog, contains('HibikiModalSheetFrame('));
+    expect(confirmationDialog, contains('HibikiDesignTokens.of(ctx)'));
+    expect(confirmationDialog, contains('insetPadding: EdgeInsets.symmetric('));
+    expect(confirmationDialog, contains('horizontal: tokens.spacing.card'));
+    expect(confirmationDialog, contains('vertical: tokens.spacing.card'));
+    expect(
       confirmationDialog,
-      progressDialog,
-    ]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
-      expect(dialogSource, contains('HibikiDesignTokens.of(ctx)'));
-      expect(dialogSource, contains('insetPadding: EdgeInsets.symmetric('));
-      expect(dialogSource, contains('horizontal: tokens.spacing.card'));
-      expect(dialogSource, contains('vertical: tokens.spacing.card'));
-      expect(
-        dialogSource,
-        isNot(
-          contains('const EdgeInsets.symmetric(horizontal: 16, vertical: 16)'),
-        ),
-      );
-    }
+      isNot(
+        contains('const EdgeInsets.symmetric(horizontal: 16, vertical: 16)'),
+      ),
+    );
   });
 
   test('sync settings custom controls use shared MD3 rows', () {
@@ -1612,7 +1586,6 @@ void main() {
   test('popup menus use the shared MD3 menu item primitive', () {
     final List<String> menuFiles = <String>[
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
-      'lib/src/pages/implementations/dictionary_entry_page.dart',
       'lib/src/pages/implementations/shortcut_settings_page.dart',
       'lib/src/sync/sync_compare_dialog.dart',
       'lib/src/utils/components/hibiki_text_selection_controls.dart',
@@ -1791,12 +1764,6 @@ void main() {
     expect(managerPopupItem, isNot(contains('const SizedBox(width: 8)')));
     expect(managerMenu, isNot(contains('const SizedBox(width: 8)')));
 
-    final String entrySource = File(
-      'lib/src/pages/implementations/dictionary_entry_page.dart',
-    ).readAsStringSync();
-    expect(entrySource, contains('HibikiOverflowMenu<VoidCallback>('));
-    expect(entrySource, isNot(contains('PopupMenuButton')));
-
     final String sourcePage =
         File('lib/src/pages/base_source_page.dart').readAsStringSync();
     final String dictionaryLoading = _functionSource(
@@ -1817,12 +1784,6 @@ void main() {
     ).readAsStringSync();
     expect(progressContent, contains('tokens.type.metadata'));
     expect(progressContent, isNot(contains('headerStyle')));
-
-    final String termSource = File(
-      'lib/src/pages/implementations/dictionary_term_page.dart',
-    ).readAsStringSync();
-    expect(termSource, contains('HibikiCard('));
-    expect(_withoutSharedComponentNames(termSource), isNot(contains('Card(')));
 
     final String popupNativeSource = File(
       'lib/src/pages/implementations/dictionary_popup_native.dart',

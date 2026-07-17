@@ -15,24 +15,10 @@ void main() {
   }) {
     return MaterialApp(
       home: Scaffold(
-        body: ClipboardLookupTextPanel(
-          text: text,
-          onLookup: onLookup,
-          dictionaryHeadwordScale: dictionaryHeadwordScale,
-        ),
-      ),
-    );
-  }
-
-  Widget buildGenericSubject({
-    required String text,
-    required void Function(String query, Rect rect) onLookup,
-  }) {
-    return MaterialApp(
-      home: Scaffold(
         body: SourceLookupTextPanel(
           text: text,
           onLookup: onLookup,
+          dictionaryHeadwordScale: dictionaryHeadwordScale,
         ),
       ),
     );
@@ -102,7 +88,7 @@ void main() {
               Positioned(
                 left: 40,
                 top: 30,
-                child: ClipboardLookupTextPanel(
+                child: SourceLookupTextPanel(
                   text: 'abc',
                   onLookup: (_, Rect localRect) {
                     rect = localRect;
@@ -135,7 +121,7 @@ void main() {
       ),
     );
 
-    expect(find.byType(ClipboardLookupTextPanel), findsOneWidget);
+    expect(find.byType(SourceLookupTextPanel), findsOneWidget);
     expect(find.byType(GestureDetector), findsNothing);
     expect(called, isFalse);
   });
@@ -149,7 +135,7 @@ void main() {
       ),
     );
 
-    expect(find.byType(ClipboardLookupTextPanel), findsOneWidget);
+    expect(find.byType(SourceLookupTextPanel), findsOneWidget);
     expect(find.byType(HibikiCard), findsNothing);
   });
 
@@ -158,7 +144,7 @@ void main() {
     String? query;
 
     await tester.pumpWidget(
-      buildGenericSubject(
+      buildSubject(
         text: 'abcdef',
         onLookup: (String value, Rect _) {
           query = value;
@@ -167,7 +153,6 @@ void main() {
     );
 
     expect(find.byType(SourceLookupTextPanel), findsOneWidget);
-    expect(find.byType(ClipboardLookupTextPanel), findsNothing);
     expect(find.textContaining('Clipboard'), findsNothing);
     expect(find.textContaining('剪贴板'), findsNothing);
 
@@ -187,7 +172,7 @@ void main() {
           body: Builder(
             builder: (BuildContext context) {
               theme = Theme.of(context);
-              return ClipboardLookupTextPanel(
+              return SourceLookupTextPanel(
                 text: 'あ',
                 onLookup: (_, __) {},
               );
@@ -234,7 +219,7 @@ void main() {
           body: Column(
             // 模拟 home_dictionary_page 把本条挂在默认居中的 Column 下。
             children: <Widget>[
-              ClipboardLookupTextPanel(
+              SourceLookupTextPanel(
                 text: 'あいう',
                 onLookup: (_, __) {},
               ),
@@ -247,7 +232,7 @@ void main() {
     // 占满父级宽度：本组件最外层撑满整屏宽。
     final double screenWidth = tester.getSize(find.byType(Scaffold)).width;
     final double panelWidth =
-        tester.getSize(find.byType(ClipboardLookupTextPanel)).width;
+        tester.getSize(find.byType(SourceLookupTextPanel)).width;
     expect(panelWidth, equals(screenWidth));
 
     // 左对齐：第一个字符紧贴 16px 左内边距，不被居中推到屏幕中间。
@@ -258,7 +243,7 @@ void main() {
     final Align align = tester.widget<Align>(
       find
           .descendant(
-            of: find.byType(ClipboardLookupTextPanel),
+            of: find.byType(SourceLookupTextPanel),
             matching: find.byType(Align),
           )
           .first,

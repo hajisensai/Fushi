@@ -117,6 +117,7 @@ class JimakuSubtitleDialog extends StatefulWidget {
     this.initialPreferredLanguage,
     this.onPreferredLanguageChanged,
     this.debugInitialCandidates,
+    this.debugInitialSeriesMatches,
     super.key,
   });
 
@@ -141,6 +142,11 @@ class JimakuSubtitleDialog extends StatefulWidget {
   /// 仅测试用：预置候选结果，免去联网搜索即可验证「已有结果」时的列表布局/滚动。
   @visibleForTesting
   final List<JimakuCandidate>? debugInitialCandidates;
+
+  /// 仅测试用：预置 AniList 系列候选，免联网验证系列选择区在窄/宽两种布局下的渲染
+  /// 与滚动（多系列曾把候选列表挤成 0 高、整个中段不可滚，见两栏布局回归测试）。
+  @visibleForTesting
+  final List<AniListMedia>? debugInitialSeriesMatches;
 
   @override
   State<JimakuSubtitleDialog> createState() => _JimakuSubtitleDialogState();
@@ -188,6 +194,11 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
       _searched = true;
       _apiKeyCollapsed = widget.initialApiKey.trim().isNotEmpty;
       _reconcileSelectedLanguage();
+    }
+    final List<AniListMedia>? seedSeries = widget.debugInitialSeriesMatches;
+    if (seedSeries != null && seedSeries.isNotEmpty) {
+      _seriesMatches = List<AniListMedia>.unmodifiable(seedSeries);
+      _selectedSeriesId = seedSeries.first.id;
     }
   }
 
@@ -393,28 +404,39 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
     _search();
   }
 
-  /// AniList 系列消歧 chip 排：AniList 对当前 query 命中 ≥2 个候选番时显示，让用户从
-  /// 罗马音/英文/日文标题里挑对正确的番（旧实现盲取首条，首条猜错就整搜空且无从纠正）。
-  /// 只命中 1 个或 0 个（纯文本回退）时不显示，不占垂直空间。
-  Widget _buildSeriesChips() {
+  /// AniList 系列消歧区：命中 ≥2 个候选番时显示，让用户从罗马音/英文/日文标题里挑对
+  /// 正确的番（旧实现盲取首条，首条猜错就整搜空且无从纠正）。只命中 1/0 个时不显示。
+  ///
+  /// 竖排 dense 行而非 chip Wrap：长罗马音标题在窄面板里两行省略可控、行高可预期，
+  /// 不再像 chip 那样一系列换出五六行把结果列表挤没（「手机滑不动」根因之一）。
+  Widget _buildSeriesSection(ThemeData theme) {
     if (_seriesMatches.length < 2) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: <Widget>[
-          Text(t.video_jimaku_series,
-              style: Theme.of(context).textTheme.labelMedium),
-          for (final AniListMedia media in _seriesMatches)
-            ChoiceChip(
-              label: Text(media.displayTitle),
-              selected: _selectedSeriesId == media.id,
-              onSelected: _searching ? null : (_) => _selectSeries(media),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          child:
+              Text(t.video_jimaku_series, style: theme.textTheme.labelMedium),
+        ),
+        for (final AniListMedia media in _seriesMatches)
+          ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            selected: _selectedSeriesId == media.id,
+            selectedTileColor: theme.colorScheme.secondaryContainer,
+            title: Text(
+              media.displayTitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-        ],
-      ),
+            onTap: _searching ? null : () => _selectSeries(media),
+          ),
+      ],
     );
   }
 
@@ -447,17 +469,163 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
     );
   }
 
+  /// 宽屏两栏的最小内容宽（dp）：≥ 此宽度筛选面板与结果列表左右并排，否则退化为
+  /// 上下两段（手机竖屏）。720 顶宽减 48 padding 后 672 必两栏；360dp 手机竖屏内容
+  /// 宽 ~296 必单栏；横屏手机（640+）正好用两栏吃掉「矮而宽」。
+  static const double _twoPaneMinWidth = 560;
+
+  /// 宽屏左侧筛选面板宽（dp）。
+  static const double _filterPaneWidth = 252;
+
+  /// 筛选面板（宽屏左栏 / 窄屏上段），配置项按操作顺序分组：① API key（可折叠）
+  /// ② 搜索（番名/集数/搜索按钮）③ 系列消歧 ④ 结果筛选（语言/关键词，有结果才显示）。
+  ///
+  /// 整个面板一体滚动——系列/语言条目再多也只在面板内滚，绝不把结果列表挤成 0 高
+  /// （「手机滑不动」根因：系列 chip 区曾是外层 Column 的固定槽位，不可滚也不收缩）。
+  Widget _buildFilterPane(ThemeData theme) {
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _buildApiKeySection(),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _queryCtrl,
+            decoration: InputDecoration(labelText: t.video_jimaku_query),
+            onSubmitted: (_) => _search(),
+          ),
+          const SizedBox(height: 8),
+          // 集数输入：默认空 → 列全部（现状）；填数字 → 只搜该集（Jimaku 服务端
+          // 启发式）。hint（而非 helperText）内联在框里，不额外占一行垂直空间。
+          TextField(
+            controller: _episodeCtrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: t.video_jimaku_episode,
+              hintText: t.video_jimaku_episode_hint,
+              isDense: true,
+              prefixIcon: const Icon(Icons.tag, size: 18),
+            ),
+            onSubmitted: (_) => _search(),
+          ),
+          const SizedBox(height: 12),
+          // 搜索按钮跟着搜索输入走（手绘稿：左栏 KEY→TITLE→SEARCH），不再窝在对话框
+          // 右下角和「取消」挤一排。
+          FilledButton.icon(
+            onPressed: _searching ? null : _search,
+            icon: const Icon(Icons.search),
+            label: Text(t.video_jimaku_search),
+          ),
+          _buildSeriesSection(theme),
+          if (_candidates.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            _buildLanguageChips(),
+            TextField(
+              decoration: InputDecoration(
+                labelText: t.video_jimaku_filter,
+                isDense: true,
+                prefixIcon: const Icon(Icons.filter_list, size: 18),
+              ),
+              onChanged: (String v) => setState(() => _filter = v),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 结果区（宽屏右栏 / 窄屏下段）：搜索中 spinner → 无结果提示（含「显示全部集」
+  /// 逃生口）→ 候选列表。列表由外层给定有界高度、内部普通（非 shrinkWrap）ListView
+  /// 滚动，保留 BUG-279 不变量。
+  Widget _buildResultsArea(ThemeData theme) {
+    if (_searching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_searched && _candidates.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.video_jimaku_no_results, textAlign: TextAlign.center),
+            // 带了集数却 0 结果：Jimaku 文件名启发式可能误伤整季打包字幕，给一键
+            // 「显示全部集」逃生口（清集数框重搜）。
+            if (_searchedWithEpisode) ...<Widget>[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _showAllEpisodes,
+                icon: const Icon(Icons.list, size: 18),
+                label: Text(t.video_jimaku_show_all_episodes),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+    if (_candidates.isEmpty) {
+      // 未搜索的初始态（宽屏右栏占位）：淡图标示意结果将显示在这里，不引入新文案。
+      return Center(
+        child: Icon(
+          Icons.subtitles_outlined,
+          size: 48,
+          color: theme.colorScheme.outlineVariant,
+        ),
+      );
+    }
+    // 先按语言筛选（_selectedLanguage），再交给列表做关键词二次筛选。
+    return JimakuCandidateList(
+      candidates: filterCandidatesByLanguage(_candidates, _selectedLanguage),
+      filter: _filter,
+      busyName: _busyName,
+      onDownload: _busyName == null ? _download : null,
+    );
+  }
+
+  /// 宽屏（≥[_twoPaneMinWidth]）两栏：左筛选面板（定宽、面板内滚动）+ 竖分隔线 +
+  /// 右结果区吃满剩余宽度。stretch 让两栏同高，列表拿到有界高度正常滚动。
+  Widget _buildWideBody(ThemeData theme) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(width: _filterPaneWidth, child: _buildFilterPane(theme)),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: VerticalDivider(width: 1),
+        ),
+        Expanded(child: _buildResultsArea(theme)),
+      ],
+    );
+  }
+
+  /// 窄屏（手机竖屏）上下两段：筛选面板与结果区各自 [Flexible]（结果区权重更大），
+  /// 面板内容再高也只在自身内滚动，结果列表永远分得到空间且可滚——修「手机滑动不了」。
+  /// 尚无任何结果态（未搜索）时不渲染结果槽，面板拿满高度、对话框贴合内容。
+  Widget _buildNarrowBody(ThemeData theme) {
+    final bool showResults = _searching || _searched || _candidates.isNotEmpty;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Flexible(child: _buildFilterPane(theme)),
+        if (showResults) ...<Widget>[
+          const SizedBox(height: 8),
+          Flexible(flex: 2, child: _buildResultsArea(theme)),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
     // 外壳用仓库标准 HibikiDialogFrame（内部仍是 Dialog）：scrollable:false 仍由
-    // maxHeight 给整个对话框有界高度天花板，于是 Column(min) 拿到有界高度，候选列表的
-    // Flexible 能正确分到剩余空间，内部普通（非 shrinkWrap）ListView 正常滚动，保留
-    // BUG-279 不变量。若用 frame 默认 scrollable:true 包 SingleChildScrollView 给无界
-    // 高度，Flexible 会坍缩成 0 高 → 回归 BUG-279，故此处必须 scrollable:false。
-    // maxWidth 提到 720 让大屏不再窄；insetPadding 保留 horizontal:16（手机宽=屏宽-32
-    // 同现状，大屏由 720 封顶居中），不用 frame 默认 horizontal:40 否则手机变窄。
+    // maxHeight 给整个对话框有界高度天花板，于是 Column(min) 拿到有界高度，正文的
+    // Flexible 能正确分到剩余空间，候选列表内部普通（非 shrinkWrap）ListView 正常
+    // 滚动，保留 BUG-279 不变量。若用 frame 默认 scrollable:true 包
+    // SingleChildScrollView 给无界高度，Flexible 会坍缩成 0 高 → 回归 BUG-279，故此
+    // 处必须 scrollable:false。maxWidth 720 让大屏走两栏；insetPadding 保留
+    // horizontal:16（手机宽=屏宽-32，大屏由 720 封顶居中）。
     return HibikiDialogFrame(
       maxWidth: 720,
       maxHeightFactor: 0.86,
@@ -470,113 +638,23 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
         children: <Widget>[
           Text(t.video_jimaku_fetch, style: theme.textTheme.titleLarge),
           const SizedBox(height: 16),
-          // 头部输入区（api key / query / episode）放进可收缩的 Flexible 滚动视图：矮屏
-          // （TODO-674 新增了 episode 必填项后头部更高）时整个头部能内部滚动，不再把固定
-          // 兄弟撑出 RenderFlex 溢出；高屏自然贴合内容、不滚。候选列表仍是独立 Flexible，
-          // 保留 BUG-279（非 shrinkWrap ListView）不变量。
+          // 正文按内容宽自适应：宽屏左右两栏（筛选|结果，手绘稿布局），窄屏上下两段。
           Flexible(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  _buildApiKeySection(),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _queryCtrl,
-                    decoration:
-                        InputDecoration(labelText: t.video_jimaku_query),
-                    onSubmitted: (_) => _search(),
-                  ),
-                  const SizedBox(height: 8),
-                  // 集数输入：默认空 → 列全部（现状）；填数字 → 只搜该集（Jimaku 服务端
-                  // 启发式）。hint（而非 helperText）内联在框里，不额外占一行垂直空间。
-                  TextField(
-                    controller: _episodeCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: t.video_jimaku_episode,
-                      hintText: t.video_jimaku_episode_hint,
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.tag, size: 18),
-                    ),
-                    onSubmitted: (_) => _search(),
-                  ),
-                ],
-              ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                return constraints.maxWidth >= _twoPaneMinWidth
+                    ? _buildWideBody(theme)
+                    : _buildNarrowBody(theme);
+              },
             ),
           ),
-          const SizedBox(height: 12),
-          // 系列消歧 chip 在搜索态之上：切换系列重搜时仍可见，不被 spinner 顶掉。
-          _buildSeriesChips(),
-          if (_searching)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_searched && _candidates.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(t.video_jimaku_no_results, textAlign: TextAlign.center),
-                  // 带了集数却 0 结果：Jimaku 文件名启发式可能误伤整季打包字幕，给一键
-                  // 「显示全部集」逃生口（清集数框重搜）。
-                  if (_searchedWithEpisode) ...<Widget>[
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: _showAllEpisodes,
-                      icon: const Icon(Icons.list, size: 18),
-                      label: Text(t.video_jimaku_show_all_episodes),
-                    ),
-                  ],
-                ],
-              ),
-            )
-          else if (_candidates.isNotEmpty) ...<Widget>[
-            _buildLanguageChips(),
-            TextField(
-              decoration: InputDecoration(
-                labelText: t.video_jimaku_filter,
-                isDense: true,
-                prefixIcon: const Icon(Icons.filter_list, size: 18),
-              ),
-              onChanged: (String v) => setState(() => _filter = v),
-            ),
-            const SizedBox(height: 8),
-            // 候选列表吃掉对话框内剩余的高度：外层 HibikiDialogFrame（scrollable:false）
-            // 已把整个对话框高度有界化，这里的 Flexible 能正确分到剩余空间，内部普通
-            //（非 shrinkWrap）ListView 填满后正常滚动。矮屏剩余空间小但仍可滚，高屏自
-            // 然变高。先按语言筛选（_selectedLanguage），再交给列表做关键词二次筛选。
-            Flexible(
-              child: JimakuCandidateList(
-                candidates:
-                    filterCandidatesByLanguage(_candidates, _selectedLanguage),
-                filter: _filter,
-                busyName: _busyName,
-                onDownload: _busyName == null ? _download : null,
-              ),
-            ),
-          ],
           const SizedBox(height: 8),
-          // 用 Wrap 而非 Row：窄屏（如 360dp）下 Cancel + 带图标的 Search 放不下
-          // 时自动换行，避免水平 RenderFlex 溢出。
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 8,
-            runSpacing: 4,
-            children: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(t.dialog_cancel),
-              ),
-              FilledButton.icon(
-                onPressed: _searching ? null : _search,
-                icon: const Icon(Icons.search),
-                label: Text(t.video_jimaku_search),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
           ),
         ],
       ),

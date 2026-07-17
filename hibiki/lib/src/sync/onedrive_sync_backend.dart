@@ -1,11 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:hibiki/src/sync/desktop_oauth.dart';
+import 'package:hibiki/src/sync/pkce_oauth.dart';
 import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -44,18 +43,13 @@ class OneDriveSyncBackend extends SyncBackend {
   String? _rootFolderId;
   final Map<String, String> _titleToFolderId = {};
 
-  // ── OAuth PKCE helpers ──────────────────────────────────────────────
-
-  static String _generateCodeVerifier() {
-    final rng = Random.secure();
-    final bytes = List<int>.generate(32, (_) => rng.nextInt(256));
-    return base64UrlEncode(bytes).replaceAll('=', '');
-  }
-
-  static String _generateCodeChallenge(String verifier) {
-    final digest = sha256.convert(utf8.encode(verifier));
-    return base64UrlEncode(digest.bytes).replaceAll('=', '');
-  }
+  /// Shared OAuth 2.0 PKCE token exchange (verifier/challenge + code/refresh).
+  /// OneDrive requires the `scope` param echoed on token refresh.
+  static final PkceOAuthFlow _oauth = PkceOAuthFlow(
+    clientId: _clientId,
+    tokenEndpoint: _tokenEndpoint,
+    extraRefreshBody: const <String, String>{'scope': _scopes},
+  );
 
   // ── Auth ──────────────────────────────────────────────────────────
 
@@ -86,8 +80,8 @@ class OneDriveSyncBackend extends SyncBackend {
     _pendingVerifier = null;
     _pendingRepo = null;
 
-    final verifier = _generateCodeVerifier();
-    final challenge = _generateCodeChallenge(verifier);
+    final verifier = PkceOAuthFlow.generateCodeVerifier();
+    final challenge = PkceOAuthFlow.codeChallenge(verifier);
 
     // Desktop: loopback HTTP redirect (RFC 8252), exchange inline.
     if (isDesktopOAuthPlatform) {
@@ -141,26 +135,13 @@ class OneDriveSyncBackend extends SyncBackend {
     required String redirectUri,
     required SyncRepository repo,
   }) async {
-    final response = await syncHttpClient.post(
-      Uri.parse(_tokenEndpoint),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'client_id': _clientId,
-        'code': code,
-        'redirect_uri': redirectUri,
-        'grant_type': 'authorization_code',
-        'code_verifier': verifier,
-      },
+    final tokens = await _oauth.exchangeCode(
+      code: code,
+      redirectUri: redirectUri,
+      verifier: verifier,
     );
-
-    if (response.statusCode != 200) {
-      throw SyncAuthError(
-          'Token exchange failed: ${response.statusCode} ${response.body}');
-    }
-
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    _accessToken = json['access_token'] as String;
-    _refreshToken = json['refresh_token'] as String?;
+    _accessToken = tokens.accessToken;
+    _refreshToken = tokens.refreshToken;
 
     await _fetchUserEmail();
     await repo.setOneDriveToken(jsonEncode({'refresh_token': _refreshToken}));
@@ -204,25 +185,10 @@ class OneDriveSyncBackend extends SyncBackend {
       throw SyncAuthError('No refresh token available');
     }
 
-    final response = await syncHttpClient.post(
-      Uri.parse(_tokenEndpoint),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'client_id': _clientId,
-        'grant_type': 'refresh_token',
-        'refresh_token': _refreshToken!,
-        'scope': _scopes,
-      },
-    );
-
-    if (response.statusCode != 200) {
-      throw SyncAuthError('Token refresh failed: ${response.statusCode}');
-    }
-
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    _accessToken = json['access_token'] as String;
-    if (json.containsKey('refresh_token')) {
-      _refreshToken = json['refresh_token'] as String;
+    final tokens = await _oauth.refreshTokens(refreshToken: _refreshToken!);
+    _accessToken = tokens.accessToken;
+    if (tokens.refreshToken != null) {
+      _refreshToken = tokens.refreshToken;
     }
   }
 

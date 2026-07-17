@@ -18,7 +18,7 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 
-enum _CollectionType { bookmark, sentence, mined, word }
+enum _CollectionType { sentence, mined, word }
 
 @visibleForTesting
 ({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
@@ -109,13 +109,11 @@ class _CollectionItem {
     required this.createdAt,
     this.bookTitle,
     this.bookKey,
-    this.label,
     this.text,
     this.chapterLabel,
     this.sectionIndex,
     this.normCharOffset,
     this.normCharLength,
-    this.bookmarkId,
     this.favoriteId,
     this.minedId,
     this.wordReading,
@@ -127,13 +125,11 @@ class _CollectionItem {
   final DateTime createdAt;
   final String? bookTitle;
   final String? bookKey;
-  final String? label;
   final String? text;
   final String? chapterLabel;
   final int? sectionIndex;
   final int? normCharOffset;
   final int? normCharLength;
-  final int? bookmarkId;
   final String? favoriteId;
 
   /// 制卡历史行 id（TODO-633，[_CollectionType.mined] 专用，供删除一条用）。
@@ -185,12 +181,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     setState(() => _loading = true);
 
     final db = appModel.database;
-    final bookmarkRepo = BookmarkRepository(db);
     final favoriteRepo = FavoriteSentenceRepository(db);
     final srtBookRepo = SrtBookRepository(db);
     final abRepo = AudiobookRepository(db);
 
-    final allBookmarks = await bookmarkRepo.getAllBookmarks();
     final allFavorites = await favoriteRepo.getAll();
     final allMined = await db.getAllMinedSentences();
     // BUG-462：弹窗 ☆ 收藏的词（FavoriteWords 表）此前只进导出管线、从不进收藏列表，
@@ -206,22 +200,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     }
 
     final items = <_CollectionItem>[];
-
-    for (final bm in allBookmarks) {
-      items.add(
-        _CollectionItem(
-          type: _CollectionType.bookmark,
-          createdAt: bm.createdAt,
-          bookTitle: bm.bookTitle ??
-              (bm.bookKey != null ? bookTitleMap[bm.bookKey] : null),
-          bookKey: bm.bookKey,
-          label: bm.label,
-          sectionIndex: bm.sectionIndex,
-          normCharOffset: bm.normCharOffset,
-          bookmarkId: bm.id,
-        ),
-      );
-    }
 
     for (final fav in allFavorites) {
       items.add(
@@ -280,11 +258,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     final allBookKeys = <String>{};
-    for (final bm in allBookmarks) {
-      if (bm.bookKey != null && bm.bookKey!.isNotEmpty) {
-        allBookKeys.add(bm.bookKey!);
-      }
-    }
     for (final fav in allFavorites) {
       if (fav.bookKey != null && fav.bookKey!.isNotEmpty) {
         allBookKeys.add(fav.bookKey!);
@@ -403,7 +376,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             // 句尾不被阅读底栏切（句子行才有 normCharLength；制卡行/老收藏可能为 null）。
             charAnchorLength: isSentenceJump ? item.normCharLength : null,
             preserveSavedPosition: isSentenceJump,
-            label: item.label ?? '',
+            label: '',
             createdAt: item.createdAt,
           )
         : null;
@@ -622,22 +595,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Future<void> _deleteItem(_CollectionItem item) async {
     final db = appModel.database;
-    if (item.type == _CollectionType.bookmark) {
-      final bookKey = item.bookKey;
-      if (bookKey == null || bookKey.isEmpty) return;
-      final repo = BookmarkRepository(db);
-      final bookmarkId = item.bookmarkId;
-      if (bookmarkId != null) {
-        await repo.removeBookmarkById(bookmarkId);
-      } else {
-        await repo.removeBookmarkMatching(
-          bookKey,
-          sectionIndex: item.sectionIndex ?? 0,
-          normCharOffset: item.normCharOffset ?? 0,
-          createdAt: item.createdAt,
-        );
-      }
-    } else if (item.type == _CollectionType.mined) {
+    if (item.type == _CollectionType.mined) {
       // TODO-633：制卡历史按行 id 删一条。
       final minedId = item.minedId;
       if (minedId == null) return;
@@ -697,9 +655,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 本地 setState，不重跑昂贵的 [_load] 音频解析）。每类只删自己那张表/偏好键，互不牵连。
   Future<void> _clearScopes(Set<_CollectionType> scopes) async {
     final db = appModel.database;
-    if (scopes.contains(_CollectionType.bookmark)) {
-      await BookmarkRepository(db).clearAllBookmarks();
-    }
     if (scopes.contains(_CollectionType.sentence)) {
       await FavoriteSentenceRepository(db).clear();
     }
@@ -961,12 +916,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   Future<void> _showItemDialog(_CollectionItem item) async {
-    final isBookmark = item.type == _CollectionType.bookmark;
-    final bool isVideoSentence =
-        !isBookmark && item.source == kFavoriteSentenceSourceVideo;
+    final bool isVideoSentence = item.source == kFavoriteSentenceSourceVideo;
     final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
     final hasAudio = _hasAudio(item);
-    final displayTitle = isBookmark ? (item.label ?? '') : (item.text ?? '');
+    final displayTitle = item.text ?? '';
     final cs = Theme.of(context).colorScheme;
 
     await showAppDialog<void>(
@@ -991,7 +944,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                       _playItemAudio(item);
                     },
             ),
-          if (!isBookmark && item.text != null)
+          if (item.text != null)
             TextButton.icon(
               icon: const Icon(Icons.copy_outlined, size: 18),
               label: Text(t.copy),
@@ -1106,34 +1059,26 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Widget _buildItem(_CollectionItem item) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final isBookmark = item.type == _CollectionType.bookmark;
     final bool isMined = item.type == _CollectionType.mined;
     final bool isWord = item.type == _CollectionType.word;
-    final IconData icon = isBookmark
-        ? Icons.bookmark_outline
-        : isMined
-            ? Icons.style_outlined
-            : isWord
-                ? Icons.star_outline
-                : Icons.format_quote_outlined;
-    final String typeLabel = isBookmark
-        ? t.collection_bookmark
-        : isMined
-            ? t.collection_mined
-            : isWord
-                ? t.collection_word
-                : t.collection_sentence;
+    final IconData icon = isMined
+        ? Icons.style_outlined
+        : isWord
+            ? Icons.star_outline
+            : Icons.format_quote_outlined;
+    final String typeLabel = isMined
+        ? t.collection_mined
+        : isWord
+            ? t.collection_word
+            : t.collection_sentence;
 
     final String title;
     final String? subtitle;
 
     final bool isVideoSentence =
-        !isBookmark && !isWord && item.source == kFavoriteSentenceSourceVideo;
+        !isWord && item.source == kFavoriteSentenceSourceVideo;
 
-    if (isBookmark) {
-      title = item.label ?? '';
-      subtitle = item.bookTitle;
-    } else if (isWord) {
+    if (isWord) {
       // BUG-462：收藏词标题=词形，副标题=读音 · 释义（无原文定位，不显示书名/章节）。
       title = item.text ?? '';
       subtitle = [
@@ -1153,13 +1098,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
 
-    final key = isBookmark
-        ? 'bm_${item.bookKey}_${item.createdAt.microsecondsSinceEpoch}'
-        : isMined
-            ? 'mined_${item.minedId}'
-            : isWord
-                ? 'word_${item.text}_${item.wordReading}_${item.wordSourceType}'
-                : 'fav_${item.favoriteId}';
+    final key = isMined
+        ? 'mined_${item.minedId}'
+        : isWord
+            ? 'word_${item.text}_${item.wordReading}_${item.wordSourceType}'
+            : 'fav_${item.favoriteId}';
 
     return Dismissible(
       key: Key(key),
@@ -1176,9 +1119,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         ),
       ),
       confirmDismiss: (_) async {
-        final String message = isBookmark
-            ? '${t.collection_bookmark}: ${item.label ?? ""}'
-            : item.text ?? '';
+        final String message = item.text ?? '';
         return await showAppDialog<bool>(
               context: context,
               builder: (ctx) => CollectionDeleteDialog(
@@ -1205,9 +1146,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                 Icon(
                   icon,
                   size: 20,
-                  color: isBookmark
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.tertiary,
+                  color: Theme.of(context).colorScheme.tertiary,
                 ),
                 Text(
                   typeLabel,
@@ -1239,7 +1178,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                     padding: EdgeInsets.all(tokens.spacing.gap / 2),
                     onTap: () => _playItemAudio(item),
                   ),
-                if (!isBookmark && item.text != null)
+                if (item.text != null)
                   HibikiIconButton(
                     tooltip: t.copy,
                     icon: Icons.copy_outlined,
@@ -1695,8 +1634,6 @@ class _ClearSheetState extends State<_ClearSheet> {
 
   String _labelFor(_CollectionType type) {
     switch (type) {
-      case _CollectionType.bookmark:
-        return t.collection_bookmark;
       case _CollectionType.sentence:
         return t.collection_sentence;
       case _CollectionType.mined:

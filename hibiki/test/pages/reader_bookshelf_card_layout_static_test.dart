@@ -88,8 +88,6 @@ void main() {
     final String source = readReaderHistorySource();
     final String remoteCover =
         _functionSource(source, 'Widget _buildRemoteBookCover(');
-    final String videoCover =
-        _functionSource(source, 'Widget _buildVideoCover(');
     final String srtCover = _functionSource(source, 'Widget _buildSrtCover(');
     final String fileCover = _functionSource(source, 'Widget _buildFileCover(');
     final String epubCover =
@@ -110,14 +108,6 @@ void main() {
       RegExp(r'fit: _bookCardCoverFit').allMatches(remoteCover).length,
       2,
       reason: 'remote cached and network covers must both fill the card',
-    );
-    // TODO-616 phase C：视频封面改用 _videoCardCoverFit（BoxFit.contain）以
-    // 完整显示整张封面，不再与书封共用 fitHeight。
-    expect(videoCover, contains('fit: _videoCardCoverFit'));
-    expect(
-      source,
-      contains('BoxFit get _videoCardCoverFit => BoxFit.contain;'),
-      reason: 'video covers must show the whole artwork (TODO-616 phase C)',
     );
     expect(srtCover, contains('_buildFileCover'));
     expect(fileCover, contains('fit: _bookCardCoverFit'));
@@ -273,27 +263,9 @@ void main() {
           'thumbnail look worse',
     );
 
-    // ② 书架视频 SliverGrid 仍取视频比例（不被 TODO-786 收窄）。
-    final String videoCard = _functionSource(source, 'Widget _buildVideoCard(');
-    expect(
-      videoCard,
-      contains('slotAspectRatio: kShelfVideoCardAspectRatio'),
-      reason: 'the video card shell must pass the video slot ratio',
-    );
-    // 书架主体的视频 SliverGrid（_buildVideoCard 之外的 grid delegate）也用视频比例。
-    final RegExp videoGridRatio = RegExp(
-      r'_buildVideoCard\(videoBooks\[i\]\)',
-    );
-    expect(videoGridRatio.hasMatch(source), isTrue,
-        reason: 'video shelf section grid must build video cards');
-    // 视频 grid delegate 与 _buildVideoCard 之间不得回退到书比例：视频比例常量
-    // 在书架视频 grid 出现的次数 >= 2（grid delegate + 卡片壳）。
-    expect(
-      'kShelfVideoCardAspectRatio'.allMatches(source).length,
-      greaterThanOrEqualTo(3),
-      reason: 'video ratio is referenced by the constant, the video grid '
-          'delegate, and the video card shell',
-    );
+    // ② 书架不再渲染视频卡/分区（视频归「视频」tab 独占，书架视频分区死路径已删）。
+    //    kShelfVideoCardAspectRatio 常量保留（视频卡槽比例文档 + reader_media_source
+    //    注释引用），但书架已无视频 grid/卡片壳，故不再校验其在书架的渲染次数。
 
     // 书类卡壳与三处书类 grid delegate（SRT × 2 + EPUB + remote）走书比例：
     // slotAspectRatio: kShelfBookCardAspectRatio 与 childAspectRatio:

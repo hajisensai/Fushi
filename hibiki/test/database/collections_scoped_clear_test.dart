@@ -92,7 +92,7 @@ void main() {
     expect((await db.getAllMinedSentences()), isEmpty);
   });
 
-  test('collections_page 清空按钮走可选范围面板（非制卡专用），覆盖四类型', () {
+  test('collections_page 清空按钮走可选范围面板（非制卡专用），覆盖三类型（书签功能 PR#188 已移除）', () {
     final String src =
         File('lib/src/pages/implementations/collections_page.dart')
             .readAsStringSync();
@@ -105,9 +105,8 @@ void main() {
     expect(src, contains('class _ClearSheet'));
     // 面板走 MD3 外壳。
     expect(src, contains('HibikiModalSheetFrame('));
-    // 四类型都能被清空（executor 覆盖四种 _CollectionType）。
+    // 三类型都能被清空（executor 覆盖三种 _CollectionType；书签功能已移除 PR#188）。
     expect(src, contains('_clearScopes('));
-    expect(src, contains('clearAllBookmarks()'));
     expect(src, contains('FavoriteSentenceRepository(db).clear()'));
     expect(src, contains('clearMinedSentences()'));
     expect(src, contains('clearAllFavoriteWords()'));

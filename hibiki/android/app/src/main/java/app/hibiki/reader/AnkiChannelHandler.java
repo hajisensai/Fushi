@@ -3,6 +3,7 @@ package app.hibiki.reader;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -10,6 +11,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.content.FileProvider;
 
 import com.ichi2.anki.FlashCardsContract;
@@ -33,12 +35,33 @@ public class AnkiChannelHandler {
     private static final String CHANNEL = ChannelNames.ANKI;
     private static final int AD_PERM_REQUEST = 0;
 
+    // BUG-865：AnkiDroid ContentProvider 访问是「进程 + 权限」作用域，只需 Context
+    // （AnkiDroidHelper 内部已 getApplicationContext()、AddContentApi/FileProvider/
+    // grantUriPermission/getContentResolver/startActivity(NEW_TASK) 均 Context 即可）。
+    // 唯一真正需要 Activity 的是运行时权限弹窗 ActivityCompat.requestPermissions；
+    // 副 FlutterEngine（popupMain/PopupEngineHolder）无 Activity，此时 activity=null，
+    // 权限路径优雅降级（返回 PERMISSION_DENIED，不 NPE），制卡权限已在主 app 授予。
+    private final Context context;
+    @Nullable
     private final Activity activity;
     private final AnkiDroidHelper ankiDroid;
 
+    /** 主 engine（MainActivity）用：Activity 既作 Context 又能弹权限。 */
     public AnkiChannelHandler(Activity activity) {
+        this(activity, activity);
+    }
+
+    /**
+     * BUG-865：副 engine（popupMain）用 applicationContext 注册，activity 传 null。
+     *
+     * @param context  用于 ContentProvider / FileProvider 的 Context（内部取
+     *                 applicationContext，避免暖 engine 持有 Activity 泄漏）。
+     * @param activity 运行时权限弹窗宿主；无 Activity（副 engine/服务）时传 null。
+     */
+    public AnkiChannelHandler(@NonNull Context context, @Nullable Activity activity) {
+        this.context = context.getApplicationContext();
         this.activity = activity;
-        this.ankiDroid = new AnkiDroidHelper(activity);
+        this.ankiDroid = new AnkiDroidHelper(this.context);
     }
 
     public void register(@NonNull FlutterEngine engine) {
@@ -55,7 +78,7 @@ public class AnkiChannelHandler {
                 final String filename = call.argument("filename");
                 final String preferredName = call.argument("preferredName");
                 final String mimeType = call.argument("mimeType");
-                final AddContentApi api = new AddContentApi(activity);
+                final AddContentApi api = new AddContentApi(context);
                 final ArrayList<String> noteTypeFields = call.argument("noteTypeFields");
                 final String noteTypeName = call.argument("noteTypeName");
                 final String cardName = call.argument("cardName");
@@ -269,7 +292,9 @@ public class AnkiChannelHandler {
                         }
                         break;
                     case "requestAnkidroidPermissions":
-                        if (ankiDroid.shouldRequestPermission()) {
+                        // BUG-865：副 engine（activity==null）无法弹系统权限框，静默跳过；
+                        // 权限须在主 app 授予。仍回 success(true) 保持契约不变。
+                        if (activity != null && ankiDroid.shouldRequestPermission()) {
                             ankiDroid.requestPermission(activity, AD_PERM_REQUEST);
                         }
                         result.success(true);
@@ -295,15 +320,15 @@ public class AnkiChannelHandler {
                         // IllegalArgumentException「Failed to find configured root」，SVG 外字
                         // 制卡断裂。
                         Uri fileUri = FileProvider.getUriForFile(
-                            activity, BuildConfig.APPLICATION_ID + ".provider", file);
-                        activity.grantUriPermission("com.ichi2.anki", fileUri,
+                            context, BuildConfig.APPLICATION_ID + ".provider", file);
+                        context.grantUriPermission("com.ichi2.anki", fileUri,
                             Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         ContentValues contentValues = new ContentValues();
                         contentValues.put(FlashCardsContract.AnkiMedia.FILE_URI,
                             fileUri.toString());
                         contentValues.put(FlashCardsContract.AnkiMedia.PREFERRED_NAME,
                             preferredName);
-                        ContentResolver contentResolver = activity.getContentResolver();
+                        ContentResolver contentResolver = context.getContentResolver();
                         Uri returnUri = contentResolver.insert(
                             FlashCardsContract.AnkiMedia.CONTENT_URI, contentValues);
                         if (returnUri == null || returnUri.getPath() == null) {
@@ -341,7 +366,11 @@ public class AnkiChannelHandler {
 
     private boolean requirePermission(MethodChannel.Result result) {
         if (ankiDroid.shouldRequestPermission()) {
-            ankiDroid.requestPermission(activity, AD_PERM_REQUEST);
+            // BUG-865：副 engine（activity==null）不能弹系统权限框，只回错误让 Dart
+            // 层提示「去主 app 授予 AnkiDroid 权限」，避免 ActivityCompat 对 null NPE。
+            if (activity != null) {
+                ankiDroid.requestPermission(activity, AD_PERM_REQUEST);
+            }
             result.error("PERMISSION_DENIED",
                 "AnkiDroid permission not granted. Please grant and retry.",
                 null);
@@ -363,7 +392,7 @@ public class AnkiChannelHandler {
      */
     private Long addNote(String model, String deck,
                          ArrayList<String> fields, ArrayList<String> tags) {
-        final AddContentApi api = new AddContentApi(activity);
+        final AddContentApi api = new AddContentApi(context);
 
         long deckId;
         Long existingDeck = ankiDroid.findDeckIdByName(deck);
@@ -404,7 +433,7 @@ public class AnkiChannelHandler {
      *         {@code null} if the note no longer exists / its model is gone.
      */
     private Map<String, String> notesInfo(long noteId) {
-        final AddContentApi api = new AddContentApi(activity);
+        final AddContentApi api = new AddContentApi(context);
         NoteInfo note = api.getNote(noteId);
         if (note == null) {
             return null;
@@ -435,7 +464,7 @@ public class AnkiChannelHandler {
      *         note / its model cannot be found or AnkiDroid refused the update.
      */
     private String updateNoteFields(long noteId, Map<String, String> fieldValues) {
-        final AddContentApi api = new AddContentApi(activity);
+        final AddContentApi api = new AddContentApi(context);
         NoteInfo note = api.getNote(noteId);
         if (note == null) {
             return "Note not found: " + noteId;
@@ -485,7 +514,7 @@ public class AnkiChannelHandler {
      * the note does not exist or the provider yields no row.
      */
     private Long modelIdForNote(long noteId) {
-        ContentResolver resolver = activity.getContentResolver();
+        ContentResolver resolver = context.getContentResolver();
         Uri noteUri = Uri.withAppendedPath(
             FlashCardsContract.Note.CONTENT_URI, Long.toString(noteId));
         try (Cursor cursor = resolver.query(
@@ -506,7 +535,7 @@ public class AnkiChannelHandler {
     private boolean checkForDuplicates(ArrayList<String> models, String key,
                                        String reading,
                                        ArrayList<Integer> readingFieldIndices) {
-        final AddContentApi api = new AddContentApi(activity);
+        final AddContentApi api = new AddContentApi(context);
         for (int i = 0; i < models.size(); i++) {
             String model = models.get(i);
             Long mid = ankiDroid.findModelIdByName(model, 1);
@@ -546,7 +575,7 @@ public class AnkiChannelHandler {
     private List<Map<String, Object>> findNotesByContent(
             ArrayList<String> models, String key, String reading,
             ArrayList<Integer> readingFieldIndices) {
-        final AddContentApi api = new AddContentApi(activity);
+        final AddContentApi api = new AddContentApi(context);
         // De-dup by note id across models (a card matches at most one model, but
         // guard anyway), then sort newest-first.
         final LinkedHashMap<Long, String> byId = new LinkedHashMap<>();
@@ -597,17 +626,17 @@ public class AnkiChannelHandler {
             FlashCardsContract.Note.CONTENT_URI, Long.toString(noteId));
         Intent intent = new Intent(Intent.ACTION_VIEW, noteUri);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        if (intent.resolveActivity(activity.getPackageManager()) == null) {
+        if (intent.resolveActivity(context.getPackageManager()) == null) {
             return false;
         }
-        activity.startActivity(intent);
+        context.startActivity(intent);
         return true;
     }
 
     private void createNoteType(String name, ArrayList<String> fields,
                                 String cardName, String front, String back,
                                 String css) {
-        final AddContentApi api = new AddContentApi(activity);
+        final AddContentApi api = new AddContentApi(context);
         // Idempotent: a model with this name + field count already exists.
         if (ankiDroid.findModelIdByName(name, fields.size()) != null) return;
         api.addNewCustomModel(

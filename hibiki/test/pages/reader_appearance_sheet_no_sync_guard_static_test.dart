@@ -43,7 +43,7 @@ void main() {
     final String sheet = _functionSource(
       stripped,
       '  Future<void> _showAppearanceSheet(',
-      '  Future<void> _addBookmarkAtCurrentPosition() async',
+      '  String _currentChapterLabel() {',
     );
     expect(
       sheet.contains('.setTtu'),

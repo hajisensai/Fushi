@@ -75,13 +75,6 @@ void main() {
     expect(webview.contains('buildPopupStaticSettingsJs('), isTrue);
   });
 
-  test('structured dictionary page injects the dictionaryFonts target', () {
-    final String src = read(
-        'lib/src/pages/implementations/dictionary_structured_content_page.dart');
-    expect(src.contains('DictionaryFontCss.build('), isTrue);
-    expect(src.contains('settings.dictionaryFonts'), isTrue);
-  });
-
   test('reader body CSS still uses the legacy body customFonts list', () {
     final String src = read('lib/src/reader/reader_content_styles.dart');
     expect(src.contains('settings.buildCustomFontCss()'), isTrue);

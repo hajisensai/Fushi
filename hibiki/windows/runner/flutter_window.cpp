@@ -1,6 +1,7 @@
 #include "flutter_window.h"
 
 #include <dwmapi.h>
+#include <flutter_windows.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <wincodec.h>
@@ -1009,6 +1010,16 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // bottom edge and shoved the parent card off the top.
           int cursor_work_x = 0;
           int cursor_work_y = 0;
+          // BUG-859 — the CURSOR MONITOR's effective scale. Dart used to divide
+          // the physical-px work/cursor values above by the MAIN window's dpr;
+          // on a mixed-scale multi-monitor setup that put the cascade layout's
+          // work-area domain in the WRONG CSS scale (the overlay WebView2
+          // rasterizes at the overlay monitor's scale), mis-placing nested
+          // cards and breaking the reserve-to-edge clamp invariant. Report the
+          // authoritative per-monitor dpr alongside the physical values so
+          // Dart converts them in the SAME scale the page measures in. 0 =
+          // monitor query failed (Dart falls back to the main-window dpr).
+          double monitor_dpr = 0.0;
           HMONITOR monitor =
               MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
           MONITORINFO mi = {};
@@ -1018,6 +1029,7 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
             work_h = mi.rcWork.bottom - mi.rcWork.top;
             cursor_work_x = x - mi.rcWork.left;
             cursor_work_y = y - mi.rcWork.top;
+            monitor_dpr = FlutterDesktopGetDpiForMonitor(monitor) / 96.0;
           }
           flutter::EncodableMap reply = {
               {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
@@ -1029,6 +1041,8 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
                flutter::EncodableValue(cursor_work_x)},
               {flutter::EncodableValue("cursorWorkY"),
                flutter::EncodableValue(cursor_work_y)},
+              {flutter::EncodableValue("monitorDpr"),
+               flutter::EncodableValue(monitor_dpr)},
           };
           result->Success(flutter::EncodableValue(reply));
         } else if (method == "render") {
@@ -1196,6 +1210,9 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
           int work_h = 0;
           int anchor_work_x = 0;
           int anchor_work_y = 0;
+          // BUG-859 — same monitor-dpr report as the transient overlay's
+          // showAt (panel parity: the shared Dart channel parses one shape).
+          double monitor_dpr = 0.0;
           HMONITOR monitor =
               MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
           MONITORINFO mi = {};
@@ -1205,6 +1222,7 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
             work_h = mi.rcWork.bottom - mi.rcWork.top;
             anchor_work_x = x - mi.rcWork.left;
             anchor_work_y = y - mi.rcWork.top;
+            monitor_dpr = FlutterDesktopGetDpiForMonitor(monitor) / 96.0;
           }
           flutter::EncodableMap reply = {
               {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
@@ -1216,6 +1234,8 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
                flutter::EncodableValue(anchor_work_x)},
               {flutter::EncodableValue("cursorWorkY"),
                flutter::EncodableValue(anchor_work_y)},
+              {flutter::EncodableValue("monitorDpr"),
+               flutter::EncodableValue(monitor_dpr)},
           };
           result->Success(flutter::EncodableValue(reply));
         } else if (method == "render") {

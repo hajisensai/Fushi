@@ -57,7 +57,6 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
-import 'package:hibiki/src/reader/reader_gamepad_immersive.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/reader/reader_top_progress.dart';
 import 'package:hibiki/src/reader/ttu_toc_flatten.dart';
@@ -1271,11 +1270,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 两栏唤出/收起联动）。改 _chromeTransientVisible 不改预留高 → 不需重锚。
   bool _chromeTransientVisible = false;
   Timer? _chromeAutoHideTimer;
-  // TODO-728: true when the chrome was hidden BY the gamepad-present auto-immersive
-  // path (not by the user). Used so that losing the controller restores the
-  // chrome ONLY if the gamepad hid it; a manual toggle clears this flag and takes
-  // ownership (a later controller-gone event then does not fight the user).
-  bool _chromeHiddenByGamepad = false;
   double _lastSyncedWidth = 0;
   double _lastSyncedHeight = 0;
   // TODO-690 / BUG-399：桌面拖窗口边框 resize 的尾沿防抖。阅读器树内的透明
@@ -1490,26 +1484,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         },
       ));
     };
-    // TODO-728: controller presence changes drive the reader's auto-immersive
-    // mode. The AppModel bridge already gates on gamepadAutoImmersive, so this
-    // only fires when the user opted in.
-    ReaderHibikiSource.onGamepadPresenceChanged = (bool present) {
-      if (!mounted) return;
-      _applyGamepadPresence(present);
-    };
-    // TODO-973: seed from the global single source of truth so a reader opened
-    // while a controller is ALREADY present (the rising edge fired before this
-    // page attached) starts immersive too — the live callback above only carries
-    // future edges. Set the fields directly (NOT via _applyGamepadPresence, which
-    // calls setState — illegal in initState): this is exactly
-    // resolveGamepadImmersive(present:true, showChrome:true, hiddenByGamepad:false)
-    // so the first build already renders chrome-hidden + gamepad-owned. Value
-    // already reflects the gamepadAutoImmersive preference, so this is inert for
-    // opted-out users.
-    if (appModelNoUpdate.gamepadImmersiveActive.value) {
-      _showChrome = false;
-      _chromeHiddenByGamepad = true;
-    }
     _initBook();
   }
 
@@ -1897,7 +1871,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     ReaderHibikiSource.onLayoutReloadLive = null;
     ReaderHibikiSource.onChromeReloadLive = null;
     ReaderHibikiSource.onChromeReanchorLive = null;
-    ReaderHibikiSource.onGamepadPresenceChanged = null;
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {
@@ -2457,10 +2430,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return;
     }
     final String jsonCss = _currentStyleJson();
+    // 余白/主题实时不生效根因修复：CSS 换入（用户可见效果）不得被样式重锚的就绪门控
+    // [readerStyleReanchorAllowed] 挡掉。旧实现只在 `!window.hoshiReader` 时裸换 CSS，
+    // 有 hoshiReader 时把换 CSS 全托付给下面 gate 后的 beginStyleReanchor；一旦 gate 关闭
+    // （内容未就绪 / 重排在飞 / 切章瞬态），[runUiScaleReanchorOrchestration] 在 evalBegin 前
+    // 就 return，CSS 被静默丢弃 → 主题/余白改完不生效、必须退出重进重烤 _computeStyleTag
+    // 才见效。这里把「换 CSS」与「重锚就绪门控」解耦：重锚会跑（gate 开）时仍交给
+    // beginStyleReanchor 原子「采锚→换 CSS」（保翻页保位不裁行）；重锚不会跑（gate 关）时
+    // 就地裸换 CSS 并失效 paginationMetrics（让余白几何重新分栏）。二者互斥、绝不双换、
+    // CSS 永不丢。
+    final bool reanchorWillRun = readerStyleReanchorAllowed(
+      controllerAvailable: _controller != null,
+      readerContentReady: _readerContentReady,
+      lyricsMode: _lyricsMode,
+    );
     try {
-      // 先确保 style 元素存在（begin 入口 setText 到它）。pagination 未就绪 / 非 reader 页
-      // （无 hoshiReader）时 beginStyleReanchorInvocation 返回 -1，下面编排自然 no-op，
-      // 这里的裸 textContent 兜底保证 CSS 仍然生效。
       await _controller!.evaluateJavascript(
         source: '''
 (function(){
@@ -2470,10 +2454,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     el.id = 'hoshi-reader-style';
     document.head.appendChild(el);
   }
-  // TODO-736 B-1：无 hoshiReader（pagination 未就绪 / 非 reader 页）时直接裸套 CSS；
-  // 有 hoshiReader 时不在此换 CSS——交给下面 Dart 编排的 beginStyleReanchor 同步换 CSS
-  // + 采锚 + 置旗，commit 在 postFrame settle 后滚回（settle-aware，挡住 reflow 归零污染）。
-  if (!window.hoshiReader) { el.textContent = $jsonCss; }
+  // 重锚不会跑（无 hoshiReader / 内容未就绪 / 重排在飞）时就地换 CSS，并失效分页 metrics
+  // 让几何（余白/字号）重新分栏；重锚会跑时不在此换——交给下面 beginStyleReanchor 原子
+  // 采锚 + 换 CSS + 置旗（settle-aware commit 保翻页保位）。
+  if (!window.hoshiReader || ${!reanchorWillRun}) {
+    el.textContent = $jsonCss;
+    if (window.hoshiReader && window.hoshiReader.paginationMetrics !== undefined) {
+      window.hoshiReader.paginationMetrics = null;
+    }
+  }
 })();
 ''',
       );

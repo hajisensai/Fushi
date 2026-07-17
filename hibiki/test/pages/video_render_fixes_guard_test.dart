@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'reader_history_source_corpus.dart';
 
 /// 视频渲染三修复的源码守卫（media_kit 驱动的 VideoHibikiPage 无法 headless 行为测试，
 /// 故锁定关键配线）：
@@ -35,13 +34,8 @@ void main() {
       expect(s, isNot(contains('VideoHibikiPage(')),
           reason: '$path 不得裸用 VideoHibikiPage( 构造（会漏掉缩放中和→无画面）');
     }
-    // reader_hibiki_history_page 拆成主壳 + reader_history/*.part.dart：视频打开入口
-    // (_openVideoBook 的 VideoHibikiPage.neutralized) 现落在 video.part.dart，故读合并语料。
-    final String shelfCorpus = readReaderHistorySource();
-    expect(shelfCorpus, contains('VideoHibikiPage.neutralized('),
-        reason: '书架视频入口必须经 VideoHibikiPage.neutralized 打开');
-    expect(shelfCorpus, isNot(contains('VideoHibikiPage(')),
-        reason: '书架不得裸用 VideoHibikiPage( 构造');
+    // 书架不再打开视频页（视频归「视频」tab 独占，书架视频分区已删），故此处不再
+    // 校验书架语料的 VideoHibikiPage.neutralized 接线。
   });
 
   test('根 Overlay 浮层 builder 用自身 context + mounted 守卫（退视频红屏）', () {

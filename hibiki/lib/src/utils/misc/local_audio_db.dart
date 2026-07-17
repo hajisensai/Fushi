@@ -77,6 +77,46 @@ class LocalAudioDb {
     }
   }
 
+  /// 以「用于查询」的方式打开 [dbPath]，并**尽力**把桌面路径缺失的两条索引补上
+  /// （根因修复：导入的 Yomitan Local Audio Server 库原本无索引，桌面 Dart 路径
+  /// 直接 `SELECT ... WHERE expression=?` 就是全表扫描——数十万行时单次查词几百 ms，
+  /// 正是「查词发音特别慢」的真因。Android 原生 `TtsChannelHandler` 早在
+  /// `setLocalAudioDb` 时后台建过同名索引；桌面此前完全没建）。
+  ///
+  /// 策略：优先读写打开建 `CREATE INDEX IF NOT EXISTS`（幂等——首次建、之后 sqlite
+  /// 查 sqlite_master 命中即秒返；索引持久化进**库文件**，故后续即便每次重新开-查-关、
+  /// 甚至别的 isolate（弹窗词典是独立 entry-point）查询也一律走索引，无需任何进程内
+  /// 连接池，天然规避 Windows 文件句柄锁 + 多 isolate 删除时序）。只读介质 / 无写权限
+  /// 时读写打开会抛 → 降级只读打开（不建索引，仍能查，只是慢；若该库曾被建过索引则
+  /// 依旧受益）。两条 DDL 各自独立 try：某表不存在（如只有 android 表的库）时另一条
+  /// 仍能建，互不牵连。调用方负责 `dispose()`——本方法不缓存连接。
+  static Database _openForQuery(String dbPath) {
+    Database db;
+    bool writable = true;
+    try {
+      db = sqlite3.open(dbPath, mode: OpenMode.readWrite);
+    } catch (_) {
+      // 只读介质 / 无写权限 / 被独占：降级只读，跳过建索引。
+      db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+      writable = false;
+    }
+    if (writable) {
+      for (final String ddl in <String>[
+        'CREATE INDEX IF NOT EXISTS idx_entries_expr_read '
+            'ON entries(expression, reading)',
+        'CREATE INDEX IF NOT EXISTS idx_android_file_source '
+            'ON android(file, source)',
+      ]) {
+        try {
+          db.execute(ddl);
+        } catch (_) {
+          // 目标表不存在 / 库被占用等：建不了不致命，查询仍可跑（慢），不牵连另一条。
+        }
+      }
+    }
+    return db;
+  }
+
   /// Looks up the `(file, source)` for [expression] in [dbPath], preferring an
   /// exact [reading] match and falling back to any entry for the expression
   /// (mirrors the native handler). Returns null on miss or error.
@@ -95,7 +135,7 @@ class LocalAudioDb {
     }
     Database? db;
     try {
-      db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+      db = _openForQuery(dbPath);
       // order 为空走快路径（LIMIT 1）；非空要取全部候选行再按序挑。
       final String limit = order.isEmpty ? ' LIMIT 1' : '';
       ResultSet rows = db.select(
@@ -157,7 +197,7 @@ class LocalAudioDb {
     if (dbPath.isEmpty || !File(dbPath).existsSync()) return null;
     Database? db;
     try {
-      db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+      db = _openForQuery(dbPath);
       final ResultSet rows = db.select(
         'SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1',
         <Object?>[file, source],

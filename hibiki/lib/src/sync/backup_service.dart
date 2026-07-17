@@ -9,6 +9,7 @@ import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/backup_merge_engine.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -3675,9 +3676,7 @@ class BackupService {
   }
 
   String defaultFilename() {
-    final now = DateTime.now();
-    final date =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final String date = HibikiTimeFormat.dayKey(DateTime.now());
     return 'hibiki-backup-$date.hibiki.zip';
   }
 }

@@ -75,15 +75,6 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     super.initState();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _creatorActiveStreamSubscription = appModel.creatorActiveStream.listen(
-        (creatorActive) {
-          if (creatorActive) {
-            onCreatorOpen();
-          } else {
-            onCreatorClose();
-          }
-        },
-      );
       _seedWarmPopup();
     });
   }
@@ -107,15 +98,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   @override
   void dispose() {
-    _creatorActiveStreamSubscription?.cancel();
     _visibleRenderFailsafeTimer?.cancel();
     // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
     _popup.dispose();
     super.dispose();
   }
-
-  /// Used for listening to when the Card Creator is opened and closed.
-  StreamSubscription<bool>? _creatorActiveStreamSubscription;
 
   /// Allows customisation of dictionary background.
   double get dictionaryBackgroundOpacity => 0.95;
@@ -1272,22 +1259,4 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     if (index < 0) return null;
     return stack[index];
   }
-
-  /// Action upon selecting the Search option.
-  @override
-  void onSearch(String searchTerm, {String? sentence = ''}) async {
-    await appModel.openPopupDictionaryLookup(searchTerm: searchTerm);
-  }
-
-  /// Action upon selecting the Stash option.
-  @override
-  void onStash(String searchTerm) {
-    appModel.addToStash(terms: [searchTerm]);
-  }
-
-  /// Performs an action before opening the Card Creator.
-  void onCreatorOpen() {}
-
-  /// Performs an action after closing the Card Creator.
-  void onCreatorClose() {}
 }

@@ -120,21 +120,6 @@ void main() {
       expect(tags.single.name, 'New');
     });
 
-    test('getBookKeysForAnyTag returns books with any matching tag', () async {
-      final db = await _openDb();
-      final b1 = await _insertBook(db, 'A');
-      final b2 = await _insertBook(db, 'B');
-      final b3 = await _insertBook(db, 'C');
-      final t1 = await db.createTag('T1', 0xFF000000);
-      final t2 = await db.createTag('T2', 0xFF000000);
-      await db.addTagToBook(b1, t1);
-      await db.addTagToBook(b2, t2);
-
-      final ids = await db.getBookKeysForAnyTag({t1, t2});
-      expect(ids, containsAll([b1, b2]));
-      expect(ids, isNot(contains(b3)));
-    });
-
     test('getBookKeysForAllTags returns books with all tags', () async {
       final db = await _openDb();
       final b1 = await _insertBook(db, 'A');

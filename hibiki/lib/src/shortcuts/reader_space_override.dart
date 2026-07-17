@@ -97,6 +97,22 @@ ShortcutAction? resolveReaderArrowPageTurn({
   return null;
 }
 
+/// 触摸 / 鼠标滑动翻页方向必须跟随书写方向（横排 LTR 与竖排 vertical-rl 相反），
+/// 与键盘方向键 [resolveReaderArrowPageTurn] 的 `leftIsForward = rtl ^ reverse` 同构。
+///
+/// 返回「向左滑（`onSwipe('left')`，手指 dx<0）是否 = 前进」。
+/// - [invert] = 用户 `invertSwipeDirection` 开关（默认 true）。
+/// - [rtl] = 竖排 vertical-rl（日文默认，`_isRtlReading`）。
+///
+/// `invert ^ rtl` 的四象限：
+/// - 竖排默认(rtl=T, invert=T) → false：右滑前进（**与历史行为一致**，不破坏既有手感）。
+/// - 横排默认(rtl=F, invert=T) → true：左滑前进（LTR 下一页在右，推内容向左露出=前进）。
+///
+/// 此前滑动路径只用 [invert] 不看书写方向，横排与竖排共用同一套映射（横排方向反了）；
+/// 键盘路径早已翻转，滑动漏了，本谓词补齐。
+bool swipeLeftIsForward({required bool invert, required bool rtl}) =>
+    invert ^ rtl;
+
 /// 桌面 Windows 阅读器「Ctrl+C 复制选中文字」止血兼容层（BUG-402）。
 ///
 /// 根因：Windows 端 WebView 走 WebView2 合成模式，fork 的

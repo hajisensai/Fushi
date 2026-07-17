@@ -394,7 +394,7 @@ class ReaderSettings {
 
   /// 翻页滑动灵敏度系数（TODO-113）。1.0 = 默认手感；<1 更灵敏（更短的滑动即可
   /// 翻页），>1 更迟钝（需滑得更远）。系数缩放 JS 端 `_gestureEnd` 的基础距离阈值
-  /// （72px / 快速短滑 36px），见 reader_hibiki_page.dart `_buildReaderSetupScript`。
+  /// （44px / 快速短滑 22px），见 reader_hibiki_page.dart `_buildReaderSetupScript`。
   static double normalizeSwipePageTurnSensitivity(num value) =>
       value.toDouble().clamp(0.3, 2.0).toDouble();
 
@@ -406,10 +406,24 @@ class ReaderSettings {
         normalizeSwipePageTurnSensitivity(v),
       );
 
-  /// 基础滑动翻页距离阈值（px）：纯距离触发 [baseDistPx]，配合速度的快速短滑触发
-  /// [baseFastDistPx]。系数 1.0 时与旧硬编码值一致（72 / 36）。
-  static const int baseSwipeDistPx = 72;
-  static const int baseSwipeFastDistPx = 36;
+  /// 基础滑动翻页距离阈值（px）：纯距离触发 [baseSwipeDistPx]，配合速度的快速短滑
+  /// 触发 [baseSwipeFastDistPx]。系数 1.0 = 默认手感（44 / 22）。
+  ///
+  /// BUG-手机翻页迟钝：旧默认 72 / 36 是照桌面鼠标手感定的，手机上「要滑很长才翻」。
+  /// 降到 44 / 22（「轻快」档），正常一滑即翻；灵敏度系数仍可上调回旧手感（系数≈1.6
+  /// → 70 / 35）。
+  static const int baseSwipeDistPx = 44;
+  static const int baseSwipeFastDistPx = 22;
+
+  /// 查词「原地轻点」判定半径（px，两轴各 ≤ 此值才算点击查词）。**固定值、不随灵敏度
+  /// 系数缩放**——它是「点」与「滑」的形状判据，不是翻页距离。
+  ///
+  /// BUG-手机翻短了会查词：旧实现把查词框上界直接取成翻页距离阈值（72px），于是任何
+  /// 够不到翻页阈值的横滑都落进查词分支被当成点词。解耦后：只有两轴位移都 ≤ 28px 的
+  /// 原地轻点才查词；横向主导、超过此半径但够不到翻页阈值的短滑一律**空操作**（既不
+  /// 翻页也不查词），彻底切断「短滑误查词」。TODO-971 真正治好慢点词靠的是去掉 500ms
+  /// 时限（保留），不是把框放大到 72（那是副作用）。
+  static const int tapSlopPx = 28;
 
   /// 把灵敏度系数 [sensitivity] 解析成 JS `_gestureEnd` 用的两个距离阈值（px）。
   /// 系数越大阈值越大（越迟钝，需滑得更远）；越小越灵敏。这是 reader 注入脚本与
@@ -504,10 +518,6 @@ class ReaderSettings {
       _get<bool>('invert_audiobook_skip_direction', false);
   Future<void> toggleInvertAudiobookSkipDirection() => _set<bool>(
       'invert_audiobook_skip_direction', !invertAudiobookSkipDirection);
-
-  int get volumePageTurningSpeed => _get<int>('volume_page_turning_speed', 100);
-  Future<void> setVolumePageTurningSpeed(int v) =>
-      _set<int>('volume_page_turning_speed', v);
 
   // ── Custom fonts (catalog + per-target refs) ─────────────────────
   //

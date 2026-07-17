@@ -26,7 +26,6 @@ void main() {
   // Every file that builds an `InAppWebView` *widget* (not headless).
   const List<String> widgetSites = <String>[
     'lib/src/pages/implementations/dictionary_popup_webview.dart',
-    'lib/src/pages/implementations/dictionary_structured_content_page.dart',
     'lib/src/pages/implementations/reader_hibiki_page.dart',
   ];
 

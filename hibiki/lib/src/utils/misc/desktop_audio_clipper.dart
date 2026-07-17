@@ -1020,7 +1020,11 @@ List<String> buildFfmpegMultiSubtitleArgs({
 /// pass (see [buildFfmpegMultiSubtitleArgs]). Returns the subset of [outputs]
 /// actually written (file exists and non-empty); a partially-failed batch (one
 /// corrupt track) still yields the tracks that succeeded rather than dropping
-/// everything.
+/// everything. When the single pass produces fewer tracks than requested — the
+/// worst case being an output-open `AVERROR(EINVAL)` (exit -22) that a single
+/// un-encodable track triggers, aborting the batch before ANY track is written —
+/// each still-missing track is re-demuxed on its own so one poison track only
+/// loses itself instead of poisoning every good track in the container.
 ///
 /// [timeout] bounds a hung demux. Unlike single-clip encodes, the read time of a
 /// big interleaved container grows with its size, so callers pass a size-scaled
@@ -1055,6 +1059,44 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
         } catch (_) {}
       }
     });
+    // Per-track fallback for tracks the single pass did NOT produce. ffmpeg
+    // initialises EVERY output encoder before writing any packet, so a single
+    // text-classified track whose codec it cannot transcode to the target muxer
+    // (e.g. a caption stream fail-opened to `.srt` by subtitleFormatForCodec)
+    // aborts the WHOLE single pass at output-open (`AVERROR(EINVAL)`, exit -22,
+    // "Error opening output files: Invalid argument") BEFORE anything lands —
+    // poisoning every good track in the batch. Re-demux each still-missing track
+    // on its own so a poison track only loses itself; a genuinely un-encodable
+    // track stays missing (graceful no-subtitle for that one track only). Reuses
+    // the same size-scaled [timeout] as the batch (NOT the single-clip 30s) so a
+    // large interleaved container does not spuriously time out on the retry. A
+    // fully-successful single pass leaves written.length == outputs.length, so
+    // this loop never runs (zero overhead on the common path). Gated on a
+    // non-null returnCode: a timed-out batch (returnCode == null) means the
+    // demux is too slow (IO contention), so per-track retries would just
+    // multiply that one timeout into N — the poison-track case that this
+    // fallback targets always returns a real exit code (-22), fast.
+    if (result.returnCode != null && written.length < outputs.length) {
+      for (final MapEntry<int, String> entry in outputs.entries) {
+        if (written.containsKey(entry.key)) continue;
+        final FfmpegRunResult single = await _runFfmpeg(
+          buildFfmpegSubtitleArgs(
+            inputPath: inputPath,
+            streamIndex: entry.key,
+            outputPath: entry.value,
+          ),
+          timeout,
+        );
+        final File f = File(entry.value);
+        if (single.returnCode == 0 && f.existsSync() && f.lengthSync() > 0) {
+          written[entry.key] = entry.value;
+        } else if (f.existsSync()) {
+          try {
+            f.deleteSync();
+          } catch (_) {}
+        }
+      }
+    }
     if (written.isEmpty) {
       _reportFfmpegFailure(
         'extractEmbeddedSubtitlesViaFfmpeg',

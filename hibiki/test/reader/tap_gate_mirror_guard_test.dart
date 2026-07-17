@@ -15,8 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// WebView 手势，这里钉死结构性接线，防重构静默拆掉镜像或漏掉同步点：
 ///  1. setup 脚本注入镜像初始值（带当前 `$_showChrome` 真值）；
 ///  2. tap 分支存在 JS 直选 + 旧链回落两条路径；
-///  3. Dart 侧 `_syncTapGateJs` 存在，且 chrome 两个翻转点（_toggleChrome /
-///     _setChromeVisible）与设置热更新（onSettingsChangedLive）都调用它。
+///  3. Dart 侧 `_syncTapGateJs` 存在，且 chrome 翻转点（_toggleChrome）
+///     与设置热更新（onSettingsChangedLive）都调用它。
 void main() {
   final String webviewPart = File(
     'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
@@ -64,17 +64,12 @@ void main() {
     expect(lookupPart, contains("'window.__hoshiTapGate = '"),
         reason: '同步助手必须写同一个 JS 全局');
 
-    // chrome 可见性的两个翻转点都要同步镜像。
+    // chrome 可见性的翻转点要同步镜像。
     final RegExp toggleBody =
         RegExp(r'void _toggleChrome\(\) \{[\s\S]*?\n  \}');
-    final RegExp setVisibleBody =
-        RegExp(r'void _setChromeVisible\(bool visible\) \{[\s\S]*?\n  \}');
     expect(toggleBody.firstMatch(chromePart)?.group(0),
         contains('_syncTapGateJs();'),
         reason: '_toggleChrome 翻转 chrome 后必须同步 JS 门控镜像');
-    expect(setVisibleBody.firstMatch(chromePart)?.group(0),
-        contains('_syncTapGateJs();'),
-        reason: '_setChromeVisible 翻转 chrome 后必须同步 JS 门控镜像');
 
     // highlightOnTap 经设置热更新链路同步。
     final int liveHook = mainShell.indexOf('onSettingsChangedLive = ()');

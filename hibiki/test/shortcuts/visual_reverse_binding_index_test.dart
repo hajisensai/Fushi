@@ -18,17 +18,18 @@ void main() {
         ShortcutScope.reader,
       );
 
-      // Spot-check a known reader default: readerToggleBookmark binds Ctrl+D.
-      final ShortcutBindingSet bookmark =
-          registry.bindingsFor(ShortcutAction.readerToggleBookmark);
-      expect(bookmark.keyboardBindings, isNotEmpty,
-          reason: 'precondition: bookmark has a default keyboard binding');
-      final LogicalKeyboardKey boundKey = bookmark.keyboardBindings.first.key;
+      // Spot-check a known reader default: readerOpenMenu binds T.
+      final ShortcutBindingSet openMenu =
+          registry.bindingsFor(ShortcutAction.readerOpenMenu);
+      expect(openMenu.keyboardBindings, isNotEmpty,
+          reason:
+              'precondition: readerOpenMenu has a default keyboard binding');
+      final LogicalKeyboardKey boundKey = openMenu.keyboardBindings.first.key;
 
       expect(index.isKeyboardBound(boundKey), isTrue);
       expect(
         index.actionsForKey(boundKey),
-        contains(ShortcutAction.readerToggleBookmark),
+        contains(ShortcutAction.readerOpenMenu),
       );
     });
 

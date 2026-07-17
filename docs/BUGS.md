@@ -27,11 +27,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 838 条。点号进各自文件。
+> 共 848 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-867](bugs/BUG-867-ass-fontname-gdi-fullname.md) | ✅ | ✅ | 装了字幕指定字体 hibiki 仍用回退字体（ASS Fontname=GDI 全名解析缺失） |
+| [BUG-866](bugs/BUG-866-reader-live-margin-theme-gate.md) | ✅ | ✅ | 阅读器余白/主题改完不实时生效须退出重进(样式重锚就绪门控静默丢CSS) |
+| [BUG-865](bugs/BUG-865-anki-popup-engine-missing-channel.md) | ✅ | ✅ | 外部查词面制卡 MissingPluginException 副engine未注册anki channel |
+| [BUG-864](bugs/BUG-864-gdrive-sync-transient-no-retry.md) | ✅ | ✅ | Google Drive 聚合同步瞬时网络超时不重试整轮放弃 |
+| [BUG-863](bugs/BUG-863-embedded-sub-poison-track.md) | ✅ | ✅ | 内嵌字幕单遍抽取被一条毒轨整批击穿 |
+| [BUG-861](bugs/BUG-861-video-shift-hover-switch.md) | ✅ | ✅ | 视频按住Shift无法连续切换查词 |
+| [BUG-860](bugs/BUG-860-popup-link-overflow.md) | ✅ | ✅ | 查词弹窗长URL链接出框 |
+| [BUG-859](bugs/BUG-859-global-lookup-nested-popup-position.md) | ✅ | ✅ | 全局查词嵌套弹窗弹出位置不对 |
+| [BUG-858](bugs/BUG-858-anki-overwrite-sentence.md) | ✅ | ✅ | Anki 覆盖卡片只覆盖图片和语音，原文句子未覆盖 |
+| [BUG-857](bugs/BUG-857-horizontal-swipe-direction-not-flipped.md) | ✅ | ✅ | 横排滑动翻页方向未随书写方向翻转（和竖排一样，应与日语相反） |
+| [BUG-856](bugs/BUG-856-mobile-swipe-insensitive-lookup.md) | ✅ | ✅ | 手机滑动翻页迟钝且短滑误触查词 |
 | [BUG-855](bugs/BUG-855-ass-fontsize-em-vs-cell.md) | ✅ | ✅ | ASS Fontsize 被当 em 用，字号比 mpv 整体大一截 |
 | [BUG-854](bugs/BUG-854-selection-menu-favorite.md) | ✅ | ✅ | 移动端选区菜单缺少收藏项 |
 | [BUG-853](bugs/BUG-853-video-ime-space-pause.md) | ✅ | ✅ | 日语输入法激活时视频页按空格无法暂停 |

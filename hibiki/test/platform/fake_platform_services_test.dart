@@ -59,18 +59,6 @@ void main() {
       final svc = FakePermissionService()..hasExternalStorage = false;
       expect(await svc.hasExternalStoragePermission(), isFalse);
     });
-
-    test('requestOverlayPermission sets requestOverlayCalled', () async {
-      final svc = FakePermissionService();
-      expect(svc.requestOverlayCalled, isFalse);
-      await svc.requestOverlayPermission();
-      expect(svc.requestOverlayCalled, isTrue);
-    });
-
-    test('canDrawOverlays reflects overlaysAllowed', () async {
-      final svc = FakePermissionService()..overlaysAllowed = true;
-      expect(await svc.canDrawOverlays(), isTrue);
-    });
   });
 
   group('FakeDirectoryService', () {

@@ -14,9 +14,5 @@ class IosDeviceInfoService implements PlatformDeviceInfoService {
   Future<String?> get deviceModel async => (await _getInfo()).model;
 
   @override
-  Future<String?> get osVersion async =>
-      'iOS ${(await _getInfo()).systemVersion}';
-
-  @override
   Future<String?> get manufacturer async => null;
 }

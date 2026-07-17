@@ -1432,10 +1432,8 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     );
   }
 
-  static String _formatTime(int ms) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${dt.year}-${_pad(dt.month)}-${_pad(dt.day)} ${_pad(dt.hour)}:${_pad(dt.minute)}';
-  }
+  static String _formatTime(int ms) =>
+      HibikiTimeFormat.dateHourMinute(DateTime.fromMillisecondsSinceEpoch(ms));
 
   static String _pad(int n) => n.toString().padLeft(2, '0');
 

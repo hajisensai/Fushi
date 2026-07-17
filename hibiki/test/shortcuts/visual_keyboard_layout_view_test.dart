@@ -73,12 +73,12 @@ void main() {
     await pumpView(tester, registry, ShortcutScope.reader,
         addKey: const InputBinding(key: LogicalKeyboardKey.f9));
 
-    // A reader default (readerToggleBookmark = Ctrl+D) makes the D keycap bound;
+    // A reader default (readerOpenMenu = T) makes the T keycap bound;
     // its cap is present and tappable (InkWell). An unbound key (F9) has no
     // InkWell.
-    final ShortcutBindingSet bookmark =
-        registry.bindingsFor(ShortcutAction.readerToggleBookmark);
-    final LogicalKeyboardKey boundKey = bookmark.keyboardBindings.first.key;
+    final ShortcutBindingSet openMenu =
+        registry.bindingsFor(ShortcutAction.readerOpenMenu);
+    final LogicalKeyboardKey boundKey = openMenu.keyboardBindings.first.key;
 
     expect(find.byKey(Key('keycap_${boundKey.keyId}')), findsOneWidget);
     expect(
@@ -92,9 +92,9 @@ void main() {
       'tapping a bound keycap writes through to the registry and persistence',
       (WidgetTester tester) async {
     final HibikiShortcutRegistry registry = buildRegistry();
-    // readerToggleBookmark default is Ctrl+D -> the D keycap is bound.
+    // readerOpenMenu default is T -> the T keycap is bound.
     final LogicalKeyboardKey boundKey = registry
-        .bindingsFor(ShortcutAction.readerToggleBookmark)
+        .bindingsFor(ShortcutAction.readerOpenMenu)
         .keyboardBindings
         .first
         .key;
@@ -109,9 +109,7 @@ void main() {
 
     // Registry truly mutated.
     expect(
-      registry
-          .bindingsFor(ShortcutAction.readerToggleBookmark)
-          .keyboardBindings,
+      registry.bindingsFor(ShortcutAction.readerOpenMenu).keyboardBindings,
       contains(added),
     );
     // Persistence carries the serialized token (F9).

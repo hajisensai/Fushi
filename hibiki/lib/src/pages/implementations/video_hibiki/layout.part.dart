@@ -324,11 +324,13 @@ extension _VideoLayout on _VideoHibikiPageState {
                         child: VideoSubtitleOverlay(
                           controller: controller,
                           onCharTap: _handleSubtitleLookupTap,
-                          // TODO-756a 桌面 Shift-鼠标悬停查词：与点击查词同链路
-                          // （[_handleSubtitleLookupTap] → [_lookupAt]，内部已 _immersiveAllowsLookup
+                          // TODO-756a 桌面 Shift-鼠标悬停查词：走去重入口 [_handleSubtitleHoverLookup]
+                          // →（[_handleSubtitleLookupTap] → [_lookupAt]，内部已 _immersiveAllowsLookup
                           // 门控），故按住 Shift 悬停字幕字符与点击该字符行为一致。移动端无 hover、
-                          // 自然不触发；节流由 VideoSubtitleOverlay 内部承载。
-                          onCharHover: _handleSubtitleLookupTap,
+                          // 自然不触发；节流由 VideoSubtitleOverlay 内部承载。BUG-861：与浮层 barrier
+                          // hover（[_onDismissBarrierHover]）共用同一「同句同 grapheme」去重键，避免
+                          // 字符未被浮层遮住时两条 hover 路径同时命中导致同词双查闪烁。
+                          onCharHover: _handleSubtitleHoverLookup,
                           // TODO-756b：开了“悬停即查词”则纯悬停（无需 Shift）即查词；
                           // 关闭退回 756a 的 Shift+悬停。视频与阅读器共享 instance。
                           hoverAutoLookupEnabled:

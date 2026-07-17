@@ -4,10 +4,10 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 
 void main() {
-  group('resolveReachableHibikiUrl', () {
+  group('resolveReachableHibikiCandidate', () {
     test('returns the first reachable url', () async {
       final List<String> probed = <String>[];
-      final String result = await resolveReachableHibikiUrl(
+      final HibikiClientUrl result = await resolveReachableHibikiCandidate(
         const <HibikiClientUrl>[
           HibikiClientUrl(url: 'http://lan:8765'),
           HibikiClientUrl(url: 'http://wan:8765'),
@@ -19,14 +19,14 @@ void main() {
         },
       );
 
-      expect(result, 'http://lan:8765');
+      expect(result.url, 'http://lan:8765');
       expect(probed, <String>['http://lan:8765']); // stops at first success
     });
 
     test('falls through to the next url when the first is unreachable',
         () async {
       final List<String> probed = <String>[];
-      final String result = await resolveReachableHibikiUrl(
+      final HibikiClientUrl result = await resolveReachableHibikiCandidate(
         const <HibikiClientUrl>[
           HibikiClientUrl(url: 'http://lan:8765'),
           HibikiClientUrl(url: 'http://wan:8765'),
@@ -38,13 +38,13 @@ void main() {
         },
       );
 
-      expect(result, 'http://wan:8765');
+      expect(result.url, 'http://wan:8765');
       expect(probed, <String>['http://lan:8765', 'http://wan:8765']);
     });
 
     test('skips disabled candidates', () async {
       final List<String> probed = <String>[];
-      final String result = await resolveReachableHibikiUrl(
+      final HibikiClientUrl result = await resolveReachableHibikiCandidate(
         const <HibikiClientUrl>[
           HibikiClientUrl(url: 'http://lan:8765', enabled: false),
           HibikiClientUrl(url: 'http://wan:8765'),
@@ -56,7 +56,7 @@ void main() {
         },
       );
 
-      expect(result, 'http://wan:8765');
+      expect(result.url, 'http://wan:8765');
       expect(probed, <String>['http://wan:8765']); // disabled never probed
     });
 
@@ -64,7 +64,7 @@ void main() {
         () async {
       final List<String> probed = <String>[];
       await expectLater(
-        resolveReachableHibikiUrl(
+        resolveReachableHibikiCandidate(
           const <HibikiClientUrl>[
             HibikiClientUrl(url: 'http://lan:8765'),
             HibikiClientUrl(url: 'http://wan:8765'),
@@ -83,7 +83,7 @@ void main() {
     test('throws a retryable SyncBackendError when none are reachable',
         () async {
       await expectLater(
-        resolveReachableHibikiUrl(
+        resolveReachableHibikiCandidate(
           const <HibikiClientUrl>[
             HibikiClientUrl(url: 'http://lan:8765'),
             HibikiClientUrl(url: 'http://wan:8765'),

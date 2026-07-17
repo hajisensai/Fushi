@@ -857,13 +857,6 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// reflow would otherwise zero `window.scrollY` and bounce to chapter start).
   static VoidCallback? onChromeReanchorLive;
 
-  /// TODO-728: fired when a physical game controller's presence changes (true =
-  /// now present, false = gone). The open reader applies/clears its
-  /// gamepad-driven immersive mode. Only wired up by the reader page; the
-  /// AppModel-side bridge already gates on [AppModel.gamepadAutoImmersive] so
-  /// this fires only when the user opted in.
-  static void Function(bool present)? onGamepadPresenceChanged;
-
   /// 手柄按钮图显示品牌（TODO-1113 / TODO-612）。纯**显示偏好**：只决定快捷键设置页
   /// 里手柄面键渲染成 Xbox A/B/X/Y、PlayStation ✕○□△ 还是 Nintendo Switch B/A/Y/X，
   /// 与 binding 序列化完全解耦（[GamepadButton.serialize] 恒定）。以 token 字符串持久化，
@@ -899,25 +892,6 @@ class ReaderHibikiSource extends ReaderMediaSource {
     await setPreference<bool>(
       key: 'volume_page_turning_inverted',
       value: !volumePageTurningInverted,
-    );
-  }
-
-  int get volumePageTurningSpeed =>
-      readerSettings?.volumePageTurningSpeed ??
-      getPreference<int>(
-        key: 'volume_page_turning_speed',
-        defaultValue: defaultScrollingSpeed,
-      );
-
-  void setVolumePageTurningSpeed(int speed) async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setVolumePageTurningSpeed(speed);
-      return;
-    }
-    await setPreference<int>(
-      key: 'volume_page_turning_speed',
-      value: speed,
     );
   }
 

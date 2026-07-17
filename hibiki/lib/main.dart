@@ -1468,8 +1468,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                                   ? null
                                   : buildHibikiMacosSidebar(
                                       activeTabs: homeActiveTabs(
-                                        videoEnabled:
-                                            appModel.experimentalVideoEnabled,
+                                        // 「视频」tab 已毕业为常驻（原
+                                        // experimentalVideoEnabled 恒 true）。
+                                        videoEnabled: true,
                                         texthookerEnabled:
                                             appModel.texthookerEnabled,
                                       ),

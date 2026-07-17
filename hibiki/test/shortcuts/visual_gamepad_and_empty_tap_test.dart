@@ -173,7 +173,7 @@ void main() {
     final HibikiShortcutRegistry registry = buildRegistry();
     // Seed a gamepad binding so its knob is bound + tappable.
     registry.updateBinding(
-      ShortcutAction.readerToggleBookmark,
+      ShortcutAction.readerToggleFurigana,
       const ShortcutBindingSet(
         gamepadBindings: <GamepadBinding>[GamepadBinding(GamepadButton.a)],
       ),

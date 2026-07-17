@@ -671,28 +671,6 @@ SettingsDestination buildReadingDestination() {
             },
           ),
           SettingsSliderItem(
-            id: 'reading_controls.volume_page_turning_speed',
-            title: t.volume_button_turning_speed,
-            // 随 volume_page_turning 一起仅 Android 可见（TODO-1155）。
-            visible: (_) => Platform.isAndroid,
-            icon: Icons.speed_outlined,
-            min: 10,
-            max: 500,
-            divisions: 49,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 6,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.volumePageTurningSpeed.toDouble(),
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.readerSource
-                  .setVolumePageTurningSpeed(value.round());
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          SettingsSliderItem(
             id: 'reading_controls.wheel_page_turn_interval',
             title: t.wheel_page_turn_interval,
             icon: Icons.mouse_outlined,
@@ -743,23 +721,6 @@ SettingsDestination buildReadingDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.keepScreenAwake,
             onChanged: setKeepScreenAwake,
-          ),
-          // TODO-728: when a game controller is present, auto-enter immersive
-          // (chrome-hidden) reading. Global AppModel preference (desktop/Apple
-          // gamepad players); default false. behavior group order 16.
-          SettingsSwitchItem(
-            id: 'reading_controls.gamepad_auto_immersive',
-            title: t.gamepad_auto_immersive,
-            icon: Icons.sports_esports_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 16,
-            ),
-            value: (SettingsContext c) => c.appModel.gamepadAutoImmersive,
-            onChanged: (SettingsContext c, bool value) {
-              c.appModel.toggleGamepadAutoImmersive();
-              notifyReaderChromeChanged(c);
-            },
           ),
         ],
       ),

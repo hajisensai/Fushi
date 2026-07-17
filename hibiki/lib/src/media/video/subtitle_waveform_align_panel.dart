@@ -48,6 +48,8 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
     this.onPlayCue,
     this.isPlaying,
     this.onTogglePlayPause,
+    this.keyboardShortcuts,
+    this.onSeek,
     this.positionListenable,
     this.currentPositionMs,
     super.key,
@@ -91,6 +93,13 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
   /// 播放/暂停切换回调（放大视图内的播放条按钮点击）。复用现有播放器，不新建音频栈。
   /// null = 不显示该按钮。
   final Future<void> Function()? onTogglePlayPause;
+
+  /// 放大对轴弹窗内生效的键盘快捷键整表（复用视频页 registry 驱动 map）。null = 弹窗内
+  /// 不接管键盘。
+  final Map<ShortcutActivator, VoidCallback>? keyboardShortcuts;
+
+  /// 点击波形空白处把播放头 seek 到对应时间（毫秒）。null = 波形不可点击 seek。
+  final Future<void> Function(int positionMs)? onSeek;
 
   /// 可选：播放位置变化的通知源（如 VideoPlayerController），用于重绘播放头。
   final Listenable? positionListenable;
@@ -159,6 +168,8 @@ class _SubtitleWaveformAlignPanelState
         onPlayCue: widget.onPlayCue,
         isPlaying: widget.isPlaying,
         onTogglePlayPause: widget.onTogglePlayPause,
+        keyboardShortcuts: widget.keyboardShortcuts,
+        onSeek: widget.onSeek,
         positionListenable: widget.positionListenable,
         currentPositionMs: widget.currentPositionMs,
       ),
@@ -263,6 +274,8 @@ class SubtitleWaveformZoomView extends StatefulWidget {
     this.onPlayCue,
     this.isPlaying,
     this.onTogglePlayPause,
+    this.keyboardShortcuts,
+    this.onSeek,
     this.positionListenable,
     this.currentPositionMs,
     super.key,
@@ -298,6 +311,14 @@ class SubtitleWaveformZoomView extends StatefulWidget {
 
   /// 播放/暂停切换回调。null = 不显示播放/暂停按钮。
   final Future<void> Function()? onTogglePlayPause;
+
+  /// 弹窗内生效的键盘快捷键整表（复用视频页 registry 驱动 map）。非空时把弹窗内容包进
+  /// [CallbackShortcuts] + 自动聚焦，使空格暂停 / 方向键 seek / 帧步进等在弹窗打开时照常
+  /// 生效（弹窗夺焦后视频页那套 media_kit 快捷键收不到按键）。null = 弹窗不接管键盘。
+  final Map<ShortcutActivator, VoidCallback>? keyboardShortcuts;
+
+  /// 点击波形把播放头 seek 到点击 x 对应的时间（毫秒）。null = 波形不可点击 seek。
+  final Future<void> Function(int positionMs)? onSeek;
 
   /// 可选：播放位置变化通知源，驱动播放头重绘。
   final Listenable? positionListenable;
@@ -471,18 +492,8 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   }
 
   /// 毫秒 -> `m:ss` / `h:mm:ss` 时间标签。
-  String _formatTime(int ms) {
-    final int totalSec = (ms < 0 ? 0 : ms) ~/ 1000;
-    final int h = totalSec ~/ 3600;
-    final int m = (totalSec % 3600) ~/ 60;
-    final int s = totalSec % 60;
-    final String ss = s.toString().padLeft(2, '0');
-    if (h > 0) {
-      final String mm = m.toString().padLeft(2, '0');
-      return '$h:$mm:$ss';
-    }
-    return '$m:$ss';
-  }
+  String _formatTime(int ms) =>
+      HibikiTimeFormat.clock(Duration(milliseconds: ms < 0 ? 0 : ms));
 
   /// cue 边界（start/end 混合，未加延迟）。painter 内部叠加延迟画竖线。
   List<int> get _cueBoundariesMs {
@@ -594,7 +605,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
 
-    return HibikiDialogFrame(
+    final Widget frame = HibikiDialogFrame(
       maxWidth: 980,
       maxHeightFactor: 0.9,
       scrollable: true,
@@ -627,6 +638,17 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           ],
         ],
       ),
+    );
+
+    // 弹窗夺焦后视频页那套 media_kit 快捷键收不到按键；这里用同一份 registry map 在弹窗内
+    // 重挂一层（自动聚焦保证按键有落点、可冒泡到 CallbackShortcuts），空格暂停 / 方向键
+    // seek / `,``.` 帧步进等照常生效。焦点落在数值输入框时文本键被其消费、不误触。
+    final Map<ShortcutActivator, VoidCallback>? shortcuts =
+        widget.keyboardShortcuts;
+    if (shortcuts == null || shortcuts.isEmpty) return frame;
+    return CallbackShortcuts(
+      bindings: shortcuts,
+      child: Focus(autofocus: true, child: frame),
     );
   }
 
@@ -775,7 +797,26 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                     SizedBox(
                       width: contentWidth,
                       height: _waveHeight,
-                      child: painted,
+                      // 点击波形把播放头 seek 到该 x 对应的时间（横向拖动仍归滚动，tap≠drag
+                      // 不冲突）。x/contentWidth 映射回 [0, windowEndMs]。
+                      child: widget.onSeek == null
+                          ? painted
+                          : GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTapUp: (TapUpDetails details) {
+                                if (contentWidth <= 0 ||
+                                    widget.windowEndMs <= 0) {
+                                  return;
+                                }
+                                final double x = details.localPosition.dx
+                                    .clamp(0.0, contentWidth);
+                                final int ms =
+                                    (x / contentWidth * widget.windowEndMs)
+                                        .round();
+                                widget.onSeek!.call(ms < 0 ? 0 : ms);
+                              },
+                              child: painted,
+                            ),
                     ),
                     strip,
                   ],

@@ -226,7 +226,6 @@ class GamepadService {
   GamepadService({
     required this.navigatorKey,
     this.registry,
-    this.onPresenceChanged,
     this.focusNavigationEnabled,
   });
 
@@ -242,14 +241,6 @@ class GamepadService {
   /// unconditional touch behaviour.
   final bool Function()? focusNavigationEnabled;
 
-  /// TODO-728: fired when controller PRESENCE changes (true = a controller is
-  /// active/in-use, false = none seen for [_presenceIdleTimeout]). The `gamepads`
-  /// plugin (0.1.10+2) exposes no onConnect/onDisconnect, so presence is inferred
-  /// from event activity plus an idle timeout, optionally seeded by a one-shot
-  /// [gp.Gamepads.list] probe at [start] (the Windows native plugin implements
-  /// listGamepads). Null = nobody cares (tests / Android no-op path).
-  final void Function(bool present)? onPresenceChanged;
-
   /// Resolves which action a controller button is bound to, used by the global
   /// LB/RB scroll-page fallback so a user-rebound key still works. Null in tests
   /// that don't exercise scrolling.
@@ -263,15 +254,6 @@ class GamepadService {
   // would otherwise crash on Android (start() early-returns there) and in tests
   // that build AppModel without starting the service.
   bool _inputRoutesInstalled = false;
-
-  // TODO-728: inferred controller-presence state. _gamepadPresent is the last
-  // value reported through [onPresenceChanged]; _presenceIdleTimer fires after
-  // [_presenceIdleTimeout] of no controller activity to flip presence back to
-  // false. The timeout is deliberately long so a controller resting between
-  // inputs is NOT misread as gone (avoids spuriously un-hiding the reader chrome).
-  bool _gamepadPresent = false;
-  Timer? _presenceIdleTimer;
-  static const Duration _presenceIdleTimeout = Duration(seconds: 30);
 
   /// Whether the platform needs the `gamepads` plugin POLLER. Android delivers
   /// controllers as engine `gameButton*` key events (so it needs NO poller —
@@ -372,87 +354,18 @@ class GamepadService {
         onLongPress: _dispatchLongPress,
         onStickMove: _dispatchStickMove,
       ),
-      // TODO-728: every normalized controller event marks the controller active
-      // (and (re)arms the idle timer). Activity-based, so it works even though
-      // the plugin has no connect/disconnect callbacks.
-      onActivity: _markGamepadActive,
     )..start();
-    // TODO-728: one-shot presence probe at start. On Windows the native plugin
-    // implements listGamepads, so an already-plugged controller is detected
-    // before the user touches it; on backends where list() is empty/unsupported
-    // this is a harmless no-op and presence still resolves from event activity.
-    if (onPresenceChanged != null) {
-      unawaited(_probeGamepadPresence());
-    }
   }
 
   void dispose() {
     _poller?.dispose();
     _poller = null;
-    _presenceIdleTimer?.cancel();
-    _presenceIdleTimer = null;
     if (_inputRoutesInstalled) {
       GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointerGlobal);
       HardwareKeyboard.instance.removeHandler(_onKey);
       _inputRoutesInstalled = false;
     }
   }
-
-  // -- TODO-728: controller presence inference --------------------------
-
-  /// One-shot startup probe: if the platform's [gp.Gamepads.list] reports any
-  /// controller, mark it present immediately. Failures (unsupported backend /
-  /// plugin not ready) are swallowed -- presence then resolves from live event
-  /// activity instead.
-  Future<void> _probeGamepadPresence() async {
-    try {
-      final List<gp.GamepadController> controllers = await gp.Gamepads.list();
-      if (controllers.isNotEmpty) _markGamepadActive();
-    } catch (e) {
-      debugPrint('[gamepad] presence probe unavailable: $e');
-    }
-  }
-
-  /// Marks the controller active: flips presence to true (firing
-  /// [onPresenceChanged] once on the rising edge) and (re)arms the idle timer
-  /// so a controller resting after a burst of input is only considered gone
-  /// after [_presenceIdleTimeout] of silence.
-  void _markGamepadActive() {
-    if (!_gamepadPresent) {
-      _gamepadPresent = true;
-      onPresenceChanged?.call(true);
-    }
-    _presenceIdleTimer?.cancel();
-    _presenceIdleTimer = Timer(_presenceIdleTimeout, _markGamepadIdle);
-  }
-
-  /// Idle-timeout edge: no controller activity for [_presenceIdleTimeout] ->
-  /// presence is false (firing [onPresenceChanged] once on the falling edge).
-  void _markGamepadIdle() {
-    _presenceIdleTimer = null;
-    if (_gamepadPresent) {
-      _gamepadPresent = false;
-      onPresenceChanged?.call(false);
-    }
-  }
-
-  /// TODO-973: the last inferred presence value (true while a controller is
-  /// considered active). Lets the owner recompute derived state — e.g. the global
-  /// [AppModel.gamepadImmersiveActive] — when the [gamepadAutoImmersive]
-  /// preference is toggled MID-presence, since the presence callback itself only
-  /// fires on rising/falling edges, not on every preference change.
-  bool get gamepadPresent => _gamepadPresent;
-
-  /// TODO-728 test hook: simulates one controller event (the same call the
-  /// poller makes via [_PluginGamepadPoller.onActivity]) so the rising-edge
-  /// presence fire + idle-timeout falling edge can be unit-tested with fakeAsync,
-  /// without a real plugin backend.
-  @visibleForTesting
-  void debugMarkGamepadActivity() => _markGamepadActive();
-
-  /// TODO-728 test hook: the idle timeout used to flip presence back to false.
-  @visibleForTesting
-  static Duration get debugPresenceIdleTimeout => _presenceIdleTimeout;
 
   BuildContext? get _dispatchContext =>
       FocusManager.instance.primaryFocus?.context ??
@@ -1208,14 +1121,9 @@ class GamepadFrameState {
 /// tick — so edge detection, stick dead-zone/hysteresis and auto-repeat behave
 /// identically on every polled platform.
 class _PluginGamepadPoller {
-  _PluginGamepadPoller({required this.processor, this.onActivity});
+  _PluginGamepadPoller({required this.processor});
 
   final GamepadFrameProcessor processor;
-
-  /// TODO-728: invoked on every normalized controller event so the owning
-  /// service can infer controller presence from activity. Null = no presence
-  /// tracking (tests).
-  final void Function()? onActivity;
 
   static const Duration _pollInterval = Duration(milliseconds: 60);
 
@@ -1258,7 +1166,6 @@ class _PluginGamepadPoller {
   }
 
   void _onEvent(gp.NormalizedGamepadEvent e) {
-    onActivity?.call();
     final gp.GamepadButton? button = e.button;
     if (button != null) {
       _state.applyButton(button, e.value);

@@ -560,6 +560,11 @@ hr {
 
 a {
     color: var(--primary-color);
+    /* BUG: 无空格的长 URL（linkify 的裸链接 / 结构化内容 href）在 .glossary-group
+       描边卡里找不到断点，把 min-width:0 的 grid track 撑出右边界「出框」。
+       overflow-wrap:anywhere 只在没有其它断点时才任意处折行（正常带空格文本不受影响），
+       并缩小 min-content 使卡片不被撑宽。作用于全部 <a>（图片链接内无文本，零副作用）。 */
+    overflow-wrap: anywhere;
 }
 
 .gloss-image-container {

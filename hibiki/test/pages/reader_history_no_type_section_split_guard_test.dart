@@ -12,8 +12,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// 2. SRT 与 EPUB 合并进同一网格：把 srtBooks 与 epubBooks 各自构造成
 ///    `_ShelfBookSlot` payload 合进单一 `shelfGroups`（TODO-616 A2 分组 + 跨类型排序），
 ///    再用 `itemCount: shelfGroups.length` 渲染——证明两类卡（+ 系列卡）进同一个
-///    itemCount 网格、无分区头；
-/// 3. 视频分区头 `t.shelf_video_section` 保持不动（本回归不碰视频）。
+///    itemCount 网格、无分区头。
+///
+/// 注：视频分区头 `t.shelf_video_section` 与 `_buildSectionHeader` 已随书架视频
+/// 分区死路径清理一并删除（视频归视频 tab 独占），故不再校验视频分区头。
 ///
 /// 纯静态切片守卫——书架页依赖 WebView/DB，整页 pumpWidget 过重，故沿用本仓库
 /// `*_static_test` 的源码切片范式。i18n key 仍保留（向后兼容，仅不再渲染）。
@@ -24,12 +26,14 @@ void main() {
   String readBody() {
     final String source = File(path).readAsStringSync();
     const String start = 'Widget _buildBodyWithSrtBooks(';
-    const String end = 'Widget _buildSectionHeader(';
+    // 原 body 结束锚点 `_buildSectionHeader` 已随书架视频分区删除，改锚到其后的
+    // `buildPlaceholder`（body 方法之后的下一个方法）。
+    const String end = 'Widget buildPlaceholder(';
     final int startIdx = source.indexOf(start);
     final int endIdx = source.indexOf(end);
     expect(startIdx, greaterThanOrEqualTo(0),
         reason: '_buildBodyWithSrtBooks 应存在');
-    expect(endIdx, greaterThan(startIdx), reason: '_buildSectionHeader 应在其后');
+    expect(endIdx, greaterThan(startIdx), reason: 'buildPlaceholder 应在其后');
     return source.substring(startIdx, endIdx);
   }
 
@@ -85,15 +89,6 @@ void main() {
       body.contains('itemCount: loose.length'),
       isTrue,
       reason: '散书（SRT+EPUB 混排）共用同一个网格',
-    );
-  });
-
-  test('视频分区头保持不动（本回归不碰视频）', () {
-    final String body = readBody();
-    expect(
-      body.contains('_buildSectionHeader(t.shelf_video_section)'),
-      isTrue,
-      reason: '视频分区头应保留',
     );
   });
 }

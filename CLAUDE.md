@@ -24,7 +24,7 @@
 ## 仓库地图
 
 - 仓库根：`D:\APP\vs_claude_code\hibiki`（Melos workspace，名 `hibiki_workspace`）。Flutter app：`hibiki/`；Android 工程：`hibiki/android/`。
-- 阅读器页面：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`（`ReaderHibikiPage`，~7300 行：WebView 拦截 + JS 分页 + 有声书同步）。
+- 阅读器页面：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`（`ReaderHibikiPage`，~3200 行主体 + `reader_hibiki/` 下 8 个域 part 文件：WebView 拦截 + JS 分页 + 有声书同步）。
 - 书架页面：`hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart`。
 - reader source：`hibiki/lib/src/media/sources/reader_hibiki_source.dart`（`ReaderHibikiSource`）。
 - 阅读器 JS/CSS：`hibiki/lib/src/reader/`（`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.hoshiReader`（历史命名，是真实符号，勿改）。

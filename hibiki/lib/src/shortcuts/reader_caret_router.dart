@@ -96,7 +96,7 @@ class ReaderCaretRouter {
   }
 
   /// Meaning of a gamepad button *while the cursor is active*; null = not a
-  /// cursor button (X = bookmark, Y = chrome, LB/RB = page-turn keep working).
+  /// cursor button (X = next sentence, Y = chrome, LB/RB = page-turn keep working).
   static CaretAction? decideGamepad(GamepadButton button) {
     switch (button) {
       case GamepadButton.dpadUp:

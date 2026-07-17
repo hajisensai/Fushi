@@ -448,10 +448,11 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   /// 当前可见的顶层 tab，按视觉顺序：书架 →（视频）→ 词典 →（文本钩子）→ 设置。
-  /// 视频仅在实验开关开启时插入（位于书架与词典之间）；文本钩子仅在其开关开启时插入
-  /// （位于词典与设置之间）。底栏/侧栏的位置索引由此列表导出。
+  /// 视频 tab 已毕业为常驻（原 experimentalVideoEnabled 恒 true，位于书架与词典
+  /// 之间）；文本钩子仅在其开关开启时插入（位于词典与设置之间）。底栏/侧栏的位置
+  /// 索引由此列表导出。
   List<HomeTab> _activeTabs() => homeActiveTabs(
-        videoEnabled: appModel.experimentalVideoEnabled,
+        videoEnabled: true,
         texthookerEnabled: appModel.texthookerEnabled,
       );
 
@@ -750,29 +751,16 @@ class _HomePageState extends BasePageState<HomePage>
         // between the rail and the content pane row-by-row.
         child: Row(
           children: [
-            // TODO-973: the side rail collapses while
-            // gamepad auto-immersive is active — single source of truth on
-            // AppModel.gamepadImmersiveActive. ValueListenableBuilder so only this
-            // region rebuilds on the immersive edge; opted-out users keep the rail
-            // at all times (default false, AppModel gates on the preference).
-            ValueListenableBuilder<bool>(
-              valueListenable: appModel.gamepadImmersiveActive,
-              builder: (BuildContext context, bool immersive, _) {
-                if (immersive) return const SizedBox.shrink();
-                return FocusTraversalGroup(
-                  // Each rail destination is its own gamepad/keyboard focus
-                  // target, so the app focus ring hugs the single selected
-                  // item; D-pad Up/Down steps between them and Left/Right
-                  // leaves to the content.
-                  child: adaptiveNavRail(
-                    context: context,
-                    currentIndex: visualIndex,
-                    onTap: selectVisual,
-                    items: displayItems,
-                    gamepadImmersiveActive: immersive,
-                  ),
-                );
-              },
+            // Each rail destination is its own gamepad/keyboard focus target, so
+            // the app focus ring hugs the single selected item; D-pad Up/Down
+            // steps between them and Left/Right leaves to the content.
+            FocusTraversalGroup(
+              child: adaptiveNavRail(
+                context: context,
+                currentIndex: visualIndex,
+                onTap: selectVisual,
+                items: displayItems,
+              ),
             ),
             Expanded(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
           ],
@@ -811,31 +799,20 @@ class _HomePageState extends BasePageState<HomePage>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: SafeArea(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
-      // TODO-973: the bottom bar collapses while gamepad auto-immersive is active
-      // (single source of truth on AppModel.gamepadImmersiveActive); immersive
-      // returns a zero-size child so the body gets the full height, opted-out
-      // users keep it (default false). The FocusTraversalGroup must wrap the
-      // ValueListenableBuilder (not the inverse) so the bottom-nav stays isolated
-      // as one closed traversal block (TODO-713) regardless of immersive state.
+      // The FocusTraversalGroup keeps the bottom-nav isolated as one closed
+      // traversal block (TODO-713).
       bottomNavigationBar: FocusTraversalGroup(
-        child: ValueListenableBuilder<bool>(
-          valueListenable: appModel.gamepadImmersiveActive,
-          builder: (BuildContext context, bool immersive, _) {
-            if (immersive) return const SizedBox.shrink();
-            return adaptiveBottomBar(
-              context: context,
-              currentIndex: visualIndex,
-              onTap: (int index) {
-                _selectTab(homeTabForVisualIndex(
-                  tabs: tabs,
-                  visualIndex: index,
-                  reversed: reversed,
-                ));
-              },
-              items: displayItems,
-              gamepadImmersiveActive: immersive,
-            );
+        child: adaptiveBottomBar(
+          context: context,
+          currentIndex: visualIndex,
+          onTap: (int index) {
+            _selectTab(homeTabForVisualIndex(
+              tabs: tabs,
+              visualIndex: index,
+              reversed: reversed,
+            ));
           },
+          items: displayItems,
         ),
       ),
     );

@@ -95,7 +95,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       return;
     }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
-    // wheelPageTurnInterval(450)、音量键 volumePageTurningSpeed(100)、键盘/手柄 0。
+    // wheelPageTurnInterval(450)、音量键固定 defaultScrollingSpeed(100)、键盘/手柄 0。
     // 时间戳语义（与音量键旧 _lastVolumeKeyTime / HBK-AUDIT-120 一致）：读 throttleMs
     // 时即生效，无残留 timer。**只盖在 _paginate 入口**——内部跨章（_handlePageTurnLimit）
     // 已在闸门内、不重复节流，故分页到章末经 _paginate 仍翻得过去（不自吞，4 必补点 #1）。
@@ -873,43 +873,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   // ── Bottom Chrome ─────────────────────────────────────────────────
 
-  // TODO-728: single sink that makes the chrome visible/hidden. Shared by the
-  // user toggle ([_toggleChrome]) and the gamepad-presence path
-  // ([_applyGamepadPresence]). It ONLY flips _showChrome + reapplies insets +
-  // requestFocus() -- it NEVER touches the focus model beyond the same cheap
-  // requestFocus() the old _toggleChrome did (TODO-700 invariant: focus stays on
-  // the reading content; the bottom bar remains ExcludeFocus and out of the
-  // traversal pool). No-op when already in the requested state so a redundant
-  // gamepad event does not re-run the WebView inset eval.
-  void _setChromeVisible(bool visible) {
-    if (_showChrome == visible) return;
-    _rebuild(() {
-      _showChrome = visible;
-    });
-    _applyChromeInsets();
-    // BUG-712 ①：chrome 可见性是 JS 侧点词门控镜像的一半，翻转即同步。
-    _syncTapGateJs();
-    _focusNode.requestFocus();
-  }
-
-  /// TODO-728: applies the gamepad auto-immersive rule. [present] true while a
-  /// controller is in use, false once it is gone. Hiding is recorded in
-  /// [_chromeHiddenByGamepad] so only a gamepad-driven hide is auto-restored when
-  /// the controller leaves; a manual toggle in between clears the flag and wins.
-  void _applyGamepadPresence(bool present) {
-    final GamepadImmersiveState next = resolveGamepadImmersive(
-      present: present,
-      showChrome: _showChrome,
-      hiddenByGamepad: _chromeHiddenByGamepad,
-    );
-    _chromeHiddenByGamepad = next.hiddenByGamepad;
-    _setChromeVisible(next.showChrome);
-  }
-
   void _toggleChrome() {
-    // A manual toggle takes ownership: clear the gamepad-hide flag so a later
-    // controller-gone event does not override the user's explicit choice.
-    _chromeHiddenByGamepad = false;
     _rebuild(() {
       _showChrome = !_showChrome;
     });
@@ -1393,12 +1357,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       // 无需设置同步——旧 TTU 双存储时代的 _syncSettings*Hive 已是写回自身的死桥，
       // 且 _syncSettingsToHive 会触发 17× onSettingsChangedLive 的 DB/WebView 风暴。
       final List<TtuTocEntry> toc = _buildTtuToc();
-      final String bookKey = widget.bookKey;
-      final BookmarkRepository bmRepo = BookmarkRepository(appModel.database);
       final FavoriteSentenceRepository favRepo =
           FavoriteSentenceRepository(appModel.database);
 
-      List<Bookmark> bookmarks = await bmRepo.getBookmarks(bookKey);
       final List<FavoriteSentence> favorites =
           await _favoriteSentencesForBook();
 
@@ -1410,9 +1371,6 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         readerProgress: (_currentChapter, _book!.chapters.length),
         onJumpSection: (index) async {
           _navigateToChapter(index, manual: true);
-        },
-        onBookmark: () async {
-          await _addBookmarkAtCurrentPosition();
         },
         // BUG-782：退出必须走 maybePop() 而非直接 pop()。直接 Navigator.pop()
         // 会绕过阅读器 PopScope(canPop:false) 的 onPopInvokedWithResult，使
@@ -1499,40 +1457,6 @@ extension _ReaderChrome on _ReaderHibikiPageState {
             ),
           );
         },
-        bookmarks: bookmarks,
-        onJumpToBookmark: (bm) async {
-          final double progress = bm.normCharOffset / 10000.0;
-          if (bm.sectionIndex != _currentChapter) {
-            // TODO-1309：跨章书签跳转把目标分数烘进导航（progress），单次原子恢复直接落点、
-            // 连续重锚采样该位置保住——不再「先落章首再抢发 restoreProgress」被 settle-reflow
-            // 冲回章首（双跳）。同章不重载、直接 restoreProgress（既有行为）。
-            await _navigateToChapterAndWait(
-              bm.sectionIndex,
-              manual: true,
-              progress: progress,
-            );
-            return;
-          }
-          if (!mounted || _controller == null) return;
-          await _controller!.evaluateJavascript(
-            source:
-                'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
-          );
-        },
-        onDeleteBookmark: (bookmark) async {
-          final int? id = bookmark.id;
-          if (id != null) {
-            await bmRepo.removeBookmarkById(id);
-          } else {
-            await bmRepo.removeBookmarkMatching(
-              bookKey,
-              sectionIndex: bookmark.sectionIndex,
-              normCharOffset: bookmark.normCharOffset,
-              createdAt: bookmark.createdAt,
-            );
-          }
-          bookmarks = await bmRepo.getBookmarks(bookKey);
-        },
         favoriteSentences: favorites,
         onDeleteFavorite: (fav) async {
           await favRepo.removeById(fav.id);
@@ -1597,78 +1521,6 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       _syncDictionaryTheme();
     } finally {
       _appearanceSheetOpen = false;
-    }
-  }
-
-  Future<void> _addBookmarkAtCurrentPosition() async {
-    if (_controller == null) return;
-    if (_lyricsMode) {
-      _syncPositionFromCurrentCue();
-      if (_lastProgressSection < 0) return;
-      final int normOffset = (_lastProgressValue * 10000).round();
-      final String label = _book?.toc.isNotEmpty == true
-          ? _currentChapterLabelFor(_lastProgressSection)
-          : 'Ch. ${_lastProgressSection + 1}';
-      final Bookmark bm = Bookmark(
-        sectionIndex: _lastProgressSection,
-        normCharOffset: normOffset,
-        label: label,
-        createdAt: DateTime.now(),
-        bookKey: widget.bookKey,
-        bookTitle: _book?.title,
-      );
-      await BookmarkRepository(appModel.database)
-          .addBookmark(widget.bookKey, bm);
-      return;
-    }
-
-    final dynamic result = await _controller!.evaluateJavascript(
-      source: ReaderPaginationScripts.progressInvocation(),
-    );
-    final double? progress = _ReaderHibikiPageState._toDouble(result);
-    if (progress == null) return;
-
-    final int normOffset = (progress * 10000).round();
-    final String label = _book?.toc.isNotEmpty == true
-        ? _currentChapterLabel()
-        : 'Ch. ${_currentChapter + 1}';
-
-    final (int, int)? pageInfo = await _probePageInfo();
-
-    final Bookmark bm = Bookmark(
-      sectionIndex: _currentChapter,
-      normCharOffset: normOffset,
-      label: label,
-      createdAt: DateTime.now(),
-      bookKey: widget.bookKey,
-      bookTitle: _book?.title,
-      pageInChapter: pageInfo?.$1,
-      totalPagesInChapter: pageInfo?.$2,
-    );
-
-    await BookmarkRepository(appModel.database).addBookmark(widget.bookKey, bm);
-  }
-
-  /// Probes the paginated reader engine for the current page / total pages
-  /// within the loaded chapter. Returns `null` in continuous mode (no pages)
-  /// or when the engine isn't ready.
-  Future<(int, int)?> _probePageInfo() async {
-    if (_controller == null) return null;
-    final Object? raw = await _controller!.evaluateJavascript(
-      source: ReaderPaginationScripts.pageInfoInvocation(),
-    );
-    if (raw is! String) return null;
-    final String trimmed = raw.trim();
-    if (trimmed.isEmpty || trimmed == 'null') return null;
-    try {
-      final Map<String, dynamic> info =
-          jsonDecode(trimmed) as Map<String, dynamic>;
-      final int? current = (info['currentPage'] as num?)?.toInt();
-      final int? total = (info['totalPages'] as num?)?.toInt();
-      if (current == null || total == null || total <= 0) return null;
-      return (current, total);
-    } catch (_) {
-      return null;
     }
   }
 

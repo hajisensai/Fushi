@@ -23,4 +23,3 @@ export 'src/language/implementations/japanese_language.dart';
 export 'src/models/dictionary_entry.dart';
 export 'src/models/dictionary_operations_params.dart';
 export 'src/models/dictionary_search_result.dart';
-export 'src/models/structured_content.dart';

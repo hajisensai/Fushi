@@ -16,7 +16,6 @@
 
 - `HibikiDatabase` -- 全部数据访问层，提供 media items / anki mappings / search history / audiobooks / audio cues / srt books / reader positions / bookmarks / reading statistics / preferences / dictionary metadata / epub books / book tags / profiles 等完整 CRUD API。
 - `PrefCodec` -- 偏好值的 `encode<T>` / `decode<T>` 泛型编解码。
-- `LanguageConfig` -- 语言配置枚举。
 - `HibikiTextSelection` -- 跨模块共享的文本选区数据模型。
 
 ## 关键依赖与配置
@@ -65,7 +64,6 @@
 - `lib/src/database/database.g.dart` -- 生成文件（勿手动修改）
 - `lib/src/database/tables.dart` -- 全部表定义
 - `lib/src/database/pref_codec.dart` -- 偏好编解码
-- `lib/src/language/language_config.dart` -- 语言配置
 - `lib/src/models/hibiki_text_selection.dart` -- 文本选区模型
 
 ## 变更记录 (Changelog)

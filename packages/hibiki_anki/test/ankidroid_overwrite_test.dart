@@ -161,6 +161,39 @@ void main() {
       expect(fieldValues['Reading'], 'べんきょう');
     });
 
+    // BUG-858: AnkiDroid native updateNoteFields only overwrites the fields it
+    // is GIVEN (unlisted fields keep their old value). So to make "覆盖" a true
+    // integral replace, an empty {sentence} render must still be SENT (empty),
+    // not dropped — otherwise a stale sentence survives while image/audio update.
+    test('overwrite sends an empty Sentence field to clear a stale sentence',
+        () async {
+      final calls = <MethodCall>[];
+      _mockChannel(calls, (call) async {
+        if (call.method == 'updateNoteFields') return null;
+        fail('unexpected channel call: ${call.method}');
+      });
+
+      final repo = _ConfiguredAnkiRepository(_settings().copyWith(
+        fieldMappings: const <String, String>{
+          'Expression': '{expression}',
+          'Sentence': '{sentence}',
+        },
+      ));
+      final outcome = await repo.updateMinedNote(
+        noteId: 42,
+        rawPayloadJson: _payload,
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.success);
+      final args = Map<String, dynamic>.from(calls.single.arguments as Map);
+      final fieldValues = Map<String, String>.from(args['fieldValues'] as Map);
+      expect(fieldValues['Expression'], '勉強');
+      expect(fieldValues.containsKey('Sentence'), isTrue,
+          reason: 'must send the empty Sentence so native clears it');
+      expect(fieldValues['Sentence'], '');
+    });
+
     test('empty render is refused (does not clear the existing card)',
         () async {
       final calls = <MethodCall>[];

@@ -16,10 +16,4 @@ class IosPermissionService implements PlatformPermissionService {
     final status = await Permission.camera.request();
     return status.isGranted;
   }
-
-  @override
-  Future<bool> canDrawOverlays() async => false;
-
-  @override
-  Future<void> requestOverlayPermission() async {}
 }

@@ -34,16 +34,6 @@ class SourceLookupTextPanel extends StatefulWidget {
   State<SourceLookupTextPanel> createState() => _SourceLookupTextPanelState();
 }
 
-class ClipboardLookupTextPanel extends SourceLookupTextPanel {
-  const ClipboardLookupTextPanel({
-    required super.text,
-    required super.onLookup,
-    super.key,
-    super.coordinateSpaceKey,
-    super.dictionaryHeadwordScale,
-  });
-}
-
 class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
   int? _lastShiftHoverIndex;
 

@@ -26,6 +26,7 @@ class GlobalLookupShowResult {
     required this.workHeight,
     this.cursorWorkX = 0,
     this.cursorWorkY = 0,
+    this.monitorDpr = 0,
   });
 
   /// Whether the native overlay window was created.
@@ -45,6 +46,16 @@ class GlobalLookupShowResult {
 
   /// See [cursorWorkX]: the vertical component (PHYSICAL px).
   final double cursorWorkY;
+
+  /// BUG-859 — the ANCHOR MONITOR's device pixel ratio (effective DPI / 96;
+  /// 0 when the native side could not query the monitor). The physical-px
+  /// values above must be divided by THIS dpr — not the main window's — to
+  /// land in the same CSS px scale the overlay page measures in: on a
+  /// mixed-scale multi-monitor setup the overlay WebView2 rasterizes at its
+  /// own monitor's scale, so converting with the main-window dpr put the
+  /// cascade layout's work-area domain in the wrong scale (mis-placed nested
+  /// cards, broken reserve-to-edge clamp invariant).
+  final double monitorDpr;
 }
 
 class OverlayWindowChannel {
@@ -99,6 +110,7 @@ class OverlayWindowChannel {
         workHeight: num2(reply['workH']),
         cursorWorkX: num2(reply['cursorWorkX']),
         cursorWorkY: num2(reply['cursorWorkY']),
+        monitorDpr: num2(reply['monitorDpr']),
       );
     }
     // Legacy/native fallback (bool reply): no work-area reported.

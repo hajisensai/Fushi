@@ -228,4 +228,40 @@ void main() {
     expect(File(first!).readAsBytesSync(), <int>[1, 2, 3, 4, 5]);
     expect(File(second!).readAsBytesSync(), <int>[8, 7, 6]);
   });
+
+  // 性能根因守卫：桌面查询路径必须给外部导入的库补索引，否则 WHERE expression=?
+  // 退回全表扫描（数十万行时每次查词几百 ms＝「查词发音特别慢」）。索引持久化进
+  // 库文件，故建一次后独立只读连接也能在 sqlite_master 看到。
+  group('auto index creation (no full-table scan)', () {
+    bool hasIndex(String name) {
+      final Database probe = sqlite3.open(dbPath);
+      try {
+        return probe.select(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+          <Object?>[name],
+        ).isNotEmpty;
+      } finally {
+        probe.dispose();
+      }
+    }
+
+    test('queryMeta builds idx_entries_expr_read on first access', () {
+      expect(hasIndex('idx_entries_expr_read'), isFalse,
+          reason: 'setUp 建的库本无索引');
+      LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう');
+      expect(hasIndex('idx_entries_expr_read'), isTrue,
+          reason: 'entries(expression,reading) 索引必须被建，消除全表扫描');
+    });
+
+    test('extractBlob builds idx_android_file_source on first access', () {
+      expect(hasIndex('idx_android_file_source'), isFalse);
+      LocalAudioDb.extractBlob(
+        dbPath: dbPath,
+        file: 'a.mp3',
+        source: 'src1',
+        cacheDir: dir,
+      );
+      expect(hasIndex('idx_android_file_source'), isTrue);
+    });
+  });
 }

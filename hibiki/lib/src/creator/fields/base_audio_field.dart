@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 import 'package:hibiki/creator.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 
@@ -322,18 +321,6 @@ abstract class BaseAudioField extends AudioExportField {
         );
       },
     );
-  }
-
-  @override
-  String? onCreatorOpenAction({
-    required WidgetRef ref,
-    required AppModel appModel,
-    required CreatorModel creatorModel,
-    required DictionaryEntry entry,
-    required bool creatorJustLaunched,
-    required String? dictionaryName,
-  }) {
-    return null;
   }
 
   @override
