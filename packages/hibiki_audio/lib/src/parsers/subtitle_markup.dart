@@ -230,6 +230,12 @@ class SubtitleSpan {
   /// `\fsp` 字间距（px，PlayRes 空间）；null=默认（回退样式表 Spacing）。
   final double? letterSpacingPx;
 
+  /// 静态 `\fscx`/`\fscy` 横/纵缩放倍数（1.0=不缩放）；null=默认。**span 级语义**
+  /// （ASS：标签处生效直到下一次覆盖）——说话人前缀 `{\fscx50}（名前）{\fscx100}本文`
+  /// 与句尾 `…{\fscx50}。` 只缩放所在段，不是整行。
+  final double? scaleX;
+  final double? scaleY;
+
   /// 卡拉 OK 音节（`\k`/`\kf`/`\K`/`\ko`）：本段从 cue 起点第 [kStartCs] 厘秒起、
   /// 历时 [kDurCs] 厘秒点亮。null=非卡拉 OK 段。[kMode]：'k'=瞬时切主色、
   /// 'kf'=渐变过渡（扫填近似）、'ko'=点亮前无描边。
@@ -254,6 +260,8 @@ class SubtitleSpan {
     this.blur,
     this.fillOpacity,
     this.letterSpacingPx,
+    this.scaleX,
+    this.scaleY,
     this.kMode,
     this.kStartCs,
     this.kDurCs,
@@ -273,6 +281,8 @@ class SubtitleSpan {
       shadowDepthPx != null ||
       fillOpacity != null ||
       letterSpacingPx != null ||
+      scaleX != null ||
+      scaleY != null ||
       kMode != null ||
       (blur != null && blur! > 0);
 }
@@ -740,6 +750,8 @@ class _Style {
   double? blur;
   double? fillOpacity;
   double? letterSpacingPx;
+  double? scaleX;
+  double? scaleY;
   String? kMode;
   int? kStartCs;
   int? kDurCs;
@@ -759,6 +771,8 @@ class _Style {
     ..blur = blur
     ..fillOpacity = fillOpacity
     ..letterSpacingPx = letterSpacingPx
+    ..scaleX = scaleX
+    ..scaleY = scaleY
     ..kMode = kMode
     ..kStartCs = kStartCs
     ..kDurCs = kDurCs;
@@ -783,6 +797,8 @@ class _Style {
     blur = null;
     fillOpacity = null;
     letterSpacingPx = null;
+    scaleX = null;
+    scaleY = null;
     kMode = null;
     kStartCs = null;
     kDurCs = null;
@@ -802,6 +818,8 @@ class _Style {
       shadowDepthPx != null ||
       fillOpacity != null ||
       letterSpacingPx != null ||
+      scaleX != null ||
+      scaleY != null ||
       kMode != null ||
       (blur != null && blur! > 0);
 }
@@ -925,6 +943,8 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
         blur: seg.style.blur,
         fillOpacity: seg.style.fillOpacity,
         letterSpacingPx: seg.style.letterSpacingPx,
+        scaleX: seg.style.scaleX,
+        scaleY: seg.style.scaleY,
         kMode: seg.style.kMode,
         kStartCs: seg.style.kStartCs,
         kDurCs: seg.style.kDurCs,
@@ -1184,16 +1204,22 @@ void _applyOverrideBlock(
       continue;
     }
 
-    // \fscx<pct> / \fscy<pct> 横 / 纵缩放（百分比，TODO-1374）。
+    // \fscx<pct> / \fscy<pct> 横 / 纵缩放（百分比）。**span 级语义**：写进段样式
+    // （渲染层逐段缩放，BUG：行级「最后值生效」把 `…{\fscx50}。` 整行压扁）；同时
+    // 记入 xf 供 `\t` 缩放动画取 from 基线（TODO-1374 招牌弹入不回归）。
     final RegExpMatch? fscx = RegExp(r'^fscx(\d+(?:\.\d+)?)$').firstMatch(tag);
     if (fscx != null) {
-      xf.scaleX = double.parse(fscx.group(1)!) / 100.0;
+      final double v = double.parse(fscx.group(1)!) / 100.0;
+      style.scaleX = v == 1.0 ? null : v;
+      xf.scaleX = v;
       xf.scaleSet = true;
       continue;
     }
     final RegExpMatch? fscy = RegExp(r'^fscy(\d+(?:\.\d+)?)$').firstMatch(tag);
     if (fscy != null) {
-      xf.scaleY = double.parse(fscy.group(1)!) / 100.0;
+      final double v = double.parse(fscy.group(1)!) / 100.0;
+      style.scaleY = v == 1.0 ? null : v;
+      xf.scaleY = v;
       xf.scaleSet = true;
       continue;
     }

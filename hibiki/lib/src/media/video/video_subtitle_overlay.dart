@@ -344,6 +344,25 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// [_assFontSizeToEm]）。字体解析结果进程内不变，跨 cue/跨帧复用。
   final Map<String, double> _fontCellFactorCache = <String, double>{};
 
+  /// 单字符布局尺寸缓存（span 级 \fscx 缩放的布局盒用）：key=字符|字号|字体|字重|
+  /// 字间距。字幕字符集有限，进程内缓存足够小。
+  final Map<String, Size> _charSizeCache = <String, Size>{};
+
+  /// 测量 [char] 在 [style] 下的布局尺寸（advance 宽 × 行盒高），带缓存。
+  Size _charSize(String char, TextStyle style) {
+    final String key = '$char|${style.fontSize}|${style.fontFamily}|'
+        '${style.fontWeight?.index}|${style.letterSpacing}';
+    return _charSizeCache.putIfAbsent(key, () {
+      final TextPainter tp = TextPainter(
+        text: TextSpan(text: char, style: style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final Size size = tp.size;
+      tp.dispose();
+      return size;
+    });
+  }
+
   /// TODO-916 症状④-A（down-snap）：onTapDown 时刻 [_hitEntryIndexAt] 命中的**登记表下标**
   /// （非 grapheme——二维登记后同一 grapheme 下标可能属不同 cue，故锁扁平 entry 下标），
   /// onTapUp 用它经 [_charHitByEntryIndex] 查词，使命中锁定按下时刻（字幕盒尚未被控制条避让
@@ -1260,7 +1279,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       final double from = rot ?? 0;
       rot = from + (tr.frzToDeg! - from) * tr.progressAt(elapsed, durMs);
     }
-    final SubtitleScale? sc = markup.scale;
+    // 行内静态 \fscx/\fscy 已按 **span 级**语义在 [_buildSubtitleChar] 逐段缩放
+    // （行级「最后值生效」会把 `…{\fscx50}。` 整行压扁）；行级只保留 `\t` 缩放动画
+    // （TODO-1374 招牌弹入，动画拥有整行）。
+    final SubtitleScale? sc =
+        (markup.scale?.isAnimated ?? false) ? markup.scale : null;
     // 样式表 ScaleX/ScaleY（百分比）作为基线缩放；行内 \fscx\fscy（sc）按 ASS 语义
     // **覆盖**样式值而非叠乘。
     final double styleSx = (markup.cueStyle?.scaleXPct ?? 100) / 100.0;
@@ -1341,7 +1364,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final bool respect = widget.respectAssStyle && markup != null;
     final double sigma =
         _blurSigmaFor(i, markup, elapsedMs: elapsedMs, durMs: durMs);
-    final Widget glyph;
+    Widget glyph;
     if (!respect) {
       // 默认统一外观：Niratan 柔和投影。fillStyle 在非 respect 下 shadows==null，直接挂软
       // 投影；thickness<=0（用户关阴影）时 soft 为空，渲染纯 fill（无投影、零多余层）。
@@ -1387,20 +1410,64 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           );
         }
         // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
-        return Stack(
-          children: <Widget>[
-            strokeLayer,
-            Text(char, style: fillTopStyle),
-          ],
+        return _applySpanScale(
+          Stack(
+            children: <Widget>[
+              strokeLayer,
+              Text(char, style: fillTopStyle),
+            ],
+          ),
+          char,
+          i,
+          markup,
+          fillStyle,
         );
       }
     }
     // 无描边（\bord 0 的 respect 分支；非 respect 分支 sigma 恒 0）：糊整个字形——libass
     // 在没有描边位图时对字形位图本身做高斯，字面边缘发虚是原作者点名要的效果。
-    if (sigma <= 0) return glyph;
-    return ImageFiltered(
-      imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-      child: glyph,
+    if (sigma > 0) {
+      glyph = ImageFiltered(
+        imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        child: glyph,
+      );
+    }
+    return _applySpanScale(glyph, char, i, markup, fillStyle);
+  }
+
+  /// span 级静态 `\fscx`/`\fscy` 缩放（ASS：标签处生效到下一次覆盖——说话人前缀
+  /// `{\fscx50}（名前）{\fscx100}本文` 与句尾 `…{\fscx50}。` 只缩所在段）。做法：
+  /// 布局盒宽压成 advance×sx（[SizedBox]+测量缓存），[OverflowBox] 里 [Transform]
+  /// 以底部中心为锚真缩放字形（基线贴行底，近似 libass 从基线缩放）。行高不变
+  /// （纵向布局压缩罕见，接受近似）。行级 `\t` 缩放动画在场时跳过（动画拥有整行，
+  /// 防双重缩放）。respect 关 / 无缩放恒原样返回（零改动）。
+  Widget _applySpanScale(Widget glyph, String char, int i,
+      SubtitleMarkup? markup, TextStyle style) {
+    if (!widget.respectAssStyle || markup == null) return glyph;
+    if (markup.scale?.isAnimated ?? false) return glyph;
+    final SubtitleSpan? span = _spanAt(i, markup);
+    final double sx = span?.scaleX ?? 1.0;
+    final double sy = span?.scaleY ?? 1.0;
+    if (sx == 1.0 && sy == 1.0) return glyph;
+    final Size cs = _charSize(char, style);
+    // 布局盒：宽压成 advance×sx（行内排版真实变窄），高保持行盒高（行高不随 \fscy
+    // 改变，接受近似）。OverflowBox 固定尺寸让内层字形以原尺寸布局再被 Transform
+    // 缩放，底部中心锚≈基线缩放。
+    return SizedBox(
+      width: cs.width * sx,
+      height: cs.height,
+      child: OverflowBox(
+        minWidth: cs.width,
+        maxWidth: cs.width,
+        minHeight: cs.height,
+        maxHeight: cs.height,
+        alignment: Alignment.bottomCenter,
+        child: Transform(
+          alignment: Alignment.bottomCenter,
+          transform: Matrix4.diagonal3Values(sx, sy, 1),
+          child: glyph,
+        ),
+      ),
     );
   }
 
