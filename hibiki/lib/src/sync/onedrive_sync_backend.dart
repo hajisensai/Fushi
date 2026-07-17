@@ -705,13 +705,6 @@ class OneDriveSyncBackend extends SyncBackend {
     await _graphDelete('/me/drive/items/$fileId');
   }
 
-  static String _guessContentType(String fileName) {
-    final lower = fileName.toLowerCase();
-    if (lower.endsWith('.epub')) return 'application/epub+zip';
-    if (lower.endsWith('.m4b') || lower.endsWith('.m4a')) return 'audio/mp4';
-    if (lower.endsWith('.mp3')) return 'audio/mpeg';
-    if (lower.endsWith('.ogg')) return 'audio/ogg';
-    if (lower.endsWith('.flac')) return 'audio/flac';
-    return 'application/octet-stream';
-  }
+  static String _guessContentType(String fileName) =>
+      guessSyncContentType(fileName);
 }

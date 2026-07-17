@@ -967,8 +967,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           jsonFile: alignFile, bookKey: widget.bookKey);
       useFragmentHealth = true;
     } else {
-      final String fileName =
-          alignmentFilePath.split(Platform.pathSeparator).last;
+      final String fileName = p.basename(alignmentFilePath);
       final String chapterHref = fileName.replaceAll(
           RegExp(r'\.smil$', caseSensitive: false), '.xhtml');
       cues = await SmilParser.parse(
@@ -1037,7 +1036,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     setState(() {
       _patchingAudio = true;
       _alignmentPath = ab.alignmentPath;
-      _alignmentName = ab.alignmentPath.split(Platform.pathSeparator).last;
+      _alignmentName = p.basename(ab.alignmentPath);
       if (ab.audioPaths != null && ab.audioPaths!.isNotEmpty) {
         _audioPaths = List<String>.from(ab.audioPaths!);
       } else if (ab.audioRoot != null && ab.audioRoot!.isNotEmpty) {

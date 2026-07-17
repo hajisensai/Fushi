@@ -66,7 +66,7 @@ class AudiobookAlignmentMessages {
   String _copying(String name) => copyingFile?.call(name) ?? persisting;
 }
 
-/// 按字幕扩展名分派解析器（与对话框 _parseCuesWithIndex 逐字节等价）。
+/// 按字幕扩展名分派解析器（导入对话框与对齐 service 共用的唯一真源）。
 Future<List<AudioCue>> parseCuesForFormat(
   File file,
   String bookKey,

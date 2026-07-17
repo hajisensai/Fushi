@@ -36,3 +36,14 @@ DriveFile? findSyncFileByPrefix(List<DriveFile> files, String prefix) {
   }
   return null;
 }
+
+/// 按文件扩展名猜测同步上传的 Content-Type（各云端后端共用的唯一真源）。
+String guessSyncContentType(String fileName) {
+  final lower = fileName.toLowerCase();
+  if (lower.endsWith('.epub')) return 'application/epub+zip';
+  if (lower.endsWith('.m4b') || lower.endsWith('.m4a')) return 'audio/mp4';
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (lower.endsWith('.ogg')) return 'audio/ogg';
+  if (lower.endsWith('.flac')) return 'audio/flac';
+  return 'application/octet-stream';
+}

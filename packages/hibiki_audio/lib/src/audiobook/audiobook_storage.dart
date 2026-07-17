@@ -86,32 +86,6 @@ abstract final class AudiobookStorage {
     return dir;
   }
 
-  static Future<String> persistFile(
-    File src,
-    Directory persistDir, {
-    int? dedupeIndex,
-  }) async {
-    if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
-      return src.path;
-    }
-    String baseName = p.basename(src.path);
-    if (baseName.contains('..')) {
-      throw ArgumentError('Invalid filename: $baseName');
-    }
-    if (dedupeIndex != null) {
-      final String ext = p.extension(baseName);
-      final String stem = p.basenameWithoutExtension(baseName);
-      baseName = '$stem _$dedupeIndex$ext';
-    }
-    final String dest = p.join(persistDir.path, baseName);
-    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
-      throw ArgumentError('Path traversal detected: $dest');
-    }
-    await src.copy(dest);
-    debugPrint('[hibiki-import] persisted ${src.path} → $dest');
-    return dest;
-  }
-
   static Future<String> persistFileWithProgress(
     File src,
     Directory persistDir, {
