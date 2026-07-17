@@ -70,6 +70,33 @@ void main() {
     );
   });
 
+  // BUG-866：余白/主题改完不实时生效须退出重进。根因=有 window.hoshiReader 时
+  // _applyStylesLive 把「换 CSS」全托付给门控后的 beginStyleReanchor，门控
+  // readerStyleReanchorAllowed（含 readerContentReady）关闭时编排在 evalBegin 前 return，
+  // CSS 被静默丢弃。修复=换 CSS 与重锚就绪门控解耦：算 reanchorWillRun，其为 false
+  // （重锚不会跑）时内联就地裸换 CSS。任一处退回（不算门控 / 兜底只 !window.hoshiReader），本组红。
+  test(
+      'BUG-866: applyStylesLive swaps CSS even when the reanchor gate is closed',
+      () {
+    // 1) _applyStylesLive 必须计算 reanchorWillRun 门控（与重锚同一真值表）。
+    expect(
+      src,
+      contains('readerStyleReanchorAllowed('),
+      reason:
+          '_applyStylesLive 必须算 reanchorWillRun = readerStyleReanchorAllowed(...)，'
+          '据此决定裸换 CSS 兜底是否覆盖「重锚不会跑」（BUG-866）。',
+    );
+    // 2) 内联兜底换 CSS 的条件必须覆盖「重锚不会跑」，不能退回只在 !window.hoshiReader
+    //    时才换（那样 gate 关闭时 CSS 被静默丢弃 → 主题/余白改完须退出重进）。
+    expect(
+      src,
+      contains(r'!window.hoshiReader || ${!reanchorWillRun}'),
+      reason: '裸换 CSS 兜底条件必须是 `!window.hoshiReader || \${!reanchorWillRun}`，'
+          '否则门控关闭（内容未就绪/重排在飞）时主题/余白 live 变更被丢弃（BUG-866）。'
+          '勿退回只 `if (!window.hoshiReader)`。',
+    );
+  });
+
   // TODO-842：「反转阅读器底栏」改完不实时生效须退出重进。根因=该项 onChanged
   // 只调 quick-settings sheet 自身 refresh()，不触碰下层 reader 页；reader 底栏裸读
   // appModel.reverseReaderBottomBar（非 ref.watch），只有 reader 页 rebuild 才重取值。
