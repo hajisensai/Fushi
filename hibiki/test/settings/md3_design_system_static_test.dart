@@ -474,10 +474,6 @@ void main() {
         'fontSize: 13',
         'OutlineInputBorder',
       ],
-      'lib/src/pages/implementations/blur_options_dialog_page.dart': <String>[
-        'TextField(',
-        'OutlineInputBorder',
-      ],
       'lib/src/pages/implementations/media_item_edit_dialog_page.dart':
           <String>[
         'TextField(',
@@ -615,6 +611,12 @@ void main() {
               'etc.) from the MD3 ColorScheme; surface roles are injected into '
               'popup CSS, not ordinary Flutter page chrome — same reviewed '
               'exception class as dictionary_popup_webview / global_lookup_render.',
+      'lib/src/utils/popup_theme_css.dart':
+          'Popup theme CSS single source of truth maps MD3 ColorScheme surface '
+              'roles (surfaceContainerHigh etc.) to WebView CSS custom '
+              'properties for the three popup injectors — same reviewed '
+              'exception class as popup_settings_injection / '
+              'dictionary_popup_webview.',
       'lib/src/lookup/global_lookup_render.dart':
           'Global lookup popup theming injects MD3 ColorScheme surface roles into popup CSS (same as dictionary_popup_webview).',
       'lib/src/pages/implementations/history_reader_page.dart':

@@ -60,9 +60,13 @@ void main() {
 
   test('popup.css 定义 .audio-hint 与 .audio-button.audio-unavailable', () {
     final String css = read('assets/popup/popup.css');
-    expect(css.contains('.audio-hint {'), isTrue);
-    expect(css.contains('.audio-hint.visible {'), isTrue);
-    expect(css.contains('.audio-button.audio-unavailable {'), isTrue);
+    // 选择器允许出现在合并组里（BUG-842 起 .audio-hint 与 .hoshi-btn-tip 共用
+    // 一条规则），守卫只钉「选择器存在且开启规则」，不钉独占写法。
+    expect(RegExp(r'\.audio-hint\s*[,{]').hasMatch(css), isTrue);
+    expect(RegExp(r'\.audio-hint\.visible\s*[,{]').hasMatch(css), isTrue);
+    expect(
+        RegExp(r'\.audio-button\.audio-unavailable\s*[,{]').hasMatch(css),
+        isTrue);
   });
 
   test('buildPopupSettingsJs 向两条 render 路径注入 i18nNoAudioAvailable', () {

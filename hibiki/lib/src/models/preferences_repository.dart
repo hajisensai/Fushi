@@ -13,7 +13,6 @@ import 'package:hibiki/src/mining/immersion_mining_request.dart'
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/update_check_cache.dart';
-import 'package:hibiki/src/utils/player/blur_options.dart';
 
 enum DesktopClipboardWindowMode {
   normal('normal'),
@@ -186,32 +185,6 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── player preferences ───────────────────────────────────────────────
 
-  bool get isPlayerListeningComprehensionMode =>
-      getPref('player_listening_comprehension_mode', defaultValue: false)
-          as bool;
-
-  void togglePlayerListeningComprehensionMode() async {
-    await setPref('player_listening_comprehension_mode',
-        !isPlayerListeningComprehensionMode);
-    notifyListeners();
-  }
-
-  bool get isPlayerOrientationPortrait =>
-      getPref('player_orientation_portrait', defaultValue: false) as bool;
-
-  void togglePlayerOrientationPortrait() async {
-    await setPref('player_orientation_portrait', !isPlayerOrientationPortrait);
-    notifyListeners();
-  }
-
-  bool get isStretchToFill =>
-      getPref('stretch_to_fill_screen', defaultValue: false) as bool;
-
-  void toggleStretchToFill() async {
-    await setPref('stretch_to_fill_screen', !isStretchToFill);
-    notifyListeners();
-  }
-
   bool get playerHardwareAcceleration =>
       getPref('player_hardware_acceleration', defaultValue: true) as bool;
 
@@ -220,42 +193,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get playerBackgroundPlay =>
-      getPref('player_background_play', defaultValue: true) as bool;
-
-  void setPlayerBackgroundPlay({required bool value}) async {
-    await setPref('player_background_play', value);
-    notifyListeners();
-  }
-
   /// TODO-702：有声书「退出阅读页后是否继续后台播放」。默认 **false** = 退出即停
   /// （detachReader 卸回调后 [AudiobookSession.stop] 真正止声/释放解码器，符合多数
   /// 用户「关掉书就别再响」的预期）。开启后退书只 detachReader、会话留在进程级常驻
-  /// 持有者里继续后台播放（保 TODO-291 阶段2 的后台续播能力）。这是独立的新偏好，
-  /// **不复用** [playerBackgroundPlay]（那是只有定义、没有任何消费方的死 pref，复用
-  /// 会把语义搅混）。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留
-  /// 其存值。
+  /// 持有者里继续后台播放（保 TODO-291 阶段2 的后台续播能力）。这是独立的偏好，
+  /// **不复用**旧 `player_background_play` 死 pref（其代码通道已删除，复用会把语义
+  /// 搅混）。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留其存值。
   bool get audiobookBackgroundPlay =>
       getPref('audiobook_background_play', defaultValue: false) as bool;
 
   Future<void> setAudiobookBackgroundPlay({required bool value}) async {
     await setPref('audiobook_background_play', value);
-    notifyListeners();
-  }
-
-  bool get showSubtitlesInNotification =>
-      getPref('player_subtitle_notification', defaultValue: true) as bool;
-
-  void setShowSubtitlesInNotification({required bool value}) async {
-    await setPref('player_subtitle_notification', value);
-    notifyListeners();
-  }
-
-  bool get playerUseOpenSLES =>
-      getPref('player_use_opensles', defaultValue: true) as bool;
-
-  void setPlayerUseOpenSLES({required bool value}) async {
-    await setPref('player_use_opensles', value);
     notifyListeners();
   }
 
@@ -733,16 +681,6 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  final int defaultDoubleTapSeekDuration = 5000;
-
-  int get doubleTapSeekDuration => getPref('double_tap_seek_duration',
-      defaultValue: defaultDoubleTapSeekDuration) as int;
-
-  void setDoubleTapSeekDuration(int value) async {
-    await setPref('double_tap_seek_duration', value);
-    notifyListeners();
-  }
-
   bool get isFirstTimeSetup =>
       getPref('first_time_setup', defaultValue: true) as bool;
 
@@ -1170,32 +1108,6 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── transcript ───────────────────────────────────────────────────────
-
-  bool get isTranscriptPlayerMode =>
-      getPref('is_transcript_player_mode', defaultValue: false) as bool;
-
-  void toggleTranscriptPlayerMode() async {
-    await setPref('is_transcript_player_mode', !isTranscriptPlayerMode);
-    notifyListeners();
-  }
-
-  bool get isTranscriptOpaque =>
-      getPref('is_transcript_opaque', defaultValue: false) as bool;
-
-  void toggleTranscriptOpaque() async {
-    await setPref('is_transcript_opaque', !isTranscriptOpaque);
-    notifyListeners();
-  }
-
-  bool get subtitleTimingsShown =>
-      getPref('subtitle_timings_shown', defaultValue: true) as bool;
-
-  void toggleSubtitleTimingsShown() async {
-    await setPref('subtitle_timings_shown', !subtitleTimingsShown);
-    notifyListeners();
-  }
-
   // ── tags & card export ───────────────────────────────────────────────
 
   String get savedTags => getPref('saved_tags', defaultValue: '') as String;
@@ -1411,13 +1323,6 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── UI visibility ────────────────────────────────────────────────────
 
-  bool get showPlayBar => getPref('show_play_bar', defaultValue: true) as bool;
-
-  void toggleShowPlayBar() async {
-    await setPref('show_play_bar', !showPlayBar);
-    notifyListeners();
-  }
-
   bool get showMediaNotification =>
       getPref('show_media_notification', defaultValue: true) as bool;
 
@@ -1581,9 +1486,6 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get showFloatingDict =>
-      getPref('show_floating_dict', defaultValue: false) as bool;
-
   // ── update preferences ───────────────────────────────────────────────
 
   bool get updateNeverRemind =>
@@ -1639,79 +1541,6 @@ class PreferencesRepository extends ChangeNotifier {
   /// 后台静默刷新的产物，不驱动 UI 重建，避免无谓 rebuild。
   Future<void> setUpdateCheckCache(UpdateCheckCacheEntry entry) =>
       setPref(updateCheckCachePrefKey, entry.encode());
-
-  // ── bookmarks flag ───────────────────────────────────────────────────
-
-  bool get populateBookmarksFlag =>
-      getPref('populate_bookmarks', defaultValue: false) as bool;
-
-  void setPopulateBookmarksFlag() async {
-    await setPref('populate_bookmarks', true);
-  }
-
-  // ── blur options ─────────────────────────────────────────────────────
-
-  static const _defaultBlurJson =
-      '{"w":200,"h":200,"l":-1,"t":-1,"r":0,"g":0,"b":0,"o":0,"br":5,"v":false}';
-
-  BlurOptions get blurOptions {
-    final String raw =
-        getPref('blur_options_json', defaultValue: _defaultBlurJson) as String;
-    try {
-      final Map<String, dynamic> m =
-          Map<String, dynamic>.from(jsonDecode(raw) as Map);
-      return BlurOptions(
-        width: (m['w'] as num).toDouble(),
-        height: (m['h'] as num).toDouble(),
-        left: (m['l'] as num).toDouble(),
-        top: (m['t'] as num).toDouble(),
-        color: Color.fromRGBO(
-          (m['r'] as num).toInt(),
-          (m['g'] as num).toInt(),
-          (m['b'] as num).toInt(),
-          (m['o'] as num).toDouble(),
-        ),
-        blurRadius: (m['br'] as num).toDouble(),
-        visible: m['v'] as bool,
-      );
-    } catch (_) {
-      return BlurOptions(
-        width: 200,
-        height: 200,
-        left: -1,
-        top: -1,
-        color: Colors.black.withValues(alpha: 0),
-        blurRadius: 5,
-        visible: false,
-      );
-    }
-  }
-
-  Future<void> setBlurOptions(BlurOptions options) async {
-    final String json = jsonEncode(<String, dynamic>{
-      'w': options.width,
-      'h': options.height,
-      'l': options.left,
-      't': options.top,
-      'r': options.color.red,
-      'g': options.color.green,
-      'b': options.color.blue,
-      'o': options.color.opacity,
-      'br': options.blurRadius,
-      'v': options.visible,
-    });
-    await setPref('blur_options_json', json);
-    notifyListeners();
-  }
-
-  // ── per-media-item audio index ───────────────────────────────────────
-
-  int getMediaItemPreferredAudioIndex(String uniqueKey) =>
-      getPref('audio_index/$uniqueKey', defaultValue: 0) as int;
-
-  void setMediaItemPreferredAudioIndex(String uniqueKey, int index) async {
-    await setPref('audio_index/$uniqueKey', index);
-  }
 
   // ── anki deck/model selection ────────────────────────────────────────
 

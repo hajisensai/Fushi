@@ -1057,9 +1057,6 @@ class AppModel with ChangeNotifier {
 
   String get stashKey => mediaHistoryRepo.stashKey;
 
-  /// Used to check if the dictionary tab should be refreshed on switching tabs.
-  bool shouldRefreshTabs = false;
-
   // ── dictionary delegates (DictionaryRepository) ────────────────────
 
   List<Dictionary> get dictionaries => dictRepo.dictionaries;
@@ -1234,9 +1231,6 @@ class AppModel with ChangeNotifier {
   MediaItem? get currentMediaItem => _currentMediaItem;
   MediaItem? _currentMediaItem;
 
-  /// Blocks creator from processing initial media while player controller is not ready.
-  bool blockCreatorInitialMedia = false;
-
   /// The user's custom app-wide UI font family, or null to use the language
   /// default. Resolved and registered with the Flutter engine by
   /// [refreshAppFont]; see [AppFontLoader].
@@ -1387,13 +1381,6 @@ class AppModel with ChangeNotifier {
     } else {
       return _currentMediaItem;
     }
-  }
-
-  /// Manually flag that the app is now using a media item. Prefer [openMedia]
-  /// instead of this.
-  void setCurrentMediaItem(MediaItem mediaItem) {
-    _currentMediaItem = mediaItem;
-    _currentMediaSource = mediaItem.getMediaSource(appModel: this);
   }
 
   /// TODO-1077: reload the dictionary repository cache from the DB after an
@@ -1687,12 +1674,6 @@ class AppModel with ChangeNotifier {
       ),
     );
   }
-
-  /// Stub — old mapping system removed; new Anki export lives in lib/src/anki/.
-  void populateDefaultMapping(Language language) async {}
-
-  /// Stub kept for call-site compatibility.
-  void populateBookmarks() {}
 
   /// Return the app external directory found in the public DCIM directory.
   /// This path also initialises the folder if it does not exist, and includes
@@ -2033,7 +2014,6 @@ class AppModel with ChangeNotifier {
       // cache (keeps refreshPrefCacheIfChanged consistent if ever reused here).
       _lastSeenPrefsVersion = prefsRepo.prefsVersion;
       _setupFloatingDictHandlers();
-      if (showFloatingDict) setShowFloatingDict(false);
       // Start the LAN sync server now if hosting is enabled, so it runs app-wide
       // for the whole session instead of only while the sync settings page is on
       // screen (BUG-085). Fire-and-forget: a bind failure self-disables + is
@@ -2324,19 +2304,17 @@ class AppModel with ChangeNotifier {
   Map<String, String> browserExtensionThemeColors() {
     final ColorScheme s = themeNotifier.buildColorScheme(
         themeNotifier.isDarkMode ? Brightness.dark : Brightness.light);
-    String rgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
-        '${(c.g * 255.0).round().clamp(0, 255)}, '
-        '${(c.b * 255.0).round().clamp(0, 255)})';
-    // BUG-736：以下两个 helper 与 in-app 弹窗注入器（popup_settings_injection /
-    // dictionary_popup_webview）同款，用于补齐扩展此前漏发、退化成灰高亮/白字/直角的
-    // 变量。rgba035：查到词高亮色（primary @0.35 alpha）；triplet：卡片底色 RGB 三元组。
-    String rgba035(Color c) => 'rgba(${(c.r * 255.0).round().clamp(0, 255)}, '
-        '${(c.g * 255.0).round().clamp(0, 255)}, '
-        '${(c.b * 255.0).round().clamp(0, 255)}, 0.35)';
-    String triplet(Color c) => '${(c.r * 255.0).round().clamp(0, 255)}, '
-        '${(c.g * 255.0).round().clamp(0, 255)}, '
-        '${(c.b * 255.0).round().clamp(0, 255)}';
     final Color bgColor = _overrideDictionaryColor ?? s.surface;
+    // BUG-736：核心色/圆角/列数变量的取值统一来自 buildPopupThemeCssVars——与 in-app
+    // 弹窗注入器（popup_settings_injection / dictionary_popup_webview）同一真源，
+    // 根除「扩展漏抄一处、退化成灰高亮/白字/直角」的手抄漂移。
+    // 注：--md-surface-container-high 沿用扩展侧历史行为，override 色一并顶掉它。
+    final Map<String, String> vars = buildPopupThemeCssVars(
+      scheme: s,
+      backgroundColor: bgColor,
+      surfaceContainerHigh: _overrideDictionaryColor ?? s.surfaceContainerHigh,
+      dictionaryColumns: popupDictionaryColumns,
+    );
     // BUG-688：浏览器浮动弹窗只跟「词典字号」，**不叠加** app 的「界面大小」(appUiScale)。
     // 叠加 appUiScale 会把弹窗放大到 1.5×+ → 浮在网页上盖住大半屏、需滚动条，且大 zoom 作用于
     // 嵌套容器时触发 Blink「CSS zoom + 振假名(rt)绝对定位错位」→ 假名与正文重叠（app 内缩放的
@@ -2349,29 +2327,28 @@ class AppModel with ChangeNotifier {
       // （见 content.css `color: var(--text-color)` / `background-color: var(--background-color)`）。
       // 与 in-app _themeVariablesJs 一致地下发这两个核心变量；漏了它们会导致弹窗容器色回落到
       // data-theme 块的 #000/#fff 或宿主页继承（主题分裂：米卡 + 黑底 + 灰字）。
-      '--text-color': rgb(s.onSurface),
-      '--background-color': rgb(bgColor),
+      '--text-color': vars['--text-color']!,
+      '--background-color': vars['--background-color']!,
       // BUG-736：查到词的高亮色。漏发时 popup.css 回落到灰 rgba(160,160,160,0.4)，与 app
       // 内的主题主色高亮不一致（这是「扩展弹窗和 app 不一样」最扎眼的一处）。
-      '--hoshi-primary-highlight': rgba035(s.primary),
+      '--hoshi-primary-highlight': vars['--hoshi-primary-highlight']!,
       // BUG-736：卡片底色 alpha 合成用的 RGB 三元组（配 popup.css 的 --hibiki-card-bg-alpha）。
       // 漏发时回落到纯白 255,255,255。
-      '--hibiki-card-bg-rgb': triplet(bgColor),
+      '--hibiki-card-bg-rgb': vars['--hibiki-card-bg-rgb']!,
       // BUG-688：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
       // （而非宿主网页 prefers-color-scheme），根除「data-theme 跟宿主页 / --md-* 跟 app」的分裂。
       '--hibiki-color-scheme': themeNotifier.isDarkMode ? 'dark' : 'light',
-      '--md-surface-container-high':
-          rgb(_overrideDictionaryColor ?? s.surfaceContainerHigh),
-      '--md-surface-container': rgb(s.surfaceContainer),
-      '--md-on-surface': rgb(s.onSurface),
-      '--md-on-surface-variant': rgb(s.onSurfaceVariant),
-      '--md-outline-variant': rgb(s.outlineVariant),
-      '--md-primary': rgb(s.primary),
+      '--md-surface-container-high': vars['--md-surface-container-high']!,
+      '--md-surface-container': vars['--md-surface-container']!,
+      '--md-on-surface': vars['--md-on-surface']!,
+      '--md-on-surface-variant': vars['--md-on-surface-variant']!,
+      '--md-outline-variant': vars['--md-outline-variant']!,
+      '--md-primary': vars['--md-primary']!,
       // BUG-736：主色上的文字/图标色（popup.css `color: var(--md-on-primary,#fff)`）。
-      '--md-on-primary': rgb(s.onPrimary),
+      '--md-on-primary': vars['--md-on-primary']!,
       // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
-      // （HibikiRadii.cardValue）不一致。与两个 in-app 注入器逐字节同源。
-      '--hibiki-radius-card': '${HibikiRadii.cardValue.toInt()}px',
+      // （HibikiRadii.cardValue，经 buildPopupThemeCssVars）不一致。与两个 in-app 注入器同源。
+      '--hibiki-radius-card': vars['--hibiki-radius-card']!,
       // 弹窗尺寸精细化：扩展弹窗默认跟随 app 内 popupMaxWidth/Height，用户显式
       // 解锁「浏览器扩展独立尺寸」后改用扩展自己的键（extensionPopupEffectiveSize）。
       '--hibiki-popup-max-width':
@@ -3239,21 +3216,6 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Override flag for when [isMediaOpen] is true but the status bar should
-  /// be kept open instead of closed.
-  bool get shouldHideStatusBarWhenInMedia => _shouldHideStatusBarWhenInMedia;
-  bool _shouldHideStatusBarWhenInMedia = true;
-
-  /// Override the flag for automatically disabling the status bar. Necessary
-  /// for some very specific edge cases and byproduct of letting global state
-  /// run its course. This is a band-aid solution.
-  Future<void> temporarilyDisableStatusBarHiding(
-      {required Future Function() action}) async {
-    _shouldHideStatusBarWhenInMedia = false;
-    await action.call();
-    _shouldHideStatusBarWhenInMedia = true;
-  }
-
   /// Requests for full external storage permissions. Required to handle video
   /// files and their subtitle files in the same directory.
   Future<void> requestExternalStoragePermissions() async {
@@ -3402,7 +3364,6 @@ class AppModel with ChangeNotifier {
     mediaOpenNotifier.value = false;
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
-    blockCreatorInitialMedia = false;
     try {
       await WakelockPlus.disable();
     } catch (e) {
@@ -3717,52 +3678,16 @@ class AppModel with ChangeNotifier {
     return directories;
   }
 
-  // ── blur options & audio index (delegated) ───────────────────────────
-
-  BlurOptions get blurOptions => prefsRepo.blurOptions;
-  Future<void> setBlurOptions(BlurOptions options) =>
-      prefsRepo.setBlurOptions(options);
-
-  int getMediaItemPreferredAudioIndex(MediaItem item) =>
-      prefsRepo.getMediaItemPreferredAudioIndex(item.uniqueKey);
-
-  void setMediaItemPreferredAudioIndex(MediaItem item, int index) =>
-      prefsRepo.setMediaItemPreferredAudioIndex(item.uniqueKey, index);
-
   // ── player preferences (delegated to PreferencesRepository) ─────────
-
-  bool get isPlayerListeningComprehensionMode =>
-      prefsRepo.isPlayerListeningComprehensionMode;
-  void togglePlayerListeningComprehensionMode() =>
-      prefsRepo.togglePlayerListeningComprehensionMode();
-
-  bool get isPlayerOrientationPortrait => prefsRepo.isPlayerOrientationPortrait;
-  void togglePlayerOrientationPortrait() =>
-      prefsRepo.togglePlayerOrientationPortrait();
-
-  bool get isStretchToFill => prefsRepo.isStretchToFill;
-  void toggleStretchToFill() => prefsRepo.toggleStretchToFill();
 
   bool get playerHardwareAcceleration => prefsRepo.playerHardwareAcceleration;
   void setPlayerHardwareAcceleration({required bool value}) =>
       prefsRepo.setPlayerHardwareAcceleration(value: value);
 
-  bool get playerBackgroundPlay => prefsRepo.playerBackgroundPlay;
-  void setPlayerBackgroundPlay({required bool value}) =>
-      prefsRepo.setPlayerBackgroundPlay(value: value);
-
   // TODO-702：有声书退出即停（默认）/ 后台续播（可选）。转发偏好仓库。
   bool get audiobookBackgroundPlay => prefsRepo.audiobookBackgroundPlay;
   Future<void> setAudiobookBackgroundPlay({required bool value}) =>
       prefsRepo.setAudiobookBackgroundPlay(value: value);
-
-  bool get showSubtitlesInNotification => prefsRepo.showSubtitlesInNotification;
-  void setShowSubtitlesInNotification({required bool value}) =>
-      prefsRepo.setShowSubtitlesInNotification(value: value);
-
-  bool get playerUseOpenSLES => prefsRepo.playerUseOpenSLES;
-  void setPlayerUseOpenSLES({required bool value}) =>
-      prefsRepo.setPlayerUseOpenSLES(value: value);
 
   // ── player streams & audio handler (delegated to AudioController) ───
 
@@ -3985,12 +3910,6 @@ class AppModel with ChangeNotifier {
   Future<void> setPopupBottomDocked(bool value) =>
       prefsRepo.setPopupBottomDocked(value);
 
-  int get defaultDoubleTapSeekDuration =>
-      prefsRepo.defaultDoubleTapSeekDuration;
-  int get doubleTapSeekDuration => prefsRepo.doubleTapSeekDuration;
-  void setDoubleTapSeekDuration(int value) =>
-      prefsRepo.setDoubleTapSeekDuration(value);
-
   bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
   void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();
 
@@ -4000,7 +3919,6 @@ class AppModel with ChangeNotifier {
   void addToDictionaryHistory({required DictionarySearchResult result}) {
     MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
     if (mediaType != DictionaryMediaType.instance) {
-      shouldRefreshTabs = true;
       ScrollController scrollController =
           DictionaryMediaType.instance.scrollController;
       if (scrollController.hasClients) {
@@ -4078,16 +3996,7 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  // ── transcript, tags, card export, CSS (delegated) ──────────────────
-
-  bool get isTranscriptPlayerMode => prefsRepo.isTranscriptPlayerMode;
-  void toggleTranscriptPlayerMode() => prefsRepo.toggleTranscriptPlayerMode();
-
-  bool get isTranscriptOpaque => prefsRepo.isTranscriptOpaque;
-  void toggleTranscriptOpaque() => prefsRepo.toggleTranscriptOpaque();
-
-  bool get subtitleTimingsShown => prefsRepo.subtitleTimingsShown;
-  void toggleSubtitleTimingsShown() => prefsRepo.toggleSubtitleTimingsShown();
+  // ── tags, card export, CSS (delegated) ──────────────────────────────
 
   String get savedTags => prefsRepo.savedTags;
   void setSavedTags(String value) => prefsRepo.setSavedTags(value);
@@ -4611,9 +4520,6 @@ class AppModel with ChangeNotifier {
 
   // ── UI visibility (delegated) ────────────────────────────────────────
 
-  bool get showPlayBar => prefsRepo.showPlayBar;
-  void toggleShowPlayBar() => prefsRepo.toggleShowPlayBar();
-
   bool get showMediaNotification => prefsRepo.showMediaNotification;
   void toggleShowMediaNotification() => prefsRepo.toggleShowMediaNotification();
   Future<void> setShowMediaNotification(bool value) =>
@@ -4693,13 +4599,6 @@ class AppModel with ChangeNotifier {
   Future<void> setFloatingLyricContextLines(int value) =>
       prefsRepo.setFloatingLyricContextLines(value);
 
-  bool get showFloatingDict => prefsRepo.showFloatingDict;
-
-  Future<void> setShowFloatingDict(bool value) async {
-    await prefsRepo.setPref('show_floating_dict', value);
-    prefsRepo.notifyListeners();
-  }
-
   void _setupFloatingDictHandlers() {
     FloatingDictChannel.setEventHandlers(
       onSearch: (String term) async {
@@ -4763,9 +4662,6 @@ class AppModel with ChangeNotifier {
   UpdateCheckCacheEntry? get updateCheckCache => prefsRepo.updateCheckCache;
   Future<void> setUpdateCheckCache(UpdateCheckCacheEntry entry) =>
       prefsRepo.setUpdateCheckCache(entry);
-
-  bool get populateBookmarksFlag => prefsRepo.populateBookmarksFlag;
-  void setPopulateBookmarksFlag() => prefsRepo.setPopulateBookmarksFlag();
 
   // ── low memory mode (side effect stays here) ─────────────────────────
 

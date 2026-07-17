@@ -59,9 +59,13 @@ void main() {
         final String src = File(path).readAsStringSync();
         expect(src, contains("'--md-on-primary'"),
             reason: '$path 应注入 --md-on-primary');
-        expect(src, contains('scheme.onPrimary'),
-            reason: '$path 的 on-primary 取自 ColorScheme.onPrimary');
       }
+      // 取值已收敛到共享真源 popup_theme_css.dart：on-primary 仍取自
+      // ColorScheme.onPrimary，两个注入点经 buildPopupThemeCssVars 消费。
+      final String shared =
+          File('lib/src/utils/popup_theme_css.dart').readAsStringSync();
+      expect(shared, contains('scheme.onPrimary'),
+          reason: '共享真源的 on-primary 应取自 ColorScheme.onPrimary');
     });
   });
 
