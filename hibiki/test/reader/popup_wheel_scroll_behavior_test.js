@@ -5,12 +5,16 @@
 // prints the success marker on the last line. Node-only; the Dart wrapper skips
 // when node is absent.
 //
-// Root cause it locks: a precision touchpad reports deltaMode=PIXEL with a tiny
-// fractional deltaY. After POPUP_WHEEL_PIXEL_FACTOR (0.24) and the zoom divide each
-// frame is a fraction of a layout pixel; the pre-fix handler passed that fraction
-// to scrollBy and lost it every frame (preventDefault killed native scroll, so the
-// popup froze). The fix carries the sub-pixel remainder across events. It also
-// stops touchpad horizontal jitter from dropping genuine vertical frames.
+// Root cause it locks (TODO-1387): a precision touchpad reports deltaMode=PIXEL
+// with a tiny fractional deltaY; without a cross-event accumulator scrollBy lost
+// the sub-pixel fraction every frame and the popup froze. The fix carries the
+// remainder across events and stops horizontal jitter from dropping vertical frames.
+//
+// BUG-870 extends this: the 0.24 POPUP_WHEEL_PIXEL_FACTOR is a coarse-mouse-notch
+// taming; applying it to a fine device (small pixel deltas) made scrolling ~4x too
+// slow ("very hard to scroll"). Fine-device frames now scroll ~1:1 (factor 1.0,
+// still zoom-corrected); a mouse notch (deltaY≈100) keeps the 0.24 step. A gesture
+// latches to its device class so a large mid-fling touchpad frame is not mis-tamed.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -97,10 +101,10 @@ function fireWheel(ctx, opts) {
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
 
-// A. Slow touchpad frames accumulate into REAL visible scrolling.
-// Each frame: deltaMode=PIXEL, deltaY=2 => deltaPx=2 => x0.24=0.48px => sub-pixel.
-// The pre-fix handler lost 0.48 every frame (scrollBy(0.48) rounds to 0 => frozen).
-test('slow touchpad sub-pixel frames accumulate into visible scroll (zoom 1)', () => {
+// A. BUG-870: a precision touchpad's small pixel-mode frames scroll ~1:1 (natural),
+// NOT downscaled by the 0.24 mouse-notch factor. deltaY=2 (< MOUSE_NOTCH_PX 60) is a
+// fine-device frame => factor 1.0 => 2 layout px/frame at zoom 1.
+test('slow touchpad frames scroll ~1:1 natural, not the 0.24 mouse taming (zoom 1)', () => {
   const ctx = loadPopup();
   clockMs = 1000;
   let prevCount = 0;
@@ -108,22 +112,38 @@ test('slow touchpad sub-pixel frames accumulate into visible scroll (zoom 1)', (
     clockMs += 16; // ~60fps, well within the idle window
     if (fireWheel(ctx, { deltaY: 2, deltaX: 1, deltaMode: 0 })) prevCount++;
   }
-  // 12 frames x 0.48px = 5.76 => 5 whole layout px emitted (0.76 carried).
-  assert.equal(ctx.__win.scrollY, 5,
-    'slow touchpad must accumulate to 5px after 12 frames, got ' + ctx.__win.scrollY);
-  assert.ok(ctx.__win.scrollY > 0, 'slow touchpad must NOT be frozen (regression = 0)');
+  // 12 frames x 2px (factor 1.0) = 24px. Pre-BUG-870 this was 5px (0.24 factor):
+  // "very hard to scroll". A 4x speed-up restores natural touchpad feel.
+  assert.equal(ctx.__win.scrollY, 24,
+    'fine touchpad frames must scroll ~1:1 (24px after 12x deltaY=2), got ' + ctx.__win.scrollY);
+  assert.ok(ctx.__win.scrollY > 5,
+    'BUG-870 regression guard: 0.24 taming would give only 5px (sluggish)');
   assert.equal(prevCount, 12, 'every accepted vertical frame must preventDefault');
 });
 
-// Sub-pixel steps are LOSSLESS across many frames (zoom>1 shrinks the step).
-test('touchpad carry is lossless across many frames (zoom 2 amplifies sub-pixel)', () => {
+// Sub-pixel carry still matters for a fine device UNDER zoom>1 (each frame divides
+// by zoom into a fraction of a layout px). deltaY=1 => x1.0 => /3 zoom = 0.333/frame.
+test('fine-device sub-pixel carry is lossless under zoom (deltaY 1, zoom 3)', () => {
   const ctx = loadPopup();
-  ctx.__setZoom(2);
+  ctx.__setZoom(3);
   clockMs = 5000;
-  // deltaY=3 => deltaPx=3 => x0.24=0.72 visual => /2 zoom = 0.36 layout px/frame.
-  for (let i = 0; i < 30; i++) { clockMs += 10; fireWheel(ctx, { deltaY: 3, deltaMode: 0 }); }
+  // 30 frames x (1 / 3) = 10.0 => 10 whole layout px (residual accumulates the third).
+  for (let i = 0; i < 30; i++) { clockMs += 10; fireWheel(ctx, { deltaY: 1, deltaMode: 0 }); }
   assert.equal(ctx.__win.scrollY, 10,
-    'zoom>1 sub-pixel carry must reach 10px after 30 frames, got ' + ctx.__win.scrollY);
+    'fine-device sub-pixel carry must reach 10px after 30 frames, got ' + ctx.__win.scrollY);
+});
+
+// BUG-870 latch: a gesture that starts fine (small frame) stays fine even when an
+// occasional larger mid-fling frame (>= MOUSE_NOTCH_PX) arrives — it must NOT be
+// suddenly downscaled by 0.24 as if it were a mouse notch.
+test('touchpad gesture latches fine: a large mid-fling frame is not mouse-tamed', () => {
+  const ctx = loadPopup();
+  clockMs = 1000; clockMs += 16;
+  fireWheel(ctx, { deltaY: 4, deltaMode: 0 });   // small first frame => latch fine (4px)
+  clockMs += 16;
+  fireWheel(ctx, { deltaY: 80, deltaMode: 0 });  // big fling frame, still fine => 80px (not 19)
+  assert.equal(ctx.__win.scrollY, 84,
+    'latched fine device must scroll the fling frame ~1:1 (4+80=84), got ' + ctx.__win.scrollY);
 });
 
 // B. Mouse-wheel large-delta path is UNCHANGED (no regression).
@@ -191,18 +211,22 @@ test('ctrl+wheel is ignored (zoom gesture, not scroll)', () => {
   assert.equal(ctx.__win.scrollY, 0, 'ctrl+wheel must not scroll');
 });
 
-// E. Idle reset clears a stale sub-pixel remainder (no delayed jump).
-test('stale sub-pixel carry is reset after an idle gap', () => {
+// E. Idle reset clears a stale sub-pixel remainder (no delayed jump). Under zoom 3
+// a fine-device deltaY=1 frame is 0.333 layout px — sub-pixel — so the carry and
+// its idle reset are exercised exactly as before BUG-870 (which only changed the
+// per-frame factor, not the residual mechanism).
+test('stale sub-pixel carry is reset after an idle gap (zoom 3)', () => {
   const ctx = loadPopup();
+  ctx.__setZoom(3);
   clockMs = 1000; clockMs += 16;
-  fireWheel(ctx, { deltaY: 2, deltaMode: 0 }); // residual 0.48, scrollY 0
+  fireWheel(ctx, { deltaY: 1, deltaMode: 0 }); // residual 0.333, scrollY 0
   clockMs += 16;
-  fireWheel(ctx, { deltaY: 2, deltaMode: 0 }); // residual 0.96, scrollY 0
-  assert.equal(ctx.__win.scrollY, 0, 'two 0.48 frames stay sub-pixel');
+  fireWheel(ctx, { deltaY: 1, deltaMode: 0 }); // residual 0.666, scrollY 0
+  assert.equal(ctx.__win.scrollY, 0, 'two 0.333 frames stay sub-pixel');
   clockMs += 500; // long idle (> POPUP_WHEEL_RESIDUAL_IDLE_MS)
-  fireWheel(ctx, { deltaY: 2, deltaMode: 0 }); // reset first => residual 0.48, still 0
+  fireWheel(ctx, { deltaY: 1, deltaMode: 0 }); // reset first => residual 0.333, still 0
   assert.equal(ctx.__win.scrollY, 0,
-    'after idle reset the stale 0.96 must NOT combine into a delayed 1px jump');
+    'after idle reset the stale 0.666 must NOT combine into a delayed 1px jump');
 });
 
 let failed = 0;

@@ -32,9 +32,10 @@ void main() {
   test('drives the scroll through window.scrollBy (finer than native step)',
       () {
     expect(js, contains('window.scrollBy('));
-    // A small fraction of the raw delta per notch keeps each notch fine.
+    // BUG-870: the per-frame factor is now device-dependent (coarse mouse notch
+    // vs fine touchpad); the coarse-mouse factor is still POPUP_WHEEL_PIXEL_FACTOR.
     expect(js, contains('POPUP_WHEEL_PIXEL_FACTOR'));
-    expect(js, contains('* POPUP_WHEEL_PIXEL_FACTOR'));
+    expect(js, contains('deltaPx * factor'));
   });
 
   test('uses a browser-like wheel pixel factor below the old coarse step', () {
@@ -46,6 +47,33 @@ void main() {
     expect(factor, lessThan(0.35),
         reason: 'TODO-460 asks for a smaller per-notch distance than the old '
             'BUG-260 factor.');
+  });
+
+  // BUG-870: the 0.24 factor is only for a COARSE mouse notch. A precision
+  // touchpad / hi-res wheel reports small pixel deltas; the handler must classify
+  // a small pixel-mode frame as a fine device and scroll it ~1:1 (factor 1.0),
+  // otherwise the 0.24 taming makes touchpad scrolling ~4x too slow. A gesture
+  // latches its device class so a large mid-fling frame is not mis-tamed.
+  test('classifies fine devices and scrolls them ~1:1 (BUG-870)', () {
+    final trackpadFactor = parseNumberConstant('POPUP_WHEEL_TRACKPAD_FACTOR');
+    expect(trackpadFactor, greaterThanOrEqualTo(0.9),
+        reason: 'a fine device (touchpad / hi-res wheel) must scroll close to '
+            '1:1, not be downscaled like a coarse mouse notch');
+
+    final notchPx = parseNumberConstant('POPUP_WHEEL_MOUSE_NOTCH_PX');
+    expect(notchPx, greaterThanOrEqualTo(30),
+        reason: 'the threshold must sit above slow touchpad frames');
+    expect(notchPx, lessThan(100),
+        reason: 'and below a WebView2/Chromium mouse notch (≈100px)');
+
+    // The per-frame factor is chosen by device class, not hard-coded to 0.24.
+    expect(js, contains('const fineFrame ='));
+    expect(js, contains('_popupWheelFineDevice'),
+        reason: 'the gesture must latch its device class to avoid mis-taming a '
+            'large mid-fling touchpad frame');
+    expect(js, contains('const coarseMouseNotch ='));
+    expect(js, contains('? POPUP_WHEEL_PIXEL_FACTOR'));
+    expect(js, contains(': POPUP_WHEEL_TRACKPAD_FACTOR'));
   });
 
   test('caps a single wheel notch to avoid large device deltas jumping', () {

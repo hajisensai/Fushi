@@ -3572,9 +3572,18 @@ window.updatePopupIncremental = function() {
 // element with its own y-overflow) keep native scroll until they hit a boundary,
 // so nested scroll regions are not stolen — only the main document scroll, which
 // is the coarse one, is refined.
-const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta
+const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta (coarse mouse notch)
 const POPUP_WHEEL_MAX_VISUAL_STEP = 120;    // px cap after scaling, before zoom
 const POPUP_WHEEL_LINE_HEIGHT = 16;         // px per line for deltaMode === LINE
+// BUG-870: a precision touchpad / high-resolution wheel reports deltaMode=PIXEL
+// with small per-frame deltas; the 0.24 downscale (tuned for a coarse mouse notch,
+// deltaY≈100-120) makes those devices ~4x too slow — the "very hard to scroll"
+// symptom. A pixel-mode frame whose |deltaY| is below this many px is treated as a
+// fine device and scrolls ~1:1 (factor 1.0, still zoom-corrected); at/above it is a
+// coarse mouse notch and keeps the 0.24 taming. A mouse notch on WebView2/Chromium
+// is ≈100px, well above this; slow touchpad frames are well below.
+const POPUP_WHEEL_MOUSE_NOTCH_PX = 60;
+const POPUP_WHEEL_TRACKPAD_FACTOR = 1.0;    // fine devices: natural 1:1, no downscale
 // TODO-1387: a wheel frame counts as "horizontal" (left to native) only when the
 // horizontal delta leads the vertical delta by MORE than this many px. A touchpad
 // two-finger *vertical* scroll carries horizontal jitter that momentarily exceeds
@@ -3587,6 +3596,11 @@ const POPUP_WHEEL_RESIDUAL_IDLE_MS = 200;
 let _popupWheelResidual = 0;
 let _popupWheelResidualSurface = null;
 let _popupWheelResidualAt = 0;
+// BUG-870: device-class latch for the current gesture. A small pixel-mode frame
+// marks the stream as a fine device (touchpad / hi-res wheel); it stays latched
+// until the idle/surface reset so one occasional large mid-fling frame is not
+// mis-classified as a coarse mouse notch and momentarily over-tamed.
+let _popupWheelFineDevice = false;
 function popupCurrentZoom(scroller) {
     // BUG-688: read the zoom of the surface we are about to scroll. The in-app
     // popup zooms document.documentElement (popup_settings_injection.dart sets
@@ -3665,32 +3679,47 @@ document.addEventListener('wheel', (e) => {
         typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
     if (!scroller && inExtensionContentScript) return;
     e.preventDefault();
-    // Scale each notch down first, cap unusually large visual deltas, then
-    // divide by zoom so the on-screen step is zoom-independent.
-    const visualStep = popupClampWheelVisualStep(deltaPx * POPUP_WHEEL_PIXEL_FACTOR);
-    // BUG-688: scroll the surface the wheel is actually over. Extension popup:
-    // the shadow host is the scroll container (the ancestor walk above cannot
-    // cross the shadow boundary, so it never absorbs there). In-app popup and
-    // wheels over the host page: the window, exactly as before the shadow move.
-    const layoutStep = visualStep / popupCurrentZoom(scroller);
-    // TODO-1387: carry the sub-pixel remainder across events. A precision touchpad
-    // reports deltaMode=PIXEL with a tiny fractional deltaY (~1-4 per frame); after
-    // the 0.24 factor and the zoom divide each frame is a fraction of a layout
-    // pixel. scrollBy only moves whole (sub)pixels and the fraction was discarded
-    // every frame — preventDefault killed native scroll while the popup advanced
-    // ~0px, so slow touchpad scrolling froze (a fast fling cleared the 1px
-    // threshold, hence "sometimes works"). Accumulate the fraction and emit only
-    // the whole part, keeping the remainder for the next event. A mouse notch
-    // (deltaPx ~100-120 -> visualStep ~24) already clears 1px every frame so its
-    // behaviour is unchanged. Reset the carry on a surface switch or after an idle
-    // gap so a stale remainder can never cause a delayed jump.
+    // TODO-1387: carry the sub-pixel remainder across events; BUG-870: also reset
+    // the device-class latch here so each new gesture is classified fresh. A
+    // precision touchpad reports deltaMode=PIXEL with small fractional deltaY;
+    // after the zoom divide each frame can be a fraction of a layout pixel.
+    // scrollBy only moves whole (sub)pixels, so without the accumulator the
+    // fraction was discarded every frame — preventDefault killed native scroll
+    // while the popup advanced ~0px. Accumulate the fraction and emit only the
+    // whole part, keeping the remainder for the next event. Reset the carry (and
+    // the latch) on a surface switch or after an idle gap so a stale remainder can
+    // never cause a delayed jump.
     const nowMs = performance.now();
     if (scroller !== _popupWheelResidualSurface ||
         (nowMs - _popupWheelResidualAt) > POPUP_WHEEL_RESIDUAL_IDLE_MS) {
         _popupWheelResidual = 0;
         _popupWheelResidualSurface = scroller;
+        _popupWheelFineDevice = false;
     }
     _popupWheelResidualAt = nowMs;
+    // BUG-870: the 0.24 downscale is tuned for a COARSE mouse notch (deltaMode
+    // PIXEL, deltaY≈100-120 → visualStep≈24) so a notch does not jump a huge
+    // chunk. A precision touchpad / hi-res wheel reports small pixel deltas;
+    // applying 0.24 to them makes scrolling ~4x too slow ("very hard to scroll").
+    // Classify per gesture: a small pixel-mode frame latches the stream as a fine
+    // device (kept until the idle reset above, so an occasional large mid-fling
+    // frame is not mis-tamed); fine devices scroll ~1:1 (factor 1.0, still divided
+    // by zoom below). LINE/PAGE mode is always a classic mouse.
+    const fineFrame = e.deltaMode === 0 && absY < POPUP_WHEEL_MOUSE_NOTCH_PX;
+    if (fineFrame) { _popupWheelFineDevice = true; }
+    const coarseMouseNotch = !_popupWheelFineDevice &&
+        (e.deltaMode !== 0 || absY >= POPUP_WHEEL_MOUSE_NOTCH_PX);
+    const factor = coarseMouseNotch
+        ? POPUP_WHEEL_PIXEL_FACTOR
+        : POPUP_WHEEL_TRACKPAD_FACTOR;
+    // Scale the notch, cap unusually large visual deltas, then divide by zoom so
+    // the on-screen step is zoom-independent.
+    const visualStep = popupClampWheelVisualStep(deltaPx * factor);
+    // BUG-688: scroll the surface the wheel is actually over. Extension popup:
+    // the shadow host is the scroll container (the ancestor walk above cannot
+    // cross the shadow boundary, so it never absorbs there). In-app popup and
+    // wheels over the host page: the window, exactly as before the shadow move.
+    const layoutStep = visualStep / popupCurrentZoom(scroller);
     _popupWheelResidual += layoutStep;
     const step = Math.trunc(_popupWheelResidual);
     _popupWheelResidual -= step;

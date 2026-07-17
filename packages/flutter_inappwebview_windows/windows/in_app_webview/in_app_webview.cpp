@@ -1955,10 +1955,26 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
-    // delta * 6 gives me a multiple of WHEEL_DELTA (120)
+    // delta * 6 gives me a multiple of WHEEL_DELTA (120) for a mouse notch (delta≈20).
     constexpr auto kScrollMultiplier = 6;
 
-    auto offset = static_cast<short>(delta * kScrollMultiplier);
+    // BUG-870 根因：static_cast<short>(delta * 6) 向零截断且无跨帧余量累积。精密触控板
+    // 慢滑时 Flutter 每帧下发很小的 delta，delta*6 不足 1 时被截成 0 → 根本不发 wheel 给
+    // WebView2 → 弹窗「滚不动 / 很难滚」（鼠标一档 delta≈20→120 不受影响，每帧即过整单位）。
+    // 这是 popup.js 的 TODO-1387 子像素残差修复够不到的更上游截断点：wheel 还没进 DOM 就没了。
+    // 改为按轴累加被截掉的小数余量，小 delta 攒够整数 wheel 单位再发，绝不丢帧。
+    double& residual = horizontal ? scrollResidualX_ : scrollResidualY_;
+    double scaled = delta * kScrollMultiplier + residual;
+    // 防极快甩动 delta*6 溢出 short（否则环绕成反向跳变）；被夹掉的部分直接丢弃、不进余量。
+    if (scaled > 32760.0) { scaled = 32760.0; }
+    else if (scaled < -32760.0) { scaled = -32760.0; }
+    auto offset = static_cast<short>(scaled);  // toward zero
+    residual = scaled - offset;                // 保留 sub-unit 余量到下次调用
+
+    if (offset == 0) {
+      // 本帧不足一个 wheel 单位——余量已累加，等下帧凑够再发（永不丢触控板慢滑）。
+      return;
+    }
 
     if (horizontal) {
       webViewCompositionController->SendMouseInput(
