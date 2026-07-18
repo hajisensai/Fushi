@@ -1967,5 +1967,6 @@
   "anime_download_delete": "Delete",
   "anime_download_play_now": "Play while downloading",
   "anime_download_play_now_ok": "Imported — open it from the video library to play while downloading",
-  "anime_download_play_now_fail": "Not ready yet (metadata pending or connection failed) — try again later"
+  "anime_download_play_now_fail": "Not ready yet (metadata pending or connection failed) — try again later",
+  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki."
 }

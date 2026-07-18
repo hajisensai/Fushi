@@ -27,7 +27,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 858 条。点号进各自文件。
+> 共 860 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,7 +38,9 @@
 | [BUG-872](bugs/BUG-872-update-channel-pingpong.md) | ✅ | ✅ | 调试版与正式版来回更新 |
 | [BUG-872](bugs/BUG-872-lyrics-restore-position.md) | ✅ | ✅ | 歌词模式重开书高亮跳回开头 |
 | [BUG-871](bugs/BUG-871-win-touch-popup-scroll-primary.md) | ✅ | ✅ | Windows 触屏手指滑不动查词弹窗：注入触点缺 POINTER_FLAG_PRIMARY |
+| [BUG-871](bugs/BUG-871-extension-lookup-compact-result.md) | ✅ | ✅ | 浏览器扩展查词响应重复携带原始词条导致冷链路慢 |
 | [BUG-870](bugs/BUG-870-popup-touchpad-scroll-native.md) | ✅ | ✅ | 查词弹窗触控板滚不动 / 很难滚：native sendScroll 无残差截断 + JS 0.24 过度降速 |
+| [BUG-870](bugs/BUG-870-extension-shadow-text-align.md) | ✅ | ✅ | 浏览器扩展弹窗继承宿主页居中对齐 |
 | [BUG-869](bugs/BUG-869-fscx-line-level-squash.md) | ✅ | ✅ | 静态 \fscx/\fscy 被按行级「最后值生效」建模，句尾/前缀压扁标签把整行压扁 |
 | [BUG-868](bugs/BUG-868-reader-content-ready-timeout-pagination-wedge.md) | ✅ | ✅ | 开EPUB偶发卡住·内容就绪兜底超时漏复位导航态致翻页永久失效 |
 | [BUG-867](bugs/BUG-867-ass-fontname-gdi-fullname.md) | ✅ | ✅ | 装了字幕指定字体 hibiki 仍用回退字体（ASS Fontname=GDI 全名解析缺失） |

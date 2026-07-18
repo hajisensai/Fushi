@@ -33,6 +33,8 @@
     pushSuspended: false, enabled: false,
     // B（外挂字幕）：用户主动打开面板（即使暂无轨也不自动拆）；已加载外挂轨的原始 cue + 时轴偏移。
     forceOpen: false, extTracks: Object.create(null), offsetBar: null, offsetLabel: null,
+    overlayEnabled: true, dragDropEnabled: true, autoPause: false, condensedPlayback: false,
+    overlayEl: null, overlayCue: null, dropHint: null, lastCondensedTargetMs: -1,
   };
   var EXT_PREFIX = '外挂:';
 
@@ -56,6 +58,8 @@
     clearPush();
     if (st.panel && st.panel.parentNode) st.panel.parentNode.removeChild(st.panel);
     hideReopen();
+    hideSubtitleOverlay();
+    hideDropHint();
   }
   function applyEnabled(on) {
     st.enabled = !!on;
@@ -279,6 +283,28 @@
     if (st.autoScroll) { st.currentIndex = -1; tick(); }
   }
 
+  function applySubtitlePreferences(c) {
+    c = c || {};
+    st.overlayEnabled = c.subtitleOverlayEnabled !== false;
+    st.dragDropEnabled = c.subtitleDragDropEnabled !== false;
+    st.autoScroll = c.subtitleAutoScroll !== false;
+    st.autoPause = c.subtitleAutoPause === true;
+    st.condensedPlayback = c.subtitleCondensedPlayback === true;
+    if (!st.overlayEnabled) hideSubtitleOverlay();
+  }
+
+  function readSubtitlePreferences() {
+    var keys = [
+      'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
+      'subtitleAutoPause', 'subtitleCondensedPlayback',
+    ];
+    try {
+      var p = chrome.storage.local.get(keys);
+      if (p && typeof p.then === 'function') p.then(applySubtitlePreferences, function () {});
+      else chrome.storage.local.get(keys, applySubtitlePreferences);
+    } catch (_) {}
+  }
+
   function refreshLangSelect(tracks) {
     var sel = st.langSelect;
     if (!sel) return;
@@ -312,6 +338,7 @@
     st.rowEls = [];
     st.currentIndex = -1;
     if (!st.cues.length) {
+      hideSubtitleOverlay();
       var empty = document.createElement('div');
       empty.className = 'hibiki-sub-empty';
       empty.textContent = '暂无字幕（站内开启字幕后自动采集出现）';
@@ -360,8 +387,12 @@
   }
 
   function tick() {
-    if (!st.panel || st.hidden || !st.cues.length) return;
-    var idx = cueIndexAt(st.cues, videoTimeMs());
+    if (!st.cues.length) { hideSubtitleOverlay(); return; }
+    var nowMs = videoTimeMs();
+    var idx = cueIndexAt(st.cues, nowMs);
+    updateSubtitleOverlay(idx >= 0 ? st.cues[idx] : null);
+    applyPlaybackMode(idx, nowMs);
+    if (!st.panel || st.hidden) { st.currentIndex = idx; return; }
     if (idx === st.currentIndex) return;
     var prev = st.rowEls[st.currentIndex];
     if (prev) prev.classList.remove('is-current');
@@ -373,6 +404,80 @@
         try { cur.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { cur.scrollIntoView(); }
       }
     }
+  }
+
+  function ensureSubtitleOverlay() {
+    if (!st.overlayEl) {
+      var el = document.createElement('div');
+      el.id = 'hibiki-subtitle-overlay';
+      el.setAttribute('data-theme', resolveTheme());
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var cue = st.overlayCue;
+        if (cue && typeof window.hibikiLookupAtPoint === 'function') {
+          window.hibikiLookupAtPoint(e.clientX, e.clientY, {
+            startMs: cue.startMs, endMs: cue.endMs, text: cue.text,
+          });
+        }
+      });
+      st.overlayEl = el;
+    }
+    var parent = parentForOverlay();
+    if (st.overlayEl.parentNode !== parent) parent.appendChild(st.overlayEl);
+    return st.overlayEl;
+  }
+
+  function hideSubtitleOverlay() {
+    st.overlayCue = null;
+    if (st.overlayEl && st.overlayEl.parentNode) st.overlayEl.parentNode.removeChild(st.overlayEl);
+  }
+
+  function updateSubtitleOverlay(cue) {
+    if (!st.overlayEnabled || !isExternalLang(st.activeLang) || !cue) {
+      hideSubtitleOverlay();
+      return;
+    }
+    var video = videoEl();
+    if (!video || typeof video.getBoundingClientRect !== 'function') return;
+    var rect = video.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    var el = ensureSubtitleOverlay();
+    st.overlayCue = cue;
+    el.setAttribute('data-theme', resolveTheme());
+    el.textContent = cue.text;
+    el.style.left = (rect.left + rect.width / 2) + 'px';
+    el.style.top = (rect.top + rect.height * 0.84) + 'px';
+    el.style.maxWidth = Math.max(240, rect.width * 0.9) + 'px';
+  }
+
+  function firstCueAfter(ms) {
+    var lo = 0, hi = st.cues.length - 1, ans = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (st.cues[mid].startMs > ms) { ans = mid; hi = mid - 1; } else { lo = mid + 1; }
+    }
+    return ans;
+  }
+
+  function applyPlaybackMode(idx, nowMs) {
+    var video = videoEl();
+    if (!video) return;
+    var previous = st.currentIndex;
+    if (st.autoPause && previous >= 0 && idx < 0 &&
+        nowMs >= st.cues[previous].endMs && typeof video.pause === 'function') {
+      try { video.pause(); } catch (_) {}
+      return;
+    }
+    if (!st.condensedPlayback || st.autoPause || idx >= 0 || video.paused) {
+      if (idx >= 0) st.lastCondensedTargetMs = -1;
+      return;
+    }
+    var next = firstCueAfter(nowMs + 250);
+    if (next < 0) return;
+    var target = st.cues[next].startMs;
+    if (target - nowMs < 800 || target === st.lastCondensedTargetMs) return;
+    st.lastCondensedTargetMs = target;
+    seekTo(target);
   }
 
   function ensureMounted() {
@@ -442,10 +547,14 @@
       var inp = document.createElement('input');
       inp.type = 'file';
       inp.accept = '.srt,.ass,.ssa,.vtt';
+      inp.multiple = true;
       inp.style.display = 'none';
       inp.addEventListener('change', function () {
-        var f = inp.files && inp.files[0];
-        if (f) loadSubtitleFile(f);
+        var files = inp.files || [];
+        for (var i = 0; i < files.length; i++) {
+          if (isSubtitleFile(files[i])) loadSubtitleFile(files[i]);
+          else toast('不支持的格式（用 srt/ass/vtt）');
+        }
         if (inp.parentNode) inp.parentNode.removeChild(inp);
       });
       (st.panel || document.body).appendChild(inp);
@@ -453,6 +562,10 @@
     } catch (_) { toast('无法打开文件选择器'); }
   }
   function loadSubtitleFile(file) {
+    if (file && typeof file.size === 'number' && file.size > 8 * 1024 * 1024) {
+      toast('字幕文件过大（上限 8 MB）');
+      return;
+    }
     var reader = new FileReader();
     reader.onload = function () {
       var content = String(reader.result || '');
@@ -471,7 +584,7 @@
     try { reader.readAsText(file); } catch (_) { toast('读取文件失败'); }
   }
   function applyExternalSubtitle(filename, resp) {
-    if (!resp || !resp.ok || !resp.data) { toast('字幕解析失败'); return; }
+    if (!resp || !resp.ok || !resp.data) { toast(connectionFailureText(resp, '字幕解析失败')); return; }
     if (resp.data.error === 'unsupported') { toast('不支持的格式（用 srt/ass/vtt）'); return; }
     var raw = Array.isArray(resp.data.cues) ? resp.data.cues : [];
     var base = [];
@@ -494,6 +607,69 @@
     showPanel();
     toast('已加载外挂字幕：' + base.length + ' 句');
   }
+
+  function connectionFailureText(resp, fallback) {
+    var c = resp && resp.connection;
+    if (!c) return fallback;
+    if (c.state === 'yomitan-conflict') {
+      return '端口 ' + (c.port || 19633) + ' 被 Yomitan API 占用：请先在 Yomitan 高级设置关闭 Enable Yomitan API，再开启 Hibiki 的 Yomitan API 服务器';
+    }
+    if (c.state === 'unauthorized') return 'Hibiki API 密钥不匹配：请在扩展设置中恢复自动配置';
+    if (c.state === 'offline') return 'Hibiki API 未开启：请在 Hibiki 设置 → 查词中开启 Yomitan API 服务器';
+    return fallback;
+  }
+
+  function isSubtitleFile(file) {
+    return !!(file && /\.(srt|ass|ssa|vtt)$/i.test(String(file.name || '')));
+  }
+
+  function showDropHint() {
+    if (!st.dropHint) {
+      st.dropHint = document.createElement('div');
+      st.dropHint.id = 'hibiki-subtitle-drop-hint';
+      st.dropHint.textContent = '松开以加载字幕';
+    }
+    var parent = parentForOverlay();
+    if (st.dropHint.parentNode !== parent) parent.appendChild(st.dropHint);
+  }
+
+  function hideDropHint() {
+    if (st.dropHint && st.dropHint.parentNode) st.dropHint.parentNode.removeChild(st.dropHint);
+  }
+
+  function filesFromTransfer(dt) {
+    var out = [];
+    var files = dt && dt.files ? dt.files : [];
+    for (var i = 0; i < files.length; i++) if (isSubtitleFile(files[i])) out.push(files[i]);
+    return out;
+  }
+
+  document.addEventListener('dragover', function (e) {
+    if (!st.dragDropEnabled || !e.dataTransfer) return;
+    var hasFiles = e.dataTransfer.types && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0;
+    if (!hasFiles) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    showDropHint();
+  }, true);
+  document.addEventListener('dragleave', function (e) {
+    if (!e.relatedTarget) hideDropHint();
+  }, true);
+  document.addEventListener('drop', function (e) {
+    if (!st.dragDropEnabled) return;
+    var files = filesFromTransfer(e.dataTransfer);
+    hideDropHint();
+    if (!files.length) return;
+    e.preventDefault();
+    st.forceOpen = true;
+    if (!st.enabled) {
+      try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
+      applyEnabled(true);
+    } else {
+      showPanel();
+    }
+    for (var i = 0; i < files.length; i++) loadSubtitleFile(files[i]);
+  }, true);
   // 把外挂轨（原始 cue + 当前偏移）写进 store，供面板/查词消费。偏移让字幕对齐视频时轴。
   function writeExternalTrack(key) {
     var t = st.extTracks[key];
@@ -576,13 +752,28 @@
 
   try {
     chrome.storage.onChanged.addListener(function (changes, area) {
-      if (area !== 'local' || !changes || !changes[SETTING_KEY]) return;
-      applyEnabled(changes[SETTING_KEY].newValue === true);
+      if (area !== 'local' || !changes) return;
+      if (changes[SETTING_KEY]) applyEnabled(changes[SETTING_KEY].newValue === true);
+      var prefs = {};
+      var changed = false;
+      var keys = ['subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll', 'subtitleAutoPause', 'subtitleCondensedPlayback'];
+      for (var i = 0; i < keys.length; i++) {
+        if (changes[keys[i]]) { prefs[keys[i]] = changes[keys[i]].newValue; changed = true; }
+      }
+      if (changed) {
+        prefs.subtitleOverlayEnabled = prefs.subtitleOverlayEnabled == null ? st.overlayEnabled : prefs.subtitleOverlayEnabled;
+        prefs.subtitleDragDropEnabled = prefs.subtitleDragDropEnabled == null ? st.dragDropEnabled : prefs.subtitleDragDropEnabled;
+        prefs.subtitleAutoScroll = prefs.subtitleAutoScroll == null ? st.autoScroll : prefs.subtitleAutoScroll;
+        prefs.subtitleAutoPause = prefs.subtitleAutoPause == null ? st.autoPause : prefs.subtitleAutoPause;
+        prefs.subtitleCondensedPlayback = prefs.subtitleCondensedPlayback == null ? st.condensedPlayback : prefs.subtitleCondensedPlayback;
+        applySubtitlePreferences(prefs);
+      }
     });
   } catch (_) {}
 
   st.tickTimer = setInterval(tick, 200);
 
   // 默认关：读取开关，仅在开启（且已有整集字幕）时才自动显示面板。
+  readSubtitlePreferences();
   readEnabled(applyEnabled);
 })();

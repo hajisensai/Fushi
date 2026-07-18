@@ -1,29 +1,161 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
-<h3>Hibiki Reader Bridge</h3>
-<p style="max-width:32em;color:#555;font-size:13px">
-  These are auto-configured by Hibiki's install helper. Leave a field blank to
-  use the auto-configured default shown as a placeholder; only fill a field to
-  override it.
-</p>
-<label>Host <input id="host"></label><br>
-<label>Port <input id="port" type="number"></label><br>
-<label>Token <input id="token"></label><br>
-<button id="save">Save</button>
-<button id="reset" type="button">Reset to auto</button>
-<span id="status"></span>
-<hr>
-<label><input id="nfSubList" type="checkbox"> Show subtitle list panel on video pages (off by default)</label>
-<p style="max-width:32em;color:#555;font-size:13px">
-  When on, opening a Netflix episode shows a side panel listing the whole
-  episode's subtitles (any subtitle language) with click-to-seek, click-to-look-up
-  and current-line highlight. Leave it off to keep Netflix untouched.
-</p>
-<label><input id="nfHideNext" type="checkbox"> Hide Netflix "Next Episode" button (on by default)</label>
-<p style="max-width:32em;color:#555;font-size:13px">
-  When on, Netflix's end-of-episode "Next Episode" button and post-play overlay,
-  plus the start-of-episode age/maturity-rating badge (which otherwise gets recorded
-  into mined card screenshots), are hidden (visual only; playback is untouched).
-  Uncheck to keep them.
-</p>
-<script src="hibiki-defaults.js"></script>
-<script src="options.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hibiki 浏览器扩展</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div class="hero-mark" aria-hidden="true">響</div>
+      <div>
+        <p class="eyebrow">HIBIKI READER BRIDGE</p>
+        <h1>让字幕留在观看现场</h1>
+        <p class="hero-copy">加载整集或自己的字幕，逐句跳转、查词并制卡。连接和播放偏好都在这里管理。</p>
+      </div>
+    </header>
+
+    <div class="layout">
+      <main class="main-column">
+        <section class="section" aria-labelledby="subtitle-heading">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">字幕工作台</p>
+              <h2 id="subtitle-heading">观看与字幕</h2>
+            </div>
+            <span class="section-note">修改后立即生效</span>
+          </div>
+
+          <div class="setting-list">
+            <label class="setting-row" for="nfSubList">
+              <span class="setting-copy">
+                <strong>字幕列表</strong>
+                <small>在视频页显示可跳转、可查词的整集字幕侧栏。</small>
+              </span>
+              <span class="switch"><input id="nfSubList" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleOverlayEnabled">
+              <span class="setting-copy">
+                <strong>在视频上显示外挂字幕</strong>
+                <small>把当前用户字幕轨叠到视频上；站点自己的字幕不会重复显示。</small>
+              </span>
+              <span class="switch"><input id="subtitleOverlayEnabled" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleDragDropEnabled">
+              <span class="setting-copy">
+                <strong>允许拖放字幕文件</strong>
+                <small>将 SRT、ASS、SSA 或 VTT 拖到视频即可加载，支持多轨。</small>
+              </span>
+              <span class="switch"><input id="subtitleDragDropEnabled" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleAutoScroll">
+              <span class="setting-copy">
+                <strong>列表跟随当前句</strong>
+                <small>播放时自动把当前字幕滚到列表中部。</small>
+              </span>
+              <span class="switch"><input id="subtitleAutoScroll" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="playback-heading">
+          <div class="section-heading compact">
+            <div>
+              <p class="section-kicker">沉浸播放</p>
+              <h2 id="playback-heading">播放模式</h2>
+            </div>
+          </div>
+          <div class="setting-list">
+            <label class="setting-row" for="subtitleAutoPause">
+              <span class="setting-copy">
+                <strong>每句结束时自动暂停</strong>
+                <small>只在字幕句结束时暂停，方便精读和查词。</small>
+              </span>
+              <span class="switch"><input id="subtitleAutoPause" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleCondensedPlayback">
+              <span class="setting-copy">
+                <strong>精简播放</strong>
+                <small>自动跳过当前字幕轨中较长的无字幕区间。</small>
+              </span>
+              <span class="switch"><input id="subtitleCondensedPlayback" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="site-heading">
+          <div class="section-heading compact">
+            <div>
+              <p class="section-kicker">站点适配</p>
+              <h2 id="site-heading">Netflix</h2>
+            </div>
+          </div>
+          <div class="setting-list">
+            <label class="setting-row" for="nfHideNext">
+              <span class="setting-copy">
+                <strong>隐藏“下一集”和分级遮挡</strong>
+                <small>避免剧末按钮、后播层和开场分级标识进入制卡截图。</small>
+              </span>
+              <span class="switch"><input id="nfHideNext" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+          </div>
+        </section>
+      </main>
+
+      <aside class="side-column">
+        <section class="connection" id="connectionCard" data-tone="loading" aria-live="polite">
+          <div class="connection-top">
+            <span class="status-dot" id="connDot" aria-hidden="true"></span>
+            <span class="connection-label">本机服务</span>
+            <button class="icon-button" id="check" type="button" title="重新检测" aria-label="重新检测连接">↻</button>
+          </div>
+          <h2 id="connTitle">正在检测…</h2>
+          <p id="connDetail">确认 Hibiki 的查词与字幕服务状态。</p>
+          <code id="connEndpoint">127.0.0.1:19633</code>
+        </section>
+
+        <details class="advanced" id="advancedConnection">
+          <summary>
+            <span>高级连接设置</span>
+            <small>自动配置失效时使用</small>
+          </summary>
+          <form id="connectionForm">
+            <label class="field">
+              <span>Host</span>
+              <input id="host" autocomplete="off" inputmode="url">
+            </label>
+            <label class="field">
+              <span>Port</span>
+              <input id="port" type="number" min="1" max="65535" inputmode="numeric">
+            </label>
+            <label class="field">
+              <span>Token</span>
+              <span class="token-field">
+                <input id="token" type="password" autocomplete="off">
+                <button id="showToken" type="button" aria-label="显示或隐藏 Token">显示</button>
+              </span>
+            </label>
+            <p class="field-help">留空即使用 Hibiki 安装助手写入的自动配置。</p>
+            <div class="button-row">
+              <button class="primary-button" id="save" type="submit">保存并检测</button>
+              <button class="text-button" id="reset" type="button">恢复自动配置</button>
+            </div>
+          </form>
+        </details>
+
+        <div class="tip">
+          <strong>加载自己的字幕</strong>
+          <p>开启字幕列表后，点侧栏中的“＋”，或直接把字幕文件拖到视频上。</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="save-toast" id="status" role="status" aria-live="polite"></div>
+  <script src="hibiki-defaults.js"></script>
+  <script src="connection-diagnostics.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

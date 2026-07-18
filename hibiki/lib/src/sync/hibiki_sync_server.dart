@@ -452,6 +452,14 @@ class HibikiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _handleDuplicate(request);
     }
+    if (reqPath == '/api/extension/status') {
+      if (method != 'POST') return shelf.Response(405);
+      return _jsonResponse(<String, dynamic>{
+        'app': 'hibiki',
+        'ready': true,
+        'port': port,
+      });
+    }
     if (reqPath == '/api/ping') {
       if (method != 'GET') return shelf.Response(405);
       return _handlePing();
