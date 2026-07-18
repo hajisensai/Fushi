@@ -28,6 +28,12 @@
 
 **另一影响**：C.4 现设计是 Hibiki attach 用户已启动的游戏（post-hoc）——对 KiriKiriZ 这类**启动即建音频设备**的引擎会漏，必须 Hibiki 自己经 injector `--launch` 启动游戏才行（UX/设计取舍：Hibiki 拉起游戏 vs 附着到已开游戏）。
 
+### launch 模式已接进 Hibiki（用户已确认「拉起游戏」这个取舍无所谓）
+
+- **`EngineHookGalAudioSource` 加 launch 模式**：给 `launchExe`（而非 `targetPid`）即走 `injector --launch <exe> --hold`，从 injector stdout 的 `OK hooked pid=<N>` 解析游戏子进程 PID（纯函数 `parseInjectorHookedPid`），再 open 共享内存。`exeIs32Bit(path)` 读 PE COFF Machine 字段（0x014c=x86→true / 0x8664=x64→false）为**待启动的 exe**选 x86/x64 注入器（launch 时游戏还没进程，不能用 `processIsWow64`）。`gamePid` getter 暴露命中 PID。
+- **texthooker UX**：AppBar 加「拉起 galgame（引擎-hook）」按钮（`_launchGalgameEngineHook`）——选 exe→按位数选注入器→拉起+早注入→就绪后以引擎-hook 为音频源，并按游戏 PID 从 `listWindows()`（已带 `pid`）找主窗口绑定（制卡截图）。失败明确 toast、不静默；起不来仍可用「绑窗+loopback」。
+- 验证：analyze 0 issue、`galgame_audio` 37 测过（含 `parseInjectorHookedPid`/`exeIs32Bit` 单测）。**Dart 编排层编译+单测验证**；底层 `injector --launch`+DS 捕获已真机验证（上文），故整链 = 真机验证的注入/捕获 + 编译验证的 Dart 编排。**未做**的仍是干净语音（KiriKiriZ 软件混音，见上）+ 全程 UI 真机跑一遍出卡。
+
 ## 0. 当前状态（起点）
 
 - **分支** `worktree-galgame-mining`（base `develop`），**PR #212（draft）**。仓库 `D:\APP\vs_claude_code\hibiki`（Melos workspace，Flutter app 在 `hibiki/`）。

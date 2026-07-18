@@ -1,9 +1,24 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+
+/// 造一个最小 PE 文件字节：0x3c 处写 PE 头偏移，PE 头处 'PE\0\0' + COFF Machine。
+Uint8List _craftPe(int machine) {
+  const int peOff = 0x80;
+  final Uint8List b = Uint8List(peOff + 6);
+  final ByteData bd = ByteData.sublistView(b);
+  bd.setUint32(0x3c, peOff, Endian.little);
+  b[peOff] = 0x50; // 'P'
+  b[peOff + 1] = 0x45; // 'E'
+  b[peOff + 2] = 0;
+  b[peOff + 3] = 0;
+  bd.setUint16(peOff + 4, machine, Endian.little);
+  return b;
+}
 
 /// galgame 一键制卡（docs/specs/galgame-mining）纯逻辑契约：
 /// - WAV 头拼装 / PCM 时长（编码 helper 的可单测部分）。
@@ -350,6 +365,66 @@ void main() {
           await EngineHookGalAudioSource.targetIsWow64(4321), isNull); // error
       setHandler(null);
       expect(await EngineHookGalAudioSource.targetIsWow64(4321), isNull); // 缺失
+    });
+  });
+
+  group('parseInjectorHookedPid', () {
+    test('解析 OK hooked pid=<N>', () {
+      expect(
+        parseInjectorHookedPid(
+            'OK hooked pid=8152 hooked=1 ring=23040000 sr=0 ch=0'),
+        8152,
+      );
+      expect(
+        parseInjectorHookedPid('noise\nOK hooked pid=42 hooked=1\nmore'),
+        42,
+      );
+    });
+    test('无匹配 / pid=0 -> null', () {
+      expect(parseInjectorHookedPid('inject failed: OpenProcess 5'), isNull);
+      expect(parseInjectorHookedPid(''), isNull);
+      expect(parseInjectorHookedPid('OK hooked pid=0 hooked=0'), isNull);
+    });
+  });
+
+  group('EngineHookGalAudioSource.exeIs32Bit', () {
+    late Directory dir;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('gal_pe_');
+    });
+    tearDown(() async {
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    });
+
+    Future<String> write(String name, Uint8List bytes) async {
+      final File f = File('${dir.path}/$name');
+      await f.writeAsBytes(bytes, flush: true);
+      return f.path;
+    }
+
+    test('IMAGE_FILE_MACHINE_I386 (0x014c) -> 32 位 true', () async {
+      final String p = await write('x86.exe', _craftPe(0x014c));
+      expect(await EngineHookGalAudioSource.exeIs32Bit(p), true);
+    });
+    test('IMAGE_FILE_MACHINE_AMD64 (0x8664) -> 64 位 false', () async {
+      final String p = await write('x64.exe', _craftPe(0x8664));
+      expect(await EngineHookGalAudioSource.exeIs32Bit(p), false);
+    });
+    test('未知 machine (ARM64 0xAA64) -> null', () async {
+      final String p = await write('arm.exe', _craftPe(0xAA64));
+      expect(await EngineHookGalAudioSource.exeIs32Bit(p), isNull);
+    });
+    test('非 PE（坏签名）-> null', () async {
+      final Uint8List bad = _craftPe(0x014c);
+      bad[0x80] = 0x4d; // 破坏 'PE' 签名
+      final String p = await write('bad.exe', bad);
+      expect(await EngineHookGalAudioSource.exeIs32Bit(p), isNull);
+    });
+    test('文件不存在 -> null', () async {
+      expect(
+        await EngineHookGalAudioSource.exeIs32Bit('${dir.path}/nope.exe'),
+        isNull,
+      );
     });
   });
 }

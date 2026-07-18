@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -274,6 +275,81 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
   }
 
+  /// galgame 引擎-hook（launch 模式）：选游戏 exe → 按其位数选 x86/x64 注入器 → Hibiki **拉起
+  /// 游戏并早注入**（CREATE_SUSPENDED；KiriKiriZ 等「启动即建音频设备」的引擎必须走此路，attach
+  /// 会漏）→ 就绪后以引擎-hook 为音频源，并按游戏 PID 找主窗口绑定（制卡截图用）。任一步失败
+  /// 明确 toast、不静默（起不来时保持原状，用户仍可用「绑定窗口 + loopback」路径）。
+  Future<void> _launchGalgameEngineHook() async {
+    if (!Platform.isWindows) {
+      HibikiToast.show(msg: t.external_window_unsupported);
+      return;
+    }
+    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: <String>['exe'],
+    );
+    final String? exe = (picked != null && picked.files.isNotEmpty)
+        ? picked.files.first.path
+        : null;
+    if (exe == null) {
+      return; // 用户取消
+    }
+    final bool? is32 = await EngineHookGalAudioSource.exeIs32Bit(exe);
+    final String? injector = _resolveGalInjectorPath(is32Bit: is32 ?? false);
+    if (injector == null) {
+      HibikiToast.show(
+        msg:
+            'galgame 引擎-hook 注入器缺失（voice_hook/${(is32 ?? false) ? 'x86' : 'x64'}）',
+      );
+      return;
+    }
+    HibikiToast.show(msg: '正在拉起游戏并注入引擎-hook…');
+    final EngineHookGalAudioSource src = EngineHookGalAudioSource(
+      launchExe: exe,
+      injectorPath: injector,
+    );
+    final PcmFormat? fmt = await src.start();
+    if (fmt == null) {
+      await src.stop();
+      HibikiToast.show(msg: 'galgame 引擎-hook 启动/注入失败');
+      return;
+    }
+    // 引擎-hook 就绪：切成当前音频源。
+    await _stopGalAudio();
+    _galAudioSource = src;
+    // 按游戏 PID 找主窗口绑定（制卡截图用）；窗口可能稍后才出现，轮询几次。
+    final int? gpid = src.gamePid;
+    ExternalWindowInfo? win;
+    if (gpid != null) {
+      for (int i = 0; i < 20 && win == null; i++) {
+        for (final ExternalWindowInfo w
+            in await WindowCaptureChannel.listWindows()) {
+          if (w.pid == gpid) {
+            win = w;
+            break;
+          }
+        }
+        if (win == null) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _externalWindowMode = true;
+      if (win != null) {
+        _boundWindow = win;
+      }
+    });
+    HibikiToast.show(
+      msg: win != null
+          ? 'galgame 引擎-hook 就绪（${fmt.sampleRate}Hz/${fmt.channels}ch）'
+          : 'galgame 引擎-hook 就绪；未找到游戏窗口，截图暂不可用',
+    );
+  }
+
   /// 从当前音频源抓最近一段 → 波形选区对话框 → 帧对齐切片 → 编码成 AAC/m4a 容器字节。
   /// 无源 / 无数据 / 用户取消 / 切空 / 编码失败任一步 → 返回 null（调用方退化为纯截图卡）。
   Future<Uint8List?> _captureGalAudioBytes() async {
@@ -418,6 +494,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     : null,
               ),
               onPressed: _toggleExternalWindowMode,
+            ),
+          if (Platform.isWindows)
+            IconButton(
+              // galgame 引擎-hook：Hibiki 拉起游戏 exe 并早注入（KiriKiriZ 等启动即建音频
+              // 设备的引擎必须走此路，见 docs/specs/galgame-mining）。文案暂用中文占位。
+              tooltip: '拉起 galgame（引擎-hook 音频）',
+              icon: const Icon(Icons.rocket_launch_outlined),
+              onPressed: _launchGalgameEngineHook,
             ),
           IconButton(
             tooltip: t.clear,

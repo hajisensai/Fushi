@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 
@@ -134,6 +135,17 @@ PcmFormat? parseGalPcmFormat(Map<Object?, Object?> m) {
   );
 }
 
+/// 从 injector 子进程 stdout 解析 `OK hooked pid=<N> ...` 里的游戏子进程 PID（launch 模式）。
+/// 纯函数，可单测。未匹配 / 无效返回 null。
+int? parseInjectorHookedPid(String stdout) {
+  final RegExpMatch? m = RegExp(r'OK hooked pid=(\d+)').firstMatch(stdout);
+  if (m == null) {
+    return null;
+  }
+  final int? pid = int.tryParse(m.group(1)!);
+  return (pid != null && pid > 0) ? pid : null;
+}
+
 /// C 阶段实现：引擎级 voice hook 的**干净语音**源（混音前抓，无 BGM/SE）。
 ///
 /// 隔离红线（docs/specs/galgame-mining）：注入进游戏、装 XAudio2/DirectSound hook 的代码在
@@ -144,23 +156,37 @@ PcmFormat? parseGalPcmFormat(Map<Object?, Object?> m) {
 ///      组件建好的共享内存（读共享内存不是注入、不被杀软标记，见 voice_hook_reader.cpp）。
 /// 和 [LoopbackGalAudioSource] **同接口**——波形选区/制卡出口零改动；不可用（无 injector /
 /// 未注入 / 无该引擎 / 超时）时 [start] 返回 null，调用方自动回退 loopback（Never break）。
+///
+/// **两种模式**（二选一）：
+///   - **attach**（给 [targetPid]）：附着**已运行**的游戏进程（`injector --pid`）。适合已在跑、
+///     且引擎在注入时刻**之后**才建音频对象的场景。
+///   - **launch**（给 [launchExe]）：由 Hibiki **拉起游戏** exe（`injector --launch <exe>`，
+///     CREATE_SUSPENDED 早注入），在游戏 WinMain 前把 hook 装好——**KiriKiriZ 等「启动即建
+///     DirectSound 设备」的引擎必须走这条**（attach 会漏掉启动时创建的设备）。子进程 PID 由
+///     injector stdout 的 `OK hooked pid=<N>` 回报（[parseInjectorHookedPid] 解析）。
 class EngineHookGalAudioSource implements GalAudioSource {
   EngineHookGalAudioSource({
-    required this.targetPid,
+    this.targetPid = 0,
+    this.launchExe,
     required this.injectorPath,
     MethodChannel? channel,
-    Duration readyTimeout = const Duration(seconds: 8),
+    Duration readyTimeout = const Duration(seconds: 12),
     Duration pollInterval = const Duration(milliseconds: 200),
   })  : _channel =
             channel ?? const MethodChannel('app.hibiki.reader/voice_hook'),
         _readyTimeout = readyTimeout,
         _pollInterval = pollInterval;
 
-  /// 目标游戏进程 PID（注入对象）。<=0 视为无目标 -> 源不可用。
+  /// **attach 模式**目标游戏进程 PID（注入对象）。仅 [launchExe] 为空时用；<=0 且无
+  /// [launchExe] 视为无目标 -> 源不可用。
   final int targetPid;
 
+  /// **launch 模式**要拉起的游戏 exe 绝对路径。非空即走 `injector --launch`，从 injector
+  /// stdout 解析子进程 PID。null -> 走 attach（[targetPid]）。
+  final String? launchExe;
+
   /// injector 可执行文件绝对路径（随 app 分发 / 按需下载）；null 或文件不存在 -> 源不可用
-  /// （降级回 loopback，绝不假装注入成功）。
+  /// （降级回 loopback，绝不假装注入成功）。**位数必须匹配目标游戏**（KiriKiriZ 多 32 位 -> x86）。
   final String? injectorPath;
 
   final MethodChannel _channel;
@@ -169,6 +195,14 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   /// 拉起的 injector 子进程句柄（[stop] 时杀掉）。
   Process? _injector;
+
+  /// 实际注入命中的游戏 PID：attach=`targetPid`；launch=从 injector stdout 解析出的子进程 PID。
+  /// [grabRecent]/`open` 都用它开共享内存。
+  int _effectivePid = 0;
+
+  /// 注入命中的游戏进程 PID（[start] 成功后有效）；未就绪返回 null。launch 模式下调用方据此
+  /// 找游戏主窗口（截图用），因为拉起游戏的是本源、PID 只有它知道。
+  int? get gamePid => _effectivePid > 0 ? _effectivePid : null;
 
   /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
   /// 为 true 即目标为 32 位（多数 KiriKiri galgame），调用方据此选 x86 注入器（DLL 位数必须
@@ -197,27 +231,90 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
+  /// 读 PE 头判断 exe 是否 32 位（launch 模式选 x86/x64 注入器用——待启动的游戏还没进程，只能
+  /// 从文件的 COFF `Machine` 字段判：`0x014c`=x86(32 位,返 true)、`0x8664`=x64(返 false)。
+  /// 文件不存在 / 头损坏 / 非 PE / 未知 machine 返回 null（调用方降级）。
+  static Future<bool?> exeIs32Bit(String path) async {
+    RandomAccessFile? raf;
+    try {
+      final File f = File(path);
+      if (!await f.exists()) {
+        return null;
+      }
+      raf = await f.open();
+      // DOS 头：偏移 0x3c 处 4 字节小端 = PE 头（IMAGE_NT_HEADERS）偏移。
+      await raf.setPosition(0x3c);
+      final Uint8List lfa = await raf.read(4);
+      if (lfa.length < 4) {
+        return null;
+      }
+      final int peOff = lfa.buffer.asByteData().getUint32(0, Endian.little);
+      // PE 头：'PE\0\0'(4) + COFF Machine(2, 小端)。
+      await raf.setPosition(peOff);
+      final Uint8List head = await raf.read(6);
+      if (head.length < 6 ||
+          head[0] != 0x50 || // 'P'
+          head[1] != 0x45 || // 'E'
+          head[2] != 0 ||
+          head[3] != 0) {
+        return null;
+      }
+      final int machine = head.buffer.asByteData().getUint16(4, Endian.little);
+      if (machine == 0x014c) {
+        return true; // IMAGE_FILE_MACHINE_I386
+      }
+      if (machine == 0x8664) {
+        return false; // IMAGE_FILE_MACHINE_AMD64
+      }
+      return null; // 其它（ARM64 等）暂不支持
+    } catch (_) {
+      return null;
+    } finally {
+      await raf?.close();
+    }
+  }
+
   @override
   Future<PcmFormat?> start() async {
     final String? path = injectorPath;
-    if (targetPid <= 0 || path == null || !File(path).existsSync()) {
-      return null; // 无 injector / 无目标 -> 降级
+    if (path == null || !File(path).existsSync()) {
+      return null; // 无 injector -> 降级
+    }
+    final String? exe = launchExe;
+    final bool launchMode = exe != null && exe.isNotEmpty;
+    if (!launchMode && targetPid <= 0) {
+      return null; // 既无 launchExe 又无有效 targetPid -> 无目标
     }
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
+    //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
+    //    attach 模式：`--pid <PID>` 附着已运行进程。
     try {
       _injector = await Process.start(
         path,
-        <String>['--pid', '$targetPid', '--hold'],
+        launchMode
+            ? <String>['--launch', exe, '--hold']
+            : <String>['--pid', '$targetPid', '--hold'],
       );
     } on ProcessException {
       return null;
+    }
+    if (launchMode) {
+      // 等 injector 打印 `OK hooked pid=<子进程>`（注入成功 proof-of-life）解析出游戏 PID。
+      final int? childPid = await _awaitLaunchedPid();
+      if (childPid == null || childPid <= 0) {
+        await stop();
+        return null; // 启动/注入失败（exe 起不来 / 位数不符 / 超时）
+      }
+      _effectivePid = childPid;
+    } else {
+      _effectivePid = targetPid;
     }
     // 2. open 共享内存（injector 已创建），成功后轮询 status 等 hook DLL 注入 + 拿到语音格式。
     try {
       final Map<Object?, Object?>? opened =
           await _channel.invokeMethod<Map<Object?, Object?>>(
         'open',
-        <String, Object?>{'pid': targetPid},
+        <String, Object?>{'pid': _effectivePid},
       );
       if (opened == null || opened['error'] != null) {
         await stop();
@@ -241,6 +338,41 @@ class EngineHookGalAudioSource implements GalAudioSource {
     // 超时未就绪（未注入成功 / 该引擎无捕获）：降级。
     await stop();
     return null;
+  }
+
+  /// launch 模式：读 injector 子进程 stdout，等到 `OK hooked pid=<N>` 解析出游戏子进程 PID。
+  /// [_readyTimeout] 内没等到（exe 起不来 / 注入失败 / injector 提前退出）返回 null。
+  Future<int?> _awaitLaunchedPid() async {
+    final Process? proc = _injector;
+    if (proc == null) {
+      return null;
+    }
+    final Completer<int?> completer = Completer<int?>();
+    final StringBuffer buf = StringBuffer();
+    late final StreamSubscription<String> sub;
+    sub = proc.stdout.transform(const SystemEncoding().decoder).listen(
+      (String chunk) {
+        buf.write(chunk);
+        final int? pid = parseInjectorHookedPid(buf.toString());
+        if (pid != null && !completer.isCompleted) {
+          completer.complete(pid);
+        }
+      },
+      onDone: () {
+        if (!completer.isCompleted) {
+          completer.complete(parseInjectorHookedPid(buf.toString()));
+        }
+      },
+      onError: (Object _) {
+        if (!completer.isCompleted) {
+          completer.complete(null);
+        }
+      },
+    );
+    final int? pid =
+        await completer.future.timeout(_readyTimeout, onTimeout: () => null);
+    await sub.cancel();
+    return pid;
   }
 
   /// 轮询 native `status`：hook 就绪（ready）且格式有效时返回 [PcmFormat]，否则 null。
