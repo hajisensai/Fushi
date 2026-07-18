@@ -205,4 +205,70 @@ void main() {
     expect(session.setRateLimits(downloadBps: 1024 * 1024), isTrue);
     expect(session.setRateLimits(), isTrue);
   }, skip: skip);
+
+  test(
+    'ip_filter blocks the seeder, then clearing it lets the download start',
+    () async {
+      final LocalSeedRig rig = await LocalSeedRig.start(
+          engine: engine!, workDir: tempDir, contentBytes: 1024 * 1024);
+      addTearDown(rig.dispose);
+
+      final EmbeddedTorrentSession? leecher =
+          EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
+      addTearDown(leecher!.close);
+      // 限速让 1MiB 传输持续若干秒，peer 不会秒完即断——保证下面观察到它。
+      leecher.setRateLimits(downloadBps: 64 * 1024);
+
+      // 先封整个回环段：随后 connect_peer 到做种者应被 ip_filter 拒绝，
+      // 30×0.1s 窗口内拿不到元数据（若不生效，1MiB 本地传输早该几百 ms 完成）。
+      expect(leecher.applyIpFilter(<String>['127.0.0.0/8']), isTrue);
+      final HtAddResult added = leecher.addMagnet(rig.magnetUri,
+          savePath: '${tempDir.path}/dl', sequential: true);
+      expect(added.ok, isTrue);
+      for (int i = 0; i < 30; i++) {
+        leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      expect(
+        leecher.listTorrents().single.hasMetadata,
+        isFalse,
+        reason: 'ip_filter should have blocked the only available peer',
+      );
+
+      // 清空过滤器后同一 peer 应可连上并拿到元数据。
+      expect(leecher.applyIpFilter(const <String>[]), isTrue);
+      await _pollUntil(
+        () => leecher.listTorrents().single.hasMetadata,
+        timeout: const Duration(seconds: 30),
+        what: 'metadata after clearing ip_filter',
+        onTick: () =>
+            leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+      );
+
+      // 连上后 peer 列表应 surface 做种者（反吸血判定输入）。限速 64KiB/s 让
+      // 1MiB 传输持续约 16s，peer 全程连着——把 peer 观察绑在真实传输窗口上
+      // 而非独立竞态：推进到进度过半期间，做种者应至少出现一次且喂过字节。
+      int maxSeenDownload = 0;
+      await _pollUntil(
+        () {
+          for (final HtPeerInfo pr
+              in leecher.torrentPeers(rig.infoHash) ?? const <HtPeerInfo>[]) {
+            if (pr.ip == '127.0.0.1' && pr.totalDownload > maxSeenDownload) {
+              maxSeenDownload = pr.totalDownload;
+            }
+          }
+          return leecher.listTorrents().single.progress >= 0.5;
+        },
+        timeout: const Duration(seconds: 60),
+        what: 'download to reach 50% (peer feeding bytes)',
+        onTick: () =>
+            leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+      );
+      // 做种者在传输窗口内出现过并给我们喂了字节。
+      expect(maxSeenDownload, greaterThan(0),
+          reason: 'seeder peer must surface in peer_info with bytes fed to us');
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 }

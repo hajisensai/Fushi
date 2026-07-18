@@ -263,6 +263,55 @@ class HtPieceMap {
   int get haveCount => have.codeUnits.where((int c) => c == 0x31).length;
 }
 
+/// 某种子当前连接的单个 peer（反吸血判定输入）。
+class HtPeerInfo {
+  const HtPeerInfo({
+    required this.ip,
+    required this.port,
+    required this.peerId,
+    required this.client,
+    required this.progress,
+    required this.totalUpload,
+    required this.totalDownload,
+    required this.upSpeed,
+    required this.downSpeed,
+    required this.remoteInterested,
+  });
+
+  final String ip;
+  final int port;
+
+  /// 20 字节 peer_id 的可打印化（不可打印字节转 '.'；前 8 字节常是
+  /// "-XL0012-" 式客户端指纹）。
+  final String peerId;
+  final String client;
+
+  /// peer 自报进度 0~1（可伪造）。
+  final double progress;
+
+  /// 我实际喂给该 peer 的字节（可信，PCB 判定依据）。
+  final int totalUpload;
+  final int totalDownload;
+  final int upSpeed;
+  final int downSpeed;
+  final bool remoteInterested;
+
+  factory HtPeerInfo._fromJson(Map<String, dynamic> json) {
+    return HtPeerInfo(
+      ip: json['ip'] as String? ?? '',
+      port: (json['port'] as num?)?.toInt() ?? 0,
+      peerId: json['peer_id'] as String? ?? '',
+      client: json['client'] as String? ?? '',
+      progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
+      totalUpload: (json['total_upload'] as num?)?.toInt() ?? 0,
+      totalDownload: (json['total_download'] as num?)?.toInt() ?? 0,
+      upSpeed: (json['up_speed'] as num?)?.toInt() ?? 0,
+      downSpeed: (json['down_speed'] as num?)?.toInt() ?? 0,
+      remoteInterested: json['remote_interested'] == true,
+    );
+  }
+}
+
 /// 单个 piece 完成事件（发生序）。
 class HtPieceEvent {
   const HtPieceEvent({required this.id, required this.piece});
@@ -442,6 +491,37 @@ class EmbeddedTorrentSession {
       return _b.ht_apply_first_last_priority(_session, id);
     } finally {
       malloc.free(id);
+    }
+  }
+
+  /// 某种子当前连接的 peer 列表；种子不存在返回 null。
+  List<HtPeerInfo>? torrentPeers(String infoHash) {
+    if (isClosed) return null;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    try {
+      final Object? json =
+          _engine._consumeJson(_b.ht_torrent_peers(_session, id));
+      if (json is! Map<String, dynamic> || json['ok'] != true) return null;
+      final Object? peers = json['peers'];
+      if (peers is! List) return null;
+      return peers
+          .whereType<Map<String, dynamic>>()
+          .map(HtPeerInfo._fromJson)
+          .toList(growable: false);
+    } finally {
+      malloc.free(id);
+    }
+  }
+
+  /// 用 CIDR 列表整体重建 session 的 ip_filter（空列表 = 清空）。已连接的
+  /// 命中 peer 会被断开，新连接直接拒绝。
+  bool applyIpFilter(Iterable<String> cidrs) {
+    if (isClosed) return false;
+    final Pointer<Char> joined = cidrs.join('\n').toNativeUtf8().cast<Char>();
+    try {
+      return _b.ht_apply_ip_filter(_session, joined) == 1;
+    } finally {
+      malloc.free(joined);
     }
   }
 

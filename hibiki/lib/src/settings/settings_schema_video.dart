@@ -743,18 +743,47 @@ SettingsDestination buildVideoDestination() {
       SettingsSection(
         title: t.section_video_anime_download,
         items: <SettingsItem>[
-          // 番剧下载走外部 qBittorrent 实例（WebUI API），Hibiki 不内嵌 BT 引擎。
-          // 四项都是纯 pref（一个 JSON 配置），URL 留空 = 功能未启用。
+          // 后端二选一：外接 qBittorrent（全平台）或内置 libtorrent 引擎
+          // （桌面）。选内置时下面的 qb 连接字段隐藏（内置无需连接参数）。
+          SettingsSegmentedItem<String>(
+            id: 'video.anime_download.backend',
+            title: t.video_setting_torrent_backend,
+            icon: Icons.dns_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: QbConnectionConfig.backendQbittorrent,
+                label: t.video_setting_torrent_backend_qb,
+              ),
+              SettingsSegmentOption<String>(
+                value: QbConnectionConfig.backendEmbedded,
+                label: t.video_setting_torrent_backend_embedded,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.qbConnectionConfig?.backend ??
+                QbConnectionConfig.backendQbittorrent,
+            onChanged: (SettingsContext settingsContext, String backend) async {
+              await _commitQbConfig(
+                settingsContext,
+                (QbConnectionConfig c) => c.copyWith(backend: backend),
+              );
+            },
+          ),
+          // qb 连接字段（内置引擎时隐藏）：纯 pref（一个 JSON 配置），
+          // URL 留空 = 外接后端未启用。
           SettingsCustomItem(
             id: 'video.anime_download.qb_url',
+            visible: _qbBackendSelected,
             builder: _buildQbUrlField,
           ),
           SettingsCustomItem(
             id: 'video.anime_download.qb_username',
+            visible: _qbBackendSelected,
             builder: _buildQbUsernameField,
           ),
           SettingsCustomItem(
             id: 'video.anime_download.qb_password',
+            visible: _qbBackendSelected,
             builder: _buildQbPasswordField,
           ),
           SettingsCustomItem(
@@ -765,6 +794,15 @@ SettingsDestination buildVideoDestination() {
       ),
     ],
   );
+}
+
+/// 当前是否选外接 qBittorrent 后端（决定 qb 连接字段是否显示）。历史配置
+/// 无 backend 字段回退 qb（既有用户看得见连接字段，行为不变）。
+bool _qbBackendSelected(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  return (config?.backend ?? QbConnectionConfig.backendQbittorrent) ==
+      QbConnectionConfig.backendQbittorrent;
 }
 
 /// 读改写 qbConnectionConfig（纯 pref）：取当前（null 视为空配置）→ [mutate] → 落盘。

@@ -100,13 +100,31 @@ dart run ffigen --config ffigen.yaml
 
 无 libclang 的机器上，已入库的手写绑定与 ffigen 输出等价。
 
-## 尚未做（阶段2 及以后）
+## 阶段2/3 已接线（app 侧）
+
+- **后端选择**：`QbConnectionConfig` 加 `backend` 字段（`qbittorrent` /
+  `embedded`；历史配置无此字段回退 qb）。设置→视频→番剧下载新增后端二选一
+  分段控件，选内置时隐藏 qb 连接字段。
+- **`EmbeddedTorrentBackend implements TorrentBackend`**：分类=保存子目录、
+  magnet/.torrent 文件（http URL 拒绝）、firstLastPiecePrio 在 listTorrents
+  轮询期补应用。`closesSession` 区分 standalone（自持会话）与 app 共享会话。
+- **`EmbeddedTorrentHost`**（app 侧宿主）：拥有常驻引擎 + 单 session，派发
+  短命 `backendView()` 给 `AnimeDownloadService` 每 tick 用（视图 close 不
+  连累会话）。桌面且 DLL 可用时 `AppModel.startAnimeDownloadService` 懒建，
+  DLL 缺失回退 qb。
+- **反吸血（阶段3）**：`ht_torrent_peers` 导出 peer_info、`ht_apply_ip_filter`
+  执行封禁；`EmbeddedTorrentHost.sweepAntiLeech` 每 tick 把所有种子 peer 喂
+  `AntiLeechEngine`，新增封段全量重建 libtorrent ip_filter。服务 tick 加
+  `onTick` 钩子（早于 pending 门控，做种期也封）。ip_filter 生效性有测试
+  验证（封回环段 → 元数据死等；清空 → 秒连）。
+
+## 尚未做（阶段4 及以后）
 
 - 未接进 `hibiki/windows/CMakeLists.txt` 的 flutter runner —— 接入前
-  `flutter build windows` 不依赖 vcpkg/libtorrent。阶段2 接
-  `AnimeDownloadService.backendFactory` 全链时一并决定「vcpkg 预装 vs
-  FetchContent vs vendored 预编译」的 app 集成与 DLL 随包方案。
+  `flutter build windows` 不依赖 vcpkg/libtorrent。阶段4 一并决定「vcpkg
+  预装 vs FetchContent vs vendored 预编译」的 app 集成 + DLL 随包方案。
 - http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。
-- 反吸血接线（阶段3）：native 补 peer_info 导出，喂 `AntiLeechEngine`，
-  `BanVerdict` 翻成 libtorrent `ip_filter`。
 - 多平台（Android/macOS/Linux）+ CI 依赖获取策略（阶段4）。
+- 反吸血的真实吸血 peer 触发（PCB 进度作弊需伪造进度的 peer；本地 rig 的
+  做种者诚实，自动化只验 ip_filter 执行力 + peer_info 导出 + sweep 不误封，
+  真封禁触发留真机/阶段4）。

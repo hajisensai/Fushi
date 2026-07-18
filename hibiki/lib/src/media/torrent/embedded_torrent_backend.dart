@@ -20,11 +20,18 @@ class EmbeddedTorrentBackend implements TorrentBackend {
   EmbeddedTorrentBackend({
     required EmbeddedTorrentSession session,
     required String baseSavePath,
+    bool closesSession = true,
   })  : _session = session,
-        _baseSavePath = baseSavePath;
+        _baseSavePath = baseSavePath,
+        _closesSession = closesSession;
 
   final EmbeddedTorrentSession _session;
   final String _baseSavePath;
+
+  /// close() 是否真的销毁底层 session。standalone/测试用途持有自己的
+  /// session → true；app 侧 [EmbeddedTorrentHost] 派发的短命适配器共享
+  /// 常驻 session → false（每 tick 建/关适配器不能连累会话）。
+  final bool _closesSession;
 
   /// 已添加但 firstLastPiecePrio 尚未应用成功（等元数据）的种子。
   final Set<String> _pendingFirstLast = <String>{};
@@ -107,7 +114,9 @@ class EmbeddedTorrentBackend implements TorrentBackend {
   }
 
   @override
-  void close() => _session.close();
+  void close() {
+    if (_closesSession) _session.close();
+  }
 
   String _categoryPath(String category) => p.join(_baseSavePath, category);
 

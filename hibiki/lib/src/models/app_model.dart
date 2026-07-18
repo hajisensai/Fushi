@@ -42,6 +42,10 @@ import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
+import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
+import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
+import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
+import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/anime_download_importer.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
@@ -2737,6 +2741,11 @@ class AppModel with ChangeNotifier {
   AnimeDownloadService? _animeDownloadService;
   AnimeDownloadService? get animeDownloadService => _animeDownloadService;
 
+  /// 内置 libtorrent 下载宿主（桌面且用户选内置后端时懒建；DLL 缺失/加载
+  /// 失败为 null，服务回退外接 qb）。app 释放时 dispose。
+  EmbeddedTorrentHost? _embeddedTorrentHost;
+  EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
+
   /// 启动番剧下载完成监听。幂等（重复调用不重建）；失败由调用方记日志，不破坏 init。
   Future<void> startAnimeDownloadService() async {
     if (_animeDownloadService != null) return;
@@ -2745,12 +2754,42 @@ class AppModel with ChangeNotifier {
     final AnimeDownloadPlanStore store =
         AnimeDownloadPlanStore(baseDir: baseDir);
     _animeDownloadPlanStore = store;
+
+    // 内置引擎宿主：仅桌面（Android/iOS 阶段4/5 再定），且下载根目录就在
+    // 计划目录旁的 `content/` 子目录（分类再往下分）。DLL 未随包/未构建时
+    // open 返回 null，工厂自然回退 qb。
+    if (_supportsEmbeddedTorrent()) {
+      _embeddedTorrentHost = EmbeddedTorrentHost.open(
+        baseSavePath: path.join(baseDir.path, 'content'),
+      );
+    }
+
     _animeDownloadService = AnimeDownloadService(
       store: store,
       configProvider: () => prefsRepo.qbConnectionConfig,
       importer: buildAnimeDownloadImporter(database),
+      backendFactory: _torrentBackendFor,
+      onTick: () => _embeddedTorrentHost?.sweepAntiLeech(),
     )..start();
   }
+
+  /// 后端选择：配置选内置且宿主可用 → 内置引擎的共享 session 视图；否则
+  /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
+  TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
+    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    if (config.backend == QbConnectionConfig.backendEmbedded && host != null) {
+      return host.backendView();
+    }
+    return QbTorrentBackend(QBittorrentClient(
+      baseUrl: config.baseUrl,
+      username: config.username,
+      password: config.password,
+    ));
+  }
+
+  /// 内置 libtorrent 支持的平台：桌面（Windows 先行；mac/Linux 阶段4）。
+  bool _supportsEmbeddedTorrent() =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
   /// 每系列记住的 Jimaku 字幕语言偏好（TODO-674）。
   Map<String, String> get jimakuPreferredLanguages =>
@@ -4029,6 +4068,9 @@ class AppModel with ChangeNotifier {
     }
     _remoteLookupHttpClient?.close();
     _remoteLookupHttpClient = null;
+    _animeDownloadService?.stop();
+    _embeddedTorrentHost?.dispose();
+    _embeddedTorrentHost = null;
     super.dispose();
   }
 

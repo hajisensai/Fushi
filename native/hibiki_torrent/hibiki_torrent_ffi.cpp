@@ -16,6 +16,7 @@
 #include <libtorrent/create_torrent.hpp>
 #include <libtorrent/download_priority.hpp>
 #include <libtorrent/error_code.hpp>
+#include <libtorrent/ip_filter.hpp>
 #include <libtorrent/magnet_uri.hpp>
 #include <libtorrent/session.hpp>
 #include <libtorrent/session_params.hpp>
@@ -26,6 +27,7 @@
 #include <libtorrent/torrent_status.hpp>
 #include <libtorrent/version.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -494,6 +496,138 @@ HT_EXPORT int ht_apply_first_last_priority(void* session,
     return 1;
   } catch (...) {
     return -1;
+  }
+}
+
+HT_EXPORT char* ht_torrent_peers(void* session, const char* info_hash) {
+  if (session == nullptr) return json_error("session is null");
+  try {
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return json_error("torrent not found");
+    std::vector<lt::peer_info> peers;
+    h.get_peer_info(peers);
+    std::string out = "{\"ok\":true,\"peers\":[";
+    bool first = true;
+    for (const lt::peer_info& pi : peers) {
+      if (!first) out += ',';
+      first = false;
+      out += '{';
+      append_json_str_field(out, "ip", pi.ip.address().to_string());
+      out += ",\"port\":" + std::to_string(pi.ip.port()) + ',';
+      // peer_id：20 字节，前 8 字节常是 ASCII 客户端指纹（如 "-XL0012-"）；
+      // 不可打印字节转 '.'，黑名单前缀匹配仍成立。
+      std::string pid;
+      pid.reserve(20);
+      for (const char byte : pi.pid) {
+        const unsigned char b = static_cast<unsigned char>(byte);
+        pid += (b >= 0x20 && b < 0x7f) ? char(b) : '.';
+      }
+      append_json_str_field(out, "peer_id", pid);
+      out += ',';
+      append_json_str_field(out, "client", pi.client);
+      out += ",\"progress\":" + std::to_string(pi.progress);
+      out += ",\"total_upload\":" + std::to_string(pi.total_upload);
+      out += ",\"total_download\":" + std::to_string(pi.total_download);
+      out += ",\"up_speed\":" + std::to_string(pi.up_speed);
+      out += ",\"down_speed\":" + std::to_string(pi.down_speed);
+      out += std::string(",\"remote_interested\":") +
+             (bool(pi.flags & lt::peer_info::remote_interested) ? "true"
+                                                                : "false");
+      out += '}';
+    }
+    out += "]}";
+    return dup_string(out);
+  } catch (const std::exception& e) {
+    return json_error(e.what());
+  } catch (...) {
+    return json_error("unknown error in ht_torrent_peers");
+  }
+}
+
+namespace {
+
+// "a.b.c.d/nn" / "x::y/nn" → 该 CIDR 段的 [first, last] 地址对；解析失败
+// 返回 false。前缀缺省当 /32（v4）或 /128（v6）单地址。
+bool cidr_range(const std::string& cidr, lt::address& first,
+                lt::address& last) {
+  std::string ip = cidr;
+  int prefix = -1;
+  const std::size_t slash = cidr.rfind('/');
+  if (slash != std::string::npos) {
+    ip = cidr.substr(0, slash);
+    try {
+      prefix = std::stoi(cidr.substr(slash + 1));
+    } catch (...) {
+      return false;
+    }
+  }
+  lt::error_code ec;
+  const lt::address addr = lt::make_address(ip, ec);
+  if (ec) return false;
+  if (addr.is_v4()) {
+    if (prefix < 0 || prefix > 32) prefix = 32;
+    const std::uint32_t base = addr.to_v4().to_uint();
+    const std::uint32_t mask =
+        prefix == 0 ? 0u : ~std::uint32_t(0) << (32 - prefix);
+    first = boost::asio::ip::address_v4(base & mask);
+    last = boost::asio::ip::address_v4((base & mask) | ~mask);
+    return true;
+  }
+  if (prefix < 0 || prefix > 128) prefix = 128;
+  auto bytes_first = addr.to_v6().to_bytes();
+  auto bytes_last = bytes_first;
+  for (int i = 0; i < 16; ++i) {
+    const int bit_start = i * 8;
+    if (prefix <= bit_start) {
+      bytes_first[std::size_t(i)] = 0x00;
+      bytes_last[std::size_t(i)] = 0xff;
+    } else if (prefix < bit_start + 8) {
+      const unsigned char mask =
+          static_cast<unsigned char>(0xff << (bit_start + 8 - prefix));
+      bytes_first[std::size_t(i)] &= mask;
+      bytes_last[std::size_t(i)] |= static_cast<unsigned char>(~mask);
+    }
+  }
+  first = boost::asio::ip::address_v6(bytes_first);
+  last = boost::asio::ip::address_v6(bytes_last);
+  return true;
+}
+
+}  // namespace
+
+HT_EXPORT int ht_apply_ip_filter(void* session, const char* cidrs) {
+  if (session == nullptr) return 0;
+  try {
+    lt::ip_filter filter;
+    if (cidrs != nullptr) {
+      const std::string all(cidrs);
+      std::size_t pos = 0;
+      while (pos <= all.size()) {
+        std::size_t end = all.find('\n', pos);
+        if (end == std::string::npos) end = all.size();
+        std::string line = all.substr(pos, end - pos);
+        // 去首尾空白（含 \r）。
+        while (!line.empty() && std::isspace(
+                                    static_cast<unsigned char>(line.back()))) {
+          line.pop_back();
+        }
+        while (!line.empty() && std::isspace(static_cast<unsigned char>(
+                                    line.front()))) {
+          line.erase(line.begin());
+        }
+        if (!line.empty()) {
+          lt::address first, last;
+          if (cidr_range(line, first, last)) {
+            filter.add_rule(first, last, lt::ip_filter::blocked);
+          }
+        }
+        pos = end + 1;
+      }
+    }
+    as_session(session)->set_ip_filter(filter);
+    return 1;
+  } catch (...) {
+    return 0;
   }
 }
 

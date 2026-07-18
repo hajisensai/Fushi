@@ -254,6 +254,37 @@ class HibikiTorrentBindings {
   late final _ht_apply_first_last_priority = _ht_apply_first_last_priorityPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
 
+  /// 某种子当前连接的 peer 列表；返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_torrent_peers(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_torrent_peers(session, info_hash);
+  }
+
+  late final _ht_torrent_peersPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_torrent_peers');
+  late final _ht_torrent_peers = _ht_torrent_peersPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// 用换行分隔的 CIDR 列表整体重建 ip_filter。1 成功 0 失败。
+  int ht_apply_ip_filter(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> cidrs,
+  ) {
+    return _ht_apply_ip_filter(session, cidrs);
+  }
+
+  late final _ht_apply_ip_filterPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_apply_ip_filter');
+  late final _ht_apply_ip_filter = _ht_apply_ip_filterPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
   /// 移除种子。1 成功 0 失败。
   int ht_remove_torrent(
     ffi.Pointer<ffi.Void> session,
