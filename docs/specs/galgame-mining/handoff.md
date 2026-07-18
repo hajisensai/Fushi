@@ -32,7 +32,19 @@
 
 - **`EngineHookGalAudioSource` 加 launch 模式**：给 `launchExe`（而非 `targetPid`）即走 `injector --launch <exe> --hold`，从 injector stdout 的 `OK hooked pid=<N>` 解析游戏子进程 PID（纯函数 `parseInjectorHookedPid`），再 open 共享内存。`exeIs32Bit(path)` 读 PE COFF Machine 字段（0x014c=x86→true / 0x8664=x64→false）为**待启动的 exe**选 x86/x64 注入器（launch 时游戏还没进程，不能用 `processIsWow64`）。`gamePid` getter 暴露命中 PID。
 - **texthooker UX**：AppBar 加「拉起 galgame（引擎-hook）」按钮（`_launchGalgameEngineHook`）——选 exe→按位数选注入器→拉起+早注入→就绪后以引擎-hook 为音频源，并按游戏 PID 从 `listWindows()`（已带 `pid`）找主窗口绑定（制卡截图）。失败明确 toast、不静默；起不来仍可用「绑窗+loopback」。
-- 验证：analyze 0 issue、`galgame_audio` 37 测过（含 `parseInjectorHookedPid`/`exeIs32Bit` 单测）。**Dart 编排层编译+单测验证**；底层 `injector --launch`+DS 捕获已真机验证（上文），故整链 = 真机验证的注入/捕获 + 编译验证的 Dart 编排。**未做**的仍是干净语音（KiriKiriZ 软件混音，见上）+ 全程 UI 真机跑一遍出卡。
+- 验证：analyze 0 issue、`galgame_audio` 37 测过（含 `parseInjectorHookedPid`/`exeIs32Bit` 单测）。
+
+### ✅✅ 全链真机集成测试通过（2026-07-18，在真实 hibiki.exe 测试宿主内）
+
+`integration_test/galgame_engine_hook_launch_test.dart`：在真实 hibiki.exe 里直接跑 `EngineHookGalAudioSource(launchExe).start()` → `injector --launch` 拉起 otomeki.exe → 早注入 → DirectSound hook → 共享内存环形 → **hibiki.exe 自己的 `voice_hook` native channel `grabRecent(3000)`**。结果：
+```
+GALTEST OK fmt=44100/2/16 float=false pcmBytes=529200   (=3s×44100×2×2，非静音；All tests passed)
+```
+即**整条 Dart 编排 + native voice_hook channel + 早注入 + DS 捕获在真实 app 进程里端到端跑通、抓到真实 3 秒非静音 PCM**（不再只是「Dart 编译验证 + 底层单独真机」）。
+
+安全隔离（关键，供复现）：测试**不初始化 AppModel/Drift DB**（只 pump 平凡 widget），且经 `tool/run_windows_itest.ps1` 用 **`HIBIKI_TEST_ROOT`** 把数据根重定向到一次性 `isolated-root`——**绝不碰生产库**（`D:\APP\HIBIKI_date` 是 `data_root` pref 覆盖的产物；`HIBIKI_TEST_ROOT` 在 `_resolveSupportRoot` app_paths.dart:147-148 是**第一分支**、短路 pref）。且当前分支 schemaVersion=45，打开更高版本库会**抛 `HibikiDatabaseDowngradeException` 拒绝、不 DROP**（database.dart:403-420 已根因拦截旧红线）。测试用 env `GALTEST_GAME_EXE`/`GALTEST_INJECTOR` 指素材，缺则 skip（CI/无游戏机自动跳过）。生产 Hibiki 进程全程未受影响、游戏+injector 测后按 PID 精确收尸。
+
+**仍未做**：干净语音（KiriKiriZ 软件混音 → DS 输出 hook 抓的是混音，非孤立语音；需引擎内部 per-channel = C.3）；波形选区对话框 + Anki 出卡的**全 UI**真机走查（本集成测试直测音频源、未过 UI/制卡出口）。
 
 ## 0. 当前状态（起点）
 
