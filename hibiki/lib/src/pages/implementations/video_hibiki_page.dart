@@ -932,6 +932,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 让窗口与全屏两种场景都随 L 键 / 入口按钮翻转可见。
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
 
+  /// BUG-877：字幕列表面板左边缘拖拽中的临时宽度（逻辑像素）。仅拖动期间非 null，
+  /// [_subtitleJumpSidePanel] 优先用它实时反映拖动；拖动结束落 Drift preferences 后复位 null，
+  /// 回到读持久化值。避免每次 `onHorizontalDragUpdate` 都写 DB。
+  double? _subtitleListWidthDrag;
+
   /// 剧集列表 push-aside 侧栏可见性（TODO-638）。剧集列表此前是
   /// `showModalBottomSheet`（底部弹层），与其它侧栏（字幕列表 push-aside、设置 /
   /// 倍速等 overlay）显示风格不一致。改成与字幕列表同款的 push-aside 侧栏后，可见性
@@ -1218,6 +1223,43 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [_onDismissBarrierTap] / [VideoSubtitleListHitTester]）。
   final VideoSubtitleListHitTester _subtitleListHitTester =
       VideoSubtitleListHitTester();
+
+  /// BUG-880：最后一次已知的全局指针位置。桌面查词只在鼠标**移动**派发的 `PointerHoverEvent`
+  /// 上触发（画面字幕 overlay 的 `_handleShiftHover`、字幕列表行的 hover、barrier 的
+  /// [_onDismissBarrierHover] 都如此），故光标停在词上不动、按 Shift 却因「没有 hover 移动
+  /// 事件」而查不出来——用户报的「按了不出」核心根因。页面根 [Listener.onPointerHover] 与
+  /// [_onDismissBarrierHover] 持续把最新位置写进这里，Shift 按下瞬间即在此位置反查立即查词。
+  Offset _lastGlobalPointerPos = Offset.zero;
+
+  /// BUG-880：Shift 键按下瞬间用 [_lastGlobalPointerPos] 反查字幕字符并立即查词（不必抖鼠标）。
+  /// 先查画面字幕命中句柄（[_subtitleHitTester]，含嵌套门控 [shouldSwitchWordOnBarrierTap]），
+  /// 未命中再查字幕列表侧栏（[_subtitleListHitTester]）。命中即走与移动触发的 hover 换词同一
+  /// 去重入口 / 列表查词入口，故与连续 hover 查词天然去重、不会同词双查。[Offset.zero]（尚无
+  /// hover：移动端或刚进页面）不触发。
+  void _triggerShiftLookupAtLastPointer() {
+    if (_lastGlobalPointerPos == Offset.zero) return;
+    final SubtitleCharHit? hit =
+        _subtitleHitTester.hitTest(_lastGlobalPointerPos);
+    if (hit != null) {
+      if (VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        topVisibleIndex: _topVisiblePopupIndex,
+        hitSubtitle: true,
+      )) {
+        _handleSubtitleHoverLookup(
+            hit.sentence, hit.graphemeIndex, hit.charRect);
+      }
+      return;
+    }
+    final SubtitleListHit? listHit =
+        _subtitleListHitTester.hitTest(_lastGlobalPointerPos);
+    if (listHit != null) {
+      _handleSubtitleListLookup(
+        listHit.cue,
+        listHit.graphemeIndex,
+        listHit.charRect,
+      );
+    }
+  }
 
   /// 承载查词浮层栈的根 Overlay 入口；非空时浮层栈渲染在根 Overlay（窗口/全屏统一，
   /// 全屏时浮在 media_kit 全屏路由之上）。栈空时移除、栈变化时 `markNeedsBuild`。
@@ -3258,6 +3300,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 命中同一字符（同句同 grapheme）短路去重，避免同词反复 `replaceStack` 闪烁 / 刷 FFI。
   /// 换词经 [_handleSubtitleLookupTap] → [_lookupAt]（`replaceStack: true` 复用热槽无缝替换）。
   void _onDismissBarrierHover(PointerHoverEvent event) {
+    // BUG-880：浮层打开时 barrier 盖住一切、页面根 Listener 收不到 hover，故在此持续更新
+    // 最后指针位置，让「静止光标 + 按 Shift」在浮层已开时也能立即换词（在 Shift 门控之前，
+    // 未按 Shift 也照常记录）。
+    _lastGlobalPointerPos = event.position;
     if (!HardwareKeyboard.instance.isShiftPressed &&
         !ReaderHibikiSource.instance.hoverAutoLookup) {
       // 未按 Shift 且未开「悬停即查词」：复位节流锚 + 去重键，使下次按 Shift 进入即触发。
@@ -3278,15 +3324,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 命中反查复用与 barrier 点击换词（[_onDismissBarrierTap]）同一命中句柄，全局坐标契约
     // 一致（[PointerHoverEvent.position] 已是全局坐标）。
     final SubtitleCharHit? hit = _subtitleHitTester.hitTest(event.position);
-    // 非嵌套（仅顶层可见）且命中字幕字符才换词——与点 barrier 换词的
+    // 非嵌套（仅顶层可见）且命中画面字幕字符才换词——与点 barrier 换词的
     // [shouldSwitchWordOnBarrierTap] 同门控（嵌套态换词会误把整栈 replaceStack 替换掉）。
-    if (!VideoHibikiPage.shouldSwitchWordOnBarrierTap(
-      topVisibleIndex: _topVisiblePopupIndex,
-      hitSubtitle: hit != null,
-    )) {
+    if (hit != null &&
+        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+          topVisibleIndex: _topVisiblePopupIndex,
+          hitSubtitle: true,
+        )) {
+      _handleSubtitleHoverLookup(hit.sentence, hit.graphemeIndex, hit.charRect);
       return;
     }
-    _handleSubtitleHoverLookup(hit!.sentence, hit.graphemeIndex, hit.charRect);
+    // BUG-879/881：画面字幕没命中，再反查**字幕列表侧栏**——barrier 全屏盖在推挤式侧栏上，
+    // 抢走 hover，故 Shift 悬停列表里下一个词若不在此反查就连续换不了词（与 barrier tap 的
+    // 列表兜底 [_onDismissBarrierTap] 对称）。复用 barrier hover 的「同句同 grapheme」去重键
+    // （cue.text 作句 key）避免同词反复 replaceStack 闪烁。
+    final SubtitleListHit? listHit =
+        _subtitleListHitTester.hitTest(event.position);
+    if (listHit != null) {
+      if (listHit.cue.text == _barrierHoverLastSentence &&
+          listHit.graphemeIndex == _barrierHoverLastGrapheme) {
+        return;
+      }
+      _barrierHoverLastSentence = listHit.cue.text;
+      _barrierHoverLastGrapheme = listHit.graphemeIndex;
+      _handleSubtitleListLookup(
+        listHit.cue,
+        listHit.graphemeIndex,
+        listHit.charRect,
+      );
+    }
   }
 
   /// 悬停查词的统一去重入口（BUG-861）：字幕盒自己的 [MouseRegion]（`onCharHover` →
@@ -3858,6 +3924,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: (FocusNode node, KeyEvent event) {
+          // BUG-880：Shift 按下瞬间在最后指针位置反查字幕字符立即查词，根治「光标停在词上
+          // 不动、按 Shift 却不触发」（查词只在鼠标移动的 hover 事件上派发）。不消费按键，
+          // Shift 组合键 / 其它快捷键行为不变。
+          if (event is KeyDownEvent &&
+              (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+                  event.logicalKey == LogicalKeyboardKey.shiftRight)) {
+            _triggerShiftLookupAtLastPointer();
+          }
           // BUG-853：IME 改写成 process 的裸空格上浮到此，先按物理键还原播放/暂停；
           // 其余键交回手柄原生入口，行为不变。
           if (_handleVideoImeSpacePlayPause(event)) {
@@ -3865,7 +3939,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           }
           return _handleVideoGamepadNativeKey(node, event);
         },
-        child: child,
+        // BUG-880：页面根持续记录全局指针位置（不消费、不影响下层控制条 / 查词手势），供
+        // Shift 按下时反查。浮层打开后 barrier 盖住这里收不到 hover，由 [_onDismissBarrierHover]
+        // 接力更新同一字段。
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerHover: (PointerHoverEvent event) =>
+              _lastGlobalPointerPos = event.position,
+          child: child,
+        ),
       ),
     );
   }

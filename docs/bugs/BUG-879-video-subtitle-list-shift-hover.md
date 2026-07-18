@@ -1,0 +1,6 @@
+## BUG-879 · 字幕列表单词无法 Shift 悬停查词
+- **报告**：2026-07-18（用户：看 2 分钟动漫默认设置反馈，第 3 点）
+- **真实性**：✅ 真 bug（设计缺口）。根因 `hibiki/lib/src/media/video/video_subtitle_jump_panel.dart`：列表行文本只挂 `GestureDetector.onTapUp` 查词，行 `MouseRegion` 只做 hover 高亮（`onEnter/onExit`），**没有 `onHover` 查词**；而画面字幕 overlay 有完整 Shift-hover 链（`video_subtitle_overlay.dart` 的 `_handleShiftHover`）。两条路径不对称，故在列表上按住 Shift 悬停什么都不触发（用户报「按 Shift 探不出来」）。
+- **[x] ① 已修复** — 给列表行文本（`_buildRowText`）叠 `MouseRegion.onHover`（`opaque:false` 不阻断外层高亮 / 点击 / 滚动），命中复用行内 `hitAt` + `onLookupCue`，门控（开了「悬停即查词」则纯悬停、否则按住 Shift）+ 8px 阈值 + 同 cue 同 grapheme 短路去重，全部与 overlay `_handleShiftHover` 同构；`hoverAutoLookupEnabled` 由 `subtitle.part.dart` 从 `ReaderHibikiSource.instance.hoverAutoLookup` 传入。浮层已开时列表 hover 换词由 barrier 兜底（见 BUG-881）；静止光标按 Shift 由 BUG-880 兜底。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_jump_panel_test.dart`（BUG-879：未按 Shift 悬停不查词；按住 Shift 移到另一字符即对该字符 `onLookupCue`，命中光标下的 grapheme）+ 同文件 source guard（行文本挂 `onHover: handleRowHover` + 读 `isShiftPressed`）；`hibiki/test/pages/video_subtitle_list_zoom_lookup_wiring_guard_test.dart`（面板收到 `hoverAutoLookupEnabled`）。
+- **备注**：与 BUG-880/881 同一 PR（列表查词三点同源：列表原是查词体系二等公民）。真机验收 Shift-hover 手感。

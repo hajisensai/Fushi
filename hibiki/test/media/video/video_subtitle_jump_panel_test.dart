@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_player_controller.dart';
@@ -1399,6 +1401,146 @@ void main() {
           reason: 'un-favoriting must drop the row immediately, not keep a '
               'stale cached member');
       expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
+    });
+
+    // ── BUG-878：行字号档位持久化 + 上限提到 2.0× ──────────────────────────
+    testWidgets(
+        'BUG-878: initialFontScaleIndex seeds the row font (persists across '
+        'reopen) and the max step reaches 2.0x', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
+
+      double fontOf(String text) =>
+          tester.widget<Text>(find.text(text)).style!.fontSize!;
+
+      // 种子档位 = 最大档（下标 6 = 2.0×），基准 fontSize 14 → 有效 28。旧上限只到 1.3×
+      // （最大 18.2），撤修复 → 数组不含 2.0 / 种子回默认 → 字号回 14 → 红。
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        key: const ValueKey<String>('seed-max'),
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        initialFontScaleIndex: 6,
+        fontSize: 14,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      expect(fontOf('sized'), closeTo(28.0, 0.01),
+          reason: '种子字号档位 6 = 2.0× × 基准 14 = 28（持久化 + 提高上限）');
+      // 已在最大档：A+ 应禁用（越界短路不再放大）。
+      final IconButton increase = tester.widget<IconButton>(
+        find.ancestor(
+          of: find.byIcon(Icons.text_increase),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(increase.onPressed, isNull, reason: '已在最大档，A+ 禁用');
+    });
+
+    testWidgets(
+        'BUG-878: stepping font fires onFontScaleIndexChanged with the new '
+        'index (to persist)', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+      final List<int> changes = <int>[];
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        initialFontScaleIndex: 1,
+        onFontScaleIndexChanged: changes.add,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.pump();
+      expect(changes, <int>[2], reason: 'A+ 报新档位 2 供页面层落盘');
+      await tester.tap(find.byIcon(Icons.text_decrease));
+      await tester.pump();
+      expect(changes, <int>[2, 1], reason: 'A- 报回档位 1');
+    });
+
+    // ── BUG-879：字幕列表行 Shift-悬停查词（与画面字幕对称）─────────────────
+    testWidgets(
+        'BUG-879: shift-hover over a row character fires onLookupCue; plain '
+        'hover without shift does not', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      const String sentence = 'abcdefg';
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+      AudioCue? lookedUp;
+      int? lookupIndex;
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onLookupCue: (AudioCue c, int i, Rect r) {
+          lookedUp = c;
+          lookupIndex = i;
+        },
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+        width: 320,
+      )));
+
+      final ({int graphemeIndex, Offset tapPoint}) charA =
+          _tapPointForGrapheme(tester, sentence, 'a');
+      final ({int graphemeIndex, Offset tapPoint}) charE =
+          _tapPointForGrapheme(tester, sentence, 'e');
+
+      final TestGesture gesture =
+          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+
+      // 未按 Shift 悬停某字符：不查词（仅高亮，复位节流锚）。
+      await gesture.moveTo(charA.tapPoint);
+      await tester.pump();
+      expect(lookedUp, isNull, reason: '未按 Shift 悬停不查词');
+
+      // 按住 Shift 后移动到另一个字符：立即对该字符查词（与画面字幕 Shift-hover 对称）。
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      addTearDown(() => tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft));
+      await gesture.moveTo(charE.tapPoint);
+      await tester.pump();
+      expect(lookedUp, isNotNull,
+          reason: 'Shift 悬停列表字符必须查词（BUG-879：原本列表只挂 tap、无 hover）');
+      expect(lookedUp!.text, sentence);
+      expect(lookupIndex, charE.graphemeIndex, reason: 'Shift 悬停命中的是光标下那个字符');
+    });
+
+    // Source guard：列表行文本层挂了 Shift-悬停查词（MouseRegion.onHover + 命中 + onLookup），
+    // 而非只有 tap。撤 BUG-879（删 handleRowHover / MouseRegion.onHover）→ 红。
+    test('BUG-879 source guard: row text has a shift-hover lookup path', () {
+      final String source =
+          File('lib/src/media/video/video_subtitle_jump_panel.dart')
+              .readAsStringSync();
+      final String body = _sourceBetween(
+        source,
+        'Widget _buildRowText(',
+        'Widget _buildSelectionCheckbox',
+      );
+      expect(body, contains('onHover: handleRowHover'),
+          reason: '行文本必须挂 MouseRegion.onHover 走 Shift-悬停查词');
+      expect(body, contains('isShiftPressed'),
+          reason: 'hover 查词门控需读 Shift 键状态');
     });
   });
 

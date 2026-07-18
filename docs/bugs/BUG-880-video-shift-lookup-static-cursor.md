@@ -1,0 +1,6 @@
+## BUG-880 · Shift 查词静止光标不触发（"按了不出"）
+- **报告**：2026-07-18（用户：看 2 分钟动漫默认设置反馈，第 4 点「shift 查词很慢、经常按了不出」）
+- **真实性**：✅ 真 bug。根因：桌面 Shift 查词**只绑在 `MouseRegion.onHover`（`PointerHoverEvent`）上**（画面字幕 `video_subtitle_overlay.dart` 的 `_handleShiftHover`、字幕列表行 hover、浮层 barrier `video_hibiki_page.dart` 的 `_onDismissBarrierHover` 都如此），而 Flutter 只在鼠标**移动**时派发 hover 事件 → 光标停在词上不动、按 Shift 却不产生 hover 事件 → 不查词，必须抖一下鼠标（用户报「按了不出」）。「慢」= 查词最终走 WebView + FFI 往返（架构性，已有热槽预热 / 异步 pause 缓解，非本 bug 单点）。
+- **[x] ① 已修复** — `hibiki/lib/src/pages/implementations/video_hibiki_page.dart`：页面根 `Listener.onPointerHover` 持续记录 `_lastGlobalPointerPos`（浮层盖住时由 `_onDismissBarrierHover` 接力更新）；`_wrapVideoGamepadControls` 的 `Focus.onKeyEvent` 里，Shift（`shiftLeft/shiftRight`）`KeyDownEvent` 触发 `_triggerShiftLookupAtLastPointer` —— 用最后指针位置先反查画面字幕 `_subtitleHitTester`（含嵌套门控），未命中再反查列表 `_subtitleListHitTester`，命中即走与 hover 换词同一去重入口，天然与连续 hover 去重。不消费按键（Shift 组合键 / 其它快捷键不变）。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_subtitle_list_zoom_lookup_wiring_guard_test.dart`（BUG-880 组：页面根 `onPointerHover` 记录 `_lastGlobalPointerPos`；Shift `KeyDownEvent` 触发 `_triggerShiftLookupAtLastPointer`；该方法同时反查画面字幕 + 列表两个命中句柄）。页面级 barrier / 键盘链路无法在无头 libmpv 下驱动，按源扫描守卫（与既有 `video_subtitle_list_wiring_guard_test.dart` 同范式）。
+- **备注**：与 BUG-879/881 同一 PR。真机验收：光标停词上按 Shift 即出词、不必抖鼠标。

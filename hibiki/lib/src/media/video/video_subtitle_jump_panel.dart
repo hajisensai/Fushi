@@ -1,5 +1,7 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/utils.dart';
@@ -29,7 +31,22 @@ double subtitleTimestampColumnWidth(double effectiveFontSize, bool hasHours) {
   return scaled < floor ? floor : scaled;
 }
 
-const List<double> _kFontScaleSteps = <double>[0.85, 1.0, 1.15, 1.3];
+/// 字幕列表行字号缩放档位（BUG-878）。原上限只到 1.3×，用户反馈「字号拉到最大才够用、
+/// 上限不够」，向上扩到 2.0×（1.5 / 1.75 / 2.0 三档）。默认档 [_kDefaultFontScaleIndex]=1
+/// （1.0×）。数组扩容后旧持久化下标仍安全（seed / [_stepFont] 都 clamp 到数组范围）。
+const List<double> _kFontScaleSteps = <double>[
+  0.85,
+  1.0,
+  1.15,
+  1.3,
+  1.5,
+  1.75,
+  2.0,
+];
+
+/// 默认字号档位（1.0×）。持久化 key 从未写过时的初值，与 `preferences_repository.dart`
+/// 的 `videoSubtitleListFontScaleIndex` 默认值一致。
+const int _kDefaultFontScaleIndex = 1;
 
 /// 字幕列表行内点击命中的字符：被点 grapheme 下标 + 该字符的全局屏幕矩形。
 /// 供 [VideoSubtitleJumpPanel.onLookupCue] 精确查词（TODO-340）。
@@ -179,6 +196,9 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.onClearCueSelection,
     this.initialAutoScroll = true,
     this.onAutoScrollChanged,
+    this.initialFontScaleIndex = _kDefaultFontScaleIndex,
+    this.onFontScaleIndexChanged,
+    this.hoverAutoLookupEnabled = false,
     this.fontSize = 14,
     this.width = 320,
   });
@@ -218,6 +238,22 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// 但不通知外部持久化（部分调用方 / 测试不接落盘）。
   final ValueChanged<bool>? onAutoScrollChanged;
 
+  /// 行字号档位初值（BUG-878）：面板内 [_fontScaleIndex] 以此为种子（seed 时 clamp 到
+  /// [_kFontScaleSteps] 范围），用户 A+/A- 或 Ctrl+滚轮调节时回调 [onFontScaleIndexChanged]
+  /// 通知页面层落 Drift preferences。默认 [_kDefaultFontScaleIndex]（1.0×，向后兼容：
+  /// 旧调用方 / 测试不传即默认档）。
+  final int initialFontScaleIndex;
+
+  /// 用户调节行字号档位时回调（BUG-878）。null 时仍可调（纯本地），但不通知外部持久化
+  /// （部分调用方 / 测试不接落盘）。旧版本字号是纯内存 State、每次重开重置，这条回调让它
+  /// 跨开关 / 跨重启记住。
+  final ValueChanged<int>? onFontScaleIndexChanged;
+
+  /// 「悬停即查词」门控（BUG-879，与 `VideoSubtitleOverlay.hoverAutoLookupEnabled` 同源）：
+  /// true 时列表行文本纯悬停即查词，false 时退回按住 Shift 悬停才查词。由页面层从
+  /// `ReaderHibikiSource.instance.hoverAutoLookup` 传入。默认 false（向后兼容）。
+  final bool hoverAutoLookupEnabled;
+
   final double fontSize;
   final double width;
 
@@ -235,8 +271,27 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   int _hoveredIndex = -1;
   late bool _autoScroll = widget.initialAutoScroll;
   bool _scrollPostFrameScheduled = false;
-  int _fontScaleIndex = 1;
+  // BUG-878：字号档位以持久化初值为种子（clamp 防越界），不再每次重开都回默认档。
+  late int _fontScaleIndex =
+      widget.initialFontScaleIndex.clamp(0, _kFontScaleSteps.length - 1);
   VideoSubtitleListFilter _filter = VideoSubtitleListFilter.all;
+
+  /// BUG-878：Ctrl / ⌘ 是否按住。按住时列表滚动物理改为 [NeverScrollableScrollPhysics]，
+  /// 让 Ctrl+滚轮只缩字号而不同时滚动列表（裸滚轮仍正常滚列表，浏览器式缩放）。由
+  /// [_handleHardwareKey]（挂在 [HardwareKeyboard]）同步键状态；纯读修饰键、绝不消费按键。
+  bool _zoomModifierHeld = false;
+
+  /// BUG-879：列表行 Shift-悬停查词节流锚（与画面字幕 overlay `_lastShiftHoverPos` /
+  /// `_handleShiftHover` 同构、与阅读器 8px 阈值同源）。[Offset.zero] / 空句 / -1 表示未进入
+  /// （松开 Shift / 离开行时复位），下次按 Shift 进入即触发；命中同一 cue 同一 grapheme 且
+  /// 移动未越阈值时短路去重，避免每帧 hover 重复查词。
+  Offset _lastRowHoverPos = Offset.zero;
+  Object? _lastRowHoverCueKey;
+  int _lastRowHoverGrapheme = -1;
+
+  /// 列表行 Shift-悬停查词的移动节流阈值（像素平方，与 overlay `_kShiftHoverThresholdPx`=8
+  /// 同构）。
+  static const double _kRowHoverThresholdPx = 8;
 
   /// 只给当前/待滚动目标行保留 [GlobalKey]，供自适应行高下精确
   /// [HibikiFocusScroll.ensureVisible]。普通可见行走 [ValueKey]，避免长列表滚动后
@@ -358,7 +413,35 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       initialScrollOffset: _initialScrollOffsetForCurrentCue(),
     );
     widget.controller.addListener(_onControllerChanged);
+    // BUG-878：跟踪 Ctrl / ⌘ 键状态，供 Ctrl+滚轮缩字号时把列表滚动物理切成禁滚。
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     _scheduleScrollToCurrentCue();
+  }
+
+  /// BUG-878：同步 Ctrl / ⌘ 修饰键状态（纯观察、恒返回 false 不消费按键，不干扰任何快捷键
+  /// 或播放器键盘操作）。修饰键变化时 setState 让 [build] 切换 ListView 的滚动物理，使
+  /// Ctrl+滚轮期间列表不滚动、只缩字号。
+  bool _handleHardwareKey(KeyEvent event) {
+    final bool held = HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+    if (held != _zoomModifierHeld && mounted) {
+      setState(() => _zoomModifierHeld = held);
+    }
+    return false;
+  }
+
+  /// BUG-878：Ctrl / ⌘ + 鼠标滚轮缩放行字号（浏览器式，与 app 界面缩放偏好一致）。裸滚轮
+  /// 仍走 ListView 正常滚动列表（[_zoomModifierHeld] 为真时 [build] 才把物理切成禁滚，避免
+  /// 缩放与滚动同时发生）。上滚（`dy < 0`）放大、下滚缩小，步进复用 [_stepFont]（含 clamp
+  /// 与持久化）。非缩放修饰键 / 非滚轮信号一律忽略，交回列表滚动。
+  void _handleZoomWheel(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    if (!HardwareKeyboard.instance.isControlPressed &&
+        !HardwareKeyboard.instance.isMetaPressed) {
+      return;
+    }
+    if (event.scrollDelta.dy == 0) return;
+    _stepFont(event.scrollDelta.dy < 0 ? 1 : -1);
   }
 
   @override
@@ -385,6 +468,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   void dispose() {
     // BUG-874：面板卸载（侧栏隐藏）时解绑命中句柄，避免 barrier 调到已失效的实现。
     widget.hitTester?.unbind();
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     widget.controller.removeListener(_onControllerChanged);
     _scrollController.dispose();
     super.dispose();
@@ -526,6 +610,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       // 字号变 → 行高变，旧 visibleIndex→key 映射作废（TODO-340）。
       _rowKeys.clear();
     });
+    // BUG-878：通知页面层把新档位落 Drift preferences（null 时纯本地调整）。
+    widget.onFontScaleIndexChanged?.call(next);
     _scheduleScrollToCurrentCue();
   }
 
@@ -756,45 +842,58 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             _buildHeader(cs, cues),
             const Divider(height: 1),
             Expanded(
-              child: showLoading
-                  ? _buildLoading(cs)
-                  : cues.isEmpty || visibleIndexes.isEmpty
-                      ? _buildEmpty(cs, cuesLoaded: cues.isNotEmpty)
-                      // 无 itemExtent：行高自适应换行后的文本（TODO-340）。每行包一个
-                      // GlobalKey（存 _rowKeys，按 rawIndex）供 ensureVisible 自动滚动。
-                      : ListView.builder(
-                          controller: _scrollController,
-                          itemExtentBuilder:
-                              (int i, SliverLayoutDimensions dimensions) {
-                            if (i < 0 || i >= visibleIndexes.length) {
-                              return null;
-                            }
-                            return _estimatedRowExtentForCue(
-                              cues[visibleIndexes[i]],
-                              dimensions.crossAxisExtent,
-                            );
-                          },
-                          itemCount: visibleIndexes.length,
-                          itemBuilder: (BuildContext _, int i) {
-                            final int rawIndex = visibleIndexes[i];
-                            final AudioCue cue = cues[rawIndex];
-                            final bool selected = rawIndex == currentIndex;
-                            final bool trackKey =
-                                selected || rawIndex == _scrollTargetRawIndex;
-                            final Key rowKey = trackKey
-                                ? _rowKeys.putIfAbsent(rawIndex, GlobalKey.new)
-                                : ValueKey<int>(rawIndex);
-                            return KeyedSubtree(
-                              key: rowKey,
-                              child: _buildRow(
-                                cs,
-                                cue,
-                                i,
-                                selected,
-                              ),
-                            );
-                          },
-                        ),
+              // BUG-878：Ctrl / ⌘ + 滚轮缩字号（浏览器式）。Listener 不消费滚轮信号，
+              // 裸滚轮照常下探给 ListView 滚动；Ctrl 按住时 ListView 已切禁滚物理，故只缩
+              // 字号不滚动。translucent 覆盖含空态 / 加载态整块，任意处 Ctrl+滚轮均可缩放。
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerSignal: _handleZoomWheel,
+                child: showLoading
+                    ? _buildLoading(cs)
+                    : cues.isEmpty || visibleIndexes.isEmpty
+                        ? _buildEmpty(cs, cuesLoaded: cues.isNotEmpty)
+                        // 无 itemExtent：行高自适应换行后的文本（TODO-340）。每行包一个
+                        // GlobalKey（存 _rowKeys，按 rawIndex）供 ensureVisible 自动滚动。
+                        : ListView.builder(
+                            controller: _scrollController,
+                            // BUG-878：Ctrl / ⌘ 按住时禁列表滚动，让 Ctrl+滚轮只缩字号
+                            // （[_handleZoomWheel]）；松开恢复默认滚动物理。
+                            physics: _zoomModifierHeld
+                                ? const NeverScrollableScrollPhysics()
+                                : null,
+                            itemExtentBuilder:
+                                (int i, SliverLayoutDimensions dimensions) {
+                              if (i < 0 || i >= visibleIndexes.length) {
+                                return null;
+                              }
+                              return _estimatedRowExtentForCue(
+                                cues[visibleIndexes[i]],
+                                dimensions.crossAxisExtent,
+                              );
+                            },
+                            itemCount: visibleIndexes.length,
+                            itemBuilder: (BuildContext _, int i) {
+                              final int rawIndex = visibleIndexes[i];
+                              final AudioCue cue = cues[rawIndex];
+                              final bool selected = rawIndex == currentIndex;
+                              final bool trackKey =
+                                  selected || rawIndex == _scrollTargetRawIndex;
+                              final Key rowKey = trackKey
+                                  ? _rowKeys.putIfAbsent(
+                                      rawIndex, GlobalKey.new)
+                                  : ValueKey<int>(rawIndex);
+                              return KeyedSubtree(
+                                key: rowKey,
+                                child: _buildRow(
+                                  cs,
+                                  cue,
+                                  i,
+                                  selected,
+                                ),
+                              );
+                            },
+                          ),
+              ),
             ),
           ],
         ),
@@ -1167,32 +1266,71 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           }
         }
 
-        return GestureDetector(
-          // translucent：tap 赢手势竞技场截断外层 InkWell（点文本 = 查词、非 seek），
-          // 但空白处手动回落到行 seek，保留“点字查词、点空白 seek”的语义。
-          behavior: HitTestBehavior.translucent,
-          onTapUp: (TapUpDetails details) {
-            final SubtitleListCharHit? hit = hitAt(
-              localPosition: details.localPosition,
-              globalPosition: details.globalPosition,
-            );
-            if (hit != null && hit.charRect.contains(details.globalPosition)) {
-              onLookup(cue, hit.graphemeIndex, hit.charRect);
-              return;
-            }
-            widget.onTapCue(cue);
-          },
-          child: RichText(
-            // BUG-874：稳定 key 让 [_hitTestRows] 能按 builder 下标取到本行 RenderParagraph
-            // 反查字符命中（供查词浮层 dismiss barrier 切换查词）。
-            key: textKey,
-            text: textSpan,
-            softWrap: true,
-            overflow: TextOverflow.clip,
-            maxLines: null,
-            textAlign: TextAlign.start,
-            textDirection: textDirection,
-            textScaler: textScaler,
+        // BUG-879：列表行 Shift-悬停查词，与画面字幕 overlay `_handleShiftHover` 对称。
+        // 门控（开了"悬停即查词"则纯悬停、否则需按住 Shift）+ 8px 阈值 + 同 cue 同 grapheme
+        // 短路去重都与 overlay 同构；命中即走同一 [onLookup]（→ 页面 `_handleSubtitleListLookup`
+        // → `_lookupAt`）。`opaque:false` 不阻断外层 [_buildRow] 的 hover 高亮 MouseRegion，
+        // 也不拦点击 / 滚动下探。
+        void handleRowHover(PointerHoverEvent event) {
+          if (!widget.hoverAutoLookupEnabled &&
+              !HardwareKeyboard.instance.isShiftPressed) {
+            // 未开"悬停即查词"且未按 Shift：复位节流锚，下次按 Shift 进入即触发。
+            _lastRowHoverPos = Offset.zero;
+            _lastRowHoverCueKey = null;
+            _lastRowHoverGrapheme = -1;
+            return;
+          }
+          final SubtitleListCharHit? hit = hitAt(
+            localPosition: event.localPosition,
+            globalPosition: event.position,
+          );
+          if (hit == null) return;
+          final double dx = event.position.dx - _lastRowHoverPos.dx;
+          final double dy = event.position.dy - _lastRowHoverPos.dy;
+          final bool sameChar = identical(_lastRowHoverCueKey, cue) &&
+              hit.graphemeIndex == _lastRowHoverGrapheme;
+          if (sameChar &&
+              dx * dx + dy * dy <
+                  _kRowHoverThresholdPx * _kRowHoverThresholdPx) {
+            return;
+          }
+          _lastRowHoverPos = event.position;
+          _lastRowHoverCueKey = cue;
+          _lastRowHoverGrapheme = hit.graphemeIndex;
+          onLookup(cue, hit.graphemeIndex, hit.charRect);
+        }
+
+        return MouseRegion(
+          opaque: false,
+          onHover: handleRowHover,
+          child: GestureDetector(
+            // translucent：tap 赢手势竞技场截断外层 InkWell（点文本 = 查词、非 seek），
+            // 但空白处手动回落到行 seek，保留“点字查词、点空白 seek”的语义。
+            behavior: HitTestBehavior.translucent,
+            onTapUp: (TapUpDetails details) {
+              final SubtitleListCharHit? hit = hitAt(
+                localPosition: details.localPosition,
+                globalPosition: details.globalPosition,
+              );
+              if (hit != null &&
+                  hit.charRect.contains(details.globalPosition)) {
+                onLookup(cue, hit.graphemeIndex, hit.charRect);
+                return;
+              }
+              widget.onTapCue(cue);
+            },
+            child: RichText(
+              // BUG-874：稳定 key 让 [_hitTestRows] 能按 builder 下标取到本行 RenderParagraph
+              // 反查字符命中（供查词浮层 dismiss barrier 切换查词）。
+              key: textKey,
+              text: textSpan,
+              softWrap: true,
+              overflow: TextOverflow.clip,
+              maxLines: null,
+              textAlign: TextAlign.start,
+              textDirection: textDirection,
+              textScaler: textScaler,
+            ),
           ),
         );
       },

@@ -987,7 +987,17 @@ extension _VideoSubtitle on _VideoHibikiPageState {
   ) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double screenWidth = MediaQuery.sizeOf(context).width;
-    final double panelWidth = (screenWidth * 0.28).clamp(240.0, 420.0);
+    // BUG-877：面板宽度可自定义并持久化。未自定义（存值 0）时按屏宽自适应；用户拖拽左边缘
+    // 把手改宽后存实际像素、跨开关 / 跨重启记住。存值 / 拖拽值都再 clamp 到 [minWidth,
+    // maxWidth]（防跨设备屏宽差异下越界，且面板不至于宽到吞掉整块画面）。
+    final double autoWidth = (screenWidth * 0.28).clamp(240.0, 420.0);
+    const double minPanelWidth = 240.0;
+    final double maxPanelWidth =
+        (screenWidth * 0.6).clamp(minPanelWidth, 720.0);
+    final double storedWidth = appModel.videoSubtitleListWidth;
+    final double panelWidth =
+        (_subtitleListWidthDrag ?? (storedWidth > 0 ? storedWidth : autoWidth))
+            .clamp(minPanelWidth, maxPanelWidth);
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
@@ -1019,34 +1029,62 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                     child: _withSubtitleListCursorReveal(
                       SafeArea(
                         left: false,
-                        child: VideoSubtitleJumpPanel(
-                          key: const ValueKey<String>(
-                              'video-subtitle-jump-panel'),
-                          controller: controller,
-                          onTapCue: _handleSubtitleJumpTap,
-                          onLookupCue: _handleSubtitleListLookup,
-                          // BUG-874：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
-                          // 「点列表下一个词」切换查词而非吞成关闭浮层。
-                          hitTester: _subtitleListHitTester,
-                          onCopyCue: _copyCueText,
-                          onFavoriteCue: _toggleFavoriteCueForVideo,
-                          isCueFavorited: _isCueFavorited,
-                          isCueSelectedForCard: _isCueSelectedForCard,
-                          onToggleCueSelection: _toggleCueSelectedForCard,
-                          onClearCueSelection: _clearSelectedMiningCues,
-                          // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
-                          initialAutoScroll:
-                              appModel.videoSubtitleListAutoScroll,
-                          onAutoScrollChanged: (bool value) => unawaited(
-                            appModel.setVideoSubtitleListAutoScroll(value),
-                          ),
-                          onClose: _closeSubtitleJumpList,
-                          colorScheme: cs,
-                          title: t.video_subtitle_list,
-                          emptyHint: t.video_subtitle_list_empty,
-                          loadingHint: t.video_subtitle_list_loading,
-                          fontSize: 14 * _videoUiScale,
-                          width: panelWidth,
+                        // BUG-877：面板叠一层左边缘拖拽把手（[_subtitleListResizeHandle]）
+                        // 改宽度并持久化；Stack 让把手浮在面板左边缘、不占面板内容宽度。
+                        child: Stack(
+                          children: <Widget>[
+                            VideoSubtitleJumpPanel(
+                              key: const ValueKey<String>(
+                                  'video-subtitle-jump-panel'),
+                              controller: controller,
+                              onTapCue: _handleSubtitleJumpTap,
+                              onLookupCue: _handleSubtitleListLookup,
+                              // BUG-874：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
+                              // 「点列表下一个词」切换查词而非吞成关闭浮层。
+                              hitTester: _subtitleListHitTester,
+                              onCopyCue: _copyCueText,
+                              onFavoriteCue: _toggleFavoriteCueForVideo,
+                              isCueFavorited: _isCueFavorited,
+                              isCueSelectedForCard: _isCueSelectedForCard,
+                              onToggleCueSelection: _toggleCueSelectedForCard,
+                              onClearCueSelection: _clearSelectedMiningCues,
+                              // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
+                              initialAutoScroll:
+                                  appModel.videoSubtitleListAutoScroll,
+                              onAutoScrollChanged: (bool value) => unawaited(
+                                appModel.setVideoSubtitleListAutoScroll(value),
+                              ),
+                              // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
+                              // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
+                              initialFontScaleIndex:
+                                  appModel.videoSubtitleListFontScaleIndex,
+                              onFontScaleIndexChanged: (int value) => unawaited(
+                                appModel
+                                    .setVideoSubtitleListFontScaleIndex(value),
+                              ),
+                              // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
+                              hoverAutoLookupEnabled:
+                                  ReaderHibikiSource.instance.hoverAutoLookup,
+                              onClose: _closeSubtitleJumpList,
+                              colorScheme: cs,
+                              title: t.video_subtitle_list,
+                              emptyHint: t.video_subtitle_list_empty,
+                              loadingHint: t.video_subtitle_list_loading,
+                              fontSize: 14 * _videoUiScale,
+                              width: panelWidth,
+                            ),
+                            Positioned(
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              child: _subtitleListResizeHandle(
+                                currentWidth: panelWidth,
+                                minWidth: minPanelWidth,
+                                maxWidth: maxPanelWidth,
+                                colorScheme: cs,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -1054,6 +1092,52 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                 ),
               )
             : const SizedBox.shrink(),
+      ),
+    );
+  }
+
+  /// BUG-877：字幕列表面板左边缘拖拽把手。面板在屏幕右侧，把左边缘向左（`delta.dx < 0`）
+  /// 拖即变宽，故 `base - delta.dx`；松手把最终宽度落 Drift preferences；双击复位为自适应
+  /// （存 0 = 跟随屏宽）。8px 命中宽度 + resizeLeftRight 光标，中间画一条细可视竖条提示可拖。
+  Widget _subtitleListResizeHandle({
+    required double currentWidth,
+    required double minWidth,
+    required double maxWidth,
+    required ColorScheme colorScheme,
+  }) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: (DragUpdateDetails details) {
+          final double base = _subtitleListWidthDrag ?? currentWidth;
+          final double next =
+              (base - details.delta.dx).clamp(minWidth, maxWidth);
+          _rebuild(() => _subtitleListWidthDrag = next);
+        },
+        onHorizontalDragEnd: (DragEndDetails details) {
+          final double? dragged = _subtitleListWidthDrag;
+          if (dragged != null) {
+            unawaited(appModel.setVideoSubtitleListWidth(dragged));
+          }
+          _rebuild(() => _subtitleListWidthDrag = null);
+        },
+        onDoubleTap: () {
+          unawaited(appModel.setVideoSubtitleListWidth(0));
+          _rebuild(() => _subtitleListWidthDrag = null);
+        },
+        child: SizedBox(
+          width: 8,
+          child: Center(
+            child: Container(
+              width: 2,
+              decoration: BoxDecoration(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

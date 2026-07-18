@@ -27,7 +27,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 861 条。点号进各自文件。
+> 共 866 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -35,6 +35,11 @@
 | [BUG-884](bugs/BUG-884-extension-lookup-compact-result.md) | ✅ | ✅ | 浏览器扩展查词响应重复携带原始词条导致冷链路慢 |
 | [BUG-883](bugs/BUG-883-extension-shadow-text-align.md) | ✅ | ✅ | 浏览器扩展弹窗继承宿主页居中对齐 |
 | [BUG-882](bugs/BUG-882-lyrics-restore-position.md) | ✅ | ✅ | 歌词模式重开书高亮跳回开头 |
+| [BUG-881](bugs/BUG-881-video-subtitle-list-lookup-barrier.md) | ✅ | ✅ | 查词浮层开着时列表下一个词被 dismiss barrier 吞掉 |
+| [BUG-880](bugs/BUG-880-video-shift-lookup-static-cursor.md) | ✅ | ✅ | Shift 查词静止光标不触发（"按了不出"） |
+| [BUG-879](bugs/BUG-879-video-subtitle-list-shift-hover.md) | ✅ | ✅ | 字幕列表单词无法 Shift 悬停查词 |
+| [BUG-878](bugs/BUG-878-video-subtitle-list-font-persist.md) | ✅ | ✅ | 字幕列表字号每次重开重置且上限太小 |
+| [BUG-877](bugs/BUG-877-video-subtitle-list-panel-resize.md) | ✅ | ✅ | 字幕列表面板大小不可自定义 |
 | [BUG-876](bugs/BUG-876-favorite-jump-missing-offset-text-fallback.md) | ✅ | ✅ | 书内点收藏「有时」跳不到句子位置（normCharOffset 缺失时静默失败/落章首） |
 | [BUG-875](bugs/BUG-875-reader-vertical-single-char-line-end-flip.md) | ✅ | ✅ | 竖排有声书读到「句首是行尾单字」的句子时凭空前翻一页、下一句又翻回 |
 | [BUG-874](bugs/BUG-874-subtitle-list-lookup-barrier.md) | ✅ | ✅ | 查词浮层打开时点字幕列表下一个词被 dismiss barrier 吞掉，必须先关弹窗 |

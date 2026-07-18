@@ -2614,6 +2614,19 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleListAutoScroll(bool value) =>
       prefsRepo.setVideoSubtitleListAutoScroll(value);
 
+  /// 视频字幕列表行字号档位（BUG-878，落 Drift preferences，默认 1=1.0x）。
+  int get videoSubtitleListFontScaleIndex =>
+      prefsRepo.videoSubtitleListFontScaleIndex;
+
+  Future<void> setVideoSubtitleListFontScaleIndex(int value) =>
+      prefsRepo.setVideoSubtitleListFontScaleIndex(value);
+
+  /// 视频字幕列表面板宽度（逻辑像素，BUG-877，落 Drift preferences，0=跟随自适应）。
+  double get videoSubtitleListWidth => prefsRepo.videoSubtitleListWidth;
+
+  Future<void> setVideoSubtitleListWidth(double value) =>
+      prefsRepo.setVideoSubtitleListWidth(value);
+
   /// 播放列表自动连播开关（TODO-639，落 Drift preferences，默认开）。
   bool get videoAutoPlayNext => prefsRepo.videoAutoPlayNext;
 

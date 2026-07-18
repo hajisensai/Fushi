@@ -800,6 +800,30 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 视频字幕列表**行字号档位**（BUG-878）：档位下标（见 [VideoSubtitleJumpPanel] 的
+  /// `_kFontScaleSteps`），默认 1（1.0x）。旧版本这是面板纯内存 State、每次重开都重置成
+  /// 默认档；现在落 Drift `preferences`，用户放大后跨开关 / 跨重启都记住。仅在该 key 从未
+  /// 写过时返回默认；越界由面板 seed 时 clamp（档位数组扩容后旧存值仍安全）。
+  int get videoSubtitleListFontScaleIndex =>
+      getPref('video_subtitle_list_font_scale_index', defaultValue: 1) as int;
+
+  Future<void> setVideoSubtitleListFontScaleIndex(int value) async {
+    await setPref('video_subtitle_list_font_scale_index', value);
+    notifyListeners();
+  }
+
+  /// 视频字幕列表**面板宽度**（逻辑像素，BUG-877）：默认 0 = 未自定义，页面按屏宽自适应
+  /// （`screenWidth*0.28` 钳制）算宽；用户拖拽面板左边缘把手改宽后存实际像素值，跨开关 /
+  /// 跨重启都记住。0 语义即「跟随自适应」，故清除自定义只需存回 0。页面读取时对存值再做
+  /// 一次 clamp（防跨设备屏宽差异下存值超出合理范围）。
+  double get videoSubtitleListWidth =>
+      (getPref('video_subtitle_list_width', defaultValue: 0) as num).toDouble();
+
+  Future<void> setVideoSubtitleListWidth(double value) async {
+    await setPref('video_subtitle_list_width', value);
+    notifyListeners();
+  }
+
   /// 播放列表自动连播开关（TODO-639）：默认开启。一集播完后，开则倒计时自动进下一集
   /// （倒计时期间可点「取消」按钮停在本集），关则停在本集结束不自动推进。
   /// getPref 仅在该 key 从未写过时返回默认 true，已切过开关的用户保留其存值。
