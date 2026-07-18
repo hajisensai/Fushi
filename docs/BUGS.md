@@ -27,12 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 858 条。点号进各自文件。
+> 共 859 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-876](bugs/BUG-876-favorite-jump-missing-offset-text-fallback.md) | ✅ | ✅ | 书内点收藏「有时」跳不到句子位置（normCharOffset 缺失时静默失败/落章首） |
 | [BUG-875](bugs/BUG-875-reader-vertical-single-char-line-end-flip.md) | ✅ | ✅ | 竖排有声书读到「句首是行尾单字」的句子时凭空前翻一页、下一句又翻回 |
+| [BUG-874](bugs/BUG-874-subtitle-list-lookup-barrier.md) | ✅ | ✅ | 查词浮层打开时点字幕列表下一个词被 dismiss barrier 吞掉，必须先关弹窗 |
 | [BUG-874](bugs/BUG-874-ext-shift-hover-miss.md) | 🚧 | 🚧 | 浏览器扩展 Shift 悬停查词约 80% 不弹（机器相关，本机未复现） |
 | [BUG-873](bugs/BUG-873-macos-trafficlight-overlap.md) | ✅ | ✅ | macOS 交通灯按钮与顶部导航/返回按钮重叠 |
 | [BUG-872](bugs/BUG-872-update-channel-pingpong.md) | ✅ | ✅ | 调试版与正式版来回更新 |

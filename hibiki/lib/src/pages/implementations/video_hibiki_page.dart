@@ -1212,6 +1212,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 字符」，是则切换查词、保持暂停（见 [_onDismissBarrierTap] / [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester _subtitleHitTester = VideoSubtitleHitTester();
 
+  /// 字幕**列表侧栏**字符命中句柄（BUG-874）：与 [_subtitleHitTester] 对称。查词浮层的
+  /// dismiss barrier 盖在推挤式字幕列表侧栏之上、抢走点击，故 barrier 在底部字幕 miss 后再
+  /// 用本句柄反查「点到的是不是列表里某行某个字符」，是则切换查词、保持浮层（见
+  /// [_onDismissBarrierTap] / [VideoSubtitleListHitTester]）。
+  final VideoSubtitleListHitTester _subtitleListHitTester =
+      VideoSubtitleListHitTester();
+
   /// 承载查词浮层栈的根 Overlay 入口；非空时浮层栈渲染在根 Overlay（窗口/全屏统一，
   /// 全屏时浮在 media_kit 全屏路由之上）。栈空时移除、栈变化时 `markNeedsBuild`。
   OverlayEntry? _popupOverlayEntry;
@@ -3336,6 +3343,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       hitSubtitle: hit != null,
     )) {
       _handleSubtitleLookupTap(hit!.sentence, hit.graphemeIndex, hit.charRect);
+      return;
+    }
+    // BUG-874：底部字幕没命中，再反查**字幕列表侧栏**——barrier 全屏盖在推挤式侧栏之上、
+    // 抢走点击，故点列表里下一个词若不在此反查就只会关掉浮层。命中某行某字符即切换查词
+    // （[_handleSubtitleListLookup] → [_lookupAt] 的 `replaceStack`，保持浮层与暂停）。这是
+    // 列表行文本明确点在某字符上的显式换词意图，不吃底部字幕那条的嵌套门控
+    // （[shouldSwitchWordOnBarrierTap]）——replaceStack 本就重置整栈，等价于一次新查词。
+    final SubtitleListHit? listHit = _subtitleListHitTester.hitTest(globalPos);
+    if (listHit != null) {
+      _handleSubtitleListLookup(
+        listHit.cue,
+        listHit.graphemeIndex,
+        listHit.charRect,
+      );
       return;
     }
     // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗外**的真空白 = 一次性清整栈

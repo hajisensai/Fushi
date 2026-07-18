@@ -1,0 +1,256 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
+
+// BUG-874：查词浮层打开时，根 Overlay 的全屏 dismiss barrier 盖在推挤式字幕列表侧栏之上、
+// 抢走点击 → 点列表里下一个词只会关浮层。修复让 barrier 先用 [VideoSubtitleListHitTester]
+// 反查是否点到了列表某行某字符，是则切换查词。本测试在最强可落地层（widget）钉死这条反查：
+// 绑定句柄 → 对某行字符全局坐标 hitTest 返回正确 (cue, grapheme, charRect)，行外返回 null。
+
+AudioCue _cue(int i, int s, int e, String text) => AudioCue()
+  ..bookKey = 'video/1'
+  ..chapterHref = 'video://default'
+  ..sentenceIndex = i
+  ..textFragmentId = ''
+  ..text = text
+  ..startMs = s
+  ..endMs = e
+  ..audioFileIndex = 0;
+
+Widget _wrap(Widget child) => MaterialApp(
+      home: Scaffold(body: Stack(children: <Widget>[child])),
+    );
+
+Rect _unionRects(Iterable<Rect> rects) {
+  final Iterator<Rect> it = rects.iterator;
+  if (!it.moveNext()) return Rect.zero;
+  Rect union = it.current;
+  while (it.moveNext()) {
+    union = union.expandToInclude(it.current);
+  }
+  return union;
+}
+
+/// 复算某行某 grapheme 的全局中心点（与面板行内 tap 同源的 TextPainter 逻辑），供 hitTest。
+({Offset globalPoint, int graphemeIndex}) _pointForGrapheme(
+  WidgetTester tester,
+  String sentence,
+  String targetGrapheme,
+) {
+  final Finder textFinder = find.text(sentence, findRichText: true);
+  expect(textFinder, findsOneWidget);
+  final BuildContext context = tester.element(textFinder);
+  final RichText richText = tester.widget<RichText>(textFinder);
+  final RenderBox textBox = tester.renderObject<RenderBox>(textFinder);
+  final List<String> graphemes = sentence.characters.toList(growable: false);
+  final int targetIndex = graphemes.indexOf(targetGrapheme);
+  expect(targetIndex, greaterThanOrEqualTo(0), reason: targetGrapheme);
+  int startOffset = 0;
+  for (int i = 0; i < targetIndex; i++) {
+    startOffset += graphemes[i].length;
+  }
+  final int endOffset = startOffset + graphemes[targetIndex].length;
+  final TextPainter painter = TextPainter(
+    text: richText.text,
+    textAlign: TextAlign.start,
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: null,
+    ellipsis: null,
+  )..layout(maxWidth: textBox.size.width);
+  final Rect targetRect = _unionRects(
+    painter
+        .getBoxesForSelection(
+          TextSelection(baseOffset: startOffset, extentOffset: endOffset),
+        )
+        .map((TextBox box) => box.toRect()),
+  );
+  painter.dispose();
+  expect(targetRect, isNot(Rect.zero));
+  return (
+    globalPoint: textBox.localToGlobal(targetRect.center),
+    graphemeIndex: targetIndex,
+  );
+}
+
+void main() {
+  group('subtitle grapheme offset helpers (BUG-874 shared with barrier hit)',
+      () {
+    test('start/end offsets track UTF-16 lengths incl. multi-unit graphemes',
+        () {
+      // 'a' + 👩‍💻(ZWJ 组合, 多 code unit) + 'b'。
+      const String text = 'a👩‍💻b';
+      final List<int> starts = subtitleGraphemeStartOffsets(text);
+      final List<int> ends = subtitleGraphemeEndOffsets(text);
+      expect(starts.length, 3);
+      expect(ends.length, 3);
+      // 'a' 占 1 个 UTF-16 unit；ZWJ 表情占多个；'b' 占 1 个。
+      expect(starts.first, 0);
+      expect(ends.first, 1);
+      expect(starts[1], 1);
+      expect(ends.last, text.length);
+      // 每个 grapheme 的 [start,end) 连续、不重叠。
+      for (int i = 1; i < starts.length; i++) {
+        expect(starts[i], ends[i - 1]);
+      }
+    });
+
+    test('offset maps back to the containing grapheme index', () {
+      const String text = 'a👩‍💻b';
+      final List<int> starts = subtitleGraphemeStartOffsets(text);
+      final List<int> ends = subtitleGraphemeEndOffsets(text);
+      expect(subtitleGraphemeIndexForOffset(0, starts, ends), 0);
+      // 落在中间 ZWJ 表情内部任一 UTF-16 偏移都归第 2 个 grapheme（下标 1）。
+      expect(subtitleGraphemeIndexForOffset(2, starts, ends), 1);
+      expect(subtitleGraphemeIndexForOffset(ends.last, starts, ends), 2);
+    });
+
+    test('empty text → -1', () {
+      expect(subtitleGraphemeIndexForOffset(0, <int>[], <int>[]), -1);
+    });
+  });
+
+  group('VideoSubtitleListHitTester wiring (BUG-874)', () {
+    testWidgets(
+        'panel binds a hit tester that reverse-hits a row char to '
+        '(cue, grapheme, charRect)', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'first line'),
+        _cue(1, 2000, 3000, 'second line'),
+      ]);
+      final VideoSubtitleListHitTester hitTester = VideoSubtitleListHitTester();
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 420,
+        height: 500,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          // 查词能力启用（barrier 反查只在可查词时登记行）。
+          onLookupCue: (AudioCue _, int __, Rect ___) {},
+          hitTester: hitTester,
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 420,
+        ),
+      )));
+      await tester.pump();
+
+      final ({Offset globalPoint, int graphemeIndex}) target =
+          _pointForGrapheme(tester, 'second line', 'c');
+
+      final SubtitleListHit? hit = hitTester.hitTest(target.globalPoint);
+      expect(hit, isNotNull,
+          reason: 'tapping a list row char while a popup is open must resolve '
+              'to a lookup hit (not fall through to dismiss)');
+      expect(hit!.cue.text, 'second line');
+      expect(hit.cue.startMs, 2000);
+      expect(hit.graphemeIndex, target.graphemeIndex,
+          reason: 'reverse-hit maps UTF-16 offset back to the grapheme');
+      expect(hit.charRect.contains(target.globalPoint), isTrue,
+          reason: 'returned global charRect must contain the tapped point');
+    });
+
+    testWidgets('a point outside every row returns null (barrier dismisses)',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'only line')]);
+      final VideoSubtitleListHitTester hitTester = VideoSubtitleListHitTester();
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 420,
+        height: 500,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          onLookupCue: (AudioCue _, int __, Rect ___) {},
+          hitTester: hitTester,
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 420,
+        ),
+      )));
+      await tester.pump();
+
+      // 远在所有行之外（负坐标）→ 无命中 → barrier 落回原 dismiss。
+      expect(hitTester.hitTest(const Offset(-100, -100)), isNull);
+    });
+
+    testWidgets('without onLookupCue no rows register → hitTest is null',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'plain line')]);
+      final VideoSubtitleListHitTester hitTester = VideoSubtitleListHitTester();
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 420,
+        height: 500,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          // onLookupCue 省略（不可查词）→ 不登记行，句柄命中恒 null。
+          hitTester: hitTester,
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 420,
+        ),
+      )));
+      await tester.pump();
+
+      final Rect textRect = tester.getRect(find.text('plain line'));
+      expect(hitTester.hitTest(textRect.center), isNull,
+          reason: 'lookup disabled → no reverse-hit registration');
+    });
+
+    testWidgets('unbinds on panel dispose (hidden sidebar)',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'bye line')]);
+      final VideoSubtitleListHitTester hitTester = VideoSubtitleListHitTester();
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onLookupCue: (AudioCue _, int __, Rect ___) {},
+        hitTester: hitTester,
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      await tester.pump();
+
+      // 面板从树上移除（侧栏隐藏）→ dispose 解绑 → 句柄不再命中已失效实现。
+      await tester.pumpWidget(_wrap(const SizedBox.shrink()));
+      expect(hitTester.hitTest(Offset.zero), isNull,
+          reason: 'disposed panel must unbind so the barrier never calls a '
+              'stale hit impl');
+    });
+  });
+}
