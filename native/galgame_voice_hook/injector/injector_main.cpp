@@ -35,13 +35,17 @@
 //               确认后退出。launch 模式下 --hold 会一直挂到游戏进程退出。
 namespace {
 
+using hibiki_voice_hook::kClipCount;
 using hibiki_voice_hook::kMaxRingBytes;
 using hibiki_voice_hook::kRingSeconds;
 using hibiki_voice_hook::kSharedMagic;
 using hibiki_voice_hook::kSharedVersion;
+using hibiki_voice_hook::kTextSlotBytes;
+using hibiki_voice_hook::kTextSlotCount;
 using hibiki_voice_hook::ReadyEventName;
 using hibiki_voice_hook::SharedHeader;
 using hibiki_voice_hook::SharedMemoryName;
+using hibiki_voice_hook::VoiceClip;
 
 // 目标与自身位数（WOW64）必须一致才能注入：x86 DLL 只能进 32 位进程，x64 只能进 64 位。
 // 返回 true 表示匹配。CREATE_SUSPENDED 的新进程也能查（此刻映像已就绪，IsWow64Process 有效）。
@@ -148,7 +152,14 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // 建共享内存（header + 环形缓冲）并清零、写契约头。injector 持有映射句柄=内存所有者；
   // hold 模式下常驻维持它存活，供 host 消费。
   const uint32_t ring_capacity = ComputeRingCapacity();
-  const uint64_t total_size = sizeof(SharedHeader) + ring_capacity;
+  // v2 布局：[SharedHeader][音频环形 ring_capacity][文本环 kTextSlotCount*kTextSlotBytes]
+  //          [clip 索引 kClipCount*sizeof(VoiceClip)]。各区偏移下面填进 header。
+  const uint64_t text_region_bytes =
+      static_cast<uint64_t>(kTextSlotCount) * kTextSlotBytes;
+  const uint64_t clip_region_bytes =
+      static_cast<uint64_t>(kClipCount) * sizeof(VoiceClip);
+  const uint64_t total_size = sizeof(SharedHeader) + ring_capacity +
+                              text_region_bytes + clip_region_bytes;
   const std::wstring shm = SharedMemoryName(pid);
   HANDLE mapping = CreateFileMappingW(
       INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
@@ -163,10 +174,16 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     CloseHandle(mapping);
     return Fail("MapViewOfFile failed");
   }
-  memset(header, 0, sizeof(SharedHeader));
+  // 清零整块映射（页文件后备本就零，显式清零防旧内容并保 v2 各计数/偏移干净起步）。
+  memset(header, 0, static_cast<size_t>(total_size));
   header->magic = kSharedMagic;
   header->version = kSharedVersion;
   header->ring_capacity = ring_capacity;
+  // 文本环紧随音频环形；clip 索引紧随文本环。hook DLL 据此偏移定位两区。
+  header->text_region_offset =
+      static_cast<uint32_t>(sizeof(SharedHeader) + ring_capacity);
+  header->clip_region_offset =
+      static_cast<uint32_t>(header->text_region_offset + text_region_bytes);
 
   // 就绪事件（auto-reset，初始未触发）；hook DLL 装好后 SetEvent。
   const std::wstring evt = ReadyEventName(pid);

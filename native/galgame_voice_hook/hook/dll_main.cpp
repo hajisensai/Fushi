@@ -36,11 +36,16 @@
 // CreateThread 把活儿丢给工作线程（在 loader lock 之外跑），这是 hook DLL 的正确形态。
 namespace {
 
+using hibiki_voice_hook::kClipCount;
 using hibiki_voice_hook::kSharedMagic;
 using hibiki_voice_hook::kSharedVersion;
+using hibiki_voice_hook::kTextSlotBytes;
+using hibiki_voice_hook::kTextSlotCount;
 using hibiki_voice_hook::ReadyEventName;
 using hibiki_voice_hook::SharedHeader;
 using hibiki_voice_hook::SharedMemoryName;
+using hibiki_voice_hook::TextSlot;
+using hibiki_voice_hook::VoiceClip;
 
 HANDLE g_mapping = nullptr;
 SharedHeader* g_header = nullptr;
@@ -54,6 +59,12 @@ uint8_t* g_ring_base = nullptr;
 uint32_t g_ring_capacity = 0;
 volatile bool g_capture_enabled = false;
 bool g_mh_init = false;
+
+// ── v2 区基址（HookWorker 按 header 偏移一次性缓存）──────────────────────────
+// g_clip_base：语音 clip 索引区，SubmitSourceBuffer/DsbUnlock 回调按句写（零阻塞）。
+// g_text_base：文本环区，文本 hook（GetGlyphOutlineW/ExtTextOutW 等）写台词行（可加锁）。
+uint8_t* g_text_base = nullptr;
+uint8_t* g_clip_base = nullptr;
 
 // MinHook 去重集：同一 SubmitSourceBuffer/CreateSourceVoice 实现常被多个实例共享同一 vtable，
 // 对同一函数地址只 MH_CreateHook 一次（重复 create 会报 MH_ERROR_ALREADY_CREATED）。
@@ -235,6 +246,32 @@ inline void RingAppendVoice(const uint8_t* data, uint32_t len) {
   g_header->total_written += len;
 }
 
+// ── C.3 语音 clip 索引：每段捕获的语音额外记一条位置/时刻/格式，供 host 按文本时间戳配对
+// 「该句语音」。零阻塞红线：只 GetTickCount64 + 填结构 + 自增，常数时间无锁无分配无 IO，可留
+// 在音频回调里。写序：先填全部字段（seq 副标记先于 count），最后 clip_write_count++（host 读
+// 到新 count 才取该槽，保证读到完整记录）。ring_offset=本段 memcpy 前的 write_pos；
+// total_at_write=写后的 total_written（host 用 (当前 total_written - total_at_write) > ring_capacity
+// 判该 clip 是否已被环形覆盖）。
+inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len) {
+  if (g_clip_base == nullptr || g_header == nullptr || byte_len == 0) {
+    return;
+  }
+  const uint64_t idx = g_header->clip_write_count;
+  const size_t off = static_cast<size_t>(idx % kClipCount) * sizeof(VoiceClip);
+  auto* clip = reinterpret_cast<VoiceClip*>(g_clip_base + off);
+  clip->timestamp_ms = GetTickCount64();
+  clip->total_at_write = g_header->total_written;  // 写后累计
+  clip->ring_offset = ring_offset;
+  clip->byte_len = byte_len;
+  clip->sample_rate = g_header->sample_rate;
+  clip->channels = g_header->channels;
+  clip->bits_per_sample = g_header->bits_per_sample;
+  clip->is_float = g_header->is_float;
+  clip->pad = 0;
+  clip->seq = idx + 1;                    // 有效性副标记（先于 count）
+  g_header->clip_write_count = idx + 1;   // 最后自增：host 据此取新 clip
+}
+
 // ── C.2 detour：IXAudio2SourceVoice::SubmitSourceBuffer ──────────────────────
 // 语音送进混音前的最后一跳。零阻塞红线：只读 pBuffer 字段 + 换算字节 + RingAppendVoice，
 // 绝不加锁/分配/IO/日志。PlayBegin/PlayLength 单位是**样本(每通道)**，PlayLength==0 表示到
@@ -257,8 +294,11 @@ HRESULT STDMETHODCALLTYPE Detour_SubmitSourceBuffer(
         }
         len -= (len % ba);  // 帧对齐（防御性）。
         if (len != 0) {
+          // C.3：这一次 SubmitSourceBuffer = 一段语音，记一条 clip（起始偏移=写前 write_pos）。
+          const uint32_t off = g_header->write_pos;
           RingAppendVoice(pBuffer->pAudioData + begin,
                           static_cast<uint32_t>(len));
+          RecordVoiceClip(off, static_cast<uint32_t>(len));
         }
       }
     }
@@ -362,12 +402,19 @@ void TryHookXAudio2Create() {
 HRESULT STDMETHODCALLTYPE Detour_DsbUnlock(IDirectSoundBuffer* self, LPVOID pv1,
                                            DWORD cb1, LPVOID pv2, DWORD cb2) {
   if (g_capture_enabled && g_header != nullptr) {
+    // C.3：一次 Unlock = 一段语音；pv2/cb2 是 DS 缓冲回绕的第二片，与 pv1 在环形里连续，合成
+    // 一条 clip（起始偏移=写前 write_pos，byte_len=cb1+cb2）。
+    const uint32_t off = g_header->write_pos;
+    uint32_t seg_len = 0;
     if (pv1 != nullptr && cb1 != 0) {
       RingAppendVoice(reinterpret_cast<const uint8_t*>(pv1), cb1);
+      seg_len += cb1;
     }
     if (pv2 != nullptr && cb2 != 0) {
       RingAppendVoice(reinterpret_cast<const uint8_t*>(pv2), cb2);
+      seg_len += cb2;
     }
+    RecordVoiceClip(off, seg_len);
   }
   return g_orig_DsbUnlock(self, pv1, cb1, pv2, cb2);
 }
@@ -461,6 +508,224 @@ void TryHookDirectSoundCreate() {
          reinterpret_cast<void**>(&g_orig_DirectSoundCreate));
 }
 
+// == wen ben hook (grab dialogue text) ==
+// 覆盖 GDI 文本渲染 API（galgame 经典 hook 面）：GetGlyphOutlineW 逐字形渲染逐字累积成行，
+// ExtTextOutW/TextOutW/DrawTextW 整串直接成行；写进共享内存文本环供 host 消费。
+//
+// 诚实局限：只覆盖 **GDI 渲染文本**的游戏。KiriKiriZ / RenPy / Unity 走 FreeType / DirectWrite
+// / 自绘位图字体，GDI 文本 API 抓不到——那些靠 LunaTranslator 等备选覆盖，不在本组件范围。也
+// 不写引擎特定 H-code（逐游戏内存 callsite/参数偏移的 DB，是 LunaHook 的活儿，超出本组件）。
+//
+// 并发模型：文本 hook **不是**音频回调，允许加锁 + 静态缓冲（仅音频回调是零阻塞红线）；但仍
+// 不做重 IO。所有累积/去重/写环都在 g_text_cs 保护下、并以 g_capture_enabled 兜住 DETACH
+// 解映射窗口（与音频回调同一总开关）。
+
+// 文本渲染 API 原型（GetProcAddress 动态取址，不链接 gdi32/user32.lib）。
+typedef DWORD(WINAPI* GetGlyphOutlineW_t)(HDC, UINT, UINT, LPGLYPHMETRICS, DWORD,
+                                          LPVOID, const MAT2*);
+typedef BOOL(WINAPI* ExtTextOutW_t)(HDC, int, int, UINT, const RECT*, LPCWSTR,
+                                    UINT, const INT*);
+typedef BOOL(WINAPI* TextOutW_t)(HDC, int, int, LPCWSTR, int);
+typedef int(WINAPI* DrawTextW_t)(HDC, LPCWSTR, int, LPRECT, UINT);
+
+GetGlyphOutlineW_t g_orig_GetGlyphOutlineW = nullptr;
+ExtTextOutW_t g_orig_ExtTextOutW = nullptr;
+TextOutW_t g_orig_TextOutW = nullptr;
+DrawTextW_t g_orig_DrawTextW = nullptr;
+
+// 文本累积/去重的锁与缓冲（与音频回调隔离，允许加锁）。
+CRITICAL_SECTION g_text_cs;
+bool g_text_cs_ready = false;
+constexpr int kMaxLineChars = 500;           // 一行台词上界（UTF-16 字符数）
+wchar_t g_glyph_buf[kMaxLineChars + 8];      // GetGlyphOutlineW 逐字累积缓冲
+int g_glyph_len = 0;                         // 当前累积字符数
+ULONGLONG g_glyph_last_tick = 0;             // 上次 GetGlyphOutlineW 时刻（判行界）
+wchar_t g_last_flushed[kMaxLineChars + 8];   // 上一条已 flush 的行（去重）
+int g_last_flushed_len = 0;
+
+// 把一行文本写进共享内存文本环（调用者持 g_text_cs）。slot = text_write_count % kTextSlotCount。
+// 写序：先写文本字节 + TextSlot 字段（seq 副标记先于 count），最后 text_write_count++（host 读
+// 到新 count 才取该槽，保证读到完整槽）。首次 flush 置 text_hooked=1。
+void WriteTextRingLocked(const wchar_t* text, int char_len) {
+  if (g_text_base == nullptr || g_header == nullptr || char_len <= 0) {
+    return;
+  }
+  const uint64_t idx = g_header->text_write_count;
+  const size_t slot_off =
+      static_cast<size_t>(idx % kTextSlotCount) * kTextSlotBytes;
+  uint8_t* slot = g_text_base + slot_off;
+  auto* ts = reinterpret_cast<TextSlot*>(slot);
+  uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
+  max_bytes -= (max_bytes % static_cast<uint32_t>(sizeof(wchar_t)));  // wchar 边界
+  uint32_t byte_len = static_cast<uint32_t>(char_len) *
+                      static_cast<uint32_t>(sizeof(wchar_t));
+  if (byte_len > max_bytes) {
+    byte_len = max_bytes;  // 截断到槽容量（kTextSlotBytes-头长，wchar 对齐）
+  }
+  memcpy(slot + sizeof(TextSlot), text, byte_len);
+  ts->timestamp_ms = GetTickCount64();
+  ts->byte_len = byte_len;
+  ts->is_utf8 = 0;       // UTF-16LE
+  ts->seq = idx + 1;     // 有效性副标记（先于 count）
+  g_header->text_write_count = idx + 1;   // 最后自增
+  if (g_header->text_hooked == 0) {
+    g_header->text_hooked = 1;            // 首次 flush：文本 hook proof-of-life
+  }
+}
+
+// 过滤 + 去重 + 写环（调用者持 g_text_cs）。过滤：跳空串/纯空白/纯 ASCII 控制；只保留含至少
+// 一个非 ASCII（>=0x3000，日文假名/汉字之类）或非空白字符数>=2 的串——避免把 UI 数字/单字母
+// 当台词（粗过滤即可，别过度）。去重：与上一条 flush 完全相同则跳过（游戏常重绘同句）。
+void FlushLineLocked(const wchar_t* text, int len) {
+  if (text == nullptr || len <= 0) {
+    return;
+  }
+  if (len > kMaxLineChars) {
+    len = kMaxLineChars;  // 截断到缓冲/环槽上界
+  }
+  bool has_cjk = false;
+  int meaningful = 0;
+  for (int i = 0; i < len; i++) {
+    const wchar_t c = text[i];
+    // 空白/控制字符（空格 0x20、TAB 0x09、CR 0x0D、LF 0x0A、以及 <0x20 控制字符）不计。
+    if (c == 0x20 || c == 0x09 || c == 0x0D || c == 0x0A || c < 0x20) {
+      continue;
+    }
+    meaningful++;
+    if (c >= 0x3000) {
+      has_cjk = true;
+    }
+  }
+  if (meaningful == 0) {
+    return;  // 空串/纯空白/纯控制
+  }
+  if (!has_cjk && meaningful < 2) {
+    return;  // 单个 ASCII 字符（UI 数字/字母噪声）
+  }
+  if (len == g_last_flushed_len &&
+      memcmp(text, g_last_flushed,
+             static_cast<size_t>(len) * sizeof(wchar_t)) == 0) {
+    return;  // 与上一条完全相同（重绘同句）
+  }
+  memcpy(g_last_flushed, text, static_cast<size_t>(len) * sizeof(wchar_t));
+  g_last_flushed_len = len;
+  WriteTextRingLocked(text, len);
+}
+
+// 冲掉 GetGlyphOutlineW 逐字累积缓冲成一行（调用者持 g_text_cs）。
+void FlushGlyphAccumLocked() {
+  if (g_glyph_len > 0) {
+    FlushLineLocked(g_glyph_buf, g_glyph_len);
+    g_glyph_len = 0;
+  }
+}
+
+// -- detour: GetGlyphOutlineW（gdi32，galgame 最经典逐字形文本 hook）--
+// 多数 GDI VN 逐字渲染字形经此。uChar 是当前渲染字符：逐字累积成行，用**时间空隙**判行界
+// （距上次 >120ms 视为新行——先 flush 已累积再重开累积），缓冲将满时强制 flush。
+// GGO_GLYPH_INDEX 时 uChar 是字形索引而非字符，跳过累积（否则累出乱码 id）。
+DWORD WINAPI Detour_GetGlyphOutlineW(HDC hdc, UINT uChar, UINT uFormat,
+                                     LPGLYPHMETRICS lpgm, DWORD cbBuffer,
+                                     LPVOID lpvBuffer, const MAT2* lpmat2) {
+  if (g_capture_enabled && g_text_cs_ready &&
+      (uFormat & GGO_GLYPH_INDEX) == 0) {
+    EnterCriticalSection(&g_text_cs);
+    const ULONGLONG now = GetTickCount64();
+    if (g_glyph_len > 0 && (now - g_glyph_last_tick) > 120) {
+      FlushGlyphAccumLocked();  // 时间空隙 -> 行界
+    }
+    if (uChar != 0 && uChar <= 0xFFFFu) {
+      if (g_glyph_len >= kMaxLineChars) {
+        FlushGlyphAccumLocked();  // 缓冲将满 -> 强制 flush
+      }
+      g_glyph_buf[g_glyph_len++] = static_cast<wchar_t>(uChar);
+    }
+    g_glyph_last_tick = now;
+    LeaveCriticalSection(&g_text_cs);
+  }
+  return g_orig_GetGlyphOutlineW(hdc, uChar, uFormat, lpgm, cbBuffer, lpvBuffer,
+                                 lpmat2);
+}
+
+// -- detour: ExtTextOutW / TextOutW（gdi32）+ DrawTextW（user32）--
+// lpString + 字符数即整串台词，直接成一行（补 GetGlyphOutline 抓不到的整串渲染）。先冲掉逐字
+// 累积再写整串，避免行被拆。ETO_GLYPH_INDEX（字形索引非字符）/ DT_CALCRECT（只测量不渲染）等
+// 非真实文本内容跳过。
+BOOL WINAPI Detour_ExtTextOutW(HDC hdc, int x, int y, UINT options,
+                               const RECT* lprect, LPCWSTR lpString, UINT c,
+                               const INT* lpDx) {
+  if (g_capture_enabled && g_text_cs_ready && lpString != nullptr && c > 0 &&
+      (options & ETO_GLYPH_INDEX) == 0) {
+    EnterCriticalSection(&g_text_cs);
+    FlushGlyphAccumLocked();
+    FlushLineLocked(lpString, static_cast<int>(c));
+    LeaveCriticalSection(&g_text_cs);
+  }
+  return g_orig_ExtTextOutW(hdc, x, y, options, lprect, lpString, c, lpDx);
+}
+
+BOOL WINAPI Detour_TextOutW(HDC hdc, int x, int y, LPCWSTR lpString, int c) {
+  if (g_capture_enabled && g_text_cs_ready && lpString != nullptr && c > 0) {
+    EnterCriticalSection(&g_text_cs);
+    FlushGlyphAccumLocked();
+    FlushLineLocked(lpString, c);
+    LeaveCriticalSection(&g_text_cs);
+  }
+  return g_orig_TextOutW(hdc, x, y, lpString, c);
+}
+
+int WINAPI Detour_DrawTextW(HDC hdc, LPCWSTR lpchText, int cchText, LPRECT lprc,
+                            UINT format) {
+  if (g_capture_enabled && g_text_cs_ready && lpchText != nullptr &&
+      (format & DT_CALCRECT) == 0) {
+    int len = cchText;
+    if (len < 0) {
+      // cchText<0：以 NUL 结尾；手数长度（避免依赖 wcsnlen）。
+      len = 0;
+      while (len < kMaxLineChars && lpchText[len] != 0) {
+        len++;
+      }
+    }
+    if (len > 0) {
+      EnterCriticalSection(&g_text_cs);
+      FlushGlyphAccumLocked();
+      FlushLineLocked(lpchText, len);
+      LeaveCriticalSection(&g_text_cs);
+    }
+  }
+  return g_orig_DrawTextW(hdc, lpchText, cchText, lprc, format);
+}
+
+// 装文本渲染 hook：gdi32 的 GetGlyphOutlineW/ExtTextOutW/TextOutW + user32 的 DrawTextW
+// （GetModuleHandle 取已加载模块，未加载则 LoadLibrary 强制解析导出）。装在 XAudio2/
+// DirectSound hook 之后（见 HookWorker）。
+void TryHookTextRender() {
+  HMODULE gdi = GetModuleHandleW(L"gdi32.dll");
+  if (gdi == nullptr) {
+    gdi = LoadLibraryW(L"gdi32.dll");
+  }
+  if (gdi != nullptr) {
+    HookFn(reinterpret_cast<void*>(GetProcAddress(gdi, "GetGlyphOutlineW")),
+           reinterpret_cast<void*>(&Detour_GetGlyphOutlineW),
+           reinterpret_cast<void**>(&g_orig_GetGlyphOutlineW));
+    HookFn(reinterpret_cast<void*>(GetProcAddress(gdi, "ExtTextOutW")),
+           reinterpret_cast<void*>(&Detour_ExtTextOutW),
+           reinterpret_cast<void**>(&g_orig_ExtTextOutW));
+    HookFn(reinterpret_cast<void*>(GetProcAddress(gdi, "TextOutW")),
+           reinterpret_cast<void*>(&Detour_TextOutW),
+           reinterpret_cast<void**>(&g_orig_TextOutW));
+  }
+  HMODULE usr = GetModuleHandleW(L"user32.dll");
+  if (usr == nullptr) {
+    usr = LoadLibraryW(L"user32.dll");
+  }
+  if (usr != nullptr) {
+    HookFn(reinterpret_cast<void*>(GetProcAddress(usr, "DrawTextW")),
+           reinterpret_cast<void*>(&Detour_DrawTextW),
+           reinterpret_cast<void**>(&g_orig_DrawTextW));
+  }
+}
+
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 装 XAudio2 捕获链 -> 通知 injector。
 DWORD WINAPI HookWorker(LPVOID) {
   const DWORD pid = GetCurrentProcessId();
@@ -478,17 +743,25 @@ DWORD WINAPI HookWorker(LPVOID) {
         g_header->version == kSharedVersion) {
       g_header->hooked = 1;
 
-      // ── C.2：安装 XAudio2 语音捕获 hook ─────────────────────────────────
+      // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
       g_ring_base =
           reinterpret_cast<uint8_t*>(g_header) + sizeof(SharedHeader);
       g_ring_capacity = g_header->ring_capacity;
+      // v2：文本环 / clip 索引区基址（injector 已填偏移），供文本 hook 与 clip 记录用。
+      g_text_base =
+          reinterpret_cast<uint8_t*>(g_header) + g_header->text_region_offset;
+      g_clip_base =
+          reinterpret_cast<uint8_t*>(g_header) + g_header->clip_region_offset;
       InitializeCriticalSection(&g_cs);
       g_cs_ready = true;
+      InitializeCriticalSection(&g_text_cs);
+      g_text_cs_ready = true;
       if (MH_Initialize() == MH_OK) {
         g_mh_init = true;
         g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
         TryHookXAudio2Create();
         TryHookDirectSoundCreate();
+        TryHookTextRender();       // v2：文本 hook（抓台词）。
       }
     }
   }

@@ -166,6 +166,32 @@ int main(int argc, char** argv) {
           r, hooked, calibrating, sr, ch, bits, is_float, cap, write_pos,
           static_cast<unsigned long long>(total), state);
     }
+    // v2：文本 hook 计数 + 按句语音 clip 计数 + 最近一条台词（UTF-16LE→UTF-8）。
+    const uint32_t text_hooked = header->text_hooked;
+    const uint64_t twc = header->text_write_count;
+    const uint64_t cwc = header->clip_write_count;
+    printf("     [v2] text_hooked=%u text_lines=%llu voice_clips=%llu",
+           text_hooked, static_cast<unsigned long long>(twc),
+           static_cast<unsigned long long>(cwc));
+    if (twc > 0) {
+      const uint32_t idx =
+          static_cast<uint32_t>((twc - 1) % hibiki_voice_hook::kTextSlotCount);
+      const uint8_t* tbase =
+          reinterpret_cast<const uint8_t*>(header) + header->text_region_offset;
+      const auto* slot = reinterpret_cast<const hibiki_voice_hook::TextSlot*>(
+          tbase + static_cast<size_t>(idx) * hibiki_voice_hook::kTextSlotBytes);
+      if (slot->seq == twc && slot->byte_len > 0 && slot->is_utf8 == 0) {
+        const wchar_t* w = reinterpret_cast<const wchar_t*>(
+            reinterpret_cast<const uint8_t*>(slot) +
+            sizeof(hibiki_voice_hook::TextSlot));
+        const int wlen = static_cast<int>(slot->byte_len / 2);
+        char u8[700] = {0};
+        WideCharToMultiByte(CP_UTF8, 0, w, wlen, u8, sizeof(u8) - 1, nullptr,
+                            nullptr);
+        printf(" last=\"%s\"", u8);
+      }
+    }
+    printf("\n");
     fflush(stdout);
     if (r + 1 < rounds) {
       Sleep(static_cast<DWORD>(interval_ms));
