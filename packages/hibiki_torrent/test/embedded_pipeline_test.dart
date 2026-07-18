@@ -206,6 +206,23 @@ void main() {
     expect(session.setRateLimits(), isTrue);
   }, skip: skip);
 
+  test('applyLimits (rate + connections) round-trips', () {
+    final EmbeddedTorrentSession? session =
+        EmbeddedTorrentSession.open(engine!);
+    addTearDown(session!.close);
+    // 全设。
+    expect(
+        session.applyLimits(
+            downloadBps: 2 * 1024 * 1024,
+            uploadBps: 512 * 1024,
+            connectionsLimit: 100),
+        isTrue);
+    // 全 0 = 不限，也应成功（connections<=0 保持默认，不误设成禁连）。
+    expect(session.applyLimits(), isTrue);
+    // 只设连接数。
+    expect(session.applyLimits(connectionsLimit: 50), isTrue);
+  }, skip: skip);
+
   test(
     'ip_filter blocks the seeder, then clearing it lets the download start',
     () async {

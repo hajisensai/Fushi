@@ -360,6 +360,19 @@ class EmbeddedTorrentSession {
     return _b.ht_session_set_rate_limits(_session, downloadBps, uploadBps) == 1;
   }
 
+  /// 一次设全局资源限制（用户可调）：速率上限（字节/秒，<=0 不限）+ 全局最大
+  /// 连接数（<=0 保持 libtorrent 默认）。
+  bool applyLimits({
+    int downloadBps = 0,
+    int uploadBps = 0,
+    int connectionsLimit = 0,
+  }) {
+    if (isClosed) return false;
+    return _b.ht_apply_limits(
+            _session, downloadBps, uploadBps, connectionsLimit) ==
+        1;
+  }
+
   /// 添加磁力链接。
   HtAddResult addMagnet(
     String magnetUri, {

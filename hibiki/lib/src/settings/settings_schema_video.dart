@@ -790,6 +790,23 @@ SettingsDestination buildVideoDestination() {
             id: 'video.anime_download.qb_category',
             builder: _buildQbCategoryField,
           ),
+          // 内置引擎资源限制（仅内置后端显示；外接 qb 有自己的设置）。
+          // 均为数字输入，0 = 不限；改动即时应用到常驻引擎会话。
+          SettingsCustomItem(
+            id: 'video.anime_download.embedded_download_limit',
+            visible: _embeddedBackendSelected,
+            builder: _buildEmbeddedDownloadLimitField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.embedded_upload_limit',
+            visible: _embeddedBackendSelected,
+            builder: _buildEmbeddedUploadLimitField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.embedded_max_connections',
+            visible: _embeddedBackendSelected,
+            builder: _buildEmbeddedMaxConnectionsField,
+          ),
         ],
       ),
     ],
@@ -803,6 +820,79 @@ bool _qbBackendSelected(SettingsContext settingsContext) {
       settingsContext.appModel.qbConnectionConfig;
   return (config?.backend ?? QbConnectionConfig.backendQbittorrent) ==
       QbConnectionConfig.backendQbittorrent;
+}
+
+/// 当前是否选内置 libtorrent 引擎后端（决定内置引擎资源限制字段是否显示）。
+bool _embeddedBackendSelected(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  return config?.backend == QbConnectionConfig.backendEmbedded;
+}
+
+/// 把限制字段的文本输入解析为非负整数（空/非数/负数 → 0 = 不限）。
+int _parseNonNegLimit(String value) {
+  final int n = int.tryParse(value.trim()) ?? 0;
+  return n < 0 ? 0 : n;
+}
+
+Widget _buildEmbeddedDownloadLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.downloadLimitKbps ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_download_limit,
+    icon: Icons.south_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_limit_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(downloadLimitKbps: _parseNonNegLimit(value)),
+      );
+    },
+  );
+}
+
+Widget _buildEmbeddedUploadLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.uploadLimitKbps ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_upload_limit,
+    icon: Icons.north_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_limit_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(uploadLimitKbps: _parseNonNegLimit(value)),
+      );
+    },
+  );
+}
+
+Widget _buildEmbeddedMaxConnectionsField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.maxConnections ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_max_connections,
+    icon: Icons.lan_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_connections_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(maxConnections: _parseNonNegLimit(value)),
+      );
+    },
+  );
 }
 
 /// 读改写 qbConnectionConfig（纯 pref）：取当前（null 视为空配置）→ [mutate] → 落盘。

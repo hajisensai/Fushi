@@ -88,6 +88,14 @@ void main() {
       expect(host.sweepAntiLeech(), 0);
       expect(host.sweepAntiLeech(), 0);
       expect(host.sweepAntiLeech(), 0);
+
+      // 用户可调资源限制：全设 / 全 0（不限）/ 只设连接数，均应用成功不抛。
+      expect(
+          host.applyLimits(
+              downloadKbps: 2048, uploadKbps: 512, maxConnections: 100),
+          isTrue);
+      expect(host.applyLimits(), isTrue);
+      expect(host.applyLimits(maxConnections: 50), isTrue);
     },
     skip: skip,
     timeout: const Timeout(Duration(minutes: 2)),

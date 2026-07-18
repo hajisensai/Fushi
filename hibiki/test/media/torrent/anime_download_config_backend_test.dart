@@ -49,6 +49,52 @@ void main() {
     expect(qbSet.isConfigured, isTrue);
   });
 
+  test('rate/connection limits round-trip and default to 0 (unlimited)', () {
+    const QbConnectionConfig defaults = QbConnectionConfig();
+    expect(defaults.downloadLimitKbps, 0);
+    expect(defaults.uploadLimitKbps, 0);
+    expect(defaults.maxConnections, 0);
+
+    const QbConnectionConfig limited = QbConnectionConfig(
+      backend: QbConnectionConfig.backendEmbedded,
+      downloadLimitKbps: 2048,
+      uploadLimitKbps: 512,
+      maxConnections: 100,
+    );
+    final QbConnectionConfig decoded =
+        decodeQbConnectionConfig(encodeQbConnectionConfig(limited))!;
+    expect(decoded.downloadLimitKbps, 2048);
+    expect(decoded.uploadLimitKbps, 512);
+    expect(decoded.maxConnections, 100);
+  });
+
+  test('legacy JSON without limit fields decodes to 0', () {
+    final QbConnectionConfig decoded =
+        decodeQbConnectionConfig('{"backend":"embedded"}')!;
+    expect(decoded.downloadLimitKbps, 0);
+    expect(decoded.uploadLimitKbps, 0);
+    expect(decoded.maxConnections, 0);
+  });
+
+  test('negative/garbage limit values clamp to 0', () {
+    final QbConnectionConfig decoded = decodeQbConnectionConfig(
+        '{"downloadLimitKbps":-5,"uploadLimitKbps":"x","maxConnections":-1}')!;
+    expect(decoded.downloadLimitKbps, 0);
+    expect(decoded.uploadLimitKbps, 0);
+    expect(decoded.maxConnections, 0);
+  });
+
+  test('copyWith preserves limits when not overridden', () {
+    const QbConnectionConfig base = QbConnectionConfig(
+      downloadLimitKbps: 1000,
+      maxConnections: 50,
+    );
+    final QbConnectionConfig next = base.copyWith(uploadLimitKbps: 200);
+    expect(next.downloadLimitKbps, 1000);
+    expect(next.uploadLimitKbps, 200);
+    expect(next.maxConnections, 50);
+  });
+
   test('copyWith preserves backend when not overridden', () {
     const QbConnectionConfig base =
         QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);

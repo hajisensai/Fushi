@@ -76,6 +76,21 @@ class EmbeddedTorrentHost {
 
   static int _defaultClockMs() => DateTime.now().millisecondsSinceEpoch;
 
+  /// 应用用户可调的全局资源限制（速率 + 连接数）。[downloadKbps]/[uploadKbps]
+  /// 单位 KB/s（0 = 不限），[maxConnections]（0 = 引擎默认）。config 变更时
+  /// 由 AppModel 调用，即时生效。
+  bool applyLimits({
+    int downloadKbps = 0,
+    int uploadKbps = 0,
+    int maxConnections = 0,
+  }) {
+    return _session.applyLimits(
+      downloadBps: downloadKbps > 0 ? downloadKbps * 1024 : 0,
+      uploadBps: uploadKbps > 0 ? uploadKbps * 1024 : 0,
+      connectionsLimit: maxConnections,
+    );
+  }
+
   /// 派发一个短命后端适配器（共享常驻 session；其 close 不销毁会话）。
   /// 供 `AnimeDownloadService.backendFactory` 每 tick 调用。
   EmbeddedTorrentBackend backendView() {

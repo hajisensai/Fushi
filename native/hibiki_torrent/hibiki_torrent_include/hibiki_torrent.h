@@ -51,6 +51,14 @@ HT_EXPORT int ht_session_listen_port(void* session);
 HT_EXPORT int ht_session_set_rate_limits(void* session, int download_bps,
                                          int upload_bps);
 
+// 一次设全局资源限制（用户可调，控制内置引擎占用）：
+// [download_bps]/[upload_bps] 速率上限（字节/秒，<=0 = 不限）；
+// [connections_limit] 全局最大连接数（<=0 = 保持 libtorrent 默认）。
+// 返回 1 成功、0 失败。（速率部分与 ht_session_set_rate_limits 等价，这里
+// 合成一个入口让 app 从配置一次性应用。）
+HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
+                              int connections_limit);
+
 // 添加磁力链接，落盘到 [save_path]；[sequential] 非 0 开顺序下载。
 // 成功 {"ok":true,"id":"<infohash>"}；失败 {"ok":false,"error":"..."}。
 // 重复添加同一种子返回已有种子的 id（ok:true）。

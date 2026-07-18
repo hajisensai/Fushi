@@ -90,6 +90,24 @@ class HibikiTorrentBindings {
   late final _ht_session_set_rate_limits = _ht_session_set_rate_limitsPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int)>();
 
+  /// 一次设全局资源限制（速率 bps + 连接数）。1 成功 0 失败。
+  int ht_apply_limits(
+    ffi.Pointer<ffi.Void> session,
+    int download_bps,
+    int upload_bps,
+    int connections_limit,
+  ) {
+    return _ht_apply_limits(
+        session, download_bps, upload_bps, connections_limit);
+  }
+
+  late final _ht_apply_limitsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int,
+              ffi.Int)>>('ht_apply_limits');
+  late final _ht_apply_limits = _ht_apply_limitsPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int)>();
+
   /// 添加磁力；返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_add_magnet(
     ffi.Pointer<ffi.Void> session,

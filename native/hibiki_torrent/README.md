@@ -143,6 +143,23 @@ flutter windows 构建也不便注入 vcpkg 工具链文件。故：
 `build_windows_dll.ps1`（需缓存 vcpkg libtorrent，避免每次 40min），或从
 预先发布的 release 资产下载这 4 个 DLL 放进 `prebuilt/windows-x64/`。
 
+## 用户可调资源限制（速率 + 连接数）
+
+`QbConnectionConfig` 加 `downloadLimitKbps` / `uploadLimitKbps`（KB/s，0=不限）
++ `maxConnections`（0=引擎默认）；设置→视频→番剧下载在**选内置引擎时**显示
+三个数字输入。native `ht_apply_limits(download_bps, upload_bps,
+connections_limit)` 一次应用（`connections_limit<=0` 保持 libtorrent 默认，
+不会把"不限"误设成禁连）。`EmbeddedTorrentHost.applyLimits`（KB/s→bps）在
+宿主创建时铺一次、用户改设置时即时重应用（`AppModel.setQbConnectionConfig`）。
+
+## 为什么不支持 wss:// tracker
+
+libtorrent 2.x **无 WebSocket/WebRTC/WebTorrent tracker 能力**（头文件里
+`websocket`/`wss` 零命中）。wss 是浏览器 WebTorrent（WebRTC data channel）
+生态，给 libtorrent 加它等于塞进整套 WebRTC 栈，是另一个量级的项目。番剧
+种子（Nyaa）用标准 `udp://`/`http://` tracker + DHT，不依赖 wss——所以这
+不是"用户用不了"的短板。真实下载走标准 tracker + DHT 即可。
+
 ## 尚未做（多平台 + 真机）
 
 - **多平台**（Android/macOS/Linux）：同样走 vendored 预编译 + 各 runner

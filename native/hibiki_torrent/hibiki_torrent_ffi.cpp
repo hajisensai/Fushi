@@ -240,6 +240,27 @@ HT_EXPORT int ht_session_set_rate_limits(void* session, int download_bps,
   }
 }
 
+HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
+                              int connections_limit) {
+  if (session == nullptr) return 0;
+  try {
+    lt::settings_pack sp;
+    sp.set_int(lt::settings_pack::download_rate_limit,
+               download_bps > 0 ? download_bps : 0);
+    sp.set_int(lt::settings_pack::upload_rate_limit,
+               upload_bps > 0 ? upload_bps : 0);
+    // <=0 时不动 connections_limit（保持 libtorrent 默认），避免把用户
+    // "不限"误设成 0（0 会禁止所有连接）。
+    if (connections_limit > 0) {
+      sp.set_int(lt::settings_pack::connections_limit, connections_limit);
+    }
+    as_session(session)->apply_settings(std::move(sp));
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
 HT_EXPORT char* ht_add_magnet(void* session, const char* magnet_uri,
                               const char* save_path, int sequential) {
   if (session == nullptr) return json_error("session is null");

@@ -2730,8 +2730,22 @@ class AppModel with ChangeNotifier {
   /// qBittorrent WebUI 连接配置（番剧下载）；null = 未配置未启用。
   QbConnectionConfig? get qbConnectionConfig => prefsRepo.qbConnectionConfig;
 
-  Future<void> setQbConnectionConfig(QbConnectionConfig? config) =>
-      prefsRepo.setQbConnectionConfig(config);
+  Future<void> setQbConnectionConfig(QbConnectionConfig? config) async {
+    await prefsRepo.setQbConnectionConfig(config);
+    // 内置引擎资源限制即时生效（用户在设置里改限速/连接数后不必重启）。
+    _applyEmbeddedTorrentLimits(config);
+  }
+
+  /// 把配置里的内置引擎资源限制应用到常驻宿主（宿主不存在则 no-op）。
+  void _applyEmbeddedTorrentLimits(QbConnectionConfig? config) {
+    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    if (host == null || config == null) return;
+    host.applyLimits(
+      downloadKbps: config.downloadLimitKbps,
+      uploadKbps: config.uploadLimitKbps,
+      maxConnections: config.maxConnections,
+    );
+  }
 
   /// 番剧下载：计划存储（选种对话框写计划/暂存字幕，与完成监听服务共用同一实例）。
   AnimeDownloadPlanStore? _animeDownloadPlanStore;
@@ -2762,6 +2776,8 @@ class AppModel with ChangeNotifier {
       _embeddedTorrentHost = EmbeddedTorrentHost.open(
         baseSavePath: path.join(baseDir.path, 'content'),
       );
+      // 启动即把已保存的资源限制铺到宿主（不必等用户改设置）。
+      _applyEmbeddedTorrentLimits(prefsRepo.qbConnectionConfig);
     }
 
     _animeDownloadService = AnimeDownloadService(

@@ -13,6 +13,9 @@ class QbConnectionConfig {
     this.username = '',
     this.password = '',
     this.category = 'hibiki',
+    this.downloadLimitKbps = 0,
+    this.uploadLimitKbps = 0,
+    this.maxConnections = 0,
   });
 
   /// 本应用管理的下载在 qBittorrent 里归入的默认分类名。
@@ -40,6 +43,15 @@ class QbConnectionConfig {
   /// 下载归入的 qBittorrent 分类（列种子时也按此过滤，默认 [defaultCategory]）。
   final String category;
 
+  /// 内置引擎全局下载限速（KB/s，0 = 不限）。外接 qb 忽略（qb 自有设置）。
+  final int downloadLimitKbps;
+
+  /// 内置引擎全局上传限速（KB/s，0 = 不限）。
+  final int uploadLimitKbps;
+
+  /// 内置引擎全局最大连接数（0 = 引擎默认）。
+  final int maxConnections;
+
   /// 是否已配置（[baseUrl] 非空）；未配置时下载入队与完成监听均不动作。
   bool get isConfigured =>
       backend == backendEmbedded || baseUrl.trim().isNotEmpty;
@@ -50,6 +62,9 @@ class QbConnectionConfig {
     String? username,
     String? password,
     String? category,
+    int? downloadLimitKbps,
+    int? uploadLimitKbps,
+    int? maxConnections,
   }) {
     return QbConnectionConfig(
       backend: backend ?? this.backend,
@@ -57,8 +72,17 @@ class QbConnectionConfig {
       username: username ?? this.username,
       password: password ?? this.password,
       category: category ?? this.category,
+      downloadLimitKbps: downloadLimitKbps ?? this.downloadLimitKbps,
+      uploadLimitKbps: uploadLimitKbps ?? this.uploadLimitKbps,
+      maxConnections: maxConnections ?? this.maxConnections,
     );
   }
+}
+
+/// JSON 数字字段容错解析为非负 int（null/非数/负数 → 0）。
+int _nonNegInt(Object? value) {
+  final int n = value is num ? value.toInt() : 0;
+  return n < 0 ? 0 : n;
 }
 
 /// 解析偏好里存的 JSON 字符串为 [QbConnectionConfig]。纯函数，容错：
@@ -81,6 +105,9 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
       category: category is String && category.isNotEmpty
           ? category
           : QbConnectionConfig.defaultCategory,
+      downloadLimitKbps: _nonNegInt(json['downloadLimitKbps']),
+      uploadLimitKbps: _nonNegInt(json['uploadLimitKbps']),
+      maxConnections: _nonNegInt(json['maxConnections']),
     );
   } catch (_) {
     return null;
@@ -96,5 +123,8 @@ String encodeQbConnectionConfig(QbConnectionConfig config) {
     'username': config.username,
     'password': config.password,
     'category': config.category,
+    'downloadLimitKbps': config.downloadLimitKbps,
+    'uploadLimitKbps': config.uploadLimitKbps,
+    'maxConnections': config.maxConnections,
   });
 }

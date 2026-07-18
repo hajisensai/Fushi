@@ -1967,5 +1967,10 @@
   "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki.",
   "video_setting_torrent_backend": "Download backend",
   "video_setting_torrent_backend_qb": "External qBittorrent",
-  "video_setting_torrent_backend_embedded": "Built-in engine (desktop)"
+  "video_setting_torrent_backend_embedded": "Built-in engine (desktop)",
+  "video_setting_torrent_download_limit": "Download limit (KB/s)",
+  "video_setting_torrent_upload_limit": "Upload limit (KB/s)",
+  "video_setting_torrent_max_connections": "Max connections",
+  "video_setting_torrent_limit_hint": "0 = unlimited",
+  "video_setting_torrent_connections_hint": "0 = engine default"
 }
