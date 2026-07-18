@@ -37,6 +37,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.pageProgress,
     this.onThemeChanged,
     this.favoriteSentences = const [],
+    this.favoritePositionLabel,
     this.onDeleteFavorite,
     this.onJumpToFavorite,
     this.onPlayFavorite,
@@ -82,6 +83,10 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final WidgetRef ref;
   final Future<void> Function()? onThemeChanged;
   final List<FavoriteSentence> favoriteSentences;
+
+  /// 收藏行「阅读位置」标签（如 `78.6%`）解析器，由阅读器页面用每章字符账本折算全书
+  /// 进度。返回 null 时该行不显示位置（账本未就绪 / 无 sectionIndex）。
+  final String? Function(FavoriteSentence fav)? favoritePositionLabel;
   final Future<void> Function(FavoriteSentence fav)? onDeleteFavorite;
   final Future<void> Function(FavoriteSentence fav)? onJumpToFavorite;
   final Future<void> Function(FavoriteSentence fav)? onPlayFavorite;
@@ -1520,6 +1525,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
+  /// 收藏行副标题：`书名 - 章节 - 时间`，末尾追加阅读位置百分比（解析成功时）。
+  String _favoriteMetaLabel(FavoriteSentence favorite, DateFormat fmt) {
+    final String base =
+        '${favorite.bookTitle}${favorite.chapterLabel != null ? ' - ${favorite.chapterLabel}' : ''} - ${fmt.format(favorite.createdAt)}';
+    final String? position = widget.favoritePositionLabel?.call(favorite);
+    return position == null ? base : '$base · $position';
+  }
+
   Widget _buildFavoritesSection(BuildContext context, ThemeData theme) {
     final DateFormat fmt = DateFormat('MM/dd HH:mm');
     return AdaptiveSettingsSection(
@@ -1528,8 +1541,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         for (final FavoriteSentence favorite in _favorites)
           _InBookFavoriteRow(
             favorite: favorite,
-            metaLabel:
-                '${favorite.bookTitle}${favorite.chapterLabel != null ? ' - ${favorite.chapterLabel}' : ''} - ${fmt.format(favorite.createdAt)}',
+            // BUG-875 附带（用户反馈）：收藏行右侧加「阅读位置」百分比（如 78.6%），
+            // 让用户不放音频 / 不复制文本也能一眼看出这条收藏在书里的位置。位置解析
+            // 失败（章字符账本未就绪）时不追加、只显示原元信息。
+            metaLabel: _favoriteMetaLabel(favorite, fmt),
             color: _highlightColor(favorite.color),
             onPlay: widget.onPlayFavorite == null
                 ? null

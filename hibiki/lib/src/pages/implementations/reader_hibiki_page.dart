@@ -909,6 +909,41 @@ class ChapterProgressTarget {
   final double progress;
 }
 
+/// 收藏句列表「阅读位置百分比」：由 (章节索引, 章内绝对可匹配字符偏移) 求全书进度分数
+/// [0,1]，与 [resolveChapterProgressForGlobalOffset] 互为正/逆（这里 section+offset →
+/// 全局偏移 → /总字符）。收藏面板每行右侧显示 `78.6%`，让用户不放音频 / 不复制文本也能
+/// 一眼看出这条收藏在书里的位置。
+///
+/// - [cumulativeChars]：每章起始累积字符（`_chapterCumulativeChars`）。
+/// - [charCounts]：每章字符数（`_chapterCharCounts`）。
+/// - 章内偏移夹到 `[0, 章长]`（收藏 `normCharOffset` 是 JS 可匹配字符索引，与 Dart 章长
+///   同量纲近似；章基 `cumulativeChars[section]` 精确，故全书分数是良好近似）。
+///
+/// 表为空 / 长度不匹配 / 总字符<=0 / `sectionIndex` 越界时返回 `null`（调用方不显示百分比，
+/// 例如章字符账本尚未在本次阅读会话建好时静默不显示，绝不显示错误位置）。
+double? favoriteBookProgressFraction({
+  required List<int> cumulativeChars,
+  required List<int> charCounts,
+  required int sectionIndex,
+  required int? normCharOffset,
+}) {
+  if (cumulativeChars.isEmpty ||
+      charCounts.isEmpty ||
+      cumulativeChars.length != charCounts.length ||
+      sectionIndex < 0 ||
+      sectionIndex >= cumulativeChars.length) {
+    return null;
+  }
+  final int total = cumulativeChars.last + charCounts.last;
+  if (total <= 0) return null;
+  final int chapterLen = charCounts[sectionIndex];
+  final int inChapter = normCharOffset == null
+      ? 0
+      : normCharOffset.clamp(0, chapterLen > 0 ? chapterLen : 0);
+  final int globalOffset = cumulativeChars[sectionIndex] + inChapter;
+  return (globalOffset / total).clamp(0.0, 1.0);
+}
+
 /// TODO-131: 书本磁盘定位结果。`_locateBookOnDisk` 与 profile/settings 链并行返回，
 /// `bookRow` 携带 chaptersJson（供 DB 计数复用）；`exists` 为 false 时调用方提示
 /// 文件丢失并退出。

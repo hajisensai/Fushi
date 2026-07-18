@@ -191,6 +191,35 @@ class ReaderPaginationScripts {
     return (safe / pageSize).floorToDouble() * pageSize;
   }
 
+  /// JS `scrollToRange` reveal 决策的纯 Dart 影子（BUG-875）。
+  ///
+  /// 返回值：`null` = 不翻页（句首已在本页可见 / pageSize 非法 / 目标==当前）；
+  /// 非空 = 应翻到的目标 scroll。
+  ///
+  /// 根因：`pageSize`（列周期）因 chrome inset / body padding 可比 client
+  /// `viewportExtent` 小最多半页。竖排一句 cue 句首若是行尾单字（列底），其起始边
+  /// `rectStart`(=rect.top) 落在 `[pageSize, viewportExtent)` 带内 —— 视觉仍在本页底部、
+  /// 却已越过 pitch 网格边界 → 旧 floor 判进下一页 → 有声书读到该句凭空前翻、下一句又
+  /// 翻回 = 抖动。修复：起始边落在真实 client 视口 `[0, viewportExtent)` 内即「已可见」，
+  /// 不翻页。`rectStart<0`（句首滚出视口首边）或 `>=viewportExtent`（句首真在下一页）
+  /// 才照常 floor 落页。
+  static double? revealScrollTargetForTesting({
+    required double rectStart,
+    required double currentScroll,
+    required double pageSize,
+    required double viewportExtent,
+  }) {
+    if (pageSize <= 0) return null;
+    if (rectStart >= 0 && rectStart < viewportExtent) return null;
+    final double target = revealAnchorTargetScrollForTesting(
+      rectStart: rectStart,
+      currentScroll: currentScroll,
+      pageSize: pageSize,
+    );
+    if (target == currentScroll) return null;
+    return target;
+  }
+
   /// JS `buildPaginationMetrics` 的 min/maxScroll 落页纯 Dart 影子（TODO-1179）。
   ///
   /// 手动跳章分页恢复用 `contentFirstPageScroll`(=minScroll，前进 progress=0) /
@@ -1886,7 +1915,8 @@ $_sharedJs
       scrollEl: scrollEl,
       pageSize: pageStep,
       maxScroll: maxScroll,
-      physicalMaxScroll: physicalMaxScroll
+      physicalMaxScroll: physicalMaxScroll,
+      viewportExtent: viewportExtent
     };
   },
   getPagePosition: function(context) {
@@ -1975,7 +2005,8 @@ $_sharedJs
     // 旧实现用首段 rect 的几何中点（top/bottom 或 left/right 取中），句首落列后
     // 半段时中点越界相邻列 → floor 前翻，下一句又翻回 = 有声书自动读翻页抖动。
     // 起始边锚恒落「句子起点所在页」，不越界。轴向语义已被起始边路径锁定，不自创轴向。
-    var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
+    var startEdge = context.vertical ? rect.top : rect.left;
+    var anchor = startEdge + currentScroll;
     var targetScroll = this.alignToPage(context, anchor);
     // TODO-792 [792-REVEAL] 逐句 reveal 取证探针（仅竖排，零行为变化）。
     // 有声书跨章自动翻页时连续打印 delta = anchor − targetScroll 数列：
@@ -1997,6 +2028,18 @@ $_sharedJs
           + ' scrollHeight=' + document.body.scrollHeight);
       } catch (e) {}
     }
+    // BUG-875（竖排行尾单字凭空翻页根因修复）：pageStep（列周期 = N×(used 列宽+gap)）
+    // 因 chrome inset / body padding 可比 client 视口 extent 小最多半页（见 getScrollContext
+    // 的 physicalMaxScroll 注释「两者因此可相差半页」）。当一句 cue 的**句首**是一行的**行尾
+    // 单字**（竖排=列底），其首段 rect 的起始边 rect.top 落在 [pageStep, viewportExtent) 这条
+    // 「视觉仍在本页底部、却已越过 pitch 网格边界」的带内 → 旧 floor 网格把它判进下一 pitch
+    // 页 → 有声书读到该句凭空前翻一页、下一句句首起始边回到 [0,pageStep) 又翻回 = 来回抖动。
+    // 起始边只要落在真实 client 视口内即「已在本页可见」，reveal 原语不该再翻页（与
+    // scrollToTarget「已可见即 return false」同哲学，但分页模式整页对齐无需 15% 安全边距：
+    // 句子落在本页任意位置都是合法阅读位）。用真实 viewportExtent 作可见判据，从根上消除
+    // pitch 网格与 client 视口在页底的坐标失配，不引入延迟/特例分支。startEdge<0（句首已滚出
+    // 视口首边）或 >=viewportExtent（句首在下一页、真需翻页）时不短路，照常 floor 落页。
+    if (startEdge >= 0 && startEdge < context.viewportExtent) return false;
     if (targetScroll === currentScroll) return false;
     this.setPagePosition(context, targetScroll);
     var self = this;
