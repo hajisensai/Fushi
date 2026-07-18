@@ -25,10 +25,14 @@ per-(bookKey, 归一化 imageKey) 真值（Drift `revealed_images` 表），阅�
   - 测试：`hibiki/test/reader/image_reveal_key_test.dart`（10）+
     `packages/hibiki_core/test/migration_revealed_images_v46_test.dart`（2）+
     `migration_test.dart`/`migration_v40_collections_test.dart` 的 45→46 同步（33 全绿）。
-- **[ ] 阶段 B（诉求3：阅读器接 DB）** — 打开书从 DB 灌 `_revealedImageKeys`；`onImageRevealed`
-  归一化 + 写 DB。
-- **[ ] 阶段 C（诉求4：图片库遮罩 + 双向同步）** — 图片库传 bookKey，未揭图 blur + 点开写 DB，
-  两端以 DB 为真值。
+- **[x] 阶段 B（诉求3：阅读器接 DB，已落）** — `_loadRevealedImageKeys`（首次注入 revealedKeysJson
+  前从 DB 灌 `_revealedImageKeys`，与 spread/audio 并行）；`onImageRevealed` handler 改
+  `ImageRevealKey.normalize` + 仅新揭开写 `markImageRevealed`（含音频跨图揭开路径，经同一 handler）。
+- **[x] 阶段 C（诉求4：图片库遮罩 + 双向同步，已落）** — `IllustrationsViewerPage` 加 bookKey +
+  database；开页 `getRevealedImageKeys` 灌本地集，`ImageRevealKey.fromFile` 算 key，
+  `ImageRevealKey.shouldBlur` 判据（缩略图 + 全屏共用）渲染模糊遮罩，点击揭开写 DB。与阅读器
+  不同时活跃（图片库仅从书架进入），各自开页 get DB 即双向同步，无需 live watch。
+  测试：`image_reveal_key_test.dart` 加 shouldBlur 4 用例（14 全绿）。
 - **[ ] 阶段 D（诉求1/2：运行时失效根因，需真机复现确认）**
 
 ### ② 运行时失效根因（静态排序，待真机复现确认命中哪条）

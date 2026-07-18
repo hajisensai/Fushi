@@ -761,6 +761,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         builder: (_) => IllustrationsViewerPage(
           bookTitle: item.title,
           extractDir: row.extractDir,
+          bookKey: bookKey,
+          database: appModel.database,
         ),
       ),
     );

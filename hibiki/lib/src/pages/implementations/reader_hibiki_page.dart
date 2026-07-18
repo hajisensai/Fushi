@@ -52,6 +52,7 @@ import 'package:hibiki/src/reader/reader_caret_scripts.dart';
 import 'package:hibiki/src/reader/reader_chrome_scaler.dart';
 import 'package:hibiki/src/reader/reader_lyrics_caret_scripts.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
+import 'package:hibiki/src/reader/image_reveal_key.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
@@ -1542,6 +1543,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
   }
 
+  /// BUG-891：打开书时从 Drift 灌入本书已揭开的图片 key（跨 app 重启持久 + 图片库双向
+  /// 同步的真相源）。必须在首次注入分页脚本 revealedKeysJson 之前完成，历史揭开项才不会
+  /// 被重新遮罩。DB 失败不阻塞开书（退化为全部遮罩，与旧版一致）。
+  Future<void> _loadRevealedImageKeys(HibikiDatabase db) async {
+    try {
+      final Set<String> keys = await db.getRevealedImageKeys(widget.bookKey);
+      _revealedImageKeys.addAll(keys);
+    } catch (e, s) {
+      ErrorLogService.instance.log('ReaderHibiki.loadRevealedImageKeys', e, s);
+    }
+  }
+
   Future<void> _initBookInner() async {
     final HibikiDatabase db = appModelNoUpdate.database;
 
@@ -1619,6 +1632,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     await Future.wait(<Future<void>>[
       _initSpreadMap(appModelNoUpdate.database),
       _resolveAudioSlot(),
+      _loadRevealedImageKeys(db),
     ]);
     if (!mounted) return;
 

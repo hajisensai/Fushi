@@ -81,4 +81,38 @@ void main() {
       expect(fromReader, fromLib, reason: '两端 key 必须逐字相等才能共享持久化揭开状态');
     });
   });
+
+  group('ImageRevealKey.shouldBlur（阅读器/图片库共用遮罩判据）', () {
+    test('总开关关 → 从不遮罩（图片库始终原图）', () {
+      expect(
+        ImageRevealKey.shouldBlur(
+            blurEnabled: false, revealKey: 'x', revealed: <String>{}),
+        isFalse,
+      );
+    });
+
+    test('已揭开 → 不遮罩（双向同步：DB 已含即不遮）', () {
+      expect(
+        ImageRevealKey.shouldBlur(
+            blurEnabled: true, revealKey: 'x', revealed: <String>{'x'}),
+        isFalse,
+      );
+    });
+
+    test('开 + 未揭 → 遮罩', () {
+      expect(
+        ImageRevealKey.shouldBlur(
+            blurEnabled: true, revealKey: 'x', revealed: <String>{}),
+        isTrue,
+      );
+    });
+
+    test('无归一 key → 不遮罩（不参与防剧透）', () {
+      expect(
+        ImageRevealKey.shouldBlur(
+            blurEnabled: true, revealKey: null, revealed: <String>{}),
+        isFalse,
+      );
+    });
+  });
 }

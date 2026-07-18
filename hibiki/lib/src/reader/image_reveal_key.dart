@@ -1,6 +1,7 @@
 import 'package:path/path.dart' as p;
 
-import 'reader_settings.dart' show ReaderCustomFontCss;
+import 'package:hibiki/src/reader/reader_settings.dart'
+    show ReaderCustomFontCss;
 
 /// EPUB 图片防剧透遮罩「已揭开」状态的稳定归一化 key（BUG-891）。
 ///
@@ -48,6 +49,15 @@ class ImageRevealKey {
   /// 文件不在 [extractDir] 内（`..` 越界）返回 `null`。
   static String? fromFile(String filePath, String extractDir) =>
       _sanitizeRel(p.relative(filePath, from: extractDir));
+
+  /// 某图当前是否应显示防剧透遮罩：总开关 [blurEnabled] 开 + 有归一 [revealKey] +
+  /// 未在已揭集 [revealed]。阅读器与图片库共用同一判据（缩略图 / 全屏都调它）。
+  static bool shouldBlur({
+    required bool blurEnabled,
+    required String? revealKey,
+    required Set<String> revealed,
+  }) =>
+      blurEnabled && revealKey != null && !revealed.contains(revealKey);
 
   /// 正斜杠归一 + 折叠 `.`/`..`/重复斜杠 + 去前导斜杠；越界 / 空返回 `null`。
   static String? _sanitizeRel(String rel) {
