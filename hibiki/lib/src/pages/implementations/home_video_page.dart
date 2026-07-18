@@ -54,6 +54,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
+import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
@@ -172,6 +173,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Map<String, DateTime> _watchAtByUid = const <String, DateTime>{};
   Map<String, DateTime> _legacyWatchAtByTitle = const <String, DateTime>{};
 
+  /// 每日观看时长（dateKey → 毫秒之和），驱动顶部概览的观看热力图（GitHub 式）。
+  /// 与 [_watchAtByUid] 同批从 watch-stats 全量行聚合（[_loadLibraryMaps]）。
+  Map<String, int> _watchMsByDay = const <String, int>{};
+
   @override
   void initState() {
     super.initState();
@@ -215,11 +220,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (mounted) _refresh();
   }
 
-  void _refresh() {
+  /// 刷新库页。默认只刷**本地**（书架列表 + 分组映射 + 封面自愈）；远端互联清单
+  /// 不因本地播放/导入/标签变化而改变，故不重拉，避免「看完视频返回→远端卡整片闪空
+  /// 重新加载」（远端那层 FutureBuilder 无缓存顶值，future 一换即清空重拉）。
+  /// 只有真正改变远端来源的路径（[_openManageSources]）才传 `remote: true` 重拉清单；
+  /// 用户主动刷新走下拉 [_pullToRefresh]。
+  void _refresh({bool remote = false}) {
     setState(() {
       // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
       _future = widget.repo.listForShelf();
-      _remoteFuture = _loadRemoteVideos();
+      if (remote) _remoteFuture = _loadRemoteVideos();
     });
     _loadLibraryMaps();
     _maybeBackfillCovers();
@@ -291,6 +301,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           if (r.bookUid == null) (r.title, r.lastModified),
       ],
     );
+    // 每日观看时长聚合（dateKey → sum watchTimeMs），供顶部观看热力图。同一批
+    // watchRows 复用，不再单独查库。
+    final Map<String, int> watchMsByDay = <String, int>{};
+    for (final VideoWatchStatisticRow r in watchRows) {
+      watchMsByDay[r.dateKey] = (watchMsByDay[r.dateKey] ?? 0) + r.watchTimeMs;
+    }
     if (mounted) {
       setState(() {
         _sortMode = sortMode;
@@ -301,6 +317,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         _primaryCollectionByEntry = primaryMap;
         _watchAtByUid = watchByUid;
         _legacyWatchAtByTitle = legacyByTitle;
+        _watchMsByDay = watchMsByDay;
       });
     }
   }
@@ -720,7 +737,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       context: context,
       builder: (_) => const MediaSourcesDialog(mediaKind: 'video'),
     );
-    if (mounted) _refresh();
+    // 管理互联源可能新增/切换/移除远端 host，远端清单需重拉。
+    if (mounted) _refresh(remote: true);
   }
 
   /// 拖放到视频 tab 时的处理：分类文件 → 局部坐标转屏幕坐标命中卡片 → 决策意图。
@@ -1695,11 +1713,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 builder: (BuildContext context, BoxConstraints constraints) {
                   final HibikiDesignTokens tokens =
                       HibikiDesignTokens.of(context);
+                  // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
+                  // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
+                  // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
                   final ({int columns, double cardWidth}) cardLayout =
                       unifiedShelfCardLayout(
                     availableWidth:
                         constraints.maxWidth - tokens.spacing.card * 2,
-                    targetWidth: 240,
+                    targetWidth:
+                        readerShelfGridExtentForWidth(constraints.maxWidth),
                   );
                   return CustomScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -1707,8 +1729,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                       // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
                       // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
                       // [all] 描述整库，不随标签筛选变。
-                      if (all.isNotEmpty)
-                        SliverToBoxAdapter(child: _buildOverviewSection(all)),
+                      // 本地库非空恒显示概览（活动热力图）；本地空时仅当存在远端
+                      // 续播候选（有断点未看完）才显示——否则「连了远端但没在看任何
+                      // 视频」不该凭空冒出一张空概览（也避免挤走远端卡的可点区域）。
+                      if (all.isNotEmpty ||
+                          _hasRemoteResumeCandidate(remoteVideos))
+                        SliverToBoxAdapter(
+                          child: _buildOverviewSection(all, remoteVideos),
+                        ),
                       ..._buildLocalVideoSlivers(
                           all, ordered, remoteVideos, cardLayout),
                     ],
@@ -1722,13 +1750,37 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// UI v2 Phase B：顶部概览条 =「继续观看 hero」+「媒体库概览」统计。
+  /// UI v2 Phase B：顶部概览条 =「继续观看 hero」+「观看活动热力图」。
   ///
-  /// 数据全部内存推导（[computeVideoLibraryOverview]）：hero = 有痕迹未看完中
-  /// 最近看过的一条（watch-stats → importedAt 回退）；统计 = 总数 / 未完成 /
-  /// 近 7 天导入。**不显示百分比**（VideoBooks 无总时长列，不造假）。宽 ≥720
-  /// 并排、窄屏纵向堆叠；无 hero 候选时只渲染统计。
-  Widget _buildOverviewSection(List<VideoBookRow> all) {
+  /// hero = 有痕迹未看完中最近看过的一条（[computeVideoLibraryOverview]，
+  /// watch-stats → importedAt 回退）。右侧不再是「总数/未完成/近7天导入」三格状态
+  /// 计数（用户反馈：那是状态非统计），改成 GitHub 式观看时长热力图（[_watchMsByDay]，
+  /// 整卡点开完整视频统计页）。宽 ≥720 并排、窄屏纵向堆叠；无 hero 候选时只渲染热力图。
+  /// 远端视频 → [RemoteContinueEntry] 投影（completed 由 positionMs/durationMs
+  /// 派生，远端无 completed 列）。概览 gate 与 hero 选取共用，单一真值不重复派生。
+  List<RemoteContinueEntry> _remoteContinueEntries(
+    List<RemoteVideoInfo> remoteVideos,
+  ) =>
+      <RemoteContinueEntry>[
+        for (final RemoteVideoInfo v in remoteVideos)
+          RemoteContinueEntry(
+            id: v.id,
+            positionMs: v.positionMs,
+            completed: v.durationMs != null &&
+                v.durationMs! > 0 &&
+                v.positionMs >= (v.durationMs! * 0.9),
+            updatedAtMs: v.positionUpdatedAtMs,
+          ),
+      ];
+
+  /// 是否存在远端续播候选（有断点未看完）。本地库空时用它 gate 概览显隐。
+  bool _hasRemoteResumeCandidate(List<RemoteVideoInfo> remoteVideos) =>
+      pickRemoteContinueEntry(_remoteContinueEntries(remoteVideos)) != null;
+
+  Widget _buildOverviewSection(
+    List<VideoBookRow> all,
+    List<RemoteVideoInfo> remoteVideos,
+  ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final VideoLibraryOverview overview = computeVideoLibraryOverview(
       entries: <VideoOverviewEntry>[
@@ -1772,9 +1824,26 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         }
       }
     }
-    final Widget stats = _buildOverviewStats(overview, tokens);
-    final Widget? heroCard =
-        hero == null ? null : _buildContinueHero(hero, overview, tokens);
+    // #3：远端/互联视频也进「继续观看」。纯流播远端无本地进度行，独立挑候选
+    // （[pickRemoteContinueEntry]：有断点未看完、host 端断点时间戳最新），再与本地
+    // hero 按时间戳比较——远端更近（或本地无 hero）则 hero 换成远端卡（点击 _openRemote）。
+    final RemoteContinueEntry? remoteBest =
+        pickRemoteContinueEntry(_remoteContinueEntries(remoteVideos));
+    final int? localWatchedMs =
+        overview.heroLastWatched?.millisecondsSinceEpoch;
+    final bool remoteWins = remoteBest != null &&
+        (hero == null ||
+            localWatchedMs == null ||
+            remoteBest.updatedAtMs > localWatchedMs);
+    final Widget stats = _buildWatchHeatmapCard(tokens);
+    Widget? heroCard;
+    if (remoteWins) {
+      final RemoteVideoInfo rv =
+          remoteVideos.firstWhere((RemoteVideoInfo v) => v.id == remoteBest.id);
+      heroCard = _buildContinueHeroRemote(rv, tokens);
+    } else if (hero != null) {
+      heroCard = _buildContinueHero(hero, overview, tokens);
+    }
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
@@ -1881,11 +1950,79 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 媒体库概览统计：总数 / 未完成 / 近 7 天导入 三格。
-  Widget _buildOverviewStats(
-    VideoLibraryOverview overview,
+  /// 远端「继续观看」hero 卡（#3）：与本地 [_buildContinueHero] 同形态，但封面走
+  /// 远端封面 [_buildRemoteVideoCover]、进度取 host 端 [RemoteVideoInfo.positionMs] /
+  /// [RemoteVideoInfo.positionUpdatedAtMs]，整卡点击走远端流播 [_openRemote]。
+  Widget _buildContinueHeroRemote(
+    RemoteVideoInfo video,
     HibikiDesignTokens tokens,
   ) {
+    final DateTime? watched = video.positionUpdatedAtMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(video.positionUpdatedAtMs)
+        : null;
+    final List<String> metadata = <String>[
+      t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
+      if (watched != null)
+        t.video_last_watched(date: _formatOverviewDate(watched)),
+    ];
+    return HibikiCard(
+      key: ValueKey<String>('home_video_continue_hero_remote_${video.id}'),
+      focusId: const HibikiFocusId('home-video-continue-hero'),
+      onTap: () => _openRemote(video),
+      child: Row(
+        children: <Widget>[
+          ClipRRect(
+            borderRadius: HibikiBorderRadius.card,
+            child: SizedBox(
+              width: 148,
+              height: 84,
+              child: _buildRemoteVideoCover(video),
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap + 4),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(t.video_continue_watching,
+                    style: tokens.type.sectionLabel),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  video.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  metadata.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Icon(
+            Icons.play_circle_filled,
+            size: 36,
+            color: tokens.surfaces.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 顶部观看活动热力图卡（GitHub 式贡献图）：按每日观看时长 [_watchMsByDay] 铺
+  /// 最近数周方格，整卡可点开完整视频统计页。取代旧的「总数/未完成/近7天导入」三格
+  /// 状态计数——那是状态而非统计（用户反馈），热力图直观展示观看活跃度。
+  Widget _buildWatchHeatmapCard(HibikiDesignTokens tokens) {
+    final StatHeatmapModel model = buildStatHeatmap(
+      valueByDateKey: _watchMsByDay,
+      now: DateTime.now(),
+    );
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: tokens.surfaces.group,
@@ -1900,56 +2037,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Text(t.video_library_overview, style: tokens.type.sectionLabel),
+            Text(t.video_watch_activity, style: tokens.type.sectionLabel),
             SizedBox(height: tokens.spacing.gap),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: _buildOverviewStatCell(
-                    t.video_stat_total_videos,
-                    overview.total,
-                    tokens,
-                  ),
-                ),
-                Expanded(
-                  child: _buildOverviewStatCell(
-                    t.video_stat_unfinished,
-                    overview.unfinished,
-                    tokens,
-                  ),
-                ),
-                Expanded(
-                  child: _buildOverviewStatCell(
-                    t.video_stat_recent_imports,
-                    overview.recentImports,
-                    tokens,
-                  ),
-                ),
-              ],
+            StatContributionHeatmap(
+              model: model,
+              baseColor: tokens.surfaces.primary,
+              emptyColor: tokens.surfaces.card,
+              onTap: _openStatistics,
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildOverviewStatCell(
-    String label,
-    int value,
-    HibikiDesignTokens tokens,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text('$value', style: tokens.type.pageTitle),
-        SizedBox(height: tokens.spacing.gap / 2),
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: tokens.type.metadata,
-        ),
-      ],
     );
   }
 
@@ -2202,10 +2300,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         title: collection.name,
         countLabel: t.video_playlist_episodes(count: memberCount),
         itemCount: memberCount,
-        // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout；218 = 封面区 + 标题 +
-        // Phase D 观看进度行）。
+        // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout + _videoCardExtent：
+        // 16:9 封面 + 标题 + Phase D 观看进度行，随卡宽联动）。
         itemWidth: cardLayout.cardWidth,
-        rowHeight: 218,
+        rowHeight: _videoCardExtent(cardLayout.cardWidth),
         initialIndex: continueIdx,
         headerFocusId: HibikiFocusId('home-video-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
@@ -2597,6 +2695,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 连续散视频段落的 [SliverGrid]（TODO-654：随主 [CustomScrollView] 滚动；
   /// 网格 delegate 与远端区一致）。UI v2 Phase C 后合集不再进网格（渲染成全宽
   /// 横排行），本网格只装散视频单卡。
+  /// 视频卡总高 = 16:9 封面高（[cardWidth] × 9/16）+ 文字块（标题 2 行 + 观看进度行
+  /// + 内边距）。文字块 [_kVideoCardTextBlock] = 83，在 cardWidth=240 时回到旧的固定
+  /// 218，向后兼容；卡变窄时封面等比缩，不再出现固定卡高下的封面上下留白。散卡网格
+  /// [mainAxisExtent] 与合集横排行 [CollectionShelfRow.rowHeight] 共用此高，保持逐像素同尺寸。
+  static double _videoCardExtent(double cardWidth) =>
+      cardWidth * 9 / 16 + _kVideoCardTextBlock;
+
+  /// 视频卡封面下方文字块的固定高度（标题 2 行 + 观看进度行 + 内边距）。
+  static const double _kVideoCardTextBlock = 83;
+
   Widget _buildLooseVideoGridSliver(
     List<_VideoLooseCard> loose,
     EdgeInsetsGeometry padding,
@@ -2606,11 +2714,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       padding: padding,
       sliver: SliverGrid.builder(
         // FixedCrossAxisCount + 统一卡宽（unifiedShelfCardLayout）：散卡 cell 与
-        // 合集横排行成员卡逐像素同尺寸（用户实报合集卡大一截）。
-        // mainAxisExtent 218 = 封面区 + 标题 + Phase D 观看进度行。
+        // 合集横排行成员卡逐像素同尺寸（用户实报合集卡大一截）。卡高随卡宽按
+        // 16:9 封面联动（_videoCardExtent），窄卡不再残留固定 218 的封面上下留白。
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: cardLayout.columns,
-          mainAxisExtent: 218,
+          mainAxisExtent: _videoCardExtent(cardLayout.cardWidth),
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),

@@ -11,6 +11,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
@@ -203,6 +204,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Map<int, MediaCollectionRow> _collectionsById =
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
+
+  /// 每日阅读字数（dateKey → charactersRead 之和），驱动顶部概览的阅读热力图
+  /// （GitHub 式）。与折叠映射同批 [_loadShelfMaps] 预取。
+  Map<String, int> _readingCharsByDay = const <String, int>{};
   RemoteBookClient? _remoteBookClient;
 
   /// 正在下载中的远端书（key = book.title）。值为进度分数 0..1；收到首个
@@ -523,6 +528,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _epubImportedAtByKey = <String, int>{
       for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
     };
+    // 每日阅读字数聚合（dateKey → sum charactersRead），供顶部阅读热力图。
+    final List<ReadingStatisticRow> readingRows =
+        await appModel.database.getAllReadingStatistics();
+    final Map<String, int> readingCharsByDay = <String, int>{};
+    for (final ReadingStatisticRow r in readingRows) {
+      readingCharsByDay[r.dateKey] =
+          (readingCharsByDay[r.dateKey] ?? 0) + r.charactersRead;
+    }
+    _readingCharsByDay = readingCharsByDay;
     _memberSortIndex = memberSortIndex;
     _collectionsById = <int, MediaCollectionRow>{
       for (final MediaCollectionRow c in collections) c.id: c,
@@ -750,12 +764,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       (MediaItem item) =>
           _lastReadAtByBookKey[_parseBookKey(item.mediaIdentifier)] ?? 0,
     );
-    final Widget stats = _buildShelfOverviewStats(
-      total: libraryTotal,
-      reading: tally.reading,
-      finished: tally.finished,
-      tokens: tokens,
-    );
+    final Widget stats = _buildReadingHeatmapCard(tokens);
     final Widget? heroCard =
         hero == null ? null : _buildContinueReadingHero(hero, tokens);
     return Padding(
@@ -862,28 +871,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 书库概览统计三格：总数 / 在读 / 读完。
-  Widget _buildShelfOverviewStats({
-    required int total,
-    required int reading,
-    required int finished,
-    required HibikiDesignTokens tokens,
-  }) {
-    Widget cell(String label, int value) => Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text('$value', style: tokens.type.pageTitle),
-              SizedBox(height: tokens.spacing.gap / 2),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tokens.type.metadata,
-              ),
-            ],
-          ),
-        );
+  /// 顶部阅读活动热力图卡（GitHub 式贡献图）：按每日阅读字数 [_readingCharsByDay]
+  /// 铺最近数周方格，整卡可点开完整阅读统计页。取代旧的「总数/在读/读完」三格状态
+  /// 计数——那是状态而非统计（用户反馈），热力图直观展示阅读活跃度。
+  Widget _buildReadingHeatmapCard(HibikiDesignTokens tokens) {
+    final StatHeatmapModel model = buildStatHeatmap(
+      valueByDateKey: _readingCharsByDay,
+      now: DateTime.now(),
+    );
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: tokens.surfaces.group,
@@ -898,14 +893,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Text(t.book_library_overview, style: tokens.type.sectionLabel),
+            Text(t.reading_activity, style: tokens.type.sectionLabel),
             SizedBox(height: tokens.spacing.gap),
-            Row(
-              children: <Widget>[
-                cell(t.video_stat_total_videos, total),
-                cell(t.shelf_stat_reading, reading),
-                cell(t.video_stat_completed, finished),
-              ],
+            StatContributionHeatmap(
+              model: model,
+              baseColor: tokens.surfaces.primary,
+              emptyColor: tokens.surfaces.card,
+              onTap: _openReadingStatistics,
             ),
           ],
         ),
