@@ -147,6 +147,39 @@
          unsigned int status, cert_list_size;
          gnutls_x509_crt_t cert;
          const gnutls_datum_t *cert_list;
+--- a/libavformat/tls_openssl.c
++++ b/libavformat/tls_openssl.c
+@@ -325,6 +325,30 @@
+         goto fail;
+     }
+ 
++    if (c->pin_sha256 && *c->pin_sha256) {
++        /* Hibiki: certificate fingerprint pinning. Authoritative — replaces the
++         * (here disabled by default) CA/hostname verification, so a self-signed
++         * LAN host is accepted iff its leaf certificate matches the pin. */
++        X509 *peer = SSL_get_peer_certificate(p->ssl);
++        unsigned char *der = NULL;
++        int der_len;
++        int pinret = AVERROR(EIO);
++        if (peer) {
++            der_len = i2d_X509(peer, &der);
++            if (der_len > 0 && der)
++                pinret = ff_tls_check_cert_pin(h, der, der_len, c->pin_sha256);
++            if (der)
++                OPENSSL_free(der);
++            X509_free(peer);
++        } else {
++            av_log(h, AV_LOG_ERROR, "No peer certificate to pin against\n");
++        }
++        if (pinret < 0) {
++            ret = pinret;
++            goto fail;
++        }
++    }
++
+     return 0;
+ fail:
+     tls_close(h);
 --- a/libavformat/tls_securetransport.c
 +++ b/libavformat/tls_securetransport.c
 @@ -283,7 +283,7 @@

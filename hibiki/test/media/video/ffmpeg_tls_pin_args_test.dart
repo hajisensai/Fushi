@@ -122,12 +122,14 @@ void main() {
           reason: '重编 ffmpeg-kit 需要此补丁加 tls_pin_sha256；不得删除');
     });
 
-    test('补丁定义 AVOption + 共享助手 + 覆盖三后端', () {
+    test('补丁定义 AVOption + 共享助手 + 覆盖四后端', () {
       final String src = patch.readAsStringSync();
       expect(src.contains('tls_pin_sha256'), isTrue,
           reason: '必须定义 -tls_pin_sha256 AVOption');
       expect(src.contains('ff_tls_check_cert_pin'), isTrue, reason: '共享指纹比对助手');
-      // gnutls=移动端/Linux，securetransport=macOS，schannel=Windows 各有钉扎分支。
+      // openssl=移动端(Android/iOS 自编 --enable-openssl)，gnutls=Linux 桌面，
+      // securetransport=macOS，schannel=Windows 各有钉扎分支。
+      expect(src.contains('libavformat/tls_openssl.c'), isTrue);
       expect(src.contains('libavformat/tls_gnutls.c'), isTrue);
       expect(src.contains('libavformat/tls_securetransport.c'), isTrue);
       expect(src.contains('libavformat/tls_schannel.c'), isTrue);
