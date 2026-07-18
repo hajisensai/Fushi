@@ -1,11 +1,20 @@
 #pragma once
 
-// hibiki_torrent — minimal C ABI bridge over libtorrent 2.x.
+// hibiki_torrent — C ABI bridge over libtorrent 2.x.
 //
-// 阶段1a walking skeleton：只导出证明工具链（libtorrent 构建 → C ABI →
-// Dart FFI）打通所需的最小面，不实现下载/磁力/元数据（那是阶段1b）。
+// 阶段1b：真实下载管线（磁力 → 元数据 → 顺序下载 → 进度 → 完成）+ 本地
+// 做种/测试支撑（make_torrent / connect_peer）+ 边下边播原语
+// （sequential + set_piece_deadline + 首尾 piece 提优）。
 // C ABI 手写（不被 libtorrent 的 BSD 之外任何依赖传染），Dart 侧用 ffigen
 // 从本头文件生成绑定，与 hoshidicts 同一 FFI 范式。
+//
+// 约定：
+// - 返回 `char*` 的函数一律返回 malloc 分配的 UTF-8 JSON 串，调用方用完
+//   必须 ht_free_string() 释放；内部错误也以 {"ok":false,"error":"..."}
+//   形式返回，绝不返回 NULL（除非 malloc 本身失败）。
+// - infohash 参数/字段一律小写十六进制（v1 40 字符；纯 v2 种子为截断
+//   sha256 的 40 字符，与 libtorrent get_best() 一致）。
+// - 路径一律 UTF-8。
 
 // ── Symbol export（与 hoshidicts platform.hpp 一致的做法）────────────
 #ifdef _WIN32
@@ -22,13 +31,82 @@ extern "C" {
 // 存储，调用方**不得** free。
 HT_EXPORT const char* ht_libtorrent_version(void);
 
-// 创建一个不监听端口、不开 DHT/LSD/UPnP/NAT-PMP 的 libtorrent session，返回
-// 不透明句柄；失败返回 NULL。walking skeleton 只为证明 session 类真正链接进
-// 来，不承载任何下载语义。
-HT_EXPORT void* ht_session_create(void);
+// 创建 libtorrent session，返回不透明句柄；失败返回 NULL。
+// [listen_interfaces]：libtorrent 语法（如 "0.0.0.0:6881" / "127.0.0.1:0"，
+// 端口 0 = 系统分配）；NULL 或空串 = 完全不监听、不产生网络副作用（阶段1a
+// 空壳语义，冒烟测试用）。[enable_dht] 非 0 开 DHT（公网磁力元数据获取
+// 需要；本地测试关闭保证确定性）。LSD/UPnP/NAT-PMP 始终关闭（后续阶段
+// 按设置开放）。
+HT_EXPORT void* ht_session_create(const char* listen_interfaces,
+                                  int enable_dht);
 
 // 销毁 ht_session_create 返回的句柄；传 NULL 为 no-op。
 HT_EXPORT void ht_session_destroy(void* session);
+
+// 实际监听端口；未监听 / session 无效返回 0。
+HT_EXPORT int ht_session_listen_port(void* session);
+
+// 全局速率上限（字节/秒；<=0 = 不限）。返回 1 成功、0 失败。
+HT_EXPORT int ht_session_set_rate_limits(void* session, int download_bps,
+                                         int upload_bps);
+
+// 添加磁力链接，落盘到 [save_path]；[sequential] 非 0 开顺序下载。
+// 成功 {"ok":true,"id":"<infohash>"}；失败 {"ok":false,"error":"..."}。
+// 重复添加同一种子返回已有种子的 id（ok:true）。
+HT_EXPORT char* ht_add_magnet(void* session, const char* magnet_uri,
+                              const char* save_path, int sequential);
+
+// 添加本地 .torrent 文件（本地做种 / 恢复下载）。语义同 ht_add_magnet；
+// save_path 里已有完整数据时 libtorrent 校验后直接进入做种。
+HT_EXPORT char* ht_add_torrent_file(void* session, const char* torrent_path,
+                                    const char* save_path, int sequential);
+
+// 从本地文件或目录生成 .torrent 写到 [out_torrent_path]（本地做种与
+// 确定性测试支撑）。成功 {"ok":true,"id":"<infohash>"}。
+HT_EXPORT char* ht_make_torrent(const char* content_path,
+                                const char* out_torrent_path);
+
+// 手动连接 peer（本地测试 / LAN 直连；绕过 DHT/tracker）。1 成功 0 失败。
+HT_EXPORT int ht_connect_peer(void* session, const char* info_hash,
+                              const char* ip, int port);
+
+// 列出 session 内所有种子。返回 JSON 数组，每项：
+// {"id","name","progress"(0~1),"state"("metadata"|"checking"|"downloading"|
+//  "finished"|"seeding"|"error"),"save_path","content_path"(单文件=文件路径、
+//  多文件=内容根目录、无元数据=""),"total","done","left"(无元数据=-1),
+//  "down_rate","up_rate","num_peers","has_metadata","is_finished",
+//  "is_seeding","sequential"}
+HT_EXPORT char* ht_list_torrents(void* session);
+
+// 某种子的文件列表：{"ok":true,"files":[{"index","path","size","done"}]}；
+// 元数据未就绪 {"ok":false,"error":"no metadata"}。
+HT_EXPORT char* ht_torrent_files(void* session, const char* info_hash);
+
+// 分片持有位图：{"ok":true,"num_pieces":N,"have":"0101..."}（'1'=已校验
+// 持有）。流式缓冲显示 / 顺序性验证用。
+HT_EXPORT char* ht_torrent_pieces(void* session, const char* info_hash);
+
+// 排空本 session 累积的 piece 完成事件（piece_finished_alert），按发生序：
+// [{"id":"<infohash>","piece":N},...]。下载顺序证据 / 边下边播缓冲推进用。
+HT_EXPORT char* ht_poll_piece_events(void* session);
+
+// 流式播放原语：给单个 piece 设截止期（毫秒），libtorrent 会优先调度。
+// 返回 1 成功、0 失败（种子不存在等）。
+HT_EXPORT int ht_set_piece_deadline(void* session, const char* info_hash,
+                                    int piece, int deadline_ms);
+
+// 元数据就绪后把每个文件的首尾 piece 提到最高优先级（qb 的
+// firstLastPiecePrio 等价物，视频容器头尾元数据先到才能起播）。
+// 返回 1 = 已应用、0 = 元数据未就绪（稍后重试）、-1 = 种子不存在。
+HT_EXPORT int ht_apply_first_last_priority(void* session,
+                                           const char* info_hash);
+
+// 移除种子；[delete_files] 非 0 连已下载数据一起删。1 成功 0 失败。
+HT_EXPORT int ht_remove_torrent(void* session, const char* info_hash,
+                                int delete_files);
+
+// 释放本库返回的 char* 串；传 NULL 为 no-op。
+HT_EXPORT void ht_free_string(char* s);
 
 #ifdef __cplusplus
 }

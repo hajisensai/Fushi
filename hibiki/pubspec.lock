@@ -1026,6 +1026,13 @@ packages:
       relative: true
     source: path
     version: "0.0.0"
+  hibiki_torrent:
+    dependency: "direct main"
+    description:
+      path: "../packages/hibiki_torrent"
+      relative: true
+    source: path
+    version: "0.0.0"
   hooks:
     dependency: transitive
     description:

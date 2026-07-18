@@ -1,8 +1,10 @@
-# hibiki_torrent — 内置 libtorrent 引擎 C ABI bridge（阶段1a walking skeleton）
+# hibiki_torrent — 内置 libtorrent 引擎 C ABI bridge（阶段1b）
 
-番剧下载「内置 libtorrent 引擎」epic 的阶段1a：**有界** walking skeleton，只
-证明 `libtorrent 2.x 构建 → 自写 C ABI → ffigen/Dart FFI` 在 Windows 端到端
-打通，**不实现**磁力/元数据/下载管线（那是阶段1b）。
+番剧下载「内置 libtorrent 引擎」epic 的 native 层。阶段1a 证明了
+`libtorrent 2.x 构建 → 自写 C ABI → ffigen/Dart FFI` 在 Windows 端到端打通；
+阶段1b（当前）实现真实下载管线：**磁力 → 元数据 → 顺序下载 → 进度 → 完成**，
+外加边下边播原语（sequential + `set_piece_deadline` + 首尾 piece 提优）与
+本地做种/测试支撑（`make_torrent` / `connect_peer`）。
 
 选型（已定）：libtorrent 2.x（BSD-3）+ 自写 C ABI（不被 GPL/非 BSD 依赖传染）
 + Dart FFI + ffigen，照本仓库 `native/hoshidicts` 那套 C++ FFI 范式。
@@ -12,26 +14,50 @@
 ```
 native/hibiki_torrent/
   CMakeLists.txt                       # find_package(LibtorrentRasterbar) + SHARED lib
-  hibiki_torrent_ffi.cpp               # C ABI 实现
+  hibiki_torrent_ffi.cpp               # C ABI 实现（无自有状态；JSON 出参）
   hibiki_torrent_include/
-    hibiki_torrent.h                   # C ABI 头（ffigen 入口）
+    hibiki_torrent.h                   # C ABI 头（ffigen 入口；各函数契约见注释）
 packages/hibiki_torrent/               # Dart 侧
   ffigen.yaml                          # 从上面头文件生成绑定
   lib/src/ffi/hibiki_torrent_bindings.dart   # 绑定
-  lib/src/embedded_torrent_engine.dart        # DynamicLibrary 薄封装
-  tool/version_harness.dart            # 端到端证明 harness
+  lib/src/embedded_torrent_engine.dart        # EmbeddedTorrentEngine + EmbeddedTorrentSession
+  lib/src/testing/local_seed_rig.dart         # 本地做种 rig（确定性测试脚手架）
+  tool/version_harness.dart            # 工具链证明 harness（1a）
+  tool/download_harness.dart           # 真实网络手动冒烟（真机验收用）
   test/ffi_smoke_test.dart             # 冒烟测试（无库则 skip）
+  test/embedded_pipeline_test.dart     # 端到端管线测试（本地 rig，零外网）
+hibiki/lib/src/media/torrent/
+  embedded_torrent_backend.dart        # EmbeddedTorrentBackend implements TorrentBackend
 ```
 
-## C ABI（阶段1a 只这三个）
+## C ABI 一览
 
-- `const char* ht_libtorrent_version(void)` — libtorrent 版本串（静态存储，勿 free）
-- `void* ht_session_create(void)` — 建不监听端口的 session，空壳句柄
-- `void ht_session_destroy(void*)` — 销毁句柄
+会话：`ht_session_create(listen_interfaces, enable_dht)` /
+`ht_session_destroy` / `ht_session_listen_port` / `ht_session_set_rate_limits`。
+种子：`ht_add_magnet` / `ht_add_torrent_file` / `ht_make_torrent` /
+`ht_connect_peer` / `ht_list_torrents` / `ht_torrent_files` /
+`ht_torrent_pieces` / `ht_poll_piece_events` / `ht_set_piece_deadline` /
+`ht_apply_first_last_priority` / `ht_remove_torrent`。
+出参 JSON 一律 `ht_free_string` 释放；详细契约见 `hibiki_torrent.h` 注释。
+
+### 关键语义（踩过的坑，别再踩）
+
+- **不监听 = 连不出去**：libtorrent 的出站连接绑定在 listen socket 上，
+  `listen_interfaces` 传空的 session 无法连接任何 peer（1a 空壳/探测专用）。
+  要下载必须给监听接口（本地测试 `127.0.0.1:0`，端口 0 = 系统分配）。
+- **add 即启动**：libtorrent 默认 add 旗标带 `paused`，起始瞬间会丢弃
+  `connect_peer` 且无 tracker/DHT 时无从再发现 peer；bridge 在 add 时清
+  `paused`。手动 connect_peer 的调用方仍应在轮询里重试（幂等）。
+- **Windows 依赖 DLL 搜索**：`DynamicLibrary.open` 不把目标 DLL 所在目录
+  纳入其依赖搜索路径；`EmbeddedTorrentEngine.open` 会先预载同目录的
+  vcpkg applocal 依赖（torrent-rasterbar/ssl/crypto）再开主库。
+- **firstLastPiecePrio 无 add 期开关**：元数据未就绪无从提优；
+  `ht_apply_first_last_priority` 在元数据就绪后调用（返回 0 = 未就绪，
+  轮询重试；`EmbeddedTorrentBackend` 已在 listTorrents 轮询里补应用）。
 
 ## Windows 构建（standalone，不经 flutter windows runner）
 
-libtorrent 经 **vcpkg** 提供（本机验证过的获取路径）：
+libtorrent 经 **vcpkg** 提供（本机 `D:\APP\vcpkg`，已装 `libtorrent:x64-windows`）：
 
 ```bash
 # 1) 装 libtorrent（一次性，约 20~40min，拉 boost + openssl 从源码编）
@@ -50,17 +76,17 @@ cmake --build build --config Release
 # torrent-rasterbar/boost/openssl 依赖 DLL）
 ```
 
-## 端到端证明
+## 测试
 
 ```bash
 cd packages/hibiki_torrent && dart pub get
-dart run tool/version_harness.dart \
-  ../../native/hibiki_torrent/build/Release/hibiki_torrent_ffi.dll
-# 期望输出：libtorrent version: 2.0.x.0 / PASS
+# 端到端管线（本地 rig 做种，零外网、确定性；缺 DLL 整组 skip）：
+HIBIKI_TORRENT_LIB=<绝对路径>/hibiki_torrent_ffi.dll dart test
+# app 侧 TorrentBackend 契约（在 hibiki/ 下）：
+HIBIKI_TORRENT_LIB=... flutter test test/media/torrent/embedded_torrent_backend_test.dart
+# 真实网络手动冒烟（真机验收）：
+dart run tool/download_harness.dart <dll> "<magnet>" <saveDir>
 ```
-
-冒烟测试走 `HIBIKI_TORRENT_LIB` 环境变量指向 DLL；库不存在时整组 skip，
-CI/未构建环境不因缺 DLL 而红。
 
 ## ffigen 重生成绑定
 
@@ -72,14 +98,15 @@ cd packages/hibiki_torrent
 dart run ffigen --config ffigen.yaml
 ```
 
-无 libclang 的机器上，已入库的手写绑定与 ffigen 对该 3 函数的输出等价。
+无 libclang 的机器上，已入库的手写绑定与 ffigen 输出等价。
 
-## 尚未做（阶段1b 及以后）
+## 尚未做（阶段2 及以后）
 
-- 未接进 `hibiki/windows/CMakeLists.txt` 的 flutter runner —— 接入前 `flutter
-  build windows` 不依赖 vcpkg/libtorrent，避免破坏未装 libtorrent 的构建环境。
-  1b 落地 `EmbeddedTorrentBackend` 时再决定「vcpkg 预装 vs FetchContent vs
-  vendored 预编译」的 app 集成方案。
-- 磁力/元数据/文件列表/顺序下载/边下边播 —— 阶段1b，实现
-  `hibiki/lib/src/media/torrent/torrent_backend.dart` 的 `TorrentBackend` 接口。
-```
+- 未接进 `hibiki/windows/CMakeLists.txt` 的 flutter runner —— 接入前
+  `flutter build windows` 不依赖 vcpkg/libtorrent。阶段2 接
+  `AnimeDownloadService.backendFactory` 全链时一并决定「vcpkg 预装 vs
+  FetchContent vs vendored 预编译」的 app 集成与 DLL 随包方案。
+- http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。
+- 反吸血接线（阶段3）：native 补 peer_info 导出，喂 `AntiLeechEngine`，
+  `BanVerdict` 翻成 libtorrent `ip_filter`。
+- 多平台（Android/macOS/Linux）+ CI 依赖获取策略（阶段4）。
