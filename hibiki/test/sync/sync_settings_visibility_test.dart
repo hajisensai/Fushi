@@ -226,7 +226,8 @@ void main() {
 
     test('is its own top-level destination (not inside syncBackup)', () {
       expect(dest.id, SettingsDestinationId.interconnect);
-      expect(dest.sections, hasLength(3));
+      // 指引 + 连接设备 + 本机服务器 + 互联相关配置镜像（远端词典/音频来源/远端占位卡）。
+      expect(dest.sections, hasLength(4));
     });
 
     test('inactive note + client config + host server, all backend-gated', () {
@@ -239,6 +240,22 @@ void main() {
       expect(dest.sections[1].visible, isNotNull);
       expect(idsOf(dest.sections[2]), <String>['sync.server_mode']);
       expect(dest.sections[2].visible, isNotNull);
+    });
+
+    test('mirrors interconnect-related settings from lookup/sync categories',
+        () {
+      // 远端词典查询/管理音频来源/远端占位卡在查词、同步分类各有其位，但逻辑上都
+      // 作用于互联对端；在互联分类镜像同一入口（共享 builder，非复制），仅互联被选为
+      // 同步方式时可见（与其它互联配置区一致）。
+      expect(
+        idsOf(dest.sections[3]),
+        <String>[
+          'lookup.remote_lookup',
+          'lookup.audio_sources',
+          'sync.show_remote_entries',
+        ],
+      );
+      expect(dest.sections[3].visible, isNotNull);
     });
 
     test('host-server group keeps its explanatory footer', () {

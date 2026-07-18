@@ -52,12 +52,26 @@ class SettingsSchemaSection extends StatelessWidget {
           ),
         )
         .toList(growable: false);
+    final bool collapsible =
+        section.collapsedByDefault && (section.title?.isNotEmpty ?? false);
+    // 搜索跳转落在折叠 section 内的项时强制展开——否则收起态下目标行不入树、
+    // SettingsSearchReveal 的一次性挂点永不被消费，定位失效。测试钩子强制全展开
+    // 让覆盖守卫能焦点驱动到所有行（见 debugSettingsForceExpandAllSections）。
+    final bool containsPendingReveal =
+        SettingsSearchReveal.pendingItemId != null &&
+            section.items.any((SettingsItem item) =>
+                item.id == SettingsSearchReveal.pendingItemId);
+    final bool initiallyExpanded = debugSettingsForceExpandAllSections ||
+        !section.collapsedByDefault ||
+        containsPendingReveal;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         AdaptiveSettingsSection(
           title: section.title,
           titlePlacement: SettingsSectionTitlePlacement.inside,
+          collapsible: collapsible,
+          initiallyExpanded: initiallyExpanded,
           children: rows,
         ),
         if (section.footer != null && section.footer!.isNotEmpty)

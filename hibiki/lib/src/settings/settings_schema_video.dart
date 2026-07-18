@@ -30,7 +30,6 @@ SettingsDestination buildVideoDestination() {
           SettingsSwitchItem(
             id: 'video.playback.auto_play_next',
             title: t.video_setting_auto_play_next,
-            subtitle: t.video_setting_auto_play_next_hint,
             icon: Icons.playlist_play_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoAutoPlayNext,
@@ -62,7 +61,6 @@ SettingsDestination buildVideoDestination() {
           SettingsSegmentedItem<VideoFitMode>(
             id: 'video.playback.picture_fit',
             title: t.video_setting_picture_fit,
-            subtitle: t.video_setting_picture_fit_hint,
             icon: Icons.fit_screen_outlined,
             options: <SettingsSegmentOption<VideoFitMode>>[
               SettingsSegmentOption<VideoFitMode>(
@@ -139,7 +137,6 @@ SettingsDestination buildVideoDestination() {
           SettingsSliderItem(
             id: 'video.playback.long_press_speed',
             title: t.video_setting_long_press_speed,
-            subtitle: t.video_setting_long_press_speed_hint,
             icon: Icons.touch_app_outlined,
             min: 1.0,
             max: 4.0,
@@ -204,7 +201,6 @@ SettingsDestination buildVideoDestination() {
           SettingsActionItem(
             id: 'video.controls.reset_layout',
             title: t.video_control_reset_layout,
-            subtitle: t.video_control_reset_layout_hint,
             icon: Icons.restart_alt_outlined,
             onTap: (SettingsContext settingsContext) async {
               await settingsContext.appModel.setVideoControlLayout(
@@ -216,6 +212,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.video_setting_mpv_group_quality,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           // 画质增强（mpv 内置高质量缩放开关）+ 解码 / 去色带 / 循环：这些 mpv 配置项
           // 都序列化进 videoMpvConfig（纯 pref），下次打开视频时 applyMpvConfigToPlayer
@@ -356,6 +353,7 @@ SettingsDestination buildVideoDestination() {
       // videoMpvConfig（纯 pref，下次开视频 applyMpvConfig 应用），与播放页内设置同源。
       SettingsSection(
         title: t.video_setting_mpv_group_geometry,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSegmentedItem<int>(
             id: 'video.geometry.rotate',
@@ -448,6 +446,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.video_setting_mpv_group_color,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           _videoMpvColorSliderItem(
             id: 'video.color.brightness',
@@ -488,6 +487,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.video_setting_mpv_group_audio,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           _videoMpvSwitchItem(
             id: 'video.audio.pitch',
@@ -662,18 +662,6 @@ SettingsDestination buildVideoDestination() {
             },
             onChanged: (SettingsContext settingsContext, double v) {},
           ),
-          SettingsActionItem(
-            id: 'video.subtitle.no_background',
-            title: t.video_setting_subtitle_no_background,
-            subtitle: t.video_setting_subtitle_no_background_hint,
-            icon: Icons.format_color_reset_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              await _commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: 0),
-              );
-            },
-          ),
           SettingsSliderItem(
             id: 'video.subtitle.position',
             title: t.video_setting_subtitle_position,
@@ -697,6 +685,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.section_video_danmaku,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           // 弹幕开关 / 在线匹配 / 同屏上限都是纯 pref（appModel 直接读写 prefsRepo），
           // 与播放页内弹幕设置语义一致，下次播放生效。

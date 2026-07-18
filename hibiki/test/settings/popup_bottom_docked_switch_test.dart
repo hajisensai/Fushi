@@ -90,6 +90,11 @@ Widget _harness(HibikiDatabase db, AppModel appModel) {
 }
 
 void main() {
+  // 「弹窗窗口」section 现在默认折叠，会把行移出树；本测试直查该 section 的行，
+  // 强制全展开还原（见 debugSettingsForceExpandAllSections）。
+  setUp(() => debugSettingsForceExpandAllSections = true);
+  tearDown(() => debugSettingsForceExpandAllSections = false);
+
   testWidgets(
       'lookup settings exposes a Bottom-docked popup switch (default OFF)',
       (WidgetTester tester) async {

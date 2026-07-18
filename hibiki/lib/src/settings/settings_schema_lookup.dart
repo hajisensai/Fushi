@@ -52,73 +52,9 @@ SettingsDestination buildLookupDestination() {
               );
             },
           ),
-          SettingsActionItem(
-            id: 'lookup.audio_sources',
-            title: t.manage_audio_sources,
-            icon: Icons.volume_up_outlined,
-            onTap: (SettingsContext settingsContext) {
-              final AppModel appModel = settingsContext.appModel;
-              return showSettingsDialog(
-                settingsContext,
-                (_) => AudioSourcesDialog(
-                  sources: List<AudioSourceConfig>.from(
-                    appModel.audioSourceConfigs,
-                  ),
-                  onSave: appModel.setAudioSourceConfigs,
-                  onPickLocalDb: (bool reference) async {
-                    final FilePickerResult? result =
-                        await FilePicker.platform.pickFiles();
-                    // 用户取消选择：result 为 null，正常无声返回（不是失败）。
-                    if (result == null) return null;
-                    // BUG-446：旧实现用 `result.files.single`，0/多文件时抛 StateError
-                    // 被上层 `catch (_)` 吞成「导入失败」无信息文案。改为显式区分
-                    // 「文件数异常」与「path 为空」，各记一条诊断日志（含文件数）。
-                    final PlatformFile picked = result.files.first;
-                    final String? pickedPath = picked.path;
-                    if (result.files.length != 1 || pickedPath == null) {
-                      ErrorLogService.instance.log(
-                        'AudioSourcesDialog.pickLocalDb',
-                        'unexpected file selection: count=${result.files.length}, '
-                            'pathNull=${pickedPath == null}, '
-                            'name=${picked.name}',
-                      );
-                      // path 为空（部分平台只回 bytes 不回 path）才算失败，交给上层
-                      // catch 弹可见反馈；多文件但首个有 path 时仍按首个导入（容错）。
-                      if (pickedPath == null) {
-                        throw Exception(
-                            'picked audio db has no file path (platform '
-                            'returned bytes without a path)');
-                      }
-                    }
-                    final LocalAudioDbEntry entry =
-                        await appModel.importLocalAudioDbFile(
-                      pickedPath,
-                      displayName: picked.name,
-                      reference: reference,
-                    );
-                    return AudioSourceConfig.localAudio(
-                      label: entry.displayName,
-                      path: entry.path,
-                      enabled: true,
-                    );
-                  },
-                  onEditLocalSources: (String path) async {
-                    await showSettingsDialog(
-                      settingsContext,
-                      (_) => LocalAudioSourcesDialog(
-                        dbPath: path,
-                        savedPrefs: appModel.sourcePrefsForLocalDb(path),
-                        listSources: () => appModel.listLocalAudioSources(path),
-                        onApply: (List<LocalAudioSourcePref> prefs) =>
-                            appModel.setLocalAudioDbSources(path, prefs),
-                      ),
-                    );
-                    settingsContext.refresh();
-                  },
-                ),
-              );
-            },
-          ),
+          // 「管理音频来源」抽成共享 builder：查词分类与 Hibiki 互联分类都引用同一份
+          // 定义（互联音频源 hibikiRemote 就在该对话框里管，故互联分类也提供入口）。
+          buildManageAudioSourcesItem(),
           // TODO-1000：浏览器扩展「安装助手」——把随 app 打包的扩展解压到磁盘 + 引导
           // 「开发者模式 → 加载已解压 → 粘贴路径」（自建 MV3 无真·一键，浏览器封了侧载）。
           SettingsActionItem(
@@ -249,18 +185,9 @@ SettingsDestination buildLookupDestination() {
       SettingsSection(
         title: t.settings_section_lookup_integrations,
         items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'lookup.remote_lookup',
-            title: t.remote_dict_lookup,
-            subtitle: t.remote_dict_lookup_hint,
-            icon: Icons.hub_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.remoteLookupEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setRemoteLookupEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
+          // 远端词典查询抽成共享 builder：查词分类与 Hibiki 互联分类都引用（它直连
+          // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
+          buildRemoteDictionaryLookupItem(),
           SettingsSwitchItem(
             id: 'lookup.yomitan_api_server',
             title: t.yomitan_api_server,
@@ -325,6 +252,7 @@ SettingsDestination buildLookupDestination() {
       // 和 app 外全局查词的上下文抓取，仅桌面平台可见的一整条链路。
       SettingsSection(
         title: t.settings_section_lookup_clipboard,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.desktop_clipboard',
@@ -377,6 +305,8 @@ SettingsDestination buildLookupDestination() {
           SettingsSegmentedItem<DesktopClipboardWindowMode>(
             id: 'lookup.desktop_clipboard_window_mode',
             title: t.desktop_clipboard_window_mode,
+            // 副标题保留：spec 2026-07-10 §7 守卫要求 hint 描述置顶行为、且旧的
+            // 「仅在查词页监听」措辞不得复活（desktop_lookup_to_dictionary_tab_test）。
             subtitle: t.desktop_clipboard_window_mode_hint,
             icon: Icons.vertical_align_top_outlined,
             // spec 2026-07-10：本项管的是主窗置顶策略，仅 destination==main 时
@@ -423,7 +353,6 @@ SettingsDestination buildLookupDestination() {
           SettingsSegmentedItem<DesktopClipboardDestination>(
             id: 'lookup.desktop_clipboard_destination',
             title: t.desktop_clipboard_destination,
-            subtitle: t.desktop_clipboard_destination_hint,
             icon: Icons.picture_in_picture_alt_outlined,
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop &&
@@ -620,6 +549,7 @@ SettingsDestination buildLookupDestination() {
       // 弹窗窗口的关闭手势，与尺寸/停靠为伍）。
       SettingsSection(
         title: t.settings_section_lookup_content,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.collapse_dictionaries',
@@ -721,6 +651,7 @@ SettingsDestination buildLookupDestination() {
       ),
       SettingsSection(
         title: t.settings_section_lookup_popup_window,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSliderItem(
             id: 'lookup.popup_max_width',
@@ -927,6 +858,96 @@ SettingsDestination buildLookupDestination() {
         ],
       ),
     ],
+  );
+}
+
+/// 「管理音频来源」配置项。查词分类与 Hibiki 互联分类共享同一份定义（单一真相源）：
+/// 音频来源对话框统管远端(含互联 hibikiRemote)/本地音频源，逻辑上与互联相关，故两处
+/// 都用同一入口。id 沿用 `lookup.` 前缀（历史命名，非持久化 key，两处同 id 无冲突——
+/// 覆盖遍历按 `<destId>/<title>` 去重，action 型行不产生持久化断言）。
+SettingsItem buildManageAudioSourcesItem() {
+  return SettingsActionItem(
+    id: 'lookup.audio_sources',
+    title: t.manage_audio_sources,
+    icon: Icons.volume_up_outlined,
+    onTap: (SettingsContext settingsContext) {
+      final AppModel appModel = settingsContext.appModel;
+      return showSettingsDialog(
+        settingsContext,
+        (_) => AudioSourcesDialog(
+          sources: List<AudioSourceConfig>.from(
+            appModel.audioSourceConfigs,
+          ),
+          onSave: appModel.setAudioSourceConfigs,
+          onPickLocalDb: (bool reference) async {
+            final FilePickerResult? result =
+                await FilePicker.platform.pickFiles();
+            // 用户取消选择：result 为 null，正常无声返回（不是失败）。
+            if (result == null) return null;
+            // BUG-446：旧实现用 `result.files.single`，0/多文件时抛 StateError
+            // 被上层 `catch (_)` 吞成「导入失败」无信息文案。改为显式区分
+            // 「文件数异常」与「path 为空」，各记一条诊断日志（含文件数）。
+            final PlatformFile picked = result.files.first;
+            final String? pickedPath = picked.path;
+            if (result.files.length != 1 || pickedPath == null) {
+              ErrorLogService.instance.log(
+                'AudioSourcesDialog.pickLocalDb',
+                'unexpected file selection: count=${result.files.length}, '
+                    'pathNull=${pickedPath == null}, '
+                    'name=${picked.name}',
+              );
+              // path 为空（部分平台只回 bytes 不回 path）才算失败，交给上层
+              // catch 弹可见反馈；多文件但首个有 path 时仍按首个导入（容错）。
+              if (pickedPath == null) {
+                throw Exception('picked audio db has no file path (platform '
+                    'returned bytes without a path)');
+              }
+            }
+            final LocalAudioDbEntry entry =
+                await appModel.importLocalAudioDbFile(
+              pickedPath,
+              displayName: picked.name,
+              reference: reference,
+            );
+            return AudioSourceConfig.localAudio(
+              label: entry.displayName,
+              path: entry.path,
+              enabled: true,
+            );
+          },
+          onEditLocalSources: (String path) async {
+            await showSettingsDialog(
+              settingsContext,
+              (_) => LocalAudioSourcesDialog(
+                dbPath: path,
+                savedPrefs: appModel.sourcePrefsForLocalDb(path),
+                listSources: () => appModel.listLocalAudioSources(path),
+                onApply: (List<LocalAudioSourcePref> prefs) =>
+                    appModel.setLocalAudioDbSources(path, prefs),
+              ),
+            );
+            settingsContext.refresh();
+          },
+        ),
+      );
+    },
+  );
+}
+
+/// 远端词典查询开关。查词分类与 Hibiki 互联分类共享同一份定义：本地查不到时向已配置
+/// 的 Hibiki 互联对端查询，逻辑上属互联。id 沿用 `lookup.` 前缀（非持久化 key）。
+SettingsItem buildRemoteDictionaryLookupItem() {
+  return SettingsSwitchItem(
+    id: 'lookup.remote_lookup',
+    title: t.remote_dict_lookup,
+    subtitle: t.remote_dict_lookup_hint,
+    icon: Icons.hub_outlined,
+    value: (SettingsContext settingsContext) =>
+        settingsContext.appModel.remoteLookupEnabled,
+    onChanged: (SettingsContext settingsContext, bool value) async {
+      await settingsContext.appModel.setRemoteLookupEnabled(value);
+      settingsContext.refresh();
+    },
   );
 }
 

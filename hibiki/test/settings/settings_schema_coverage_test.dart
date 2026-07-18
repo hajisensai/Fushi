@@ -209,8 +209,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_subtitle_style_test.dart + test/media/video/video_subtitle_font_consistency_test.dart',
   'video/Shadow': 'test/media/video/video_subtitle_style_test.dart',
   'video/Background opacity': 'test/media/video/video_subtitle_style_test.dart',
-  'video/No background':
-      'test/pages/video_quick_settings_sheet_test.dart + test/pages/video_settings_schema_guard_test.dart',
   'video/Vertical position':
       'test/media/video/video_subtitle_style_test.dart + test/pages/video_subtitle_push_up_guard_test.dart',
   'video/Show danmaku':
@@ -372,6 +370,11 @@ void main() {
   testWidgets(
       'all settings destinations: focus-driven, change persists and takes effect',
       (WidgetTester tester) async {
+    // 折叠 section 默认收起会把行移出 widget 树、Tab 焦点驱动够不到它们，静默削弱
+    // 本覆盖守卫。强制全展开，让每个 section 的每一行都能被驱动到（见
+    // debugSettingsForceExpandAllSections）。
+    debugSettingsForceExpandAllSections = true;
+    addTearDown(() => debugSettingsForceExpandAllSections = false);
     // cardCreation 详情页现在内联渲染 AnkiSettingsBody（扁平化后不再藏在子路由
     // 后），它经 ankiViewModelProvider → BaseAnkiRepository 调
     // SharedPreferences.getInstance()；host 无插件实现会抛 MissingPluginException。
