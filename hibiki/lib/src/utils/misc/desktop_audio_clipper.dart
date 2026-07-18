@@ -49,11 +49,18 @@ bool debugIsRemoteFfmpegInput(String inputPath) =>
 /// 该选项 ffmpeg ≥4.3 即有，捆绑的 n7.1.5 已带；网络支持早在 ffmpeg-min recipe 编入
 /// （`--enable-network` + http/https/tcp/tls），**无需重编二进制**。remote-only、对本地
 /// 输入零影响。
-List<String> buildFfmpegRemoteInputArgs(String inputPath) {
+List<String> buildFfmpegRemoteInputArgs(String inputPath,
+    {String? tlsPinSha256}) {
   if (!_isRemoteFfmpegInput(inputPath)) return const <String>[];
-  // TODO-1365（BUG-669）：`-user_agent` 与 libmpv 侧回放 UA 同源（[kYoutubeStreamReplayUserAgent]
-  // ＝youtube_explode 铸流 UA），规避 googlevideo svpuc 对残缺 UA 的 tarpit 超时。含常量故非 const。
+  final String? pin = tlsPinSha256?.trim();
   return <String>[
+    // BUG-891：远端自签 Hibiki 主机（自编 ffmpeg-kit `--enable-gnutls` + tls pin 补丁，
+    // 见 third_party/ffmpeg_kit_flutter/patches/）——把 host 的 TOFU 钉扎指纹下发给
+    // ffmpeg 的 TLS 层，握手后按证书 SHA-256 钉扎接受自签，非无条件放行。空 = 公网源
+    // （YouTube 等有效证书）不钉扎，走 ffmpeg 默认。必须在 `-i` 前（TLS 输入选项）。
+    if (pin != null && pin.isNotEmpty) ...<String>['-tls_pin_sha256', pin],
+    // TODO-1365（BUG-669）：`-user_agent` 与 libmpv 侧回放 UA 同源（[kYoutubeStreamReplayUserAgent]
+    // ＝youtube_explode 铸流 UA），规避 googlevideo svpuc 对残缺 UA 的 tarpit 超时。含常量故非 const。
     '-user_agent',
     kYoutubeStreamReplayUserAgent,
     '-reconnect',
@@ -325,6 +332,8 @@ List<String> buildFfmpegClipArgs({
   // 点传立体声 128k（高保真档）。默认值保持现状，纯函数不读全局偏好。
   int audioChannels = 1,
   String audioBitrate = '64k',
+  // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
+  String? tlsPinSha256,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -334,7 +343,7 @@ List<String> buildFfmpegClipArgs({
   );
   return <String>[
     '-y',
-    ...buildFfmpegRemoteInputArgs(inputPath),
+    ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
     '-ss',
     startSeconds.toStringAsFixed(3),
     '-t',
@@ -618,11 +627,13 @@ List<String> buildFfmpegFrameArgs({
   required String inputPath,
   required String outputPath,
   double atSeconds = 0.0,
+  // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
+  String? tlsPinSha256,
 }) {
   final double seek = atSeconds < 0 ? 0.0 : atSeconds;
   return <String>[
     '-y',
-    ...buildFfmpegRemoteInputArgs(inputPath),
+    ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
     '-ss',
     seek.toStringAsFixed(3),
     '-i',
@@ -649,6 +660,8 @@ Future<String?> extractVideoFrameViaFfmpeg({
   required String outputPath,
   double atSeconds = 10.0,
   FfmpegFailureReporter? onFailure,
+  // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
+  String? tlsPinSha256,
 }) async {
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
     return null;
@@ -661,6 +674,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
         inputPath: inputPath,
         outputPath: outputPath,
         atSeconds: atSeconds,
+        tlsPinSha256: tlsPinSha256,
       ),
       const Duration(seconds: 30),
     );
@@ -752,6 +766,8 @@ Future<String?> extractVideoCover({
   required String videoPath,
   required String bookUid,
   double atSeconds = 10.0,
+  // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给抽帧 ffmpeg），非远端/公网源为 null。
+  String? tlsPinSha256,
 }) async {
   // TODO-1236：经 AppPaths 解析封面目录（跟随桌面自定义数据根 →
   // `<dataRoot>/documents/video_covers`；默认根仍是平台 Documents），与 TODO-1226
@@ -769,6 +785,7 @@ Future<String?> extractVideoCover({
     inputPath: videoPath,
     outputPath: outputPath,
     atSeconds: atSeconds,
+    tlsPinSha256: tlsPinSha256,
   );
 }
 
@@ -831,6 +848,8 @@ List<String> buildFfmpegClipGifArgs({
   int fps = 8,
   int width = 320,
   int maxDurationMs = 10000,
+  // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
+  String? tlsPinSha256,
 }) {
   final double startSeconds = (startMs < 0 ? 0 : startMs) / 1000.0;
   final int rawDur = endMs - startMs;
@@ -841,7 +860,7 @@ List<String> buildFfmpegClipGifArgs({
       'split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse';
   return <String>[
     '-y',
-    ...buildFfmpegRemoteInputArgs(inputPath),
+    ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
     '-ss',
     startSeconds.toStringAsFixed(3),
     '-t',
@@ -872,6 +891,8 @@ Future<String?> extractClipGifViaFfmpeg({
   // 传高保真档（720px/12fps，与 app 内视频制卡共用档位）。
   int fps = 8,
   int width = 320,
+  // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
+  String? tlsPinSha256,
 }) async {
   if (endMs <= startMs) return null;
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
@@ -889,6 +910,7 @@ Future<String?> extractClipGifViaFfmpeg({
         outputPath: outputPath,
         fps: fps,
         width: width,
+        tlsPinSha256: tlsPinSha256,
       ),
       const Duration(seconds: 120),
     );
@@ -1140,6 +1162,8 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   // 128k（高保真档）。
   int audioChannels = 1,
   String audioBitrate = '64k',
+  // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
+  String? tlsPinSha256,
 }) async {
   // TODO-1005 / BUG-472：这两条「ffmpeg 还没跑」的早返回历来静默 return null——
   // 有声书片段导出 / 句子音频 TTS / 视频制卡 只看到「失败但日志空白」，无从诊断。
@@ -1179,6 +1203,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         audioStreamCount: audioStreamCount,
         audioChannels: audioChannels,
         audioBitrate: audioBitrate,
+        tlsPinSha256: tlsPinSha256,
       ),
       const Duration(seconds: 120),
     );

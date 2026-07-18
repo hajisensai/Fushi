@@ -29,7 +29,8 @@ Future<String?> _okFrame(
         {required String inputPath,
         required String outputPath,
         double atSeconds = 10.0,
-        FfmpegFailureReporter? onFailure}) async =>
+        FfmpegFailureReporter? onFailure,
+        String? tlsPinSha256}) async =>
     outputPath;
 Future<String?> _okGif(
         {required String inputPath,
@@ -38,7 +39,8 @@ Future<String?> _okGif(
         required String outputPath,
         int fps = 8,
         int width = 320,
-        FfmpegFailureReporter? onFailure}) async =>
+        FfmpegFailureReporter? onFailure,
+        String? tlsPinSha256}) async =>
     outputPath;
 
 void main() {
@@ -166,7 +168,8 @@ void main() {
           int? audioStreamCount,
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
-          String audioBitrate = '64k'}) async {
+          String audioBitrate = '64k',
+          String? tlsPinSha256}) async {
         audioInput = inputPath;
         return outputPath;
       }
@@ -209,7 +212,8 @@ void main() {
           int? audioStreamCount,
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
-          String audioBitrate = '64k'}) async {
+          String audioBitrate = '64k',
+          String? tlsPinSha256}) async {
         audioInput = inputPath;
         return outputPath;
       }

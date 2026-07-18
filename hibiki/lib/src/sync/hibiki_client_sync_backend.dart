@@ -156,6 +156,10 @@ class HibikiClientSyncBackend extends SyncBackend
   @visibleForTesting
   String? get activeBaseUrl => _ops?.baseUrl;
 
+  /// BUG-891：当前选中 host 的 TOFU 钉扎证书 SHA-256 指纹（`aa:bb:..`），供制卡把它
+  /// 下发给 ffmpeg 的 `-tls_pin_sha256` 以按指纹接受自签流。http 主机 / 未解析 = null。
+  String? get activeFingerprintSha256 => _activeFingerprint;
+
   // ── Auth ──────────────────────────────────────────────────────────
 
   @override
