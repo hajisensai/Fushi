@@ -66,6 +66,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   int _lastTextSeq = 0;
   int _lastHookedLineTs = 0;
 
+  /// **句子↔语音「出现即锁定」缓存**（抗快进/环形覆盖）：每条台词行一出现（轮询到），就立刻按
+  /// 它的 hook 时间戳抓好对应语音 clip 存这里（key=台词文本）。制卡时直接取缓存,而非制卡那刻再
+  /// 抓——用户快进/多行飞过后再挖某句,它的语音在出现那刻就锁好了、不会因环形覆盖或播放被切而丢。
+  /// LRU 上限 [_voiceCacheMax]，最旧的先淘汰。
+  final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
+  static const int _voiceCacheMax = 200;
+
   /// 热键那一刻从环形缓冲回看的时长（毫秒）：引擎-hook 拿不到按句 clip 时的兜底取最近这么久。
   static const int _galAudioBackMs = 8000;
 
@@ -125,7 +132,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // galgame 一键制卡：若音频源已开，抓最近一段 → 波形选区 → 帧对齐切片 → 编码成 AAC/m4a
     // 容器字节。任一步不成（无源/无数据/用户取消/切空/编码失败）→ audioBytes 保持 null，
     // 退化为纯截图卡（Never break：截图卡本就无声，不因无音频中止）。
-    final Uint8List? audioBytes = await _captureGalAudioBytes();
+    final Uint8List? audioBytes =
+        await _captureGalAudioBytes(fields['sentence'] ?? '');
 
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final MiningMediaCompression compression =
@@ -265,6 +273,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _engineSource = null;
     _lastTextSeq = 0;
     _lastHookedLineTs = 0;
+    _lineVoiceCache.clear();
     final GalAudioSource? src = _galAudioSource;
     _galAudioSource = null;
     await src?.stop();
@@ -296,9 +305,24 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     for (final GalHookedLine line in poll.lines) {
       TexthookerService.instance.appendLine(line.text);
       _lastHookedLineTs = line.timestampMs;
+      // 出现即锁定该行语音（抗快进/环形覆盖）：立刻按 hook 时间戳抓好 clip 缓存起来。
+      final GalAudioSlice? clip = await eng.grabClipNear(line.timestampMs);
+      if (clip != null && !clip.isEmpty) {
+        _cacheLineVoice(line.text, clip);
+      }
     }
     if (poll.count > _lastTextSeq) {
       _lastTextSeq = poll.count;
+    }
+  }
+
+  /// 把台词行 [text] 的语音 clip [clip] 存进「出现即锁定」LRU 缓存（同文本更新为最新，超上限淘汰
+  /// 最旧）。
+  void _cacheLineVoice(String text, GalAudioSlice clip) {
+    _lineVoiceCache.remove(text);
+    _lineVoiceCache[text] = clip;
+    while (_lineVoiceCache.length > _voiceCacheMax) {
+      _lineVoiceCache.remove(_lineVoiceCache.keys.first);
     }
   }
 
@@ -398,19 +422,26 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   /// 从当前音频源抓最近一段 → 波形选区对话框 → 帧对齐切片 → 编码成 AAC/m4a 容器字节。
   /// 无源 / 无数据 / 用户取消 / 切空 / 编码失败任一步 → 返回 null（调用方退化为纯截图卡）。
-  Future<Uint8List?> _captureGalAudioBytes() async {
+  Future<Uint8List?> _captureGalAudioBytes(String sentence) async {
     final GalAudioSource? src = _galAudioSource;
     if (src == null) {
       return null;
     }
-    // 引擎-hook + 有台词时间戳：**自动取「该句的语音 clip」**（voice hook 按句切好的那段，
-    // 与文本 hook 的行同一 GetTickCount64 时钟配对）—— 替代手动波形选区。
     GalAudioSlice? slice;
+    // ① 最优先：这句台词**出现那刻就锁定**的语音（`_lineVoiceCache`）——最完整对应、抗快进/
+    //    环形覆盖。挖的句子（fields['sentence']）与文本 hook 的行文本一致时命中。
+    final GalAudioSlice? cached = _lineVoiceCache[sentence];
+    if (cached != null && !cached.isEmpty) {
+      slice = cached;
+    }
     final EngineHookGalAudioSource? eng = _engineSource;
-    if (eng != null && _lastHookedLineTs > 0) {
+    // ② 缓存未命中（该句在接线前出现/文本不完全一致）：按最近台词时间戳现抓该句 clip。
+    if ((slice == null || slice.isEmpty) &&
+        eng != null &&
+        _lastHookedLineTs > 0) {
       slice = await eng.grabClipNear(_lastHookedLineTs);
     }
-    // 兜底（loopback / 引擎-hook 没抓到该句 clip）：取最近 N 秒（仍全自动、不弹波形选区）。
+    // ③ 兜底（loopback / 无 clip）：取最近 N 秒（仍全自动、不弹波形选区）。
     slice ??= await src.grabRecent(_galAudioBackMs);
     if (slice == null || slice.isEmpty) {
       return null;
