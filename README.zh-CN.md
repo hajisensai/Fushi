@@ -98,6 +98,7 @@ hibiki 把你正在读的小说、追的番、听的有声书，变成你的语�
 - 通过 [AnkiDroid](https://github.com/ankidroid/Anki-Android) 或 AnkiConnect 制卡。
 - 内置 [Lapis](https://github.com/donkuri/lapis) 笔记类型（vendored 1.7.0），可在 App 内一键创建卡片模板与牌组。
 - 自动填充上下文句子，支持录音与截图裁剪。
+- Windows 可配合 LunaTranslator 制作带游戏原声与窗口截图的 Galgame 卡片，参见 [Galgame 原声与截图制卡快速上手](docs/galgame-mining-guide.zh-CN.md)。
 - 多导出配置（Profile）、自定义字段映射。
 - 收藏生词，制卡与收藏计入统计。
 
