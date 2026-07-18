@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show FontLoader;
+import 'package:hibiki/src/media/video/ass_font_metrics.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
@@ -325,6 +326,9 @@ class SubtitleEmbeddedFontLoader {
     final Uint8List bytes = await file.readAsBytes();
     final Set<String> names = parseSfntFamilyNames(bytes);
     if (names.isEmpty) return;
+    // BUG-891：同步喂进字号换算索引（OS/2 win cell 语义）——内嵌字体正是 .ass 点名的
+    // 字体，其 cell/em 系数优先于系统扫描，overlay 字号与 mpv/libass 同源。
+    AssFontCellIndex.instance.registerFontBytes(bytes);
     for (final String family in names) {
       families.add(family);
       if (_registeredFamilies.contains(family)) continue;

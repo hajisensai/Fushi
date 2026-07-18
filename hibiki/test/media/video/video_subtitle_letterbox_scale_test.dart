@@ -73,8 +73,9 @@ void main() {
     // 内容矩形高 = 640×(1080/1920) = 360 → 字号 65×360/1080 = 21.67，
     // 而非容器基准的 65×640/1080 = 38.5（偏大 78%）。
     expect(_fill(tester).style?.fontSize, closeTo(65 * 360 / 1080, 0.01));
+    // BUG-891：ASS Outline 是向外扩的半径，居中 stroke 需 ×2 才与 mpv 同可见宽。
     expect(_stroke(tester).style?.foreground?.strokeWidth,
-        closeTo(2.5 * 360 / 1080, 0.01));
+        closeTo(2.5 * 360 / 1080 * 2, 0.01));
   });
 
   testWidgets(
