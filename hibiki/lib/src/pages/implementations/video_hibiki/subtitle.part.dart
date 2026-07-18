@@ -272,20 +272,20 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     );
   }
 
-  /// 副字幕源行（TODO-857 / TODO-1312 视频双字幕）：顶部「关闭」项 + 内嵌字幕轨（复用
-  /// [_subtitleMenuSources] 只取内嵌轨——图形位图轨抽不出文本 cue，选中时 loadCuesForSource
-  /// 返回空、诚实提示失败）。副字幕走 Flutter overlay 副层 cue 流（**可逐字符查词**），与
-  /// 主字幕同款。TODO-1350：这些行以前住在一个独立浮层侧栏里（点「副字幕」跳到另一个窗口，
-  /// 用户报「副字幕打开会去到另一个窗口」）；现直接内联在「字幕」分类的可展开区里就地切换。
+  /// 副字幕源行（TODO-857 / TODO-1312 视频双字幕）：顶部「关闭」项 + 与主字幕**同一份**
+  /// 可用字幕列表 [_subtitleMenuSources]（内嵌轨 + 同目录外挂文件；BUG-891：此前只取
+  /// 内嵌轨，用户下载的外挂字幕没法选为副字幕——「副字幕没办法添加」）。选择链路
+  /// [_selectSecondarySubtitleSource] 走同一 [loadCuesForSource]（内嵌 ffmpeg demux、
+  /// 外挂读文件）本就支持两类源；图形位图轨抽不出文本 cue，选中时返回空、诚实提示失败。
+  /// 副字幕走 Flutter overlay 副层 cue 流（**可逐字符查词**），与主字幕同款。TODO-1350：
+  /// 这些行以前住在一个独立浮层侧栏里（点「副字幕」跳到另一个窗口，用户报「副字幕打开
+  /// 会去到另一个窗口」）；现直接内联在「字幕」分类的可展开区里就地切换。
   /// [context] 是设置面板（浅色 MD3）的构建上下文，配色随之解析（与主字幕轨行一致）。
   List<Widget> _buildSecondarySubtitleRows(
     BuildContext context,
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final List<SubtitleSource> embedded = _subtitleMenuSources
-        .where((SubtitleSource s) => s.isEmbedded)
-        .toList(growable: false);
     return <Widget>[
       if (_subtitleMenuLoading) const LinearProgressIndicator(),
       ListTile(
@@ -301,10 +301,15 @@ extension _VideoSubtitle on _VideoHibikiPageState {
             : () => unawaited(_selectSecondarySubtitleOff(controller)),
       ),
       const Divider(height: 1),
-      for (final SubtitleSource source in embedded)
+      // BUG-891：遍历完整 [_subtitleMenuSources]（与主字幕轨行同一份可用列表），外挂
+      // 字幕文件也能选为副字幕。图标与主字幕轨行一致：图形轨 image / 内嵌 movie /
+      // 外挂 subtitles。
+      for (final SubtitleSource source in _subtitleMenuSources)
         ListTile(
           leading: Icon(
-            source.isGraphicEmbedded ? Icons.image_outlined : Icons.movie,
+            source.isGraphicEmbedded
+                ? Icons.image_outlined
+                : (source.isEmbedded ? Icons.movie : Icons.subtitles),
           ),
           title: Text(source.label),
           selected: source.matchesPersisted(_currentSecondarySubtitleSource),
@@ -463,28 +468,43 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         () => _currentSecondarySubtitleSource = SubtitleSource.offSentinel);
   }
 
-  /// 视频就绪后恢复用户选过的副字幕轨（TODO-857 / TODO-1312）。仅内嵌轨（`embedded:<n>`）：
-  /// 解析 streamIndex → [loadCuesForSource] 抽 cue → [VideoPlayerController.setSecondaryCues]。
-  /// null=无偏好 / `off:`=显式关闭 / 外挂路径（首版恢复不支持）都不加载，保持无副字幕。
-  /// 空 cue（图形轨 / 抽取失败）静默跳过（不弹失败——恢复是后台行为，不打扰用户）。
+  /// 视频就绪后恢复用户选过的副字幕轨（TODO-857 / TODO-1312）。支持内嵌轨（`embedded:<n>`）
+  /// 与外挂字幕文件绝对路径（BUG-891：与主字幕同一份可用列表后，副字幕也能选外挂，恢复
+  /// 须对称支持外挂——否则重开视频副字幕丢失）：
+  ///  - 内嵌：解析 streamIndex → [SubtitleSource.embedded]。
+  ///  - 外挂：绝对路径存在 → [SubtitleSource.external]（文件不在则跳过，与主字幕
+  ///    [_restorePersistedSubtitle] 同判据）。
+  /// 再 [loadCuesForSource] 抽 cue → [VideoPlayerController.setSecondaryCues]。
+  /// null=无偏好 / `off:`=显式关闭 都不加载，保持无副字幕。空 cue（图形轨 / 抽取失败 /
+  /// 坏文件）静默跳过（不弹失败——恢复是后台行为，不打扰用户）。
   Future<void> _restoreSecondarySubtitle(
     VideoPlayerController controller,
   ) async {
     final String? persisted = _currentSecondarySubtitleSource;
     if (persisted == null || persisted.isEmpty) return;
     if (SubtitleSource.isOff(persisted)) return;
-    if (!persisted.startsWith(SubtitleSource.embeddedPrefix)) return;
-    final int? streamIndex = int.tryParse(
-      persisted.substring(SubtitleSource.embeddedPrefix.length),
-    );
-    if (streamIndex == null) return;
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return;
+    final SubtitleSource? source;
+    if (persisted.startsWith(SubtitleSource.embeddedPrefix)) {
+      final int? streamIndex = int.tryParse(
+        persisted.substring(SubtitleSource.embeddedPrefix.length),
+      );
+      if (streamIndex == null) return;
+      source = SubtitleSource.embedded(
+        streamIndex: streamIndex,
+        label: 'embedded:$streamIndex',
+      );
+    } else if (File(persisted).existsSync()) {
+      // 外挂源持久化值即其绝对路径（[SubtitleSource.toPersistedValue]）。
+      source = SubtitleSource.external(
+        externalPath: persisted,
+        label: p.basename(persisted),
+      );
+    } else {
+      return;
+    }
     if (!mounted || _controller != controller) return;
-    final SubtitleSource source = SubtitleSource.embedded(
-      streamIndex: streamIndex,
-      label: 'embedded:$streamIndex',
-    );
     final List<AudioCue> cues =
         await loadCuesForSource(source, videoPath, widget.bookUid);
     if (!mounted || _controller != controller) return;
