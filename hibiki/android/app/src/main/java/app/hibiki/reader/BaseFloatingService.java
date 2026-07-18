@@ -243,6 +243,10 @@ public abstract class BaseFloatingService extends Service {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
+        // 悬浮查词 / 悬浮歌词 overlay 窗默认不请求高刷，滚动 / 逐行滑动被系统压到
+        // 60Hz。addView 前给 LayoutParams 声明最高刷模式偏好（FloatingLyricService
+        // 覆写了本方法但会 super 调用，故一并覆盖；FloatingDictService 自建 lp 需单独接）。
+        HighRefreshRate.applyToLayoutParams(lp, windowManager);
         return lp;
     }
 
