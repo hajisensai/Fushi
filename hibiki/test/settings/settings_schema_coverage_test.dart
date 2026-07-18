@@ -46,6 +46,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （关=占位全隐藏、开=混排+云角标）。
   'syncBackup/Show remote entries':
       'test/pages/home_video_remote_mixed_grid_test.dart + test/pages/reader_remote_mixed_grid_test.dart',
+  // 互联解耦（用户诉求「互联和同步后端不冲突」）：互联总开关，独立于 backendType
+  // 云备份后端。写 SyncRepository（changed=true），生效点在同步触发的双通道门控 +
+  // 互联各 section 可见性 + 远端内容来源选择（非 reader CSS / 主题树），无适用探针；
+  // 由迁移守卫（hibikiServer→独立开关）+ 可见性守卫（开关常显、配置区门控）咬住。
+  'interconnect/Enable interconnect':
+      'test/sync/sync_interconnect_decouple_migration_test.dart + test/sync/sync_settings_visibility_test.dart',
   // 专项 unit/widget 生效探针（docs/specs/2026-06-03-t4-effect-probes-plan.md T1–T9）
   'reading/Text Orientation': 'test/reader/reader_content_styles_test.dart',
   'reading/Font Kerning (Vertical)':

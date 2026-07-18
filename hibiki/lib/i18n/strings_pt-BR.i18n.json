@@ -1922,10 +1922,7 @@
   "settings_section_lookup_trigger": "Lookup trigger",
   "settings_destination_interconnect": "Hibiki Interconnect",
   "interconnect_summary": "Direct device-to-device sync & host this device as a server",
-  "interconnect_inactive_note": "Hibiki Interconnect is not the active sync method",
-  "interconnect_inactive_note_hint": "Select Hibiki Interconnect under Sync & backup - Sync method to use these settings",
   "interconnect_section_client": "Connect to other devices",
-  "interconnect_moved_note": "Connection & server settings are in the Hibiki Interconnect category",
   "settings_search_hint": "Search settings",
   "settings_search_no_results": "No matching settings",
   "section_video_anime_download": "Anime download (qBittorrent)",
@@ -1964,5 +1961,7 @@
   "anime_download_play_now_fail": "Not ready yet (metadata pending or connection failed) — try again later",
   "interconnect_section_related": "Remote content & lookup",
   "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows",
-  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki."
+  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki.",
+  "interconnect_enable": "Enable interconnect",
+  "interconnect_enable_hint": "Connect to your other devices over the LAN. Works alongside a cloud backup backend — they don't conflict."
 }

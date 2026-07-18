@@ -1821,9 +1821,13 @@ class AppModel with ChangeNotifier {
       // Sync-pref maintenance, before any repository loads them or sync runs:
       // 1) recover device-local sync config if a previous backup import crashed
       //    after overwriting the DB but before re-applying the preserved keys;
-      // 2) fold the deprecated "SMB"(WebDAV-gateway) config into WebDAV.
+      // 2) fold the deprecated "SMB"(WebDAV-gateway) config into WebDAV;
+      // 3) migrate the mutually-exclusive `backendType==hibikiServer` interconnect
+      //    selection to the independent interconnect toggle (interconnect and a
+      //    cloud backup backend can now coexist).
       await BackupService.recoverPendingImport(_databaseDirectory.path);
       await SyncRepository(_database).migrateSmbToWebDav();
+      await SyncRepository(_database).migrateInterconnectBackendToToggle();
 
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).

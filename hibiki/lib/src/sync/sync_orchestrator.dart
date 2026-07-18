@@ -188,6 +188,24 @@ class SyncRunReport {
       localAudioImported > 0 ||
       localBookProgressPulled > 0 ||
       collectionsUpdated > 0;
+
+  /// 合并另一条通道的报告到本报告（option B 双通道：云备份 + 互联并行各跑一轮后，
+  /// 汇总成单一报告返回）。累加所有计数、拼接错误与冲突列表。
+  void mergeFrom(SyncRunReport other) {
+    booksImported += other.booksImported;
+    dictionariesImported += other.dictionariesImported;
+    dictionariesExported += other.dictionariesExported;
+    audiobooksImported += other.audiobooksImported;
+    audiobooksExported += other.audiobooksExported;
+    localAudioImported += other.localAudioImported;
+    localAudioExported += other.localAudioExported;
+    videosExported += other.videosExported;
+    localBookProgressPulled += other.localBookProgressPulled;
+    rootSpillFilesRemoved += other.rootSpillFilesRemoved;
+    collectionsUpdated += other.collectionsUpdated;
+    errors.addAll(other.errors);
+    conflicts.addAll(other.conflicts);
+  }
 }
 
 /// Orchestrates sync across any [SyncBackend].

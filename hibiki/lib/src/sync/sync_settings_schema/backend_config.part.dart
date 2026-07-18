@@ -285,11 +285,15 @@ bool _isBackendSelectable(SyncBackendType type) {
       return OneDriveSyncBackend.isConfigured;
     case SyncBackendType.dropbox:
       return DropboxSyncBackend.isConfigured;
+    // 互联（hibikiServer）不再是「同步方式」的互斥单选项——它已解耦成独立分类 +
+    // 独立开关（buildInterconnectDestination），与云备份并存。故从后端选择器隐藏；
+    // 枚举值与 [_backendLabel] 仅为防御性回显（迁移前的历史持久化值）保留。
+    case SyncBackendType.hibikiServer:
+      return false;
     case SyncBackendType.googleDrive:
     case SyncBackendType.webDav:
     case SyncBackendType.ftp:
     case SyncBackendType.sftp:
-    case SyncBackendType.hibikiServer:
       return true;
   }
 }
