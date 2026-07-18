@@ -1649,7 +1649,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
     // TODO-1136 / BUG-frosted：进度文字直接叠在正文上，浅色书/复杂背景下
     //  看不清。在文字后面加一层毛玻璃（frosted glass）背景提升可读性——
-    //  复用 blur_options.dart 的既有配方（ClipRRect > BackdropFilter(ImageFilter.blur)
+    //  经典配方（ClipRRect > BackdropFilter(ImageFilter.blur)
     //  > 半透明 Container），背景色/文字色跟随当前主题
     //  （_themeBackgroundColor / _themeTextColor），不硬编码。BackdropFilter 必须
     //  在 ClipRRect 内限定到 pill 自身矩形，避免整页模糊。

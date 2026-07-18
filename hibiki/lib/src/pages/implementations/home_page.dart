@@ -230,8 +230,6 @@ class _HomePageState extends BasePageState<HomePage>
         .addListener(_onHomeDictionaryTabRequested);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      appModel.populateDefaultMapping(appModel.targetLanguage);
-      appModel.populateBookmarks();
       if (appModel.isFirstTimeSetup) {
         appModel.setLastSelectedDictionaryFormat(
             appModel.targetLanguage.standardFormat);

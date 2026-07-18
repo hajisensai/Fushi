@@ -1562,6 +1562,20 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           callback: (_) => _onRestoreComplete(),
         );
 
+        // BUG-493 根因修复：JS 侧 `_reanchorPending` 清旗已单点化（_sharedJs 的
+        // `_setReanchorPending`），true→false（重锚 settle）那一刻回调此处。settle 即补
+        // 刷一次进度，事件驱动替代旧的 Dart 侧 120ms×8 轮询重试——commit 成功 / gate 不
+        // 放行 / begin 采不到锚 / 已有别处重锚在飞等**所有**清旗路径都会通知，进度不再
+        // 依赖轮询猜测清旗时机。图片/封面章的 null 稳态仍由 _refreshProgress 内的
+        // _applyImagePageProgressFallback 兜底，不受影响。
+        controller.addJavaScriptHandler(
+          handlerName: 'onReanchorSettled',
+          callback: (_) {
+            if (!mounted) return;
+            unawaited(_refreshProgress());
+          },
+        );
+
         // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸·trackpad·键盘
         // 箭头落 body 的原生滚动）经 setup 脚本的 scroll reporter 回传，刷新章内进度
         // 条。门控由 readerScrollProgressRefreshAllowed 纯函数统一判定，恢复期/歌词/
@@ -2050,6 +2064,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         });
       }
       _lyricsPageReady = true;
+      // 首次进入歌词模式的提示对话框：挂在歌词文档真正就绪的这一刻消费一次性旗
+      // （_toggleLyricsMode 进入分支置位），替代旧的裸 delay 100ms（事件驱动，见旗注释）。
+      if (_pendingLyricsHintOnReady) {
+        _pendingLyricsHintOnReady = false;
+        _showLyricsModeHintIfNeeded();
+      }
       // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 hoshiCaret 注入。
       // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
       await controller.evaluateJavascript(

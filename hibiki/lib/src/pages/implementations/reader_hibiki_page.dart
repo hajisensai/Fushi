@@ -1186,18 +1186,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 与翻章恢复直接调 _refreshProgress。
   bool _scrollProgressInFlight = false;
   bool _scrollProgressPending = false;
-  // BUG-493 (TODO-1053 Bug B)：重锚未完成时进度刷新的「待重试」coalesce。恢复完成后
-  // _reanchorContinuousAfterRestore 的 begin 同步置 JS 侧 _reanchorPending=true，紧跟的首发
-  // _refreshProgress() 撞上 → stableProgressInvocation 返 null → 早退 → 顶部进度条隐藏，只剩
-  // 10s 轮询兜底（要滑一下 / 查词滚 DOM 才补触发到 100%）。onAfterCommit 只覆盖「重锚 commit
-  // 成功」一条路；gate 不放行 / begin 采不到锚（charOffset<0）/ 已有别处重锚在飞等逃逸路径下
-  // commit 与 onAfterCommit 都不跑 → 进度仍锁死。故在 _refreshProgress 读到「真实文本章却返
-  // null」（即重锚在飞的瞬态）时武装一次短延迟重试，重锚一清旗即补到真值，覆盖所有逃逸路径。
-  // 有界重试（[_kProgressRetryMax]），避免罕见永不 settle 场景空转，超界回落 10s 轮询。
-  Timer? _progressReanchorRetryTimer;
-  int _progressReanchorRetryCount = 0;
-  static const int _kProgressRetryMax = 8;
-  static const Duration _kProgressRetryDelay = Duration(milliseconds: 120);
+  // BUG-493 (TODO-1053 Bug B) 根因修复（事件驱动版）：恢复完成后首发 _refreshProgress()
+  // 撞上 JS 侧 _reanchorPending=true → stableProgressInvocation 返 null → 顶部进度条隐藏。
+  // 旧修复在 Dart 侧武装 120ms×8 轮询重试兜「清旗时机不可知」；现已把 JS 侧清旗收敛到
+  // 单一 setter（_sharedJs 的 _setReanchorPending），true→false 转换即 callHandler
+  // 'onReanchorSettled'（webview.part.dart 注册）→ Dart 补刷一次进度。事件覆盖所有清旗
+  // 路径（含 commit 之外的逃逸路径），轮询重试字段已整体删除。
   // TODO-1229 v2：跨章去抖冷却窗（固定 450ms，对齐默认 wheelPageTurnInterval）。必须
   // 足够长以桥接一次惯性手势内相邻 wheel/touch 事件的间隔(约 16~60ms，偶有尖峰)——冷却窗
   // 若短于间隔会在手势中途重新开启而放行第二次跨章。用固定常量(不跟随用户可调的
@@ -1285,6 +1279,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _appearanceSheetOpen = false;
 
   bool _lyricsPageReady = false;
+  // 首次进入歌词模式的提示对话框的一次性待弹旗：_toggleLyricsMode 进入分支置 true，
+  // 歌词文档真正就绪（_onChapterLoadComplete 歌词分支，_lyricsPageReady 置位点）消费。
+  // 事件驱动，替代旧的「loadData 后裸 delay 100ms 再弹」（慢机 100ms 未必加载完，
+  // 对话框可能压在空白页上）。退出歌词模式随 _lyricsPageReady 一并复位。
+  bool _pendingLyricsHintOnReady = false;
   int _lyricsEntryChapter = 0;
   int _lyricsEntryCueIndex = 0;
   int _lyricsCueIndexOffset = 0;
@@ -1914,7 +1913,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
-    _progressReanchorRetryTimer?.cancel();
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();
     _contentReadyTimer?.cancel();
@@ -2056,8 +2054,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // BUG-438 / TODO-889：手柄连/断引发系统 inset 抖动，旧实现每帧 postFrame 直连
     // _syncPageSize → 宽变触发 _navigateToChapter → 反复把 _readerContentReady 置 false
     // 重挂 loading，配合相对 8s 兜底超时被反复推迟 → 无限 loading。改走与
-    // _onReaderConstraintsChanged 同一条 ~50ms 尾沿防抖（_resizeRepaginateDebounce），
+    // _onReaderConstraintsChanged 共享的 ~50ms 尾沿防抖（_armResizeRepaginateDebounce），
     // 多次抖动只在 settle 后触发一次重排，且 _syncPageSize 内部基线判定天然去重幂等。
+    _armResizeRepaginateDebounce();
+  }
+
+  /// BUG-438 / TODO-889 / TODO-690：resize→重排的共享 ~50ms 尾沿防抖武装点
+  /// （[didChangeMetrics] 与 [_onReaderConstraintsChanged] 此前逐字重复的两份收敛于此）。
+  /// 先取消旧 timer 再起新的（拖拽期不堆积），timer 回调 mounted 守卫后调
+  /// [_syncPageSize]；timer 在 dispose 取消（_resizeRepaginateDebounce?.cancel()）。
+  void _armResizeRepaginateDebounce() {
     _resizeRepaginateDebounce?.cancel();
     _resizeRepaginateDebounce = Timer(
       const Duration(milliseconds: 50),
@@ -2161,13 +2167,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _lastConstraintWidth = w;
     _lastConstraintHeight = h;
     if (!needsRepaginate) return;
-    _resizeRepaginateDebounce?.cancel();
-    _resizeRepaginateDebounce = Timer(
-      const Duration(milliseconds: 50),
-      () {
-        if (mounted) _syncPageSize();
-      },
-    );
+    _armResizeRepaginateDebounce();
   }
 
   @override
@@ -2385,9 +2385,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return _cachedStyleTag ??= _computeStyleTag();
   }
 
-  String _computeStyleTag() {
+  /// _computeStyleTag / _currentStyleJson 共享的正文 CSS 生成（此前两处以相同参数各调
+  /// 一次 [ReaderContentStyles.css]，任一参数改动要双处同步，否则 <style> 标签与
+  /// beginStyleReanchor 下发的 CSS 漂移）。两个包装分别包 <style> 标签 / jsonEncode。
+  String _currentReaderCss() {
     final ReaderThemeColors rc = _readerThemeColors;
-    return '<style id="hoshi-reader-style">\n${ReaderContentStyles.css(
+    return ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
       // TODO-165 / BUG-224：正文 <body> 背景/字色统一吃 `_readerThemeColors` 派生色。
@@ -2402,7 +2405,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       selectionColor: _colorToCssRgba(rc.selection),
       sasayakiColor: _colorToCssRgba(rc.sasayaki),
       linkColor: _colorToCssRgba(rc.link),
-    )}\n</style>';
+    );
+  }
+
+  String _computeStyleTag() {
+    return '<style id="hoshi-reader-style">\n${_currentReaderCss()}\n</style>';
   }
 
   void _invalidateStyleCache() {
@@ -2431,23 +2438,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   /// 当前正文样式的 JSON 编码（喂给 beginStyleReanchorInvocation）。从 [_applyStylesLive]
   /// 抽出，供它与 TODO-975 的 chrome-inset 重锚（[_applyChromeInsetsAndReanchor]，CSS
-  /// 不变但需复用样式重锚的滚动保位）共用同一套色/样式计算，避免两处漂移。
+  /// 不变但需复用样式重锚的滚动保位）共用同一套色/样式计算；CSS 本体经
+  /// [_currentReaderCss] 与 [_computeStyleTag] 同源，双处参数漂移已消除。
   String _currentStyleJson() {
-    final ReaderThemeColors rc = _readerThemeColors;
-    final String css = ReaderContentStyles.css(
-      settings: _settings!,
-      themeOverride: appModel.appThemeKey,
-      // TODO-165 / BUG-224：与 _computeStyleTag 对称——正文背景/字色统一吃当前主题
-      // 派生色，system-theme（默认主题）不再恒白底。
-      customBg: _readerBackgroundHex,
-      customFg: _customThemeTextCss,
-      // BUG-396：与 _computeStyleTag 对称——三角色色统一取自 `_readerThemeColors`
-      // 单一真相源，system/light 也吃强调色（不再落硬编码默认）。
-      selectionColor: _colorToCssRgba(rc.selection),
-      sasayakiColor: _colorToCssRgba(rc.sasayaki),
-      linkColor: _colorToCssRgba(rc.link),
-    );
-    return jsonEncode(css);
+    return jsonEncode(_currentReaderCss());
   }
 
   Future<void> _applyStylesLive() async {

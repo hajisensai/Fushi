@@ -15,7 +15,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/popup_theme_css.dart';
 import 'package:hibiki/src/reader/dictionary_font_css.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -52,20 +52,13 @@ class PopupSettingsOptions {
   final bool sentenceDraftEnabled;
 }
 
-String _cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
-    '${(c.g * 255.0).round().clamp(0, 255)}, '
-    '${(c.b * 255.0).round().clamp(0, 255)})';
-
-/// spec 2026-07-10 §6 — the bare `r, g, b` triplet of [c]，供 popup.css 的
-/// `rgba(var(--hibiki-card-bg-rgb), var(--hibiki-card-bg-alpha))` 组装半透明卡
-/// 背景（`--background-color` 是不透明 `rgb()`，纯 CSS 无法给它加 alpha）。
-String _cssRgbTriplet(Color c) => '${(c.r * 255.0).round().clamp(0, 255)}, '
-    '${(c.g * 255.0).round().clamp(0, 255)}, '
-    '${(c.b * 255.0).round().clamp(0, 255)}';
-
 /// Builds the theme-derived CSS custom properties + `data-theme` (+ the
 /// `global-lookup` document class when [globalLookup]). Shared by both paths so
 /// the WebView surfaces follow the app ColorScheme identically.
+///
+/// 变量取值统一来自 [buildPopupThemeCssVars]（与浏览器扩展的
+/// `browserExtensionThemeColors()` 同一真源）；变量名字面量保留在本模板里，
+/// 供源码扫描守卫（parity guard 等）钉住「in-app 注入了哪些变量」。
 String _themeVariablesJs({
   required AppModel appModel,
   required ThemeData theme,
@@ -74,12 +67,12 @@ String _themeVariablesJs({
 }) {
   final bool isDark = theme.brightness == Brightness.dark;
   final ColorScheme scheme = theme.colorScheme;
-  final Color primary = scheme.primary;
-  final String primaryRgba =
-      'rgba(${(primary.r * 255.0).round().clamp(0, 255)}, '
-      '${(primary.g * 255.0).round().clamp(0, 255)}, '
-      '${(primary.b * 255.0).round().clamp(0, 255)}, 0.35)';
-  final Color bgColor = appModel.overrideDictionaryColor ?? scheme.surface;
+  final Map<String, String> vars = buildPopupThemeCssVars(
+    scheme: scheme,
+    backgroundColor: appModel.overrideDictionaryColor ?? scheme.surface,
+    surfaceContainerHigh: scheme.surfaceContainerHigh,
+    dictionaryColumns: appModel.popupDictionaryColumns,
+  );
   // TODO-1065: mobileExternal tags the doc so popup.css `html.mobile-external`
   // turns the documentElement transparent (external popup washout fix), the
   // mobile analogue of the desktop global-lookup transparent-html rule.
@@ -90,18 +83,18 @@ String _themeVariablesJs({
           : '');
   return '''
       $classLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
-      document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
-      document.documentElement.style.setProperty('--text-color', '${_cssRgb(scheme.onSurface)}');
-      document.documentElement.style.setProperty('--background-color', '${_cssRgb(bgColor)}');
-      document.documentElement.style.setProperty('--hibiki-card-bg-rgb', '${_cssRgbTriplet(bgColor)}');
-      document.documentElement.style.setProperty('--md-surface-container', '${_cssRgb(scheme.surfaceContainer)}');
-      document.documentElement.style.setProperty('--md-surface-container-high', '${_cssRgb(scheme.surfaceContainerHigh)}');
-      document.documentElement.style.setProperty('--md-outline-variant', '${_cssRgb(scheme.outlineVariant)}');
-      document.documentElement.style.setProperty('--md-on-surface-variant', '${_cssRgb(scheme.onSurfaceVariant)}');
-      document.documentElement.style.setProperty('--md-primary', '${_cssRgb(scheme.primary)}');
-      document.documentElement.style.setProperty('--md-on-primary', '${_cssRgb(scheme.onPrimary)}');
-      document.documentElement.style.setProperty('--hibiki-radius-card', '${HibikiRadii.cardValue.toInt()}px');
-      document.documentElement.style.setProperty('--dict-columns', '${appModel.popupDictionaryColumns}');
+      document.documentElement.style.setProperty('--hoshi-primary-highlight', '${vars['--hoshi-primary-highlight']}');
+      document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
+      document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');
+      document.documentElement.style.setProperty('--hibiki-card-bg-rgb', '${vars['--hibiki-card-bg-rgb']}');
+      document.documentElement.style.setProperty('--md-surface-container', '${vars['--md-surface-container']}');
+      document.documentElement.style.setProperty('--md-surface-container-high', '${vars['--md-surface-container-high']}');
+      document.documentElement.style.setProperty('--md-outline-variant', '${vars['--md-outline-variant']}');
+      document.documentElement.style.setProperty('--md-on-surface-variant', '${vars['--md-on-surface-variant']}');
+      document.documentElement.style.setProperty('--md-primary', '${vars['--md-primary']}');
+      document.documentElement.style.setProperty('--md-on-primary', '${vars['--md-on-primary']}');
+      document.documentElement.style.setProperty('--hibiki-radius-card', '${vars['--hibiki-radius-card']}');
+      document.documentElement.style.setProperty('--dict-columns', '${vars['--dict-columns']}');
 ''';
 }
 

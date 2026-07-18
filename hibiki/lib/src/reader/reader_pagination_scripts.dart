@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_visual_novel_scripts.dart';
+import 'package:hibiki/src/utils/misc/debug_log_service.dart';
 
 enum ReaderNavigationDirection {
   forward('forward'),
@@ -856,6 +857,18 @@ class ReaderPaginationScripts {
   nodeStartOffsets: new WeakMap(),
   isVertical: function() {
     return window.getComputedStyle(document.body).writingMode === "vertical-rl";
+  },
+  // BUG-493 根因修复：_reanchorPending 的唯一写入口（清旗单点化，_sharedJs 两 shell 共用）。
+  // true→false 转换 = 重锚 settle，那一刻（bridge 可用时）callHandler('onReanchorSettled')
+  // 通知 Dart 补刷一次进度（webview.part.dart 注册），事件驱动替代旧的 Dart 侧 120ms×8
+  // 轮询重试——setChromeInsets/updatePageSize/begin·commit 系列任何一处清旗（含 commit
+  // 成功之外的逃逸路径）都会通知，进度不再锁死等 10s 轮询。
+  _setReanchorPending: function(value) {
+    var settled = this._reanchorPending === true && value !== true;
+    this._reanchorPending = value === true;
+    if (settled && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try { window.flutter_inappwebview.callHandler('onReanchorSettled'); } catch (e) {}
+    }
   },
   // TODO-1285（图片挤压根因修复）：每页多列(pageColumns>=2)时 multicol 把「turn 轴」
   // （横排=宽 / 竖排=高）切成 N 个子列，但图片 max 约束过去恒用整 content-box（cs.w/cs.h）
@@ -2014,7 +2027,9 @@ $_sharedJs
     //   单调增长 → 坐实 anchor/floor 累积 → 候选A(scrollToRange 加 page-stable hint)；
     //   配套 [792-REVEAL-RB] 若 readback≠target 且随句增长 → 竖排 scrollTop 亚像素回读漂移 → 候选B。
     // 走 console.log → onConsoleMessage → debugPrint → DebugLogService，与 [753-DIAG] 同管道。
-    if (context.vertical) {
+    // TODO-792 修复已落地：探针保留但按 [806-TAP] 同模式加构建期门控（DebugLogService
+    // 关闭时注入 false，短路不打印，不再常驻热路径刷屏）。
+    if (${DebugLogService.instance.enabled} && context.vertical) {
       try {
         console.log('[792-REVEAL]'
           + ' rectTop=' + (rect.top != null ? rect.top.toFixed(2) : 'null')
@@ -2046,7 +2061,8 @@ $_sharedJs
     requestAnimationFrame(function() {
       self.setPagePosition(context, targetScroll);
       // [792-REVEAL-RB] rAF 复读：核验 vertical-rl scrollTop 是否亚像素回读漂移。
-      if (context.vertical) {
+      // 同上：构建期门控，调试日志开启才输出。
+      if (${DebugLogService.instance.enabled} && context.vertical) {
         try {
           var readback = self.getPagePosition(context);
           console.log('[792-REVEAL-RB]'
@@ -2208,6 +2224,17 @@ $_sharedJs
     if (page > totalPages) page = totalPages;
     return { currentPage: page, totalPages: totalPages };
   },
+  // 纯 dedup（零行为变化）：恢复/跳锚共用的落点 settle 双发——16ms 后重设落点 + 注册
+  // snap 基线，再 16ms 后 notifyRestoreComplete 通知 Dart 恢复完成。与原
+  // restoreProgress / restoreToCharOffset / jumpToFragment 三处内联展开逐字节等时序。
+  _settleAndNotify: function(context, pos) {
+    var self = this;
+    setTimeout(function() {
+      self.setPagePosition(context, pos);
+      self.registerSnapScroll(pos);
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
+  },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var context = this.getScrollContext();
@@ -2221,12 +2248,7 @@ $_sharedJs
     // 精确 char 锚不登记（重锚到粗 progress 反更差）。任一用户翻页(paginate)清资格。
     this.__imgReanchorProgress = (progress <= 0 || progress >= 0.99) ? progress : null;
     var pos = this.getPagePosition(context);
-    var self = this;
-    setTimeout(function() {
-      self.setPagePosition(context, pos);
-      self.registerSnapScroll(pos);
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify(context, pos);
   },
   // BUG-162: 退出再进的精确恢复——按 section 内绝对字符偏移落到该字符真实所在页
   // （成熟 scrollToCharOffset 路径，是「存→取」不动点），替代粗粒度
@@ -2250,12 +2272,7 @@ $_sharedJs
       this.scrollToCharOffset(charOffset);
     }
     var pos = this.getPagePosition(context);
-    var self = this;
-    setTimeout(function() {
-      self.setPagePosition(context, pos);
-      self.registerSnapScroll(pos);
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify(context, pos);
   },
   jumpToFragment: async function(fragment) {
     await document.fonts.ready;
@@ -2272,12 +2289,7 @@ $_sharedJs
     var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
     var targetScroll = this.alignToPage(context, anchor);
     this.setPagePosition(context, targetScroll);
-    var self = this;
-    setTimeout(function() {
-      self.setPagePosition(context, targetScroll);
-      self.registerSnapScroll(targetScroll);
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify(context, targetScroll);
     return true;
   },
   paginate: function(direction) {
@@ -2458,13 +2470,13 @@ $_sharedJs
     // changes. Invalidate even when a re-anchor is already in flight.
     this.paginationMetrics = null;
     if (inFlight || charOffset < 0) return;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     var self = this;
     requestAnimationFrame(function() {
       try {
         self.scrollToCharOffset(charOffset, scrollBefore);
       } finally {
-        self._reanchorPending = false;
+        self._setReanchorPending(false);
       }
     });
   },
@@ -2494,7 +2506,7 @@ $_sharedJs
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
     this._resetImageMaxVars();
     if (charOffset < 0) return -1;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     this._styleReanchorOffset = charOffset;
     this._styleReanchorHint = hint;
     return charOffset;
@@ -2508,7 +2520,7 @@ $_sharedJs
     } finally {
       this._styleReanchorOffset = undefined;
       this._styleReanchorHint = undefined;
-      this._reanchorPending = false;
+      this._setReanchorPending(false);
     }
     return true;
   }
@@ -2786,13 +2798,13 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   // TODO-753 诊断：尺寸变化（横竖屏切换 / chrome inset 变化）后再取一行（phase 去重）。
   this._diag753('resize');
   if (inFlight) return;
-  this._reanchorPending = true;
+  this._setReanchorPending(true);
   var self = this;
   requestAnimationFrame(function() {
     try {
       self.scrollToProgressPaged(self.getScrollContext(), progress);
     } finally {
-      self._reanchorPending = false;
+      self._setReanchorPending(false);
     }
   });
 };
@@ -2950,6 +2962,16 @@ $_sharedJs
     }
     return totalChars > 0 ? exploredChars / totalChars : 0;
   },
+  // 纯 dedup（零行为变化）：恢复落点 settle 的 16ms 双层延迟后 notifyRestoreComplete。
+  // 与原 restoreProgress（中段分数分支）/ jumpToFragment / restoreToCharOffset 三处内联
+  // 展开逐字节等时序。章首/章末分支是「单层 16ms + 重发滚动后立即通知」的另一形态
+  // （时序不同），保留原样不并入。
+  _settleAndNotify: function() {
+    var self = this;
+    setTimeout(function() {
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
+  },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var self = this;
@@ -2982,9 +3004,7 @@ $_sharedJs
     }
     this.__imgReanchorProgress = null;
     this.scrollToProgressContinuous(progress);
-    setTimeout(function() {
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify();
   },
   jumpToFragment: async function(fragment) {
     await document.fonts.ready;
@@ -2994,11 +3014,8 @@ $_sharedJs
       this.notifyRestoreComplete();
       return false;
     }
-    var self = this;
     target.scrollIntoView();
-    setTimeout(function() {
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify();
     return true;
   },
   paginate: function(direction) {
@@ -3182,7 +3199,6 @@ $_sharedJs
   // 收藏句句尾偏移，透传给 scrollToCharOffset 做整句区间对齐（不传则单点句首锚）。
   restoreToCharOffset: async function(charOffset, endCharOffset) {
     await document.fonts.ready;
-    var self = this;
     // TODO-1229 (BUG-594)：charOffset 0 == 章首（0 字已读）。连续模式章首插图同理不得越过，
     // scrollToChapterStart 滚到顶（含前导图），与 restoreProgress 章首语义一致。>0 走精确锚不变。
     if (charOffset <= 0) { this.scrollToChapterStart(); }
@@ -3199,9 +3215,7 @@ $_sharedJs
         this.scrollToCharOffset(charOffset, endCharOffset);
       }
     }
-    setTimeout(function() {
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify();
   },
   setChromeInsets: function(topPx, bottomPx) {
     // See the paginated setChromeInsets: re-anchoring is serialised through the
@@ -3216,13 +3230,13 @@ $_sharedJs
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
     if (inFlight || charOffset < 0) return;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     var self = this;
     requestAnimationFrame(function() {
       try {
         self.scrollToCharOffset(charOffset, undefined, scrollBefore);
       } finally {
-        self._reanchorPending = false;
+        self._setReanchorPending(false);
       }
     });
   },
@@ -3243,7 +3257,7 @@ $_sharedJs
     if (this._reanchorPending === true) return -1;
     var charOffset = this.getFirstVisibleCharOffset();
     if (charOffset < 0) return -1;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     this._uiScaleReanchorOffset = charOffset;
     // TODO-1229：暂存重锚前滚动位，commit 时用作 <=0 章首区保位 hint。
     this._uiScaleReanchorScroll = this._readContinuousScroll();
@@ -3259,7 +3273,7 @@ $_sharedJs
     } finally {
       this._uiScaleReanchorOffset = undefined;
       this._uiScaleReanchorScroll = undefined;
-      this._reanchorPending = false;
+      this._setReanchorPending(false);
     }
     return true;
   },
@@ -3299,7 +3313,7 @@ $_sharedJs
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
     this._resetImageMaxVars();
     if (charOffset < 0) return -1;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     this._styleReanchorOffset = charOffset;
     this._styleReanchorHint = hint;
     return charOffset;
@@ -3317,7 +3331,7 @@ $_sharedJs
     } finally {
       this._styleReanchorOffset = undefined;
       this._styleReanchorHint = undefined;
-      this._reanchorPending = false;
+      this._setReanchorPending(false);
     }
     return true;
   }
@@ -3375,13 +3389,13 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   if (inFlight || progress <= 0) return;
-  this._reanchorPending = true;
+  this._setReanchorPending(true);
   var self = this;
   requestAnimationFrame(function() {
     try {
       self.scrollToProgressContinuous(progress);
     } finally {
-      self._reanchorPending = false;
+      self._setReanchorPending(false);
     }
   });
 };

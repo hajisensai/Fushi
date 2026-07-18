@@ -784,7 +784,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
     reportProgress(0.1, t.import_step_parsing);
 
-    final List<AudioCue> cues = await _parseCuesWithIndex(
+    final List<AudioCue> cues = await parseCuesForFormat(
       File(_subtitlePath!),
       uid,
       0,
@@ -1007,29 +1007,6 @@ class _BookImportDialogState extends State<BookImportDialog>
       case HealthKind.unrun:
       case HealthKind.running:
         return null;
-    }
-  }
-
-  Future<List<AudioCue>> _parseCuesWithIndex(
-    File file,
-    String bookKey,
-    int audioFileIndex,
-  ) {
-    final String ext = file.path.split('.').last.toLowerCase();
-    switch (ext) {
-      case 'lrc':
-        return LrcParser.parse(
-            lrcFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
-      case 'vtt':
-        return VttParser.parse(
-            vttFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
-      case 'ass':
-      case 'ssa':
-        return AssParser.parse(
-            assFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
-      default:
-        return SrtParser.parse(
-            srtFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
     }
   }
 
