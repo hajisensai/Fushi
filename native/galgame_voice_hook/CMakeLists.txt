@@ -1,0 +1,38 @@
+cmake_minimum_required(VERSION 3.14)
+project(hibiki_voice_hook LANGUAGES CXX)
+
+# galgame 一键制卡 C 阶段 —— 引擎级 voice hook 的**独立可选 helper 组件**。
+#
+# 部署红线（docs/specs/galgame-mining）：这套 injector + hook DLL 与 hibiki.exe **物理隔离、
+# 分离构建/分发**。注入用的 CreateRemoteThread/WriteProcessMemory 必被杀软启发式报毒，编进主
+# 程序会污染整个 app 的分发口碑；隔离成独立组件把污染面锁死在这里。**故本 CMake 不被
+# hibiki/windows 引用**，单独 configure/build，产物按需下载分发。
+#
+# 32/64 位分开构建（galgame 多为 32 位；DLL 位数必须匹配目标进程）：
+#   x64: cmake -S . -B build/x64 -A x64      && cmake --build build/x64 --config Release
+#   x86: cmake -S . -B build/x86 -A Win32    && cmake --build build/x86 --config Release
+# 产物：hibiki_voice_injector.exe + hibiki_voice_hook.dll（各 arch 一份，同目录并放）。
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# 源码含中文注释/字符串（UTF-8 无 BOM）。中文 locale 下 MSVC 默认按 GBK 解析会把 UTF-8
+# 多字节序列误读、错乱引号/大括号（本组件即因此曾编译失败）。/utf-8 明确按 UTF-8 解析。
+if(MSVC)
+  add_compile_options(/utf-8)
+endif()
+
+# 注入进游戏的 hook DLL。
+add_library(hibiki_voice_hook SHARED
+  "hook/dll_main.cpp"
+)
+target_include_directories(hibiki_voice_hook PRIVATE "include")
+target_compile_definitions(hibiki_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+
+# 注入器（Hibiki 主进程把它当子进程拉起）。
+add_executable(hibiki_voice_injector
+  "injector/injector_main.cpp"
+)
+target_include_directories(hibiki_voice_injector PRIVATE "include")
+target_compile_definitions(hibiki_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(hibiki_voice_injector PRIVATE shell32)

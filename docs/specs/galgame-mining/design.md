@@ -67,15 +67,16 @@
 | A6 | 热键 → 切片 → 波形 → 抓帧 → 制卡 端到端接线 | Dart | ⏳ 真机 galgame |
 | A.5 | 进程级 process-loopback（Win10 20H1+，异步激活，滤掉别的 app 声音） | C++ | ⏳ 增量 |
 
-## C 阶段任务（第二里程碑，干净语音，逐引擎，长期独立分支）
+## C 阶段任务（第二里程碑，干净语音，逐引擎，独立可选组件）
 
-| # | 任务 |
-|---|---|
-| C1 | 注入器 + 注入 DLL：hook XAudio2/DirectSound submit/play，混音前 memcpy 语音进 slab，回调只 push 无锁队列 |
-| C2 | 校准模式：识别 voice callsite（首次抓一次调用栈），记 `game.exe SHA + callsite RVA`；正常模式只比对 RVA |
-| C3 | 共享内存/命名管道回传干净 PCM 到 Hibiki Host |
-| C4 | `EngineHookGalAudioSource`：接同一个波形选区 + 制卡出口 |
-| C5 | 逐引擎覆盖（KiriKiri / Artemis / Unity …），其余自动回退 A |
+组件在 `native/galgame_voice_hook/`（独立 CMake，**不被 hibiki/windows 引用**——部署红线，见下）。
+
+| # | 任务 | 状态 |
+|---|---|---|
+| C.1 | 注入管线 + IPC 契约 proof-of-life：injector（`CreateRemoteThread`+`LoadLibraryW`）注入 hook DLL、建共享内存（`SharedHeader`+环形缓冲）+ 就绪事件、位数校验；DLL 注入后标记 `hooked=1`+`SetEvent` | ✅ x64/x86 编译过 + 对无害进程真实注入验证（`OK hooked pid=.. hooked=1`） |
+| C.2 | `dll_main.cpp` 标注处安装 XAudio2/DirectSound vtable hook（MinHook 之类）：`CreateSourceVoice`/`SubmitSourceBuffer` 混音前 memcpy 语音进环形缓冲（回调只 memcpy+更新 write_pos，零阻塞爆音红线）；首帧填格式；校准模式记 `game.exe SHA + callsite RVA` | ⏳ 需真实 galgame |
+| C.3 | 逐引擎覆盖（KiriKiri / Artemis / Unity …），其余自动回退 A | ⏳ |
+| C.4 | `EngineHookGalAudioSource`（Dart 实现 `GalAudioSource`）：Hibiki 拉起 injector 子进程、读共享内存，接同一个波形选区 + 制卡出口 | ⏳ |
 
 ## 部署形态（许可 + 报毒隔离）
 
@@ -90,4 +91,5 @@
 
 - Dart 纯函数（A1/A2 头/A3 抽象）：`flutter test` 覆盖。
 - native（A4/A.5）：`flutter build windows` 编译 + 真机跑一个出声程序验证环形缓冲。
-- 端到端（A5/A6/C）：真实 galgame 上按热键 → 波形选区 → 出卡，留证据（截图 + Anki 卡）。声明「能用」前必须真机复测。
+- C.1 注入管线：`cmake` x64/x86 编译 + 对无害进程真实注入（读回 `hooked=1`）——无需 galgame。
+- 端到端（A5/A6/C.2+）：真实 galgame 上按热键 → 波形选区 → 出卡，留证据（截图 + Anki 卡）。声明「能用」前必须真机复测。
