@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 869 条。点号进各自文件。
+> 共 871 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-893](bugs/BUG-893-favorited-sentences-stat-zero.md) | ✅ | ✅ | 阅读统计「收藏语句」计数恒为 0 |
+| [BUG-892](bugs/BUG-892-reading-time-suspend-inflation.md) | ✅ | ✅ | 阅读时长记账把后台/挂起/睡眠时长计为阅读（34h 的书 / 单小时 >1h / 凌晨幻影 / 纵轴 "2h 2h"） |
 | [BUG-890](bugs/BUG-890-paused-audio-follow-image-snap.md) | ✅ | ✅ | 暂停/图片等待时有声书跟随把阅读器拽回音频位置 |
 | [BUG-887](bugs/BUG-887-top-progress-squeeze-frost.md) | ✅ | ✅ | 挤压模式顶部进度不应有毛玻璃且不应压住正文首行 |
 | [BUG-886](bugs/BUG-886-collapse-header-center.md) | ✅ | ✅ | 折叠设置分组标题头文字与箭头未垂直居中 |

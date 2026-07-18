@@ -133,14 +133,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _bookCounters = aggregateStatCountersByTitle(counters);
       _bookFavorites = aggregateStatFavoritesByTitle(favs);
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
-      // 旧条目无 dateKey（null）→ 不参与按日分桶（whereType 过滤掉）。
+      // BUG-893：写入端此前不带 dateKey，旧的 `dateKey != null` 过滤把所有书内收藏
+      // 滤光 → 统计恒为 0。改用 `dateKey ?? statDateKey(createdAt)` 回退——createdAt
+      // 恒非空，已存的无 dateKey 收藏也按创建日归桶（与写入端补 dateKey 双向修复）。
       final List<FavoriteSentence> favSentences =
           await FavoriteSentenceRepository(db).getAll();
       _favoritedSentences = bucketActivityByDateKey(
         favSentences
             .where((FavoriteSentence s) =>
-                s.source != kFavoriteSentenceSourceVideo && s.dateKey != null)
-            .map((FavoriteSentence s) => (s.dateKey!, 1)),
+                s.source != kFavoriteSentenceSourceVideo)
+            .map((FavoriteSentence s) =>
+                (s.dateKey ?? statDateKey(s.createdAt), 1)),
         now,
       );
       await _loadHourlyData();

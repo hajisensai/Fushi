@@ -63,6 +63,25 @@ void main() {
       expect(labels.where((l) => l != '0').isNotEmpty, isTrue);
       expect(labels, isNot(everyElement('0m')));
     });
+
+    test('BUG-892：小时量级刻度不再向下取整塌成重复标签（"…2h 2h"）', () {
+      // 旧实现 `ms ~/ 3600000` 把 2.0h 与 2.5h 都显成 "2h"。max=2h50m 时 4 等分刻度
+      // 为 0 / 42.5m / 1h25m / 2h7.5m / 2h50m，旧实现末两个刻度都塌成 "2h" → "2h 2h"。
+      const maxMs = 10200000; // 2h50m
+      final labels = <String>[
+        for (int i = 0; i <= 4; i++)
+          formatStatDurationAxis((maxMs * i / 4).round()),
+      ];
+      // 顶部两个刻度必须是不同标签（修复前同为 "2h"）。
+      expect(labels.last, isNot(labels[labels.length - 2]));
+      // 非整点小时用一位小数（如 2.8h），且无重复。
+      expect(labels.toSet().length, labels.length);
+    });
+
+    test('整点小时仍显示为整数（无多余小数）', () {
+      expect(formatStatDurationAxis(7200000), '2h');
+      expect(formatStatDurationAxis(9000000), '2.5h');
+    });
   });
 
   group('statCharsValue / statMsValue tear-offs', () {
