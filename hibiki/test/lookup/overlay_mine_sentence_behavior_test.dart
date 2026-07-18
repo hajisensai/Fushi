@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/lookup/overlay_bridge_handlers.dart';
@@ -25,6 +27,8 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 class _CapturingAnkiRepo extends BaseAnkiRepository {
   AnkiMiningContext? captured;
   String? capturedPayloadJson;
+  bool? coverExistedDuringMine;
+  Uint8List? coverBytesDuringMine;
 
   @override
   Future<MineOutcome> mineEntry({
@@ -33,6 +37,14 @@ class _CapturingAnkiRepo extends BaseAnkiRepository {
   }) async {
     captured = context;
     capturedPayloadJson = rawPayloadJson;
+    final String? coverPath = context.coverPath;
+    if (coverPath != null) {
+      final File cover = File(coverPath);
+      coverExistedDuringMine = cover.existsSync();
+      if (coverExistedDuringMine!) {
+        coverBytesDuringMine = cover.readAsBytesSync();
+      }
+    }
     // result != success → `_mineEntry` skips `_recordMinedStats` (no DB touch).
     return MineOutcome.failure('capture');
   }
@@ -52,7 +64,14 @@ class _CapturingAnkiRepo extends BaseAnkiRepository {
   Future<bool> createDeck(String name) async => false;
 }
 
-AppModel _desktopModel(_CapturingAnkiRepo repo) => AppModel(
+class _OverlayMiningAppModel extends AppModel {
+  _OverlayMiningAppModel(super.platformServices);
+
+  @override
+  bool get compressMiningMedia => true;
+}
+
+AppModel _desktopModel(_CapturingAnkiRepo repo) => _OverlayMiningAppModel(
       PlatformServices(
         directory: DesktopDirectoryService(),
         lifecycle: DesktopLifecycleService(),
@@ -83,18 +102,26 @@ void main() {
 
   const MethodChannel audioChannel =
       MethodChannel('app.hibiki.reader/process_audio_capture');
+  const MethodChannel windowChannel =
+      MethodChannel('app.hibiki.reader/window_capture');
   final TestDefaultBinaryMessenger messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   final GalgameAudioCaptureController capture =
       GalgameAudioCaptureController.instance;
+  final Uint8List screenshotBytes =
+      Uint8List.fromList(<int>[0x89, 0x50, 0x4e, 0x47, 4, 5, 6]);
 
   setUp(() {
     capture.debugReset();
     GalgameAudioCaptureController.debugIsSupportedOverride = true;
+    messenger.setMockMethodCallHandler(windowChannel, (MethodCall call) async {
+      return <String, Object?>{'pngBytes': screenshotBytes};
+    });
   });
 
   tearDown(() {
     messenger.setMockMethodCallHandler(audioChannel, null);
+    messenger.setMockMethodCallHandler(windowChannel, null);
     capture.debugReset();
     GalgameAudioCaptureController.debugIsSupportedOverride = null;
   });
@@ -149,13 +176,13 @@ void main() {
         reason: 'JS 非空 sentence 优先，context 只是兜底（future-proof）');
   });
 
-  test('audio occurrence reaches AnkiMiningContext.sasayakiAudioPath',
+  test('Galgame occurrence reaches Anki with sentence audio and picture',
       () async {
     messenger.setMockMethodCallHandler(audioChannel, (MethodCall call) async {
       if (call.method == 'start' || call.method == 'mark') {
         return <String, Object?>{'ok': true};
       }
-      if (call.method == 'exportWav') {
+      if (call.method == 'exportAudio') {
         final Map<Object?, Object?> args =
             call.arguments! as Map<Object?, Object?>;
         return <String, Object?>{
@@ -186,9 +213,18 @@ void main() {
       audioOccurrenceId: occurrence,
     );
 
-    await _pumpUntil(() => repo.captured != null);
+    await _pumpUntil(() {
+      final String? coverPath = repo.captured?.coverPath;
+      return coverPath != null && !File(coverPath).existsSync();
+    });
     expect(repo.captured, isNotNull);
-    expect(repo.captured!.sasayakiAudioPath, endsWith('.wav'));
+    expect(repo.captured!.sasayakiAudioPath, endsWith('.mp3'));
+    expect(repo.captured!.coverPath, endsWith('.png'));
+    expect(repo.captured!.requireCover, isTrue);
+    expect(repo.coverExistedDuringMine, isTrue);
+    expect(repo.coverBytesDuringMine, screenshotBytes);
+    expect(File(repo.captured!.coverPath!).existsSync(), isFalse,
+        reason: 'The overlay bridge must clean its temporary screenshot.');
   });
 
   test('audio export failure aborts mining instead of creating a silent card',
@@ -197,13 +233,62 @@ void main() {
       if (call.method == 'start' || call.method == 'mark') {
         return <String, Object?>{'ok': true};
       }
-      if (call.method == 'exportWav') {
+      if (call.method == 'exportAudio') {
         return <String, Object?>{
           'ok': false,
           'error': 'audio marker has expired',
         };
       }
       return <String, Object?>{'ok': true};
+    });
+    expect(
+      await capture.start(
+        const ExternalWindowInfo(hwnd: 1, pid: 77, title: 'VN'),
+      ),
+      isTrue,
+    );
+    final String occurrence = capture.markClipboardOccurrence()!;
+    final _CapturingAnkiRepo repo = _CapturingAnkiRepo();
+    Object? reply;
+
+    maybeHandleOverlayDeferredBridge(
+      model: _desktopModel(repo),
+      handler: 'mineEntry',
+      message: _mineMessage(<String, Object?>{
+        'expression': 'voice',
+        'dictionaryMedia': '',
+      }),
+      resolveBridge: (int id, Object? value) async => reply = value,
+      sentenceContext: 'voiced sentence',
+      audioOccurrenceId: occurrence,
+    );
+
+    await _pumpUntil(() => reply != null);
+    expect(repo.captured, isNull);
+    expect(
+      reply,
+      <String, Object?>{'ankiConnect': false, 'noteId': null},
+    );
+  });
+
+  test('picture capture failure aborts mining instead of creating a card',
+      () async {
+    messenger.setMockMethodCallHandler(audioChannel, (MethodCall call) async {
+      if (call.method == 'start' || call.method == 'mark') {
+        return <String, Object?>{'ok': true};
+      }
+      if (call.method == 'exportAudio') {
+        final Map<Object?, Object?> args =
+            call.arguments! as Map<Object?, Object?>;
+        return <String, Object?>{
+          'ok': true,
+          'path': args['outputPath']! as String,
+        };
+      }
+      return <String, Object?>{'ok': true};
+    });
+    messenger.setMockMethodCallHandler(windowChannel, (MethodCall call) async {
+      return <String, Object?>{'error': 'window closed'};
     });
     expect(
       await capture.start(

@@ -107,13 +107,13 @@ class FlutterWindow : public Win32Window {
 
   // TODO-1162 M0: window_capture channel (Windows-only external-window mining).
   // listWindows enumerates top-level windows; captureWindow grabs a single WGC
-  // frame (PNG) off a worker thread. See window_capture.cpp / .h.
+  // frame (PNG) asynchronously on the UI DispatcherQueue.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_capture_channel_;
   void RegisterWindowCaptureChannel();
 
   // Windows process-loopback sentence-audio capture. PCM stays in the native
-  // ring buffer; Dart only marks occurrences and requests WAV exports.
+  // ring buffer; Dart only marks occurrences and requests bounded exports.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       process_audio_capture_channel_;
   std::unique_ptr<hibiki::ProcessAudioCapture> process_audio_capture_;

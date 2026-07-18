@@ -1,0 +1,6 @@
+## BUG-871 · 主查词页制卡丢失 Galgame 音频 occurrence 与整句
+- **报告**：2026-07-18（用户：note `1784342954279` / `斜めに` 的 `Sentence`、`SentenceAudio` 均为空）
+- **真实性**：✅ 真 bug。`hibiki/lib/src/pages/implementations/home_dictionary_page.dart:219` 原先先保存 `audioOccurrenceId` 再调用 `_search`；程序化写入搜索框会同步触发 `hibiki/lib/src/pages/implementations/home_dictionary_page.dart:571` 并把 occurrence 清空。与此同时 `hibiki/lib/src/pages/implementations/dictionary_page_mixin.dart:266` 直接使用 popup 未发送的 `fields['sentence']`，没有回退到 Luna 剪贴板全文。
+- **[x] ① 已修复** — `_runDesktopLookup` 在 `_search` 完成搜索框写回后再关联 occurrence，并单独保存桌面/Luna 制卡整句上下文；`DictionaryPageMixin` 新增统一的制卡整句解析钩子，主查词页仅在 popup sentence 为空时使用该桌面上下文（`hibiki/lib/src/pages/implementations/home_dictionary_page.dart:237`），手动改搜索框会清空，避免普通查词把查询词误写成整句。新增卡、覆写卡和 mined-sentence 历史共用同一个解析结果。媒体文件 SHA-256 改用 `package:crypto`，并增加 `[hibiki-mining]` 的音频导出/Anki 阶段耗时日志。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/home_dictionary_galgame_mining_context_test.dart` 走真实 `DesktopLookupService → HomeDictionaryPage` widget 路径，断言 native marker occurrence 经程序化查词后仍保留、空 sentence 回退到 Luna 整句；`hibiki/test/mining/galgame_audio_capture_controller_test.dart` 断言按指定 occurrence 导出首选 MP3，并接受 native 返回的 WAV 回退路径。
+- **备注**：note `1784342954279` 仅是修复前失败证据，不能作为成功验收。需用本次新构建按原流程另制一张新卡，再检查该新 note 的 `Sentence` 与 `SentenceAudio`；650ms post-roll 保留以避免截断仍在播放的句尾。

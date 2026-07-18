@@ -375,6 +375,7 @@ class AnkiMiningContext {
     this.cueSentence,
     this.documentTitle,
     this.coverPath,
+    this.requireCover = false,
     this.sasayakiAudioPath,
     this.sentenceOffset,
     this.source,
@@ -384,6 +385,13 @@ class AnkiMiningContext {
   final String? cueSentence;
   final String? documentTitle;
   final String? coverPath;
+
+  /// When true, [coverPath] is a requested capture (for example a Galgame
+  /// window screenshot), not optional decoration. Backends that support strict
+  /// media writes must abort before creating/updating the note if it is absent
+  /// or cannot be stored.
+  final bool requireCover;
+
   final String? sasayakiAudioPath;
   final int? sentenceOffset;
 

@@ -61,8 +61,15 @@ class AnkiConnectService {
   /// SocketException — classified as a connection error with an actionable
   /// "is Anki running?" hint — instead of making a remote/extension mine wait
   /// the whole response budget on every doomed AnkiConnect call.
-  static http.Client _defaultClient(Duration connectionTimeout) =>
-      IOClient(HttpClient()..connectionTimeout = connectionTimeout);
+  static http.Client _defaultClient(Duration connectionTimeout) {
+    final client = HttpClient()
+      ..connectionTimeout = connectionTimeout
+      // AnkiConnect's local HTTP server is easily saturated by the popup's
+      // duplicate probes plus several base64 media uploads. Queue requests on
+      // one transport connection instead of opening a burst of sockets.
+      ..maxConnectionsPerHost = 1;
+    return IOClient(client);
+  }
 
   Future<dynamic> _request(String action,
       [Map<String, dynamic>? params]) async {

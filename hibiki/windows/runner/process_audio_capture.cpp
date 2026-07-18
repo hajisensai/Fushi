@@ -4,12 +4,16 @@
 #include <audioclientactivationparams.h>
 #include <ks.h>
 #include <ksmedia.h>
+#include <mfapi.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
 #include <mmdeviceapi.h>
 #include <propidl.h>
 #include <wrl.h>
 #include <wrl/implements.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -29,6 +33,8 @@ constexpr DWORD kActivationTimeoutMs = 10000;
 constexpr uint32_t kMinBufferSeconds = 15;
 constexpr uint32_t kMaxBufferSeconds = 300;
 constexpr uint64_t kMaxRingBytes = 256ULL * 1024ULL * 1024ULL;
+constexpr uint32_t kMp3BytesPerSecond = 6000;  // 48 kbps.
+constexpr LONGLONG kHundredNanosecondsPerSecond = 10000000LL;
 
 std::string HResultText(const char* operation, HRESULT hr) {
   char buffer[160] = {};
@@ -69,6 +75,236 @@ bool WriteAll(HANDLE file, const void* data, DWORD size) {
 
 bool WriteFourCc(HANDLE file, const char (&value)[5]) {
   return WriteAll(file, value, 4);
+}
+
+// WASAPI's shared mix format is normally stereo float32. MP3 encoders accept
+// PCM input, and Galgame dialogue does not benefit from preserving stereo, so
+// prepare compact mono PCM16 without changing the capture ring itself.
+bool ConvertWaveToMonoPcm16(std::vector<uint8_t>* format,
+                            std::vector<uint8_t>* audio) {
+  if (format == nullptr || audio == nullptr ||
+      format->size() < sizeof(WAVEFORMATEX)) {
+    return false;
+  }
+
+  WAVEFORMATEX source = {};
+  memcpy(&source, format->data(), sizeof(source));
+  bool is_float = source.wFormatTag == WAVE_FORMAT_IEEE_FLOAT;
+  bool is_pcm = source.wFormatTag == WAVE_FORMAT_PCM;
+  if (source.wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+      format->size() >= sizeof(WAVEFORMATEXTENSIBLE)) {
+    WAVEFORMATEXTENSIBLE extensible = {};
+    memcpy(&extensible, format->data(), sizeof(extensible));
+    is_float = IsEqualGUID(extensible.SubFormat,
+                          KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
+    is_pcm = IsEqualGUID(extensible.SubFormat, KSDATAFORMAT_SUBTYPE_PCM);
+  }
+  const bool supported_float = is_float && source.wBitsPerSample == 32;
+  const bool supported_pcm = is_pcm && source.wBitsPerSample == 16;
+  const size_t bytes_per_sample = supported_float ? sizeof(float)
+                                                   : sizeof(int16_t);
+  if ((!supported_float && !supported_pcm) || source.nChannels == 0 ||
+      source.nSamplesPerSec == 0 ||
+      source.nBlockAlign != source.nChannels * bytes_per_sample ||
+      audio->size() % source.nBlockAlign != 0) {
+    return false;
+  }
+
+  const size_t frame_count = audio->size() / source.nBlockAlign;
+  const uint16_t channels_to_mix = std::min<uint16_t>(source.nChannels, 2);
+  std::vector<uint8_t> pcm(frame_count * sizeof(int16_t));
+  for (size_t frame = 0; frame < frame_count; ++frame) {
+    float sample = 0.0f;
+    for (uint16_t channel = 0; channel < channels_to_mix; ++channel) {
+      const size_t offset = frame * source.nBlockAlign +
+                            channel * bytes_per_sample;
+      if (supported_float) {
+        float channel_sample = 0.0f;
+        memcpy(&channel_sample, audio->data() + offset,
+               sizeof(channel_sample));
+        if (std::isfinite(channel_sample)) sample += channel_sample;
+      } else {
+        int16_t channel_sample = 0;
+        memcpy(&channel_sample, audio->data() + offset,
+               sizeof(channel_sample));
+        sample += static_cast<float>(channel_sample) / 32768.0f;
+      }
+    }
+    sample /= channels_to_mix;
+    sample = std::clamp(sample, -1.0f, 1.0f);
+    const float scale = sample < 0.0f ? 32768.0f : 32767.0f;
+    const int16_t converted =
+        static_cast<int16_t>(std::lround(sample * scale));
+    memcpy(pcm.data() + frame * sizeof(converted), &converted,
+           sizeof(converted));
+  }
+
+  WAVEFORMATEX output = {};
+  output.wFormatTag = WAVE_FORMAT_PCM;
+  output.nChannels = 1;
+  output.nSamplesPerSec = source.nSamplesPerSec;
+  output.wBitsPerSample = 16;
+  output.nBlockAlign =
+      output.nChannels * output.wBitsPerSample / static_cast<WORD>(8);
+  output.nAvgBytesPerSec = output.nSamplesPerSec * output.nBlockAlign;
+
+  constexpr size_t kPcmFormatSize = 16;
+  format->assign(reinterpret_cast<const uint8_t*>(&output),
+                 reinterpret_cast<const uint8_t*>(&output) + kPcmFormatSize);
+  *audio = std::move(pcm);
+  return true;
+}
+
+std::string ReplaceExtension(const std::string& path,
+                             const char* extension) {
+  const size_t separator = path.find_last_of("\\/");
+  const size_t dot = path.find_last_of('.');
+  if (dot == std::string::npos ||
+      (separator != std::string::npos && dot < separator)) {
+    return path + extension;
+  }
+  return path.substr(0, dot) + extension;
+}
+
+bool WriteMp3File(const std::string& output_path,
+                  const std::vector<uint8_t>& format,
+                  const std::vector<uint8_t>& audio, std::string* error) {
+  constexpr size_t kWaveFormatBaseSize = 16;
+  if (format.size() < kWaveFormatBaseSize || audio.empty() ||
+      audio.size() > std::numeric_limits<DWORD>::max()) {
+    *error = "mono PCM input is invalid for MP3 encoding";
+    return false;
+  }
+  WAVEFORMATEX input = {};
+  memcpy(&input, format.data(),
+         std::min(format.size(), sizeof(WAVEFORMATEX)));
+  if (input.wFormatTag != WAVE_FORMAT_PCM || input.nChannels != 1 ||
+      input.nSamplesPerSec == 0 || input.wBitsPerSample != 16 ||
+      input.nBlockAlign != sizeof(int16_t) ||
+      audio.size() % input.nBlockAlign != 0) {
+    *error = "MP3 encoding requires mono PCM16 input";
+    return false;
+  }
+  const std::wstring wide_path = Utf8ToWide(output_path);
+  if (wide_path.empty()) {
+    *error = "output path is invalid UTF-8";
+    return false;
+  }
+
+  HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
+  if (FAILED(hr)) {
+    *error = HResultText("MFStartup", hr);
+    return false;
+  }
+  {
+    ComPtr<IMFSinkWriter> writer;
+    ComPtr<IMFMediaType> output_type;
+    ComPtr<IMFMediaType> input_type;
+    ComPtr<IMFMediaBuffer> buffer;
+    ComPtr<IMFSample> sample;
+    DWORD stream_index = 0;
+
+    hr = MFCreateSinkWriterFromURL(wide_path.c_str(), nullptr, nullptr,
+                                   writer.GetAddressOf());
+    if (SUCCEEDED(hr)) hr = MFCreateMediaType(output_type.GetAddressOf());
+    if (SUCCEEDED(hr)) {
+      hr = output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = output_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_MP3);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = output_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, 1);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = output_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND,
+                                  input.nSamplesPerSec);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = output_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
+                                  kMp3BytesPerSecond);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = output_type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 1);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = writer->AddStream(output_type.Get(), &stream_index);
+    }
+
+    if (SUCCEEDED(hr)) hr = MFCreateMediaType(input_type.GetAddressOf());
+    if (SUCCEEDED(hr)) {
+      hr = input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = input_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = input_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, 1);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = input_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND,
+                                 input.nSamplesPerSec);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = input_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = input_type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT,
+                                 input.nBlockAlign);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = input_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
+                                 input.nAvgBytesPerSec);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = input_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
+    }
+    if (SUCCEEDED(hr)) {
+      hr = writer->SetInputMediaType(stream_index, input_type.Get(), nullptr);
+    }
+    if (SUCCEEDED(hr)) hr = writer->BeginWriting();
+
+    if (SUCCEEDED(hr)) {
+      hr = MFCreateMemoryBuffer(static_cast<DWORD>(audio.size()),
+                                buffer.GetAddressOf());
+    }
+    if (SUCCEEDED(hr)) {
+      BYTE* destination = nullptr;
+      DWORD capacity = 0;
+      hr = buffer->Lock(&destination, &capacity, nullptr);
+      if (SUCCEEDED(hr)) {
+        if (capacity < audio.size()) {
+          hr = E_UNEXPECTED;
+        } else {
+          memcpy(destination, audio.data(), audio.size());
+        }
+        const HRESULT unlock = buffer->Unlock();
+        if (SUCCEEDED(hr)) hr = unlock;
+      }
+    }
+    if (SUCCEEDED(hr)) {
+      hr = buffer->SetCurrentLength(static_cast<DWORD>(audio.size()));
+    }
+    if (SUCCEEDED(hr)) hr = MFCreateSample(sample.GetAddressOf());
+    if (SUCCEEDED(hr)) hr = sample->AddBuffer(buffer.Get());
+    if (SUCCEEDED(hr)) hr = sample->SetSampleTime(0);
+    if (SUCCEEDED(hr)) {
+      const uint64_t frames = audio.size() / input.nBlockAlign;
+      const LONGLONG duration = static_cast<LONGLONG>(
+          frames * kHundredNanosecondsPerSecond / input.nSamplesPerSec);
+      hr = sample->SetSampleDuration(duration);
+    }
+    if (SUCCEEDED(hr)) hr = writer->WriteSample(stream_index, sample.Get());
+    if (SUCCEEDED(hr)) hr = writer->Finalize();
+  }
+  MFShutdown();
+
+  if (FAILED(hr)) {
+    DeleteFileW(wide_path.c_str());
+    *error = HResultText("MP3 encoding", hr);
+    return false;
+  }
+  return true;
 }
 
 bool WriteWaveFile(const std::string& output_path,
@@ -630,7 +866,7 @@ ProcessAudioCaptureResult ProcessAudioCapture::SnapshotSegment(
   return result;
 }
 
-ProcessAudioCaptureResult ProcessAudioCapture::ExportWav(
+ProcessAudioCaptureResult ProcessAudioCapture::ExportAudio(
     const std::string& occurrence_id, const std::string& output_path,
     uint32_t pre_roll_ms, uint32_t max_clip_ms) {
   std::vector<uint8_t> format;
@@ -638,11 +874,27 @@ ProcessAudioCaptureResult ProcessAudioCapture::ExportWav(
   ProcessAudioCaptureResult result = SnapshotSegment(
       occurrence_id, pre_roll_ms, max_clip_ms, &format, &audio);
   if (!result.ok) return result;
-  if (!WriteWaveFile(output_path, format, audio, &result.error)) {
-    result.ok = false;
+
+  const bool has_mono_pcm = ConvertWaveToMonoPcm16(&format, &audio);
+  if (has_mono_pcm &&
+      WriteMp3File(output_path, format, audio, &result.error)) {
+    result.path = output_path;
+    result.channels = 1;
     return result;
   }
-  result.path = output_path;
+
+  const std::string mp3_error = result.error;
+  const std::string fallback_path = ReplaceExtension(output_path, ".wav");
+  if (!WriteWaveFile(fallback_path, format, audio, &result.error)) {
+    result.ok = false;
+    if (!mp3_error.empty()) {
+      result.error = mp3_error + "; WAV fallback: " + result.error;
+    }
+    return result;
+  }
+  result.path = fallback_path;
+  if (has_mono_pcm) result.channels = 1;
+  result.error.clear();
   return result;
 }
 

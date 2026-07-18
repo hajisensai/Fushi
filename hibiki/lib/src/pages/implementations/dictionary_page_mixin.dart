@@ -89,9 +89,15 @@ mixin DictionaryPageMixin {
   /// 对称，纯查词页不渲染清空入口）。视频页覆写返回非空闭包清掉 [MiningSentenceDraft]。
   Future<int> Function()? get onClearSentenceDraftToDraft => null;
 
-  /// Optional sentence-audio lease for app-external clipboard mining. The
-  /// default keeps every existing reader/video/plain lookup path unchanged.
-  Future<GalgameAudioClip?> resolveSentenceAudioForMining() async => null;
+  /// Optional Galgame audio + screenshot lease for app-external clipboard
+  /// mining. The default keeps every reader/video/plain lookup path unchanged.
+  Future<GalgameMiningMedia?> resolveGalgameMediaForMining() async => null;
+
+  /// Resolves the sentence written to Anki and mined-sentence history. Popup
+  /// JavaScript normally supplies `sentence`; app-external lookup surfaces can
+  /// override this to fall back to the full captured clipboard/UIA context.
+  String resolveSentenceForMining(Map<String, String> fields) =>
+      fields['sentence'] ?? '';
 
   /// Niratan「制卡前调整·选择句子上下文」（视频/首页查词车道）：弹窗打开模态时拉取当前
   /// 草稿真实上下文句 + 当前正查句 + 词偏移做预览。默认 null = 不支持（纯查词页无草稿）。
@@ -259,13 +265,22 @@ mixin DictionaryPageMixin {
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
+    final Stopwatch miningWatch = Stopwatch()..start();
     HibikiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
-    GalgameAudioClip? sentenceAudio;
+    final String sentence = resolveSentenceForMining(fields);
+    GalgameMiningMedia? galgameMedia;
+    final Stopwatch mediaWatch = Stopwatch()..start();
     try {
-      sentenceAudio = await resolveSentenceAudioForMining();
+      galgameMedia = await resolveGalgameMediaForMining();
+    } on GalgamePictureCaptureException {
+      HibikiToast.showMine(
+        msg: t.external_window_capture_failed,
+        status: MineToastStatus.failed,
+      );
+      return const MinePopupResult();
     } on GalgameAudioCaptureException {
       HibikiToast.showMine(
         msg: t.audio_clip_failed,
@@ -273,20 +288,33 @@ mixin DictionaryPageMixin {
       );
       return const MinePopupResult();
     }
+    mediaWatch.stop();
     final miningContext = AnkiMiningContext(
-      sentence: fields['sentence'] ?? '',
+      sentence: sentence,
       source: _miningSource,
-      sasayakiAudioPath: sentenceAudio?.path,
+      coverPath: galgameMedia?.picturePath,
+      sasayakiAudioPath: galgameMedia?.audioPath,
+      requireCover: galgameMedia != null,
     );
     MineOutcome outcome;
+    final Stopwatch repositoryWatch = Stopwatch()..start();
     try {
       outcome = await repo.mineEntry(
         rawPayloadJson: jsonEncode(fields),
         context: miningContext,
       );
     } finally {
-      await sentenceAudio?.dispose();
+      repositoryWatch.stop();
+      await galgameMedia?.dispose();
     }
+    miningWatch.stop();
+    debugPrint(
+      '[hibiki-mining] mine total=${miningWatch.elapsedMilliseconds}ms '
+      'galgameMedia=${mediaWatch.elapsedMilliseconds}ms '
+      'anki=${repositoryWatch.elapsedMilliseconds}ms '
+      'hasSentenceAudio=${galgameMedia != null} '
+      'hasPicture=${galgameMedia != null}',
+    );
     // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
     final String deckName = outcome.result == MineResult.success
         ? (await repo.loadSettings()).selectedDeckName ?? ''
@@ -298,7 +326,11 @@ mixin DictionaryPageMixin {
     // standalone/home lookup (no book context), so locator anchors stay null
     // (shown as non-navigable in collections, same as existing lookup-only).
     if (described.record) {
-      unawaited(recordMinedSentence(fields, outcome.noteId));
+      unawaited(recordMinedSentence(
+        fields,
+        outcome.noteId,
+        sentence: sentence,
+      ));
     }
     // TODO-1325 #6：MD3 着色 + 图标 toast。着色状态由 describeMineOutcome 单一真相
     // 带出（added 绿 / duplicate 橙 / failed 红），此处不再本地 switch。
@@ -323,9 +355,16 @@ mixin DictionaryPageMixin {
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
-    GalgameAudioClip? sentenceAudio;
+    final String sentence = resolveSentenceForMining(fields);
+    GalgameMiningMedia? galgameMedia;
     try {
-      sentenceAudio = await resolveSentenceAudioForMining();
+      galgameMedia = await resolveGalgameMediaForMining();
+    } on GalgamePictureCaptureException {
+      HibikiToast.showMine(
+        msg: t.external_window_capture_failed,
+        status: MineToastStatus.failed,
+      );
+      return const MinePopupResult();
     } on GalgameAudioCaptureException {
       HibikiToast.showMine(
         msg: t.audio_clip_failed,
@@ -334,9 +373,11 @@ mixin DictionaryPageMixin {
       return const MinePopupResult();
     }
     final miningContext = AnkiMiningContext(
-      sentence: fields['sentence'] ?? '',
+      sentence: sentence,
       source: _miningSource,
-      sasayakiAudioPath: sentenceAudio?.path,
+      coverPath: galgameMedia?.picturePath,
+      sasayakiAudioPath: galgameMedia?.audioPath,
+      requireCover: galgameMedia != null,
     );
     MineOutcome outcome;
     try {
@@ -346,7 +387,7 @@ mixin DictionaryPageMixin {
         context: miningContext,
       );
     } finally {
-      await sentenceAudio?.dispose();
+      await galgameMedia?.dispose();
     }
     // 覆盖路径走收口的单一真相（overwrite=true → card_overwritten + 不记账）。
     final String deckName = outcome.result == MineResult.success
@@ -507,8 +548,9 @@ mixin DictionaryPageMixin {
   @protected
   Future<void> recordMinedSentence(
     Map<String, String> fields,
-    int? noteId,
-  ) async {
+    int? noteId, {
+    String? sentence,
+  }) async {
     try {
       await mixinAppModel.database.addMinedSentence(
         source: dictionarySourceType,
@@ -516,7 +558,7 @@ mixin DictionaryPageMixin {
         expression: fields['expression'] ?? '',
         reading: fields['reading'] ?? '',
         glossary: fields['glossary'] ?? '',
-        sentence: fields['sentence'] ?? '',
+        sentence: sentence ?? resolveSentenceForMining(fields),
         noteId: noteId,
       );
     } catch (e, st) {

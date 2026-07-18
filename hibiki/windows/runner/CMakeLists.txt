@@ -67,13 +67,16 @@ target_link_libraries(${BINARY_NAME} PRIVATE Shlwapi.lib)
 # IID_IUIAutomation*) used by foreground_selection.cpp to read the foreground
 # app's text selection + surrounding context (TODO-1030 M0 global lookup).
 target_link_libraries(${BINARY_NAME} PRIVATE uiautomationcore.lib)
-# TODO-1162: window_capture.cpp (external-window mining) — Windows.Graphics.Capture
-# single-frame screenshot needs D3D11 + DXGI + the WinRT activation runtime
+# TODO-1162: window_capture.cpp external-window mining uses PrintWindow first,
+# then Windows.Graphics.Capture and a visible-desktop crop fallback. WGC needs
+# D3D11 + DXGI + the WinRT activation runtime
 # (RoInitialize / RoGetActivationFactory / WindowsCreateStringReference) and WIC
 # for PNG encode.
 target_link_libraries(${BINARY_NAME} PRIVATE d3d11 dxgi runtimeobject windowscodecs)
-# Per-process render loopback activation and WASAPI capture.
-target_link_libraries(${BINARY_NAME} PRIVATE mmdevapi)
+# Per-process render loopback activation/WASAPI capture and Media Foundation
+# MP3 encoding for compact Galgame sentence audio exports.
+target_link_libraries(${BINARY_NAME} PRIVATE
+  mmdevapi mfplat mfreadwrite mfuuid)
 # 剪切板面板背景逐像素透明（global_lookup_window composition 模式）：DirectComposition
 # 视觉树承载 WebView2 composition controller 的透明像素，dxguid 提供 DComp/DXGI IID。
 target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)

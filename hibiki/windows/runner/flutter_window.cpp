@@ -678,16 +678,6 @@ struct ForegroundSelectionPending {
   int64_t elapsed_ms = 0;
 };
 
-// TODO-1162 M0 — a completed window_capture WGC single-frame grab (run on a
-// worker thread) posted back to the UI thread, where the pending Flutter reply
-// is completed. LPARAM is a heap-owned WindowCapturePending* (deleted there).
-constexpr UINT WM_WINDOWCAP_DONE = WM_APP + 4;
-
-struct WindowCapturePending {
-  hibiki::WindowCaptureResult result;
-  std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> reply;
-};
-
 }  // namespace
 
 void FlutterWindow::RegisterFloatingLyricChannel() {
@@ -1352,12 +1342,9 @@ void FlutterWindow::RegisterForegroundSelectionChannel() {
       });
 }
 
-// TODO-1162 M0 — window_capture channel (Windows-only external-window mining).
-// `listWindows` runs synchronously (EnumWindows is instant). `captureWindow`
-// runs the blocking WGC single-frame grab on a DETACHED worker thread and
-// marshals the PNG/error back to the UI thread via WM_WINDOWCAP_DONE (the
-// Flutter MethodResult is not thread-safe), mirroring the foreground-selection
-// channel. Both fail-open with an error map (never a silent success).
+// TODO-1162 M0: Windows-only external-window mining. captureWindow creates its
+// WGC session on the UI DispatcherQueue and polls it asynchronously, keeping
+// the Flutter platform thread responsive while the MethodResult is pending.
 void FlutterWindow::RegisterWindowCaptureChannel() {
   window_capture_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
@@ -1409,21 +1396,23 @@ void FlutterWindow::RegisterWindowCaptureChannel() {
         }
         const HWND target =
             reinterpret_cast<HWND>(static_cast<intptr_t>(hwnd_val));
-        const HWND host = GetHandle();
-        auto* pending = new WindowCapturePending();
-        pending->reply = std::move(result);
-        std::thread([target, host, pending]() {
-          pending->result = hibiki::CaptureWindowPng(target);
-          if (!PostMessage(host, WM_WINDOWCAP_DONE, 0,
-                           reinterpret_cast<LPARAM>(pending))) {
-            pending->reply->Success(
-                flutter::EncodableValue(flutter::EncodableMap{
-                    {flutter::EncodableValue("error"),
-                     flutter::EncodableValue(
-                         std::string("post message failed"))}}));
-            delete pending;
-          }
-        }).detach();
+        auto reply = std::shared_ptr<
+            flutter::MethodResult<flutter::EncodableValue>>(std::move(result));
+        hibiki::CaptureWindowPngAsync(
+            target, [reply](hibiki::WindowCaptureResult capture) {
+              if (capture.ok && !capture.png.empty()) {
+                reply->Success(flutter::EncodableValue(flutter::EncodableMap{
+                    {flutter::EncodableValue("pngBytes"),
+                     flutter::EncodableValue(std::move(capture.png))}}));
+                return;
+              }
+              const std::string error = capture.error.empty()
+                                            ? std::string("capture failed")
+                                            : std::move(capture.error);
+              reply->Success(flutter::EncodableValue(flutter::EncodableMap{
+                  {flutter::EncodableValue("error"),
+                   flutter::EncodableValue(error)}}));
+            });
       });
 }
 
@@ -1498,14 +1487,14 @@ void FlutterWindow::RegisterProcessAudioCaptureChannel() {
               process_audio_capture_->Mark(string_arg("occurrenceId"))));
           return;
         }
-        if (call.method_name() == "exportWav") {
+        if (call.method_name() == "exportAudio") {
           const int64_t pre_roll = int_arg("preRollMs", 450);
           const int64_t max_clip = int_arg("maxClipMs", 30000);
           if (pre_roll < 0 || max_clip <= 0) {
             result->Error("bad_args", "invalid audio clip bounds");
             return;
           }
-          result->Success(encode_result(process_audio_capture_->ExportWav(
+          result->Success(encode_result(process_audio_capture_->ExportAudio(
               string_arg("occurrenceId"), string_arg("outputPath"),
               static_cast<uint32_t>(pre_roll),
               static_cast<uint32_t>(max_clip))));
@@ -1672,29 +1661,6 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                    static_cast<int>(pending->elapsed_ms))}}));
         } else {
           pending->result->Success(flutter::EncodableValue());
-        }
-        delete pending;
-      }
-      return 0;
-    }
-    case WM_WINDOWCAP_DONE: {
-      // TODO-1162 M0 — a worker-thread WGC capture finished; complete its
-      // pending Flutter reply on the UI thread. On success return
-      // {pngBytes: Uint8List}; on failure {error: String} (fail-open, never a
-      // silent empty success).
-      auto* pending = reinterpret_cast<WindowCapturePending*>(lparam);
-      if (pending != nullptr) {
-        if (pending->result.ok && !pending->result.png.empty()) {
-          pending->reply->Success(flutter::EncodableValue(flutter::EncodableMap{
-              {flutter::EncodableValue("pngBytes"),
-               flutter::EncodableValue(pending->result.png)}}));
-        } else {
-          const std::string err = pending->result.error.empty()
-                                      ? std::string("capture failed")
-                                      : pending->result.error;
-          pending->reply->Success(flutter::EncodableValue(flutter::EncodableMap{
-              {flutter::EncodableValue("error"),
-               flutter::EncodableValue(err)}}));
         }
         delete pending;
       }

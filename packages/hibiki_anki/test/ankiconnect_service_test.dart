@@ -321,6 +321,45 @@ void main() {
     });
   });
 
+  group('default transport concurrency', () {
+    test('serializes concurrent requests to avoid saturating AnkiConnect',
+        () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      int activeRequests = 0;
+      int maxActiveRequests = 0;
+      server.listen((HttpRequest request) async {
+        activeRequests += 1;
+        maxActiveRequests = maxActiveRequests < activeRequests
+            ? activeRequests
+            : maxActiveRequests;
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode(<String, Object?>{
+          'result': const <String>['Default'],
+          'error': null,
+        }));
+        await request.response.close();
+        activeRequests -= 1;
+      });
+
+      try {
+        final service = AnkiConnectService(
+          host: InternetAddress.loopbackIPv4.address,
+          port: server.port,
+        );
+        await Future.wait<List<String>>(
+          List<Future<List<String>>>.generate(
+            4,
+            (_) => service.getDeckNames(),
+          ),
+        );
+        expect(maxActiveRequests, 1);
+      } finally {
+        await server.close(force: true);
+      }
+    });
+  });
+
   group('api key', () {
     // AnkiConnect with `apiKey` configured rejects keyless requests with
     // "valid api key must be provided"; the service must thread the key into

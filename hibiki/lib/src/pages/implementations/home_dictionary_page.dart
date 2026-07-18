@@ -37,6 +37,16 @@ abstract class HomeDictionarySearchDebug {
   /// 以便测试 await 失败路径，避免依赖 UI 文本输入的异步链。[writeHistory] 默认
   /// false 以隔离历史写入 / autoRead 等副作用，只验证查词状态机。
   Future<void> debugSearch(String term, {bool writeHistory});
+
+  /// 当前 Galgame 剪贴板 occurrence；程序化写搜索框后仍必须保留。
+  String? get debugAudioOccurrenceId;
+
+  /// 直接验证主查词页的制卡整句解析，不需要连接真实 Anki。
+  String debugResolveSentenceForMining(Map<String, String> fields);
+
+  /// 通过真实 [DictionaryPageMixin.onMineEntry] 执行一次制卡，让行为测试验证
+  /// Galgame occurrence 产生的音频和窗口截图都进入 Anki 上下文。
+  Future<MinePopupResult> debugMineEntry(Map<String, String> fields);
 }
 
 /// The body content for the Dictionary tab in the main menu.
@@ -92,6 +102,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   bool _allLoaded = false;
   Timer? _debounceTimer;
   String _sourceLookupText = '';
+  String _miningSentenceContext = '';
   int _searchGeneration = 0;
   String? _audioOccurrenceId;
 
@@ -211,20 +222,35 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   void _runDesktopLookup(DesktopLookupRequest request) {
     if (!mounted) return;
-    _audioOccurrenceId = request.audioOccurrenceId;
     if (request.foregroundPolicy ==
         DesktopLookupForegroundPolicy.bringToFront) {
       unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
     }
-    if (mounted) _search(request.text, autoRead: false);
+    if (mounted) {
+      _search(request.text, autoRead: false);
+      // _search writes the programmatic query into _controller, which
+      // synchronously fires _onQueryChanged and clears a stale occurrence.
+      // Associate the new occurrence only after that write-back completes.
+      _miningSentenceContext =
+          request.showSourcePanel ? request.text.trim() : '';
+      _audioOccurrenceId = request.audioOccurrenceId;
+    }
   }
 
   @override
-  Future<GalgameAudioClip?> resolveSentenceAudioForMining() async {
+  String resolveSentenceForMining(Map<String, String> fields) {
+    final String fromPopup = fields['sentence'] ?? '';
+    return fromPopup.trim().isNotEmpty ? fromPopup : _miningSentenceContext;
+  }
+
+  @override
+  Future<GalgameMiningMedia?> resolveGalgameMediaForMining() async {
     final String? occurrenceId = _audioOccurrenceId;
     if (occurrenceId == null) return null;
-    return GalgameAudioCaptureController.instance
-        .exportOccurrence(occurrenceId);
+    return GalgameAudioCaptureController.instance.exportOccurrence(
+      occurrenceId,
+      compressPicture: appModel.compressMiningMedia,
+    );
   }
 
   void _onFocusChanged() {
@@ -316,6 +342,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _lastQuery = '';
     _allLoaded = false;
     _sourceLookupText = '';
+    _miningSentenceContext = '';
     _historyWritten = false;
     setState(() {});
     if (_searchFocusNode.canRequestFocus) {
@@ -550,6 +577,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   void _onQueryChanged(String query) {
     _debounceTimer?.cancel();
     _historyWritten = false;
+    _miningSentenceContext = '';
     _audioOccurrenceId = null;
     if (query.isEmpty) {
       _clearSearch();
@@ -711,6 +739,17 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   @override
   bool get debugIsSearching => _isSearching;
+
+  @override
+  String? get debugAudioOccurrenceId => _audioOccurrenceId;
+
+  @override
+  String debugResolveSentenceForMining(Map<String, String> fields) =>
+      resolveSentenceForMining(fields);
+
+  @override
+  Future<MinePopupResult> debugMineEntry(Map<String, String> fields) =>
+      onMineEntry(fields);
 
   @override
   Future<void> debugLoadMore() {

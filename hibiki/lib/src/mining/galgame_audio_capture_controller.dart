@@ -6,11 +6,12 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/mining/process_audio_capture_channel.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
+import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
 
 enum GalgameAudioCaptureState { stopped, starting, running, unavailable }
 
-class GalgameAudioCaptureException implements Exception {
-  const GalgameAudioCaptureException(this.message);
+sealed class GalgameMiningMediaException implements Exception {
+  const GalgameMiningMediaException(this.message);
 
   final String message;
 
@@ -18,17 +19,28 @@ class GalgameAudioCaptureException implements Exception {
   String toString() => message;
 }
 
-class GalgameAudioClip {
-  GalgameAudioClip(this.path);
+final class GalgameAudioCaptureException extends GalgameMiningMediaException {
+  const GalgameAudioCaptureException(super.message);
+}
 
-  final String path;
+final class GalgamePictureCaptureException extends GalgameMiningMediaException {
+  const GalgamePictureCaptureException(super.message);
+}
+
+class GalgameMiningMedia {
+  GalgameMiningMedia({required this.audioPath, required this.picturePath});
+
+  final String audioPath;
+  final String picturePath;
 
   Future<void> dispose() async {
-    try {
-      final File file = File(path);
-      if (await file.exists()) await file.delete();
-    } on FileSystemException {
-      // The next app temp cleanup can remove a file still held by antivirus.
+    for (final String path in <String>[audioPath, picturePath]) {
+      try {
+        final File file = File(path);
+        if (await file.exists()) await file.delete();
+      } on FileSystemException {
+        // The next app temp cleanup can remove a file still held by antivirus.
+      }
     }
   }
 }
@@ -40,12 +52,23 @@ class GalgameAudioCaptureController extends ChangeNotifier {
   GalgameAudioCaptureController._();
 
   static const int _maxPendingMarkers = 2048;
+  static const int _maxPendingPictures = 8;
 
   static final GalgameAudioCaptureController instance =
       GalgameAudioCaptureController._();
 
   @visibleForTesting
   static bool? debugIsSupportedOverride;
+
+  @visibleForTesting
+  static Future<WindowCaptureResult> Function(int hwnd)?
+      debugWindowCaptureOverride;
+
+  @visibleForTesting
+  static GalgameMiningMedia Function(
+    String occurrenceId, {
+    required bool compressPicture,
+  })? debugExportOccurrenceOverride;
 
   static bool get isSupported => debugIsSupportedOverride ?? Platform.isWindows;
 
@@ -55,6 +78,8 @@ class GalgameAudioCaptureController extends ChangeNotifier {
   int _occurrenceSequence = 0;
   final Map<String, Future<ProcessAudioCaptureResult>> _pendingMarkers =
       <String, Future<ProcessAudioCaptureResult>>{};
+  final Map<String, Future<WindowCaptureResult>> _pendingPictures =
+      <String, Future<WindowCaptureResult>>{};
 
   GalgameAudioCaptureState get state => _state;
   ExternalWindowInfo? get target => _target;
@@ -81,6 +106,7 @@ class GalgameAudioCaptureController extends ChangeNotifier {
       return false;
     }
     _pendingMarkers.clear();
+    _pendingPictures.clear();
     _setState(GalgameAudioCaptureState.running);
     return true;
   }
@@ -88,6 +114,7 @@ class GalgameAudioCaptureController extends ChangeNotifier {
   Future<void> stop() async {
     if (isSupported) await ProcessAudioCaptureChannel.stop();
     _pendingMarkers.clear();
+    _pendingPictures.clear();
     _target = null;
     _setState(GalgameAudioCaptureState.stopped);
   }
@@ -155,44 +182,160 @@ class GalgameAudioCaptureController extends ChangeNotifier {
       },
     );
     _pendingMarkers[id] = pending;
+    final ExternalWindowInfo? target = _target;
+    if (target != null && target.hwnd != 0) {
+      _pendingPictures[id] = _captureWindow(target.hwnd);
+    }
     while (_pendingMarkers.length > _maxPendingMarkers) {
-      _pendingMarkers.remove(_pendingMarkers.keys.first);
+      final String expired = _pendingMarkers.keys.first;
+      _pendingMarkers.remove(expired);
+      _pendingPictures.remove(expired);
+    }
+    while (_pendingPictures.length > _maxPendingPictures) {
+      _pendingPictures.remove(_pendingPictures.keys.first);
     }
     return id;
   }
 
-  Future<GalgameAudioClip> exportOccurrence(
+  Future<GalgameMiningMedia> exportOccurrence(
     String occurrenceId, {
     Duration postRoll = const Duration(milliseconds: 650),
+    bool compressPicture = true,
   }) async {
+    final GalgameMiningMedia Function(
+      String occurrenceId, {
+      required bool compressPicture,
+    })? exportOverride = debugExportOccurrenceOverride;
+    if (exportOverride != null) {
+      return exportOverride(
+        occurrenceId,
+        compressPicture: compressPicture,
+      );
+    }
     final Future<ProcessAudioCaptureResult>? pending =
         _pendingMarkers[occurrenceId];
+    final Future<WindowCaptureResult>? pendingPicture =
+        _pendingPictures[occurrenceId];
     final ProcessAudioCaptureResult? markerResult =
         pending == null ? null : await pending;
     if (markerResult != null && !markerResult.ok) {
+      _discardOccurrence(occurrenceId);
       throw GalgameAudioCaptureException(
         markerResult.error ?? 'The sentence audio marker could not be created.',
       );
     }
-    await Future<void>.delayed(postRoll);
+    final ExternalWindowInfo? target = _target;
+    if (target == null || target.hwnd == 0) {
+      _discardOccurrence(occurrenceId);
+      throw const GalgamePictureCaptureException(
+        'The selected game window is no longer available.',
+      );
+    }
     final Directory directory = Directory(
       p.join(Directory.systemTemp.path, 'hibiki_galgame_audio'),
     );
     await directory.create(recursive: true);
-    final String outputPath = p.join(directory.path, '$occurrenceId.wav');
-    final ProcessAudioCaptureResult result =
-        await ProcessAudioCaptureChannel.exportWav(
-      occurrenceId: occurrenceId,
-      outputPath: outputPath,
-    );
-    _pendingMarkers.remove(occurrenceId);
-    if (!result.ok || result.path == null) {
-      _lastError = result.error ?? 'Unable to export sentence audio.';
+
+    String? audioPath;
+    String? picturePath;
+    final Future<void> pictureFuture = () async {
+      picturePath = await _capturePicture(
+        target: target,
+        occurrenceId: occurrenceId,
+        directory: directory,
+        compress: compressPicture,
+        pendingCapture: pendingPicture,
+      );
+    }();
+    final Future<void> audioFuture = () async {
+      await Future<void>.delayed(postRoll);
+      final String preferredPath = p.join(
+        directory.path,
+        '$occurrenceId.mp3',
+      );
+      final ProcessAudioCaptureResult result =
+          await ProcessAudioCaptureChannel.exportAudio(
+        occurrenceId: occurrenceId,
+        outputPath: preferredPath,
+      );
+      if (!result.ok || result.path == null) {
+        throw GalgameAudioCaptureException(
+          result.error ?? 'Unable to export sentence audio.',
+        );
+      }
+      audioPath = result.path;
+    }();
+
+    try {
+      await Future.wait<void>(<Future<void>>[pictureFuture, audioFuture]);
+      return GalgameMiningMedia(
+        audioPath: audioPath!,
+        picturePath: picturePath!,
+      );
+    } on GalgameMiningMediaException catch (error) {
+      _lastError = error.message;
       notifyListeners();
-      throw GalgameAudioCaptureException(_lastError!);
+      await _deleteTemporaryFiles(<String?>[audioPath, picturePath]);
+      rethrow;
+    } on FileSystemException catch (error) {
+      _lastError = 'Unable to save the game screenshot: ${error.message}';
+      notifyListeners();
+      await _deleteTemporaryFiles(<String?>[audioPath, picturePath]);
+      throw GalgamePictureCaptureException(_lastError!);
+    } finally {
+      _discardOccurrence(occurrenceId);
     }
-    return GalgameAudioClip(result.path!);
   }
+
+  Future<String> _capturePicture({
+    required ExternalWindowInfo target,
+    required String occurrenceId,
+    required Directory directory,
+    required bool compress,
+    required Future<WindowCaptureResult>? pendingCapture,
+  }) async {
+    final WindowCaptureResult result =
+        await (pendingCapture ?? _captureWindow(target.hwnd));
+    if (!result.ok) {
+      throw GalgamePictureCaptureException(
+        result.error ?? 'Unable to capture the game window.',
+      );
+    }
+    final Uint8List pngBytes = result.pngBytes!;
+    final Uint8List pictureBytes = downsampleCardScreenshot(
+      pngBytes,
+      maxLongEdge: compress ? 1000 : 2000,
+      quality: compress ? 90 : 95,
+    );
+    final String extension = identical(pictureBytes, pngBytes) ? 'png' : 'jpg';
+    final String picturePath = p.join(
+      directory.path,
+      '$occurrenceId-picture.$extension',
+    );
+    await File(picturePath).writeAsBytes(pictureBytes, flush: true);
+    return picturePath;
+  }
+
+  Future<void> _deleteTemporaryFiles(List<String?> paths) async {
+    for (final String? path in paths) {
+      if (path == null) continue;
+      try {
+        final File file = File(path);
+        if (await file.exists()) await file.delete();
+      } on FileSystemException {
+        // Best effort; app temp cleanup handles antivirus-held files later.
+      }
+    }
+  }
+
+  void _discardOccurrence(String occurrenceId) {
+    _pendingMarkers.remove(occurrenceId);
+    _pendingPictures.remove(occurrenceId);
+  }
+
+  static Future<WindowCaptureResult> _captureWindow(int hwnd) =>
+      debugWindowCaptureOverride?.call(hwnd) ??
+      WindowCaptureChannel.captureWindow(hwnd);
 
   void _setState(GalgameAudioCaptureState state, {String? error}) {
     _state = state;
@@ -201,11 +344,18 @@ class GalgameAudioCaptureController extends ChangeNotifier {
   }
 
   @visibleForTesting
+  Future<WindowCaptureResult>? debugPendingPicture(String occurrenceId) =>
+      _pendingPictures[occurrenceId];
+
+  @visibleForTesting
   void debugReset() {
     _state = GalgameAudioCaptureState.stopped;
     _target = null;
     _lastError = null;
     _occurrenceSequence = 0;
     _pendingMarkers.clear();
+    _pendingPictures.clear();
+    debugWindowCaptureOverride = null;
+    debugExportOccurrenceOverride = null;
   }
 }

@@ -13,6 +13,7 @@ void main() {
 
   setUp(() {
     DesktopLookupService.instance.debugReset();
+    DesktopLookupService.debugClipboardSequenceReader = () => null;
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
     DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = false;
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
@@ -25,8 +26,16 @@ void main() {
       const MethodChannel('app.hibiki/window'),
       (MethodCall call) async => null,
     );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMessageHandler(
+      'dev.leanflutter.plugins/hotkey_manager_event',
+      (ByteData? message) async =>
+          const StandardMethodCodec().encodeSuccessEnvelope(null),
+    );
   });
   tearDown(() {
+    DesktopLookupService.instance.debugReset();
+    DesktopLookupService.debugClipboardSequenceReader = null;
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = null;
     DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = null;
     DesktopForegroundGuard.debugHiddenWindowsRunner = null;
@@ -37,6 +46,9 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
             const MethodChannel('app.hibiki/window'), null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMessageHandler(
+            'dev.leanflutter.plugins/hotkey_manager_event', null);
   });
 
   test('submitText sets pendingText and notifies, deduped', () {
@@ -137,8 +149,8 @@ void main() {
     await tester.runAsync(() async {
       try {
         svc.onClipboardChanged();
-        // 覆盖 3 次重试 + 2×50ms 退避。
-        await Future<void>.delayed(const Duration(milliseconds: 250));
+        // 覆盖完整的有界退避窗口。
+        await Future<void>.delayed(const Duration(milliseconds: 1300));
       } catch (e) {
         escaped = e;
       }
@@ -146,6 +158,144 @@ void main() {
 
     expect(escaped, isNull); // 异常没有逃逸
     expect(svc.pendingText, isNull); // 读取失败 → 没有误提交查词
+  });
+
+  testWidgets('clipboard busy beyond the old 100ms window is still delivered',
+      (WidgetTester tester) async {
+    int reads = 0;
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform,
+        (MethodCall call) async {
+      if (call.method != 'Clipboard.getData') return null;
+      reads++;
+      if (reads <= 4) {
+        throw PlatformException(
+          code: 'Clipboard error',
+          message: 'Unable to open clipboard',
+        );
+      }
+      return <String, Object?>{'text': '遅れて届いた台詞'};
+    });
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      if (call.method == 'isFocused') return false;
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.onWindowBlur();
+    await tester.runAsync(() async {
+      svc.onClipboardChanged();
+      await Future<void>.delayed(const Duration(milliseconds: 550));
+    });
+
+    expect(reads, 5);
+    expect(svc.pendingText, '遅れて届いた台詞');
+  });
+
+  testWidgets('overlapping clipboard notifications are read serially',
+      (WidgetTester tester) async {
+    int reads = 0;
+    int activeReads = 0;
+    int maxActiveReads = 0;
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform,
+        (MethodCall call) async {
+      if (call.method != 'Clipboard.getData') return null;
+      final int index = reads++;
+      activeReads++;
+      if (activeReads > maxActiveReads) maxActiveReads = activeReads;
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      activeReads--;
+      return <String, Object?>{
+        'text': index == 0 ? '一つ目' : '二つ目',
+      };
+    });
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      if (call.method == 'isFocused') return false;
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.onWindowBlur();
+    await tester.runAsync(() async {
+      svc.onClipboardChanged();
+      svc.onClipboardChanged();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    });
+
+    expect(reads, 2);
+    expect(maxActiveReads, 1);
+    expect(svc.pendingText, '二つ目');
+  });
+
+  testWidgets('stale focus cache cannot hide an external clipboard write',
+      (WidgetTester tester) async {
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform,
+        (MethodCall call) async {
+      if (call.method == 'Clipboard.getData') {
+        return <String, Object?>{'text': 'ゲームが実際の前景'};
+      }
+      return null;
+    });
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      if (call.method == 'isFocused') return false;
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.onWindowFocus(); // Deliberately stale cached state.
+    await tester.runAsync(() async {
+      svc.onClipboardChanged();
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    expect(svc.pendingText, 'ゲームが実際の前景');
+  });
+
+  testWidgets(
+      'clipboard sequence polling recovers a missed native notification',
+      (WidgetTester tester) async {
+    int sequence = 40;
+    String clipboardText = '起動前の値';
+    DesktopLookupService.debugClipboardSequenceReader = () => sequence;
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      if (call.method == 'isFocused') return false;
+      return null;
+    });
+    messenger.setMockMethodCallHandler(const MethodChannel('clipboard_watcher'),
+        (MethodCall call) async => null);
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('dev.leanflutter.plugins/hotkey_manager'),
+      (MethodCall call) async => null,
+    );
+    messenger.setMockMethodCallHandler(SystemChannels.platform,
+        (MethodCall call) async {
+      if (call.method == 'Clipboard.getData') {
+        return <String, Object?>{'text': clipboardText};
+      }
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    await tester.runAsync(() async {
+      await svc.start(windowMode: DesktopClipboardWindowMode.normal);
+      clipboardText = '通知がなくても回収する';
+      sequence = 41;
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await svc.stop();
+    });
+
+    expect(svc.pendingText, '通知がなくても回収する');
   });
 
   testWidgets('clipboard hit queues lookup but waits for UI before foreground',

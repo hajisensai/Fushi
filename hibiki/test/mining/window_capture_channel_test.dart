@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
@@ -101,5 +103,22 @@ void main() {
       final res = await WindowCaptureChannel.captureWindow(1);
       expect(res.ok, false);
     });
+  });
+
+  test('native capture rejects client black frames and keeps bounded fallbacks',
+      () {
+    final File source = File('windows/runner/window_capture.cpp');
+    expect(source.existsSync(), isTrue);
+    final String native = source.readAsStringSync();
+
+    expect(native.contains('PrintWindow('), isTrue);
+    expect(native.contains('HasVisibleClientPixels('), isTrue);
+    expect(native.contains('CreateFreeThreaded('), isTrue);
+    expect(native.contains('CreateTimer('), isTrue);
+    expect(native.contains('TryGetNextFrame('), isTrue);
+    expect(native.contains('GetTickCount64() + 300'), isTrue);
+    expect(native.contains('BitBlt('), isTrue);
+    expect(native.contains('add_FrameArrived'), isFalse);
+    expect(native.contains('remove_FrameArrived'), isFalse);
   });
 }

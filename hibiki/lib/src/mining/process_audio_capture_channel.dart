@@ -21,13 +21,13 @@ abstract final class ProcessAudioCaptureChannel {
         'occurrenceId': occurrenceId,
       });
 
-  static Future<ProcessAudioCaptureResult> exportWav({
+  static Future<ProcessAudioCaptureResult> exportAudio({
     required String occurrenceId,
     required String outputPath,
     int preRollMs = 450,
     int maxClipMs = 30000,
   }) =>
-      _invokeResult('exportWav', <String, Object?>{
+      _invokeResult('exportAudio', <String, Object?>{
         'occurrenceId': occurrenceId,
         'outputPath': outputPath,
         'preRollMs': preRollMs,

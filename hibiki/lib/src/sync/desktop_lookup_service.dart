@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:clipboard_watcher/clipboard_watcher.dart';
@@ -9,6 +10,7 @@ import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/mining/galgame_audio_capture_controller.dart';
 import 'package:hibiki/src/sync/clipboard_dedupe.dart';
 import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
@@ -96,6 +98,30 @@ class DesktopLookupService extends ChangeNotifier
   bool _focused = true;
   HotKey? _hotKey;
 
+  static const Duration _clipboardReconcileInterval =
+      Duration(milliseconds: 250);
+  static const List<Duration> _clipboardReadRetryDelays = <Duration>[
+    Duration(milliseconds: 25),
+    Duration(milliseconds: 50),
+    Duration(milliseconds: 100),
+    Duration(milliseconds: 200),
+    Duration(milliseconds: 300),
+    Duration(milliseconds: 400),
+  ];
+
+  int? _lastObservedClipboardSequence;
+  int? _lastHandledClipboardSequence;
+  String? _lastObservedClipboardText;
+  Timer? _clipboardReconcileTimer;
+  bool _clipboardNotificationPending = false;
+  bool _clipboardReconcilePending = false;
+  bool _clipboardDrainRunning = false;
+  int _clipboardDrainEpoch = 0;
+  int _clipboardNotificationCount = 0;
+
+  @visibleForTesting
+  static int? Function()? debugClipboardSequenceReader;
+
   bool get isRunning => _startRefCount > 0;
 
   /// TODO-1355：被动剪贴板变化（用户在**别的 app** 里复制）只把内容排进查词管线
@@ -179,6 +205,16 @@ class DesktopLookupService extends ChangeNotifier
     _lastText = null;
     _lastClipboardOccurrenceText = null;
     _lastClipboardOccurrenceId = null;
+    _clipboardReconcileTimer?.cancel();
+    _clipboardReconcileTimer = null;
+    _lastObservedClipboardSequence = null;
+    _lastHandledClipboardSequence = null;
+    _lastObservedClipboardText = null;
+    _clipboardNotificationPending = false;
+    _clipboardReconcilePending = false;
+    _clipboardDrainEpoch++;
+    _clipboardDrainRunning = false;
+    _clipboardNotificationCount = 0;
     // BUG-700：跑过 start()/stop() 的用例可能留下非零计数 + 已挂的 Dart 侧监听器，
     // 若不清会漏进后续用例。仅在确有累计计数时同步摘除监听并归零（未 start 的用例
     // 计数恒 0，此块跳过，行为不变）。removeListener 对未注册的监听器是安全 no-op。
@@ -206,8 +242,10 @@ class DesktopLookupService extends ChangeNotifier
     windowManager.addListener(this);
     // 初始聚焦态：窗口可能尚未在前台（如开机自启），以平台真实状态为准。
     _focused = await windowManager.isFocused();
+    _primeClipboardReconciliation();
     clipboardWatcher.addListener(this);
     await clipboardWatcher.start();
+    _startClipboardReconciliation();
     _hotKey = HotKey(
       key: PhysicalKeyboardKey.keyD,
       modifiers: <HotKeyModifier>[HotKeyModifier.control, HotKeyModifier.shift],
@@ -224,6 +262,12 @@ class DesktopLookupService extends ChangeNotifier
     // 仍有其它 owner 持有（跨断点重建时新旧页短暂重叠）：保持 watcher 存活，
     // 只有最后一个引用释放（1→0）才真正拆。这正是消除断点竞态的关键。
     if (_startRefCount > 0) return;
+    _clipboardReconcileTimer?.cancel();
+    _clipboardReconcileTimer = null;
+    _clipboardDrainEpoch++;
+    _clipboardDrainRunning = false;
+    _clipboardNotificationPending = false;
+    _clipboardReconcilePending = false;
     windowManager.removeListener(this);
     clipboardWatcher.removeListener(this);
     await clipboardWatcher.stop();
@@ -268,11 +312,14 @@ class DesktopLookupService extends ChangeNotifier
   @override
   void onWindowBlur() => _focused = false;
 
-  /// clipboard_watcher 的 [ClipboardListener.onClipboardChanged] 返回 `void`，
-  /// 故异步读取剪贴板的工作下放到不等待的 [_handleClipboardChange]。
+  /// clipboard_watcher 的通知不携带当时的文本。把读取放进同一个 drain，避免快速
+  /// 连续通知并发读取后全读到最终值，或在 Luna 尚占用剪贴板时一起失败。
   @override
   void onClipboardChanged() {
-    unawaited(_handleClipboardChange());
+    _clipboardNotificationCount++;
+    _clipboardNotificationPending = true;
+    glog('clipboard: notification #$_clipboardNotificationCount queued');
+    _scheduleClipboardDrain();
   }
 
   /// spec 2026-07-10 §8 — 抓选区自产剪贴板事件的一次性忽略集。收口后到达的
@@ -312,13 +359,137 @@ class DesktopLookupService extends ChangeNotifier
     }
   }
 
-  Future<void> _handleClipboardChange() async {
-    // app 在前台 = 本 app 内复制（制卡/选词复制），不弹查词。
-    final bool foreground = _focused || await _isHibikiForeground();
-    if (!shouldTriggerOnClipboard(foreground)) return;
-    final String? text = await _readClipboardText();
-    if (text == null) return;
-    processClipboardText(text);
+  void _primeClipboardReconciliation() {
+    final int? sequence = _readClipboardSequence();
+    _lastObservedClipboardSequence = sequence;
+    _lastHandledClipboardSequence = sequence;
+  }
+
+  void _startClipboardReconciliation() {
+    _clipboardReconcileTimer?.cancel();
+    if (!Platform.isWindows || _lastObservedClipboardSequence == null) return;
+    _clipboardReconcileTimer = Timer.periodic(_clipboardReconcileInterval, (_) {
+      final int? current = _readClipboardSequence();
+      if (current == null || current == _lastObservedClipboardSequence) return;
+      _clipboardReconcilePending = true;
+      glog('clipboard: sequence changed without completed read '
+          '(${_lastObservedClipboardSequence ?? '-'}->$current); reconciling');
+      _scheduleClipboardDrain();
+    });
+  }
+
+  void _scheduleClipboardDrain() {
+    if (_clipboardDrainRunning) return;
+    _clipboardDrainRunning = true;
+    final int epoch = _clipboardDrainEpoch;
+    unawaited(_drainClipboardChanges(epoch));
+  }
+
+  Future<void> _drainClipboardChanges(int epoch) async {
+    String? lastUnsequencedNotificationText;
+    try {
+      while (epoch == _clipboardDrainEpoch &&
+          (_clipboardNotificationPending || _clipboardReconcilePending)) {
+        final bool fromNotification = _clipboardNotificationPending;
+        // One read subsumes everything already queued. A new notification or
+        // sequence change during the await sets its flag for the next loop.
+        _clipboardNotificationPending = false;
+        _clipboardReconcilePending = false;
+
+        final _ClipboardSnapshot? snapshot =
+            await _readClipboardSnapshot(fromNotification: fromNotification);
+        if (epoch != _clipboardDrainEpoch || snapshot == null) continue;
+
+        final int? sequence = snapshot.sequence;
+        final String? previousText = _lastObservedClipboardText;
+        _lastObservedClipboardText = snapshot.text;
+        if (sequence != null) {
+          _lastObservedClipboardSequence = sequence;
+          if (sequence == _lastHandledClipboardSequence) {
+            glog('clipboard: duplicate notification ignored (seq=$sequence)');
+            continue;
+          }
+        } else if (fromNotification &&
+            snapshot.text == lastUnsequencedNotificationText) {
+          // Tests/non-Windows hosts have no sequence number. Only coalesce
+          // duplicate reads inside this drain; a later same-text event remains
+          // a concrete Galgame occurrence.
+          continue;
+        } else if (!fromNotification && snapshot.text == previousText) {
+          continue;
+        }
+
+        if (sequence != null) _lastHandledClipboardSequence = sequence;
+        if (!shouldTriggerOnClipboard(snapshot.foreground) ||
+            snapshot.text.trim().isEmpty) {
+          glog('clipboard: read ignored source='
+              '${fromNotification ? 'event' : 'reconcile'} '
+              'len=${snapshot.text.length} seq=${sequence ?? '-'} '
+              'foreground=${snapshot.foreground}');
+          continue;
+        }
+
+        if (fromNotification && sequence == null) {
+          lastUnsequencedNotificationText = snapshot.text;
+        }
+        glog('clipboard: accepted source='
+            '${fromNotification ? 'event' : 'reconcile'} '
+            'len=${snapshot.text.length} seq=${sequence ?? '-'}');
+        processClipboardText(snapshot.text);
+      }
+    } finally {
+      if (epoch == _clipboardDrainEpoch) {
+        _clipboardDrainRunning = false;
+        if (_clipboardNotificationPending || _clipboardReconcilePending) {
+          _scheduleClipboardDrain();
+        }
+      }
+    }
+  }
+
+  Future<_ClipboardSnapshot?> _readClipboardSnapshot({
+    required bool fromNotification,
+  }) async {
+    // WindowListener can stay stale when a fullscreen game takes focus. Always
+    // verify the real foreground window before classifying this clipboard write.
+    final bool foreground = await _isHibikiForeground();
+    if (_focused != foreground) _focused = foreground;
+    if (!shouldTriggerOnClipboard(foreground)) {
+      // Hibiki-owned copies are intentionally ignored. Keep the sequence
+      // watermark current without opening the clipboard or perturbing Anki/
+      // WebView copy flows that may still hold the global clipboard lock.
+      return _ClipboardSnapshot(
+        text: '',
+        sequence: _readClipboardSequence(),
+        foreground: foreground,
+      );
+    }
+
+    String? text;
+    int? sequenceAfter;
+    for (int raceAttempt = 0; raceAttempt < 3; raceAttempt++) {
+      final int? sequenceBefore = _readClipboardSequence();
+      text = await _readClipboardText();
+      if (text == null) {
+        glog('clipboard: read failed source='
+            '${fromNotification ? 'event' : 'reconcile'}');
+        return null;
+      }
+      sequenceAfter = _readClipboardSequence();
+      if (sequenceBefore == null ||
+          sequenceAfter == null ||
+          sequenceBefore == sequenceAfter) {
+        break;
+      }
+      glog('clipboard: changed during read '
+          '($sequenceBefore->$sequenceAfter); retrying snapshot');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    return _ClipboardSnapshot(
+      text: text ?? '',
+      sequence: sequenceAfter,
+      foreground: foreground,
+    );
   }
 
   /// 剪贴板事件读取成功后的统一入口。@visibleForTesting 使 §8 泄漏根修可离屏
@@ -376,22 +547,41 @@ class DesktopLookupService extends ChangeNotifier
 
   /// BUG-114：Windows 剪贴板是全局独占资源——刚复制的进程可能仍持有句柄，
   /// 此刻 `OpenClipboard` 会失败（errno 5 / "Unable to open clipboard"），
-  /// `Clipboard.getData` 抛 [PlatformException]。`_handleClipboardChange` 经
+  /// `Clipboard.getData` 抛 [PlatformException]。剪贴板通知回调经
   /// `unawaited` 发射，异常会逃逸到全局 zone（被记成 UncaughtZone 噪音）。
   ///
-  /// 这是不可控的平台竞态：做有界重试（占用方通常毫秒级释放），仍失败则放弃
-  /// 本次剪贴板变化而不是把异常往外抛。返回 null 表示读取失败。
+  /// Luna 与其它剪贴板工具可能持有 OpenClipboard 数百毫秒；旧的 3 次/约 100ms
+  /// 窗口会直接丢失唯一一次通知。这里用有界退避覆盖约 1.1 秒；仍失败时序列号
+  /// reconciliation 会在下一拍继续补读。返回 null 表示本轮读取失败。
   Future<String?> _readClipboardText() async {
-    for (int attempt = 0; attempt < 3; attempt++) {
+    for (int attempt = 0;
+        attempt <= _clipboardReadRetryDelays.length;
+        attempt++) {
       try {
         final ClipboardData? d = await Clipboard.getData(Clipboard.kTextPlain);
         return d?.text ?? '';
-      } on PlatformException {
-        if (attempt == 2) return null;
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+      } on PlatformException catch (error) {
+        if (attempt == _clipboardReadRetryDelays.length) {
+          glog('clipboard: platform read exhausted '
+              'attempts=${attempt + 1} code=${error.code}');
+          return null;
+        }
+        await Future<void>.delayed(_clipboardReadRetryDelays[attempt]);
       }
     }
     return null;
+  }
+
+  int? _readClipboardSequence() {
+    final int? Function()? override = debugClipboardSequenceReader;
+    if (override != null) return override();
+    if (!Platform.isWindows) return null;
+    try {
+      final int sequence = _WindowsClipboardSequence.instance.current;
+      return sequence == 0 ? null : sequence;
+    } on Object {
+      return null;
+    }
   }
 
   /// 显式查词入口（TODO-376）：把一段文本送进与剪贴板/热键完全相同的查词管线
@@ -505,3 +695,32 @@ class DesktopLookupService extends ChangeNotifier
     }
   }
 }
+
+final class _ClipboardSnapshot {
+  const _ClipboardSnapshot({
+    required this.text,
+    required this.sequence,
+    required this.foreground,
+  });
+
+  final String text;
+  final int? sequence;
+  final bool foreground;
+}
+
+final class _WindowsClipboardSequence {
+  _WindowsClipboardSequence._()
+      : _getClipboardSequenceNumber = DynamicLibrary.open('user32.dll')
+            .lookupFunction<_GetClipboardSequenceNumberNative,
+                _GetClipboardSequenceNumberDart>('GetClipboardSequenceNumber');
+
+  static final _WindowsClipboardSequence instance =
+      _WindowsClipboardSequence._();
+
+  final _GetClipboardSequenceNumberDart _getClipboardSequenceNumber;
+
+  int get current => _getClipboardSequenceNumber();
+}
+
+typedef _GetClipboardSequenceNumberNative = Uint32 Function();
+typedef _GetClipboardSequenceNumberDart = int Function();

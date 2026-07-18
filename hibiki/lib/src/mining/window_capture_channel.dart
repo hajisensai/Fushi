@@ -1,14 +1,15 @@
 import 'package:flutter/services.dart';
 
 /// TODO-1162 外部窗口挖矿 M0（仅 Windows）：枚举系统可见顶层窗口 + 对选定窗口抓一帧
-/// 静态截图（Windows.Graphics.Capture 单帧），经 MethodChannel 返回给 Dart。
+/// 静态截图（PrintWindow / Windows.Graphics.Capture / 桌面裁剪分层回退），
+/// 经 MethodChannel 返回给 Dart。
 ///
 /// native 侧（`hibiki/windows/runner/window_capture.cpp`）注册 `window_capture`
 /// channel，暴露两个方法：
 ///   - `listWindows` -> `List<Map>`：每项包含窗口句柄、PID、标题与进程路径。
 ///   - `captureWindow` -> `Map`：`{pngBytes:Uint8List}` 或 `{error:String}`。
 ///
-/// native 缺失（未构建 / 非 Windows / 旧 Windows 无 WGC）时，两个方法都以
+/// native 缺失（未构建 / 非 Windows）时，两个方法都以
 /// [MissingPluginException] / [PlatformException] 收敛为空列表 / error 结果——
 /// 调用方据此降级（不崩、不静默假成功）。
 abstract final class WindowCaptureChannel {
@@ -42,7 +43,7 @@ abstract final class WindowCaptureChannel {
   }
 
   /// 对 [hwnd] 指向的窗口抓一帧静态截图（PNG 字节）。成功返回带 [WindowCaptureResult.pngBytes]，
-  /// 失败（窗口已关 / DRM 黑帧 / WGC 不支持 / native 缺失）返回带 [WindowCaptureResult.error]
+  /// 失败（窗口已关 / 黑帧 / native 缺失）返回带 [WindowCaptureResult.error]
   /// 的结果（fail-open，绝不抛给调用方）。
   static Future<WindowCaptureResult> captureWindow(int hwnd) async {
     try {

@@ -159,6 +159,7 @@ void main() {
     DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = false;
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
     DesktopLookupService.instance.debugReset();
+    DesktopLookupService.debugClipboardSequenceReader = () => null;
   });
 
   tearDown(() {
@@ -166,6 +167,7 @@ void main() {
     DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = null;
     DesktopForegroundGuard.debugHiddenWindowsRunner = null;
     DesktopLookupService.instance.debugReset();
+    DesktopLookupService.debugClipboardSequenceReader = null;
   });
 
   // 引用计数直接语义：断点期「双 start 后单 stop」必须保持 watcher 存活，只有最后一个

@@ -279,13 +279,16 @@ Future<Map<String, Object?>> _mineEntry(
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final String sentence = resolveMineSentence(fields, sentenceContext);
   final BaseAnkiRepository repo = model.platformServices.createAnkiRepository();
-  GalgameAudioClip? sentenceAudio;
+  GalgameMiningMedia? galgameMedia;
   if (audioOccurrenceId != null) {
     try {
-      sentenceAudio = await GalgameAudioCaptureController.instance
-          .exportOccurrence(audioOccurrenceId);
-    } on GalgameAudioCaptureException catch (e) {
-      glog('mine: sentence audio export failed: $e');
+      galgameMedia =
+          await GalgameAudioCaptureController.instance.exportOccurrence(
+        audioOccurrenceId,
+        compressPicture: model.compressMiningMedia,
+      );
+    } on GalgameMiningMediaException catch (e) {
+      glog('mine: Galgame media export failed: $e');
       return const <String, Object?>{
         'ankiConnect': false,
         'noteId': null,
@@ -299,11 +302,13 @@ Future<Map<String, Object?>> _mineEntry(
       context: AnkiMiningContext(
         sentence: sentence,
         source: AnkiMiningSource.book,
-        sasayakiAudioPath: sentenceAudio?.path,
+        coverPath: galgameMedia?.picturePath,
+        sasayakiAudioPath: galgameMedia?.audioPath,
+        requireCover: galgameMedia != null,
       ),
     );
   } finally {
-    await sentenceAudio?.dispose();
+    await galgameMedia?.dispose();
   }
   // 与 in-app onMineEntry 同判据：仅 MineResult.success 回 ankiConnect=true +
   // noteId（AnkiConnect 非空进「最新可改」态；AnkiDroid 恒 null=优雅降级）。
@@ -465,13 +470,16 @@ Future<Map<String, Object?>> _updateEntry(
 ) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final BaseAnkiRepository repo = model.platformServices.createAnkiRepository();
-  GalgameAudioClip? sentenceAudio;
+  GalgameMiningMedia? galgameMedia;
   if (audioOccurrenceId != null) {
     try {
-      sentenceAudio = await GalgameAudioCaptureController.instance
-          .exportOccurrence(audioOccurrenceId);
-    } on GalgameAudioCaptureException catch (e) {
-      glog('update: sentence audio export failed: $e');
+      galgameMedia =
+          await GalgameAudioCaptureController.instance.exportOccurrence(
+        audioOccurrenceId,
+        compressPicture: model.compressMiningMedia,
+      );
+    } on GalgameMiningMediaException catch (e) {
+      glog('update: Galgame media export failed: $e');
       return const <String, Object?>{
         'ankiConnect': false,
         'noteId': null,
@@ -486,11 +494,13 @@ Future<Map<String, Object?>> _updateEntry(
       context: AnkiMiningContext(
         sentence: resolveMineSentence(fields, sentenceContext),
         source: AnkiMiningSource.book,
-        sasayakiAudioPath: sentenceAudio?.path,
+        coverPath: galgameMedia?.picturePath,
+        sasayakiAudioPath: galgameMedia?.audioPath,
+        requireCover: galgameMedia != null,
       ),
     );
   } finally {
-    await sentenceAudio?.dispose();
+    await galgameMedia?.dispose();
   }
   final bool success = outcome.result == MineResult.success;
   return <String, Object?>{

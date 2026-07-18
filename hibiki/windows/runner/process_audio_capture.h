@@ -32,8 +32,8 @@ struct ProcessAudioCaptureStatus {
 };
 
 // Captures the render stream of one process tree into a native PCM ring buffer.
-// Dart only creates markers and exports bounded WAV clips; PCM never crosses the
-// method channel continuously.
+// Dart only creates markers and exports bounded audio clips; PCM never crosses
+// the method channel continuously.
 class ProcessAudioCapture {
  public:
   ProcessAudioCapture();
@@ -45,10 +45,10 @@ class ProcessAudioCapture {
   ProcessAudioCaptureResult Start(DWORD process_id, uint32_t buffer_seconds);
   void Stop();
   ProcessAudioCaptureResult Mark(const std::string& occurrence_id);
-  ProcessAudioCaptureResult ExportWav(const std::string& occurrence_id,
-                                      const std::string& output_path,
-                                      uint32_t pre_roll_ms,
-                                      uint32_t max_clip_ms);
+  ProcessAudioCaptureResult ExportAudio(const std::string& occurrence_id,
+                                        const std::string& output_path,
+                                        uint32_t pre_roll_ms,
+                                        uint32_t max_clip_ms);
   ProcessAudioCaptureStatus Status() const;
 
  private:

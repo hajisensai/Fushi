@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -29,6 +30,31 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
   }) async {
     addedNotes.add(Map<String, String>.from(fields));
     return addedNotes.length;
+  }
+}
+
+class _FailingRequiredAudioService extends _RecordingAnkiConnectService {
+  @override
+  Future<void> storeMediaFile({
+    required String filename,
+    String? data,
+    String? path,
+  }) {
+    throw TimeoutException('sentence audio upload timed out');
+  }
+}
+
+class _FailingRequiredPictureService extends _RecordingAnkiConnectService {
+  @override
+  Future<void> storeMediaFile({
+    required String filename,
+    String? data,
+    String? path,
+  }) {
+    if (filename.startsWith('hibiki_cover_')) {
+      throw TimeoutException('card picture upload timed out');
+    }
+    return super.storeMediaFile(filename: filename, data: data, path: path);
   }
 }
 
@@ -63,13 +89,14 @@ const AnkiSettings _settings = AnkiSettings(
     AnkiNoteType(
       id: 2,
       name: 'Hibiki',
-      fields: <String>['Expression', 'Audio', 'SentenceAudio'],
+      fields: <String>['Expression', 'Audio', 'SentenceAudio', 'Picture'],
     ),
   ],
   fieldMappings: <String, String>{
     'Expression': '{expression}',
     'Audio': '{audio}',
     'SentenceAudio': '{sasayaki-audio}',
+    'Picture': '{card-image}',
   },
   allowDupes: true,
 );
@@ -83,10 +110,14 @@ void main() {
   group('Anki media filenames', () {
     late Directory dir;
     late File audio;
+    late File sentenceAudio;
+    late File picture;
 
     setUp(() {
       dir = Directory.systemTemp.createTempSync('hibiki_anki_media_names');
       audio = File('${dir.path}/local_audio.mp3');
+      sentenceAudio = File('${dir.path}/sentence.wav');
+      picture = File('${dir.path}/window.png');
     });
 
     tearDown(() {
@@ -139,6 +170,113 @@ void main() {
       expect(secondSentenceAudio, startsWith('[sound:hibiki_audio_'));
       expect(firstSentenceAudio, isNot(secondSentenceAudio));
       expect(service.storedFilenames.toSet(), hasLength(2));
+    });
+
+    test(
+        'AnkiConnect uploads required sentence audio before optional word audio',
+        () async {
+      sentenceAudio.writeAsBytesSync(<int>[1, 2, 3, 4]);
+      audio.writeAsBytesSync(<int>[9, 8, 7]);
+      final service = _RecordingAnkiConnectService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: _settings,
+      );
+
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: _payloadFor(audio.path),
+        context: AnkiMiningContext(
+          sentence: 'sentence',
+          sasayakiAudioPath: sentenceAudio.path,
+        ),
+      );
+
+      expect(outcome.result, MineResult.success);
+      expect(service.storedFilenames, hasLength(2));
+      expect(
+        service.storedFilenames.first,
+        hibikiAnkiMediaFilenameForBytes(
+          prefix: 'hibiki_audio_',
+          bytes: sentenceAudio.readAsBytesSync(),
+          sourceName: sentenceAudio.path,
+        ),
+      );
+      expect(service.addedNotes.single['SentenceAudio'], contains('[sound:'));
+    });
+
+    test(
+        'AnkiConnect does not create a card when required sentence audio fails',
+        () async {
+      sentenceAudio.writeAsBytesSync(<int>[1, 2, 3, 4]);
+      final service = _FailingRequiredAudioService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: _settings,
+      );
+
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, String>{'expression': 'word'}),
+        context: AnkiMiningContext(
+          sentence: 'sentence',
+          sasayakiAudioPath: sentenceAudio.path,
+        ),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.connectionTimeout);
+      expect(service.addedNotes, isEmpty);
+    });
+
+    test(
+        'AnkiConnect uploads required picture after sentence audio and before optional media',
+        () async {
+      sentenceAudio.writeAsBytesSync(<int>[1, 2, 3, 4]);
+      picture.writeAsBytesSync(<int>[0x89, 0x50, 0x4e, 0x47]);
+      audio.writeAsBytesSync(<int>[9, 8, 7]);
+      final service = _RecordingAnkiConnectService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: _settings,
+      );
+
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: _payloadFor(audio.path),
+        context: AnkiMiningContext(
+          sentence: 'sentence',
+          sasayakiAudioPath: sentenceAudio.path,
+          coverPath: picture.path,
+          requireCover: true,
+        ),
+      );
+
+      expect(outcome.result, MineResult.success);
+      expect(service.storedFilenames, hasLength(3));
+      expect(service.storedFilenames[0], startsWith('hibiki_audio_'));
+      expect(service.storedFilenames[1], startsWith('hibiki_cover_'));
+      expect(service.addedNotes.single['Picture'], contains('<img src='));
+    });
+
+    test('AnkiConnect does not create a card when required picture fails',
+        () async {
+      picture.writeAsBytesSync(<int>[0x89, 0x50, 0x4e, 0x47]);
+      final service = _FailingRequiredPictureService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: _settings,
+      );
+
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, String>{'expression': 'word'}),
+        context: AnkiMiningContext(
+          sentence: 'sentence',
+          coverPath: picture.path,
+          requireCover: true,
+        ),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.connectionTimeout);
+      expect(service.addedNotes, isEmpty);
     });
 
     test('content-derived media names use SHA-256 and preserve extension', () {

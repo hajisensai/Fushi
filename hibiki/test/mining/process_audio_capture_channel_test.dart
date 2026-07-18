@@ -34,7 +34,7 @@ void main() {
     expect(result.channels, 2);
   });
 
-  test('mark and exportWav preserve occurrence and clip bounds', () async {
+  test('mark and exportAudio preserve occurrence and clip bounds', () async {
     final List<MethodCall> calls = <MethodCall>[];
     messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
       calls.add(call);
@@ -43,7 +43,7 @@ void main() {
       }
       return <String, Object?>{
         'ok': true,
-        'path': r'C:\temp\line.wav',
+        'path': r'C:\temp\line.mp3',
         'startFrame': 80,
         'endFrame': 280,
       };
@@ -52,21 +52,21 @@ void main() {
     final ProcessAudioCaptureResult marked =
         await ProcessAudioCaptureChannel.mark('line-7');
     final ProcessAudioCaptureResult exported =
-        await ProcessAudioCaptureChannel.exportWav(
+        await ProcessAudioCaptureChannel.exportAudio(
       occurrenceId: 'line-7',
-      outputPath: r'C:\temp\line.wav',
+      outputPath: r'C:\temp\line.mp3',
       preRollMs: 300,
       maxClipMs: 12000,
     );
 
     expect(marked.startFrame, 100);
-    expect(exported.path, r'C:\temp\line.wav');
+    expect(exported.path, r'C:\temp\line.mp3');
     expect(exported.startFrame, 80);
     expect(exported.endFrame, 280);
     expect(calls[0].arguments, <String, Object?>{'occurrenceId': 'line-7'});
     expect(calls[1].arguments, <String, Object?>{
       'occurrenceId': 'line-7',
-      'outputPath': r'C:\temp\line.wav',
+      'outputPath': r'C:\temp\line.mp3',
       'preRollMs': 300,
       'maxClipMs': 12000,
     });
