@@ -1635,6 +1635,11 @@ class ReaderPaginationScripts {
   window.__hoshiMarkImageRevealed = function(key) {
     if (key) _hoshiRevealedKeys[key] = true;
   };
+  // BUG-891：稳定 reveal key 归一到「extractDir 相对、decode、正斜杠」路径（如
+  // OEBPS/images/foo.jpg），与图片库磁盘 File 的相对路径、Dart ImageRevealKey.normalize
+  // 完全一致 —— 三端（阅读器 WebView / 图片库 / Drift 持久表）共享同一 key，才能双向同步。
+  // 用 new URL(raw, baseURI) 折叠 ../ 并解析相对 src → 剥 hoshi.local 的 /epub/ 前缀 +
+  // decodeURIComponent → 相对路径。host 非本资源域（不该发生）时回退原始串。
   function _hoshiImageRevealKey(element) {
     if (!element) return '';
     var raw = '';
@@ -1645,7 +1650,15 @@ class ReaderPaginationScripts {
       if (im) raw = im.getAttribute('xlink:href') || im.getAttribute('href') || '';
     }
     if (!raw) return '';
-    try { return new URL(raw, document.baseURI).href; } catch (e) { return raw; }
+    try {
+      var u = new URL(raw, document.baseURI);
+      if (u.host !== 'hoshi.local') return raw;
+      var path = decodeURIComponent(u.pathname);
+      var pfx = '/epub/';
+      var i = path.indexOf(pfx);
+      if (i < 0) return raw;
+      return path.substring(i + pfx.length);
+    } catch (e) { return raw; }
   }
   window.__hoshiImageRevealKey = _hoshiImageRevealKey;
   function _hoshiBlurImage(element) {
