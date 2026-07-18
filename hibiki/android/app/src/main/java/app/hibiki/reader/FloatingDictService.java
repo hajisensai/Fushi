@@ -150,6 +150,8 @@ public class FloatingDictService extends BaseFloatingService {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
+        // 本方法完全自建 lp、不调 super，故需单独请求高刷（与 BaseFloatingService 同款）。
+        HighRefreshRate.applyToLayoutParams(lp, windowManager);
         return lp;
     }
 
