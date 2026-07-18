@@ -132,8 +132,9 @@ void main() {
         'class _ReaderGalleryPage extends StatefulWidget {');
     expect(fav, contains('_navigateToChapterAndWait('),
         reason: '收藏跨章走 navigate-with-baked-charOffset（原子恢复链）');
-    expect(fav, contains('charOffset: normCharOffset'),
-        reason: '收藏把目标绝对字符锚烘进导航（不再 /10000 当分数落章首）');
+    expect(fav, contains('charOffset: useOffset ? normCharOffset :'),
+        reason: '收藏把目标绝对字符锚烘进导航（不再 /10000 当分数落章首）；'
+            'BUG-876 起 charOffset 条件化(useOffset ? … : null)，收藏缺 offset 回退文本搜索');
     expect(fav.contains('progress:'), isFalse,
         reason: '收藏跳转不得再把绝对字符索引当分数烘进 progress');
     expect('hoshiReader.restoreProgress('.allMatches(fav).length, 0,
