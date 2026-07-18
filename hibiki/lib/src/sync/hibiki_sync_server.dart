@@ -189,8 +189,21 @@ class HibikiSyncServer {
   final DateTime Function() _now;
   final Map<String, _RemoteAudioToken> _remoteAudioTokens =
       <String, _RemoteAudioToken>{};
+
+  /// BUG-908(a)：音频查词 token 的数量上限。POST 侧签发前先按 TTL prune、再淘汰最旧
+  /// 者收束到上限内（对照 [_maxPairSessions]）。只 POST /api/lookup/audio 却从不 GET
+  /// 取文件的调用者会让 [_remoteAudioTokens] 无界堆积（内存膨胀 DoS）——GET 侧的
+  /// [_pruneAudioTokens] 永远等不到，故上限必须在 POST 侧强制。
+  static const int _maxAudioTokens = 128;
+
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
+
+  /// BUG-908(d)：WebDAV 写操作（PUT / MKCOL / DELETE）的按路径串行闸门。key 是目标
+  /// 文件系统绝对路径，value 是该路径上最近一次写的完成 future。新的写先 await 同一
+  /// 路径上前一次写的 future 再执行——同一路径的写串行、不同路径可并行。读操作
+  /// （PROPFIND / GET / HEAD）不入闸。仅单路径链式 await、绝不嵌套持锁，故无死锁。
+  final Map<String, Future<void>> _davWriteChain = <String, Future<void>>{};
 
   /// TODO-961 M1：进行中的 v2 配对会话（pair/v2 创建、pair/v2/confirm 消费）。
   /// 内存态、不落盘；server 重启即清空（半截配对作废，安全侧）。
@@ -514,12 +527,14 @@ class HibikiSyncServer {
         return _handlePropfind(request, reqPath, fsPath);
       case 'GET':
         return _handleGet(fsPath);
+      // BUG-908(d)：改动文件系统的写操作按目标路径串行化，避免并发 PUT/DELETE/MKCOL
+      // 同一路径互相踩（截断/半写/删了又建的竞态）。读操作（PROPFIND/GET/HEAD）不入闸。
       case 'PUT':
-        return _handlePut(request, fsPath);
+        return _serializeDavWrite(fsPath, () => _handlePut(request, fsPath));
       case 'MKCOL':
-        return _handleMkcol(fsPath);
+        return _serializeDavWrite(fsPath, () => _handleMkcol(fsPath));
       case 'DELETE':
-        return _handleDelete(fsPath);
+        return _serializeDavWrite(fsPath, () => _handleDelete(fsPath));
       case 'HEAD':
         return _handleHead(fsPath);
       case 'OPTIONS':
@@ -529,6 +544,29 @@ class HibikiSyncServer {
         });
       default:
         return shelf.Response(405);
+    }
+  }
+
+  /// BUG-908(d)：把 [action] 串到 [fsPath] 的写链尾部——同一路径上的写严格 FIFO 串行，
+  /// 不同路径互不阻塞。实现是「每路径一条链式 future」：新写先取当前链尾 [prev]，把自己
+  /// 的完成 future 挂成新链尾，await [prev] 后再执行 [action]，最后 complete 自己让后继
+  /// 继续。永远只 await 单一路径上的前驱、绝不在持有一把锁时去取另一把，故不会死锁；
+  /// 收尾时若自己仍是链尾就从 map 摘除，避免闲置路径无界堆积。
+  Future<T> _serializeDavWrite<T>(
+      String fsPath, Future<T> Function() action) async {
+    final Future<void> prev = _davWriteChain[fsPath] ?? Future<void>.value();
+    final Completer<void> done = Completer<void>();
+    _davWriteChain[fsPath] = done.future;
+    try {
+      // 等前一次同路径写完成后再动手。前驱失败也不应连累后继，故吞掉其异常。
+      await prev.catchError((Object _) {});
+      return await action();
+    } finally {
+      done.complete();
+      // 若期间没有后继把链尾替换掉，说明该路径已空闲，摘除以防 map 无界增长。
+      if (identical(_davWriteChain[fsPath], done.future)) {
+        _davWriteChain.remove(fsPath);
+      }
     }
   }
 
@@ -873,6 +911,11 @@ class HibikiSyncServer {
     );
     if (lookup == null) return _audioMissResponse();
 
+    // BUG-908(a)：签发前先按 TTL 清过期，再把数量收束到 [_maxAudioTokens] 内（淘汰
+    // 最旧者）。否则只 POST 不 GET 的调用者会让 [_remoteAudioTokens] 无界膨胀——GET
+    // 侧的 [_pruneAudioTokens] 永远不会被触发。
+    _pruneAudioTokens();
+    _enforceAudioTokenCap();
     final String id = _generateAudioToken();
     _remoteAudioTokens[id] = _RemoteAudioToken(
       bytes: lookup.bytes,
@@ -2109,6 +2152,29 @@ class HibikiSyncServer {
     );
   }
 
+  /// BUG-908(a)：守住音频 token 上限。TTL prune 之后仍达到 [_maxAudioTokens] 时，按
+  /// createdAt 淘汰最旧者直到回到上限内（对照 [_enforcePairSessionCap]）。签发前调用，
+  /// 使插入新 token 后总数 <= [_maxAudioTokens]。只 POST 不 GET 的膨胀攻击的兜底。
+  void _enforceAudioTokenCap() {
+    while (_remoteAudioTokens.length >= _maxAudioTokens) {
+      String? oldestKey;
+      DateTime? oldestAt;
+      for (final MapEntry<String, _RemoteAudioToken> e
+          in _remoteAudioTokens.entries) {
+        if (oldestAt == null || e.value.createdAt.isBefore(oldestAt)) {
+          oldestAt = e.value.createdAt;
+          oldestKey = e.key;
+        }
+      }
+      if (oldestKey == null) break;
+      _remoteAudioTokens.remove(oldestKey);
+    }
+  }
+
+  /// BUG-908(a) 测试钩子：当前驻留的音频 token 数（验证 cap 逐出行为）。
+  @visibleForTesting
+  int get remoteAudioTokenCount => _remoteAudioTokens.length;
+
   /// TODO-961 M1：清掉 [_pairSessionTtl] 之前创建的配对会话。对照
   /// [_pruneAudioTokens] / [_pruneVideoTokens]：按 createdAt + 注入的 [_now] 判定，
   /// 可单测。在 pair/v2 创建与 confirm 两处调用，使过期会话既不堆积也不可被 confirm。
@@ -2149,7 +2215,9 @@ class HibikiSyncServer {
   Future<shelf.Response> _handlePropfind(
       shelf.Request request, String davPath, String fsPath) async {
     final depth = request.headers['depth'] ?? '1';
-    final entity = FileSystemEntity.typeSync(fsPath);
+    // BUG-908(b)：逐项 stat 一律异步，避免在事件循环上做阻塞式系统调用（大目录
+    // PROPFIND 会串起成百上千次同步 stat，卡住整个 server）。
+    final entity = await FileSystemEntity.type(fsPath);
 
     if (entity == FileSystemEntityType.notFound) {
       return shelf.Response.notFound('Not found');
@@ -2172,7 +2240,9 @@ class HibikiSyncServer {
           final childName = p.basename(child.path);
           final isDir = child is Directory;
           final childHref = '$normPath$childName${isDir ? '/' : ''}';
-          final length = isDir ? 0 : (child as File).lengthSync();
+          // BUG-908(b)：文件长度用异步 stat（await for 循环里安全 await，不打乱 XML
+          // 组装顺序）；目录不必取长度。
+          final length = isDir ? 0 : (await (child as File).stat()).size;
           entries.add(_DavEntry(
             href: childHref,
             isCollection: isDir,
@@ -2183,11 +2253,13 @@ class HibikiSyncServer {
       }
     } else {
       final file = File(fsPath);
+      // BUG-908(b)：单文件长度也用异步 stat。
+      final int fileLength = (await file.stat()).size;
       entries.add(_DavEntry(
         href: davPath,
         isCollection: false,
         displayName: p.basename(fsPath),
-        contentLength: file.lengthSync(),
+        contentLength: fileLength,
       ));
     }
 

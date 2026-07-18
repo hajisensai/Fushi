@@ -8,9 +8,8 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 ///
 /// 守护两件事：
 /// - A. JS 端 onTap 发射点有 `[806-TAP]` 调试探针，且**门控**在
-///   `${DebugLogService.instance.enabled}` 后（与 `[792-REVEAL]`/`[753-DIAG]` 同
-///   一注入期门控开关），口径注释写明 = WebView CSS 视口像素。撤回探针或去掉门控
-///   即红。
+///   `${DebugLogService.instance.enabled}` 后（DebugLogService 注入期门控开关），
+///   口径注释写明 = WebView CSS 视口像素。撤回探针或去掉门控即红。
 /// - B. `onDismissBarrierHover` 用 WebView 的 RenderBox `globalToLocal` 把全局
 ///   指针位置映成 WebView 局部坐标（与 onShiftHover 口径一致），**不再**把
 ///   `event.localPosition`（相对 dismiss barrier）直接喂给 `_selectTextAt`。撤回
@@ -35,7 +34,7 @@ void main() {
         window.contains(r'if (${DebugLogService.instance.enabled})'),
         isTrue,
         reason: '[806-TAP] 探针必须门控在 \${DebugLogService.instance.enabled} 后，'
-            '默认 off，开调试日志才注入打印（沿用 [792-REVEAL] 同开关，别新造）。',
+            '默认 off，开调试日志才注入打印（沿用 DebugLogService 同开关，别新造）。',
       );
 
       // 口径注释：明确是 WebView CSS 视口像素，非 OS 屏幕坐标。

@@ -987,7 +987,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     try {
       // 命名/目录与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移，
       // 否则文件名对不上→读不到→卡片留坏图）。HBK-AUDIT-062 无扩展名兜底已并入。
-      final filename = ankiDictionaryMediaCacheFilename(media.path);
+      final filename =
+          ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
       final file = File('${ankiDictionaryMediaCacheDirPath()}/$filename');
       if (!file.existsSync()) return null;
       final bytes = await file.readAsBytes();

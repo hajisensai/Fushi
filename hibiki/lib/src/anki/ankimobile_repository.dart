@@ -421,7 +421,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     DictionaryMedia media,
     _AnkiMobileLocalMediaRefBuilder localMediaRef,
   ) {
-    final filename = ankiDictionaryMediaCacheFilename(media.path);
+    final filename =
+        ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
     final path = '${ankiDictionaryMediaCacheDirPath()}/$filename';
     return localMediaRef(path, mimePath: filename);
   }

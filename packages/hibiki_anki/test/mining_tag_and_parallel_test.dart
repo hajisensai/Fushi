@@ -519,10 +519,10 @@ void main() {
       final dictPathA = '${dir.path}/gaiji_a.svg';
       final dictPathB = '${dir.path}/gaiji_b.svg';
       final dictFileA = File(
-          '${cacheDir.path}/${ankiDictionaryMediaCacheFilename(dictPathA)}')
+          '${cacheDir.path}/${ankiDictionaryMediaCacheFilename('d', dictPathA)}')
         ..writeAsBytesSync(<int>[7]);
       final dictFileB = File(
-          '${cacheDir.path}/${ankiDictionaryMediaCacheFilename(dictPathB)}')
+          '${cacheDir.path}/${ankiDictionaryMediaCacheFilename('d', dictPathB)}')
         ..writeAsBytesSync(<int>[8]);
       addTearDown(() {
         if (dictFileA.existsSync()) dictFileA.deleteSync();

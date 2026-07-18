@@ -27,10 +27,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 883 条。点号进各自文件。
+> 共 890 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-909](bugs/BUG-909-remove-vertical-forensic-probes.md) | ✅ | ✅ | 移除发布版残留的竖排取证探针（TODO-792/753 系列 + 753-DIAG） |
+| [BUG-908](bugs/BUG-908-lan-sync-server-hardening.md) | ✅ | ✅ | LAN 局域网同步服务器健壮性欠账（token 膨胀 / PROPFIND 同步阻塞 / 写无互斥） |
+| [BUG-907](bugs/BUG-907-danmaku-layout-binary-and-isolate-parse.md) | ✅ | ✅ | 弹幕两项性能缺陷：布局每帧 O(N) 全量扫描 + 20MB sidecar 主 isolate 同步解析 |
+| [BUG-906](bugs/BUG-906-prefs-version-txn-and-indexes.md) | ✅ | ✅ | 偏好版本并发自增丢失 + 查询热路径缺索引 |
+| [BUG-905](bugs/BUG-905-ffmpegkit-precise-cancel.md) | ✅ | ✅ | 移动端 ffmpeg 超时用 FFmpegKit.cancel() 误杀全部并发会话 |
+| [BUG-904](bugs/BUG-904-anki-gaiji-cache-key-per-dict.md) | ✅ | ✅ | Anki 外字(gaiji)媒体缓存键漏词典名 → 跨词典串味 |
+| [BUG-903](bugs/BUG-903-audiobook-manual-seek-explicit-flag.md) | ✅ | ✅ | 有声书暂停态手动 seek 后显式 seek 抑制旗不复位，cue/高亮卡住 |
 | [BUG-902](bugs/BUG-902-anki-dict-media-path-normalize.md) | ✅ | ✅ | 制卡词典图片脏path未归一化导致坏图 |
 | [BUG-901](bugs/BUG-901-subtitle-seekbar-tap-proximity.md) | ✅ | ✅ | 字幕点击与进度条点击命中区重叠误触 |
 | [BUG-900](bugs/BUG-900-secondary-subtitle-same-list.md) | ✅ | ✅ | 副字幕无法添加外挂字幕·应与主字幕共用同一可用字幕列表 |

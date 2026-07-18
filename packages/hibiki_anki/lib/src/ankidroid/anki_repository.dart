@@ -703,7 +703,8 @@ class AnkiRepository extends BaseAnkiRepository {
       final cacheDir = await _mediaCacheDir();
       // 命名与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移；也修了旧
       // split('.').last 在无扩展名时把整串当扩展名的边角）。
-      final filename = ankiDictionaryMediaCacheFilename(media.path);
+      final filename =
+          ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
       final file = File('${cacheDir.path}/$filename');
       if (!file.existsSync()) return null;
       final result =
