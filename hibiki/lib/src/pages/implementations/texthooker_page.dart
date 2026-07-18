@@ -13,8 +13,6 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/mining/external_window_mining.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/mining/galgame_waveform_select.dart';
-import 'package:hibiki/src/mining/galgame_waveform_select_dialog.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
@@ -59,7 +57,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 关闭 / 解绑 / 换窗口 / dispose 时停止。
   GalAudioSource? _galAudioSource;
 
-  /// 热键那一刻从环形缓冲回看的时长（毫秒）：galgame 一句语音通常落在近几秒内，波形选区再精修。
+  /// 引擎-hook 源（launch 模式成功时 = [_galAudioSource]）：额外能 pollText 抓台词、grabClipNear
+  /// 按句取语音。loopback 源没有这俩能力，故单独持有引擎源引用。
+  EngineHookGalAudioSource? _engineSource;
+
+  /// 文本 hook 轮询定时器 + 游标（已喂到 texthooker 的行序号）+ 最近一句台词的 hook 时间戳。
+  Timer? _textPollTimer;
+  int _lastTextSeq = 0;
+  int _lastHookedLineTs = 0;
+
+  /// 热键那一刻从环形缓冲回看的时长（毫秒）：引擎-hook 拿不到按句 clip 时的兜底取最近这么久。
   static const int _galAudioBackMs = 8000;
 
   /// 缓存的 [AppModel] 引用（`appProvider` 为单例，实例不变）。在 [initState] 一次性
@@ -237,6 +244,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
       if (await eng.start() != null) {
         _galAudioSource = eng; // 引擎-hook 就绪：干净语音
+        _onEngineHookReady(eng); // 接上文本 hook 轮询（喂 texthooker）
         return;
       }
       await eng.stop();
@@ -250,11 +258,48 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _galAudioSource = null;
   }
 
-  /// 停止并释放当前音频采集源（幂等）。
+  /// 停止并释放当前音频采集源（幂等）+ 停文本 hook 轮询。
   Future<void> _stopGalAudio() async {
+    _textPollTimer?.cancel();
+    _textPollTimer = null;
+    _engineSource = null;
+    _lastTextSeq = 0;
+    _lastHookedLineTs = 0;
     final GalAudioSource? src = _galAudioSource;
     _galAudioSource = null;
     await src?.stop();
+  }
+
+  /// 引擎-hook 就绪后：记住引擎源 + 起定时器轮询我们文本 hook 抓到的台词，喂进 Hibiki
+  /// texthooker（真句子来源，非 OCR）。约 400ms 一轮。
+  void _onEngineHookReady(EngineHookGalAudioSource eng) {
+    _engineSource = eng;
+    _lastTextSeq = 0;
+    _lastHookedLineTs = 0;
+    _textPollTimer?.cancel();
+    _textPollTimer = Timer.periodic(
+      const Duration(milliseconds: 400),
+      (_) => unawaited(_pollHookedText()),
+    );
+  }
+
+  /// 轮询文本 hook 的新台词行 → 喂 texthooker + 记最近一句的 hook 时间戳（供按句取语音配对）。
+  Future<void> _pollHookedText() async {
+    final EngineHookGalAudioSource? eng = _engineSource;
+    if (eng == null) {
+      return;
+    }
+    final GalTextPoll? poll = await eng.pollText(_lastTextSeq);
+    if (poll == null || _engineSource == null) {
+      return;
+    }
+    for (final GalHookedLine line in poll.lines) {
+      TexthookerService.instance.appendLine(line.text);
+      _lastHookedLineTs = line.timestampMs;
+    }
+    if (poll.count > _lastTextSeq) {
+      _lastTextSeq = poll.count;
+    }
   }
 
   /// 解析 galgame 引擎-hook 注入器（隔离 helper 组件）绝对路径：约定放在 app 可执行文件同级
@@ -314,9 +359,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       HibikiToast.show(msg: 'galgame 引擎-hook 启动/注入失败');
       return;
     }
-    // 引擎-hook 就绪：切成当前音频源。
+    // 引擎-hook 就绪：切成当前音频源 + 接上文本 hook 轮询。
     await _stopGalAudio();
     _galAudioSource = src;
+    _onEngineHookReady(src);
     // 按游戏 PID 找主窗口绑定（制卡截图用）；窗口可能稍后才出现，轮询几次。
     final int? gpid = src.gamePid;
     ExternalWindowInfo? win;
@@ -357,25 +403,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (src == null) {
       return null;
     }
-    final GalAudioSlice? slice = await src.grabRecent(_galAudioBackMs);
+    // 引擎-hook + 有台词时间戳：**自动取「该句的语音 clip」**（voice hook 按句切好的那段，
+    // 与文本 hook 的行同一 GetTickCount64 时钟配对）—— 替代手动波形选区。
+    GalAudioSlice? slice;
+    final EngineHookGalAudioSource? eng = _engineSource;
+    if (eng != null && _lastHookedLineTs > 0) {
+      slice = await eng.grabClipNear(_lastHookedLineTs);
+    }
+    // 兜底（loopback / 引擎-hook 没抓到该句 clip）：取最近 N 秒（仍全自动、不弹波形选区）。
+    slice ??= await src.grabRecent(_galAudioBackMs);
     if (slice == null || slice.isEmpty) {
       return null;
     }
-    if (!context.mounted) {
-      return null;
-    }
-    final GalWaveformRange? range =
-        await showGalWaveformSelectDialog(context, slice: slice);
-    if (range == null || range.durationMs <= 0) {
-      return null; // 用户取消 / 空选区
-    }
-    final Uint8List sub =
-        slicePcmByMs(slice.pcm, slice.format, range.startMs, range.endMs);
-    if (sub.isEmpty) {
-      return null;
-    }
     return pcmSliceToAacBytes(
-      pcm: sub,
+      pcm: slice.pcm,
       format: slice.format,
       tempDir: Directory.systemTemp.path,
       outputExtension: immersionMiningAudioExtension(),
