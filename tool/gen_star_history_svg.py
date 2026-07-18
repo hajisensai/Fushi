@@ -27,18 +27,42 @@ from typing import Dict, List, Tuple
 API_ROOT = "https://api.github.com"
 
 
-def _request(url: str, token: str) -> Tuple[list, Dict[str, str]]:
-    """Perform a single GitHub API GET and return (json, response headers)."""
+def _build_request(url: str, token: str) -> urllib.request.Request:
+    """Assemble a GitHub API GET request, optionally authenticated."""
     req = urllib.request.Request(url)
     req.add_header("Accept", "application/vnd.github.star+json")
     req.add_header("X-GitHub-Api-Version", "2022-11-28")
     req.add_header("User-Agent", "hibiki-star-history")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
+    return req
+
+
+def _do_request(req: urllib.request.Request) -> Tuple[list, Dict[str, str]]:
+    """Execute a prepared request and return (json, response headers)."""
     with urllib.request.urlopen(req, timeout=30) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
         headers = {k: v for k, v in resp.headers.items()}
     return payload, headers
+
+
+def _request(url: str, token: str) -> Tuple[list, Dict[str, str]]:
+    """Perform a single GitHub API GET and return (json, response headers).
+
+    公开仓库的 stargazers 端点本可无认证读取。GitHub Actions 里默认注入的
+    GITHUB_TOKEN 常被工作流用 `permissions:` 收窄到 contents:write，其余 scope
+    归零，用它带 Authorization 访问 stargazers 会被 GitHub 拒为 403
+    ("You do not have permission to view the stargazers")。因此遇到 403 且当前
+    请求带了 Authorization 头时，去掉该头无认证重试一次；仍失败才向上抛。
+    """
+    if token:
+        try:
+            return _do_request(_build_request(url, token))
+        except urllib.error.HTTPError as err:
+            if err.code != 403:
+                raise
+            # 受限 token 被拒；退回无认证请求（公开仓库 stargazers 可读）。
+    return _do_request(_build_request(url, ""))
 
 
 def fetch_star_times(repo: str, token: str) -> List[dt.datetime]:
