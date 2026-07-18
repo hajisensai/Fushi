@@ -1506,6 +1506,26 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
   }
 
+  /// 把标签拖到合集行头 = 给整个合集打标签（`CollectionShelfRow.onTagDropped`）。
+  /// `addTagToCollection` 本身幂等（INSERT OR IGNORE），这里先查现有标签给「已存在」
+  /// 提示，避免静默无反馈；成功后失效 [filteredCollectionIdsProvider] 让标签过滤下
+  /// 合集卡显隐立即刷新（详情页标签行走 FutureBuilder，重进即新）。
+  Future<void> _addTagToVideoCollection(
+      int collectionId, BookTagRow tag) async {
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final List<BookTagRow> existing =
+        await db.getTagsForCollection(collectionId);
+    if (existing.any((BookTagRow t) => t.id == tag.id)) {
+      HibikiToast.show(msg: t.tag_already_on_collection(name: tag.name));
+      return;
+    }
+    await db.addTagToCollection(collectionId, tag.id);
+    ref.invalidate(filteredCollectionIdsProvider);
+    if (mounted) {
+      HibikiToast.show(msg: t.tag_added_to_collection(name: tag.name));
+    }
+  }
+
   /// 设置封面：选图 → 经共享 [setVideoCoverFromPickedFile]（拷盘 + 驱逐旧缓存 +
   /// 落库）→ 刷新。与书架视频卡的换封面共用同一入口，封面与自动截图同目录。
   Future<void> _pickCover(VideoBookRow book) async {
@@ -2223,6 +2243,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         onToggleSelected: _selectionMode
             ? () => _toggleCollectionSelection(collection.id)
             : null,
+        // 拖标签到行头 = 给整个合集打标签（与散卡书级拖放一致）。
+        onTagDropped: (BookTagRow tag) =>
+            _addTagToVideoCollection(collection.id, tag),
         itemBuilder: (BuildContext _, int i) {
           final _VideoSlot slot = group.items[i].payload;
           final VideoBookRow? local = slot.local;

@@ -695,6 +695,25 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  /// 把标签拖到书架合集行头 = 给整个合集打标签（`CollectionShelfRow.onTagDropped`）。
+  /// 不复用 [_addTagToMedia]：它的「已存在」提示固定是 `tag_already_on_book`，对合集
+  /// 文案不对。`addTagToCollection` 幂等，这里先查现有标签给合集专属提示，成功后失效
+  /// [filteredCollectionIdsProvider] 让标签过滤下合集卡显隐立即刷新。
+  Future<void> _addTagToCollection(int collectionId, BookTagRow tag) async {
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final List<BookTagRow> existing =
+        await db.getTagsForCollection(collectionId);
+    if (existing.any((BookTagRow t) => t.id == tag.id)) {
+      HibikiToast.show(msg: t.tag_already_on_collection(name: tag.name));
+      return;
+    }
+    await db.addTagToCollection(collectionId, tag.id);
+    ref.invalidate(filteredCollectionIdsProvider);
+    if (mounted) {
+      HibikiToast.show(msg: t.tag_added_to_collection(name: tag.name));
+    }
+  }
+
   /// 某媒体卡上挂的标签列：标签 map 为空 / 该 key 无标签都返回 null，否则渲染
   /// [_adaptiveTagColumn]。三种媒体（epub/srt/video）只差「watch 哪个标签 provider +
   /// key 类型」，故各 caller 自己 `ref.watch(provider).valueOrNull`（保响应式订阅）后
@@ -1303,6 +1322,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         onToggleSelected: _selectionMode
             ? () => _toggleCollectionSelection(collection.id)
             : null,
+        // 拖标签到行头 = 给整个合集打标签（与散书书级拖放一致）。
+        onTagDropped: (BookTagRow tag) =>
+            _addTagToCollection(collection.id, tag),
         itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
           group.items[i].payload,
           epubCoverUrisByBookKey,
