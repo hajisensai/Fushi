@@ -203,5 +203,39 @@ void main() {
       expect(tally.finished, 0);
       expect(tally.inProgress, isEmpty);
     });
+
+    test('isCompleted：手动标记的书计读完，不受进度约束、不进在读候选', () {
+      // 用户诉求：跳过后记/附录进度停在 99% 的书，手动标记后必须计入 Completed。
+      final List<({int position, int duration, int lastReadAt})> books =
+          <({int position, int duration, int lastReadAt})>[
+        item(99, 100, lastReadAt: 5), // 99%，若被标记完成 → 读完（否则在读）
+        item(30, 100), // 在读、未标记
+        item(0, 100), // 未开始，但被标记完成 → 仍计读完
+      ];
+      final tally = tallyShelfProgress(
+        books,
+        (it) => it.position,
+        (it) => it.duration,
+        // 第 0、2 本被标记完成（按 lastReadAt 区分：这里用 position 当身份代理）。
+        isCompleted: (it) => it.position == 99 || it.position == 0,
+      );
+      expect(tally.finished, 2, reason: '两本标记完成的都计读完（含 position=0）');
+      expect(tally.reading, 1, reason: '只有未标记的 30% 那本在读');
+      expect(tally.inProgress.single.position, 30,
+          reason: '标记完成的不进在读候选，即使进度 99%');
+    });
+
+    test('isCompleted 为 null → 退回纯进度派生（旧行为向后兼容）', () {
+      final tally = tallyShelfProgress(
+        <({int position, int duration, int lastReadAt})>[
+          item(100, 100),
+          item(30, 100),
+        ],
+        (it) => it.position,
+        (it) => it.duration,
+      );
+      expect(tally.finished, 1);
+      expect(tally.reading, 1);
+    });
   });
 }

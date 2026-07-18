@@ -1964,5 +1964,9 @@
   "anime_download_play_now_fail": "暂不可提前入库（元数据未就绪或连接失败），稍后再试",
   "interconnect_section_related": "远端内容与查词",
   "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他窗口上方",
-  "browser_extension_yomitan_port_conflict": "端口 $port 正被 Yomitan API 占用。请先在 Yomitan 高级设置中关闭 Yomitan API，再回 Hibiki 开启 Yomitan API 服务器。"
+  "browser_extension_yomitan_port_conflict": "端口 $port 正被 Yomitan API 占用。请先在 Yomitan 高级设置中关闭 Yomitan API，再回 Hibiki 开启 Yomitan API 服务器。",
+  "book_mark_completed_action": "标记为已读完",
+  "book_mark_uncompleted_action": "取消已读完",
+  "book_marked_completed": "已标记为读完",
+  "book_marked_uncompleted": "已取消完成标记"
 }

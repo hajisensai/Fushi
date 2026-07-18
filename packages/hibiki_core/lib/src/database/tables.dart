@@ -246,6 +246,11 @@ class EpubBooks extends Table {
   TextColumn get sourceMetadata => text().nullable()();
   IntColumn get importedAt => integer()();
 
+  /// 书「读完」的时间戳（用户手动标记，或读到全书末尾自动写入）；null = 未完成。
+  /// 镜像 [VideoBooks.completedAt]，书架概览「Completed」统计用。跳过后记/附录的
+  /// 读者靠手动标记即可计入完成，不再受「必须读到最后一字」限制。
+  DateTimeColumn get completedAt => dateTime().nullable()();
+
   /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
   /// onDelete:setNull = 移除来源时保留书目（归 NULL），不连坐删条目。
   IntColumn get sourceId => integer()
