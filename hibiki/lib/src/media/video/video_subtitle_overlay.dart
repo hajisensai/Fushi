@@ -10,6 +10,7 @@ import 'package:flutter/rendering.dart'
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
+import 'package:hibiki/src/media/video/ass_font_metrics.dart';
 import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
@@ -100,6 +101,17 @@ int resolveSubtitleCharHit(
 /// `\blur 值 × (显示/PlayRes 缩放) × blur_radius_scale`。**ASS 的 `\blur` 数值不是直接的高斯
 /// sigma**——少了这个因子就比 mpv/libass 明显偏糊（约 1/0.8493 ≈ 1.18×）。
 final double kLibassBlurRadiusScale = 2 / math.sqrt(math.log(256));
+
+/// 把 ASS `Outline`/`\bord`（**向外扩的描边半径**，已按 PlayRes 缩放成逻辑像素）换算成
+/// Flutter 居中 stroke 的 `strokeWidth`（BUG-897）：libass 用 FreeType stroker 沿字形
+/// 轮廓**向外**描 [outlinePx] 半径（`FT_Glyph_StrokeBorder`，可见描边=完整半径）；
+/// Flutter `PaintingStyle.stroke` 沿轮廓**居中**描，内半边被上层 fill 盖住，可见只剩
+/// `strokeWidth/2`——必须 ×2 才与 mpv/libass 同宽（旧实现直接把半径当 strokeWidth，
+/// 描边恒比 mpv 细一半，用户报「描边偏细」）。<=0（含 `Outline:0` 明示无描边）返回 0
+/// （不画描边层——旧实现被 `clamp(0.5,…)` 强制成 0.5px 细边，mpv 则完全不画）。
+@visibleForTesting
+double assOutlineStrokeWidth(double outlinePx) =>
+    outlinePx <= 0 ? 0 : outlinePx * 2;
 
 /// 把 ASS `\blur` 值 [blurValue] 换算成 Flutter 高斯模糊 sigma（逻辑像素），对齐 libass/mpv：
 /// `sigma = blurValue × [assFontScale]（显示区高 / PlayResY）× [kLibassBlurRadiusScale]`，
@@ -468,6 +480,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   @override
   void initState() {
     super.initState();
+    // BUG-897：字体表索引（内嵌字体注册 / 系统扫描完成）更新时，k=cell/em 缓存里可能
+    // 还存着索引就绪前的 TextPainter 近似值——清缓存重算并重绘，使字号自动校正到真表值。
+    AssFontCellIndex.instance.revision.addListener(_onFontMetricsRevision);
     _fadeTicker = createTicker((_) {
       // 每帧强制重建：build 里按最新播放位置重算各 cue 的 fade 不透明度（值来自
       // controller，不在此保存，故空 setState 足矣）。
@@ -475,8 +490,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     });
   }
 
+  /// 字体表索引代次变化（BUG-897）：清依赖字号的缓存并重绘（见 [initState] 注释）。
+  void _onFontMetricsRevision() {
+    _fontCellFactorCache.clear();
+    _charSizeCache.clear();
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    AssFontCellIndex.instance.revision.removeListener(_onFontMetricsRevision);
     // 停并释放 ticker：SingleTickerProviderStateMixin.dispose 会断言 ticker 不再 active，
     // 故必须在 super.dispose 之前 dispose 掉它（dispose 内部会取消在途 tick）。
     _fadeTicker?.dispose();
@@ -1529,9 +1552,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             from + (tr.bordTo! - from) * tr.progressAt(elapsedMs, durMs);
       }
     }
-    final double outlineWidth = outlineWidthAss != null
-        ? (outlineWidthAss * _assFontScale(markup)).clamp(0.5, 24.0).toDouble()
-        : baseWidth;
+    // BUG-897：ASS 值是「向外扩的半径」——缩放夹范围后经 [assOutlineStrokeWidth] ×2 成
+    // 居中 strokeWidth（可见宽=半径，与 mpv 对齐）；Outline<=0 明示无描边 → 0（不再被
+    // clamp 下限强制成 0.5px 细边）。回退用户统一宽（baseWidth，历史居中语义）不变换。
+    final double outlineWidth;
+    if (outlineWidthAss == null) {
+      outlineWidth = baseWidth;
+    } else if (outlineWidthAss <= 0) {
+      outlineWidth = 0;
+    } else {
+      outlineWidth = assOutlineStrokeWidth(
+        (outlineWidthAss * _assFontScale(markup)).clamp(0.5, 24.0).toDouble(),
+      );
+    }
     return (
       outlineArgb != null ? Color(outlineArgb) : baseColor,
       outlineWidth,
@@ -1816,36 +1849,57 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return (family: fam, weight: w);
   }
 
-  /// libass/VSFilter 的字号语义（`FT_SIZE_REQUEST_TYPE_REAL_DIM`）：ASS `Fontsize`
-  /// 等于字体**上升部+下降部（cell 高）**，不是 em；Flutter `TextStyle.fontSize` 是
-  /// em。常见 CJK 字体 cell≈1.1~1.25 em——直接把 Fontsize 当 em 用会比 mpv 整体大
-  /// 一截（用户报「字号比 mpv 大/小一截、各布局都有」的根因）。本方法用 [TextPainter]
-  /// 实测「目标字体+回退链」在指定字重/斜体下的自然行高系数 k=cell/em（不设 height
-  /// 覆盖=字体自然度量），返回 em' = px/k，使渲染 cell 高 == ASS 请求的 Fontsize。
-  /// 结果按 (family|weight|italic) 缓存；测试字体（FlutterTest）k=1.0，既有测试像素
-  /// 不变。异常度量（k∉(0.5,2.0)）回退 1.0 不校准。
+  /// libass/VSFilter 的字号语义（`ass_face_set_size` + `FT_SIZE_REQUEST_TYPE_REAL_DIM`）：
+  /// ASS `Fontsize` 等于字体 **OS/2 win cell 高**（`usWinAscent+usWinDescent`，净效果
+  /// `em = Fontsize × upem / winCell`，推导见 [AssFontCellIndex] 文件头），不是 em；
+  /// Flutter `TextStyle.fontSize` 是 em，故换算 em' = px / k（k=cell/em）。
+  /// 结果按 (family|weight|italic) 缓存；真相源见 [_cellPerEmFor]。
   double _assFontSizeToEm(
       double px, String? family, FontWeight weight, bool italic) {
     final String key = '${family ?? ''}|${weight.index}|${italic ? 1 : 0}';
-    final double k = _fontCellFactorCache.putIfAbsent(key, () {
-      final TextPainter tp = TextPainter(
-        text: TextSpan(
-          text: 'Ｍぽ',
-          style: TextStyle(
-            fontSize: 100,
-            fontFamily: family,
-            fontFamilyFallback: _kSubtitleCjkFallback,
-            fontWeight: weight,
-            fontStyle: italic ? FontStyle.italic : FontStyle.normal,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      final double factor = tp.height / 100.0;
-      tp.dispose();
-      return (factor.isFinite && factor > 0.5 && factor < 2.0) ? factor : 1.0;
-    });
+    final double k = _fontCellFactorCache.putIfAbsent(
+        key, () => _cellPerEmFor(family, weight, italic));
     return px / k;
+  }
+
+  /// k=cell/em 的真相源（BUG-897 根修）：
+  ///
+  /// ① **真字体表**：沿「显式家族 → CJK 回退链」找 Skia 实际会解析到的第一个存在家族，
+  ///   查 [AssFontCellIndex]（MKV 内嵌字体 + 系统字体目录扫描）的 `winCell/upem`——与
+  ///   libass 完全同源。只对第一个真实存在的家族查表（后续家族不会被用来渲染）；同时
+  ///   懒惰踢一次系统扫描（测试环境所有家族都解析不到 → 不踢、恒走 ②，既有测试像素不变）。
+  /// ② **TextPainter 行高近似**（仅兜底：扫描未就绪 / 平台受限 / 家族无表）：实测段落
+  ///   自然行高当 cell。注意它**含 hhea lineGap**：日文系统字体 lineGap 极大（Yu Gothic
+  ///   lineGap=0.5em、winCell=1.287em → 行高 ≈1.79em），把字算小 20%~40%，正是「字号比
+  ///   mpv 小一截」的旧病根——真表就绪后 [AssFontCellIndex.revision] bump → 清缓存重算，
+  ///   自动校正到 ①。异常度量（k∉(0.5,2.0)）回退 1.0 不校准。
+  double _cellPerEmFor(String? family, FontWeight weight, bool italic) {
+    for (final String candidate in <String>[
+      if (family != null && family.isNotEmpty) family,
+      ..._kSubtitleCjkFallback,
+    ]) {
+      if (!_fontFamilyExists(candidate)) continue;
+      AssFontCellIndex.instance.ensureSystemScan();
+      final double? k = AssFontCellIndex.instance.cellPerEmOf(candidate);
+      if (k != null) return k;
+      break; // Skia 会用它渲染但表未就绪/未收录 → 落到 ② 近似。
+    }
+    final TextPainter tp = TextPainter(
+      text: TextSpan(
+        text: 'Ｍぽ',
+        style: TextStyle(
+          fontSize: 100,
+          fontFamily: family,
+          fontFamilyFallback: _kSubtitleCjkFallback,
+          fontWeight: weight,
+          fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final double factor = tp.height / 100.0;
+    tp.dispose();
+    return (factor.isFinite && factor > 0.5 && factor < 2.0) ? factor : 1.0;
   }
 
   /// 缩放后的 ASS 字号夹到合理范围：下限 8px、上限 = 显示区高的 40%（防 PlayResY 缺失 /

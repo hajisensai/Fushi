@@ -378,7 +378,8 @@ void main() {
     ));
     await pumpOverlay(tester, cue, respect: true, height: 360);
     final Text stroke = strokeOf(tester, 'X');
-    expect(stroke.style?.foreground?.strokeWidth, 2.0); // 4 * 360/720
+    // BUG-897：半径 4×360/720=2 → 居中 strokeWidth ×2 = 4（可见描边=半径，对齐 mpv）。
+    expect(stroke.style?.foreground?.strokeWidth, 4.0); // (4 * 360/720) * 2
     expect(stroke.style?.foreground?.color, const Color(0xFF0000FF));
   });
 
@@ -391,7 +392,8 @@ void main() {
       cueStyle: SubtitleCueStyle(outlineWidthPx: 4),
     ));
     await pumpOverlay(tester, cue, respect: true, height: 360);
-    expect(strokeOf(tester, 'X').style?.foreground?.strokeWidth, 4.0);
+    // BUG-897：裸半径 4 → 居中 strokeWidth ×2 = 8（无 PlayResY 不缩放，仅 ×2 换算）。
+    expect(strokeOf(tester, 'X').style?.foreground?.strokeWidth, 8.0);
   });
 
   testWidgets(
