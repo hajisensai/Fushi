@@ -11,7 +11,8 @@ project(hibiki_voice_hook LANGUAGES C CXX)
 # 32/64 位分开构建（galgame 多为 32 位；DLL 位数必须匹配目标进程）：
 #   x64: cmake -S . -B build/x64 -A x64      && cmake --build build/x64 --config Release
 #   x86: cmake -S . -B build/x86 -A Win32    && cmake --build build/x86 --config Release
-# 产物：hibiki_voice_injector.exe + hibiki_voice_hook.dll（各 arch 一份，同目录并放）。
+# 产物：hibiki_voice_injector.exe + hibiki_voice_hook.dll（各 arch 一份，同目录并放）；
+#   诊断读取器 hibiki_voice_ring_probe.exe 仅 x64 出（命名文件映射跨位数可读，reader 不注入）。
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -45,10 +46,21 @@ target_include_directories(hibiki_voice_hook PRIVATE "include")
 target_compile_definitions(hibiki_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(hibiki_voice_hook PRIVATE minhook)
 
-# 注入器（Hibiki 主进程把它当子进程拉起）。
+# 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch，CREATE_SUSPENDED
+# 早注入）两种模式，各 arch 一份（32 位游戏用 x86 注入器 + x86 DLL）。
 add_executable(hibiki_voice_injector
   "injector/injector_main.cpp"
 )
 target_include_directories(hibiki_voice_injector PRIVATE "include")
 target_compile_definitions(hibiki_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(hibiki_voice_injector PRIVATE shell32)
+
+# 环形缓冲诊断读取器（只读共享内存，不注入）。命名文件映射跨 32/64 位可读，故只出 x64 一份即
+# 可读任意位数游戏里 hook 填的缓冲——仅在 64 位构建时加入本目标（x86 配置跳过）。
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+  add_executable(hibiki_voice_ring_probe
+    "tools/ring_probe.cpp"
+  )
+  target_include_directories(hibiki_voice_ring_probe PRIVATE "include")
+  target_compile_definitions(hibiki_voice_ring_probe PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "voice_hook_ipc.h"
 
@@ -13,13 +14,25 @@
 // 事件，确认注入成功后读回语音格式。Hibiki 主进程把它当子进程拉起（部署红线：注入代码只在
 // 这个隔离组件里，不进 hibiki.exe）。
 //
+// 两种进入方式（二选一）：
+//   attach（--pid）：注入已运行进程。适合引擎在游戏运行中才建声音设备的情形。
+//   launch（--launch）：CREATE_SUSPENDED 拉起游戏，在其 WinMain 之前注入 hook 再 ResumeThread。
+//     适合 KiriKiriZ 这类启动时创建一次 DirectSound 设备的旧引擎——attach 永远晚于设备创建会
+//     漏掉，必须在游戏跑起来之前把 DirectSoundCreate 导出 hook 装好（MTool 对同款游戏正是
+//     CREATE_SUSPENDED 早注入，证明这条路安全）。
+//
 // 用法：
 //   hibiki_voice_injector.exe --pid <PID> [--dll <hook.dll>] [--wait-ms N] [--hold]
-//     --pid     目标进程 ID（必填）
+//   hibiki_voice_injector.exe --launch <exe> [--workdir <dir>] [--arg <a>]...
+//                             [--dll <hook.dll>] [--wait-ms N] [--hold]
+//     --pid     目标进程 ID（attach 模式；与 --launch 二选一）
+//     --launch  目标游戏 exe 路径（launch 模式；与 --pid 二选一）
+//     --workdir 子进程工作目录（launch 缺省=exe 所在目录）
+//     --arg     追加一个传给子进程的命令行参数（可重复；launch 专用）
 //     --dll     hook DLL 路径（默认取同目录 arch 匹配的 hibiki_voice_hook.dll）
-//     --wait-ms 等待「就绪」事件的超时毫秒（默认 5000）
+//     --wait-ms 等待就绪事件的超时毫秒（默认 5000）
 //     --hold    注入并确认后保持运行（host 模式，维持共享内存存活）；缺省=probe 模式，
-//               确认后退出（仅用于验证注入管线，退出后映射释放）。
+//               确认后退出。launch 模式下 --hold 会一直挂到游戏进程退出。
 namespace {
 
 using hibiki_voice_hook::kMaxRingBytes;
@@ -31,7 +44,7 @@ using hibiki_voice_hook::SharedHeader;
 using hibiki_voice_hook::SharedMemoryName;
 
 // 目标与自身位数（WOW64）必须一致才能注入：x86 DLL 只能进 32 位进程，x64 只能进 64 位。
-// 返回 true 表示匹配。mismatch 时提示改用对应 arch 的注入器。
+// 返回 true 表示匹配。CREATE_SUSPENDED 的新进程也能查（此刻映像已就绪，IsWow64Process 有效）。
 bool BitnessMatches(HANDLE target, bool* target_is_wow64) {
   BOOL self_wow = FALSE;
   BOOL tgt_wow = FALSE;
@@ -59,6 +72,8 @@ std::wstring DefaultDllPath() {
 }
 
 // 经 CreateRemoteThread(LoadLibraryW) 把 [dll_path] 注入 [target]。成功返回 true。
+// CREATE_SUSPENDED 的进程主线程虽挂起，但此处 CreateRemoteThread 建的新线程照跑（kernel32/
+// ntdll 已映射，LoadLibraryW 可用）——标准早注入手法。
 bool InjectDll(HANDLE target, const std::wstring& dll_path) {
   const SIZE_T bytes = (dll_path.size() + 1) * sizeof(wchar_t);
   LPVOID remote = VirtualAllocEx(target, nullptr, bytes, MEM_COMMIT | MEM_RESERVE,
@@ -82,7 +97,7 @@ bool InjectDll(HANDLE target, const std::wstring& dll_path) {
         GetExitCodeThread(thread, &exit_code);
         CloseHandle(thread);
         // 64 位下 exit_code 截断 HMODULE，不足以判成败——真正的成功信号是 hook DLL
-        // SetEvent 的就绪事件（见 main）。这里只要远程线程跑起来即算注入动作完成。
+        // SetEvent 的就绪事件（见 RunInjection）。这里只要远程线程跑起来即算注入动作完成。
         ok = true;
       } else {
         fprintf(stderr, "CreateRemoteThread failed: %lu\n", GetLastError());
@@ -112,55 +127,17 @@ int Fail(const char* msg) {
   return 1;
 }
 
-}  // namespace
-
-int main() {
-  int argc = 0;
-  wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-  DWORD pid = 0;
-  std::wstring dll_path;
-  DWORD wait_ms = 5000;
-  bool hold = false;
-
-  if (argv != nullptr) {
-    for (int i = 1; i < argc; i++) {
-      const std::wstring a = argv[i];
-      if (a == L"--pid" && i + 1 < argc) {
-        pid = static_cast<DWORD>(_wtoi(argv[++i]));
-      } else if (a == L"--dll" && i + 1 < argc) {
-        dll_path = argv[++i];
-      } else if (a == L"--wait-ms" && i + 1 < argc) {
-        wait_ms = static_cast<DWORD>(_wtoi(argv[++i]));
-      } else if (a == L"--hold") {
-        hold = true;
-      }
-    }
-    LocalFree(argv);
-  }
-  if (pid == 0) {
-    return Fail("usage: hibiki_voice_injector --pid <PID> [--dll <hook.dll>] "
-                "[--wait-ms N] [--hold]");
-  }
-  if (dll_path.empty()) {
-    dll_path = DefaultDllPath();
-  }
-  if (GetFileAttributesW(dll_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-    return Fail("hook DLL not found (pass --dll <path>)");
-  }
-
-  HANDLE target = OpenProcess(
-      PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
-          PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
-      FALSE, pid);
-  if (target == nullptr) {
-    fprintf(stderr, "OpenProcess(%lu) failed: %lu (需管理员/相同完整性级别?)\n",
-            pid, GetLastError());
-    return 1;
-  }
-
+// attach 与 launch 共用的注入编排。target=目标进程句柄，pid=目标 pid（命名共享内存/事件）。
+// resume_thread!=nullptr（launch 模式）时：注入完成后 ResumeThread 让挂起的游戏跑起来，再等就绪
+// 事件——保证 hook 在游戏调 DirectSoundCreate/WinMain 之前就装好。hold_process 在 --hold 时决定
+// 挂起终点（launch 给游戏进程句柄，挂到游戏退出；attach 给 nullptr，无限 Sleep）。
+// 契约与 --pid 老路径完全一致：建共享内存(pid) + 就绪事件(pid)，注入，[Resume]，等事件，
+// 打印 OK hooked ...，[hold]。全部句柄本函数负责关闭。返回进程退出码。
+int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
+                 DWORD wait_ms, bool hold, HANDLE resume_thread,
+                 HANDLE hold_process) {
   bool target_wow64 = false;
   if (!BitnessMatches(target, &target_wow64)) {
-    CloseHandle(target);
     fprintf(stderr,
             "位数不匹配：目标是 %s 进程，请改用对应 arch 的注入器 "
             "(32 位游戏用 x86 injector+DLL，64 位用 x64)。\n",
@@ -178,14 +155,12 @@ int main() {
       static_cast<DWORD>(total_size >> 32),
       static_cast<DWORD>(total_size & 0xFFFFFFFF), shm.c_str());
   if (mapping == nullptr) {
-    CloseHandle(target);
     return Fail("CreateFileMapping failed");
   }
   auto* header = static_cast<SharedHeader*>(
       MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0));
   if (header == nullptr) {
     CloseHandle(mapping);
-    CloseHandle(target);
     return Fail("MapViewOfFile failed");
   }
   memset(header, 0, sizeof(SharedHeader));
@@ -199,7 +174,6 @@ int main() {
   if (ready == nullptr) {
     UnmapViewOfFile(header);
     CloseHandle(mapping);
-    CloseHandle(target);
     return Fail("CreateEvent failed");
   }
 
@@ -207,8 +181,18 @@ int main() {
     CloseHandle(ready);
     UnmapViewOfFile(header);
     CloseHandle(mapping);
-    CloseHandle(target);
     return Fail("injection failed");
+  }
+
+  // launch 模式：hook 已装好，此刻才放游戏跑（它随后调 DirectSoundCreate 命中我们的 hook）。
+  if (resume_thread != nullptr) {
+    if (ResumeThread(resume_thread) == static_cast<DWORD>(-1)) {
+      fprintf(stderr, "ResumeThread failed: %lu\n", GetLastError());
+      CloseHandle(ready);
+      UnmapViewOfFile(header);
+      CloseHandle(mapping);
+      return 1;
+    }
   }
 
   // 等 hook DLL 的 proof-of-life。超时=注入了但 DLL 没跑到通知点（arch/契约/权限问题）。
@@ -219,7 +203,6 @@ int main() {
     CloseHandle(ready);
     UnmapViewOfFile(header);
     CloseHandle(mapping);
-    CloseHandle(target);
     return 2;
   }
 
@@ -230,14 +213,145 @@ int main() {
 
   if (hold) {
     // host 模式：常驻维持共享内存存活，供 Hibiki 消费（C.2 起真正读 PCM）。
-    for (;;) {
-      Sleep(1000);
+    // launch 时挂到游戏进程退出；attach 时无限 Sleep（Ctrl-C 结束）。
+    if (hold_process != nullptr) {
+      WaitForSingleObject(hold_process, INFINITE);
+    } else {
+      for (;;) {
+        Sleep(1000);
+      }
     }
   }
 
   CloseHandle(ready);
   UnmapViewOfFile(header);
   CloseHandle(mapping);
-  CloseHandle(target);
   return 0;
+}
+
+// launch 模式：CREATE_SUSPENDED 拉起游戏，再 RunInjection（建共享内存/注入/Resume/等事件/hold）。
+// 命令行含 exe 本身（CreateProcessW 约定）；workdir 缺省=exe 所在目录。
+int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
+              const std::vector<std::wstring>& extra_args,
+              const std::wstring& dll_path, DWORD wait_ms, bool hold) {
+  if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    return Fail("目标 exe 不存在（--launch <exe路径>）");
+  }
+
+  // workdir 缺省=exe 所在目录。
+  std::wstring workdir = workdir_in;
+  if (workdir.empty()) {
+    const size_t slash = exe.find_last_of(L"\\/");
+    if (slash != std::wstring::npos) {
+      workdir = exe.substr(0, slash);
+    }
+  }
+
+  // 构造命令行：exe 加引号防路径含空格；CreateProcessW 要求缓冲可写。
+  std::wstring cmdline = L"\"" + exe + L"\"";
+  for (const std::wstring& a : extra_args) {
+    cmdline += L" ";
+    cmdline += a;
+  }
+  std::vector<wchar_t> cmd_buf(cmdline.begin(), cmdline.end());
+  cmd_buf.push_back(L'\0');
+
+  STARTUPINFOW si = {0};
+  si.cb = sizeof(si);
+  PROCESS_INFORMATION pi = {0};
+  const BOOL created = CreateProcessW(
+      exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED,
+      nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
+  if (!created) {
+    fprintf(stderr, "CreateProcessW failed: %lu\n", GetLastError());
+    return 1;
+  }
+
+  // 复用 attach 同一套编排；resume_thread=pi.hThread（注入后再放行游戏），
+  // hold_process=pi.hProcess（--hold 挂到游戏退出）。
+  const int rc = RunInjection(pi.hProcess, pi.dwProcessId, dll_path, wait_ms,
+                              hold, pi.hThread, pi.hProcess);
+
+  // 注入前/Resume 前失败（rc==1）时游戏仍处挂起：强制结束，避免留下僵死挂起进程。
+  // rc==2（超时但已 Resume）游戏已在跑，不 terminate 交给用户。rc==0 正常退出，游戏自然运行。
+  if (rc == 1) {
+    TerminateProcess(pi.hProcess, 1);
+  }
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+  return rc;
+}
+
+}  // namespace
+
+int main() {
+  int argc = 0;
+  wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  DWORD pid = 0;
+  std::wstring launch_exe;
+  std::wstring workdir;
+  std::vector<std::wstring> launch_args;
+  std::wstring dll_path;
+  DWORD wait_ms = 5000;
+  bool hold = false;
+
+  if (argv != nullptr) {
+    for (int i = 1; i < argc; i++) {
+      const std::wstring a = argv[i];
+      if (a == L"--pid" && i + 1 < argc) {
+        pid = static_cast<DWORD>(_wtoi(argv[++i]));
+      } else if (a == L"--launch" && i + 1 < argc) {
+        launch_exe = argv[++i];
+      } else if (a == L"--workdir" && i + 1 < argc) {
+        workdir = argv[++i];
+      } else if (a == L"--arg" && i + 1 < argc) {
+        launch_args.emplace_back(argv[++i]);
+      } else if (a == L"--dll" && i + 1 < argc) {
+        dll_path = argv[++i];
+      } else if (a == L"--wait-ms" && i + 1 < argc) {
+        wait_ms = static_cast<DWORD>(_wtoi(argv[++i]));
+      } else if (a == L"--hold") {
+        hold = true;
+      }
+    }
+    LocalFree(argv);
+  }
+
+  if ((pid == 0) == launch_exe.empty()) {
+    // 两个都没给 或 两个都给了。
+    return Fail(
+        "usage: hibiki_voice_injector --pid <PID> [--dll <hook.dll>] "
+        "[--wait-ms N] [--hold]\n"
+        "   or: hibiki_voice_injector --launch <exe> [--workdir <dir>] "
+        "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold]");
+  }
+
+  if (dll_path.empty()) {
+    dll_path = DefaultDllPath();
+  }
+  if (GetFileAttributesW(dll_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    return Fail("hook DLL not found (pass --dll <path>)");
+  }
+
+  // launch 模式：CREATE_SUSPENDED 早注入。
+  if (!launch_exe.empty()) {
+    return RunLaunch(launch_exe, workdir, launch_args, dll_path, wait_ms, hold);
+  }
+
+  // attach 模式：注入已运行进程（老路径行为不变）。
+  HANDLE target = OpenProcess(
+      PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
+          PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
+      FALSE, pid);
+  if (target == nullptr) {
+    fprintf(stderr, "OpenProcess(%lu) failed: %lu (需管理员/相同完整性级别?)\n",
+            pid, GetLastError());
+    return 1;
+  }
+
+  const int rc = RunInjection(target, pid, dll_path, wait_ms, hold,
+                              nullptr,
+                              nullptr);
+  CloseHandle(target);
+  return rc;
 }

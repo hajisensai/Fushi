@@ -18,6 +18,16 @@
 
 **接缝提醒**：injector 可执行文件约定放在 app 同级 `voice_hook/<arch>/hibiki_voice_injector.exe`（`_resolveGalInjectorPath({is32Bit})`，按 `EngineHookGalAudioSource.targetIsWow64(pid)` 查目标进程位数选 x86/x64——**KiriKiri 多为 32 位必须 x86 注入器**），由 `native/galgame_voice_hook` 单独 cmake（`-A x64` / `-A Win32`）构建后随包分发/按需下载；缺失/位数不符时 A6 自动回退 loopback。C.2 的**校准模式 callsite/音量精筛**（只留角色语音、BGM/SE 不捕获）留 TODO（`dll_main.cpp` 内注释），需真机各引擎标定=C.3。
 
+## ✅ 真机验证（2026-07-18，KiriKiriZ / `otomeki.exe` 32 位 DirectSound 游戏）
+
+**捕获管线本身跑通了**（首个真实 galgame 验证）：
+- 新增 injector **`--launch <exe>` CREATE_SUSPENDED 早注入模式**（`injector_main.cpp`）——KiriKiriZ 启动时创建一次 DirectSound 设备，post-hoc attach 会漏掉；早注入在游戏 WinMain 前把 hook 装好。新增 x64 诊断读取器 **`tools/ring_probe.cpp`**（`hibiki_voice_ring_probe <pid>`，读共享内存打印 hooked/格式/total_written/peak）。
+- 实测：x86 injector `--launch otomeki.exe --hold` → `OK hooked hooked=1` → ring_probe 读到 **`sr=44100 ch=2 bits=16`、`total_written` 以 ~174KB/s（=44100×2×2，实时字节率）持续增长、`peak` 恒在数千（SOUND 非静音）**。证明：早注入命中、`DirectSoundCreate`→`CreateSoundBuffer`→`Unlock` hook 生效、干净 PCM 真的进了共享内存环形、外部进程可读。
+
+**关键发现（诚实，影响 C-path 前提）**：捕获到的是**连续单流、恰好等于主输出字节率**——说明 **KiriKiriZ 是软件混音后走单个 DirectSound 输出 buffer**，故 DS-输出 hook 抓到的是**混音（标题界面=BGM）而非孤立干净语音**。即：**对 KiriKiriZ，引擎-hook 与 loopback 等效（都是混音），拿不到「干净语音」这个 C-path 卖点**。干净语音优势只对**每音/每 voice 独立 buffer** 的引擎成立（经典 KiriKiri 的 per-sound DS buffer、XAudio2 的 per-source-voice）。KiriKiriZ 要干净语音得 hook 其**引擎内部 per-channel 混音输入**（KiriKiriZ 专属，=C.3 深度活），或直接用 loopback（等效更省）。
+
+**另一影响**：C.4 现设计是 Hibiki attach 用户已启动的游戏（post-hoc）——对 KiriKiriZ 这类**启动即建音频设备**的引擎会漏，必须 Hibiki 自己经 injector `--launch` 启动游戏才行（UX/设计取舍：Hibiki 拉起游戏 vs 附着到已开游戏）。
+
 ## 0. 当前状态（起点）
 
 - **分支** `worktree-galgame-mining`（base `develop`），**PR #212（draft）**。仓库 `D:\APP\vs_claude_code\hibiki`（Melos workspace，Flutter app 在 `hibiki/`）。
