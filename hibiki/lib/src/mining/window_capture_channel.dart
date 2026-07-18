@@ -60,9 +60,13 @@ abstract final class WindowCaptureChannel {
   }
 }
 
-/// 一个可捕获的外部顶层窗口：native HWND（作为 [int] 传回）+ 窗口标题。
+/// 一个可捕获的外部顶层窗口：native HWND（作为 [int] 传回）+ 窗口标题 + 所属进程 PID。
 class ExternalWindowInfo {
-  const ExternalWindowInfo({required this.hwnd, required this.title});
+  const ExternalWindowInfo({
+    required this.hwnd,
+    required this.title,
+    this.pid = 0,
+  });
 
   /// native 窗口句柄 HWND，作为整数在 MethodChannel 上传输（回传 native 时原样带回）。
   final int hwnd;
@@ -70,24 +74,32 @@ class ExternalWindowInfo {
   /// 窗口标题（GetWindowText），供 UI 展示与选择。
   final String title;
 
+  /// 窗口所属进程 PID（galgame 引擎级 voice hook 的注入目标）；native 未提供时为 0。
+  final int pid;
+
   /// 从 native map 解析；缺 `hwnd`（无有效句柄）返回 null（跳过该项）。
   static ExternalWindowInfo? fromMap(Map<Object?, Object?> m) {
     final Object? h = m['hwnd'];
     if (h is! int) {
       return null;
     }
+    final Object? p = m['pid'];
     return ExternalWindowInfo(
       hwnd: h,
       title: (m['title'] as String?) ?? '',
+      pid: p is int ? p : 0,
     );
   }
 
   @override
   bool operator ==(Object other) =>
-      other is ExternalWindowInfo && other.hwnd == hwnd && other.title == title;
+      other is ExternalWindowInfo &&
+      other.hwnd == hwnd &&
+      other.title == title &&
+      other.pid == pid;
 
   @override
-  int get hashCode => Object.hash(hwnd, title);
+  int get hashCode => Object.hash(hwnd, title, pid);
 }
 
 /// [WindowCaptureChannel.captureWindow] 的结果：成功带 PNG 字节，失败带人类可读原因。

@@ -108,6 +108,8 @@ BOOL CALLBACK EnumProc(HWND hwnd, LPARAM lparam) {
   ExternalWindow w;
   w.hwnd = hwnd;
   w.title = WideToUtf8(title);
+  // 所属进程 PID（供 galgame 引擎级 voice hook 注入目标；纯读，不改窗口）。
+  GetWindowThreadProcessId(hwnd, &w.pid);
   ctx->out->push_back(std::move(w));
   return TRUE;
 }

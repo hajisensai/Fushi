@@ -24,6 +24,7 @@
 #include "external_video_handoff.h"
 #include "flutter/generated_plugin_registrant.h"
 #include "audio_loopback_capture.h"
+#include "voice_hook_reader.h"
 #include "foreground_selection.h"
 #include "window_capture.h"
 
@@ -541,6 +542,7 @@ bool FlutterWindow::OnCreate() {
   RegisterForegroundSelectionChannel();
   RegisterWindowCaptureChannel();
   RegisterAudioLoopbackChannel();
+  RegisterVoiceHookChannel();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
@@ -1393,6 +1395,8 @@ void FlutterWindow::RegisterWindowCaptureChannel() {
                      reinterpret_cast<intptr_t>(w.hwnd)))},
                 {flutter::EncodableValue("title"),
                  flutter::EncodableValue(w.title)},
+                {flutter::EncodableValue("pid"),
+                 flutter::EncodableValue(static_cast<int64_t>(w.pid))},
             }));
           }
           result->Success(flutter::EncodableValue(std::move(list)));
@@ -1504,6 +1508,206 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
           out[flutter::EncodableValue("pcm")] =
               flutter::EncodableValue(std::move(pcm));
           result->Success(flutter::EncodableValue(std::move(out)));
+          return;
+        }
+        result->NotImplemented();
+      });
+}
+
+// galgame 一键制卡 C 阶段 — voice_hook channel（仅 Windows）。open{pid} 打开隔离组件建好的
+// 共享内存；status 轮询 hook 是否就绪（hooked/calibrating/格式）；grabRecent{backMs} 拉最近 N
+// 毫秒干净语音 PCM；close 解除映射。注入/挂钩代码全在独立 injector+hook DLL，本体只**读**共享
+// 内存（读不是注入、不被杀软标记）。native fail-open：无映射/未就绪返回 error map，Dart 侧
+// EngineHookGalAudioSource 据此降级回 loopback。
+void FlutterWindow::RegisterVoiceHookChannel() {
+  voice_hook_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/voice_hook",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  voice_hook_channel_->SetMethodCallHandler(
+      [](const flutter::MethodCall<flutter::EncodableValue>& call,
+         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+             result) {
+        const std::string& method = call.method_name();
+        auto status_map = [](const hibiki::VoiceHookStatus& s) {
+          return flutter::EncodableMap{
+              {flutter::EncodableValue("sampleRate"),
+               flutter::EncodableValue(s.sample_rate)},
+              {flutter::EncodableValue("channels"),
+               flutter::EncodableValue(s.channels)},
+              {flutter::EncodableValue("bitsPerSample"),
+               flutter::EncodableValue(s.bits_per_sample)},
+              {flutter::EncodableValue("isFloat"),
+               flutter::EncodableValue(s.is_float)},
+              {flutter::EncodableValue("hooked"),
+               flutter::EncodableValue(s.hooked)},
+              {flutter::EncodableValue("calibrating"),
+               flutter::EncodableValue(s.calibrating)},
+              {flutter::EncodableValue("textHooked"),
+               flutter::EncodableValue(s.text_hooked)},
+              {flutter::EncodableValue("ready"),
+               flutter::EncodableValue(s.ok)},
+          };
+        };
+        auto read_long = [&call](const char* key) -> int64_t {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (args == nullptr) {
+            return 0;
+          }
+          const auto it = args->find(flutter::EncodableValue(key));
+          if (it == args->end()) {
+            return 0;
+          }
+          return it->second.TryGetLongValue().value_or(0);
+        };
+        auto read_pid = [&call]() -> uint32_t {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (args == nullptr) {
+            return 0;
+          }
+          const auto it = args->find(flutter::EncodableValue("pid"));
+          if (it == args->end()) {
+            return 0;
+          }
+          return static_cast<uint32_t>(
+              it->second.TryGetLongValue().value_or(0));
+        };
+        if (method == "open") {
+          const uint32_t pid = read_pid();
+          const hibiki::VoiceHookStatus s =
+              hibiki::VoiceHookReader::Instance().Open(pid);
+          // open 成功但 hook 未就绪也不算错误（调用方轮询 status）：只有映射不存在
+          // （s 全零且 !hooked）才回 error，让 Dart 侧降级。
+          if (!s.hooked && !s.ok) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(
+                     std::string("voice hook shared memory not found"))}}));
+            return;
+          }
+          result->Success(flutter::EncodableValue(status_map(s)));
+          return;
+        }
+        if (method == "status") {
+          result->Success(flutter::EncodableValue(
+              status_map(hibiki::VoiceHookReader::Instance().Status())));
+          return;
+        }
+        if (method == "grabRecent") {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          int back_ms = 0;
+          if (args != nullptr) {
+            const auto it = args->find(flutter::EncodableValue("backMs"));
+            if (it != args->end()) {
+              back_ms = static_cast<int>(
+                  it->second.TryGetLongValue().value_or(0));
+            }
+          }
+          std::vector<uint8_t> pcm;
+          const hibiki::VoiceHookStatus s =
+              hibiki::VoiceHookReader::Instance().GrabRecent(back_ms, pcm);
+          if (!s.ok || pcm.empty()) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(
+                     std::string("no voice buffered"))}}));
+            return;
+          }
+          flutter::EncodableMap out = status_map(s);
+          out[flutter::EncodableValue("pcm")] =
+              flutter::EncodableValue(std::move(pcm));
+          result->Success(flutter::EncodableValue(std::move(out)));
+          return;
+        }
+        if (method == "pollText") {
+          // 取 (fromSeq, count] 的新台词行，喂 Dart 的 texthooker。
+          const uint64_t from_seq =
+              static_cast<uint64_t>(read_long("fromSeq"));
+          std::vector<hibiki::VoiceHookText> lines;
+          hibiki::VoiceHookReader::Instance().PollText(from_seq, lines);
+          const uint64_t count =
+              hibiki::VoiceHookReader::Instance().TextWriteCount();
+          flutter::EncodableList list;
+          for (const auto& ln : lines) {
+            list.push_back(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("seq"),
+                 flutter::EncodableValue(static_cast<int64_t>(ln.seq))},
+                {flutter::EncodableValue("ts"),
+                 flutter::EncodableValue(static_cast<int64_t>(ln.timestamp_ms))},
+                {flutter::EncodableValue("text"),
+                 flutter::EncodableValue(ln.utf8)},
+            }));
+          }
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("count"),
+               flutter::EncodableValue(static_cast<int64_t>(count))},
+              {flutter::EncodableValue("lines"),
+               flutter::EncodableValue(std::move(list))},
+          }));
+          return;
+        }
+        if (method == "grabClipNear") {
+          // 按句取语音：找时间戳与 tsMs 最近（差 <= tolMs）的语音 clip PCM。
+          const uint64_t ts = static_cast<uint64_t>(read_long("tsMs"));
+          uint64_t tol = static_cast<uint64_t>(read_long("tolMs"));
+          if (tol == 0) {
+            tol = 3000;  // 缺省 ±3s
+          }
+          std::vector<uint8_t> pcm;
+          const hibiki::VoiceHookStatus s =
+              hibiki::VoiceHookReader::Instance().GrabClipNear(ts, tol, pcm);
+          if (!s.ok || pcm.empty()) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("no clip near timestamp"))}}));
+            return;
+          }
+          flutter::EncodableMap out = status_map(s);
+          out[flutter::EncodableValue("pcm")] =
+              flutter::EncodableValue(std::move(pcm));
+          result->Success(flutter::EncodableValue(std::move(out)));
+          return;
+        }
+        if (method == "processIsWow64") {
+          // 查目标进程位数：hibiki.exe 是 64 位，故 IsWow64Process==TRUE 即目标为 32 位
+          // （多数 KiriKiri 游戏），Dart 据此选 x86 注入器；FALSE 为 64 位选 x64。
+          const uint32_t pid = read_pid();
+          if (pid == 0) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("no pid"))}}));
+            return;
+          }
+          HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                 static_cast<DWORD>(pid));
+          if (h == nullptr) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("open process failed"))}}));
+            return;
+          }
+          BOOL wow64 = FALSE;
+          const BOOL ok = IsWow64Process(h, &wow64);
+          CloseHandle(h);
+          if (!ok) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("IsWow64Process failed"))}}));
+            return;
+          }
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("isWow64"),
+               flutter::EncodableValue(wow64 != FALSE)}}));
+          return;
+        }
+        if (method == "close") {
+          hibiki::VoiceHookReader::Instance().Close();
+          result->Success();
           return;
         }
         result->NotImplemented();

@@ -115,6 +115,14 @@ class FlutterWindow : public Win32Window {
       audio_loopback_channel_;
   void RegisterAudioLoopbackChannel();
 
+  // galgame 一键制卡 C 阶段（docs/specs/galgame-mining，仅 Windows）：引擎级 voice hook
+  // 读侧。open 按游戏 PID 打开隔离组件建好的共享内存，status 轮询 hook 是否就绪，
+  // grabRecent 拉最近 N 毫秒干净语音 PCM，close 解除映射。见 voice_hook_reader.cpp / .h。
+  // 注入/挂钩代码不在本体，只读共享内存（读不是注入、不被杀软标记）。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      voice_hook_channel_;
+  void RegisterVoiceHookChannel();
+
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);

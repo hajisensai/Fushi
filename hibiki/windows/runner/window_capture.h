@@ -12,10 +12,11 @@
 // _HAS_EXCEPTIONS=0 编译，故不用 C++/WinRT 投影类型，全程 HRESULT 校验、不抛异常）。
 namespace hibiki {
 
-// 一个可捕获的外部顶层窗口：native 句柄 + UTF-8 标题。
+// 一个可捕获的外部顶层窗口：native 句柄 + UTF-8 标题 + 所属进程 PID。
 struct ExternalWindow {
   HWND hwnd = nullptr;
   std::string title;  // UTF-8
+  DWORD pid = 0;      // 所属进程 PID（galgame voice hook 注入目标；见 voice_hook_reader）
 };
 
 // 单帧窗口捕获结果：成功带 PNG 字节，失败带人类可读原因。
