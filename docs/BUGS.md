@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 882 条。点号进各自文件。
+> 共 883 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-902](bugs/BUG-902-anki-dict-media-path-normalize.md) | ✅ | ✅ | 制卡词典图片脏path未归一化导致坏图 |
 | [BUG-901](bugs/BUG-901-subtitle-seekbar-tap-proximity.md) | ✅ | ✅ | 字幕点击与进度条点击命中区重叠误触 |
 | [BUG-900](bugs/BUG-900-secondary-subtitle-same-list.md) | ✅ | ✅ | 副字幕无法添加外挂字幕·应与主字幕共用同一可用字幕列表 |
 | [BUG-899](bugs/BUG-899-collection-tag-drop-target.md) | ✅ | ✅ | 标签拖到合集行头无接收（合集打标签仅详情页按钮入口） |
