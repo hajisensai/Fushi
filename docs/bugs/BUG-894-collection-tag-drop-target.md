@@ -10,8 +10,8 @@
   - 视频页 `_addTagToVideoCollection`（`home_video_page.dart`）：查 `getTagsForCollection` 去重 → `addTagToCollection` → 失效 `filteredCollectionIdsProvider` → toast。
   - 书架页 `_addTagToCollection`（`reader_hibiki_history_page.dart`）：同上（不复用 `_addTagToMedia`，其「已存在」提示固定为 `tag_already_on_book`，合集文案不对）。
   - 新增 i18n `tag_added_to_collection` / `tag_already_on_collection`（`tool/i18n_sync.dart --add`，17 语言，`dart run slang` 重生成）。
-  - 提交：f0ad59aa4
+  - 提交：80a68e84d
 
-- **[x] ② 已加自动化测试** — `hibiki/test/widgets/collection_shelf_row_tag_drop_test.dart`：pump `CollectionShelfRow` + `Draggable<BookTagRow>`，把标签拖到行头断言 `onTagDropped` 收到该 `BookTagRow`；并断言 `onTagDropped: null` 时行头不是 `DragTarget`（回归守卫：防止调用点漏传接线又退回静默）。提交：f0ad59aa4
+- **[x] ② 已加自动化测试** — `hibiki/test/media/collection_shelf_row_tag_drop_test.dart`：pump `CollectionShelfRow` + `Draggable<BookTagRow>`，把标签拖到行头断言 `onTagDropped` 收到该 `BookTagRow`；并断言 `onTagDropped: null` 时行头不是 `DragTarget`（回归守卫：防止调用点漏传接线又退回静默）。提交：80a68e84d
 
 - **备注**：合集打标签的持久化/同步（`CollectionSyncEngine` 并集透传、备份合并 `_mergeCollectionTags`）与详情页展示均由 PR#128 提供，本修复仅补「拖放」这条交互入口，与已有「详情页 AppBar 按钮」入口等价。真机验收：视频/书架合集行头拖标签→toast→穿 DB（详情页标签行可见）、标签栏过滤合集卡显隐、重复拖同标签提示「已在此合集上」、回归普通书/视频/成员卡拖标签仍有效。
