@@ -1545,9 +1545,23 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                flutter::EncodableValue(s.hooked)},
               {flutter::EncodableValue("calibrating"),
                flutter::EncodableValue(s.calibrating)},
+              {flutter::EncodableValue("textHooked"),
+               flutter::EncodableValue(s.text_hooked)},
               {flutter::EncodableValue("ready"),
                flutter::EncodableValue(s.ok)},
           };
+        };
+        auto read_long = [&call](const char* key) -> int64_t {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (args == nullptr) {
+            return 0;
+          }
+          const auto it = args->find(flutter::EncodableValue(key));
+          if (it == args->end()) {
+            return 0;
+          }
+          return it->second.TryGetLongValue().value_or(0);
         };
         auto read_pid = [&call]() -> uint32_t {
           const auto* args =
@@ -1602,6 +1616,55 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                 {flutter::EncodableValue("error"),
                  flutter::EncodableValue(
                      std::string("no voice buffered"))}}));
+            return;
+          }
+          flutter::EncodableMap out = status_map(s);
+          out[flutter::EncodableValue("pcm")] =
+              flutter::EncodableValue(std::move(pcm));
+          result->Success(flutter::EncodableValue(std::move(out)));
+          return;
+        }
+        if (method == "pollText") {
+          // 取 (fromSeq, count] 的新台词行，喂 Dart 的 texthooker。
+          const uint64_t from_seq =
+              static_cast<uint64_t>(read_long("fromSeq"));
+          std::vector<hibiki::VoiceHookText> lines;
+          hibiki::VoiceHookReader::Instance().PollText(from_seq, lines);
+          const uint64_t count =
+              hibiki::VoiceHookReader::Instance().TextWriteCount();
+          flutter::EncodableList list;
+          for (const auto& ln : lines) {
+            list.push_back(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("seq"),
+                 flutter::EncodableValue(static_cast<int64_t>(ln.seq))},
+                {flutter::EncodableValue("ts"),
+                 flutter::EncodableValue(static_cast<int64_t>(ln.timestamp_ms))},
+                {flutter::EncodableValue("text"),
+                 flutter::EncodableValue(ln.utf8)},
+            }));
+          }
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("count"),
+               flutter::EncodableValue(static_cast<int64_t>(count))},
+              {flutter::EncodableValue("lines"),
+               flutter::EncodableValue(std::move(list))},
+          }));
+          return;
+        }
+        if (method == "grabClipNear") {
+          // 按句取语音：找时间戳与 tsMs 最近（差 <= tolMs）的语音 clip PCM。
+          const uint64_t ts = static_cast<uint64_t>(read_long("tsMs"));
+          uint64_t tol = static_cast<uint64_t>(read_long("tolMs"));
+          if (tol == 0) {
+            tol = 3000;  // 缺省 ±3s
+          }
+          std::vector<uint8_t> pcm;
+          const hibiki::VoiceHookStatus s =
+              hibiki::VoiceHookReader::Instance().GrabClipNear(ts, tol, pcm);
+          if (!s.ok || pcm.empty()) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("no clip near timestamp"))}}));
             return;
           }
           flutter::EncodableMap out = status_map(s);

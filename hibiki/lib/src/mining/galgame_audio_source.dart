@@ -418,6 +418,66 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
+  /// v2 文本 hook：取序号在 `(fromSeq, count]` 的新台词行（我们注入 DLL 的文本 hook 抓的），
+  /// 供喂 Hibiki texthooker。返回 `count`(当前总行数) + `lines`(每行 seq/ts(GetTickCount64)/text)。
+  /// native 缺失 / 失败返回 null。
+  Future<GalTextPoll?> pollText(int fromSeq) async {
+    try {
+      final Map<Object?, Object?>? r =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+        'pollText',
+        <String, Object?>{'fromSeq': fromSeq},
+      );
+      if (r == null) {
+        return null;
+      }
+      final int count = (r['count'] as int?) ?? 0;
+      final List<Object?> raw = (r['lines'] as List<Object?>?) ?? const <Object?>[];
+      final List<GalHookedLine> lines = <GalHookedLine>[];
+      for (final Object? e in raw) {
+        if (e is Map) {
+          final Object? seq = e['seq'];
+          final Object? ts = e['ts'];
+          final Object? text = e['text'];
+          if (seq is int && ts is int && text is String) {
+            lines.add(GalHookedLine(seq: seq, timestampMs: ts, text: text));
+          }
+        }
+      }
+      return GalTextPoll(count: count, lines: lines);
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  /// v2 **按句取语音**：取时间戳与 [tsMs]（GetTickCount64，来自 [pollText] 的行 ts）最近、差
+  /// <= [tolMs] 的语音 clip PCM —— 就是「这句台词对应的那段语音」，**自动选取、替代手动波形
+  /// 选区**。找不到返回 null。
+  Future<GalAudioSlice?> grabClipNear(int tsMs, {int tolMs = 8000}) async {
+    try {
+      final Map<Object?, Object?>? r =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+        'grabClipNear',
+        <String, Object?>{'tsMs': tsMs, 'tolMs': tolMs},
+      );
+      if (r == null || r['error'] != null) {
+        return null;
+      }
+      final Uint8List? pcm = r['pcm'] as Uint8List?;
+      final PcmFormat? fmt = parseGalPcmFormat(r);
+      if (pcm == null || pcm.isEmpty || fmt == null) {
+        return null;
+      }
+      return GalAudioSlice(pcm: pcm, format: fmt);
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   @override
   Future<void> stop() async {
     try {
@@ -430,4 +490,24 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _injector?.kill();
     _injector = null;
   }
+}
+
+/// [EngineHookGalAudioSource.pollText] 的结果：当前文本行总数 + 本次取到的新行。
+class GalTextPoll {
+  const GalTextPoll({required this.count, required this.lines});
+  final int count;
+  final List<GalHookedLine> lines;
+}
+
+/// 一条文本 hook 抓到的台词行：单调 [seq]、hook 写入时刻 [timestampMs]（GetTickCount64，与语音
+/// clip 同一时钟，供 [EngineHookGalAudioSource.grabClipNear] 按句配对语音）、[text]。
+class GalHookedLine {
+  const GalHookedLine({
+    required this.seq,
+    required this.timestampMs,
+    required this.text,
+  });
+  final int seq;
+  final int timestampMs;
+  final String text;
 }
