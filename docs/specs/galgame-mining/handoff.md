@@ -44,7 +44,13 @@ GALTEST OK fmt=44100/2/16 float=false pcmBytes=529200   (=3s×44100×2×2，非�
 
 安全隔离（关键，供复现）：测试**不初始化 AppModel/Drift DB**（只 pump 平凡 widget），且经 `tool/run_windows_itest.ps1` 用 **`HIBIKI_TEST_ROOT`** 把数据根重定向到一次性 `isolated-root`——**绝不碰生产库**（`D:\APP\HIBIKI_date` 是 `data_root` pref 覆盖的产物；`HIBIKI_TEST_ROOT` 在 `_resolveSupportRoot` app_paths.dart:147-148 是**第一分支**、短路 pref）。且当前分支 schemaVersion=45，打开更高版本库会**抛 `HibikiDatabaseDowngradeException` 拒绝、不 DROP**（database.dart:403-420 已根因拦截旧红线）。测试用 env `GALTEST_GAME_EXE`/`GALTEST_INJECTOR` 指素材，缺则 skip（CI/无游戏机自动跳过）。生产 Hibiki 进程全程未受影响、游戏+injector 测后按 PID 精确收尸。
 
-**仍未做**：干净语音（KiriKiriZ 软件混音 → DS 输出 hook 抓的是混音，非孤立语音；需引擎内部 per-channel = C.3）；波形选区对话框 + Anki 出卡的**全 UI**真机走查（本集成测试直测音频源、未过 UI/制卡出口）。
+**仍未做**：干净语音（KiriKiriZ 软件混音 → DS 输出 hook 抓的是混音，非孤立语音；需引擎内部 per-channel = C.3）；波形选区对话框 + Anki 出卡的**全 UI**（原生 file picker 那段）焦点驱动走查。
+
+### ✅✅✅ 多游戏端到端**真卡进 Anki**（2026-07-18）
+
+`integration_test/galgame_card_mining_test.dart`：宿主内逐游戏 injector `--launch` 拉起 → 引擎-hook 抓（抓不到/静音回退 **loopback**，保证每游戏都有音频）→ 截窗口 → **dump WAV+PNG+meta 到 `GALTEST_OUT`**；外层脚本经 AnkiConnect `storeMediaFile`+`addNote` 推卡（runner 隔离环境里 Dart→AnkiConnect 不稳，故拆「宿主内抓+dump」与「外层推卡」）。实测 **4 张带可播放音频的卡进 `galgame_card_test`**：`otomeki.exe`(KiriKiriZ)=**engine-hook** 44100/2/16+截图；`pxc2_bc_vol2`(hibiki works)/`Sakura Swim Club`(Ren'Py)/`全年齢時間停止`(WAFFLE)=**loopback** 48000/2/32（这仨引擎非 DS/XAudio2 per-voice，引擎-hook 未命中→自动回退 loopback 混音，仍出卡）。
+
+**gotcha**：① Ren'Py 顶层 exe 是启动器、真游戏是子 python 进程 → 引擎-hook 注入到启动器抓不到、`Process.killPid(启动器pid)` 杀不掉子进程（要按窗口 pid 补杀）。② PS `Start-Process -ArgumentList` **数组形式重引号打断含空格/方括号的游戏路径**，须单字符串 `--launch "<exe>" --hold`（Dart `Process.start(List)` 无此问题）。③ 直接 `flutter test -d windows` 缺 runner 的构建设置会 native-assets build 失败，须走 `tool/run_windows_itest.ps1`。
 
 ## 0. 当前状态（起点）
 
