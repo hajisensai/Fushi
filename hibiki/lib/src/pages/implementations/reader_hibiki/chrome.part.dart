@@ -1629,12 +1629,14 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final Color infoColor = _themeTextColor();
     final String position = ReaderHibikiSource.instance.topProgressPosition;
 
-    // TODO-1136 / BUG-frosted：进度文字直接叠在正文上，浅色书/复杂背景下
-    //  看不清。在文字后面加一层毛玻璃（frosted glass）背景提升可读性——
-    //  经典配方（ClipRRect > BackdropFilter(ImageFilter.blur)
-    //  > 半透明 Container），背景色/文字色跟随当前主题
-    //  （_themeBackgroundColor / _themeTextColor），不硬编码。BackdropFilter 必须
-    //  在 ClipRRect 内限定到 pill 自身矩形，避免整页模糊。
+    // TODO-1136 / BUG-frosted：进度文字直接叠在正文上，浅色书/复杂背景下看不清，
+    //  在文字后面加一层毛玻璃（frosted glass）背景提升可读性——经典配方
+    //  （ClipRRect > BackdropFilter(ImageFilter.blur) > 半透明 Container），背景/文字
+    //  色跟随当前主题（_themeBackgroundColor / _themeTextColor），不硬编码。
+    //  BUG-887：毛玻璃只在**悬浮**模式有意义——那时进度真正浮在正文之上。挤压模式
+    //  下 strip 预留了自身高度、正文被推到其下方，pill 落在预留区（正文空白顶边距
+    //  = 主题背景）之上，背后并无正文，毛玻璃既无意义又会显出一块贴着正文首行的模糊
+    //  矩形（横线字如「一」「ー」尤为明显）。故 frostedFill 仅悬浮态使用。
     final Color frostedFill = _themeBackgroundColor()
         .withValues(alpha: _isReaderThemeDark ? 0.42 : 0.55);
 
@@ -1649,6 +1651,43 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     //    (penetration guard).
     //  - No Focus/canRequestFocus wrapper: this stays a pure pointer surface and
     //    must never enter the focus-traversal pool (TODO-700 invariant).
+    final Text label = Text(
+      '$_progressCurrentChars / $_progressTotalChars'
+      '  ${(ratio * 100).toStringAsFixed(2)}%',
+      key: const ValueKey<String>('hoshi_progress'),
+      style: TextStyle(
+          fontSize: _ReaderHibikiPageState._infoFontSize, color: infoColor),
+      textAlign: readerTopProgressTextAlign(position),
+    );
+
+    // BUG-887：仅悬浮态套毛玻璃；挤压态是纯文字，无背景无模糊（见上方 frostedFill
+    //  注释）。两态纵向内边距同源 [kTopProgressPillVerticalPadding]，pill 实高不超
+    //  预留 [_infoStripHeight]（= [kTopProgressStripHeight]，BUG-547 已把预留同步含
+    //  该内边距），保证挤压态 pill 落在预留区内、绝不压住正文首行。
+    final Widget pill =
+        topProgressUsesFrostedGlass(floating: _topProgressFloating)
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    color: frostedFill,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: kTopProgressPillVerticalPadding,
+                    ),
+                    child: label,
+                  ),
+                ),
+              )
+            : Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: kTopProgressPillVerticalPadding,
+                ),
+                child: label,
+              );
+
     return Positioned(
       top: _stableTopInset,
       left: 16,
@@ -1662,32 +1701,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           onTap: _anyChromeFloating
               ? () => _handleFloatingChromeReveal()
               : _toggleChrome,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                color: frostedFill,
-                // TODO-975 铁律：pill 上下内边距与预留高 [_infoStripHeight]
-                // （= [kTopProgressStripHeight]）共享同一常量
-                // [kTopProgressPillVerticalPadding]，pill 实高绝不超预留（BUG-547
-                // 曾只加 padding 未同步预留 → 压住正文首行）。
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: kTopProgressPillVerticalPadding,
-                ),
-                child: Text(
-                  '$_progressCurrentChars / $_progressTotalChars'
-                  '  ${(ratio * 100).toStringAsFixed(2)}%',
-                  key: const ValueKey<String>('hoshi_progress'),
-                  style: TextStyle(
-                      fontSize: _ReaderHibikiPageState._infoFontSize,
-                      color: infoColor),
-                  textAlign: readerTopProgressTextAlign(position),
-                ),
-              ),
-            ),
-          ),
+          child: pill,
         ),
       ),
     );
