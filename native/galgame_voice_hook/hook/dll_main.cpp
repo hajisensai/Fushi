@@ -554,6 +554,12 @@ void WriteTextRingLocked(const wchar_t* text, int char_len) {
   if (g_text_base == nullptr || g_header == nullptr || char_len <= 0) {
     return;
   }
+  // LunaHook（引擎精确、干净）一旦活跃，GDI 文本 hook 让位，不再写文本环——否则游戏为粗体/描边
+  // 每字重画会让 GetGlyphOutlineW 累加出「ここのの」式伪影，与 LunaHook 干净行混在一起污染卡片。
+  // GDI 仅在 LunaHook 覆盖不到的引擎（luna_active==0）时作兜底文本源。音频 hook 不看此标志。
+  if (g_header->luna_active != 0) {
+    return;
+  }
   // 原子预留唯一槽位：返回自增后的新值（=占到的 1 基序号，0 基 idx=reserved-1）。
   const LONGLONG reserved = InterlockedIncrement64(
       reinterpret_cast<volatile LONGLONG*>(&g_header->text_write_count));

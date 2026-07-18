@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
 #include <cwchar>
 #include <vector>
@@ -277,17 +278,157 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* text, int wlen) {
   }
 }
 
+// ── 多 hook 自动选干净线程（LunaHook 伪影过滤）────
+// LunaHook 对同一个游戏常同时装多条 hook，同一句对白会被多条各回传一次：只有一条
+// 干净，其余是坏 hook 产生的伪影（整串重复 / 每字重复 N 次）。这里按 hookcode 分组统计
+// clean/dirty，自动锁定表现最干净的那条 hook，只把它的行写进文本环。纯函数判别 +
+// 单锁保护的计数表，不动 IPC 契约，不改 WriteLunaTextLine 写入格式，只决定哪些行值得写。
+
+// 伪影判别（纯函数）：给定 [text,len]，判断是否为坏 hook 的重复伪影。
+//   ① 整串重复：len 为偶数且前半 == 后半（例：AB…|AB…）。
+//   ② 等长游程：对字符串做游程编码（连续相同字符归为一段），若段数 >=3 且所有段
+//     长度相等且 >=2 → 伪影（捕获每字×2/×3/×10 等）。
+// 其余为“干净”。
+bool LunaTextIsArtifact(const wchar_t* text, int len) {
+  if (text == nullptr || len <= 1) {
+    return false;
+  }
+  // ① 整串重复：偶数长且前半 == 后半。
+  if ((len % 2) == 0) {
+    const int half = len / 2;
+    if (wmemcmp(text, text + half, static_cast<size_t>(half)) == 0) {
+      return true;
+    }
+  }
+  // ② 等长游程：连续相同字符归一段，段数 >=3 且所有段等长且 >=2。
+  int seg_count = 0;
+  int first_run = 0;
+  bool uniform = true;
+  int i = 0;
+  while (i < len) {
+    int j = i + 1;
+    while (j < len && text[j] == text[i]) {
+      j++;
+    }
+    const int run = j - i;
+    if (seg_count == 0) {
+      first_run = run;
+    } else if (run != first_run) {
+      uniform = false;
+    }
+    seg_count++;
+    i = j;
+  }
+  if (seg_count >= 3 && uniform && first_run >= 2) {
+    return true;
+  }
+  // ③ 相邻同字比例：非等长的混合重画伪影（如 そそれれど…ころかか，部分字重复）游程不等长，
+  //   ② 抓不到。但每字重画的相邻相同字符占比很高（~0.5），干净日文 ≈0（偶有っ/ー/々）。>=30% 判伪影。
+  int adj_eq = 0;
+  for (int k = 1; k < len; k++) {
+    if (text[k] == text[k - 1]) {
+      adj_eq++;
+    }
+  }
+  return len > 4 && adj_eq * 100 >= (len - 1) * 30;
+}
+
+// 每条 hook 的干净/伪影计数。
+struct LunaHookStats {
+  uint64_t clean_count = 0;
+  uint64_t dirty_count = 0;
+  uint64_t last_tick = 0;
+};
+
+// hookcode -> 计数。Output 回调可能在 LunaHook 内部工作线程并发触发，用 CRITICAL_SECTION
+// 串行化计数更新与赢家评估。g_lunaSelectedHook 空=冷启动未选出赢家。
+std::map<std::wstring, LunaHookStats> g_lunaHookStats;
+std::wstring g_lunaSelectedHook;
+bool g_lunaSelectPrimed = false;
+CRITICAL_SECTION g_lunaSelectCs;
+bool g_lunaSelectCsInit = false;
+
+// 冷启动阈值：总干净行 < 阈值前不锁定赢家，只要该行本身干净就照写（保证首句立刻可见）。
+constexpr uint64_t kLunaSelectMinClean = 3;
+
+// 多 hook 自动选干净线程：更新某 hookcode 的计数并重算当前赢家，返回本行是否应写入文本环。
+// hookcode 可能为 nullptr（归到空串 key）。冷启动（总 clean < 阈值）时干净行照写；一旦某
+// hook 累计干净行达阈值即锁定为赢家，之后只写赢家的行；赢家按 clean_count 最高 + 占比
+// clean/(clean+dirty) >= 0.5 重选，可随游戏切换重新评估。
+bool LunaShouldWriteLine(const wchar_t* hookcode, bool is_artifact) {
+  if (!g_lunaSelectCsInit) {
+    return !is_artifact;  // 防御性：锁未初始化时只写干净行
+  }
+  const std::wstring key =
+      (hookcode != nullptr) ? std::wstring(hookcode) : std::wstring();
+  bool should_write = false;
+  EnterCriticalSection(&g_lunaSelectCs);
+  LunaHookStats& st = g_lunaHookStats[key];
+  if (is_artifact) {
+    st.dirty_count++;
+  } else {
+    st.clean_count++;
+  }
+  st.last_tick = GetTickCount64();
+
+  // 重算赢家：clean_count 最高、且占比 clean/(clean+dirty) >= 0.5 的 hookcode。
+  // 占比 c/(c+d) >= 0.5  <=>  c >= d（整数比较，避免浮点）。
+  const std::wstring* best = nullptr;
+  uint64_t best_clean = 0;
+  uint64_t total_clean = 0;
+  for (const auto& kv : g_lunaHookStats) {
+    total_clean += kv.second.clean_count;
+    const uint64_t c = kv.second.clean_count;
+    const uint64_t d = kv.second.dirty_count;
+    if (c == 0 || c < d) {
+      continue;
+    }
+    if (c > best_clean) {
+      best_clean = c;
+      best = &kv.first;
+    }
+  }
+
+  if (total_clean >= kLunaSelectMinClean && best != nullptr) {
+    g_lunaSelectPrimed = true;
+    g_lunaSelectedHook = *best;
+  }
+
+  // 伪影永不写——无论来自哪个 hook。赢家 hook 自己也会夹带 ×2/×3 伪影行（同一 hookcode 既出
+  // 干净又出重复），旧逻辑「锁定态只按 key 放行」会把赢家的伪影也写进去。线程选择只作次级去重
+  // （多条干净 hook 里锁定一条，避免重复），伪影过滤是无条件的第一道闸。
+  if (is_artifact) {
+    should_write = false;
+  } else if (!g_lunaSelectPrimed) {
+    // 冷启动：未锁定赢家，干净行照写（保证首句立刻可见）。
+    should_write = true;
+  } else {
+    // 锁定态：只写赢家 hook 的干净行。
+    should_write = (key == g_lunaSelectedHook);
+  }
+  LeaveCriticalSection(&g_lunaSelectCs);
+  return should_write;
+}
+
 // ── Luna_Start 的 8 个回调实现（__cdecl 默认约定）─────────────────────────────
 // Output：全引擎精确台词入口。过滤 + 写文本环。返回值在本 vendored 版恒 true（不作门控）。
 bool LunaOutput(const wchar_t* hookcode, const char* hookname, LunaThreadParam tp,
                 const wchar_t* text) {
-  (void)hookcode;
   (void)hookname;
   (void)tp;
   if (g_luna.header != nullptr && text != nullptr) {
     const int len = static_cast<int>(wcslen(text));
     if (LunaPassesFilter(text, len)) {
-      WriteLunaTextLine(g_luna.header, text, len);
+      // 多 hook 自动选干净线程：先判伪影并累计，再决定本行是否写入文本环。
+      const bool artifact = LunaTextIsArtifact(text, len);
+      if (LunaShouldWriteLine(hookcode, artifact)) {
+        WriteLunaTextLine(g_luna.header, text, len);
+        // 一旦 LunaHook 写出干净行，标记 LunaHook 权威：游戏内 GDI 文本 hook 让位不再写文本，
+        // 避免双写者污染（见 voice_hook_ipc.h SharedHeader::luna_active 注释）。幂等，写 1 即可。
+        if (!artifact) {
+          g_luna.header->luna_active = 1;
+        }
+      }
     }
   }
   return true;
@@ -376,6 +517,13 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   // codepage（日文 galgame 默认 932/SHIFT_JIS）、maxBufferSize/maxHistorySize 保守非零值。
   if (settings != nullptr) {
     settings(200, true, codepage, 8192, 1000);
+  }
+
+  // 多 hook 自动选干净线程的计数锁：Output 回调可在 LunaHook 工作线程并发，
+  // 于 start() 注册回调前初始化（进程生命期内一次，多次 Init 由 flag 守卫）。
+  if (!g_lunaSelectCsInit) {
+    InitializeCriticalSection(&g_lunaSelectCs);
+    g_lunaSelectCsInit = true;
   }
 
   // 注册回调，顺序严格对齐 texthook.py：Connect, Disconnect, ThreadCreate, ThreadRemove,

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -78,6 +79,91 @@ double PeakAmplitude(const std::vector<uint8_t>& buf, uint32_t bits,
   return -1.0;  // 未知/暂不支持的格式（如 8/24 位整型）。
 }
 
+// 导出文本环里所有台词行到 stdout：每行 `seq|ts_ms|utf8文本`。供外层做卡的句子来源。
+void DumpText(const SharedHeader* h) {
+  const uint64_t count = h->text_write_count;
+  const uint32_t slots = hibiki_voice_hook::kTextSlotCount;
+  const uint32_t slot_bytes = hibiki_voice_hook::kTextSlotBytes;
+  const uint8_t* base =
+      reinterpret_cast<const uint8_t*>(h) + h->text_region_offset;
+  const uint64_t start = (count > slots) ? count - slots : 0;
+  for (uint64_t seq = start + 1; seq <= count; seq++) {
+    const auto* slot = reinterpret_cast<const hibiki_voice_hook::TextSlot*>(
+        base + static_cast<size_t>((seq - 1) % slots) * slot_bytes);
+    if (slot->seq != seq || slot->byte_len == 0) {
+      continue;
+    }
+    char u8[1400] = {0};
+    const uint8_t* txt = reinterpret_cast<const uint8_t*>(slot) +
+                         sizeof(hibiki_voice_hook::TextSlot);
+    if (slot->is_utf8) {
+      uint32_t n = slot->byte_len;
+      if (n > 1399) n = 1399;
+      memcpy(u8, txt, n);
+    } else {
+      WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<const wchar_t*>(txt),
+                          static_cast<int>(slot->byte_len / 2), u8,
+                          sizeof(u8) - 1, nullptr, nullptr);
+    }
+    printf("%llu|%llu|%s\n", static_cast<unsigned long long>(seq),
+           static_cast<unsigned long long>(slot->timestamp_ms), u8);
+  }
+  fflush(stdout);
+}
+
+// 找时间戳最近 [ts] 的语音 clip，从音频环形取其 PCM 写成 WAV 到 [path]。成功返回 true。
+bool DumpWav(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
+             const char* path) {
+  const uint32_t cap = h->ring_capacity;
+  const uint64_t clips = h->clip_write_count;
+  if (cap == 0 || clips == 0) return false;
+  const uint32_t cslots = hibiki_voice_hook::kClipCount;
+  const uint8_t* cbase =
+      reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
+  const uint64_t total = h->total_written;
+  const uint64_t scan = (clips > cslots) ? clips - cslots : 0;
+  const hibiki_voice_hook::VoiceClip* best = nullptr;
+  uint64_t bestDiff = ~0ull;
+  for (uint64_t seq = scan + 1; seq <= clips; seq++) {
+    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
+        cbase + static_cast<size_t>((seq - 1) % cslots) *
+                    sizeof(hibiki_voice_hook::VoiceClip));
+    if (c->seq != seq || c->byte_len == 0 || c->byte_len > cap) continue;
+    if (total > c->total_at_write &&
+        total - c->total_at_write > cap - c->byte_len)
+      continue;
+    const uint64_t d =
+        (c->timestamp_ms > ts) ? c->timestamp_ms - ts : ts - c->timestamp_ms;
+    if (d < bestDiff) { bestDiff = d; best = c; }
+  }
+  if (best == nullptr) return false;
+  const uint32_t off = best->ring_offset % cap;
+  const uint32_t len = best->byte_len;
+  std::vector<uint8_t> pcm(len);
+  const uint32_t first = (len <= cap - off) ? len : (cap - off);
+  memcpy(pcm.data(), ring + off, first);
+  if (len > first) memcpy(pcm.data() + first, ring, len - first);
+  const uint32_t sr = best->sample_rate, ch = best->channels,
+                 bits = best->bits_per_sample;
+  const uint32_t ba = ch * (bits / 8), br = sr * ba;
+  const uint16_t fmt = best->is_float ? 3 : 1;
+  FILE* f = fopen(path, "wb");
+  if (f == nullptr) return false;
+  auto w32 = [&](uint32_t v) { fwrite(&v, 4, 1, f); };
+  auto w16 = [&](uint16_t v) { fwrite(&v, 2, 1, f); };
+  fwrite("RIFF", 1, 4, f); w32(36 + len); fwrite("WAVE", 1, 4, f);
+  fwrite("fmt ", 1, 4, f); w32(16); w16(fmt); w16(static_cast<uint16_t>(ch));
+  w32(sr); w32(br); w16(static_cast<uint16_t>(ba));
+  w16(static_cast<uint16_t>(bits));
+  fwrite("data", 1, 4, f); w32(len); fwrite(pcm.data(), 1, len, f);
+  fclose(f);
+  printf("wrote %s bytes=%u fmt=%u/%u/%u float=%u ts=%llu diff=%llu\n", path,
+         len, sr, ch, bits, best->is_float,
+         static_cast<unsigned long long>(best->timestamp_ms),
+         static_cast<unsigned long long>(bestDiff));
+  return true;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -115,6 +201,21 @@ int main(int argc, char** argv) {
 
   const uint8_t* ring =
       reinterpret_cast<const uint8_t*>(header) + sizeof(SharedHeader);
+
+  // 导出模式：--dump-text 打印所有台词行；--dump-wav <ts_ms> <out.wav> 导出最近该时间戳的语音。
+  if (argc >= 3 && strcmp(argv[2], "--dump-text") == 0) {
+    DumpText(header);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
+  if (argc >= 5 && strcmp(argv[2], "--dump-wav") == 0) {
+    const uint64_t ts = strtoull(argv[3], nullptr, 10);
+    const bool ok = DumpWav(header, ring, ts, argv[4]);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return ok ? 0 : 2;
+  }
 
   std::vector<uint8_t> window;
   for (int r = 0; r < rounds; r++) {
@@ -170,8 +271,9 @@ int main(int argc, char** argv) {
     const uint32_t text_hooked = header->text_hooked;
     const uint64_t twc = header->text_write_count;
     const uint64_t cwc = header->clip_write_count;
-    printf("     [v2] text_hooked=%u text_lines=%llu voice_clips=%llu",
-           text_hooked, static_cast<unsigned long long>(twc),
+    printf("     [v2] text_hooked=%u luna_active=%u text_lines=%llu voice_clips=%llu",
+           text_hooked, header->luna_active,
+           static_cast<unsigned long long>(twc),
            static_cast<unsigned long long>(cwc));
     if (twc > 0) {
       const uint32_t idx =
