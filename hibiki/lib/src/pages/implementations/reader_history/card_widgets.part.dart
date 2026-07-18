@@ -465,9 +465,14 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     return Tooltip(message: tooltip, child: badge);
   }
 
-  Widget _progressBar(MediaItem item) {
+  /// [completed] = 该书已被显式标记「读完」（EpubBooks.completedAt 非 null）。命中时
+  /// 进度条恒满格并用区分色（tertiary），让手动标记完成但进度停在 99%（跳过后记/附录）
+  /// 的书在书架上也一眼可辨「已读完」，而非停在一条差一点的普通进度条。
+  Widget _progressBar(MediaItem item, {bool completed = false}) {
     double value = 0;
-    if (item.duration > 0) {
+    if (completed) {
+      value = 1;
+    } else if (item.duration > 0) {
       final double v = item.position / item.duration;
       if (v.isFinite) {
         value = v > 0.97 ? 1 : v;
@@ -476,7 +481,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     return LinearProgressIndicator(
       value: value,
       backgroundColor: theme.colorScheme.surfaceContainerHighest,
-      color: theme.colorScheme.primary,
+      color: completed ? theme.colorScheme.tertiary : theme.colorScheme.primary,
       minHeight: 3,
     );
   }

@@ -1033,6 +1033,20 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       // 逐句跟随。还原 null 守卫，把同/跨 section 的取舍交回 repo.save。
       charOffset: charOffset >= 0 ? charOffset : null,
     );
+
+    // 读到全书末尾（最后一章 + 章内进度到末尾）→ 自动写「已读完」时间戳。
+    // markEpubBookCompletedIfUnset 幂等（仅 completed_at IS NULL 时写），不刷新时间戳、
+    // 绝不覆盖用户手动标记/取消的状态。手动翻页与有声书自动推进到末章末句都汇聚
+    // _persistPosition，故两条路径统一由此接线；临时跳转已被上方 _suppressPositionPersist
+    // 提前返回，不会误触发。widget.bookKey 即当前书（有声书会话为其配对 EpubBooks 行）。
+    final EpubBook? book = _book;
+    if (book != null &&
+        book.chapters.isNotEmpty &&
+        section >= book.chapters.length - 1 &&
+        progress >= 0.999) {
+      await appModel.database
+          .markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
+    }
   }
 
   void _syncPositionFromCurrentCue() {

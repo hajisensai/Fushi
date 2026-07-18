@@ -1965,5 +1965,9 @@
   "interconnect_enable": "启用互联",
   "interconnect_enable_hint": "通过局域网连接你的其他设备。与云备份后端并存，互不冲突。",
   "reading_activity": "阅读活动",
-  "video_watch_activity": "观看活动"
+  "video_watch_activity": "观看活动",
+  "book_mark_completed_action": "标记为已读完",
+  "book_mark_uncompleted_action": "取消已读完",
+  "book_marked_completed": "已标记为读完",
+  "book_marked_uncompleted": "已取消完成标记"
 }

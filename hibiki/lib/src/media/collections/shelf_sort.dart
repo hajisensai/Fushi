@@ -163,15 +163,25 @@ class ShelfProgressTally<T> {
   final List<T> inProgress;
 }
 
+/// [isCompleted]（可选）= 该书是否被显式标记「读完」（EpubBooks.completedAt 非
+/// null，用户手动标记或读到末尾自动写入）。命中即计读完、不进在读候选，且**不受
+/// 进度约束**——跳过后记/附录、进度停在 99% 的手动标记书也能计入 Completed，正是
+/// 「读到最后一字才算完成」这一临时派生判据无法覆盖的场景。未传则退回纯进度派生
+/// （旧行为，向后兼容）。
 ShelfProgressTally<T> tallyShelfProgress<T>(
   Iterable<T> epubBackedBooks,
   int Function(T) position,
-  int Function(T) duration,
-) {
+  int Function(T) duration, {
+  bool Function(T)? isCompleted,
+}) {
   int reading = 0;
   int finished = 0;
   final List<T> inProgress = <T>[];
   for (final T book in epubBackedBooks) {
+    if (isCompleted != null && isCompleted(book)) {
+      finished++;
+      continue;
+    }
     final int dur = duration(book);
     if (dur <= 0) continue;
     final int pos = position(book);

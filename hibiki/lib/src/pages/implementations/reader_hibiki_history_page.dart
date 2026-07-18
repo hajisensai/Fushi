@@ -199,6 +199,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 时间；SRT 卡的 SrtBook 自带）。
   Map<String, int> _epubImportedAtByKey = const <String, int>{};
 
+  /// 已标记「读完」的书 bookKey 集合（EpubBooks.completedAt 非 null 的单一真值）。
+  /// EPUB 小说卡按自身 bookKey、有声书 SRT 卡按其配对 bookKey 命中同一集合，供概览
+  /// 「Completed」统计、卡片完成视觉、菜单「标记/取消」标签联动。随 [_loadShelfMaps]
+  /// 一次性预取，手动切换或删书后 `_shelfMapsFuture = _loadShelfMaps()` 重取。
+  Set<String> _completedBookKeys = const <String>{};
+
   /// 统一合集 Phase 4：书籍合集字典（id → 行）+ 条目折叠归属（'mediaType|entryKey' →
   /// 最小 collectionId），与上述映射同一次 [_loadShelfMaps] 预取，替代 Series 折叠。
   Map<int, MediaCollectionRow> _collectionsById =
@@ -537,6 +543,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           (readingCharsByDay[r.dateKey] ?? 0) + r.charactersRead;
     }
     _readingCharsByDay = readingCharsByDay;
+    _completedBookKeys = await appModel.database.getCompletedEpubBookKeys();
     _memberSortIndex = memberSortIndex;
     _collectionsById = <int, MediaCollectionRow>{
       for (final MediaCollectionRow c in collections) c.id: c,
@@ -758,6 +765,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       progressBooks,
       (MediaItem item) => item.position,
       (MediaItem item) => item.duration,
+      isCompleted: (MediaItem item) {
+        final String? key = _parseBookKey(item.mediaIdentifier);
+        return key != null && _completedBookKeys.contains(key);
+      },
     );
     final MediaItem? hero = mostRecentlyReadCandidate(
       tally.inProgress,
@@ -1617,7 +1628,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               background: theme.colorScheme.surfaceContainerHighest,
               foreground: theme.colorScheme.onSurfaceVariant,
             ),
-      metadata: _progressBar(item),
+      metadata: _progressBar(
+        item,
+        completed: bookKey != null && _completedBookKeys.contains(bookKey),
+      ),
     );
   }
 
@@ -1701,6 +1715,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         onPressed: () => _openAudiobookImport(item, bookKey),
       ),
       DialogListAction(
+        label: _completedBookKeys.contains(bookKey)
+            ? t.book_mark_uncompleted_action
+            : t.book_mark_completed_action,
+        icon: _completedBookKeys.contains(bookKey)
+            ? Icons.check_circle
+            : Icons.check_circle_outline,
+        onPressed: () => _toggleBookCompleted(bookKey),
+      ),
+      DialogListAction(
         label: t.profile_book_profile,
         icon: Icons.account_circle_outlined,
         onPressed: () => _openBookProfilePicker(item, bookKey),
@@ -1721,6 +1744,27 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
         ),
     ];
+  }
+
+  /// 手动切换书 / 有声书「已读完」状态：写 EpubBooks.completedAt（单一真值，按
+  /// bookKey），有声书 SRT 卡也调它（传其配对 bookKey）。已完成 → 清除；未完成 →
+  /// 置当前时间。切换后重取完成集合并重绘，概览统计与卡片视觉下一帧即同步。
+  /// [bookKey] 为空（无 EPUB 正文的纯字幕书）时静默忽略——该书无进度维度、也无
+  /// 完成真值载体，与 [_openSrtBook] 的 `srt_epub_not_ready` 门控一致。
+  Future<void> _toggleBookCompleted(String bookKey) async {
+    Navigator.pop(context);
+    if (bookKey.isEmpty) return;
+    final bool wasCompleted = _completedBookKeys.contains(bookKey);
+    await appModel.database.setEpubBookCompleted(
+      bookKey,
+      wasCompleted ? null : DateTime.now(),
+    );
+    if (!mounted) return;
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
+    HibikiToast.show(
+      msg: wasCompleted ? t.book_marked_uncompleted : t.book_marked_completed,
+    );
   }
 
   String? _parseBookKey(String mediaIdentifier) =>

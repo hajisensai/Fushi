@@ -1,5 +1,6 @@
 ﻿import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -144,6 +145,38 @@ void main() {
       await db.addTagToBook(b2, tagId);
 
       expect(await db.countBooksForTag(tagId), 2);
+    });
+
+    test(
+        'countBooksForTag sums EPUB + SRT + video (BUG: 标签管理器对有声书/视频'
+        '标签显示 0——旧实现只 COUNT EPUB 一张映射表)', () async {
+      final db = await _openDb();
+      final tagId = await db.createTag('Finished', 0xFF000000);
+
+      // EPUB 书打标签。
+      final epub = await _insertBook(db, 'Novel');
+      await db.addTagToBook(epub, tagId);
+
+      // 有声书（SRT）打标签——旧实现漏计。
+      await db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'srt/1',
+        title: 'Audiobook',
+        srtPath: '/tmp/a.srt',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+      final SrtBookRow? srtRow = await db.getSrtBookByUid('srt/1');
+      await db.addTagToSrtBook(srtRow!.id, tagId);
+
+      // 视频打标签——旧实现同样漏计。
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: const Value('video/1'),
+        title: const Value('Video'),
+        videoPath: const Value('/abs/v.mp4'),
+      ));
+      await db.addTagToVideoBook('video/1', tagId);
+
+      // 三种媒体共享同一标签池，计数必须是 3（修复前只返回 1 = EPUB）。
+      expect(await db.countBooksForTag(tagId), 3);
     });
 
     test('deleting a tag cascades to mappings', () async {

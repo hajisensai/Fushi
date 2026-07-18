@@ -1965,5 +1965,9 @@
   "interconnect_enable": "Enable interconnect",
   "interconnect_enable_hint": "Connect to your other devices over the LAN. Works alongside a cloud backup backend — they don't conflict.",
   "reading_activity": "Reading activity",
-  "video_watch_activity": "Watch activity"
+  "video_watch_activity": "Watch activity",
+  "book_mark_completed_action": "Mark as completed",
+  "book_mark_uncompleted_action": "Mark as not completed",
+  "book_marked_completed": "Marked as completed",
+  "book_marked_uncompleted": "Marked as not completed"
 }
