@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 874 条。点号进各自文件。
+> 共 875 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-896](bugs/BUG-896-ankidroid-open-note-view-uri.md) | ✅ | ✅ | AnkiDroid 中打开卡片失败：ACTION_VIEW note URI 无 activity 处理 |
 | [BUG-895](bugs/BUG-895-video-cards-too-large-on-phone.md) | ✅ | ✅ | 手机端视频卡片过大（窄屏只出 1 列铺满整屏） |
 | [BUG-894](bugs/BUG-894-remote-video-reload-on-return.md) | ✅ | ✅ | 互联远端视频看完返回即重拉列表 |
 | [BUG-891](bugs/BUG-891-remote-mining-audio-tls.md) | ✅ | ✅ | 远端流媒体制卡句子音频 ffmpeg-kit 无 https/自签 Protocol not found |
