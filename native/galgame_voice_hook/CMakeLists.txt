@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(hibiki_voice_hook LANGUAGES CXX)
+project(hibiki_voice_hook LANGUAGES C CXX)
 
 # galgame 一键制卡 C 阶段 —— 引擎级 voice hook 的**独立可选 helper 组件**。
 #
@@ -22,12 +22,28 @@ if(MSVC)
   add_compile_options(/utf-8)
 endif()
 
+# MinHook（vendored，MIT，与本组件 GPLv3 兼容）—— inline/vtable hook 引擎（C.2 用）。
+#
+# 直接手动列出 MinHook 的 C 源码建 static 目标，**不 add_subdirectory 它自带的 CMake**：
+# 上游 CMakeLists 声明 `cmake_minimum_required(VERSION 3.0...3.5)`，CMake 4.x 已移除对
+# < 3.5 的兼容会致命报错；手动列源码同样可复现，且避开它的 install/export 逻辑。
+# hde32.c / hde64.c 各自按 _M_X64 / _M_IX86 编译期自我 gating，两个都列进来无冲突。
+add_library(minhook STATIC
+  "third_party/minhook/src/buffer.c"
+  "third_party/minhook/src/hook.c"
+  "third_party/minhook/src/trampoline.c"
+  "third_party/minhook/src/hde/hde32.c"
+  "third_party/minhook/src/hde/hde64.c"
+)
+target_include_directories(minhook PUBLIC "third_party/minhook/include")
+
 # 注入进游戏的 hook DLL。
 add_library(hibiki_voice_hook SHARED
   "hook/dll_main.cpp"
 )
 target_include_directories(hibiki_voice_hook PRIVATE "include")
 target_compile_definitions(hibiki_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(hibiki_voice_hook PRIVATE minhook)
 
 # 注入器（Hibiki 主进程把它当子进程拉起）。
 add_executable(hibiki_voice_injector

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,10 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/mining/external_window_mining.dart';
+import 'package:hibiki/src/mining/galgame_audio_encode.dart';
+import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_waveform_select.dart';
+import 'package:hibiki/src/mining/galgame_waveform_select_dialog.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
@@ -47,6 +52,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 已绑定的目标外部窗口（null = 未绑定；未绑定时制卡回落普通逐词制卡）。
   ExternalWindowInfo? _boundWindow;
 
+  /// galgame 一键制卡（docs/specs/galgame-mining）：外部窗口模式下抓「最近一段」音频的采集源。
+  /// 引擎-hook（干净语音）优先、不可用回退 loopback（系统混音）；都不可用 / 非 Windows 时为
+  /// null（退化为纯截图卡，Never break）。外部模式打开且绑定窗口时启动（环形缓冲持续累积），
+  /// 关闭 / 解绑 / 换窗口 / dispose 时停止。
+  GalAudioSource? _galAudioSource;
+
+  /// 热键那一刻从环形缓冲回看的时长（毫秒）：galgame 一句语音通常落在近几秒内，波形选区再精修。
+  static const int _galAudioBackMs = 8000;
+
   /// 缓存的 [AppModel] 引用（`appProvider` 为单例，实例不变）。在 [initState] 一次性
   /// 读取：浮层层在 `LayoutBuilder` 回调里访问 `mixinAppModel`，widget 失活后再
   /// `ref.read` 会抛「deactivated widget's ancestor」（与视频页同源），缓存实例规避。
@@ -69,6 +83,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   void dispose() {
     TexthookerService.instance.removeListener(_onLines);
+    unawaited(_stopGalAudio());
     _popup.dispose();
     _scroll.dispose();
     super.dispose();
@@ -99,6 +114,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
       return const MinePopupResult();
     }
+    // galgame 一键制卡：若音频源已开，抓最近一段 → 波形选区 → 帧对齐切片 → 编码成 AAC/m4a
+    // 容器字节。任一步不成（无源/无数据/用户取消/切空/编码失败）→ audioBytes 保持 null，
+    // 退化为纯截图卡（Never break：截图卡本就无声，不因无音频中止）。
+    final Uint8List? audioBytes = await _captureGalAudioBytes();
+
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final MiningMediaCompression compression =
         MiningMediaCompression.forCompressionEnabled(
@@ -108,6 +128,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         fields: fields,
         sentence: fields['sentence'] ?? '',
         screenshotBytes: cap.pngBytes,
+        audioBytes: audioBytes,
         documentTitle: bound.title.isEmpty ? 'External window' : bound.title,
       ),
       compression: compression,
@@ -141,9 +162,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   /// 切换外部窗口挖矿模式；首次开启且未绑定窗口时直接拉起窗口选择器。
   void _toggleExternalWindowMode() {
-    setState(() => _externalWindowMode = !_externalWindowMode);
-    if (_externalWindowMode && _boundWindow == null) {
-      _pickExternalWindow();
+    final bool next = !_externalWindowMode;
+    setState(() => _externalWindowMode = next);
+    if (next) {
+      final ExternalWindowInfo? bound = _boundWindow;
+      if (bound == null) {
+        _pickExternalWindow(); // 绑定成功后由 _pickExternalWindow 启动音频源
+      } else {
+        unawaited(_startGalAudio(bound));
+      }
+    } else {
+      unawaited(_stopGalAudio());
     }
   }
 
@@ -180,7 +209,96 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
     if (picked != null && mounted) {
       setState(() => _boundWindow = picked);
+      // 换/新绑窗口：按新 PID 重启音频源（引擎-hook 需对准新进程）。
+      if (_externalWindowMode) {
+        unawaited(_startGalAudio(picked));
+      }
     }
+  }
+
+  /// galgame 一键制卡：为绑定窗口 [bound] 启动音频采集源。引擎-hook（干净语音）优先——有隔离
+  /// 注入器 + 有效 PID 才试，其 [EngineHookGalAudioSource.start] 会拉起 injector 子进程注入并
+  /// 等 hook 就绪；不可用（无注入器 / 无该引擎 / 超时）自动回退 loopback（系统混音）；两者都
+  /// 起不来时 [_galAudioSource] 保持 null（纯截图卡）。先停旧源（换窗口 / 换 PID）。
+  Future<void> _startGalAudio(ExternalWindowInfo bound) async {
+    await _stopGalAudio();
+    if (!Platform.isWindows) {
+      return;
+    }
+    final String? injector = _resolveGalInjectorPath();
+    if (injector != null && bound.pid > 0) {
+      final EngineHookGalAudioSource eng = EngineHookGalAudioSource(
+        targetPid: bound.pid,
+        injectorPath: injector,
+      );
+      if (await eng.start() != null) {
+        _galAudioSource = eng; // 引擎-hook 就绪：干净语音
+        return;
+      }
+      await eng.stop();
+    }
+    final LoopbackGalAudioSource loopback = LoopbackGalAudioSource();
+    if (await loopback.start() != null) {
+      _galAudioSource = loopback; // 回退：系统混音
+      return;
+    }
+    await loopback.stop();
+    _galAudioSource = null;
+  }
+
+  /// 停止并释放当前音频采集源（幂等）。
+  Future<void> _stopGalAudio() async {
+    final GalAudioSource? src = _galAudioSource;
+    _galAudioSource = null;
+    await src?.stop();
+  }
+
+  /// 解析 galgame 引擎-hook 注入器（隔离 helper 组件）绝对路径：约定放在 app 可执行文件同级
+  /// `voice_hook/x64/hibiki_voice_injector.exe`（随包分发 / 按需下载，报毒代码不进本体）。
+  /// 非 Windows / 不存在返回 null（引擎-hook 不可用，回退 loopback）。
+  String? _resolveGalInjectorPath() {
+    if (!Platform.isWindows) {
+      return null;
+    }
+    try {
+      final String dir = File(Platform.resolvedExecutable).parent.path;
+      final String path = '$dir\\voice_hook\\x64\\hibiki_voice_injector.exe';
+      return File(path).existsSync() ? path : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 从当前音频源抓最近一段 → 波形选区对话框 → 帧对齐切片 → 编码成 AAC/m4a 容器字节。
+  /// 无源 / 无数据 / 用户取消 / 切空 / 编码失败任一步 → 返回 null（调用方退化为纯截图卡）。
+  Future<Uint8List?> _captureGalAudioBytes() async {
+    final GalAudioSource? src = _galAudioSource;
+    if (src == null) {
+      return null;
+    }
+    final GalAudioSlice? slice = await src.grabRecent(_galAudioBackMs);
+    if (slice == null || slice.isEmpty) {
+      return null;
+    }
+    if (!context.mounted) {
+      return null;
+    }
+    final GalWaveformRange? range =
+        await showGalWaveformSelectDialog(context, slice: slice);
+    if (range == null || range.durationMs <= 0) {
+      return null; // 用户取消 / 空选区
+    }
+    final Uint8List sub =
+        slicePcmByMs(slice.pcm, slice.format, range.startMs, range.endMs);
+    if (sub.isEmpty) {
+      return null;
+    }
+    return pcmSliceToAacBytes(
+      pcm: sub,
+      format: slice.format,
+      tempDir: Directory.systemTemp.path,
+      outputExtension: immersionMiningAudioExtension(),
+    );
   }
 
   /// 外部窗口挖矿模式条：展示已绑定窗口标题 + 重选/解绑；未绑定时点击选窗口。
@@ -213,7 +331,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 IconButton(
                   tooltip: t.external_window_unbind,
                   icon: const Icon(Icons.link_off, size: 18),
-                  onPressed: () => setState(() => _boundWindow = null),
+                  onPressed: () {
+                    setState(() => _boundWindow = null);
+                    unawaited(_stopGalAudio()); // 解绑：停音频源（无目标）
+                  },
                 ),
               IconButton(
                 tooltip: t.external_window_refresh,

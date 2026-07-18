@@ -22,6 +22,7 @@ add_custom_command(
 
 add_executable(${BINARY_NAME} WIN32
   "audio_loopback_capture.cpp"
+  "voice_hook_reader.cpp"
   "crash_dump.cpp"
   "external_video_handoff.cpp"
   "flutter_window.cpp"

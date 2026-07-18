@@ -3,6 +3,21 @@
 > 面向接手的另一个 AI/开发者，**自包含**。总设计见 [design.md](design.md)。
 > 已完成 A 阶段 Dart 基座 + native loopback + 波形桥 + C.1 注入组件（PR #212）。本文档给出**剩余任务**的落地路径：文件、接缝、gotcha、验证门。
 
+## 落地进度（本轮已完成，编译/单测已验；真机门未过）
+
+> 下列 A5/A6/C.2/C.4 的**代码已落地并本地验证**（Dart 全量 `flutter analyze` 0 issue、`flutter test test/mining` 191 过 1 skip、`flutter build windows` 成功、`native/galgame_voice_hook` x64 Release 三目标零 warning）。**真机门仍未过**（无真实 galgame + 无法在此环境注入/放声）——声明「能用」前必须按各节「验证门」在真机复测。
+
+| 任务 | 状态 | 已验证（本地上界） | 仍需真机 |
+|---|---|---|---|
+| **A5** 波形选区 widget | ✅ 代码完成 | `galgame_waveform_select.dart`/`_dialog.dart` + 8 单测绿 | 目视：能画/能拖/返回值对 |
+| **A6** 端到端一键 | ✅ 代码完成 | 接入 `texthooker_page.dart`；`slicePcmByMs` + 单测绿；`_captureGalAudioBytes` 串起 grab→选区→切片→编码→制卡 | galgame 热键→对话框→Anki 出卡（文本+可播音频+画面） |
+| **A native 运行验证** | ⏳ 未验证 | loopback native 已编译 | 放声→`grabRecent` 返非零 PCM |
+| **C.2** XAudio2 hook | ✅ 代码完成 | MinHook vendored；`XAudio2Create`/`CreateSourceVoice(vt5)`/`SubmitSourceBuffer(vt21)` 零阻塞写环形；x64 Release 链接过 | 真实 XAudio2 游戏注入→环形填非静音语音、无爆音 |
+| **C.4** EngineHookGalAudioSource+接回 | ✅ 代码完成 | `voice_hook_reader.{h,cpp}`+`app.hibiki.reader/voice_hook` channel（windows build 过）；`EngineHookGalAudioSource` + 单测绿；`ExternalWindowInfo.pid` 已通；A6 已「引擎-hook 优先，不可用回退 loopback」 | 切引擎-hook→出卡为干净语音；不可用无缝回退 |
+| **C.3** 逐引擎覆盖 | ⛔ 未做 | — | 需各引擎真机标定 callsite/接口（C.2 当前捕获所有 source voice，未按 callsite 精筛） |
+
+**接缝提醒**：injector 可执行文件约定放在 app 同级 `voice_hook/x64/hibiki_voice_injector.exe`（`_resolveGalInjectorPath`），由 `native/galgame_voice_hook` 单独 cmake 构建后随包分发/按需下载；缺失时 A6 自动回退 loopback。C.2 的 DirectSound 路径与校准模式 callsite 精筛留 TODO（`dll_main.cpp` 内注释）。
+
 ## 0. 当前状态（起点）
 
 - **分支** `worktree-galgame-mining`（base `develop`），**PR #212（draft）**。仓库 `D:\APP\vs_claude_code\hibiki`（Melos workspace，Flutter app 在 `hibiki/`）。

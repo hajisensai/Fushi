@@ -48,6 +48,35 @@ int pcmDurationMs(int pcmByteLength, int byteRate) {
   return (pcmByteLength * 1000) ~/ byteRate;
 }
 
+/// 把裸 PCM 按时间区间 `[startMs, endMs)` 切出子段（**帧对齐**，供 galgame 波形选区后取音频）。
+///
+/// 纯函数，可单测。字节偏移按 [PcmFormat.byteRate] 换算并**向下对齐到 [PcmFormat.blockAlign]**
+/// （切在整帧边界，不半帧撕裂立体声/多字节采样），再 clamp 到 `[0, pcm.length]`。
+/// 收敛后 `start>=end`（区间空/倒置/越界）时返回空 [Uint8List]（调用方据此提示「未选到音频」，
+/// 不塞空段假装成功）。返回的是**拷贝**（不与入参共享底层 buffer）。
+Uint8List slicePcmByMs(
+    Uint8List pcm, PcmFormat format, int startMs, int endMs) {
+  final int blockAlign = format.blockAlign;
+  final int byteRate = format.byteRate;
+  if (pcm.isEmpty || blockAlign <= 0 || byteRate <= 0) {
+    return Uint8List(0);
+  }
+  int startByte = startMs <= 0 ? 0 : (startMs * byteRate) ~/ 1000;
+  int endByte = endMs <= 0 ? 0 : (endMs * byteRate) ~/ 1000;
+  // 向下帧对齐（切在整帧边界）。
+  startByte -= startByte % blockAlign;
+  endByte -= endByte % blockAlign;
+  // clamp 到实际 PCM 范围。
+  if (startByte < 0) startByte = 0;
+  if (endByte > pcm.length) endByte = pcm.length;
+  // 末尾也对齐（clamp 后可能不再对齐）。
+  endByte -= endByte % blockAlign;
+  if (startByte >= endByte) {
+    return Uint8List(0);
+  }
+  return Uint8List.fromList(pcm.sublist(startByte, endByte));
+}
+
 /// 把裸 PCM 拼成合法的 44 字节头 WAV（RIFF/WAVE，单 fmt + data chunk）。纯函数，可单测。
 ///
 /// 头部字段全部小端。[PcmFormat.isFloat] 决定 WAVE 格式码（1=整型 / 3=浮点）。
