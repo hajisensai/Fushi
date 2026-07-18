@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
@@ -32,6 +33,7 @@ class CollectionShelfRow extends StatefulWidget {
     this.onToggleCollapsed,
     this.selectionCheckbox,
     this.onToggleSelected,
+    this.onTagDropped,
     super.key,
   });
 
@@ -82,12 +84,21 @@ class CollectionShelfRow extends StatefulWidget {
   /// [onOpenDetail]。null（默认）时行头点击维持进详情。
   final VoidCallback? onToggleSelected;
 
+  /// 把标签拖到**行头**上 = 给整个合集打标签（与书/视频卡的 [BookDragTarget] 拖放
+  /// 手势一致；成员卡区各成员卡自带书级 drop target，与行头区不重叠）。null（默认）时
+  /// 行头不接收拖放。合集详情页 AppBar 的打标签按钮是另一条等价入口。
+  final void Function(BookTagRow tag)? onTagDropped;
+
   @override
   State<CollectionShelfRow> createState() => _CollectionShelfRowState();
 }
 
 class _CollectionShelfRowState extends State<CollectionShelfRow> {
   late final ScrollController _controller;
+
+  /// 行头正被标签拖放悬停（画高亮边框反馈）。仅 [CollectionShelfRow.onTagDropped]
+  /// 非 null 时有意义。
+  bool _tagHovering = false;
 
   @override
   void initState() {
@@ -230,8 +241,9 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
       ),
     );
     final HibikiFocusId? focusId = widget.headerFocusId;
+    Widget result = header;
     if (focusId != null && HibikiFocusRoot.maybeControllerOf(context) != null) {
-      return Actions(
+      result = Actions(
         actions: <Type, Action<Intent>>{
           ActivateIntent: CallbackAction<ActivateIntent>(
             onInvoke: (_) {
@@ -243,7 +255,77 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
         child: HibikiFocusTarget(id: focusId, child: header),
       );
     }
-    return header;
+    // 把标签拖到行头 = 给整个合集打标签。DragTarget 包在最外层（含焦点包裹），
+    // 整个行头区域都是 drop 区；仅拖拽时接收 [BookTagRow]，普通点击/焦点不受影响。
+    final void Function(BookTagRow tag)? onTagDropped = widget.onTagDropped;
+    if (onTagDropped != null) {
+      result = _wrapTagDropTarget(context, tokens, result, onTagDropped);
+    }
+    return result;
+  }
+
+  /// 用 [DragTarget] 包住行头 [child]：拖入标签时画高亮边框反馈，落下时回调
+  /// [onTagDropped]（给整个合集打标签）。与 `BookDragTarget` 的书级拖放视觉同源，
+  /// 但适配行头形状（末端小图标而非居中大图标）。
+  Widget _wrapTagDropTarget(
+    BuildContext context,
+    HibikiDesignTokens tokens,
+    Widget child,
+    void Function(BookTagRow tag) onTagDropped,
+  ) {
+    final Color hoverColor = tokens.surfaces.primary;
+    return DragTarget<BookTagRow>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (DragTargetDetails<BookTagRow> details) {
+        setState(() => _tagHovering = false);
+        onTagDropped(details.data);
+      },
+      onMove: (_) {
+        if (!_tagHovering) setState(() => _tagHovering = true);
+      },
+      onLeave: (_) {
+        if (_tagHovering) setState(() => _tagHovering = false);
+      },
+      builder: (
+        BuildContext context,
+        List<BookTagRow?> candidateData,
+        List<dynamic> rejectedData,
+      ) {
+        return Stack(
+          children: <Widget>[
+            child,
+            if (_tagHovering)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: hoverColor.withValues(alpha: 0.18),
+                      borderRadius: tokens.radii.controlRadius,
+                      border: Border.all(
+                        color: hoverColor,
+                        width: tokens.spacing.gap / 4,
+                      ),
+                    ),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: tokens.spacing.gap,
+                        ),
+                        child: Icon(
+                          Icons.new_label_outlined,
+                          color: hoverColor,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 }
 

@@ -1969,5 +1969,7 @@
   "book_mark_completed_action": "Mark as completed",
   "book_mark_uncompleted_action": "Mark as not completed",
   "book_marked_completed": "Marked as completed",
-  "book_marked_uncompleted": "Marked as not completed"
+  "book_marked_uncompleted": "Marked as not completed",
+  "tag_added_to_collection": "Tag $name added to collection.",
+  "tag_already_on_collection": "Tag $name is already on this collection."
 }

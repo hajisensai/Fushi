@@ -1969,5 +1969,7 @@
   "book_mark_completed_action": "标记为已读完",
   "book_mark_uncompleted_action": "取消已读完",
   "book_marked_completed": "已标记为读完",
-  "book_marked_uncompleted": "已取消完成标记"
+  "book_marked_uncompleted": "已取消完成标记",
+  "tag_added_to_collection": "标签「$name」已添加到合集。",
+  "tag_already_on_collection": "标签「$name」已在此合集上。"
 }
