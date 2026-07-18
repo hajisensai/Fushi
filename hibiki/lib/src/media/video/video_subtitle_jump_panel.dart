@@ -1,3 +1,5 @@
+import 'dart:ui' show BoxHeightStyle;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -154,11 +156,17 @@ SubtitleListCharHit? subtitleListCharHitFromParagraph(
   Rect localRect = _subtitleUnionBoxes(
     paragraph.getBoxesForSelection(
       TextSelection(baseOffset: start, extentOffset: end),
+      // BUG-879：盒覆盖整行视觉格（含行距 leading），默认 tight 只贴字形、点在 1.25 行高的
+      // 上下 leading 里就落空 → 退 seek（「点了不出词」的一半病因）。
+      boxHeightStyle: BoxHeightStyle.max,
     ),
   );
   if (localRect.isEmpty) return null;
   if (!localRect.contains(localPosition)) {
-    if (!localRect.inflate(1).contains(localPosition)) return null;
+    // BUG-879：容差从 1px 放宽到半个字格（≈ 行高一半，CJK 方块字 ≈ 半字宽），与画面字幕
+    // resolveSubtitleCharHit 的半字宽字缝兜底同量级——点在字缝 / 行距上仍命中最近字符。
+    final double tol = localRect.height * 0.5;
+    if (!localRect.inflate(tol).contains(localPosition)) return null;
     localRect = localRect.expandToInclude(
       Rect.fromCenter(center: localPosition, width: 1, height: 1),
     );
@@ -442,6 +450,38 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     }
     if (event.scrollDelta.dy == 0) return;
     _stepFont(event.scrollDelta.dy < 0 ? 1 : -1);
+  }
+
+  /// BUG-879：字幕列表 Shift-悬停查词（面板级单一入口，复用 [_hitTestRows] 的 RenderParagraph
+  /// 反查——不为每次 hover 新建 TextPainter 重排整行，与画面字幕 overlay 的几何反查一样轻，
+  /// 消除「列表查词比画面字幕卡」）。门控（开了「悬停即查词」则纯悬停、否则按住 Shift）+
+  /// 8px 阈值 + 同 cue 同 grapheme 短路去重都与 overlay `_handleShiftHover` 同构。命中经
+  /// [VideoSubtitleJumpPanel.onLookupCue] → 页面 `_handleSubtitleListLookup` → `_lookupAt`。
+  void _handleListShiftHover(PointerHoverEvent event) {
+    final void Function(AudioCue, int, Rect)? onLookup = widget.onLookupCue;
+    if (onLookup == null) return;
+    if (!widget.hoverAutoLookupEnabled &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      // 未开「悬停即查词」且未按 Shift：复位节流锚，下次按 Shift 进入即触发。
+      _lastRowHoverPos = Offset.zero;
+      _lastRowHoverCueKey = null;
+      _lastRowHoverGrapheme = -1;
+      return;
+    }
+    final SubtitleListHit? hit = _hitTestRows(event.position);
+    if (hit == null) return;
+    final double dx = event.position.dx - _lastRowHoverPos.dx;
+    final double dy = event.position.dy - _lastRowHoverPos.dy;
+    final bool sameChar = identical(_lastRowHoverCueKey, hit.cue) &&
+        hit.graphemeIndex == _lastRowHoverGrapheme;
+    if (sameChar &&
+        dx * dx + dy * dy < _kRowHoverThresholdPx * _kRowHoverThresholdPx) {
+      return;
+    }
+    _lastRowHoverPos = event.position;
+    _lastRowHoverCueKey = hit.cue;
+    _lastRowHoverGrapheme = hit.graphemeIndex;
+    onLookup(hit.cue, hit.graphemeIndex, hit.charRect);
   }
 
   @override
@@ -848,6 +888,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               child: Listener(
                 behavior: HitTestBehavior.translucent,
                 onPointerSignal: _handleZoomWheel,
+                // BUG-879：面板级 Shift-悬停查词（复用 RenderParagraph 反查，轻量）。
+                onPointerHover: _handleListShiftHover,
                 child: showLoading
                     ? _buildLoading(cs)
                     : cues.isEmpty || visibleIndexes.isEmpty
@@ -1235,6 +1277,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             Rect localRect = _subtitleUnionBoxes(
               painter.getBoxesForSelection(
                 TextSelection(baseOffset: start, extentOffset: end),
+                // BUG-879：盒覆盖整行视觉格（含 1.25 行高的 leading），与 barrier 反查
+                // [subtitleListCharHitFromParagraph] 同款，消除点在行距/字缝落空退 seek。
+                boxHeightStyle: BoxHeightStyle.max,
               ),
             );
             if (localRect.isEmpty) {
@@ -1250,7 +1295,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               );
             }
             if (!localRect.contains(localPosition)) {
-              if (!localRect.inflate(1).contains(localPosition)) return null;
+              // BUG-879：容差 1px→半字格（≈ 行高一半，CJK ≈ 半字宽），与画面字幕
+              // resolveSubtitleCharHit 的半字宽字缝兜底同量级，点字缝仍命中最近字符。
+              final double tol = localRect.height * 0.5;
+              if (!localRect.inflate(tol).contains(localPosition)) return null;
               localRect = localRect.expandToInclude(
                 Rect.fromCenter(center: localPosition, width: 1, height: 1),
               );
@@ -1266,71 +1314,38 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           }
         }
 
-        // BUG-879：列表行 Shift-悬停查词，与画面字幕 overlay `_handleShiftHover` 对称。
-        // 门控（开了"悬停即查词"则纯悬停、否则需按住 Shift）+ 8px 阈值 + 同 cue 同 grapheme
-        // 短路去重都与 overlay 同构；命中即走同一 [onLookup]（→ 页面 `_handleSubtitleListLookup`
-        // → `_lookupAt`）。`opaque:false` 不阻断外层 [_buildRow] 的 hover 高亮 MouseRegion，
-        // 也不拦点击 / 滚动下探。
-        void handleRowHover(PointerHoverEvent event) {
-          if (!widget.hoverAutoLookupEnabled &&
-              !HardwareKeyboard.instance.isShiftPressed) {
-            // 未开"悬停即查词"且未按 Shift：复位节流锚，下次按 Shift 进入即触发。
-            _lastRowHoverPos = Offset.zero;
-            _lastRowHoverCueKey = null;
-            _lastRowHoverGrapheme = -1;
-            return;
-          }
-          final SubtitleListCharHit? hit = hitAt(
-            localPosition: event.localPosition,
-            globalPosition: event.position,
-          );
-          if (hit == null) return;
-          final double dx = event.position.dx - _lastRowHoverPos.dx;
-          final double dy = event.position.dy - _lastRowHoverPos.dy;
-          final bool sameChar = identical(_lastRowHoverCueKey, cue) &&
-              hit.graphemeIndex == _lastRowHoverGrapheme;
-          if (sameChar &&
-              dx * dx + dy * dy <
-                  _kRowHoverThresholdPx * _kRowHoverThresholdPx) {
-            return;
-          }
-          _lastRowHoverPos = event.position;
-          _lastRowHoverCueKey = cue;
-          _lastRowHoverGrapheme = hit.graphemeIndex;
-          onLookup(cue, hit.graphemeIndex, hit.charRect);
-        }
-
-        return MouseRegion(
-          opaque: false,
-          onHover: handleRowHover,
-          child: GestureDetector(
-            // translucent：tap 赢手势竞技场截断外层 InkWell（点文本 = 查词、非 seek），
-            // 但空白处手动回落到行 seek，保留“点字查词、点空白 seek”的语义。
-            behavior: HitTestBehavior.translucent,
-            onTapUp: (TapUpDetails details) {
-              final SubtitleListCharHit? hit = hitAt(
-                localPosition: details.localPosition,
-                globalPosition: details.globalPosition,
-              );
-              if (hit != null &&
-                  hit.charRect.contains(details.globalPosition)) {
-                onLookup(cue, hit.graphemeIndex, hit.charRect);
-                return;
-              }
-              widget.onTapCue(cue);
-            },
-            child: RichText(
-              // BUG-874：稳定 key 让 [_hitTestRows] 能按 builder 下标取到本行 RenderParagraph
-              // 反查字符命中（供查词浮层 dismiss barrier 切换查词）。
-              key: textKey,
-              text: textSpan,
-              softWrap: true,
-              overflow: TextOverflow.clip,
-              maxLines: null,
-              textAlign: TextAlign.start,
-              textDirection: textDirection,
-              textScaler: textScaler,
-            ),
+        return GestureDetector(
+          // translucent：tap 赢手势竞技场截断外层 InkWell（点文本 = 查词、非 seek），
+          // 但空白处手动回落到行 seek，保留“点字查词、点空白 seek”的语义。
+          // BUG-879：Shift-悬停查词不再挂逐行 MouseRegion（会为每次 hover 新建 TextPainter
+          // 重排整行、比画面字幕重），改由面板级单一 Listener [_handleListShiftHover] 复用
+          // [_hitTestRows] 的 RenderParagraph 反查（不重排、与画面字幕几何反查一样轻）。
+          behavior: HitTestBehavior.translucent,
+          onTapUp: (TapUpDetails details) {
+            final SubtitleListCharHit? hit = hitAt(
+              localPosition: details.localPosition,
+              globalPosition: details.globalPosition,
+            );
+            // BUG-879：点在字符上（含字缝 / 行距 leading 容差，见 hitAt）即查词；命中即
+            // 用返回的 charRect 定位，不再额外 `contains` 二次收窄（那会把容差内命中又判成
+            // 空白误退 seek，正是「点了不出词」的一半病因）。
+            if (hit != null) {
+              onLookup(cue, hit.graphemeIndex, hit.charRect);
+              return;
+            }
+            widget.onTapCue(cue);
+          },
+          child: RichText(
+            // BUG-872：稳定 key 让 [_hitTestRows] 能按 builder 下标取到本行 RenderParagraph
+            // 反查字符命中（供查词浮层 dismiss barrier 切换查词 + 列表 Shift-悬停 / keydown）。
+            key: textKey,
+            text: textSpan,
+            softWrap: true,
+            overflow: TextOverflow.clip,
+            maxLines: null,
+            textAlign: TextAlign.start,
+            textDirection: textDirection,
+            textScaler: textScaler,
           ),
         );
       },
