@@ -371,9 +371,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
     final AppModel appModel = ref.read(appProvider);
     final SyncRepository syncRepo = SyncRepository(appModel.database);
-    if (await syncRepo.getBackendType() != SyncBackendType.hibikiServer) {
-      return null;
-    }
+    // 互联已从 backendType 解耦成独立开关，可与云备份并存：互联启用且已配对时用它的
+    // live 库；未启用则本方法返 null，`_loadRemoteVideos` 回退云视频占位卡。
+    if (!await syncRepo.isInterconnectEnabled()) return null;
     final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
     if (!await backend.restoreAuth(syncRepo)) return null;
     return backend;

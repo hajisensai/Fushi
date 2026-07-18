@@ -289,6 +289,25 @@ class SyncRepository {
     }
   }
 
+  /// 一次性幂等迁移：把「互联=互斥的 backendType==hibikiServer 单选」旧模型迁到
+  /// 独立的 [isInterconnectEnabled] 开关（互联与云备份不再冲突，可并存）。
+  ///
+  /// 旧模型里选互联意味着 `sync_backend_type == 'hibikiServer'`（配对设备时也会被
+  /// 强写成这个值，见 interconnect UI）。迁移：这类用户置互联开关为 true，并把
+  /// backendType 迁到云默认 googleDrive（未认证时云通道自动 no-op），使升级后互联
+  /// 照常跑、且不再占着「云后端选择」这个位置。互联自身的持久化字段（serverEnabled
+  /// / clientUrls / token 等）本就独立存储，无需搬运。
+  ///
+  /// 幂等：仅当 backendType 原始字符串恰为 'hibikiServer' 时动作；其余情况 no-op。
+  /// 必须在任何 [getBackendType]（未知值静默回落 googleDrive）之前、init 期跑一次。
+  /// 用原始 key 字符串读取，独立于枚举符号的存亡。
+  Future<void> migrateInterconnectBackendToToggle() async {
+    final String? backend = await _getStringOrNull(_keyBackendType);
+    if (backend != SyncBackendType.hibikiServer.name) return;
+    await setInterconnectEnabled(true);
+    await _setString(_keyBackendType, SyncBackendType.googleDrive.name);
+  }
+
   // ── Content sync ──────────────────────────────────────────────────
 
   Future<bool> isSyncContentEnabled() =>
@@ -469,6 +488,7 @@ class SyncRepository {
 
   // ── Hibiki Server config ────────────────────────────────────────
 
+  static const _keyInterconnectEnabled = 'sync_interconnect_enabled';
   static const _keyServerEnabled = 'sync_server_enabled';
   static const _keyServerPort = 'sync_server_port';
   static const _keyServerPassword = 'sync_server_password';
@@ -482,6 +502,17 @@ class SyncRepository {
   /// so initial bind conflicts are unlikely. Referenced everywhere the default
   /// is needed so the value can never drift between call sites.
   static const int defaultServerPort = 38765;
+
+  /// 互联总开关，独立于 [getBackendType]（云备份后端选择）。为 true 时互联作为
+  /// 一条独立的同步/端到端通道运行——连接对端、远端查词/音频/占位卡 live 数据源、
+  /// 以及与云备份并行的元数据同步通道——与用户选的云后端并存、互不排斥。
+  ///
+  /// 历史上互联是 `SyncBackendType.hibikiServer` 这个互斥单选项；已由
+  /// [migrateInterconnectBackendToToggle] 迁移到本独立布尔开关。默认 false。
+  Future<bool> isInterconnectEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectEnabled, false);
+  Future<void> setInterconnectEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectEnabled, v);
 
   Future<bool> isServerEnabled() =>
       _db.getPrefTyped<bool>(_keyServerEnabled, false);
