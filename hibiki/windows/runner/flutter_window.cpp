@@ -1610,6 +1610,38 @@ void FlutterWindow::RegisterVoiceHookChannel() {
           result->Success(flutter::EncodableValue(std::move(out)));
           return;
         }
+        if (method == "processIsWow64") {
+          // 查目标进程位数：hibiki.exe 是 64 位，故 IsWow64Process==TRUE 即目标为 32 位
+          // （多数 KiriKiri 游戏），Dart 据此选 x86 注入器；FALSE 为 64 位选 x64。
+          const uint32_t pid = read_pid();
+          if (pid == 0) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("no pid"))}}));
+            return;
+          }
+          HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                 static_cast<DWORD>(pid));
+          if (h == nullptr) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("open process failed"))}}));
+            return;
+          }
+          BOOL wow64 = FALSE;
+          const BOOL ok = IsWow64Process(h, &wow64);
+          CloseHandle(h);
+          if (!ok) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("IsWow64Process failed"))}}));
+            return;
+          }
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("isWow64"),
+               flutter::EncodableValue(wow64 != FALSE)}}));
+          return;
+        }
         if (method == "close") {
           hibiki::VoiceHookReader::Instance().Close();
           result->Success();

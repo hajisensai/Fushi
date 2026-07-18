@@ -225,7 +225,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!Platform.isWindows) {
       return;
     }
-    final String? injector = _resolveGalInjectorPath();
+    // 按目标进程位数选注入器（DLL 位数必须匹配目标：KiriKiri 多为 32 位→x86，否则 x64）。
+    // 查不到位数时默认 x64（hibiki 本体 arch）；不匹配时注入失败会自动回退 loopback。
+    final bool? wow64 = await EngineHookGalAudioSource.targetIsWow64(bound.pid);
+    final String? injector = _resolveGalInjectorPath(is32Bit: wow64 ?? false);
     if (injector != null && bound.pid > 0) {
       final EngineHookGalAudioSource eng = EngineHookGalAudioSource(
         targetPid: bound.pid,
@@ -254,15 +257,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   /// 解析 galgame 引擎-hook 注入器（隔离 helper 组件）绝对路径：约定放在 app 可执行文件同级
-  /// `voice_hook/x64/hibiki_voice_injector.exe`（随包分发 / 按需下载，报毒代码不进本体）。
+  /// `voice_hook/<arch>/hibiki_voice_injector.exe`（随包分发 / 按需下载，报毒代码不进本体）。
+  /// [is32Bit] 决定 arch 目录（目标 32 位→`x86`，否则→`x64`；注入 DLL 位数必须匹配目标）。
   /// 非 Windows / 不存在返回 null（引擎-hook 不可用，回退 loopback）。
-  String? _resolveGalInjectorPath() {
+  String? _resolveGalInjectorPath({required bool is32Bit}) {
     if (!Platform.isWindows) {
       return null;
     }
     try {
       final String dir = File(Platform.resolvedExecutable).parent.path;
-      final String path = '$dir\\voice_hook\\x64\\hibiki_voice_injector.exe';
+      final String arch = is32Bit ? 'x86' : 'x64';
+      final String path = '$dir\\voice_hook\\$arch\\hibiki_voice_injector.exe';
       return File(path).existsSync() ? path : null;
     } catch (_) {
       return null;

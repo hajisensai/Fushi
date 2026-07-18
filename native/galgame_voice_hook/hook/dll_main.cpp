@@ -3,6 +3,13 @@
 #include <mmreg.h>
 #include <xaudio2.h>
 
+// DirectSound（旧引擎 KiriKiri/吉里吉里等混音前干净语音）。只用头文件里的接口/结构定义，
+// **不链接 dsound.lib**——不 CoCreateInstance、不用任何 CLSID/IID 常量，仅 GetProcAddress 拿
+// 导出 + vtable hook，故纯头文件即可（避开 dsound.lib 依赖）。DIRECTSOUND_VERSION 必须在
+// include 前定义为 0x0800，才能拿到 IDirectSound8 定义。
+#define DIRECTSOUND_VERSION 0x0800
+#include <dsound.h>
+
 #include <MinHook.h>
 
 #include <cstdint>
@@ -12,7 +19,7 @@
 
 #include "voice_hook_ipc.h"
 
-// galgame 一键制卡 C 阶段 hook DLL（C.1 注入管线 + C.2 XAudio2 语音捕获）。
+// galgame 一键制卡 C 阶段 hook DLL（C.1 注入管线 + C.2 XAudio2/DirectSound 语音捕获）。
 //
 // C.1 建立注入管线与共享内存契约：注入进游戏后打开 injector 建好的共享内存、校验 magic/version、
 // 标记 hooked=1、SetEvent 通知 injector。
@@ -20,6 +27,10 @@
 //   XAudio2Create -> 每个 IXAudio2::CreateSourceVoice -> 每个 source voice 的 SubmitSourceBuffer，
 //   在语音进混音**之前**把 PCM memcpy 进共享内存的环形缓冲。回调里只 memcpy + 推 write_pos/
 //   total_written，无锁无分配无 IO（回调阻塞即爆音，spec 红线）。
+// C.2b 同法覆盖 DirectSound（旧引擎 KiriKiri 等，多为 32 位）：DirectSoundCreate8/Create ->
+//   每个 IDirectSound8::CreateSoundBuffer -> 每个 secondary buffer 的 Unlock；Unlock 参数即
+//   游戏刚写完 PCM 的锁定区，直接 memcpy 进同一环形缓冲（跳主缓冲 + 格式一致性门控保证只装
+//   一种格式的干净 secondary 语音流）。
 //
 // loader lock 纪律：DllMain 里**不**做 IPC/同步/加载库/MinHook，只 DisableThreadLibraryCalls +
 // CreateThread 把活儿丢给工作线程（在 loader lock 之外跑），这是 hook DLL 的正确形态。
@@ -78,6 +89,33 @@ XAudio2Create_t g_orig_XAudio2Create9 = nullptr;
 XAudio2Create_t g_orig_XAudio2Create8 = nullptr;
 CreateSourceVoice_t g_orig_CreateSourceVoice = nullptr;
 SubmitSourceBuffer_t g_orig_SubmitSourceBuffer = nullptr;
+
+// ── DirectSound COM 方法 vtable 槽（按 dsound.h 接口声明顺序，跨 DS8 稳定）───────────
+// IDirectSound8 : IUnknown(0-2) 后 CreateSoundBuffer(3) GetCaps(4) DuplicateSoundBuffer(5)...
+constexpr size_t kIdxCreateSoundBuffer = 3;
+// IDirectSoundBuffer : IUnknown(0-2) 后 GetCaps(3)...Lock(11) Play(12)...Unlock(19) Restore(20)
+constexpr size_t kIdxDsbUnlock = 19;
+
+// DirectSound 导出函数 + 两个 COM 方法的原实现（MinHook trampoline）。DirectSoundCreate 与
+// DirectSoundCreate8 是两个不同导出（各自地址、各自 trampoline）；CreateSoundBuffer/Unlock 是
+// dsound 对象共享的 vtable 槽（同一实现地址，HookFn 去重只装一次，单 trampoline 够用）。
+typedef HRESULT(WINAPI* DirectSoundCreate8_t)(LPCGUID pcGuidDevice,
+                                              LPDIRECTSOUND8* ppDS8,
+                                              LPUNKNOWN pUnkOuter);
+typedef HRESULT(WINAPI* DirectSoundCreate_t)(LPCGUID pcGuidDevice,
+                                             LPDIRECTSOUND* ppDS,
+                                             LPUNKNOWN pUnkOuter);
+typedef HRESULT(STDMETHODCALLTYPE* CreateSoundBuffer_t)(
+    IDirectSound8* self, LPCDSBUFFERDESC pcDesc, LPDIRECTSOUNDBUFFER* ppBuf,
+    LPUNKNOWN pUnkOuter);
+typedef HRESULT(STDMETHODCALLTYPE* DsbUnlock_t)(IDirectSoundBuffer* self,
+                                                LPVOID pv1, DWORD cb1,
+                                                LPVOID pv2, DWORD cb2);
+
+DirectSoundCreate8_t g_orig_DirectSoundCreate8 = nullptr;
+DirectSoundCreate_t g_orig_DirectSoundCreate = nullptr;
+CreateSoundBuffer_t g_orig_CreateSoundBuffer = nullptr;
+DsbUnlock_t g_orig_DsbUnlock = nullptr;
 
 // 独立测试用 proof-of-life 标记文件：%TEMP%\hibiki_voice_hook_<pid>.marker。injector 之外也
 // 能据此确认 DLL 真的被加载执行（不依赖事件）。
@@ -310,11 +348,117 @@ void TryHookXAudio2Create() {
     void* fn = reinterpret_cast<void*>(GetProcAddress(mod, "XAudio2Create"));
     HookFn(fn, c.detour, c.original);
   }
+}
 
-  // ── DirectSound 路径（旧引擎）：此切片**不做**。──────────────────────────
-  // 需 hook IDirectSoundBuffer::Lock/Play（或 DirectSoundCreate）在混音前取 buffer 段，
-  // 但 DirectSound 的 buffer 语义（循环 buffer + 写游标）与 XAudio2 差异大、且只能在真实旧
-  // 引擎游戏上标定验证，写空壳无法编译/运行验证=slop。留待 C.3 逐引擎覆盖。
+// ══ C.2b DirectSound 捕获链（旧引擎 KiriKiri/吉里吉里等）══════════════════════════
+// XAudio2 之外的另一条混音前干净语音路径，装法与 XAudio2 同构：hook 导出的 DirectSoundCreate8/
+// DirectSoundCreate 拿到 IDirectSound8*，包裹它的 CreateSoundBuffer(槽3)；每建一个 secondary
+// buffer 就 vtable-hook 该 buffer 的 Unlock(槽19)，在游戏写完 PCM、Unlock 回锁前 memcpy 走。
+
+// ── detour：IDirectSoundBuffer::Unlock（槽19）─────────────────────────────────
+// 游戏把 PCM 写进锁定区后调 Unlock 交还；pv1/cb1（+回绕段 pv2/cb2）正是刚写完的字节区与实际
+// 字节数，无需和 Lock 关联、无需 map，直接 memcpy 进环形缓冲。零阻塞红线：只 RingAppendVoice，
+// 绝不加锁/分配/IO/日志。
+HRESULT STDMETHODCALLTYPE Detour_DsbUnlock(IDirectSoundBuffer* self, LPVOID pv1,
+                                           DWORD cb1, LPVOID pv2, DWORD cb2) {
+  if (g_capture_enabled && g_header != nullptr) {
+    if (pv1 != nullptr && cb1 != 0) {
+      RingAppendVoice(reinterpret_cast<const uint8_t*>(pv1), cb1);
+    }
+    if (pv2 != nullptr && cb2 != 0) {
+      RingAppendVoice(reinterpret_cast<const uint8_t*>(pv2), cb2);
+    }
+  }
+  return g_orig_DsbUnlock(self, pv1, cb1, pv2, cb2);
+}
+
+// ── detour：IDirectSound8::CreateSoundBuffer（槽3）────────────────────────────
+// 先调原函数建 buffer，成功后按两道门决定是否 hook 它的 Unlock：
+//  ① 跳过主缓冲（DSBCAPS_PRIMARYBUFFER）：主缓冲是最终混音目标，抓它=抓混音不干净；只要
+//     secondary（每个音单独的流）。
+//  ② 格式一致性门控：环形缓冲只装**一种**格式的音，否则不同 bits/rate/channels 的字节混进
+//     同一缓冲会播放乱码。首个 secondary 的格式经 MaybeRecordFormat 记进 header（全局只写一
+//     次）；此后只有 (nSamplesPerSec,nChannels,wBitsPerSample) 与已记录格式全等的 buffer 才
+//     hook Unlock，不等就跳过。（只 hook Unlock、不 hook Lock——Unlock 已带回写入区+字节数，
+//     少一个 hook、少一处出错面。）
+HRESULT STDMETHODCALLTYPE Detour_CreateSoundBuffer(IDirectSound8* self,
+                                                   LPCDSBUFFERDESC pcDesc,
+                                                   LPDIRECTSOUNDBUFFER* ppBuf,
+                                                   LPUNKNOWN pUnkOuter) {
+  const HRESULT hr = g_orig_CreateSoundBuffer(self, pcDesc, ppBuf, pUnkOuter);
+  if (SUCCEEDED(hr) && pcDesc != nullptr && ppBuf != nullptr &&
+      *ppBuf != nullptr && g_header != nullptr) {
+    const bool is_primary = (pcDesc->dwFlags & DSBCAPS_PRIMARYBUFFER) != 0;
+    const WAVEFORMATEX* fmt = pcDesc->lpwfxFormat;
+    if (!is_primary && fmt != nullptr) {
+      // 先尝试记格式（已记录则 no-op），再比对；全等才 hook Unlock。
+      MaybeRecordFormat(fmt);
+      if (fmt->nSamplesPerSec == g_header->sample_rate &&
+          fmt->nChannels == g_header->channels &&
+          fmt->wBitsPerSample == g_header->bits_per_sample) {
+        HookFn(VtableSlot(*ppBuf, kIdxDsbUnlock),
+               reinterpret_cast<void*>(&Detour_DsbUnlock),
+               reinterpret_cast<void**>(&g_orig_DsbUnlock));
+      }
+    }
+  }
+  return hr;
+}
+
+// 对一个 IDirectSound(8) 实例 vtable-hook 其 CreateSoundBuffer（去重：dsound 对象共享同一
+// vtable）。参数用 void*：DirectSoundCreate 返回 IDirectSound*、DirectSoundCreate8 返回
+// IDirectSound8*，两者 CreateSoundBuffer 都在槽 3、同一实现地址。
+void HookCreateSoundBufferOn(void* ds) {
+  if (ds == nullptr) {
+    return;
+  }
+  HookFn(VtableSlot(ds, kIdxCreateSoundBuffer),
+         reinterpret_cast<void*>(&Detour_CreateSoundBuffer),
+         reinterpret_cast<void**>(&g_orig_CreateSoundBuffer));
+}
+
+// ── detour：导出的 DirectSoundCreate8 / DirectSoundCreate ─────────────────────
+// 先调原函数拿到 IDirectSound(8)*，成功后包裹它的 CreateSoundBuffer。两个导出各一份（不同
+// 地址、各自 trampoline）；返回对象的 CreateSoundBuffer 都在槽 3。
+HRESULT WINAPI Detour_DirectSoundCreate8(LPCGUID pcGuidDevice,
+                                         LPDIRECTSOUND8* ppDS8,
+                                         LPUNKNOWN pUnkOuter) {
+  const HRESULT hr = g_orig_DirectSoundCreate8(pcGuidDevice, ppDS8, pUnkOuter);
+  if (SUCCEEDED(hr) && ppDS8 != nullptr && *ppDS8 != nullptr) {
+    HookCreateSoundBufferOn(*ppDS8);
+  }
+  return hr;
+}
+HRESULT WINAPI Detour_DirectSoundCreate(LPCGUID pcGuidDevice,
+                                        LPDIRECTSOUND* ppDS,
+                                        LPUNKNOWN pUnkOuter) {
+  const HRESULT hr = g_orig_DirectSoundCreate(pcGuidDevice, ppDS, pUnkOuter);
+  if (SUCCEEDED(hr) && ppDS != nullptr && *ppDS != nullptr) {
+    HookCreateSoundBufferOn(*ppDS);
+  }
+  return hr;
+}
+
+// hook 导出的 DirectSoundCreate8 + DirectSoundCreate（dsound.dll，未加载则 LoadLibrary 强制
+// 解析导出）。
+//
+// 局限（需真实游戏验证，保留诚实）：只捕获注入**之后**创建的 DS 对象/buffer（注入前已建好的
+// 漏掉）；捕获**所有同格式 secondary buffer**——BGM/语音/SE 若同格式会一起进环形缓冲，按
+// callsite/音量精筛只留角色语音留给 C.3；跨格式 buffer 已被格式门控排除。
+void TryHookDirectSoundCreate() {
+  HMODULE mod = GetModuleHandleW(L"dsound.dll");
+  if (mod == nullptr) {
+    mod = LoadLibraryW(L"dsound.dll");
+  }
+  if (mod == nullptr) {
+    return;
+  }
+  void* c8 = reinterpret_cast<void*>(GetProcAddress(mod, "DirectSoundCreate8"));
+  HookFn(c8, reinterpret_cast<void*>(&Detour_DirectSoundCreate8),
+         reinterpret_cast<void**>(&g_orig_DirectSoundCreate8));
+  void* c0 = reinterpret_cast<void*>(GetProcAddress(mod, "DirectSoundCreate"));
+  HookFn(c0, reinterpret_cast<void*>(&Detour_DirectSoundCreate),
+         reinterpret_cast<void**>(&g_orig_DirectSoundCreate));
 }
 
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 装 XAudio2 捕获链 -> 通知 injector。
@@ -342,8 +486,9 @@ DWORD WINAPI HookWorker(LPVOID) {
       g_cs_ready = true;
       if (MH_Initialize() == MH_OK) {
         g_mh_init = true;
-        g_capture_enabled = true;  // detour 上线（XAudio2 未加载时 hook 随后命中）。
+        g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
         TryHookXAudio2Create();
+        TryHookDirectSoundCreate();
       }
     }
   }

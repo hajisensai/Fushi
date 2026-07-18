@@ -170,6 +170,33 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 拉起的 injector 子进程句柄（[stop] 时杀掉）。
   Process? _injector;
 
+  /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
+  /// 为 true 即目标为 32 位（多数 KiriKiri galgame），调用方据此选 x86 注入器（DLL 位数必须
+  /// 匹配目标进程，否则注入失败）。native 缺失 / 查询失败 / pid<=0 返回 null（调用方降级）。
+  static Future<bool?> targetIsWow64(int pid, {MethodChannel? channel}) async {
+    if (pid <= 0) {
+      return null;
+    }
+    final MethodChannel ch =
+        channel ?? const MethodChannel('app.hibiki.reader/voice_hook');
+    try {
+      final Map<Object?, Object?>? r =
+          await ch.invokeMethod<Map<Object?, Object?>>(
+        'processIsWow64',
+        <String, Object?>{'pid': pid},
+      );
+      if (r == null || r['error'] != null) {
+        return null;
+      }
+      final Object? v = r['isWow64'];
+      return v is bool ? v : null;
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   @override
   Future<PcmFormat?> start() async {
     final String? path = injectorPath;

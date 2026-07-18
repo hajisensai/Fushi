@@ -325,5 +325,31 @@ void main() {
       expect(await src.grabRecent(3000), isNull);
       await src.stop();
     });
+
+    test('targetIsWow64: native 返回 true -> 32 位（选 x86 注入器）', () async {
+      setHandler((call) async {
+        if (call.method == 'processIsWow64') {
+          expect(call.arguments, {'pid': 4321});
+          return <String, Object?>{'isWow64': true};
+        }
+        return null;
+      });
+      expect(await EngineHookGalAudioSource.targetIsWow64(4321), true);
+    });
+
+    test('targetIsWow64: native 返回 false -> 64 位', () async {
+      setHandler((call) async => <String, Object?>{'isWow64': false});
+      expect(await EngineHookGalAudioSource.targetIsWow64(4321), false);
+    });
+
+    test('targetIsWow64: pid<=0 / error / native 缺失 -> null', () async {
+      setHandler((call) async => <String, Object?>{'error': 'open failed'});
+      expect(
+          await EngineHookGalAudioSource.targetIsWow64(0), isNull); // 不打 native
+      expect(
+          await EngineHookGalAudioSource.targetIsWow64(4321), isNull); // error
+      setHandler(null);
+      expect(await EngineHookGalAudioSource.targetIsWow64(4321), isNull); // 缺失
+    });
   });
 }
