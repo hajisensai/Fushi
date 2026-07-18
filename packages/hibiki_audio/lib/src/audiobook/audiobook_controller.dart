@@ -175,6 +175,27 @@ class AudiobookPlayerController extends ChangeNotifier {
     return _allBookCueIndex(allBookCues: _allBookCues, currentCue: cue);
   }
 
+  /// [allBookCueIdx] 的「位置驱动」变体：直接按 [_player] 当前位置实时重算的
+  /// cue（[cueAtCurrentPositionInBook]）映射到 allBook 索引，**不依赖**
+  /// [_currentCue]。
+  ///
+  /// BUG-872：重开书时 [load] 已把播放器 seek 回保存位置，但 [_currentCue] 由
+  /// 125ms 播放 tick（[_updateCurrentCue]）填充，且 load 期常先吐一条 posMs≈0 的
+  /// 瞬态把 [_currentCue] 定成首句（[allBookCueIdx]==0）——歌词模式入场直接用它
+  /// 就高亮跳回第一句，等首个真实 tick 才跳到正确行。播放器**位置**已恢复到
+  /// `savedMs`，故按位置重算才是权威（[cueAtCurrentPositionInBook] 内部在位置
+  /// 无命中时仍回退 [_currentCue]）。歌词入场 / 恢复用本 getter，一次性锚定，
+  /// 与悬浮字幕 [displayCueForFloatingLyric] 同源回避 tick 依赖。
+  int get allBookCueIdxAtPosition {
+    final AudioCue? cue = cueAtCurrentPositionInBook();
+    if (cue == null || _allBookCues.isEmpty) return -1;
+    final int? id = cue.id;
+    if (id != null) {
+      return _allBookCueIdToIndex[id] ?? -1;
+    }
+    return _allBookCueIndex(allBookCues: _allBookCues, currentCue: cue);
+  }
+
   // ── PR8b: Follow audio ────────────────────────────────────────────────────
 
   /// 持久化后的 Follow audio 开关。UI 监听这个 ValueNotifier 切换磁铁图标。

@@ -110,9 +110,12 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
           _audiobookController!.setChapterCues(allCues);
         }
         _lyricsEntryChapter = _currentChapter;
+        // BUG-872：用 allBookCueIdxAtPosition（位置优先）而非 allBookCueIdx，
+        // 重开书暂停态下 _currentCue 尚未被播放 tick 填充，allBookCueIdx==-1 会
+        // 把入场高亮 clamp 回第一句；按已恢复的播放器位置取正确 cue。
         _lyricsEntryCueIndex =
             _audiobookController!.allBookCuesSnapshot.isNotEmpty
-                ? _audiobookController!.allBookCueIdx
+                ? _audiobookController!.allBookCueIdxAtPosition
                 : _audiobookController!.currentCueIdx;
         await _loadLyricsPage();
         await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -140,8 +143,11 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     final LyricsCueWindow cueWindow = LyricsCueWindow.select(
       allBookCues: ctrl.allBookCuesSnapshot,
       chapterCues: ctrl.chapterCuesSnapshot,
-      allBookIndex:
-          ctrl.allBookCueIdx >= 0 ? ctrl.allBookCueIdx : _lyricsEntryCueIndex,
+      // BUG-872：allBookCueIdxAtPosition 在 _currentCue 未填充时按播放器位置回退，
+      // 重开书恢复歌词页时窗口锚到已恢复的当前句而非第一句。
+      allBookIndex: ctrl.allBookCueIdxAtPosition >= 0
+          ? ctrl.allBookCueIdxAtPosition
+          : _lyricsEntryCueIndex,
       chapterIndex:
           ctrl.currentCueIdx >= 0 ? ctrl.currentCueIdx : _lyricsEntryCueIndex,
     );

@@ -1502,8 +1502,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             _audiobookController!.setChapterCues(allCues);
           }
           _lyricsEntryChapter = _currentChapter;
+          // BUG-872：位置优先索引，避免暂停态重建时 _currentCue 未填充导致
+          // 入场高亮 clamp 回第一句。
           _lyricsEntryCueIndex = allCues.isNotEmpty
-              ? _audiobookController!.allBookCueIdx
+              ? _audiobookController!.allBookCueIdxAtPosition
               : _audiobookController!.currentCueIdx;
           _loadLyricsPage();
         } else {
