@@ -118,13 +118,37 @@ dart run ffigen --config ffigen.yaml
   `onTick` 钩子（早于 pending 门控，做种期也封）。ip_filter 生效性有测试
   验证（封回环段 → 元数据死等；清空 → 秒连）。
 
-## 尚未做（阶段4 及以后）
+## 阶段4 — Windows DLL 随包（已接 flutter runner）
 
-- 未接进 `hibiki/windows/CMakeLists.txt` 的 flutter runner —— 接入前
-  `flutter build windows` 不依赖 vcpkg/libtorrent。阶段4 一并决定「vcpkg
-  预装 vs FetchContent vs vendored 预编译」的 app 集成 + DLL 随包方案。
+**分布决策：vendored 预编译**（在「vcpkg 预装 / FetchContent 现编 / vendored
+预编译」三选一里选它）。理由：libtorrent 经 vcpkg 首次源码编译约 40min
+（boost+openssl+libtorrent），不能强制每台构建机 / CI 都装 vcpkg 并现编；
+flutter windows 构建也不便注入 vcpkg 工具链文件。故：
+
+1. **产出**：`native/hibiki_torrent/build_windows_dll.ps1 -VcpkgRoot <vcpkg>`
+   编 bridge 并把 4 个运行时 DLL（`hibiki_torrent_ffi` + `torrent-rasterbar`
+   + `libssl-3-x64` + `libcrypto-3-x64`，共 ~11MB）收拢到
+   `prebuilt/windows-x64/`（git 忽略，不入库——repo 不放二进制，构建/发布
+   流程各自现产或从 release 拉取）。
+2. **随包**：`hibiki/windows/CMakeLists.txt` 在 hoshidicts 之后加了
+   **copy-if-present** 块——`prebuilt/windows-x64/*.dll` 存在则 `install` 到
+   `hibiki.exe` 旁，不存在则跳过。因此 `flutter build windows` **不依赖
+   vcpkg/libtorrent**：没跑过产出脚本的机器照常构建，只是 app 运行期
+   `EmbeddedTorrentHost.open` 因 DLL 缺失返回 null → 自动回退外接 qb。
+3. **加载**：`EmbeddedTorrentEngine._openByPlatformDefault` 用
+   `DynamicLibrary.open('hibiki_torrent_ffi.dll')`，DLL 与 exe 同目录即命中；
+   运行时依赖（torrent-rasterbar/ssl/crypto）也在同目录，被隐式加载。
+
+发布流程接入：CI/release workflow 在打 Windows 包前跑一次
+`build_windows_dll.ps1`（需缓存 vcpkg libtorrent，避免每次 40min），或从
+预先发布的 release 资产下载这 4 个 DLL 放进 `prebuilt/windows-x64/`。
+
+## 尚未做（多平台 + 真机）
+
+- **多平台**（Android/macOS/Linux）：同样走 vendored 预编译 + 各 runner
+  CMake 的 copy-if-present，但需对应工具链编 libtorrent（Android NDK /
+  Xcode / gcc），未在本机验证，另起 job。
 - http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。
-- 多平台（Android/macOS/Linux）+ CI 依赖获取策略（阶段4）。
 - 反吸血的真实吸血 peer 触发（PCB 进度作弊需伪造进度的 peer；本地 rig 的
   做种者诚实，自动化只验 ip_filter 执行力 + peer_info 导出 + sweep 不误封，
-  真封禁触发留真机/阶段4）。
+  真封禁触发留真机）。

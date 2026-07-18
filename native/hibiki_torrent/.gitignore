@@ -1,2 +1,6 @@
 # CMake / standalone build artifacts — never commit.
 build/
+
+# Vendored prebuilt runtime DLLs（由 build_windows_dll.ps1 产出，~11MB）——
+# 不入库（repo 不放二进制），由构建/发布流程各自现产或从 release 拉取。
+prebuilt/
