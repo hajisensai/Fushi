@@ -1,4 +1,4 @@
-## BUG-879 · 浏览器扩展查词响应重复携带原始词条导致冷链路慢
+## BUG-884 · 浏览器扩展查词响应重复携带原始词条导致冷链路慢
 - **报告**：2026-07-17（用户：浏览器扩展查词“感觉速度好慢”）
 - **真实性**：✅ 真 bug。`hibiki/lib/src/sync/hibiki_remote_api_handlers.dart` 的 `buildRemoteDictionaryLookupResponse` 同时返回 `result.toJson()` 与 `popupJson`，而 `tools/browser-extension/background.js` 把整包交给 content script；扩展只从 `result` 读取 `bestLength`，词条正文已在 `popupJson` 中，因而重复序列化、传输、JSON 解析和跨扩展消息复制完整词条。真实运行接口实测：“ていた”响应 253,100 bytes，其中完整 `result` 142,619 bytes；“見る”响应 1,121,702 bytes，其中完整 `result` 633,635 bytes。
 - **[x] ① 已修复** — 扩展查词显式发送 `popupOnly:true`，共享 handler 只在该标志下返回 `{bestLength}`；默认请求仍返回完整 result，保持同步端及第三方客户端兼容。提交：`71b8029db`。
