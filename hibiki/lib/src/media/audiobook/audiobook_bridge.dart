@@ -295,13 +295,21 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
 window.__hoshiSasayakiAnchorEl = function(key) {
   var r = window.hoshiReader;
   if (!r) return null;
+  // BUG-891 根因：这里原本是 `if(cueRangesMap) {...} else if(cueWrappers) {...}`。
+  // 但 __hoshiCssHighlightsSupported 在现代 WebView 恒为 true 且 cueRangesMap **从不被
+  // 填充**（applySasayakiCues 只 set cueWrappers，无 cueRangesMap.set），于是第一分支恒
+  // 进入、`ranges` 恒 undefined、直接 return null——cueWrappers 兜底被 `else` 永久跳过。
+  // 结果 anchor 恒为 null → __hoshiHighlightSasayakiCueById 的 `if(anchor)` 守卫使
+  // __hoshiImagePauseAdvance 永不调用 → 有声书跨图既不暂停也不揭遮罩（用户报「章节正文里
+  // 的图被直接无视」）。修法：cueRangesMap 命中不了就**无条件兜底** cueWrappers（拆 else）。
   if (window.__hoshiCssHighlightsSupported && r.cueRangesMap && r.cueRangesMap.get) {
     var ranges = r.cueRangesMap.get(key);
     if (ranges && ranges[0]) {
       var n = ranges[0].startContainer;
       return n && n.nodeType === 1 ? n : (n ? n.parentElement : null);
     }
-  } else if (r.cueWrappers && r.cueWrappers.get) {
+  }
+  if (r.cueWrappers && r.cueWrappers.get) {
     var w = r.cueWrappers.get(key);
     if (w && w[0]) return w[0];
   }

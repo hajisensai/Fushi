@@ -33,28 +33,25 @@ per-(bookKey, 归一化 imageKey) 真值（Drift `revealed_images` 表），阅�
   `ImageRevealKey.shouldBlur` 判据（缩略图 + 全屏共用）渲染模糊遮罩，点击揭开写 DB。与阅读器
   不同时活跃（图片库仅从书架进入），各自开页 get DB 即双向同步，无需 live watch。
   测试：`image_reveal_key_test.dart` 加 shouldBlur 4 用例（14 全绿）。
-- **[x] 阶段 D — 诉求2「遮罩没揭」的确定根因已修** — 纯图片章走 `_pauseThroughImageOnlyChapters`
-  → `awaitImageChapterPause` 停留，**不经**区间揭遮罩原语 `__hoshiRevealBlurredBetween`（需 prev→el
-  两 cue 锚点），音频停在模糊图上。新增 JS `__hoshiRevealAllBlurred`（揭整章全部 blurred 图 +
-  回传 key 持久化，跳过 gaiji）+ Dart `AudiobookBridge.revealAllBlurred`，在图片章停留前调用。
-  测试：`test/js/audiobook_image_pause.test.mjs` 加 2 用例（14 全绿），既有图片章路径 26 全绿。
-- **[ ] 诉求1「音频跟随失效」** — 需真机复现确认命中「② 运行时失效根因」哪条。推测：用户很可能
-  把「停在纯图片章模糊图上」误感为跟随失效；修遮罩缺口后停留展示清晰图、结束继续跟随，感知或随之
-  缓解。若真机复测仍有独立跟随失效，再按候选 1（`_chapterTransition` 收尾未干净释放）/ 3
-  （`snapReaderToAudio` 早退吞 `_forceNextReveal`）针对性根因修（未经真机确认前不盲改有声书时序）。
+- **[x] 阶段 D-1 — 诉求1/2 真正根因（章节正文内联图被无视）已修** — 用户澄清：诉求1/2 是**同一件事**——
+  章节正文里的内联图，音频跟随经过时既不暂停也不揭遮罩，被整个跳过。用 jsdom（真实 bridge 函数 + 真实
+  highlight 序列）复现定位根因：`__hoshiSasayakiAnchorEl` 是 `if(cueRangesMap){} else if(cueWrappers){}`，
+  而现代 WebView `__hoshiCssHighlightsSupported` **恒 true** 且 `cueRangesMap` **从不被填充**
+  （`applySasayakiCues` 只 `set cueWrappers`，无 `cueRangesMap.set`）→ 第一分支恒进入、找不到 range、
+  `return null`，cueWrappers 兜底被 `else` **永久跳过** → anchor 恒 null → `__hoshiHighlightSasayakiCueById`
+  的 `if(anchor)` 守卫使 `__hoshiImagePauseAdvance` **永不调用** → 整条 sasayaki 图片暂停+揭遮罩失效。
+  **修法**：cueRangesMap 未命中就无条件兜底 cueWrappers（`else if`→`if`）。jsdom 实证：修复前生产条件
+  （cssHighlights=true）5 结构全 `paused=false`；修复后结构 1/2/3（段内/跨段内联图）`paused=true` + 揭遮罩。
+  守卫：`test/js/audiobook_image_pause.test.mjs` 加 3 anchor 用例（17 全绿）。
+  （残留次要边界：整句纯 ruby 无 wrapper → anchor 仍 null；图紧跟当前句之后 → 下一句 cue 推进才检测。）
+- **[x] 阶段 D-2 — 纯图片章揭遮罩（独立次要缺口）** — 纯图片章走 `awaitImageChapterPause` 停留，不经区间
+  揭遮罩原语 `__hoshiRevealBlurredBetween`。新增 `__hoshiRevealAllBlurred` + `AudiobookBridge.revealAllBlurred`
+  停留前调用。与主根因正交的另一真实缺口，一并修掉。
 
-### ② 运行时失效根因（静态排序，待真机复现确认命中哪条）
-1. **独立成章的纯图片页（BUG-487 路径）**：整章无 cue → `__hoshiRevealBlurredBetween`
-   （`audiobook_bridge.dart`）永不执行 → 遮罩不揭；且 `_chapterTransition`/`_imageChapterPauseActive`
-   长期持真（`audiobook_controller.dart` / `audiobook.part.dart`）→ 音频走但文字不跟。同时解释①②。
-2. **章首（首句之前）插图 + 跨章后 `prev==null`**（`resetImagePauseAnchor` 归零）→ 章首插图
-   既不暂停也不揭。
-3. **`snapReaderToAudio`/`_onCueChanged` 早退吞 `_forceNextReveal`** → 恢复后不跟随。
-
-- **[x] ① 根因修复** — 诉求2/3/4 已根因修（reveal 状态提升为持久 per-(bookKey,归一key) 真值 +
-  纯图片章揭遮罩缺口）；诉求1「音频跟随失效」独立部分待真机复现确认后针对性修（见阶段 D）。
+- **[x] ① 根因修复** — 诉求1/2（`__hoshiSasayakiAnchorEl` 的 `else` 使图片暂停+揭遮罩整条失效，纯逻辑
+  根因）+ 诉求3/4（reveal 状态提升为持久 per-(bookKey,归一key) 真值 + 图片库双向同步）+ 纯图片章次要缺口。
 - **[x] ② 自动化测试** — 归一化 10 + 判据 shouldBlur 4 + v46 迁移/DAO 2 + 迁移链 45→46 同步 33 +
-  JS 揭遮罩行为（含纯图片章 revealAll）14 + 图片章路径回归 26，全绿。
-- **备注**：⚠️ schema v46 与 PR#224（EpubBooks.completedAt，本会话并发，也占 v46）撞版本号，
-  当前 develop 仍为 45；集成时**后合者改 47**。诉求1（音频跟随失效）声明「彻底修好」前必须真机复测
-  原始失败路径（CLAUDE.md 验证纪律）——本轮已修确定的遮罩缺口，跟随失效的独立部分留真机确认。
+  JS 行为 17（含 anchor 兜底 3 + 纯图片章 revealAll 2）+ 图片章路径回归 26，全绿。
+- **备注**：⚠️ schema v46 与 PR#224（EpubBooks.completedAt，本会话并发，也占 v46）撞版本号，当前 develop
+  仍为 45；集成时**后合者改 47**。根因经 jsdom 实证复现+修复验证；声明「彻底修好」前仍建议真机复测原始
+  失败路径（CLAUDE.md 验证纪律）。

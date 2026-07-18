@@ -135,3 +135,44 @@ test("揭整章(纯图片章)：无 cue 锚点也揭开所有 blurred 图，跳�
 test("揭整章：无 blurred 图时安全返回 0", () => {
   assert.equal(revealsAll(`<p>纯文字，无图</p>`), "0|0");
 });
+
+// BUG-891 真正根因（诉求1/2「章节正文里的图，音频经过既不暂停也不揭遮罩，被直接无视」）：
+// __hoshiSasayakiAnchorEl 原为 `if(cueRangesMap){...} else if(cueWrappers){...}`。现代
+// WebView __hoshiCssHighlightsSupported 恒 true，而 cueRangesMap 从不被填充（applySasayakiCues
+// 只 set cueWrappers）→ 第一分支恒进入、找不到 range、return null，cueWrappers 兜底被 else
+// 永久跳过 → anchor 恒 null → __hoshiImagePauseAdvance 永不调用 → 整条图片暂停+揭遮罩失效。
+// 修法：cueRangesMap 未命中就无条件兜底 cueWrappers。本用例锁死这个兜底。
+const anchorElSrc = extract("__hoshiSasayakiAnchorEl");
+
+function resolveAnchorId(cssHighlights, rangeMapEntries) {
+  const setup = `
+    window.__hoshiCssHighlightsSupported = ${cssHighlights};
+    window.hoshiReader = {
+      cueRangesMap: new Map(${rangeMapEntries}),
+      cueWrappers: new Map([['K', [document.getElementById('w')]]]),
+    };
+  `;
+  return runInDom(
+    `<span id="w" class="hoshi-sasayaki-cue">句</span>`,
+    anchorElSrc + setup,
+    `var a = window.__hoshiSasayakiAnchorEl('K');
+     document.body.setAttribute('data-result', a ? (a.id || a.nodeName) : 'null');`,
+  );
+}
+
+test("锚点解析：cssHighlights 开 + cueRangesMap 空 → 兜底 cueWrappers（不是 null）", () => {
+  // 生产真实条件。修复前此处返回 'null'（图片暂停+揭遮罩全废）。
+  assert.equal(resolveAnchorId("true", ""), "w");
+});
+
+test("锚点解析：cssHighlights 关也兜底 cueWrappers", () => {
+  assert.equal(resolveAnchorId("false", ""), "w");
+});
+
+test("锚点解析：cueRangesMap 命中时优先用 range 的 startContainer（不破坏原路径）", () => {
+  // range startContainer 指向 #w 元素本身（nodeType===1 直接返回）。
+  assert.equal(
+    resolveAnchorId("true", "[['K', [{ startContainer: document.getElementById('w') }]]]"),
+    "w",
+  );
+});
