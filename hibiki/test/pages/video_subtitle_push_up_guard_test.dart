@@ -113,9 +113,9 @@ void main() {
     for (final String getter in <String>[
       '_videoButtonBarHeight',
       '_videoSeekBarButtonGap',
-      // TODO-568：移动 reserve 抬到「可见轨道上缘 + 呼吸间距」（不再用整段触摸热区高
-      // _videoSeekBarContainerHeight，那会顶飞 ~47×缩放 透明命中区空白）。
-      '_videoSeekBarTrackHeight',
+      // BUG-891：移动 reserve 抬到「进度条**触摸热区**上缘 + 呼吸间距」——热区含可见轨道
+      // 上方那段透明可点 seek 区，字幕命中区要整体清出它才不与 seek 重叠误触。
+      '_videoSeekBarContainerHeight',
       '_videoSubtitleSeekBarBreathingGap',
       '_videoBottomChromeBaseline',
       '_videoBottomSystemInset()',
@@ -124,12 +124,13 @@ void main() {
           reason: 'reserve 必须由真实控制条几何项 $getter 加总（随缩放、盖过移动进度条）');
     }
     expect(body, contains('_isDesktopVideoControls'),
-        reason: 'reserve 应按平台分桌面/移动几何（桌面只让一个按钮行，移动让进度条上缘）');
-    // TODO-568 防回退：reserve 计算不应再用整段触摸热区高（顶飞根因）。撤回成
-    // `seekBarContainerHeight: _videoSeekBarContainerHeight` → 本条红。
-    expect(body, isNot(contains('_videoSeekBarContainerHeight')),
-        reason: 'reserve 不应再用整段触摸热区高 _videoSeekBarContainerHeight'
-            '（字幕被顶飞 ~47×缩放 空白，TODO-568 改用可见轨道高 + 呼吸间距）');
+        reason: 'reserve 应按平台分桌面/移动几何（桌面只让一个按钮行，移动让进度条热区上缘）');
+    // BUG-891 防回退：reserve 计算不应再只用**可见轨道高**（那会让字幕落进轨道上方那段
+    // 透明 seek 命中区、与进度条在同一竞技场误触）。撤回成
+    // `seekBarTrackHeight: _videoSeekBarTrackHeight` → 本条红。
+    expect(body, isNot(contains('_videoSeekBarTrackHeight')),
+        reason: 'reserve 不应再只用可见轨道高 _videoSeekBarTrackHeight'
+            '（字幕落进进度条透明热区、点击挨太近误触，BUG-891 改用触摸热区全高）');
   });
 
   test('桌面 hover 包裹层 non-opaque 下探 media_kit 自己的 MouseRegion（TODO-364）', () {

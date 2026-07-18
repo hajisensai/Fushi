@@ -45,19 +45,24 @@ const double kVideoControlsBottomReserve = _kButtonBarHeight;
 /// - 桌面：进度条骑按钮行上沿 → reserve = 一个按钮行高（[buttonBarHeight]），保持
 ///   BUG-228「只让出进度条那一条、不抬过整条按钮行」的桌面观感，但现在随缩放变化；
 /// - 移动：进度条整体被抬到按钮行上方 → reserve = [bottomChromeBaseline] + 系统底部
-///   inset + [buttonBarHeight] + [seekBarButtonGap] + **可见轨道高** [seekBarTrackHeight]
-///   + 字幕呼吸间距 [subtitleBreathingGap]（= 可见进度条**轨道上缘** + 一点点呼吸距离，
-///   字幕底缘恰骑其上方）。
+///   inset + [buttonBarHeight] + [seekBarButtonGap] + **进度条触摸热区全高**
+///   [seekBarContainerHeight] + 字幕呼吸间距 [subtitleBreathingGap]（= 进度条**触摸热区
+///   上缘** + 一点点呼吸距离，字幕命中区整体骑在进度条整段可点区上方）。
 ///
-/// TODO-568（手机端字幕被顶飞 / 位置不对）：BUG-238 当初移动分支加的是
-/// **`seekBarContainerHeight`（进度条触摸热区全高 ≈52×缩放）**，但 media_kit
-/// `MaterialSeekBar` 把**可见轨道**放在容器底缘（`Alignment.bottomCenter`，
-/// `third_party/media_kit_video/.../material.dart` 的 `seekBarAlignment` + 内层 Stack），
-/// 可见轨道只占 `seekBarHeight`（≈5×缩放），容器其余 ~47×缩放 全是轨道**上方**的透明
-/// 命中区。用整段热区高当 reserve → 字幕底缘被抬到热区**顶缘**，比可见进度条上缘还高出
-/// ~47×缩放 的空白，字幕悬空「顶飞」（BUG-238 备注里预留的「真机微调项」，现兑现）。修正：
-/// 改用**可见轨道高** [seekBarTrackHeight] + 小呼吸间距 [subtitleBreathingGap]，让字幕
-/// 底缘骑在可见进度条上方一点点（不被遮、也不顶飞）。
+/// BUG-891（字幕点击与进度条点击挨太近 / 误触）——推翻 TODO-568 的取舍：TODO-568 当初为
+/// 消「字幕顶飞」把移动 reserve 从触摸热区全高改成**可见轨道高** [seekBarTrackHeight] +
+/// 呼吸，让字幕底缘骑在可见进度条上方一点点。但 media_kit `MaterialSeekBar` 把可见轨道放在
+/// 触摸热区容器底缘（`Alignment.bottomCenter`），容器上方 ~35×缩放 全是**透明但可点**的
+/// seek 命中区。字幕只避让可见轨道 → 字幕命中区（含逐字符兜底扩边）落进那段透明热区里，与
+/// 进度条 seek 命中区在同一手势竞技场重叠，手指差几像素就把字幕点误判成 seek、seek 误判成
+/// 字幕（用户报「点字幕/点进度条太容易点错」）。
+///
+/// 修正：移动 reserve 改回用**触摸热区全高** [seekBarContainerHeight]（进度条真正的可点
+/// 目标，非只可见轨道）+ 呼吸间距，让字幕命中区整体清出进度条整段 seek 命中区、两者不再
+/// 重叠。代价是控制条可见时字幕比可见轨道高出约一个热区高（用户明确要求「让他们远一点」，
+/// 这段离底距离正是要的分隔；控制条会自动隐藏、字幕随即落回用户基线）。若真机上此分隔过大，
+/// 收窄 `_videoSeekBarContainerHeight`（进度条可点热区）或 [subtitleBreathingGap] 即可，
+/// 但不能退回只让可见轨道高——那会重新让两命中区重叠（本 bug 根因）。
 ///
 /// 几何项均来自 `video_hibiki_page.dart` 的同名控制条 getter（已 ×uiScale）；本函数不再
 /// 二次乘 uiScale，由调用方传入已缩放值，避免双重缩放。[bottomChromeBaseline] 是不随
@@ -67,7 +72,7 @@ double videoSubtitleControlsReserve({
   required bool isDesktop,
   required double buttonBarHeight,
   required double seekBarButtonGap,
-  required double seekBarTrackHeight,
+  required double seekBarContainerHeight,
   required double subtitleBreathingGap,
   required double bottomChromeBaseline,
   required double bottomSystemInset,
@@ -76,13 +81,14 @@ double videoSubtitleControlsReserve({
     // 桌面进度条骑按钮行上沿：让出一个（已缩放的）按钮行高即可（BUG-228）。
     return buttonBarHeight;
   }
-  // 移动可见进度条**轨道上缘** = 离底基线 + 系统 inset + 按钮行 + 进度条/按钮间距 +
-  // 可见轨道高；再加字幕呼吸间距让字幕底缘骑在其上方一点点（不顶飞、不被遮，TODO-568）。
+  // 移动进度条**触摸热区上缘** = 离底基线 + 系统 inset + 按钮行 + 进度条/按钮间距 +
+  // 触摸热区全高；再加字幕呼吸间距让字幕命中区整体骑在进度条整段可点区上方，不与 seek
+  // 命中区重叠（BUG-891：只让可见轨道高会落进热区上方那段透明可点区、误触）。
   return bottomChromeBaseline +
       bottomSystemInset +
       buttonBarHeight +
       seekBarButtonGap +
-      seekBarTrackHeight +
+      seekBarContainerHeight +
       subtitleBreathingGap;
 }
 
