@@ -4910,20 +4910,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         systemBarsVisible: _systemBarsVisible,
       );
 
-  /// 字幕动态避让的「进度条上缘」高度（BUG-238）：控制条可见时字幕底缘对它取下限
-  /// （`max(bottomPadding, reserve)`，见 [VideoSubtitleOverlay]）。由当前平台真实控制条
+  /// 字幕动态避让的「进度条上缘」高度（BUG-238 / BUG-901）：控制条可见时字幕底缘对它取
+  /// 下限（`max(bottomPadding, reserve)`，见 [VideoSubtitleOverlay]）。由当前平台真实控制条
   /// 几何加总（同名 getter 已 ×[_videoUiScale]），故随界面缩放一起变大——旧默认常量 56
   /// 既不随缩放、又低于默认基线 75，移动端 `max(75,56)=75` 把字幕留在被抬高的进度条
   /// 下面被遮。桌面进度条骑按钮行上沿 → 只让一个按钮行高（保 BUG-228 观感）；移动端
-  /// 进度条整体被 [_mobileControlsTheme] 抬到按钮行上方 → 让出其热区上缘（≈140×缩放）。
+  /// 进度条整体被 [_mobileControlsTheme] 抬到按钮行上方 → 让出其**触摸热区上缘**（含轨道
+  /// 上方那段透明可点区），字幕命中区整体清出 seek 命中区、不再挨太近误触（BUG-901）。
   double _subtitleControlsBottomReserve() {
     return videoSubtitleControlsReserve(
       isDesktop: _isDesktopVideoControls,
       buttonBarHeight: _videoButtonBarHeight,
       seekBarButtonGap: _videoSeekBarButtonGap,
-      // TODO-568：用**可见轨道高** + 呼吸间距（而非整段触摸热区高），字幕底缘骑在可见
-      // 进度条上方一点点、不顶飞那 ~47×缩放 的透明命中区空白。
-      seekBarTrackHeight: _videoSeekBarTrackHeight,
+      // BUG-901：用**触摸热区全高**（进度条真正可点目标，含可见轨道上方那段透明 seek
+      // 命中区）+ 呼吸间距，让字幕命中区整体骑在进度条整段可点区上方，与 seek 不重叠。
+      // 只让可见轨道高（旧 TODO-568）会让字幕落进那段透明热区、两命中区在同一竞技场误触。
+      seekBarContainerHeight: _videoSeekBarContainerHeight,
       subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap,
       bottomChromeBaseline: _videoBottomChromeBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
