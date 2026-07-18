@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 878 条。点号进各自文件。
+> 共 879 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-898](bugs/BUG-898-audio-follow-image-pause-mask-persist.md) | ✅ | ✅ | 音频跟随遇图片暂停失效且遮罩未揭，遮罩揭开状态应持久化并与图片库双向同步 |
 | [BUG-897](bugs/BUG-897-ass-size-outline-mpv-parity.md) | ✅ | ✅ | ASS 字幕字号偏小、描边偏细：cell 校准含 lineGap + 居中描边只显一半，与 mpv/libass 不齐 |
 | [BUG-896](bugs/BUG-896-ankidroid-open-note-view-uri.md) | ✅ | ✅ | AnkiDroid 中打开卡片失败：ACTION_VIEW note URI 无 activity 处理 |
 | [BUG-895](bugs/BUG-895-video-cards-too-large-on-phone.md) | ✅ | ✅ | 手机端视频卡片过大（窄屏只出 1 列铺满整屏） |

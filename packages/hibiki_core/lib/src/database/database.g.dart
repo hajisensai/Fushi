@@ -16285,6 +16285,252 @@ class SyncDeletionTombstonesCompanion
   }
 }
 
+class $RevealedImagesTable extends RevealedImages
+    with TableInfo<$RevealedImagesTable, RevealedImageRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $RevealedImagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES epub_books (book_key) ON DELETE CASCADE'));
+  static const VerificationMeta _imageKeyMeta =
+      const VerificationMeta('imageKey');
+  @override
+  late final GeneratedColumn<String> imageKey = GeneratedColumn<String>(
+      'image_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _revealedAtMeta =
+      const VerificationMeta('revealedAt');
+  @override
+  late final GeneratedColumn<int> revealedAt = GeneratedColumn<int>(
+      'revealed_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [bookKey, imageKey, revealedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'revealed_images';
+  @override
+  VerificationContext validateIntegrity(Insertable<RevealedImageRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    } else if (isInserting) {
+      context.missing(_bookKeyMeta);
+    }
+    if (data.containsKey('image_key')) {
+      context.handle(_imageKeyMeta,
+          imageKey.isAcceptableOrUnknown(data['image_key']!, _imageKeyMeta));
+    } else if (isInserting) {
+      context.missing(_imageKeyMeta);
+    }
+    if (data.containsKey('revealed_at')) {
+      context.handle(
+          _revealedAtMeta,
+          revealedAt.isAcceptableOrUnknown(
+              data['revealed_at']!, _revealedAtMeta));
+    } else if (isInserting) {
+      context.missing(_revealedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookKey, imageKey};
+  @override
+  RevealedImageRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return RevealedImageRow(
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
+      imageKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}image_key'])!,
+      revealedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}revealed_at'])!,
+    );
+  }
+
+  @override
+  $RevealedImagesTable createAlias(String alias) {
+    return $RevealedImagesTable(attachedDatabase, alias);
+  }
+}
+
+class RevealedImageRow extends DataClass
+    implements Insertable<RevealedImageRow> {
+  /// 书稳定身份（= EpubBooks.bookKey，内容派生跨设备一致）。删书 cascade 清本表。
+  final String bookKey;
+
+  /// 图片稳定 key（extractDir 相对、解码、正斜杠路径，如 `OEBPS/images/foo.jpg`）。
+  final String imageKey;
+
+  /// 揭开毫秒戳（LWW 比较键；将来跨端同步/备份合并取较新）。
+  final int revealedAt;
+  const RevealedImageRow(
+      {required this.bookKey,
+      required this.imageKey,
+      required this.revealedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_key'] = Variable<String>(bookKey);
+    map['image_key'] = Variable<String>(imageKey);
+    map['revealed_at'] = Variable<int>(revealedAt);
+    return map;
+  }
+
+  RevealedImagesCompanion toCompanion(bool nullToAbsent) {
+    return RevealedImagesCompanion(
+      bookKey: Value(bookKey),
+      imageKey: Value(imageKey),
+      revealedAt: Value(revealedAt),
+    );
+  }
+
+  factory RevealedImageRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return RevealedImageRow(
+      bookKey: serializer.fromJson<String>(json['bookKey']),
+      imageKey: serializer.fromJson<String>(json['imageKey']),
+      revealedAt: serializer.fromJson<int>(json['revealedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookKey': serializer.toJson<String>(bookKey),
+      'imageKey': serializer.toJson<String>(imageKey),
+      'revealedAt': serializer.toJson<int>(revealedAt),
+    };
+  }
+
+  RevealedImageRow copyWith(
+          {String? bookKey, String? imageKey, int? revealedAt}) =>
+      RevealedImageRow(
+        bookKey: bookKey ?? this.bookKey,
+        imageKey: imageKey ?? this.imageKey,
+        revealedAt: revealedAt ?? this.revealedAt,
+      );
+  RevealedImageRow copyWithCompanion(RevealedImagesCompanion data) {
+    return RevealedImageRow(
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      imageKey: data.imageKey.present ? data.imageKey.value : this.imageKey,
+      revealedAt:
+          data.revealedAt.present ? data.revealedAt.value : this.revealedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RevealedImageRow(')
+          ..write('bookKey: $bookKey, ')
+          ..write('imageKey: $imageKey, ')
+          ..write('revealedAt: $revealedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(bookKey, imageKey, revealedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RevealedImageRow &&
+          other.bookKey == this.bookKey &&
+          other.imageKey == this.imageKey &&
+          other.revealedAt == this.revealedAt);
+}
+
+class RevealedImagesCompanion extends UpdateCompanion<RevealedImageRow> {
+  final Value<String> bookKey;
+  final Value<String> imageKey;
+  final Value<int> revealedAt;
+  final Value<int> rowid;
+  const RevealedImagesCompanion({
+    this.bookKey = const Value.absent(),
+    this.imageKey = const Value.absent(),
+    this.revealedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  RevealedImagesCompanion.insert({
+    required String bookKey,
+    required String imageKey,
+    required int revealedAt,
+    this.rowid = const Value.absent(),
+  })  : bookKey = Value(bookKey),
+        imageKey = Value(imageKey),
+        revealedAt = Value(revealedAt);
+  static Insertable<RevealedImageRow> custom({
+    Expression<String>? bookKey,
+    Expression<String>? imageKey,
+    Expression<int>? revealedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookKey != null) 'book_key': bookKey,
+      if (imageKey != null) 'image_key': imageKey,
+      if (revealedAt != null) 'revealed_at': revealedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  RevealedImagesCompanion copyWith(
+      {Value<String>? bookKey,
+      Value<String>? imageKey,
+      Value<int>? revealedAt,
+      Value<int>? rowid}) {
+    return RevealedImagesCompanion(
+      bookKey: bookKey ?? this.bookKey,
+      imageKey: imageKey ?? this.imageKey,
+      revealedAt: revealedAt ?? this.revealedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (imageKey.present) {
+      map['image_key'] = Variable<String>(imageKey.value);
+    }
+    if (revealedAt.present) {
+      map['revealed_at'] = Variable<int>(revealedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RevealedImagesCompanion(')
+          ..write('bookKey: $bookKey, ')
+          ..write('imageKey: $imageKey, ')
+          ..write('revealedAt: $revealedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -16354,6 +16600,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $CollectionTagMappingsTable(this);
   late final $SyncDeletionTombstonesTable syncDeletionTombstones =
       $SyncDeletionTombstonesTable(this);
+  late final $RevealedImagesTable revealedImages = $RevealedImagesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -16401,7 +16648,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         bookTagMembershipTombstones,
         bookCustomCss,
         collectionTagMappings,
-        syncDeletionTombstones
+        syncDeletionTombstones,
+        revealedImages
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -16516,6 +16764,13 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('collection_tag_mappings', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('epub_books',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('revealed_images', kind: UpdateKind.delete),
             ],
           ),
         ],
@@ -18882,6 +19137,21 @@ final class $$EpubBooksTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$RevealedImagesTable, List<RevealedImageRow>>
+      _revealedImagesRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.revealedImages,
+              aliasName: 'epub_books__book_key__revealed_images__book_key');
+
+  $$RevealedImagesTableProcessedTableManager get revealedImagesRefs {
+    final manager = $$RevealedImagesTableTableManager($_db, $_db.revealedImages)
+        .filter((f) =>
+            f.bookKey.bookKey.sqlEquals($_itemColumn<String>('book_key')!));
+
+    final cache = $_typedResult.readTableOrNull(_revealedImagesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$EpubBooksTableFilterComposer
@@ -18984,6 +19254,27 @@ class $$EpubBooksTableFilterComposer
             $$BookTagMappingsTableFilterComposer(
               $db: $db,
               $table: $db.bookTagMappings,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> revealedImagesRefs(
+      Expression<bool> Function($$RevealedImagesTableFilterComposer f) f) {
+    final $$RevealedImagesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookKey,
+        referencedTable: $db.revealedImages,
+        getReferencedColumn: (t) => t.bookKey,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$RevealedImagesTableFilterComposer(
+              $db: $db,
+              $table: $db.revealedImages,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -19168,6 +19459,27 @@ class $$EpubBooksTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> revealedImagesRefs<T extends Object>(
+      Expression<T> Function($$RevealedImagesTableAnnotationComposer a) f) {
+    final $$RevealedImagesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookKey,
+        referencedTable: $db.revealedImages,
+        getReferencedColumn: (t) => t.bookKey,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$RevealedImagesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.revealedImages,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$EpubBooksTableTableManager extends RootTableManager<
@@ -19182,7 +19494,10 @@ class $$EpubBooksTableTableManager extends RootTableManager<
     (EpubBookRow, $$EpubBooksTableReferences),
     EpubBookRow,
     PrefetchHooks Function(
-        {bool sourceId, bool bookmarksRefs, bool bookTagMappingsRefs})> {
+        {bool sourceId,
+        bool bookmarksRefs,
+        bool bookTagMappingsRefs,
+        bool revealedImagesRefs})> {
   $$EpubBooksTableTableManager(_$HibikiDatabase db, $EpubBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -19266,12 +19581,14 @@ class $$EpubBooksTableTableManager extends RootTableManager<
           prefetchHooksCallback: (
               {sourceId = false,
               bookmarksRefs = false,
-              bookTagMappingsRefs = false}) {
+              bookTagMappingsRefs = false,
+              revealedImagesRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (bookmarksRefs) db.bookmarks,
-                if (bookTagMappingsRefs) db.bookTagMappings
+                if (bookTagMappingsRefs) db.bookTagMappings,
+                if (revealedImagesRefs) db.revealedImages
               ],
               addJoins: <
                   T extends TableManagerState<
@@ -19326,6 +19643,19 @@ class $$EpubBooksTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.bookKey == item.bookKey),
+                        typedResults: items),
+                  if (revealedImagesRefs)
+                    await $_getPrefetchedData<EpubBookRow, $EpubBooksTable,
+                            RevealedImageRow>(
+                        currentTable: table,
+                        referencedTable: $$EpubBooksTableReferences
+                            ._revealedImagesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$EpubBooksTableReferences(db, table, p0)
+                                .revealedImagesRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.bookKey == item.bookKey),
                         typedResults: items)
                 ];
               },
@@ -19346,7 +19676,10 @@ typedef $$EpubBooksTableProcessedTableManager = ProcessedTableManager<
     (EpubBookRow, $$EpubBooksTableReferences),
     EpubBookRow,
     PrefetchHooks Function(
-        {bool sourceId, bool bookmarksRefs, bool bookTagMappingsRefs})>;
+        {bool sourceId,
+        bool bookmarksRefs,
+        bool bookTagMappingsRefs,
+        bool revealedImagesRefs})>;
 typedef $$BookmarksTableCreateCompanionBuilder = BookmarksCompanion Function({
   Value<int> id,
   required String bookKey,
@@ -27701,6 +28034,253 @@ typedef $$SyncDeletionTombstonesTableProcessedTableManager
         ),
         SyncDeletionTombstoneRow,
         PrefetchHooks Function()>;
+typedef $$RevealedImagesTableCreateCompanionBuilder = RevealedImagesCompanion
+    Function({
+  required String bookKey,
+  required String imageKey,
+  required int revealedAt,
+  Value<int> rowid,
+});
+typedef $$RevealedImagesTableUpdateCompanionBuilder = RevealedImagesCompanion
+    Function({
+  Value<String> bookKey,
+  Value<String> imageKey,
+  Value<int> revealedAt,
+  Value<int> rowid,
+});
+
+final class $$RevealedImagesTableReferences extends BaseReferences<
+    _$HibikiDatabase, $RevealedImagesTable, RevealedImageRow> {
+  $$RevealedImagesTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $EpubBooksTable _bookKeyTable(_$HibikiDatabase db) => db.epubBooks
+      .createAlias('revealed_images__book_key__epub_books__book_key');
+
+  $$EpubBooksTableProcessedTableManager get bookKey {
+    final $_column = $_itemColumn<String>('book_key')!;
+
+    final manager = $$EpubBooksTableTableManager($_db, $_db.epubBooks)
+        .filter((f) => f.bookKey.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookKeyTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$RevealedImagesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $RevealedImagesTable> {
+  $$RevealedImagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get imageKey => $composableBuilder(
+      column: $table.imageKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get revealedAt => $composableBuilder(
+      column: $table.revealedAt, builder: (column) => ColumnFilters(column));
+
+  $$EpubBooksTableFilterComposer get bookKey {
+    final $$EpubBooksTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookKey,
+        referencedTable: $db.epubBooks,
+        getReferencedColumn: (t) => t.bookKey,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EpubBooksTableFilterComposer(
+              $db: $db,
+              $table: $db.epubBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$RevealedImagesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $RevealedImagesTable> {
+  $$RevealedImagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get imageKey => $composableBuilder(
+      column: $table.imageKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get revealedAt => $composableBuilder(
+      column: $table.revealedAt, builder: (column) => ColumnOrderings(column));
+
+  $$EpubBooksTableOrderingComposer get bookKey {
+    final $$EpubBooksTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookKey,
+        referencedTable: $db.epubBooks,
+        getReferencedColumn: (t) => t.bookKey,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EpubBooksTableOrderingComposer(
+              $db: $db,
+              $table: $db.epubBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$RevealedImagesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $RevealedImagesTable> {
+  $$RevealedImagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get imageKey =>
+      $composableBuilder(column: $table.imageKey, builder: (column) => column);
+
+  GeneratedColumn<int> get revealedAt => $composableBuilder(
+      column: $table.revealedAt, builder: (column) => column);
+
+  $$EpubBooksTableAnnotationComposer get bookKey {
+    final $$EpubBooksTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookKey,
+        referencedTable: $db.epubBooks,
+        getReferencedColumn: (t) => t.bookKey,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EpubBooksTableAnnotationComposer(
+              $db: $db,
+              $table: $db.epubBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$RevealedImagesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $RevealedImagesTable,
+    RevealedImageRow,
+    $$RevealedImagesTableFilterComposer,
+    $$RevealedImagesTableOrderingComposer,
+    $$RevealedImagesTableAnnotationComposer,
+    $$RevealedImagesTableCreateCompanionBuilder,
+    $$RevealedImagesTableUpdateCompanionBuilder,
+    (RevealedImageRow, $$RevealedImagesTableReferences),
+    RevealedImageRow,
+    PrefetchHooks Function({bool bookKey})> {
+  $$RevealedImagesTableTableManager(
+      _$HibikiDatabase db, $RevealedImagesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$RevealedImagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$RevealedImagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$RevealedImagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> bookKey = const Value.absent(),
+            Value<String> imageKey = const Value.absent(),
+            Value<int> revealedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              RevealedImagesCompanion(
+            bookKey: bookKey,
+            imageKey: imageKey,
+            revealedAt: revealedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String bookKey,
+            required String imageKey,
+            required int revealedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              RevealedImagesCompanion.insert(
+            bookKey: bookKey,
+            imageKey: imageKey,
+            revealedAt: revealedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$RevealedImagesTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({bookKey = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (bookKey) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.bookKey,
+                    referencedTable:
+                        $$RevealedImagesTableReferences._bookKeyTable(db),
+                    referencedColumn: $$RevealedImagesTableReferences
+                        ._bookKeyTable(db)
+                        .bookKey,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$RevealedImagesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $RevealedImagesTable,
+    RevealedImageRow,
+    $$RevealedImagesTableFilterComposer,
+    $$RevealedImagesTableOrderingComposer,
+    $$RevealedImagesTableAnnotationComposer,
+    $$RevealedImagesTableCreateCompanionBuilder,
+    $$RevealedImagesTableUpdateCompanionBuilder,
+    (RevealedImageRow, $$RevealedImagesTableReferences),
+    RevealedImageRow,
+    PrefetchHooks Function({bool bookKey})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -27796,4 +28376,6 @@ class $HibikiDatabaseManager {
   $$SyncDeletionTombstonesTableTableManager get syncDeletionTombstones =>
       $$SyncDeletionTombstonesTableTableManager(
           _db, _db.syncDeletionTombstones);
+  $$RevealedImagesTableTableManager get revealedImages =>
+      $$RevealedImagesTableTableManager(_db, _db.revealedImages);
 }
