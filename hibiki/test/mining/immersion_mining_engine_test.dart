@@ -61,7 +61,8 @@ void main() {
           required String outputPath,
           int fps = 8,
           int width = 320,
-          FfmpegFailureReporter? onFailure}) async =>
+          FfmpegFailureReporter? onFailure,
+          String? tlsPinSha256}) async =>
       outputPath;
   Future<String?> nullGif(
           {required String inputPath,
@@ -70,7 +71,8 @@ void main() {
           required String outputPath,
           int fps = 8,
           int width = 320,
-          FfmpegFailureReporter? onFailure}) async =>
+          FfmpegFailureReporter? onFailure,
+          String? tlsPinSha256}) async =>
       null;
   Future<String?> okAudio(
           {required String inputPath,
@@ -81,7 +83,8 @@ void main() {
           int? audioStreamCount,
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
+          String audioBitrate = '64k',
+          String? tlsPinSha256}) async =>
       outputPath;
   Future<String?> nullAudio(
           {required String inputPath,
@@ -92,19 +95,22 @@ void main() {
           int? audioStreamCount,
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
+          String audioBitrate = '64k',
+          String? tlsPinSha256}) async =>
       null;
   Future<String?> okFrame(
           {required String inputPath,
           required String outputPath,
           double atSeconds = 10.0,
-          FfmpegFailureReporter? onFailure}) async =>
+          FfmpegFailureReporter? onFailure,
+          String? tlsPinSha256}) async =>
       outputPath;
   Future<String?> nullFrame(
           {required String inputPath,
           required String outputPath,
           double atSeconds = 10.0,
-          FfmpegFailureReporter? onFailure}) async =>
+          FfmpegFailureReporter? onFailure,
+          String? tlsPinSha256}) async =>
       null;
 
   test('gif+audio success builds context and calls mineEntry', () async {
@@ -211,7 +217,8 @@ void main() {
         required String outputPath,
         int fps = 8,
         int width = 320,
-        FfmpegFailureReporter? onFailure}) async {
+        FfmpegFailureReporter? onFailure,
+        String? tlsPinSha256}) async {
       gifInput = inputPath;
       return outputPath;
     }
@@ -225,7 +232,8 @@ void main() {
         int? audioStreamCount,
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
-        String audioBitrate = '64k'}) async {
+        String audioBitrate = '64k',
+        String? tlsPinSha256}) async {
       audioInput = inputPath;
       return outputPath;
     }
@@ -337,7 +345,8 @@ void main() {
         required String outputPath,
         int fps = 8,
         int width = 320,
-        FfmpegFailureReporter? onFailure}) async {
+        FfmpegFailureReporter? onFailure,
+        String? tlsPinSha256}) async {
       gifCalled = true;
       return outputPath;
     }
@@ -372,7 +381,8 @@ void main() {
         required String outputPath,
         int fps = 8,
         int width = 320,
-        FfmpegFailureReporter? onFailure}) async {
+        FfmpegFailureReporter? onFailure,
+        String? tlsPinSha256}) async {
       gifCalled = true;
       return outputPath;
     }

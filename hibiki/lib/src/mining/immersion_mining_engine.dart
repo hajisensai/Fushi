@@ -17,6 +17,7 @@ typedef GifExtractor = Future<String?> Function({
   int fps,
   int width,
   FfmpegFailureReporter? onFailure,
+  String? tlsPinSha256,
 });
 typedef AudioExtractor = Future<String?> Function({
   required String inputPath,
@@ -28,12 +29,14 @@ typedef AudioExtractor = Future<String?> Function({
   FfmpegFailureReporter? onFailure,
   int audioChannels,
   String audioBitrate,
+  String? tlsPinSha256,
 });
 typedef FrameExtractor = Future<String?> Function({
   required String inputPath,
   required String outputPath,
   double atSeconds,
   FfmpegFailureReporter? onFailure,
+  String? tlsPinSha256,
 });
 
 /// TODO-1314（B5）：把远端 audio-only DASH 流物化到本地临时文件（yt-dlp 式 range 分片下载）
@@ -115,6 +118,7 @@ class ImmersionMiningEngine {
         fps: compression.gifFps,
         width: compression.gifWidth,
         onFailure: onFailure,
+        tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
     }
 
@@ -126,6 +130,7 @@ class ImmersionMiningEngine {
         outputPath: '$tempDir/immersion_frame.jpg',
         atSeconds: req.clipStartMs / 1000.0,
         onFailure: onFailure,
+        tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
     }
 
@@ -204,6 +209,9 @@ class ImmersionMiningEngine {
         audioChannels: compression.audioChannels,
         audioBitrate: compression.audioBitrate,
         onFailure: onFailure,
+        // BUG-891：cutInput 若是物化后的本地文件（YouTube）pin 被 buildFfmpegRemoteInputArgs
+        // 的远端判定忽略；Hibiki muxed 时 cutInput 是远端 https host，pin 生效。
+        tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
       // 物化的整段音频临时文件用完即删（裁好的 immersion_audio.* 才是产物）。
       if (materialized != null) {

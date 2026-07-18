@@ -1,0 +1,4 @@
+# Unified-diff patches contain format-significant leading/trailing spaces
+# (context lines for blank source lines are a single space). Do not let
+# git whitespace checks flag or "fix" them.
+*.patch -whitespace -text
