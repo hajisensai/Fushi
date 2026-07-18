@@ -13,6 +13,7 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/mining/external_window_mining.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_window_gif.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
@@ -117,17 +118,26 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
-    final WindowCaptureResult cap =
-        await WindowCaptureChannel.captureWindow(bound.hwnd);
-    if (!cap.ok) {
-      // 截图失败：明确报错，不产出空壳卡（fail-open，不静默假成功）。
-      HibikiToast.showMine(
-        msg: cap.error != null
-            ? '${t.external_window_capture_failed}：${cap.error}'
-            : t.external_window_capture_failed,
-        status: MineToastStatus.failed,
-      );
-      return const MinePopupResult();
+    // 画面默认出 GIF 短动图（抓角色口型/眨眼）：先试多帧 GIF；不成（帧不足 / 无
+    // ffmpeg / 编码失败）回退单帧 PNG。GIF 成时 [coverName]=.gif 让引擎按动图封面处理，
+    // 单帧回退不传 coverName（=png）。两者都失败才报错中止（fail-open，不产出空壳卡）。
+    final Uint8List? gifBytes = await captureWindowGifBytes(hwnd: bound.hwnd);
+    Uint8List? coverBytes = gifBytes;
+    String? coverName = gifBytes != null ? 'external_window.gif' : null;
+    if (coverBytes == null) {
+      final WindowCaptureResult cap =
+          await WindowCaptureChannel.captureWindow(bound.hwnd);
+      if (!cap.ok) {
+        // 单帧也失败：明确报错，不产出空壳卡（fail-open，不静默假成功）。
+        HibikiToast.showMine(
+          msg: cap.error != null
+              ? '${t.external_window_capture_failed}：${cap.error}'
+              : t.external_window_capture_failed,
+          status: MineToastStatus.failed,
+        );
+        return const MinePopupResult();
+      }
+      coverBytes = cap.pngBytes;
     }
     // galgame 一键制卡：若音频源已开，抓最近一段 → 波形选区 → 帧对齐切片 → 编码成 AAC/m4a
     // 容器字节。任一步不成（无源/无数据/用户取消/切空/编码失败）→ audioBytes 保持 null，
@@ -143,7 +153,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       buildExternalWindowRequest(
         fields: fields,
         sentence: fields['sentence'] ?? '',
-        screenshotBytes: cap.pngBytes,
+        screenshotBytes: coverBytes,
+        coverName: coverName,
         audioBytes: audioBytes,
         documentTitle: bound.title.isEmpty ? 'External window' : bound.title,
       ),
