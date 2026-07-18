@@ -24,7 +24,7 @@ namespace hibiki_voice_hook {
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v2：在 v1 音频环形之外加「文本环」(hook 抓的台词行) + 「语音 clip 索引」(按句切的语音片段)。
 // 全自动制卡：文本 hook 出一句 + voice hook 出对应那条语音 clip → 按时间戳配对 → 点+一键出卡。
-constexpr uint32_t kSharedVersion = 2;
+constexpr uint32_t kSharedVersion = 3;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
@@ -88,6 +88,11 @@ struct SharedHeader {
   uint32_t clip_region_offset;      // clip 索引起始
   volatile uint64_t text_write_count;  // 单调：已写文本行数（host 取 last..count 的新行）
   volatile uint64_t clip_write_count;  // 单调：已写语音 clip 数
+  // LunaHook（引擎精确）出干净行后 injector 置 1；置 1 后游戏内 GDI 文本 hook 让位不再写文本，
+  // 消除「LunaHook 干净行 + GDI 每字重画伪影」双写者污染。音频写入不受此标志影响。GDI 仅在
+  // luna_active==0（LunaHook 未覆盖该引擎）时作兜底文本源。
+  volatile uint32_t luna_active;
+  uint32_t reserved_luna;  // 保持 8 对齐
 };
 #pragma pack(pop)
 

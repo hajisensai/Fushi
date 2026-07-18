@@ -26,6 +26,10 @@ ImmersionMiningRequest buildExternalWindowRequest({
   required Map<String, String> fields,
   required String sentence,
   Uint8List? screenshotBytes,
+  // galgame 一键制卡默认出 GIF 动图：调用点传 `'external_window.gif'` 让引擎按
+  // 动图封面处理（引擎据 providedCoverName 后缀区分 GIF/静图）。缺省保持
+  // `'external_window.png'`，不传的既有调用行为不变（Never break）。
+  String? coverName,
   Uint8List? audioBytes,
   String? audioName,
   String? cueSentence,
@@ -47,7 +51,8 @@ ImmersionMiningRequest buildExternalWindowRequest({
     bookTitleTag: bookTitleTag,
     updateNoteId: updateNoteId,
     providedCoverBytes: screenshotBytes,
-    providedCoverName: screenshotBytes == null ? null : 'external_window.png',
+    providedCoverName:
+        screenshotBytes == null ? null : (coverName ?? 'external_window.png'),
     providedAudioBytes: hasAudio ? audioBytes : null,
     providedAudioName: hasAudio
         ? (audioName ?? 'galgame_audio.${immersionMiningAudioExtension()}')

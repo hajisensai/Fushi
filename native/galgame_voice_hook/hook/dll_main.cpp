@@ -543,14 +543,27 @@ ULONGLONG g_glyph_last_tick = 0;             // 上次 GetGlyphOutlineW 时刻�
 wchar_t g_last_flushed[kMaxLineChars + 8];   // 上一条已 flush 的行（去重）
 int g_last_flushed_len = 0;
 
-// 把一行文本写进共享内存文本环（调用者持 g_text_cs）。slot = text_write_count % kTextSlotCount。
-// 写序：先写文本字节 + TextSlot 字段（seq 副标记先于 count），最后 text_write_count++（host 读
-// 到新 count 才取该槽，保证读到完整槽）。首次 flush 置 text_hooked=1。
+// 把一行文本写进共享内存文本环（调用者持 g_text_cs，仅序列化本 DLL 内部去重状态）。
+// 文本环是**多写者**：本 DLL（游戏内 GDI hook）和 host 侧 injector 里的 LunaHook 写同一个环，
+// 跨进程并发。故 slot 号必须用 InterlockedIncrement64 原子 fetch-add 预留——绝不与另一写者撞
+// 同一槽，也绝不丢更新（旧的“读 text_write_count → 填 → plain store idx+1”是非原子 RMW，与
+// 原子写者交错时会互相覆盖计数、丢行或读到半写槽）。写序：原子占号 → 填文本字节 + 字段 →
+// **最后**写 seq=占到的号作完成标记（reader 校验 slot.seq==text_write_count 才取该槽；x86/x64
+// store 有序 TSO，前面的数据写对 reader 先于 seq 可见）。首次 flush 置 text_hooked=1。
 void WriteTextRingLocked(const wchar_t* text, int char_len) {
   if (g_text_base == nullptr || g_header == nullptr || char_len <= 0) {
     return;
   }
-  const uint64_t idx = g_header->text_write_count;
+  // LunaHook（引擎精确、干净）一旦活跃，GDI 文本 hook 让位，不再写文本环——否则游戏为粗体/描边
+  // 每字重画会让 GetGlyphOutlineW 累加出「ここのの」式伪影，与 LunaHook 干净行混在一起污染卡片。
+  // GDI 仅在 LunaHook 覆盖不到的引擎（luna_active==0）时作兜底文本源。音频 hook 不看此标志。
+  if (g_header->luna_active != 0) {
+    return;
+  }
+  // 原子预留唯一槽位：返回自增后的新值（=占到的 1 基序号，0 基 idx=reserved-1）。
+  const LONGLONG reserved = InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(&g_header->text_write_count));
+  const uint64_t idx = static_cast<uint64_t>(reserved) - 1;
   const size_t slot_off =
       static_cast<size_t>(idx % kTextSlotCount) * kTextSlotBytes;
   uint8_t* slot = g_text_base + slot_off;
@@ -565,9 +578,8 @@ void WriteTextRingLocked(const wchar_t* text, int char_len) {
   memcpy(slot + sizeof(TextSlot), text, byte_len);
   ts->timestamp_ms = GetTickCount64();
   ts->byte_len = byte_len;
-  ts->is_utf8 = 0;       // UTF-16LE
-  ts->seq = idx + 1;     // 有效性副标记（先于 count）
-  g_header->text_write_count = idx + 1;   // 最后自增
+  ts->is_utf8 = 0;                            // UTF-16LE
+  ts->seq = static_cast<uint64_t>(reserved);  // 完成标记，**最后**写
   if (g_header->text_hooked == 0) {
     g_header->text_hooked = 1;            // 首次 flush：文本 hook proof-of-life
   }

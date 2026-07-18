@@ -64,3 +64,29 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   target_include_directories(hibiki_voice_ring_probe PRIVATE "include")
   target_compile_definitions(hibiki_voice_ring_probe PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
+
+# LunaHost 符号解析校验器（纯查符号，不注入、不跑游戏）。x64/x86 各出一份，运行期从自身目录
+# 找同位数 LunaHost<arch>.dll 校验导出。CI/本地构建后可直接跑它离线确认 ABI 契约满足。
+add_executable(hibiki_luna_symcheck
+  "tools/luna_symcheck.cpp"
+)
+target_include_directories(hibiki_luna_symcheck PRIVATE "include")
+target_compile_definitions(hibiki_luna_symcheck PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+
+# LunaHook 的 vendored 二进制（GPLv3，third_party/lunahook/，动态加载不链 .lib）。构建后把与本
+# 编译位数匹配的 LunaHost<arch>.dll（injector 加载）+ LunaHook<arch>.dll（注入进游戏）拷到
+# injector 输出目录，使 injector 运行期在自身目录就能找到它们。位数由 CMAKE_SIZEOF_VOID_P 决定。
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(_LUNA_ARCH "64")
+else()
+  set(_LUNA_ARCH "32")
+endif()
+set(_LUNA_SRC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lunahook")
+foreach(_luna_dll "LunaHost${_LUNA_ARCH}.dll" "LunaHook${_LUNA_ARCH}.dll")
+  add_custom_command(TARGET hibiki_voice_injector POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${_LUNA_SRC}/${_luna_dll}"
+      "$<TARGET_FILE_DIR:hibiki_voice_injector>/${_luna_dll}"
+    COMMENT "部署 vendored LunaHook 二进制 ${_luna_dll} 到 injector 目录"
+    VERBATIM)
+endforeach()
