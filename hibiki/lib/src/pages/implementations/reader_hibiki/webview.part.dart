@@ -875,9 +875,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         // TODO-806 [806-TAP] 框选点击坐标取证探针（默认 off，由 DebugLogService 门控
         // 注入：${DebugLogService.instance.enabled} 为 false 时整段不进 JS）。打印 onTap
         // 实际回传的点击坐标，口径=WebView CSS 视口像素（e.clientX/clientY），**不是** OS
-        // 屏幕坐标——差一个 devicePixelRatio + 页面在屏内的偏移。用户曾把 [792-REVEAL]
-        // 的 WebView 内部滚动几何探针误当框选坐标，这条标明口径以正本清源。走 console.log
-        // → onConsoleMessage → debugPrint → DebugLogService 环形缓冲，与 [792-REVEAL] 同管道。
+        // 屏幕坐标——差一个 devicePixelRatio + 页面在屏内的偏移，这条标明口径以正本清源。
+        // 走 console.log → onConsoleMessage → debugPrint → DebugLogService 环形缓冲。
         if (${DebugLogService.instance.enabled}) {
           try {
             console.log('[806-TAP] clientX=' + x + ' clientY=' + y

@@ -154,14 +154,38 @@ void main() {
       );
     });
 
-    test('dictionary media cache names use stable SHA-1 path hashes', () {
+    test('dictionary media cache names use stable SHA-1 dict+path hashes', () {
+      // BUG-897：哈希输入是 `<dict>\u0000<path>`（词典名 + NUL + 相对路径），不再只
+      // 对 path 求哈希，否则两本词典同一相对路径的外字会串味。这里锁定精确 SHA-1，
+      // 兼作 BUG-640 的「禁止退回 String.hashCode」守卫。
       expect(
-        ankiDictionaryMediaCacheFilename('gaiji/bs一.svg'),
-        'hibiki_dict_7de320e8f49c1e60a3ee86953fbafd6cadf701a7.svg',
+        ankiDictionaryMediaCacheFilename('明鏡', 'gaiji/bs一.svg'),
+        'hibiki_dict_74259f28356918b3397453d0a5b467182d1ba404.svg',
       );
       expect(
-        ankiDictionaryMediaCacheFilename('gaiji/noext'),
-        'hibiki_dict_9b891374d454bc61cb63a8b3ac0e229da34e0107.bin',
+        ankiDictionaryMediaCacheFilename('明鏡', 'gaiji/noext'),
+        'hibiki_dict_7467bc1485d9e93b46b4c5885134bd3819e80c1e.bin',
+      );
+    });
+
+    test('BUG-897: same path, different dictionary -> different cache name',
+        () {
+      const path = 'gaiji/x.svg';
+      final a = ankiDictionaryMediaCacheFilename('A', path);
+      final b = ankiDictionaryMediaCacheFilename('B', path);
+      // 跨词典必须落到不同文件，否则后制卡的词典嵌入前者的外字（串味）。
+      expect(a, isNot(b));
+      expect(a, 'hibiki_dict_2bd97ca34b2d23c7ac8666c112bf1aa849865b82.svg');
+      expect(b, 'hibiki_dict_834d0a756fd728a369a89c017bd202dbc766bc31.svg');
+      // 同 dict 同 path 稳定一致（writer 与 reader 才对得上）。
+      expect(
+        ankiDictionaryMediaCacheFilename('A', path),
+        ankiDictionaryMediaCacheFilename('A', path),
+      );
+      // NUL 分隔消除拼接歧义：('ab','c') 与 ('a','bc') 不得相同。
+      expect(
+        ankiDictionaryMediaCacheFilename('ab', 'c'),
+        isNot(ankiDictionaryMediaCacheFilename('a', 'bc')),
       );
     });
 

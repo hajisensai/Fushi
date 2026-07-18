@@ -614,27 +614,32 @@ class CliFfmpegBackend implements FfmpegBackend {
 ///
 /// 与 [CliFfmpegBackend] **同契约**（args→退出码+合并日志），5 个 extract 函数 +
 /// （替代的崩溃包是第三方预编译 ffmpeg-kit 变体，见 BUG-122）。
-/// 字幕枚举零改动。`executeWithArguments` await 到会话结束，随后 [FFmpegSession.getReturnCode]
-/// / [FFmpegSession.getOutput]（= 合并日志，喂 `parseSubtitleStreamsFromFfmpegLog`）就绪；
-/// 超时用 `.timeout` + [FFmpegKit.cancel]（调用方串行，cancel-all 安全）。
+/// 字幕枚举零改动。异步启动 `executeWithArgumentsAsync`（立即返回 session），完成回调喂
+/// [Completer]，`.timeout` 等到会话结束后再读 [FFmpegSession.getReturnCode] /
+/// [FFmpegSession.getOutput]（= 合并日志，喂 `parseSubtitleStreamsFromFfmpegLog`）；
+/// 超时只精确取消**本次** session（`FFmpegKit.cancel(session.getSessionId())`），绝不碰并发
+/// 会话——曾用无参 `FFmpegKit.cancel()` 取消全部会话，误杀并发字幕抽取/制卡任务，表现为
+/// 偶发丢内封字幕（BUG-898）。
 class KitFfmpegBackend implements FfmpegBackend {
   const KitFfmpegBackend();
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    // 异步启动：立即拿到本次 session，超时才能精确取消它而不误杀并发会话（BUG-898）。
+    final Completer<void> done = Completer<void>();
+    final session = await FFmpegKit.executeWithArgumentsAsync(
+      args,
+      (_) {
+        if (!done.isCompleted) done.complete();
+      },
+    );
     try {
-      final session =
-          await FFmpegKit.executeWithArguments(args).timeout(timeout);
-      final ReturnCode? rc = await session.getReturnCode();
-      final String output = (await session.getOutput()) ?? '';
-      return FfmpegRunResult(
-        returnCode: rc?.getValue(),
-        output: output,
-        executable: 'ffmpeg-kit',
-        attemptedExecutables: const <String>['ffmpeg-kit'],
-      );
+      await done.future.timeout(timeout);
     } on TimeoutException {
-      await FFmpegKit.cancel();
+      final int? sessionId = session.getSessionId();
+      if (sessionId != null) {
+        await FFmpegKit.cancel(sessionId);
+      }
       return const FfmpegRunResult(
         returnCode: null,
         output: '',
@@ -642,6 +647,14 @@ class KitFfmpegBackend implements FfmpegBackend {
         attemptedExecutables: <String>['ffmpeg-kit'],
       );
     }
+    final ReturnCode? rc = await session.getReturnCode();
+    final String output = (await session.getOutput()) ?? '';
+    return FfmpegRunResult(
+      returnCode: rc?.getValue(),
+      output: output,
+      executable: 'ffmpeg-kit',
+      attemptedExecutables: const <String>['ffmpeg-kit'],
+    );
   }
 
   /// 移动端 ffprobe：进程内 `FFprobeKit.executeWithArguments`，`session.getOutput()`
@@ -649,19 +662,21 @@ class KitFfmpegBackend implements FfmpegBackend {
   /// 超时/cancel 语义。TODO-1045：移动端也能读 M4B 容器 tag（方案 A 的关键假设）。
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
+    // 与 [run] 同款异步启动 + 精确取消语义（BUG-898）。
+    final Completer<void> done = Completer<void>();
+    final session = await FFprobeKit.executeWithArgumentsAsync(
+      args,
+      (_) {
+        if (!done.isCompleted) done.complete();
+      },
+    );
     try {
-      final session =
-          await FFprobeKit.executeWithArguments(args).timeout(timeout);
-      final ReturnCode? rc = await session.getReturnCode();
-      final String output = (await session.getOutput()) ?? '';
-      return FfmpegRunResult(
-        returnCode: rc?.getValue(),
-        output: output,
-        executable: 'ffprobe-kit',
-        attemptedExecutables: const <String>['ffprobe-kit'],
-      );
+      await done.future.timeout(timeout);
     } on TimeoutException {
-      await FFmpegKit.cancel();
+      final int? sessionId = session.getSessionId();
+      if (sessionId != null) {
+        await FFmpegKit.cancel(sessionId);
+      }
       return const FfmpegRunResult(
         returnCode: null,
         output: '',
@@ -669,6 +684,14 @@ class KitFfmpegBackend implements FfmpegBackend {
         attemptedExecutables: <String>['ffprobe-kit'],
       );
     }
+    final ReturnCode? rc = await session.getReturnCode();
+    final String output = (await session.getOutput()) ?? '';
+    return FfmpegRunResult(
+      returnCode: rc?.getValue(),
+      output: output,
+      executable: 'ffprobe-kit',
+      attemptedExecutables: const <String>['ffprobe-kit'],
+    );
   }
 }
 

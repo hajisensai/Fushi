@@ -50,7 +50,7 @@ Future<void> writeDictionaryMediaCache(String dictionaryMediaJson) async {
     final String path = raw['path']?.toString() ?? '';
     if (dict.isEmpty || path.isEmpty) continue;
     final File file =
-        File('${dir.path}/${ankiDictionaryMediaCacheFilename(path)}');
+        File('${dir.path}/${ankiDictionaryMediaCacheFilename(dict, path)}');
     if (file.existsSync()) continue; // 幂等：已缓存。
     try {
       final Uint8List? bytes = HoshiDicts.instance.getMediaFile(dict, path);

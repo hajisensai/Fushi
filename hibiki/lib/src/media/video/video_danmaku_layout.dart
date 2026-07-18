@@ -55,8 +55,20 @@ class VideoDanmakuLayout {
         droppedForDensity: 0,
       );
     }
+    // [items] 契约按 startMs 升序（来源 video_danmaku_source.dart 解析后 sort）。
+    // 活动窗口只可能落在 startMs ∈ [positionMs - maxDurationMs, positionMs]：
+    //  - startMs > positionMs ⇒ elapsed<0（尚未出现）；
+    //  - startMs < positionMs - maxDurationMs ⇒ 任何模式都 elapsed>durationMs（已过期）。
+    // 用二分把每帧 O(N) 全量扫描收窄成只遍历该有序切片；切片内仍按各条自身
+    // 模式的 durationMs 做精确判定，与原全量筛选逐条等价（fixed 模式窗口更短）。
+    final int maxDurationMs = math.max(
+      scrollDuration.inMilliseconds,
+      fixedDuration.inMilliseconds,
+    );
+    final int loIndex = _lowerBoundByStartMs(items, positionMs - maxDurationMs);
+    final int hiIndex = _lowerBoundByStartMs(items, positionMs + 1);
     final List<_ActiveItem> active = <_ActiveItem>[];
-    for (int i = 0; i < items.length; i++) {
+    for (int i = loIndex; i < hiIndex; i++) {
       final VideoDanmakuItem item = items[i];
       final int elapsed = positionMs - item.startMs;
       final int durationMs = item.mode == VideoDanmakuMode.scroll
@@ -161,6 +173,23 @@ class VideoDanmakuLayout {
 
   static double _estimatedWidth(String text, double fontScale) =>
       (text.runes.length * 18.0 * fontScale).clamp(36.0, 720.0).toDouble();
+
+  /// 二分（lowerBound）：在按 startMs 升序的 [items] 中返回第一个
+  /// `startMs >= target` 的下标；不存在则返回 `items.length`。
+  /// O(log N) 定位活动窗口起止，替代每帧 O(N) 全量扫描。
+  static int _lowerBoundByStartMs(List<VideoDanmakuItem> items, int target) {
+    int lo = 0;
+    int hi = items.length;
+    while (lo < hi) {
+      final int mid = lo + ((hi - lo) >> 1);
+      if (items[mid].startMs < target) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
 }
 
 class _ActiveItem {
