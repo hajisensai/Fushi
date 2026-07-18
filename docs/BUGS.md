@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 871 条。点号进各自文件。
+> 共 872 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-896](bugs/BUG-896-anki-dict-media-path-normalize.md) | ✅ | ✅ | 制卡词典图片脏path未归一化导致坏图 |
 | [BUG-895](bugs/BUG-895-video-cards-too-large-on-phone.md) | ✅ | ✅ | 手机端视频卡片过大（窄屏只出 1 列铺满整屏） |
 | [BUG-894](bugs/BUG-894-remote-video-reload-on-return.md) | ✅ | ✅ | 互联远端视频看完返回即重拉列表 |
 | [BUG-890](bugs/BUG-890-paused-audio-follow-image-snap.md) | ✅ | ✅ | 暂停/图片等待时有声书跟随把阅读器拽回音频位置 |
