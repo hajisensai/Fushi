@@ -4053,9 +4053,12 @@ class AppModel with ChangeNotifier {
   bool get autoAddBookNameToTags => prefsRepo.autoAddBookNameToTags;
   void toggleAutoAddBookNameToTags() => prefsRepo.toggleAutoAddBookNameToTags();
 
-  // TODO-757 压缩制卡媒体开关（透传 prefsRepo）。默认 true=压缩档（现状）。
-  bool get compressMiningMedia => prefsRepo.compressMiningMedia;
-  void toggleCompressMiningMedia() => prefsRepo.toggleCompressMiningMedia();
+  // TODO-1650 制卡图片/GIF 清晰度档 + 音频质量档（透传 prefsRepo）。默认档 = 旧压缩档
+  // （现状零破坏）。制卡消费点用 [MiningMediaCompression.resolve] 据这两个档组装媒体档。
+  int get miningImageQuality => prefsRepo.miningImageQuality;
+  void setMiningImageQuality(int tier) => prefsRepo.setMiningImageQuality(tier);
+  int get miningAudioQuality => prefsRepo.miningAudioQuality;
+  void setMiningAudioQuality(int tier) => prefsRepo.setMiningAudioQuality(tier);
 
   // 视频制卡封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认 gif=现状。
   VideoMiningImageMode get videoMiningImageMode =>
@@ -4824,9 +4827,10 @@ class _AppModelRemoteLookupService
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
-    final MiningMediaCompression compression =
-        MiningMediaCompression.forCompressionEnabled(
-            _appModel.compressMiningMedia);
+    final MiningMediaCompression compression = MiningMediaCompression.resolve(
+      imageTier: _appModel.miningImageQuality,
+      audioTier: _appModel.miningAudioQuality,
+    );
     // 优先级 0（YouTube，非 DRM）：有 videoId + 视频时间窗 → 从真实视频流精确裁，不录屏/不回放。
     // 复用应用内播放器已验证的引擎（mediaSource=挖矿流，audioSource=分离音频流或 null）。
     if (payload.youtubeVideoId != null &&

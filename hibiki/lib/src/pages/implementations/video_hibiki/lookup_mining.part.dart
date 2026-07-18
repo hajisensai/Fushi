@@ -279,8 +279,10 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final Directory tmp = await getTemporaryDirectory();
     final MiningMediaCompression mediaCompression =
-        MiningMediaCompression.forCompressionEnabled(
-            appModel.compressMiningMedia);
+        MiningMediaCompression.resolve(
+      imageTier: appModel.miningImageQuality,
+      audioTier: appModel.miningAudioQuality,
+    );
     // BUG-891：远端 Hibiki 库视频的 miningSource 是自签 https 流 URL。把该 host 当前会话
     // 已 TOFU 钉扎的证书指纹带给引擎，使 ffmpeg（自编 ffmpeg-kit `--enable-gnutls` + pin
     // 补丁）按指纹接受自签流抽音频/帧，绕过「Protocol not found」。非 Hibiki host（本地 /

@@ -190,17 +190,20 @@ Future<String?> materializeRemoteAudioViaRangeDownload({
   }
 }
 
-/// TODO-757 制卡媒体压缩档位（音频 / GIF 封面 / 截图封面的编码参数集）。
+/// TODO-1650 制卡媒体清晰度档位（音频 / GIF 封面 / 截图封面的编码参数集）。
 ///
-/// 压缩开关（`AppModel.compressMiningMedia`，默认开）选档：
-/// - [compressed]（默认 = TODO-646 现状）：音频单声道 64k、GIF 480px/8fps、
-///   截图长边 1000px/质量 90。体积省一半以上，移动端小图肉眼基本无差。
-/// - [highFidelity]（关闭压缩时）：音频立体声 128k、GIF 720px/12fps、截图长边
-///   2000px/质量 95。给想要高保真的用户更清晰的媒体，代价是更大的卡片体积。
+/// 由两个用户可调的清晰度滑块组装（各是独立有序档位，替代旧的单一「压缩」开关）：
+/// - **图片/GIF 清晰度**（`AppModel.miningImageQuality`，4 档 0..3）：只管截图分辨率/
+///   JPEG 质量 + GIF 帧率/宽度。见 [imageTiers]。满档 [imageTierNative]=原片（截图不缩、
+///   原图直通；GIF 源分辨率+源帧率），最省档 0 更小更省流。默认档 [defaultImageTier]=1
+///   与旧「压缩档」逐字节一致——零行为破坏。
+/// - **音频质量**（`AppModel.miningAudioQuality`，3 档 0..2）：只管句子/cue 音频声道 +
+///   比特率。见 [audioTiers]。默认档 [defaultAudioTier]=0 = 旧压缩档（单声道 64k）。
 ///
 /// 不可变值对象（纯数据，可单测、可在隔离中构造）。各底层纯函数（[buildFfmpegClipArgs]
-/// / [buildFfmpegClipGifArgs] / [downsampleCardScreenshot]）仍接收原始可选参数并默认
-/// 到压缩档，本类只是调用点选档时的参数捆绑，不让纯函数读全局偏好。
+/// / [buildFfmpegClipGifArgs] / [downsampleCardScreenshot]）仍接收原始可选参数，本类只是
+/// 调用点选档时的参数捆绑，不让纯函数读全局偏好。原片档用 [gifFps]/[gifWidth]/
+/// [screenshotMaxLongEdge] == 0 表示「源帧率 / 源分辨率 / 不缩放」，由底层纯函数解读。
 class MiningMediaCompression {
   const MiningMediaCompression({
     required this.audioChannels,
@@ -211,26 +214,64 @@ class MiningMediaCompression {
     required this.screenshotQuality,
   });
 
-  /// 音频下混声道数（`-ac`）。压缩档 1（单声道），高保真档 2（立体声）。
+  /// 音频下混声道数（`-ac`）。
   final int audioChannels;
 
-  /// 音频比特率（`-b:a`，如 `'64k'`）。压缩档 64k，高保真档 128k。
+  /// 音频比特率（`-b:a`，如 `'64k'`）。
   final String audioBitrate;
 
-  /// cue 封面 GIF 帧率（`fps=`）。压缩档 8，高保真档 12。
+  /// cue 封面 GIF 帧率（`fps=`）。**0 = 源帧率**（原片档，不加 fps 滤镜）。
   final int gifFps;
 
-  /// cue 封面 GIF 宽度（`scale=W:-2`）。压缩档 480，高保真档 720（TODO-1145 拉高；
-  /// 网飞与 app 内视频制卡共用本档位，GIF 输出天然一致）。
+  /// cue 封面 GIF 宽度（`scale=W:-2`）。**0 = 源分辨率**（原片档，不加 scale 滤镜）。
   final int gifWidth;
 
-  /// 帧截图封面降采样长边（px）。压缩档 1000，高保真档 2000。
+  /// 帧截图封面降采样长边（px）。**0 = 不缩放**（原片档，原图字节直通）。
   final int screenshotMaxLongEdge;
 
-  /// 帧截图封面重编码 JPEG 质量（0–100）。压缩档 90，高保真档 95。
+  /// 帧截图封面重编码 JPEG 质量（0–100）。原片档不重编码，此值不生效。
   final int screenshotQuality;
 
-  /// 压缩档（默认）：与 TODO-646 写死的现状逐字节一致——零行为破坏。
+  /// 图片/GIF 清晰度有序档位（索引 0..[imageTierNative]）：低→高。
+  /// 档 1 = 旧「压缩档」（1000px/q90/GIF 480px·8fps），逐字节保持现状。
+  /// 档 2 = 旧「高保真档」（2000px/q95/GIF 720px·12fps）。
+  /// 档 3 = 原片（不缩 / 源分辨率 / 源帧率），用 0 哨兵表达。
+  static const List<({int gifFps, int gifWidth, int maxLongEdge, int quality})>
+      imageTiers = [
+    (gifFps: 6, gifWidth: 360, maxLongEdge: 720, quality: 80), // 0 省流
+    (gifFps: 8, gifWidth: 480, maxLongEdge: 1000, quality: 90), // 1 标准（默认=旧压缩档）
+    (gifFps: 12, gifWidth: 720, maxLongEdge: 2000, quality: 95), // 2 高清（=旧高保真档）
+    (gifFps: 0, gifWidth: 0, maxLongEdge: 0, quality: 100), // 3 原片
+  ];
+
+  /// 音频质量有序档位（索引 0..2）：低→高。
+  /// 档 0 = 旧压缩档（单声道 64k），档 1 = 旧高保真档（立体声 128k），档 2 = 原片（立体声 192k）。
+  static const List<({int channels, String bitrate})> audioTiers = [
+    (channels: 1, bitrate: '64k'), // 0 标准（默认=旧压缩档）
+    (channels: 2, bitrate: '128k'), // 1 高音质（=旧高保真档）
+    (channels: 2, bitrate: '192k'), // 2 原片
+  ];
+
+  static const int imageTierCount = 4;
+  static const int audioTierCount = 3;
+
+  /// 默认图片档（= 旧压缩档，保持现状）。
+  static const int defaultImageTier = 1;
+
+  /// 默认音频档（= 旧压缩档，单声道 64k）。
+  static const int defaultAudioTier = 0;
+
+  /// 满档索引（原片，供 UI / 调用点判定「原片」语义）。
+  static const int imageTierNative = imageTierCount - 1;
+
+  static int _clampImageTier(int tier) =>
+      tier < 0 ? 0 : (tier >= imageTierCount ? imageTierCount - 1 : tier);
+
+  static int _clampAudioTier(int tier) =>
+      tier < 0 ? 0 : (tier >= audioTierCount ? audioTierCount - 1 : tier);
+
+  /// 具名预设：默认档组合（图片标准档 1 + 音频标准档 0），逐字节 = TODO-646 现状。
+  /// 供不读用户偏好的调用点/测试当默认媒体档用（与 `resolve(imageTier:1, audioTier:0)` 等价）。
   static const MiningMediaCompression compressed = MiningMediaCompression(
     audioChannels: 1,
     audioBitrate: '64k',
@@ -240,7 +281,7 @@ class MiningMediaCompression {
     screenshotQuality: 90,
   );
 
-  /// 高保真档（关闭压缩时）：更高声道/比特率/分辨率/质量，更清晰但体积更大。
+  /// 具名预设：高保真档组合（图片高清档 2 + 音频高音质档 1），= 旧「关闭压缩」。
   static const MiningMediaCompression highFidelity = MiningMediaCompression(
     audioChannels: 2,
     audioBitrate: '128k',
@@ -250,9 +291,24 @@ class MiningMediaCompression {
     screenshotQuality: 95,
   );
 
-  /// 据压缩开关选档：开=压缩档（默认），关=高保真档。
-  static MiningMediaCompression forCompressionEnabled(bool compress) =>
-      compress ? compressed : highFidelity;
+  /// 据图片/GIF 清晰度档 [imageTier] + 音频质量档 [audioTier] 组装媒体档（越界自动夹取）。
+  static MiningMediaCompression resolve({
+    required int imageTier,
+    required int audioTier,
+  }) {
+    final ({int gifFps, int gifWidth, int maxLongEdge, int quality}) img =
+        imageTiers[_clampImageTier(imageTier)];
+    final ({int channels, String bitrate}) aud =
+        audioTiers[_clampAudioTier(audioTier)];
+    return MiningMediaCompression(
+      audioChannels: aud.channels,
+      audioBitrate: aud.bitrate,
+      gifFps: img.gifFps,
+      gifWidth: img.gifWidth,
+      screenshotMaxLongEdge: img.maxLongEdge,
+      screenshotQuality: img.quality,
+    );
+  }
 }
 
 void _reportFfmpegFailure(
@@ -856,8 +912,13 @@ List<String> buildFfmpegClipGifArgs({
   final int clampedDur =
       rawDur > maxDurationMs ? maxDurationMs : (rawDur < 1 ? 1 : rawDur);
   final double durationSeconds = clampedDur / 1000.0;
-  final String filter = 'fps=$fps,scale=$width:-2:flags=lanczos,'
-      'split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse';
+  // 原片档（清晰度滑块满档）用 [fps]<=0 / [width]<=0 表示「源帧率 / 源分辨率」：
+  // 对应滤镜前缀整段省略（不降帧、不缩放），仅保留 palettegen/paletteuse 双遍避免抖动。
+  final StringBuffer pre = StringBuffer();
+  if (fps > 0) pre.write('fps=$fps,');
+  if (width > 0) pre.write('scale=$width:-2:flags=lanczos,');
+  final String filter =
+      '${pre}split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse';
   return <String>[
     '-y',
     ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
