@@ -70,6 +70,14 @@
        rule at #entries-container, so in the browser extension it only affects the
        popup container and never flips the host page's direction (zero leakage). */
     direction: ltr;
+    /* BUG-870: browser-extension popup content lives in a shadow root. Shadow
+       DOM blocks selector leakage, but inherited properties still cross the
+       host boundary. A host page/container with text-align:center therefore
+       centered every headword and glossary line. Pin the popup root to its
+       intended reading alignment; intentionally-centered descendants (ruby,
+       empty states, controls) keep their more-specific rules below. The
+       content-css generator re-roots this declaration at #entries-container. */
+    text-align: left;
 }
 
 :where(#entries-container) {
@@ -1714,4 +1722,39 @@
 
 #hibiki-subtitle-reopen[data-theme="light"] {
     background: rgba(56, 106, 88, 0.94);
+}
+
+/* 用户外挂字幕：只显示当前外挂轨，不复制站点原生字幕。按 video rect 动态定位，文本仍可点击查词。 */
+#hibiki-subtitle-overlay {
+    position: fixed;
+    z-index: 2147483637;
+    transform: translate(-50%, -50%);
+    padding: 6px 12px 7px;
+    border-radius: 8px;
+    color: #f7f8f2;
+    background: rgba(12, 15, 13, 0.72);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
+    font: 600 clamp(18px, 2.2vw, 32px)/1.45 "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    letter-spacing: 0.01em;
+    text-align: center;
+    text-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
+    white-space: pre-wrap;
+    user-select: text;
+    cursor: text;
+}
+
+/* 拖字幕文件时的单一全局提示；pointer-events:none，绝不抢宿主页 drop。 */
+#hibiki-subtitle-drop-hint {
+    position: fixed;
+    inset: 24px;
+    z-index: 2147483646;
+    display: grid;
+    place-items: center;
+    border: 2px dashed var(--md-primary, #9dd7b8);
+    border-radius: 18px;
+    color: var(--md-on-primary-container, #b9f2cf);
+    background: rgba(12, 20, 16, 0.82);
+    font: 700 18px/1.4 "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    letter-spacing: 0.04em;
+    pointer-events: none;
 }

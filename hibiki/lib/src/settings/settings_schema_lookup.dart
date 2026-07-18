@@ -17,7 +17,15 @@ import 'package:hibiki/src/settings/settings_schema_fields.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
+import 'package:hibiki/src/sync/yomitan_api_server.dart'
+    show kYomitanApiDefaultPort;
 import 'package:hibiki/utils.dart';
+
+String _yomitanApiPortInUseMessage(int port) {
+  return port == kYomitanApiDefaultPort
+      ? t.browser_extension_yomitan_port_conflict(port: port)
+      : t.sync_server_port_in_use(port: port);
+}
 
 SettingsDestination buildLookupDestination() {
   return SettingsDestination(
@@ -108,6 +116,8 @@ SettingsDestination buildLookupDestination() {
                   serverEnabled:
                       serverReady && appModel.yomitanApiServerEnabled,
                   hasToken: appModel.yomitanApiKey.isNotEmpty,
+                  serverPort: appModel.yomitanApiPort,
+                  portConflict: !serverReady,
                 ),
               );
             },
@@ -208,8 +218,8 @@ SettingsDestination buildLookupDestination() {
                     ScaffoldMessenger.of(ctx).showSnackBar(
                       SnackBar(
                         content: Text(
-                          t.sync_server_port_in_use(
-                            port: settingsContext.appModel.yomitanApiPort,
+                          _yomitanApiPortInUseMessage(
+                            settingsContext.appModel.yomitanApiPort,
                           ),
                         ),
                       ),
@@ -978,8 +988,8 @@ Future<void> _restartYomitanApiServerIfEnabled(
     ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(
         content: Text(
-          t.sync_server_port_in_use(
-            port: settingsContext.appModel.yomitanApiPort,
+          _yomitanApiPortInUseMessage(
+            settingsContext.appModel.yomitanApiPort,
           ),
         ),
       ),
@@ -1064,11 +1074,15 @@ Widget buildBrowserExtensionInstallDialogForTest({
   required String path,
   required bool serverEnabled,
   required bool hasToken,
+  int serverPort = kYomitanApiDefaultPort,
+  bool portConflict = false,
 }) {
   return _BrowserExtensionInstallDialog(
     path: path,
     serverEnabled: serverEnabled,
     hasToken: hasToken,
+    serverPort: serverPort,
+    portConflict: portConflict,
   );
 }
 
@@ -1086,6 +1100,8 @@ class _BrowserExtensionInstallDialog extends StatelessWidget {
     required this.path,
     required this.serverEnabled,
     required this.hasToken,
+    required this.serverPort,
+    required this.portConflict,
   });
 
   /// 解压出的扩展目录绝对路径（供「加载已解压」时选择）。
@@ -1096,6 +1112,10 @@ class _BrowserExtensionInstallDialog extends StatelessWidget {
 
   /// 是否已设 API token（未设时连接虽通但鉴权会失败，一并提醒）。
   final bool hasToken;
+
+  /// 安装助手自动启服失败时的端口及冲突态，用于给出 Yomitan 专项修复路径。
+  final int serverPort;
+  final bool portConflict;
 
   /// 一步：编号圆点 + 图标 + 正文（可含尾随可复制字段）。
   Widget _step(
@@ -1215,7 +1235,9 @@ class _BrowserExtensionInstallDialog extends StatelessWidget {
                       child: Text(
                         autoReady
                             ? t.browser_extension_step_done_auto
-                            : t.browser_extension_enable_server_first,
+                            : portConflict
+                                ? _yomitanApiPortInUseMessage(serverPort)
+                                : t.browser_extension_enable_server_first,
                         style: TextStyle(color: bannerFg),
                       ),
                     ),

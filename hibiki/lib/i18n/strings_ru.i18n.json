@@ -1963,5 +1963,6 @@
   "anime_download_play_now_ok": "Imported — open it from the video library to play while downloading",
   "anime_download_play_now_fail": "Not ready yet (metadata pending or connection failed) — try again later",
   "interconnect_section_related": "Remote content & lookup",
-  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows",
+  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki."
 }

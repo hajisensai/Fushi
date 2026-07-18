@@ -1,66 +1,142 @@
-// TODO-1087：options 页显示「当前生效」的 host/port/token。
-// 生效值 = chrome.storage.local 手动覆盖（若有） > hibiki-defaults.js 内置默认（app 注入的真值）。
-// 输入框留空即回落默认（保存时把空值写回，cfg() 便走默认），无需用户记住原始端口。
+// Hibiki 浏览器扩展设置：自动连接优先，用户覆盖与字幕偏好存 chrome.storage.local。
 const $ = (id) => document.getElementById(id);
-const D = (self.HIBIKI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
-
-// placeholder 显示 app 注入的自动配置默认，提示用户「留空即用这个」。
-$('host').placeholder = D.host || '127.0.0.1';
-$('port').placeholder = String(D.port || 19633);
-$('token').placeholder = D.token ? '(auto-configured)' : '';
-
-chrome.storage.local.get(['host', 'port', 'token']).then((c) => {
-  // 只在用户曾手动覆盖过时回填输入框；否则留空，靠 placeholder 展示默认。
-  if (c.host != null && c.host !== '') $('host').value = c.host;
-  if (c.port != null && c.port !== 0) $('port').value = c.port;
-  if (c.token != null && c.token !== '') $('token').value = c.token;
+const D = self.HIBIKI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
+const subtitleDefaults = Object.freeze({
+  netflixSubtitlePanel: false,
+  subtitleOverlayEnabled: true,
+  subtitleDragDropEnabled: true,
+  subtitleAutoScroll: true,
+  subtitleAutoPause: false,
+  subtitleCondensedPlayback: false,
+  netflixHideNextEpisode: true,
+});
+const toggleIds = Object.freeze({
+  nfSubList: 'netflixSubtitlePanel',
+  subtitleOverlayEnabled: 'subtitleOverlayEnabled',
+  subtitleDragDropEnabled: 'subtitleDragDropEnabled',
+  subtitleAutoScroll: 'subtitleAutoScroll',
+  subtitleAutoPause: 'subtitleAutoPause',
+  subtitleCondensedPlayback: 'subtitleCondensedPlayback',
+  nfHideNext: 'netflixHideNextEpisode',
 });
 
-$('save').onclick = async () => {
+let toastTimer = null;
+function toast(message) {
+  const el = $('status');
+  if (!el) return;
+  el.textContent = message;
+  el.classList.add('is-visible');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2600);
+}
+
+function runtimeMessage(message) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        try {
+          if (chrome.runtime.lastError) return resolve(null);
+        } catch (_) {
+          return resolve(null);
+        }
+        resolve(response || null);
+      });
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
+function effectivePort() {
+  return parseInt($('port').value, 10) || Number(D.port) || 19633;
+}
+
+async function refreshConnection(force) {
+  const card = $('connectionCard');
+  const title = $('connTitle');
+  const detail = $('connDetail');
+  const endpoint = $('connEndpoint');
+  const button = $('check');
+  if (card) card.dataset.tone = 'loading';
+  if (title) title.textContent = '正在检测…';
+  if (detail) detail.textContent = '确认 Hibiki 的查词与字幕服务状态。';
+  if (button) button.disabled = true;
+
+  const response = await runtimeMessage({ type: 'connectionStatus', force: force === true });
+  const connection = response && response.connection
+    ? response.connection
+    : { state: 'offline', port: effectivePort(), base: 'http://127.0.0.1:' + effectivePort() };
+  const copy = self.HIBIKI_CONNECTION.copy(connection.state, connection.port);
+  if (card) card.dataset.tone = copy.tone;
+  if (title) title.textContent = copy.title;
+  if (detail) detail.textContent = copy.detail;
+  if (endpoint) endpoint.textContent = connection.base || ('http://127.0.0.1:' + effectivePort());
+  if (button) button.disabled = false;
+
+  if (connection.state === self.HIBIKI_CONNECTION.states.unauthorized ||
+      connection.state === self.HIBIKI_CONNECTION.states.wrongService) {
+    $('advancedConnection').open = true;
+  }
+}
+
+async function loadSettings() {
+  $('host').placeholder = D.host || '127.0.0.1';
+  $('port').placeholder = String(D.port || 19633);
+  $('token').placeholder = D.token ? '已由 Hibiki 自动配置' : '';
+
+  const keys = ['host', 'port', 'token'].concat(Object.values(toggleIds));
+  const saved = await chrome.storage.local.get(keys);
+  if (saved.host != null && saved.host !== '') $('host').value = saved.host;
+  if (saved.port != null && saved.port !== 0) $('port').value = saved.port;
+  if (saved.token != null && saved.token !== '') $('token').value = saved.token;
+
+  for (const [id, key] of Object.entries(toggleIds)) {
+    const input = $(id);
+    if (!input) continue;
+    input.checked = typeof saved[key] === 'boolean' ? saved[key] : subtitleDefaults[key];
+    input.addEventListener('change', async () => {
+      await chrome.storage.local.set({ [key]: input.checked });
+      toast('已更新：' + input.closest('.setting-row').querySelector('strong').textContent);
+    });
+  }
+}
+
+$('connectionForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
   await chrome.storage.local.set({
     host: $('host').value.trim(),
     port: parseInt($('port').value, 10) || 0,
     token: $('token').value.trim(),
   });
-  $('status').textContent = ' Saved';
-};
+  toast('连接设置已保存');
+  await refreshConnection(true);
+});
 
-// TODO-1219：Netflix 整集字幕列表面板开关（默认关）。这是纯 UI 偏好，独立于 host/port/token 的
-// 自动配置——存在 chrome.storage.local 的 netflixSubtitlePanel（缺省即关），改动即时持久化，
-// subtitle-panel.js 通过 storage.onChanged 实时生效。Reset 按钮只清连接覆盖，不动此开关。
-const nfSubList = $('nfSubList');
-if (nfSubList) {
-  chrome.storage.local.get('netflixSubtitlePanel').then((c) => {
-    nfSubList.checked = !!(c && c.netflixSubtitlePanel === true);
-  });
-  nfSubList.onchange = async () => {
-    await chrome.storage.local.set({ netflixSubtitlePanel: nfSubList.checked });
-    $('status').textContent = nfSubList.checked ? ' Subtitle list on' : ' Subtitle list off';
-  };
-}
+$('reset').addEventListener('click', async () => {
+  await chrome.storage.local.set({ host: '', port: 0, token: '' });
+  $('host').value = '';
+  $('port').value = '';
+  $('token').value = '';
+  toast('已恢复 Hibiki 自动配置');
+  await refreshConnection(true);
+});
 
-// BUG-674（TODO-1361 ①）：网飞剧末「下一集」按钮隐藏开关。缺省=隐藏（只在显式存 false 时才显示，
-// 与 content.js 的默认隐藏判据一致）；纯 UI 偏好，存 chrome.storage.local.netflixHideNextEpisode，
-// content.js 经 storage.onChanged 实时生效。Reset 只清连接覆盖，不动此开关。
-const nfHideNext = $('nfHideNext');
-if (nfHideNext) {
-  chrome.storage.local.get('netflixHideNextEpisode').then((c) => {
-    nfHideNext.checked = !(c && c.netflixHideNextEpisode === false);
-  });
-  nfHideNext.onchange = async () => {
-    await chrome.storage.local.set({ netflixHideNextEpisode: nfHideNext.checked });
-    $('status').textContent = nfHideNext.checked ? ' Next-episode hidden' : ' Next-episode shown';
-  };
-}
+$('showToken').addEventListener('click', () => {
+  const token = $('token');
+  const visible = token.type === 'text';
+  token.type = visible ? 'password' : 'text';
+  $('showToken').textContent = visible ? '显示' : '隐藏';
+});
 
-// 一键回到自动配置：清空覆盖，cfg() 便回落 app 注入的默认。
-const resetBtn = $('reset');
-if (resetBtn) {
-  resetBtn.onclick = async () => {
-    await chrome.storage.local.set({ host: '', port: 0, token: '' });
-    $('host').value = '';
-    $('port').value = '';
-    $('token').value = '';
-    $('status').textContent = ' Reset to auto';
-  };
-}
+$('check').addEventListener('click', () => refreshConnection(true));
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  for (const [id, key] of Object.entries(toggleIds)) {
+    if (!changes[key]) continue;
+    const input = $(id);
+    if (input) input.checked = changes[key].newValue === true;
+  }
+});
+
+loadSettings().then(() => refreshConnection(false));

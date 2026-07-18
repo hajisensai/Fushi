@@ -1,6 +1,6 @@
 // TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 hibiki-defaults.js，
 // 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
-try { importScripts('hibiki-defaults.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+try { importScripts('hibiki-defaults.js', 'connection-diagnostics.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
 const HIBIKI_DEFAULTS =
     (self.HIBIKI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
 
@@ -15,6 +15,56 @@ async function cfg() {
   return { base: `http://${host}:${port}`, token };
 }
 function authHeader(token) { return 'Basic ' + btoa('hibiki:' + token); }
+
+let connectionCache = null;
+async function responseJson(resp) {
+  try { return await resp.json(); } catch (_) { return null; }
+}
+async function diagnoseConnection(force) {
+  const { base, token } = await cfg();
+  const cacheKey = base + '|' + token;
+  const now = Date.now();
+  if (!force && connectionCache && connectionCache.key === cacheKey && now - connectionCache.at < 5000) {
+    return connectionCache.value;
+  }
+  let primary = null;
+  let legacy = null;
+  let version = null;
+  let networkError = false;
+  try {
+    const r = await fetch(base + '/api/extension/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+      body: '{}',
+    });
+    primary = { status: r.status, body: await responseJson(r) };
+    if (r.status === 404 || r.status === 405) {
+      const old = await fetch(base + '/api/lookup/dictionary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+        body: JSON.stringify({ term: '', popupOnly: true }),
+      });
+      legacy = { status: old.status, body: await responseJson(old) };
+    }
+    const preliminary = self.HIBIKI_CONNECTION.classify(primary, legacy, null, false);
+    if (preliminary !== self.HIBIKI_CONNECTION.states.connected &&
+        preliminary !== self.HIBIKI_CONNECTION.states.legacy &&
+        preliminary !== self.HIBIKI_CONNECTION.states.unauthorized) {
+      const v = await fetch(base + '/serverVersion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      version = { status: v.status, body: await responseJson(v) };
+    }
+  } catch (_) {
+    networkError = true;
+  }
+  const state = self.HIBIKI_CONNECTION.classify(primary, legacy, version, networkError);
+  const value = { state, base, port: Number(new URL(base).port) || 19633 };
+  connectionCache = { key: cacheKey, at: now, value };
+  return value;
+}
 
 // BUG-726：扩展自更新。app 启动时会把 <appSupport> 的已解压副本刷新到当前内置版本，并把
 // 内容指纹写进 hibiki-defaults.js（build）+ 随查词响应下发（extensionBuild）。这里比对
@@ -170,6 +220,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // base URL + token to build GET /api/media/dictionary. Same source as
         // lookup/mine (cfg()): installer-injected defaults or options override.
         sendResponse({ ok: true, base, token });
+      } else if (msg.type === 'connectionStatus') {
+        sendResponse({ ok: true, connection: await diagnoseConnection(msg.force === true) });
       } else if (msg.type === 'popupSize') {
         // 弹窗尺寸精细化 Phase D：content.js 拖弹窗右下角把手松手后，把最终基准最大宽高经此
         // 回写 app（POST /api/extension/popup-size，Basic auth 与查词同源）。app 侧 clamp
@@ -185,10 +237,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const r = await fetch(base + '/api/lookup/dictionary', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
-          body: JSON.stringify({ term: msg.term, record: msg.record === true }),
+          body: JSON.stringify({
+            term: msg.term,
+            record: msg.record === true,
+            // BUG-871: popup HTML already contains the entries; only bestLength is
+            // consumed from result, so avoid transferring the full duplicate result.
+            popupOnly: true,
+          }),
         });
         const data = r.ok ? await r.json() : null;
-        sendResponse({ ok: r.ok, status: r.status, data });
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
         // BUG-726：先回结果再检查自更新（reload 杀 SW，绝不能挡在 sendResponse 前面）。
         maybeSelfReload(data);
       } else if (msg.type === 'lookupAudio') {
@@ -213,7 +276,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ videoId: msg.videoId || '', preferLang: msg.preferLang || 'ja' }),
         });
-        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? await r.json() : null,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
       } else if (msg.type === 'parseSubtitle') {
         // B（asb 招牌）：给任意网页视频加载用户自己的外挂字幕文件——扩展读本地 srt/ass/vtt 文本
         // POST /api/subtitle/parse {filename,content} → server 复用 app 内已测 parser 解析成 cue。
@@ -222,7 +290,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ filename: msg.filename || '', content: msg.content || '' }),
         });
-        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? await r.json() : null,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
       } else if (msg.type === 'mine') {
         // 纯文本挖词（非流媒体页 / 回落）：直接 POST {fields,sentence}，无媒体。
         const r = await fetch(base + '/api/mine', {
@@ -290,7 +363,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: false, error: 'unknown' });
       }
     } catch (e) {
-      sendResponse({ ok: false, error: String(e) });
+      sendResponse({
+        ok: false,
+        error: String(e),
+        connection: await diagnoseConnection(true).catch(() => ({ state: 'offline', base, port: 19633 })),
+      });
     }
   })();
   return true;
