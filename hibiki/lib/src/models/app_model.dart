@@ -2676,15 +2676,7 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoAsbplayerConfig(String json) =>
       prefsRepo.setVideoAsbplayerConfig(json);
 
-  VideoControlCustomization get videoControlCustomization =>
-      prefsRepo.videoControlCustomization;
-
-  Future<void> setVideoControlCustomization(
-    VideoControlCustomization customization,
-  ) =>
-      prefsRepo.setVideoControlCustomization(customization);
-
-  /// 视频控制按钮 9-槽位布局（TODO-274/312 phase 2，与 legacy 共用持久化键，v1 自动迁移）。
+  /// 视频控制按钮 9-槽位布局（TODO-274/312 phase 2，持久化键沿用旧三档时期键名，v1 自动迁移）。
   VideoControlLayout get videoControlLayout => prefsRepo.videoControlLayout;
 
   Future<void> setVideoControlLayout(VideoControlLayout layout) =>

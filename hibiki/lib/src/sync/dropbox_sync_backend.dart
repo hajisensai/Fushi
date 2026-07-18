@@ -8,6 +8,7 @@ import 'package:hibiki/src/sync/pkce_oauth.dart';
 import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -18,7 +19,8 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// Auth: OAuth 2.0 PKCE flow.
 /// Folder IDs are path strings like `/hibiki-data/BookTitle`.
-class DropboxSyncBackend extends SyncBackend with SyncFolderCache {
+class DropboxSyncBackend extends SyncBackend
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
   DropboxSyncBackend._();
   static final DropboxSyncBackend instance = DropboxSyncBackend._();
 
@@ -357,26 +359,10 @@ class DropboxSyncBackend extends SyncBackend with SyncFolderCache {
     );
   }
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 Dropbox 的下载原语（files/download API + jsonDecode）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _downloadFileJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _downloadFileJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _downloadFileJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _downloadFileJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -532,41 +518,6 @@ class DropboxSyncBackend extends SyncBackend with SyncFolderCache {
               isFolder: e['.tag'] == 'folder',
             ))
         .toList();
-  }
-
-  @override
-  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
-    final file = await findContentFile(namespaceId, name);
-    if (file == null) return null;
-    return AssetEntry(id: file.id, name: file.name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
   }
 
   @override

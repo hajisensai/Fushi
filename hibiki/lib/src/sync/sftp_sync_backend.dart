@@ -6,12 +6,14 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
-class SftpSyncBackend extends SyncBackend with SyncFolderCache {
+class SftpSyncBackend extends SyncBackend
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
   SftpSyncBackend._();
   static final SftpSyncBackend instance = SftpSyncBackend._();
 
@@ -187,26 +189,10 @@ class SftpSyncBackend extends SyncBackend with SyncFolderCache {
         );
       });
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 SFTP 的下载原语（已 `_guarded` 的 temp-file → utf8 → jsonDecode）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _downloadJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -361,44 +347,6 @@ class SftpSyncBackend extends SyncBackend with SyncFolderCache {
                 ))
             .toList();
       });
-
-  @override
-  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
-    // Delegates to the already-`_guarded` findContentFile (no re-wrap).
-    final file = await findContentFile(namespaceId, name);
-    if (file == null) return null;
-    return AssetEntry(id: file.id, name: file.name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) {
-    // Delegates to the already-`_guarded` uploadContentFile (no re-wrap).
-    return uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) {
-    // Delegates to the already-`_guarded` downloadContentFile (no re-wrap).
-    return downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
-  }
 
   @override
   Future<Object?> getJsonAsset(String assetId) async {

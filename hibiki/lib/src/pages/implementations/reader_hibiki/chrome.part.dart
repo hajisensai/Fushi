@@ -1184,6 +1184,49 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     );
   }
 
+  // Shared scaffold for the two bottom chrome bars ([_buildAudiobookBar] /
+  // [_buildSettingsBar]): Positioned(bottom) -> ExcludeFocus -> FocusScope ->
+  // Column(min) -> ReaderChromeScaler-scaled bar -> bottom-inset ColoredBox.
+  //
+  // TODO-700 T8: ExcludeFocus removes every bar control from the focus traversal
+  // pool so the reading content ([_focusNode]) is the only home for focus. The
+  // bar stays operable by touch/mouse but is never a directional-nav destination,
+  // so it can neither steal a hidden shortcut nor strand the page-turn keys.
+  // _chromeFocusScope is kept as the bar's structural scope; its `.hasFocus` is
+  // now always false, which [_reclaimReaderFocusAfterGesture] relies on. The
+  // audiobook bar passes a ValueKey so element identity survives the play-bar ↔
+  // settings-bar swap; the settings bar passes none (as before).
+  Widget _wrapBottomChromeBar({Key? key, required Widget bar}) {
+    return Positioned(
+      key: key,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: ExcludeFocus(
+        child: FocusScope(
+          node: _chromeFocusScope,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ReaderChromeScaler(
+                scale: _readerChromeScale,
+                baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
+                child: bar,
+              ),
+              ColoredBox(
+                color: _themeBackgroundColor(),
+                child: SizedBox(
+                  height: _stableBottomInset,
+                  width: double.infinity,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBottomChrome() {
     // 底栏可见性只取决于用户意图（_showChrome）和「首次冷加载是否完成」
     // （_hasEverLoaded，只置 true、从不复位），不再耦合每次切章都会翻转的
@@ -1206,53 +1249,21 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     return ListenableBuilder(
       listenable: ctrl,
       builder: (context, _) {
-        return Positioned(
+        return _wrapBottomChromeBar(
           key: const ValueKey<String>('hoshi_play_bar'),
-          left: 0,
-          right: 0,
-          bottom: 0,
-          // TODO-700 T8: ExcludeFocus removes every bar control from the
-          // focus traversal pool so the reading content ([_focusNode]) is the
-          // only home for focus. The bar stays operable by touch/mouse but is
-          // never a directional-nav destination, so it can neither steal a
-          // hidden shortcut nor strand the page-turn keys. _chromeFocusScope is
-          // kept as the bar's structural scope; its `.hasFocus` is now always
-          // false, which [_reclaimReaderFocusAfterGesture] relies on.
-          child: ExcludeFocus(
-            child: FocusScope(
-              node: _chromeFocusScope,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  ReaderChromeScaler(
-                    scale: _readerChromeScale,
-                    baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
-                    child: AudiobookPlayBar(
-                      controller: ctrl,
-                      skipActionSeconds:
-                          ReaderHibikiSource.instance.skipActionSeconds,
-                      onOpenSettings: _showAppearanceSheet,
-                      backgroundColor: _themeBackgroundColor(),
-                      foregroundColor: _themeTextColor(),
-                      reversed: appModel.reverseReaderBottomBar,
-                      // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
-                      // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
-                      invertSkip: ReaderHibikiSource
-                          .instance.invertAudiobookSkipDirection,
-                      // TODO-728: per-reader toggle for the current-sentence cue.
-                      showCue: ReaderHibikiSource.instance.showBottomBarCue,
-                    ),
-                  ),
-                  ColoredBox(
-                    color: _themeBackgroundColor(),
-                    child: SizedBox(
-                      height: _stableBottomInset,
-                      width: double.infinity,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          bar: AudiobookPlayBar(
+            controller: ctrl,
+            skipActionSeconds: ReaderHibikiSource.instance.skipActionSeconds,
+            onOpenSettings: _showAppearanceSheet,
+            backgroundColor: _themeBackgroundColor(),
+            foregroundColor: _themeTextColor(),
+            reversed: appModel.reverseReaderBottomBar,
+            // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
+            // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
+            invertSkip:
+                ReaderHibikiSource.instance.invertAudiobookSkipDirection,
+            // TODO-728: per-reader toggle for the current-sentence cue.
+            showCue: ReaderHibikiSource.instance.showBottomBarCue,
           ),
         );
       },
@@ -1290,45 +1301,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         ),
       ),
     ];
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      // TODO-700 T8: see [_buildAudiobookBar] — ExcludeFocus keeps the settings
-      // bar out of the focus traversal pool so focus stays on the reading
-      // content. _chromeFocusScope is kept as the structural scope only.
-      child: ExcludeFocus(
-        child: FocusScope(
-          node: _chromeFocusScope,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ReaderChromeScaler(
-                scale: _readerChromeScale,
-                baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
-                child: ColoredBox(
-                  color: _themeBackgroundColor(),
-                  child: SizedBox(
-                    height: _ReaderHibikiPageState._readerChromeBaseHeight,
-                    child: Padding(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
-                      child: Row(
-                        children:
-                            reversed ? barItems.reversed.toList() : barItems,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              ColoredBox(
-                color: _themeBackgroundColor(),
-                child: SizedBox(
-                  height: _stableBottomInset,
-                  width: double.infinity,
-                ),
-              ),
-            ],
+    return _wrapBottomChromeBar(
+      bar: ColoredBox(
+        color: _themeBackgroundColor(),
+        child: SizedBox(
+          height: _ReaderHibikiPageState._readerChromeBaseHeight,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+            child: Row(
+              children: reversed ? barItems.reversed.toList() : barItems,
+            ),
           ),
         ),
       ),

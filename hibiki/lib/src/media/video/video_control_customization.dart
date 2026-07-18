@@ -35,118 +35,15 @@ enum VideoControlPlacement {
   }
 }
 
-class VideoControlCustomization {
-  const VideoControlCustomization({
-    required Map<VideoControlButton, VideoControlPlacement> placements,
-  }) : _placements = placements;
-
-  static const VideoControlCustomization defaults = VideoControlCustomization(
-    placements: <VideoControlButton, VideoControlPlacement>{
-      VideoControlButton.speed: VideoControlPlacement.bottom,
-      VideoControlButton.subtitleList: VideoControlPlacement.rightRail,
-      VideoControlButton.favoriteSentence: VideoControlPlacement.rightRail,
-      VideoControlButton.settings: VideoControlPlacement.rightRail,
-    },
-  );
-
-  final Map<VideoControlButton, VideoControlPlacement> _placements;
-
-  VideoControlPlacement placementFor(VideoControlButton button) {
-    return _placements[button] ??
-        defaults._placements[button] ??
-        VideoControlPlacement.settingsOnly;
-  }
-
-  List<VideoControlButton> buttonsFor(VideoControlPlacement placement) {
-    return <VideoControlButton>[
-      for (final VideoControlButton button in VideoControlButton.values)
-        if (placementFor(button) == placement) button,
-    ];
-  }
-
-  bool isOnPlayer(VideoControlButton button) =>
-      placementFor(button) != VideoControlPlacement.settingsOnly;
-
-  List<VideoControlButton> get settingsFallbackButtons =>
-      buttonsFor(VideoControlPlacement.settingsOnly);
-
-  VideoControlCustomization copyWithPlacement(
-    VideoControlButton button,
-    VideoControlPlacement placement,
-  ) {
-    return VideoControlCustomization(
-      placements: <VideoControlButton, VideoControlPlacement>{
-        for (final VideoControlButton b in VideoControlButton.values)
-          b: placementFor(b),
-        button: placement,
-      },
-    );
-  }
-
-  String encode() {
-    return jsonEncode(<String, Object>{
-      'version': 1,
-      'placements': <String, String>{
-        for (final VideoControlButton button in VideoControlButton.values)
-          button.storageValue: placementFor(button).storageValue,
-      },
-    });
-  }
-
-  static VideoControlCustomization decode(String json) {
-    if (json.trim().isEmpty) return defaults;
-    try {
-      final Object? raw = jsonDecode(json);
-      if (raw is! Map<String, dynamic>) return defaults;
-      final Object? placementsRaw = raw['placements'];
-      if (placementsRaw is! Map<String, dynamic>) return defaults;
-      final Map<VideoControlButton, VideoControlPlacement> placements =
-          <VideoControlButton, VideoControlPlacement>{
-        for (final VideoControlButton button in VideoControlButton.values)
-          button: defaults.placementFor(button),
-      };
-      for (final MapEntry<String, dynamic> entry in placementsRaw.entries) {
-        final VideoControlButton? button =
-            VideoControlButton.fromStorage(entry.key);
-        final Object? rawValue = entry.value;
-        final VideoControlPlacement? placement = rawValue is String
-            ? VideoControlPlacement.fromStorage(rawValue)
-            : null;
-        if (button != null && placement != null) {
-          placements[button] = placement;
-        }
-      }
-      return VideoControlCustomization(placements: placements);
-    } catch (_) {
-      return defaults;
-    }
-  }
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    if (other is! VideoControlCustomization) return false;
-    for (final VideoControlButton button in VideoControlButton.values) {
-      if (placementFor(button) != other.placementFor(button)) return false;
-    }
-    return true;
-  }
-
-  @override
-  int get hashCode {
-    return Object.hashAll(
-      <Object>[
-        for (final VideoControlButton button in VideoControlButton.values)
-          Object.hash(button, placementFor(button)),
-      ],
-    );
-  }
-}
-
 // ============================================================================
 // TODO-274 phase 0: 9-slot full drag-customization data model foundation.
-// Pure data, no rendering wired. Coexists with the legacy 3-tier model above
-// (VideoControlCustomization stays untouched and keeps driving current chrome).
+// Pure data, no rendering wired. The legacy 3-tier enums above
+// ([VideoControlButton] / [VideoControlPlacement]) are retained only to decode
+// and migrate old persisted v1 layouts (see [VideoControlLayout._migrateFromV1]);
+// the old VideoControlCustomization holder class was removed once the renderer
+// and picker moved to the 9-slot [VideoControlLayout] (the persisted source of
+// truth). The v1 wire format ({"version":1,"placements":{...}}) is read directly
+// from raw JSON by the migration, so no holder object is needed.
 // ============================================================================
 
 /// The 9 target slots for a control button (Bilibili-style: bottom L/C/R +
@@ -539,8 +436,8 @@ class VideoControlLayout {
   /// Default layout: transport keys at traditional positions + learning keys
   /// per the user decision (favorite buttons default to bottomRight).
   ///
-  /// This is the new model's own default and does NOT touch the legacy
-  /// [VideoControlCustomization.defaults] (which keeps driving current chrome).
+  /// This is the new model's own default and is independent of the old legacy
+  /// 3-tier defaults (speed in the bottom cluster, the rest on the right rail).
   static final VideoControlLayout defaults = VideoControlLayout.fromAssignments(
     const <VideoControlItem, VideoControlSlot>{
       VideoControlItem.back: VideoControlSlot.topLeft,
@@ -620,8 +517,8 @@ class VideoControlLayout {
   ///
   /// Mapping of today's chrome:
   ///   - learning keys (speed / subtitleList / favorites / settings): the legacy
-  ///     [VideoControlCustomization.defaults] placed speed in the bottom cluster
-  ///     and the rest on the right rail -> bottomRight / screenRight respectively.
+  ///     3-tier default placed speed in the bottom cluster and the rest on the
+  ///     right rail -> bottomRight / screenRight respectively.
   ///   - transport / nav keys: drawn in the fixed top bar (back via topLeft,
   ///     title topCenter, episode nav / screenshot / subtitle-track / audio-track
   ///     topRight) and the bottom-center transport cluster (previousCue /
@@ -705,26 +602,6 @@ class VideoControlLayout {
       ],
     },
   );
-
-  /// Build the live render layout from the persisted legacy
-  /// [VideoControlCustomization] (the single persisted source of truth today).
-  /// Learning keys follow the user's saved 3-tier placement; transport / nav
-  /// keys keep their fixed [currentChrome] positions (the legacy model never
-  /// tracked them). Phase 1 reads this so the renderer is data-driven while
-  /// persistence stays on the legacy model (phase 2 migrates the picker).
-  factory VideoControlLayout.fromLegacy(VideoControlCustomization legacy) {
-    final Map<VideoControlItem, VideoControlSlot> assignments =
-        <VideoControlItem, VideoControlSlot>{
-      for (final VideoControlItem item in VideoControlItem.values)
-        item: currentChrome.slotOf(item),
-    };
-    for (final VideoControlButton button in VideoControlButton.values) {
-      final VideoControlItem? item = VideoControlItem.fromLegacy(button);
-      if (item == null) continue;
-      assignments[item] = _slotForLegacyPlacement(legacy.placementFor(button));
-    }
-    return VideoControlLayout.fromAssignments(assignments);
-  }
 
   final Map<VideoControlSlot, List<VideoControlItem>> _slots;
   final Set<VideoControlItem> _removed;

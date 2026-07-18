@@ -144,6 +144,14 @@ class ReaderCaretScripts {
     return null;
   }
 
+  // 互指注释（参照本仓 _jsStringLiteral 双实现先例）：本对象的字符模型 / 焦点环 JS 辅助与
+  // [ReaderLyricsCaretScripts]（window.hoshiLyricsCaret）各自内联一份——两者注入**不同文档**、
+  // 运行时无共享对象，且两侧 source() 都是不可插值的 r"""...""" 原始串，无法经 Dart 常量收敛。
+  // 下列辅助与 reader_lyrics_caret 对应方法**逐字节相同**，改任一侧必须同步另一侧：_charLen /
+  // _charRect / _applyRingStyle / _rectJson / _prevIndex / _hideRing。故意分叉（各自特化，勿强行
+  // 同步）：_isStop（本文件含弹窗标点/scope/clickable 门控）、_ensureRing（ring id hoshi-caret-ring
+  // vs hoshi-lyrics-caret-ring）、_drawRing（本文件做视口 clamp）、_walker（本文件走 document.body
+  // 全文）。
   static String source() => r"""
 window.hoshiCaret = {
   active: false,

@@ -31,14 +31,38 @@ void main() {
       .where((String line) => !line.trimLeft().startsWith('//'))
       .join('\n');
 
-  test('两条底栏（有声书条 + 设置条）都被 ExcludeFocus 包住', () {
+  test('两条底栏（有声书条 + 设置条）经单一 _wrapBottomChromeBar 外壳被 ExcludeFocus 包住', () {
     final String chrome = chromeSource();
+    // 底栏 ExcludeFocus/FocusScope 外壳去重为单一 helper [_wrapBottomChromeBar]
+    // （消除 _buildAudiobookBar/_buildSettingsBar 的重复脚手架）。不变式不变——两条底栏
+    // 仍都经这个 ExcludeFocus 外壳排出焦点遍历池；断言从「数 >=2 个 ExcludeFocus」升级为
+    // 「helper 定义存在 + ExcludeFocus 唯一在其内 + 两个构建器都经它」这层更强的结构断言。
+    expect(
+      chrome.contains('Widget _wrapBottomChromeBar('),
+      isTrue,
+      reason: '底栏外壳必须收敛为单一 _wrapBottomChromeBar helper（T8 根因修复）。',
+    );
     final int excludes = RegExp(r'ExcludeFocus\(').allMatches(chrome).length;
     expect(
       excludes,
-      greaterThanOrEqualTo(2),
-      reason: '_buildAudiobookBar 与 _buildSettingsBar 必须各用 ExcludeFocus 包住 '
-          '_chromeFocusScope，把底栏控件排出焦点遍历池（T8 根因修复）。',
+      1,
+      reason: '底栏 ExcludeFocus 外壳必须唯一（在 _wrapBottomChromeBar 内），'
+          '不留重复脚手架。',
+    );
+    expect(
+      chrome.contains('node: _chromeFocusScope'),
+      isTrue,
+      reason: '_wrapBottomChromeBar 必须挂 _chromeFocusScope 作底栏结构 scope。',
+    );
+    // 1 处 helper 定义 + _buildAudiobookBar / _buildSettingsBar 两处调用 = 3。
+    final int wraps =
+        RegExp(r'_wrapBottomChromeBar\(').allMatches(chrome).length;
+    expect(
+      wraps,
+      greaterThanOrEqualTo(3),
+      reason:
+          '_buildAudiobookBar 与 _buildSettingsBar 都必须经 _wrapBottomChromeBar '
+          '（1 定义 + 2 调用）；撤回任一 → 该底栏不再被 ExcludeFocus 排出焦点遍历池。',
     );
   });
 

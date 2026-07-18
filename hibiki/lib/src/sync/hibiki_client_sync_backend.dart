@@ -10,6 +10,7 @@ import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -111,7 +112,7 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
 class HibikiClientSyncBackend extends SyncBackend
-    with SyncFolderCache
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
     implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
   HibikiClientSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
@@ -336,26 +337,11 @@ class HibikiClientSyncBackend extends SyncBackend
     );
   }
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 hibiki client 的下载原语（size-capped GET + jsonDecode，见
+  // WebDavOps.downloadJson）。读取不经 _ensureResolved（沿用原实现，直接用 _ops!）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _ops!.downloadJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _ops!.downloadJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _ops!.downloadJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _ops!.downloadJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -428,29 +414,14 @@ class HibikiClientSyncBackend extends SyncBackend
     final response = await request.close();
     _ops!.checkStatus(response.statusCode, 'GET $fileId');
 
-    final contentLength = response.contentLength;
-    final sink = destination.openWrite();
-    int bytesReceived = 0;
-    bool success = false;
-    try {
-      await for (final chunk in response) {
-        sink.add(chunk);
-        bytesReceived += chunk.length;
-        if (contentLength > 0) {
-          onProgress?.call(bytesReceived / contentLength);
-        }
-      }
-      success = true;
-    } finally {
-      await sink.close();
-      if (!success) {
-        try {
-          destination.deleteSync();
-        } catch (e) {
-          debugPrint('[hibiki-client] failed to clean up temp file: $e');
-        }
-      }
-    }
+    await writeSyncStreamToFile(
+      source: response,
+      destination: destination,
+      totalBytes: response.contentLength,
+      onProgress: onProgress,
+      onCleanupError: (e) =>
+          debugPrint('[hibiki-client] failed to clean up temp file: $e'),
+    );
   }
 
   @override
@@ -472,8 +443,8 @@ class HibikiClientSyncBackend extends SyncBackend
     // Re-probe the candidate addresses on the next op. SyncManager calls
     // clearCache() before retrying a retryable failure; if the resolved
     // address just went down, the retry must be free to fail over to the next
-    // one (HBK-AUDIT-157). The folder cache is cleared here too, so switching
-    // addresses is safe — no stale base-URL-coupled paths survive.
+    // one (HBK-AUDIT-157). The folder cache is cleared by super.clearCache(), so
+    // switching addresses is safe — no stale base-URL-coupled paths survive.
     _sessionResolved = false;
   }
 
@@ -510,42 +481,19 @@ class HibikiClientSyncBackend extends SyncBackend
         .toList();
   }
 
+  // interconnect must settle on a reachable host before any per-asset op, so the
+  // base [putAsset]/[getAsset] defaults await this readiness hook. The path-style
+  // findAsset override and the folder-op methods below still call
+  // [_ensureResolved] directly (same idempotent gate, unchanged from before).
+  @override
+  Future<void> ensureAssetReady() => _ensureResolved();
+
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async {
     await _ensureResolved();
     final path = '$namespaceId${Uri.encodeComponent(name)}';
     if (!await _ops!.headFile(path)) return null;
     return AssetEntry(id: path, name: name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await _ensureResolved();
-    await uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await _ensureResolved();
-    await downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
   }
 
   @override

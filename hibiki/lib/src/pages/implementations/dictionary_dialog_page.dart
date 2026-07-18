@@ -315,74 +315,55 @@ class _DictionaryDialogPageState extends BasePageState {
     ];
   }
 
-  Future<void> showDictionaryClearDialog() async {
-    final Widget dialog = DictionaryConfirmationDialog(
-      title: Text(t.dialog_title_dictionary_clear),
-      content: Text(
-        t.dialog_content_dictionary_clear,
-        textAlign: TextAlign.justify,
-      ),
-      actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
-          child: Text(
-            t.dialog_clear,
-          ),
-          onPressed: () async {
-            showAppDialog(
-              barrierDismissible: false,
-              context: context,
-              builder: (context) => const DictionaryDialogDeletePage(),
-            );
-
-            await appModel.deleteDictionaries();
-
-            if (mounted) {
-              Navigator.pop(context);
-            }
-
-            if (mounted) {
-              Navigator.pop(context);
-              setState(() {});
-            }
-          },
-        ),
-        adaptiveDialogAction(
-          context: context,
-          child: Text(t.dialog_cancel),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ],
-    );
-
-    showAppDialog(
-      context: context,
-      builder: (context) => dialog,
+  Future<void> showDictionaryClearDialog() {
+    return _showDictionaryActionConfirmDialog(
+      title: t.dialog_title_dictionary_clear,
+      content: t.dialog_content_dictionary_clear,
+      confirmLabel: t.dialog_clear,
+      run: () => appModel.deleteDictionaries(),
     );
   }
 
-  Future<void> showDictionaryDeleteDialog(Dictionary dictionary) async {
+  Future<void> showDictionaryDeleteDialog(Dictionary dictionary) {
+    return _showDictionaryActionConfirmDialog(
+      title: t.dialog_title_dictionary_delete(name: dictionary.name),
+      content: t.dialog_content_dictionary_delete,
+      confirmLabel: t.dialog_delete,
+      run: () => appModel.deleteDictionary(dictionary),
+      progressName: dictionary.name,
+    );
+  }
+
+  /// 「清空全部词典 / 删除单本词典」共用的确认对话框流程（原为两份逐字复制的
+  /// 45 行构造样板，仅差文案与删除调用）：确认后先弹不可关闭的删除进度页
+  /// [DictionaryDialogDeletePage]（[progressName] 为 null 时是清空全部的无名
+  /// 变体），等 [run] 完成后依次收掉进度页与确认框并刷新列表。
+  Future<void> _showDictionaryActionConfirmDialog({
+    required String title,
+    required String content,
+    required String confirmLabel,
+    required Future<void> Function() run,
+    String? progressName,
+  }) async {
     final Widget dialog = DictionaryConfirmationDialog(
-      title: Text(t.dialog_title_dictionary_delete(name: dictionary.name)),
+      title: Text(title),
       content: Text(
-        t.dialog_content_dictionary_delete,
+        content,
         textAlign: TextAlign.justify,
       ),
       actions: <Widget>[
         adaptiveDialogAction(
           context: context,
-          child: Text(
-            t.dialog_delete,
-          ),
+          child: Text(confirmLabel),
           onPressed: () async {
             showAppDialog(
               barrierDismissible: false,
               context: context,
               builder: (context) =>
-                  DictionaryDialogDeletePage(name: dictionary.name),
+                  DictionaryDialogDeletePage(name: progressName),
             );
 
-            await appModel.deleteDictionary(dictionary);
+            await run();
 
             if (mounted) {
               Navigator.pop(context);
@@ -840,9 +821,121 @@ class _DictionaryDialogPageState extends BasePageState {
   Future<void> _downloadSelectedDictionaries(
     List<RecommendedDictionary> toDownload,
   ) async {
+    final Directory tempDir = Directory(
+      path.join(appModel.dictionaryResourceDirectory.path, 'download_temp'),
+    );
+
+    // BUG-927：逐本下载失败不再只压成一个 2 秒就消失的进度文案——收集失败的词典名
+    // 与原因，循环后弹一条持久可见（LENGTH_LONG）的失败汇总，并把完整诊断（异常 +
+    // 栈 + URL）写进 ErrorLogService（错误日志页可查、可回传），与「导入词典」按钮的
+    // 文件导入路径（_importDictionaryPaths）同一套「记日志 + 汇总 toast」反馈。
+    final List<String> failedNames = <String>[];
+
+    await _runWithDownloadProgressDialog(
+      initialMessage: t.import_start,
+      body: (
+        ValueNotifier<String> progressNotifier,
+        ValueNotifier<double> downloadProgress,
+      ) async {
+        int successCount = 0;
+        String? lastError;
+
+        try {
+          for (final RecommendedDictionary rec in toDownload) {
+            progressNotifier.value = t.dict_downloading(name: rec.name);
+            downloadProgress.value = 0;
+
+            try {
+              final File zipFile = await DictionaryDownloader.download(
+                url: rec.url,
+                tempDir: tempDir,
+                progressNotifier: downloadProgress,
+              );
+
+              progressNotifier.value = t.import_extract;
+              // TODO-1075：初装即把「可更新性」权威信号锚定在 catalog 来源真值上。
+              // 对存在**分离 index.json 端点**的来源（yomidevs releases / wty，见
+              // [RecommendedDictionary.indexUrl]）回填 isUpdatable:'true' + indexUrl +
+              // downloadUrl 三件套——与手动更新链路（_updateSingleDictionary）一致，
+              // 让通过 catalog 导入的词典**初装即可 isUpdatable==true**，不再依赖第三方
+              // 包内是否碰巧声明这些字段（修 TODO-1075：初装 gate 恒空、自动更新永不启用）。
+              // 对无分离 index 端点的来源（MarvNC / grammar / frequency）只回填
+              // downloadUrl，isUpdatable 交回包内 index.json 声明——不误标不可更新来源为
+              // 可更新，避免对无源词典发无效更新请求。
+              final String? recIndexUrl = rec.indexUrl;
+              final Map<String, String> sourceOverride = recIndexUrl != null
+                  ? <String, String>{
+                      'isUpdatable': 'true',
+                      'indexUrl': recIndexUrl,
+                      'downloadUrl': rec.url,
+                    }
+                  : <String, String>{'downloadUrl': rec.url};
+              await appModel.importDictionary(
+                file: zipFile,
+                progressNotifier: progressNotifier,
+                onImportSuccess: () {},
+                sourceOverride: sourceOverride,
+              );
+              successCount++;
+            } catch (e, st) {
+              // 完整诊断进错误日志（含异常类型 / URL / 栈），不再被静默吞掉。
+              ErrorLogService.instance.log(
+                'DictionaryDialog.download',
+                '${e.runtimeType} 下载/导入「${rec.name}」失败（${rec.url}）：$e',
+                st,
+              );
+              lastError = '${rec.name}: $e';
+              failedNames.add(rec.name);
+            }
+          }
+
+          if (successCount == toDownload.length) {
+            progressNotifier.value = t.dict_download_complete;
+          } else if (successCount > 0) {
+            progressNotifier.value = t.dict_download_partial(
+              success: successCount,
+              total: toDownload.length,
+              error: lastError ?? '',
+            );
+          } else {
+            progressNotifier.value =
+                t.dict_download_failed(error: lastError ?? '');
+          }
+          await Future<void>.delayed(const Duration(seconds: 2));
+        } finally {
+          if (tempDir.existsSync()) {
+            tempDir.deleteSync(recursive: true);
+          }
+        }
+      },
+    );
+
+    // BUG-927：进度框关闭后，把失败的词典名持久汇总给用户（LENGTH_LONG），而不是
+    // 只在那个 2 秒就消失的进度框里一闪而过。与文件导入路径同一套失败汇总文案。
+    if (failedNames.isNotEmpty) {
+      HibikiToast.show(
+        msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
+        toastLength: Toast.LENGTH_LONG,
+      );
+    }
+  }
+
+  /// 下载/更新词典共用的进度对话框样板（原为四处逐字复制：在线下载
+  /// [_downloadSelectedDictionaries]、单本在线更新 [_updateSingleDictionary]、
+  /// 从文件覆盖更新 [_updateDictionaryFromFile]、批量检查更新 [_checkForUpdates]）：
+  /// 置 [_isDownloading]、建文案/进度两个 notifier、弹不可关闭的
+  /// [DictionaryDownloadProgressDialog]，跑完 [body] 后统一 dispose、复位下载
+  /// 标志、收掉进度框并刷新列表。
+  Future<void> _runWithDownloadProgressDialog({
+    required String initialMessage,
+    required Future<void> Function(
+      ValueNotifier<String> progressNotifier,
+      ValueNotifier<double> downloadProgress,
+    ) body,
+  }) async {
     _isDownloading = true;
     final ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(t.import_start);
+        ValueNotifier<String>(initialMessage);
     final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
 
     showAppDialog(
@@ -857,97 +950,15 @@ class _DictionaryDialogPageState extends BasePageState {
       ),
     );
 
-    final Directory tempDir = Directory(
-      path.join(appModel.dictionaryResourceDirectory.path, 'download_temp'),
-    );
-
-    int successCount = 0;
-    String? lastError;
-    // BUG-927：逐本下载失败不再只压成一个 2 秒就消失的进度文案——收集失败的词典名
-    // 与原因，循环后弹一条持久可见（LENGTH_LONG）的失败汇总，并把完整诊断（异常 +
-    // 栈 + URL）写进 ErrorLogService（错误日志页可查、可回传），与「导入词典」按钮的
-    // 文件导入路径（_importDictionaryPaths）同一套「记日志 + 汇总 toast」反馈。
-    final List<String> failedNames = <String>[];
-
     try {
-      for (final RecommendedDictionary rec in toDownload) {
-        progressNotifier.value = t.dict_downloading(name: rec.name);
-        downloadProgress.value = 0;
-
-        try {
-          final File zipFile = await DictionaryDownloader.download(
-            url: rec.url,
-            tempDir: tempDir,
-            progressNotifier: downloadProgress,
-          );
-
-          progressNotifier.value = t.import_extract;
-          // TODO-1075：初装即把「可更新性」权威信号锚定在 catalog 来源真值上。
-          // 对存在**分离 index.json 端点**的来源（yomidevs releases / wty，见
-          // [RecommendedDictionary.indexUrl]）回填 isUpdatable:'true' + indexUrl +
-          // downloadUrl 三件套——与手动更新链路（_updateSingleDictionary）一致，
-          // 让通过 catalog 导入的词典**初装即可 isUpdatable==true**，不再依赖第三方
-          // 包内是否碰巧声明这些字段（修 TODO-1075：初装 gate 恒空、自动更新永不启用）。
-          // 对无分离 index 端点的来源（MarvNC / grammar / frequency）只回填
-          // downloadUrl，isUpdatable 交回包内 index.json 声明——不误标不可更新来源为
-          // 可更新，避免对无源词典发无效更新请求。
-          final String? recIndexUrl = rec.indexUrl;
-          final Map<String, String> sourceOverride = recIndexUrl != null
-              ? <String, String>{
-                  'isUpdatable': 'true',
-                  'indexUrl': recIndexUrl,
-                  'downloadUrl': rec.url,
-                }
-              : <String, String>{'downloadUrl': rec.url};
-          await appModel.importDictionary(
-            file: zipFile,
-            progressNotifier: progressNotifier,
-            onImportSuccess: () {},
-            sourceOverride: sourceOverride,
-          );
-          successCount++;
-        } catch (e, st) {
-          // 完整诊断进错误日志（含异常类型 / URL / 栈），不再被静默吞掉。
-          ErrorLogService.instance.log(
-            'DictionaryDialog.download',
-            '${e.runtimeType} 下载/导入「${rec.name}」失败（${rec.url}）：$e',
-            st,
-          );
-          lastError = '${rec.name}: $e';
-          failedNames.add(rec.name);
-        }
-      }
-
-      if (successCount == toDownload.length) {
-        progressNotifier.value = t.dict_download_complete;
-      } else if (successCount > 0) {
-        progressNotifier.value = t.dict_download_partial(
-          success: successCount,
-          total: toDownload.length,
-          error: lastError ?? '',
-        );
-      } else {
-        progressNotifier.value = t.dict_download_failed(error: lastError ?? '');
-      }
-      await Future<void>.delayed(const Duration(seconds: 2));
+      await body(progressNotifier, downloadProgress);
     } finally {
       progressNotifier.dispose();
       downloadProgress.dispose();
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
-      }
       _isDownloading = false;
       if (mounted) {
         Navigator.pop(context);
         setState(() {});
-      }
-      // BUG-927：进度框关闭后，把失败的词典名持久汇总给用户（LENGTH_LONG），而不是
-      // 只在那个 2 秒就消失的进度框里一闪而过。与文件导入路径同一套失败汇总文案。
-      if (failedNames.isNotEmpty) {
-        HibikiToast.show(
-          msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
-          toastLength: Toast.LENGTH_LONG,
-        );
       }
     }
   }
@@ -1562,59 +1573,44 @@ class _DictionaryDialogPageState extends BasePageState {
   Future<void> _updateSingleDictionary(Dictionary dictionary) async {
     if (_isDownloading) return;
     if (!dictionary.isUpdatable) return;
-    _isDownloading = true;
-
-    final ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(t.dict_update_checking);
-    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
-
-    showAppDialog(
-      barrierDismissible: false,
-      context: context,
-      builder: (ctx) => ValueListenableBuilder<String>(
-        valueListenable: progressNotifier,
-        builder: (ctx, String msg, __) => DictionaryDownloadProgressDialog(
-          message: msg,
-          progressListenable: downloadProgress,
-        ),
-      ),
-    );
 
     String resultMsg = t.dict_update_latest;
-    try {
-      final String? remoteRevision =
-          await DictionaryUpdateService.fetchRemoteIndex(dictionary.indexUrl);
-      if (!DictionaryUpdateService.needsUpdate(
-          dictionary.revision, remoteRevision)) {
-        resultMsg = t.dict_update_latest;
-      } else {
-        await _redownloadAndReimport(
-          name: dictionary.name,
-          downloadUrl: dictionary.downloadUrl,
-          progressNotifier: progressNotifier,
-          downloadProgress: downloadProgress,
-          // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
-          // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
-          sourceOverride: <String, String>{
-            'isUpdatable': 'true',
-            'downloadUrl': dictionary.downloadUrl,
-            'indexUrl': dictionary.indexUrl,
-          },
-        );
-        resultMsg = t.dict_update_done(name: dictionary.name);
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('DictionaryDialog.updateSingle', e, stack);
-      resultMsg = t.dict_update_failed(error: '$e');
-    } finally {
-      progressNotifier.dispose();
-      downloadProgress.dispose();
-      _isDownloading = false;
-      if (mounted) {
-        Navigator.pop(context);
-        setState(() {});
-      }
-    }
+    await _runWithDownloadProgressDialog(
+      initialMessage: t.dict_update_checking,
+      body: (
+        ValueNotifier<String> progressNotifier,
+        ValueNotifier<double> downloadProgress,
+      ) async {
+        try {
+          final String? remoteRevision =
+              await DictionaryUpdateService.fetchRemoteIndex(
+                  dictionary.indexUrl);
+          if (!DictionaryUpdateService.needsUpdate(
+              dictionary.revision, remoteRevision)) {
+            resultMsg = t.dict_update_latest;
+          } else {
+            await _redownloadAndReimport(
+              name: dictionary.name,
+              downloadUrl: dictionary.downloadUrl,
+              progressNotifier: progressNotifier,
+              downloadProgress: downloadProgress,
+              // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
+              // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
+              sourceOverride: <String, String>{
+                'isUpdatable': 'true',
+                'downloadUrl': dictionary.downloadUrl,
+                'indexUrl': dictionary.indexUrl,
+              },
+            );
+            resultMsg = t.dict_update_done(name: dictionary.name);
+          }
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('DictionaryDialog.updateSingle', e, stack);
+          resultMsg = t.dict_update_failed(error: '$e');
+        }
+      },
+    );
     HibikiToast.show(msg: resultMsg);
   }
 
@@ -1665,46 +1661,30 @@ class _DictionaryDialogPageState extends BasePageState {
     }
 
     if (!mounted) return;
-    _isDownloading = true;
-
-    final ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(t.dict_update_updating(name: dictionary.name));
-    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
-
-    showAppDialog(
-      barrierDismissible: false,
-      context: context,
-      builder: (ctx) => ValueListenableBuilder<String>(
-        valueListenable: progressNotifier,
-        builder: (ctx, String msg, __) => DictionaryDownloadProgressDialog(
-          message: msg,
-          progressListenable: downloadProgress,
-        ),
-      ),
-    );
 
     String resultMsg = t.dict_update_done(name: dictionary.name);
-    try {
-      await appModel.importDictionary(
-        file: file,
-        progressNotifier: progressNotifier,
-        onImportSuccess: () {},
-        forceReplaceExisting: true,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('DictionaryDialog.updateFromFile', e, stack);
-      resultMsg = t.dict_update_failed(error: '$e');
-    } finally {
-      progressNotifier.dispose();
-      downloadProgress.dispose();
-      _isDownloading = false;
-      if (mounted) {
-        Navigator.pop(context);
-        setState(() {});
-      }
-      if (Platform.isAndroid || Platform.isIOS) {
-        await FilePicker.platform.clearTemporaryFiles();
-      }
+    await _runWithDownloadProgressDialog(
+      initialMessage: t.dict_update_updating(name: dictionary.name),
+      body: (
+        ValueNotifier<String> progressNotifier,
+        ValueNotifier<double> downloadProgress,
+      ) async {
+        try {
+          await appModel.importDictionary(
+            file: file,
+            progressNotifier: progressNotifier,
+            onImportSuccess: () {},
+            forceReplaceExisting: true,
+          );
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('DictionaryDialog.updateFromFile', e, stack);
+          resultMsg = t.dict_update_failed(error: '$e');
+        }
+      },
+    );
+    if (Platform.isAndroid || Platform.isIOS) {
+      await FilePicker.platform.clearTemporaryFiles();
     }
     HibikiToast.show(msg: resultMsg);
   }
@@ -1752,68 +1732,49 @@ class _DictionaryDialogPageState extends BasePageState {
       HibikiToast.show(msg: t.dict_update_none);
       return;
     }
-    _isDownloading = true;
-
-    final ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(t.dict_update_checking);
-    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
-
-    showAppDialog(
-      barrierDismissible: false,
-      context: context,
-      builder: (ctx) => ValueListenableBuilder<String>(
-        valueListenable: progressNotifier,
-        builder: (ctx, String msg, __) => DictionaryDownloadProgressDialog(
-          message: msg,
-          progressListenable: downloadProgress,
-        ),
-      ),
-    );
 
     int updated = 0;
     int current = 0;
     int failed = 0;
-    try {
-      for (final Dictionary d in updatable) {
-        try {
-          // W-1：每本检查前归零进度条，避免上一本下载完的满格残留在「检查 revision」
-          // 阶段误显 100%。
-          downloadProgress.value = 0;
-          progressNotifier.value = t.dict_update_checking;
-          final String? remoteRevision =
-              await DictionaryUpdateService.fetchRemoteIndex(d.indexUrl);
-          if (!DictionaryUpdateService.needsUpdate(
-              d.revision, remoteRevision)) {
-            current++;
-            continue;
+    await _runWithDownloadProgressDialog(
+      initialMessage: t.dict_update_checking,
+      body: (
+        ValueNotifier<String> progressNotifier,
+        ValueNotifier<double> downloadProgress,
+      ) async {
+        for (final Dictionary d in updatable) {
+          try {
+            // W-1：每本检查前归零进度条，避免上一本下载完的满格残留在「检查 revision」
+            // 阶段误显 100%。
+            downloadProgress.value = 0;
+            progressNotifier.value = t.dict_update_checking;
+            final String? remoteRevision =
+                await DictionaryUpdateService.fetchRemoteIndex(d.indexUrl);
+            if (!DictionaryUpdateService.needsUpdate(
+                d.revision, remoteRevision)) {
+              current++;
+              continue;
+            }
+            await _redownloadAndReimport(
+              name: d.name,
+              downloadUrl: d.downloadUrl,
+              progressNotifier: progressNotifier,
+              downloadProgress: downloadProgress,
+              sourceOverride: <String, String>{
+                'isUpdatable': 'true',
+                'downloadUrl': d.downloadUrl,
+                'indexUrl': d.indexUrl,
+              },
+            );
+            updated++;
+          } catch (e, stack) {
+            ErrorLogService.instance
+                .log('DictionaryDialog.checkUpdates', e, stack);
+            failed++;
           }
-          await _redownloadAndReimport(
-            name: d.name,
-            downloadUrl: d.downloadUrl,
-            progressNotifier: progressNotifier,
-            downloadProgress: downloadProgress,
-            sourceOverride: <String, String>{
-              'isUpdatable': 'true',
-              'downloadUrl': d.downloadUrl,
-              'indexUrl': d.indexUrl,
-            },
-          );
-          updated++;
-        } catch (e, stack) {
-          ErrorLogService.instance
-              .log('DictionaryDialog.checkUpdates', e, stack);
-          failed++;
         }
-      }
-    } finally {
-      progressNotifier.dispose();
-      downloadProgress.dispose();
-      _isDownloading = false;
-      if (mounted) {
-        Navigator.pop(context);
-        setState(() {});
-      }
-    }
+      },
+    );
     HibikiToast.show(
       msg: t.dict_update_summary(
         updated: updated.toString(),

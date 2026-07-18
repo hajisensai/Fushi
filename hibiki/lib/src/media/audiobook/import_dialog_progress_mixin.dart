@@ -35,6 +35,39 @@ mixin ImportDialogProgressMixin<T extends StatefulWidget> on State<T> {
     super.dispose();
   }
 
+  /// 「导入」确认按钮：导入中禁用并渲 spinner + 文案，否则渲 [t.dialog_import]。
+  /// 两个导入对话框逐字相同的 action 收敛到此；Enter/默认键语义由
+  /// `adaptiveDialogAction(isDefaultAction: true)` 原样保留，焦点行为不变。
+  Widget buildImportAction(
+    BuildContext context, {
+    required VoidCallback onImport,
+  }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return adaptiveDialogAction(
+      context: context,
+      isDefaultAction: true,
+      onPressed: importing ? null : onImport,
+      child: importing
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: tokens.spacing.gap * 2,
+                  height: tokens.spacing.gap * 2,
+                  child: adaptiveIndicator(
+                    context: context,
+                    strokeWidth: 2,
+                    color: tokens.surfaces.primary,
+                  ),
+                ),
+                SizedBox(width: tokens.spacing.gap),
+                Text(t.dialog_importing),
+              ],
+            )
+          : Text(t.dialog_import),
+    );
+  }
+
   /// 导入进行中时渲染的进度块组件序列：间距 + 进度条 + 间距 + 文案。
   ///
   /// 返回的是 **待 spread 进父级 `Column.children` 的 widget 列表**（不是包一层

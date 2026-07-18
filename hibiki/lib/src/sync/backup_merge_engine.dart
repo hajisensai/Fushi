@@ -95,8 +95,8 @@ class BackupMergeEngine {
   List<String> get _reachableVideoArgs => _carriedVideoSourcePaths.toList();
 
   /// Preference key holding the favorite-sentence JSON list. Mirrors
-  /// `FavoriteSentenceRepository._key`; kept in sync by
-  /// `favorite_sentence_pref_key_guard_test.dart`.
+  /// `FavoriteSentenceRepository._key`; kept in sync behaviourally by
+  /// `favorite_sentence_merge_import_test.dart`.
   static const String _favoriteSentencesPrefKey = 'favorite_sentences';
 
   /// Content-config preference keys carrying the local-audio registry (their
