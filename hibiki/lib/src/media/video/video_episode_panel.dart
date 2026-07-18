@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/video/video_panel_auto_scroll.dart';
 
 /// 视频播放列表「剧集列表」push-aside 侧栏面板（TODO-638）。
 ///
@@ -56,8 +57,8 @@ class VideoEpisodePanel extends StatefulWidget {
 }
 
 class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
-  final ScrollController _scrollController = ScrollController();
-  int _lastScrolledIndex = -1;
+  // 「当前集滚到视口中部偏上」的机器与章节面板共享（[VideoPanelAutoScroller]）。
+  final VideoPanelAutoScroller _autoScroller = VideoPanelAutoScroller();
 
   @override
   void initState() {
@@ -81,26 +82,14 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _autoScroller.dispose();
     super.dispose();
   }
 
   void _scrollToCurrentEpisode() {
-    final int index = widget.currentIndex;
-    if (index < 0 || index >= widget.episodeTitles.length) return;
-    if (index == _lastScrolledIndex) return;
-    if (!_scrollController.hasClients) return;
-    _lastScrolledIndex = index;
-    // 估算行高（dense ListTile，标题最多两行）约 56；把当前集滚到视口中部偏上。
-    const double rowExtent = 56;
-    final double viewport = _scrollController.position.viewportDimension;
-    final double target = (index * rowExtent) - (viewport / 2) + rowExtent;
-    final double clamped =
-        target.clamp(0.0, _scrollController.position.maxScrollExtent);
-    _scrollController.animateTo(
-      clamped,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
+    _autoScroller.scrollToIndex(
+      widget.currentIndex,
+      itemCount: widget.episodeTitles.length,
     );
   }
 
@@ -178,7 +167,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
 
   Widget _buildList(ColorScheme cs) {
     return ListView.builder(
-      controller: _scrollController,
+      controller: _autoScroller.controller,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: widget.episodeTitles.length,
       itemBuilder: (BuildContext _, int i) {

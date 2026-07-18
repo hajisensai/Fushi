@@ -28,6 +28,28 @@ class ReaderLayoutDefaults {
   static const String trailingSpacerWidthCss = '0';
 }
 
+/// 本 wave 清理：`_paginatedLayoutCss` / `_vnLayoutCss` / `_continuousLayoutCss` 三个布局
+/// CSS 生成器共享的公共参数契约（主题色 / 字体 / 行距 / 边距 + 各子 CSS 片段）。原来三处
+/// 生成器签名 + `css()` 里三处调用点各重复一份逐字相同的参数管道样板；抽成单一 record 作
+/// 唯一真相源——增删公共参数只改此 record 与用到它的生成器，不再三处手改。纯机械搬运：各
+/// 生成器 `return '''...'''` 的 CSS 原始串一字未改，解构出的局部变量名 / 值与旧命名参数完全
+/// 一致 → `css()` 输出逐字节不变。
+typedef _LayoutCssArgs = ({
+  ReaderSettings settings,
+  bool isVertical,
+  _ThemeColors colors,
+  String resolvedFontFamily,
+  String textSpacingCss,
+  String paddingCss,
+  String gridCss,
+  String textIndentCss,
+  String vertKerningCss,
+  String vpalCss,
+  String textOrientCss,
+  double clampedMarginTop,
+  double clampedMarginBottom,
+});
+
 class ReaderContentStyles {
   ReaderContentStyles._();
 
@@ -311,55 +333,31 @@ svg.block-img.blurred {
     // `hoshi-vn-stage`, so reusing column-width/gap geometry would fight the
     // stage). Falling through to the paginated `else` would silently give VN the
     // column model, so VN must be selected explicitly here.
+    // 三布局生成器共享的公共参数（单一真相源，见 _LayoutCssArgs）。一次构建，按 view-mode 分发。
+    final _LayoutCssArgs layoutArgs = (
+      settings: settings,
+      isVertical: isVertical,
+      colors: colors,
+      resolvedFontFamily: resolvedFontFamily,
+      textSpacingCss: textSpacingCss,
+      paddingCss: paddingCss,
+      gridCss: gridCss,
+      textIndentCss: textIndentCss,
+      vertKerningCss: vertKerningCss,
+      vpalCss: vpalCss,
+      textOrientCss: textOrientCss,
+      clampedMarginTop: mt,
+      clampedMarginBottom: mb,
+    );
     final String layoutCss = settings.isVnMode
-        ? _vnLayoutCss(
-            settings: settings,
-            isVertical: isVertical,
-            colors: colors,
-            resolvedFontFamily: resolvedFontFamily,
-            textSpacingCss: textSpacingCss,
-            paddingCss: paddingCss,
-            gridCss: gridCss,
-            textIndentCss: textIndentCss,
-            vertKerningCss: vertKerningCss,
-            vpalCss: vpalCss,
-            textOrientCss: textOrientCss,
-            clampedMarginTop: mt,
-            clampedMarginBottom: mb,
-          )
+        ? _vnLayoutCss(layoutArgs)
         : settings.isContinuousMode
-            ? _continuousLayoutCss(
-                settings: settings,
-                isVertical: isVertical,
-                colors: colors,
-                resolvedFontFamily: resolvedFontFamily,
-                textSpacingCss: textSpacingCss,
-                paddingCss: paddingCss,
-                gridCss: gridCss,
-                textIndentCss: textIndentCss,
-                vertKerningCss: vertKerningCss,
-                vpalCss: vpalCss,
-                textOrientCss: textOrientCss,
-                clampedMarginTop: mt,
-                clampedMarginBottom: mb,
-              )
+            ? _continuousLayoutCss(layoutArgs)
             : _paginatedLayoutCss(
-                settings: settings,
-                isVertical: isVertical,
-                colors: colors,
-                resolvedFontFamily: resolvedFontFamily,
-                textSpacingCss: textSpacingCss,
-                paddingCss: paddingCss,
+                layoutArgs,
                 columnGapCss: columnGapCss,
                 columnWidthCss: columnWidthCss,
-                gridCss: gridCss,
-                textIndentCss: textIndentCss,
-                vertKerningCss: vertKerningCss,
-                vpalCss: vpalCss,
-                textOrientCss: textOrientCss,
                 columnsCss: columnsCss,
-                clampedMarginTop: mt,
-                clampedMarginBottom: mb,
                 clampedMarginLeft: ml,
                 clampedMarginRight: mr,
                 contentClipCss: contentClipCss,
@@ -672,27 +670,29 @@ a {
 ''';
   }
 
-  static String _paginatedLayoutCss({
-    required ReaderSettings settings,
-    required bool isVertical,
-    required _ThemeColors colors,
-    required String resolvedFontFamily,
-    required String textSpacingCss,
-    required String paddingCss,
+  static String _paginatedLayoutCss(
+    _LayoutCssArgs a, {
     required String columnGapCss,
     required String columnWidthCss,
-    required String gridCss,
-    required String textIndentCss,
-    required String vertKerningCss,
-    required String vpalCss,
-    required String textOrientCss,
     required String columnsCss,
-    required double clampedMarginTop,
-    required double clampedMarginBottom,
     required double clampedMarginLeft,
     required double clampedMarginRight,
     required String contentClipCss,
   }) {
+    // 公共参数解构自 _LayoutCssArgs（局部名 / 值与旧命名参数一致）；isVertical 本生成器不用，
+    // 故不解构（避免未使用局部告警）。下方 CSS 原始串一字未改。
+    final ReaderSettings settings = a.settings;
+    final _ThemeColors colors = a.colors;
+    final String resolvedFontFamily = a.resolvedFontFamily;
+    final String textSpacingCss = a.textSpacingCss;
+    final String paddingCss = a.paddingCss;
+    final String gridCss = a.gridCss;
+    final String textIndentCss = a.textIndentCss;
+    final String vertKerningCss = a.vertKerningCss;
+    final String vpalCss = a.vpalCss;
+    final String textOrientCss = a.textOrientCss;
+    final double clampedMarginTop = a.clampedMarginTop;
+    final double clampedMarginBottom = a.clampedMarginBottom;
     return '''
 html, body {
   overflow: hidden !important;
@@ -790,21 +790,21 @@ html::before {
   /// screen reserves the reader chrome insets (top/bottom) and centres its
   /// content. No multicol columns — text flows naturally within one screen, so
   /// this does NOT reuse the paginated column geometry.
-  static String _vnLayoutCss({
-    required ReaderSettings settings,
-    required bool isVertical,
-    required _ThemeColors colors,
-    required String resolvedFontFamily,
-    required String textSpacingCss,
-    required String paddingCss,
-    required String gridCss,
-    required String textIndentCss,
-    required String vertKerningCss,
-    required String vpalCss,
-    required String textOrientCss,
-    required double clampedMarginTop,
-    required double clampedMarginBottom,
-  }) {
+  static String _vnLayoutCss(_LayoutCssArgs a) {
+    // 公共参数解构自 _LayoutCssArgs（局部名 / 值与旧命名参数一致）；下方 CSS 原始串一字未改。
+    final ReaderSettings settings = a.settings;
+    final bool isVertical = a.isVertical;
+    final _ThemeColors colors = a.colors;
+    final String resolvedFontFamily = a.resolvedFontFamily;
+    final String textSpacingCss = a.textSpacingCss;
+    final String paddingCss = a.paddingCss;
+    final String gridCss = a.gridCss;
+    final String textIndentCss = a.textIndentCss;
+    final String vertKerningCss = a.vertKerningCss;
+    final String vpalCss = a.vpalCss;
+    final String textOrientCss = a.textOrientCss;
+    final double clampedMarginTop = a.clampedMarginTop;
+    final double clampedMarginBottom = a.clampedMarginBottom;
     // TODO-958：VN 居中需区分主轴。flex 容器 `.hoshi-vn-screen` 的物理主轴恒为水平
     // （flex-direction:row），但「沿主轴居中」的语义在两种写排下不同：竖排
     // vertical-rl 文字列沿水平主轴展开，水平居中即左右居中；横排文字行沿垂直交叉轴
@@ -875,21 +875,21 @@ body {
 ''';
   }
 
-  static String _continuousLayoutCss({
-    required ReaderSettings settings,
-    required bool isVertical,
-    required _ThemeColors colors,
-    required String resolvedFontFamily,
-    required String textSpacingCss,
-    required String paddingCss,
-    required String gridCss,
-    required String textIndentCss,
-    required String vertKerningCss,
-    required String vpalCss,
-    required String textOrientCss,
-    required double clampedMarginTop,
-    required double clampedMarginBottom,
-  }) {
+  static String _continuousLayoutCss(_LayoutCssArgs a) {
+    // 公共参数解构自 _LayoutCssArgs（局部名 / 值与旧命名参数一致）；下方 CSS 原始串一字未改。
+    final ReaderSettings settings = a.settings;
+    final bool isVertical = a.isVertical;
+    final _ThemeColors colors = a.colors;
+    final String resolvedFontFamily = a.resolvedFontFamily;
+    final String textSpacingCss = a.textSpacingCss;
+    final String paddingCss = a.paddingCss;
+    final String gridCss = a.gridCss;
+    final String textIndentCss = a.textIndentCss;
+    final String vertKerningCss = a.vertKerningCss;
+    final String vpalCss = a.vpalCss;
+    final String textOrientCss = a.textOrientCss;
+    final double clampedMarginTop = a.clampedMarginTop;
+    final double clampedMarginBottom = a.clampedMarginBottom;
     // TODO-788：连续模式无 multicol 翻页周期，padding-bottom 只用 marginBottom + chrome-bottom-inset，
     // 不再像分页模式 (_paginatedLayoutCss :507) 那样塞一份独立的 fontSize px 预留项——分页那份 F
     // 是承载几何项（镜像 verticalColumnWidthCss/JS contentBox 维持 pageStep==realPitch 不变式）必须保留，

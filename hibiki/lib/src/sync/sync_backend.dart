@@ -161,6 +161,71 @@ abstract class SyncBackend implements SyncAssetStore {
   void evictFolderId(String folderId);
 }
 
+/// SyncAssetStore 默认委托（与 [SyncBackendFileTrioMixin]/[SyncFolderCache]
+/// 同款模式：挂在具体后端的 `with` 列表，SyncBackend 接口零变化——测试 fake 用
+/// `implements SyncBackend` 不受影响）。
+mixin SyncAssetStoreDefaults on SyncBackend {
+  //
+  // findAsset/putAsset/getAsset were byte-identical across the ID-style backends
+  // (ftp/sftp/dropbox/onedrive), each forwarding verbatim to the per-backend
+  // content primitives, so they live here once instead of six copies. The
+  // concrete findContentFile / uploadContentFile / downloadContentFile each
+  // already take their own backend lock (_opLock / _guarded / WebDavOps), so
+  // these defaults MUST NOT wrap them in another lock — re-acquiring a
+  // non-reentrant mutex would deadlock (do not re-wrap).
+  //
+  // Path-style backends (WebDAV, Hibiki interconnect) probe existence with a
+  // HEAD rather than findContentFile, so they still override findAsset; nothing
+  // else diverges. The lone readiness difference — HibikiClientSyncBackend must
+  // settle on a reachable host before any per-asset op — is funnelled through
+  // the [ensureAssetReady] hook (default no-op) instead of duplicated call sites.
+
+  /// Protected readiness hook awaited before the default [putAsset] / [getAsset]
+  /// forward. Default no-op; a backend that must settle a session first
+  /// (HibikiClientSyncBackend → resolve a reachable host) overrides it.
+  Future<void> ensureAssetReady() async {}
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
+    // Delegates to the already-locking findContentFile; do not re-wrap.
+    final DriveFile? file = await findContentFile(namespaceId, name);
+    if (file == null) return null;
+    return AssetEntry(id: file.id, name: file.name);
+  }
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await ensureAssetReady();
+    // Delegates to the already-locking uploadContentFile; do not re-wrap.
+    await uploadContentFile(
+      folderId: namespaceId,
+      fileName: name,
+      file: file,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await ensureAssetReady();
+    // Delegates to the already-locking downloadContentFile; do not re-wrap.
+    await downloadContentFile(
+      fileId: assetId,
+      destination: destination,
+      onProgress: onProgress,
+    );
+  }
+}
+
 // HBK-AUDIT-091: resolver lives next to SyncBackendType (its switch subject)
 // instead of inside the concrete GoogleDrive backend, so no single concrete
 // backend is forced to import all of its siblings.

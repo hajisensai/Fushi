@@ -251,6 +251,13 @@ void main() {
     'lib/src/utils/misc/hibiki_toast.dart': <String>[
       'HibikiDesignTokens',
     ],
+    // Merged from app_model_popup_dictionary_md3_static_test.dart: the desktop
+    // popup dictionary lookup (AppModel.openPopupDictionaryLookup) uses the shared
+    // MD3 dialog frame + PopupDictionaryPage instead of a bespoke Dialog shell.
+    'lib/src/models/app_model.dart': <String>[
+      'HibikiDialogFrame(',
+      'PopupDictionaryPage(',
+    ],
   };
 
   test('MD3 design token and shared component files exist', () {
@@ -534,6 +541,13 @@ void main() {
       'lib/src/utils/misc/hibiki_toast.dart': <String>[
         'BorderRadius.circular(24)',
         'fontSize: 14',
+      ],
+      // Merged from app_model_popup_dictionary_md3_static_test.dart: the popup
+      // dictionary lookup must not fall back to a bespoke Dialog + ConstrainedBox
+      // shell (it flows through HibikiDialogFrame instead).
+      'lib/src/models/app_model.dart': <String>[
+        '=> Dialog(',
+        'child: ConstrainedBox(',
       ],
     };
 
@@ -1326,13 +1340,26 @@ void main() {
     expect(audiobookBuild, isNot(contains('adaptiveAlertDialog(')));
     expect(removeDialog, isNot(contains('adaptiveAlertDialog(')));
 
+    // 导入对话框外框 chrome 已收敛到共享 ImportDialogFrame（清理 wave2）：
+    // 两侧 Frame 断言走委托，共享件内再断言真实 chrome，MD3 保证传递闭环
+    // （参照 BatchTagPickerDialogFrame 先例）。RemoveConfirmation 仍直持 chrome。
+    final String sharedImportFrame = _sectionSource(
+      bookImportSource,
+      'class ImportDialogFrame',
+      'class BookImportDialogFrame',
+    );
+    expect(bookImportFrame, contains('return ImportDialogFrame('));
+    expect(audiobookFrame, contains('return ImportDialogFrame('));
+    expect(sharedImportFrame, contains('HibikiDialogFrame('));
+    expect(sharedImportFrame, contains('HibikiModalSheetFrame('));
+    expect(removeFrame, contains('HibikiDialogFrame('));
+    expect(removeFrame, contains('HibikiModalSheetFrame('));
     for (final String dialogSource in <String>[
       bookImportFrame,
       audiobookFrame,
       removeFrame,
+      sharedImportFrame,
     ]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
   });
@@ -1391,6 +1418,24 @@ void main() {
       '  Widget _audioSourceRow()',
     );
 
+    // 导入中 spinner 按钮（含 tokens.surfaces.primary 的进度指示）已收敛到
+    // import_dialog_progress_mixin.buildImportAction：两侧 flow 断言委托，
+    // mixin 体内再断言真实 token，保证传递闭环。
+    final String progressMixinSource = File(
+      'lib/src/media/audiobook/import_dialog_progress_mixin.dart',
+    ).readAsStringSync();
+    final String importActionBody = _functionSource(
+      progressMixinSource,
+      'Widget buildImportAction(',
+      '  List<Widget> buildProgressSection(',
+    );
+    expect(importActionBody, contains('HibikiDesignTokens.of(context)'));
+    expect(importActionBody, contains('tokens.surfaces.primary'));
+    expect(
+      importActionBody,
+      isNot(contains('Theme.of(context).colorScheme.primary')),
+    );
+
     for (final String section in <String>[
       bookImportFlow,
       audiobookImportFlow,
@@ -1398,7 +1443,7 @@ void main() {
       expect(section, contains('HibikiDesignTokens.of(context)'));
       expect(section, contains('tokens.spacing'));
       expect(section, contains('tokens.type.metadata'));
-      expect(section, contains('tokens.surfaces.primary'));
+      expect(section, contains('buildImportAction('));
       expect(section, isNot(contains('Theme.of(context).textTheme.bodySmall')));
       expect(
         section,
@@ -2410,6 +2455,13 @@ void main() {
     final String deleteDialog = _functionSource(
       source,
       'Future<void> showDictionaryDeleteDialog(Dictionary dictionary)',
+      '  /// 「清空全部词典 / 删除单本词典」共用的确认对话框流程',
+    );
+    // 清空/删除两个确认流程已收敛到共用 helper（原为两份逐字复制的构造样板），
+    // MD3 对话框铬件断言随之锚到 helper 本体；两个入口只需保证仍委托给它。
+    final String confirmHelper = _functionSource(
+      source,
+      'Future<void> _showDictionaryActionConfirmDialog({',
       '  Future<void> _importDictionaryFiles()',
     );
     final String confirmationFrame = _sectionSource(
@@ -2424,9 +2476,11 @@ void main() {
     );
 
     for (final String dialogSource in <String>[clearDialog, deleteDialog]) {
-      expect(dialogSource, contains('DictionaryConfirmationDialog('));
+      expect(dialogSource, contains('_showDictionaryActionConfirmDialog('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
+    expect(confirmHelper, contains('DictionaryConfirmationDialog('));
+    expect(confirmHelper, isNot(contains('adaptiveAlertDialog(')));
 
     for (final String dialogSource in <String>[
       confirmationFrame,

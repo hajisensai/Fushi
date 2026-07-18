@@ -95,12 +95,19 @@ void main() {
       final String chrome = File(
         'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
       ).readAsStringSync();
-      // 有声书条 + 设置条各一个 ExcludeFocus 包住 _chromeFocusScope。
+      // 底栏 ExcludeFocus 外壳已收敛到单一 _wrapBottomChromeBar helper
+      //（清理 wave2）：ExcludeFocus 唯一在 helper 内、两条底栏都经它包装。
+      // 不变量不变——两条底栏仍都被排出焦点遍历池（TODO-700 T8 根因修复）。
       expect(
-        RegExp(r'ExcludeFocus\(').allMatches(chrome).length,
-        greaterThanOrEqualTo(2),
-        reason: '底栏（有声书条 + 设置条）必须各被 ExcludeFocus 包住，把控件排出焦点'
-            '遍历池 —— 这是 TODO-700 T8 的根因修复（焦点恒在正文）。',
+        chrome,
+        contains('Widget _wrapBottomChromeBar('),
+        reason: '底栏（有声书条 + 设置条）的 ExcludeFocus 外壳必须收敛在 '
+            '_wrapBottomChromeBar 内 —— TODO-700 T8 根因修复（焦点恒在正文）。',
+      );
+      expect(RegExp(r'ExcludeFocus\(').allMatches(chrome).length, 1);
+      expect(
+        RegExp(r'_wrapBottomChromeBar\(').allMatches(chrome).length,
+        greaterThanOrEqualTo(3),
       );
     });
 

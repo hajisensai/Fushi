@@ -66,7 +66,22 @@ class AudiobookAlignmentMessages {
   String _copying(String name) => copyingFile?.call(name) ?? persisting;
 }
 
-/// 按字幕扩展名分派解析器（导入对话框与对齐 service 共用的唯一真源）。
+/// 从 EPUB 提取目录构建 matcher 用的章节列表。本 service、导入对话框
+/// （probe / matcher）与 [SasayakiRematch]（弹窗 probe / 重跑）五个调用点共用；
+/// 解析异常由各调用方按自身语义 try/catch，此处不吞。
+List<EpubSection> epubSectionsFromExtractDir(String extractDir) {
+  final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
+  return List<EpubSection>.generate(
+    epubBook.chapters.length,
+    (int i) => EpubSection(
+      index: i,
+      href: epubBook.chapters[i].href,
+      text: epubBook.chapterPlainText(i),
+    ),
+  );
+}
+
+/// 按字幕扩展名分派解析器（原两个导入对话框各持等价副本，已收敛到此单一真相源）。
 Future<List<AudioCue>> parseCuesForFormat(
   File file,
   String bookKey,
@@ -123,15 +138,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   try {
     final EpubBookRow? bookRow = await db.getEpubBook(bookKey);
     final String extractDir = bookRow?.extractDir ?? '';
-    final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
-    sections = List<EpubSection>.generate(
-      epubBook.chapters.length,
-      (i) => EpubSection(
-        index: i,
-        href: epubBook.chapters[i].href,
-        text: epubBook.chapterPlainText(i),
-      ),
-    );
+    sections = epubSectionsFromExtractDir(extractDir);
   } catch (e, stack) {
     ErrorLogService.instance
         .log('AudiobookAlignmentService.parseEpub', e, stack);

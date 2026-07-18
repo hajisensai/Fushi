@@ -162,7 +162,6 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiFileDropTarget(
       enabled: !importing,
       debugLabel: 'book-import-dialog',
@@ -176,29 +175,7 @@ class _BookImportDialogState extends State<BookImportDialog>
             onPressed: () => Navigator.pop(context),
             child: Text(t.dialog_cancel),
           ),
-          adaptiveDialogAction(
-            context: context,
-            isDefaultAction: true,
-            onPressed: importing ? null : _doImport,
-            child: importing
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: tokens.spacing.gap * 2,
-                        height: tokens.spacing.gap * 2,
-                        child: adaptiveIndicator(
-                          context: context,
-                          strokeWidth: 2,
-                          color: tokens.surfaces.primary,
-                        ),
-                      ),
-                      SizedBox(width: tokens.spacing.gap),
-                      Text(t.dialog_importing),
-                    ],
-                  )
-                : Text(t.dialog_import),
-          ),
+          buildImportAction(context, onImport: _doImport),
         ],
       ),
     );
@@ -510,10 +487,6 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
   }
 
-  static final Set<String> _audioExtensions = AudiobookStorage.audioExtensions
-      .map((String ext) => ext.replaceFirst('.', ''))
-      .toSet();
-
   Future<void> _pickAudio() async {
     if (_pickerActive) return;
     _pickerActive = true;
@@ -523,7 +496,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       final List<String> paths = await pickRealFilePaths(
         context: context,
         appModel: appModel,
-        allowedExtensions: _audioExtensions,
+        allowedExtensions: AudiobookStorage.audioExtensionsNoDot,
       );
       if (!mounted) return;
       paths.sort(compareAudioFilePath);
@@ -993,25 +966,67 @@ class _BookImportDialogState extends State<BookImportDialog>
       ),
     );
 
-    return _summarizeHealth(result.health);
-  }
-
-  String? _summarizeHealth(AudiobookHealth h) {
-    switch (h.kind) {
-      case HealthKind.ok:
-      case HealthKind.partial:
-      case HealthKind.failed:
-        final int p = h.ratePct ?? 0;
-        return t.health_match_summary(pct: p);
-      case HealthKind.notApplicable:
-      case HealthKind.unrun:
-      case HealthKind.running:
-        return null;
-    }
+    return summarizeAudiobookHealth(result.health);
   }
 
   Future<Directory> _ensurePersistDir(String key) =>
       AudiobookStorage.ensurePersistDir(key);
+}
+
+/// 两个导入对话框逐字相同的外框脚手架（HibikiDialogFrame 560/0.86 +
+/// HibikiModalSheetFrame 同 padding + Wrap footer，空 actions 时无 footer）。
+/// 标题渲染两态刻意各异——book 在 body 里渲 Widget 标题（2 行省略），audiobook
+/// 用 sheet 的 [title] 槽——由调用方各自保留，不在此归一。
+class ImportDialogFrame extends StatelessWidget {
+  const ImportDialogFrame({
+    required this.leadingIcon,
+    required this.body,
+    required this.actions,
+    this.title,
+    super.key,
+  });
+
+  final IconData leadingIcon;
+  final String? title;
+  final Widget body;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: title,
+        leadingIcon: leadingIcon,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        scrollable: true,
+        body: body,
+        footer: actions.isEmpty
+            ? null
+            : Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: actions,
+              ),
+      ),
+    );
+  }
 }
 
 @visibleForTesting
@@ -1031,49 +1046,42 @@ class BookImportDialogFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
-      maxWidth: 560,
-      maxHeightFactor: 0.86,
-      scrollable: false,
-      child: HibikiModalSheetFrame(
-        leadingIcon: Icons.library_add_outlined,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        scrollable: true,
-        body: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            DefaultTextStyle.merge(
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: tokens.type.listTitle.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              child: title,
+    return ImportDialogFrame(
+      leadingIcon: Icons.library_add_outlined,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          DefaultTextStyle.merge(
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.listTitle.copyWith(
+              fontWeight: FontWeight.w600,
             ),
-            SizedBox(height: tokens.spacing.gap),
-            content,
-          ],
-        ),
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: actions,
-        ),
+            child: title,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          content,
+        ],
       ),
+      actions: actions,
     );
+  }
+}
+
+/// 把 [AudiobookHealth] 压成一段 toast 尾巴；notApplicable/unrun/running 返回
+/// null 省掉冗余提示。两个导入对话框共用（原各持一份逐字相同副本）。
+String? summarizeAudiobookHealth(AudiobookHealth h) {
+  switch (h.kind) {
+    case HealthKind.ok:
+    case HealthKind.partial:
+    case HealthKind.failed:
+      final int pct = h.ratePct ?? 0;
+      return t.health_match_summary(pct: pct);
+    case HealthKind.notApplicable:
+    case HealthKind.unrun:
+    case HealthKind.running:
+      return null;
   }
 }
 

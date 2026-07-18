@@ -8,6 +8,7 @@ import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_transient_error.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -75,7 +76,7 @@ bool googleDriveErrorIsInsufficientScope(Object error) {
   return false;
 }
 
-class GoogleDriveHandler with SyncFolderCache {
+class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   GoogleDriveHandler._();
   static final GoogleDriveHandler instance = GoogleDriveHandler._();
 
@@ -402,23 +403,10 @@ class GoogleDriveHandler with SyncFolderCache {
     });
   }
 
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 Google Drive 的下载原语（size-capped fullMedia GET + jsonDecode）。
+  @override
+  Future<Object?> readJsonById(String fileId) => _downloadJson(fileId);
 
   Future<void> updateProgressFile({
     required String folderId,

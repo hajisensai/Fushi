@@ -271,15 +271,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       onWideChanged: (bool wide) => _isWide = wide,
       narrowKey: () => ValueKey<String>(_subPage ?? 'main'),
       // 窄窗 padding：水平 page + gap/2，底部叠 card + gap + 键盘 inset（与视频不同，
-      // 视频用 page + gap，不可统一）。
+      // 视频用 page + gap，不可统一；底部走共享公式
+      // [HibikiMasterDetailSettingsSheet.paneInsets]）。
       narrowPadding: (BuildContext context, BoxConstraints constraints) {
-        final double viewInsetsBottom =
-            MediaQuery.of(context).viewInsets.bottom;
-        return EdgeInsets.fromLTRB(
-          tokens.spacing.page + tokens.spacing.gap / 2,
-          tokens.spacing.gap / 2,
-          tokens.spacing.page + tokens.spacing.gap / 2,
-          tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+        return HibikiMasterDetailSettingsSheet.paneInsets(
+          context,
+          horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
+          top: tokens.spacing.gap / 2,
         );
       },
       // 窄窗（含全部手机 bottom sheet）：维持现有 push 行为，外观仍内联。
@@ -291,26 +289,18 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       // 宽窗左右 master-detail（左父菜单 + 右详情）——视频走顶部分类条，两边发散，
       // 故 MaterialSupportingPaneLayout / SupportingPaneSide 等符号留在此回调里。
       wideBuilder: (BuildContext context, BoxConstraints constraints) {
-        final double viewInsetsBottom =
-            MediaQuery.of(context).viewInsets.bottom;
         // TODO-725：导航置首后宽窗默认选中改 'location'（不再默认 appearance）。
         final String selectedId = _subPage ?? 'location';
         final Color dividerColor = isCupertinoPlatform(context)
             ? CupertinoColors.separator.resolveFrom(context)
             : HibikiDesignTokens.of(context).surfaces.outline;
-        final double wideHorizontalInset =
-            tokens.spacing.page + tokens.spacing.gap / 2;
-        final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
-          wideHorizontalInset,
-          tokens.spacing.gap / 2,
-          wideHorizontalInset,
-          tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
-        );
-        final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
-          wideHorizontalInset,
-          tokens.spacing.gap / 2,
-          wideHorizontalInset,
-          tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+        // 左父菜单与右详情两个 pane 同一份 padding（此前两份逐字相同的
+        // EdgeInsets.fromLTRB，收敛为共享公式 paneInsets 的一次调用）。
+        final EdgeInsets widePanePadding =
+            HibikiMasterDetailSettingsSheet.paneInsets(
+          context,
+          horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
+          top: tokens.spacing.gap / 2,
         );
         // 用可用的有界高度撑满整张 master-detail（等价于主页设置把
         // MaterialSupportingPaneLayout 放进 Expanded）：Row(stretch) 才能给
@@ -331,12 +321,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 BuildContext context,
                 BoxConstraints paneConstraints,
               ) {
-                final double minContentHeight = paneConstraints.maxHeight >
-                        wideSupportingPadding.vertical
-                    ? paneConstraints.maxHeight - wideSupportingPadding.vertical
-                    : 0;
+                final double minContentHeight =
+                    paneConstraints.maxHeight > widePanePadding.vertical
+                        ? paneConstraints.maxHeight - widePanePadding.vertical
+                        : 0;
                 return SingleChildScrollView(
-                  padding: wideSupportingPadding,
+                  padding: widePanePadding,
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       minHeight: minContentHeight,
@@ -352,7 +342,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             primary: KeyedSubtree(
               key: ValueKey<String>(selectedId),
               child: SingleChildScrollView(
-                padding: widePrimaryPadding,
+                padding: widePanePadding,
                 child: _buildWidePrimary(context, theme, selectedId),
               ),
             ),
@@ -612,7 +602,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       settingsContext: settingsContext,
       destination: destination,
       shrinkWrap: true,
-      // 本面板已在外层 SingleChildScrollView 提供横向 padding（widePrimaryPadding /
+      // 本面板已在外层 SingleChildScrollView 提供横向 padding（widePanePadding /
       // narrowPadding）；让渲染器别再自带横向缩进，否则 schema 投影子页（布局 / 阅读
       // 控制 / 查词）会双重缩进、比 bespoke 的「导航 / 有声书」子页更窄（TODO-1321）。
       insetHorizontally: false,

@@ -8,6 +8,7 @@ import 'package:hibiki/src/sync/pkce_oauth.dart';
 import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -18,7 +19,8 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// Auth: OAuth 2.0 PKCE flow.
 /// Redirect URI: `hibiki://auth/onedrive`
-class OneDriveSyncBackend extends SyncBackend with SyncFolderCache {
+class OneDriveSyncBackend extends SyncBackend
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
   OneDriveSyncBackend._();
   static final OneDriveSyncBackend instance = OneDriveSyncBackend._();
 
@@ -381,26 +383,10 @@ class OneDriveSyncBackend extends SyncBackend with SyncFolderCache {
     );
   }
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 OneDrive 的下载原语（Graph item content GET + jsonDecode）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _downloadItemJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _downloadItemJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _downloadItemJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _downloadItemJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -530,39 +516,6 @@ class OneDriveSyncBackend extends SyncBackend with SyncFolderCache {
             ))
         .toList();
   }
-
-  @override
-  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
-    final file = await findContentFile(namespaceId, name);
-    if (file == null) return null;
-    return AssetEntry(id: file.id, name: file.name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) =>
-      uploadContentFile(
-        folderId: namespaceId,
-        fileName: name,
-        file: file,
-        onProgress: onProgress,
-      );
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) =>
-      downloadContentFile(
-        fileId: assetId,
-        destination: destination,
-        onProgress: onProgress,
-      );
 
   @override
   Future<Object?> getJsonAsset(String assetId) => _downloadItemJson(assetId);

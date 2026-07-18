@@ -101,4 +101,23 @@ void main() {
     //   该调用只在 reader 页 Dart 侧（语料）出现，HTML 生成器的函数定义不在语料内。
     expect(src, contains(r'window.__lyricsScrollToCue($idx)'));
   });
+
+  test('lyrics html wires middle-button seek via data-cue-index', () {
+    // 标准 click 事件对中键从不触发，中键点句 seek 必须单列 mousedown 监听——
+    // 本守卫防止它被删掉（并自 lyrics_pointer_seek_guard_test.dart，改为对
+    // 生成 HTML 断言：lyrics mode must wire a non-left mouse button to
+    // onLyricsPointerSeek using the cue element's data-cue-index）。
+    final String html = LyricsModeHtml.generate(
+      cues: <AudioCue>[cue(0), cue(1), cue(2)],
+      currentIndex: 0,
+      backgroundColor: 'rgba(255,255,255,1.00)',
+      textColor: 'rgba(0,0,0,1.00)',
+      accentColor: 'rgba(255,220,0,1.00)',
+      fontSize: 20,
+    );
+
+    expect(html, contains("_lc.addEventListener('mousedown'"));
+    expect(html, contains("callHandler('onLyricsPointerSeek'"));
+    expect(html, contains('data-cue-index'));
+  });
 }

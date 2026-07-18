@@ -22,6 +22,11 @@ abstract final class AudiobookStorage {
     '.mp4',
   };
 
+  /// [audioExtensions] 的去点形式（file picker 的 `allowedExtensions` 用）。
+  /// 两个导入对话框原各持同一派生副本，收敛到源集合旁的单一真相。
+  static final Set<String> audioExtensionsNoDot =
+      audioExtensions.map((String ext) => ext.replaceFirst('.', '')).toSet();
+
   static bool isAudioFile(String path) =>
       audioExtensions.contains(p.extension(path).toLowerCase());
 

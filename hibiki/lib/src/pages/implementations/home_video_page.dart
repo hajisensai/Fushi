@@ -1598,8 +1598,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   @override
   Widget build(BuildContext context) {
     // 「视频」tab 已毕业为常驻：导入入口恒放出（原 `kVideoImportEnabled ||
-    // experimentalVideoEnabled`，后者已删且恒 true，故门控恒真）。仍 watch
-    // appProvider 保持与 AppModel 变化的重建订阅不变。
+    // experimentalVideoEnabled`，后者已删且恒 true，故门控恒真）。这个 watch
+    // **不是**毕业开关残留、不可删：build 路径内 [_visibleRemoteVideos] 用
+    // ref.read 读 prefsRepo.showRemoteEntries（另一处 appProvider watch 藏在
+    // 合集行嵌套 builder 里，无合集时不执行），AppModel 转发 prefsRepo 的
+    // notifyListeners，靠这里的订阅让「显示远端条目」开关切换时占位卡即时增删。
     ref.watch(appProvider);
     const bool canImport = true;
     final List<BookTagRow> allTags =
