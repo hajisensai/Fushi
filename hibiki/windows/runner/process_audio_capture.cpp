@@ -2,6 +2,8 @@
 
 #include <audioclient.h>
 #include <audioclientactivationparams.h>
+#include <ks.h>
+#include <ksmedia.h>
 #include <mmdeviceapi.h>
 #include <propidl.h>
 #include <wrl.h>
@@ -320,6 +322,33 @@ void ProcessAudioCapture::CaptureLoop(DWORD process_id,
 
   WAVEFORMATEX* mix_format = nullptr;
   hr = audio_client->GetMixFormat(&mix_format);
+  if (hr == E_NOTIMPL) {
+    // The virtual process-loopback device has no endpoint mix format. Match
+    // Microsoft's ApplicationLoopback-compatible implementations with the
+    // shared-engine default format used by the process-loopback stream.
+    auto* fallback = static_cast<WAVEFORMATEXTENSIBLE*>(
+        CoTaskMemAlloc(sizeof(WAVEFORMATEXTENSIBLE)));
+    if (fallback == nullptr) {
+      hr = E_OUTOFMEMORY;
+    } else {
+      *fallback = {};
+      fallback->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+      fallback->Format.nChannels = 2;
+      fallback->Format.nSamplesPerSec = 48000;
+      fallback->Format.wBitsPerSample = 32;
+      fallback->Format.nBlockAlign =
+          fallback->Format.nChannels * fallback->Format.wBitsPerSample / 8;
+      fallback->Format.nAvgBytesPerSec =
+          fallback->Format.nSamplesPerSec * fallback->Format.nBlockAlign;
+      fallback->Format.cbSize =
+          sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
+      fallback->Samples.wValidBitsPerSample = 32;
+      fallback->dwChannelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT;
+      fallback->SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+      mix_format = &fallback->Format;
+      hr = S_OK;
+    }
+  }
   if (FAILED(hr) || mix_format == nullptr || mix_format->nSamplesPerSec == 0 ||
       mix_format->nBlockAlign == 0) {
     ProcessAudioCaptureResult failed;
