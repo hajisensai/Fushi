@@ -16,6 +16,7 @@ import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/sync/cloud_remote_video_client.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/interconnect_download_manager.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -103,6 +104,31 @@ void main() {
         ),
       );
 
+  /// 触发下载（点 [trigger]）并等到整条下载链在本 runAsync zone 内彻底排干为止。云视频
+  /// 下载走 [_downloadRemote] → [InterconnectDownloadManager.startVideoDownload]，后者在标
+  /// completed 前 await 了整链（拉整文件 + onComplete 建行 + 云封面/抽帧兜底），故任务终态
+  /// = 全部真实异步已排干。等待用 [Stopwatch] 墙钟兜底（高分辨率、不受 Windows ~15.6ms
+  /// 定时器粒度影响、早退保持快路径）——旧实现固定 200 次 20ms 迭代在满负载多 isolate 争用
+  /// 下会被批量到期定时器瞬间连发饿死（下载续体尚未调度就退出）而误红。
+  Future<void> tapAndAwaitDownload(WidgetTester tester, Finder trigger) async {
+    final InterconnectDownloadManager manager =
+        ProviderScope.containerOf(tester.element(find.byType(HomeVideoPage)))
+            .read(interconnectDownloadManagerProvider);
+    await tester.runAsync(() async {
+      await tester.tap(trigger);
+      final Stopwatch sw = Stopwatch()..start();
+      while (sw.elapsed < const Duration(seconds: 30)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        final InterconnectDownloadTask? task = manager.tasks['cloud/vid1'];
+        if (task != null &&
+            task.status != InterconnectDownloadStatus.running) {
+          return;
+        }
+      }
+    });
+    await tester.pump();
+  }
+
   testWidgets('云视频清单条目混排进主网格散卡区并带云角标', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -168,16 +194,10 @@ void main() {
     // 下载前列表无该行（云视频不在 VideoBooks）。
     expect(await repo.getByBookUid('cloud/vid1'), isNull);
 
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(
-        const ValueKey<String>('remote_video_download_cloud_vid1'),
-      ));
-      for (int i = 0; i < 200; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        if (await repo.getByBookUid('cloud/vid1') != null && i > 4) return;
-      }
-    });
-    await tester.pump();
+    await tapAndAwaitDownload(
+      tester,
+      find.byKey(const ValueKey<String>('remote_video_download_cloud_vid1')),
+    );
 
     // 撤掉 saveVideoBook 建行后此断言转红（行不存在）。
     final VideoBookRow? row = await repo.getByBookUid('cloud/vid1');
@@ -215,17 +235,11 @@ void main() {
 
     expect(await repo.getByBookUid('cloud/vid1'), isNull);
 
-    await tester.runAsync(() async {
-      // 点卡片本体（onTap → _openRemote），不是右上角 remote_video_download 按钮。
-      await tester.tap(
-        find.byKey(const ValueKey<String>('remote_video_card_cloud_vid1')),
-      );
-      for (int i = 0; i < 200; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        if (await repo.getByBookUid('cloud/vid1') != null && i > 4) return;
-      }
-    });
-    await tester.pump();
+    // 点卡片本体（onTap → _openRemote），不是右上角 remote_video_download 按钮。
+    await tapAndAwaitDownload(
+      tester,
+      find.byKey(const ValueKey<String>('remote_video_card_cloud_vid1')),
+    );
 
     expect(cloud.downloadedUids, contains('cloud/vid1'),
         reason: '#4：短按云占位卡分派下载（不再静默 return）');
