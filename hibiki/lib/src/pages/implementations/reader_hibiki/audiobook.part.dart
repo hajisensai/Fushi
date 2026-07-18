@@ -749,6 +749,12 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         final bool loaded = await _navigateToChapterAndWait(chapter);
         if (!mounted || _lyricsMode) break;
         if (!loaded) continue;
+        // BUG-891：停留前揭开该纯图片章的防剧透模糊图（此路径无 cue，不经区间揭遮罩
+        // 原语 __hoshiRevealBlurredBetween，否则音频停在一张仍模糊的图上）。
+        final InAppWebViewController? webCtrl = _controller;
+        if (webCtrl != null) {
+          await AudiobookBridge.revealAllBlurred(webCtrl);
+        }
         await controller.awaitImageChapterPause();
       }
     } finally {

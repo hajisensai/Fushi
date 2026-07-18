@@ -114,6 +114,37 @@ window.__hoshiRevealBlurredBetween = function(prev, el) {
   return revealed;
 };
 
+// BUG-891：揭开当前章（文档）内**全部**防剧透模糊图。纯图片章（无 cue，音频跨到它时走
+// _pauseThroughImageOnlyChapters → awaitImageChapterPause 停留，不经 __hoshiRevealBlurredBetween
+// 的 prev→el 区间判定）音频停在模糊图上——用户看到「暂停在一张仍然模糊的图上」。逻辑与
+// __hoshiRevealBlurredBetween 一致（登记 key 进已揭活集 + 删 blurred 类 + 回传 onImageRevealed
+// 持久化），只是不限区间、揭整章。仅 blurImages 开时 __hoshiImageRevealKey 存在，否则前置
+// 守卫 no-op（无 blurred 类 / 无 key 机制，向后兼容零副作用）。返回处理的图片数。
+window.__hoshiRevealAllBlurred = function() {
+  if (typeof window.__hoshiImageRevealKey !== 'function') return 0;
+  var media = document.querySelectorAll('img, svg');
+  var revealed = 0;
+  for (var i = 0; i < media.length; i++) {
+    var m = media[i];
+    if (m.classList &&
+        (m.classList.contains('gaiji') || m.classList.contains('gaiji-line'))) {
+      continue;
+    }
+    var key = window.__hoshiImageRevealKey(m);
+    if (key && typeof window.__hoshiMarkImageRevealed === 'function') {
+      window.__hoshiMarkImageRevealed(key);
+    }
+    if (m.classList && m.classList.contains('blurred')) {
+      m.classList.remove('blurred');
+    }
+    if (key && window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('onImageRevealed', key);
+    }
+    revealed++;
+  }
+  return revealed;
+};
+
 window.__hoshiRevealTarget = function(t) {
   if (!t) return;
   var r = window.hoshiReader;
@@ -446,6 +477,19 @@ window.__hoshiAnnotate = function(chapterHref) {
     await controller.evaluateJavascript(
       source: 'if(typeof __hoshiResetPrevHighlight!=="undefined")'
           '__hoshiResetPrevHighlight();',
+    );
+  }
+
+  /// BUG-891：揭开当前章内全部防剧透模糊图。纯图片章走 [awaitImageChapterPause] 停留、
+  /// 不经 `__hoshiRevealBlurredBetween`（那要 prev→el 两个 cue 锚点），音频会停在模糊图
+  /// 上。停留前调本方法揭遮罩——回传的 key 经 `onImageRevealed` handler 持久化 + 登记
+  /// 会话集。`blurImages` 关时 JS 前置守卫 no-op（零副作用）。
+  static Future<void> revealAllBlurred(
+    InAppWebViewController controller,
+  ) async {
+    await controller.evaluateJavascript(
+      source: 'if(typeof __hoshiRevealAllBlurred!=="undefined")'
+          '__hoshiRevealAllBlurred();',
     );
   }
 

@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-891](bugs/BUG-891-audio-follow-image-pause-mask-persist.md) | 🚧 | 🚧 | 音频跟随遇图片暂停失效且遮罩未揭，遮罩揭开状态应持久化并与图片库双向同步 |
+| [BUG-891](bugs/BUG-891-audio-follow-image-pause-mask-persist.md) | ✅ | ✅ | 音频跟随遇图片暂停失效且遮罩未揭，遮罩揭开状态应持久化并与图片库双向同步 |
 | [BUG-890](bugs/BUG-890-paused-audio-follow-image-snap.md) | ✅ | ✅ | 暂停/图片等待时有声书跟随把阅读器拽回音频位置 |
 | [BUG-887](bugs/BUG-887-top-progress-squeeze-frost.md) | ✅ | ✅ | 挤压模式顶部进度不应有毛玻璃且不应压住正文首行 |
 | [BUG-886](bugs/BUG-886-collapse-header-center.md) | ✅ | ✅ | 折叠设置分组标题头文字与箭头未垂直居中 |

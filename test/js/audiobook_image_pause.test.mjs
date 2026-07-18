@@ -104,3 +104,34 @@ for (const s of SCENARIOS) {
     assert.equal(reveals(s.html), s.expected);
   });
 }
+
+// BUG-891：纯图片章（无 cue 锚点，走 awaitImageChapterPause 停留）用 __hoshiRevealAllBlurred
+// 揭整章 —— 区间函数 __hoshiRevealBlurredBetween 需要 prev→el 两个 cue，纯图片章走不到，
+// 音频会停在模糊图上。本用例验证：无任何 cue 段落也能揭开全部 blurred 图，且 gaiji 跳过。
+const revealAllSrc = extract("__hoshiRevealAllBlurred");
+
+function revealsAll(bodyHtml) {
+  const stubs = `
+    window.__hoshiImageRevealKey = function(m){ return (m && m.getAttribute && m.getAttribute('src')) || 'key'; };
+    window.__hoshiMarkImageRevealed = function(){};
+  `;
+  return runInDom(bodyHtml, stubs + revealAllSrc, `
+    var n = window.__hoshiRevealAllBlurred();
+    var blurredLeft = document.querySelectorAll('.blurred').length;
+    document.body.setAttribute('data-result', n + '|' + blurredLeft);
+  `);
+}
+
+test("揭整章(纯图片章)：无 cue 锚点也揭开所有 blurred 图，跳过 gaiji", () => {
+  // 纯图片章：两张 blurred 图 + 一个 gaiji（应被 continue 跳过、保持 blurred）。
+  const html =
+    `<img class="block-img blurred" src="a.jpg">` +
+    `<img class="block-img blurred" src="b.jpg">` +
+    `<svg class="gaiji blurred"><image href="g.svg"></image></svg>`;
+  // revealed=2（a,b；gaiji 不计数），剩 1 个 blurred（gaiji 仍模糊）。
+  assert.equal(revealsAll(html), "2|1");
+});
+
+test("揭整章：无 blurred 图时安全返回 0", () => {
+  assert.equal(revealsAll(`<p>纯文字，无图</p>`), "0|0");
+});
