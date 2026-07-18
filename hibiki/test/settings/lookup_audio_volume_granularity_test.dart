@@ -155,7 +155,11 @@ void main() {
       expect(controller.activeId, isNotNull, reason: '音量行注册为单一焦点停靠点');
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-      await tester.pump();
+      // onChanged 是异步的（await setLookupAudioVolume → 事务化 setPref
+      // BUG-906，比旧两次裸 await 多一个异步回合），标题实时读数经
+      // notifyReaderSettingsChanged 在 await 之后重建；pumpAndSettle 排空该
+      // 异步写 + 重建，单次 pump 会漏掉读数刷新（值已同步进 _cache 故不受影响）。
+      await tester.pumpAndSettle();
       expect(ReaderHibikiSource.instance.lookupAudioVolume, 95,
           reason: '左方向键 = -5%（键步经 step 与 1% 拖动档位解耦）');
       expect(find.text('${t.lookup_audio_volume} (95%)'), findsOneWidget,
