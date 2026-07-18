@@ -1526,21 +1526,57 @@ void main() {
       expect(lookupIndex, charE.graphemeIndex, reason: 'Shift 悬停命中的是光标下那个字符');
     });
 
-    // Source guard：列表行文本层挂了 Shift-悬停查词（MouseRegion.onHover + 命中 + onLookup），
-    // 而非只有 tap。撤 BUG-879（删 handleRowHover / MouseRegion.onHover）→ 红。
-    test('BUG-879 source guard: row text has a shift-hover lookup path', () {
+    // Source guard：Shift-悬停查词走面板级单一 Listener（复用 RenderParagraph 反查，轻量），
+    // 不再逐行 MouseRegion 每次 hover 重排 TextPainter。撤 BUG-879 → 红。
+    test('BUG-879 source guard: panel-level shift-hover reuses _hitTestRows',
+        () {
       final String source =
           File('lib/src/media/video/video_subtitle_jump_panel.dart')
               .readAsStringSync();
-      final String body = _sourceBetween(
+      expect(source, contains('onPointerHover: _handleListShiftHover'),
+          reason: '列表 Shift-悬停查词必须挂在面板级 Listener 上');
+      expect(source, contains('void _handleListShiftHover('),
+          reason: '必须有面板级 Shift-悬停处理器');
+      final String hoverBody = _sourceBetween(
         source,
-        'Widget _buildRowText(',
-        'Widget _buildSelectionCheckbox',
+        'void _handleListShiftHover(',
+        'Widget build(',
       );
-      expect(body, contains('onHover: handleRowHover'),
-          reason: '行文本必须挂 MouseRegion.onHover 走 Shift-悬停查词');
-      expect(body, contains('isShiftPressed'),
+      expect(hoverBody, contains('_hitTestRows('),
+          reason: 'hover 查词复用 RenderParagraph 反查（不为每次 hover 重排 TextPainter）');
+      expect(hoverBody, contains('isShiftPressed'),
           reason: 'hover 查词门控需读 Shift 键状态');
+    });
+
+    // Source guard（BUG-879：「点了不出词」的命中收窄病因）：列表命中盒用 BoxHeightStyle.max
+    // 覆盖整行视觉格 + 半字格容差（`height * 0.5`），tap / hover / barrier 四路共用的两个
+    // 命中 helper 都必须放宽，否则点在行距/字缝落空退 seek。撤修复（回 1px / tight）→ 红。
+    test('BUG-879 source guard: list char hit uses forgiving box + tolerance',
+        () {
+      final String source =
+          File('lib/src/media/video/video_subtitle_jump_panel.dart')
+              .readAsStringSync();
+      // barrier / hover / keydown 共用的 RenderParagraph 反查。
+      final String paraHit = _sourceBetween(
+        source,
+        'SubtitleListCharHit? subtitleListCharHitFromParagraph(',
+        'enum VideoSubtitleListFilter',
+      );
+      expect(paraHit, contains('BoxHeightStyle.max'),
+          reason: 'RenderParagraph 反查须用 BoxHeightStyle.max 覆盖行距 leading');
+      expect(paraHit, contains('localRect.height * 0.5'),
+          reason: '容差须放宽到半字格（不再 1px），点字缝仍命中');
+      expect(paraHit, isNot(contains('inflate(1)')), reason: '旧 1px 容差必须已移除');
+      // tap 路径的 TextPainter 反查。
+      final String tapHit = _sourceBetween(
+        source,
+        'SubtitleListCharHit? hitAt({',
+        'return GestureDetector(',
+      );
+      expect(tapHit, contains('BoxHeightStyle.max'),
+          reason: 'tap 命中也须用 BoxHeightStyle.max');
+      expect(tapHit, contains('localRect.height * 0.5'),
+          reason: 'tap 容差同样放宽到半字格');
     });
   });
 
