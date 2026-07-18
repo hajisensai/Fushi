@@ -58,5 +58,42 @@ void main() {
       expect(req.updateNoteId, 42);
       expect(req.source, AnkiMiningSource.book);
     });
+
+    // galgame 一键制卡（docs/specs/galgame-mining）：audioBytes 接线。
+    test('有音频字节 -> providedAudioBytes 透传，requireAudio 开，默认名带扩展', () {
+      final req = buildExternalWindowRequest(
+        fields: const {'expression': '声'},
+        sentence: '君の声',
+        screenshotBytes: Uint8List.fromList([9, 9]),
+        audioBytes: Uint8List.fromList([1, 2, 3, 4]),
+      );
+      expect(req.providedAudioBytes, [1, 2, 3, 4]);
+      // 桌面/Android 默认 aac；iOS m4a。两种都以 galgame_audio. 前缀。
+      expect(req.providedAudioName, startsWith('galgame_audio.'));
+      // 本应有音频 -> 守卫开（最终丢音=失败，不静默出无声卡）。
+      expect(req.requireAudio, true);
+    });
+
+    test('自定义 audioName 覆盖默认名', () {
+      final req = buildExternalWindowRequest(
+        fields: const {'expression': '声'},
+        sentence: '君の声',
+        audioBytes: Uint8List.fromList([1, 2]),
+        audioName: 'custom_voice.m4a',
+      );
+      expect(req.providedAudioName, 'custom_voice.m4a');
+    });
+
+    test('空音频字节 -> 当作无音频（requireAudio false，纯截图卡不被误当失败）', () {
+      final req = buildExternalWindowRequest(
+        fields: const {'expression': '声'},
+        sentence: '君の声',
+        screenshotBytes: Uint8List.fromList([9]),
+        audioBytes: Uint8List(0),
+      );
+      expect(req.providedAudioBytes, isNull);
+      expect(req.providedAudioName, isNull);
+      expect(req.requireAudio, false);
+    });
   });
 }
