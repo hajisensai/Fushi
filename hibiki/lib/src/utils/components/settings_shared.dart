@@ -180,9 +180,17 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     HibikiDesignTokens tokens,
     bool cupertino,
   ) {
+    // 折叠头（onTitleTap != null）是带尾随箭头的可点整头：箭头在 Row 里按
+    // crossAxisAlignment.center 垂直居中，标题必须用上下对称 padding 才能与箭头
+    // 在同一垂直中线上（否则上重下轻的标签 padding 会让标题比箭头低几像素）。
+    // 静态内嵌小标题（onTitleTap == null）是行上方的标签，保持上重下轻贴住下方
+    // 设置行，行为不变。
+    final bool interactive = onTitleTap != null;
     final Widget label = cupertino
         ? Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            padding: interactive
+                ? const EdgeInsets.fromLTRB(16, 10, 16, 10)
+                : const EdgeInsets.fromLTRB(16, 10, 16, 4),
             child: Text(
               title!.toUpperCase(),
               style: tokens.type.metadata.copyWith(
@@ -193,10 +201,12 @@ class AdaptiveSettingsSurface extends StatelessWidget {
           )
         : SettingsSectionHeader(
             title!,
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            padding: interactive
+                ? const EdgeInsets.fromLTRB(12, 10, 12, 10)
+                : const EdgeInsets.fromLTRB(12, 10, 12, 4),
           );
 
-    if (onTitleTap == null) return label;
+    if (!interactive) return label;
 
     // 折叠头：标题 + 尾随箭头拼成整头，整头可点、可焦点驱动展开/收起。焦点驱动走
     // 与设置行一致的 _SettingsRowFocusTarget（Enter/手柄 A 触发 Activate），保证纯
