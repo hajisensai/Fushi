@@ -317,6 +317,21 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前是否处于图片暂停等待中。
   bool get isImagePaused => _imagePauseTimer?.isActive ?? false;
 
+  /// BUG-890：图片等待（自动暂停）窗口内用户是否手动翻页离开了插图那句。
+  /// 图片等待到点自动恢复播放时，若为真则**不**强制把 reader 拽回音频位
+  /// （否则把用户手动翻到的位置吃掉）——让跟随只在播放推进到下一句时经
+  /// [_manualReaderOverrideCue] 护栏自然接管。由 [noteManualReaderNavigation]
+  /// 在 [isImagePaused] 期间置真，定时器回调消费后复位，生命周期各点复位防泄漏。
+  bool _readerMovedDuringImagePause = false;
+
+  /// 纯决策：图片等待自动恢复播放时是否应把 reader 强制 snap 回音频位。
+  /// 用户在暂停窗口内手动翻页离开（[readerMovedDuringPause] 为真）→ 不 snap。
+  @visibleForTesting
+  static bool shouldSnapAfterImagePauseResume({
+    required bool readerMovedDuringPause,
+  }) =>
+      !readerMovedDuringPause;
+
   void setImagePauseSec(int sec) {
     final int clamped = sec.clamp(0, 15);
     if (imagePauseSec.value == clamped) return;
@@ -332,15 +347,27 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int sec = imagePauseSec.value;
     if (sec <= 0 || !_player.playing) return;
     _imagePauseTimer?.cancel();
+    // BUG-890：新一轮图片等待开始，复位“窗口内是否手动翻页”标志。
+    _readerMovedDuringImagePause = false;
     unawaited(_player.pause());
     _imagePauseTimer = Timer(Duration(seconds: sec), () {
       _imagePauseTimer = null;
+      // BUG-890：消费并复位标志（无论下面是否恢复都清，防泄漏到下一轮）。
+      final bool readerMoved = _readerMovedDuringImagePause;
+      _readerMovedDuringImagePause = false;
       if (!_player.playing) {
         unawaited(_player.play());
         // 暂停时视口停在插图上；恢复后把视口拉回当前 cue（插图后那句），
         // 让 reader 的 _onCueChanged 以 forceReveal 续上 audio-follow（snapReaderToAudio
         // 内部会 notifyListeners）。
-        snapReaderToAudio();
+        // BUG-890：但若用户在这几秒暂停窗口内已手动翻页离开插图那句，则不强制
+        // snap——否则把用户手动翻到的位置吃掉。既有 _manualReaderOverrideCue 护栏
+        // 会让恢复后“同一句”期间保位不跳，跟随只在播放推进到下一句时自然接管。
+        if (shouldSnapAfterImagePauseResume(
+          readerMovedDuringPause: readerMoved,
+        )) {
+          snapReaderToAudio();
+        }
       }
     });
     notifyListeners();
@@ -507,6 +534,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _imagePauseTimer = null;
     _hasPlayedOnce = false;
     _forceNextReveal = false;
+    _readerMovedDuringImagePause = false;
     _chapterTransition = false;
     _imageChapterPauseActive = false;
 
@@ -702,9 +730,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     _manualReaderOverrideCue = null;
     // 用户在图片自动暂停窗口内手动播放：取消待恢复计时器并把视口从插图拉回当前
     // cue（否则计时器到点见已在播放而跳过 snap，视口卡在插图上直到下次 cue 推进）。
+    // 手动按播放是显式“继续听书”手势，仍 snap；只复位 BUG-890 的窗口内翻页标志。
     if (_imagePauseTimer != null) {
       _imagePauseTimer!.cancel();
       _imagePauseTimer = null;
+      _readerMovedDuringImagePause = false;
       snapReaderToAudio();
     }
     unawaited(_player.play());
@@ -713,6 +743,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   Future<void> pause() async {
     _imagePauseTimer?.cancel();
     _imagePauseTimer = null;
+    _readerMovedDuringImagePause = false;
     _resumeMainAfterClip = false;
     await _player.pause();
     _maybeSavePosition(force: true);
@@ -1194,6 +1225,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   void noteManualReaderNavigation() {
     _chapterTransition = false;
     _manualReaderOverrideCue = _currentCue;
+    // BUG-890：图片等待自动暂停窗口内的手动翻页 → 标记为“用户已离开插图那句”，
+    // 图片等待到点恢复时据此不强制 snap 回音频位（见 triggerImagePause）。
+    if (isImagePaused) {
+      _readerMovedDuringImagePause = true;
+    }
   }
 
   /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落 Hive。相同值调用
