@@ -78,4 +78,21 @@ void main() {
     // 显式钉住期望数值，防止无意改动悄悄回落：12×1.5 + 2×3 = 24。
     expect(kTopProgressStripHeight, 24.0);
   });
+
+  group('BUG-886 顶部进度毛玻璃只在悬浮态出现', () {
+    test('挤压态（未开悬浮进度）不套毛玻璃', () {
+      // 用户报告：没开悬浮顶部进度，pill 背后却有一层模糊贴住正文首行。挤压态 pill
+      // 落在预留区（正文空白顶边距 = 主题背景）上，背后没有正文，毛玻璃无意义。
+      expect(
+        topProgressUsesFrostedGlass(floating: false),
+        isFalse,
+        reason: '挤压模式顶部进度必须是纯文字、无 BackdropFilter 模糊；'
+            '一旦有人把毛玻璃改回无条件绘制（BUG-886 回归），此断言即失败',
+      );
+    });
+
+    test('悬浮态才套毛玻璃（浮在正文之上需提升可读性）', () {
+      expect(topProgressUsesFrostedGlass(floating: true), isTrue);
+    });
+  });
 }

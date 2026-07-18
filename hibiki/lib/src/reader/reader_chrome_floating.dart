@@ -102,3 +102,17 @@ bool topProgressVisible({
   if (!floating) return true;
   return transientVisible;
 }
+
+/// Whether the top progress pill paints a frosted-glass (BackdropFilter blur +
+/// translucent fill) background behind its text — single source of truth for
+/// `_buildTopProgressBar`'s pill branch.
+///
+/// BUG-886: the frost only makes sense when [floating] — there the pill is a
+/// [Positioned] overlay genuinely on top of the body text, so a complex/light
+/// background needs the frost for legibility. In squeeze mode the strip reserves
+/// its own height and the body is pushed BELOW it, so the pill sits over the
+/// body's blank top margin (the theme background), not over text; a frost there
+/// is pointless and reads as a blurred rectangle hugging the first body line
+/// (worst on glyphs with a stroke at the very top, e.g. 「一」「ー」). So squeeze
+/// mode renders plain text with no blur and no fill.
+bool topProgressUsesFrostedGlass({required bool floating}) => floating;
