@@ -611,6 +611,9 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
 }  // namespace
 
 int main() {
+  // stderr 无缓冲：--hold 期间 [luna] 等诊断日志立即落盘/可读（否则块缓冲到进程退出才 flush，
+  // host 模式常被外部按 PID 收尾杀掉 → 日志丢失，无法诊断 LunaHook 加载/注入）。
+  setvbuf(stderr, nullptr, _IONBF, 0);
   int argc = 0;
   wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
   DWORD pid = 0;
