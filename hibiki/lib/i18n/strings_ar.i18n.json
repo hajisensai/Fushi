@@ -1387,8 +1387,6 @@
   "anki_error_connection_timeout": "تعذّر الاتصال بـ Anki: انتهت مهلة الاتصال. تحقق من المضيف والمنفذ وإعدادات الجدار الناري.",
   "anki_error_http": "تعذّر التصدير إلى Anki: حدث خطأ HTTP أثناء الاتصال بـ AnkiConnect.",
   "anki_error_connection_unknown": "تعذّر التصدير إلى Anki: حدث خطأ اتصال غير متوقع. راجع سجل الأخطاء لمزيد من التفاصيل.",
-  "compress_mining_media": "ضغط وسائط البطاقات",
-  "compress_mining_media_hint": "إيقافه يبقي وسائط البطاقات أوضح لكن أكبر حجمًا",
   "log_copy_all": "نسخ الكل",
   "hover_auto_lookup": "البحث عند التمرير",
   "hover_auto_lookup_hint": "البحث تلقائيًا عند تمرير مؤشر الماوس فوق حرف؛ دون الحاجة إلى النقر أو الضغط على Shift. يُظهر طبقة منبثقة واحدة كحد أقصى. لأجهزة سطح المكتب فقط.",
@@ -1964,5 +1962,16 @@
   "anime_download_play_now_fail": "Not ready yet (metadata pending or connection failed) — try again later",
   "interconnect_section_related": "Remote content & lookup",
   "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows",
-  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki."
+  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki.",
+  "mining_image_quality": "Image / GIF quality",
+  "mining_image_quality_hint": "Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.",
+  "mining_image_quality_thrift": "Data saver",
+  "mining_image_quality_standard": "Standard",
+  "mining_image_quality_hd": "HD",
+  "mining_image_quality_native": "Native",
+  "mining_audio_quality": "Audio quality",
+  "mining_audio_quality_hint": "Higher bitrate is clearer but makes larger cards.",
+  "mining_audio_quality_standard": "Standard",
+  "mining_audio_quality_high": "High",
+  "mining_audio_quality_native": "Native"
 }

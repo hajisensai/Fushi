@@ -1387,8 +1387,6 @@
   "anki_error_connection_timeout": "Kon geen verbinding maken met Anki: time-out van de verbinding. Controleer de host, poort en firewallinstellingen.",
   "anki_error_http": "Kon niet exporteren naar Anki: er is een HTTP-fout opgetreden tijdens het contact met AnkiConnect.",
   "anki_error_connection_unknown": "Kon niet exporteren naar Anki: er is een onverwachte verbindingsfout opgetreden. Zie het foutenlogboek voor details.",
-  "compress_mining_media": "Kaartmedia comprimeren",
-  "compress_mining_media_hint": "Uit houdt kaartmedia scherper maar groter",
   "log_copy_all": "Alles kopiëren",
   "hover_auto_lookup": "Opzoeken bij hover",
   "hover_auto_lookup_hint": "Automatisch opzoeken wanneer de muis over een teken zweeft; zonder te klikken of Shift in te drukken. Toont hooguit één popuplaag. Alleen desktop.",
@@ -1964,5 +1962,16 @@
   "anime_download_play_now_fail": "Not ready yet (metadata pending or connection failed) — try again later",
   "interconnect_section_related": "Remote content & lookup",
   "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows",
-  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki."
+  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki.",
+  "mining_image_quality": "Image / GIF quality",
+  "mining_image_quality_hint": "Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.",
+  "mining_image_quality_thrift": "Data saver",
+  "mining_image_quality_standard": "Standard",
+  "mining_image_quality_hd": "HD",
+  "mining_image_quality_native": "Native",
+  "mining_audio_quality": "Audio quality",
+  "mining_audio_quality_hint": "Higher bitrate is clearer but makes larger cards.",
+  "mining_audio_quality_standard": "Standard",
+  "mining_audio_quality_high": "High",
+  "mining_audio_quality_native": "Native"
 }

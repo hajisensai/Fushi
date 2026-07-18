@@ -279,8 +279,10 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final Directory tmp = await getTemporaryDirectory();
     final MiningMediaCompression mediaCompression =
-        MiningMediaCompression.forCompressionEnabled(
-            appModel.compressMiningMedia);
+        MiningMediaCompression.resolve(
+      imageTier: appModel.miningImageQuality,
+      audioTier: appModel.miningAudioQuality,
+    );
     // TODO-1000：委托统一沉浸制卡引擎。媒体降级阶梯 / 无音频中止 / 组 context / 落卡都在
     // 引擎内；本壳只管 OSD + 视频统计。onFailure 捕获 GIF(首)/音频(末)失败摘要供 OSD。
     String? gifFailure;

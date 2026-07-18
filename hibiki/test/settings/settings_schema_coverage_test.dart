@@ -92,11 +92,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Auto-add book title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
           'reader_hibiki/mining.part.dart & video_hibiki/lookup_mining.part.dart (bookTitleTag)',
-  // TODO-757: 压缩制卡媒体开关。写 AppModel.compressMiningMedia（prefsRepo），
-  // 焦点遍历能切到并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非
-  // reader CSS / 主题树），无适用探针；由专项纯函数 + pref round-trip 守卫覆盖。
-  'cardCreation/Compress card media':
-      'test/settings/compress_mining_media_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
+  // TODO-1650: 制卡图片/GIF 清晰度 + 音频质量两滑块（替代旧「压缩」开关）。写
+  // AppModel.miningImageQuality / miningAudioQuality（prefsRepo），焦点遍历能切到
+  // 并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非 reader CSS / 主题
+  // 树），无适用探针；由专项纯函数（档位工厂 + GIF 原片滤镜）+ pref round-trip 守卫覆盖。
+  'cardCreation/Image / GIF quality':
+      'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
+  'cardCreation/Audio quality':
+      'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // TODO-135: 默认标签区现无条件显示（hibiki/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡

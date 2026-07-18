@@ -12,6 +12,8 @@ import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
 import 'package:hibiki/src/models/audio_source_config.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+    show MiningMediaCompression;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/update_check_cache.dart';
 
@@ -1151,14 +1153,48 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  // TODO-757 压缩制卡媒体（音频 / GIF 封面 / 截图封面）。默认 true=压缩档（= TODO-646
-  // 现状，零行为破坏）；关闭后走高保真档，媒体更清晰但卡片体积更大。Android 句子
-  // 音频本就无损 re-mux，不受此开关影响。
-  bool get compressMiningMedia =>
-      getPref('compress_mining_media', defaultValue: true) as bool;
+  // TODO-1650 制卡图片/GIF 清晰度档（0..3，见 [MiningMediaCompression.imageTiers]）。
+  // 替代旧的单一「压缩」开关。未显式设过时从旧 `compress_mining_media` 布尔迁移：
+  // 开(默认)→标准档 1（= TODO-646 现状，零行为破坏）；关→高清档 2。读写都夹到 0..3，
+  // 防止损坏/越界值进到底层编码。
+  int get miningImageQuality {
+    final int? explicit =
+        getPref('mining_image_quality', defaultValue: null) as int?;
+    if (explicit != null) {
+      return explicit.clamp(0, MiningMediaCompression.imageTierCount - 1);
+    }
+    final bool oldCompress =
+        getPref('compress_mining_media', defaultValue: true) as bool;
+    return oldCompress
+        ? MiningMediaCompression.defaultImageTier
+        : 2; // 旧「关闭压缩」= 高保真档 = 图片高清档 2
+  }
 
-  void toggleCompressMiningMedia() async {
-    await setPref('compress_mining_media', !compressMiningMedia);
+  void setMiningImageQuality(int tier) async {
+    await setPref('mining_image_quality',
+        tier.clamp(0, MiningMediaCompression.imageTierCount - 1));
+    notifyListeners();
+  }
+
+  // TODO-1650 制卡音频质量档（0..2，见 [MiningMediaCompression.audioTiers]）。未显式设过时
+  // 从旧「压缩」开关迁移：开(默认)→标准档 0（单声道 64k，现状）；关→高音质档 1（立体声
+  // 128k）。Android 句子音频本就无损 re-mux，不受此档影响。
+  int get miningAudioQuality {
+    final int? explicit =
+        getPref('mining_audio_quality', defaultValue: null) as int?;
+    if (explicit != null) {
+      return explicit.clamp(0, MiningMediaCompression.audioTierCount - 1);
+    }
+    final bool oldCompress =
+        getPref('compress_mining_media', defaultValue: true) as bool;
+    return oldCompress
+        ? MiningMediaCompression.defaultAudioTier
+        : 1; // 旧「关闭压缩」= 高保真档 = 音频高音质档 1
+  }
+
+  void setMiningAudioQuality(int tier) async {
+    await setPref('mining_audio_quality',
+        tier.clamp(0, MiningMediaCompression.audioTierCount - 1));
     notifyListeners();
   }
 

@@ -1387,8 +1387,6 @@
   "anki_error_connection_timeout": "Anki에 연결할 수 없습니다: 연결 시간이 초과되었습니다. 호스트, 포트, 방화벽 설정을 확인하세요.",
   "anki_error_http": "Anki로 내보낼 수 없습니다: AnkiConnect에 연결하는 중 HTTP 오류가 발생했습니다.",
   "anki_error_connection_unknown": "Anki로 내보낼 수 없습니다: 알 수 없는 연결 오류가 발생했습니다. 자세한 내용은 오류 로그를 확인하세요.",
-  "compress_mining_media": "카드 미디어 압축",
-  "compress_mining_media_hint": "끄면 미디어가 더 선명하지만 용량이 커집니다",
   "log_copy_all": "모두 복사",
   "hover_auto_lookup": "마우스를 올리면 사전 찾기",
   "hover_auto_lookup_hint": "마우스를 글자 위에 올리면 자동으로 사전을 찾습니다. 클릭하거나 Shift를 누를 필요가 없습니다. 팝업은 최대 1개 층까지. 데스크톱 전용.",
@@ -1964,5 +1962,16 @@
   "anime_download_play_now_fail": "Not ready yet (metadata pending or connection failed) — try again later",
   "interconnect_section_related": "Remote content & lookup",
   "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows",
-  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki."
+  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki.",
+  "mining_image_quality": "Image / GIF quality",
+  "mining_image_quality_hint": "Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.",
+  "mining_image_quality_thrift": "Data saver",
+  "mining_image_quality_standard": "Standard",
+  "mining_image_quality_hd": "HD",
+  "mining_image_quality_native": "Native",
+  "mining_audio_quality": "Audio quality",
+  "mining_audio_quality_hint": "Higher bitrate is clearer but makes larger cards.",
+  "mining_audio_quality_standard": "Standard",
+  "mining_audio_quality_high": "High",
+  "mining_audio_quality_native": "Native"
 }

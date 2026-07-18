@@ -100,9 +100,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       return const MinePopupResult();
     }
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
-    final MiningMediaCompression compression =
-        MiningMediaCompression.forCompressionEnabled(
-            mixinAppModel.compressMiningMedia);
+    final MiningMediaCompression compression = MiningMediaCompression.resolve(
+      imageTier: mixinAppModel.miningImageQuality,
+      audioTier: mixinAppModel.miningAudioQuality,
+    );
     final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
       buildExternalWindowRequest(
         fields: fields,

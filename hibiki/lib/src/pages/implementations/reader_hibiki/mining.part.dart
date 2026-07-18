@@ -97,12 +97,13 @@ extension _ReaderMining on _ReaderHibikiPageState {
           'sentence.${immersionMiningAudioExtension()}',
         );
         requestedSentenceAudioClip = true;
-        // TODO-757 压缩开关：默认压缩档（单声道 64k=现状），关闭压缩走立体声 128k。
+        // TODO-1650 音频质量档：默认档 0（单声道 64k=现状），更高档立体声 128k/192k。
         // TODO-970：句子音频已全平台统一走 ffmpeg（extractAudioSegment 不再有 Android
-        // 原生 Transformer + AacAdtsCueAudioRewriter 特例），两端都吃压缩开关。
+        // 原生 Transformer + AacAdtsCueAudioRewriter 特例），两端都吃这个档。
         final MiningMediaCompression mediaCompression =
-            MiningMediaCompression.forCompressionEnabled(
-          appModel.compressMiningMedia,
+            MiningMediaCompression.resolve(
+          imageTier: appModel.miningImageQuality,
+          audioTier: appModel.miningAudioQuality,
         );
         sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
           inputPath: inputFile.path,

@@ -1387,8 +1387,6 @@
   "anki_error_connection_timeout": "无法连接 Anki：连接超时。请检查主机、端口和防火墙设置。",
   "anki_error_http": "无法导出到 Anki：连接 AnkiConnect 时发生 HTTP 错误。",
   "anki_error_connection_unknown": "无法导出到 Anki：发生未知的连接错误。详情见错误日志。",
-  "compress_mining_media": "压缩制卡媒体",
-  "compress_mining_media_hint": "关闭后媒体更清晰但体积更大",
   "log_copy_all": "复制全部",
   "hover_auto_lookup": "悬停即查词",
   "hover_auto_lookup_hint": "鼠标悬停在文字上即自动查词，无需点击或按住 Shift；最多触发一层弹窗。仅桌面端。",
@@ -1964,5 +1962,16 @@
   "anime_download_play_now_fail": "暂不可提前入库（元数据未就绪或连接失败），稍后再试",
   "interconnect_section_related": "远端内容与查词",
   "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他窗口上方",
-  "browser_extension_yomitan_port_conflict": "端口 $port 正被 Yomitan API 占用。请先在 Yomitan 高级设置中关闭 Yomitan API，再回 Hibiki 开启 Yomitan API 服务器。"
+  "browser_extension_yomitan_port_conflict": "端口 $port 正被 Yomitan API 占用。请先在 Yomitan 高级设置中关闭 Yomitan API，再回 Hibiki 开启 Yomitan API 服务器。",
+  "mining_image_quality": "图片 / GIF 清晰度",
+  "mining_image_quality_hint": "越高越清晰，卡片体积也越大。原片档保留源分辨率与帧率。",
+  "mining_image_quality_thrift": "省流",
+  "mining_image_quality_standard": "标准",
+  "mining_image_quality_hd": "高清",
+  "mining_image_quality_native": "原片",
+  "mining_audio_quality": "音频质量",
+  "mining_audio_quality_hint": "比特率越高越清晰，卡片体积也越大。",
+  "mining_audio_quality_standard": "标准",
+  "mining_audio_quality_high": "高音质",
+  "mining_audio_quality_native": "原片"
 }
