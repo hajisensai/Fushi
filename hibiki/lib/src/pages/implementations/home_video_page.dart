@@ -1715,8 +1715,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                       // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
                       // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
                       // [all] 描述整库，不随标签筛选变。
-                      if (all.isNotEmpty)
-                        SliverToBoxAdapter(child: _buildOverviewSection(all)),
+                      // 本地库非空恒显示概览（活动热力图）；本地空时仅当存在远端
+                      // 续播候选（有断点未看完）才显示——否则「连了远端但没在看任何
+                      // 视频」不该凭空冒出一张空概览（也避免挤走远端卡的可点区域）。
+                      if (all.isNotEmpty ||
+                          _hasRemoteResumeCandidate(remoteVideos))
+                        SliverToBoxAdapter(
+                          child: _buildOverviewSection(all, remoteVideos),
+                        ),
                       ..._buildLocalVideoSlivers(
                           all, ordered, remoteVideos, cardLayout),
                     ],
@@ -1736,7 +1742,31 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// watch-stats → importedAt 回退）。右侧不再是「总数/未完成/近7天导入」三格状态
   /// 计数（用户反馈：那是状态非统计），改成 GitHub 式观看时长热力图（[_watchMsByDay]，
   /// 整卡点开完整视频统计页）。宽 ≥720 并排、窄屏纵向堆叠；无 hero 候选时只渲染热力图。
-  Widget _buildOverviewSection(List<VideoBookRow> all) {
+  /// 远端视频 → [RemoteContinueEntry] 投影（completed 由 positionMs/durationMs
+  /// 派生，远端无 completed 列）。概览 gate 与 hero 选取共用，单一真值不重复派生。
+  List<RemoteContinueEntry> _remoteContinueEntries(
+    List<RemoteVideoInfo> remoteVideos,
+  ) =>
+      <RemoteContinueEntry>[
+        for (final RemoteVideoInfo v in remoteVideos)
+          RemoteContinueEntry(
+            id: v.id,
+            positionMs: v.positionMs,
+            completed: v.durationMs != null &&
+                v.durationMs! > 0 &&
+                v.positionMs >= (v.durationMs! * 0.9),
+            updatedAtMs: v.positionUpdatedAtMs,
+          ),
+      ];
+
+  /// 是否存在远端续播候选（有断点未看完）。本地库空时用它 gate 概览显隐。
+  bool _hasRemoteResumeCandidate(List<RemoteVideoInfo> remoteVideos) =>
+      pickRemoteContinueEntry(_remoteContinueEntries(remoteVideos)) != null;
+
+  Widget _buildOverviewSection(
+    List<VideoBookRow> all,
+    List<RemoteVideoInfo> remoteVideos,
+  ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final VideoLibraryOverview overview = computeVideoLibraryOverview(
       entries: <VideoOverviewEntry>[
@@ -1780,9 +1810,26 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         }
       }
     }
+    // #3：远端/互联视频也进「继续观看」。纯流播远端无本地进度行，独立挑候选
+    // （[pickRemoteContinueEntry]：有断点未看完、host 端断点时间戳最新），再与本地
+    // hero 按时间戳比较——远端更近（或本地无 hero）则 hero 换成远端卡（点击 _openRemote）。
+    final RemoteContinueEntry? remoteBest =
+        pickRemoteContinueEntry(_remoteContinueEntries(remoteVideos));
+    final int? localWatchedMs =
+        overview.heroLastWatched?.millisecondsSinceEpoch;
+    final bool remoteWins = remoteBest != null &&
+        (hero == null ||
+            localWatchedMs == null ||
+            remoteBest.updatedAtMs > localWatchedMs);
     final Widget stats = _buildWatchHeatmapCard(tokens);
-    final Widget? heroCard =
-        hero == null ? null : _buildContinueHero(hero, overview, tokens);
+    Widget? heroCard;
+    if (remoteWins) {
+      final RemoteVideoInfo rv =
+          remoteVideos.firstWhere((RemoteVideoInfo v) => v.id == remoteBest.id);
+      heroCard = _buildContinueHeroRemote(rv, tokens);
+    } else if (hero != null) {
+      heroCard = _buildContinueHero(hero, overview, tokens);
+    }
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
@@ -1864,6 +1911,71 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 SizedBox(height: tokens.spacing.gap / 2),
                 Text(
                   hero.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  metadata.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Icon(
+            Icons.play_circle_filled,
+            size: 36,
+            color: tokens.surfaces.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 远端「继续观看」hero 卡（#3）：与本地 [_buildContinueHero] 同形态，但封面走
+  /// 远端封面 [_buildRemoteVideoCover]、进度取 host 端 [RemoteVideoInfo.positionMs] /
+  /// [RemoteVideoInfo.positionUpdatedAtMs]，整卡点击走远端流播 [_openRemote]。
+  Widget _buildContinueHeroRemote(
+    RemoteVideoInfo video,
+    HibikiDesignTokens tokens,
+  ) {
+    final DateTime? watched = video.positionUpdatedAtMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(video.positionUpdatedAtMs)
+        : null;
+    final List<String> metadata = <String>[
+      t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
+      if (watched != null)
+        t.video_last_watched(date: _formatOverviewDate(watched)),
+    ];
+    return HibikiCard(
+      key: ValueKey<String>('home_video_continue_hero_remote_${video.id}'),
+      focusId: const HibikiFocusId('home-video-continue-hero'),
+      onTap: () => _openRemote(video),
+      child: Row(
+        children: <Widget>[
+          ClipRRect(
+            borderRadius: HibikiBorderRadius.card,
+            child: SizedBox(
+              width: 148,
+              height: 84,
+              child: _buildRemoteVideoCover(video),
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap + 4),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(t.video_continue_watching,
+                    style: tokens.type.sectionLabel),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  video.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: tokens.type.listTitle,

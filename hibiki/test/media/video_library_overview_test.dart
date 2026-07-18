@@ -245,4 +245,54 @@ void main() {
     expect(m['A'], DateTime(2026, 3, 1));
     expect(m.containsKey('B'), isFalse);
   });
+
+  group('pickRemoteContinueEntry (#3 远端继续观看)', () {
+    RemoteContinueEntry rc(
+      String id, {
+      int positionMs = 0,
+      bool completed = false,
+      int updatedAtMs = 0,
+    }) =>
+        RemoteContinueEntry(
+          id: id,
+          positionMs: positionMs,
+          completed: completed,
+          updatedAtMs: updatedAtMs,
+        );
+
+    test('空列表 → null', () {
+      expect(pickRemoteContinueEntry(const <RemoteContinueEntry>[]), isNull);
+    });
+
+    test('无断点 / 已看完的都排除', () {
+      expect(
+        pickRemoteContinueEntry(<RemoteContinueEntry>[
+          rc('a', positionMs: 0, updatedAtMs: 100), // 无断点
+          rc('b', positionMs: 500, completed: true, updatedAtMs: 200), // 已看完
+        ]),
+        isNull,
+      );
+    });
+
+    test('有断点未看完中取 updatedAtMs 最新者', () {
+      final RemoteContinueEntry? best = pickRemoteContinueEntry(
+        <RemoteContinueEntry>[
+          rc('old', positionMs: 100, updatedAtMs: 1000),
+          rc('newest', positionMs: 200, updatedAtMs: 3000),
+          rc('mid', positionMs: 300, updatedAtMs: 2000),
+        ],
+      );
+      expect(best?.id, 'newest');
+    });
+
+    test('updatedAtMs 全 0（host 未记时间戳）仍取第一个有断点未看完的', () {
+      final RemoteContinueEntry? best = pickRemoteContinueEntry(
+        <RemoteContinueEntry>[
+          rc('a', positionMs: 100),
+          rc('b', positionMs: 200),
+        ],
+      );
+      expect(best?.id, 'a');
+    });
+  });
 }
