@@ -1943,6 +1943,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       sectionIndex: section,
       normCharOffset: sentenceRange?.offset,
       normCharLength: sentenceRange?.length,
+      // BUG-893：补 dateKey，否则阅读统计「收藏语句」计数恒为 0（视频收藏路径早已带
+      // dateKey，唯独书内收藏漏了）。source 用默认（书籍），与统计分桶口径一致。
+      dateKey: statTodayKey(),
     );
     await repo.add(fav);
     // BUG-494：记住刚写入条目的精确 id，供随后取消收藏 removeById 精确删单条。

@@ -76,6 +76,33 @@ void main() {
     });
   });
 
+  group('dailyAverageChars（活跃日均值，对齐字符图窗口）', () {
+    test('只对有阅读的天取均值，零阅读日不摊薄', () {
+      // 30 天窗口里 3 天有阅读（6000/4000/2000），其余 27 天为 0。
+      final List<StatDayData> days = <StatDayData>[
+        for (int i = 0; i < 27; i++) _day('d$i', 0, 0),
+        _day('a', 6000, 0),
+        _day('b', 4000, 0),
+        _day('c', 2000, 0),
+      ];
+      // 活跃日均值 = 12000 / 3 = 4000（而非终身/日历口径的 12000/30=400，那才是「偏低」）。
+      expect(dailyAverageChars(days), 4000);
+    });
+
+    test('无活跃日返回 0（不除零）', () {
+      expect(dailyAverageChars(<StatDayData>[_day('x', 0, 0)]), 0);
+      expect(dailyAverageChars(const <StatDayData>[]), 0);
+    });
+
+    test('四舍五入', () {
+      final List<StatDayData> days = <StatDayData>[
+        _day('a', 100, 0),
+        _day('b', 101, 0),
+      ];
+      expect(dailyAverageChars(days), 101); // 201/2 = 100.5 → 101
+    });
+  });
+
   group('trendMetricValue', () {
     final StatTrendPoint p = StatTrendPoint(
         bucketKey: '2026-06-01', label: '06-01', chars: 3600, ms: 3600000);

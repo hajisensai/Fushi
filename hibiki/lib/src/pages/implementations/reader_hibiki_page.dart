@@ -2081,12 +2081,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // in lyrics mode persists the current playback position, not a stale scroll.
       _syncAndFlushPosition();
       _flushReadingStats();
+      // BUG-892: 进后台/失焦时停掉阅读时长计时——否则后台挂起、熄屏、睡眠期间的墙钟
+      // 时长会在恢复时被一次性计入（34h 的书 / 单小时 >1h / 凌晨幻影阅读）。stop() 先
+      // flush 退出瞬间的部分窗口（受 kMaxReadingGap 守卫）再 cancel。
+      _readingTimeTracker?.stop();
     } else if (state == AppLifecycleState.resumed) {
       // TODO-900: OS 层失焦（Alt+Tab 切窗）后 Flutter 不保证把 primaryFocus 归还到
       // 页级 [_focusNode]，导致切窗回来后页级 / 全局快捷键全死，且因是焦点状态而非可
       // 重建对象，只有重启 app 才靠 autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned]
       // 的 resumed 回收范式，把焦点收回正文（门控见 helper，绝不抢对话框 / 查词焦点）。
       _reclaimReaderFocusIfOwned();
+      // BUG-892: 恢复前台时重锚两条计时链，丢弃后台那段间隔——① 每书/每日时长走
+      // [_flushReadingStats] 的 `now - _sessionStartTime`，不重置就会把整段后台算进下次
+      // flush；② 每小时桶走 [ReadingTimeTracker]，重启定时器并重锚 tick 起点。
+      _sessionStartTime = DateTime.now();
+      _readingTimeTracker?.start();
     }
   }
 
