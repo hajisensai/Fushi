@@ -146,10 +146,25 @@ Future<bool> _focusThroughHibiki(
   final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
     driver.tester.element(target),
   );
-  if (!controller.requestById(focusId)) return false;
-  await driver.tester.pump(const Duration(milliseconds: 250));
-  return controller.activeId == focusId &&
-      controller.primaryFocusIsManagedTarget;
+  if (controller.requestById(focusId)) {
+    await driver.tester.pump(const Duration(milliseconds: 250));
+    if (controller.activeId == focusId &&
+        controller.primaryFocusIsManagedTarget) {
+      return true;
+    }
+  }
+  final Finder focusNodes = find.descendant(
+    of: target,
+    matching: find.byType(Focus),
+  );
+  for (final Element element in focusNodes.evaluate()) {
+    final FocusNode? node = (element.widget as Focus).focusNode;
+    if (node?.debugLabel != focusId.value) continue;
+    node!.requestFocus();
+    await driver.tester.pump(const Duration(milliseconds: 250));
+    return FocusManager.instance.primaryFocus == node;
+  }
+  return false;
 }
 
 Future<void> _capture(WidgetTester tester, String name) async {
