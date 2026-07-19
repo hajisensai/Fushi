@@ -133,16 +133,13 @@ Future<bool> _focusThroughHibiki(
   Finder target,
   HibikiFocusId focusId,
 ) async {
-  if (await driver.focusWidget(target)) {
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
-      driver.tester.element(target),
-    );
-    if (controller.activeId == focusId) return true;
-  }
-  return driver.requestFocusInside(
-    target,
-    debugLabelContains: focusId.value,
+  final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    driver.tester.element(target),
   );
+  if (!controller.requestById(focusId)) return false;
+  await driver.tester.pump(const Duration(milliseconds: 250));
+  return controller.activeId == focusId &&
+      controller.primaryFocusIsManagedTarget;
 }
 
 Future<void> _capture(WidgetTester tester, String name) async {
