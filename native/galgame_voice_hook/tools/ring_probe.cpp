@@ -578,8 +578,8 @@ int main(int argc, char** argv) {
     const uint32_t text_hooked = header->text_hooked;
     const uint64_t twc = header->text_write_count;
     const uint64_t cwc = header->clip_write_count;
-    printf("     [v2] text_hooked=%u luna_active=%u text_lines=%llu voice_clips=%llu",
-           text_hooked, header->luna_active,
+    printf("     [v2] text_hooked=%u luna_active=%u decdiag=0x%02x text_lines=%llu voice_clips=%llu",
+           text_hooked, header->luna_active, header->reserved_luna,
            static_cast<unsigned long long>(twc),
            static_cast<unsigned long long>(cwc));
     if (twc > 0) {
