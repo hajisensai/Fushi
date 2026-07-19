@@ -2036,5 +2036,16 @@
   "home_dashboard_title": "首页",
   "clipboard_history_title": "复制历史",
   "clipboard_history_clear": "清空",
-  "clipboard_history_empty": "暂无复制记录"
+  "clipboard_history_empty": "暂无复制记录",
+  "video_setting_torrent_upload_enabled": "启用上传 / 做种",
+  "video_setting_torrent_upload_enabled_hint": "默认关闭。下载完成后向网络回传做种。",
+  "video_setting_torrent_seed_time_limit": "做种时长上限（分钟）",
+  "video_setting_torrent_seed_time_hint": "做种超过此时长后停止上传。0 = 不限。",
+  "video_setting_torrent_seed_ratio_limit": "做种分享率上限",
+  "video_setting_torrent_seed_ratio_hint": "上传/下载比值达到此值后停止上传。0 = 不限。",
+  "torrent_upload_intro_title": "上传 / 做种",
+  "torrent_upload_intro_body": "上传（做种）默认关闭。开启后会把下载内容回传给网络，会占用你的上传带宽。可随时在「设置」里修改。",
+  "torrent_upload_intro_enable": "启用上传 / 做种",
+  "torrent_upload_intro_keep_off": "保持关闭",
+  "torrent_upload_intro_confirm": "保存"
 }

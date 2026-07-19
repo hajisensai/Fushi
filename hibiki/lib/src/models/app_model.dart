@@ -4026,6 +4026,11 @@ class AppModel with ChangeNotifier {
   bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
   void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();
 
+  /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
+  bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;
+  Future<void> setTorrentUploadIntroShown() =>
+      prefsRepo.setTorrentUploadIntroShown();
+
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
 

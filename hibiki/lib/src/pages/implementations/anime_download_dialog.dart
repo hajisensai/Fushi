@@ -16,6 +16,7 @@ import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
     show jimakuLanguageLabel;
+import 'package:hibiki/src/pages/implementations/torrent_upload_consent_dialog.dart';
 import 'package:hibiki/utils.dart';
 
 /// 「番剧下载」选种对话框：搜番（AniList）→ 选种（Nyaa）→ 确认字幕（Jimaku）→
@@ -247,6 +248,23 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     });
   }
 
+  /// 首次下载弹「上传/做种」一次性提示。用户在其中选是否开启上传并可配上传
+  /// 限速/做种时长/分享率；确认后落偏好（即时应用到内置引擎）并置首用 flag。
+  Future<void> _showUploadIntro(
+      AppModel appModel, QbConnectionConfig config) async {
+    await showAppDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext ctx) => TorrentUploadConsentDialog(
+        initialConfig: config,
+        onApply: (QbConnectionConfig next) async {
+          await appModel.setQbConnectionConfig(next);
+          await appModel.setTorrentUploadIntroShown();
+        },
+      ),
+    );
+  }
+
   /// 推送下载：暂存字幕 → 落计划 → 推 qBittorrent（失败回滚计划）→ 催一轮 tick。
   Future<void> _push() async {
     final AppModel appModel = ref.read(appProvider);
@@ -267,6 +285,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       // RSS 缺 infoHash：无法与 qb 列表比对，等于计划无法追踪，直接按失败处理。
       _snack(t.anime_download_push_failed);
       return;
+    }
+    // 首次下载：弹一次「上传/做种」提示（默认关上传、询问是否开启+配限速/时长/
+    // 分享率）。仅内置引擎相关（外接 qb 自管上传）；展示后置 flag 不再弹。
+    if (!appModel.torrentUploadIntroShown &&
+        appModel.isEmbeddedTorrentReady &&
+        config.backend != QbConnectionConfig.backendQbittorrent) {
+      await _showUploadIntro(appModel, config);
+      if (!mounted) return;
     }
     setState(() => _pushing = true);
 

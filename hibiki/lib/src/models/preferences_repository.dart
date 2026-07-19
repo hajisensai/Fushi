@@ -949,6 +949,15 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 是否已展示过「上传/做种」首用提示（默认 false = 未展示）。首次下载时弹
+  /// 一次性对话框提醒上传默认关并询问是否开启（见下载对话框），之后置真不再弹。
+  bool get torrentUploadIntroShown =>
+      getPref('torrent_upload_intro_shown', defaultValue: false) as bool;
+
+  Future<void> setTorrentUploadIntroShown() async {
+    await setPref('torrent_upload_intro_shown', true);
+  }
+
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
   /// 读盘经 [VideoDanmakuStyle.decode] 已 clamp 到合法区间。
   VideoDanmakuStyle get videoDanmakuStyle => VideoDanmakuStyle.decode(

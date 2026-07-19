@@ -824,10 +824,40 @@ SettingsDestination buildVideoDestination() {
             visible: _embeddedBackendSelected,
             builder: _buildEmbeddedDownloadLimitField,
           ),
+          // 上传/做种总开关（内置引擎；默认关，尊重带宽/隐私）。关时下面的
+          // 上传限速/做种上限字段隐藏（无意义）。
+          SettingsSwitchItem(
+            id: 'video.anime_download.upload_enabled',
+            title: t.video_setting_torrent_upload_enabled,
+            subtitle: t.video_setting_torrent_upload_enabled_hint,
+            icon: Icons.upload_outlined,
+            visible: _embeddedBackendSelected,
+            value: (SettingsContext settingsContext) =>
+                (settingsContext.appModel.qbConnectionConfig ??
+                        const QbConnectionConfig())
+                    .uploadEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await _commitQbConfig(
+                settingsContext,
+                (QbConnectionConfig c) => c.copyWith(uploadEnabled: value),
+              );
+              settingsContext.refresh();
+            },
+          ),
           SettingsCustomItem(
             id: 'video.anime_download.embedded_upload_limit',
-            visible: _embeddedBackendSelected,
+            visible: _embeddedUploadEnabled,
             builder: _buildEmbeddedUploadLimitField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.seed_time_limit',
+            visible: _embeddedUploadEnabled,
+            builder: _buildSeedTimeLimitField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.seed_ratio_limit',
+            visible: _embeddedUploadEnabled,
+            builder: _buildSeedRatioLimitField,
           ),
           SettingsCustomItem(
             id: 'video.anime_download.embedded_max_connections',
@@ -857,10 +887,25 @@ bool _embeddedBackendSelected(SettingsContext settingsContext) {
       QbConnectionConfig.backendEmbedded;
 }
 
+/// 当前是否内置引擎且已开启上传（决定上传限速/做种上限字段是否显示）。
+bool _embeddedUploadEnabled(SettingsContext settingsContext) {
+  final QbConnectionConfig config =
+      settingsContext.appModel.qbConnectionConfig ?? const QbConnectionConfig();
+  return config.resolveBackend(isDesktop: isDesktopPlatform) ==
+          QbConnectionConfig.backendEmbedded &&
+      config.uploadEnabled;
+}
+
 /// 把限制字段的文本输入解析为非负整数（空/非数/负数 → 0 = 不限）。
 int _parseNonNegLimit(String value) {
   final int n = int.tryParse(value.trim()) ?? 0;
   return n < 0 ? 0 : n;
+}
+
+/// 把分享率字段的文本输入解析为非负 double（空/非数/负数/非有限 → 0 = 不限）。
+double _parseNonNegDouble(String value) {
+  final double n = double.tryParse(value.trim()) ?? 0;
+  return (n.isFinite && n > 0) ? n : 0;
 }
 
 Widget _buildEmbeddedDownloadLimitField(SettingsContext settingsContext) {
@@ -898,6 +943,46 @@ Widget _buildEmbeddedUploadLimitField(SettingsContext settingsContext) {
         settingsContext,
         (QbConnectionConfig c) =>
             c.copyWith(uploadLimitKbps: _parseNonNegLimit(value)),
+      );
+    },
+  );
+}
+
+Widget _buildSeedTimeLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.seedTimeLimitMinutes ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_seed_time_limit,
+    icon: Icons.timer_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_seed_time_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(seedTimeLimitMinutes: _parseNonNegLimit(value)),
+      );
+    },
+  );
+}
+
+Widget _buildSeedRatioLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final double current = config?.seedRatioLimit ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_seed_ratio_limit,
+    icon: Icons.balance_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    hintText: t.video_setting_torrent_seed_ratio_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(seedRatioLimit: _parseNonNegDouble(value)),
       );
     },
   );

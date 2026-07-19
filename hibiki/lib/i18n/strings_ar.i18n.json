@@ -2036,5 +2036,16 @@
   "home_dashboard_title": "Home",
   "clipboard_history_title": "Clipboard history",
   "clipboard_history_clear": "Clear",
-  "clipboard_history_empty": "No copy history yet"
+  "clipboard_history_empty": "No copy history yet",
+  "video_setting_torrent_upload_enabled": "Enable upload / seeding",
+  "video_setting_torrent_upload_enabled_hint": "Off by default. Seed back to the swarm after downloading.",
+  "video_setting_torrent_seed_time_limit": "Seed time limit (minutes)",
+  "video_setting_torrent_seed_time_hint": "Stop uploading after seeding this long. 0 = unlimited.",
+  "video_setting_torrent_seed_ratio_limit": "Seed ratio limit",
+  "video_setting_torrent_seed_ratio_hint": "Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.",
+  "torrent_upload_intro_title": "Upload / seeding",
+  "torrent_upload_intro_body": "Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.",
+  "torrent_upload_intro_enable": "Enable upload / seeding",
+  "torrent_upload_intro_keep_off": "Keep off",
+  "torrent_upload_intro_confirm": "Save"
 }
