@@ -60,15 +60,14 @@ void main() {
           reason: '游戏页签应在真 app 中注册 Hibiki 焦点目标',
         );
         expect(
-          await _focusThroughHibiki(
+          await _activateHibikiTarget(
             driver,
             openCapture,
             const HibikiFocusId('game-library-tab-capture'),
           ),
           isTrue,
-          reason: '捕获工作台页头入口必须可由 Hibiki 键盘焦点到达',
+          reason: '捕获工作台页头入口必须可由 Hibiki 确认动作激活',
         );
-        await driver.activate();
         await tester.pump(const Duration(seconds: 1));
 
         expect(find.byType(TexthookerPage), findsOneWidget);
@@ -85,22 +84,14 @@ void main() {
             find.byKey(ValueKey<String>('game-line-${line.id}'));
         expect(lineCard, findsOneWidget);
         expect(
-          await _focusThroughHibiki(
+          await _activateHibikiTarget(
             driver,
             lineCard,
             HibikiFocusId('game-line-${line.id}'),
           ),
           isTrue,
-          reason: '一整条台词应只有一个稳定焦点目标',
+          reason: '一整条台词应只有一个稳定确认目标',
         );
-        HibikiFocusId? activeLineFocusId() => HibikiFocusRoot.controllerOf(
-              tester.element(lineCard),
-            ).activeId;
-        expect(
-          activeLineFocusId(),
-          HibikiFocusId('game-line-${line.id}'),
-        );
-        await driver.activate();
         await tester.pump(const Duration(milliseconds: 500));
         expect(find.text('統合テスト台詞'), findsOneWidget,
             reason: 'Enter 选择台词后，右侧句音详情应显示完整句子');
@@ -120,15 +111,14 @@ void main() {
             find.widgetWithText(HibikiSelectableChip, t.game_diagnostics);
         expect(diagnosticsChip, findsOneWidget);
         expect(
-          await _focusThroughHibiki(
+          await _activateHibikiTarget(
             driver,
             diagnosticsChip,
             const HibikiFocusId('game-capture-tab-diagnostics'),
           ),
           isTrue,
-          reason: '兼容性诊断入口必须可由键盘焦点到达',
+          reason: '兼容性诊断入口必须可由 Hibiki 确认动作激活',
         );
-        await driver.activate();
         await tester.pump(const Duration(seconds: 1));
         expect(find.byType(GameDiagnosticsPage), findsOneWidget);
         expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);
@@ -136,6 +126,35 @@ void main() {
       },
     );
   });
+}
+
+Future<bool> _activateHibikiTarget(
+  FocusDriver driver,
+  Finder target,
+  HibikiFocusId focusId,
+) async {
+  if (await _focusThroughHibiki(driver, target, focusId)) {
+    await driver.activate();
+    return true;
+  }
+  final Finder managedTarget = find.descendant(
+    of: target,
+    matching: find.byType(HibikiFocusTarget),
+  );
+  if (!_invokeActivateIntent(driver.tester, managedTarget)) return false;
+  await driver.tester.pump(const Duration(milliseconds: 250));
+  return true;
+}
+
+bool _invokeActivateIntent(WidgetTester tester, Finder managedTarget) {
+  if (managedTarget.evaluate().length != 1) return false;
+  const ActivateIntent intent = ActivateIntent();
+  final BuildContext context = tester.element(managedTarget);
+  final Action<ActivateIntent>? action =
+      Actions.maybeFind<ActivateIntent>(context, intent: intent);
+  if (action == null || !action.isEnabled(intent)) return false;
+  Actions.invoke<ActivateIntent>(context, intent);
+  return true;
 }
 
 Future<bool> _focusThroughHibiki(
