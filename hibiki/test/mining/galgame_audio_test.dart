@@ -381,6 +381,62 @@ void main() {
       await src.stop();
     });
 
+    test('pollText keeps Luna thread metadata for the UI selector', () async {
+      setHandler((MethodCall call) async {
+        if (call.method != 'pollText') return null;
+        expect(call.arguments, <String, Object?>{'fromSeq': 7});
+        return <String, Object?>{
+          'count': 8,
+          'lines': <Object?>[
+            <Object?, Object?>{
+              'seq': 8,
+              'ts': 123456,
+              'text': '選択する台詞',
+              'threadId': 0x1234,
+              'threadAddress': 0x5678,
+              'threadContext': 9,
+              'threadContext2': 10,
+              'processId': 42,
+              'sourceKind': 2,
+              'hookName': 'SiglusEngine',
+              'hookCode': 'HS932@5678',
+            },
+          ],
+        };
+      });
+
+      final GalTextPoll? poll = await EngineHookGalAudioSource(
+        targetPid: 1,
+        injectorPath: null,
+      ).pollText(7);
+      expect(poll, isNotNull);
+      expect(poll!.count, 8);
+      final GalHookedLine line = poll.lines.single;
+      expect(line.textThreadKey, 'luna:1234');
+      expect(line.textThreadLabel, 'SiglusEngine · 0x5678');
+      expect(line.hookCode, 'HS932@5678');
+      expect(line.processId, 42);
+      expect(line.threadContext2, 10);
+    });
+
+    test('selectTextThread forwards the native thread id and can reset to auto',
+        () async {
+      final List<Object?> selected = <Object?>[];
+      setHandler((MethodCall call) async {
+        if (call.method != 'selectTextThread') return null;
+        selected.add((call.arguments as Map<Object?, Object?>)['threadId']);
+        return <String, Object?>{'ok': true};
+      });
+      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+        targetPid: 1,
+        injectorPath: null,
+      );
+
+      expect(await source.selectTextThread(0x1234), isTrue);
+      expect(await source.selectTextThread(null), isTrue);
+      expect(selected, <Object?>[0x1234, 0]);
+    });
+
     test('targetIsWow64: native 返回 true -> 32 位（选 x86 注入器）', () async {
       setHandler((call) async {
         if (call.method == 'processIsWow64') {

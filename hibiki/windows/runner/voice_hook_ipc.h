@@ -13,10 +13,15 @@
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 5;
+constexpr uint32_t kSharedVersion = 6;
 
 constexpr uint32_t kTextSlotCount = 256;
-constexpr uint32_t kTextSlotBytes = 1024;
+constexpr uint32_t kTextSlotBytes = 2048;
+constexpr uint32_t kTextHookNameChars = 64;
+constexpr uint32_t kTextHookCodeChars = 128;
+constexpr uint32_t kTextSourceUnknown = 0;
+constexpr uint32_t kTextSourceGdi = 1;
+constexpr uint32_t kTextSourceLuna = 2;
 constexpr uint32_t kClipCount = 1024;
 
 #pragma pack(push, 8)
@@ -25,6 +30,16 @@ struct TextSlot {
   uint64_t timestamp_ms;    // GetTickCount64() 写入时刻（与语音 clip 配对用）
   uint32_t byte_len;        // 文本有效字节数
   uint32_t is_utf8;         // 1=UTF-8，0=UTF-16LE
+  uint64_t thread_id;       // 会话内稳定 Hook 线程 id（0=不可区分）
+  uint64_t thread_address;
+  uint64_t thread_context;
+  uint64_t thread_context2;
+  uint32_t process_id;
+  uint32_t source_kind;
+  uint32_t hook_name_len;
+  uint32_t hook_code_len;
+  char hook_name[kTextHookNameChars];
+  wchar_t hook_code[kTextHookCodeChars];
   // 紧跟文本字节。
 };
 
@@ -60,6 +75,7 @@ struct SharedHeader {
   uint32_t clip_region_offset;
   volatile uint64_t text_write_count;
   volatile uint64_t clip_write_count;
+  volatile uint64_t selected_text_thread_id;  // 0=自动；非0=用户选择的 TextSlot::thread_id
   volatile uint32_t luna_active;  // LunaHook 出干净行后 =1，游戏内 GDI 文本 hook 让位（见 native 头注释）
   uint32_t reserved_luna;         // 8 对齐
 };

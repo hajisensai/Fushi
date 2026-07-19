@@ -1880,6 +1880,7 @@ void WriteTextRingLocked(const wchar_t* text, int char_len) {
       static_cast<size_t>(idx % kTextSlotCount) * kTextSlotBytes;
   uint8_t* slot = g_text_base + slot_off;
   auto* ts = reinterpret_cast<TextSlot*>(slot);
+  memset(ts, 0, sizeof(TextSlot));
   uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
   max_bytes -= (max_bytes % static_cast<uint32_t>(sizeof(wchar_t)));  // wchar 边界
   uint32_t byte_len = static_cast<uint32_t>(char_len) *
@@ -1891,6 +1892,12 @@ void WriteTextRingLocked(const wchar_t* text, int char_len) {
   ts->timestamp_ms = GetTickCount64();
   ts->byte_len = byte_len;
   ts->is_utf8 = 0;                            // UTF-16LE
+  ts->thread_id = 1;                          // GDI 兜底统一为一条可选源
+  ts->process_id = GetCurrentProcessId();
+  ts->source_kind = hibiki_voice_hook::kTextSourceGdi;
+  constexpr char kGdiHookName[] = "GDI fallback";
+  ts->hook_name_len = static_cast<uint32_t>(sizeof(kGdiHookName) - 1);
+  memcpy(ts->hook_name, kGdiHookName, sizeof(kGdiHookName));
   ts->seq = static_cast<uint64_t>(reserved);  // 完成标记，**最后**写
   if (g_header->text_hooked == 0) {
     g_header->text_hooked = 1;            // 首次 flush：文本 hook proof-of-life

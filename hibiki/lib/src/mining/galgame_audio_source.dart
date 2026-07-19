@@ -547,7 +547,19 @@ class EngineHookGalAudioSource implements GalAudioSource {
           final Object? ts = e['ts'];
           final Object? text = e['text'];
           if (seq is int && ts is int && text is String) {
-            lines.add(GalHookedLine(seq: seq, timestampMs: ts, text: text));
+            lines.add(GalHookedLine(
+              seq: seq,
+              timestampMs: ts,
+              text: text,
+              threadId: (e['threadId'] as int?) ?? 0,
+              threadAddress: (e['threadAddress'] as int?) ?? 0,
+              threadContext: (e['threadContext'] as int?) ?? 0,
+              threadContext2: (e['threadContext2'] as int?) ?? 0,
+              processId: (e['processId'] as int?) ?? 0,
+              sourceKind: (e['sourceKind'] as int?) ?? 0,
+              hookName: (e['hookName'] as String?) ?? '',
+              hookCode: (e['hookCode'] as String?) ?? '',
+            ));
           }
         }
       }
@@ -556,6 +568,22 @@ class EngineHookGalAudioSource implements GalAudioSource {
       return null;
     } on MissingPluginException {
       return null;
+    }
+  }
+
+  /// 选择 Luna 文本线程。null/0 恢复 helper 自动选择；非 0 时 helper 只发布该线程。
+  Future<bool> selectTextThread(int? threadId) async {
+    try {
+      final Map<Object?, Object?>? result =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+        'selectTextThread',
+        <String, Object?>{'threadId': threadId ?? 0},
+      );
+      return result?['ok'] == true;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
     }
   }
 
@@ -841,10 +869,49 @@ class GalHookedLine {
     required this.seq,
     required this.timestampMs,
     required this.text,
+    this.threadId = 0,
+    this.threadAddress = 0,
+    this.threadContext = 0,
+    this.threadContext2 = 0,
+    this.processId = 0,
+    this.sourceKind = 0,
+    this.hookName = '',
+    this.hookCode = '',
   });
   final int seq;
   final int timestampMs;
   final String text;
+  final int threadId;
+  final int threadAddress;
+  final int threadContext;
+  final int threadContext2;
+  final int processId;
+  final int sourceKind;
+  final String hookName;
+  final String hookCode;
+
+  String? get textThreadKey {
+    if (threadId == 0) return null;
+    final String source = switch (sourceKind) {
+      1 => 'gdi',
+      2 => 'luna',
+      _ => 'hook',
+    };
+    return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
+  }
+
+  String? get textThreadLabel {
+    if (threadId == 0) return null;
+    final String source = hookName.trim().isNotEmpty
+        ? hookName.trim()
+        : switch (sourceKind) {
+            1 => 'GDI fallback',
+            2 => 'LunaHook',
+            _ => 'Text hook',
+          };
+    if (threadAddress == 0) return source;
+    return '$source · 0x${threadAddress.toUnsigned(64).toRadixString(16)}';
+  }
 }
 
 /// [EngineHookGalAudioSource.listAudioTracks] 的一条：一个活跃语音源（source voice / DS buffer）

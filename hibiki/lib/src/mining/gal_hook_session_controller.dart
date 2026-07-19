@@ -565,6 +565,22 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  Future<bool> selectTextThread(int? threadId) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    if (engine == null) return false;
+    final bool selected = await engine.selectTextThread(threadId);
+    _record(
+      selected ? GalHookEventSeverity.success : GalHookEventSeverity.warning,
+      'text',
+      selected ? 'text.thread_selected' : 'text.thread_select_failed',
+      threadId == null || threadId == 0
+          ? 'Automatic text-thread selection enabled'
+          : 'Text thread selected',
+      details: <String, Object?>{'threadId': threadId ?? 0},
+    );
+    return selected;
+  }
+
   void setTrackExcluded(int sourcePtr, bool excluded) {
     final EngineHookGalAudioSource? engine = _engineSource;
     if (engine == null) return;
@@ -872,6 +888,10 @@ class GalHookSessionController extends ChangeNotifier {
           sourceLabel: 'engine_hook',
           sourceSequence: line.seq,
           hookTimestampMs: line.timestampMs,
+          textThreadKey: line.textThreadKey,
+          textThreadLabel: line.textThreadLabel,
+          textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
+          nativeTextThreadId: line.threadId == 0 ? null : line.threadId,
           audioStatus: TexthookerLineAudioStatus.pending,
         );
         if (entry == null) {

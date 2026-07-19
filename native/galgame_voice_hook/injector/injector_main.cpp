@@ -2,6 +2,7 @@
 
 #include <shellapi.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -249,7 +250,34 @@ bool LunaPassesFilter(const wchar_t* text, int len) {
 // **完全同一套协议**：InterlockedIncrement64 原子占唯一槽号 → 填文本 + 字段 → 最后写 seq 作
 // 完成标记。跨进程双写同环靠原子占号防撞槽、防丢更新。LunaHook 的 Output 回调可能在其内部工作
 // 线程并发触发，原子占号同样保证 injector 侧多次调用互不撞槽。
-void WriteLunaTextLine(SharedHeader* header, const wchar_t* text, int wlen) {
+uint64_t Fnv1a64(uint64_t hash, const void* data, size_t size) {
+  const auto* bytes = static_cast<const uint8_t*>(data);
+  for (size_t i = 0; i < size; i++) {
+    hash ^= bytes[i];
+    hash *= 1099511628211ull;
+  }
+  return hash;
+}
+
+uint64_t LunaTextThreadId(const wchar_t* hookcode, const char* hookname,
+                          const LunaThreadParam& tp) {
+  uint64_t hash = 1469598103934665603ull;
+  hash = Fnv1a64(hash, &tp.processId, sizeof(tp.processId));
+  hash = Fnv1a64(hash, &tp.addr, sizeof(tp.addr));
+  hash = Fnv1a64(hash, &tp.ctx, sizeof(tp.ctx));
+  hash = Fnv1a64(hash, &tp.ctx2, sizeof(tp.ctx2));
+  if (hookcode != nullptr) {
+    hash = Fnv1a64(hash, hookcode, wcslen(hookcode) * sizeof(wchar_t));
+  }
+  if (hookname != nullptr) {
+    hash = Fnv1a64(hash, hookname, strlen(hookname));
+  }
+  return hash == 0 ? 1 : hash;
+}
+
+void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
+                       const char* hookname, const LunaThreadParam& tp,
+                       uint64_t thread_id, const wchar_t* text, int wlen) {
   if (header == nullptr || text == nullptr || wlen <= 0) {
     return;
   }
@@ -261,6 +289,7 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* text, int wlen) {
   uint8_t* slot =
       text_base + static_cast<size_t>(idx % kTextSlotCount) * kTextSlotBytes;
   auto* ts = reinterpret_cast<TextSlot*>(slot);
+  memset(ts, 0, sizeof(TextSlot));
   uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
   max_bytes -= (max_bytes % static_cast<uint32_t>(sizeof(wchar_t)));  // wchar 边界
   uint32_t byte_len = static_cast<uint32_t>(wlen) *
@@ -272,6 +301,28 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* text, int wlen) {
   ts->timestamp_ms = GetTickCount64();
   ts->byte_len = byte_len;
   ts->is_utf8 = 0;                            // UTF-16LE
+  ts->thread_id = thread_id;
+  ts->thread_address = tp.addr;
+  ts->thread_context = tp.ctx;
+  ts->thread_context2 = tp.ctx2;
+  ts->process_id = tp.processId;
+  ts->source_kind = hibiki_voice_hook::kTextSourceLuna;
+  if (hookname != nullptr) {
+    const size_t n = (std::min)(strlen(hookname),
+                                static_cast<size_t>(
+                                    hibiki_voice_hook::kTextHookNameChars - 1));
+    memcpy(ts->hook_name, hookname, n);
+    ts->hook_name[n] = '\0';
+    ts->hook_name_len = static_cast<uint32_t>(n);
+  }
+  if (hookcode != nullptr) {
+    const size_t n = (std::min)(wcslen(hookcode),
+                                static_cast<size_t>(
+                                    hibiki_voice_hook::kTextHookCodeChars - 1));
+    memcpy(ts->hook_code, hookcode, n * sizeof(wchar_t));
+    ts->hook_code[n] = L'\0';
+    ts->hook_code_len = static_cast<uint32_t>(n);
+  }
   ts->seq = static_cast<uint64_t>(reserved);  // 完成标记，最后写
   if (header->text_hooked == 0) {
     header->text_hooked = 1;  // 首次 flush：文本 hook proof-of-life
@@ -281,8 +332,8 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* text, int wlen) {
 // ── 多 hook 自动选干净线程（LunaHook 伪影过滤）────
 // LunaHook 对同一个游戏常同时装多条 hook，同一句对白会被多条各回传一次：只有一条
 // 干净，其余是坏 hook 产生的伪影（整串重复 / 每字重复 N 次）。这里按 hookcode 分组统计
-// clean/dirty，自动锁定表现最干净的那条 hook，只把它的行写进文本环。纯函数判别 +
-// 单锁保护的计数表，不动 IPC 契约，不改 WriteLunaTextLine 写入格式，只决定哪些行值得写。
+// clean/dirty，自动锁定表现最干净的那条 hook；用户在 Hibiki 选择线程后则以共享 header 的
+// selected_text_thread_id 覆盖自动赢家。重复伪影始终不写，手动选择也不能绕过过滤。
 
 // 伪影判别（纯函数）：给定 [text,len]，判断是否为坏 hook 的重复伪影。
 //   ① 整串重复：len 为偶数且前半 == 后半（例：AB…|AB…）。
@@ -355,9 +406,20 @@ constexpr uint64_t kLunaSelectMinClean = 3;
 // hookcode 可能为 nullptr（归到空串 key）。冷启动（总 clean < 阈值）时干净行照写；一旦某
 // hook 累计干净行达阈值即锁定为赢家，之后只写赢家的行；赢家按 clean_count 最高 + 占比
 // clean/(clean+dirty) >= 0.5 重选，可随游戏切换重新评估。
-bool LunaShouldWriteLine(const wchar_t* hookcode, bool is_artifact) {
+bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
+                         bool is_artifact) {
+  const uint64_t manually_selected = g_luna.header == nullptr
+                                         ? 0
+                                         : static_cast<uint64_t>(
+                                               InterlockedCompareExchange64(
+                                                   reinterpret_cast<
+                                                       volatile LONGLONG*>(
+                                                       &g_luna.header
+                                                            ->selected_text_thread_id),
+                                                   0, 0));
   if (!g_lunaSelectCsInit) {
-    return !is_artifact;  // 防御性：锁未初始化时只写干净行
+    return !is_artifact &&
+           (manually_selected == 0 || manually_selected == thread_id);
   }
   const std::wstring key =
       (hookcode != nullptr) ? std::wstring(hookcode) : std::wstring();
@@ -399,6 +461,9 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, bool is_artifact) {
   // （多条干净 hook 里锁定一条，避免重复），伪影过滤是无条件的第一道闸。
   if (is_artifact) {
     should_write = false;
+  } else if (manually_selected != 0) {
+    // Hibiki UI 手动选择优先于自动赢家；切回 0 即恢复自动选择。
+    should_write = manually_selected == thread_id;
   } else if (!g_lunaSelectPrimed) {
     // 冷启动：未锁定赢家，干净行照写（保证首句立刻可见）。
     should_write = true;
@@ -414,15 +479,15 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, bool is_artifact) {
 // Output：全引擎精确台词入口。过滤 + 写文本环。返回值在本 vendored 版恒 true（不作门控）。
 bool LunaOutput(const wchar_t* hookcode, const char* hookname, LunaThreadParam tp,
                 const wchar_t* text) {
-  (void)hookname;
-  (void)tp;
   if (g_luna.header != nullptr && text != nullptr) {
     const int len = static_cast<int>(wcslen(text));
     if (LunaPassesFilter(text, len)) {
       // 多 hook 自动选干净线程：先判伪影并累计，再决定本行是否写入文本环。
       const bool artifact = LunaTextIsArtifact(text, len);
-      if (LunaShouldWriteLine(hookcode, artifact)) {
-        WriteLunaTextLine(g_luna.header, text, len);
+      const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
+      if (LunaShouldWriteLine(hookcode, thread_id, artifact)) {
+        WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id, text,
+                          len);
         // 一旦 LunaHook 写出干净行，标记 LunaHook 权威：游戏内 GDI 文本 hook 让位不再写文本，
         // 避免双写者污染（见 voice_hook_ipc.h SharedHeader::luna_active 注释）。幂等，写 1 即可。
         if (!artifact) {

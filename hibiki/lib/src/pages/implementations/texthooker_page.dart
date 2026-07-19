@@ -57,9 +57,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   );
   final ScrollController _scroll = ScrollController();
   final GalHookSessionController _session = GalHookSessionController.instance;
+  OverlayEntry? _popupOverlayEntry;
+  bool _overlayInert = false;
   String? _activeLineId;
   String? _activeSentence;
   bool _followLive = true;
+  String? _selectedTextThreadKey;
   int _unreadLines = 0;
   String? _lastObservedLineId;
 
@@ -90,9 +93,27 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   void dispose() {
     TexthookerService.instance.removeListener(_onLines);
     _session.removeListener(_onSessionChanged);
+    final OverlayEntry? popupOverlay = _popupOverlayEntry;
+    if (popupOverlay != null) {
+      if (popupOverlay.mounted) popupOverlay.remove();
+      popupOverlay.dispose();
+      _popupOverlayEntry = null;
+    }
     _popup.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  @override
+  void deactivate() {
+    _overlayInert = true;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _overlayInert = false;
   }
 
   /// TODO-1162：外部窗口挖矿模式下覆写制卡——先截绑定窗口当前帧作封面，再连同当前句
@@ -384,7 +405,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   @override
   Widget build(BuildContext context) {
-    final List<TexthookerLineEntry> lines = TexthookerService.instance.entries;
+    final TexthookerService texthooker = TexthookerService.instance;
+    final List<TexthookerTextThread> textThreads = texthooker.textThreads;
+    final String? selectedTextThreadKey = textThreads.any(
+      (thread) => thread.key == _selectedTextThreadKey,
+    )
+        ? _selectedTextThreadKey
+        : null;
+    final List<TexthookerLineEntry> lines =
+        texthooker.entriesForTextThread(selectedTextThreadKey);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
     if (widget.embedded) {
       return Column(
         children: <Widget>[
@@ -401,7 +431,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             actions: _buildEmbeddedActions(context),
             bottom: _buildSectionTabs(),
           ),
-          Expanded(child: _buildMonitorBody(context, lines)),
+          Expanded(
+            child: _buildMonitorBody(
+              context,
+              lines,
+              textThreads,
+              selectedTextThreadKey,
+            ),
+          ),
         ],
       );
     }
@@ -433,7 +470,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
         ],
       ),
-      body: _buildMonitorBody(context, lines),
+      body: _buildMonitorBody(
+        context,
+        lines,
+        textThreads,
+        selectedTextThreadKey,
+      ),
     );
   }
 
@@ -515,90 +557,91 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Widget _buildMonitorBody(
     BuildContext context,
     List<TexthookerLineEntry> lines,
+    List<TexthookerTextThread> textThreads,
+    String? selectedTextThreadKey,
   ) {
     final GalHookSessionState state = _session.state;
-    return Stack(
+    return Column(
       children: <Widget>[
-        Column(
-          children: <Widget>[
-            _buildExperimentalBanner(context),
-            if (state.externalWindowMode) _buildExternalWindowBar(context),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints box) {
-                    final Widget live = _buildLiveLinesPanel(context, lines);
-                    final Widget latest = _LatestLineCard(
-                      line: _selectedOrLatestLine(lines),
-                    );
-                    final Widget health = _CaptureHealthCard(
-                      state: state,
-                      endpoints: _session.endpointStatuses,
-                    );
-                    if (box.maxWidth >= 1280) {
-                      return Column(
-                        children: <Widget>[
-                          _SessionOverviewCard(state: state),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                Expanded(flex: 5, child: live),
-                                const SizedBox(width: 12),
-                                Expanded(flex: 3, child: latest),
-                                const SizedBox(width: 12),
-                                Expanded(flex: 3, child: health),
-                              ],
+        _buildExperimentalBanner(context),
+        if (state.externalWindowMode) _buildExternalWindowBar(context),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) {
+                final Widget live = _buildLiveLinesPanel(
+                  context,
+                  lines,
+                  textThreads,
+                  selectedTextThreadKey,
+                );
+                final Widget latest = _LatestLineCard(
+                  line: _selectedOrLatestLine(lines),
+                );
+                final Widget health = _CaptureHealthCard(
+                  state: state,
+                  endpoints: _session.endpointStatuses,
+                );
+                if (box.maxWidth >= 1280) {
+                  return Column(
+                    children: <Widget>[
+                      _SessionOverviewCard(state: state),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Expanded(flex: 5, child: live),
+                            const SizedBox(width: 12),
+                            Expanded(flex: 3, child: latest),
+                            const SizedBox(width: 12),
+                            Expanded(flex: 3, child: health),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                if (box.maxWidth >= 840) {
+                  return Column(
+                    children: <Widget>[
+                      _SessionOverviewCard(state: state),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Expanded(flex: 2, child: live),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: <Widget>[
+                                  Expanded(child: latest),
+                                  const SizedBox(height: 12),
+                                  Expanded(child: health),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
-                      );
-                    }
-                    if (box.maxWidth >= 840) {
-                      return Column(
-                        children: <Widget>[
-                          _SessionOverviewCard(state: state),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                Expanded(flex: 2, child: live),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: <Widget>[
-                                      Expanded(child: latest),
-                                      const SizedBox(height: 12),
-                                      Expanded(child: health),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        _SessionOverviewCard(state: state, compact: true),
-                        const SizedBox(height: 12),
-                        Expanded(child: live),
-                      ],
-                    );
-                  },
-                ),
-              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _SessionOverviewCard(state: state, compact: true),
+                    const SizedBox(height: 12),
+                    Expanded(child: live),
+                  ],
+                );
+              },
             ),
-          ],
+          ),
         ),
-        ..._buildPopups(context),
       ],
     );
   }
@@ -618,6 +661,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Widget _buildLiveLinesPanel(
     BuildContext context,
     List<TexthookerLineEntry> lines,
+    List<TexthookerTextThread> textThreads,
+    String? selectedTextThreadKey,
   ) {
     return HibikiCard(
       padding: EdgeInsets.zero,
@@ -665,6 +710,70 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   },
                 ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: InputDecorator(
+              decoration: InputDecoration(
+                labelText: t.game_text_thread,
+                helperText: t.game_text_thread_hint,
+                prefixIcon: const Icon(Icons.account_tree_outlined, size: 20),
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  key: const ValueKey<String>('game-text-thread-selector'),
+                  value: selectedTextThreadKey ?? '',
+                  isExpanded: true,
+                  isDense: true,
+                  items: <DropdownMenuItem<String>>[
+                    DropdownMenuItem<String>(
+                      value: '',
+                      child: Text(t.game_text_thread_all),
+                    ),
+                    for (final TexthookerTextThread thread in textThreads)
+                      DropdownMenuItem<String>(
+                        value: thread.key,
+                        child: Tooltip(
+                          message: thread.hookCode ?? thread.label,
+                          child: Text(
+                            '${thread.label} · ${thread.lineCount}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                  ],
+                  onChanged: textThreads.isEmpty
+                      ? null
+                      : (String? value) {
+                          TexthookerTextThread? selectedThread;
+                          if (value != null && value.isNotEmpty) {
+                            for (final TexthookerTextThread thread
+                                in textThreads) {
+                              if (thread.key == value) {
+                                selectedThread = thread;
+                                break;
+                              }
+                            }
+                          }
+                          setState(() {
+                            _selectedTextThreadKey =
+                                value == null || value.isEmpty ? null : value;
+                            _activeLineId = null;
+                            _activeSentence = null;
+                            _unreadLines = 0;
+                          });
+                          unawaited(
+                            _session.selectTextThread(
+                              selectedThread?.nativeThreadId,
+                            ),
+                          );
+                        },
+                ),
+              ),
             ),
           ),
           const Divider(height: 1),
@@ -786,6 +895,50 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           onPop: (int index) => popNestedPopupAt(index, _popup),
         ),
     ];
+  }
+
+  /// 查词浮层放到根 Overlay，并把整棵浮层子树中和到净缩放 1。
+  ///
+  /// 这样平台 WebView 不会在缩放画布内低分辨率栅格化，且点词得到的
+  /// `localToGlobal` 屏幕矩形与浮层处在同一坐标系。
+  void _syncPopupOverlay() {
+    if (!mounted) return;
+    if (_popup.entries.isEmpty && !_popup.isSearchingUi) {
+      final OverlayEntry? entry = _popupOverlayEntry;
+      if (entry != null) {
+        if (entry.mounted) entry.remove();
+        entry.dispose();
+        _popupOverlayEntry = null;
+      }
+      return;
+    }
+    if (_popupOverlayEntry != null) {
+      _popupOverlayEntry!.markNeedsBuild();
+      return;
+    }
+    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
+    _popupOverlayEntry = entry;
+    overlay.insert(entry);
+  }
+
+  Widget _buildPopupOverlay(BuildContext overlayContext) {
+    if (!mounted || _overlayInert) return const SizedBox.shrink();
+    return HibikiAppUiScaleNeutralizer(
+      child: Theme(
+        data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
+        child: Builder(
+          builder: (BuildContext context) {
+            if (!mounted || _overlayInert) return const SizedBox.shrink();
+            return Stack(
+              clipBehavior: Clip.none,
+              children: _buildPopups(context),
+            );
+          },
+        ),
+      ),
+    );
   }
 }
 
@@ -1141,6 +1294,7 @@ class _TexthookerLine extends StatelessWidget {
                 Expanded(
                   child: Text(
                     '${_formatTime(line.receivedAt)} · $source'
+                    '${line.textThreadLabel == null ? '' : ' · ${line.textThreadLabel}'}'
                     '${line.sourceSequence == null ? '' : ' · #${line.sourceSequence}'}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
