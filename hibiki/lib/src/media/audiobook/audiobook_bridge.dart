@@ -456,9 +456,6 @@ window.__hoshiAnnotate = function(chapterHref) {
     // 的 textFragmentId='[data-cue-id=...]'）走普通 __hoshiHighlight，完全不碰
     // sasayaki 高亮系统——即使 setup 期建了 range 也不会激活 ::highlight。
     // TODO-724：pauseEnabled = imagePauseSec>0；仅它为真时跨图才滚到插图。
-    debugPrint('[sasayaki-hl] highlight raw="$raw" '
-        'frag=${frag == null ? "NULL->__hoshiHighlight(non-sasayaki)" : "sasayaki"} '
-        'reveal=$reveal pauseEnabled=$pauseEnabled');
     if (frag != null) {
       await controller.evaluateJavascript(
         source: 'if(typeof __hoshiHighlightSasayakiCueById!=="undefined")'
@@ -556,9 +553,6 @@ window.__hoshiAnnotate = function(chapterHref) {
     final List<Map<String, dynamic>> payload =
         buildSasayakiPayload(cues, sectionIndex);
     if (payload.isEmpty) {
-      // BUG-366/TODO-630 诊断：payload 空 → JS __hoshiApplySasayakiCues 不被调用。
-      debugPrint('[sasayaki-hl] applySasayakiCues section=$sectionIndex '
-          'EMPTY payload (cues=${cues.length}) -> JS not invoked');
       return;
     }
     final String json = jsonEncode(payload);

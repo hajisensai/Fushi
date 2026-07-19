@@ -810,7 +810,6 @@ JSON.stringify((function(){
           window.resetSelectedDictionaries();
           window.renderPopup();
         ''';
-    final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
       ${staticChanged ? staticSettingsJs : ''}
       $entriesJs
@@ -852,11 +851,7 @@ JSON.stringify((function(){
       };
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
-    ''').then((_) {
-      swInject.stop();
-      debugPrint(
-          '[dict-perf] evaluateJavascript: ${swInject.elapsedMilliseconds}ms');
-    });
+    ''');
   }
 
   /// Ensures the current [widget.result] is (or will be) rendered in the WebView.
@@ -901,20 +896,21 @@ JSON.stringify((function(){
   static String? _inlineDictMediaJs;
   static String? _inlineSelectionJs;
   static String? _inlinePopupJs;
-  static bool _inlineAssetsLoadFailed = false;
 
   static bool get _shouldInlinePopupAssets =>
       isWindowsPlatform || defaultTargetPlatform == TargetPlatform.iOS;
 
   static void _ensureInlinePopupAssetsLoaded() {
-    if (_inlineCss != null || _inlineAssetsLoadFailed) return;
+    // BUG-912 #2：成功后 _inlineCss 非空即可防重复读盘；不再用进程级
+    // 永久失败闩——一次瞬时读盘异常（文件锁 / 磁盘抖动）不该把内联资产
+    // 永久降级到不可靠的 file:// 路径，失败时下次唤起自然重试。
+    if (_inlineCss != null) return;
     try {
       _inlineCss = _readPopupAsset('popup.css');
       _inlineDictMediaJs = _readPopupAsset('dict-media.js');
       _inlineSelectionJs = _readPopupAsset('selection.js');
       _inlinePopupJs = _readPopupAsset('popup.js');
     } catch (e, stack) {
-      _inlineAssetsLoadFailed = true;
       debugPrint('[PopupWebView] Popup asset inlining failed, '
           'falling back to file:// URL loading: $e');
       ErrorLogService.instance

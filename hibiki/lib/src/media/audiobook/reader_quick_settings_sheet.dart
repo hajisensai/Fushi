@@ -2013,6 +2013,11 @@ class _RepeatIconButtonState extends State<_RepeatIconButton> {
     return GestureDetector(
       onLongPressStart: (_) => _start(),
       onLongPressEnd: (_) => _stop(),
+      // BUG-912 #3：手势被取消（指针滑出 / 识别器被上层夺走）而非正常 End 时，
+      // onLongPressEnd 不必然回调；不补 cancel 的话 _timer 会持续每 100ms 连触
+      // widget.onPressed()（数值狂涨 / 狂降）直到 dispose。与 video_hibiki_page.dart
+      // 的 _VideoRepeatGestureButton 对齐。
+      onLongPressCancel: () => _stop(),
       child: HibikiIconButton(
         icon: widget.icon,
         size: 18,

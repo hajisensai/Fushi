@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/video/video_playback_source.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
 /// 完成判定纯函数：进度 ≥ 90% 且尚未完成、且时长已知。
@@ -150,21 +151,28 @@ class VideoWatchTracker {
     _tickStart = now;
     if (s == null || start == null) return;
 
-    // 仅在连续前台播放窗口内累加：[isContinuousWatchGap] 过滤异常大间隔（后台挂起 /
-    // 系统睡眠 / 长 GC 停顿致定时器跨越非播放窗口），整窗丢弃而非凭空计入观看时长，
-    // 并保证 [splitWatchTime] 输入恒 ≤ kMaxWatchGap（单次至多跨一个边界）。
-    if (s.isPlaying && isContinuousWatchGap(start, now)) {
-      for (final (String dateKey, int hour, int ms)
-          in splitWatchTime(start, now)) {
-        await _addHourly?.call(dateKey, hour, ms);
-        // 逐桶配各自 dateKey：跨午夜正确归两天。
-        await _addStat(title, dateKey, 0, ms);
+    // 周期 tick 经 `unawaited(_flush())` fire-and-forget 调用，DB 写异常无处捕获会被
+    // 静默丢弃且线上不可诊断。整段 DB 写包 try/catch：fail-open（异常不冒泡、不阻塞
+    // 播放，仅丢本次统计增量），并补 ErrorLogService.log 使其可诊断。
+    try {
+      // 仅在连续前台播放窗口内累加：[isContinuousWatchGap] 过滤异常大间隔（后台挂起 /
+      // 系统睡眠 / 长 GC 停顿致定时器跨越非播放窗口），整窗丢弃而非凭空计入观看时长，
+      // 并保证 [splitWatchTime] 输入恒 ≤ kMaxWatchGap（单次至多跨一个边界）。
+      if (s.isPlaying && isContinuousWatchGap(start, now)) {
+        for (final (String dateKey, int hour, int ms)
+            in splitWatchTime(start, now)) {
+          await _addHourly?.call(dateKey, hour, ms);
+          // 逐桶配各自 dateKey：跨午夜正确归两天。
+          await _addStat(title, dateKey, 0, ms);
+        }
       }
-    }
 
-    if (shouldMarkCompleted(s.positionMs, s.durationMs, _completed)) {
-      _completed = true;
-      await _markCompleted(bookUid);
+      if (shouldMarkCompleted(s.positionMs, s.durationMs, _completed)) {
+        _completed = true;
+        await _markCompleted(bookUid);
+      }
+    } catch (e, st) {
+      ErrorLogService.instance.log('VideoWatchTracker.flush', e, st);
     }
   }
 }

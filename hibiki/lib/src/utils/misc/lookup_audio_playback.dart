@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
@@ -19,16 +18,14 @@ Future<void> playLookupAudio(
 ) async {
   final String? url =
       await resolveLookupAudioUrl(appModel, expression, reading);
-  debugPrint('[hibiki-autoread] resolved url=$url');
   if (url == null || url.isEmpty) return;
 
   // Plays remote URLs and local file paths uniformly, including Windows
   // drive-letter paths (BUG-046).
-  final bool ok = await TtsChannel.instance.playAudioRef(
+  await TtsChannel.instance.playAudioRef(
     url,
     volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
   );
-  debugPrint('[hibiki-autoread] play ok=$ok');
 }
 
 /// Resolves (but does not play) the configured-source audio URL/path for
@@ -40,9 +37,6 @@ Future<String?> resolveLookupAudioUrl(
   String expression,
   String reading,
 ) async {
-  final sources = appModel.enabledAudioSources;
-  debugPrint(
-      '[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
   final WordAudioResolver resolver = WordAudioResolver(
     queryLocalAudio: (expression, reading) async {
       try {
@@ -50,8 +44,6 @@ Future<String?> resolveLookupAudioUrl(
             .queryLocalAudio(expression, reading)
             .timeout(const Duration(milliseconds: 500));
       } on TimeoutException {
-        debugPrint(
-            '[hibiki-autoread] queryLocalAudio timed out for "$expression"');
         return null;
       }
     },
@@ -61,8 +53,6 @@ Future<String?> resolveLookupAudioUrl(
             .queryLocalAudio(expression, reading, dbIndex: dbIndex)
             .timeout(const Duration(milliseconds: 500));
       } on TimeoutException {
-        debugPrint(
-            '[hibiki-autoread] queryLocalAudio timed out for "$expression"');
         return null;
       }
     },
