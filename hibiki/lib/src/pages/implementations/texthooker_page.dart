@@ -375,10 +375,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
   }
 
-  /// galgame 引擎-hook（launch 模式）：选游戏 exe → 按其位数选 x86/x64 注入器 → Hibiki **拉起
-  /// 游戏并早注入**（CREATE_SUSPENDED；KiriKiriZ 等「启动即建音频设备」的引擎必须走此路，attach
-  /// 会漏）→ 就绪后以引擎-hook 为音频源，并按游戏 PID 找主窗口绑定（制卡截图用）。任一步失败
-  /// 明确 toast、不静默（起不来时保持原状，用户仍可用「绑定窗口 + loopback」路径）。
+  /// galgame 引擎-hook（launch 模式）：选游戏 exe → 按其位数选 x86/x64 注入器 → Hibiki 拉起
+  /// 游戏并注入。KiriKiriZ 走 CREATE_SUSPENDED 早注入；SiglusEngine 因 Enigma 保护壳自动改为
+  /// 游戏窗口出现后附着，再抓后续 OVK 原始逐句人声。就绪后以引擎-hook 为音频源，并按游戏 PID
+  /// 找主窗口绑定（制卡截图用）。任一步失败明确 toast、不静默。
   Future<void> _launchGalgameEngineHook() async {
     if (!Platform.isWindows) {
       HibikiToast.show(msg: t.external_window_unsupported);
@@ -463,16 +463,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     //    OGG 里配对出这句对应的原始语音（混音前、无 BGM/SE），转码成 aac 直接作
     //    providedAudioBytes。句子文本命中 ts 缓存用**该行**时间戳，否则退回最近一句时间戳。
     //    仅 KiriKiri 等有引擎-hook dump 的引擎命中；其它引擎/loopback 落到下面的采集链。
+    //    Siglus 为避开 Enigma 保护壳采用晚附着，可能没有文本时间戳；传 0 时源只会从本次
+    //    会话新落盘文件中取最新一句，不会误用上一局残留。
     if (eng != null && Platform.isWindows) {
       final int ts = _lineTsCache[sentence] ?? _lastHookedLineTs;
-      if (ts > 0) {
-        final Uint8List? voice = await eng.grabPairedVoiceBytes(
-          ts,
-          outputExtension: immersionMiningAudioExtension(),
-        );
-        if (voice != null && voice.isNotEmpty) {
-          return voice;
-        }
+      final Uint8List? voice = await eng.grabPairedVoiceBytes(
+        ts,
+        outputExtension: immersionMiningAudioExtension(),
+      );
+      if (voice != null && voice.isNotEmpty) {
+        return voice;
       }
     }
     // 以下为 PCM 采集链回退（loopback / 非 KiriKiri 引擎 / 无 dump / 配对失败）。

@@ -260,6 +260,101 @@ static VOID ProcessThreadIPs(HANDLE hThread, UINT pos, UINT action)
 }
 
 //-------------------------------------------------------------------------
+// Append one thread id to the freeze list. Kept separate so the normal
+// Toolhelp path and the NtGetNextThread fallback share identical allocation
+// behavior.
+static BOOL AppendThreadId(PFROZEN_THREADS pThreads, DWORD threadId)
+{
+    if (pThreads->pItems == NULL)
+    {
+        pThreads->capacity = INITIAL_THREAD_CAPACITY;
+        pThreads->pItems
+            = (LPDWORD)HeapAlloc(g_hHeap, 0, pThreads->capacity * sizeof(DWORD));
+        if (pThreads->pItems == NULL)
+            return FALSE;
+    }
+    else if (pThreads->size >= pThreads->capacity)
+    {
+        LPDWORD p;
+        pThreads->capacity *= 2;
+        p = (LPDWORD)HeapReAlloc(
+            g_hHeap, 0, pThreads->pItems, pThreads->capacity * sizeof(DWORD));
+        if (p == NULL)
+            return FALSE;
+        pThreads->pItems = p;
+    }
+    pThreads->pItems[pThreads->size++] = threadId;
+    return TRUE;
+}
+
+// Some protected visual-novel engines make the Toolhelp thread snapshot fail
+// even inside their own process. NtGetNextThread is the supported NT iterator
+// used as a fallback; it still enumerates every sibling thread so MinHook does
+// not degrade to unsafe patching without freezing them.
+typedef LONG (NTAPI *NtGetNextThread_t)(
+    HANDLE ProcessHandle,
+    HANDLE ThreadHandle,
+    ACCESS_MASK DesiredAccess,
+    ULONG HandleAttributes,
+    ULONG Flags,
+    PHANDLE NewThreadHandle);
+
+static BOOL EnumerateThreadsNt(PFROZEN_THREADS pThreads)
+{
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    NtGetNextThread_t nextThread;
+    HANDLE current = NULL;
+    LONG status;
+    BOOL succeeded = FALSE;
+
+    if (ntdll == NULL)
+        return FALSE;
+    nextThread = (NtGetNextThread_t)GetProcAddress(ntdll, "NtGetNextThread");
+    if (nextThread == NULL)
+        return FALSE;
+
+    for (;;)
+    {
+        HANDLE next = NULL;
+        status = nextThread(GetCurrentProcess(), current,
+            THREAD_QUERY_LIMITED_INFORMATION, 0, 0, &next);
+        if (current != NULL)
+        {
+            CloseHandle(current);
+            current = NULL;
+        }
+        if (status < 0)
+        {
+            // STATUS_NO_MORE_ENTRIES: normal end of enumeration. Any other NT
+            // error must stay a failure; silently patching with no freeze is
+            // not acceptable.
+            succeeded = ((ULONG)status == 0x8000001AUL);
+            break;
+        }
+        current = next;
+        if (next != NULL)
+        {
+            DWORD threadId = GetThreadId(next);
+            if (threadId != 0 && threadId != GetCurrentThreadId()
+                && !AppendThreadId(pThreads, threadId))
+            {
+                break;
+            }
+        }
+    }
+    if (current != NULL)
+        CloseHandle(current);
+    if (!succeeded && pThreads->pItems != NULL)
+    {
+        HeapFree(g_hHeap, 0, pThreads->pItems);
+        pThreads->pItems = NULL;
+        pThreads->size = 0;
+        pThreads->capacity = 0;
+    }
+    return succeeded;
+}
+
+//-------------------------------------------------------------------------
 static BOOL EnumerateThreads(PFROZEN_THREADS pThreads)
 {
     BOOL succeeded = FALSE;
@@ -278,32 +373,11 @@ static BOOL EnumerateThreads(PFROZEN_THREADS pThreads)
                     && te.th32OwnerProcessID == GetCurrentProcessId()
                     && te.th32ThreadID != GetCurrentThreadId())
                 {
-                    if (pThreads->pItems == NULL)
+                    if (!AppendThreadId(pThreads, te.th32ThreadID))
                     {
-                        pThreads->capacity = INITIAL_THREAD_CAPACITY;
-                        pThreads->pItems
-                            = (LPDWORD)HeapAlloc(g_hHeap, 0, pThreads->capacity * sizeof(DWORD));
-                        if (pThreads->pItems == NULL)
-                        {
-                            succeeded = FALSE;
-                            break;
-                        }
+                        succeeded = FALSE;
+                        break;
                     }
-                    else if (pThreads->size >= pThreads->capacity)
-                    {
-                        LPDWORD p;
-                        pThreads->capacity *= 2;
-                        p = (LPDWORD)HeapReAlloc(
-                            g_hHeap, 0, pThreads->pItems, pThreads->capacity * sizeof(DWORD));
-                        if (p == NULL)
-                        {
-                            succeeded = FALSE;
-                            break;
-                        }
-
-                        pThreads->pItems = p;
-                    }
-                    pThreads->pItems[pThreads->size++] = te.th32ThreadID;
                 }
 
                 te.dwSize = sizeof(THREADENTRY32);
@@ -321,7 +395,18 @@ static BOOL EnumerateThreads(PFROZEN_THREADS pThreads)
         CloseHandle(hSnapshot);
     }
 
-    return succeeded;
+    if (!succeeded)
+    {
+        if (pThreads->pItems != NULL)
+        {
+            HeapFree(g_hHeap, 0, pThreads->pItems);
+            pThreads->pItems = NULL;
+        }
+        pThreads->size = 0;
+        pThreads->capacity = 0;
+        return EnumerateThreadsNt(pThreads);
+    }
+    return TRUE;
 }
 
 //-------------------------------------------------------------------------

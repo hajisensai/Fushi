@@ -136,6 +136,28 @@ PcmFormat? parseGalPcmFormat(Map<Object?, Object?> m) {
   );
 }
 
+/// 引擎 hook 的就绪 map 转格式。常规路径返回共享内存 PCM 格式；Siglus 的晚附着路径只
+/// 导出原始 OVK Ogg、没有已错过的 DirectSound PCM，此时用其已验证的解码格式作为会话
+/// 能力标记，让上层保留 [EngineHookGalAudioSource] 并走 [grabPairedVoiceBytes]。
+PcmFormat? parseEngineHookReadyFormat(Map<Object?, Object?> m) {
+  if (m['ready'] != true) {
+    return null;
+  }
+  final PcmFormat? pcm = parseGalPcmFormat(m);
+  if (pcm != null) {
+    return pcm;
+  }
+  if (m['rawVoiceReady'] == true) {
+    return const PcmFormat(
+      sampleRate: 44100,
+      channels: 1,
+      bitsPerSample: 16,
+      isFloat: false,
+    );
+  }
+  return null;
+}
+
 /// 从 injector 子进程 stdout 解析 `OK hooked pid=<N> ...` 里的游戏子进程 PID（launch 模式）。
 /// 纯函数，可单测。未匹配 / 无效返回 null。
 int? parseInjectorHookedPid(String stdout) {
@@ -238,17 +260,18 @@ bool _isNonVoiceBasename(String basename) =>
 /// **两种模式**（二选一）：
 ///   - **attach**（给 [targetPid]）：附着**已运行**的游戏进程（`injector --pid`）。适合已在跑、
 ///     且引擎在注入时刻**之后**才建音频对象的场景。
-///   - **launch**（给 [launchExe]）：由 Hibiki **拉起游戏** exe（`injector --launch <exe>`，
-///     CREATE_SUSPENDED 早注入），在游戏 WinMain 前把 hook 装好——**KiriKiriZ 等「启动即建
+///   - **launch**（给 [launchExe]）：由 Hibiki **拉起游戏** exe（`injector --launch <exe>`）。
+///     通常 CREATE_SUSPENDED 早注入，在游戏 WinMain 前把 hook 装好——**KiriKiriZ 等「启动即建
 ///     DirectSound 设备」的引擎必须走这条**（attach 会漏掉启动时创建的设备）。子进程 PID 由
-///     injector stdout 的 `OK hooked pid=<N>` 回报（[parseInjectorHookedPid] 解析）。
+///     injector stdout 的 `OK hooked pid=<N>` 回报（[parseInjectorHookedPid] 解析）。Siglus 的
+///     Enigma 保护壳例外：injector 会先正常启动、等游戏窗口出现后再附着，捕获后续 OVK 原始语音。
 class EngineHookGalAudioSource implements GalAudioSource {
   EngineHookGalAudioSource({
     this.targetPid = 0,
     this.launchExe,
     required this.injectorPath,
     MethodChannel? channel,
-    Duration readyTimeout = const Duration(seconds: 12),
+    Duration readyTimeout = const Duration(seconds: 30),
     Duration pollInterval = const Duration(milliseconds: 200),
   })  : _channel =
             channel ?? const MethodChannel('app.hibiki.reader/voice_hook'),
@@ -277,6 +300,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 实际注入命中的游戏 PID：attach=`targetPid`；launch=从 injector stdout 解析出的子进程 PID。
   /// [grabRecent]/`open` 都用它开共享内存。
   int _effectivePid = 0;
+
+  /// 本次 injector 会话起点。Siglus 晚附着可能抓不到文本时间戳，制卡时只允许用本会话之后
+  /// 新落盘的最新 Ogg，避免误配上一局残留。
+  DateTime? _sessionStartedAt;
 
   /// 注入命中的游戏进程 PID（[start] 成功后有效）；未就绪返回 null。launch 模式下调用方据此
   /// 找游戏主窗口（截图用），因为拉起游戏的是本源、PID 只有它知道。
@@ -363,6 +390,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     if (!launchMode && targetPid <= 0) {
       return null; // 既无 launchExe 又无有效 targetPid -> 无目标
     }
+    _sessionStartedAt = DateTime.now();
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。
@@ -458,10 +486,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
     try {
       final Map<Object?, Object?>? r =
           await _channel.invokeMethod<Map<Object?, Object?>>('status');
-      if (r == null || r['ready'] != true) {
+      if (r == null) {
         return null;
       }
-      return parseGalPcmFormat(r);
+      return parseEngineHookReadyFormat(r);
     } on PlatformException {
       return null;
     } on MissingPluginException {
@@ -610,7 +638,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     int textTsMs, {
     required String outputExtension,
   }) async {
-    if (!Platform.isWindows || textTsMs <= 0) {
+    if (!Platform.isWindows) {
       return null;
     }
     final Directory dir = _galVoiceDumpDir();
@@ -618,6 +646,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       return null;
     }
     final List<String> oggNames = <String>[];
+    final List<File> oggFiles = <File>[];
     try {
       for (final FileSystemEntity e in dir.listSync()) {
         if (e is! File) {
@@ -626,13 +655,46 @@ class EngineHookGalAudioSource implements GalAudioSource {
         final String name = _fileBaseName(e.path);
         if (name.toLowerCase().endsWith('.ogg')) {
           oggNames.add(name);
+          oggFiles.add(e);
         }
       }
     } catch (_) {
       return null;
     }
-    final String? picked =
-        pickPairedVoiceOgg(oggFileNames: oggNames, textTsMs: textTsMs);
+    String? picked = textTsMs > 0
+        ? pickPairedVoiceOgg(oggFileNames: oggNames, textTsMs: textTsMs)
+        : null;
+    // Siglus 的 Enigma-safe 晚附着可能没有文本 hook 时间戳。此时（或精确窗口未命中时）只在
+    // 本会话新文件里选修改时间最新的一条；跨会话旧 dump 绝不参与。
+    if (picked == null && _sessionStartedAt != null) {
+      File? latest;
+      DateTime? latestModified;
+      final DateTime floor =
+          _sessionStartedAt!.subtract(const Duration(seconds: 2));
+      for (final File file in oggFiles) {
+        final String name = _fileBaseName(file.path);
+        final _ParsedVoiceOgg? parsed = _parseVoiceOggName(name);
+        if (parsed == null || _isNonVoiceBasename(parsed.basename)) {
+          continue;
+        }
+        DateTime modified;
+        try {
+          modified = file.statSync().modified;
+        } catch (_) {
+          continue;
+        }
+        if (modified.isBefore(floor)) {
+          continue;
+        }
+        if (latestModified == null || modified.isAfter(latestModified)) {
+          latest = file;
+          latestModified = modified;
+        }
+      }
+      if (latest != null) {
+        picked = _fileBaseName(latest.path);
+      }
+    }
     if (picked == null) {
       return null;
     }
@@ -760,6 +822,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
     _injector?.kill();
     _injector = null;
+    _effectivePid = 0;
+    _sessionStartedAt = null;
   }
 }
 

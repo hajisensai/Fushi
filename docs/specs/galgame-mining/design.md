@@ -74,9 +74,9 @@
 | # | 任务 | 状态 |
 |---|---|---|
 | C.1 | 注入管线 + IPC 契约 proof-of-life：injector（`CreateRemoteThread`+`LoadLibraryW`）注入 hook DLL、建共享内存（`SharedHeader`+环形缓冲）+ 就绪事件、位数校验；DLL 注入后标记 `hooked=1`+`SetEvent` | ✅ x64/x86 编译过 + 对无害进程真实注入验证（`OK hooked pid=.. hooked=1`） |
-| C.2 | `dll_main.cpp` 标注处安装 XAudio2/DirectSound vtable hook（MinHook 之类）：`CreateSourceVoice`/`SubmitSourceBuffer` 混音前 memcpy 语音进环形缓冲（回调只 memcpy+更新 write_pos，零阻塞爆音红线）；首帧填格式；校准模式记 `game.exe SHA + callsite RVA` | ⏳ 需真实 galgame |
-| C.3 | 逐引擎覆盖（KiriKiri / Artemis / Unity …），其余自动回退 A | ⏳ |
-| C.4 | `EngineHookGalAudioSource`（Dart 实现 `GalAudioSource`）：Hibiki 拉起 injector 子进程、读共享内存，接同一个波形选区 + 制卡出口 | ⏳ |
+| C.2 | XAudio2/DirectSound vtable hook：`CreateSourceVoice`/`SubmitSourceBuffer` 或 DS `Unlock` 写环形；支持导出创建和 `CoCreateInstance` 创建路径 | ✅ KiriKiriZ + Siglus x86 真机通过 |
+| C.3 | 逐引擎覆盖（KiriKiri / Siglus / Artemis / Unity …），其余自动回退 A | 🟡 Siglus 已支持 Enigma-safe 延迟附着 + OVK 干净逐句 Ogg + raw-only 制卡；其余继续 |
+| C.4 | `EngineHookGalAudioSource`（Dart 实现 `GalAudioSource`）：Hibiki 拉起 injector 子进程、读共享内存/原始逐句 Ogg，接同一个波形选区 + 制卡出口 | ✅ KiriKiriZ PCM + Siglus raw-only Ogg 接回已验证 |
 
 ## 部署形态（许可 + 报毒隔离）
 

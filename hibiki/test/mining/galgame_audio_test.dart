@@ -50,6 +50,46 @@ void main() {
     });
   });
 
+  group('parseEngineHookReadyFormat', () {
+    test('常规 PCM ready 返回真实格式', () {
+      final PcmFormat? fmt = parseEngineHookReadyFormat(<Object?, Object?>{
+        'ready': true,
+        'sampleRate': 48000,
+        'channels': 2,
+        'bitsPerSample': 32,
+        'isFloat': true,
+      });
+      expect(fmt, isNotNull);
+      expect(fmt!.sampleRate, 48000);
+      expect(fmt.channels, 2);
+      expect(fmt.isFloat, true);
+    });
+
+    test('Siglus raw-only ready 返回 OVK 解码能力格式', () {
+      final PcmFormat? fmt = parseEngineHookReadyFormat(<Object?, Object?>{
+        'ready': true,
+        'rawVoiceReady': true,
+        'sampleRate': 0,
+        'channels': 0,
+        'bitsPerSample': 0,
+      });
+      expect(fmt, isNotNull);
+      expect(fmt!.sampleRate, 44100);
+      expect(fmt.channels, 1);
+      expect(fmt.bitsPerSample, 16);
+    });
+
+    test('既无 PCM 也无 raw voice 时不误报就绪', () {
+      expect(
+        parseEngineHookReadyFormat(<Object?, Object?>{
+          'ready': false,
+          'rawVoiceReady': false,
+        }),
+        isNull,
+      );
+    });
+  });
+
   group('pcmDurationMs', () {
     test('一秒混音字节 -> 1000ms', () {
       expect(pcmDurationMs(192000, 192000), 1000);

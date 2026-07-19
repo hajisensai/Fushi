@@ -18,10 +18,10 @@
 //
 // 两种进入方式（二选一）：
 //   attach（--pid）：注入已运行进程。适合引擎在游戏运行中才建声音设备的情形。
-//   launch（--launch）：CREATE_SUSPENDED 拉起游戏，在其 WinMain 之前注入 hook 再 ResumeThread。
-//     适合 KiriKiriZ 这类启动时创建一次 DirectSound 设备的旧引擎——attach 永远晚于设备创建会
-//     漏掉，必须在游戏跑起来之前把 DirectSoundCreate 导出 hook 装好（MTool 对同款游戏正是
-//     CREATE_SUSPENDED 早注入，证明这条路安全）。
+//   launch（--launch）：通常 CREATE_SUSPENDED 拉起游戏，在其 WinMain 之前注入 hook 再
+//     ResumeThread。SiglusEngine.exe 的 Enigma 保护壳会拒绝这种早注入，因此该 exe 自动改为
+//     正常启动，等保护壳退出且游戏主窗口出现后再附着；Siglus 的干净语音来自后续 OVK 文件读，
+//     不要求抢在音频设备创建之前。
 //
 // 用法：
 //   hibiki_voice_injector.exe --pid <PID> [--dll <hook.dll>] [--wait-ms N] [--hold]
@@ -702,7 +702,51 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   return 0;
 }
 
-// launch 模式：CREATE_SUSPENDED 拉起游戏，再 RunInjection（建共享内存/注入/Resume/等事件/hold）。
+bool IsSiglusExecutable(const std::wstring& exe) {
+  const size_t slash = exe.find_last_of(L"\\/");
+  const wchar_t* base =
+      slash == std::wstring::npos ? exe.c_str() : exe.c_str() + slash + 1;
+  return _wcsicmp(base, L"SiglusEngine.exe") == 0;
+}
+
+struct ReadyWindowSearch {
+  DWORD pid = 0;
+  bool found = false;
+};
+
+BOOL CALLBACK FindReadyGameWindow(HWND window, LPARAM param) {
+  auto* search = reinterpret_cast<ReadyWindowSearch*>(param);
+  DWORD owner = 0;
+  GetWindowThreadProcessId(window, &owner);
+  if (owner != search->pid || !IsWindowVisible(window)) return TRUE;
+  wchar_t title[256] = {0};
+  if (GetWindowTextW(window, title, 256) <= 0 ||
+      _wcsicmp(title, L"The Enigma Protector") == 0) {
+    return TRUE;
+  }
+  search->found = true;
+  return FALSE;
+}
+
+// Enigma 完成自校验并进入游戏消息循环后再注入。只看本次子进程的可见非保护器窗口，
+// 不靠固定 Sleep 猜机器速度；进程提前退出或超时都明确失败。
+bool WaitForSiglusGameWindow(HANDLE process, DWORD pid, DWORD timeout_ms) {
+  const uint64_t deadline = GetTickCount64() + timeout_ms;
+  while (GetTickCount64() < deadline) {
+    if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) return false;
+    ReadyWindowSearch search;
+    search.pid = pid;
+    EnumWindows(&FindReadyGameWindow, reinterpret_cast<LPARAM>(&search));
+    if (search.found) {
+      Sleep(200);  // 让窗口创建尾部退出保护器调用栈，再装 inline hooks。
+      return true;
+    }
+    Sleep(50);
+  }
+  return false;
+}
+
+// launch 模式：一般 CREATE_SUSPENDED 早注入；Siglus 因 Enigma 保护壳改为正常启动后附着。
 // 命令行含 exe 本身（CreateProcessW 约定）；workdir 缺省=exe 所在目录。
 int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               const std::vector<std::wstring>& extra_args,
@@ -733,22 +777,35 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   STARTUPINFOW si = {0};
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi = {0};
+  const bool delayed_siglus = IsSiglusExecutable(exe);
   const BOOL created = CreateProcessW(
-      exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED,
+      exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE,
+      delayed_siglus ? 0 : CREATE_SUSPENDED,
       nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
   if (!created) {
     fprintf(stderr, "CreateProcessW failed: %lu\n", GetLastError());
     return 1;
   }
 
-  // 复用 attach 同一套编排；resume_thread=pi.hThread（注入后再放行游戏），
-  // hold_process=pi.hProcess（--hold 挂到游戏退出）。
-  const int rc = RunInjection(pi.hProcess, pi.dwProcessId, dll_path, wait_ms,
-                              hold, pi.hThread, pi.hProcess, luna);
+  if (delayed_siglus &&
+      !WaitForSiglusGameWindow(pi.hProcess, pi.dwProcessId, 20000)) {
+    fprintf(stderr, "Siglus 保护壳初始化/游戏窗口等待超时\n");
+    TerminateProcess(pi.hProcess, 1);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return 1;
+  }
 
-  // 注入前/Resume 前失败（rc==1）时游戏仍处挂起：强制结束，避免留下僵死挂起进程。
-  // rc==2（超时但已 Resume）游戏已在跑，不 terminate 交给用户。rc==0 正常退出，游戏自然运行。
-  if (rc == 1) {
+  // 复用 attach 同一套编排；普通 launch 的 resume_thread=pi.hThread（注入后放行），
+  // Siglus 已正常运行故为 nullptr；hold_process 让 --hold 挂到游戏退出。
+  const int rc = RunInjection(pi.hProcess, pi.dwProcessId, dll_path, wait_ms,
+                              hold, delayed_siglus ? nullptr : pi.hThread,
+                              pi.hProcess, luna);
+
+  // 普通早注入在注入前/Resume 前失败（rc==1）时游戏仍处挂起：强制结束，避免留下僵死
+  // 挂起进程。Siglus 延迟附着时游戏已经正常运行，hook 失败也交给用户/上层回退处理。
+  // rc==2（超时但已 Resume）游戏已在跑，不 terminate。rc==0 正常退出，游戏自然运行。
+  if (rc == 1 && !delayed_siglus) {
     TerminateProcess(pi.hProcess, 1);
   }
   CloseHandle(pi.hThread);
