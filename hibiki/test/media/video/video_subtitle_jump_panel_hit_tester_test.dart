@@ -262,6 +262,63 @@ void main() {
           reason: 'lookup disabled → no reverse-hit registration');
     });
 
+    testWidgets(
+        'BUG-910 exactOnly: on-glyph tap still switches; skirt blank dismisses',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'first line'),
+        _cue(1, 2000, 3000, 'second line'),
+      ]);
+      final VideoSubtitleListHitTester hitTester = VideoSubtitleListHitTester();
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 420,
+        height: 500,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          onLookupCue: (AudioCue _, int __, Rect ___) {},
+          hitTester: hitTester,
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 420,
+        ),
+      )));
+      await tester.pump();
+
+      final ({Offset globalPoint, int graphemeIndex}) target =
+          _pointForGrapheme(tester, 'second line', 'c');
+
+      // 点在字形正中：exactOnly 也命中 → barrier 切词（用户要的「点在字上换词」保留）。
+      final SubtitleListHit? onGlyph =
+          hitTester.hitTest(target.globalPoint, exactOnly: true);
+      expect(onGlyph, isNotNull, reason: 'exactOnly：点列表字形正中仍命中→切词');
+      expect(onGlyph!.graphemeIndex, target.graphemeIndex);
+
+      // 行首字符左外侧的空白（在默认半字格容差内、在字形盒外的左边距，中间不夹相邻字）：
+      // 默认宽容差会兜底命中最近字符（旧行为，点这里被误判成切词）；exactOnly 必须 miss →
+      // barrier 落回 dismiss（用户要的「点空白关闭」）。
+      final SubtitleListHit? headHit = hitTester
+          .hitTest(_pointForGrapheme(tester, 'second line', 's').globalPoint);
+      expect(headHit, isNotNull);
+      final Rect head = headHit!.charRect;
+      final Offset leftSkirt = head.centerLeft - Offset(head.height * 0.4, 0);
+      final SubtitleListHit? generous = hitTester.hitTest(leftSkirt);
+      // 仅当该布局下左边距确被默认容差兜底命中，才断言 exactOnly 反差（不同 Text 布局下
+      // 左边距可能落在行框外→默认也 miss，此时两者都 null 亦是「点空白关闭」正确行为）。
+      if (generous != null) {
+        expect(hitTester.hitTest(leftSkirt, exactOnly: true), isNull,
+            reason: 'BUG-910：行首左侧空白 exactOnly 必 miss → barrier 关闭浮层续播');
+      }
+    });
+
     testWidgets('unbinds on panel dispose (hidden sidebar)',
         (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();

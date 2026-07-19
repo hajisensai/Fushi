@@ -10,7 +10,9 @@
   - `resolveSubtitleCharHit`（`video_subtitle_overlay.dart`）加 `bool exactOnly=false`：为 true 时只跑第一段精确 `Rect.contains`、**跳过**第二段裙边兜底容差，字形外一律返回 -1。默认 false，查词/悬停命中语义完全不变。
   - `VideoSubtitleHitTester.hitTest` / 绑定实现 `_charHitTest` / `_hitEntryIndexAt` 透传 `exactOnly`。
   - `_onDismissBarrierTap` 改 `_subtitleHitTester.hitTest(globalPos, exactOnly: true)`：点字幕行周围空白 halo → 命中为空 → 落到 `_popNestedPopupAt(0)` 关整栈 + 恢复播放（`shouldResumeAfterLookupDismiss`）；点在字形上仍切词（TODO-758 不回归）；嵌套门控 `shouldSwitchWordOnBarrierTap`（BUG-410）不动；查词胖手指容差（TODO-971）不动。恢复了 BUG-410 备注承诺的「落纯空白正常」。
-  - 仅动 barrier **tap** 一处；hover 换词（`_onDismissBarrierHover:3327`）、Shift 查词（`_triggerShiftLookupAtLastPointer:1243`）仍走宽容差。字幕列表侧栏兜底（`_subtitleListHitTester`）不在本 bug 路径，未改。
+  - hover 换词（`_onDismissBarrierHover`）、Shift 查词（`_triggerShiftLookupAtLastPointer`）仍走宽容差（查词意图）。
+  - **补（用户复诉「半个屏幕远也重查」）**：截图证据——第二次查到的是 **市川(いちかわ)**，画面字幕里根本没有，只在**右侧字幕列表面板**里。`_onDismissBarrierTap` 在底部字幕 miss 后**兜底反查字幕列表** `_subtitleListHitTester`（BUG-874），用的也是宽容差（`subtitleListCharHitFromParagraph` 的半字格裙边）。列表面板占右半屏 = 「半个屏幕远」。点列表想关闭 → 被兜底吃成「切列表里的词」反复重查。故给 `subtitleListCharHitFromParagraph` / `_hitTestRows` / `VideoSubtitleListHitTester.hitTest` 同加 `exactOnly`，barrier 列表兜底也用 `exactOnly: true`——点列表**字形盒外**的行距/边距空白落回 dismiss。
+  - **用户已确认（2026-07-19）**：规则统一为「点在字上换词、点空白关闭」，画面字幕与列表面板同款。列表面板行文本满宽、字挨字，故点列表行的**真实文字**仍切到那个列表词（用户明确接受，且**保留 BUG-874 的列表单击换词**），只有点行距/边距/字形盒外空白才关闭。即当前 exactOnly 实现，无需再移除列表兜底。
   - 提交哈希：（见分支 `worktree-bug-video-subtitle-dismiss-halo` / 本 PR）。
 - **[x] ② 已加自动化测试** — 纯函数行为测试，扩展 `hibiki/test/media/video/subtitle_char_hit_tolerance_test.dart`：
   - `group('BUG-910：exactOnly ...')`：点落字形内 exactOnly 仍命中（切词保留）；字缝 / 描边 halo / 字幕行水平右缘 12px 空白在**默认宽容差命中、exactOnly 下必 -1**（对照断言两路，撤 `exactOnly` 分支即转红）。
