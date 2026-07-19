@@ -8,14 +8,28 @@ import 'dart:convert';
 /// 字符串，解析在消费端做。
 class QbConnectionConfig {
   const QbConnectionConfig({
+    this.backend = backendQbittorrent,
     this.baseUrl = '',
     this.username = '',
     this.password = '',
     this.category = 'hibiki',
+    this.downloadLimitKbps = 0,
+    this.uploadLimitKbps = 0,
+    this.maxConnections = 0,
   });
 
   /// 本应用管理的下载在 qBittorrent 里归入的默认分类名。
   static const String defaultCategory = 'hibiki';
+
+  /// 后端标识：外接 qBittorrent WebUI。
+  static const String backendQbittorrent = 'qbittorrent';
+
+  /// 后端标识：内置 libtorrent 引擎（桌面；见 EmbeddedTorrentHost）。
+  static const String backendEmbedded = 'embedded';
+
+  /// 下载后端（[backendQbittorrent] / [backendEmbedded]）。历史配置无此
+  /// 字段时回退 qb（向后兼容：既有用户行为不变）。
+  final String backend;
 
   /// WebUI 地址（如 `http://127.0.0.1:8080`）；空 = 未配置。
   final String baseUrl;
@@ -29,22 +43,46 @@ class QbConnectionConfig {
   /// 下载归入的 qBittorrent 分类（列种子时也按此过滤，默认 [defaultCategory]）。
   final String category;
 
+  /// 内置引擎全局下载限速（KB/s，0 = 不限）。外接 qb 忽略（qb 自有设置）。
+  final int downloadLimitKbps;
+
+  /// 内置引擎全局上传限速（KB/s，0 = 不限）。
+  final int uploadLimitKbps;
+
+  /// 内置引擎全局最大连接数（0 = 引擎默认）。
+  final int maxConnections;
+
   /// 是否已配置（[baseUrl] 非空）；未配置时下载入队与完成监听均不动作。
-  bool get isConfigured => baseUrl.trim().isNotEmpty;
+  bool get isConfigured =>
+      backend == backendEmbedded || baseUrl.trim().isNotEmpty;
 
   QbConnectionConfig copyWith({
+    String? backend,
     String? baseUrl,
     String? username,
     String? password,
     String? category,
+    int? downloadLimitKbps,
+    int? uploadLimitKbps,
+    int? maxConnections,
   }) {
     return QbConnectionConfig(
+      backend: backend ?? this.backend,
       baseUrl: baseUrl ?? this.baseUrl,
       username: username ?? this.username,
       password: password ?? this.password,
       category: category ?? this.category,
+      downloadLimitKbps: downloadLimitKbps ?? this.downloadLimitKbps,
+      uploadLimitKbps: uploadLimitKbps ?? this.uploadLimitKbps,
+      maxConnections: maxConnections ?? this.maxConnections,
     );
   }
+}
+
+/// JSON 数字字段容错解析为非负 int（null/非数/负数 → 0）。
+int _nonNegInt(Object? value) {
+  final int n = value is num ? value.toInt() : 0;
+  return n < 0 ? 0 : n;
 }
 
 /// 解析偏好里存的 JSON 字符串为 [QbConnectionConfig]。纯函数，容错：
@@ -56,13 +94,20 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
     final dynamic json = jsonDecode(raw);
     if (json is! Map) return null;
     final dynamic category = json['category'];
+    final dynamic backend = json['backend'];
     return QbConnectionConfig(
+      backend: backend == QbConnectionConfig.backendEmbedded
+          ? QbConnectionConfig.backendEmbedded
+          : QbConnectionConfig.backendQbittorrent,
       baseUrl: json['baseUrl'] is String ? json['baseUrl'] as String : '',
       username: json['username'] is String ? json['username'] as String : '',
       password: json['password'] is String ? json['password'] as String : '',
       category: category is String && category.isNotEmpty
           ? category
           : QbConnectionConfig.defaultCategory,
+      downloadLimitKbps: _nonNegInt(json['downloadLimitKbps']),
+      uploadLimitKbps: _nonNegInt(json['uploadLimitKbps']),
+      maxConnections: _nonNegInt(json['maxConnections']),
     );
   } catch (_) {
     return null;
@@ -73,9 +118,13 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
 /// 互逆）。纯函数。
 String encodeQbConnectionConfig(QbConnectionConfig config) {
   return jsonEncode(<String, dynamic>{
+    'backend': config.backend,
     'baseUrl': config.baseUrl,
     'username': config.username,
     'password': config.password,
     'category': config.category,
+    'downloadLimitKbps': config.downloadLimitKbps,
+    'uploadLimitKbps': config.uploadLimitKbps,
+    'maxConnections': config.maxConnections,
   });
 }

@@ -5,6 +5,7 @@
 // 阶段1b：真实下载管线（磁力 → 元数据 → 顺序下载 → 进度 → 完成）+ 本地
 // 做种/测试支撑（make_torrent / connect_peer）+ 边下边播原语
 // （sequential + set_piece_deadline + 首尾 piece 提优）。
+// 阶段3：反吸血支撑（torrent_peers 导出 peer_info、apply_ip_filter 执行封禁）。
 // C ABI 手写（不被 libtorrent 的 BSD 之外任何依赖传染），Dart 侧用 ffigen
 // 从本头文件生成绑定，与 hoshidicts 同一 FFI 范式。
 //
@@ -49,6 +50,14 @@ HT_EXPORT int ht_session_listen_port(void* session);
 // 全局速率上限（字节/秒；<=0 = 不限）。返回 1 成功、0 失败。
 HT_EXPORT int ht_session_set_rate_limits(void* session, int download_bps,
                                          int upload_bps);
+
+// 一次设全局资源限制（用户可调，控制内置引擎占用）：
+// [download_bps]/[upload_bps] 速率上限（字节/秒，<=0 = 不限）；
+// [connections_limit] 全局最大连接数（<=0 = 保持 libtorrent 默认）。
+// 返回 1 成功、0 失败。（速率部分与 ht_session_set_rate_limits 等价，这里
+// 合成一个入口让 app 从配置一次性应用。）
+HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
+                              int connections_limit);
 
 // 添加磁力链接，落盘到 [save_path]；[sequential] 非 0 开顺序下载。
 // 成功 {"ok":true,"id":"<infohash>"}；失败 {"ok":false,"error":"..."}。
@@ -100,6 +109,19 @@ HT_EXPORT int ht_set_piece_deadline(void* session, const char* info_hash,
 // 返回 1 = 已应用、0 = 元数据未就绪（稍后重试）、-1 = 种子不存在。
 HT_EXPORT int ht_apply_first_last_priority(void* session,
                                            const char* info_hash);
+
+// 某种子当前连接的 peer 列表（反吸血判定输入）：
+// {"ok":true,"peers":[{"ip","port","peer_id"(20 字节可打印化，不可打印字节
+// 转 '.'),"client","progress"(peer 自报 0~1，可伪造),"total_upload"(我实际
+// 喂给该 peer 的字节，可信),"total_download","up_speed","down_speed",
+// "remote_interested"}]}
+HT_EXPORT char* ht_torrent_peers(void* session, const char* info_hash);
+
+// 用 CIDR 列表整体重建 session 的 ip_filter（换行分隔，如
+// "1.2.3.0/24\n5.6.7.8/32"；空串 = 清空）。已连接的命中 peer 会被断开，
+// 新连接直接拒绝。封禁真相源在 Dart 侧 AntiLeechEngine（bannedCidrs），
+// 每次全量重建消除增量同步状态。1 成功 0 失败。
+HT_EXPORT int ht_apply_ip_filter(void* session, const char* cidrs);
 
 // 移除种子；[delete_files] 非 0 连已下载数据一起删。1 成功 0 失败。
 HT_EXPORT int ht_remove_torrent(void* session, const char* info_hash,

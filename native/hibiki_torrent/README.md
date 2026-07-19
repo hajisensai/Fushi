@@ -100,13 +100,72 @@ dart run ffigen --config ffigen.yaml
 
 无 libclang 的机器上，已入库的手写绑定与 ffigen 输出等价。
 
-## 尚未做（阶段2 及以后）
+## 阶段2/3 已接线（app 侧）
 
-- 未接进 `hibiki/windows/CMakeLists.txt` 的 flutter runner —— 接入前
-  `flutter build windows` 不依赖 vcpkg/libtorrent。阶段2 接
-  `AnimeDownloadService.backendFactory` 全链时一并决定「vcpkg 预装 vs
-  FetchContent vs vendored 预编译」的 app 集成与 DLL 随包方案。
+- **后端选择**：`QbConnectionConfig` 加 `backend` 字段（`qbittorrent` /
+  `embedded`；历史配置无此字段回退 qb）。设置→视频→番剧下载新增后端二选一
+  分段控件，选内置时隐藏 qb 连接字段。
+- **`EmbeddedTorrentBackend implements TorrentBackend`**：分类=保存子目录、
+  magnet/.torrent 文件（http URL 拒绝）、firstLastPiecePrio 在 listTorrents
+  轮询期补应用。`closesSession` 区分 standalone（自持会话）与 app 共享会话。
+- **`EmbeddedTorrentHost`**（app 侧宿主）：拥有常驻引擎 + 单 session，派发
+  短命 `backendView()` 给 `AnimeDownloadService` 每 tick 用（视图 close 不
+  连累会话）。桌面且 DLL 可用时 `AppModel.startAnimeDownloadService` 懒建，
+  DLL 缺失回退 qb。
+- **反吸血（阶段3）**：`ht_torrent_peers` 导出 peer_info、`ht_apply_ip_filter`
+  执行封禁；`EmbeddedTorrentHost.sweepAntiLeech` 每 tick 把所有种子 peer 喂
+  `AntiLeechEngine`，新增封段全量重建 libtorrent ip_filter。服务 tick 加
+  `onTick` 钩子（早于 pending 门控，做种期也封）。ip_filter 生效性有测试
+  验证（封回环段 → 元数据死等；清空 → 秒连）。
+
+## 阶段4 — Windows DLL 随包（已接 flutter runner）
+
+**分布决策：vendored 预编译**（在「vcpkg 预装 / FetchContent 现编 / vendored
+预编译」三选一里选它）。理由：libtorrent 经 vcpkg 首次源码编译约 40min
+（boost+openssl+libtorrent），不能强制每台构建机 / CI 都装 vcpkg 并现编；
+flutter windows 构建也不便注入 vcpkg 工具链文件。故：
+
+1. **产出**：`native/hibiki_torrent/build_windows_dll.ps1 -VcpkgRoot <vcpkg>`
+   编 bridge 并把 4 个运行时 DLL（`hibiki_torrent_ffi` + `torrent-rasterbar`
+   + `libssl-3-x64` + `libcrypto-3-x64`，共 ~11MB）收拢到
+   `prebuilt/windows-x64/`（git 忽略，不入库——repo 不放二进制，构建/发布
+   流程各自现产或从 release 拉取）。
+2. **随包**：`hibiki/windows/CMakeLists.txt` 在 hoshidicts 之后加了
+   **copy-if-present** 块——`prebuilt/windows-x64/*.dll` 存在则 `install` 到
+   `hibiki.exe` 旁，不存在则跳过。因此 `flutter build windows` **不依赖
+   vcpkg/libtorrent**：没跑过产出脚本的机器照常构建，只是 app 运行期
+   `EmbeddedTorrentHost.open` 因 DLL 缺失返回 null → 自动回退外接 qb。
+3. **加载**：`EmbeddedTorrentEngine._openByPlatformDefault` 用
+   `DynamicLibrary.open('hibiki_torrent_ffi.dll')`，DLL 与 exe 同目录即命中；
+   运行时依赖（torrent-rasterbar/ssl/crypto）也在同目录，被隐式加载。
+
+发布流程接入：CI/release workflow 在打 Windows 包前跑一次
+`build_windows_dll.ps1`（需缓存 vcpkg libtorrent，避免每次 40min），或从
+预先发布的 release 资产下载这 4 个 DLL 放进 `prebuilt/windows-x64/`。
+
+## 用户可调资源限制（速率 + 连接数）
+
+`QbConnectionConfig` 加 `downloadLimitKbps` / `uploadLimitKbps`（KB/s，0=不限）
++ `maxConnections`（0=引擎默认）；设置→视频→番剧下载在**选内置引擎时**显示
+三个数字输入。native `ht_apply_limits(download_bps, upload_bps,
+connections_limit)` 一次应用（`connections_limit<=0` 保持 libtorrent 默认，
+不会把"不限"误设成禁连）。`EmbeddedTorrentHost.applyLimits`（KB/s→bps）在
+宿主创建时铺一次、用户改设置时即时重应用（`AppModel.setQbConnectionConfig`）。
+
+## 为什么不支持 wss:// tracker
+
+libtorrent 2.x **无 WebSocket/WebRTC/WebTorrent tracker 能力**（头文件里
+`websocket`/`wss` 零命中）。wss 是浏览器 WebTorrent（WebRTC data channel）
+生态，给 libtorrent 加它等于塞进整套 WebRTC 栈，是另一个量级的项目。番剧
+种子（Nyaa）用标准 `udp://`/`http://` tracker + DHT，不依赖 wss——所以这
+不是"用户用不了"的短板。真实下载走标准 tracker + DHT 即可。
+
+## 尚未做（多平台 + 真机）
+
+- **多平台**（Android/macOS/Linux）：同样走 vendored 预编译 + 各 runner
+  CMake 的 copy-if-present，但需对应工具链编 libtorrent（Android NDK /
+  Xcode / gcc），未在本机验证，另起 job。
 - http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。
-- 反吸血接线（阶段3）：native 补 peer_info 导出，喂 `AntiLeechEngine`，
-  `BanVerdict` 翻成 libtorrent `ip_filter`。
-- 多平台（Android/macOS/Linux）+ CI 依赖获取策略（阶段4）。
+- 反吸血的真实吸血 peer 触发（PCB 进度作弊需伪造进度的 peer；本地 rig 的
+  做种者诚实，自动化只验 ip_filter 执行力 + peer_info 导出 + sweep 不误封，
+  真封禁触发留真机）。

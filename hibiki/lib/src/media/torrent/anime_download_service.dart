@@ -106,10 +106,12 @@ class AnimeDownloadService {
       List<String> videoAbsolutePaths,
     ) importer,
     TorrentBackend Function(QbConnectionConfig config)? backendFactory,
+    void Function()? onTick,
     this.interval = const Duration(seconds: 20),
   })  : _configProvider = configProvider,
         _importer = importer,
-        _backendFactory = backendFactory ?? _defaultBackendFactory;
+        _backendFactory = backendFactory ?? _defaultBackendFactory,
+        _onTick = onTick;
 
   /// 种子在后端里消失（用户手动删除）后，计划保留等待的时长；
   /// 超过（按 [AnimeDownloadPlan.createdAtMs] 判断）标 failed。
@@ -131,6 +133,10 @@ class AnimeDownloadService {
     List<String> videoAbsolutePaths,
   ) _importer;
   final TorrentBackend Function(QbConnectionConfig config) _backendFactory;
+
+  /// 每 tick 起始（早于「无 pending 计划则跳过」判断）无条件跑一次的钩子；
+  /// 内置引擎接反吸血扫描（种子做种期仍需封吸血 peer，不能被 pending 门控）。
+  final void Function()? _onTick;
   final Duration interval;
 
   Timer? _timer;
@@ -214,6 +220,9 @@ class AnimeDownloadService {
   }
 
   Future<void> _tickOnce() async {
+    // 反吸血等后端维护钩子先跑：与是否有等待入库的计划无关（做种期也要封）。
+    _onTick?.call();
+
     final QbConnectionConfig? config = _configProvider();
     if (config == null || !config.isConfigured) return;
 
