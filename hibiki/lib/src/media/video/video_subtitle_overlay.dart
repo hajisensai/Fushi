@@ -173,6 +173,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.fontFamily,
     this.respectAssStyle = false,
+    this.assUserFontScale = 1.0,
     super.key,
   });
 
@@ -276,6 +277,16 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 外观像素级一致（仅行内 \i \b \u \s \c \fs 这些旧就支持的 span 样式照旧生效——那是本开关
   /// 出现前既有行为、不受影响）。
   final bool respectAssStyle;
+
+  /// 尊重 .ass 模式下的**用户字号倍率**（mpv `sub-scale` 同语义，BUG-915）。
+  ///
+  /// 此前 [respectAssStyle] 开时 ASS 绝对字号完全接管、[fontSize] 滑块失效——用户要调
+  /// 大小只能关掉尊重开关（又会失去自带样式，特效字幕塌成叠印乱字）。本倍率乘在 ASS
+  /// 字号换算出的 em 上：页面传「用户字号基准 / 默认 36」，默认基准时 =1.0（完全按作者
+  /// 字号，mpv 平价基线不变），滑块±即整体缩放。只乘字号，不乘描边/阴影/字间距/边距
+  /// （对齐 mpv `sub-scale` 只缩文字的语义）；不含屏幕自适应因子（ASS 路径已按显示区
+  /// 几何缩放，再叠屏幕因子会双重放大）。respectAssStyle 关时不参与（[fontSize] 直用）。
+  final double assUserFontScale;
 
   /// 听力沉浸「模糊态」的高斯模糊 sigma（逻辑像素）。以前是硬编码 8——一个只对默认字号
   /// 36 勉强够用的绝对值（8/36≈0.22×字宽），用户把字幕字号调大后同样的 8px 相对字形就
@@ -657,8 +668,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
         // 位置（\pos 或 \an，即 ASS 副字幕）的组遵自带位置；纯 SRT 副字幕（anchor / pos 皆空）
         // 无位置信息才在 [_positionCueGroup] 里回退置顶（翻译参考，避让主字幕底部）。
-        final List<(String, List<AudioCue>)> groups =
-            _groupMainCuesByPosition(cues);
+        //
+        // respectAssStyle 关 = **纯字幕模式**（asbplayer 语义，BUG-915）：不但样式统一，
+        // 位置/层/边距也统一——全部 cue 折进**一个**底部组（副字幕仍置顶），并按文本去重
+        // （KFX/多层特效把一句拆成多条同时事件，样式被统一后只剩裸文本拷贝，同位叠印成
+        // 乱字——正是「样式不尊重、位置却尊重」的半吊子语义的病根；文本互异的堆叠分行）。
+        final List<(String, List<AudioCue>)> groups = widget.respectAssStyle
+            ? _groupMainCuesByPosition(cues)
+            : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))];
 
         final List<(String, Widget)> positioned = <(String, Widget)>[
           for (final (String key, List<AudioCue> group) in groups)
@@ -717,6 +734,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       clipper: _AssClipClipper(clip: clip, videoW: videoW, videoH: videoH),
       child: child,
     );
+  }
+
+  /// 纯字幕模式（respectAssStyle 关，BUG-915）：按 `text` 去重、保留发现顺序。KFX/
+  /// 多层卡拉 OK 的同句多层拷贝（样式统一后内容全同）只渲染一条；文本互异的保留（由
+  /// 单组竖排堆叠、不叠印）。respectAssStyle 开不走本路径（层语义由分组键承载）。
+  List<AudioCue> _uniqueByText(List<AudioCue> cues) {
+    final Set<String> seen = <String>{};
+    return <AudioCue>[
+      for (final AudioCue cue in cues)
+        if (seen.add(cue.text)) cue,
+    ];
   }
 
   /// TODO-1341：把主字幕活动集按「有效定位」（\pos 分数 + 锚点，或纯锚点）分组，保留发现
@@ -966,7 +994,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // （\pos 或 \an，即 ASS 副字幕）遵其自带位置（各遵自带位置，消除「副字幕总被拽到顶部」的
     // 降级）；纯 SRT 副字幕（anchor / pos 皆空、无位置信息）才回退强制置顶（翻译参考，避让主
     // 字幕底部，与历史一致）。
-    final SubtitleMarkup? ownMarkup = cues.first.markup;
+    // 纯字幕模式（respectAssStyle 关，BUG-915）：位置语义整体归零——\pos / \an / MarginV /
+    // \move 全不参与，主字幕恒底部居中基线、副字幕恒置顶（asbplayer 语义）。ownMarkup 置
+    // null 让下游 ownPos / ownAnchor / posMarkup / margins 全走「无位置信息」分支，零特例。
+    final SubtitleMarkup? ownMarkup =
+        widget.respectAssStyle ? cues.first.markup : null;
     // 副字幕默认置顶（翻译参考，避让主字幕底部对白）；但若它自带**非底部**位置——\pos，或
     // \an 顶部 / 中部（作者本就把它放在别处，如顶部歌词 / 招牌 / 中部注释）——则遵其自带位置，
     // 不再硬拽到顶（消除「副字幕总被降级到顶部」）。自带底部 / 无位置的副字幕（纯 SRT、\an2
@@ -1640,10 +1672,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             : _fontWeight(widget.fontWeight));
     final bool baseItalic = respect && (cue?.italic ?? false);
     // ASS 字号 → em：先按 PlayRes 占比缩放，再按字体 cell/em 系数校准
-    // （libass REAL_DIM 语义，见 [_assFontSizeToEm]），最后夹上限。
+    // （libass REAL_DIM 语义，见 [_assFontSizeToEm]），再乘用户字号倍率
+    // （[VideoSubtitleOverlay.assUserFontScale]，mpv sub-scale 语义，BUG-915），最后夹上限。
     final double baseFontSize = cueFontPx != null
-        ? _scaleAssFontSize(_assFontSizeToEm(
-            cueFontPx * assFontScale, baseFontFamily, baseWeight, baseItalic))
+        ? _scaleAssFontSize(_assFontSizeToEm(cueFontPx * assFontScale,
+                baseFontFamily, baseWeight, baseItalic) *
+            widget.assUserFontScale)
         : widget.fontSize;
 
     final TextStyle base = TextStyle(
@@ -1706,10 +1740,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       fontSize: span.fontSizePx != null
           ? (respect
               ? _scaleAssFontSize(_assFontSizeToEm(
-                  span.fontSizePx! * assFontScale,
-                  spanFontFamily ?? baseFontFamily,
-                  span.bold ? FontWeight.bold : baseWeight,
-                  span.italic || baseItalic))
+                      span.fontSizePx! * assFontScale,
+                      spanFontFamily ?? baseFontFamily,
+                      span.bold ? FontWeight.bold : baseWeight,
+                      span.italic || baseItalic) *
+                  widget.assUserFontScale)
               : span.fontSizePx!)
           : base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),

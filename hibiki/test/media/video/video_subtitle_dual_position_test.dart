@@ -70,11 +70,13 @@ void main() {
       expect(c.activeCues.map((AudioCue e) => e.text).toList(),
           <String>['上', '下']);
 
-      await _pump(tester, VideoSubtitleOverlay(controller: c));
+      // BUG-903：ASS 定位现属「尊重 .ass」语义（respectAssStyle 关=纯字幕模式恒底部）。
+      await _pump(
+          tester, VideoSubtitleOverlay(controller: c, respectAssStyle: true));
 
-      // 默认统一外观：每字单层 Text（Niratan 软投影），两条都在屏 → 各 1 个。
-      expect(find.text('上'), findsOneWidget);
-      expect(find.text('下'), findsOneWidget);
+      // 尊重 .ass（BUG-903 起定位属尊重语义）：每字 stroke+fill 两层 Text → 各 2 个。
+      expect(find.text('上'), findsNWidgets(2));
+      expect(find.text('下'), findsNWidgets(2));
 
       final Rect overlayRect =
           tester.getRect(find.byType(VideoSubtitleOverlay));
@@ -101,7 +103,9 @@ void main() {
 
       // 位置 2500：currentCue 为其一。
       c.debugUpdateCueForPosition(2500);
-      await _pump(tester, VideoSubtitleOverlay(controller: c));
+      // BUG-903：ASS 定位现属「尊重 .ass」语义（respectAssStyle 关=纯字幕模式恒底部）。
+      await _pump(
+          tester, VideoSubtitleOverlay(controller: c, respectAssStyle: true));
       final Rect r1 = tester.getRect(find.byType(VideoSubtitleOverlay));
       final double top1 = tester.getCenter(find.text('上').first).dy;
       final double bottom1 = tester.getCenter(find.text('下').first).dy;
@@ -165,7 +169,9 @@ void main() {
             start: 2000, end: 8000),
       ]);
       c.debugUpdateCueForPosition(3000);
-      await _pump(tester, VideoSubtitleOverlay(controller: c));
+      // BUG-903：ASS 定位现属「尊重 .ass」语义（respectAssStyle 关=纯字幕模式恒底部）。
+      await _pump(
+          tester, VideoSubtitleOverlay(controller: c, respectAssStyle: true));
       final Rect overlayRect =
           tester.getRect(find.byType(VideoSubtitleOverlay));
       expect(tester.getCenter(find.text('一').first).dy,
