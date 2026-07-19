@@ -69,9 +69,13 @@ class VideoWatchTracker {
         addStat,
     required Future<void> Function(String bookUid) markCompleted,
     Future<void> Function(String dateKey, int hour, int deltaMs)? addHourly,
+    FutureOr<void> Function(String title, String bookUid, String dateKey,
+            int timestampMs, int durationMs, int subtitleChars)?
+        recordActivity,
   })  : _addStat = addStat,
         _markCompleted = markCompleted,
-        _addHourly = addHourly;
+        _addHourly = addHourly,
+        _recordActivity = recordActivity;
 
   final String title;
   final String bookUid;
@@ -82,6 +86,12 @@ class VideoWatchTracker {
   final Future<void> Function(String dateKey, int hour, int deltaMs)?
       _addHourly;
 
+  /// v49：一次观看 session（attach→stop 生命周期）结束时写一条精确时刻的活动事件，
+  /// 喂首页 Activity 时间轴。与按 60s tick 落库的 [_addStat] 不同——那会一坐产生几十
+  /// 行噪声，故活动事件在 session 累积后**只落一行**（总时长 + 总字幕字数）。
+  final FutureOr<void> Function(String title, String bookUid, String dateKey,
+      int timestampMs, int durationMs, int subtitleChars)? _recordActivity;
+
   static const Duration _interval = Duration(seconds: 60);
 
   VideoPlaybackSource? _source;
@@ -89,6 +99,11 @@ class VideoWatchTracker {
   DateTime? _tickStart;
   final Set<int> _countedIndices = <int>{};
   bool _completed = false;
+
+  /// v49 session 累积：本次观看的净观看时长（[_flush] 里过滤挂起后累加）与字幕字数，
+  /// [stop] 时聚合成一条活动事件后清零（幂等：二次 stop 见 0 不重复写）。
+  int _sessionWatchMs = 0;
+  int _sessionChars = 0;
 
   @visibleForTesting
   int debugSubtitleChars = 0;
@@ -113,6 +128,21 @@ class VideoWatchTracker {
     _timer?.cancel();
     _timer = null;
     _tickStart = null;
+    // v49：session 结束落一条活动事件（有净观看时长才记）。清零保证幂等——
+    // dispose 与进程退出路径可能各调一次 stop，第二次见 0 不重复写。
+    final int ms = _sessionWatchMs;
+    if (ms > 0 && _recordActivity != null) {
+      final int chars = _sessionChars;
+      _sessionWatchMs = 0;
+      _sessionChars = 0;
+      final DateTime now = DateTime.now();
+      try {
+        await _recordActivity(title, bookUid, _dateKey(now),
+            now.millisecondsSinceEpoch, ms, chars);
+      } catch (e, st) {
+        ErrorLogService.instance.log('VideoWatchTracker.recordActivity', e, st);
+      }
+    }
   }
 
   /// 换集：清空字幕去重集（新集字幕从头计），完成标记不变（按整本书）。
@@ -135,6 +165,7 @@ class VideoWatchTracker {
       final int chars = text.runes.length;
       if (chars > 0) {
         debugSubtitleChars += chars;
+        _sessionChars += chars;
         unawaited(Future<void>.value(
             _addStat(title, _dateKey(DateTime.now()), chars, 0)));
       }
@@ -164,6 +195,7 @@ class VideoWatchTracker {
           await _addHourly?.call(dateKey, hour, ms);
           // 逐桶配各自 dateKey：跨午夜正确归两天。
           await _addStat(title, dateKey, 0, ms);
+          _sessionWatchMs += ms; // v49 session 累积（净观看时长，已过挂起守卫）。
         }
       }
 

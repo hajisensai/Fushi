@@ -1197,6 +1197,18 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         charsRead: charsRead,
         timeMs: elapsedMs,
       );
+      // v49：同一 session 追加一条精确时刻的活动事件，喂首页 Activity 时间轴
+      // （按天统计表只有每日总量，无法还原「几小时前 · 本次多久」）。
+      await appModel.database.addActivityEvent(
+        eventType: kActivityRead,
+        mediaType: kActivityMediaBook,
+        title: title,
+        mediaKey: widget.bookKey,
+        dateKey: dateKey,
+        timestampMs: now.millisecondsSinceEpoch,
+        durationMs: elapsedMs,
+        charsDelta: charsRead,
+      );
     } catch (e, stack) {
       // fail-open：本次统计增量丢弃（计数器已清零，不会重复累加），补 debugPrint +
       // ErrorLogService.log 使 DB 写异常线上可诊断。

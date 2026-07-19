@@ -10,6 +10,7 @@ import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 
@@ -189,6 +190,7 @@ class EpubImporter {
         }
       }
 
+      final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
       insertedKey = await db.insertEpubBook(
         EpubBooksCompanion.insert(
           bookKey: bookKey,
@@ -203,12 +205,30 @@ class EpubImporter {
           chapterCount: book.chapters.length,
           chaptersJson: chaptersJson,
           tocJson: tocJson != null ? Value(tocJson) : const Value.absent(),
-          importedAt: DateTime.now().millisecondsSinceEpoch,
+          importedAt: importedAtMs,
           // TODO-817 M1b：扫描器入库时回填来源库 id；手动导入 sourceId==null
           // → Value.absent() 落 NULL（向后兼容）。
           sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
         ),
       );
+
+      // v49：导入一本书写一条「added」活动事件，喂首页 Activity 时间轴。放用户导入
+      // 管线（本方法），云同步/备份 MERGE 直接插行不经此路 → 不刷屏。best-effort，
+      // 记账失败不影响书已导入。
+      try {
+        await db.addActivityEvent(
+          eventType: kActivityAdded,
+          mediaType: kActivityMediaBook,
+          title: storedTitle,
+          mediaKey: bookKey,
+          dateKey: HibikiTimeFormat.dayKey(
+              DateTime.fromMillisecondsSinceEpoch(importedAtMs)),
+          timestampMs: importedAtMs,
+        );
+      } catch (e) {
+        ErrorLogService.instance
+            .log('EpubImporter.addActivityEvent', e, StackTrace.current);
+      }
 
       return insertedKey;
     } catch (e) {

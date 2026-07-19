@@ -11,8 +11,6 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/pages/implementations/stat_shared.dart';
-import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
@@ -212,9 +210,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
 
-  /// 每日阅读字数（dateKey → charactersRead 之和），驱动顶部概览的阅读热力图
-  /// （GitHub 式）。与折叠映射同批 [_loadShelfMaps] 预取。
-  Map<String, int> _readingCharsByDay = const <String, int>{};
   RemoteBookClient? _remoteBookClient;
 
   /// 正在下载中的远端书（key = book.title）。值为进度分数 0..1；收到首个
@@ -535,15 +530,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _epubImportedAtByKey = <String, int>{
       for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
     };
-    // 每日阅读字数聚合（dateKey → sum charactersRead），供顶部阅读热力图。
-    final List<ReadingStatisticRow> readingRows =
-        await appModel.database.getAllReadingStatistics();
-    final Map<String, int> readingCharsByDay = <String, int>{};
-    for (final ReadingStatisticRow r in readingRows) {
-      readingCharsByDay[r.dateKey] =
-          (readingCharsByDay[r.dateKey] ?? 0) + r.charactersRead;
-    }
-    _readingCharsByDay = readingCharsByDay;
     _completedBookKeys = await appModel.database.getCompletedEpubBookKeys();
     _memberSortIndex = memberSortIndex;
     _collectionsById = <int, MediaCollectionRow>{
@@ -758,216 +744,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final List<SrtBook> srtBooks =
         ref.watch(srtBooksProvider).valueOrNull ?? const [];
     return _buildBodyWithSrtBooks(books, srtBooks, remoteSnapshot);
-  }
-
-  /// UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页）。
-  ///
-  /// 数据边界（诚实外显）：hero = 在读（0<position<duration）EPUB-backed 书中
-  /// 「最后阅读时间」（[bookLastReadAtProvider]，即 reader_positions.updatedAt）
-  /// 最新者，显示「已读 x%」；无候选整块只剩统计。BUG-777：旧实现取列表第一本
-  /// 在读书，但列表序 = getAllEpubBooks 的 importedAt 倒序，选中的是「最近导入」
-  /// 而非「最近阅读」的书。
-  ///
-  /// BUG-804：[progressBooks] 必须是**未按 srt 过滤的全量 EPUB-backed 列表**
-  /// （`hibikiBooksProvider` 全部行，含有声书——EPUB 正文 + SRT 字幕同 bookKey）。
-  /// 旧实现只喂 srt 过滤后的 `epubBooks`，有声书虽有进度与 lastReadAt 却被整类
-  /// 排除，读了有声书回书架「继续阅读」永不更新。过滤到纯 EPUB 只为主网格卡
-  /// 去重（有声书渲染成 SRT 卡），与 hero/统计无关。
-  ///
-  /// 统计 = 总数（[libraryTotal] = 纯 EPUB 卡 + SRT 卡，有声书计一次）/ 在读 /
-  /// 读完（后两格按 EPUB-backed 进度；纯字幕无 EPUB 正文的书无进度维度，跳过）。
-  /// 宽 >=720 并排、窄屏堆叠。
-  Widget _buildShelfOverviewSection(
-    List<MediaItem> progressBooks,
-    int libraryTotal,
-  ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final ShelfProgressTally<MediaItem> tally = tallyShelfProgress<MediaItem>(
-      progressBooks,
-      (MediaItem item) => item.position,
-      (MediaItem item) => item.duration,
-      isCompleted: (MediaItem item) {
-        final String? key = _parseBookKey(item.mediaIdentifier);
-        return key != null && _completedBookKeys.contains(key);
-      },
-    );
-    final MediaItem? hero = mostRecentlyReadCandidate(
-      tally.inProgress,
-      (MediaItem item) =>
-          _lastReadAtByBookKey[_parseBookKey(item.mediaIdentifier)] ?? 0,
-    );
-    final Widget stats = _buildReadingHeatmapCard(tokens);
-    final Widget? heroCard =
-        hero == null ? null : _buildContinueReadingHero(hero, tokens);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.card,
-        tokens.spacing.gap,
-        tokens.spacing.card,
-        0,
-      ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          if (heroCard == null) return stats;
-          final bool wide = constraints.maxWidth >= 720;
-          if (wide) {
-            // IntrinsicHeight 必须有：SliverToBoxAdapter 下主轴无界，裸
-            // Row(stretch) 会强制无限高崩溃（与视频页同一根因，对抗审查确认）。
-            return IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(flex: 3, child: heroCard),
-                  SizedBox(width: tokens.spacing.gap + 4),
-                  Expanded(flex: 2, child: stats),
-                ],
-              ),
-            );
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              heroCard,
-              SizedBox(height: tokens.spacing.gap),
-              stats,
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  /// 继续阅读 hero：封面缩略 + 标题 + 已读 % 。整卡点击开书。
-  Widget _buildContinueReadingHero(MediaItem hero, HibikiDesignTokens tokens) {
-    final int percent = hero.duration > 0
-        ? ((hero.position / hero.duration) * 100).clamp(0, 100).round()
-        : 0;
-    return HibikiCard(
-      key: const ValueKey<String>('reader_shelf_continue_hero'),
-      focusId: const HibikiFocusId('reader-shelf-continue-hero'),
-      onTap: () async {
-        final MediaSource source = hero.getMediaSource(appModel: appModel);
-        await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
-      },
-      child: Row(
-        children: <Widget>[
-          ClipRRect(
-            borderRadius: HibikiBorderRadius.card,
-            child: SizedBox(
-              width: 56,
-              height: 84,
-              child: FadeInImage(
-                imageErrorBuilder: (_, __, ___) =>
-                    _coverPlaceholderIcon(Icons.menu_book_outlined),
-                placeholder: MemoryImage(kTransparentImage),
-                image: mediaSource.getDisplayThumbnailFromMediaItem(
-                  appModel: appModel,
-                  item: hero,
-                ),
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap + 4),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(t.book_continue_reading, style: tokens.type.sectionLabel),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  hero.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.listTitle,
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  t.book_read_progress(percent: percent),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.metadata,
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          Icon(
-            Icons.play_circle_filled,
-            size: 36,
-            color: tokens.surfaces.primary,
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 顶部阅读活动热力图卡（GitHub 式贡献图）：按每日阅读字数 [_readingCharsByDay]
-  /// 铺数周方格。可点**标题**打开完整阅读统计页；点某天格子弹气泡看当日阅读字数；
-  /// 数据超首屏时热力图右上出现翻页箭头看更早历史。取代旧的「总数/在读/读完」三格
-  /// 状态计数——那是状态而非统计（用户反馈），热力图直观展示阅读活跃度。
-  Widget _buildReadingHeatmapCard(HibikiDesignTokens tokens) {
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        color: tokens.surfaces.group,
-        shape: const RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.card,
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.gap + 4),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            _buildStatHeatmapTitle(
-              tokens,
-              t.reading_activity,
-              _openReadingStatistics,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            StatContributionHeatmap(
-              valueByDateKey: _readingCharsByDay,
-              now: DateTime.now(),
-              baseColor: tokens.surfaces.primary,
-              emptyColor: tokens.surfaces.card,
-              valueLabel: (String dateKey, int chars) =>
-                  '${formatStatHeatmapDay(dateKey)} · ${formatStatChars(chars)}',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 热力图卡可点标题：文字 + 尾随小箭头，点击打开对应统计页（取代旧的整卡 onTap，
-  /// 好把格子点击让给「查看每日数值」）。
-  Widget _buildStatHeatmapTitle(
-    HibikiDesignTokens tokens,
-    String label,
-    VoidCallback onOpen,
-  ) {
-    return InkWell(
-      onTap: onOpen,
-      borderRadius: const BorderRadius.all(Radius.circular(8)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(label, style: tokens.type.sectionLabel),
-            const SizedBox(width: 2),
-            Icon(
-              Icons.chevron_right,
-              size: 16,
-              color: tokens.type.sectionLabel.color,
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildBodyWithSrtBooks(
@@ -1224,19 +1000,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             ),
             slivers: [
               SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-              // UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页，用户
-              // 拍板「书架也要有」）。空库隐藏；统计按未过滤全量描述整库。
-              // BUG-804：hero/在读统计喂**未过滤的全量 EPUB-backed `books`**（含
-              // 有声书），不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续
-              // 阅读」永不更新。libraryTotal 仍按可见卡数（纯 EPUB + SRT）计，
-              // 有声书渲染成单张 SRT 卡只计一次。
-              if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: _buildShelfOverviewSection(
-                    books,
-                    epubBooks.length + srtBooks.length,
-                  ),
-                ),
               // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
               // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
               // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频不再进书架

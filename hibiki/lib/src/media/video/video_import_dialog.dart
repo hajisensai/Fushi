@@ -343,6 +343,13 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         await widget.repo.updateCover(firstUid, coverPath);
       }
 
+      // v49：手动选/拖入 m3u8 播放列表也是用户明示导入，整本只记 1 条 added 活动
+      // 事件（title=合集名=m3u8 文件名、mediaKey=首集 uid）。
+      await widget.repo.recordVideoImportActivity(
+        bookUid: firstUid,
+        title: p.basenameWithoutExtension(m3u8Path),
+      );
+
       if (!mounted) return;
       debugPrint(
         '[hibiki-drop] [video-import] importedPlaylist collection='
@@ -430,6 +437,12 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       if (coverPath != null) {
         await widget.repo.updateCover(firstUid, coverPath);
       }
+      // v49：一个多集播放列表只记 1 条 added 活动事件（title=合集名、mediaKey=首集
+      // uid），绝不每集一条——避免刷屏（约束2）。
+      await widget.repo.recordVideoImportActivity(
+        bookUid: firstUid,
+        title: group.series,
+      );
       return firstUid;
     }
     final VideoEpisode only = group.episodes.first;
@@ -444,6 +457,11 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       coverPath: Value<String?>(coverPath),
       importedAt: Value(DateTime.now()),
     ));
+    // v49：文件夹扫描里的单集视频，记一条 added 活动事件。
+    await widget.repo.recordVideoImportActivity(
+      bookUid: bookUid,
+      title: p.basenameWithoutExtension(only.path),
+    );
     return bookUid;
   }
 
@@ -511,6 +529,13 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         ));
       }
 
+      // v49：用户明示导入单个视频成功 → 记一条 added 活动事件（喂首页 Activity
+      // 时间轴）。best-effort（方法内吞异常只 log），不影响视频已导入。
+      await widget.repo.recordVideoImportActivity(
+        bookUid: bookUid,
+        title: p.basenameWithoutExtension(videoPath),
+      );
+
       if (!mounted) return;
       debugPrint(
         '[hibiki-drop] [video-import] imported bookUid=$bookUid '
@@ -574,6 +599,9 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         coverPath: Value<String?>(coverPath),
         importedAt: Value(DateTime.now()),
       ));
+      // v49：用户明示导入流媒体成功 → 记一条 added 活动事件（title=解析出的流标题）。
+      await widget.repo
+          .recordVideoImportActivity(bookUid: bookUid, title: title);
       if (!mounted) return;
       debugPrint(
         '[hibiki-drop] [video-import] importedStream bookUid=$bookUid '

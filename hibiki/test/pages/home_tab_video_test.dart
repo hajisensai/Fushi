@@ -9,10 +9,11 @@ import 'package:hibiki/src/pages/implementations/home_page.dart';
 /// DB；此处验证它的「生效」= tab 的出现/位置。
 void main() {
   group('homeActiveTabs', () {
-    test('关闭实验视频：无视频 tab，顺序为 书架→词典→texthooker→设置', () {
+    test('关闭实验视频：无视频 tab，顺序为 首页→书架→词典→texthooker→设置', () {
       final List<HomeTab> tabs =
           homeActiveTabs(videoEnabled: false, texthookerEnabled: true);
       expect(tabs, <HomeTab>[
+        HomeTab.home,
         HomeTab.books,
         HomeTab.dictionaries,
         HomeTab.texthooker,
@@ -21,10 +22,11 @@ void main() {
       expect(tabs.contains(HomeTab.video), isFalse);
     });
 
-    test('开启实验视频：视频 tab 出现，顺序为 书架→视频→词典→texthooker→设置', () {
+    test('开启实验视频：视频 tab 出现，顺序为 首页→书架→视频→词典→texthooker→设置', () {
       final List<HomeTab> tabs =
           homeActiveTabs(videoEnabled: true, texthookerEnabled: true);
       expect(tabs, <HomeTab>[
+        HomeTab.home,
         HomeTab.books,
         HomeTab.video,
         HomeTab.dictionaries,
