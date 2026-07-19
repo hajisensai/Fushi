@@ -290,9 +290,8 @@ void main() {
       await store.save(_plan());
       await buildService(config: () => null).tick();
       await buildService(
-              config: () => const QbConnectionConfig(
-                  backend: QbConnectionConfig.backendQbittorrent))
-          .tick();
+          config: () => const QbConnectionConfig(
+              backend: QbConnectionConfig.backendQbittorrent)).tick();
       expect(qb.factoryCalls, 0);
       expect(importCalls, isEmpty);
     });
