@@ -989,6 +989,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
 
+  /// BUG-939：`_subtitleMenuSources` 已成功枚举时对应的本地视频路径。字幕轨枚举
+  /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
+  /// 用缓存渲染，不再每次重跑 ffprobe 显加载条、也不再把已枚举出的字幕轨先清空重来
+  /// （用户报「字幕轨每次都要加载、明明没可加载的地方；之前有的字幕还会消失要等」）。
+  /// null=尚未为当前视频枚举 / 已失效（换视频、导入新字幕档）→ 下次打开重新枚举。
+  String? _subtitleMenuSourcesPath;
+
   /// 当前视频是否有内封章节（TODO-424）：控制条章节入口按钮的显隐门控。章节列表是
   /// [VideoPlayerController.refreshChapters] open 后**异步**填充的，故缓存这个布尔并由
   /// [_onControllerChaptersChanged] 监听 controller 通知刷新——章节就绪后触发一次
@@ -2596,6 +2603,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _missingResource = false;
       _missingRow = null;
       _currentVideoPath = videoPath;
+      // BUG-939：换了视频源（含换集）→ 上一视频的字幕轨枚举缓存作废，清空并复位加载态
+      // + 缓存 key，避免面板停留在「字幕」分类时残留上一集的字幕轨行，下次打开按新路径重枚举。
+      if (clipExportSourceChanged) {
+        _subtitleMenuSources = const <SubtitleSource>[];
+        _subtitleMenuLoading = false;
+        _subtitleMenuSourcesPath = null;
+      }
       // externalSubtitlePath 即持久化值：外挂路径 / `embedded:<n>` / `off:`（显式关闭
       // 哨兵，TODO-818）都按原样写进 _currentSubtitleSource 供菜单高亮。内嵌自动加载
       // （externalSubtitlePath==null）时当前选中由 _currentSubtitleSource 保留（菜单
