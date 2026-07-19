@@ -26,13 +26,21 @@ import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 
-/// 独立 texthooker tab：实时展示 WebSocket 收到的文本行，逐词查词 + 挖词。
+/// texthooker 捕获工作台：实时展示 WebSocket 收到的文本行，逐词查词 + 挖词。
 ///
 /// 订阅单例 [TexthookerService]（ChangeNotifier）实时刷新文本行；每行经日语分词
 /// 成可点 span，点击后经 [DictionaryPageMixin.pushNestedPopup] 弹查词浮层，挖词
 /// 复用 mixin 的 Anki 逻辑。
 class TexthookerPage extends ConsumerStatefulWidget {
-  const TexthookerPage({super.key});
+  const TexthookerPage({
+    super.key,
+    this.embedded = false,
+    this.onShowLibrary,
+  });
+
+  /// 嵌入 [HomeGamePage] 时不再创建第二层 Scaffold/AppBar。
+  final bool embedded;
+  final VoidCallback? onShowLibrary;
 
   @override
   ConsumerState<TexthookerPage> createState() => _TexthookerPageState();
@@ -601,6 +609,25 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   Widget build(BuildContext context) {
     final List<String> lines = TexthookerService.instance.lines;
+    if (widget.embedded) {
+      return Column(
+        children: <Widget>[
+          HibikiPageHeader(
+            title: t.game_capture_workbench,
+            subtitle: t.game_capture_description,
+            leading: widget.onShowLibrary == null
+                ? null
+                : IconButton(
+                    tooltip: t.game_back_to_library,
+                    onPressed: widget.onShowLibrary,
+                    icon: const Icon(Icons.arrow_back),
+                  ),
+            actions: _buildEmbeddedActions(context),
+          ),
+          Expanded(child: _buildMonitorBody(context, lines)),
+        ],
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(t.texthooker),
@@ -618,9 +645,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             ),
           if (Platform.isWindows)
             IconButton(
-              // galgame 引擎-hook：Hibiki 拉起游戏 exe 并早注入（KiriKiriZ 等启动即建音频
-              // 设备的引擎必须走此路，见 docs/specs/galgame-mining）。文案暂用中文占位。
-              tooltip: '拉起 galgame（引擎-hook 音频）',
+              tooltip: t.game_launch_and_capture,
               icon: const Icon(Icons.rocket_launch_outlined),
               onPressed: _launchGalgameEngineHook,
             ),
@@ -631,26 +656,55 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
         ],
       ),
-      body: Stack(
-        children: <Widget>[
-          Column(
-            children: <Widget>[
-              _buildExperimentalBanner(context),
-              if (_externalWindowMode) _buildExternalWindowBar(context),
-              Expanded(
-                child: ListView.builder(
-                  controller: _scroll,
-                  padding: const EdgeInsets.all(12),
-                  itemCount: lines.length,
-                  itemBuilder: (BuildContext context, int i) =>
-                      _TexthookerLine(text: lines[i], onWordTap: _onWordTap),
-                ),
-              ),
-            ],
+      body: _buildMonitorBody(context, lines),
+    );
+  }
+
+  List<Widget> _buildEmbeddedActions(BuildContext context) => <Widget>[
+        if (Platform.isWindows)
+          HibikiIconButton(
+            icon: Icons.crop_free,
+            tooltip: t.external_window_mining,
+            label: t.external_window_mining,
+            enabledColor: _externalWindowMode
+                ? Theme.of(context).colorScheme.primary
+                : null,
+            onTap: _toggleExternalWindowMode,
           ),
-          ..._buildPopups(context),
-        ],
-      ),
+        if (Platform.isWindows)
+          HibikiIconButton(
+            icon: Icons.rocket_launch_outlined,
+            tooltip: t.game_launch_and_capture,
+            label: t.game_launch_and_capture,
+            onTap: _launchGalgameEngineHook,
+          ),
+        HibikiIconButton(
+          icon: Icons.delete_outline,
+          tooltip: t.clear,
+          onTap: TexthookerService.instance.clear,
+        ),
+      ];
+
+  Widget _buildMonitorBody(BuildContext context, List<String> lines) {
+    return Stack(
+      children: <Widget>[
+        Column(
+          children: <Widget>[
+            _buildExperimentalBanner(context),
+            if (_externalWindowMode) _buildExternalWindowBar(context),
+            Expanded(
+              child: ListView.builder(
+                controller: _scroll,
+                padding: const EdgeInsets.all(12),
+                itemCount: lines.length,
+                itemBuilder: (BuildContext context, int i) =>
+                    _TexthookerLine(text: lines[i], onWordTap: _onWordTap),
+              ),
+            ),
+          ],
+        ),
+        ..._buildPopups(context),
+      ],
     );
   }
 

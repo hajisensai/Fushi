@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 保活机制的行为验证（配 home_tab_keepalive_guard_test.dart 的源码守卫）：
 ///
-/// HomePage.buildBody 用「Offstage 保活（books/video）+ KeyedSubtree 按需（其余 tab）」
+/// HomePage.buildBody 用「Offstage 保活（books/video/games）+ KeyedSubtree 按需」
 /// 消除「切回 tab 重新联网加载远端」。HomePage 本身在 headless 测试无法挂载（AppModel
 /// 未初始化），故这里用**同构 stub** 复刻 buildBody 的结构，直接断言不变式：
 ///   - 保活 tab 切走再切回 State 存活、initState **只跑一次**（不会重拉远端）；
@@ -32,6 +32,11 @@ void main() {
     expect(initCounts['B'], 1);
     expect(initCounts['A'], 1, reason: 'A 被 Offstage 保活，切走时 State 不销毁');
 
+    // 游戏工作台 G 同样保活，切去其它 tab 不得停止 Hook 会话。
+    controller.select('G');
+    await tester.pump();
+    expect(initCounts['G'], 1);
+
     // 切回保活 tab A：A 的 initState **不再跑**——这正是「切回不重新加载远端」的证据。
     controller.select('A');
     await tester.pump();
@@ -52,6 +57,7 @@ void main() {
     // 全程保活 tab A / B 的 init 计数不因来回切而增长。
     expect(initCounts['A'], 1);
     expect(initCounts['B'], 1);
+    expect(initCounts['G'], 1);
   });
 }
 
@@ -64,7 +70,7 @@ class _TabShellController extends ChangeNotifier {
   }
 }
 
-/// 与 HomePage.buildBody 同构：A/B 为保活 tab（Offstage + 惰性），C 为按需 tab
+/// 与 HomePage.buildBody 同构：A/B/G 为保活 tab（Offstage + 惰性），C 为按需 tab
 /// （KeyedSubtree，只在可见时构建）。
 class _KeepAliveTabShell extends StatefulWidget {
   const _KeepAliveTabShell({required this.controller, required this.onInit});
@@ -77,7 +83,7 @@ class _KeepAliveTabShell extends StatefulWidget {
 }
 
 class _KeepAliveTabShellState extends State<_KeepAliveTabShell> {
-  static const Set<String> _keepAliveTabs = <String>{'A', 'B'};
+  static const Set<String> _keepAliveTabs = <String>{'A', 'B', 'G'};
   final Set<String> _visited = <String>{};
 
   @override

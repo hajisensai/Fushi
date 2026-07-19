@@ -38,4 +38,34 @@ void main() {
     await tester.pump();
     expect(find.textContaining('行'), findsNothing);
   });
+
+  testWidgets('embedded mode reuses parent scaffold and exposes back action',
+      (WidgetTester tester) async {
+    bool returned = false;
+    TexthookerService.instance.appendLine('嵌入行');
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: TexthookerPage(
+              embedded: true,
+              onShowLibrary: () => returned = true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(Scaffold), findsOneWidget,
+        reason: '嵌入工作台不得再创建第二层 Scaffold');
+    expect(find.byType(AppBar), findsNothing);
+    expect(find.textContaining('嵌'), findsWidgets);
+
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    expect(returned, isTrue);
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pump();
+    expect(find.textContaining('嵌'), findsNothing);
+  });
 }

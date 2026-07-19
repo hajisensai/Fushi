@@ -1933,5 +1933,19 @@
   "interconnect_section_client": "连接到其他设备",
   "interconnect_moved_note": "互联连接与本机服务器设置在「Hibiki 互联」分类",
   "settings_search_hint": "搜索设置",
-  "settings_search_no_results": "没有匹配的设置项"
+  "settings_search_no_results": "没有匹配的设置项",
+  "nav_game": "游戏",
+  "game_home_subtitle": "游戏库与捕获监控",
+  "game_library": "游戏库",
+  "game_capture_workbench": "捕获工作台",
+  "game_capture_ready": "捕获工具已就绪",
+  "game_capture_active": "正在捕获",
+  "game_capture_description": "启动或绑定游戏，并监控文本、语音、画面与 Anki 出卡。",
+  "game_captured_lines": "已捕获台词",
+  "game_waiting_for_text": "等待文本",
+  "game_library_empty_title": "尚未添加游戏",
+  "game_library_empty_body": "游戏配置与兼容性记录会显示在这里；当前可先使用捕获工作台。",
+  "game_open_capture_workspace": "打开捕获工作台",
+  "game_back_to_library": "返回游戏库",
+  "game_launch_and_capture": "启动并捕获"
 }

@@ -1933,5 +1933,19 @@
   "interconnect_section_client": "Connect to other devices",
   "interconnect_moved_note": "Connection & server settings are in the Hibiki Interconnect category",
   "settings_search_hint": "Search settings",
-  "settings_search_no_results": "No matching settings"
+  "settings_search_no_results": "No matching settings",
+  "nav_game": "Game",
+  "game_home_subtitle": "Game library and capture monitoring",
+  "game_library": "Game library",
+  "game_capture_workbench": "Capture workspace",
+  "game_capture_ready": "Capture tools ready",
+  "game_capture_active": "Capture is active",
+  "game_capture_description": "Launch or attach a game, then monitor text, voice, screenshots and Anki output.",
+  "game_captured_lines": "Captured lines",
+  "game_waiting_for_text": "Waiting for text",
+  "game_library_empty_title": "No games added yet",
+  "game_library_empty_body": "Game profiles and compatibility history will appear here. Capture tools are already available.",
+  "game_open_capture_workspace": "Open capture workspace",
+  "game_back_to_library": "Back to game library",
+  "game_launch_and_capture": "Launch and capture"
 }

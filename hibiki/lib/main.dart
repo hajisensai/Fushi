@@ -1471,8 +1471,6 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                                         // 「视频」tab 已毕业为常驻（原
                                         // experimentalVideoEnabled 恒 true）。
                                         videoEnabled: true,
-                                        texthookerEnabled:
-                                            appModel.texthookerEnabled,
                                       ),
                                     ),
                               child: child!,
