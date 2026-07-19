@@ -72,18 +72,8 @@ SubtitleWaveformPainter _zoomPainter(WidgetTester tester) {
   return paint.painter! as SubtitleWaveformPainter;
 }
 
-/// 波形 [CustomPaint] 的高度（= 当前 _waveHeight）。拖调节把手后应随之变化。
-double _waveHeight(WidgetTester tester) {
-  final CustomPaint paint = tester
-      .widgetList<CustomPaint>(find.descendant(
-        of: find.byType(SubtitleWaveformZoomView),
-        matching: find.byType(CustomPaint),
-      ))
-      .firstWhere((CustomPaint w) => w.painter is SubtitleWaveformPainter);
-  return paint.size.height;
-}
-
-const Key _resizeKey = ValueKey<String>('subtitle-waveform-resize-handle');
+const Key _stripKey = ValueKey<String>('subtitle-waveform-cue-strip');
+const Key _hscrollKey = ValueKey<String>('subtitle-waveform-hscroll');
 
 const Key _openKey = ValueKey<String>('subtitle-waveform-open-button');
 
@@ -628,25 +618,36 @@ void main() {
     expect(seeks.single, lessThan(1000)); // 近左缘 → 时间很小
   });
 
-  testWidgets('resize handle: dragging up shrinks the waveform height',
+  testWidgets(
+      'cue strip drag: sliding the subtitle strip right commits a larger delay',
       (WidgetTester tester) async {
+    final List<int> committed = <int>[];
     await tester.pumpWidget(_host(
-      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
-      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      cues: <AudioCue>[
+        _cue(1000, 2000, text: 'ohayou'),
+        _cue(30000, 31000, text: 'konbanwa'),
+      ],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5, -50, -12],
+      onCommitDelay: (int ms) async => committed.add(ms),
     ));
     await tester.pumpAndSettle();
     await _openZoom(tester);
-    expect(find.byKey(_resizeKey), findsOneWidget);
-    final double before = _waveHeight(tester);
-    // 向上拖把手 → 波形变矮（露出下方控件，短屏不必滚整弹窗）。
-    await tester.drag(find.byKey(_resizeKey), const Offset(0, -80));
+    expect(_zoomPainter(tester).previewDelayMs, 0);
+    expect(find.byKey(_stripKey), findsOneWidget);
+    // 字幕条铺满整条时间轴、宽超视口，其几何中心在视口外；改用视口内、落在底部字幕条
+    // 高度上的点起拖（波形容器上部是波形区、底部 56px 是字幕条）。
+    final Rect box = tester.getRect(find.byKey(_hscrollKey));
+    final Offset start = Offset(box.left + 60, box.bottom - 18);
+    await tester.dragFrom(start, const Offset(140, 0));
     await tester.pumpAndSettle();
-    final double after = _waveHeight(tester);
-    expect(after, lessThan(before));
-    expect(after, greaterThanOrEqualTo(96.0)); // 不低于 _minWaveHeight
+    // 向右拖字幕块 → 延迟增大（正），松手落盘一次。
+    expect(committed, hasLength(1));
+    expect(committed.single, greaterThan(0));
+    expect(_zoomPainter(tester).previewDelayMs, committed.single);
   });
 
-  testWidgets('resize handle: dragging down grows the waveform height',
+  testWidgets(
+      'cue strip drag: read-only (no onCommitDelay) => no align-drag gesture',
       (WidgetTester tester) async {
     await tester.pumpWidget(_host(
       cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
@@ -654,11 +655,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
     await _openZoom(tester);
-    final double before = _waveHeight(tester);
-    await tester.drag(find.byKey(_resizeKey), const Offset(0, 120));
-    await tester.pumpAndSettle();
-    final double after = _waveHeight(tester);
-    expect(after, greaterThan(before));
-    expect(after, lessThanOrEqualTo(360.0)); // 不高于 _maxWaveHeight
+    // 无 onCommitDelay：字幕条只读，不挂对轴拖动手势（key 不存在）。
+    expect(find.byKey(_stripKey), findsNothing);
   });
 }
