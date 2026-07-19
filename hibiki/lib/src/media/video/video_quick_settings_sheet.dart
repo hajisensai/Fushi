@@ -373,6 +373,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 避免每个拖动 tick 都写 DB。null = 未在拖动。
   int? _delayDragMs;
 
+  /// 数值输入框「边键入边生效」的去抖（BUG-918）：用户报「不按回车不更新、backspace 没反应」——
+  /// 原字段只有 [onSubmitted]（Enter）提交、无 [onChanged]，故键入 / 退格不落到延迟上，观感像
+  /// 「输入框没反应」。改为键入即去抖提交（350ms 停手后 [_commitDelay]，与滑条 / ± 按钮同源、
+  /// 实时生效），不再要求按回车。去抖避免逐键提交把字幕来回跳 + OSD 刷屏；[syncField:false]
+  /// 不回写文本，保住光标与退格（回写会把光标弹到行尾、下一次退格看似「没反应」）。
+  Timer? _delayInputDebounce;
+
   /// 一键自动对轴进行中（TODO-701）：按钮显示 spinner 并禁用，防重入。
   bool _autoAligning = false;
 
@@ -397,10 +404,24 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   @override
   void dispose() {
+    _delayInputDebounce?.cancel();
     _rawConfController.dispose();
     _delayController.dispose();
     _danmakuBlockRulesController.dispose();
     super.dispose();
+  }
+
+  /// 数值输入框 [onChanged]：解析成功就去抖 350ms 后走 [_commitDelay] 实时生效（BUG-918），
+  /// 无需回车。空 / 只有正负号等未成形输入解析失败 → 不提交、不回退（保留用户正在敲的中间态）。
+  void _onDelayInputChanged(String raw) {
+    _delayInputDebounce?.cancel();
+    final int? parsed = int.tryParse(raw.trim());
+    if (parsed == null) return;
+    _delayInputDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      // syncField:false —— 键入过程中不回写输入框文本，避免光标弹到行尾、退格错位。
+      _commitDelay(parsed, syncField: false);
+    });
   }
 
   @override
@@ -893,6 +914,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 即时回调 [VideoQuickSettingsSheet.onSetDelay] 落盘+实时生效。
   Future<void> _commitDelay(int next, {bool syncField = true}) async {
     final int clamped = next.clamp(-_subtitleSyncClampMs, _subtitleSyncClampMs);
+    // 权威提交（syncField，即滑条 / ± 按钮 / 回车回写文本的路径）取消任何待触发的键入去抖，
+    // 免得一个陈旧的键入值在按钮点击后姗姗迟到覆盖掉刚设的值（BUG-918）。
+    if (syncField) _delayInputDebounce?.cancel();
     setState(() => _delayMs = clamped);
     if (syncField && _delayController.text != '$clamped') {
       _delayController.text = '$clamped';
@@ -1048,7 +1072,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             labelText: t.video_setting_subtitle_sync_input,
             keyboardType: const TextInputType.numberWithOptions(signed: true),
             textInputAction: TextInputAction.done,
+            // 边键入边去抖生效（BUG-918）：不再要求按回车，退格 / 键入实时反映到延迟。
+            onChanged: _onDelayInputChanged,
             onSubmitted: (String raw) {
+              _delayInputDebounce?.cancel();
               final int? parsed = int.tryParse(raw.trim());
               if (parsed == null) {
                 // 非法输入 → 回退到当前权威值，不改延迟。
