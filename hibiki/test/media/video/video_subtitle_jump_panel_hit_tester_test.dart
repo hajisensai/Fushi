@@ -97,19 +97,57 @@ void main() {
         expect(starts[i], ends[i - 1]);
       }
     });
+  });
 
-    test('offset maps back to the containing grapheme index', () {
-      const String text = 'a👩‍💻b';
-      final List<int> starts = subtitleGraphemeStartOffsets(text);
-      final List<int> ends = subtitleGraphemeEndOffsets(text);
-      expect(subtitleGraphemeIndexForOffset(0, starts, ends), 0);
-      // 落在中间 ZWJ 表情内部任一 UTF-16 偏移都归第 2 个 grapheme（下标 1）。
-      expect(subtitleGraphemeIndexForOffset(2, starts, ends), 1);
-      expect(subtitleGraphemeIndexForOffset(ends.last, starts, ends), 2);
+  // BUG-916：字幕列表 Shift-悬停 / tap 查词系统性「偏左一格」——指向「護」查出「の」、
+  // 指「ね」查出「衛」。病根是旧命中走 getPositionForOffset 的 caret 边界：点落在某字**左
+  // 半格**时返回该字左边界（= 与左邻字之间的边界），旧映射又把边界一律归**左**字。改由
+  // resolveSubtitleListGraphemeHit 对**每个字的真实渲染盒**做几何命中（先 contains 后半字宽
+  // 最近），对真实像素点判定、不再塌陷左右半格。下面用合成矩形钉死这条纯函数判定。
+  group('resolveSubtitleListGraphemeHit (BUG-916 几何命中，不偏左)', () {
+    // 三个连续方块字：[0,30) [30,60) [60,90)，行高 40。
+    final List<Rect> rects = <Rect>[
+      const Rect.fromLTWH(0, 0, 30, 40),
+      const Rect.fromLTWH(30, 0, 30, 40),
+      const Rect.fromLTWH(60, 0, 30, 40),
+    ];
+
+    test('点在字内 → 该字（含左半格，回归病根）', () {
+      // 中间字**左半格** x=35：旧实现查到左邻字（下标 0），几何命中返回本字（下标 1）。
+      expect(resolveSubtitleListGraphemeHit(rects, const Offset(35, 20)), 1,
+          reason: '指向某字左半格必须命中该字本身，不偏左一格');
+      // 中间字右半格 x=55 同样命中本字。
+      expect(resolveSubtitleListGraphemeHit(rects, const Offset(55, 20)), 1);
+      // 首字左端、末字右端。
+      expect(resolveSubtitleListGraphemeHit(rects, const Offset(2, 20)), 0);
+      expect(resolveSubtitleListGraphemeHit(rects, const Offset(88, 20)), 2);
     });
 
-    test('empty text → -1', () {
-      expect(subtitleGraphemeIndexForOffset(0, <int>[], <int>[]), -1);
+    test('两字边界点归右侧字（Rect.contains 含左边、排右边）', () {
+      expect(resolveSubtitleListGraphemeHit(rects, const Offset(30, 20)), 1);
+      expect(resolveSubtitleListGraphemeHit(rects, const Offset(60, 20)), 2);
+    });
+
+    test('字缝 / 越界：半字宽容差内取最近，超出返回 -1', () {
+      // 右端外 10px（< 半字宽 15）→ 命中末字。
+      expect(resolveSubtitleListGraphemeHit(rects, const Offset(100, 20)), 2);
+      // 远在右侧（> 半字宽）→ 无命中。
+      expect(resolveSubtitleListGraphemeHit(rects, const Offset(140, 20)), -1);
+    });
+
+    test('空矩形跳过；全空 → -1', () {
+      expect(
+        resolveSubtitleListGraphemeHit(
+          <Rect>[Rect.zero, const Rect.fromLTWH(30, 0, 30, 40)],
+          const Offset(40, 20),
+        ),
+        1,
+      );
+      expect(
+          resolveSubtitleListGraphemeHit(
+              <Rect>[Rect.zero, Rect.zero], const Offset(5, 5)),
+          -1);
+      expect(resolveSubtitleListGraphemeHit(<Rect>[], const Offset(5, 5)), -1);
     });
   });
 

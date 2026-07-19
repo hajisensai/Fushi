@@ -85,6 +85,51 @@ Rect _unionRects(Iterable<Rect> rects) {
   );
 }
 
+/// 同 [_tapPointForGrapheme]，但取目标字的**左 1/4** 处（而非中心）。BUG-916：中心点会被
+/// getPositionForOffset 丸到字的**末尾**边界、旧命中偶然对；左半格才暴露「偏左一格」病根。
+({Offset tapPoint, int graphemeIndex}) _leftPortionPointForGrapheme(
+  WidgetTester tester,
+  String sentence,
+  String targetGrapheme,
+) {
+  final Finder textFinder = find.text(sentence, findRichText: true);
+  expect(textFinder, findsOneWidget);
+  final BuildContext context = tester.element(textFinder);
+  final RichText richText = tester.widget<RichText>(textFinder);
+  final RenderBox textBox = tester.renderObject<RenderBox>(textFinder);
+  final List<String> graphemes = sentence.characters.toList(growable: false);
+  final int targetIndex = graphemes.indexOf(targetGrapheme);
+  expect(targetIndex, greaterThanOrEqualTo(0), reason: targetGrapheme);
+  int startOffset = 0;
+  for (int i = 0; i < targetIndex; i++) {
+    startOffset += graphemes[i].length;
+  }
+  final int endOffset = startOffset + graphemes[targetIndex].length;
+  final TextPainter painter = TextPainter(
+    text: richText.text,
+    textAlign: TextAlign.start,
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: null,
+    ellipsis: null,
+  )..layout(maxWidth: textBox.size.width);
+  final Rect targetRect = _unionRects(
+    painter
+        .getBoxesForSelection(
+          TextSelection(baseOffset: startOffset, extentOffset: endOffset),
+        )
+        .map((TextBox box) => box.toRect()),
+  );
+  painter.dispose();
+  expect(targetRect, isNot(Rect.zero));
+  final Offset leftPortion =
+      Offset(targetRect.left + targetRect.width * 0.25, targetRect.center.dy);
+  return (
+    tapPoint: textBox.localToGlobal(leftPortion),
+    graphemeIndex: targetIndex,
+  );
+}
+
 int _builtCueTextWidgetCount(WidgetTester tester) {
   return tester.allWidgets.where((Widget widget) {
     if (widget is Text) {
@@ -769,8 +814,12 @@ void main() {
           reason: 'per-character BuildContext capture must stay removed');
       expect(body, contains('RichText('));
       expect(body, contains('TextPainter('));
-      expect(body, contains('getPositionForOffset'));
       expect(body, contains('getBoxesForSelection'));
+      // BUG-916：命中走 grapheme 真实盒的几何反查，不再用 getPositionForOffset 的 caret
+      // 边界（会把某字左右半格塌陷到同一边界、系统性偏左一格）。
+      expect(body, contains('resolveSubtitleListGraphemeHit'));
+      expect(body, isNot(contains('getPositionForOffset(')),
+          reason: 'BUG-916：tap 命中不得再回落 caret 偏移映射');
       expect(body, contains('MediaQuery.textScalerOf(context)'));
       expect(body, contains('Directionality.of(context)'));
       expect(body, contains('constraints.maxWidth'));
@@ -886,6 +935,39 @@ void main() {
       expect(lookupRect!.contains(tapPoint), isTrue,
           reason: 'returned global charRect must contain the actual tap point');
       expect(seeked, isNull, reason: 'tapping text must look up, not seek');
+    });
+
+    testWidgets(
+        'BUG-916: tapping a character\'s LEFT portion looks up THAT character, '
+        'not the one to its left', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      // 全角方块字（视频里的真实场景：の護衛ね…），字宽足够、左半格明显。
+      const String sentence = 'あいうえお';
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+      int? lookupIndex;
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onLookupCue: (AudioCue _, int i, Rect __) => lookupIndex = i,
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      // 点「う」（下标 2）的左 1/4 处：旧实现（caret 偏移映射）会查到「い」（下标 1）。
+      final ({int graphemeIndex, Offset tapPoint}) target =
+          _leftPortionPointForGrapheme(tester, sentence, 'う');
+      await tester.tapAt(target.tapPoint);
+      await tester.pump();
+
+      expect(lookupIndex, target.graphemeIndex,
+          reason: '指向某字左半格必须查该字（BUG-916：原本偏左一格查到左邻字）');
     });
 
     testWidgets(
@@ -1548,10 +1630,12 @@ void main() {
           reason: 'hover 查词门控需读 Shift 键状态');
     });
 
-    // Source guard（BUG-879：「点了不出词」的命中收窄病因）：列表命中盒用 BoxHeightStyle.max
-    // 覆盖整行视觉格 + 半字格容差（`height * 0.5`），tap / hover / barrier 四路共用的两个
-    // 命中 helper 都必须放宽，否则点在行距/字缝落空退 seek。撤修复（回 1px / tight）→ 红。
-    test('BUG-879 source guard: list char hit uses forgiving box + tolerance',
+    // Source guard（BUG-879 命中收窄 + BUG-916 偏左一格）：tap / hover / barrier 三路共用的
+    // 两个命中 helper 都必须①用 BoxHeightStyle.max 覆盖整行视觉格（点在行距 leading 不落空
+    // 退 seek），②走 grapheme 真实盒的几何反查 resolveSubtitleListGraphemeHit（不再用
+    // getPositionForOffset 的 caret 边界，否则某字左半格查到左边一个字）。撤任一 → 红。
+    test(
+        'BUG-879/910 source guard: list char hit uses forgiving box + geometry',
         () {
       final String source =
           File('lib/src/media/video/video_subtitle_jump_panel.dart')
@@ -1564,9 +1648,10 @@ void main() {
       );
       expect(paraHit, contains('BoxHeightStyle.max'),
           reason: 'RenderParagraph 反查须用 BoxHeightStyle.max 覆盖行距 leading');
-      expect(paraHit, contains('localRect.height * 0.5'),
-          reason: '容差须放宽到半字格（不再 1px），点字缝仍命中');
-      expect(paraHit, isNot(contains('inflate(1)')), reason: '旧 1px 容差必须已移除');
+      expect(paraHit, contains('resolveSubtitleListGraphemeHit'),
+          reason: 'BUG-916：须用 grapheme 真实盒几何反查');
+      expect(paraHit, isNot(contains('getPositionForOffset(')),
+          reason: 'BUG-916：不得再用 caret 偏移映射（偏左一格病根）');
       // tap 路径的 TextPainter 反查。
       final String tapHit = _sourceBetween(
         source,
@@ -1575,8 +1660,10 @@ void main() {
       );
       expect(tapHit, contains('BoxHeightStyle.max'),
           reason: 'tap 命中也须用 BoxHeightStyle.max');
-      expect(tapHit, contains('localRect.height * 0.5'),
-          reason: 'tap 容差同样放宽到半字格');
+      expect(tapHit, contains('resolveSubtitleListGraphemeHit'),
+          reason: 'BUG-916：tap 命中同走 grapheme 真实盒几何反查');
+      expect(tapHit, isNot(contains('getPositionForOffset(')),
+          reason: 'BUG-916：tap 命中不得再用 caret 偏移映射');
     });
   });
 

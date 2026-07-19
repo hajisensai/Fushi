@@ -33,6 +33,51 @@ double subtitleTimestampColumnWidth(double effectiveFontSize, bool hasHours) {
   return scaled < floor ? floor : scaled;
 }
 
+/// 按局部坐标在一行字幕的 grapheme 屏幕矩形里反查命中的字下标（纯函数，可测）。
+///
+/// BUG-916：旧实现走 `TextPainter.getPositionForOffset(point).offset` 取 caret 边界、
+/// 再映射回字下标。但 `getPositionForOffset` 把某字**左半格与右半格的点塌陷到同一条 caret
+/// 边界**（点在字 i 左半 → 返回 `starts[i]`，即字 i 与 i-1 之间的边界），单凭这个偏移量
+/// 无法区分点落在边界哪一侧；旧 `graphemeIndexForOffset` 又把边界一律归给**左边**那个字
+/// （`offset <= starts[i]` 返回 `i-1`），于是指向某字左半时系统性查到**左边一个字**
+/// （视频里指「護」查出「の」、指「ね」查出「衛」）。
+///
+/// 根治：丢弃 caret 偏移这一层，直接用**真实像素点**做几何命中——
+/// 1. 先取包含点的字（[Rect.contains] 含左/上边、排右/下边，故落在两字边界的点归**右侧**
+///    那个字，与「指向某字起笔」的直觉一致）。
+/// 2. miss 则取欧氏距离最近、且在半字宽 / [minTolerance] 容差内的字（兜底 [Wrap] 字缝、
+///    换行首尾的空隙）。垂直用 clamp 距离参与，避免把点归到相邻行的远字。
+///
+/// 空矩形（零宽组合字符等）跳过。无有效矩形或全部超容差返回 -1。
+@visibleForTesting
+int resolveSubtitleListGraphemeHit(
+  List<Rect> graphemeRects,
+  Offset point, {
+  double minTolerance = 4.0,
+}) {
+  for (int i = 0; i < graphemeRects.length; i++) {
+    final Rect r = graphemeRects[i];
+    if (r.isEmpty) continue;
+    if (r.contains(point)) return i;
+  }
+  int bestIndex = -1;
+  double bestDistance = double.infinity;
+  for (int i = 0; i < graphemeRects.length; i++) {
+    final Rect r = graphemeRects[i];
+    if (r.isEmpty) continue;
+    final double dx = point.dx.clamp(r.left, r.right) - point.dx;
+    final double dy = point.dy.clamp(r.top, r.bottom) - point.dy;
+    final double distance = dx * dx + dy * dy;
+    if (distance >= bestDistance) continue;
+    final double tolerance = (r.width / 2).clamp(minTolerance, double.infinity);
+    if (distance <= tolerance * tolerance) {
+      bestDistance = distance;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
 /// 字幕列表行字号缩放档位（BUG-878）。原上限只到 1.3×，用户反馈「字号拉到最大才够用、
 /// 上限不够」，向上扩到 2.0×（1.5 / 1.75 / 2.0 三档）。默认档 [_kDefaultFontScaleIndex]=1
 /// （1.0×）。数组扩容后旧持久化下标仍安全（seed / [_stepFont] 都 clamp 到数组范围）。
@@ -106,22 +151,6 @@ List<int> subtitleGraphemeEndOffsets(String text) {
   return ends;
 }
 
-/// 把 UTF-16 [offset] 映射到 grapheme 下标：落在某 grapheme 区间内即命中该 grapheme，
-/// 落在起点前归第一个、越界归最后一个。[starts]/[ends] 为同源 grapheme 偏移表。
-@visibleForTesting
-int subtitleGraphemeIndexForOffset(
-  int offset,
-  List<int> starts,
-  List<int> ends,
-) {
-  if (starts.isEmpty) return -1;
-  for (int i = 0; i < starts.length; i++) {
-    if (offset <= starts[i]) return i == 0 ? 0 : i - 1;
-    if (offset <= ends[i]) return i;
-  }
-  return starts.length - 1;
-}
-
 Rect _subtitleUnionBoxes(List<TextBox> boxes) {
   if (boxes.isEmpty) return Rect.zero;
   Rect rect = boxes.first.toRect();
@@ -147,26 +176,26 @@ SubtitleListCharHit? subtitleListCharHitFromParagraph(
   final List<int> starts = subtitleGraphemeStartOffsets(text);
   if (starts.isEmpty) return null;
   final List<int> ends = subtitleGraphemeEndOffsets(text);
-  final int offset = paragraph.getPositionForOffset(localPosition).offset;
+  // BUG-916：对**每个 grapheme 的真实渲染盒**做几何命中，不再走 getPositionForOffset 的
+  // caret 边界（后者把某字左右半格塌陷到同一边界、无法区分点在哪侧 → 旧实现系统性偏左一格）。
+  // BUG-879：盒用 BoxHeightStyle.max 覆盖整行视觉格（含 1.25 行高的 leading），点在行距里
+  // 也落在盒内命中，不退 seek。
+  final List<Rect> rects = <Rect>[
+    for (int i = 0; i < starts.length; i++)
+      _subtitleUnionBoxes(
+        paragraph.getBoxesForSelection(
+          TextSelection(baseOffset: starts[i], extentOffset: ends[i]),
+          boxHeightStyle: BoxHeightStyle.max,
+        ),
+      ),
+  ];
   final int graphemeIndex =
-      subtitleGraphemeIndexForOffset(offset, starts, ends);
+      resolveSubtitleListGraphemeHit(rects, localPosition);
   if (graphemeIndex < 0) return null;
-  final int start = starts[graphemeIndex];
-  final int end = ends[graphemeIndex];
-  Rect localRect = _subtitleUnionBoxes(
-    paragraph.getBoxesForSelection(
-      TextSelection(baseOffset: start, extentOffset: end),
-      // BUG-879：盒覆盖整行视觉格（含行距 leading），默认 tight 只贴字形、点在 1.25 行高的
-      // 上下 leading 里就落空 → 退 seek（「点了不出词」的一半病因）。
-      boxHeightStyle: BoxHeightStyle.max,
-    ),
-  );
-  if (localRect.isEmpty) return null;
+  Rect localRect = rects[graphemeIndex];
   if (!localRect.contains(localPosition)) {
-    // BUG-879：容差从 1px 放宽到半个字格（≈ 行高一半，CJK 方块字 ≈ 半字宽），与画面字幕
-    // resolveSubtitleCharHit 的半字宽字缝兜底同量级——点在字缝 / 行距上仍命中最近字符。
-    final double tol = localRect.height * 0.5;
-    if (!localRect.inflate(tol).contains(localPosition)) return null;
+    // 字缝 / 行距上的兜底命中：把返回盒扩到含点，保证 charRect 始终含指针（浮层锚点、
+    // barrier 反查的 contains 判定不落空）。
     localRect = localRect.expandToInclude(
       Rect.fromCenter(center: localPosition, width: 1, height: 1),
     );
@@ -1252,8 +1281,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           required Offset localPosition,
           required Offset globalPosition,
         }) {
-          // BUG-874：grapheme 映射 / 选区盒并集用顶层纯 helper（与 barrier 反查
-          // [subtitleListCharHitFromParagraph] 同源），此处仅 caret 兜底沿用 TextPainter。
+          // BUG-874：grapheme 偏移表用顶层纯 helper（与 barrier 反查
+          // [subtitleListCharHitFromParagraph] 同源）。
           final List<int> starts = subtitleGraphemeStartOffsets(cue.text);
           final List<int> ends = subtitleGraphemeEndOffsets(cue.text);
           if (starts.isEmpty) return null;
@@ -1267,43 +1296,28 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           );
           try {
             painter.layout(maxWidth: maxWidth);
-            final int offset =
-                painter.getPositionForOffset(localPosition).offset;
+            // BUG-916：与 barrier / hover 反查同款——对每个 grapheme 的真实渲染盒做几何命中，
+            // 不再走 getPositionForOffset 的 caret 边界（会把某字左右半格塌陷到同一边界、
+            // 系统性偏左一格）。BUG-879：BoxHeightStyle.max 覆盖整行视觉格，点在行距里也命中。
+            final List<Rect> rects = <Rect>[
+              for (int i = 0; i < starts.length; i++)
+                _subtitleUnionBoxes(
+                  painter.getBoxesForSelection(
+                    TextSelection(baseOffset: starts[i], extentOffset: ends[i]),
+                    boxHeightStyle: BoxHeightStyle.max,
+                  ),
+                ),
+            ];
             final int graphemeIndex =
-                subtitleGraphemeIndexForOffset(offset, starts, ends);
+                resolveSubtitleListGraphemeHit(rects, localPosition);
             if (graphemeIndex < 0) return null;
-            final int start = starts[graphemeIndex];
-            final int end = ends[graphemeIndex];
-            Rect localRect = _subtitleUnionBoxes(
-              painter.getBoxesForSelection(
-                TextSelection(baseOffset: start, extentOffset: end),
-                // BUG-879：盒覆盖整行视觉格（含 1.25 行高的 leading），与 barrier 反查
-                // [subtitleListCharHitFromParagraph] 同款，消除点在行距/字缝落空退 seek。
-                boxHeightStyle: BoxHeightStyle.max,
-              ),
-            );
-            if (localRect.isEmpty) {
-              final Offset caretOffset = painter.getOffsetForCaret(
-                TextPosition(offset: start),
-                Rect.fromLTWH(0, 0, 1, painter.preferredLineHeight),
-              );
-              localRect = Rect.fromLTWH(
-                caretOffset.dx,
-                caretOffset.dy,
-                1,
-                painter.preferredLineHeight,
-              );
-            }
+            Rect localRect = rects[graphemeIndex];
             if (!localRect.contains(localPosition)) {
-              // BUG-879：容差 1px→半字格（≈ 行高一半，CJK ≈ 半字宽），与画面字幕
-              // resolveSubtitleCharHit 的半字宽字缝兜底同量级，点字缝仍命中最近字符。
-              final double tol = localRect.height * 0.5;
-              if (!localRect.inflate(tol).contains(localPosition)) return null;
+              // 字缝 / 行距兜底命中：扩盒含点，保证 charRect 始终含指针。
               localRect = localRect.expandToInclude(
                 Rect.fromCenter(center: localPosition, width: 1, height: 1),
               );
             }
-            if (localRect.isEmpty) return null;
             final Offset globalOrigin = globalPosition - localPosition;
             return (
               graphemeIndex: graphemeIndex,

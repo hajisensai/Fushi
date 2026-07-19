@@ -1,0 +1,8 @@
+## BUG-916 · 视频字幕列表Shift悬停查词偏左一格
+- **报告**：2026-07-19（用户：录屏 `Hibiki 2026-07-19 03-02-42.mp4`）
+- **真实性**：✅ 真 bug。录屏在字幕列表面板 Shift 悬停 / 点字查词，句「もみじは私の護衛ね 人多いし…」逐字验证：指向「護」查出「の」、指向「ね」查出「衛」、指向「衛」查出「護衛」——命中系统性**偏左一格**（多帧一致，光标静止时也偏，非 lag）。根因 `hibiki/lib/src/media/video/video_subtitle_jump_panel.dart:157`（旧 `subtitleGraphemeIndexForOffset`）。
+- **[x] ① 已修复** — 根因：tap 的 `hitAt` 与 hover/barrier 的 `subtitleListCharHitFromParagraph` 都走 `TextPainter/RenderParagraph.getPositionForOffset(point).offset` 取 caret 边界，再经 `subtitleGraphemeIndexForOffset` 映射回字下标。`getPositionForOffset` 把某字**左半格与右半格的点塌陷到同一条 caret 边界**（点在字 i 左半 → 返回 `starts[i]`，即字 i 与 i-1 之间的边界），仅凭偏移量无法区分点落在边界哪侧；旧映射的 `if (offset <= starts[i]) return i-1` 又把边界**一律归左字**。叠加命中盒 `inflate(height*0.5)` 的半字格容差，把左邻字的盒撑进本字、坐实偏左命中。修复：丢弃 caret 偏移这层，新增纯函数 `resolveSubtitleListGraphemeHit`——对**每个 grapheme 的真实渲染盒**（`BoxHeightStyle.max` 覆盖行距 leading）对**真实像素点**做几何命中（先 `Rect.contains` 后半字宽最近兜底）。两条命中 helper 同源改用它，删掉 `subtitleGraphemeIndexForOffset`。提交：<待填>。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/video/video_subtitle_jump_panel_hit_tester_test.dart`：纯函数 `resolveSubtitleListGraphemeHit` 用合成矩形钉死「点某字**左半格**必命中该字本身、不偏左」+ 边界归右字 + 半字宽容差兜底 + 空盒跳过。
+  - `hibiki/test/media/video/video_subtitle_jump_panel_test.dart`：`BUG-916` widget 回归——tap 全角字「う」的**左 1/4** 处必查「う」（旧实现查左邻「い」）；两条 source guard 钉死 tap / hover / barrier 三路命中均走 `resolveSubtitleListGraphemeHit`、不得回落 `getPositionForOffset(`。
+- **备注**：既有 widget 测试全部叩字符**中心**——中心点被 `getPositionForOffset` 丸到字**末尾**边界、旧映射偶然返回正确下标，故这条偏左 bug 一直躲过绿门。新增左半格用例正是补这个盲区。命中盒 `BoxHeightStyle.max`（BUG-879 覆盖行距 leading，「点了不出词」的一半病因）保留，未回退。
