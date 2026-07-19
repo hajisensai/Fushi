@@ -939,6 +939,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 回到读持久化值。避免每次 `onHorizontalDragUpdate` 都写 DB。
   double? _subtitleListWidthDrag;
 
+  /// BUG-930：鼠标是否正悬在字幕列表宽度拖拽把手（[_subtitleListResizeHandle]）上。
+  /// 把手要显 `resizeLeftRight`（左右箭头）光标，但侧栏 [_withSubtitleListCursorReveal]
+  /// 的 `onHover` 每帧经 [_forceRevealOsCursorForPanel] **原生强设** OS 光标为 `basic`
+  /// （箭头，BUG-391 缓解），会盖掉框架为把手下发的 resize 光标 → 调宽光标永远出不来。
+  /// 悬在把手上时置真，让 [_forceRevealOsCursorForPanel] 让位（不再强设 basic），把光标
+  /// 交给把手 MouseRegion 声明的 resize。只被 hover 回调读、不触发重建，故不走 setState。
+  bool _pointerOverSubtitleResizeHandle = false;
+
   /// 剧集列表 push-aside 侧栏可见性（TODO-638）。剧集列表此前是
   /// `showModalBottomSheet`（底部弹层），与其它侧栏（字幕列表 push-aside、设置 /
   /// 倍速等 overlay）显示风格不一致。改成与字幕列表同款的 push-aside 侧栏后，可见性

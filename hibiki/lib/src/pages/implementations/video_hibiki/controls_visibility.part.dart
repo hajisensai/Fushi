@@ -230,6 +230,10 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
   /// `SystemMouseCursors.basic.kind == 'basic'`）。
   void _forceRevealOsCursorForPanel(int device) {
     if (!_isDesktopVideoControls) return;
+    // BUG-930：悬在字幕列表宽度拖拽把手上时**不**原生强设 basic——否则每帧 SetCursor(箭头)
+    // 会盖掉框架为把手下发的 resizeLeftRight，用户永远看不到调宽光标。让位给把手 MouseRegion
+    // 声明的 resize 光标；把手区域几何上就是「已明确要什么光标」，无需本层的残留唤回缓解。
+    if (_pointerOverSubtitleResizeHandle) return;
     SystemChannels.mouseCursor.invokeMethod<void>(
       'activateSystemCursor',
       <String, dynamic>{'device': device, 'kind': 'basic'},
