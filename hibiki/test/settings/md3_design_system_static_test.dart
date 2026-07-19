@@ -670,6 +670,19 @@ void main() {
               'placeholder using surfaceContainerHighest); episode cover art / '
               'media-shelf content, not ordinary page chrome — same reviewed '
               'exception class as series_shelf_card mosaic covers.',
+      // galgame 游戏库页把每个游戏渲染成封面卡片（有 coverPath 用 Image.file，
+      // 否则 surfaceContainerHighest letterbox + 手柄图标占位），点击卡片启动游戏
+      // 进入制卡。卡片外框 Card + 无封面占位面色 surfaceContainerHighest 是游戏
+      // 封面美术 / 媒体书架内容，非普通页面 chrome，同 series_shelf_card 马赛克封面
+      // / media_collection_detail_page 每集封面 / 书架封面豁免类。
+      'lib/src/pages/implementations/games_library_page.dart':
+          'Galgame library renders each game as a cover card (Image.file cover '
+              'or surfaceContainerHighest letterbox + gamepad-icon placeholder '
+              'when no cover); the card frame (Card) and no-cover placeholder '
+              'surface (surfaceContainerHighest) are game cover art / media-shelf '
+              'content, not ordinary page chrome — same reviewed exception class '
+              'as series_shelf_card mosaic covers / media_collection_detail_page '
+              'per-episode covers / reader-shelf book covers.',
       // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
