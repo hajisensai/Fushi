@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 904 条。点号进各自文件。
+> 共 905 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-924](bugs/BUG-924-video-dict-dismiss-shortcut.md) | ✅ | ✅ | 视频词典浮层无法用快捷键关闭·浮层开着时快捷键穿透控制视频 |
 | [BUG-923](bugs/BUG-923-immersive-cursor-lock-button-no-idle-rehide.md) | ✅ | ✅ | 沉浸模式鼠标光标与沉浸退出按钮静止时不隐藏（缺「空闲重隐」路径，除非把鼠标移到别处） |
 | [BUG-922](bugs/BUG-922-scm-landscape-sentence-collapsed.md) | ✅ | ✅ | 制卡·选择句子上下文对话框横屏塌陷只剩选项看不见句子 |
 | [BUG-921](bugs/BUG-921-mining-collection-tag.md) | ✅ | ✅ | 制卡缺少所属合集名标签 |
