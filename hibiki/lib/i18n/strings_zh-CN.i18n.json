@@ -1993,5 +1993,7 @@
   "video_setting_torrent_connections_hint": "0 = 引擎默认",
   "shortcut_action_video_subtitle_delay_increase": "字幕延迟增大",
   "shortcut_action_video_subtitle_delay_decrease": "字幕延迟减小",
-  "shortcut_action_video_open_subtitle_align": "打开字幕波形对轴"
+  "shortcut_action_video_open_subtitle_align": "打开字幕波形对轴",
+  "font_desc_noto_serif_tc": "Google/Adobe 宋体 · 繁中字形优先 · 适合竖排阅读",
+  "custom_fonts_font_roles": "字体用途"
 }
