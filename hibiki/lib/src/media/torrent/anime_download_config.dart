@@ -8,7 +8,7 @@ import 'dart:convert';
 /// 字符串，解析在消费端做。
 class QbConnectionConfig {
   const QbConnectionConfig({
-    this.backend = backendQbittorrent,
+    this.backend = backendAuto,
     this.baseUrl = '',
     this.username = '',
     this.password = '',
@@ -27,9 +27,23 @@ class QbConnectionConfig {
   /// 后端标识：内置 libtorrent 引擎（桌面；见 EmbeddedTorrentHost）。
   static const String backendEmbedded = 'embedded';
 
-  /// 下载后端（[backendQbittorrent] / [backendEmbedded]）。历史配置无此
-  /// 字段时回退 qb（向后兼容：既有用户行为不变）。
+  /// 后端标识：自动（默认，开箱即用）——桌面用内置引擎、移动端外接 qb。
+  /// 用户没显式选过后端时的值。
+  static const String backendAuto = 'auto';
+
+  /// 下载后端（[backendAuto] / [backendQbittorrent] / [backendEmbedded]）。
+  /// 默认 [backendAuto]，按平台解析（见 [resolveBackend]）。历史配置无此字段
+  /// 但配过 qb 地址的，decode 时回退 qb（向后兼容：老用户行为不变）。
   final String backend;
+
+  /// 把 [backendAuto] 解析成具体后端：桌面 → 内置引擎、移动端 → 外接 qb。
+  /// 已显式选定（embedded/qbittorrent）的原样返回。
+  String resolveBackend({required bool isDesktop}) {
+    if (backend == backendAuto) {
+      return isDesktop ? backendEmbedded : backendQbittorrent;
+    }
+    return backend;
+  }
 
   /// WebUI 地址（如 `http://127.0.0.1:8080`）；空 = 未配置。
   final String baseUrl;
@@ -52,9 +66,10 @@ class QbConnectionConfig {
   /// 内置引擎全局最大连接数（0 = 引擎默认）。
   final int maxConnections;
 
-  /// 是否已配置（[baseUrl] 非空）；未配置时下载入队与完成监听均不动作。
+  /// 是否已配置：内置引擎/自动无需连接参数恒为真（桌面开箱即用）；外接 qb
+  /// 要求 [baseUrl] 非空。未配置时下载入队与完成监听均不动作。
   bool get isConfigured =>
-      backend == backendEmbedded || baseUrl.trim().isNotEmpty;
+      backend != backendQbittorrent || baseUrl.trim().isNotEmpty;
 
   QbConnectionConfig copyWith({
     String? backend,
@@ -79,6 +94,25 @@ class QbConnectionConfig {
   }
 }
 
+/// 解析 backend 字段（向后兼容）：
+/// - 显式 `embedded`/`qbittorrent`/`auto` → 原样
+/// - 无字段/未知值：配过 qb 地址（[baseUrl] 非空）→ qbittorrent（老用户不变）；
+///   否则 → auto（新用户默认，按平台解析）。
+String _decodeBackend(Object? raw, String baseUrl) {
+  if (raw == QbConnectionConfig.backendEmbedded) {
+    return QbConnectionConfig.backendEmbedded;
+  }
+  if (raw == QbConnectionConfig.backendQbittorrent) {
+    return QbConnectionConfig.backendQbittorrent;
+  }
+  if (raw == QbConnectionConfig.backendAuto) {
+    return QbConnectionConfig.backendAuto;
+  }
+  return baseUrl.trim().isNotEmpty
+      ? QbConnectionConfig.backendQbittorrent
+      : QbConnectionConfig.backendAuto;
+}
+
 /// JSON 数字字段容错解析为非负 int（null/非数/负数 → 0）。
 int _nonNegInt(Object? value) {
   final int n = value is num ? value.toInt() : 0;
@@ -94,12 +128,11 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
     final dynamic json = jsonDecode(raw);
     if (json is! Map) return null;
     final dynamic category = json['category'];
-    final dynamic backend = json['backend'];
+    final String baseUrl =
+        json['baseUrl'] is String ? json['baseUrl'] as String : '';
     return QbConnectionConfig(
-      backend: backend == QbConnectionConfig.backendEmbedded
-          ? QbConnectionConfig.backendEmbedded
-          : QbConnectionConfig.backendQbittorrent,
-      baseUrl: json['baseUrl'] is String ? json['baseUrl'] as String : '',
+      backend: _decodeBackend(json['backend'], baseUrl),
+      baseUrl: baseUrl,
       username: json['username'] is String ? json['username'] as String : '',
       password: json['password'] is String ? json['password'] as String : '',
       category: category is String && category.isNotEmpty

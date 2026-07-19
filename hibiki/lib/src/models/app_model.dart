@@ -2793,7 +2793,9 @@ class AppModel with ChangeNotifier {
   /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
     final EmbeddedTorrentHost? host = _embeddedTorrentHost;
-    if (config.backend == QbConnectionConfig.backendEmbedded && host != null) {
+    final String backend =
+        config.resolveBackend(isDesktop: _supportsEmbeddedTorrent());
+    if (backend == QbConnectionConfig.backendEmbedded && host != null) {
       return host.backendView();
     }
     return QbTorrentBackend(QBittorrentClient(

@@ -284,10 +284,15 @@ void main() {
       } catch (_) {}
     });
 
-    test('未配置（null 或空 baseUrl）不动作', () async {
+    test('未配置（null 或显式 qb 空 baseUrl）不动作', () async {
+      // 注：默认 auto 在桌面 = 内置引擎 = 已配置（开箱即用）；"未配置"现指
+      // null 或显式选了外接 qb 但没填地址。
       await store.save(_plan());
       await buildService(config: () => null).tick();
-      await buildService(config: () => const QbConnectionConfig()).tick();
+      await buildService(
+              config: () => const QbConnectionConfig(
+                  backend: QbConnectionConfig.backendQbittorrent))
+          .tick();
       expect(qb.factoryCalls, 0);
       expect(importCalls, isEmpty);
     });

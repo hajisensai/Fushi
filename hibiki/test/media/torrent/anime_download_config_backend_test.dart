@@ -4,9 +4,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 
 void main() {
-  test('backend defaults to qbittorrent', () {
+  test('backend defaults to auto (resolves per platform)', () {
     const QbConnectionConfig config = QbConnectionConfig();
-    expect(config.backend, QbConnectionConfig.backendQbittorrent);
+    expect(config.backend, QbConnectionConfig.backendAuto);
+    // 桌面 → 内置引擎（开箱即用）；移动端 → 外接 qb。
+    expect(config.resolveBackend(isDesktop: true),
+        QbConnectionConfig.backendEmbedded);
+    expect(config.resolveBackend(isDesktop: false),
+        QbConnectionConfig.backendQbittorrent);
+  });
+
+  test('explicit backends resolve to themselves regardless of platform', () {
+    const QbConnectionConfig emb =
+        QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);
+    expect(emb.resolveBackend(isDesktop: false),
+        QbConnectionConfig.backendEmbedded);
+    const QbConnectionConfig qb =
+        QbConnectionConfig(backend: QbConnectionConfig.backendQbittorrent);
+    expect(qb.resolveBackend(isDesktop: true),
+        QbConnectionConfig.backendQbittorrent);
+  });
+
+  test('auto round-trips through encode/decode', () {
+    const QbConnectionConfig original = QbConnectionConfig();
+    final QbConnectionConfig decoded =
+        decodeQbConnectionConfig(encodeQbConnectionConfig(original))!;
+    expect(decoded.backend, QbConnectionConfig.backendAuto);
   });
 
   test('legacy JSON without backend field decodes as qbittorrent', () {
@@ -36,16 +59,26 @@ void main() {
     expect(config!.backend, QbConnectionConfig.backendQbittorrent);
   });
 
-  test('isConfigured: embedded needs no url, qb needs a url', () {
-    // 内置引擎无连接参数：恒已配置。
+  test('legacy no backend + no url decodes as auto (new user default)', () {
+    // 全新用户：没配过任何东西 → auto（桌面开箱即用内置引擎）。
+    final QbConnectionConfig decoded = decodeQbConnectionConfig('{}')!;
+    expect(decoded.backend, QbConnectionConfig.backendAuto);
+  });
+
+  test('isConfigured: embedded/auto need no url, explicit qb needs a url', () {
+    // 内置引擎/自动无连接参数：恒已配置（开箱即用）。
     const QbConnectionConfig embedded =
         QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);
     expect(embedded.isConfigured, isTrue);
-    // 外接 qb：URL 空 = 未配置。
-    const QbConnectionConfig qbEmpty = QbConnectionConfig();
+    const QbConnectionConfig auto = QbConnectionConfig();
+    expect(auto.isConfigured, isTrue);
+    // 显式外接 qb：URL 空 = 未配置。
+    const QbConnectionConfig qbEmpty =
+        QbConnectionConfig(backend: QbConnectionConfig.backendQbittorrent);
     expect(qbEmpty.isConfigured, isFalse);
-    const QbConnectionConfig qbSet =
-        QbConnectionConfig(baseUrl: 'http://127.0.0.1:8080');
+    const QbConnectionConfig qbSet = QbConnectionConfig(
+        backend: QbConnectionConfig.backendQbittorrent,
+        baseUrl: 'http://127.0.0.1:8080');
     expect(qbSet.isConfigured, isTrue);
   });
 
