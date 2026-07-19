@@ -14,10 +14,15 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
 #include "voice_hook_ipc.h"
+
+// C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
+// GetFileVersionInfo* 在 version.dll，用 #pragma 就地声明依赖，避免改 CMake（改动集中在本文件）。
+#pragma comment(lib, "version.lib")
 
 // galgame 一键制卡 C 阶段 hook DLL（C.1 注入管线 + C.2 XAudio2/DirectSound 语音捕获）。
 //
@@ -70,7 +75,7 @@ uint8_t* g_clip_base = nullptr;
 // 对同一函数地址只 MH_CreateHook 一次（重复 create 会报 MH_ERROR_ALREADY_CREATED）。
 CRITICAL_SECTION g_cs;
 bool g_cs_ready = false;
-void* g_hooked_fns[16] = {nullptr};
+void* g_hooked_fns[32] = {nullptr};
 int g_hooked_count = 0;
 
 // 首次拿到语音格式的写入闩：多路 CreateSourceVoice 只让第一个写 header 格式字段。
@@ -175,7 +180,7 @@ bool HookFn(void* target, void* detour, void** original) {
     ok = true;
   } else if (MH_CreateHook(target, detour, original) == MH_OK &&
              MH_EnableHook(target) == MH_OK) {
-    if (g_hooked_count < 16) {
+    if (g_hooked_count < 32) {
       g_hooked_fns[g_hooked_count++] = target;
     }
     ok = true;
@@ -854,6 +859,607 @@ bool TryHookKirikiriDecoders() {
   return vorb_done && opus_done;
 }
 
+// ══ C.2d KiriKiriZ 原始语音 OGG 捕获（引擎内部 TVPCreateStream hook）══════════════
+// XAudio2/DirectSound 抓输出、解码器 hook 抓 wuvorbis/wuopus 解码——但 KiriKiriZ 的人声实测三条都
+// 不触发：语音在 voice.xp3 里，播放路径是
+//   storagename("voice/xxx.ogg") → 引擎内部 TVPCreateStream(name,mode) → 已解密 OGG 流 → OggVorbis 解码
+// 故正确 hook 点 = 引擎内部 TVPCreateStream（KrkrExtract 的 GetTVPCreateStreamCall 定位的同一函数）。
+// 它对每次文件访问都带 storagename(ttstr) + 一个能读出**解密后原始字节**的 tTJSBinaryStream。过滤
+// storagename 含 "voice" 或后缀 .ogg/.opus → 拿到"当前播放那句"的原始 OGG，落盘供 host 按时间戳与文
+// 本环配对。参考实现照搬自本机 KrkrExtract（CodeAna.cpp KrkrZ 分支 / tp_stub.*）。
+//
+// 调用约定关键事实（纠正任务描述）：KrkrExtract 的 KrkrZ 分支反汇编显示内部 TVPCreateStream 是 MSVC
+// __fastcall(ecx=name, edx=mode)（stub 里 mov edx,[ebp+C]; mov ecx,[ebp+8]; call）。任务描述里
+// "eax=name / BCB fastcall"其实对应 Krkr2(BCB) 分支（mov eax,[ebp+8]）。otomeki=KrkrZ，故此处按
+// MSVC __fastcall 实现；stub 扫描同时识别 eax(BCB) 变体并置诊断位后安全跳过（避免用错约定崩游戏）。
+
+#if defined(_M_IX86)
+
+// ── tjs 基础对象布局（x86；tjs_char=wchar_t=UTF-16LE，全部照 KrkrExtract tp_stub.h）──────────────
+// ttstr 对象首 4 字节即 tTJSVariantString*（偏移+0）；空串时该指针为 NULL。
+#pragma pack(push, 4)
+struct TjsVariantString {
+  int32_t ref_count;         // +0
+  wchar_t* long_string;      // +4  堆上长字符串（非空优先用它）
+  wchar_t short_string[22];  // +8  内联短字符串（TJS_VS_SHORT_LEN+1）
+  int32_t length;            // +52
+  uint32_t heap_flag;        // +56
+  uint32_t hint;             // +60
+};  // sizeof = 64
+#pragma pack(pop)
+
+// tTJSBinaryStream 抽象类 vtable。TJS_INTF_METHOD = __cdecl（不是 __stdcall，x86 下 this 走栈）。
+// 槽序：0=Seek 1=Read 2=Write 3=SetEndOfStorage 4=GetSize。只用 Seek/Read/GetSize，Write/
+// SetEndOfStorage 必须声明占位以把 GetSize 对齐到槽 4。
+struct TjsBinaryStream {
+  virtual uint64_t __cdecl Seek(int64_t offset, int32_t whence) = 0;             // 0：返回新绝对位置
+  virtual uint32_t __cdecl Read(void* buffer, uint32_t read_size) = 0;          // 1：返回实际读到字节
+  virtual uint32_t __cdecl Write(const void* buffer, uint32_t write_size) = 0;  // 2：占位
+  virtual void __cdecl SetEndOfStorage() = 0;                                   // 3：占位
+  virtual uint64_t __cdecl GetSize() = 0;                                       // 4：返回总字节数
+};
+
+// iTVPFunctionExporter（tp_stub.h:4593），TJS_INTF_METHOD = __cdecl。只用第二个方法按 narrow 串查函数。
+struct ITVPFunctionExporter {
+  virtual bool __cdecl QueryFunctions(const wchar_t** name, void** function, uint32_t count) = 0;
+  virtual bool __cdecl QueryFunctionsByNarrowString(const char** name, void** function,
+                                                    uint32_t count) = 0;
+};
+
+// exe 导出的 TVPGetFunctionExporter（无参 __stdcall，返回 exporter 单例）。
+typedef ITVPFunctionExporter*(__stdcall* TVPGetFunctionExporter_t)();
+// 内部 TVPCreateStream：KrkrZ = MSVC __fastcall(ecx=name(const ttstr&), edx=mode)，返回 tTJSBinaryStream*。
+typedef TjsBinaryStream*(__fastcall* TVPCreateStream_t)(const void* name, uint32_t mode);
+
+TVPCreateStream_t g_orig_TVPCreateStream = nullptr;
+
+// exe 直取 / V2Link 两条拿 exporter 的路径共享的一次性安装闩（InterlockedCompareExchange）。
+volatile LONG g_voice_installed = 0;
+
+constexpr uint32_t kMaxVoiceDumpBytes = 32u * 1024u * 1024u;  // 单个语音/OGG 落盘上限（防御性）
+
+// E8 rel32 的调用目标 = p + 5 + *(int32*)(p+1)（照 my.h GetCallDestination）。
+inline uint8_t* GetCallDest(const uint8_t* p) {
+  const int32_t rel = *reinterpret_cast<const int32_t*>(p + 1);
+  return const_cast<uint8_t*>(p) + 5 + rel;
+}
+
+// 紧凑 x86 指令长度解码器（覆盖 MSVC SEH 序言指令集，够定位 CallIStream 内首个 call；未知返回 0 使
+// 调用方安全放弃定位而非误步）。替代 KrkrExtract 的完整 LDE GetOpCodeSize32，避免移植整套反汇编器。
+uint32_t InsnLen32(const uint8_t* p) {
+  uint32_t i = 0;
+  for (;;) {  // 前缀（段/操作数/地址/rep/lock）逐个吃掉。
+    const uint8_t b = p[i];
+    if (b == 0x66 || b == 0x67 || b == 0xF0 || b == 0xF2 || b == 0xF3 || b == 0x2E ||
+        b == 0x36 || b == 0x3E || b == 0x26 || b == 0x64 || b == 0x65) {
+      i++;
+      continue;
+    }
+    break;
+  }
+  const uint8_t op = p[i++];
+  auto modrm_len = [&]() -> uint32_t {
+    const uint8_t m = p[i];
+    const uint8_t mod = static_cast<uint8_t>(m >> 6);
+    const uint8_t rm = static_cast<uint8_t>(m & 7);
+    uint32_t len = 1;  // modrm 本身
+    if (mod != 3) {
+      if (rm == 4) {  // SIB
+        const uint8_t sib = p[i + 1];
+        len += 1;
+        if (mod == 0 && (sib & 7) == 5) len += 4;  // disp32
+      } else if (mod == 0 && rm == 5) {
+        len += 4;  // disp32
+      }
+      if (mod == 1) {
+        len += 1;  // disp8
+      } else if (mod == 2) {
+        len += 4;  // disp32
+      }
+    }
+    return len;
+  };
+  switch (op) {
+    case 0x90: case 0xC3: case 0xC9: case 0xCC: case 0xF4:
+      return i;
+    case 0xC2:
+      return i + 2;  // ret imm16
+    case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
+    case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4E: case 0x4F:
+    case 0x50: case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:
+    case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5E: case 0x5F:
+    case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: case 0x97:
+      return i;  // push/pop/inc/dec/xchg-eax reg
+    case 0x6A:
+      return i + 1;  // push imm8
+    case 0x68:
+      return i + 4;  // push imm32
+    case 0xEB:
+      return i + 1;  // jmp rel8
+    case 0xE8: case 0xE9:
+      return i + 4;  // call/jmp rel32
+    case 0xA0: case 0xA1: case 0xA2: case 0xA3:
+      return i + 4;  // mov al/eax,[moffs32] 及反向
+    case 0xA8:
+      return i + 1;  // test al,imm8
+    case 0xA9:
+      return i + 4;  // test eax,imm32
+    case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB6: case 0xB7:
+      return i + 1;  // mov r8,imm8
+    case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBE: case 0xBF:
+      return i + 4;  // mov r32,imm32
+    case 0x04: case 0x0C: case 0x14: case 0x1C: case 0x24: case 0x2C: case 0x34: case 0x3C:
+      return i + 1;  // arith al,imm8
+    case 0x05: case 0x0D: case 0x15: case 0x1D: case 0x25: case 0x2D: case 0x35: case 0x3D:
+      return i + 4;  // arith eax,imm32
+    case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x76: case 0x77:
+    case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7E: case 0x7F:
+      return i + 1;  // jcc rel8
+    case 0x80: case 0x83: case 0xC0: case 0xC1: case 0xC6: case 0x6B:
+      return i + modrm_len() + 1;  // modrm + imm8
+    case 0x81: case 0xC7: case 0x69:
+      return i + modrm_len() + 4;  // modrm + imm32
+    case 0x00: case 0x01: case 0x02: case 0x03:
+    case 0x08: case 0x09: case 0x0A: case 0x0B:
+    case 0x10: case 0x11: case 0x12: case 0x13:
+    case 0x18: case 0x19: case 0x1A: case 0x1B:
+    case 0x20: case 0x21: case 0x22: case 0x23:
+    case 0x28: case 0x29: case 0x2A: case 0x2B:
+    case 0x30: case 0x31: case 0x32: case 0x33:
+    case 0x38: case 0x39: case 0x3A: case 0x3B:
+    case 0x84: case 0x85: case 0x86: case 0x87:
+    case 0x88: case 0x89: case 0x8A: case 0x8B:
+    case 0x8D: case 0x8F:
+    case 0xD0: case 0xD1: case 0xD2: case 0xD3:
+    case 0xFE: case 0xFF: case 0x62: case 0x63:
+      return i + modrm_len();  // 纯 modrm
+    case 0x0F: {
+      const uint8_t op2 = p[i++];
+      if (op2 >= 0x80 && op2 <= 0x8F) return i + 4;  // jcc rel32
+      return i + modrm_len();                        // setcc/movzx/movsx/imul 等（best effort）
+    }
+    default:
+      return 0;  // 未知 → 放弃定位
+  }
+}
+
+// 主模块（游戏 exe）映像范围，用于校验定位到的函数指针落在代码段内。
+void GetMainModuleRange(uint8_t** base, uint32_t* size) {
+  *base = nullptr;
+  *size = 0;
+  HMODULE h = GetModuleHandleW(nullptr);
+  if (h == nullptr) return;
+  auto b = reinterpret_cast<uint8_t*>(h);
+  auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(b);
+  if (dos->e_magic != IMAGE_DOS_SIGNATURE) return;
+  auto nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(b + dos->e_lfanew);
+  if (nt->Signature != IMAGE_NT_SIGNATURE) return;
+  *base = b;
+  *size = nt->OptionalHeader.SizeOfImage;
+}
+
+// 目标是否像函数入口（常见 MSVC 序言首字节）；配合模块范围 + IsBadCodePtr 三重校验，杜绝把游戏
+// hook 到中途/垃圾地址（会崩游戏）。
+inline bool PlausiblePrologue(const uint8_t* p) {
+  const uint8_t b = p[0];
+  return b == 0x55 || b == 0x53 || b == 0x56 || b == 0x57 || b == 0x83 || b == 0x6A ||
+         b == 0x68 || b == 0x8B || b == 0xB8 || b == 0xE9;
+}
+
+// 从导入的 TVPCreateIStream stub（stdcall 薄壳）定位 CallIStream（exe::TVPCreateIStream fastcall）。
+// KrkrZ: 8B 55 0C(mov edx,[ebp+C]) 8B 4D 08(mov ecx,[ebp+8]) E8(call)；Krkr2: 8B 45 08(mov eax)。
+// 命中 ecx → MSVC(is_bcb=false)；命中 eax → BCB(is_bcb=true)。返回 CallIStream，未命中返回 nullptr。
+uint8_t* FindCallIStreamFromStub(uint8_t* stub, bool* is_bcb) {
+  *is_bcb = false;
+  for (int i = 0; i < 0x40; i++) {
+    const uint8_t* p = stub + i;
+    if (p[0] == 0x8B && p[1] == 0x55 && p[2] == 0x0C) {  // mov edx,[ebp+0C]
+      const uint8_t* q = p + 3;
+      if (q[0] == 0x8B && q[2] == 0x08 && q[3] == 0xE8) {  // mov ?,[ebp+08] ; call
+        if (q[1] == 0x4D) {                                // ecx → KrkrZ
+          *is_bcb = false;
+          return GetCallDest(q + 3);
+        }
+        if (q[1] == 0x45) {  // eax → Krkr2
+          *is_bcb = true;
+          return GetCallDest(q + 3);
+        }
+      }
+    }
+  }
+  return nullptr;
+}
+
+// 在 CallIStream 体内步进指令、取首个 call 目标 = 引擎内部 TVPCreateStream。逐指令步进（非裸扫 E8）
+// 从根本上避免立即数里的杂散 E8 被误认；再对目标做模块范围 + IsBadCodePtr + 序言三重校验。
+uint8_t* FindInternalTVPCreateStream(uint8_t* call_istream, uint8_t* mod_base, uint32_t mod_size) {
+  uint32_t off = 0;
+  while (off < 0x100) {
+    const uint8_t* p = call_istream + off;
+    if (p[0] == 0xC3 || p[0] == 0xCC) break;  // ret/int3 兜底
+    if (p[0] == 0xE8) {                        // call rel32
+      uint8_t* dest = GetCallDest(p);
+      const bool in_mod =
+          (mod_base != nullptr && dest >= mod_base && dest < mod_base + mod_size);
+      if (in_mod && !IsBadCodePtr(reinterpret_cast<FARPROC>(dest)) && PlausiblePrologue(dest)) {
+        return dest;
+      }
+    }
+    const uint32_t len = InsnLen32(p);
+    if (len == 0) break;  // 未知指令 → 放弃（宁可不 hook 也不误 hook）
+    off += len;
+  }
+  return nullptr;
+}
+
+// SEH 守卫读取整条流字节（malloc 缓冲，无 C++ 析构对象故可用 __try）。读前后都 Seek 回 0，务必把
+// 原流位置还原到 0 再返回给游戏，否则游戏读不到内容。异常一律吞掉，尽力不崩游戏。
+bool ReadStreamAllGuarded(TjsBinaryStream* s, uint8_t** out_buf, uint32_t* out_len) {
+  *out_buf = nullptr;
+  *out_len = 0;
+  __try {
+    const uint64_t size = s->GetSize();
+    if (size == 0 || size > kMaxVoiceDumpBytes) {
+      s->Seek(0, 0);  // 还原位置
+      return false;
+    }
+    uint8_t* buf = static_cast<uint8_t*>(malloc(static_cast<size_t>(size)));
+    if (buf == nullptr) {
+      s->Seek(0, 0);
+      return false;
+    }
+    s->Seek(0, 0);
+    uint64_t done = 0;
+    while (done < size) {
+      const uint64_t remain = size - done;
+      const uint32_t want = static_cast<uint32_t>(remain > 0x100000 ? 0x100000 : remain);
+      const uint32_t got = s->Read(buf + done, want);
+      if (got == 0) break;
+      done += got;
+    }
+    s->Seek(0, 0);  // 还原给游戏
+    if (done == 0) {
+      free(buf);
+      return false;
+    }
+    *out_buf = buf;
+    *out_len = static_cast<uint32_t>(done);
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;  // 流 vtable 异常：放弃本次（buf 若已分配极罕见泄漏，换不崩游戏）。
+  }
+}
+
+// SEH 守卫从 ttstr 拷出 storagename（只用裸数组，可 __try）。判空 Ptr / long?:short。
+bool ExtractStorageNameGuarded(const void* name, wchar_t* out, size_t out_cap) {
+  __try {
+    auto pp = reinterpret_cast<TjsVariantString* const*>(name);
+    TjsVariantString* vs = *pp;
+    if (vs == nullptr) return false;
+    const wchar_t* src = vs->long_string != nullptr ? vs->long_string : vs->short_string;
+    if (src == nullptr) return false;
+    size_t k = 0;
+    for (; src[k] != 0 && k + 1 < out_cap; k++) out[k] = src[k];
+    out[k] = 0;
+    return k > 0;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+// storagename 是否语音：小写化后含 "voice" 或后缀 .ogg/.opus（任务约定过滤；host 侧再按时间戳精配）。
+bool IsVoiceStorageName(const wchar_t* name) {
+  wchar_t low[520];
+  size_t n = 0;
+  for (; name[n] != 0 && n + 1 < 520; n++) {
+    wchar_t c = name[n];
+    if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c - L'A' + L'a');
+    low[n] = c;
+  }
+  low[n] = 0;
+  if (n >= 4 && wcscmp(low + n - 4, L".ogg") == 0) return true;
+  if (n >= 5 && wcscmp(low + n - 5, L".opus") == 0) return true;
+  return wcsstr(low, L"voice") != nullptr;
+}
+
+// 从 storagename 取 basename 并净化非法文件名字符；无扩展名则补 .ogg。
+std::wstring VoiceBaseName(const wchar_t* storagename) {
+  std::wstring s(storagename);
+  const size_t pos = s.find_last_of(L"/\\");
+  std::wstring base = (pos == std::wstring::npos) ? s : s.substr(pos + 1);
+  for (wchar_t& c : base) {
+    if (c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' || c == L'|') {
+      c = L'_';
+    }
+  }
+  if (base.empty()) base = L"voice";
+  if (base.find(L'.') == std::wstring::npos) base += L".ogg";
+  return base;
+}
+
+// 落盘：%TEMP%\hibiki_gal_voice\<GetTickCount64>_<basename>。tick 与文本环 timestamp_ms 同源供配对。
+void WriteVoiceOgg(const uint8_t* data, uint32_t len, const wchar_t* storagename) {
+  if (data == nullptr || len == 0) return;
+  wchar_t temp[MAX_PATH] = {0};
+  const DWORD n = GetTempPathW(MAX_PATH, temp);
+  if (n == 0 || n > MAX_PATH) return;
+  std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  CreateDirectoryW(dir.c_str(), nullptr);  // 已存在则失败无害
+  std::wstring file =
+      dir + L"\\" + std::to_wstring(GetTickCount64()) + L"_" + VoiceBaseName(storagename);
+  HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (f == INVALID_HANDLE_VALUE) return;
+  DWORD written = 0;
+  WriteFile(f, data, len, &written, nullptr);
+  CloseHandle(f);
+}
+
+// ── detour：引擎内部 TVPCreateStream（MSVC __fastcall：ecx=name(const ttstr&), edx=mode）──────────
+// 先调原函数拿到已解密流；storagename 命中语音则读全字节落盘（流位置在 ReadStreamAllGuarded 内还原
+// 回 0）。非命中零开销直接返回。此 hook 不在音频回调线程，允许文件 IO；全程 SEH + 判空防御不崩游戏。
+TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(const void* name, uint32_t mode) {
+  TjsBinaryStream* stream = g_orig_TVPCreateStream(name, mode);
+  if (g_header != nullptr) {
+    g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
+  }
+  if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
+    wchar_t storage[520];
+    if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
+      uint8_t* buf = nullptr;
+      uint32_t buf_len = 0;
+      if (ReadStreamAllGuarded(stream, &buf, &buf_len)) {
+        WriteVoiceOgg(buf, buf_len, storage);
+        free(buf);
+        g_header->reserved_luna |= 0x80000;  // diag: 命中并 dump 过一个 voice OGG
+      }
+    }
+  }
+  return stream;
+}
+
+// 读主模块 VersionInfo 确认 KrkrZ（仅诊断，不门控——真正决策走 stub 反汇编模式自校验）。
+void DetectKrkrVersionDiag() {
+  if (g_header == nullptr) return;
+  wchar_t path[MAX_PATH] = {0};
+  if (GetModuleFileNameW(GetModuleHandleW(nullptr), path, MAX_PATH) == 0) return;
+  DWORD handle = 0;
+  const DWORD size = GetFileVersionInfoSizeW(path, &handle);
+  if (size == 0) return;
+  void* buf = malloc(size);
+  if (buf == nullptr) return;
+  if (GetFileVersionInfoW(path, handle, size, buf)) {
+    const wchar_t* hay = static_cast<const wchar_t*>(buf);
+    const size_t count = size / sizeof(wchar_t);
+    auto has = [&](const wchar_t* needle) -> bool {
+      const size_t nlen = wcslen(needle);
+      if (nlen == 0 || count < nlen) return false;
+      for (size_t i = 0; i + nlen <= count; i++) {
+        if (memcmp(hay + i, needle, nlen * sizeof(wchar_t)) == 0) return true;
+      }
+      return false;
+    };
+    if (has(L"TVP(KIRIKIRI) Z core")) {
+      g_header->reserved_luna |= 0x100000;  // diag: 版本确认 KrkrZ
+    } else if (has(L"TVP(KIRIKIRI) 2 core")) {
+      g_header->reserved_luna |= 0x200000;  // diag: 版本是 Krkr2
+    }
+  }
+  free(buf);
+}
+
+// exe 直取路径：调 exe 导出的 TVPGetFunctionExporter（未加壳游戏最早、最简）。加壳 exe 不导出该符号时
+// 置 0x1000000 返回 nullptr，改由 LoadLibrary→V2Link 兜底（见 InstallLoadLibraryHooks / HandleV2Link）。
+ITVPFunctionExporter* ObtainExporter() {
+  HMODULE exe = GetModuleHandleW(nullptr);
+  if (exe == nullptr) return nullptr;
+  auto getexp =
+      reinterpret_cast<TVPGetFunctionExporter_t>(GetProcAddress(exe, "TVPGetFunctionExporter"));
+  if (getexp == nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x1000000;  // diag: exe 未导出该符号
+    return nullptr;
+  }
+  __try {
+    return getexp();
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return nullptr;
+  }
+}
+
+// 幂等一次性安装：拿到 exporter（任一路径）后跑「导入 TVPCreateIStream + 反汇编定位内部
+// TVPCreateStream + 装 detour」。InterlockedCompareExchange 保证 exe 直取 / V2Link 两条路径只跑一次。
+void InstallVoiceStreamHookWithExporter(ITVPFunctionExporter* exporter) {
+  if (exporter == nullptr) return;
+  if (InterlockedCompareExchange(&g_voice_installed, 1, 0) != 0) return;  // 已装过，幂等
+
+  DetectKrkrVersionDiag();  // 诊断版本（非门控）
+
+  static const char* kSig = "IStream * ::TVPCreateIStream(const ttstr &,tjs_uint32)";
+  const char* name = kSig;
+  void* stub = nullptr;
+  bool ok = false;
+  __try {
+    ok = exporter->QueryFunctionsByNarrowString(&name, &stub, 1);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    ok = false;
+  }
+  if (!ok || stub == nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x400000;
+    return;
+  }
+
+  bool is_bcb = false;
+  uint8_t* call_istream = FindCallIStreamFromStub(static_cast<uint8_t*>(stub), &is_bcb);
+  if (call_istream == nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x400000;  // 定位失败
+    return;
+  }
+  if (is_bcb) {
+    // Krkr2(BCB, eax=name) 变体：MSVC __fastcall detour 不适用，安全跳过（用错约定会崩游戏）。
+    if (g_header != nullptr) g_header->reserved_luna |= 0x800000;
+    return;
+  }
+  uint8_t* mod_base = nullptr;
+  uint32_t mod_size = 0;
+  GetMainModuleRange(&mod_base, &mod_size);
+  uint8_t* internal = FindInternalTVPCreateStream(call_istream, mod_base, mod_size);
+  if (internal == nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x400000;  // 定位失败
+    return;
+  }
+  if (HookFn(internal, reinterpret_cast<void*>(&Detour_TVPCreateBinaryStream),
+             reinterpret_cast<void**>(&g_orig_TVPCreateStream))) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x20000;  // 内部函数定位成功并 hook
+  }
+}
+
+// ── 加壳 exe 兜底：hook LoadLibrary → 截获插件 V2Link 拿 exporter ──────────────────────────────
+// otomeki.exe 加壳、不导出 TVPGetFunctionExporter（真机 decdiag 0x1000000）。照 KrkrExtract
+// InitHookWithDll(KrkrExtract.cpp:1667) + HookV2Link(Hook.cpp:1081) + XeV2Link(Hook.cpp:208)：hook
+// LoadLibrary*，新加载的插件若导出 V2Link 就 hook 它；引擎随后调该 V2Link(exporter) 时，detour 里拿到
+// exporter 完成一次性安装，再转发原 V2Link 保证插件正常初始化。CREATE_SUSPENDED 早注入时插件尚未加载，
+// 正好由后续 LoadLibrary 触发（那时 exe 也已自解壳）。
+typedef HRESULT(NTAPI* V2Link_t)(ITVPFunctionExporter*);
+constexpr int kMaxV2Link = 4;  // 同时 hook 前几个导出 V2Link 的新插件（任一被调用即拿到单例 exporter）
+V2Link_t g_v2link_orig[kMaxV2Link] = {nullptr};
+void* g_v2link_targets[kMaxV2Link] = {nullptr};
+int g_v2link_count = 0;
+
+// V2Link detour 公共体：拿到 exporter → 置诊断 → 幂等安装 → 转发原 V2Link（不破坏插件初始化）。
+HRESULT HandleV2Link(ITVPFunctionExporter* exporter, V2Link_t orig) {
+  if (exporter != nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x4000000;  // 经 V2Link 拿到 exporter
+    InstallVoiceStreamHookWithExporter(exporter);                   // 幂等
+  }
+  if (orig != nullptr) return orig(exporter);
+  return S_OK;
+}
+
+// 每个 hook 槽一个独立 detour（MinHook 共享 detour 无法区分各自 trampoline，故按 slot 展开）。
+#define HIBIKI_V2LINK_DETOUR(i)                               \
+  HRESULT NTAPI Detour_V2Link_##i(ITVPFunctionExporter* e) {  \
+    return HandleV2Link(e, g_v2link_orig[i]);                 \
+  }
+HIBIKI_V2LINK_DETOUR(0)
+HIBIKI_V2LINK_DETOUR(1)
+HIBIKI_V2LINK_DETOUR(2)
+HIBIKI_V2LINK_DETOUR(3)
+void* const g_v2link_detours[kMaxV2Link] = {
+    reinterpret_cast<void*>(&Detour_V2Link_0), reinterpret_cast<void*>(&Detour_V2Link_1),
+    reinterpret_cast<void*>(&Detour_V2Link_2), reinterpret_cast<void*>(&Detour_V2Link_3),
+};
+
+// 新加载的模块若导出 V2Link 且未 hook 过就 hook 它（分配下一个 slot）。已完成安装后不再抓新 V2Link。
+// 本函数在 LoadLibrary detour（loader lock 内）被调；MinHook 装 hook 只 VirtualProtect+改 5 字节 +
+// 短暂 SuspendThread，不获取堆锁/不等待其它线程，loader lock 内低风险（与 KrkrExtract 同款时机）。
+void MaybeHookModuleV2Link(HMODULE mod) {
+  if (mod == nullptr || !g_cs_ready || g_voice_installed) return;
+  FARPROC v2 = GetProcAddress(mod, "V2Link");
+  if (v2 == nullptr) return;
+  EnterCriticalSection(&g_cs);
+  bool already = false;
+  for (int i = 0; i < g_v2link_count; i++) {
+    if (g_v2link_targets[i] == reinterpret_cast<void*>(v2)) {
+      already = true;
+      break;
+    }
+  }
+  if (!already && g_v2link_count < kMaxV2Link) {
+    const int slot = g_v2link_count;
+    if (MH_CreateHook(reinterpret_cast<void*>(v2), g_v2link_detours[slot],
+                      reinterpret_cast<void**>(&g_v2link_orig[slot])) == MH_OK &&
+        MH_EnableHook(reinterpret_cast<void*>(v2)) == MH_OK) {
+      g_v2link_targets[g_v2link_count++] = reinterpret_cast<void*>(v2);
+    }
+  }
+  LeaveCriticalSection(&g_cs);
+}
+
+// LoadLibrary(W/ExW/A/ExA) detour：先调原函数拿 HMODULE，再看是否新插件的 V2Link 该 hook。
+typedef HMODULE(WINAPI* LoadLibraryW_t)(LPCWSTR);
+typedef HMODULE(WINAPI* LoadLibraryExW_t)(LPCWSTR, HANDLE, DWORD);
+typedef HMODULE(WINAPI* LoadLibraryA_t)(LPCSTR);
+typedef HMODULE(WINAPI* LoadLibraryExA_t)(LPCSTR, HANDLE, DWORD);
+LoadLibraryW_t g_orig_LoadLibraryW = nullptr;
+LoadLibraryExW_t g_orig_LoadLibraryExW = nullptr;
+LoadLibraryA_t g_orig_LoadLibraryA = nullptr;
+LoadLibraryExA_t g_orig_LoadLibraryExA = nullptr;
+
+HMODULE WINAPI Detour_LoadLibraryW(LPCWSTR lib) {
+  HMODULE m = g_orig_LoadLibraryW(lib);
+  MaybeHookModuleV2Link(m);
+  return m;
+}
+HMODULE WINAPI Detour_LoadLibraryExW(LPCWSTR lib, HANDLE file, DWORD flags) {
+  HMODULE m = g_orig_LoadLibraryExW(lib, file, flags);
+  MaybeHookModuleV2Link(m);
+  return m;
+}
+HMODULE WINAPI Detour_LoadLibraryA(LPCSTR lib) {
+  HMODULE m = g_orig_LoadLibraryA(lib);
+  MaybeHookModuleV2Link(m);
+  return m;
+}
+HMODULE WINAPI Detour_LoadLibraryExA(LPCSTR lib, HANDLE file, DWORD flags) {
+  HMODULE m = g_orig_LoadLibraryExA(lib, file, flags);
+  MaybeHookModuleV2Link(m);
+  return m;
+}
+
+// 装 LoadLibrary hook（kernel32 早已加载）。四个导出各一份，用现有 HookFn（单函数、去重）。W/ExW 覆盖
+// 引擎宽字符加载，A/ExA 兜住少数窄字符路径。任一装上即算就绪。
+bool InstallLoadLibraryHooks() {
+  HMODULE k = GetModuleHandleW(L"kernel32.dll");
+  if (k == nullptr) return false;
+  bool any = false;
+  any |= HookFn(reinterpret_cast<void*>(GetProcAddress(k, "LoadLibraryW")),
+                reinterpret_cast<void*>(&Detour_LoadLibraryW),
+                reinterpret_cast<void**>(&g_orig_LoadLibraryW));
+  any |= HookFn(reinterpret_cast<void*>(GetProcAddress(k, "LoadLibraryExW")),
+                reinterpret_cast<void*>(&Detour_LoadLibraryExW),
+                reinterpret_cast<void**>(&g_orig_LoadLibraryExW));
+  any |= HookFn(reinterpret_cast<void*>(GetProcAddress(k, "LoadLibraryA")),
+                reinterpret_cast<void*>(&Detour_LoadLibraryA),
+                reinterpret_cast<void**>(&g_orig_LoadLibraryA));
+  any |= HookFn(reinterpret_cast<void*>(GetProcAddress(k, "LoadLibraryExA")),
+                reinterpret_cast<void*>(&Detour_LoadLibraryExA),
+                reinterpret_cast<void**>(&g_orig_LoadLibraryExA));
+  return any;
+}
+
+// 装 KiriKiriZ 语音流 hook。两条拿 exporter 的路径，幂等只安装一次：
+//  ① exe 直取 TVPGetFunctionExporter（未加壳游戏更早可用；加壳返回 null，置 0x1000000）。
+//  ② hook LoadLibrary → 插件 V2Link 兜底（对付加壳 exe，异步在游戏加载插件时完成）。
+// LoadLibrary hook 装好即返回 true 停止轮询；真正安装可能稍后由 V2Link detour 异步触发。保活循环里
+// exporter 迟迟没到不必强等——V2Link 会随游戏加载插件自动触发（30s 轮询窗口足够覆盖插件加载）。
+bool TryHookKirikiriVoiceStream() {
+  static bool ll_installed = false;
+
+  if (!ll_installed) {
+    if (InstallLoadLibraryHooks()) {
+      ll_installed = true;
+      if (g_header != nullptr) g_header->reserved_luna |= 0x2000000;  // LoadLibrary hook 已装
+    }
+  }
+
+  if (!g_voice_installed) {
+    ITVPFunctionExporter* exp = ObtainExporter();  // exe 直取（加壳置 0x1000000 返回 null）
+    if (exp != nullptr) {
+      if (g_header != nullptr) g_header->reserved_luna |= 0x10000;  // 经 exe 导出拿到 exporter
+      InstallVoiceStreamHookWithExporter(exp);                      // 幂等
+    }
+  }
+
+  return ll_installed;
+}
+
+#else  // !_M_IX86
+
+// KiriKiriZ 是 32 位引擎；x64 构建此路径为空实现（仅保证两架构都能编译）。
+bool TryHookKirikiriVoiceStream() { return true; }
+
+#endif  // _M_IX86
+
 // == wen ben hook (grab dialogue text) ==
 // 覆盖 GDI 文本渲染 API（galgame 经典 hook 面）：GetGlyphOutlineW 逐字形渲染逐字累积成行，
 // ExtTextOutW/TextOutW/DrawTextW 整串直接成行；写进共享内存文本环供 host 消费。
@@ -1123,6 +1729,7 @@ DWORD WINAPI HookWorker(LPVOID) {
         TryHookDirectSoundCreate();
         TryHookTextRender();          // v2：文本 hook（抓台词）。
         TryHookKirikiriDecoders();    // C.2c：KiriKiri 解码器级干净人声。
+        TryHookKirikiriVoiceStream();  // C.2d：KiriKiriZ 原始语音 OGG 捕获。
       }
     }
   }
@@ -1139,10 +1746,16 @@ DWORD WINAPI HookWorker(LPVOID) {
   // wuvorbis/wuopus 插件尚未加载，须等游戏启动后加载了插件再装（幂等，装齐即停止重试）。
   int dec_retry = 0;
   bool dec_ready = false;
+  int voice_retry = 0;
+  bool voice_ready = false;
   while (!g_stop) {
     if (!dec_ready && g_capture_enabled && dec_retry < 150) {
       dec_ready = TryHookKirikiriDecoders();
       dec_retry++;
+    }
+    if (!voice_ready && g_capture_enabled && voice_retry < 150) {
+      voice_ready = TryHookKirikiriVoiceStream();
+      voice_retry++;
     }
     Sleep(200);
   }
