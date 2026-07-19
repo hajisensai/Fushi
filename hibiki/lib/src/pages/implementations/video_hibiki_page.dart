@@ -120,7 +120,6 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/render_backend_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
-import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -2829,7 +2828,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _failed = false;
       _failReason = null;
     });
-    HibikiToast.show(msg: t.video_resource_relink_success);
+    _showOsd(t.video_resource_relink_success);
     await _loadSingle(updated);
   }
 
@@ -5320,10 +5319,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _toggleFavoriteCurrentCue() async {
     final AudioCue? cue = _currentCueForAction();
     if (cue == null || cue.text.trim().isEmpty) {
-      HibikiToast.show(msg: t.no_sentence_selected);
+      _showOsd(t.no_sentence_selected);
       return;
     }
-    _pokeControlsVisible();
+    // BUG-931：收藏不再唤起 media_kit 控制条——原先那句 poke 会派发合成 hover 把底栏
+    // 进度条弹出来（用户报「碍眼」）。收藏结果走左上角 OSD 即可，无需显现控制条；
+    // seek / 重播仍保留 poke，因为那些操作本就需要看进度。
     await _toggleFavoriteCueForVideo(cue);
   }
 
@@ -5582,7 +5583,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await RenderBackendService.instance.setImpellerDisabled(true);
     if (!ok || !appModel.platformServices.lifecycle.supportsRestart) {
       // pref 未写成（非 Android）或平台不支持自动重启：降级提示手动重开。
-      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+      if (mounted) _showOsd(t.render_restart_required);
       return;
     }
     try {
@@ -5590,7 +5591,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     } catch (e) {
       // 起新进程失败（Process.start 抛错等）→ 降级提示手动重开。
       debugPrint('[render] switch to Skia restart failed: $e');
-      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+      if (mounted) _showOsd(t.render_restart_required);
     }
   }
 
