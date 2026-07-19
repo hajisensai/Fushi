@@ -1538,6 +1538,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       return;
     }
     await db.addTagToCollection(collectionId, tag.id);
+    ref.invalidate(collectionTagMapProvider);
     ref.invalidate(filteredCollectionIdsProvider);
     if (mounted) {
       HibikiToast.show(msg: t.tag_added_to_collection(name: tag.name));
@@ -2344,6 +2345,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         // 拖标签到行头 = 给整个合集打标签（与散卡书级拖放一致）。
         onTagDropped: (BookTagRow tag) =>
             _addTagToVideoCollection(collection.id, tag),
+        // 行头下方展示该合集已打的标签 chip（与散卡标签列同形）。
+        tags: ref.watch(collectionTagMapProvider).valueOrNull?[collection.id],
         itemBuilder: (BuildContext _, int i) {
           final _VideoSlot slot = group.items[i].payload;
           final VideoBookRow? local = slot.local;

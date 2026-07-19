@@ -34,6 +34,7 @@ class CollectionShelfRow extends StatefulWidget {
     this.selectionCheckbox,
     this.onToggleSelected,
     this.onTagDropped,
+    this.tags,
     super.key,
   });
 
@@ -89,6 +90,11 @@ class CollectionShelfRow extends StatefulWidget {
   /// 行头不接收拖放。合集详情页 AppBar 的打标签按钮是另一条等价入口。
   final void Function(BookTagRow tag)? onTagDropped;
 
+  /// 该合集已打的标签（行头下方展示 chip 列，与书/视频卡的标签列同形）。null/空时
+  /// 不占位。调用方 `ref.watch(collectionTagMapProvider)` 后传该合集的列表；打标签
+  /// 后失效该 provider 即刷新。
+  final List<BookTagRow>? tags;
+
   @override
   State<CollectionShelfRow> createState() => _CollectionShelfRowState();
 }
@@ -124,6 +130,9 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _buildHeader(context, tokens),
+        // 行头下方展示该合集已打的标签 chip（折叠态也显示——折叠时仍看得到有哪些
+        // 标签）。与书/视频卡的标签列同形；空则不占位。
+        _buildTagChips(context, tokens),
         // 折叠态不建成员列表（行只剩行头）；展开时照常。控制器跨折叠切换存活
         //（ListView 重建时重新 attach，无 clients 期间安全）。
         if (!widget.collapsed)
@@ -156,6 +165,33 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
             ),
           ),
       ],
+    );
+  }
+
+  /// 合集已打标签的 chip 列（行头下方）。与合集详情页 `_buildTagChips` 视觉一致
+  /// （[HibikiTagChip] + Wrap）；[CollectionShelfRow.tags] 空则不占位。
+  Widget _buildTagChips(BuildContext context, HibikiDesignTokens tokens) {
+    final List<BookTagRow>? tags = widget.tags;
+    if (tags == null || tags.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.gap / 2,
+        0,
+        tokens.spacing.gap / 2,
+        tokens.spacing.gap / 2,
+      ),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: <Widget>[
+          for (final BookTagRow tag in tags)
+            HibikiTagChip(
+              label: tag.name,
+              color: Color(tag.colorValue),
+              tone: HibikiTagChipTone.surface,
+            ),
+        ],
+      ),
     );
   }
 
