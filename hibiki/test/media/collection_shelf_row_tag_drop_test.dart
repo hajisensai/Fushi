@@ -56,7 +56,10 @@ void main() {
     );
   }
 
-  CollectionShelfRow buildRow({void Function(BookTagRow tag)? onTagDropped}) =>
+  CollectionShelfRow buildRow({
+    void Function(BookTagRow tag)? onTagDropped,
+    List<BookTagRow>? tags,
+  }) =>
       CollectionShelfRow(
         title: 'コレクション',
         countLabel: '3',
@@ -65,6 +68,7 @@ void main() {
         rowHeight: 160,
         onOpenDetail: () {},
         onTagDropped: onTagDropped,
+        tags: tags,
         itemBuilder: (BuildContext _, int __) => const Text('EP0'),
       );
 
@@ -105,5 +109,17 @@ void main() {
       (WidgetTester tester) async {
     await pump(tester, buildRow(onTagDropped: null));
     expect(find.byType(DragTarget<BookTagRow>), findsNothing);
+  });
+
+  testWidgets('tags 非空时行头下方展示标签 chip（用户实报：打了标签但列表上看不见）',
+      (WidgetTester tester) async {
+    await pump(tester, buildRow(tags: const <BookTagRow>[tag]));
+    // chip 以标签名渲染（合集详情页同款 HibikiTagChip）。
+    expect(find.text('お気に入り'), findsOneWidget);
+  });
+
+  testWidgets('tags 为 null 时不占位（无 chip）', (WidgetTester tester) async {
+    await pump(tester, buildRow());
+    expect(find.text('お気に入り'), findsNothing);
   });
 }
