@@ -2807,12 +2807,34 @@ class AppModel with ChangeNotifier {
       store: store,
       configProvider: () => prefsRepo.qbConnectionConfig,
       importer: buildAnimeDownloadImporter(database),
+      bookImporter: _importDownloadedBooks,
       backendFactory: _torrentBackendFor,
       onTick: () {
         _embeddedTorrentHost?.sweepAntiLeech();
         _embeddedTorrentHost?.sweepUploadPolicy();
       },
     )..start();
+  }
+
+  /// 下载完成的书籍（epub）入库回调：逐个走 [EpubImporter] 进阅读库
+  /// （skipIfExists，重复导入不报错），返回成功入库的书本数。单本失败跳过。
+  Future<int?> _importDownloadedBooks(
+      AnimeDownloadPlan plan, List<String> bookAbsolutePaths) async {
+    int imported = 0;
+    for (final String filePath in bookAbsolutePaths) {
+      try {
+        await EpubImporter.importFromPath(
+          db: database,
+          filePath: filePath,
+          fileName: path.basename(filePath),
+          skipIfExists: true,
+        );
+        imported++;
+      } catch (_) {
+        // 单本导入失败跳过，不影响其它书与计划状态（有成功即算入库）。
+      }
+    }
+    return imported;
   }
 
   /// 内置引擎宿主是否就绪（桌面且 DLL 已加载）。下载对话框据此判断能否走

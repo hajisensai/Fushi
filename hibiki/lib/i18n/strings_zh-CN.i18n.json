@@ -2047,5 +2047,12 @@
   "torrent_upload_intro_body": "上传（做种）默认关闭。开启后会把下载内容回传给网络，会占用你的上传带宽。可随时在「设置」里修改。",
   "torrent_upload_intro_enable": "启用上传 / 做种",
   "torrent_upload_intro_keep_off": "保持关闭",
-  "torrent_upload_intro_confirm": "保存"
+  "torrent_upload_intro_confirm": "保存",
+  "anime_download_generic_title": "粘贴链接下载（书、视频等）",
+  "anime_download_generic_hint": "磁力链接",
+  "anime_download_generic_download": "下载",
+  "anime_download_magnet_invalid": "磁力链接无效",
+  "anime_download_kind_auto": "自动",
+  "anime_download_kind_video": "视频",
+  "anime_download_kind_book": "书"
 }

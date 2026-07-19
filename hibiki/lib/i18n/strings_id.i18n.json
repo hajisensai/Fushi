@@ -2047,5 +2047,12 @@
   "torrent_upload_intro_body": "Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.",
   "torrent_upload_intro_enable": "Enable upload / seeding",
   "torrent_upload_intro_keep_off": "Keep off",
-  "torrent_upload_intro_confirm": "Save"
+  "torrent_upload_intro_confirm": "Save",
+  "anime_download_generic_title": "Paste a link (books, videos, anything)",
+  "anime_download_generic_hint": "Magnet link",
+  "anime_download_generic_download": "Download",
+  "anime_download_magnet_invalid": "Invalid magnet link",
+  "anime_download_kind_auto": "Auto",
+  "anime_download_kind_video": "Video",
+  "anime_download_kind_book": "Book"
 }

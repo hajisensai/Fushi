@@ -42,6 +42,31 @@ List<String> resolveVideoAbsolutePaths(
   return out;
 }
 
+/// 阅读库支持的书籍扩展名（当前只有 EPUB —— reader_hibiki 走 EPUB）。
+const Set<String> kBookExtensions = <String>{'.epub'};
+
+/// 把种子文件列表解析为书籍（epub）绝对路径列表。纯函数，与
+/// [resolveVideoAbsolutePaths] 同姿态（files 为空退化用 contentPath 单文件）。
+List<String> resolveBookAbsolutePaths(
+  TorrentSnapshot info,
+  List<TorrentFileEntry> files,
+) {
+  if (files.isEmpty) {
+    final String ext = p.extension(info.contentPath).toLowerCase();
+    if (info.contentPath.isNotEmpty && kBookExtensions.contains(ext)) {
+      return <String>[info.contentPath];
+    }
+    return const <String>[];
+  }
+  final List<String> out = <String>[];
+  for (final TorrentFileEntry f in files) {
+    if (kBookExtensions.contains(p.extension(f.name).toLowerCase())) {
+      out.add(p.join(info.savePath, f.name));
+    }
+  }
+  return out;
+}
+
 /// 把计划里的字幕配对到视频（key = 视频绝对路径）。纯函数。
 ///
 /// 视频集号用 [parseVideoFilename] 从文件名解析。配对规则：
@@ -106,10 +131,15 @@ class AnimeDownloadService {
       List<String> videoAbsolutePaths,
     ) importer,
     TorrentBackend Function(QbConnectionConfig config)? backendFactory,
+    Future<int?> Function(
+      AnimeDownloadPlan plan,
+      List<String> bookAbsolutePaths,
+    )? bookImporter,
     void Function()? onTick,
     this.interval = const Duration(seconds: 20),
   })  : _configProvider = configProvider,
         _importer = importer,
+        _bookImporter = bookImporter,
         _backendFactory = backendFactory ?? _defaultBackendFactory,
         _onTick = onTick;
 
@@ -132,6 +162,13 @@ class AnimeDownloadService {
     AnimeDownloadPlan plan,
     List<String> videoAbsolutePaths,
   ) _importer;
+
+  /// 书籍（epub）入库回调（AppModel 接线 EpubImporter；null = 不支持书，
+  /// 遇书内容按失败处理）。返回成功入库的书本数（0/null = 无/失败）。
+  final Future<int?> Function(
+    AnimeDownloadPlan plan,
+    List<String> bookAbsolutePaths,
+  )? _bookImporter;
   final TorrentBackend Function(QbConnectionConfig config) _backendFactory;
 
   /// 每 tick 起始（早于「无 pending 计划则跳过」判断）无条件跑一次的钩子；
@@ -203,7 +240,9 @@ class AnimeDownloadService {
       if (info == null) return false;
       // 预检：元数据未解析（文件列表还空）时不入库、不动计划状态。
       final List<TorrentFileEntry> files = await client.listFiles(info.hash);
-      if (resolveVideoAbsolutePaths(info, files).isEmpty) return false;
+      final (List<String> v, List<String> b) =
+          _classifyContent(plan, info, files);
+      if (v.isEmpty && b.isEmpty) return false;
       await _finishPlan(client, plan, info);
     } catch (_) {
       return false;
@@ -264,31 +303,72 @@ class AnimeDownloadService {
     }
   }
 
-  /// 单个计划的完成处理：解析视频路径 → 字幕 sidecar 落位 → 入库回调 →
-  /// 状态落盘（成功 imported + collectionId；失败 failed，不重试）。
+  /// 按计划 [AnimeDownloadPlan.contentKind] 把已完成文件分流成（视频, 书）两组
+  /// 绝对路径。纯映射：video 只取视频、book 只取书、auto 两者都取。
+  (List<String>, List<String>) _classifyContent(
+    AnimeDownloadPlan plan,
+    TorrentSnapshot info,
+    List<TorrentFileEntry> files,
+  ) {
+    switch (plan.contentKind) {
+      case AnimeDownloadPlan.kindBook:
+        return (const <String>[], resolveBookAbsolutePaths(info, files));
+      case AnimeDownloadPlan.kindAuto:
+        return (
+          resolveVideoAbsolutePaths(info, files),
+          resolveBookAbsolutePaths(info, files),
+        );
+      case AnimeDownloadPlan.kindVideo:
+      default:
+        return (resolveVideoAbsolutePaths(info, files), const <String>[]);
+    }
+  }
+
+  /// 单个计划的完成处理：按内容类型分流 → 视频落 sidecar + 视频库入库、书走
+  /// 阅读库入库 → 状态落盘（任一入库成功即 imported；全失败 failed，不重试）。
   Future<void> _finishPlan(
     TorrentBackend client,
     AnimeDownloadPlan plan,
     TorrentSnapshot info,
   ) async {
     final List<TorrentFileEntry> files = await client.listFiles(info.hash);
-    final List<String> videos = resolveVideoAbsolutePaths(info, files);
-
-    // 先落 sidecar 再入库：播放器按 sidecar 自动发现即可认到字幕，
-    // 不依赖 DB 特殊路径。
-    await _placeSidecars(videos, plan.subtitles);
+    final (List<String> videos, List<String> books) =
+        _classifyContent(plan, info, files);
 
     AnimeDownloadImportOutcome? outcome;
+    int booksImported = 0;
     String? importError;
-    try {
-      outcome = await _importer(plan, videos);
-    } catch (e) {
-      importError = 'import failed: $e';
+
+    // 视频：先落 sidecar 再入库（播放器按 sidecar 自动发现字幕）。
+    if (videos.isNotEmpty) {
+      await _placeSidecars(videos, plan.subtitles);
+      try {
+        outcome = await _importer(plan, videos);
+      } catch (e) {
+        importError = 'video import failed: $e';
+      }
     }
-    if (outcome != null) {
+
+    // 书：走阅读库入库回调（epub）。
+    if (books.isNotEmpty) {
+      final Future<int?> Function(AnimeDownloadPlan, List<String>)?
+          bookImporter = _bookImporter;
+      if (bookImporter == null) {
+        importError ??= 'book import unsupported';
+      } else {
+        try {
+          booksImported = await bookImporter(plan, books) ?? 0;
+        } catch (e) {
+          importError ??= 'book import failed: $e';
+        }
+      }
+    }
+
+    final bool imported = outcome != null || booksImported > 0;
+    if (imported) {
       await store.save(plan.copyWith(
         status: AnimeDownloadPlan.statusImported,
-        collectionId: outcome.collectionId,
+        collectionId: outcome?.collectionId,
       ));
     } else {
       await store.save(plan.copyWith(
