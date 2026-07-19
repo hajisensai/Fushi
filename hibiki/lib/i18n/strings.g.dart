@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 33558 (1974 per locale)
+/// Strings: 33745 (1985 per locale)
 ///
-/// Built on 2026-07-18 at 17:34 UTC
+/// Built on 2026-07-19 at 12:00 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2655,6 +2655,22 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_setting_torrent_max_connections => 'Max connections';
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -7130,6 +7146,33 @@ class _StringsAr extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -11678,6 +11721,33 @@ class _StringsDe extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -16242,6 +16312,33 @@ class _StringsEs extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -20817,6 +20914,33 @@ class _StringsFr extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -25319,6 +25443,33 @@ class _StringsId extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -29869,6 +30020,33 @@ class _StringsIt extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -34225,6 +34403,33 @@ class _StringsJa extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -38584,6 +38789,33 @@ class _StringsKo extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -43112,6 +43344,33 @@ class _StringsNl extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -47655,6 +47914,33 @@ class _StringsPtBr extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -52181,6 +52467,33 @@ class _StringsRu extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -56652,6 +56965,33 @@ class _StringsTh extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -61155,6 +61495,33 @@ class _StringsTr extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -65645,6 +66012,33 @@ class _StringsVi extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 // Path: <root>
@@ -69826,6 +70220,30 @@ class _StringsZhCn extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = 不限';
   @override
   String get video_setting_torrent_connections_hint => '0 = 引擎默认';
+  @override
+  String get video_setting_torrent_upload_enabled => '启用上传 / 做种';
+  @override
+  String get video_setting_torrent_upload_enabled_hint => '默认关闭。下载完成后向网络回传做种。';
+  @override
+  String get video_setting_torrent_seed_time_limit => '做种时长上限（分钟）';
+  @override
+  String get video_setting_torrent_seed_time_hint => '做种超过此时长后停止上传。0 = 不限。';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => '做种分享率上限';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      '上传/下载比值达到此值后停止上传。0 = 不限。';
+  @override
+  String get torrent_upload_intro_title => '上传 / 做种';
+  @override
+  String get torrent_upload_intro_body =>
+      '上传（做种）默认关闭。开启后会把下载内容回传给网络，会占用你的上传带宽。可随时在「设置」里修改。';
+  @override
+  String get torrent_upload_intro_enable => '启用上传 / 做种';
+  @override
+  String get torrent_upload_intro_keep_off => '保持关闭';
+  @override
+  String get torrent_upload_intro_confirm => '保存';
 }
 
 // Path: <root>
@@ -74104,6 +74522,33 @@ class _StringsZhHk extends _StringsEn {
   String get video_setting_torrent_limit_hint => '0 = unlimited';
   @override
   String get video_setting_torrent_connections_hint => '0 = engine default';
+  @override
+  String get video_setting_torrent_upload_enabled => 'Enable upload / seeding';
+  @override
+  String get video_setting_torrent_upload_enabled_hint =>
+      'Off by default. Seed back to the swarm after downloading.';
+  @override
+  String get video_setting_torrent_seed_time_limit =>
+      'Seed time limit (minutes)';
+  @override
+  String get video_setting_torrent_seed_time_hint =>
+      'Stop uploading after seeding this long. 0 = unlimited.';
+  @override
+  String get video_setting_torrent_seed_ratio_limit => 'Seed ratio limit';
+  @override
+  String get video_setting_torrent_seed_ratio_hint =>
+      'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+  @override
+  String get torrent_upload_intro_title => 'Upload / seeding';
+  @override
+  String get torrent_upload_intro_body =>
+      'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+  @override
+  String get torrent_upload_intro_enable => 'Enable upload / seeding';
+  @override
+  String get torrent_upload_intro_keep_off => 'Keep off';
+  @override
+  String get torrent_upload_intro_confirm => 'Save';
 }
 
 /// Flat map(s) containing all translations.
@@ -78141,6 +78586,28 @@ extension on _StringsEn {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -82176,6 +82643,28 @@ extension on _StringsAr {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -86232,6 +86721,28 @@ extension on _StringsDe {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -90287,6 +90798,28 @@ extension on _StringsEs {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -94348,6 +94881,28 @@ extension on _StringsFr {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -98391,6 +98946,28 @@ extension on _StringsId {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -102449,6 +103026,28 @@ extension on _StringsIt {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -106469,6 +107068,28 @@ extension on _StringsJa {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -110493,6 +111114,28 @@ extension on _StringsKo {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -114544,6 +115187,28 @@ extension on _StringsNl {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -118592,6 +119257,28 @@ extension on _StringsPtBr {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -122645,6 +123332,28 @@ extension on _StringsRu {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -126682,6 +127391,28 @@ extension on _StringsTh {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -130728,6 +131459,28 @@ extension on _StringsTr {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -134769,6 +135522,28 @@ extension on _StringsVi {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
@@ -138778,6 +139553,28 @@ extension on _StringsZhCn {
         return '0 = 不限';
       case 'video_setting_torrent_connections_hint':
         return '0 = 引擎默认';
+      case 'video_setting_torrent_upload_enabled':
+        return '启用上传 / 做种';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return '默认关闭。下载完成后向网络回传做种。';
+      case 'video_setting_torrent_seed_time_limit':
+        return '做种时长上限（分钟）';
+      case 'video_setting_torrent_seed_time_hint':
+        return '做种超过此时长后停止上传。0 = 不限。';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return '做种分享率上限';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return '上传/下载比值达到此值后停止上传。0 = 不限。';
+      case 'torrent_upload_intro_title':
+        return '上传 / 做种';
+      case 'torrent_upload_intro_body':
+        return '上传（做种）默认关闭。开启后会把下载内容回传给网络，会占用你的上传带宽。可随时在「设置」里修改。';
+      case 'torrent_upload_intro_enable':
+        return '启用上传 / 做种';
+      case 'torrent_upload_intro_keep_off':
+        return '保持关闭';
+      case 'torrent_upload_intro_confirm':
+        return '保存';
       default:
         return null;
     }
@@ -142793,6 +143590,28 @@ extension on _StringsZhHk {
         return '0 = unlimited';
       case 'video_setting_torrent_connections_hint':
         return '0 = engine default';
+      case 'video_setting_torrent_upload_enabled':
+        return 'Enable upload / seeding';
+      case 'video_setting_torrent_upload_enabled_hint':
+        return 'Off by default. Seed back to the swarm after downloading.';
+      case 'video_setting_torrent_seed_time_limit':
+        return 'Seed time limit (minutes)';
+      case 'video_setting_torrent_seed_time_hint':
+        return 'Stop uploading after seeding this long. 0 = unlimited.';
+      case 'video_setting_torrent_seed_ratio_limit':
+        return 'Seed ratio limit';
+      case 'video_setting_torrent_seed_ratio_hint':
+        return 'Stop uploading when uploaded/downloaded reaches this. 0 = unlimited.';
+      case 'torrent_upload_intro_title':
+        return 'Upload / seeding';
+      case 'torrent_upload_intro_body':
+        return 'Uploading (seeding) is off by default. Turn it on to share downloaded content back to the swarm — this uses your upload bandwidth. You can change this anytime in Settings.';
+      case 'torrent_upload_intro_enable':
+        return 'Enable upload / seeding';
+      case 'torrent_upload_intro_keep_off':
+        return 'Keep off';
+      case 'torrent_upload_intro_confirm':
+        return 'Save';
       default:
         return null;
     }
