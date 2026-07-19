@@ -353,6 +353,11 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   late final TextEditingController _delayController =
       TextEditingController(text: '${widget.initialDelayMs}');
 
+  /// 数值输入框「边键入边生效」去抖（BUG-918）：与 [VideoQuickSettingsSheet] 同款——原字段只在
+  /// [onSubmitted]（Enter）提交、无 [onChanged]，用户报「不按回车不更新、backspace 没反应」。改为
+  /// 键入即去抖 350ms 后 [_commit]，无需回车；[syncField:false] 不回写文本，保住光标与退格。
+  Timer? _delayInputDebounce;
+
   final ScrollController _scrollController = ScrollController();
 
   /// 每根波形柱的目标像素宽（含间隙）。
@@ -516,6 +521,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   @override
   void dispose() {
+    _delayInputDebounce?.cancel();
     _positionTicker?.cancel();
     _positionTicker = null;
     _livePositionMs.dispose();
@@ -526,9 +532,25 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     super.dispose();
   }
 
+  /// 数值输入框 [onChanged]：解析成功就去抖 350ms 后 [_commit] 实时生效（BUG-918），无需回车。
+  /// 空 / 只有正负号等未成形输入解析失败 → 不提交、不回退，保留用户正在敲的中间态。
+  void _onDelayInputChanged(String raw) {
+    _delayInputDebounce?.cancel();
+    final int? parsed = int.tryParse(raw.trim());
+    if (parsed == null) return;
+    _delayInputDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      // syncField:false —— 键入过程中不回写输入框文本，避免光标弹到行尾、退格错位。
+      _commit(parsed, syncField: false);
+    });
+  }
+
   /// 调轴权威提交：clamp -> 本地 setState -> 可选回写输入框 -> 回调写回上方 `_delayMs`。
   Future<void> _commit(int next, {bool syncField = true}) async {
     final int clamped = next.clamp(-_clampMs, _clampMs);
+    // 权威提交（滑条 / 步进 / 回车回写文本的路径）取消待触发的键入去抖，免得陈旧键入值
+    // 迟到覆盖刚设的值（BUG-918）。
+    if (syncField) _delayInputDebounce?.cancel();
     if (mounted) {
       setState(() {
         _delayMs = clamped;
@@ -1231,7 +1253,10 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           labelText: t.video_setting_subtitle_sync_input,
           keyboardType: const TextInputType.numberWithOptions(signed: true),
           textInputAction: TextInputAction.done,
+          // 边键入边去抖生效（BUG-918）：不再要求按回车，退格 / 键入实时反映到延迟。
+          onChanged: _onDelayInputChanged,
           onSubmitted: (String raw) {
+            _delayInputDebounce?.cancel();
             final int? parsed = int.tryParse(raw.trim());
             if (parsed == null) {
               _delayController.text = '$_delayMs';

@@ -510,6 +510,91 @@ void main() {
     expect(spaceHits, 1);
   });
 
+  testWidgets(
+      'BUG-918: typing the offset commits live (no Enter) via debounce, '
+      'without clobbering the typed text', (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int ms) async => committed.add(ms),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final Finder field = find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byType(TextField),
+    );
+    expect(field, findsOneWidget);
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+
+    // 键入偏移值但**不按回车**：去抖窗口内还未提交。
+    await tester.enterText(field, '1230');
+    await tester.pump();
+    expect(committed, isEmpty);
+
+    // 停手过了去抖窗口 → 无需回车即落到延迟（onCommitDelay 收到键入值）。
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(committed, <int>[1230]);
+
+    // 去抖提交走 syncField:false，不回写输入框文本：用户键入的字符仍在，
+    // 光标不被弹到行尾（保证随后退格 / 继续编辑不错位）。
+    expect(find.text('1230'), findsWidgets);
+  });
+
+  testWidgets(
+      'BUG-918: erasing a digit re-commits the shortened value live (no Enter)',
+      (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      initialDelayMs: 1230,
+      onCommitDelay: (int ms) async => committed.add(ms),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final Finder field = find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byType(TextField),
+    );
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+
+    // 模拟退格删掉末位 0：文本从 1230 → 123，不按回车。
+    await tester.enterText(field, '123');
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(committed, <int>[123]);
+  });
+
+  testWidgets(
+      'BUG-918: partial input (empty / lone sign) does not commit or revert',
+      (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int ms) async => committed.add(ms),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final Finder field = find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byType(TextField),
+    );
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+
+    // 清空 + 只留正负号：解析失败 → 不提交、不回退（保留中间态可继续键入）。
+    await tester.enterText(field, '');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.enterText(field, '-');
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(committed, isEmpty);
+    expect(find.text('-'), findsWidgets);
+  });
+
   testWidgets('waveform tap seeks the playhead to the tapped time',
       (WidgetTester tester) async {
     final List<int> seeks = <int>[];
