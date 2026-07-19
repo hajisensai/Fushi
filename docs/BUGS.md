@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 908 条。点号进各自文件。
+> 共 909 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-928](bugs/BUG-928-video-card-16x9-gap.md) | ✅ | ✅ | 视频卡对标准 16:9 封面留空隙·封面比例随标题长短浮动 |
 | [BUG-927](bugs/BUG-927-reader-native-selection-blocks-lookup-and-rightclick-crash.md) | ✅ | ✅ | 阅读器原生选区残留卡住查词 + 右键闪退 |
 | [BUG-926](bugs/BUG-926-popup-touch-copy-disabled.md) | ✅ | ✅ | 词典弹窗触屏无法复制释义(撤回BUG-762全量禁选) |
 | [BUG-925](bugs/BUG-925-settings-all-sections-collapsible.md) | ✅ | ✅ | 设置所有带标题分区都应可折叠，默认展开/收起互不影响 |

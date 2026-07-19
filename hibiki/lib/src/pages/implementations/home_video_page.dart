@@ -2416,7 +2416,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Expanded(
+          // BUG-926：与本地卡同因——封面从 Expanded 改为固定 AspectRatio(16/9)，让
+          // 16:9 远端封面精确铺满、无上下空隙，标题浮动高度不再反灌封面区。
+          AspectRatio(
+            aspectRatio: 16 / 9,
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
@@ -2482,13 +2485,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Text(
-              video.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text(
+                    video.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -2872,7 +2883,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Expanded(
+          // BUG-926：封面此前用 Expanded 吃掉「cell 高 − 下方文字块实际高度」的剩余，
+          // 而文字块高度随标题行数 / 有无观看进度浮动（≤_kVideoCardTextBlock），文字不
+          // 足时多出的空间灌进封面区、使其高于 16:9，16:9 封面 contain 后上下留空隙
+          // （标题短或无进度时才现，故「时有时无」）。改为固定 AspectRatio(16/9)：封面
+          // 永远精确 16:9，与标题长短彻底解耦，标准 16:9 封面无空隙。
+          AspectRatio(
+            aspectRatio: 16 / 9,
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
@@ -2929,31 +2946,38 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-            child: Text(
-              book.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
+          // 文字块占封面下方剩余固定高度（cell 高 − 16:9 封面 = _kVideoCardTextBlock），
+          // 标题 / 进度用 ellipsis 内收，浮动高度不再反灌进封面区（BUG-926）。
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                  child: Text(
+                    book.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                // UI v2 Phase D：观看进度文字外显（mockup 卡片下的进度/上次观看行）。
+                // 只显示可靠数据：已看完 / 已看至 mm:ss（无总时长列，不显示百分比）+
+                // 上次观看日期（watch-stats 有该 title 时）；全无痕迹不渲染本行。
+                if (_buildCardWatchMeta(book) case final String meta
+                    when meta.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                    child: Text(
+                      meta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HibikiDesignTokens.of(context).type.metadata,
+                    ),
+                  ),
+              ],
             ),
           ),
-          // UI v2 Phase D：观看进度文字外显（mockup 卡片下的进度/上次观看行）。
-          // 只显示可靠数据：已看完 / 已看至 mm:ss（无总时长列，不显示百分比）+
-          // 上次观看日期（watch-stats 有该 title 时）；全无痕迹不渲染本行。
-          if (_buildCardWatchMeta(book) case final String meta
-              when meta.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-              child: Text(
-                meta,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: HibikiDesignTokens.of(context).type.metadata,
-              ),
-            )
-          else
-            const SizedBox(height: 4),
         ],
       ),
     );
