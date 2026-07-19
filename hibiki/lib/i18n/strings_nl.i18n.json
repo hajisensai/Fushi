@@ -1990,5 +1990,8 @@
   "video_setting_torrent_upload_limit": "Upload limit (KB/s)",
   "video_setting_torrent_max_connections": "Max connections",
   "video_setting_torrent_limit_hint": "0 = unlimited",
-  "video_setting_torrent_connections_hint": "0 = engine default"
+  "video_setting_torrent_connections_hint": "0 = engine default",
+  "shortcut_action_video_subtitle_delay_increase": "Subtitle delay +",
+  "shortcut_action_video_subtitle_delay_decrease": "Subtitle delay −",
+  "shortcut_action_video_open_subtitle_align": "Open subtitle waveform align"
 }

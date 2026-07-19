@@ -153,6 +153,16 @@ enum ShortcutAction {
   videoCycleSubtitleObscure(
       ShortcutScope.video, 'video_cycle_subtitle_obscure'),
   videoToggleSubtitleHide(ShortcutScope.video, 'video_toggle_subtitle_hide'),
+  // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
+  // 键盘。videoOpenSubtitleAlign 一键弹波形对轴放大视图（复用 SubtitleWaveformZoomView，
+  // 与面板入口同一逻辑、零第二套状态）；videoSubtitleDelayIncrease/Decrease 像 mpv 的
+  // z/x 一样按固定步进整体平移字幕延迟（走现有 _setDelayMs 写穿 delayMs 落盘）。三者都
+  // 在 video 独立 co-active 组内，默认键与既有视频键无冲突。
+  videoOpenSubtitleAlign(ShortcutScope.video, 'video_open_subtitle_align'),
+  videoSubtitleDelayIncrease(
+      ShortcutScope.video, 'video_subtitle_delay_increase'),
+  videoSubtitleDelayDecrease(
+      ShortcutScope.video, 'video_subtitle_delay_decrease'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，

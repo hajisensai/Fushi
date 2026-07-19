@@ -217,6 +217,9 @@ class _Rig {
       replayPreviousSubtitle: _noop,
       previousChapter: _noop,
       nextChapter: _noop,
+      openSubtitleAlign: _noop,
+      subtitleDelayIncrease: _noop,
+      subtitleDelayDecrease: _noop,
       escape: () {
         bump(ShortcutAction.videoEscape);
         if (state.fullscreenActive) {

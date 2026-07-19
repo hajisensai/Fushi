@@ -80,6 +80,7 @@ import 'package:hibiki/src/media/video/video_chapter_panel.dart';
 import 'package:hibiki/src/media/video/audio_energy_probe.dart';
 import 'package:hibiki/src/media/video/waveform_envelope_cache.dart';
 import 'package:hibiki/src/media/video/subtitle_auto_align.dart';
+import 'package:hibiki/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:hibiki/src/media/video/video_chapter_markers.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart';
 import 'package:hibiki/src/media/video/video_episode_panel.dart';
@@ -3814,6 +3815,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _pokeControlsVisible();
         unawaited(controller.nextChapter());
       }),
+      // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
+      // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
+      // 与顶部快速设置面板同源、零第二套状态。
+      openSubtitleAlign: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_openSubtitleWaveformAlign()),
+      ),
+      subtitleDelayIncrease: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_setDelayMs(_delayMs + _kSubtitleDelayNudgeMs)),
+      ),
+      subtitleDelayDecrease: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_setDelayMs(_delayMs - _kSubtitleDelayNudgeMs)),
+      ),
       escape: () {
         if (_videoControlEditMode.value) {
           _hideVideoControlEditOverlay(revealControls: false);
@@ -5331,6 +5344,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ShortcutAction.videoToggleFullscreen,
                 ShortcutAction.videoToggleSubtitleList,
                 ShortcutAction.videoToggleImmersiveLock,
+                // 对轴弹窗内再按「打开对轴」不叠第二层弹窗（与键盘直达路径一致）。
+                ShortcutAction.videoOpenSubtitleAlign,
               },
             ),
       // 点击字幕波形把播放头跳过去（seek 到该 x 对应的时间，不强制播放，保留当前播放态）。

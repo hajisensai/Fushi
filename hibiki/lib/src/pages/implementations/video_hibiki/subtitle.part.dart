@@ -1266,4 +1266,83 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       ),
     );
   }
+
+  /// 字幕对轴/匹配快捷键（用户请求，默认 Shift+A）：从键盘一键弹波形对轴放大视图，
+  /// 免去「控制栏 tune → 快速设置面板 → 字幕调轴区 → 点入口」四级操作。逻辑与
+  /// [SubtitleWaveformAlignPanel] 的入口点击（懒抽波形 → 非空才弹 [SubtitleWaveformZoomView]）
+  /// 完全一致、零第二套状态：调轴仍经 [_setDelayMs] 写回权威 `_delayMs`，自动对轴复用
+  /// [_autoAlignSubtitle]，逐句试听 / 播放头 / 弹窗内快捷键与快速设置面板路径同源。
+  ///
+  /// 降级路径与面板入口同款：无 controller / 无字幕 cue / 无本地视频路径 / 抽波形返回空
+  /// （移动端拿不到逐帧行 / ffmpeg 不可用）时不弹窗，改弹 OSD 提示不可用（不崩不空白）。
+  Future<void> _openSubtitleWaveformAlign() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final List<AudioCue> cues = controller.cues;
+    final String? videoPath = controller.videoPath;
+    if (cues.isEmpty || videoPath == null || videoPath.isEmpty) {
+      _showOsd(t.video_subtitle_waveform_unavailable);
+      return;
+    }
+    final List<double> env = await _loadSubtitleWaveformEnvelope();
+    if (!mounted) return;
+    if (env.isEmpty) {
+      _showOsd(t.video_subtitle_waveform_unavailable);
+      return;
+    }
+    // 波形时间窗上界：与 extractAudioEnergyEnvelope 探测上界同源（前 N 分钟截断），
+    // 与 _SubtitleWaveformAlignPanelState._windowEndMs 同一算式，保证键盘直达路径与
+    // 面板入口路径画出的时间轴一致。
+    final int durationMs = controller.durationMs ?? 0;
+    final int windowEndMs =
+        (durationMs > 0 && durationMs < kSubtitleAutoAlignProbeLimitMs)
+            ? durationMs
+            : kSubtitleAutoAlignProbeLimitMs;
+    final bool canAutoAlign = cues.isNotEmpty && videoPath.isNotEmpty;
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (BuildContext _) => SubtitleWaveformZoomView(
+        rawEnvelope: env,
+        cues: cues,
+        windowEndMs: windowEndMs,
+        initialDelayMs: _delayMs,
+        onCommitDelay: _setDelayMs,
+        onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
+        onPlayCue: (int startMs) async {
+          await controller.seekMs(startMs);
+          await controller.play();
+        },
+        isPlaying: () => controller.isPlaying,
+        onTogglePlayPause: () async {
+          await controller.togglePlayPause();
+        },
+        // 弹窗内复用视频页 registry 驱动的整表（尊重重映射）；排除会破坏弹窗自身的动作
+        // （Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁 / 再次打开对轴弹窗——避免递归叠栈）。
+        keyboardShortcuts: buildVideoPlayerShortcutsFromRegistry(
+          appModel.shortcutRegistry,
+          _buildVideoShortcutActions(controller),
+          exclude: const <ShortcutAction>{
+            ShortcutAction.videoEscape,
+            ShortcutAction.videoToggleFullscreen,
+            ShortcutAction.videoToggleSubtitleList,
+            ShortcutAction.videoToggleImmersiveLock,
+            ShortcutAction.videoOpenSubtitleAlign,
+          },
+        ),
+        onSeek: (int ms) async {
+          await controller.seekMs(ms);
+        },
+        positionListenable: controller,
+        // positionMs 可空（未就绪）；与快速设置面板路径同用 -1 哨兵 = 不画播放头。
+        currentPositionMs: () => controller.positionMs ?? -1,
+      ),
+    );
+  }
 }
+
+/// 字幕延迟 +/- 快捷键（用户请求，默认 z/x）每次整体平移的步进（毫秒）。取 100ms
+/// = mpv 字幕延迟键 `z`/`x` 的 0.1s 惯例；与快速设置面板 ±50 / ±1000 步进正交（都经
+/// [_setDelayMs] 写穿同一权威 `_delayMs`）。
+const int _kSubtitleDelayNudgeMs = 100;

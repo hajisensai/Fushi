@@ -46,13 +46,14 @@ void main() {
   late HibikiDatabase db;
   late ReaderHibikiSource source;
 
-  // A non-default custom binding for a video action: KeyZ (no modifiers) mapped
+  // A non-default custom binding for a video action: KeyG (no modifiers) mapped
   // to "toggle play/pause", which defaults to Space/P/MediaPlayPause and never
-  // KeyZ. Resolving KeyZ in the video scope therefore proves the *custom* JSON
-  // was loaded, not the defaults.
+  // KeyG. Resolving KeyG in the video scope therefore proves the *custom* JSON
+  // was loaded, not the defaults. (KeyZ/KeyX are now default subtitle-delay
+  // bindings, so this sentinel deliberately uses a still-unbound key.)
   final String customJson = jsonEncode(<String, dynamic>{
     ShortcutAction.videoTogglePlayPause.key: <String, dynamic>{
-      'keyboard': <String>['KeyZ'],
+      'keyboard': <String>['KeyG'],
       'gamepad': <String>[],
       'mouse': <String>[],
     },
@@ -94,10 +95,10 @@ void main() {
     final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
     await loadShortcutRegistry(registry, source, TargetPlatform.windows);
 
-    // Custom key KeyZ is NOT recognised — the registry only has defaults.
+    // Custom key KeyG is NOT recognised — the registry only has defaults.
     expect(
       registry.resolveKeyboard(
-        LogicalKeyboardKey.keyZ,
+        LogicalKeyboardKey.keyG,
         modifiers: const <ModifierKey>{},
         scope: ShortcutScope.video,
       ),
@@ -127,10 +128,10 @@ void main() {
     final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
     await loadShortcutRegistry(registry, source, TargetPlatform.windows);
 
-    // The custom KeyZ binding for toggle-play-pause is now active.
+    // The custom KeyG binding for toggle-play-pause is now active.
     expect(
       registry.resolveKeyboard(
-        LogicalKeyboardKey.keyZ,
+        LogicalKeyboardKey.keyG,
         modifiers: const <ModifierKey>{},
         scope: ShortcutScope.video,
       ),
