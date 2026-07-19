@@ -240,7 +240,11 @@ class AdaptiveSettingsSurface extends StatelessWidget {
             )
           : tappable;
     }
-    return _SettingsRowFocusTarget(onTap: onTitleTap!, child: tappable);
+    return _SettingsRowFocusTarget(
+      onTap: onTitleTap!,
+      autoHome: false,
+      child: tappable,
+    );
   }
 }
 
@@ -598,10 +602,16 @@ class _SettingsRowFocusTarget extends StatefulWidget {
   const _SettingsRowFocusTarget({
     required this.onTap,
     required this.child,
+    this.autoHome = true,
   });
 
   final VoidCallback onTap;
   final Widget child;
+
+  /// False for a collapsible section's fold header: it stays keyboard/gamepad
+  /// reachable but passive focus auto-home skips it so the cursor lands on the
+  /// first real setting row (see [HibikiFocusTargetEntry.autoHome]).
+  final bool autoHome;
 
   @override
   State<_SettingsRowFocusTarget> createState() =>
@@ -626,6 +636,7 @@ class _SettingsRowFocusTargetState extends State<_SettingsRowFocusTarget> {
       },
       child: HibikiFocusTarget(
         id: _focusId,
+        autoHome: widget.autoHome,
         child: widget.child,
       ),
     );
