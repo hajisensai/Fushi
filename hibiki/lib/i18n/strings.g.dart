@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 33728 (1984 per locale)
+/// Strings: 33779 (1987 per locale)
 ///
-/// Built on 2026-07-18 at 18:37 UTC
+/// Built on 2026-07-19 at 04:03 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2666,6 +2666,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get mining_audio_quality_standard => 'Standard';
   String get mining_audio_quality_high => 'High';
   String get mining_audio_quality_native => 'Native';
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -7162,6 +7168,15 @@ class _StringsAr extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -11731,6 +11746,15 @@ class _StringsDe extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -16316,6 +16340,15 @@ class _StringsEs extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -20912,6 +20945,15 @@ class _StringsFr extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -25435,6 +25477,15 @@ class _StringsId extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -30006,6 +30057,15 @@ class _StringsIt extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -34383,6 +34443,15 @@ class _StringsJa extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -38763,6 +38832,15 @@ class _StringsKo extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -43312,6 +43390,15 @@ class _StringsNl extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -47876,6 +47963,15 @@ class _StringsPtBr extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -52423,6 +52519,15 @@ class _StringsRu extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -56915,6 +57020,15 @@ class _StringsTh extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -61439,6 +61553,15 @@ class _StringsTr extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -65950,6 +66073,15 @@ class _StringsVi extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 // Path: <root>
@@ -70152,6 +70284,12 @@ class _StringsZhCn extends _StringsEn {
   String get mining_audio_quality_high => '高音质';
   @override
   String get mining_audio_quality_native => '原片';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase => '字幕延迟增大';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease => '字幕延迟减小';
+  @override
+  String get shortcut_action_video_open_subtitle_align => '打开字幕波形对轴';
 }
 
 // Path: <root>
@@ -74451,6 +74589,15 @@ class _StringsZhHk extends _StringsEn {
   String get mining_audio_quality_high => 'High';
   @override
   String get mining_audio_quality_native => 'Native';
+  @override
+  String get shortcut_action_video_subtitle_delay_increase =>
+      'Subtitle delay +';
+  @override
+  String get shortcut_action_video_subtitle_delay_decrease =>
+      'Subtitle delay −';
+  @override
+  String get shortcut_action_video_open_subtitle_align =>
+      'Open subtitle waveform align';
 }
 
 /// Flat map(s) containing all translations.
@@ -78509,6 +78656,12 @@ extension on _StringsEn {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -82565,6 +82718,12 @@ extension on _StringsAr {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -86642,6 +86801,12 @@ extension on _StringsDe {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -90718,6 +90883,12 @@ extension on _StringsEs {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -94800,6 +94971,12 @@ extension on _StringsFr {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -98864,6 +99041,12 @@ extension on _StringsId {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -102943,6 +103126,12 @@ extension on _StringsIt {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -106984,6 +107173,12 @@ extension on _StringsJa {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -111029,6 +111224,12 @@ extension on _StringsKo {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -115101,6 +115302,12 @@ extension on _StringsNl {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -119170,6 +119377,12 @@ extension on _StringsPtBr {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -123244,6 +123457,12 @@ extension on _StringsRu {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -127302,6 +127521,12 @@ extension on _StringsTh {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -131369,6 +131594,12 @@ extension on _StringsTr {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -135431,6 +135662,12 @@ extension on _StringsVi {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }
@@ -139460,6 +139697,12 @@ extension on _StringsZhCn {
         return '高音质';
       case 'mining_audio_quality_native':
         return '原片';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return '字幕延迟增大';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return '字幕延迟减小';
+      case 'shortcut_action_video_open_subtitle_align':
+        return '打开字幕波形对轴';
       default:
         return null;
     }
@@ -143496,6 +143739,12 @@ extension on _StringsZhHk {
         return 'High';
       case 'mining_audio_quality_native':
         return 'Native';
+      case 'shortcut_action_video_subtitle_delay_increase':
+        return 'Subtitle delay +';
+      case 'shortcut_action_video_subtitle_delay_decrease':
+        return 'Subtitle delay −';
+      case 'shortcut_action_video_open_subtitle_align':
+        return 'Open subtitle waveform align';
       default:
         return null;
     }

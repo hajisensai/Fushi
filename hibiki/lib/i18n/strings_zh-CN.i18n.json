@@ -1982,5 +1982,8 @@
   "mining_audio_quality_hint": "比特率越高越清晰，卡片体积也越大。",
   "mining_audio_quality_standard": "标准",
   "mining_audio_quality_high": "高音质",
-  "mining_audio_quality_native": "原片"
+  "mining_audio_quality_native": "原片",
+  "shortcut_action_video_subtitle_delay_increase": "字幕延迟增大",
+  "shortcut_action_video_subtitle_delay_decrease": "字幕延迟减小",
+  "shortcut_action_video_open_subtitle_align": "打开字幕波形对轴"
 }

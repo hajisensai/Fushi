@@ -35,6 +35,9 @@ class VideoPlayerShortcutActions {
     required this.replayPreviousSubtitle,
     required this.previousChapter,
     required this.nextChapter,
+    required this.openSubtitleAlign,
+    required this.subtitleDelayIncrease,
+    required this.subtitleDelayDecrease,
     required this.escape,
   });
 
@@ -84,6 +87,16 @@ class VideoPlayerShortcutActions {
   final VoidCallback previousChapter;
   final VoidCallback nextChapter;
 
+  /// 打开字幕波形对轴放大视图（用户请求，默认 Shift+A）：复用快速设置面板里的
+  /// SubtitleWaveformZoomView，一键从键盘直达埋得很深的「字幕调轴」。无字幕 / 无本地
+  /// 视频路径 / 移动端抽不到波形时降级弹提示、不弹窗。
+  final VoidCallback openSubtitleAlign;
+
+  /// 字幕延迟 +/-（用户请求，默认 z/x）：像 mpv 一样按固定步进整体平移字幕延迟，
+  /// 走现有 _setDelayMs 写穿 delayMs 落盘 + OSD 反馈。
+  final VoidCallback subtitleDelayIncrease;
+  final VoidCallback subtitleDelayDecrease;
+
   final VoidCallback escape;
 }
 
@@ -123,6 +136,9 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
     ShortcutAction.videoPreviousChapter: actions.previousChapter,
     ShortcutAction.videoNextChapter: actions.nextChapter,
+    ShortcutAction.videoOpenSubtitleAlign: actions.openSubtitleAlign,
+    ShortcutAction.videoSubtitleDelayIncrease: actions.subtitleDelayIncrease,
+    ShortcutAction.videoSubtitleDelayDecrease: actions.subtitleDelayDecrease,
     ShortcutAction.videoEscape: actions.escape,
   };
 }

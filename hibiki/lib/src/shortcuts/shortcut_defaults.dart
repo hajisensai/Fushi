@@ -336,6 +336,19 @@ class ShortcutDefaults {
     ShortcutAction.videoToggleSubtitleHide: _kb([
       _key(LogicalKeyboardKey.keyH),
     ]),
+    // 字幕对轴/匹配（用户请求）：打开波形对轴放大视图默认 Shift+A（A=Align，避开裸 A 的
+    // 回退 seek）；字幕延迟 -/+ 默认 z/x（mpv 经典字幕延迟键，每次 ±100ms=mpv 0.1s）。
+    // 三键在 video co-active 组内均未占用（裸 z/x、Shift+A 都是空闲位），无冲突。键盘-only
+    // （手柄不绑，与 videoToggleMute/videoSpeedUp 同范式）。
+    ShortcutAction.videoOpenSubtitleAlign: _kb([
+      _key(LogicalKeyboardKey.keyA, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoSubtitleDelayDecrease: _kb([
+      _key(LogicalKeyboardKey.keyZ),
+    ]),
+    ShortcutAction.videoSubtitleDelayIncrease: _kb([
+      _key(LogicalKeyboardKey.keyX),
+    ]),
     // TODO-700 T6：dpad 四向可绑触发键。默认各绑对应 dpad 键；键盘留空（方向焦点
     // 移动由箭头键 / 摇杆负责，避免与各页面方向键语义重复）。执行体 = 通用方向焦点
     // 移动（gamepadMoveFocusInDirection），见 gamepad_service._dispatchButton。

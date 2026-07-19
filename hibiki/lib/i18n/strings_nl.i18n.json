@@ -1982,5 +1982,8 @@
   "mining_audio_quality_hint": "Higher bitrate is clearer but makes larger cards.",
   "mining_audio_quality_standard": "Standard",
   "mining_audio_quality_high": "High",
-  "mining_audio_quality_native": "Native"
+  "mining_audio_quality_native": "Native",
+  "shortcut_action_video_subtitle_delay_increase": "Subtitle delay +",
+  "shortcut_action_video_subtitle_delay_decrease": "Subtitle delay −",
+  "shortcut_action_video_open_subtitle_align": "Open subtitle waveform align"
 }

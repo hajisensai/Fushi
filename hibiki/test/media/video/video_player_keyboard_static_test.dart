@@ -279,13 +279,42 @@ void main() {
               'Keyboard volume keys must not display volume in the top-left OSD.');
     });
 
-    test('subtitle sync is a settings control, not an arrow-key binding', () {
-      // TODO-060: subtitle sync moved to the settings panel row, committed via
-      // onSetDelay -> _setDelayMs; no arrow-key increment binding.
+    test('subtitle sync is both a settings control and a z/x key binding', () {
+      // TODO-060: subtitle sync is a settings panel row, committed via
+      // onSetDelay -> _setDelayMs. 用户请求（本轮）：额外把整体延迟平移绑到键盘
+      // z/x（mpv 惯例），每次 ±_kSubtitleDelayNudgeMs，走同一 _setDelayMs 写穿路径。
+      // 仍不绑到裸箭头键（箭头是 time seek，TODO-090），故与既有 seek 语义不冲突。
       expect(page.contains('onSetDelay: _setDelayMs'), isTrue);
       expect(page.contains('_setDelayMs'), isTrue);
-      expect(shortcuts.contains('_setDelayMs'), isFalse,
-          reason: 'subtitle sync is not bound to arrows, only in settings');
+      // 键盘默认：z = 减小字幕延迟、x = 增大（video co-active 组内无冲突）。
+      expect(
+          defaultHasKey(ShortcutAction.videoSubtitleDelayDecrease,
+              LogicalKeyboardKey.keyZ),
+          isTrue,
+          reason: 'z decreases subtitle delay (mpv-style)');
+      expect(
+          defaultHasKey(ShortcutAction.videoSubtitleDelayIncrease,
+              LogicalKeyboardKey.keyX),
+          isTrue,
+          reason: 'x increases subtitle delay (mpv-style)');
+      // 裸箭头仍不绑字幕延迟（保持 time seek 语义）。
+      expect(
+          defaultHasKey(ShortcutAction.videoSubtitleDelayDecrease,
+              LogicalKeyboardKey.arrowLeft),
+          isFalse,
+          reason: 'subtitle delay is not bound to bare arrows');
+      // 页面把两个动作接到 _setDelayMs(_delayMs ± step)，与设置面板同一写穿路径。
+      expect(page.contains('_setDelayMs(_delayMs + _kSubtitleDelayNudgeMs)'),
+          isTrue);
+      expect(page.contains('_setDelayMs(_delayMs - _kSubtitleDelayNudgeMs)'),
+          isTrue);
+      // action->callback 接线在 videoActionCallbacks 里。
+      expect(
+          shortcuts.contains(
+              'ShortcutAction.videoSubtitleDelayIncrease: '
+              'actions.subtitleDelayIncrease'),
+          isTrue);
+      // 仍不引入旧的被否决实现名。
       expect(page.contains('_adjustSubtitleOffset'), isFalse);
       expect(page.contains('_subtitleOffsetStepMs'), isFalse);
     });
