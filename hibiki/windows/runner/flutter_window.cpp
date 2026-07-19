@@ -1547,8 +1547,10 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                flutter::EncodableValue(s.calibrating)},
               {flutter::EncodableValue("textHooked"),
                flutter::EncodableValue(s.text_hooked)},
+              {flutter::EncodableValue("rawVoiceReady"),
+               flutter::EncodableValue(s.raw_voice_ready)},
               {flutter::EncodableValue("ready"),
-               flutter::EncodableValue(s.ok)},
+               flutter::EncodableValue(s.ok || s.raw_voice_ready)},
           };
         };
         auto read_long = [&call](const char* key) -> int64_t {

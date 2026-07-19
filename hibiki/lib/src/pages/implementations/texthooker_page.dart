@@ -234,6 +234,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (picked != null) await _session.bindWindow(picked);
   }
 
+  /// galgame 引擎-hook（launch 模式）：页面只发起会话；位数解析、注入器选择、窗口绑定、
+  /// 音频源回退都在 [GalHookSessionController]。KiriKiriZ 仍走早注入；SiglusEngine 由
+  /// injector 自动改为 Enigma-safe 延迟附着，并通过 raw-only Ogg 路径提供制卡音频。
   Future<void> _launchGalgameEngineHook() async {
     if (!Platform.isWindows) {
       HibikiToast.show(msg: t.external_window_unsupported);

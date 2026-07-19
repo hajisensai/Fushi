@@ -28,6 +28,7 @@ struct VoiceHookStatus {
   bool hooked = false;       // hook DLL 是否已注入并安装钩子（proof-of-life）
   bool calibrating = false;  // 是否处于校准模式（识别 voice callsite 中）
   bool text_hooked = false;  // 文本 hook 是否已装（v2）
+  bool raw_voice_ready = false;  // Siglus OVK 原始逐句 Ogg hook 已就绪（可无 PCM 格式）
   bool ok = false;           // 映射有效且格式已就绪（音频格式已填）
 };
 

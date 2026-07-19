@@ -46,8 +46,16 @@ target_include_directories(hibiki_voice_hook PRIVATE "include")
 target_compile_definitions(hibiki_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(hibiki_voice_hook PRIVATE minhook)
 
-# 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch，CREATE_SUSPENDED
-# 早注入）两种模式，各 arch 一份（32 位游戏用 x86 注入器 + x86 DLL）。
+# Siglus OVK 索引/Ogg 完整性解析是纯函数，独立小测试不需启动或注入游戏。
+enable_testing()
+add_executable(hibiki_siglus_ovk_test
+  "tests/siglus_ovk_test.cpp"
+)
+target_include_directories(hibiki_siglus_ovk_test PRIVATE "hook")
+add_test(NAME hibiki_siglus_ovk_test COMMAND hibiki_siglus_ovk_test)
+
+# 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
+# CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(hibiki_voice_injector
   "injector/injector_main.cpp"
 )

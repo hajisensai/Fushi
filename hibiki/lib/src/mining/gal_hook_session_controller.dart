@@ -630,7 +630,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
     final EngineHookGalAudioSource? engine = _engineSource;
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
-    if (engine != null && _isWindows && timestamp > 0) {
+    if (engine != null && _isWindows) {
       final Uint8List? paired = await engine.grabPairedVoiceBytes(
         timestamp,
         outputExtension: outputExtension,
@@ -653,13 +653,15 @@ class GalHookSessionController extends ChangeNotifier {
         );
         return paired;
       }
-      _record(
-        GalHookEventSeverity.warning,
-        'match',
-        'audio.paired_voice_not_found',
-        'No paired original voice candidate; falling back to PCM',
-        details: <String, Object?>{'lineId': lineId},
-      );
+      if (timestamp > 0) {
+        _record(
+          GalHookEventSeverity.warning,
+          'match',
+          'audio.paired_voice_not_found',
+          'No paired original voice candidate; falling back to PCM',
+          details: <String, Object?>{'lineId': lineId},
+        );
+      }
     }
     GalAudioSlice? slice = _lineVoiceCache[lineId];
     if ((slice == null || slice.isEmpty) && engine != null && timestamp > 0) {

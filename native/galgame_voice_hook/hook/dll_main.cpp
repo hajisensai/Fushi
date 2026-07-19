@@ -18,6 +18,7 @@
 #include <cstring>
 #include <string>
 
+#include "siglus_ovk.h"
 #include "voice_hook_ipc.h"
 
 // C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
@@ -75,8 +76,43 @@ uint8_t* g_clip_base = nullptr;
 // 对同一函数地址只 MH_CreateHook 一次（重复 create 会报 MH_ERROR_ALREADY_CREATED）。
 CRITICAL_SECTION g_cs;
 bool g_cs_ready = false;
-void* g_hooked_fns[32] = {nullptr};
+void* g_hooked_fns[64] = {nullptr};
 int g_hooked_count = 0;
+
+// 原始语音流落盘的共用出口（KiriKiri 与 Siglus 都写同一目录，供 Dart 按 tick 配对）。
+std::wstring VoiceBaseName(const wchar_t* storagename) {
+  std::wstring s(storagename);
+  const size_t pos = s.find_last_of(L"/\\");
+  std::wstring base =
+      (pos == std::wstring::npos) ? s : s.substr(pos + 1);
+  for (wchar_t& c : base) {
+    if (c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' ||
+        c == L'>' || c == L'|') {
+      c = L'_';
+    }
+  }
+  if (base.empty()) base = L"voice";
+  if (base.find(L'.') == std::wstring::npos) base += L".ogg";
+  return base;
+}
+
+void WriteVoiceOggAt(const uint8_t* data, uint32_t len,
+                     const wchar_t* storagename, uint64_t tick_ms) {
+  if (data == nullptr || len == 0) return;
+  wchar_t temp[MAX_PATH] = {0};
+  const DWORD n = GetTempPathW(MAX_PATH, temp);
+  if (n == 0 || n > MAX_PATH) return;
+  std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  CreateDirectoryW(dir.c_str(), nullptr);
+  std::wstring file = dir + L"\\" + std::to_wstring(tick_ms) + L"_" +
+                      VoiceBaseName(storagename);
+  HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr,
+                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (f == INVALID_HANDLE_VALUE) return;
+  DWORD written = 0;
+  WriteFile(f, data, len, &written, nullptr);
+  CloseHandle(f);
+}
 
 // 首次拿到语音格式的写入闩：多路 CreateSourceVoice 只让第一个写 header 格式字段。
 volatile LONG g_format_set = 0;
@@ -133,6 +169,12 @@ DirectSoundCreate_t g_orig_DirectSoundCreate = nullptr;
 CreateSoundBuffer_t g_orig_CreateSoundBuffer = nullptr;
 DsbUnlock_t g_orig_DsbUnlock = nullptr;
 
+typedef HRESULT(WINAPI* CoCreateInstance_t)(REFCLSID rclsid,
+                                             LPUNKNOWN pUnkOuter,
+                                             DWORD dwClsContext,
+                                             REFIID riid, LPVOID* ppv);
+CoCreateInstance_t g_orig_CoCreateInstance = nullptr;
+
 // 独立测试用 proof-of-life 标记文件：%TEMP%\hibiki_voice_hook_<pid>.marker。injector 之外也
 // 能据此确认 DLL 真的被加载执行（不依赖事件）。
 void WriteMarkerFile(DWORD pid) {
@@ -178,12 +220,17 @@ bool HookFn(void* target, void* detour, void** original) {
   }
   if (already) {
     ok = true;
-  } else if (MH_CreateHook(target, detour, original) == MH_OK &&
-             MH_EnableHook(target) == MH_OK) {
-    if (g_hooked_count < 32) {
-      g_hooked_fns[g_hooked_count++] = target;
+  } else {
+    const MH_STATUS created = MH_CreateHook(target, detour, original);
+    if (created == MH_OK || created == MH_ERROR_ALREADY_CREATED) {
+      const MH_STATUS enabled = MH_EnableHook(target);
+      if (enabled == MH_OK || enabled == MH_ERROR_ENABLED) {
+        if (g_hooked_count < 64) {
+          g_hooked_fns[g_hooked_count++] = target;
+        }
+        ok = true;
+      }
     }
-    ok = true;
   }
   LeaveCriticalSection(&g_cs);
   return ok;
@@ -536,6 +583,34 @@ HRESULT WINAPI Detour_DirectSoundCreate(LPCGUID pcGuidDevice,
   return hr;
 }
 
+// SiglusEngine 1.1.x 不走 DirectSoundCreate(8) 导出，而是经 COM 创建 DirectSound 对象。
+// 捕获 CLSID_DirectSound/CLSID_DirectSound8 的返回接口后，复用同一 CreateSoundBuffer vtable
+// hook。这样既给 raw OVK 路径提供 status/混音兜底，也覆盖其它采用 COM 建 DS 的引擎。
+constexpr GUID kClsidDirectSound = {
+    0x47d4d946, 0x62e8, 0x11cf, {0x93, 0xbc, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00}};
+constexpr GUID kClsidDirectSound8 = {
+    0x3901cc3f, 0x84b5, 0x4fa4, {0xba, 0x35, 0xaa, 0x81, 0x72, 0xb8, 0xa0, 0x9b}};
+
+bool SameGuid(REFCLSID a, const GUID& b) {
+  return memcmp(&a, &b, sizeof(GUID)) == 0;
+}
+
+HRESULT WINAPI Detour_CoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter,
+                                        DWORD dwClsContext, REFIID riid,
+                                        LPVOID* ppv) {
+  const HRESULT hr = g_orig_CoCreateInstance(rclsid, pUnkOuter, dwClsContext,
+                                              riid, ppv);
+  if (SUCCEEDED(hr) && ppv != nullptr && *ppv != nullptr &&
+      (SameGuid(rclsid, kClsidDirectSound) ||
+       SameGuid(rclsid, kClsidDirectSound8))) {
+    if (g_header != nullptr) {
+      g_header->reserved_luna |= 0x08000000u;
+    }
+    HookCreateSoundBufferOn(*ppv);
+  }
+  return hr;
+}
+
 // hook 导出的 DirectSoundCreate8 + DirectSoundCreate（dsound.dll，未加载则 LoadLibrary 强制
 // 解析导出）。
 //
@@ -556,6 +631,319 @@ void TryHookDirectSoundCreate() {
   void* c0 = reinterpret_cast<void*>(GetProcAddress(mod, "DirectSoundCreate"));
   HookFn(c0, reinterpret_cast<void*>(&Detour_DirectSoundCreate),
          reinterpret_cast<void**>(&g_orig_DirectSoundCreate));
+
+  HMODULE ole = GetModuleHandleW(L"ole32.dll");
+  if (ole == nullptr) {
+    ole = LoadLibraryW(L"ole32.dll");
+  }
+  if (ole != nullptr) {
+    HookFn(reinterpret_cast<void*>(GetProcAddress(ole, "CoCreateInstance")),
+           reinterpret_cast<void*>(&Detour_CoCreateInstance),
+           reinterpret_cast<void**>(&g_orig_CoCreateInstance));
+  }
+}
+
+// ══ C.3 SiglusEngine OVK 原始语音捕获 ═══════════════════════════════════════════
+// Siglus 角色语音位于 koe/*.ovk：文件头是 count + count 个 16-byte 索引项，每项给出一条
+// 完整 Ogg/Vorbis 的 byte_len / absolute_offset。引擎播放台词时从相应 offset ReadFile；在
+// 返回 buffer 以 OggS 开头时只投递固定大小任务，HookWorker 另开只读句柄按索引取完整 entry、
+// 校验 Ogg EOS 后落盘。ReadFile 路径不分配、不写盘，避免给游戏的解码 IO 线程增加阻塞。
+
+constexpr size_t kSiglusPathChars = 520;
+constexpr int kSiglusHandleSlots = 32;
+constexpr int kSiglusTaskSlots = 32;
+constexpr uint32_t kDiagSiglusHooksReady = 0x10000000u;
+constexpr uint32_t kDiagSiglusOvkOpened = 0x20000000u;
+constexpr uint32_t kDiagSiglusVoiceQueued = 0x40000000u;
+constexpr uint32_t kDiagSiglusVoiceDumped = 0x80000000u;
+
+struct SiglusOvkHandle {
+  HANDLE handle = INVALID_HANDLE_VALUE;
+  wchar_t path[kSiglusPathChars] = {0};
+};
+
+struct SiglusVoiceTask {
+  volatile LONG state = 0;  // 0=空，1=生产中，2=待消费，3=消费中
+  uint64_t tick_ms = 0;
+  uint64_t offset = 0;
+  wchar_t path[kSiglusPathChars] = {0};
+};
+
+SiglusOvkHandle g_siglus_handles[kSiglusHandleSlots];
+SiglusVoiceTask g_siglus_tasks[kSiglusTaskSlots];
+
+decltype(&CreateFileW) g_orig_CreateFileW = nullptr;
+decltype(&CreateFileA) g_orig_CreateFileA = nullptr;
+decltype(&ReadFile) g_orig_ReadFile = nullptr;
+decltype(&CloseHandle) g_orig_CloseHandle = nullptr;
+
+bool HasOvkSuffix(const wchar_t* path) {
+  if (path == nullptr) return false;
+  const size_t len = wcslen(path);
+  return len >= 4 && _wcsicmp(path + len - 4, L".ovk") == 0;
+}
+
+bool HasOvkSuffix(const char* path) {
+  if (path == nullptr) return false;
+  const size_t len = strlen(path);
+  return len >= 4 && _stricmp(path + len - 4, ".ovk") == 0;
+}
+
+void RememberSiglusOvk(HANDLE handle, const wchar_t* path) {
+  if (handle == INVALID_HANDLE_VALUE || path == nullptr || !g_cs_ready) return;
+  bool remembered = false;
+  EnterCriticalSection(&g_cs);
+  for (int i = 0; i < kSiglusHandleSlots; ++i) {
+    if (g_siglus_handles[i].handle == INVALID_HANDLE_VALUE ||
+        g_siglus_handles[i].handle == handle) {
+      g_siglus_handles[i].handle = handle;
+      wcsncpy_s(g_siglus_handles[i].path, path, _TRUNCATE);
+      remembered = true;
+      break;
+    }
+  }
+  LeaveCriticalSection(&g_cs);
+  if (remembered && g_header != nullptr) {
+    g_header->reserved_luna |= kDiagSiglusOvkOpened;
+  }
+}
+
+bool CopySiglusOvkPath(HANDLE handle, wchar_t* out, size_t out_chars) {
+  if (handle == INVALID_HANDLE_VALUE || out == nullptr || out_chars == 0 ||
+      !g_cs_ready) {
+    return false;
+  }
+  bool found = false;
+  EnterCriticalSection(&g_cs);
+  for (int i = 0; i < kSiglusHandleSlots; ++i) {
+    if (g_siglus_handles[i].handle == handle) {
+      wcsncpy_s(out, out_chars, g_siglus_handles[i].path, _TRUNCATE);
+      found = true;
+      break;
+    }
+  }
+  LeaveCriticalSection(&g_cs);
+  return found;
+}
+
+void ForgetSiglusOvk(HANDLE handle) {
+  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready) return;
+  EnterCriticalSection(&g_cs);
+  for (int i = 0; i < kSiglusHandleSlots; ++i) {
+    if (g_siglus_handles[i].handle == handle) {
+      g_siglus_handles[i].handle = INVALID_HANDLE_VALUE;
+      g_siglus_handles[i].path[0] = 0;
+      break;
+    }
+  }
+  LeaveCriticalSection(&g_cs);
+}
+
+HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
+                                  DWORD share_mode,
+                                  LPSECURITY_ATTRIBUTES security,
+                                  DWORD creation_disposition,
+                                  DWORD flags_and_attributes,
+                                  HANDLE template_file) {
+  HANDLE result = g_orig_CreateFileW(file_name, desired_access, share_mode,
+                                     security, creation_disposition,
+                                     flags_and_attributes, template_file);
+  if (result != INVALID_HANDLE_VALUE && HasOvkSuffix(file_name)) {
+    RememberSiglusOvk(result, file_name);
+  }
+  return result;
+}
+
+HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
+                                  DWORD share_mode,
+                                  LPSECURITY_ATTRIBUTES security,
+                                  DWORD creation_disposition,
+                                  DWORD flags_and_attributes,
+                                  HANDLE template_file) {
+  HANDLE result = g_orig_CreateFileA(file_name, desired_access, share_mode,
+                                     security, creation_disposition,
+                                     flags_and_attributes, template_file);
+  if (result != INVALID_HANDLE_VALUE && HasOvkSuffix(file_name)) {
+    wchar_t wide[kSiglusPathChars] = {0};
+    const int converted = MultiByteToWideChar(CP_ACP, 0, file_name, -1, wide,
+                                               kSiglusPathChars);
+    if (converted > 0) RememberSiglusOvk(result, wide);
+  }
+  return result;
+}
+
+void QueueSiglusVoice(const wchar_t* path, uint64_t offset) {
+  if (path == nullptr) return;
+  const uint64_t now = GetTickCount64();
+  for (int i = 0; i < kSiglusTaskSlots; ++i) {
+    if (InterlockedCompareExchange(&g_siglus_tasks[i].state, 1, 0) != 0) {
+      continue;
+    }
+    g_siglus_tasks[i].tick_ms = now;
+    g_siglus_tasks[i].offset = offset;
+    wcsncpy_s(g_siglus_tasks[i].path, path, _TRUNCATE);
+    InterlockedExchange(&g_siglus_tasks[i].state, 2);
+    if (g_header != nullptr) g_header->reserved_luna |= kDiagSiglusVoiceQueued;
+    return;
+  }
+}
+
+BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
+                            LPDWORD bytes_read, LPOVERLAPPED overlapped) {
+  const BOOL ok =
+      g_orig_ReadFile(file, buffer, requested, bytes_read, overlapped);
+  const DWORD done = bytes_read != nullptr ? *bytes_read : 0;
+  if (!ok || done < 4 || buffer == nullptr || !g_capture_enabled) return ok;
+
+  wchar_t path[kSiglusPathChars] = {0};
+  if (!CopySiglusOvkPath(file, path, kSiglusPathChars)) return ok;
+  __try {
+    if (memcmp(buffer, "OggS", 4) != 0) return ok;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return ok;
+  }
+
+  uint64_t start = 0;
+  if (overlapped != nullptr) {
+    start = (static_cast<uint64_t>(overlapped->OffsetHigh) << 32) |
+            overlapped->Offset;
+  } else {
+    LARGE_INTEGER zero = {};
+    LARGE_INTEGER current = {};
+    if (!SetFilePointerEx(file, zero, &current, FILE_CURRENT) ||
+        current.QuadPart < done) {
+      return ok;
+    }
+    start = static_cast<uint64_t>(current.QuadPart) - done;
+  }
+  QueueSiglusVoice(path, start);
+  return ok;
+}
+
+BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
+  ForgetSiglusOvk(handle);
+  return g_orig_CloseHandle(handle);
+}
+
+bool ReadExact(HANDLE file, void* buffer, uint32_t bytes) {
+  uint8_t* out = static_cast<uint8_t*>(buffer);
+  uint32_t done = 0;
+  while (done < bytes) {
+    DWORD part = 0;
+    if (!g_orig_ReadFile(file, out + done, bytes - done, &part, nullptr) ||
+        part == 0) {
+      return false;
+    }
+    done += part;
+  }
+  return true;
+}
+
+void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
+  HANDLE file = g_orig_CreateFileW(
+      task->path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE |
+                                       FILE_SHARE_DELETE,
+      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return;
+
+  LARGE_INTEGER size = {};
+  uint32_t count = 0;
+  uint8_t* index = nullptr;
+  uint8_t* ogg = nullptr;
+  hibiki_voice_hook::siglus::OvkEntry entry;
+  bool valid = GetFileSizeEx(file, &size) && size.QuadPart > 0 &&
+               ReadExact(file, &count, sizeof(count)) && count > 0 &&
+               count <= hibiki_voice_hook::siglus::kMaxEntryCount;
+  if (valid) {
+    const uint64_t index_bytes64 = sizeof(uint32_t) +
+        static_cast<uint64_t>(count) * hibiki_voice_hook::siglus::kOvkEntryBytes;
+    valid = index_bytes64 <= static_cast<uint64_t>(size.QuadPart) &&
+            index_bytes64 <= SIZE_MAX;
+    if (valid) {
+      const size_t index_bytes = static_cast<size_t>(index_bytes64);
+      index = static_cast<uint8_t*>(malloc(index_bytes));
+      valid = index != nullptr;
+      if (valid) {
+        memcpy(index, &count, sizeof(count));
+        valid = ReadExact(file, index + sizeof(count),
+                          static_cast<uint32_t>(index_bytes - sizeof(count)));
+      }
+      if (valid) {
+        valid = hibiki_voice_hook::siglus::FindEntryAtOffset(
+            index, index_bytes, static_cast<uint64_t>(size.QuadPart),
+            task->offset, &entry);
+      }
+    }
+  }
+  if (valid) {
+    LARGE_INTEGER at = {};
+    at.QuadPart = entry.offset;
+    valid = SetFilePointerEx(file, at, nullptr, FILE_BEGIN) != FALSE;
+  }
+  if (valid) {
+    ogg = static_cast<uint8_t*>(malloc(entry.byte_len));
+    valid = ogg != nullptr && ReadExact(file, ogg, entry.byte_len) &&
+            hibiki_voice_hook::siglus::CompleteOggBytes(ogg, entry.byte_len) ==
+                entry.byte_len;
+  }
+  if (valid) {
+    const wchar_t* slash = wcsrchr(task->path, L'\\');
+    const wchar_t* base = slash != nullptr ? slash + 1 : task->path;
+    wchar_t storage[260] = {0};
+    swprintf_s(storage, L"%s_%u.ogg", base, entry.id);
+    WriteVoiceOggAt(ogg, entry.byte_len, storage, task->tick_ms);
+    if (g_header != nullptr) g_header->reserved_luna |= kDiagSiglusVoiceDumped;
+  }
+  free(ogg);
+  free(index);
+  g_orig_CloseHandle(file);
+}
+
+void ProcessSiglusVoiceTasks() {
+  for (int i = 0; i < kSiglusTaskSlots; ++i) {
+    if (InterlockedCompareExchange(&g_siglus_tasks[i].state, 3, 2) == 2) {
+      ProcessSiglusVoiceTask(&g_siglus_tasks[i]);
+      InterlockedExchange(&g_siglus_tasks[i].state, 0);
+    }
+  }
+}
+
+bool IsSiglusEngine() {
+  wchar_t path[MAX_PATH] = {0};
+  if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0) return false;
+  const wchar_t* slash = wcsrchr(path, L'\\');
+  const wchar_t* base = slash != nullptr ? slash + 1 : path;
+  return _wcsicmp(base, L"SiglusEngine.exe") == 0;
+}
+
+bool TryHookSiglusOvk() {
+  if (!IsSiglusEngine()) return true;
+  // Windows 10/11 上 kernel32 的文件 API 是 forwarder；MinHook 不能对那段转发桩建 trampoline。
+  // 游戏 IAT 最终也落到 KernelBase 实现，故优先 hook KernelBase，旧系统再退 kernel32。
+  HMODULE kernel = GetModuleHandleW(L"KernelBase.dll");
+  if (kernel == nullptr) kernel = GetModuleHandleW(L"kernel32.dll");
+  if (kernel == nullptr) return false;
+  const bool create_w = HookFn(
+      reinterpret_cast<void*>(GetProcAddress(kernel, "CreateFileW")),
+      reinterpret_cast<void*>(&Detour_CreateFileW),
+      reinterpret_cast<void**>(&g_orig_CreateFileW));
+  const bool create_a = HookFn(
+      reinterpret_cast<void*>(GetProcAddress(kernel, "CreateFileA")),
+      reinterpret_cast<void*>(&Detour_CreateFileA),
+      reinterpret_cast<void**>(&g_orig_CreateFileA));
+  const bool read = HookFn(
+      reinterpret_cast<void*>(GetProcAddress(kernel, "ReadFile")),
+      reinterpret_cast<void*>(&Detour_ReadFile),
+      reinterpret_cast<void**>(&g_orig_ReadFile));
+  const bool close = HookFn(
+      reinterpret_cast<void*>(GetProcAddress(kernel, "CloseHandle")),
+      reinterpret_cast<void*>(&Detour_CloseHandle),
+      reinterpret_cast<void**>(&g_orig_CloseHandle));
+  const bool ready = create_w && create_a && read && close;
+  if (ready && g_header != nullptr) {
+    g_header->reserved_luna |= kDiagSiglusHooksReady;
+  }
+  return ready;
 }
 
 // ══ C.2c KiriKiri 解码器捕获链（引擎级干净人声）══════════════════════════════════
@@ -1162,37 +1550,9 @@ bool IsVoiceStorageName(const wchar_t* name) {
   return wcsstr(low, L"voice") != nullptr;
 }
 
-// 从 storagename 取 basename 并净化非法文件名字符；无扩展名则补 .ogg。
-std::wstring VoiceBaseName(const wchar_t* storagename) {
-  std::wstring s(storagename);
-  const size_t pos = s.find_last_of(L"/\\");
-  std::wstring base = (pos == std::wstring::npos) ? s : s.substr(pos + 1);
-  for (wchar_t& c : base) {
-    if (c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' || c == L'|') {
-      c = L'_';
-    }
-  }
-  if (base.empty()) base = L"voice";
-  if (base.find(L'.') == std::wstring::npos) base += L".ogg";
-  return base;
-}
-
-// 落盘：%TEMP%\hibiki_gal_voice\<GetTickCount64>_<basename>。tick 与文本环 timestamp_ms 同源供配对。
-void WriteVoiceOgg(const uint8_t* data, uint32_t len, const wchar_t* storagename) {
-  if (data == nullptr || len == 0) return;
-  wchar_t temp[MAX_PATH] = {0};
-  const DWORD n = GetTempPathW(MAX_PATH, temp);
-  if (n == 0 || n > MAX_PATH) return;
-  std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
-  CreateDirectoryW(dir.c_str(), nullptr);  // 已存在则失败无害
-  std::wstring file =
-      dir + L"\\" + std::to_wstring(GetTickCount64()) + L"_" + VoiceBaseName(storagename);
-  HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                         FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (f == INVALID_HANDLE_VALUE) return;
-  DWORD written = 0;
-  WriteFile(f, data, len, &written, nullptr);
-  CloseHandle(f);
+void WriteVoiceOgg(const uint8_t* data, uint32_t len,
+                   const wchar_t* storagename) {
+  WriteVoiceOggAt(data, len, storagename, GetTickCount64());
 }
 
 // ── detour：引擎内部 TVPCreateStream（MSVC __fastcall：ecx=name(const ttstr&), edx=mode）──────────
@@ -1693,6 +2053,8 @@ void TryHookTextRender() {
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 装 XAudio2 捕获链 -> 通知 injector。
 DWORD WINAPI HookWorker(LPVOID) {
   const DWORD pid = GetCurrentProcessId();
+  const bool siglus_engine = IsSiglusEngine();
+  bool siglus_ready = false;
   WriteMarkerFile(pid);
 
   const std::wstring shm = SharedMemoryName(pid);
@@ -1727,6 +2089,7 @@ DWORD WINAPI HookWorker(LPVOID) {
         g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
         TryHookXAudio2Create();
         TryHookDirectSoundCreate();
+        siglus_ready = TryHookSiglusOvk();  // C.3：Siglus koe/*.ovk 原始逐句 OGG。
         TryHookTextRender();          // v2：文本 hook（抓台词）。
         TryHookKirikiriDecoders();    // C.2c：KiriKiri 解码器级干净人声。
         TryHookKirikiriVoiceStream();  // C.2d：KiriKiriZ 原始语音 OGG 捕获。
@@ -1748,7 +2111,22 @@ DWORD WINAPI HookWorker(LPVOID) {
   bool dec_ready = false;
   int voice_retry = 0;
   bool voice_ready = false;
+  int generic_retry = 0;
+  int siglus_retry = 0;
   while (!g_stop) {
+    ProcessSiglusVoiceTasks();
+    // Siglus 的保护壳在 CREATE_SUSPENDED 极早期会让 Toolhelp 线程快照瞬时失败，MinHook
+    // MH_EnableHook 返回 MEMORY_ALLOC；主线程 Resume 后重试即可。generic 入口也一并重试，
+    // 覆盖同一启动窗口内首次未 enable 的 XAudio2/DirectSound 导出 hook。
+    if (g_capture_enabled && generic_retry < 150) {
+      TryHookXAudio2Create();
+      TryHookDirectSoundCreate();
+      generic_retry++;
+    }
+    if (!siglus_ready && g_capture_enabled && siglus_retry < 150) {
+      siglus_ready = TryHookSiglusOvk();
+      siglus_retry++;
+    }
     if (!dec_ready && g_capture_enabled && dec_retry < 150) {
       dec_ready = TryHookKirikiriDecoders();
       dec_retry++;
@@ -1757,7 +2135,9 @@ DWORD WINAPI HookWorker(LPVOID) {
       voice_ready = TryHookKirikiriVoiceStream();
       voice_retry++;
     }
-    Sleep(200);
+    // Siglus 保护壳的 Toolhelp 快照在主线程刚 Resume 的极短窗口内才恢复；未装好前 1ms
+    // 紧凑重试，避免等 200ms 后音频/归档对象早已创建。装好后回到常规低频保活。
+    Sleep(siglus_engine && !siglus_ready ? 1 : 200);
   }
 
   // 收尾在工作线程里做（不在 loader lock 中）：先关捕获总开关，再拆 MinHook。

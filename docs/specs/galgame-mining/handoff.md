@@ -3,20 +3,31 @@
 > 面向接手的另一个 AI/开发者，**自包含**。总设计见 [design.md](design.md)。
 > 已完成 A 阶段 Dart 基座 + native loopback + 波形桥 + C.1 注入组件（PR #212）。本文档给出**剩余任务**的落地路径：文件、接缝、gotcha、验证门。
 
-## 落地进度（本轮已完成，编译/单测已验；真机门未过）
+## 落地进度
 
-> 下列 A5/A6/C.2/C.4 的**代码已落地并本地验证**（Dart 全量 `flutter analyze` 0 issue、`flutter test test/mining` 全绿、`flutter build windows` 成功含 voice_hook_reader/channel/processIsWow64/pid、`native/galgame_voice_hook` **x64 与 x86 Release** 三目标零 warning）。**真机门仍未过**（无可运行的 galgame + 无法在此环境注入/放声）——声明「能用」前必须按各节「验证门」在真机复测。C.2 已覆盖 **XAudio2 + DirectSound**（后者供 KiriKiri/吉里吉里等旧引擎）。
+> A5/A6/C.2/C.4 的代码已落地。C.2/C.4 已在真实 32 位 KiriKiriZ 游戏跑通；2026-07-19 又在 SiglusEngine 1.1.141.3 正式版通过 DirectSound 混音捕获与 OVK 干净逐句语音验证。各引擎仍须逐个走原始路径，未覆盖者回退 loopback。
 
 | 任务 | 状态 | 已验证（本地上界） | 仍需真机 |
 |---|---|---|---|
 | **A5** 波形选区 widget | ✅ 代码完成 | `galgame_waveform_select.dart`/`_dialog.dart` + 8 单测绿 | 目视：能画/能拖/返回值对 |
 | **A6** 端到端一键 | ✅ 代码完成 | 接入 `texthooker_page.dart`；`slicePcmByMs` + 单测绿；`_captureGalAudioBytes` 串起 grab→选区→切片→编码→制卡 | galgame 热键→对话框→Anki 出卡（文本+可播音频+画面） |
 | **A native 运行验证** | ⏳ 未验证 | loopback native 已编译 | 放声→`grabRecent` 返非零 PCM |
-| **C.2** XAudio2 + DirectSound hook | ✅ 代码完成 | MinHook vendored；**XAudio2**（`XAudio2Create`/`CreateSourceVoice(vt5)`/`SubmitSourceBuffer(vt21)`）+ **DirectSound**（`DirectSoundCreate(8)`/`CreateSoundBuffer(vt3)`/`Unlock(vt19)`,跳主缓冲+格式一致性门控）零阻塞写环形；**x64 与 x86 Release 均链接过** | 真实 XAudio2/KiriKiri 游戏注入→环形填非静音语音、无爆音 |
-| **C.4** EngineHookGalAudioSource+接回 | ✅ 代码完成 | `voice_hook_reader.{h,cpp}`+`app.hibiki.reader/voice_hook` channel（含 `processIsWow64` 目标位数查询，windows build 过）；`EngineHookGalAudioSource`+`targetIsWow64` + 单测绿；`ExternalWindowInfo.pid` 已通；A6 已「引擎-hook 优先(按目标位数选 x86/x64 注入器)，不可用回退 loopback」 | 切引擎-hook→出卡为干净语音；不可用无缝回退 |
-| **C.3** 逐引擎覆盖 | ⛔ 未做 | — | 需各引擎真机标定 callsite/接口（C.2 当前捕获所有同格式 source voice/DS buffer，未按 callsite/音量精筛只留角色语音） |
+| **C.2** XAudio2 + DirectSound hook | ✅ 真机通过 | MinHook vendored；XAudio2 + DirectSound（含 `CoCreateInstance` 创建 DS）写环形；KiriKiriZ、Siglus x86 真机均读到 44.1kHz/2ch/16-bit 非静音 PCM | 继续覆盖其它引擎 |
+| **C.4** EngineHookGalAudioSource+接回 | ✅ 真机通过 | `voice_hook_reader.{h,cpp}`+`app.hibiki.reader/voice_hook` channel（含 `processIsWow64` 与 `rawVoiceReady`）；`EngineHookGalAudioSource` 支持 PCM 与 Siglus raw-only Ogg；A6 已「引擎-hook 优先(按目标位数选 x86/x64 注入器)，不可用回退 loopback」 | 全 UI 热键→Anki 出卡仍可继续走查 |
+| **C.3** 逐引擎覆盖 | 🟡 Siglus 已完成 | `SiglusEngine.exe` 专属 OVK 索引/Ogg 捕获，连续两句真机导出与原归档逐字节一致 | Artemis/Unity 等继续覆盖；KiriKiriZ 干净 per-channel 仍未做 |
 
 **接缝提醒**：injector 可执行文件约定放在 app 同级 `voice_hook/<arch>/hibiki_voice_injector.exe`（`_resolveGalInjectorPath({is32Bit})`，按 `EngineHookGalAudioSource.targetIsWow64(pid)` 查目标进程位数选 x86/x64——**KiriKiri 多为 32 位必须 x86 注入器**），由 `native/galgame_voice_hook` 单独 cmake（`-A x64` / `-A Win32`）构建后随包分发/按需下载；缺失/位数不符时 A6 自动回退 loopback。C.2 的**校准模式 callsite/音量精筛**（只留角色语音、BGM/SE 不捕获）留 TODO（`dll_main.cpp` 内注释），需真机各引擎标定=C.3。
+
+## ✅ 真机验证（2026-07-19，SiglusEngine 1.1.141.3 / anemoi 正式版）
+
+- 原始路径：`D:\anemoi\anemoi (正式版)\SiglusEngine.exe`，32 位 x86，SHA-256 `D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059`。
+- Siglus 通过 COM 创建 DirectSound；补 `CoCreateInstance` 后，ring probe 实测 `sr=44100 ch=2 bits=16`、`peak=31799`、`total_written=89556000`，共享内存持续为非静音。
+- Enigma 保护壳对 CREATE_SUSPENDED 极早注入并不稳定，复测曾直接报 `Internal Protection Error`。最终产品路径对 basename `SiglusEngine.exe` 改为：正常启动 → 等可见非 `The Enigma Protector` 游戏窗口 → 延迟附着；用户先开游戏再 `--pid` 附着也已真机通过。其它需要抢音频设备的引擎仍保留早注入。
+- 保护壳会令 Toolhelp 线程快照失败，导致 MinHook `MH_EnableHook` 返回 `MH_ERROR_MEMORY_ALLOC`。vendored MinHook 增加 `NtGetNextThread` 枚举兜底，仍完整冻结其它线程，不采用不安全的“跳过冻结”。
+- `koe/*.ovk` 格式已确认是 `u32 count + count × 16-byte index`，每项含 Ogg 字节数、绝对偏移与 voice id。文件 hook 只在读到索引精确命中的 `OggS` 起点时排队，工作线程重读完整 entry、验证 EOS 后落盘。
+- 真实存档连续有声台词导出：`z6038.ovk#113616` 为 34,621 bytes / 2.576327s，`z6038.ovk#189706` 为 64,298 bytes / 4.301723s；均为 Vorbis 44.1kHz mono，导出 SHA-256 与 OVK 对应 entry 完全一致。由此证明是原始逐句角色语音，不含 DirectSound 输出端的 BGM 混音。
+- 最终 DLL 对用户手动启动的进程晚附着后再次导出 `z6038.ovk#189706`（64,298 bytes），`reserved_luna=0xf3000000` 表示 hooks ready、OVK opened、voice queued/dumped 均命中。补完产品路径后，`hibiki_voice_injector.exe --launch "D:\anemoi\anemoi (正式版)\SiglusEngine.exe" --hold` 也成功正常进标题、延迟附着 pid、从存档导出 `586970156_z6038.ovk_189706.ogg`；该文件 SHA-256 `476F35F8A554A335910825D8D69A5C3C875E9E45A30E67289ADA7D3DB8FAEA58` 与 OVK entry 完全一致，并可转码为 44.1kHz mono AAC（53,816 bytes）。晚附着可能没有 DirectSound PCM/文本时间戳，因此 reader 新增 `rawVoiceReady`：Dart 保留引擎源，制卡优先精确时间配对；无时间戳则只选本 injector 会话之后最新的 Ogg，避免跨局误配。
+- Hibiki Windows 集成测试在进入用例前被本机缺少 Windows SDK 10.0.26100 `GameInput.h` 阻断；这是仓库 `gamepads_windows` 已注明的构建前置条件，不是本次 Siglus 代码失败。native x86/x64、Dart 音频测试和真实晚附着路径均另行验证。
 
 ## ✅ 真机验证（2026-07-18，KiriKiriZ / `otomeki.exe` 32 位 DirectSound 游戏）
 

@@ -33,9 +33,11 @@ cmake -S . -B build/x86 -A Win32 && cmake --build build/x86 --config Release
 
 ```sh
 hibiki_voice_injector.exe --pid <目标游戏PID> [--dll <hook.dll>] [--wait-ms 5000] [--hold]
+hibiki_voice_injector.exe --launch <游戏exe> [--workdir <目录>] [--arg <参数>]... [--dll <hook.dll>] [--wait-ms 5000] [--hold]
 ```
 
-- `--pid`：目标进程 ID（必填）。
+- `--pid`：附着模式的目标进程 ID；与 `--launch` 二选一。
+- `--launch`：由 injector 启动游戏并注入；普通引擎用 CREATE_SUSPENDED 早注入，`SiglusEngine.exe` 会自动改为 Enigma-safe 延迟附着。
 - `--dll`：hook DLL 路径（默认取同目录 arch 匹配的 `hibiki_voice_hook.dll`）。
 - `--wait-ms`：等「就绪」事件超时（默认 5000）。
 - `--hold`：注入确认后常驻（host 模式，维持共享内存存活供消费）；缺省=probe 模式，确认后退出。
@@ -45,6 +47,16 @@ hibiki_voice_injector.exe --pid <目标游戏PID> [--dll <hook.dll>] [--wait-ms 
 ## 分阶段（本组件的实现进度）
 
 - **C.1（已落）**：注入管线 + IPC 契约 proof-of-life。injector 注入 DLL、建共享内存/就绪事件，DLL 注入后标记 `hooked=1` 并 `SetEvent`；位数校验、marker 文件。**编译验证 + 对无害进程真实注入验证**。
-- **C.2（待真实 galgame）**：在 `dll_main.cpp` 的标注处安装 XAudio2/DirectSound vtable hook（经 MinHook 之类），混音前把语音 memcpy 进环形缓冲（回调零阻塞，爆音红线），首帧填格式；校准模式识别角色语音 voice callsite（`game.exe SHA + RVA`）。
-- **C.3**：逐引擎覆盖（KiriKiri / Artemis / Unity …），其余自动回退 A 阶段 loopback。
+- **C.2（已验证）**：XAudio2/DirectSound vtable hook 已落地，并在真实 32 位 KiriKiriZ 与 SiglusEngine 游戏验证非静音 PCM 可由共享内存读取。Siglus 的 DirectSound COM 创建路径也已覆盖。
+- **C.3（部分完成）**：SiglusEngine `koe/*.ovk` 已支持逐句提取完整 Ogg/Vorbis；其它引擎继续回退 A 阶段 loopback。KiriKiriZ 的 DirectSound 输出仍是软件混音后的 BGM+语音，不能视为干净语音。
 - **接 Hibiki**：`EngineHookGalAudioSource` 实现 `GalAudioSource`（Dart 侧），复用 A 阶段同一波形选区 + 制卡出口。
+
+## SiglusEngine 支持
+
+正式版 `SiglusEngine.exe` 使用 x86 injector。`--launch` 会识别该文件名，先让 Enigma 保护壳正常初始化，等游戏窗口出现后再自动附着（对其它引擎仍是 CREATE_SUSPENDED 早注入）；也可对用户已打开的游戏使用 `--pid`。hook 跟踪引擎之后读取的 `koe/*.ovk`，按归档头中的 16-byte 索引精确取出当前条目的完整 Ogg，并写到：
+
+```text
+%TEMP%\hibiki_gal_voice\<tick>_<archive>.ovk_<voice-id>.ogg
+```
+
+导出前会同时检查索引边界、条目上限、Ogg 页序列号和 EOS；文件 IO 与 Ogg 校验在工作线程执行，`ReadFile` detour 只复制固定大小任务。晚附着可能没有 DirectSound PCM 格式，Hibiki 会用 `rawVoiceReady` 保持引擎源，并优先把本会话的新 Ogg 转为 Anki 音频；无文本时间戳时只选本会话最新条目，绝不拿上一局残留。受保护的 Siglus 进程若令 Toolhelp 线程快照失败，vendored MinHook 会通过 `NtGetNextThread` 安全枚举并冻结其它线程后再启用 hook。
