@@ -366,7 +366,7 @@ void DumpSources(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
     }
     const int64_t d =
         static_cast<int64_t>(c->timestamp_ms) - static_cast<int64_t>(ts);
-    if (d >= -300 && d <= 6000) {
+    if (d >= -2000 && d <= 8000) {  // 宽窗：多句语音一起导出，人声爆发更易听辨
       by_src[c->source_ptr].push_back(c);
     }
   }

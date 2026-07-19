@@ -24,7 +24,7 @@ namespace hibiki_voice_hook {
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v2：在 v1 音频环形之外加「文本环」(hook 抓的台词行) + 「语音 clip 索引」(按句切的语音片段)。
 // 全自动制卡：文本 hook 出一句 + voice hook 出对应那条语音 clip → 按时间戳配对 → 点+一键出卡。
-constexpr uint32_t kSharedVersion = 4;
+constexpr uint32_t kSharedVersion = 5;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
@@ -37,7 +37,7 @@ constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 1024;
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
-constexpr uint32_t kClipCount = 128;
+constexpr uint32_t kClipCount = 1024;  // clip 索引环：128≈仅2秒历史不够重建整句语音，扩到 ~16秒
 
 // 文本槽：seq==全局 text_write_count 对应值时该槽有效；文本紧跟本头之后（kTextSlotBytes-头长）。
 #pragma pack(push, 8)

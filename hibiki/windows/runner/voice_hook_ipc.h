@@ -13,11 +13,11 @@
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 4;
+constexpr uint32_t kSharedVersion = 5;
 
 constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 1024;
-constexpr uint32_t kClipCount = 128;
+constexpr uint32_t kClipCount = 1024;
 
 #pragma pack(push, 8)
 struct TextSlot {
