@@ -2011,5 +2011,8 @@
   "game_event_warnings": "Warnings and errors",
   "game_session_events": "Session events",
   "game_latest_line": "Latest line",
-  "game_no_active_line": "Select a line to inspect its sentence-audio state."
+  "game_no_active_line": "Select a line to inspect its sentence-audio state.",
+  "game_text_thread": "Text thread",
+  "game_text_thread_all": "All text threads",
+  "game_text_thread_hint": "Choose the clean dialogue thread, like Luna Translator"
 }

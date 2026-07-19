@@ -39,6 +39,43 @@ void main() {
     expect(find.textContaining('行'), findsNothing);
   });
 
+  testWidgets('Luna-style text thread selector filters mixed hook output',
+      (WidgetTester tester) async {
+    TexthookerService.instance.appendLine(
+      '坏线程文本',
+      textThreadKey: 'luna:bad',
+      textThreadLabel: 'Luna 0x1000',
+      textHookCode: 'HS932@1000',
+    );
+    TexthookerService.instance.appendLine(
+      '干净台词',
+      textThreadKey: 'luna:clean',
+      textThreadLabel: 'SiglusEngine 0x2000',
+      textHookCode: 'HS932@2000',
+    );
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: TexthookerPage())),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('game-text-thread-selector')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('坏'), findsWidgets);
+    expect(find.textContaining('干'), findsWidgets);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('game-text-thread-selector')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('SiglusEngine 0x2000').last);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('干'), findsWidgets);
+    expect(find.textContaining('坏'), findsNothing);
+  });
+
   testWidgets('embedded mode reuses parent scaffold and exposes back action',
       (WidgetTester tester) async {
     bool returned = false;

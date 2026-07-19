@@ -1643,6 +1643,27 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                  flutter::EncodableValue(static_cast<int64_t>(ln.timestamp_ms))},
                 {flutter::EncodableValue("text"),
                  flutter::EncodableValue(ln.utf8)},
+                {flutter::EncodableValue("threadId"),
+                 flutter::EncodableValue(static_cast<int64_t>(ln.thread_id))},
+                {flutter::EncodableValue("threadAddress"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.thread_address))},
+                {flutter::EncodableValue("threadContext"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.thread_context))},
+                {flutter::EncodableValue("threadContext2"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.thread_context2))},
+                {flutter::EncodableValue("processId"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.process_id))},
+                {flutter::EncodableValue("sourceKind"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.source_kind))},
+                {flutter::EncodableValue("hookName"),
+                 flutter::EncodableValue(ln.hook_name)},
+                {flutter::EncodableValue("hookCode"),
+                 flutter::EncodableValue(ln.hook_code)},
             }));
           }
           result->Success(flutter::EncodableValue(flutter::EncodableMap{
@@ -1650,6 +1671,16 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                flutter::EncodableValue(static_cast<int64_t>(count))},
               {flutter::EncodableValue("lines"),
                flutter::EncodableValue(std::move(list))},
+          }));
+          return;
+        }
+        if (method == "selectTextThread") {
+          const uint64_t thread_id =
+              static_cast<uint64_t>(read_long("threadId"));
+          const bool ok =
+              hibiki::VoiceHookReader::Instance().SelectTextThread(thread_id);
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
           }));
           return;
         }

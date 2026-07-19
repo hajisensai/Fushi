@@ -11,6 +11,29 @@ enum TexthookerLineAudioStatus {
   encoded,
 }
 
+/// 一条可由用户选择的文本 Hook 线程。
+///
+/// [key] 在一次捕获会话内稳定；LunaHook 使用 ThreadParam + hookcode 的哈希，
+/// WebSocket/GDI 等没有线程信息的来源不会出现在该列表中。
+@immutable
+class TexthookerTextThread {
+  const TexthookerTextThread({
+    required this.key,
+    required this.label,
+    required this.lineCount,
+    required this.latestAt,
+    this.hookCode,
+    this.nativeThreadId,
+  });
+
+  final String key;
+  final String label;
+  final String? hookCode;
+  final int? nativeThreadId;
+  final int lineCount;
+  final DateTime latestAt;
+}
+
 @immutable
 class TexthookerLineEntry {
   const TexthookerLineEntry({
@@ -21,6 +44,10 @@ class TexthookerLineEntry {
     this.sourceLabel,
     this.sourceSequence,
     this.hookTimestampMs,
+    this.textThreadKey,
+    this.textThreadLabel,
+    this.textHookCode,
+    this.nativeTextThreadId,
     this.audioStatus = TexthookerLineAudioStatus.unavailable,
     this.audioBackend,
     this.audioDurationMs,
@@ -33,6 +60,10 @@ class TexthookerLineEntry {
   final String? sourceLabel;
   final int? sourceSequence;
   final int? hookTimestampMs;
+  final String? textThreadKey;
+  final String? textThreadLabel;
+  final String? textHookCode;
+  final int? nativeTextThreadId;
   final DateTime receivedAt;
   final TexthookerLineAudioStatus audioStatus;
   final String? audioBackend;
@@ -53,6 +84,10 @@ class TexthookerLineEntry {
       sourceLabel: sourceLabel,
       sourceSequence: sourceSequence,
       hookTimestampMs: hookTimestampMs,
+      textThreadKey: textThreadKey,
+      textThreadLabel: textThreadLabel,
+      textHookCode: textHookCode,
+      nativeTextThreadId: nativeTextThreadId,
       receivedAt: receivedAt,
       audioStatus: audioStatus ?? this.audioStatus,
       audioBackend: audioBackend ?? this.audioBackend,
@@ -84,12 +119,46 @@ class TexthookerService extends ChangeNotifier {
   List<String> get lines =>
       List<String>.unmodifiable(_entries.map((entry) => entry.text));
 
+  /// 当前缓冲中出现过的可选文本线程，最近活跃的排在前面。
+  List<TexthookerTextThread> get textThreads {
+    final Map<String, TexthookerTextThread> byKey =
+        <String, TexthookerTextThread>{};
+    for (final TexthookerLineEntry entry in _entries) {
+      final String? key = entry.textThreadKey;
+      if (key == null || key.isEmpty) continue;
+      final TexthookerTextThread? previous = byKey[key];
+      byKey[key] = TexthookerTextThread(
+        key: key,
+        label: entry.textThreadLabel ?? previous?.label ?? key,
+        hookCode: entry.textHookCode ?? previous?.hookCode,
+        nativeThreadId: entry.nativeTextThreadId ?? previous?.nativeThreadId,
+        lineCount: (previous?.lineCount ?? 0) + 1,
+        latestAt: entry.receivedAt,
+      );
+    }
+    final List<TexthookerTextThread> result = byKey.values.toList()
+      ..sort((a, b) => b.latestAt.compareTo(a.latestAt));
+    return List<TexthookerTextThread>.unmodifiable(result);
+  }
+
+  /// [threadKey] 为 null 时返回所有行；否则只返回指定 Hook 线程的文本。
+  List<TexthookerLineEntry> entriesForTextThread(String? threadKey) {
+    if (threadKey == null) return entries;
+    return List<TexthookerLineEntry>.unmodifiable(
+      _entries.where((entry) => entry.textThreadKey == threadKey),
+    );
+  }
+
   TexthookerLineEntry? appendLine(
     String line, {
     TexthookerLineSource source = TexthookerLineSource.unknown,
     String? sourceLabel,
     int? sourceSequence,
     int? hookTimestampMs,
+    String? textThreadKey,
+    String? textThreadLabel,
+    String? textHookCode,
+    int? nativeTextThreadId,
     DateTime? receivedAt,
     TexthookerLineAudioStatus audioStatus =
         TexthookerLineAudioStatus.unavailable,
@@ -104,6 +173,10 @@ class TexthookerService extends ChangeNotifier {
       sourceLabel: sourceLabel,
       sourceSequence: sourceSequence,
       hookTimestampMs: hookTimestampMs,
+      textThreadKey: textThreadKey,
+      textThreadLabel: textThreadLabel,
+      textHookCode: textHookCode,
+      nativeTextThreadId: nativeTextThreadId,
       receivedAt: now,
       audioStatus: audioStatus,
     );

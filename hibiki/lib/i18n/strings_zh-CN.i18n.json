@@ -2011,5 +2011,8 @@
   "game_event_warnings": "警告及错误",
   "game_session_events": "会话事件",
   "game_latest_line": "最新台词",
-  "game_no_active_line": "选择一条台词查看句音状态。"
+  "game_no_active_line": "选择一条台词查看句音状态。",
+  "game_text_thread": "文本线程",
+  "game_text_thread_all": "全部文本线程",
+  "game_text_thread_hint": "像 Luna Translator 一样选择干净的台词线程"
 }

@@ -32,6 +32,17 @@ ReaderState& State() {
   return state;
 }
 
+std::string WideToUtf8(const wchar_t* text, int length) {
+  if (text == nullptr || length <= 0) return std::string();
+  const int need = WideCharToMultiByte(CP_UTF8, 0, text, length, nullptr, 0,
+                                        nullptr, nullptr);
+  if (need <= 0) return std::string();
+  std::string utf8(static_cast<size_t>(need), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, text, length, &utf8[0], need, nullptr,
+                      nullptr);
+  return utf8;
+}
+
 // 从 header 填状态（不读环形缓冲）。契约不匹配返回 ok=false。调用方持锁。
 VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   VoiceHookStatus s;
@@ -162,12 +173,13 @@ VoiceHookStatus VoiceHookReader::Open(uint32_t pid) {
     CloseLocked(st);
   }
   const std::wstring name = SharedMemoryName(static_cast<DWORD>(pid));
-  HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, name.c_str());
+  HANDLE mapping =
+      OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, name.c_str());
   if (mapping == nullptr) {
     return VoiceHookStatus{};  // injector 未拉起 / pid 不符
   }
   auto* header = static_cast<SharedHeader*>(
-      MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
+      MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
   if (header == nullptr) {
     CloseHandle(mapping);
     return VoiceHookStatus{};
@@ -290,23 +302,40 @@ void VoiceHookReader::PollText(uint64_t from_seq,
     VoiceHookText line;
     line.seq = seq;
     line.timestamp_ms = slot->timestamp_ms;
+    line.thread_id = slot->thread_id;
+    line.thread_address = slot->thread_address;
+    line.thread_context = slot->thread_context;
+    line.thread_context2 = slot->thread_context2;
+    line.process_id = slot->process_id;
+    line.source_kind = slot->source_kind;
+    const uint32_t hook_name_len = (std::min)(
+        slot->hook_name_len, hibiki_voice_hook::kTextHookNameChars);
+    line.hook_name.assign(slot->hook_name, hook_name_len);
+    const uint32_t hook_code_len = (std::min)(
+        slot->hook_code_len, hibiki_voice_hook::kTextHookCodeChars);
+    line.hook_code = WideToUtf8(slot->hook_code,
+                                static_cast<int>(hook_code_len));
     if (slot->is_utf8) {
       line.utf8.assign(reinterpret_cast<const char*>(txt), blen);
     } else {
       const int wlen = static_cast<int>(blen / 2);
-      if (wlen > 0) {
-        const wchar_t* w = reinterpret_cast<const wchar_t*>(txt);
-        const int need = WideCharToMultiByte(CP_UTF8, 0, w, wlen, nullptr, 0,
-                                              nullptr, nullptr);
-        if (need > 0) {
-          line.utf8.resize(static_cast<size_t>(need));
-          WideCharToMultiByte(CP_UTF8, 0, w, wlen, &line.utf8[0], need, nullptr,
-                              nullptr);
-        }
-      }
+      line.utf8 = WideToUtf8(reinterpret_cast<const wchar_t*>(txt), wlen);
     }
     out.push_back(std::move(line));
   }
+}
+
+bool VoiceHookReader::SelectTextThread(uint64_t thread_id) {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  SharedHeader* h = st.header;
+  if (h == nullptr || h->magic != kSharedMagic || h->version != kSharedVersion) {
+    return false;
+  }
+  InterlockedExchange64(
+      reinterpret_cast<volatile LONGLONG*>(&h->selected_text_thread_id),
+      static_cast<LONGLONG>(thread_id));
+  return true;
 }
 
 VoiceHookStatus VoiceHookReader::GrabClipNear(uint64_t ts_ms,
