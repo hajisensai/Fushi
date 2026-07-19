@@ -13,7 +13,7 @@
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 3;
+constexpr uint32_t kSharedVersion = 4;
 
 constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 1024;
@@ -39,6 +39,7 @@ struct VoiceClip {
   uint32_t bits_per_sample;
   uint32_t is_float;
   uint32_t pad;
+  uint64_t source_ptr;  // source voice / DS buffer 指针：区分语音源 vs BGM 源，合成整句语音用
 };
 
 struct SharedHeader {

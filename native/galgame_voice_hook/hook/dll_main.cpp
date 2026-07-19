@@ -252,7 +252,8 @@ inline void RingAppendVoice(const uint8_t* data, uint32_t len) {
 // 到新 count 才取该槽，保证读到完整记录）。ring_offset=本段 memcpy 前的 write_pos；
 // total_at_write=写后的 total_written（host 用 (当前 total_written - total_at_write) > ring_capacity
 // 判该 clip 是否已被环形覆盖）。
-inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len) {
+inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len,
+                            uint64_t source_ptr) {
   if (g_clip_base == nullptr || g_header == nullptr || byte_len == 0) {
     return;
   }
@@ -268,6 +269,7 @@ inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len) {
   clip->bits_per_sample = g_header->bits_per_sample;
   clip->is_float = g_header->is_float;
   clip->pad = 0;
+  clip->source_ptr = source_ptr;          // 该段所属源（区分语音源 vs BGM 源）
   clip->seq = idx + 1;                    // 有效性副标记（先于 count）
   g_header->clip_write_count = idx + 1;   // 最后自增：host 据此取新 clip
 }
@@ -298,7 +300,8 @@ HRESULT STDMETHODCALLTYPE Detour_SubmitSourceBuffer(
           const uint32_t off = g_header->write_pos;
           RingAppendVoice(pBuffer->pAudioData + begin,
                           static_cast<uint32_t>(len));
-          RecordVoiceClip(off, static_cast<uint32_t>(len));
+          RecordVoiceClip(off, static_cast<uint32_t>(len),
+                          reinterpret_cast<uint64_t>(self));
         }
       }
     }
@@ -414,7 +417,7 @@ HRESULT STDMETHODCALLTYPE Detour_DsbUnlock(IDirectSoundBuffer* self, LPVOID pv1,
       RingAppendVoice(reinterpret_cast<const uint8_t*>(pv2), cb2);
       seg_len += cb2;
     }
-    RecordVoiceClip(off, seg_len);
+    RecordVoiceClip(off, seg_len, reinterpret_cast<uint64_t>(self));
   }
   return g_orig_DsbUnlock(self, pv1, cb1, pv2, cb2);
 }

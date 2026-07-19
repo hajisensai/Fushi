@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -164,6 +165,211 @@ bool DumpWav(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
   return true;
 }
 
+// 把一条 clip 的 PCM 从环形读出追加到 out；已被环形覆盖返回 false。
+bool ReadClipPcm(const SharedHeader* h, const uint8_t* ring,
+                 const hibiki_voice_hook::VoiceClip* c,
+                 std::vector<uint8_t>& out) {
+  const uint32_t cap = h->ring_capacity;
+  const uint32_t len = c->byte_len;
+  if (len == 0 || len > cap) {
+    return false;
+  }
+  if (h->total_written > c->total_at_write &&
+      h->total_written - c->total_at_write > cap - len) {
+    return false;  // 已被覆盖
+  }
+  const uint32_t off = c->ring_offset % cap;
+  const size_t base = out.size();
+  out.resize(base + len);
+  const uint32_t first = (len <= cap - off) ? len : (cap - off);
+  memcpy(out.data() + base, ring + off, first);
+  if (len > first) {
+    memcpy(out.data() + base + first, ring, len - first);
+  }
+  return true;
+}
+
+// 16-bit PCM 平均绝对幅值（能量代理）。非 16-bit 返回 -1（调用方退化为固定窗口）。
+double ClipEnergy16(const SharedHeader* h, const uint8_t* ring,
+                    const hibiki_voice_hook::VoiceClip* c) {
+  if (c->bits_per_sample != 16 || c->is_float) {
+    return -1.0;
+  }
+  std::vector<uint8_t> buf;
+  if (!ReadClipPcm(h, ring, c, buf) || buf.size() < 2) {
+    return 0.0;
+  }
+  const int16_t* s = reinterpret_cast<const int16_t*>(buf.data());
+  const size_t n = buf.size() / 2;
+  double acc = 0;
+  for (size_t i = 0; i < n; i++) {
+    acc += (s[i] < 0) ? -static_cast<double>(s[i]) : static_cast<double>(s[i]);
+  }
+  return acc / static_cast<double>(n);
+}
+
+// 「整句语音」根修：游戏用多个 source voice 持续并行流式（语音源没人说话时流静音）。按源做能量
+// 分析选出语音源（说话前静音、文本时刻突然有能量的那条），取它从起声到静默的整段拼成一句。
+// 找 ts 附近的语音源，把该源在 [ts-200ms, 起声后连续非静音段] 的 PCM 拼接、去首尾静音，写 WAV。
+bool DumpUtterance(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
+                   const char* path) {
+  const uint32_t cap = h->ring_capacity;
+  const uint64_t clips = h->clip_write_count;
+  if (cap == 0 || clips == 0) {
+    return false;
+  }
+  const uint32_t cslots = hibiki_voice_hook::kClipCount;
+  const uint8_t* cbase =
+      reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
+  const uint64_t scan = (clips > cslots) ? clips - cslots : 0;
+  // 收集有效 clip 指针。
+  std::vector<const hibiki_voice_hook::VoiceClip*> valid;
+  for (uint64_t seq = scan + 1; seq <= clips; seq++) {
+    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
+        cbase + static_cast<size_t>((seq - 1) % cslots) *
+                    sizeof(hibiki_voice_hook::VoiceClip));
+    if (c->seq == seq && c->byte_len != 0 && c->byte_len <= cap) {
+      valid.push_back(c);
+    }
+  }
+  if (valid.empty()) {
+    return false;
+  }
+  // 每源：说话前窗口 [ts-900,ts-250] 与文本时刻窗口 [ts-150,ts+450] 的平均能量。
+  std::map<uint64_t, double> e_before, e_at;
+  std::map<uint64_t, int> n_before, n_at;
+  bool any_energy = false;
+  for (const auto* c : valid) {
+    const double e = ClipEnergy16(h, ring, c);
+    if (e < 0) {
+      continue;  // 非 16-bit
+    }
+    any_energy = true;
+    const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
+                      static_cast<int64_t>(ts);
+    if (d >= -900 && d <= -250) {
+      e_before[c->source_ptr] += e;
+      n_before[c->source_ptr]++;
+    }
+    if (d >= -150 && d <= 450) {
+      e_at[c->source_ptr] += e;
+      n_at[c->source_ptr]++;
+    }
+  }
+  // 语音源 = (文本时刻平均能量 - 说话前平均能量) 最大者：从静音跳到有声。
+  uint64_t voice_src = 0;
+  double best_delta = -1e18;
+  for (const auto& kv : e_at) {
+    if (kv.second <= 0 || n_at[kv.first] == 0) {
+      continue;
+    }
+    const double at_avg = kv.second / n_at[kv.first];
+    const double bef_avg =
+        (n_before.count(kv.first) && n_before[kv.first] > 0)
+            ? e_before[kv.first] / n_before[kv.first]
+            : 0.0;
+    const double delta = at_avg - bef_avg;
+    if (delta > best_delta) {
+      best_delta = delta;
+      voice_src = kv.first;
+    }
+  }
+  // 拼接语音源在 [ts-200, ts+6000] 的段；静音判据用该源峰值能量的 8%。
+  std::vector<uint8_t> pcm;
+  const hibiki_voice_hook::VoiceClip* fmt = nullptr;
+  double peak = 1.0;
+  for (const auto* c : valid) {
+    if (any_energy && c->source_ptr != voice_src) {
+      continue;
+    }
+    const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
+                      static_cast<int64_t>(ts);
+    if (d < -200 || d > 6000) {
+      continue;
+    }
+    const double e = ClipEnergy16(h, ring, c);
+    if (e > peak) {
+      peak = e;
+    }
+    if (ReadClipPcm(h, ring, c, pcm) && fmt == nullptr) {
+      fmt = c;
+    }
+  }
+  if (fmt == nullptr || pcm.empty()) {
+    return false;
+  }
+  // 去首尾静音（16-bit）：阈值 = peak*0.08。
+  if (fmt->bits_per_sample == 16 && !fmt->is_float) {
+    const int16_t thr = static_cast<int16_t>(peak * 0.08);
+    const int16_t* s = reinterpret_cast<const int16_t*>(pcm.data());
+    const size_t n = pcm.size() / 2;
+    size_t lo = 0, hi = n;
+    while (lo < n && (s[lo] < 0 ? -s[lo] : s[lo]) < thr) lo++;
+    while (hi > lo && (s[hi - 1] < 0 ? -s[hi - 1] : s[hi - 1]) < thr) hi--;
+    const uint32_t ch = fmt->channels ? fmt->channels : 1;
+    lo -= (lo % ch);  // 帧对齐
+    hi -= (hi % ch);
+    if (hi > lo) {
+      std::vector<uint8_t> trimmed(
+          pcm.begin() + static_cast<long>(lo * 2),
+          pcm.begin() + static_cast<long>(hi * 2));
+      pcm.swap(trimmed);
+    }
+  }
+  // 写 WAV。
+  const uint32_t sr = fmt->sample_rate, ch = fmt->channels,
+                 bits = fmt->bits_per_sample;
+  const uint32_t ba = ch * (bits / 8), br = sr * ba;
+  const uint16_t wfmt = fmt->is_float ? 3 : 1;
+  const uint32_t len = static_cast<uint32_t>(pcm.size());
+  FILE* f = fopen(path, "wb");
+  if (f == nullptr) {
+    return false;
+  }
+  auto w32 = [&](uint32_t v) { fwrite(&v, 4, 1, f); };
+  auto w16 = [&](uint16_t v) { fwrite(&v, 2, 1, f); };
+  fwrite("RIFF", 1, 4, f); w32(36 + len); fwrite("WAVE", 1, 4, f);
+  fwrite("fmt ", 1, 4, f); w32(16); w16(wfmt); w16(static_cast<uint16_t>(ch));
+  w32(sr); w32(br); w16(static_cast<uint16_t>(ba));
+  w16(static_cast<uint16_t>(bits));
+  fwrite("data", 1, 4, f); w32(len); fwrite(pcm.data(), 1, len, f);
+  fclose(f);
+  const double dur = br ? static_cast<double>(len) / br * 1000.0 : 0;
+  printf("utterance %s bytes=%u dur=%.0fms src=%08llx peak=%.0f\n", path, len,
+         dur, static_cast<unsigned long long>(voice_src & 0xffffffffull), peak);
+  return true;
+}
+
+// 列出最近的语音 clip：seq / 时间戳 / 与上一条间隔 / 源指针低32位 / 环偏移 / 字节 / 时长ms。
+// 用来看播放模式（语音是不是连续多段同源、BGM 是不是另一持续源），设计整句合成分组用。
+void ListClips(const SharedHeader* h) {
+  const uint64_t clips = h->clip_write_count;
+  const uint32_t cslots = hibiki_voice_hook::kClipCount;
+  const uint8_t* cbase =
+      reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
+  const uint64_t scan = (clips > cslots) ? clips - cslots : 0;
+  uint64_t prev_ts = 0;
+  for (uint64_t seq = scan + 1; seq <= clips; seq++) {
+    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
+        cbase + static_cast<size_t>((seq - 1) % cslots) *
+                    sizeof(hibiki_voice_hook::VoiceClip));
+    if (c->seq != seq) {
+      continue;
+    }
+    const uint32_t br = c->sample_rate * c->channels * (c->bits_per_sample / 8);
+    const double dur = br ? static_cast<double>(c->byte_len) / br * 1000.0 : 0;
+    const long long dts =
+        prev_ts ? static_cast<long long>(c->timestamp_ms - prev_ts) : 0;
+    printf("clip seq=%llu ts=%llu dts=%lld src=%08llx off=%u len=%u dur=%.0fms\n",
+           static_cast<unsigned long long>(seq),
+           static_cast<unsigned long long>(c->timestamp_ms), dts,
+           static_cast<unsigned long long>(c->source_ptr & 0xffffffffull),
+           c->ring_offset, c->byte_len, dur);
+    prev_ts = c->timestamp_ms;
+  }
+  fflush(stdout);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -212,6 +418,19 @@ int main(int argc, char** argv) {
   if (argc >= 5 && strcmp(argv[2], "--dump-wav") == 0) {
     const uint64_t ts = strtoull(argv[3], nullptr, 10);
     const bool ok = DumpWav(header, ring, ts, argv[4]);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return ok ? 0 : 2;
+  }
+  if (argc >= 3 && strcmp(argv[2], "--list-clips") == 0) {
+    ListClips(header);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
+  if (argc >= 5 && strcmp(argv[2], "--dump-utterance") == 0) {
+    const uint64_t ts = strtoull(argv[3], nullptr, 10);
+    const bool ok = DumpUtterance(header, ring, ts, argv[4]);
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     return ok ? 0 : 2;

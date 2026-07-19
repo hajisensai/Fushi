@@ -24,7 +24,7 @@ namespace hibiki_voice_hook {
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v2：在 v1 音频环形之外加「文本环」(hook 抓的台词行) + 「语音 clip 索引」(按句切的语音片段)。
 // 全自动制卡：文本 hook 出一句 + voice hook 出对应那条语音 clip → 按时间戳配对 → 点+一键出卡。
-constexpr uint32_t kSharedVersion = 3;
+constexpr uint32_t kSharedVersion = 4;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
@@ -63,6 +63,8 @@ struct VoiceClip {
   uint32_t bits_per_sample;
   uint32_t is_float;
   uint32_t pad;               // 8 对齐
+  uint64_t source_ptr;        // 该段所属 source voice / DS buffer 指针：区分语音源 vs BGM 源，
+                              // 供 host 把同一源的连续段合成整句语音（而非只取一个 buffer 片段）
 };
 
 // 共享内存头。injector 创建并清零、填各区偏移；hook DLL 注入后填格式、持续更新计数。
