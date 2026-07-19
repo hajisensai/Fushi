@@ -2793,11 +2793,23 @@ class AppModel with ChangeNotifier {
     )..start();
   }
 
+  /// 内置引擎宿主是否就绪（桌面且 DLL 已加载）。下载对话框据此判断能否走
+  /// 内置引擎（不必配置外接 qb）。
+  bool get isEmbeddedTorrentReady => _embeddedTorrentHost != null;
+
+  /// 按配置解析出应使用的下载后端（供下载对话框的推送按钮与轮询服务共用
+  /// 同一选择逻辑）。调用方用完须 `close()`（内置引擎的视图 close 是 no-op，
+  /// 不连累常驻 session）。
+  TorrentBackend createTorrentBackend(QbConnectionConfig config) =>
+      _torrentBackendFor(config);
+
   /// 后端选择：配置选内置且宿主可用 → 内置引擎的共享 session 视图；否则
   /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
     final EmbeddedTorrentHost? host = _embeddedTorrentHost;
-    if (config.backend == QbConnectionConfig.backendEmbedded && host != null) {
+    final String backend =
+        config.resolveBackend(isDesktop: _supportsEmbeddedTorrent());
+    if (backend == QbConnectionConfig.backendEmbedded && host != null) {
       return host.backendView();
     }
     return QbTorrentBackend(QBittorrentClient(

@@ -760,8 +760,9 @@ SettingsDestination buildVideoDestination() {
               ),
             ],
             selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.qbConnectionConfig?.backend ??
-                QbConnectionConfig.backendQbittorrent,
+                (settingsContext.appModel.qbConnectionConfig ??
+                        const QbConnectionConfig())
+                    .resolveBackend(isDesktop: isDesktopPlatform),
             onChanged: (SettingsContext settingsContext, String backend) async {
               await _commitQbConfig(
                 settingsContext,
@@ -816,17 +817,18 @@ SettingsDestination buildVideoDestination() {
 /// 当前是否选外接 qBittorrent 后端（决定 qb 连接字段是否显示）。历史配置
 /// 无 backend 字段回退 qb（既有用户看得见连接字段，行为不变）。
 bool _qbBackendSelected(SettingsContext settingsContext) {
-  final QbConnectionConfig? config =
-      settingsContext.appModel.qbConnectionConfig;
-  return (config?.backend ?? QbConnectionConfig.backendQbittorrent) ==
+  return (settingsContext.appModel.qbConnectionConfig ??
+              const QbConnectionConfig())
+          .resolveBackend(isDesktop: isDesktopPlatform) ==
       QbConnectionConfig.backendQbittorrent;
 }
 
 /// 当前是否选内置 libtorrent 引擎后端（决定内置引擎资源限制字段是否显示）。
 bool _embeddedBackendSelected(SettingsContext settingsContext) {
-  final QbConnectionConfig? config =
-      settingsContext.appModel.qbConnectionConfig;
-  return config?.backend == QbConnectionConfig.backendEmbedded;
+  return (settingsContext.appModel.qbConnectionConfig ??
+              const QbConnectionConfig())
+          .resolveBackend(isDesktop: isDesktopPlatform) ==
+      QbConnectionConfig.backendEmbedded;
 }
 
 /// 把限制字段的文本输入解析为非负整数（空/非数/负数 → 0 = 不限）。

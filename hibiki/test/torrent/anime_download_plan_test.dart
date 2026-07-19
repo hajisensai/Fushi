@@ -69,11 +69,17 @@ void main() {
       expect(decoded2!.category, 'hibiki');
     });
 
-    test('默认构造未配置；copyWith 逐字段', () {
+    test('默认构造=auto(开箱即用/已配置)；显式 qb 空=未配置；copyWith 逐字段', () {
+      // 默认 auto：桌面内置引擎，无需连接参数 → 已配置。
       const QbConnectionConfig config = QbConnectionConfig();
-      expect(config.isConfigured, isFalse);
+      expect(config.backend, QbConnectionConfig.backendAuto);
+      expect(config.isConfigured, isTrue);
       expect(config.category, 'hibiki');
-      final QbConnectionConfig edited = config.copyWith(baseUrl: 'http://x');
+      // 显式外接 qb 但没填地址 → 未配置。
+      const QbConnectionConfig qbEmpty =
+          QbConnectionConfig(backend: QbConnectionConfig.backendQbittorrent);
+      expect(qbEmpty.isConfigured, isFalse);
+      final QbConnectionConfig edited = qbEmpty.copyWith(baseUrl: 'http://x');
       expect(edited.isConfigured, isTrue);
       expect(edited.category, 'hibiki');
       expect(edited.username, '');
