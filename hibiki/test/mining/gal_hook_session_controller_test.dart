@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
@@ -88,9 +90,12 @@ void main() {
         required int targetPid,
         required String? launchExe,
         required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
       }) =>
           engine,
       windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
     );
@@ -110,6 +115,53 @@ void main() {
 
     await controller.close();
     endpoints.dispose();
+  });
+
+  test('launchGame passes Luna PC hooks for manosaba Unity target', () async {
+    final Directory dir =
+        await Directory.systemTemp.createTemp('gal_manosaba_');
+    final File exe = File('${dir.path}${Platform.pathSeparator}manosaba.exe');
+    await exe.writeAsBytes(<int>[0], flush: true);
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+    );
+    bool? capturedLunaPcHooks;
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) {
+        capturedLunaPcHooks = lunaPcHooks;
+        return engine;
+      },
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    try {
+      expect(await controller.launchGame(exe.path), isTrue);
+      expect(capturedLunaPcHooks, isTrue);
+      final GalHookEvent launch = controller.events.firstWhere(
+        (GalHookEvent event) => event.code == 'game.launch_started',
+      );
+      expect(launch.details['lunaPcHooks'], isTrue);
+      expect(launch.details['arch'], 'x64');
+    } finally {
+      await controller.close();
+      endpoints.dispose();
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    }
   });
 }
 

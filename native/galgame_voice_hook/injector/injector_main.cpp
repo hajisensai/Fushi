@@ -709,6 +709,69 @@ bool IsSiglusExecutable(const std::wstring& exe) {
   return _wcsicmp(base, L"SiglusEngine.exe") == 0;
 }
 
+std::wstring ExecutableBaseName(const std::wstring& exe) {
+  const size_t slash = exe.find_last_of(L"\\/");
+  if (slash == std::wstring::npos) return exe;
+  return exe.substr(slash + 1);
+}
+
+std::wstring ExecutableDirectory(const std::wstring& exe) {
+  const size_t slash = exe.find_last_of(L"\\/");
+  if (slash == std::wstring::npos) return L"";
+  return exe.substr(0, slash);
+}
+
+std::wstring StripExeExtension(const std::wstring& basename) {
+  if (basename.size() >= 4 &&
+      _wcsicmp(basename.c_str() + basename.size() - 4, L".exe") == 0) {
+    return basename.substr(0, basename.size() - 4);
+  }
+  return basename;
+}
+
+std::wstring JoinPath(const std::wstring& a, const std::wstring& b) {
+  if (a.empty()) return b;
+  if (a.back() == L'\\' || a.back() == L'/') return a + b;
+  return a + L"\\" + b;
+}
+
+bool FileExists(const std::wstring& path) {
+  const DWORD attr = GetFileAttributesW(path.c_str());
+  return attr != INVALID_FILE_ATTRIBUTES &&
+         (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+bool DirectoryExists(const std::wstring& path) {
+  const DWORD attr = GetFileAttributesW(path.c_str());
+  return attr != INVALID_FILE_ATTRIBUTES &&
+         (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+bool LooksLikeUnityRuntime(const std::wstring& exe) {
+  const std::wstring dir = ExecutableDirectory(exe);
+  if (dir.empty() || !FileExists(JoinPath(dir, L"UnityPlayer.dll"))) {
+    return false;
+  }
+  const std::wstring stem = StripExeExtension(ExecutableBaseName(exe));
+  const std::wstring data = JoinPath(dir, stem + L"_Data");
+  const bool il2cpp =
+      FileExists(JoinPath(dir, L"GameAssembly.dll")) ||
+      FileExists(JoinPath(JoinPath(JoinPath(data, L"il2cpp_data"), L"Metadata"),
+                          L"global-metadata.dat"));
+  const bool mono = DirectoryExists(JoinPath(data, L"Managed")) ||
+                    DirectoryExists(JoinPath(data, L"MonoBleedingEdge")) ||
+                    FileExists(JoinPath(dir, L"mono-2.0-bdwgc.dll"));
+  return il2cpp || mono;
+}
+
+bool ShouldAutoUseLunaPcHooks(const std::wstring& exe) {
+  const std::wstring base = ExecutableBaseName(exe);
+  if (_wcsicmp(base.c_str(), L"manosaba.exe") == 0) {
+    return true;
+  }
+  return LooksLikeUnityRuntime(exe);
+}
+
 struct ReadyWindowSearch {
   DWORD pid = 0;
   bool found = false;
@@ -755,6 +818,13 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
     return Fail("目标 exe 不存在（--launch <exe路径>）");
   }
+  LunaOptions effective_luna = luna;
+  if (!effective_luna.pc_hooks && ShouldAutoUseLunaPcHooks(exe)) {
+    effective_luna.pc_hooks = true;
+    fprintf(stderr,
+            "[luna] auto-enabled PC hooks for Unity/Mono-style target: %ls\n",
+            ExecutableBaseName(exe).c_str());
+  }
 
   // workdir 缺省=exe 所在目录。
   std::wstring workdir = workdir_in;
@@ -800,7 +870,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   // Siglus 已正常运行故为 nullptr；hold_process 让 --hold 挂到游戏退出。
   const int rc = RunInjection(pi.hProcess, pi.dwProcessId, dll_path, wait_ms,
                               hold, delayed_siglus ? nullptr : pi.hThread,
-                              pi.hProcess, luna);
+                              pi.hProcess, effective_luna);
 
   // 普通早注入在注入前/Resume 前失败（rc==1）时游戏仍处挂起：强制结束，避免留下僵死
   // 挂起进程。Siglus 延迟附着时游戏已经正常运行，hook 失败也交给用户/上层回退处理。

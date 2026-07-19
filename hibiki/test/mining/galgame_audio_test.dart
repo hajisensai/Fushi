@@ -408,6 +408,34 @@ void main() {
     });
   });
 
+  group('buildEngineHookInjectorArguments', () {
+    test('launch 模式可追加 Luna PC hooks 参数', () {
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 0,
+          launchExe: r'D:\steam\steamapps\common\manosaba_game\manosaba.exe',
+          lunaPcHooks: true,
+        ),
+        <String>[
+          '--launch',
+          r'D:\steam\steamapps\common\manosaba_game\manosaba.exe',
+          '--hold',
+          '--luna-pchooks',
+        ],
+      );
+    });
+
+    test('attach 模式保持旧参数，未启用时不带 Luna PC hooks', () {
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 4567,
+          launchExe: null,
+        ),
+        <String>['--pid', '4567', '--hold'],
+      );
+    });
+  });
+
   group('parseInjectorHookedPid', () {
     test('解析 OK hooked pid=<N>', () {
       expect(
@@ -465,6 +493,39 @@ void main() {
         await EngineHookGalAudioSource.exeIs32Bit('${dir.path}/nope.exe'),
         isNull,
       );
+    });
+  });
+
+  group('shouldUseLunaPcHooksForExecutable', () {
+    late Directory dir;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('gal_unity_');
+    });
+    tearDown(() async {
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    });
+
+    String join(String a, String b) => '$a${Platform.pathSeparator}$b';
+
+    test('manosaba.exe 明确启用 Unity/Mono 文本 hook 兜底', () async {
+      final File exe = File(join(dir.path, 'manosaba.exe'));
+      await exe.writeAsBytes(_craftPe(0x8664), flush: true);
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+    });
+
+    test('Unity IL2CPP 布局启用 Luna PC hooks', () async {
+      final File exe = File(join(dir.path, 'sample.exe'));
+      await exe.writeAsBytes(_craftPe(0x8664), flush: true);
+      await File(join(dir.path, 'UnityPlayer.dll')).writeAsBytes(<int>[1]);
+      await File(join(dir.path, 'GameAssembly.dll')).writeAsBytes(<int>[1]);
+
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+    });
+
+    test('普通 PE 不启用 Luna PC hooks', () async {
+      final File exe = File(join(dir.path, 'plain.exe'));
+      await exe.writeAsBytes(_craftPe(0x8664), flush: true);
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isFalse);
     });
   });
 }
