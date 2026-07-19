@@ -10,6 +10,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/external_window_mining.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_window_gif.dart';
@@ -360,8 +361,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     String word,
     Rect rect,
   ) {
-    _activeLineId = line.id;
-    _activeSentence = line.text;
+    _selectLine(line);
     pushNestedPopup(
       query: word,
       selectionRect: rect,
@@ -369,6 +369,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       replaceStack: true,
       autoRead: true,
     );
+  }
+
+  void _selectLine(TexthookerLineEntry line) {
+    if (_activeLineId == line.id && _activeSentence == line.text) return;
+    setState(() {
+      _activeLineId = line.id;
+      _activeSentence = line.text;
+    });
   }
 
   @override
@@ -689,6 +697,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         _TexthookerLine(
                       line: lines[i],
                       selected: lines[i].id == _activeLineId,
+                      onSelectLine: _selectLine,
                       onWordTap: _onWordTap,
                     ),
                   ),
@@ -1087,11 +1096,13 @@ class _TexthookerLine extends StatelessWidget {
   const _TexthookerLine({
     required this.line,
     required this.selected,
+    required this.onSelectLine,
     required this.onWordTap,
   });
 
   final TexthookerLineEntry line;
   final bool selected;
+  final ValueChanged<TexthookerLineEntry> onSelectLine;
   final void Function(
     TexthookerLineEntry line,
     String word,
@@ -1111,8 +1122,10 @@ class _TexthookerLine extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: HibikiCard(
-        color:
-            selected ? colors.primaryContainer.withValues(alpha: 0.35) : null,
+        key: ValueKey<String>('game-line-${line.id}'),
+        selected: selected,
+        focusId: HibikiFocusId('game-line-${line.id}'),
+        onTap: () => onSelectLine(line),
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
