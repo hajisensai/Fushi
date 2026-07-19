@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 909 条。点号进各自文件。
+> 共 910 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-929](bugs/BUG-929-ass-mpv-windows-font-fallback.md) | ✅ | ✅ | ASS 缺失字体在 Windows 上与 mpv 回退不一致 |
 | [BUG-928](bugs/BUG-928-video-card-16x9-gap.md) | ✅ | ✅ | 视频卡对标准 16:9 封面留空隙·封面比例随标题长短浮动 |
 | [BUG-927](bugs/BUG-927-reader-native-selection-blocks-lookup-and-rightclick-crash.md) | ✅ | ✅ | 阅读器原生选区残留卡住查词 + 右键闪退 |
 | [BUG-926](bugs/BUG-926-popup-touch-copy-disabled.md) | ✅ | ✅ | 词典弹窗触屏无法复制释义(撤回BUG-762全量禁选) |
