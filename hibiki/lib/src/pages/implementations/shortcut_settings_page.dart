@@ -134,6 +134,10 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_video_subtitle_delay_increase;
     case ShortcutAction.videoSubtitleDelayDecrease:
       return t.shortcut_action_video_subtitle_delay_decrease;
+    case ShortcutAction.videoAlignSubtitleToPrev:
+      return t.shortcut_action_video_align_subtitle_to_prev;
+    case ShortcutAction.videoAlignSubtitleToNext:
+      return t.shortcut_action_video_align_subtitle_to_next;
     case ShortcutAction.videoEscape:
       return t.shortcut_action_video_escape;
     case ShortcutAction.dpadUp:

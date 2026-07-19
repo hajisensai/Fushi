@@ -39,6 +39,8 @@ VideoPlayerShortcutActions _recordingVideoActions(List<String> log) {
     openSubtitleAlign: () => record('openSubtitleAlign'),
     subtitleDelayIncrease: () => record('subtitleDelayIncrease'),
     subtitleDelayDecrease: () => record('subtitleDelayDecrease'),
+    alignSubtitleToPrev: () => record('alignSubtitleToPrev'),
+    alignSubtitleToNext: () => record('alignSubtitleToNext'),
     escape: () => record('escape'),
   );
 }

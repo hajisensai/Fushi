@@ -3827,6 +3827,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       subtitleDelayDecrease: () => _runWhenImmersiveAllowsFullControls(
         () => unawaited(_setDelayMs(_delayMs - _kSubtitleDelayNudgeMs)),
       ),
+      // asbplayer 式「字幕偏移对齐」（用户请求，默认 Ctrl+Shift+←/→）：把上一句 / 下一句
+      // 字幕的起点整体平移到当前播放点。决策集中在纯函数 snapSubtitleDelayMs，写穿仍走
+      // _setDelayMs（与 z/x 同一路径）。过沉浸门控，与 z/x 微调互补。
+      alignSubtitleToPrev: () => _runWhenImmersiveAllowsFullControls(
+        () => _snapSubtitleDelayToCue(next: false),
+      ),
+      alignSubtitleToNext: () => _runWhenImmersiveAllowsFullControls(
+        () => _snapSubtitleDelayToCue(next: true),
+      ),
       escape: () {
         if (_videoControlEditMode.value) {
           _hideVideoControlEditOverlay(revealControls: false);

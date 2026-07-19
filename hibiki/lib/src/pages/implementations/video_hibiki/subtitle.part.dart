@@ -1162,6 +1162,27 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     );
   }
 
+  /// asbplayer 式「字幕偏移对齐」快捷键胶水（用户请求，默认 Ctrl+Shift+←/→）：把
+  /// **上一句 / 下一句**字幕的起点整体平移到当前播放点，一键把整轨粗对齐到当前台词时刻
+  /// （再配合 z/x 微调）。与 z/x 的固定步进平移不同——这里按目标 cue 求**绝对**偏移。
+  ///
+  /// 决策全部集中在纯函数 [VideoPlayerController.snapSubtitleDelayMs]（选相邻 cue + 求
+  /// 新 delayMs，可单测）；本方法只做胶水：取 controller 实时 cues/positionMs 与当前
+  /// `_delayMs`，拿到新延迟后走既有权威写穿 [_setDelayMs]（clamp + 落盘 + OSD + 即时重算）。
+  /// 无 controller / 无 cue / 位置未就绪 / 已是首末句无相邻 cue 时 no-op（不弹窗、不改延迟）。
+  void _snapSubtitleDelayToCue({required bool next}) {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final int? newDelayMs = VideoPlayerController.snapSubtitleDelayMs(
+      cues: controller.cues,
+      positionMs: controller.positionMs,
+      currentDelayMs: _delayMs,
+      next: next,
+    );
+    if (newDelayMs == null) return;
+    unawaited(_setDelayMs(newDelayMs));
+  }
+
   /// TODO-701 阶段1：一键字幕自动对轴。抽当前视频的逐帧音频能量包络（[extractAudioEnergyEnvelope]
   /// 经 ffmpeg 抽象），与字幕 cue 时间轴栅格化后做互相关（[bestOffsetMsByCrossCorrelation]）
   /// 求**整体平移** offset，再走现有 [_setDelayMs] 写穿 `delayMs` 落盘（零新持久化）。

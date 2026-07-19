@@ -1996,5 +1996,7 @@
   "shortcut_action_video_open_subtitle_align": "Open subtitle waveform align",
   "font_desc_noto_serif_tc": "Google/Adobe Serif · Traditional Chinese glyphs priority · Ideal for vertical reading",
   "custom_fonts_font_roles": "Font roles",
-  "video_clip_export_cancelled": "Clip export cancelled"
+  "video_clip_export_cancelled": "Clip export cancelled",
+  "shortcut_action_video_align_subtitle_to_prev": "Align previous subtitle to now",
+  "shortcut_action_video_align_subtitle_to_next": "Align next subtitle to now"
 }

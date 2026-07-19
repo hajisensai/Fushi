@@ -38,6 +38,8 @@ class VideoPlayerShortcutActions {
     required this.openSubtitleAlign,
     required this.subtitleDelayIncrease,
     required this.subtitleDelayDecrease,
+    required this.alignSubtitleToPrev,
+    required this.alignSubtitleToNext,
     required this.escape,
   });
 
@@ -97,6 +99,12 @@ class VideoPlayerShortcutActions {
   final VoidCallback subtitleDelayIncrease;
   final VoidCallback subtitleDelayDecrease;
 
+  /// asbplayer 式「字幕偏移对齐」（用户请求，默认 Ctrl+Shift+←/→）：把上一句 / 下一句
+  /// 字幕的起点整体平移到当前播放点（按目标 cue 求绝对偏移，一键粗对齐整轨）。决策走
+  /// 纯函数 VideoPlayerController.snapSubtitleDelayMs，写穿仍经 _setDelayMs（与 z/x 同源）。
+  final VoidCallback alignSubtitleToPrev;
+  final VoidCallback alignSubtitleToNext;
+
   final VoidCallback escape;
 }
 
@@ -139,6 +147,8 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoOpenSubtitleAlign: actions.openSubtitleAlign,
     ShortcutAction.videoSubtitleDelayIncrease: actions.subtitleDelayIncrease,
     ShortcutAction.videoSubtitleDelayDecrease: actions.subtitleDelayDecrease,
+    ShortcutAction.videoAlignSubtitleToPrev: actions.alignSubtitleToPrev,
+    ShortcutAction.videoAlignSubtitleToNext: actions.alignSubtitleToNext,
     ShortcutAction.videoEscape: actions.escape,
   };
 }

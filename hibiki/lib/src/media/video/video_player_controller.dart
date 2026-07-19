@@ -2605,6 +2605,37 @@ class VideoPlayerController extends ChangeNotifier
     return lo == 0 ? 0 : lo - 1;
   }
 
+  /// 纯函数：asbplayer 式「字幕偏移对齐」——把**上一句 / 下一句**字幕的起点整体平移到
+  /// 当前播放点 [positionMs]，返回应写入的**新 delayMs**；无相邻 cue（首/末句边界）或
+  /// 位置未就绪时返回 null（调用方据此 no-op，不改延迟）。
+  ///
+  /// 与 z/x 的固定步进平移不同：这里按目标 cue 求**绝对**偏移，一键把整轨粗对齐到当前
+  /// 台词时刻（再配合 z/x 微调）。「上一句 / 下一句」复用与 Ctrl+←/→ 跳句同一决策
+  /// （[nextCueIndexFor] / [prevCueIndexFor]），认定的是同一条 cue，心智模型一致。
+  ///
+  /// 坐标系换算（与 controller 判 cue 命中同源）：cue 命中用等效位置
+  /// `effective = playerPos - delay`（[effectiveSubtitlePositionMs]），故先把当前
+  /// [positionMs] 去掉已应用的 [currentDelayMs] 得到**原始时间轴**位置 `effPos`，据此
+  /// 找相邻 cue；再令目标 cue 恰好在此刻出现：`target.startMs + newDelay == positionMs`，
+  /// 即 `newDelay = positionMs - target.startMs`。写穿仍走既有 setDelayMs（clamp + 落盘）。
+  ///
+  /// [next] 为 true 取下一句、false 取上一句。不传 anchorIndex（对轴不是主动跳转，
+  /// 无 preRoll 偏前落点，纯按 effPos 反推即可）。
+  static int? snapSubtitleDelayMs({
+    required List<AudioCue> cues,
+    required int? positionMs,
+    required int currentDelayMs,
+    required bool next,
+  }) {
+    if (cues.isEmpty || positionMs == null) return null;
+    final int effPos = effectiveSubtitlePositionMs(positionMs, currentDelayMs);
+    final int? idx = next
+        ? nextCueIndexFor(cues: cues, positionMs: effPos)
+        : prevCueIndexFor(cues: cues, positionMs: effPos);
+    if (idx == null || idx < 0 || idx >= cues.length) return null;
+    return positionMs - cues[idx].startMs;
+  }
+
   /// 纯函数：「上一句」seek 决策（TODO-085）。普通向后跳句时，若目标上一句的
   /// 起点距当前位置太远（gap 大于 [seekSeconds] 秒），则**退化成回退 [seekSeconds]
   /// 秒的时间 seek**，而不是一脚跳到很远的上一句 —— 对照用户诉求「如果上一句话距离
