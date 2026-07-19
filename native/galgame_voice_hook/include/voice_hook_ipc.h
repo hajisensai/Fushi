@@ -24,7 +24,10 @@ namespace hibiki_voice_hook {
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v2：在 v1 音频环形之外加「文本环」(hook 抓的台词行) + 「语音 clip 索引」(按句切的语音片段)。
 // 全自动制卡：文本 hook 出一句 + voice hook 出对应那条语音 clip → 按时间戳配对 → 点+一键出卡。
-constexpr uint32_t kSharedVersion = 5;
+// v6：在 clip 索引之后再加「loopback 混音环」+「时间戳↔环位置标记表」。作为没有引擎专属纯人声
+//     hook 的游戏（Atelier Kaguya、未识别引擎等）的**兜底**——WASAPI loopback 抓系统渲染端点的
+//     最终混音（voice+BGM），按文本时刻抽窗口做卡。与引擎级纯人声路径并存，互不干扰。
+constexpr uint32_t kSharedVersion = 6;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
@@ -38,6 +41,16 @@ constexpr uint32_t kTextSlotBytes = 1024;
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
 constexpr uint32_t kClipCount = 1024;  // clip 索引环：128≈仅2秒历史不够重建整句语音，扩到 ~16秒
+
+// ── v6 loopback 兜底混音捕获 ─────────────────────────────────────────────────
+// loopback 环时长（秒）。injector 在**注入前**分配映射，此刻还拿不到真实混音格式，故按名义
+// 立体声 16-bit 存储格式（48k*2ch*2B）预留固定字节；实际混音若是 5.1/7.1，同容量下只是历史
+// 时长变短（例 6ch → ~20s），仍够 [ts-100ms, ts+5000ms] 抽窗。混音端 32-bit float 在 hook 侧
+// 转成 16-bit PCM 再入环，故按 16-bit 名义容量算字节（同时压低 32 位游戏地址空间占用）。
+constexpr uint32_t kLoopbackSeconds = 60;
+constexpr uint32_t kMaxLoopbackBytes = 16u * 1024u * 1024u;  // ≤16MB（32 位地址空间预算）
+// 时间戳↔环位置标记表槽数。loopback 线程每 ~200ms 记一条 {tick, total}；60s → 300 条，512 留余。
+constexpr uint32_t kLoopbackMarkerCount = 512;
 
 // 文本槽：seq==全局 text_write_count 对应值时该槽有效；文本紧跟本头之后（kTextSlotBytes-头长）。
 #pragma pack(push, 8)
@@ -67,6 +80,16 @@ struct VoiceClip {
                               // 供 host 把同一源的连续段合成整句语音（而非只取一个 buffer 片段）
 };
 
+// loopback 时间戳↔环位置标记：loopback 线程每 ~200ms 写一条，记该时刻的墙钟 tick 与 loopback 环
+// 已写字节 total。host/工具按文本时间戳（同为 GetTickCount64）在标记表里插值反查环内字节位置，
+// 抽 [ts_start, ts_end] 窗口。单写者（仅 loopback 线程写），seq 作半写完成标记（reader 校验
+// seq==loopback_marker_count 快照即有效），与 VoiceClip 同款纪律。
+struct LoopbackMarker {
+  volatile uint64_t seq;    // 写入序号（0=空；等于 loopback_marker_count 快照即有效），**最后**写
+  uint64_t tick_ms;         // GetTickCount64() 记录时刻
+  uint64_t total_written;   // 该时刻的 loopback_total_written（单调）
+};
+
 // 共享内存头。injector 创建并清零、填各区偏移；hook DLL 注入后填格式、持续更新计数。
 // volatile 字段跨进程无锁单写单读。绝不在此放指针（跨进程地址无意义）。
 // 内存布局：[SharedHeader][音频环形 ring_capacity][文本环 kTextSlotCount*kTextSlotBytes]
@@ -94,13 +117,28 @@ struct SharedHeader {
   // 消除「LunaHook 干净行 + GDI 每字重画伪影」双写者污染。音频写入不受此标志影响。GDI 仅在
   // luna_active==0（LunaHook 未覆盖该引擎）时作兜底文本源。
   volatile uint32_t luna_active;
-  uint32_t reserved_luna;  // 保持 8 对齐
+  uint32_t reserved_luna;  // 32 位诊断位（引擎级 hook 用；bit31 被 Ren'Py 占，已满，loopback 另立字段）
+  // ── v6 loopback 区（injector 填偏移/容量，hook 侧 loopback 线程填格式/计数）──
+  // 内存布局尾部追加：[...clip 索引][loopback 环 loopback_ring_capacity][标记表 kLoopbackMarkerCount*LoopbackMarker]
+  uint32_t loopback_ring_offset;       // loopback 环起始（header 起算字节偏移）
+  uint32_t loopback_ring_capacity;     // loopback 环字节容量（帧对齐）
+  uint32_t loopback_marker_offset;     // 标记表起始（header 起算字节偏移）
+  uint32_t loopback_marker_slot_count;  // 标记表槽数（= kLoopbackMarkerCount，冗余便于 reader 自洽）
+  uint32_t loopback_sample_rate;       // loopback 混音采样率（GetMixFormat 后 hook 填）
+  uint32_t loopback_channels;          // 混音声道数
+  uint32_t loopback_bits_per_sample;   // 存入环的位深（固定 16，混音 float32 已转换）
+  uint32_t loopback_block_align;       // 每帧字节 = channels*bits/8（存储格式；hook 填，作格式就绪信号）
+  volatile uint32_t loopback_write_pos;  // 下一写入位置（0..loopback_ring_capacity）
+  uint32_t loopback_diag;                // loopback 诊断位（线程启动/设备就绪/捕获非静音等）
+  volatile uint64_t loopback_total_written;  // 单调累计写入 loopback 字节（reader 判可读量/覆盖）
+  volatile uint64_t loopback_marker_count;   // 单调累计已写标记数
 };
 #pragma pack(pop)
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
 static_assert(sizeof(TextSlot) % 8 == 0, "TextSlot must stay 8-aligned");
 static_assert(sizeof(VoiceClip) % 8 == 0, "VoiceClip must stay 8-aligned");
+static_assert(sizeof(LoopbackMarker) % 8 == 0, "LoopbackMarker must stay 8-aligned");
 
 // 命名对象（同会话跨进程）。以目标 PID 区分，支持同时对多个游戏进程各挂一份。
 // injector 创建、hook DLL 打开：共享内存 + 「就绪」事件（DLL 装好后 SetEvent，injector 据此

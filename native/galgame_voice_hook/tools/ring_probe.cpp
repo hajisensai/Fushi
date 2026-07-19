@@ -421,6 +421,163 @@ void DumpSources(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
   fflush(stdout);
 }
 
+// ══ C.2f loopback 兜底混音取证 ═══════════════════════════════════════════════════
+// 收集 loopback 标记表里有效标记（seq 校验），按序号（=时间/位置单调）排。
+void CollectLoopbackMarkers(const SharedHeader* h,
+                            std::vector<hibiki_voice_hook::LoopbackMarker>* out) {
+  out->clear();
+  const uint64_t count = h->loopback_marker_count;
+  const uint32_t slots = h->loopback_marker_slot_count
+                             ? h->loopback_marker_slot_count
+                             : hibiki_voice_hook::kLoopbackMarkerCount;
+  const uint8_t* base =
+      reinterpret_cast<const uint8_t*>(h) + h->loopback_marker_offset;
+  const uint64_t scan = (count > slots) ? count - slots : 0;
+  for (uint64_t seq = scan + 1; seq <= count; seq++) {
+    const auto* m = reinterpret_cast<const hibiki_voice_hook::LoopbackMarker*>(
+        base + static_cast<size_t>((seq - 1) % slots) *
+                   sizeof(hibiki_voice_hook::LoopbackMarker));
+    if (m->seq == seq) {
+      out->push_back(*m);
+    }
+  }
+}
+
+// 用标记表把墙钟 tick 映射到 loopback 环线性字节位置 total。标记单调（tick/total 同增）：tick 落
+// 两标记间线性插值（自动处理静音间隙的 total 平段）；早于首标记按 byte_rate 反推夹到 [0,首total]；
+// 晚于末标记按 byte_rate 外推夹到 cur_total。无标记退化为 cur_total。
+uint64_t TickToTotal(const std::vector<hibiki_voice_hook::LoopbackMarker>& mk,
+                     uint64_t tick, uint64_t byte_rate, uint64_t cur_total) {
+  if (mk.empty()) {
+    return cur_total;
+  }
+  const auto& first = mk.front();
+  const auto& last = mk.back();
+  if (tick <= first.tick_ms) {
+    const uint64_t back = (first.tick_ms - tick) * byte_rate / 1000;
+    return (back >= first.total_written) ? 0 : (first.total_written - back);
+  }
+  if (tick >= last.tick_ms) {
+    const uint64_t fwd = (tick - last.tick_ms) * byte_rate / 1000;
+    const uint64_t t = last.total_written + fwd;
+    return (t > cur_total) ? cur_total : t;
+  }
+  for (size_t i = 1; i < mk.size(); i++) {
+    if (tick <= mk[i].tick_ms) {
+      const auto& a = mk[i - 1];
+      const auto& b = mk[i];
+      const uint64_t dt = (b.tick_ms > a.tick_ms) ? (b.tick_ms - a.tick_ms) : 1;
+      const uint64_t dtot = (b.total_written > a.total_written)
+                                ? (b.total_written - a.total_written)
+                                : 0;
+      return a.total_written + dtot * (tick - a.tick_ms) / dt;
+    }
+  }
+  return last.total_written;
+}
+
+// --dump-loopback：把 [ts_start, ts_end]（GetTickCount64 墙钟 ms，与文本环 timestamp 同源）经标记
+// 表映射到 loopback 环字节区间，抽该段 16-bit PCM、去尾静音、写 WAV。成功返回 true。
+bool DumpLoopback(const SharedHeader* h, uint64_t ts_start, uint64_t ts_end,
+                  const char* path) {
+  const uint32_t cap = h->loopback_ring_capacity;
+  const uint32_t sr = h->loopback_sample_rate;
+  const uint32_t ch = h->loopback_channels;
+  if (cap == 0 || sr == 0 || ch == 0) {
+    fprintf(stderr,
+            "loopback 未就绪：cap=%u sr=%u ch=%u（loopback 线程没起/没抓到？看 lbdiag）\n",
+            cap, sr, ch);
+    return false;
+  }
+  const uint8_t* ring =
+      reinterpret_cast<const uint8_t*>(h) + h->loopback_ring_offset;
+  const uint64_t byte_rate = static_cast<uint64_t>(sr) * ch * 2u;  // 16-bit 存储
+  const uint64_t cur_total = h->loopback_total_written;
+  std::vector<hibiki_voice_hook::LoopbackMarker> mk;
+  CollectLoopbackMarkers(h, &mk);
+  uint64_t start_total = TickToTotal(mk, ts_start, byte_rate, cur_total);
+  uint64_t end_total = TickToTotal(mk, ts_end, byte_rate, cur_total);
+  if (end_total <= start_total) {
+    fprintf(stderr, "空窗口：start_total=%llu end_total=%llu\n",
+            static_cast<unsigned long long>(start_total),
+            static_cast<unsigned long long>(end_total));
+    return false;
+  }
+  // 夹到环内仍存活区间 [cur_total-cap, cur_total)。
+  const uint64_t floor = (cur_total > cap) ? cur_total - cap : 0;
+  if (start_total < floor) {
+    start_total = floor;
+  }
+  if (end_total > cur_total) {
+    end_total = cur_total;
+  }
+  const uint32_t ba = ch * 2u;
+  if (end_total <= start_total) {
+    fprintf(stderr, "窗口已被环形覆盖或超出：start=%llu end=%llu cur=%llu cap=%u\n",
+            static_cast<unsigned long long>(start_total),
+            static_cast<unsigned long long>(end_total),
+            static_cast<unsigned long long>(cur_total), cap);
+    return false;
+  }
+  uint64_t len64 = end_total - start_total;
+  len64 -= (len64 % ba);  // 帧对齐
+  if (len64 == 0) {
+    return false;
+  }
+  uint32_t len = (len64 > cap) ? cap : static_cast<uint32_t>(len64);
+  std::vector<uint8_t> pcm(len);
+  const uint32_t off = static_cast<uint32_t>(start_total % cap);
+  const uint32_t first = (len <= cap - off) ? len : (cap - off);
+  memcpy(pcm.data(), ring + off, first);
+  if (len > first) {
+    memcpy(pcm.data() + first, ring, len - first);
+  }
+  // 去尾静音（16-bit）：阈值取该段峰值的 8%（同 DumpUtterance 口径）。前导保留（起声可能在窗口初）。
+  {
+    const int16_t* s = reinterpret_cast<const int16_t*>(pcm.data());
+    const size_t n = pcm.size() / 2;
+    double peak = 1.0;
+    for (size_t i = 0; i < n; i++) {
+      const double v = (s[i] < 0) ? -static_cast<double>(s[i]) : s[i];
+      if (v > peak) {
+        peak = v;
+      }
+    }
+    const int16_t thr = static_cast<int16_t>(peak * 0.08);
+    size_t hi = n;
+    while (hi > 0 && (s[hi - 1] < 0 ? -s[hi - 1] : s[hi - 1]) < thr) {
+      hi--;
+    }
+    hi -= (hi % ch);  // 帧对齐
+    if (hi > 0 && hi < n) {
+      pcm.resize(hi * 2);
+      len = static_cast<uint32_t>(pcm.size());
+    }
+  }
+  const uint32_t br = static_cast<uint32_t>(byte_rate);
+  FILE* f = fopen(path, "wb");
+  if (f == nullptr) {
+    return false;
+  }
+  auto w32 = [&](uint32_t v) { fwrite(&v, 4, 1, f); };
+  auto w16 = [&](uint16_t v) { fwrite(&v, 2, 1, f); };
+  fwrite("RIFF", 1, 4, f); w32(36 + len); fwrite("WAVE", 1, 4, f);
+  fwrite("fmt ", 1, 4, f); w32(16); w16(1); w16(static_cast<uint16_t>(ch));
+  w32(sr); w32(br); w16(static_cast<uint16_t>(ba)); w16(16);
+  fwrite("data", 1, 4, f); w32(len); fwrite(pcm.data(), 1, len, f);
+  fclose(f);
+  const double dur = br ? static_cast<double>(len) / br * 1000.0 : 0;
+  printf(
+      "loopback %s bytes=%u dur=%.0fms sr=%u ch=%u markers=%zu win=[%llu,%llu] "
+      "total=[%llu,%llu]\n",
+      path, len, dur, sr, ch, mk.size(),
+      static_cast<unsigned long long>(ts_start),
+      static_cast<unsigned long long>(ts_end),
+      static_cast<unsigned long long>(start_total),
+      static_cast<unsigned long long>(end_total));
+  return true;
+}
+
 // 列出最近的语音 clip：seq / 时间戳 / 与上一条间隔 / 源指针低32位 / 环偏移 / 字节 / 时长ms。
 // 用来看播放模式（语音是不是连续多段同源、BGM 是不是另一持续源），设计整句合成分组用。
 void ListClips(const SharedHeader* h) {
@@ -456,7 +613,11 @@ void ListClips(const SharedHeader* h) {
 int main(int argc, char** argv) {
   if (argc < 2) {
     fprintf(stderr,
-            "usage: hibiki_voice_ring_probe <pid> [轮数=30] [间隔ms=500]\n");
+            "usage: hibiki_voice_ring_probe <pid> [轮数=30] [间隔ms=500]\n"
+            "  或导出: <pid> --dump-text | --list-clips\n"
+            "         <pid> --dump-wav|--dump-utterance <ts_ms> <out.wav>\n"
+            "         <pid> --dump-sources <ts_ms> <prefix>\n"
+            "         <pid> --dump-loopback <ts_start_ms> <ts_end_ms> <out.wav>\n");
     return 1;
   }
   const DWORD pid = static_cast<DWORD>(strtoul(argv[1], nullptr, 10));
@@ -522,6 +683,15 @@ int main(int argc, char** argv) {
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     return 0;
+  }
+  // C.2f loopback 兜底：--dump-loopback <ts_start_ms> <ts_end_ms> <out.wav>。抽混音窗口做卡。
+  if (argc >= 6 && strcmp(argv[2], "--dump-loopback") == 0) {
+    const uint64_t ts0 = strtoull(argv[3], nullptr, 10);
+    const uint64_t ts1 = strtoull(argv[4], nullptr, 10);
+    const bool ok = DumpLoopback(header, ts0, ts1, argv[5]);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return ok ? 0 : 2;
   }
 
   std::vector<uint8_t> window;
@@ -601,6 +771,15 @@ int main(int argc, char** argv) {
       }
     }
     printf("\n");
+    // C.2f loopback 兜底捕获状态：诊断位 + 混音格式 + 累计字节 + 标记数（主代理据此确认 loopback
+    // 真在抓）。lbdiag 位：0x01 线程启动/0x02 设备就绪/0x04 捕获启动/0x08 抓到非静音/0x10 见静音包/
+    // 0x40 未知格式按静音填/0x80 初始化失败。
+    printf(
+        "     [lb] lbdiag=0x%02x sr=%u ch=%u bits=%u total=%llu markers=%llu\n",
+        header->loopback_diag, header->loopback_sample_rate,
+        header->loopback_channels, header->loopback_bits_per_sample,
+        static_cast<unsigned long long>(header->loopback_total_written),
+        static_cast<unsigned long long>(header->loopback_marker_count));
     fflush(stdout);
     if (r + 1 < rounds) {
       Sleep(static_cast<DWORD>(interval_ms));

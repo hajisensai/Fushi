@@ -38,12 +38,16 @@
 namespace {
 
 using hibiki_voice_hook::kClipCount;
+using hibiki_voice_hook::kLoopbackMarkerCount;
+using hibiki_voice_hook::kLoopbackSeconds;
+using hibiki_voice_hook::kMaxLoopbackBytes;
 using hibiki_voice_hook::kMaxRingBytes;
 using hibiki_voice_hook::kRingSeconds;
 using hibiki_voice_hook::kSharedMagic;
 using hibiki_voice_hook::kSharedVersion;
 using hibiki_voice_hook::kTextSlotBytes;
 using hibiki_voice_hook::kTextSlotCount;
+using hibiki_voice_hook::LoopbackMarker;
 using hibiki_voice_hook::ReadyEventName;
 using hibiki_voice_hook::SharedHeader;
 using hibiki_voice_hook::SharedMemoryName;
@@ -124,6 +128,17 @@ uint32_t ComputeRingCapacity() {
   uint64_t cap = 48000ull * 2ull * 4ull * kRingSeconds;
   if (cap > kMaxRingBytes) {
     cap = kMaxRingBytes;
+  }
+  cap -= (cap % 8);
+  return static_cast<uint32_t>(cap);
+}
+
+// loopback 环固定容量（注入前分配，尚不知真实混音格式）：按名义 48k 立体声 16-bit 存储 * 60s。
+// 混音若多声道则同容量下历史时长变短，仍够抽窗；上界 kMaxLoopbackBytes 护住 32 位地址空间。
+uint32_t ComputeLoopbackCapacity() {
+  uint64_t cap = 48000ull * 2ull * 2ull * kLoopbackSeconds;  // sr*ch*16bit*秒
+  if (cap > kMaxLoopbackBytes) {
+    cap = kMaxLoopbackBytes;
   }
   cap -= (cap % 8);
   return static_cast<uint32_t>(cap);
@@ -601,14 +616,19 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // 建共享内存（header + 环形缓冲）并清零、写契约头。injector 持有映射句柄=内存所有者；
   // hold 模式下常驻维持它存活，供 host 消费。
   const uint32_t ring_capacity = ComputeRingCapacity();
-  // v2 布局：[SharedHeader][音频环形 ring_capacity][文本环 kTextSlotCount*kTextSlotBytes]
-  //          [clip 索引 kClipCount*sizeof(VoiceClip)]。各区偏移下面填进 header。
+  const uint32_t loopback_capacity = ComputeLoopbackCapacity();
+  // v6 布局：[SharedHeader][音频环形 ring_capacity][文本环 kTextSlotCount*kTextSlotBytes]
+  //          [clip 索引 kClipCount*sizeof(VoiceClip)][loopback 环 loopback_capacity]
+  //          [loopback 标记表 kLoopbackMarkerCount*sizeof(LoopbackMarker)]。各区偏移下面填进 header。
   const uint64_t text_region_bytes =
       static_cast<uint64_t>(kTextSlotCount) * kTextSlotBytes;
   const uint64_t clip_region_bytes =
       static_cast<uint64_t>(kClipCount) * sizeof(VoiceClip);
+  const uint64_t loopback_marker_bytes =
+      static_cast<uint64_t>(kLoopbackMarkerCount) * sizeof(LoopbackMarker);
   const uint64_t total_size = sizeof(SharedHeader) + ring_capacity +
-                              text_region_bytes + clip_region_bytes;
+                              text_region_bytes + clip_region_bytes +
+                              loopback_capacity + loopback_marker_bytes;
   const std::wstring shm = SharedMemoryName(pid);
   HANDLE mapping = CreateFileMappingW(
       INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
@@ -633,6 +653,14 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       static_cast<uint32_t>(sizeof(SharedHeader) + ring_capacity);
   header->clip_region_offset =
       static_cast<uint32_t>(header->text_region_offset + text_region_bytes);
+  // v6：loopback 环紧随 clip 索引；标记表紧随 loopback 环。格式/计数字段留空由 hook 侧 loopback
+  // 线程运行期填（injector 注入前拿不到真实混音格式）。
+  header->loopback_ring_offset =
+      static_cast<uint32_t>(header->clip_region_offset + clip_region_bytes);
+  header->loopback_ring_capacity = loopback_capacity;
+  header->loopback_marker_offset =
+      static_cast<uint32_t>(header->loopback_ring_offset + loopback_capacity);
+  header->loopback_marker_slot_count = kLoopbackMarkerCount;
 
   // 就绪事件（auto-reset，初始未触发）；hook DLL 装好后 SetEvent。
   const std::wstring evt = ReadyEventName(pid);
