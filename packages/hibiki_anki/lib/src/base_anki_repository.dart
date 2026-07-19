@@ -241,6 +241,9 @@ abstract class BaseAnkiRepository {
   /// - 两个开关默认 `true`，等价 TODO-115/062 的固定行为（Never break userspace）。
   /// - [titleTag]（TODO-681 开关，「自动添加书名到标签」）非空时追加**已清洗的书名/番名
   ///   标签**（去重后），书籍/视频同语义。
+  /// - [collectionTag]（同「自动添加书名到标签」开关）非空时追加**已清洗的合集/系列名
+  ///   标签**（去重后）：视频=播放列表系列名，书籍=所属合集名。与 [titleTag] 并列，二者
+  ///   字面量不同则各成一个 tag，相同时由 [seen] 去重合并。
   /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加或漂移。
   @protected
   List<String> buildNoteTags(
@@ -249,6 +252,7 @@ abstract class BaseAnkiRepository {
     bool includeHibiki = true,
     bool includeCategory = true,
     String? titleTag,
+    String? collectionTag,
   }) {
     final seen = <String>{};
     final result = <String>[];
@@ -266,6 +270,13 @@ abstract class BaseAnkiRepository {
     // 同一标题标签时不会重复追加（两处清洗规则同源故字面量相同）。
     final clean = sanitizeTitleTag(titleTag);
     if (clean != null && seen.add(clean)) result.add(clean);
+    // 合集/系列名标签（与 titleTag 同「自动添加书名到标签」开关）：视频=播放列表系列名、
+    // 书籍=所属合集名。调用方读开关 + 取合集名 + 清洗后注入；与书名标签并列，字面量相同时
+    // 由 [seen] 去重合并（如单视频合集名==剧集名时不重复追加）。
+    final cleanCollection = sanitizeTitleTag(collectionTag);
+    if (cleanCollection != null && seen.add(cleanCollection)) {
+      result.add(cleanCollection);
+    }
     return result;
   }
 

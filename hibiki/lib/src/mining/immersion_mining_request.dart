@@ -73,6 +73,7 @@ class ImmersionMiningRequest {
     this.audioStreamCount,
     this.source = AnkiMiningSource.video,
     this.bookTitleTag,
+    this.collectionTag,
     this.updateNoteId,
     this.stillFallback,
     this.providedCoverBytes,
@@ -99,6 +100,11 @@ class ImmersionMiningRequest {
   final int? audioStreamCount;
   final AnkiMiningSource source;
   final String? bookTitleTag;
+
+  /// 合集/系列名标签（视频=播放列表系列名）：与 [bookTitleTag] 同「自动添加书名到标签」
+  /// 开关，非 null 时经 [BaseAnkiRepository.buildNoteTags] 追加为独立 tag。不属合集/单视频
+  /// 无系列名时为 null。透传进 [AnkiMiningContext.collectionTag]。
+  final String? collectionTag;
 
   /// 非 null = 覆盖现有卡（走 updateMinedNote，不计统计）。
   final int? updateNoteId;

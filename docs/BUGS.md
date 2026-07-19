@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 894 条。点号进各自文件。
+> 共 895 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-919](bugs/BUG-919-mining-collection-tag.md) | ✅ | ✅ | 制卡缺少所属合集名标签 |
 | [BUG-917](bugs/BUG-917-video-clip-mp4-muxer.md) | ✅ | ✅ | 视频片段导出 exit -22（捆绑 ffmpeg-min 无 matroska muxer，输出跟随源容器） |
 | [BUG-916](bugs/BUG-916-subtitle-list-shift-hover-offset.md) | ✅ | ✅ | 视频字幕列表Shift悬停查词偏左一格 |
 | [BUG-915](bugs/BUG-915-ass-user-scale-and-plain-off-mode.md) | ✅ | ✅ | 尊重字幕不能调字号；关闭尊重时 ASS 特效层叠印乱字 |

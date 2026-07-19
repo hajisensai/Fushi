@@ -232,6 +232,8 @@ class AnkiRepository extends BaseAnkiRepository {
       // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
       // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
       titleTag: context.bookTitleTag,
+      // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
+      collectionTag: context.collectionTag,
     );
 
     try {

@@ -492,6 +492,100 @@ void main() {
     });
   });
 
+  group(
+      'collectionTag appends the collection/series tag alongside the title tag, '
+      'de-duped, sanitised', () {
+    Future<List<String>> tagsForConnect(
+      String configured, {
+      AnkiMiningSource? source,
+      String? bookTitleTag,
+      String? collectionTag,
+    }) async {
+      final service = _RecordingAnkiConnectService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: _settingsWithTags(configured),
+      );
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: _payload,
+        context: AnkiMiningContext(
+          sentence: '',
+          source: source,
+          bookTitleTag: bookTitleTag,
+          collectionTag: collectionTag,
+        ),
+      );
+      expect(outcome.result, MineResult.success);
+      return service.addedTags.single;
+    }
+
+    test(
+        'collection tag is appended after the title tag (video: series + episode)',
+        () async {
+      // 撤掉 buildNoteTags 的 collectionTag 追加（或 video/reader 调用方不传）此处转红。
+      expect(
+        await tagsForConnect('',
+            source: AnkiMiningSource.video,
+            bookTitleTag: 'S1E01',
+            collectionTag: 'Attack_on_Titan'),
+        <String>['hibiki', 'video', 'S1E01', 'Attack_on_Titan'],
+      );
+    });
+
+    test('collection tag alone (no title) still appends', () async {
+      expect(
+        await tagsForConnect('jp',
+            source: AnkiMiningSource.book, collectionTag: 'My_Series'),
+        <String>['jp', 'hibiki', 'book', 'My_Series'],
+      );
+    });
+
+    test('collection tag equal to the title tag is de-duped (single tag)',
+        () async {
+      // 单视频/单本时合集名==标题名（如合集只有一个条目）不重复追加。
+      expect(
+        await tagsForConnect('',
+            source: AnkiMiningSource.video,
+            bookTitleTag: 'Same',
+            collectionTag: 'Same'),
+        <String>['hibiki', 'video', 'Same'],
+      );
+    });
+
+    test('collection tag equal to a user/category tag is de-duped', () async {
+      expect(
+        await tagsForConnect('video',
+            source: AnkiMiningSource.video, collectionTag: 'video'),
+        <String>['video', 'hibiki'],
+      );
+    });
+
+    test('null / empty collection tag appends nothing (not in a collection)',
+        () async {
+      expect(
+        await tagsForConnect('jp',
+            source: AnkiMiningSource.video, bookTitleTag: 'Ep'),
+        <String>['jp', 'hibiki', 'video', 'Ep'],
+      );
+      expect(
+        await tagsForConnect('jp',
+            source: AnkiMiningSource.video,
+            bookTitleTag: 'Ep',
+            collectionTag: ''),
+        <String>['jp', 'hibiki', 'video', 'Ep'],
+      );
+    });
+
+    test('spaces / tabs in collection name are sanitised to a single tag',
+        () async {
+      expect(
+        await tagsForConnect('',
+            source: AnkiMiningSource.book, collectionTag: 'My Big Series'),
+        <String>['hibiki', 'book', 'My_Big_Series'],
+      );
+    });
+  });
+
   group('media uploads run in parallel (timing proof for the 6s fix)', () {
     late Directory dir;
 

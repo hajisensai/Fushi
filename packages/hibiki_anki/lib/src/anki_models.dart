@@ -379,6 +379,7 @@ class AnkiMiningContext {
     this.sentenceOffset,
     this.source,
     this.bookTitleTag,
+    this.collectionTag,
   });
   final String sentence;
   final String? cueSentence;
@@ -399,6 +400,15 @@ class AnkiMiningContext {
   /// app；标题来源也按来源不同（书=书名 / 视频=番名）。故由调用方读开关 + 取标题 + 清洗后
   /// 注入，本包只负责按既有 [buildNoteTags] 去重规则追加，与 `book`/`video` 分类标签同构。
   final String? bookTitleTag;
+
+  /// 「自动添加书名到标签」开关开启且当前条目**归属某合集**时，调用方（reader / video）
+  /// 算好的**已清洗合集名标签**（空格/Tab→下划线，单个 Anki tag 字面量）；不属任何合集、
+  /// 开关关闭或无合集名时为 `null`，[BaseAnkiRepository.buildNoteTags] 不追加。
+  ///
+  /// 与 [bookTitleTag] 并列：视频从播放列表（系列）名取、reader 从书所属合集反查取，
+  /// 二者字面量不同则各成一个 tag（Anki 里可按系列聚合、也可按单集/单本区分）；相同时由
+  /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
+  final String? collectionTag;
 }
 
 class AnkiHandlebarRenderer {
