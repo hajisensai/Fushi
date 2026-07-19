@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anti_leech.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_backend.dart';
+import 'package:hibiki/src/media/torrent/torrent_upload_policy.dart';
 import 'package:hibiki_torrent/hibiki_torrent.dart';
 
 /// 内置 libtorrent 引擎的 app 侧宿主：拥有**常驻**引擎 + 单个 session
@@ -36,6 +38,15 @@ class EmbeddedTorrentHost {
 
   /// 当前 ip_filter 里的封段快照（避免无变化时重复 set_ip_filter）。
   Set<String> _appliedBans = <String>{};
+
+  /// 上传/做种策略（默认开箱即关上传）。config 变更时由 AppModel 更新。
+  QbConnectionConfig _uploadConfig = const QbConnectionConfig();
+
+  /// 每个种子进入做种阶段的时刻（做种时长上限判定基准）。
+  final Map<String, int> _seedStartMs = <String, int>{};
+
+  /// 已下发的 per-torrent 上传模式（避免无变化时重复 FFI 调用）。
+  final Map<String, bool> _appliedUpload = <String, bool>{};
 
   /// 底层引擎版本串（诊断/probe 用）。
   String get libtorrentVersion => _engine.libtorrentVersion();
@@ -140,6 +151,54 @@ class EmbeddedTorrentHost {
         }
       }
       return newlyBanned;
+    } on Object {
+      return 0;
+    }
+  }
+
+  /// 更新上传/做种策略并立即重扫一次让新策略生效（用户在设置里改上传开关/
+  /// 做种上限时由 AppModel 调用）。
+  void setUploadPolicy(QbConnectionConfig config) {
+    _uploadConfig = config;
+    sweepUploadPolicy();
+  }
+
+  /// 上传/做种策略扫描：按 [torrent_upload_policy] 算出每个种子的期望上传状态
+  /// （总开关关 / 做种超时 / 分享率达标 → 停传），仅在期望状态变化时下发
+  /// `setUploadMode`（避免每 tick 重复 FFI）。返回本轮实际改变的种子数。
+  /// 与 [sweepAntiLeech] 同在 `AnimeDownloadService` 每 tick 调用。异常静默吞。
+  int sweepUploadPolicy() {
+    try {
+      final int nowMs = _clockMs();
+      int changed = 0;
+      final Set<String> live = <String>{};
+      for (final HtTorrentStatus t in _session.listTorrents()) {
+        live.add(t.id);
+        if (t.isSeeding) {
+          _seedStartMs.putIfAbsent(t.id, () => nowMs);
+        }
+        final int? startMs = _seedStartMs[t.id];
+        final int elapsedMs = startMs == null ? 0 : nowMs - startMs;
+        final bool allow = shouldAllowUpload(
+          _uploadConfig,
+          TorrentUploadMetrics(
+            isSeeding: t.isSeeding,
+            uploaded: t.uploaded,
+            downloaded: t.downloaded,
+            seedingElapsedMs: elapsedMs,
+          ),
+        );
+        if (_appliedUpload[t.id] != allow) {
+          if (_session.setUploadMode(infoHash: t.id, enabled: allow)) {
+            _appliedUpload[t.id] = allow;
+            changed++;
+          }
+        }
+      }
+      // 清理已移除种子的残留状态。
+      _seedStartMs.removeWhere((String k, int v) => !live.contains(k));
+      _appliedUpload.removeWhere((String k, bool v) => !live.contains(k));
+      return changed;
     } on Object {
       return 0;
     }
