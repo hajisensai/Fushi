@@ -165,6 +165,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/video_window_aspect_lock_static_test.dart',
   'video/Obscure subtitles':
       'test/media/video/video_subtitle_obscure_mode_test.dart + test/media/video/video_subtitle_overlay_test.dart + test/shortcuts/video_shortcut_registry_test.dart',
+  'video/Obscure secondary subtitle':
+      'test/media/video/video_secondary_subtitle_obscure_test.dart + test/media/video/video_subtitle_overlay_test.dart',
   // TODO-286: pref-only video settings surfaced in home settings for parity with
   // the in-player sheet. Schema coverage here proves focus/change/persist/restore
   // through the DB; the runtime effect of each underlying config is guarded by the
