@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -72,4 +73,30 @@ Uint8List downsampleCardScreenshot(
   } catch (_) {
     return bytes;
   }
+}
+
+/// [downsampleCardScreenshot] 的后台 isolate 变体（BUG-933）。
+///
+/// 根因：制卡封面（libmpv 原始解码帧，可能 1080p/4K）的 `img.decodeImage` +
+/// `copyResize`(lanczos) + `encodeJpg` 是纯 Dart CPU 重活，几十到几百 ms；旧代码在
+/// **UI isolate** 同步 `await` 这条链（`immersion_mining_engine` / reader 选区插图），
+/// 制卡截图那一下明显卡顿/未响应。这里整体卸到后台 isolate（[Isolate.run]，与
+/// `encodeClipTextFrameAsJpgAsync` 同范式）：传 [Uint8List] 进、[Uint8List] 出，
+/// `package:image` 对象只在后台 isolate 内生灭，UI 线程不再被解码/编码阻塞。
+///
+/// 语义与同步版一致：小图/无法解码时原样返回入参字节（跨 isolate 拷贝后内容相等，
+/// 不再是 `identical`，但绝不返回空/破坏媒体）。
+Future<Uint8List> downsampleCardScreenshotAsync(
+  Uint8List bytes, {
+  int maxLongEdge = 1000,
+  int quality = 90,
+}) {
+  if (bytes.isEmpty) return Future<Uint8List>.value(bytes);
+  return Isolate.run<Uint8List>(
+    () => downsampleCardScreenshot(
+      bytes,
+      maxLongEdge: maxLongEdge,
+      quality: quality,
+    ),
+  );
 }

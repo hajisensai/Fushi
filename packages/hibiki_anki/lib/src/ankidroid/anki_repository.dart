@@ -614,7 +614,8 @@ class AnkiRepository extends BaseAnkiRepository {
     final file = File(path);
     if (!file.existsSync()) return null;
     final bytes = await file.readAsBytes();
-    return hibikiAnkiMediaFilenameForBytes(
+    // BUG-933：sha256 卸到后台 isolate（大媒体），避免阻塞 UI。
+    return hibikiAnkiMediaFilenameForBytesAsync(
       prefix: prefix,
       bytes: bytes,
       sourceName: file.path,
@@ -667,7 +668,8 @@ class AnkiRepository extends BaseAnkiRepository {
                 await response.fold<List<int>>([], (a, b) => a..addAll(b));
             final cacheDir = await _mediaCacheDir();
             final ext = _audioExtension(response.headers.contentType, url);
-            final preferredName = hibikiAnkiMediaFilenameForBytes(
+            // BUG-933：远端音频 sha256 卸到后台 isolate。
+            final preferredName = await hibikiAnkiMediaFilenameForBytesAsync(
               prefix: 'hibiki_audio_',
               bytes: bytes,
               sourceName: url,
