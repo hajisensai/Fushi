@@ -51,7 +51,7 @@
   <circle cx="241" cy="220" r="26" fill="#fff" fill-opacity="0.12"/><path d="M143 266l55-58 42 43 50-33v58H143z" fill="#fff" fill-opacity="0.17"/>
   <text x="306" y="208" class="t label accent">继续捕获</text>
   <text x="306" y="239" class="t title">オトメ＊ドメイン</text>
-  <text x="306" y="264" class="t body muted">运行 37 分 · 最近台词 0.8 秒 · Engine hook（混音）</text>
+  <text x="306" y="264" class="t body muted">运行 37 分 · 最近台词 0.8 秒 · 原始 OGG（纯人声已验证）</text>
   <circle cx="946" cy="232" r="25" fill="#087b94"/><path d="M938 220l18 12-18 12z" fill="#fff"/>
   <text x="1018" y="190" class="t label accent">捕获概览</text>
   <g fill="#dce9ee">
@@ -63,7 +63,7 @@
   <g fill="#84bdcb"><rect x="1072" y="207" width="13" height="13" rx="3"/><rect x="1090" y="225" width="13" height="13" rx="3"/><rect x="1054" y="243" width="13" height="13" rx="3"/><rect x="1072" y="243" width="13" height="13" rx="3"/><rect x="1090" y="243" width="13" height="13" rx="3"/><rect x="1054" y="261" width="13" height="13" rx="3"/></g>
   <g class="t"><text x="1160" y="218" class="small muted">本会话</text><text x="1160" y="244" class="title">18 行 / 17 段音频</text><text x="1160" y="270" class="body muted">5 张卡 · 1 次 fallback</text>
     <circle cx="1390" cy="216" r="6" fill="#2f8c45"/><text x="1404" y="221" class="body">文本活跃</text>
-    <circle cx="1390" cy="247" r="6" fill="#e59b00"/><text x="1404" y="252" class="body">音频混音</text>
+    <circle cx="1390" cy="247" r="6" fill="#2e8b57"/><text x="1404" y="252" class="body">纯人声 OGG</text>
     <circle cx="1390" cy="278" r="6" fill="#2f8c45"/><text x="1404" y="283" class="body">Anki 可写</text>
   </g>
 

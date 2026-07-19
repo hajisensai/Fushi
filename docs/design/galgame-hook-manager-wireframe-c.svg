@@ -108,8 +108,8 @@
   <rect x="1108" y="176" width="86" height="110" rx="14" fill="url(#c1)"/>
   <text x="1212" y="199" class="t title">オトメ＊ドメイン</text>
   <text x="1212" y="224" class="t small muted">otomeki.exe · PID 8420 · x86</text>
-  <rect x="1212" y="239" width="83" height="24" rx="12" fill="#fff4d1"/><text x="1227" y="255" class="t chip" fill="#744600">混音捕获</text>
-  <rect x="1303" y="239" width="90" height="24" rx="12" fill="#d7f8dc"/><text x="1319" y="255" class="t chip" fill="#174d1d">文本活跃</text>
+  <rect x="1212" y="239" width="104" height="24" rx="12" fill="#d7f8dc"/><text x="1227" y="255" class="t chip" fill="#174d1d">纯人声 OGG</text>
+  <rect x="1324" y="239" width="90" height="24" rx="12" fill="#d7f8dc"/><text x="1340" y="255" class="t chip" fill="#174d1d">文本活跃</text>
   <text x="1212" y="282" class="t small" fill="#6750a4">打开完整捕获台  ›</text>
   <text x="1092" y="340" class="t label">就绪链</text>
   <line x1="1120" y1="381" x2="1506" y2="381" stroke="#c8c2cb" stroke-width="3"/>

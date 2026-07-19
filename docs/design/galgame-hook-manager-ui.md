@@ -28,25 +28,26 @@ Hibiki 需要的不是先复刻一个完整 ReinaManager，而是把两个层次
 
 ### 2.1 已经能工作的链路
 
-- 外部窗口制卡已有文本、窗口 GIF / PNG、音频编码和 Anki 出口；`TexthookerPage.onMineEntry` 串起画面、音频与 `ImmersionMiningEngine`（`hibiki/lib/src/pages/implementations/texthooker_page.dart:108-164`）。
-- `EngineHookGalAudioSource` 已有 attach / launch 两种模式，launch 可按 exe 位数选择 helper、等待注入并打开共享内存（`hibiki/lib/src/mining/galgame_audio_source.dart:167-340`）。
-- 文本行带单调序号与同一时钟的时间戳，可按句抓 clip / utterance；页面还做了最多 200 句的“出现即锁定”缓存（`texthooker_page.dart:65-78,307-339`）。
-- native 已能枚举活跃音频源，包含格式、平均 buffer、能量、创建顺序和 clip 数；Dart 已有“选语音轨 / 排除 BGM 轨”的会话内字段（`hibiki/windows/runner/voice_hook_reader.h:41-53,86-101`；`galgame_audio_source.dart:482-549`）。
+- 外部窗口制卡已有文本、窗口 GIF / PNG、音频编码和 Anki 出口；`TexthookerPage.onMineEntry` 串起画面、音频与 `ImmersionMiningEngine`（`hibiki/lib/src/pages/implementations/texthooker_page.dart:112-168`）。
+- `EngineHookGalAudioSource` 已有 attach / launch 两种模式，launch 可按 exe 位数选择 helper、等待注入并打开共享内存（`hibiki/lib/src/mining/galgame_audio_source.dart:245-454`）。
+- 当前目标分支已把 KiriKiri 语音 OGG dump 接回制卡：按文本时间戳窗口筛候选、排除 BGM / SE 前缀、转 AAC，并优先于共享内存 PCM 与 loopback（`galgame_audio_source.dart:159-190,609-645`；`galgame_audio_encode.dart:169-221`；`texthooker_page.dart:456-497`）。这是一条真实可用的新 backend，不再是断路。
+- 文本行带单调序号与同一时钟的时间戳，可按句抓 clip / utterance；页面还做了最多 200 句的“出现即锁定”音频与时间戳缓存（`texthooker_page.dart:65-78,314-356`）。
+- native 已能枚举活跃音频源，包含格式、平均 buffer、能量、创建顺序和 clip 数；Dart 已有“选语音轨 / 排除 BGM 轨”的会话内字段（`hibiki/windows/runner/voice_hook_reader.h:41-53,86-101`；`galgame_audio_source.dart:560-583,720-750,788-833`）。
 - 2026-07-18 的交接记录已给出真实 Hibiki 宿主内全链抓音验证，以及 4 个游戏实际出卡证据（`docs/specs/galgame-mining/handoff.md:21-53`）。
 
 ### 2.2 仍不能对用户承诺的部分
 
-- **“引擎 hook = 干净人声”并不成立**。KiriKiriZ 当前抓到软件混音后的单一 DirectSound 输出，与 loopback 都是混音；其它引擎也可能不命中而回退 loopback（`handoff.md:27-29,47-53`）。界面必须明确显示当前来源和“混音 / 可能干净”的能力级别。
+- **不能用“引擎 hook”一个绿标代表干净人声**。共享内存的 KiriKiriZ DirectSound 输出仍是软件混音，与 loopback 等价（`handoff.md:27-29,47-53`）；当前新增的“原始 OGG + 时间戳配对”才可能给出混音前语音，而且只应在已有真机证据的游戏 / 引擎配置上显示“纯人声已验证”。其它引擎仍可能不命中并回退 loopback。
 - **逐引擎校准仍未完成**。C.3 的 callsite / 引擎内部 per-channel 覆盖没有落地，自动能量选源可能把 BGM 当语音（`handoff.md:17,139-157`）。
 - **完整 UI 路径仍缺焦点驱动真机走查**。原生文件选择、波形 / 出卡等完整用户路径不能因为底层集成测试通过就标成已验证（`handoff.md:47`）。
-- **错误原因被压扁成 null**。启动、注入、IPC、等待格式、抓取均大量 fail-open；这对不打断游戏是对的，但管理界面必须保留失败阶段与 fallback 原因，不能只显示“可用 / 不可用”（`galgame_audio_source.dart:277-340,394-553`）。
+- **错误原因被压扁成 null**。启动、注入、IPC、等待格式、OGG 匹配 / 转码和 PCM 抓取均大量 fail-open；这对不打断游戏是对的，但管理界面必须保留失败阶段与 fallback 原因，不能只显示“可用 / 不可用”（`galgame_audio_source.dart:356-550,573-750`）。
 
 ### 2.3 当前 UI / 生命周期的结构性问题
 
 - hook 会话、timer、音轨选择和句音缓存都由 `TexthookerPage` 的 State 持有（`texthooker_page.dart:49-78`）。
-- 页面 `dispose` 会停止音频源、文本轮询并清空缓存（`texthooker_page.dart:99-105,280-290`）。
+- 页面 `dispose` 会停止音频源、文本轮询并清空缓存（`texthooker_page.dart:103-109,284-297`）。
 - Home shell 明确让 texthooker tab 切走即销毁（`hibiki/lib/src/pages/implementations/home_page.dart:833-885`）。因此只在现页增加监控卡片仍会导致切到游戏库 / 设置后整个捕获会话终止。
-- 现页只有“外部窗口模式”“拉起游戏”“清空”和一个绑定窗口条（`texthooker_page.dart:568-605`），看不到注入阶段、实际 fallback、文本源、音轨、音量、最后一条音频、匹配结果和失败历史。
+- 现页只有“外部窗口模式”“拉起游戏”“清空”和一个绑定窗口条（`texthooker_page.dart:601-654`），看不到注入阶段、实际 fallback、文本源、音轨、音量、最后一条音频、OGG 配对偏移、匹配结果和失败历史。
 - `TexthookerService` 只有无时间戳、无来源的 `List<String>`；WS client 虽连接多个端口并重连，却不公开每个 endpoint 的连接状态、最后错误与最后消息时间（`hibiki/lib/src/sync/texthooker_service.dart`；`texthooker_ws_client.dart`）。
 
 ### 2.4 开始做管理 UI 前的 P0 阻塞
@@ -55,11 +56,11 @@ Hibiki 需要的不是先复刻一个完整 ReinaManager，而是把两个层次
 
 | 阻塞 | 已复核证据 | UI / 实现要求 |
 |---|---|---|
-| 完整台词没有进入点词制卡 payload | 台词行把单个 `word` 传入 popup（`hibiki/lib/src/pages/implementations/texthooker_page.dart:556-563,698-713`）；popup 的 `buildMinePayload` 没有 `sentence`（`hibiki/assets/popup/popup.js:1254-1315`）；WebView handler 原样转成 map（`hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart:1198-1224`），但 galgame 制卡和缓存查找读取 `fields['sentence']`（`texthooker_page.dart:145-158,438-457`） | 先给台词稳定 ID 与完整文本，查词只改变 expression；制卡、音频缓存和 UI 行均按 event ID 关联，不能再用句子字符串 key |
-| “停止”不等于卸载 hook | Dart `stop()` 关闭映射后直接 `Process.kill()` helper（`hibiki/lib/src/mining/galgame_audio_source.dart:557-568`）；injector 只有正常离开 hold 后才 `ShutdownLunaHook`（`native/galgame_voice_hook/injector/injector_main.cpp:680-702`）；游戏内 DLL 明确常驻到进程退出（`native/galgame_voice_hook/hook/dll_main.cpp:1775-1796`） | 增加 graceful stop / detach IPC、heartbeat 与 orphan 检测；在此之前按钮只能诚实写“停止监听 / 结束 helper”，不能宣称已卸载游戏内 hook |
-| 文本轮询有重入与丢行窗口 | 页面用固定 400ms timer，未做 in-flight 互斥（`hibiki/lib/src/pages/implementations/texthooker_page.dart:296-329`）；reader 会跳过尚未完整提交的 slot，而页面仍把 cursor 推到 header count | 轮询串行化，cursor 只推进到实际确认的最大 seq；公开 gap / overwrite / duplicate 计数 |
-| 制卡没有稳定任务串行化 | PCM 临时目录按 `pcm.length` 命名并在 finally 递归删除（`hibiki/lib/src/mining/galgame_audio_encode.dart:139-162`）；页面没有 mining mutex / queue | M0 引入 `MiningJob` 队列和唯一 job temp 目录；界面显示 capture → encode → upload 各阶段 |
-| 原始 OGG 分支当前是断路 | KiriKiri helper 能把匹配文件同步写到 `%TEMP%/hibiki_gal_voice`，但 Hibiki 没有 watcher、索引、清理，也没有把它接回 shared-memory clip / 制卡 | 只在诊断页标“实验导出、未接入制卡”；补齐消费链与保留策略前，不能标成当前音频 backend |
+| 完整台词没有进入点词制卡 payload | 台词行只把被点的 `word` 送进 popup（`hibiki/lib/src/pages/implementations/texthooker_page.dart:591-599,733-773`）；popup 的 `buildMinePayload` 没有 `sentence`（`hibiki/assets/popup/popup.js:1254-1315`）；WebView handler 原样转成 map（`hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart:1200-1224`），但 galgame 制卡、纯人声时间戳与音频缓存查找都读取 `fields['sentence']`（`texthooker_page.dart:146-159,456-482`）。空 / 旧句未命中还会退到“最近一句”，重复文本也会覆盖字符串 key | 先给台词稳定 ID 与完整文本，查词只改变 expression；制卡、OGG 配对、音频缓存和 UI 行均按 event ID 关联，禁止用 sentence string 或 latest fallback 冒充正确配对 |
+| “停止”不等于卸载 hook | Dart `stop()` 关闭映射后直接 `Process.kill()` helper（`hibiki/lib/src/mining/galgame_audio_source.dart:752-763`）；injector 只有正常离开 hold 后才 `ShutdownLunaHook`（`native/galgame_voice_hook/injector/injector_main.cpp:680-702`）；游戏内 DLL 明确常驻到进程退出（`native/galgame_voice_hook/hook/dll_main.cpp:1775-1796`），所以停止监听后 DLL 与 OGG dump 仍可能继续到游戏退出 | 增加 graceful stop / detach / disable IPC、heartbeat、orphan 与 dump 生命周期检测；在此之前按钮只能诚实写“停止监听 / 结束 helper”，不能宣称已卸载或完全停止游戏内 hook |
+| 文本轮询有重入与丢行窗口 | 页面用固定 400ms timer，未做 in-flight 互斥（`hibiki/lib/src/pages/implementations/texthooker_page.dart:299-337`）；reader 会跳过尚未完整提交的 slot，而页面仍把 cursor 推到 header count | 轮询串行化，cursor 只推进到实际确认的最大 seq；公开 gap / overwrite / duplicate 计数 |
+| 制卡没有稳定任务串行化 | PCM 临时目录按 `pcm.length`、OGG 转码目录按 `oggPath.hashCode` 命名，并都在 finally 递归删除（`hibiki/lib/src/mining/galgame_audio_encode.dart:140-162,177-221`）；页面没有 mining mutex / queue | M0 引入 `MiningJob` 队列和真正唯一的 job temp 目录；界面显示 match → capture → encode → upload 各阶段 |
+| 纯人声 OGG 已接线，但匹配能力仍缺结构化证据 | 当前同步扫描全局 temp 目录，文件名没有 PID / session，按固定 `[T-330ms,T-130ms]` 窗口与前缀启发式选一个 OGG；旧 DLL 在停止监听后继续落盘时可能污染新会话。另无候选置信度和已消费标记，失败会静默落到 PCM / loopback（`galgame_audio_source.dart:145-190,609-702`；`native/galgame_voice_hook/hook/dll_main.cpp:1180-1195`；`texthooker_page.dart:456-497`） | dump 路径 / 索引携带并校验 PID + session ID；把 backend、候选数、实际 offset、置信度、排除原因、转码结果和 fallback 原因放进事件；规则按游戏 / 引擎版本保存，只有真机验证过的 profile 标“纯人声已验证” |
 | 画面与台词不是同一事件快照 | 当前点击制卡时才抓 10 帧 GIF / PNG，旧台词得到的是点击时画面；抓 GIF 后才取音频，时差进一步扩大 | `GalCapturedLine` 出现时记录稳定时间与可选轻量缩略图；UI 明示各媒体时间戳 / delta，允许用户替换 |
 
 另有 helper 安装 / 版本 / hash / 签名预检、多进程 launcher→实际游戏 PID 重定向、黑帧检测与目标 HWND 重用校验等兼容性项，进入 M0 的 preflight 与诊断事件，不靠 toast 一次性带过。
@@ -73,7 +74,7 @@ Hibiki 需要的不是先复刻一个完整 ReinaManager，而是把两个层次
 | 游戏配置 `GalGameProfile` | 跨会话保存一个游戏的事实 | 标题、封面、exe、exe SHA、位数、引擎、启动 / attach 策略、窗口匹配、音轨签名、标签 |
 | 捕获会话 `GalHookSession` | 管一轮游戏运行与捕获生命周期 | profile、PID、HWND、helper、文本源、音频源、会话阶段、开始时间、降级原因 |
 | 捕获事件 `GalHookEvent` | 可诊断的时间线 | 时间、severity、stage、code、摘要、技术详情、是否可重试 |
-| 台词条目 `GalCapturedLine` | 让文本、音频与制卡状态可追踪 | seq、文本、来源、hook 时间、收到时间、匹配音轨、音频时长 / 峰值、匹配状态、出卡结果 |
+| 台词条目 `GalCapturedLine` | 让文本、音频与制卡状态可追踪 | seq、文本、来源、hook 时间、收到时间、实际音频 backend、纯度等级、候选数 / offset、匹配音轨、音频时长 / 峰值、fallback、出卡结果 |
 
 ### 3.2 当前不做
 
@@ -90,13 +91,13 @@ Hibiki 需要的不是先复刻一个完整 ReinaManager，而是把两个层次
 2. 健康检查 helper 是否存在且位数匹配，明确说明注入组件与杀软风险。
 3. 默认推荐“由 Hibiki 启动并早注入”；对已启动游戏提供 attach，但提示可能漏过启动期创建的音频设备。
 4. 启动后自动找 PID / 主窗口，逐步显示 `启动 → 注入 → IPC → 文本 → 音频 → 窗口 → Anki`。
-5. 命中引擎 hook 就显示实际 PCM 格式和能力；未命中时允许显式切到 loopback，并保留 fallback 原因。
+5. 命中原始 OGG 配对时显示“纯人声 OGG（已验证 profile）”及 offset；只命中共享内存 PCM 时显示其真实混音能力和格式；未命中时允许显式切到 loopback，并保留 fallback 原因。
 
 ### 4.2 游玩中监控与制卡
 
 1. 捕获台持续显示最近台词；每行独立显示“文本已到 / 音频匹配 / 画面可抓 / 已出卡”。
 2. 右侧健康栏显示当前进程、窗口、文本源、音频源、Anki 与 helper 状态。
-3. 波形 / 电平用于判断是否有声，不用装饰性假波形；标明来源是 engine、process loopback 还是 system loopback。
+3. 波形 / 电平用于判断是否有声，不用装饰性假波形；标明来源是 paired OGG、engine PCM、process loopback 还是 system loopback，并区分“已验证纯人声 / 混音 / 未知”。
 4. 用户可试听最近一句、重选语音轨、标记 BGM、测试截图、生成测试卡。
 5. 快捷键出卡时，结果回写到对应台词行；失败不丢上下文，可展开技术原因后重试。
 
@@ -127,8 +128,8 @@ Hibiki 需要的不是先复刻一个完整 ReinaManager，而是把两个层次
 | 游戏窗口 | 未找到 / 已绑定 / 丢失 / 重绑定中 | HWND、标题、尺寸、最近抓帧 |
 | helper | 缺失 / 位数不符 / 注入中 / 已注入 / 退出 | arch、版本、退出码 |
 | 文本 | 未连接 / 等待 / 活跃 / 超时 / 错误 | 来源、最后行时间、总行数、覆盖 / 丢失数 |
-| 音频 | 未开 / 等待 / 活跃 / 静音 / fallback / 错误 | 来源、混音能力、格式、peak / RMS、最近 clip |
-| 句音匹配 | 未匹配 / 自动 / 手选 / 过期 / 失败 | 时间差、轨道、时长、缓存是否命中 |
+| 音频 | 未开 / 等待 / 活跃 / 静音 / fallback / 错误 | 实际 backend、纯度证据、格式、peak / RMS、最近 OGG / clip、fallback 链 |
+| 句音匹配 | 未匹配 / 自动 / 手选 / 过期 / 失败 | event ID、候选数、offset / confidence、轨道、时长、缓存是否命中 |
 | 截图 | 未绑定 / 可抓 / 最近失败 | 最近缩略图、耗时、错误码 |
 | Anki | 未配置 / 可用 / 写入中 / 失败 | deck、最近一次结果、耗时 |
 
@@ -176,7 +177,7 @@ Hibiki 需要的不是先复刻一个完整 ReinaManager，而是把两个层次
 - `< 840dp`：本功能为 Windows 桌面实验项，仍允许单栏查看，但启动 / 注入配置不以移动端为首要目标。
 - 所有主操作进焦点序列；列表项、音轨和状态卡使用 Enter 确认，避免只有 hover 才出现的动作。
 - 台词列表先让“一整行”成为焦点目标，上下键移动、Enter 打开、`Ctrl+Enter` 制卡；不能让 Tab 依次穿过 500 行中的每个日语词。新台词不抢焦点，关闭详情后焦点回原行。
-- 现有 `_onLines` 每次都跳到列表底部（`texthooker_page.dart:518-525`）；新界面改成“跟随实时”开关，用户查看旧句时只累计未读数。
+- 现有 `_onLines` 每次都跳到列表底部（`texthooker_page.dart:553-560`）；新界面改成“跟随实时”开关，用户查看旧句时只累计未读数。
 
 ### 可复用的 Hibiki 组件
 
