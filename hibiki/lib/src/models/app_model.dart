@@ -39,6 +39,7 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/lookup/browser_extension_installer.dart';
 import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
+import 'package:hibiki/src/models/clipboard_history_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
@@ -555,6 +556,9 @@ class AppModel with ChangeNotifier {
 
   /// Dictionary metadata, history, and search caches.
   late DictionaryRepository dictRepo;
+  late ClipboardHistoryRepository clipboardHistoryRepo;
+  final ClipboardHistoryNotifier clipboardHistoryNotifier =
+      ClipboardHistoryNotifier();
 
   /// Extracted sub-managers.
   late final AudioController audioCtrl = AudioController();
@@ -1194,6 +1198,23 @@ class AppModel with ChangeNotifier {
   List<DictionarySearchResult> get dictionaryHistory =>
       dictRepo.dictionaryHistory;
 
+  /// Desktop clipboard-copy history (data source for the panel / transient
+  /// popup history button).
+  List<ClipboardHistoryEntry> get clipboardHistory =>
+      clipboardHistoryRepo.entries;
+
+  /// Record one clipboard-copied text (from DesktopLookupService, origin=clipboard).
+  void addClipboardHistoryEntry(String text) {
+    clipboardHistoryRepo.add(text, DateTime.now());
+    clipboardHistoryNotifier.bump();
+  }
+
+  /// Clear clipboard-copy history (the history panel clear button).
+  Future<void> clearClipboardHistory() async {
+    await clipboardHistoryRepo.clear();
+    clipboardHistoryNotifier.bump();
+  }
+
   // ── audio & media streams (delegated to AudioController) ────────────
 
   Stream<void> get currentMediaPauseStream => audioCtrl.currentMediaPauseStream;
@@ -1815,6 +1836,7 @@ class AppModel with ChangeNotifier {
       dictRepo = DictionaryRepository(_database,
           onCacheRebuild: _rebuildDictPathsCache);
       mediaHistoryRepo = MediaHistoryRepository(_database);
+      clipboardHistoryRepo = ClipboardHistoryRepository(_database);
 
       debugPrint('[Hibiki] init: repositories (parallel)');
       await Future.wait(<Future<void>>[
@@ -2121,6 +2143,8 @@ class AppModel with ChangeNotifier {
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
+      clipboardHistoryRepo = ClipboardHistoryRepository(_database);
+      await clipboardHistoryRepo.loadFromDb();
 
       // The popup process always runs this full branch (separate :popup
       // process, _isInitialised starts false). PopupDictApp.build() reads
@@ -4058,6 +4082,7 @@ class AppModel with ChangeNotifier {
       _themeListenerAdded = false;
     }
     dictionaryEntriesNotifier.dispose();
+    clipboardHistoryNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
     dictionaryMenuNotifier.dispose();
     incognitoNotifier.dispose();
@@ -4235,6 +4260,9 @@ class AppModel with ChangeNotifier {
   /// [setDesktopClipboardEnabled] 幂等重入（service.start 对已运行是 no-op）。
   Future<void> applyDesktopClipboardLifecycle() async {
     if (!DesktopLookupService.isDesktop) return;
+    // 剪贴板复制历史采集：真实剪贴板变化（origin=clipboard、去重通过）落历史。
+    DesktopLookupService.instance.onClipboardCaptured =
+        addClipboardHistoryEntry;
     if (desktopClipboardEnabled) {
       await DesktopLookupService.instance.start(
         windowMode: desktopClipboardWindowMode,

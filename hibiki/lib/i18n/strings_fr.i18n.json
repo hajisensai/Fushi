@@ -2033,5 +2033,8 @@
   "activity_hours_ago": "$n h ago",
   "activity_days_ago": "$n d ago",
   "home_session_count": "$n sessions",
-  "home_dashboard_title": "Home"
+  "home_dashboard_title": "Home",
+  "clipboard_history_title": "Clipboard history",
+  "clipboard_history_clear": "Clear",
+  "clipboard_history_empty": "No copy history yet"
 }

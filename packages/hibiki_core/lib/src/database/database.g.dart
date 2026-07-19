@@ -17019,6 +17019,240 @@ class ActivityEventsCompanion extends UpdateCompanion<ActivityEventRow> {
   }
 }
 
+class $ClipboardHistoryTable extends ClipboardHistory
+    with TableInfo<$ClipboardHistoryTable, ClipboardHistoryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ClipboardHistoryTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _positionMeta =
+      const VerificationMeta('position');
+  @override
+  late final GeneratedColumn<int> position = GeneratedColumn<int>(
+      'position', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _contentMeta =
+      const VerificationMeta('content');
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+      'content', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _copiedAtMeta =
+      const VerificationMeta('copiedAt');
+  @override
+  late final GeneratedColumn<int> copiedAt = GeneratedColumn<int>(
+      'copied_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [position, content, copiedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'clipboard_history';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<ClipboardHistoryRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('position')) {
+      context.handle(_positionMeta,
+          position.isAcceptableOrUnknown(data['position']!, _positionMeta));
+    } else if (isInserting) {
+      context.missing(_positionMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(_contentMeta,
+          content.isAcceptableOrUnknown(data['content']!, _contentMeta));
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('copied_at')) {
+      context.handle(_copiedAtMeta,
+          copiedAt.isAcceptableOrUnknown(data['copied_at']!, _copiedAtMeta));
+    } else if (isInserting) {
+      context.missing(_copiedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => const {};
+  @override
+  ClipboardHistoryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ClipboardHistoryRow(
+      position: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}position'])!,
+      content: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}content'])!,
+      copiedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}copied_at'])!,
+    );
+  }
+
+  @override
+  $ClipboardHistoryTable createAlias(String alias) {
+    return $ClipboardHistoryTable(attachedDatabase, alias);
+  }
+}
+
+class ClipboardHistoryRow extends DataClass
+    implements Insertable<ClipboardHistoryRow> {
+  final int position;
+  final String content;
+  final int copiedAt;
+  const ClipboardHistoryRow(
+      {required this.position, required this.content, required this.copiedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['position'] = Variable<int>(position);
+    map['content'] = Variable<String>(content);
+    map['copied_at'] = Variable<int>(copiedAt);
+    return map;
+  }
+
+  ClipboardHistoryCompanion toCompanion(bool nullToAbsent) {
+    return ClipboardHistoryCompanion(
+      position: Value(position),
+      content: Value(content),
+      copiedAt: Value(copiedAt),
+    );
+  }
+
+  factory ClipboardHistoryRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ClipboardHistoryRow(
+      position: serializer.fromJson<int>(json['position']),
+      content: serializer.fromJson<String>(json['content']),
+      copiedAt: serializer.fromJson<int>(json['copiedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'position': serializer.toJson<int>(position),
+      'content': serializer.toJson<String>(content),
+      'copiedAt': serializer.toJson<int>(copiedAt),
+    };
+  }
+
+  ClipboardHistoryRow copyWith(
+          {int? position, String? content, int? copiedAt}) =>
+      ClipboardHistoryRow(
+        position: position ?? this.position,
+        content: content ?? this.content,
+        copiedAt: copiedAt ?? this.copiedAt,
+      );
+  ClipboardHistoryRow copyWithCompanion(ClipboardHistoryCompanion data) {
+    return ClipboardHistoryRow(
+      position: data.position.present ? data.position.value : this.position,
+      content: data.content.present ? data.content.value : this.content,
+      copiedAt: data.copiedAt.present ? data.copiedAt.value : this.copiedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ClipboardHistoryRow(')
+          ..write('position: $position, ')
+          ..write('content: $content, ')
+          ..write('copiedAt: $copiedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(position, content, copiedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ClipboardHistoryRow &&
+          other.position == this.position &&
+          other.content == this.content &&
+          other.copiedAt == this.copiedAt);
+}
+
+class ClipboardHistoryCompanion extends UpdateCompanion<ClipboardHistoryRow> {
+  final Value<int> position;
+  final Value<String> content;
+  final Value<int> copiedAt;
+  final Value<int> rowid;
+  const ClipboardHistoryCompanion({
+    this.position = const Value.absent(),
+    this.content = const Value.absent(),
+    this.copiedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ClipboardHistoryCompanion.insert({
+    required int position,
+    required String content,
+    required int copiedAt,
+    this.rowid = const Value.absent(),
+  })  : position = Value(position),
+        content = Value(content),
+        copiedAt = Value(copiedAt);
+  static Insertable<ClipboardHistoryRow> custom({
+    Expression<int>? position,
+    Expression<String>? content,
+    Expression<int>? copiedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (position != null) 'position': position,
+      if (content != null) 'content': content,
+      if (copiedAt != null) 'copied_at': copiedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ClipboardHistoryCompanion copyWith(
+      {Value<int>? position,
+      Value<String>? content,
+      Value<int>? copiedAt,
+      Value<int>? rowid}) {
+    return ClipboardHistoryCompanion(
+      position: position ?? this.position,
+      content: content ?? this.content,
+      copiedAt: copiedAt ?? this.copiedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (position.present) {
+      map['position'] = Variable<int>(position.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (copiedAt.present) {
+      map['copied_at'] = Variable<int>(copiedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ClipboardHistoryCompanion(')
+          ..write('position: $position, ')
+          ..write('content: $content, ')
+          ..write('copiedAt: $copiedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -17090,6 +17324,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $SyncDeletionTombstonesTable(this);
   late final $RevealedImagesTable revealedImages = $RevealedImagesTable(this);
   late final $ActivityEventsTable activityEvents = $ActivityEventsTable(this);
+  late final $ClipboardHistoryTable clipboardHistory =
+      $ClipboardHistoryTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -17139,7 +17375,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         collectionTagMappings,
         syncDeletionTombstones,
         revealedImages,
-        activityEvents
+        activityEvents,
+        clipboardHistory
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -28999,6 +29236,152 @@ typedef $$ActivityEventsTableProcessedTableManager = ProcessedTableManager<
     ),
     ActivityEventRow,
     PrefetchHooks Function()>;
+typedef $$ClipboardHistoryTableCreateCompanionBuilder
+    = ClipboardHistoryCompanion Function({
+  required int position,
+  required String content,
+  required int copiedAt,
+  Value<int> rowid,
+});
+typedef $$ClipboardHistoryTableUpdateCompanionBuilder
+    = ClipboardHistoryCompanion Function({
+  Value<int> position,
+  Value<String> content,
+  Value<int> copiedAt,
+  Value<int> rowid,
+});
+
+class $$ClipboardHistoryTableFilterComposer
+    extends Composer<_$HibikiDatabase, $ClipboardHistoryTable> {
+  $$ClipboardHistoryTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get copiedAt => $composableBuilder(
+      column: $table.copiedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$ClipboardHistoryTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $ClipboardHistoryTable> {
+  $$ClipboardHistoryTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get copiedAt => $composableBuilder(
+      column: $table.copiedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$ClipboardHistoryTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $ClipboardHistoryTable> {
+  $$ClipboardHistoryTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get position =>
+      $composableBuilder(column: $table.position, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<int> get copiedAt =>
+      $composableBuilder(column: $table.copiedAt, builder: (column) => column);
+}
+
+class $$ClipboardHistoryTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $ClipboardHistoryTable,
+    ClipboardHistoryRow,
+    $$ClipboardHistoryTableFilterComposer,
+    $$ClipboardHistoryTableOrderingComposer,
+    $$ClipboardHistoryTableAnnotationComposer,
+    $$ClipboardHistoryTableCreateCompanionBuilder,
+    $$ClipboardHistoryTableUpdateCompanionBuilder,
+    (
+      ClipboardHistoryRow,
+      BaseReferences<_$HibikiDatabase, $ClipboardHistoryTable,
+          ClipboardHistoryRow>
+    ),
+    ClipboardHistoryRow,
+    PrefetchHooks Function()> {
+  $$ClipboardHistoryTableTableManager(
+      _$HibikiDatabase db, $ClipboardHistoryTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ClipboardHistoryTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ClipboardHistoryTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ClipboardHistoryTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> position = const Value.absent(),
+            Value<String> content = const Value.absent(),
+            Value<int> copiedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ClipboardHistoryCompanion(
+            position: position,
+            content: content,
+            copiedAt: copiedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required int position,
+            required String content,
+            required int copiedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ClipboardHistoryCompanion.insert(
+            position: position,
+            content: content,
+            copiedAt: copiedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$ClipboardHistoryTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $ClipboardHistoryTable,
+    ClipboardHistoryRow,
+    $$ClipboardHistoryTableFilterComposer,
+    $$ClipboardHistoryTableOrderingComposer,
+    $$ClipboardHistoryTableAnnotationComposer,
+    $$ClipboardHistoryTableCreateCompanionBuilder,
+    $$ClipboardHistoryTableUpdateCompanionBuilder,
+    (
+      ClipboardHistoryRow,
+      BaseReferences<_$HibikiDatabase, $ClipboardHistoryTable,
+          ClipboardHistoryRow>
+    ),
+    ClipboardHistoryRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -29098,4 +29481,6 @@ class $HibikiDatabaseManager {
       $$RevealedImagesTableTableManager(_db, _db.revealedImages);
   $$ActivityEventsTableTableManager get activityEvents =>
       $$ActivityEventsTableTableManager(_db, _db.activityEvents);
+  $$ClipboardHistoryTableTableManager get clipboardHistory =>
+      $$ClipboardHistoryTableTableManager(_db, _db.clipboardHistory);
 }

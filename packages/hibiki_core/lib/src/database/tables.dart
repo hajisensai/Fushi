@@ -267,6 +267,18 @@ class DictionaryHistory extends Table {
   TextColumn get resultJson => text()();
 }
 
+// ── clipboard_history ───────────────────────────────────────────────
+// 桌面「剪贴板复制历史」——查词面板/瞬态浮窗的历史按钮读取。position 保存内存
+// List 的顺序（tail=最新），content=去重后的复制文本，copiedAt=复制时刻毫秒戳。
+// 建表由 database.dart onUpgrade v49 负责；写入走 ClipboardHistoryRepository 的
+// replaceAll（delete + batch insert），无需 autoIncrement id。
+@DataClassName('ClipboardHistoryRow')
+class ClipboardHistory extends Table {
+  IntColumn get position => integer()();
+  TextColumn get content => text()();
+  IntColumn get copiedAt => integer()();
+}
+
 // ── epub_books ─────────────────────────────────────────────────────
 @DataClassName('EpubBookRow')
 class EpubBooks extends Table {

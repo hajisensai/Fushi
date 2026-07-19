@@ -2033,5 +2033,8 @@
   "activity_hours_ago": "$n 小时前",
   "activity_days_ago": "$n 天前",
   "home_session_count": "$n 次",
-  "home_dashboard_title": "首页"
+  "home_dashboard_title": "首页",
+  "clipboard_history_title": "复制历史",
+  "clipboard_history_clear": "清空",
+  "clipboard_history_empty": "暂无复制记录"
 }

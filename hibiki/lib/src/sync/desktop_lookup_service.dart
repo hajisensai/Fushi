@@ -87,6 +87,11 @@ class DesktopLookupService extends ChangeNotifier
   bool _focused = true;
   HotKey? _hotKey;
 
+  /// 剪贴板复制历史采集回调（AppModel 接上 `addClipboardHistoryEntry`）。仅在真实
+  /// 剪贴板变化（origin=clipboard、去重通过）时触发；热键 / 悬浮字幕点词不计入
+  /// 「复制历史」。桌面单例，主进程设一次。
+  void Function(String text)? onClipboardCaptured;
+
   bool get isRunning => _startRefCount > 0;
 
   /// TODO-1355：被动剪贴板变化（用户在**别的 app** 里复制）只把内容排进查词管线

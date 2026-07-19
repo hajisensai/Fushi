@@ -1711,7 +1711,13 @@ function flushTimers() {
     layoutMode: 'panel',
   });
   const bar = document.getElementById('global-lookup-panel-bar');
-  const [grip, pinBtn, blockBtn, closeBtn] = bar.children;
+  // 面板栏顺序：grip · 🕘history · 📌pin · 🛡block · ×close（history 插在 grip 后）。
+  const [grip, historyBtn, pinBtn, blockBtn, closeBtn] = bar.children;
+  assert.strictEqual(
+    historyBtn.className.indexOf('panel-history') >= 0,
+    true,
+    'panel bar has the clipboard-history button between grip and pin',
+  );
   const fakeEvent = { preventDefault() {}, stopPropagation() {} };
 
   hostPostLog = [];
@@ -1765,6 +1771,155 @@ function flushTimers() {
   assert.ok(
     hostPostLog.some((m) => m.handler === 'panelClose'),
     'close posts panelClose (Dart hides + pauses)',
+  );
+}
+
+// ---- 剪贴板复制历史覆盖层（面板栏🕘 / 瞬态 root 卡🕘） --------------------
+
+// 找一个 shell 里的历史覆盖层（null 表示没渲染）。
+function historyOverlayIn(shell) {
+  return (
+    (shell.children || []).find(
+      (c) => c.className === 'clipboard-history-overlay',
+    ) || null
+  );
+}
+
+// CH1. 面板栏🕘 pointerdown -> postToHost('clipboardHistory')（Dart 从 DB 重载并回注）。
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [descriptor('panel-root', -1)],
+    layoutMode: 'panel',
+  });
+  const bar = document.getElementById('global-lookup-panel-bar');
+  const historyBtn = bar.children.find(
+    (c) => c.className.indexOf('panel-history') >= 0,
+  );
+  assert.ok(historyBtn, 'panel bar has the 🕘 history button');
+  hostPostLog = [];
+  historyBtn._listeners['pointerdown'][0]({
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.ok(
+    hostPostLog.some((m) => m.handler === 'clipboardHistory'),
+    'panel 🕘 posts clipboardHistory',
+  );
+}
+
+// CH2. showClipboardHistory 把覆盖层渲染进 ROOT 卡 shell（躲 native 裁剪）：
+//      带条目铺行 + 点行 -> lookupClipboardHistoryEntry(text) 并关层；清空按钮 ->
+//      clearClipboardHistory；空条目 -> 空态元素、无行。
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [descriptor('panel-root', -1)],
+    layoutMode: 'panel',
+  });
+  const rootShell = shellsOf(document)[0];
+
+  const ok = host.showClipboardHistory({
+    entries: [
+      { text: 'ねこ', time: '12:00' },
+      { text: 'いぬ', time: '11:30' },
+    ],
+    title: '复制历史',
+    clearLabel: '清空',
+    emptyLabel: '暂无复制记录',
+  });
+  assert.strictEqual(ok, true, 'showClipboardHistory returns true (rendered)');
+
+  let overlay = historyOverlayIn(rootShell);
+  assert.ok(overlay, 'history overlay rendered inside the ROOT shell');
+  const [head, list] = overlay.children;
+  assert.ok(
+    head.children.some((c) => c.textContent === '复制历史'),
+    'header shows localized title',
+  );
+  assert.strictEqual(list.className, 'clipboard-history-list', 'list present');
+  assert.strictEqual(list.children.length, 2, 'two history rows (newest-first)');
+  const firstRowText = list.children[0].children[0].textContent;
+  assert.strictEqual(firstRowText, 'ねこ', 'first row = first payload entry');
+
+  // 点第一行 -> postToHost('lookupClipboardHistoryEntry', ['ねこ']) 且关层。
+  hostPostLog = [];
+  list.children[0]._listeners['pointerdown'][0]({
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  const pick = hostPostLog.find(
+    (m) => m.handler === 'lookupClipboardHistoryEntry',
+  );
+  assert.ok(pick, 'row click posts lookupClipboardHistoryEntry');
+  assert.strictEqual(pick.args[0], 'ねこ', 'entry text forwarded to Dart');
+  assert.strictEqual(
+    historyOverlayIn(rootShell),
+    null,
+    'picking an entry closes the history overlay',
+  );
+
+  // 清空按钮 -> postToHost('clearClipboardHistory')。
+  host.showClipboardHistory({
+    entries: [{ text: 'x', time: '10:00' }],
+    title: 'T',
+    clearLabel: 'C',
+    emptyLabel: 'E',
+  });
+  overlay = historyOverlayIn(rootShell);
+  const clearBtn = overlay.children[0].children.find(
+    (c) => c.textContent === 'C',
+  );
+  assert.ok(clearBtn, 'clear button present');
+  hostPostLog = [];
+  clearBtn._listeners['pointerdown'][0]({
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.ok(
+    hostPostLog.some((m) => m.handler === 'clearClipboardHistory'),
+    'clear posts clearClipboardHistory',
+  );
+
+  // 空条目 -> 空态元素、无 list。
+  host.showClipboardHistory({
+    entries: [],
+    title: 'T',
+    clearLabel: 'C',
+    emptyLabel: '暂无复制记录',
+  });
+  overlay = historyOverlayIn(rootShell);
+  assert.ok(
+    overlay.children.some(
+      (c) => c.className === 'clipboard-history-empty' &&
+        c.textContent === '暂无复制记录',
+    ),
+    'empty entries render the localized empty state',
+  );
+  assert.ok(
+    !overlay.children.some((c) => c.className === 'clipboard-history-list'),
+    'no list element when history is empty',
+  );
+}
+
+// CH3. 瞬态覆盖窗（cascade）root 卡带 global-lookup-history 按钮，点它 posts
+//      clipboardHistory（无面板栏，按钮挂 shell 内躲 native 裁剪）。
+{
+  const { host, document } = freshHost();
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  const rootShell = shellsOf(document)[0];
+  const histBtn = (rootShell.children || []).find(
+    (c) => c.className === 'global-lookup-history',
+  );
+  assert.ok(histBtn, 'cascade root card carries the 🕘 history button');
+  hostPostLog = [];
+  histBtn._listeners['pointerdown'][0]({
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.ok(
+    hostPostLog.some((m) => m.handler === 'clipboardHistory'),
+    'transient 🕘 posts clipboardHistory',
   );
 }
 

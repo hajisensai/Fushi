@@ -20,6 +20,7 @@ import 'package:hibiki/src/lookup/global_lookup_controller.dart'
         GlobalLookupController,
         GlobalLookupMediaRequest,
         resolveGlobalLookupMedia;
+import 'package:hibiki/src/lookup/clipboard_history_payload.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/lookup/global_lookup_render.dart';
 import 'package:hibiki/src/lookup/global_lookup_stack.dart';
@@ -470,6 +471,24 @@ class ClipboardPanelController {
         unawaited(model?.setClipboardPanelBlockCapture(block));
       case 'panelClose':
         unawaited(hidePanel());
+      case 'clipboardHistory':
+        // 面板栏🕘：从 DB 重载复制历史（主进程写入，面板进程读），注入覆盖层。
+        if (model == null) return;
+        unawaited(_showClipboardHistory(model));
+      case 'lookupClipboardHistoryEntry':
+        // 历史某条被点：以该文本重查（换根，横幅显示整句），复用剪贴板查词管线。
+        final Object? args = message['args'];
+        if (args is! List || args.isEmpty) return;
+        final String text = args.first?.toString() ?? '';
+        if (text.isEmpty) return;
+        unawaited(update(DesktopLookupRequest(
+          text: text,
+          origin: DesktopLookupOrigin.explicit,
+        )));
+      case 'clearClipboardHistory':
+        // 历史面板「清空」：清库 + 内存，再重渲染（空态）。
+        if (model == null) return;
+        unawaited(_clearClipboardHistoryAndRefresh(model));
       case 'dismissPopupAt':
         final int? index = _firstIntArg(message);
         if (index == null) return;
@@ -529,6 +548,41 @@ class ClipboardPanelController {
     final AppModel? model = _appModel;
     if (model == null || _stack.isEmpty) return;
     await _renderPanel(model);
+  }
+
+  /// 面板栏🕘：从 DB 重载复制历史（主进程采集写入，面板进程只读）后注入覆盖层。
+  /// best-effort：任何失败记日志吞掉，绝不打断面板。
+  Future<void> _showClipboardHistory(AppModel model) async {
+    try {
+      await model.clipboardHistoryRepo.loadFromDb();
+      await _renderClipboardHistory(model);
+    } catch (e, st) {
+      glog('panel: clipboard-history EXCEPTION $e\n$st');
+    }
+  }
+
+  /// 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
+  Future<void> _clearClipboardHistoryAndRefresh(AppModel model) async {
+    try {
+      await model.clearClipboardHistory();
+      await _renderClipboardHistory(model);
+    } catch (e, st) {
+      glog('panel: clipboard-history clear EXCEPTION $e\n$st');
+    }
+  }
+
+  /// 把当前 [AppModel.clipboardHistory] + 本地化标签转成 host payload 注入渲染。
+  /// 单槽 pending_json_ 顾虑不适用：历史开/清是离散用户动作，不与栈渲染并发。
+  Future<void> _renderClipboardHistory(AppModel model) async {
+    final String payload = buildClipboardHistoryPayloadJson(
+      entries: model.clipboardHistory,
+      title: t.clipboard_history_title,
+      clearLabel: t.clipboard_history_clear,
+      emptyLabel: t.clipboard_history_empty,
+      now: DateTime.now(),
+    );
+    await _channel.render('window.__globalLookupHost && '
+        'window.__globalLookupHost.showClipboardHistory($payload);');
   }
 
   /// 真机第 4 轮 — 选词区点字（panelSentenceLookup 桥）：以后缀重查并**换根**
