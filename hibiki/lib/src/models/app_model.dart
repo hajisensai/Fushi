@@ -2766,6 +2766,8 @@ class AppModel with ChangeNotifier {
       uploadKbps: config.uploadLimitKbps,
       maxConnections: config.maxConnections,
     );
+    // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
+    host.setUploadPolicy(config);
   }
 
   /// 番剧下载：计划存储（选种对话框写计划/暂存字幕，与完成监听服务共用同一实例）。
@@ -2806,7 +2808,10 @@ class AppModel with ChangeNotifier {
       configProvider: () => prefsRepo.qbConnectionConfig,
       importer: buildAnimeDownloadImporter(database),
       backendFactory: _torrentBackendFor,
-      onTick: () => _embeddedTorrentHost?.sweepAntiLeech(),
+      onTick: () {
+        _embeddedTorrentHost?.sweepAntiLeech();
+        _embeddedTorrentHost?.sweepUploadPolicy();
+      },
     )..start();
   }
 
