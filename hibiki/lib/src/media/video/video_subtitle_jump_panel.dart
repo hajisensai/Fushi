@@ -68,17 +68,24 @@ typedef SubtitleListHit = ({AudioCue cue, int graphemeIndex, Rect charRect});
 /// 点击 → 点列表里下一个词只会关浮层、查不了下一个词。让 barrier 先用本句柄反查是否点到了
 /// 列表字符，是则切换查词（保持暂停 + `replaceStack`），否则才 dismiss。
 class VideoSubtitleListHitTester {
-  SubtitleListHit? Function(Offset globalPos)? _impl;
+  SubtitleListHit? Function(Offset globalPos, {bool exactOnly})? _impl;
 
   /// [VideoSubtitleJumpPanel] build 时绑定当前可见行的命中实现。
-  void bindHitTest(SubtitleListHit? Function(Offset globalPos) impl) =>
+  void bindHitTest(
+          SubtitleListHit? Function(Offset globalPos, {bool exactOnly}) impl) =>
       _impl = impl;
 
   /// 面板卸载（侧栏隐藏）时解绑，避免 barrier 调到已失效的实现。
   void unbind() => _impl = null;
 
   /// 无绑定（无查词能力 / 面板已卸载）时返回 null，barrier 落回原 dismiss。
-  SubtitleListHit? hitTest(Offset globalPos) => _impl?.call(globalPos);
+  ///
+  /// [exactOnly]（BUG-910）：为 true 时只在点**落在字形选区盒内**才命中，跳过半字格裙边
+  /// 容差——查词浮层 dismiss barrier 用它区分「点列表空白想关闭」与「点列表字上想切词」。
+  /// 列表面板占右半屏、行文本满宽，若 barrier 判定吃裙边容差，点面板行距 / 行尾空白想关闭
+  /// 浮层会被误判成切词重查（用户报「点半个屏幕外一直重复查词」）。悬停查词仍用宽容差。
+  SubtitleListHit? hitTest(Offset globalPos, {bool exactOnly = false}) =>
+      _impl?.call(globalPos, exactOnly: exactOnly);
 }
 
 /// 字幕文本每个 grapheme 的 UTF-16 起始偏移（按 [String.characters] 顺序）。列表行内 tap 的
@@ -143,6 +150,9 @@ SubtitleListCharHit? subtitleListCharHitFromParagraph(
   String text, {
   required Offset localPosition,
   required Offset globalPosition,
+  // BUG-910：为 true 时只在点落在字形选区盒内才命中，跳过半字格裙边容差（barrier 关闭
+  // 判定用）——点列表行距 / 行尾空白想关闭浮层不被误判成切词。查词/悬停默认 false。
+  bool exactOnly = false,
 }) {
   final List<int> starts = subtitleGraphemeStartOffsets(text);
   if (starts.isEmpty) return null;
@@ -163,6 +173,9 @@ SubtitleListCharHit? subtitleListCharHitFromParagraph(
   );
   if (localRect.isEmpty) return null;
   if (!localRect.contains(localPosition)) {
+    // BUG-910：exactOnly（barrier 关闭判定）不吃裙边——点在字形盒外一律 miss → barrier
+    // 落回 dismiss，不把「点面板空白想关闭」误判成切词重查。
+    if (exactOnly) return null;
     // BUG-879：容差从 1px 放宽到半个字格（≈ 行高一半，CJK 方块字 ≈ 半字宽），与画面字幕
     // resolveSubtitleCharHit 的半字宽字缝兜底同量级——点在字缝 / 行距上仍命中最近字符。
     final double tol = localRect.height * 0.5;
@@ -518,7 +531,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 供 [VideoSubtitleListHitTester] 绑定给查词浮层 dismiss barrier。无查词能力 / 无命中
   /// 返回 null（barrier 落回原 dismiss）。遍历 [_rowTextKeys]：滚出屏的行 `currentContext`
   /// 为 null 自动跳过；先粗判点落在哪行的段落框内，再逐字符精查。
-  SubtitleListHit? _hitTestRows(Offset globalPos) {
+  SubtitleListHit? _hitTestRows(Offset globalPos, {bool exactOnly = false}) {
     if (widget.onLookupCue == null || _rowHitCues.isEmpty) return null;
     for (final MapEntry<int, GlobalKey> entry in _rowTextKeys.entries) {
       final AudioCue? cue = _rowHitCues[entry.key];
@@ -532,6 +545,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         cue.text,
         localPosition: local,
         globalPosition: globalPos,
+        exactOnly: exactOnly,
       );
       if (hit == null) continue;
       return (

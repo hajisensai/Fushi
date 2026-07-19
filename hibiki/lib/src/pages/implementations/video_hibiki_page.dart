@@ -3425,7 +3425,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // （[_handleSubtitleListLookup] → [_lookupAt] 的 `replaceStack`，保持浮层与暂停）。这是
     // 列表行文本明确点在某字符上的显式换词意图，不吃底部字幕那条的嵌套门控
     // （[shouldSwitchWordOnBarrierTap]）——replaceStack 本就重置整栈，等价于一次新查词。
-    final SubtitleListHit? listHit = _subtitleListHitTester.hitTest(globalPos);
+    //
+    // BUG-910：反查同样用 `exactOnly: true`——列表面板占右半屏、行文本满宽，若吃半字格裙边
+    // 容差，点面板行距 / 行尾空白想关闭浮层会被误判成「切列表里的词」反复重查（用户报「点半
+    // 个屏幕外的空白一直重复查一个词」；截图里查到的词根本不在画面字幕里、只在列表面板里）。
+    // exactOnly 只在点**落在列表字形盒内**才切词，点面板空白落回下方 dismiss+续播。
+    final SubtitleListHit? listHit =
+        _subtitleListHitTester.hitTest(globalPos, exactOnly: true);
     if (listHit != null) {
       _handleSubtitleListLookup(
         listHit.cue,
