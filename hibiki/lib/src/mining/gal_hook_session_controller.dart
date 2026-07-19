@@ -146,6 +146,8 @@ typedef GalEngineSourceFactory = EngineHookGalAudioSource Function({
   required int targetPid,
   required String? launchExe,
   required String injectorPath,
+  required bool lunaPcHooks,
+  int? lunaCodepage,
 });
 typedef GalLoopbackSourceFactory = LoopbackGalAudioSource Function();
 typedef GalTargetWow64Probe = Future<bool?> Function(int pid);
@@ -246,11 +248,15 @@ class GalHookSessionController extends ChangeNotifier {
     required int targetPid,
     required String? launchExe,
     required String injectorPath,
+    required bool lunaPcHooks,
+    int? lunaCodepage,
   }) {
     return EngineHookGalAudioSource(
       targetPid: targetPid,
       launchExe: launchExe,
       injectorPath: injectorPath,
+      lunaPcHooks: lunaPcHooks,
+      lunaCodepage: lunaCodepage,
     );
   }
 
@@ -346,6 +352,7 @@ class GalHookSessionController extends ChangeNotifier {
         targetPid: window.pid,
         launchExe: null,
         injectorPath: injector,
+        lunaPcHooks: false,
       );
       final PcmFormat? format = await engine.start();
       if (generation != _operationGeneration) {
@@ -406,6 +413,7 @@ class GalHookSessionController extends ChangeNotifier {
       );
       return false;
     }
+    final bool lunaPcHooks = shouldUseLunaPcHooksForExecutable(executablePath);
     _setState(_state.copyWith(phase: GalHookSessionPhase.launching));
     _record(
       GalHookEventSeverity.info,
@@ -415,12 +423,14 @@ class GalHookSessionController extends ChangeNotifier {
       details: <String, Object?>{
         'exe': executablePath,
         'arch': is32Bit == true ? 'x86' : 'x64',
+        'lunaPcHooks': lunaPcHooks,
       },
     );
     final EngineHookGalAudioSource engine = _engineSourceFactory(
       targetPid: 0,
       launchExe: executablePath,
       injectorPath: injector,
+      lunaPcHooks: lunaPcHooks,
     );
     _setState(_state.copyWith(phase: GalHookSessionPhase.injecting));
     final PcmFormat? format = await engine.start();

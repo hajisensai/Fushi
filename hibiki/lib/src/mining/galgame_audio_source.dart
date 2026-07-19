@@ -246,6 +246,62 @@ final RegExp _nonVoiceBasenamePattern = RegExp(
 bool _isNonVoiceBasename(String basename) =>
     _nonVoiceBasenamePattern.hasMatch(basename);
 
+/// Unity/Mono/IL2CPP 游戏的文本通常不走 GDI 渲染，LunaHook 的通用 PC hooks 需要显式补装。
+/// 先覆盖已验证需要的 `manosaba.exe`，再用 Unity 目录布局兜住同类目标。
+bool shouldUseLunaPcHooksForExecutable(String executablePath) {
+  final String basename = EngineHookGalAudioSource._fileBaseName(
+    executablePath,
+  );
+  final String lowerBasename = basename.toLowerCase();
+  if (lowerBasename == 'manosaba.exe') {
+    return true;
+  }
+
+  final Directory directory = File(executablePath).parent;
+  final String separator = Platform.pathSeparator;
+  final bool hasUnityPlayer =
+      File('${directory.path}${separator}UnityPlayer.dll').existsSync();
+  if (!hasUnityPlayer) {
+    return false;
+  }
+
+  final String stem = lowerBasename.endsWith('.exe')
+      ? basename.substring(0, basename.length - 4)
+      : basename;
+  final String dataPath = '${directory.path}${separator}${stem}_Data';
+  final bool il2cpp =
+      File('${directory.path}${separator}GameAssembly.dll').existsSync() ||
+          File('$dataPath${separator}il2cpp_data${separator}Metadata'
+                  '${separator}global-metadata.dat')
+              .existsSync();
+  final bool mono = Directory('$dataPath${separator}Managed').existsSync() ||
+      Directory('$dataPath${separator}MonoBleedingEdge').existsSync() ||
+      File('${directory.path}${separator}mono-2.0-bdwgc.dll').existsSync();
+  return il2cpp || mono;
+}
+
+/// 构造 voice injector 命令行参数。保持 `--hold` 默认开启，让共享内存与 LunaHost
+/// 在游戏会话期间存活。
+List<String> buildEngineHookInjectorArguments({
+  required int targetPid,
+  required String? launchExe,
+  bool lunaPcHooks = false,
+  int? lunaCodepage,
+}) {
+  final String? exe = launchExe;
+  final bool launchMode = exe != null && exe.isNotEmpty;
+  final List<String> args = launchMode
+      ? <String>['--launch', exe, '--hold']
+      : <String>['--pid', '$targetPid', '--hold'];
+  if (lunaPcHooks) {
+    args.add('--luna-pchooks');
+  }
+  if (lunaCodepage != null && lunaCodepage > 0) {
+    args.addAll(<String>['--luna-codepage', '$lunaCodepage']);
+  }
+  return args;
+}
+
 /// C 阶段实现：引擎级 voice hook 的**干净语音**源（混音前抓，无 BGM/SE）。
 ///
 /// 隔离红线（docs/specs/galgame-mining）：注入进游戏、装 XAudio2/DirectSound hook 的代码在
@@ -270,6 +326,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     this.targetPid = 0,
     this.launchExe,
     required this.injectorPath,
+    this.lunaPcHooks = false,
+    this.lunaCodepage,
     MethodChannel? channel,
     Duration readyTimeout = const Duration(seconds: 30),
     Duration pollInterval = const Duration(milliseconds: 200),
@@ -289,6 +347,13 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// injector 可执行文件绝对路径（随 app 分发 / 按需下载）；null 或文件不存在 -> 源不可用
   /// （降级回 loopback，绝不假装注入成功）。**位数必须匹配目标游戏**（KiriKiriZ 多 32 位 -> x86）。
   final String? injectorPath;
+
+  /// 是否让 LunaHook 连接后额外插入通用 PC hooks。Unity/Mono/IL2CPP 这类自绘文本路径需要它，
+  /// 经典 GDI/KiriKiri/Siglus 默认关闭以减少重复线程。
+  final bool lunaPcHooks;
+
+  /// LunaHook 默认文本代码页。null 时沿用 injector 默认值（日文 Shift-JIS/932）。
+  final int? lunaCodepage;
 
   final MethodChannel _channel;
   final Duration _readyTimeout;
@@ -397,9 +462,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
     try {
       _injector = await Process.start(
         path,
-        launchMode
-            ? <String>['--launch', exe, '--hold']
-            : <String>['--pid', '$targetPid', '--hold'],
+        buildEngineHookInjectorArguments(
+          targetPid: targetPid,
+          launchExe: exe,
+          lunaPcHooks: lunaPcHooks,
+          lunaCodepage: lunaCodepage,
+        ),
       );
     } on ProcessException {
       return null;
@@ -793,7 +861,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   /// 取路径 [path] 的文件名（最后一段，兼容 `\` 与 `/` 分隔）。
   static String _fileBaseName(String path) {
-    final int slash = path.lastIndexOf(RegExp(r'[\/]'));
+    final int slash = path.lastIndexOf(RegExp(r'[\\/]'));
     return slash < 0 ? path : path.substring(slash + 1);
   }
 

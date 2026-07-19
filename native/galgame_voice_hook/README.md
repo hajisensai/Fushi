@@ -32,8 +32,8 @@ cmake -S . -B build/x86 -A Win32 && cmake --build build/x86 --config Release
 ## 用法
 
 ```sh
-hibiki_voice_injector.exe --pid <目标游戏PID> [--dll <hook.dll>] [--wait-ms 5000] [--hold]
-hibiki_voice_injector.exe --launch <游戏exe> [--workdir <目录>] [--arg <参数>]... [--dll <hook.dll>] [--wait-ms 5000] [--hold]
+hibiki_voice_injector.exe --pid <目标游戏PID> [--dll <hook.dll>] [--wait-ms 5000] [--hold] [--luna-pchooks]
+hibiki_voice_injector.exe --launch <游戏exe> [--workdir <目录>] [--arg <参数>]... [--dll <hook.dll>] [--wait-ms 5000] [--hold] [--luna-pchooks]
 ```
 
 - `--pid`：附着模式的目标进程 ID；与 `--launch` 二选一。
@@ -41,8 +41,16 @@ hibiki_voice_injector.exe --launch <游戏exe> [--workdir <目录>] [--arg <参�
 - `--dll`：hook DLL 路径（默认取同目录 arch 匹配的 `hibiki_voice_hook.dll`）。
 - `--wait-ms`：等「就绪」事件超时（默认 5000）。
 - `--hold`：注入确认后常驻（host 模式，维持共享内存存活供消费）；缺省=probe 模式，确认后退出。
+- `--luna-pchooks`：LunaHook 连接后补装通用 PC hooks。Unity/Mono/IL2CPP 自绘文本常需要；`manosaba.exe` 与带 `UnityPlayer.dll` + `GameAssembly.dll` / `*_Data/il2cpp_data` / Mono 目录的目标在 `--launch` 下会自动启用。
 
 成功输出：`OK hooked pid=<..> ring=<..> sr=<..> ch=<..> ...`。
+
+## Unity / IL2CPP / manosaba 支持
+
+`D:\steam\steamapps\common\manosaba_game\manosaba.exe` 实机目录含 `UnityPlayer.dll`、`GameAssembly.dll`
+和 `manosaba_Data/il2cpp_data/Metadata/global-metadata.dat`，判定为 64 位 Unity IL2CPP（不是 Mono 运行时）。
+Hibiki 的 launch 路径和 injector 命令行直跑都会为这类目标自动打开 Luna PC hooks，使自绘文本进入同一
+共享内存文本环；音频侧继续走 x64 XAudio2/Unity 输出捕获，抓不到时按既有逻辑回退 loopback。
 
 ## 分阶段（本组件的实现进度）
 
