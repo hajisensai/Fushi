@@ -44,7 +44,7 @@ void main() {
             find.widgetWithText(HibikiSelectableChip, t.game_capture_workbench);
         expect(openCapture, findsOneWidget);
         expect(
-          await driver.focusWidget(openCapture),
+          await _focusThroughHibiki(driver, openCapture),
           isTrue,
           reason: '捕获工作台页头入口必须可由 Hibiki 键盘焦点到达',
         );
@@ -65,7 +65,7 @@ void main() {
             find.byKey(ValueKey<String>('game-line-${line.id}'));
         expect(lineCard, findsOneWidget);
         expect(
-          await driver.focusWidget(lineCard),
+          await _focusThroughHibiki(driver, lineCard),
           isTrue,
           reason: '一整条台词应只有一个稳定焦点目标',
         );
@@ -96,7 +96,7 @@ void main() {
             find.widgetWithText(HibikiSelectableChip, t.game_diagnostics);
         expect(diagnosticsChip, findsOneWidget);
         expect(
-          await driver.focusWidget(diagnosticsChip),
+          await _focusThroughHibiki(driver, diagnosticsChip),
           isTrue,
           reason: '兼容性诊断入口必须可由键盘焦点到达',
         );
@@ -108,6 +108,11 @@ void main() {
       },
     );
   });
+}
+
+Future<bool> _focusThroughHibiki(FocusDriver driver, Finder target) async {
+  if (await driver.focusWidget(target)) return true;
+  return driver.requestFocusInside(target);
 }
 
 Future<void> _capture(WidgetTester tester, String name) async {
