@@ -250,9 +250,21 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   Future<void> _showReaderTextContextMenu(Offset globalPosition) async {
     if (!mounted || !isWindowsPlatform) return;
     // 没有原生选区文本就不弹菜单（右键空白处不打扰）。
-    final Object? rawText = await _controller?.evaluateJavascript(
-      source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
-    );
+    // 本方法从 onSecondaryTapDown fire-and-forget 调用，异常会逃出当前 zone 被记为
+    // fatal（main.dart runZonedGuarded）——WebView 半销毁 / 插件通道异常时右键
+    // evaluateJavascript 会抛 PlatformException / MissingPluginException，表现为闪退。
+    // 与孪生的 _fillLookupStateFromNativeSelection / _copyNativeSelectionToClipboard
+    // 同款：eval 必须 try/catch 吞掉。BUG-927。
+    Object? rawText;
+    try {
+      rawText = await _controller?.evaluateJavascript(
+        source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.showReaderTextContextMenu', e, stack);
+      return;
+    }
     final String selectedText =
         ReaderSelectionScripts.nativeSelectionTextFromResult(rawText);
     if (selectedText.isEmpty) return;
@@ -368,6 +380,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       case 'copy':
         await Clipboard.setData(ClipboardData(text: selectedText));
         HibikiToast.show(msg: t.copied_to_clipboard);
+        // 复制是终结动作：清掉刻意保留的原生选区，和移动端拖选菜单的 'copy'
+        // （_clearReaderAppSelection）对齐。否则残留的原生蓝色选区会一直卡住后续
+        // 查词（见 webview.part.dart pointerup 里对 nativeMoved 的处理）。BUG-927。
+        await _clearReaderAppSelection();
         return;
       case 'favorite':
         // BUG-854：右键收藏也走「原生选区 → 查词状态」补写（与 search 同源），确保

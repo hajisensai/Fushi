@@ -1052,14 +1052,20 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       var nativeDx = e.clientX - startX;
       var nativeDy = e.clientY - startY;
       var nativeMoved = (nativeDx * nativeDx + nativeDy * nativeDy) > 36;
-      var nativeSelection = window.getSelection && window.getSelection();
-      var hasNativeSelection = nativeSelection && !nativeSelection.isCollapsed;
       _hoshiReaderMouseNativeTextStart = false;
       _hoshiReaderMouseDragActive = false;
       _hoshiReaderMouseDragPointerId = null;
       _hoshiReaderMouseDragPageDirection = null;
       _hoshiReaderPointerNoSelect(false);
-      if (nativeMoved || hasNativeSelection) {
+      // 只有「本次手势里指针真的移动过」(nativeMoved) 才当作用户在拖动划原生选区，
+      // 保留选区供复制 / 桌面 Ctrl+C，不再当作查词 tap。
+      // 旧代码还把「残留原生选区未折叠」也塞进这条早退：只要上一轮的选区还在，纯 tap
+      //（未移动）也会在此提前 return，跳过 _gestureEnd -> selectText -> clearSelection
+      // 整条链——于是残留选区会让之后每一次点击都被吞（查词永远打不开）。桌面细指针鼠标
+      // 拖选/右键复制刻意保留原生选区，最容易触发这个死循环。纯 tap 时改为落到下方
+      // _gestureEnd：selectText 会先 clearSelection(removeAllRanges) 再查词，既清掉残留
+      // 选区又能正常弹词典。BUG-927。
+      if (nativeMoved) {
         hasStart = false;
         return;
       }
@@ -1430,6 +1436,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                     if (text == null || text.isEmpty) return;
                     await Clipboard.setData(ClipboardData(text: text));
                     HibikiToast.show(msg: t.copied_to_clipboard);
+                    // 复制后清掉 ActionMode 残留的原生选区，和桌面右键 'copy' 对齐，
+                    // 避免残留选区卡住后续查词。BUG-927。
+                    await _clearReaderAppSelection();
                   },
                 ),
               ],
