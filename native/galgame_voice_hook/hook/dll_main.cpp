@@ -2050,7 +2050,18 @@ void TryHookTextRender() {
   }
 }
 
-// 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 装 XAudio2 捕获链 -> 通知 injector。
+// 通知 injector IPC 契约已经可用。必须在任何 MinHook/引擎探测之前调用：
+// 这些重型安装可能被目标进程里已有的 hook 拖慢，不能因此让 injector 超时并释放共享内存。
+bool SignalReady(DWORD pid) {
+  const std::wstring evt = ReadyEventName(pid);
+  HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, evt.c_str());
+  if (ready == nullptr) return false;
+  const bool signaled = SetEvent(ready) != FALSE;
+  CloseHandle(ready);
+  return signaled;
+}
+
+// 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked/通知 injector -> 装捕获链。
 DWORD WINAPI HookWorker(LPVOID) {
   const DWORD pid = GetCurrentProcessId();
   const bool siglus_engine = IsSiglusEngine();
@@ -2068,6 +2079,10 @@ DWORD WINAPI HookWorker(LPVOID) {
     if (g_header->magic == kSharedMagic &&
         g_header->version == kSharedVersion) {
       g_header->hooked = 1;
+
+      // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
+      // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
+      if (!SignalReady(pid)) return 1;
 
       // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
       g_ring_base =
@@ -2095,14 +2110,6 @@ DWORD WINAPI HookWorker(LPVOID) {
         TryHookKirikiriVoiceStream();  // C.2d：KiriKiriZ 原始语音 OGG 捕获。
       }
     }
-  }
-
-  // 通知 injector：DLL 已加载并跑到这里（proof-of-life）。事件由 injector 建好。
-  const std::wstring evt = ReadyEventName(pid);
-  HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, evt.c_str());
-  if (ready != nullptr) {
-    SetEvent(ready);
-    CloseHandle(ready);
   }
 
   // 承载捕获期间生命周期，保活到停机。前 ~30s 反复重试装 KiriKiri 解码器 hook——早期注入时
