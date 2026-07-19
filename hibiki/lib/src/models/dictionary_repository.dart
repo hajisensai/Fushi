@@ -324,7 +324,6 @@ class DictionaryRepository {
 
   Future<void> _flushDictionaryHistory() async {
     _cancelPendingHistoryPersist();
-    final swPersist = Stopwatch()..start();
     final items = <DictionaryHistoryCompanion>[];
     for (int i = 0; i < _dictionaryHistoryResults.length; i++) {
       final DictionarySearchResult r = _dictionaryHistoryResults[i];
@@ -333,13 +332,9 @@ class DictionaryRepository {
         resultJson: _historyJsonMemo[r] ??= r.toJson(),
       ));
     }
-    final swSerialize = swPersist.elapsedMilliseconds;
     // 序列化段与上面的取消/快照在同一同步区间内完成；此后 clear 等竞态由
     // drift 单连接 FIFO 保序（本次写先入队，后续 clear 的 DELETE 后到后赢）。
     await _db.replaceAllDictionaryHistory(items);
-    swPersist.stop();
-    debugPrint(
-        '[dict-perf] persistHistory: serialize=${swSerialize}ms dbWrite=${swPersist.elapsedMilliseconds - swSerialize}ms total=${swPersist.elapsedMilliseconds}ms items=${items.length}');
   }
 
   /// Release in-memory caches. Replaces the inherited ChangeNotifier.dispose

@@ -1099,12 +1099,12 @@ class AudiobookPlayerController extends ChangeNotifier {
       // !_hasPlayedOnce（本会话首次「从本句播放」）/ restore-in-flight 等守卫
       // 被挡，文字停在原章；之后 cue 一直不变就走这条裸 return、永不再做跨章
       // 检查 → 要用户再点一次才跟过去。在「正在跟随播放」（playing 且非
-      // playCueOnce 单句试听）时补一次安静（不打印）的跨章检查，让文字收敛到
+      // playCueOnce 单句试听）时补一次跨章检查，让文字收敛到
       // 当前 cue 所属章。_maybeEmitCrossChapter 同章早退（已同步时 no-op）、
       // 跳章期间 _chapterTransition 守卫挡住后续 tick，不会 per-tick 抖动；
       // 暂停态不补检查，避免覆盖用户手动翻页。
       if (_player.playing && _stopAtPositionMs == null) {
-        _maybeEmitCrossChapter(cue, quiet: true);
+        _maybeEmitCrossChapter(cue);
       }
       if (forceNotify) {
         notifyListeners();
@@ -1164,13 +1164,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// SMIL/JSON 等非 sasayaki 路径 cue 的 textFragmentId 解码返回 null，
   /// 自然跳过这套逻辑（它们没有跨章同步概念）。
-  void _maybeEmitCrossChapter(AudioCue? cue,
-      {bool bypassPlayGuard = false, bool quiet = false}) {
+  void _maybeEmitCrossChapter(AudioCue? cue, {bool bypassPlayGuard = false}) {
     if (_chapterTransition) {
-      if (!quiet) {
-        // ignore: avoid_print
-        print('[hibiki-crossChapter] blocked: _chapterTransition=true');
-      }
       return;
     }
     if (cue == null) return;
@@ -1180,11 +1175,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (frag == null) return;
     final int cueSec = frag.sectionIndex;
     final int currentSec = getCurrentReaderSection?.call() ?? -1;
-    if (!quiet) {
-      // ignore: avoid_print
-      print(
-          '[hibiki-crossChapter] cueSec=$cueSec currentSec=$currentSec follow=${followAudio.value} played=$_hasPlayedOnce');
-    }
     if (!shouldCrossChapterForTesting(
       cueSec: cueSec,
       currentSec: currentSec,

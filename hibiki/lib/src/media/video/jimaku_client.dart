@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
+
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 
 /// Jimaku（jimaku.cc）字幕条目：一个番剧/作品。
@@ -88,7 +90,10 @@ List<JimakuEntry> parseJimakuEntries(String body) {
       ));
     }
     return out;
-  } catch (_) {
+  } catch (e) {
+    // fail-open：解析失败返回空列表（同旧行为），补 diagnostic 便于排障。
+    ErrorLogService.instance
+        .logDiagnostic('JimakuClient.parseJimakuEntries', e);
     return const <JimakuEntry>[];
   }
 }
@@ -198,7 +203,9 @@ List<JimakuFile> parseJimakuFiles(String body) {
       ));
     }
     return out;
-  } catch (_) {
+  } catch (e) {
+    // fail-open：解析失败返回空列表（同旧行为），补 diagnostic 便于排障。
+    ErrorLogService.instance.logDiagnostic('JimakuClient.parseJimakuFiles', e);
     return const <JimakuFile>[];
   }
 }
@@ -248,7 +255,9 @@ class JimakuClient {
       final http.Response res = await _client.get(uri, headers: _headers);
       if (res.statusCode != 200) return const <JimakuEntry>[];
       return parseJimakuEntries(res.body);
-    } catch (_) {
+    } catch (e) {
+      // fail-open：预期可失败的网络路径，返回空列表（同旧行为），补 diagnostic。
+      ErrorLogService.instance.logDiagnostic('JimakuClient.searchEntries', e);
       return const <JimakuEntry>[];
     }
   }
@@ -264,7 +273,9 @@ class JimakuClient {
       final http.Response res = await _client.get(uri, headers: _headers);
       if (res.statusCode != 200) return const <JimakuFile>[];
       return parseJimakuFiles(res.body);
-    } catch (_) {
+    } catch (e) {
+      // fail-open：预期可失败的网络路径，返回空列表（同旧行为），补 diagnostic。
+      ErrorLogService.instance.logDiagnostic('JimakuClient.listFiles', e);
       return const <JimakuFile>[];
     }
   }
@@ -276,7 +287,9 @@ class JimakuClient {
           await _client.get(Uri.parse(fileUrl), headers: _headers);
       if (res.statusCode != 200) return null;
       return res.bodyBytes;
-    } catch (_) {
+    } catch (e) {
+      // fail-open：预期可失败的网络路径，返回 null（同旧行为），补 diagnostic。
+      ErrorLogService.instance.logDiagnostic('JimakuClient.downloadFile', e);
       return null;
     }
   }

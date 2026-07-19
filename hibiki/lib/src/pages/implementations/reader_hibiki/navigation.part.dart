@@ -1021,18 +1021,23 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         'section=$section normOffset=$normOffset charOffset=$charOffset');
     final ReaderPositionRepository repo =
         ReaderPositionRepository(appModel.database);
-    await repo.save(
-      bookKey: widget.bookKey,
-      sectionIndex: section,
-      normCharOffset: normOffset,
-      // BUG-162: >=0 写精确锚（char_offset 列）。<0（WebView 当帧算不出精确偏移）
-      // 传 null → ReaderPositionRepository.save 在同 section 保留既有精确锚、仅跨
-      // section 失效。BUG-285 回归：TODO-265 误改成直接传 -1，使 _refreshProgress /
-      // _syncPositionFromWebViewProgress 在重排或竖排边缘拿到 -1 时把同 section 的
-      // 精确锚覆盖成 -1 → 恢复/有声书跨章重锚退化成「章首分数」（章节粒度），不再
-      // 逐句跟随。还原 null 守卫，把同/跨 section 的取舍交回 repo.save。
-      charOffset: charOffset >= 0 ? charOffset : null,
-    );
+    try {
+      await repo.save(
+        bookKey: widget.bookKey,
+        sectionIndex: section,
+        normCharOffset: normOffset,
+        // BUG-162: >=0 写精确锚（char_offset 列）。<0（WebView 当帧算不出精确偏移）
+        // 传 null → ReaderPositionRepository.save 在同 section 保留既有精确锚、仅跨
+        // section 失效。BUG-285 回归：TODO-265 误改成直接传 -1，使 _refreshProgress /
+        // _syncPositionFromWebViewProgress 在重排或竖排边缘拿到 -1 时把同 section 的
+        // 精确锚覆盖成 -1 → 恢复/有声书跨章重锚退化成「章首分数」（章节粒度），不再
+        // 逐句跟随。还原 null 守卫，把同/跨 section 的取舍交回 repo.save。
+        charOffset: charOffset >= 0 ? charOffset : null,
+      );
+    } catch (e, stack) {
+      // fail-open：本次位置未落盘（后续 debounce/flush 会重试），补日志便于诊断。
+      ErrorLogService.instance.log('ReaderHibiki._persistPosition', e, stack);
+    }
 
     // 读到全书末尾（最后一章 + 章内进度到末尾）→ 自动写「已读完」时间戳。
     // markEpubBookCompletedIfUnset 幂等（仅 completed_at IS NULL 时写），不刷新时间戳、
@@ -1192,8 +1197,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         charsRead: charsRead,
         timeMs: elapsedMs,
       );
-    } catch (e) {
+    } catch (e, stack) {
+      // fail-open：本次统计增量丢弃（计数器已清零，不会重复累加），补 debugPrint +
+      // ErrorLogService.log 使 DB 写异常线上可诊断。
       debugPrint('[ReaderHibiki] stats flush error: $e');
+      ErrorLogService.instance.log('ReaderHibiki._flushReadingStats', e, stack);
     }
   }
 }

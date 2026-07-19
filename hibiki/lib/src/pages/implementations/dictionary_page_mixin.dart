@@ -736,7 +736,6 @@ mixin DictionaryPageMixin {
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return 0;
-    final Stopwatch swPush = Stopwatch()..start();
     final int maxTerms = mixinAppModel.maximumTerms;
     final Rect rect = fallbackSelectionRect(selectionRect);
     final DictionaryPopupEntry entry = controller.beginTop(
@@ -764,9 +763,6 @@ mixin DictionaryPageMixin {
         searchWithWildcards: true,
         overrideMaximumTerms: maxTerms,
       );
-      debugPrint('[dict-perf] pushNestedPopup search done in '
-          '${swPush.elapsedMilliseconds}ms reuseWarm=$reuseWarmSlot '
-          'entries=${result.entries.length} "$trimmed"');
       if (mounted && controller.entries.contains(entry)) {
         setState(() {
           controller.fillResult(

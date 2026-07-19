@@ -27,7 +27,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 899 条。点号进各自文件。
+> 共 903 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -39,6 +39,10 @@
 | [BUG-917](bugs/BUG-917-video-clip-mp4-muxer.md) | ✅ | ✅ | 视频片段导出 exit -22（捆绑 ffmpeg-min 无 matroska muxer，输出跟随源容器） |
 | [BUG-916](bugs/BUG-916-subtitle-list-shift-hover-offset.md) | ✅ | ✅ | 视频字幕列表Shift悬停查词偏左一格 |
 | [BUG-915](bugs/BUG-915-ass-user-scale-and-plain-off-mode.md) | ✅ | ✅ | 尊重字幕不能调字号；关闭尊重时 ASS 特效层叠印乱字 |
+| [BUG-914](bugs/BUG-914-remove-release-diagnostic-noise.md) | ✅ | ✅ | 发布版残留诊断日志/性能打点（查词·弹窗·按句同步热路径） |
+| [BUG-913](bugs/BUG-913-asymmetric-disposal-leak.md) | ✅ | ✅ | 常驻服务/Notifier/provider 未对称释放（泄漏） |
+| [BUG-912](bugs/BUG-912-state-not-reset-on-exception-path.md) | ✅ | ✅ | 异常/取消路径状态不复位（Windows 弹窗资产永久闩 + 长按缺 onLongPressCancel） |
+| [BUG-911](bugs/BUG-911-fail-open-swallow-add-logging.md) | ✅ | ✅ | fail-open 静默吞异常致线上不可诊断（补 ErrorLogService 日志） |
 | [BUG-910](bugs/BUG-910-video-subtitle-dismiss-halo-reloop.md) | ✅ | ✅ | 视频字幕查词点空白想关闭却重复查同一个词 |
 | [BUG-909](bugs/BUG-909-remove-vertical-forensic-probes.md) | ✅ | ✅ | 移除发布版残留的竖排取证探针（TODO-792/753 系列 + 753-DIAG） |
 | [BUG-908](bugs/BUG-908-lan-sync-server-hardening.md) | ✅ | ✅ | LAN 局域网同步服务器健壮性欠账（token 膨胀 / PROPFIND 同步阻塞 / 写无互斥） |

@@ -101,6 +101,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     _visibleRenderFailsafeTimer?.cancel();
     // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
     _popup.dispose();
+    _isSearchingNotifier.dispose();
     super.dispose();
   }
 
@@ -213,7 +214,6 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final gen = ++_searchGeneration;
     _pendingSelectionRect = selectionRect;
     _deferredPopupItem = null;
-    final swTotal = Stopwatch()..start();
 
     try {
       if (!deferDisplay) {
@@ -227,8 +227,6 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       );
 
       if (_searchGeneration != gen) return 0;
-
-      final msAfterSearch = swTotal.elapsedMilliseconds;
 
       appModel.addToDictionaryHistory(result: dictionaryResult);
 
@@ -273,9 +271,6 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         _popup.markPendingReveal(item);
       }
 
-      debugPrint(
-          '[dict-perf] searchDictionaryResult: search=${msAfterSearch}ms pushPopup=${swTotal.elapsedMilliseconds}ms "$searchTerm"');
-
       final int highlightCount = lookupHighlightCharCount(
         result: dictionaryResult,
         searchTerm: searchTerm,
@@ -283,8 +278,6 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       );
 
       final bool arEnabled = ReaderHibikiSource.instance.autoReadOnLookup;
-      debugPrint(
-          '[hibiki-autoread] autoReadOnLookup=$arEnabled entries=${dictionaryResult.entries.length}');
       if (arEnabled && dictionaryResult.entries.isNotEmpty) {
         final entry = dictionaryResult.entries.first;
         final expression = entry.word;
