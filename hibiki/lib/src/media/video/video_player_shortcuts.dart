@@ -182,6 +182,33 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
   return result;
 }
 
+/// BUG-922：词典浮层开着时，让**任一**已映射的视频快捷键先关掉顶层浮层并消费掉这一次
+/// 按键，而不是穿透去控制后面的视频（对齐阅读器：浮层可见时导航/退出类键先关浮层，见
+/// `reader_hibiki/caret.part.dart` 的 `readerDismissDict` 及各键 `isDictionaryShown` 分支）。
+///
+/// 纯函数、无页面依赖，方便单测：把 [base] 里每个回调包一层守卫——[isPopupVisible] 为真时
+/// 调 [dismissPopup] 关一层浮层后 return（不跑原动作）；为假时原样执行 [base] 的回调。视频
+/// scope 没有任何「作用于浮层本身」的快捷键（制卡走浮层内按钮，非视频快捷键），故整表统一
+/// 守卫等价于阅读器的逐键 `isDictionaryShown` 判定，不误吞需要作用于浮层的键。
+Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithPopupDismiss(
+  Map<ShortcutActivator, VoidCallback> base, {
+  required bool Function() isPopupVisible,
+  required VoidCallback dismissPopup,
+}) {
+  return base.map(
+    (ShortcutActivator activator, VoidCallback callback) => MapEntry(
+      activator,
+      () {
+        if (isPopupVisible()) {
+          dismissPopup();
+          return;
+        }
+        callback();
+      },
+    ),
+  );
+}
+
 /// BUG-853 / TODO-847 对齐（视频版）：Windows 微软 IME 激活时裸 Space 的 [logicalKey]
 /// 会被引擎改写成 [LogicalKeyboardKey.process]，视频页两条空格「播放/暂停」路径
 /// （media_kit controls 的 `keyboardShortcuts` 与页级 `_withPageSpaceOverride`）都用

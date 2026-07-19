@@ -3679,11 +3679,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
     VideoPlayerController controller,
   ) {
-    return buildVideoPlayerShortcutsFromRegistry(
-      appModel.shortcutRegistry,
-      _buildVideoShortcutActions(controller),
+    // BUG-922：词典浮层可见时，任一视频快捷键先关顶层浮层（对齐阅读器），否则穿透去控制
+    // 后台视频（用户报「视频里关不掉词典」「按 d 竟然快进」）。守卫是纯函数，逻辑集中在
+    // [guardVideoShortcutsWithPopupDismiss]，此处只提供页面态谓词与关浮层动作。
+    return guardVideoShortcutsWithPopupDismiss(
+      buildVideoPlayerShortcutsFromRegistry(
+        appModel.shortcutRegistry,
+        _buildVideoShortcutActions(controller),
+      ),
+      isPopupVisible: () => _hasVisiblePopup,
+      dismissPopup: _dismissTopVisiblePopup,
     );
   }
+
+  /// BUG-922：关掉当前顶层可见词典浮层（复用 [_handleBackOrExit] / [_onDismissBarrierTap]
+  /// 同款逐层关调用，index 0 保留隐藏热槽 BUG-092）。键盘 / 手柄 / 裸空格三条输入通道在
+  /// 浮层可见时统一调它先关浮层。
+  void _dismissTopVisiblePopup() => _popNestedPopupAt(_topVisiblePopupIndex);
 
   /// TODO-1342：视频播放器动作回调集合的单一构造点。键盘
   /// （[buildVideoPlayerShortcutsFromRegistry]）与手柄（[_handleVideoGamepadButton]
@@ -3877,6 +3889,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       scope: ShortcutScope.video,
     );
     if (action == null) return false;
+    // BUG-922：词典浮层可见时，任一已绑手柄键先关顶层浮层并消费（对齐阅读器 + 键盘通道），
+    // 而非穿透控制后台视频。放在解析出 action 之后——未绑定的键仍交回 GamepadService 兜底
+    // （焦点移动等），不误吞导航。
+    if (_hasVisiblePopup) {
+      _dismissTopVisiblePopup();
+      return true;
+    }
     final VoidCallback? callback =
         videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
     if (callback == null) return false;
@@ -5829,10 +5848,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.space): () =>
-            _runWhenImmersiveAllowsFullControls(
-              () => unawaited(controller.playOrPause()),
-            ),
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          // BUG-922：词典浮层可见时，裸空格也先关浮层（与 [_videoKeyboardShortcuts] 守卫
+          // 同语义），而非在浮层后面 play/pause。浮层不可见时保持原「裸空格=播放/暂停」覆写。
+          if (_hasVisiblePopup) {
+            _dismissTopVisiblePopup();
+            return;
+          }
+          _runWhenImmersiveAllowsFullControls(
+            () => unawaited(controller.playOrPause()),
+          );
+        },
       },
       child: child,
     );
