@@ -226,6 +226,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_danmaku_settings_test.dart + test/pages/video_danmaku_wiring_guard_test.dart',
   'video/Active danmaku limit':
       'test/media/video/video_danmaku_settings_test.dart + test/media/video/video_danmaku_layout_test.dart',
+  // PR#227: 番剧下载后端选择（外部 qBittorrent / 内置 libtorrent 引擎）。生效点在
+  // QbConnectionConfig.backend 字段（编解码 / 向后兼容 / isConfigured），由专项
+  // codec 测试覆盖；真实引擎切换是桌面 native 集成，widget 测不到。
+  'video/Download backend':
+      'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread Direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
