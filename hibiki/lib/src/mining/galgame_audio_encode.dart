@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 
 /// galgame 一键制卡（docs/specs/galgame-mining）音频编码：把 loopback 抓到的**裸 PCM**
@@ -154,6 +155,65 @@ Future<Uint8List?> pcmSliceToAacBytes({
       return null;
     }
     return await File(aacPath).readAsBytes();
+  } catch (_) {
+    return null;
+  } finally {
+    if (dir.existsSync()) {
+      await dir.delete(recursive: true);
+    }
+  }
+}
+
+/// galgame 纯人声一键制卡（docs/specs/galgame-mining）：把注入 hook DLL dump 的**原始语音
+/// OGG 文件** [oggPath] 整段转码成制卡管线容器（桌面 `aac`）字节，供 `providedAudioBytes`
+/// 逐字节写盘。
+///
+/// 为什么转码而非直接塞 OGG：`ImmersionMiningEngine` 把 `providedAudioBytes` 逐字节写成
+/// `immersion_audio.<扩展>`（引擎固定用制卡管线扩展名，桌面 = `aac`），Anki 按该扩展识别
+/// 媒体。OGG 字节塞进 `.aac` 名下既错又 Anki 不一定自动播；转成与句子音频同一条 AAC 容器
+/// （[extractAudioSegmentViaFfmpeg] 同款 `-c:a aac`）最稳。语音行本就短，整段转、不做区间
+/// 裁剪。[outputExtension] 由调用方按运行平台传（此路径 Windows 专属，恒为 `aac`）。ffmpeg
+/// 缺失 / 转码失败 / 空产出返回 null（调用方回退 PCM 采集链，Never break）。
+Future<Uint8List?> transcodeVoiceOggToMiningAudio({
+  required String oggPath,
+  required String tempDir,
+  required String outputExtension,
+  int audioChannels = 1,
+  String audioBitrate = '128k',
+}) async {
+  if (!File(oggPath).existsSync()) {
+    return null;
+  }
+  final Directory dir = Directory('$tempDir/gal_voice_${oggPath.hashCode}');
+  await dir.create(recursive: true);
+  try {
+    final String outPath = '${dir.path}/voice.$outputExtension';
+    final FfmpegRunResult result = await resolveFfmpegBackend().run(
+      <String>[
+        '-y',
+        '-i',
+        oggPath,
+        '-vn',
+        '-ac',
+        '$audioChannels',
+        '-ar',
+        '44100',
+        '-c:a',
+        'aac',
+        '-b:a',
+        audioBitrate,
+        outPath,
+      ],
+      const Duration(seconds: 30),
+    );
+    final File out = File(outPath);
+    if (result.returnCode == 0 && out.existsSync() && out.lengthSync() > 0) {
+      return await out.readAsBytes();
+    }
+    return null;
+  } on ProcessException {
+    // ffmpeg 缺失 / 跑不起来：优雅回退（调用方改用 PCM 采集链）。
+    return null;
   } catch (_) {
     return null;
   } finally {
