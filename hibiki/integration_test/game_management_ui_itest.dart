@@ -12,6 +12,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'helpers/focus_driver.dart';
+import 'helpers/library_fixture.dart' show readyAppModel;
 import 'helpers/observe_capture.dart';
 import 'support/itest_startup_guard.dart';
 import 'test_helpers.dart';
@@ -28,6 +29,11 @@ void main() {
         TexthookerService.instance.clear();
         app.main();
         expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
+        final appModel = await readyAppModel(tester);
+        await appModel.setExperimentalFocusNavigationEnabled(true);
+        for (int i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 250));
+        }
         await windowManager.setSize(const Size(1440, 900));
         await tester.pump(const Duration(seconds: 2));
 
