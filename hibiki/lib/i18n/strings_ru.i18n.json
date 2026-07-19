@@ -1993,5 +1993,7 @@
   "video_setting_torrent_connections_hint": "0 = engine default",
   "shortcut_action_video_subtitle_delay_increase": "Subtitle delay +",
   "shortcut_action_video_subtitle_delay_decrease": "Subtitle delay −",
-  "shortcut_action_video_open_subtitle_align": "Open subtitle waveform align"
+  "shortcut_action_video_open_subtitle_align": "Open subtitle waveform align",
+  "font_desc_noto_serif_tc": "Google/Adobe Serif · Traditional Chinese glyphs priority · Ideal for vertical reading",
+  "custom_fonts_font_roles": "Font roles"
 }
