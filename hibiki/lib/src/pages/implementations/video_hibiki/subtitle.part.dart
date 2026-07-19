@@ -1127,6 +1127,12 @@ extension _VideoSubtitle on _VideoHibikiPageState {
   }) {
     return MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
+      // BUG-930：进 / 出把手时翻 [_pointerOverSubtitleResizeHandle]，让侧栏
+      // [_forceRevealOsCursorForPanel] 的每帧原生「强设 basic」在把手上让位，
+      // 使框架声明的 resizeLeftRight 光标不被盖掉（enter 早于同帧 parent onHover 处理，
+      // 稳态下光标即为 resize；退出把手复位、面板其余区域仍走 basic 唤回缓解）。
+      onEnter: (PointerEnterEvent _) => _pointerOverSubtitleResizeHandle = true,
+      onExit: (PointerExitEvent _) => _pointerOverSubtitleResizeHandle = false,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onHorizontalDragUpdate: (DragUpdateDetails details) {
