@@ -1176,7 +1176,7 @@
   "video_setting_immersive_mode_hint": "サイドのロックボタンを押した後も使える操作を制御します",
   "video_immersive_mode_lookup_only": "辞書引きのみ",
   "video_immersive_mode_full": "すべての操作",
-  "video_immersive_mode_seek_lookup": "シーク＋辞書引き",
+  "video_immersive_mode_seek_lookup": "ショートカット＋辞書引き",
   "video_immersive_mode_unlock_only": "ロック解除のみ",
   "custom_fonts_catalog_title": "フォントライブラリ",
   "startup_default_dictionary_tab": "起動時に辞書を開く",

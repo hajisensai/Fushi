@@ -1176,7 +1176,7 @@
   "video_setting_immersive_mode_hint": "Определяет, что остаётся доступным после нажатия боковой кнопки блокировки",
   "video_immersive_mode_lookup_only": "Только поиск слов",
   "video_immersive_mode_full": "Все элементы управления",
-  "video_immersive_mode_seek_lookup": "Перемотка + поиск слов",
+  "video_immersive_mode_seek_lookup": "Горячая клавиша + поиск слов",
   "video_immersive_mode_unlock_only": "Только разблокировка",
   "custom_fonts_catalog_title": "Библиотека шрифтов",
   "startup_default_dictionary_tab": "Открывать поиск при запуске",

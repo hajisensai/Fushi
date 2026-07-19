@@ -1176,7 +1176,7 @@
   "video_setting_immersive_mode_hint": "측면 잠금 버튼을 누른 뒤에도 어떤 조작이 가능한지 제어합니다",
   "video_immersive_mode_lookup_only": "단어 찾기만",
   "video_immersive_mode_full": "전체 조작",
-  "video_immersive_mode_seek_lookup": "이동 + 단어 찾기",
+  "video_immersive_mode_seek_lookup": "단축키 + 단어 찾기",
   "video_immersive_mode_unlock_only": "잠금 해제만",
   "custom_fonts_catalog_title": "글꼴 라이브러리",
   "startup_default_dictionary_tab": "시작 시 단어 찾기 열기",

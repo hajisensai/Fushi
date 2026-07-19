@@ -1176,7 +1176,7 @@
   "video_setting_immersive_mode_hint": "Yan kilit düğmesine basıldıktan sonra hangi işlevlerin kullanılabilir kalacağını denetler",
   "video_immersive_mode_lookup_only": "Yalnızca arama",
   "video_immersive_mode_full": "Tüm denetimler",
-  "video_immersive_mode_seek_lookup": "Sarma + arama",
+  "video_immersive_mode_seek_lookup": "Kısayol + arama",
   "video_immersive_mode_unlock_only": "Yalnızca kilit açma",
   "custom_fonts_catalog_title": "Yazı tipi kitaplığı",
   "startup_default_dictionary_tab": "Başlangıçta aramayı aç",

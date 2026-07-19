@@ -1176,7 +1176,7 @@
   "video_setting_immersive_mode_hint": "ควบคุมว่าหลังกดปุ่มล็อกด้านข้างแล้วยังใช้อะไรได้บ้าง",
   "video_immersive_mode_lookup_only": "เฉพาะค้นคำ",
   "video_immersive_mode_full": "ควบคุมทั้งหมด",
-  "video_immersive_mode_seek_lookup": "เลื่อนเวลา + ค้นคำ",
+  "video_immersive_mode_seek_lookup": "ทางลัด + ค้นคำ",
   "video_immersive_mode_unlock_only": "เฉพาะปลดล็อก",
   "custom_fonts_catalog_title": "คลังฟอนต์",
   "startup_default_dictionary_tab": "เปิดหน้าค้นคำเมื่อเริ่มแอป",

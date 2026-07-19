@@ -1176,7 +1176,7 @@
   "video_setting_immersive_mode_hint": "Steuert, was nach Drücken der seitlichen Sperrtaste verfügbar bleibt",
   "video_immersive_mode_lookup_only": "Nur Nachschlagen",
   "video_immersive_mode_full": "Alle Bedienelemente",
-  "video_immersive_mode_seek_lookup": "Spulen + Nachschlagen",
+  "video_immersive_mode_seek_lookup": "Tastenkürzel + Nachschlagen",
   "video_immersive_mode_unlock_only": "Nur Entsperren",
   "custom_fonts_catalog_title": "Schriftbibliothek",
   "startup_default_dictionary_tab": "Beim Start Nachschlagen öffnen",

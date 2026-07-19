@@ -50,23 +50,28 @@ void main() {
   }
 
   test(
-      'TODO-174: four persisted immersive modes exist and default to lookup-only',
-      () {
+      'TODO-174: four persisted immersive modes exist and default to '
+      'shortcut-and-lookup', () {
     expect(modeSrc.contains('enum VideoImmersiveMode'), isTrue);
     for (final String name in <String>[
       'full',
-      'seekAndLookup',
+      'shortcutAndLookup',
       'lookupOnly',
       'unlockOnly',
     ]) {
       expect(modeSrc.contains("$name('"), isTrue,
           reason: 'missing immersive mode $name');
     }
+    // storageValue 保留旧字符串 'seek_and_lookup'（不破坏存量偏好），标识符改为
+    // shortcutAndLookup。
+    expect(modeSrc.contains("shortcutAndLookup('seek_and_lookup')"), isTrue,
+        reason:
+            'shortcutAndLookup must keep legacy storage value seek_and_lookup');
     expect(
-        modeSrc
-            .contains('static const VideoImmersiveMode fallback = lookupOnly'),
+        modeSrc.contains(
+            'static const VideoImmersiveMode fallback = shortcutAndLookup'),
         isTrue,
-        reason: 'default immersive mode must be lookup-only');
+        reason: 'default immersive mode must be shortcut-and-lookup');
     expect(prefsSrc.contains("'video_immersive_mode'"), isTrue,
         reason: 'immersive mode must persist in preferences');
     expect(appModelSrc.contains('VideoImmersiveMode get videoImmersiveMode'),
@@ -80,9 +85,10 @@ void main() {
     for (final String helper in <String>[
       'VideoImmersiveMode get _videoImmersiveMode',
       'bool get _immersiveAllowsFullControls',
+      'bool get _immersiveAllowsShortcuts',
       'bool get _immersiveAllowsDoubleTapSeek',
       'bool get _immersiveAllowsLookup',
-      'void _runWhenImmersiveAllowsFullControls(',
+      'void _runWhenImmersiveAllowsShortcuts(',
     ]) {
       expect(pageSrc.contains(helper), isTrue, reason: 'missing $helper');
     }
@@ -103,46 +109,59 @@ void main() {
       reason: 'double-tap seek must be mode-gated while immersive locked',
     );
     expect(
-      pageSrc.contains(
-          'togglePlayPause: () => _runWhenImmersiveAllowsFullControls('),
+      pageSrc
+          .contains('togglePlayPause: () => _runWhenImmersiveAllowsShortcuts('),
       isTrue,
       reason:
-          'keyboard/media actions must be blocked outside full mode while locked',
+          'keyboard/media actions gate through the shortcuts immersive runner',
+    );
+    // shortcutAndLookup 放行快捷键但不放行触摸双击 seek：两个 gate 语义必须分离。
+    expect(
+      pageSrc.contains(
+          '_videoImmersiveMode == VideoImmersiveMode.shortcutAndLookup;'),
+      isTrue,
+      reason: 'shortcuts gate must admit shortcut-and-lookup mode',
     );
   });
 
   test(
-      'TODO-174: seek-and-lookup locked mode consumes unsafe double-tap fallback',
-      () {
+      'TODO-174: shortcut-and-lookup blocks touch double-tap seek, no mode '
+      'special-case in pointer-up fallback', () {
+    // 触摸双击 seek 门控只放行 full（未锁定亦可），不含 shortcutAndLookup：该模式的
+    // 跳转改由快捷键完成，触摸误触被挡。表达式 getter 到 `;` 为止。
+    final int dtStart =
+        pageSrc.indexOf('bool get _immersiveAllowsDoubleTapSeek =>');
+    expect(dtStart, greaterThanOrEqualTo(0),
+        reason: 'missing _immersiveAllowsDoubleTapSeek getter');
+    final String doubleTapGetter =
+        pageSrc.substring(dtStart, pageSrc.indexOf(';', dtStart) + 1);
+    expect(doubleTapGetter.contains('VideoImmersiveMode.shortcutAndLookup'),
+        isFalse,
+        reason:
+            'double-tap seek gate must NOT admit shortcut-and-lookup (touch seek off)');
+    expect(doubleTapGetter.contains('VideoImmersiveMode.full'), isTrue,
+        reason: 'double-tap seek gate still admits full mode');
+
     final String body = methodBody(
         pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {');
+    final int gateIdx = body.indexOf(
+        'if (_immersiveLocked.value && !_immersiveAllowsDoubleTapSeek) {');
     final int seekIdx = body.indexOf('final bool doubleTapHandled =');
-    final int seekCallIdx =
-        body.indexOf('_handleDoubleTapSeek(controlsContext, event.position)');
-    expect(seekIdx, greaterThanOrEqualTo(0),
-        reason:
-            'double-tap seek result must be captured before platform fallback');
-    expect(seekCallIdx, greaterThan(seekIdx),
-        reason:
-            'captured double-tap result must come from _handleDoubleTapSeek');
+    expect(gateIdx, greaterThanOrEqualTo(0),
+        reason: 'locked double-tap must be mode-gated before running seek');
+    expect(seekIdx, greaterThan(gateIdx),
+        reason: 'double-tap seek runs only after the immersive gate');
     final int seekReturnIdx =
         body.indexOf('if (doubleTapHandled) return;', seekIdx);
     expect(seekReturnIdx, greaterThan(seekIdx),
-        reason: 'handled left/right seek must return before fallback');
-    final int seekAndLookupBlockIdx =
-        body.indexOf('if (_immersiveLocked.value &&', seekReturnIdx);
-    final int seekAndLookupModeIdx = body.indexOf(
-        '_videoImmersiveMode == VideoImmersiveMode.seekAndLookup',
-        seekAndLookupBlockIdx);
-    expect(seekAndLookupBlockIdx, greaterThan(seekReturnIdx),
+        reason: 'handled left/right seek must return before platform fallback');
+    // 特例块已删除：pointer-up 不再按具体沉浸模式分叉（走到 fallback 必为 full）。
+    expect(body.contains('VideoImmersiveMode.'), isFalse,
         reason:
-            'locked seek-and-lookup must consume center/off double-taps before pause/fullscreen fallback');
-    expect(seekAndLookupModeIdx, greaterThan(seekAndLookupBlockIdx),
-        reason: 'fallback-consuming gate must target seek-and-lookup mode');
+            'pointer-up fallback must not special-case any immersive mode enum');
     final int platformBranch = body.indexOf('if (_isDesktopVideoControls) {');
-    expect(platformBranch, greaterThan(seekAndLookupBlockIdx),
-        reason:
-            'pause/fullscreen fallback must be unreachable in locked seek-and-lookup mode');
+    expect(platformBranch, greaterThan(seekReturnIdx),
+        reason: 'platform pause/fullscreen fallback follows the seek attempt');
   });
 
   test('TODO-174: locked context menu is available only to full-control mode',
