@@ -670,7 +670,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
           if (shouldAutoRead) {
             final entry = result.entries.first;
             if (entry.word.isNotEmpty) {
-              autoReadWord(entry.word, entry.reading);
+              autoReadWord(entry.word, entry.reading,
+                  popupState: _resultWebViewKey.currentState);
             }
           }
         }

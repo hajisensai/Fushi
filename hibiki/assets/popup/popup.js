@@ -1883,16 +1883,34 @@ async function fetchAudioUrl(expression, reading) {
     }
 }
 
-async function playWordAudio(audioUrl) {
+// 单词音频播放：统一走 WebView 自己的 HTML5 <audio>，不再回 Dart 交给 native
+// MediaPlayer（Android）或 libmpv（桌面 just_audio）——那条桌面路径每播一次都要
+// stop→loadfile→play，比手机的原生同步 prepare 慢。三端（app 内 InAppWebView / app 外
+// overlay WebView2 / 浏览器扩展真实浏览器）现在同一路径：resolveWordAudio 已返回可直接
+// 播放的 URL（远端 http、本地 base64 data:）。interrupt 模式先掐上一段，留 window.
+// __hibikiWordAudio 句柄。音量取 window.lookupAudioVolume（0..1，宿主注入；扩展缺省 1）。
+function playWordAudio(audioUrl) {
     try {
-        return await window.flutter_inappwebview.callHandler('playWordAudio', {
-            url: audioUrl,
-            mode: window.audioPlaybackMode || 'interrupt'
-        });
-    } catch {
-        return false;
+        if (!audioUrl) return Promise.resolve(false);
+        if ((window.audioPlaybackMode || 'interrupt') === 'interrupt'
+                && window.__hibikiWordAudio) {
+            try { window.__hibikiWordAudio.pause(); } catch (_) { /* no-op */ }
+        }
+        const audio = new Audio(audioUrl);
+        const v = window.lookupAudioVolume;
+        if (typeof v === 'number' && isFinite(v)) {
+            audio.volume = Math.max(0, Math.min(1, v));
+        }
+        window.__hibikiWordAudio = audio;
+        return audio.play().then(() => true).catch(() => false);
+    } catch (_) {
+        return Promise.resolve(false);
     }
 }
+
+// Dart 自动发音（打开词条自动读）驱动入口：宿主解析好 URL 后经 evaluateJavascript
+// 调此函数，让弹窗用同一 <audio> 路径播，桌面自动发音同样变快、且与手动 ♪ 一致。
+window.__hibikiPlayWordAudioUrl = playWordAudio;
 
 function showAudioError(button) {
     setButtonIcon(button, 'audioOff');

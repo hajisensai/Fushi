@@ -126,7 +126,9 @@ void main() {
       'onLinkClick': 'null',
       'queryLocalAudio': 'null',
       'resolveWordAudio': 'null',
-      'playWordAudio': 'false',
+      // playWordAudio bridge removed: popup.js now plays the resolved URL itself
+      // with an HTML5 <audio> element (unified across all surfaces), so there is
+      // no Dart handler to boundary-guard here.
     };
 
     for (final MapEntry<String, String> entry in fallbacks.entries) {

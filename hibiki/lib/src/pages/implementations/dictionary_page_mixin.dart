@@ -328,18 +328,34 @@ mixin DictionaryPageMixin {
     return const MinePopupResult();
   }
 
-  /// Resolves and plays the audio for [expression] / [reading] via
-  /// [WordAudioResolver] + [TtsChannel].
-  Future<void> autoReadWord(String expression, String reading) async {
+  /// Resolves and plays the audio for [expression] / [reading]. [popupState] is
+  /// the just-rendered popup WebView (when this surface renders results in a
+  /// popup): auto-read then plays through its own `<audio>` element — the unified
+  /// fast path shared with the manual ♪ button and every surface. Null (e.g. an
+  /// inline full-page view with no popup WebView) falls back to the Dart player.
+  Future<void> autoReadWord(
+    String expression,
+    String reading, {
+    DictionaryPopupWebViewState? popupState,
+  }) async {
     await LookupAutoReadCoordinator.instance.runAutomatic(
       expression: expression,
       reading: reading,
-      play: () => _playAutoReadWord(expression, reading),
+      play: () => _playAutoReadWord(expression, reading, popupState),
     );
   }
 
-  Future<void> _playAutoReadWord(String expression, String reading) =>
-      playLookupAudio(mixinAppModel, expression, reading);
+  Future<void> _playAutoReadWord(
+    String expression,
+    String reading,
+    DictionaryPopupWebViewState? popupState,
+  ) =>
+      autoReadWordUnified(
+        mixinAppModel,
+        expression,
+        reading,
+        playInWebView: popupState?.playWordAudioUrl,
+      );
 
   /// Checks whether a card for [expression] / [reading] already exists in Anki.
   Future<bool> checkDuplicate(String expression, String reading) async {
@@ -827,7 +843,8 @@ mixin DictionaryPageMixin {
       if (autoRead && ReaderHibikiSource.instance.autoReadOnLookup) {
         final first = result.entries.first;
         if (first.word.isNotEmpty) {
-          autoReadWord(first.word, first.reading);
+          autoReadWord(first.word, first.reading,
+              popupState: entry.webViewKey.currentState);
         }
       }
     }
