@@ -39,6 +39,48 @@ class AniListMedia {
               : 'AniList #$id';
 }
 
+/// 罗马字长音符（macron）→ **双元音** 展开（修正 Hepburn）。番剧官方 romaji
+/// 常用 macron 转写（ū ō ā ī ē，如「Chūnibyō」），但 AniList 的 search 索引
+/// 用双元音拼法（如「Chuunibyou」）且**不做 macron 归一化匹配**——用户直接
+/// 打/复制带 macron 的标题会 0 结果。
+///
+/// 实测（live AniList）：`Chūnibyō Demo Koi ga Shitai!` → 0；简单去 macron 的
+/// `Chunibyo Demo…`（单元音）→ 仍 0（太短）；双元音 `Chuunibyou Demo…` → 命中。
+/// 故按修正 Hepburn 展开长音：ā→aa ī→ii ū→uu ē→ee ō→ou（ō 取最常见的 おう；
+/// 少数 おお 词靠 AniList 模糊匹配兜底）。
+const Map<int, String> _macronExpand = <int, String>{
+  0x0100: 'Aa', 0x0101: 'aa', // Ā ā
+  0x0112: 'Ee', 0x0113: 'ee', // Ē ē
+  0x012A: 'Ii', 0x012B: 'ii', // Ī ī
+  0x014C: 'Ou', 0x014D: 'ou', // Ō ō
+  0x016A: 'Uu', 0x016B: 'uu', // Ū ū
+};
+
+/// 归一化搜索关键词：把 macron 长音符展开成双元音，让带官方 romaji 长音的
+/// 输入也能命中 AniList。预组合字母（ū…）按 [_macronExpand] 展开；分解形式的
+/// combining macron U+0304 把前一个元音再写一遍（双写）。纯函数：无 macron 的
+/// 输入原样返回（no-op），不会降低正常命中。
+String normalizeAniListSearch(String query) {
+  final StringBuffer sb = StringBuffer();
+  int? prevRune; // 供 combining macron 双写前一元音
+  for (final int rune in query.runes) {
+    if (rune == 0x0304) {
+      // combining macron：分解形式（如 'u' + U+0304）→ 双写前一个字母。
+      if (prevRune != null) sb.writeCharCode(prevRune);
+      continue;
+    }
+    final String? expanded = _macronExpand[rune];
+    if (expanded != null) {
+      sb.write(expanded);
+      prevRune = null;
+    } else {
+      sb.writeCharCode(rune);
+      prevRune = rune;
+    }
+  }
+  return sb.toString();
+}
+
 /// 解析 AniList GraphQL 搜索响应为 [AniListMedia] 列表。纯函数，容错（结构不符 →
 /// 空列表），便于单测。
 List<AniListMedia> parseAniListSearchResponse(String body) {
@@ -95,8 +137,11 @@ query ($search: String) {
 }''';
 
   /// 按 [title] 搜索番剧。网络/解析失败返回空列表（不抛，调用方按空处理）。
+  /// 搜索词先做 macron 归一化（见 [normalizeAniListSearch]），让带官方 romaji
+  /// 长音（ū ō…）的输入也能命中 AniList。
   Future<List<AniListMedia>> searchAnime(String title) async {
-    if (title.trim().isEmpty) return const <AniListMedia>[];
+    final String query = normalizeAniListSearch(title.trim());
+    if (query.isEmpty) return const <AniListMedia>[];
     try {
       final http.Response res = await _client.post(
         Uri.parse(_endpoint),
@@ -106,7 +151,7 @@ query ($search: String) {
         },
         body: jsonEncode(<String, dynamic>{
           'query': _searchQuery,
-          'variables': <String, dynamic>{'search': title},
+          'variables': <String, dynamic>{'search': query},
         }),
       );
       if (res.statusCode != 200) return const <AniListMedia>[];
