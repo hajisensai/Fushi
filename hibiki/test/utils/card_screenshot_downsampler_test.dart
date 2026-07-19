@@ -100,4 +100,33 @@ void main() {
       expect(identical(out, garbage), isTrue);
     });
   });
+
+  group('downsampleCardScreenshotAsync (BUG-933 后台 isolate 卸载)', () {
+    Uint8List jpegOf(int width, int height) {
+      final img.Image image = img.Image(width: width, height: height);
+      img.fill(image, color: img.ColorRgb8(120, 60, 200));
+      return img.encodeJpg(image);
+    }
+
+    test('大图后台降采样：长边钉 1000（与同步版语义一致）', () async {
+      final Uint8List big = jpegOf(2400, 1350);
+      // 卸到后台 isolate 后不再 identical，但内容语义与同步版一致：解码得长边 1000。
+      final img.Image decoded =
+          img.decodeImage(await downsampleCardScreenshotAsync(big))!;
+      expect(decoded.width, 1000);
+      expect(decoded.height, 563);
+    });
+
+    test('空字节原样返回（同步短路，不起 isolate）', () async {
+      final Uint8List empty = Uint8List(0);
+      expect(
+          identical(await downsampleCardScreenshotAsync(empty), empty), isTrue);
+    });
+
+    test('无法解码字节保守回退：内容与入参一致（绝不变空）', () async {
+      final Uint8List garbage = Uint8List.fromList(<int>[0, 1, 2, 3, 4]);
+      final Uint8List out = await downsampleCardScreenshotAsync(garbage);
+      expect(out, orderedEquals(garbage));
+    });
+  });
 }

@@ -139,7 +139,9 @@ class ImmersionMiningEngine {
       if (req.stillFallback == null) return null;
       final Uint8List? shot = await req.stillFallback!();
       if (shot == null) return null;
-      final Uint8List small = downsampleCardScreenshot(
+      // BUG-933：降采样（decode/resize/encodeJpg）卸到后台 isolate，避免 1080p/4K
+      // 截图的纯 Dart CPU 重活阻塞 UI 线程（制卡「未响应」根因之一）。
+      final Uint8List small = await downsampleCardScreenshotAsync(
         shot,
         maxLongEdge: compression.screenshotMaxLongEdge,
         quality: compression.screenshotQuality,

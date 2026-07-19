@@ -750,8 +750,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         final Uint8List bytes = await file.readAsBytes();
         if (bytes.isEmpty) continue;
         // 降采样护体积（长边 1000px / JPEG q90，与制卡截图同档）；小图/无法解码时
-        // downsampleCardScreenshot 原样返回，绝不把有效插图变空。
-        final Uint8List downsampled = downsampleCardScreenshot(bytes);
+        // downsampleCardScreenshot 原样返回，绝不把有效插图变空。BUG-933：解码/编码
+        // 卸到后台 isolate，避免逐张插图的纯 Dart CPU 阻塞 UI。
+        final Uint8List downsampled =
+            await downsampleCardScreenshotAsync(bytes);
         images.add((normOffset: ref.normOffset, bytes: downsampled));
       } catch (e, stack) {
         ErrorLogService.instance
