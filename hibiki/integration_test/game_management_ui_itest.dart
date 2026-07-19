@@ -44,7 +44,11 @@ void main() {
             find.widgetWithText(HibikiSelectableChip, t.game_capture_workbench);
         expect(openCapture, findsOneWidget);
         expect(
-          await _focusThroughHibiki(driver, openCapture),
+          await _focusThroughHibiki(
+            driver,
+            openCapture,
+            const HibikiFocusId('game-library-tab-capture'),
+          ),
           isTrue,
           reason: '捕获工作台页头入口必须可由 Hibiki 键盘焦点到达',
         );
@@ -65,7 +69,11 @@ void main() {
             find.byKey(ValueKey<String>('game-line-${line.id}'));
         expect(lineCard, findsOneWidget);
         expect(
-          await _focusThroughHibiki(driver, lineCard),
+          await _focusThroughHibiki(
+            driver,
+            lineCard,
+            HibikiFocusId('game-line-${line.id}'),
+          ),
           isTrue,
           reason: '一整条台词应只有一个稳定焦点目标',
         );
@@ -96,7 +104,11 @@ void main() {
             find.widgetWithText(HibikiSelectableChip, t.game_diagnostics);
         expect(diagnosticsChip, findsOneWidget);
         expect(
-          await _focusThroughHibiki(driver, diagnosticsChip),
+          await _focusThroughHibiki(
+            driver,
+            diagnosticsChip,
+            const HibikiFocusId('game-capture-tab-diagnostics'),
+          ),
           isTrue,
           reason: '兼容性诊断入口必须可由键盘焦点到达',
         );
@@ -110,9 +122,21 @@ void main() {
   });
 }
 
-Future<bool> _focusThroughHibiki(FocusDriver driver, Finder target) async {
-  if (await driver.focusWidget(target)) return true;
-  return driver.requestFocusInside(target);
+Future<bool> _focusThroughHibiki(
+  FocusDriver driver,
+  Finder target,
+  HibikiFocusId focusId,
+) async {
+  if (await driver.focusWidget(target)) {
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      driver.tester.element(target),
+    );
+    if (controller.activeId == focusId) return true;
+  }
+  return driver.requestFocusInside(
+    target,
+    debugLabelContains: focusId.value,
+  );
 }
 
 Future<void> _capture(WidgetTester tester, String name) async {

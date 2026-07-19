@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
@@ -105,6 +106,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
                     label: t.game_library,
                     leadingIcon: Icons.sports_esports_outlined,
                     selected: true,
+                    focusId: const HibikiFocusId('game-library-tab-library'),
                     onSelected: (_) => _showLibrary(),
                   ),
                   const SizedBox(width: 8),
@@ -112,6 +114,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
                     label: t.game_capture_workbench,
                     leadingIcon: Icons.sensors_outlined,
                     selected: false,
+                    focusId: const HibikiFocusId('game-library-tab-capture'),
                     onSelected: (_) => _showMonitor(),
                   ),
                   const SizedBox(width: 8),
@@ -119,6 +122,8 @@ class _HomeGamePageState extends State<HomeGamePage> {
                     label: t.game_diagnostics,
                     leadingIcon: Icons.monitor_heart_outlined,
                     selected: false,
+                    focusId:
+                        const HibikiFocusId('game-library-tab-diagnostics'),
                     onSelected: (_) => _showDiagnostics(),
                   ),
                 ],
