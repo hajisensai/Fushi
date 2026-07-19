@@ -1176,7 +1176,7 @@
   "video_setting_immersive_mode_hint": "控制按下側邊鎖後仍可使用哪些操作",
   "video_immersive_mode_lookup_only": "僅查詞",
   "video_immersive_mode_full": "全部功能",
-  "video_immersive_mode_seek_lookup": "跳轉＋查詞",
+  "video_immersive_mode_seek_lookup": "快捷鍵＋查詞",
   "video_immersive_mode_unlock_only": "僅解鎖",
   "custom_fonts_catalog_title": "字型庫",
   "startup_default_dictionary_tab": "啟動時開啟查詞",

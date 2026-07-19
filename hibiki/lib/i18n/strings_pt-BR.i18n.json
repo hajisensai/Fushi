@@ -1176,7 +1176,7 @@
   "video_setting_immersive_mode_hint": "Controla o que permanece disponível após pressionar o botão de bloqueio lateral",
   "video_immersive_mode_lookup_only": "Apenas consulta",
   "video_immersive_mode_full": "Todos os controles",
-  "video_immersive_mode_seek_lookup": "Avançar + consultar",
+  "video_immersive_mode_seek_lookup": "Atalho + consulta",
   "video_immersive_mode_unlock_only": "Apenas desbloquear",
   "custom_fonts_catalog_title": "Biblioteca de fontes",
   "startup_default_dictionary_tab": "Abrir consulta ao iniciar",

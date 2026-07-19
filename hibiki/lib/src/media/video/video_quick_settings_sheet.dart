@@ -911,7 +911,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     switch (mode) {
       case VideoImmersiveMode.full:
         return t.video_immersive_mode_full;
-      case VideoImmersiveMode.seekAndLookup:
+      case VideoImmersiveMode.shortcutAndLookup:
         return t.video_immersive_mode_seek_lookup;
       case VideoImmersiveMode.lookupOnly:
         return t.video_immersive_mode_lookup_only;

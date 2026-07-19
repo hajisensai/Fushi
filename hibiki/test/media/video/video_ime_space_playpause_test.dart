@@ -90,8 +90,8 @@ void main() {
         reason: '必须复用可单测的纯谓词识别 IME 空格');
     expect(body, contains('focusedEditableText()'),
         reason: '必须在文本框 composing 时关闭回退');
-    expect(body, contains('_runWhenImmersiveAllowsFullControls'),
-        reason: '必须经沉浸锁门控（与页级 _withPageSpaceOverride 同语义）');
+    expect(body, contains('_runWhenImmersiveAllowsShortcuts'),
+        reason: '必须经沉浸锁快捷键门控（与页级 _withPageSpaceOverride 同语义）');
     expect(body, contains('controller.playOrPause()'),
         reason: 'IME 空格应触发播放/暂停');
 

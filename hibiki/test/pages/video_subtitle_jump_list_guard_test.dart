@@ -77,7 +77,7 @@ void main() {
     final int nextActionIdx = src.indexOf('toggleImmersiveLock:', actionIdx);
     expect(nextActionIdx, greaterThan(actionIdx));
     final String callback = src.substring(actionIdx, nextActionIdx);
-    final int gate = callback.indexOf('_runWhenImmersiveAllowsFullControls');
+    final int gate = callback.indexOf('_runWhenImmersiveAllowsShortcuts');
     final int toggle = callback.indexOf('_toggleSubtitleJumpList');
     expect(gate, greaterThanOrEqualTo(0));
     expect(toggle, greaterThan(gate));
