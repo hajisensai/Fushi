@@ -302,6 +302,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
         titleTag: context.bookTitleTag,
+        collectionTag: context.collectionTag,
       );
       final success = Uri.parse(hibikiAnkiSuccessCallback).replace(
         queryParameters: <String, String>{
@@ -370,6 +371,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       sentenceOffset: context.sentenceOffset,
       source: context.source,
       bookTitleTag: context.bookTitleTag,
+      collectionTag: context.collectionTag,
     );
 
     final mediaPayload = AnkiMiningPayload(

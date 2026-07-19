@@ -251,6 +251,7 @@ class ImmersionMiningEngine {
       sasayakiAudioPath: audioPath,
       source: req.source,
       bookTitleTag: req.bookTitleTag,
+      collectionTag: req.collectionTag,
     );
 
     final MineOutcome outcome = req.updateNoteId == null

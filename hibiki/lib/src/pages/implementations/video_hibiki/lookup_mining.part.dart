@@ -315,6 +315,11 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         bookTitleTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(_title)
             : null,
+        // 合集/系列名标签（同上开关）：播放列表下用系列名 _playlistTitle（col.name，已在内存）
+        // 作独立 tag，与剧集名并列；单视频/远端无系列名时为 null 不追加。
+        collectionTag: appModel.autoAddBookNameToTags
+            ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
+            : null,
         updateNoteId: updateNoteId,
         stillFallback: controller.screenshot,
         // 用户在 Anki 设置里选的封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧）；
