@@ -36,7 +36,7 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 /// 进入 [_HomePageState._activeTabs]，故用枚举身份而非位置来切换/路由——插入这个
 /// 条件 tab 不会再打乱「设置/词典」的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊
 /// 情况）。底栏/侧栏只在渲染层把身份映射成位置。texthooker 紧邻设置之前。
-enum HomeTab { books, video, dictionaries, texthooker, settings }
+enum HomeTab { home, books, video, dictionaries, texthooker, settings }
 
 /// 纯函数：给定实验视频开关与文本钩子开关，返回可见顶层 tab 的**视觉顺序**——视频
 /// 固定插在书架与词典之间（用户要求「在书架和词典管理中间」），texthooker 仅在文本
@@ -48,6 +48,7 @@ List<HomeTab> homeActiveTabs({
   required bool texthookerEnabled,
 }) =>
     <HomeTab>[
+      HomeTab.home,
       HomeTab.books,
       if (videoEnabled) HomeTab.video,
       HomeTab.dictionaries,
@@ -90,12 +91,18 @@ HomeTab homeTabForVisualIndex({
 /// MacosWindowScope）构建，与 HomePage 自绘的 rail / 底栏驱动**同一个**选中身份。
 /// 非 macOS 平台不读写它，纯 no-op。
 final ValueNotifier<HomeTab> homeShellTabNotifier =
-    ValueNotifier<HomeTab>(HomeTab.books);
+    ValueNotifier<HomeTab>(HomeTab.home);
 
 /// 单个 [HomeTab] 的导航项（图标 + 标签）。顶层函数，供 HomePage 的 rail/底栏与 macOS
 /// 根侧栏共用，保证三处标签/图标一致。
 AdaptiveNavItem homeNavItemFor(HomeTab tab) {
   switch (tab) {
+    case HomeTab.home:
+      return AdaptiveNavItem(
+        icon: Icons.home_outlined,
+        selectedIcon: Icons.home,
+        label: t.nav_home,
+      );
     case HomeTab.books:
       return AdaptiveNavItem(
         icon: Icons.menu_book_outlined,
@@ -195,10 +202,10 @@ class _HomePageState extends BasePageState<HomePage>
     with WidgetsBindingObserver {
   String get appVersion => appModel.packageInfo.version;
 
-  HomeTab _currentTab = HomeTab.books;
+  HomeTab _currentTab = HomeTab.home;
 
   /// 进入「设置」标签前的来源 tab，供设置全屏左上返回箭头切回。
-  HomeTab _previousTab = HomeTab.books;
+  HomeTab _previousTab = HomeTab.home;
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
 
@@ -915,6 +922,8 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildTabContent(HomeTab tab) {
     switch (tab) {
+      case HomeTab.home:
+        return HomeDashboardPage(videoRepo: _videoRepository);
       case HomeTab.video:
         return HomeVideoPage(repo: _videoRepository);
       case HomeTab.dictionaries:

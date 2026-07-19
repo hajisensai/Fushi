@@ -2681,6 +2681,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           hour: hour,
           deltaMs: deltaMs,
         ),
+        // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
+        recordActivity: (String t, String uid, String dateKey, int timestampMs,
+                int durationMs, int chars) =>
+            db.addActivityEvent(
+          eventType: kActivityWatch,
+          mediaType: kActivityMediaVideo,
+          title: t,
+          mediaKey: uid,
+          dateKey: dateKey,
+          timestampMs: timestampMs,
+          durationMs: durationMs,
+          charsDelta: chars,
+        ),
       )
         ..attach(controller)
         ..start();

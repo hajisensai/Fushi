@@ -195,6 +195,43 @@ class VideoHourlyLogs extends Table {
       ];
 }
 
+// ── activity_events ─────────────────────────────────────────────────
+/// v49（首页活动时间轴）：精确时间戳的事件流，喂新首页 [HomeDashboardPage] 的
+/// Activity 面板（对齐 ReinaManager「8 小时前 · 1 session」精度）。与按天聚合的
+/// [ReadingStatistics] / [VideoWatchStatistics] 互补——那些是「每天总量」，这张是
+/// 「每次 session 一行」，保留精确时刻用于相对时间与按类别筛选。追加式，只增不改。
+@DataClassName('ActivityEventRow')
+class ActivityEvents extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 事件语义：'read'（读完一段）/ 'watch'（看了一段视频）/ 'added'（导入了媒体）
+  /// / 'game'（游戏游玩，本轮仅预留槽位、无写入方）。
+  TextColumn get eventType => text()();
+
+  /// 媒体种类：'book' / 'video' / 'game'。与 [eventType] 分开，未来可扩展
+  /// （如 'added' 的媒体既可能是 book 也可能是 video）。
+  TextColumn get mediaType => text()();
+
+  /// 展示标题（书名 / 视频名）。
+  TextColumn get title => text()();
+
+  /// 点击活动条打开媒体用的稳定身份：书=bookKey，视频=bookUid，导入不一定有。
+  TextColumn get mediaKey => text().nullable()();
+
+  /// 冗余的按天分组键（'YYYY-MM-DD'，本地时区），避免读取端为分组再从
+  /// [timestampMs] 反算。与统计表 dateKey 同源（[statDateKey]）。
+  TextColumn get dateKey => text()();
+
+  /// 精确发生时刻（epoch 毫秒），Activity 相对时间与排序的真值。
+  IntColumn get timestampMs => integer()();
+
+  /// 本次 session 时长（毫秒），read/watch 有；added 为 null。
+  IntColumn get durationMs => integer().nullable()();
+
+  /// 本次读/看的字符数（阅读=字数，视频=字幕字数），added 为 null。
+  IntColumn get charsDelta => integer().nullable()();
+}
+
 // ── preferences (key-value) ─────────────────────────────���───────────
 @DataClassName('PreferenceRow')
 class Preferences extends Table {

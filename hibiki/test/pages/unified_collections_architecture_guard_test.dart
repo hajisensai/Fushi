@@ -296,40 +296,15 @@ void main() {
     final String exitBody = sourceSrc.substring(exitFn, exitEnd);
     expect(exitBody.contains('ref.invalidate(bookLastReadAtProvider)'), isTrue,
         reason: '关书必须同点失效 recency 映射（BUG-777 刷新语义）');
-    // 书架页：hero 按最后阅读时间选书；「最近阅读」读同一映射、没读过退
-    // importedAt；provider 下标假名次（实为导入序）不得回潮。
-    expect(historySrc.contains('mostRecentlyReadCandidate'), isTrue,
-        reason: '继续阅读 hero 必须选最后阅读时间最新的在读书');
+    // 书架页「最近阅读」排序读同一 recency 映射、没读过退 importedAt；provider
+    // 下标假名次（实为导入序）不得回潮。（v49：继续阅读 hero/概览热力图已从书架页
+    // 移到新首页 HomeDashboardPage，此处只守卫书架页仍在用的「最近阅读」排序语义。）
     expect(
         historySrc.contains('_lastReadAtByBookKey[bookKey] ?? it.importedAt'),
         isTrue,
         reason: '「最近阅读」= updatedAt，没读过按导入时间融入（与视频页语义镜像）');
     expect(historySrc.contains('payload.seq'), isFalse,
         reason: '列表下标假名次已删（provider 序 = importedAt 倒序，不是访问序）');
-  });
-
-  test('BUG-804：继续阅读 hero/概览统计喂全量 EPUB-backed（含有声书），不喂 srt 过滤后的 epubBooks', () {
-    // 有声书 = EPUB 正文 + SRT 字幕同 bookKey，有真实 position/duration 与
-    // lastReadAt。旧实现把 srt 过滤后的 `epubBooks` 喂给 _buildShelfOverviewSection，
-    // 有声书整类被排除，读了有声书回书架「继续阅读」永不更新。守卫：概览 section
-    // 调用点必须传未过滤的 `books`（hibikiBooksProvider 全部 EPUB-backed 行）。
-    final int callAt = historySrc.lastIndexOf('_buildShelfOverviewSection(');
-    expect(callAt, isNonNegative);
-    final String callArgs = historySrc.substring(
-      callAt,
-      (callAt + 80).clamp(0, historySrc.length),
-    );
-    expect(callArgs.contains('books,'), isTrue,
-        reason: 'hero/统计必须吃未过滤的全量 EPUB-backed 列表 books');
-    // 绝不能回退到把 srt 过滤后的 epubBooks 当概览/hero 输入（有声书会被排除）。
-    expect(
-        RegExp(r'_buildShelfOverviewSection\(\s*epubBooks\b')
-            .hasMatch(historySrc),
-        isFalse,
-        reason: 'hero 输入不得是 srt 过滤后的 epubBooks（有声书会被排除，BUG-804 回退）');
-    // 在读/读完/候选分类抽成纯函数 tallyShelfProgress（可单测，见 shelf_sort_test）。
-    expect(historySrc.contains('tallyShelfProgress'), isTrue,
-        reason: '书架概览分类必须走纯函数 tallyShelfProgress（BUG-804 单测锁）');
   });
 
   test('多端库联合视图 §2.2/§2.6：云视频占位必经 CloudRemoteVideoClient（不自造清单解析）', () {

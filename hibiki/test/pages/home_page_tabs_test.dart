@@ -68,6 +68,30 @@ void main() {
     });
   });
 
+  group('home dashboard tab', () {
+    test('HomeTab 枚举包含 home，且是可见 tab 列表的第一个', () {
+      expect(HomeTab.values, contains(HomeTab.home));
+      expect(
+        homeActiveTabs(videoEnabled: false, texthookerEnabled: false).first,
+        HomeTab.home,
+      );
+      expect(
+        homeActiveTabs(videoEnabled: true, texthookerEnabled: true).first,
+        HomeTab.home,
+      );
+    });
+
+    test('冷启动（未开默认词典 tab）落在首页 home', () {
+      expect(
+        homeInitialTab(
+          startupDefaultDictionaryTab: false,
+          fallback: HomeTab.home,
+        ),
+        HomeTab.home,
+      );
+    });
+  });
+
   group('texthooker home tab', () {
     test('HomeTab 枚举包含 texthooker', () {
       expect(HomeTab.values, contains(HomeTab.texthooker));
