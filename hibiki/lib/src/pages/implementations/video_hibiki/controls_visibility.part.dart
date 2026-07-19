@@ -315,7 +315,27 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
     _lockButtonHideTimer?.cancel();
     _lockButtonHideTimer =
         Timer(_VideoHibikiPageState._videoControlsHoverDuration, () {
-      if (mounted) _lockButtonVisible.value = false;
+      if (!mounted) return;
+      _lockButtonVisible.value = false;
+      // BUG-920：静止超时补上缺失的「空闲重隐」路径。沉浸态下 media_kit 控制条被
+      // [IgnorePointer] + 门控整体关掉、其 visibilityNotifier 不再翻 →
+      // [_applyControlsVisibilityFromMediaKit]（OS 光标隐藏的唯一权威）只在**进沉浸那一刻**
+      // 跑一次；之后真实鼠标移动经 [_handleVideoControlsHover] 调 [_setCursorHidden]`(false)`
+      // 唤回光标后，就**再没有任何路径**把光标 / 锁按钮重新隐藏（用户报「沉浸模式鼠标和沉浸
+      // 按钮都不会隐藏，除非把鼠标移到别处」）。此处在 2s 无操作后重跑光标策略，按门控 /
+      // overlay 判定重隐光标。仅桌面有 OS 光标语义，故整块桌面门控（移动端只保留
+      // [_lockButtonVisible] 自然淡出，行为不变）。
+      if (_isDesktopVideoControls) {
+        _applyControlsVisibilityFromMediaKit();
+        // 光标**真被隐藏**时（纯沉浸 / 控制条自动淡出且无 overlay）一并释放锁按钮 hover
+        // 保活 [_lockButtonHovered]，让按钮随光标同步淡出——根除「鼠标静止悬在锁按钮上 →
+        // keep-alive 顶住 [_lockButtonHovered]=true → 2s 定时器只清 [_lockButtonVisible]、
+        // OR 判据 `_lockButtonVisible || _lockButtonHovered` 仍为真 → 按钮永不淡出」。
+        // 光标仍可见时（[_hasVideoOverlay] 强制光标可见，如字幕列表 / 侧栏）**不**清 hover，
+        // 保 BUG-294「按钮不在可见光标正下方凭空消失」。鼠标再移动经 keep-alive 的 onHover
+        // 会重新置 [_lockButtonHovered]=true 唤回按钮，[_handleVideoControlsHover] 同步唤回光标。
+        if (_cursorHidden.value) _lockButtonHovered.value = false;
+      }
     });
   }
 }
