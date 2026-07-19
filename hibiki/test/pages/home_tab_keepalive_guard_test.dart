@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 远端封面只走进程内 ImageCache）。
 ///
 /// 修复——只让**书架 + 视频**两个 tab 保活（State 常驻、用 `Offstage` 隐藏未选中者），
-/// 切回沿用已加载列表/封面/滚动位置。其余 tab（词典 / texthooker / 设置）**故意不保活**、
+/// 切回沿用已加载列表/封面/滚动位置。其余 tab（词典 / games / 设置）**故意不保活**、
 /// 按需重建，以保留其依赖 initState 挂载的语义——尤其 HomeDictionaryPage 靠切到查词
 /// tab 时 re-mount 消费桌面悬浮字幕 pending 查词（TODO-376，见
 /// desktop_lookup_to_dictionary_tab_test.dart）。
@@ -41,8 +41,8 @@ void main() {
         reason: '查词 tab 不得保活：靠 re-mount 消费桌面悬浮字幕 pending（TODO-376）');
     expect(literal.contains('HomeTab.settings'), isFalse,
         reason: '设置 tab 不得保活：保留其 initState 挂载语义（现状不变）');
-    expect(literal.contains('HomeTab.texthooker'), isFalse,
-        reason: 'texthooker tab 不得保活：保留现状按需重建');
+    expect(literal.contains('HomeTab.games'), isFalse,
+        reason: 'games tab 不得保活：保留现状按需重建');
   });
 
   test('buildBody 用 Offstage 保活而非 switch 每次重建', () {

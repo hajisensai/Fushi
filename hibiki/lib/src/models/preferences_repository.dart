@@ -410,8 +410,10 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── desktop clipboard lookup ─────────────────────────────────────────
 
+  /// 桌面剪贴板查词是否开启。默认 true：galgame UX 统一后，剪贴板 / galgame 台词都走同一条
+  /// 查词去向路由（默认落悬浮查词面板），故桌面开箱即用无需先手动开开关。
   bool get desktopClipboardEnabled =>
-      getPref('desktop_clipboard_enabled', defaultValue: false) as bool;
+      getPref('desktop_clipboard_enabled', defaultValue: true) as bool;
 
   Future<void> setDesktopClipboardEnabled(bool value) async {
     await setPref('desktop_clipboard_enabled', value);
