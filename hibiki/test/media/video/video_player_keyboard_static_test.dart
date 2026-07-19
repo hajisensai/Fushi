@@ -375,10 +375,14 @@ void main() {
       ).firstMatch(page);
       expect(body, isNotNull, reason: 'cannot find _onDismissBarrierTap body');
       final String b = body!.group(1)!;
-      final int hitAt = b.indexOf('_subtitleHitTester.hitTest(globalPos)');
+      // BUG-910：barrier 关闭判定用 exactOnly:true（跳过查词裙边容差），点字幕行周围空白
+      // halo 不误判成切词重查。查词/悬停仍用宽容差（不在本方法体）。
+      final int hitAt =
+          b.indexOf('_subtitleHitTester.hitTest(globalPos, exactOnly: true)');
       final int handlerAt = b.indexOf('_handleSubtitleLookupTap(');
       final int popAt = b.indexOf('_popNestedPopupAt(0)');
-      expect(hitAt, greaterThanOrEqualTo(0), reason: 'hit-test the char first');
+      expect(hitAt, greaterThanOrEqualTo(0),
+          reason: 'hit-test the char first with exactOnly (BUG-910)');
       expect(handlerAt, greaterThan(hitAt),
           reason: 'on hit, switch lookup through the lookup gate handler');
       expect(popAt, greaterThan(handlerAt),

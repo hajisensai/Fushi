@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 890 条。点号进各自文件。
+> 共 891 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-910](bugs/BUG-910-video-subtitle-dismiss-halo-reloop.md) | ✅ | ✅ | 视频字幕查词点空白想关闭却重复查同一个词 |
 | [BUG-909](bugs/BUG-909-remove-vertical-forensic-probes.md) | ✅ | ✅ | 移除发布版残留的竖排取证探针（TODO-792/753 系列 + 753-DIAG） |
 | [BUG-908](bugs/BUG-908-lan-sync-server-hardening.md) | ✅ | ✅ | LAN 局域网同步服务器健壮性欠账（token 膨胀 / PROPFIND 同步阻塞 / 写无互斥） |
 | [BUG-907](bugs/BUG-907-danmaku-layout-binary-and-isolate-parse.md) | ✅ | ✅ | 弹幕两项性能缺陷：布局每帧 O(N) 全量扫描 + 20MB sidecar 主 isolate 同步解析 |
