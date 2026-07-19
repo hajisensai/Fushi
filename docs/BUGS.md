@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 906 条。点号进各自文件。
+> 共 907 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-927](bugs/BUG-927-reader-native-selection-blocks-lookup-and-rightclick-crash.md) | ✅ | ✅ | 阅读器原生选区残留卡住查词 + 右键闪退 |
 | [BUG-925](bugs/BUG-925-settings-all-sections-collapsible.md) | ✅ | ✅ | 设置所有带标题分区都应可折叠，默认展开/收起互不影响 |
 | [BUG-924](bugs/BUG-924-video-dict-dismiss-shortcut.md) | ✅ | ✅ | 视频词典浮层无法用快捷键关闭·浮层开着时快捷键穿透控制视频 |
 | [BUG-923](bugs/BUG-923-immersive-cursor-lock-button-no-idle-rehide.md) | ✅ | ✅ | 沉浸模式鼠标光标与沉浸退出按钮静止时不隐藏（缺「空闲重隐」路径，除非把鼠标移到别处） |
