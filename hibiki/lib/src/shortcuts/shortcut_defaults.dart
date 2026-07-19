@@ -349,6 +349,18 @@ class ShortcutDefaults {
     ShortcutAction.videoSubtitleDelayIncrease: _kb([
       _key(LogicalKeyboardKey.keyX),
     ]),
+    // asbplayer 式「字幕偏移对齐」（用户请求）：Ctrl+Shift+← 把上一句、Ctrl+Shift+→ 把
+    // 下一句字幕的起点整体平移到当前播放点（按目标 cue 求绝对偏移，与 z/x 步进微调互补）。
+    // 镜像既有 Ctrl+←/→（跳句）的手感、asbplayer 用户肌肉记忆一致；Ctrl+Shift+箭头在
+    // video co-active 组内空闲（裸箭头=seek、Ctrl+箭头=跳句、上下=音量，均不冲突）。
+    // 键盘-only（手柄不绑）。macOS 表自动把 Ctrl→Meta（见 _macOS，与 Ctrl+箭头同款）。
+    ShortcutAction.videoAlignSubtitleToPrev: _kb([
+      _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoAlignSubtitleToNext: _kb([
+      _key(
+          LogicalKeyboardKey.arrowRight, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
     // TODO-700 T6：dpad 四向可绑触发键。默认各绑对应 dpad 键；键盘留空（方向焦点
     // 移动由箭头键 / 摇杆负责，避免与各页面方向键语义重复）。执行体 = 通用方向焦点
     // 移动（gamepadMoveFocusInDirection），见 gamepad_service._dispatchButton。

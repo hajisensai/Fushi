@@ -310,13 +310,59 @@ void main() {
           isTrue);
       // action->callback 接线在 videoActionCallbacks 里。
       expect(
-          shortcuts.contains(
-              'ShortcutAction.videoSubtitleDelayIncrease: '
+          shortcuts.contains('ShortcutAction.videoSubtitleDelayIncrease: '
               'actions.subtitleDelayIncrease'),
           isTrue);
       // 仍不引入旧的被否决实现名。
       expect(page.contains('_adjustSubtitleOffset'), isFalse);
       expect(page.contains('_subtitleOffsetStepMs'), isFalse);
+    });
+
+    test('asbplayer 式字幕偏移对齐绑 Ctrl+Shift+←/→，走纯函数 + _setDelayMs', () {
+      // 用户请求（本轮）：Ctrl+Shift+← 对齐上一句、Ctrl+Shift+→ 对齐下一句字幕到当前
+      // 播放点（按目标 cue 求绝对偏移，与 z/x 步进微调互补）。镜像 Ctrl+←/→ 跳句手感。
+      expect(
+        defaultHasKey(ShortcutAction.videoAlignSubtitleToPrev,
+            LogicalKeyboardKey.arrowLeft, modifiers: const <ModifierKey>{
+          ModifierKey.ctrl,
+          ModifierKey.shift
+        }),
+        isTrue,
+        reason: 'Ctrl+Shift+Left 对齐上一句字幕到当前点',
+      );
+      expect(
+        defaultHasKey(ShortcutAction.videoAlignSubtitleToNext,
+            LogicalKeyboardKey.arrowRight, modifiers: const <ModifierKey>{
+          ModifierKey.ctrl,
+          ModifierKey.shift
+        }),
+        isTrue,
+        reason: 'Ctrl+Shift+Right 对齐下一句字幕到当前点',
+      );
+      // 仍不绑裸箭头（箭头=time seek，TODO-090），也不绑 Ctrl+箭头（=跳句），避免撞语义。
+      expect(
+        defaultHasKey(ShortcutAction.videoAlignSubtitleToNext,
+            LogicalKeyboardKey.arrowRight,
+            modifiers: const <ModifierKey>{ModifierKey.ctrl}),
+        isFalse,
+        reason: 'Ctrl+Right 仍是跳句（videoNextSubtitle），不是对齐',
+      );
+      // action->callback 接线在 videoActionCallbacks 里。
+      expect(
+        shortcuts.contains(
+            'ShortcutAction.videoAlignSubtitleToPrev: actions.alignSubtitleToPrev'),
+        isTrue,
+      );
+      expect(
+        shortcuts.contains(
+            'ShortcutAction.videoAlignSubtitleToNext: actions.alignSubtitleToNext'),
+        isTrue,
+      );
+      // 页面胶水调纯函数 snapSubtitleDelayMs，写穿仍走既有 _setDelayMs（与 z/x 同源）。
+      expect(page.contains('_snapSubtitleDelayToCue(next: false)'), isTrue);
+      expect(page.contains('_snapSubtitleDelayToCue(next: true)'), isTrue);
+      expect(
+          page.contains('VideoPlayerController.snapSubtitleDelayMs('), isTrue);
     });
 
     test('speed changes by configured asbplayer step', () {

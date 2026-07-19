@@ -163,6 +163,13 @@ enum ShortcutAction {
       ShortcutScope.video, 'video_subtitle_delay_increase'),
   videoSubtitleDelayDecrease(
       ShortcutScope.video, 'video_subtitle_delay_decrease'),
+  // asbplayer 式「字幕偏移对齐」（用户请求，默认 Ctrl+Shift+←/→）：把上一句 / 下一句
+  // 字幕的起点整体平移到当前播放时间点（按目标 cue 求**绝对**偏移，一键粗对齐整轨；与
+  // z/x 的固定步进平移互补）。执行体走同一 _setDelayMs 写穿路径（clamp + 落盘 + OSD），
+  // 决策集中在纯函数 VideoPlayerController.snapSubtitleDelayMs。video co-active 组内
+  // Ctrl+Shift+箭头未被占用（裸箭头=time seek、Ctrl+箭头=跳句，均不冲突）。
+  videoAlignSubtitleToPrev(ShortcutScope.video, 'video_align_subtitle_to_prev'),
+  videoAlignSubtitleToNext(ShortcutScope.video, 'video_align_subtitle_to_next'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，
