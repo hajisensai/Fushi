@@ -2005,5 +2005,12 @@
   "games_rename": "重命名",
   "games_remove": "移除",
   "games_launch_unsupported": "启动游戏仅支持 Windows 桌面",
-  "games_exe_missing": "找不到游戏可执行文件"
+  "games_exe_missing": "找不到游戏可执行文件",
+  "galgame_helper_needed_title": "需要下载 galgame 引擎组件",
+  "galgame_helper_needed_body": "启动 galgame 需要引擎-hook 注入器组件（约 $size）。它含进程注入代码，与主程序分离分发以避免杀软误报。现在下载吗？",
+  "galgame_helper_size_unknown": "大小未知",
+  "galgame_helper_download": "下载",
+  "galgame_helper_downloading": "正在下载引擎组件…",
+  "galgame_helper_download_failed": "引擎组件下载失败：$error",
+  "galgame_helper_install_incomplete": "引擎组件安装不完整，请重试"
 }

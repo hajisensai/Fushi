@@ -122,7 +122,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       HibikiToast.show(msg: t.games_exe_missing);
       return;
     }
-    await GalgameSessionController.instance.launch(game);
+    await GalgameSessionController.instance.launch(game, context: context);
   }
 
   @override

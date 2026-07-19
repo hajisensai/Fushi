@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_window_gif.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
@@ -77,22 +79,34 @@ class GalgameSessionController extends ChangeNotifier {
   /// （CREATE_SUSPENDED；KiriKiriZ 等「启动即建音频设备」的引擎必须走此路，attach 会漏）→
   /// 就绪后以引擎-hook 为音频源 + 接文本 hook 轮询（台词自动进悬浮查词面板）+ 按游戏 PID 找主
   /// 窗口绑定（制卡截图用）。非 Windows / 各步失败均明确 toast、不静默（起不来时保持原状）。
-  Future<void> launch(GalgameEntry game) => launchFromExe(game.exePath);
+  Future<void> launch(GalgameEntry game, {required BuildContext context}) =>
+      launchFromExe(game.exePath, context: context);
 
   /// launch 的核心：给定游戏 exe 路径完成上述启动 + 注入 + 接线 + 绑定窗口。
-  Future<void> launchFromExe(String exe) async {
+  Future<void> launchFromExe(String exe,
+      {required BuildContext context}) async {
     if (!Platform.isWindows) {
       HibikiToast.show(msg: t.external_window_unsupported);
       return;
     }
     final bool? is32 = await EngineHookGalAudioSource.exeIs32Bit(exe);
-    final String? injector = _resolveGalInjectorPath(is32Bit: is32 ?? false);
+    final bool is32Bit = is32 ?? false;
+    String? injector = _resolveGalInjectorPath(is32Bit: is32Bit);
     if (injector == null) {
-      HibikiToast.show(
-        msg:
-            'galgame 引擎-hook 注入器缺失（voice_hook/${(is32 ?? false) ? 'x86' : 'x64'}）',
+      // 注入器缺失（隔离 helper 未随包分发）：按需下载（方案 B）——弹确认对话框（标大小）
+      // → 用户确认→下载对应架构 zip→sha256 校验→解压到 voice_hook/<arch>/。用户取消或
+      // 下载失败则中止启动（已给提示，Never break）。
+      if (!context.mounted) return;
+      final bool installed = await GalgameHelperInstaller().ensureInjector(
+        is32Bit: is32Bit,
+        context: context,
       );
-      return;
+      if (!installed) return;
+      injector = _resolveGalInjectorPath(is32Bit: is32Bit);
+      if (injector == null) {
+        HibikiToast.show(msg: t.galgame_helper_install_incomplete);
+        return;
+      }
     }
     HibikiToast.show(msg: '正在拉起游戏并注入引擎-hook…');
     final EngineHookGalAudioSource src = EngineHookGalAudioSource(
