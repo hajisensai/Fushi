@@ -10,8 +10,6 @@ import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
-import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
-import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
@@ -84,11 +82,23 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     super.dispose();
   }
 
-  /// qBittorrent 是否未配置（推送按钮禁用；浏览选种不禁）。
-  bool get _qbMissing {
-    final QbConnectionConfig? config = ref.read(appProvider).qbConnectionConfig;
-    return config == null || !config.isConfigured;
+  /// 下载后端是否就绪（推送按钮禁用条件；浏览选种不禁）。默认（auto）在桌面
+  /// 走内置引擎、开箱即用；只有显式外接 qb 且没填地址才算未就绪。
+  bool get _backendReady {
+    final AppModel appModel = ref.read(appProvider);
+    final QbConnectionConfig config =
+        appModel.qbConnectionConfig ?? const QbConnectionConfig();
+    // 内置引擎宿主就绪（桌面 + DLL）且未显式选外接 qb → 直接可下载。
+    if (appModel.isEmbeddedTorrentReady &&
+        config.backend != QbConnectionConfig.backendQbittorrent) {
+      return true;
+    }
+    // 否则走外接 qb，需要填了地址。
+    return config.baseUrl.trim().isNotEmpty;
   }
+
+  /// 后端未就绪（推送禁用 + 提示横幅）。
+  bool get _qbMissing => !_backendReady;
 
   void _snack(String message) {
     if (!mounted) return;
@@ -240,10 +250,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   /// 推送下载：暂存字幕 → 落计划 → 推 qBittorrent（失败回滚计划）→ 催一轮 tick。
   Future<void> _push() async {
     final AppModel appModel = ref.read(appProvider);
-    final QbConnectionConfig? config = appModel.qbConnectionConfig;
+    // null（全新用户没进过设置）→ 默认配置（auto：桌面内置引擎，开箱即用）。
+    final QbConnectionConfig config =
+        appModel.qbConnectionConfig ?? const QbConnectionConfig();
     final NyaaTorrent? torrent = _selectedTorrent;
     final AniListMedia? media = _selectedMedia;
-    if (config == null || !config.isConfigured) return;
+    if (!_backendReady) return;
     if (torrent == null || media == null || _pushing) return;
     final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
     if (store == null) {
@@ -301,12 +313,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     );
     await store.save(plan);
 
-    // ③ 推种子后端（顺序下载 + 首尾块优先，支持边下边播）。
-    final TorrentBackend backend = QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.baseUrl,
-      username: config.username,
-      password: config.password,
-    ));
+    // ③ 推种子后端（顺序下载 + 首尾块优先，支持边下边播）。按配置解析后端
+    // （默认桌面走内置 libtorrent 引擎；显式外接才走 qb）——与轮询服务同一
+    // 选择逻辑，不再硬编码 qb。
+    final TorrentBackend backend = appModel.createTorrentBackend(config);
     bool pushed = false;
     try {
       await backend.prepareCategory(config.category);
