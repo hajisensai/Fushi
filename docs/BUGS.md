@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 859 条。点号进各自文件。
+> 共 860 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-879](bugs/BUG-879-manosaba-text-loopback-hybrid.md) | ✅ | ✅ | Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留 |
 | [BUG-878](bugs/BUG-878-database-schema-v48-compat.md) | ✅ | ✅ | 游戏分支无法打开 schema v48 用户数据库 |
 | [BUG-877](bugs/BUG-877-texthooker-popup-ui-scale.md) | ✅ | ✅ | 捕获工作台非默认缩放下查词断言 |
 | [BUG-876](bugs/BUG-876-gal-text-thread-selector.md) | ✅ | ✅ | Galgame 捕获文本缺少 Luna 风格线程选择 |

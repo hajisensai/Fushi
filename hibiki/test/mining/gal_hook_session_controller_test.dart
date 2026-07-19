@@ -163,27 +163,106 @@ void main() {
       if (dir.existsSync()) await dir.delete(recursive: true);
     }
   });
+
+  test('text-only engine hook stays active with loopback audio fallback',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 123456,
+          text: 'やめろ化け物め！',
+          threadId: 99,
+          hookName: 'Unity',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 7, pid: 19332, title: 'manosaba'),
+    );
+
+    expect(controller.state.phase, GalHookSessionPhase.degraded);
+    expect(controller.state.audioBackend, GalHookAudioBackend.systemLoopback);
+    expect(controller.state.fallbackReason, 'engine_pcm_unavailable');
+    expect(engine.stopCalls, 0,
+        reason: 'text helper must remain alive when only engine PCM is absent');
+    expect(loopback.startCalls, 1);
+    expect(await controller.selectTextThread(99), isTrue,
+        reason: 'retained engine helper must still accept Luna thread choices');
+
+    for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, hasLength(1));
+    expect(service.entries.single.text, 'やめろ化け物め！');
+    expect(
+      service.entries.single.audioStatus,
+      TexthookerLineAudioStatus.fallback,
+      reason: 'loopback availability must not be mislabeled as no audio',
+    );
+    expect(service.entries.single.audioBackend, 'system_loopback');
+
+    await controller.close();
+    expect(engine.stopCalls, 1);
+    expect(loopback.stopCalls, 1);
+    endpoints.dispose();
+  });
 }
 
 class _FakeEngineSource extends EngineHookGalAudioSource {
-  _FakeEngineSource({required this.pairedBytes})
-      : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
+  _FakeEngineSource({
+    required this.pairedBytes,
+    this.audioFormat = const PcmFormat(
+      sampleRate: 44100,
+      channels: 1,
+      bitsPerSample: 16,
+      isFloat: false,
+    ),
+    this.textReady = false,
+    this.polledLines = const <GalHookedLine>[],
+  }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final Uint8List pairedBytes;
+  final PcmFormat? audioFormat;
+  final bool textReady;
+  final List<GalHookedLine> polledLines;
   final List<int> pairedTimestamps = <int>[];
+  int stopCalls = 0;
+  int _pollCalls = 0;
 
   @override
   int? get gamePid => 4242;
 
   @override
-  Future<PcmFormat?> start() async {
-    return const PcmFormat(
-      sampleRate: 44100,
-      channels: 1,
-      bitsPerSample: 16,
-      isFloat: false,
-    );
-  }
+  bool get textHookReady => textReady;
+
+  @override
+  Future<PcmFormat?> start() async => audioFormat;
 
   @override
   Future<Uint8List?> grabPairedVoiceBytes(
@@ -195,10 +274,55 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   }
 
   @override
+  Future<GalAudioSlice?> grabUtterance(
+    int tsMs, {
+    int? sourcePtr,
+    List<int>? exclude,
+  }) async =>
+      null;
+
+  @override
+  Future<GalAudioSlice?> grabClipNear(
+    int tsMs, {
+    int tolMs = 8000,
+  }) async =>
+      null;
+
+  @override
   Future<GalTextPoll?> pollText(int sinceSeq) async {
-    return const GalTextPoll(count: 0, lines: <GalHookedLine>[]);
+    _pollCalls++;
+    return GalTextPoll(
+      count: polledLines.length,
+      lines: _pollCalls == 1 ? polledLines : const <GalHookedLine>[],
+    );
   }
 
   @override
-  Future<void> stop() async {}
+  Future<bool> selectTextThread(int? threadId) async => true;
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+  }
+}
+
+class _FakeLoopbackSource extends LoopbackGalAudioSource {
+  int startCalls = 0;
+  int stopCalls = 0;
+
+  @override
+  Future<PcmFormat?> start() async {
+    startCalls++;
+    return const PcmFormat(
+      sampleRate: 44100,
+      channels: 2,
+      bitsPerSample: 32,
+      isFloat: true,
+    );
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+  }
 }
