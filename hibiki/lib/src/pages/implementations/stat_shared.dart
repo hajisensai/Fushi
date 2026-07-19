@@ -46,6 +46,26 @@ String formatStatTime(int ms) {
   return t.stat_format_hours_minutes(h: h, m: m);
 }
 
+/// 统计页字数外显：≥1 万套「万」文案（保留 1 位小数），否则整数字文案。
+/// 与阅读统计页原私有 `_formatChars` 同口径，供热力图气泡等复用（机械去重）。
+String formatStatChars(int chars) {
+  if (chars >= 10000) {
+    return t.stat_format_chars_wan(n: (chars / 10000).toStringAsFixed(1));
+  }
+  return t.stat_format_chars(n: chars);
+}
+
+/// 热力图气泡日期标签：`M-dd`；跨年补年份成 `Y-M-dd`。[dateKey] 形如 `2026-07-18`
+/// （[statDateKey] 格式）；无法解析时原样返回。
+String formatStatHeatmapDay(String dateKey) {
+  final DateTime? d = DateTime.tryParse(dateKey);
+  if (d == null) return dateKey;
+  final DateTime now = DateTime.now();
+  final String dd = d.day.toString().padLeft(2, '0');
+  if (d.year == now.year) return '${d.month}-$dd';
+  return '${d.year}-${d.month}-$dd';
+}
+
 /// 「今日按小时」柱状图区块（标题 + [StatHourlyChartPainter] 画布）。
 /// [hourlyMs] 为 0-23 每小时的毫秒值。
 Widget buildStatHourlyChartSection(BuildContext context, List<int> hourlyMs) {

@@ -54,6 +54,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
+import 'package:hibiki/src/pages/implementations/stat_shared.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
@@ -2037,13 +2038,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   }
 
   /// 顶部观看活动热力图卡（GitHub 式贡献图）：按每日观看时长 [_watchMsByDay] 铺
-  /// 最近数周方格，整卡可点开完整视频统计页。取代旧的「总数/未完成/近7天导入」三格
-  /// 状态计数——那是状态而非统计（用户反馈），热力图直观展示观看活跃度。
+  /// 数周方格。可点**标题**打开完整视频统计页；点某天格子弹气泡看当日观看时长；
+  /// 数据超首屏时热力图右上出现翻页箭头看更早历史。取代旧的「总数/未完成/近7天
+  /// 导入」三格状态计数——那是状态而非统计（用户反馈），热力图直观展示观看活跃度。
   Widget _buildWatchHeatmapCard(HibikiDesignTokens tokens) {
-    final StatHeatmapModel model = buildStatHeatmap(
-      valueByDateKey: _watchMsByDay,
-      now: DateTime.now(),
-    );
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: tokens.surfaces.group,
@@ -2058,13 +2056,47 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Text(t.video_watch_activity, style: tokens.type.sectionLabel),
+            _buildStatHeatmapTitle(
+              tokens,
+              t.video_watch_activity,
+              _openStatistics,
+            ),
             SizedBox(height: tokens.spacing.gap),
             StatContributionHeatmap(
-              model: model,
+              valueByDateKey: _watchMsByDay,
+              now: DateTime.now(),
               baseColor: tokens.surfaces.primary,
               emptyColor: tokens.surfaces.card,
-              onTap: _openStatistics,
+              valueLabel: (String dateKey, int ms) =>
+                  '${formatStatHeatmapDay(dateKey)} · ${formatStatTime(ms)}',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 热力图卡可点标题：文字 + 尾随小箭头，点击打开对应统计页（取代旧的整卡 onTap，
+  /// 好把格子点击让给「查看每日数值」）。
+  Widget _buildStatHeatmapTitle(
+    HibikiDesignTokens tokens,
+    String label,
+    VoidCallback onOpen,
+  ) {
+    return InkWell(
+      onTap: onOpen,
+      borderRadius: const BorderRadius.all(Radius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(label, style: tokens.type.sectionLabel),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.chevron_right,
+              size: 16,
+              color: tokens.type.sectionLabel.color,
             ),
           ],
         ),
