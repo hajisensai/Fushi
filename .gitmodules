@@ -1,0 +1,3 @@
+[submodule "references/ReinaManager"]
+	path = references/ReinaManager
+	url = https://github.com/huoshen80/ReinaManager.git

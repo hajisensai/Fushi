@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920">
+  <defs>
+    <linearGradient id="coverA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3949ab"/>
+      <stop offset="0.55" stop-color="#7e57c2"/>
+      <stop offset="1" stop-color="#26a69a"/>
+    </linearGradient>
+    <linearGradient id="screenA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#263238"/>
+      <stop offset="1" stop-color="#455a64"/>
+    </linearGradient>
+    <filter id="shadowA" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#1d192b" flood-opacity="0.10"/>
+    </filter>
+    <style>
+      .t{font-family:"Segoe UI","Microsoft YaHei",sans-serif;fill:#1d1b20}
+      .muted{fill:#6f6b75}.small{font-size:13px}.body{font-size:15px}.label{font-size:14px;font-weight:600}
+      .title{font-size:23px;font-weight:700}.h1{font-size:28px;font-weight:750}.chip{font-size:12px;font-weight:650}
+      .panel{fill:#fff;stroke:#e5e1e8;stroke-width:1}.hair{stroke:#e5e1e8;stroke-width:1}
+    </style>
+  </defs>
+  <rect width="1600" height="920" fill="#f7f5fa"/>
+
+  <!-- App rail -->
+  <rect x="0" y="0" width="188" height="920" fill="#fffbfe"/>
+  <line x1="188" y1="0" x2="188" y2="920" stroke="#e5e1e8"/>
+  <circle cx="36" cy="38" r="18" fill="#6750a4"/>
+  <path d="M28 41c6-12 14-12 18 0" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  <text x="66" y="45" class="t title">Hibiki</text>
+  <g class="t body">
+    <text x="54" y="118" class="muted">书架</text>
+    <text x="54" y="170" class="muted">视频</text>
+    <rect x="12" y="190" width="164" height="48" rx="14" fill="#eee8f4"/>
+    <circle cx="34" cy="214" r="6" fill="#6750a4"/><text x="54" y="220" font-weight="700" fill="#6750a4">游戏</text>
+    <text x="54" y="274" class="muted">查词</text>
+    <text x="54" y="326" class="muted">设置</text>
+  </g>
+  <rect x="18" y="832" width="152" height="58" rx="16" fill="#f2edf5"/>
+  <circle cx="38" cy="854" r="5" fill="#2e7d32"/><text x="52" y="859" class="t label">会话运行中</text>
+  <text x="28" y="878" class="t small muted">00:37:18 · PID 8420</text>
+
+  <!-- Top bar -->
+  <rect x="188" y="0" width="1412" height="72" fill="#fffbfe"/>
+  <line x1="188" y1="72" x2="1600" y2="72" stroke="#e5e1e8"/>
+  <text x="220" y="43" class="t h1">游戏 / 捕获工作台</text>
+  <rect x="486" y="21" width="124" height="32" rx="16" fill="#d7f8dc"/>
+  <circle cx="506" cy="37" r="5" fill="#1b5e20"/><text x="518" y="42" class="t chip" fill="#174d1d">全链可用</text>
+  <rect x="1177" y="17" width="102" height="38" rx="19" fill="#f2edf5"/>
+  <text x="1203" y="41" class="t label">附着</text>
+  <rect x="1291" y="17" width="132" height="38" rx="19" fill="#6750a4"/>
+  <path d="M1311 28l13 8-13 8z" fill="#fff"/><text x="1333" y="41" font-family="Segoe UI,Microsoft YaHei" font-size="14" font-weight="700" fill="#fff">重新启动</text>
+  <rect x="1435" y="17" width="132" height="38" rx="19" fill="#fff" stroke="#ba1a1a"/>
+  <rect x="1454" y="29" width="12" height="12" rx="2" fill="#ba1a1a"/><text x="1477" y="41" class="t label" fill="#ba1a1a">停止捕获</text>
+
+  <!-- Game/session summary -->
+  <rect x="212" y="94" width="1356" height="104" rx="22" class="panel" filter="url(#shadowA)"/>
+  <rect x="230" y="110" width="72" height="72" rx="15" fill="url(#coverA)"/>
+  <circle cx="276" cy="134" r="15" fill="#ffffff" fill-opacity="0.22"/>
+  <path d="M242 171l35-32 25 23v20h-60z" fill="#fff" fill-opacity="0.24"/>
+  <text x="322" y="135" class="t title">オトメ＊ドメイン</text>
+  <text x="322" y="160" class="t small muted">otomeki.exe · KiriKiriZ · x86 · 由 Hibiki 早注入启动</text>
+  <rect x="322" y="169" width="94" height="23" rx="11.5" fill="#fff4d1"/><text x="339" y="185" class="t chip" fill="#744600">混音来源</text>
+  <rect x="424" y="169" width="112" height="23" rx="11.5" fill="#e2f4ff"/><text x="441" y="185" class="t chip" fill="#004f6d">44.1kHz / 2ch</text>
+  <rect x="544" y="169" width="88" height="23" rx="11.5" fill="#d7f8dc"/><text x="560" y="185" class="t chip" fill="#174d1d">文本活跃</text>
+  <text x="1040" y="127" class="t small muted">快捷测试</text>
+  <rect x="1038" y="140" width="132" height="42" rx="14" fill="#f2edf5"/><text x="1064" y="166" class="t label">试听最近句</text>
+  <rect x="1182" y="140" width="118" height="42" rx="14" fill="#f2edf5"/><text x="1208" y="166" class="t label">测试截图</text>
+  <rect x="1312" y="140" width="152" height="42" rx="14" fill="#e8def8"/><text x="1342" y="166" class="t label" fill="#4f378b">生成测试卡</text>
+  <text x="1487" y="162" class="t small muted">⌘ K</text>
+
+  <!-- Live text column -->
+  <rect x="212" y="218" width="704" height="672" rx="22" class="panel"/>
+  <text x="238" y="254" class="t title">实时台词</text>
+  <text x="238" y="278" class="t small muted">文本到达后立即锁定对应语音；点击台词可查词或重试匹配</text>
+  <rect x="720" y="234" width="94" height="32" rx="16" fill="#f2edf5"/><text x="746" y="255" class="t small">自动滚动</text>
+  <rect x="824" y="234" width="66" height="32" rx="16" fill="#f2edf5"/><text x="844" y="255" class="t small">筛选</text>
+  <line x1="212" y1="294" x2="916" y2="294" class="hair"/>
+
+  <g class="t">
+    <text x="238" y="326" class="small muted">18:42:07.228</text>
+    <text x="338" y="326" class="body">それじゃ、行ってきます。</text>
+    <rect x="740" y="307" width="64" height="24" rx="12" fill="#d7f8dc"/><text x="755" y="324" class="chip" fill="#174d1d">已匹配</text>
+    <rect x="812" y="307" width="74" height="24" rx="12" fill="#e2f4ff"/><text x="826" y="324" class="chip" fill="#004f6d">2.84 秒</text>
+    <line x1="238" y1="348" x2="890" y2="348" class="hair"/>
+
+    <rect x="224" y="360" width="680" height="122" rx="16" fill="#f4effa" stroke="#d0bcff"/>
+    <rect x="224" y="360" width="5" height="122" rx="2.5" fill="#6750a4"/>
+    <text x="244" y="386" class="small muted">18:42:11.614 · #1842 · Luna 文本环</text>
+    <text x="244" y="419" font-size="19" font-weight="650">先輩、今日は一緒に帰りませんか？</text>
+    <g fill="#6750a4" opacity="0.78">
+      <rect x="246" y="446" width="4" height="12" rx="2"/><rect x="254" y="440" width="4" height="18" rx="2"/>
+      <rect x="262" y="434" width="4" height="24" rx="2"/><rect x="270" y="442" width="4" height="16" rx="2"/>
+      <rect x="278" y="429" width="4" height="29" rx="2"/><rect x="286" y="436" width="4" height="22" rx="2"/>
+      <rect x="294" y="447" width="4" height="11" rx="2"/><rect x="302" y="432" width="4" height="26" rx="2"/>
+      <rect x="310" y="439" width="4" height="19" rx="2"/><rect x="318" y="444" width="4" height="14" rx="2"/>
+    </g>
+    <rect x="628" y="440" width="74" height="25" rx="12.5" fill="#d7f8dc"/><text x="645" y="457" class="chip" fill="#174d1d">音频就绪</text>
+    <rect x="710" y="440" width="72" height="25" rx="12.5" fill="#e8def8"/><text x="727" y="457" class="chip" fill="#4f378b">画面就绪</text>
+    <rect x="790" y="440" width="92" height="25" rx="12.5" fill="#6750a4"/><text x="811" y="457" class="chip" fill="#fff">按键出卡</text>
+
+    <text x="238" y="516" class="small muted">18:42:15.083</text>
+    <text x="338" y="516" class="body">えっ……急にどうしたんですか。</text>
+    <rect x="740" y="497" width="64" height="24" rx="12" fill="#fff4d1"/><text x="755" y="514" class="chip" fill="#744600">自动轨</text>
+    <rect x="812" y="497" width="74" height="24" rx="12" fill="#e2f4ff"/><text x="826" y="514" class="chip" fill="#004f6d">1.92 秒</text>
+    <line x1="238" y1="540" x2="890" y2="540" class="hair"/>
+
+    <text x="238" y="574" class="small muted">18:42:18.901</text>
+    <text x="338" y="574" class="body">別に、深い意味はありませんよ。</text>
+    <rect x="740" y="555" width="64" height="24" rx="12" fill="#fde9e7"/><text x="755" y="572" class="chip" fill="#8c1d18">未匹配</text>
+    <rect x="812" y="555" width="74" height="24" rx="12" fill="#f2edf5"/><text x="828" y="572" class="chip">重试</text>
+    <line x1="238" y1="598" x2="890" y2="598" class="hair"/>
+
+    <text x="238" y="632" class="small muted">18:42:23.447</text>
+    <text x="338" y="632" class="body">ほら、早くしないと置いていきます。</text>
+    <rect x="740" y="613" width="64" height="24" rx="12" fill="#d7f8dc"/><text x="755" y="630" class="chip" fill="#174d1d">已匹配</text>
+    <rect x="812" y="613" width="74" height="24" rx="12" fill="#e2f4ff"/><text x="826" y="630" class="chip" fill="#004f6d">3.12 秒</text>
+    <line x1="238" y1="656" x2="890" y2="656" class="hair"/>
+  </g>
+  <rect x="232" y="824" width="664" height="46" rx="16" fill="#f2edf5"/>
+  <circle cx="256" cy="847" r="8" fill="#2e7d32"/><text x="276" y="852" class="t body">等待下一句文本…</text>
+  <text x="754" y="852" class="t small muted">最近 0.8 秒</text>
+
+  <!-- Preview center -->
+  <rect x="936" y="218" width="354" height="672" rx="22" class="panel"/>
+  <text x="960" y="254" class="t title">当前素材</text>
+  <rect x="960" y="278" width="306" height="178" rx="16" fill="url(#screenA)"/>
+  <circle cx="1138" cy="348" r="48" fill="#fff" fill-opacity="0.08"/>
+  <path d="M1008 425l74-76 60 50 50-37 74 63z" fill="#fff" fill-opacity="0.15"/>
+  <rect x="976" y="294" width="78" height="24" rx="12" fill="#0d1b1e" fill-opacity="0.72"/><text x="991" y="311" font-family="Segoe UI,Microsoft YaHei" font-size="12" font-weight="650" fill="#fff">窗口已绑定</text>
+  <text x="960" y="486" class="t label">句音波形 · 2.84 秒</text>
+  <rect x="960" y="500" width="306" height="94" rx="14" fill="#f4effa"/>
+  <line x1="974" y1="548" x2="1252" y2="548" stroke="#cac4d0"/>
+  <g fill="#6750a4">
+    <rect x="981" y="535" width="5" height="26" rx="2"/><rect x="991" y="526" width="5" height="44" rx="2"/>
+    <rect x="1001" y="518" width="5" height="60" rx="2"/><rect x="1011" y="532" width="5" height="32" rx="2"/>
+    <rect x="1021" y="512" width="5" height="72" rx="2"/><rect x="1031" y="523" width="5" height="50" rx="2"/>
+    <rect x="1041" y="529" width="5" height="38" rx="2"/><rect x="1051" y="515" width="5" height="66" rx="2"/>
+    <rect x="1061" y="520" width="5" height="56" rx="2"/><rect x="1071" y="532" width="5" height="32" rx="2"/>
+    <rect x="1081" y="525" width="5" height="46" rx="2"/><rect x="1091" y="516" width="5" height="64" rx="2"/>
+    <rect x="1101" y="521" width="5" height="54" rx="2"/><rect x="1111" y="534" width="5" height="28" rx="2"/>
+    <rect x="1121" y="529" width="5" height="38" rx="2"/><rect x="1131" y="517" width="5" height="62" rx="2"/>
+    <rect x="1141" y="524" width="5" height="48" rx="2"/><rect x="1151" y="531" width="5" height="34" rx="2"/>
+    <rect x="1161" y="520" width="5" height="56" rx="2"/><rect x="1171" y="514" width="5" height="68" rx="2"/>
+    <rect x="1181" y="527" width="5" height="42" rx="2"/><rect x="1191" y="536" width="5" height="24" rx="2"/>
+    <rect x="1201" y="525" width="5" height="46" rx="2"/><rect x="1211" y="531" width="5" height="34" rx="2"/>
+    <rect x="1221" y="537" width="5" height="22" rx="2"/><rect x="1231" y="541" width="5" height="14" rx="2"/>
+  </g>
+  <circle cx="980" cy="624" r="19" fill="#6750a4"/><path d="M975 614l13 10-13 10z" fill="#fff"/>
+  <text x="1010" y="629" class="t body">试听</text><text x="1198" y="629" class="t small muted">峰值 -8.4 dB</text>
+  <line x1="960" y1="650" x2="1266" y2="650" class="hair"/>
+  <text x="960" y="680" class="t label">当前音轨</text>
+  <rect x="960" y="694" width="306" height="76" rx="14" fill="#f7f2fa" stroke="#e5e1e8"/>
+  <circle cx="986" cy="720" r="8" fill="#2e7d32"/>
+  <text x="1004" y="716" class="t label">轨道 #2 · 自动命中</text>
+  <text x="1004" y="739" class="t small muted">order 1 · 44.1k / 2ch · 184 clips</text>
+  <text x="1186" y="738" class="t small" fill="#6750a4">更改</text>
+  <rect x="960" y="792" width="306" height="62" rx="14" fill="#fff4d1"/>
+  <path d="M980 810l10 18h-20z" fill="#8d5a00"/><text x="1004" y="816" class="t label" fill="#5f3b00">此引擎当前为混音输出</text>
+  <text x="1004" y="838" class="t small" fill="#744600">BGM 可能进入句子音频 · 查看说明</text>
+
+  <!-- Health rail -->
+  <rect x="1310" y="218" width="258" height="672" rx="22" class="panel"/>
+  <text x="1334" y="254" class="t title">健康状态</text>
+  <text x="1517" y="253" class="t small" fill="#6750a4">诊断</text>
+  <g class="t">
+    <circle cx="1342" cy="298" r="8" fill="#2e7d32"/><text x="1362" y="295" class="label">游戏进程</text><text x="1362" y="315" class="small muted">PID 8420 · x86</text>
+    <line x1="1334" y1="334" x2="1544" y2="334" class="hair"/>
+    <circle cx="1342" cy="365" r="8" fill="#2e7d32"/><text x="1362" y="362" class="label">窗口捕获</text><text x="1362" y="382" class="small muted">1280 × 720 · 34ms</text>
+    <line x1="1334" y1="401" x2="1544" y2="401" class="hair"/>
+    <circle cx="1342" cy="432" r="8" fill="#2e7d32"/><text x="1362" y="429" class="label">文本 hook</text><text x="1362" y="449" class="small muted">最近 0.8 秒 · 1842 行</text>
+    <line x1="1334" y1="468" x2="1544" y2="468" class="hair"/>
+    <circle cx="1342" cy="499" r="8" fill="#ed9f05"/><text x="1362" y="496" class="label">音频来源</text><text x="1362" y="516" class="small muted">Engine hook · 混音</text>
+    <line x1="1334" y1="535" x2="1544" y2="535" class="hair"/>
+    <circle cx="1342" cy="566" r="8" fill="#2e7d32"/><text x="1362" y="563" class="label">句音匹配</text><text x="1362" y="583" class="small muted">92% · 缓存 37 / 200</text>
+    <line x1="1334" y1="602" x2="1544" y2="602" class="hair"/>
+    <circle cx="1342" cy="633" r="8" fill="#2e7d32"/><text x="1362" y="630" class="label">AnkiConnect</text><text x="1362" y="650" class="small muted">galgame · 可写入</text>
+  </g>
+  <rect x="1330" y="688" width="218" height="78" rx="16" fill="#f4effa"/>
+  <text x="1348" y="714" class="t label">本会话</text>
+  <text x="1348" y="740" class="t body">18 行文本 · 17 段音频</text>
+  <text x="1348" y="760" class="t small muted">5 张卡 · 1 次 fallback</text>
+  <rect x="1330" y="782" width="218" height="48" rx="16" fill="#f2edf5"/>
+  <text x="1371" y="812" class="t label">导出诊断摘要</text>
+  <text x="1334" y="862" class="t small muted">草图 A · 推荐默认界面</text>
+</svg>

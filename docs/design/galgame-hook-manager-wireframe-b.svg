@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920">
+  <defs>
+    <linearGradient id="diagB" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#151923"/><stop offset="1" stop-color="#0c0f16"/></linearGradient>
+    <style>
+      .t{font-family:"Segoe UI","Microsoft YaHei",sans-serif;fill:#e9edf6}.muted{fill:#929bad}.dim{fill:#697386}
+      .small{font-size:12px}.body{font-size:14px}.label{font-size:13px;font-weight:650}.title{font-size:20px;font-weight:700}.h1{font-size:25px;font-weight:750}
+      .panel{fill:#171c27;stroke:#2a3140;stroke-width:1}.hair{stroke:#2a3140;stroke-width:1}.mono{font-family:"Cascadia Mono","Consolas",monospace}
+    </style>
+    <filter id="glowB"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1600" height="920" fill="url(#diagB)"/>
+
+  <!-- Header -->
+  <rect x="0" y="0" width="1600" height="66" fill="#11151e"/>
+  <line x1="0" y1="66" x2="1600" y2="66" stroke="#2a3140"/>
+  <circle cx="31" cy="33" r="14" fill="#9b83d5"/><path d="M24 35c5-10 11-10 15 0" fill="none" stroke="#11151e" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="55" y="40" class="t h1">游戏 / 兼容性诊断</text>
+  <rect x="310" y="18" width="176" height="30" rx="15" fill="#173728" stroke="#2fbd73"/>
+  <circle cx="330" cy="33" r="5" fill="#4ee28c" filter="url(#glowB)"/><text x="342" y="38" class="t label" fill="#8cf0b5">RUNNING · 00:37:18</text>
+  <text x="517" y="39" class="t body muted">otomeki.exe</text><text x="616" y="39" class="t body dim">PID 8420 · x86 · KiriKiriZ</text>
+  <rect x="1260" y="14" width="94" height="38" rx="10" fill="#202735"/><text x="1284" y="39" class="t label">清空日志</text>
+  <rect x="1364" y="14" width="104" height="38" rx="10" fill="#202735"/><text x="1385" y="39" class="t label">导出诊断</text>
+  <rect x="1478" y="14" width="102" height="38" rx="10" fill="#47222a" stroke="#f06a75"/><text x="1503" y="39" class="t label" fill="#ffabb1">停止捕获</text>
+
+  <!-- Pipeline -->
+  <rect x="18" y="84" width="264" height="818" rx="16" class="panel"/>
+  <text x="38" y="119" class="t title">会话管线</text><text x="211" y="118" class="t small" fill="#9b83d5">重新探测</text>
+  <line x1="57" y1="159" x2="57" y2="624" stroke="#394253" stroke-width="3"/>
+  <g class="t">
+    <circle cx="57" cy="165" r="12" fill="#2fbd73"/><path d="M51 165l4 4 8-9" fill="none" stroke="#0d1711" stroke-width="2"/>
+    <text x="83" y="162" class="label">RESOLVE</text><text x="83" y="181" class="small muted">exe / SHA / x86 · 14ms</text>
+    <circle cx="57" cy="233" r="12" fill="#2fbd73"/><path d="M51 233l4 4 8-9" fill="none" stroke="#0d1711" stroke-width="2"/>
+    <text x="83" y="230" class="label">LAUNCH</text><text x="83" y="249" class="small muted">CREATE_SUSPENDED · 81ms</text>
+    <circle cx="57" cy="301" r="12" fill="#2fbd73"/><path d="M51 301l4 4 8-9" fill="none" stroke="#0d1711" stroke-width="2"/>
+    <text x="83" y="298" class="label">INJECT</text><text x="83" y="317" class="small muted">helper x86 · hooked=1</text>
+    <circle cx="57" cy="369" r="12" fill="#2fbd73"/><path d="M51 369l4 4 8-9" fill="none" stroke="#0d1711" stroke-width="2"/>
+    <text x="83" y="366" class="label">OPEN IPC</text><text x="83" y="385" class="small muted">map v2 · 23ms</text>
+    <circle cx="57" cy="437" r="12" fill="#2fbd73"/><path d="M51 437l4 4 8-9" fill="none" stroke="#0d1711" stroke-width="2"/>
+    <text x="83" y="434" class="label">TEXT SIGNAL</text><text x="83" y="453" class="small muted">seq 1842 · age 0.8s</text>
+    <circle cx="57" cy="505" r="12" fill="#eab64d"/><text x="53" y="510" class="label" fill="#1b1406">!</text>
+    <text x="83" y="502" class="label">AUDIO SIGNAL</text><text x="83" y="521" class="small" fill="#eab64d">engine · mixed output</text>
+    <circle cx="57" cy="573" r="12" fill="#2fbd73"/><path d="M51 573l4 4 8-9" fill="none" stroke="#0d1711" stroke-width="2"/>
+    <text x="83" y="570" class="label">WINDOW / ANKI</text><text x="83" y="589" class="small muted">bound · writable</text>
+    <circle cx="57" cy="641" r="12" fill="#2fbd73"/><path d="M51 641l4 4 8-9" fill="none" stroke="#0d1711" stroke-width="2"/>
+    <text x="83" y="638" class="label">RUNNING</text><text x="83" y="657" class="small muted">degraded capability</text>
+  </g>
+  <rect x="36" y="700" width="228" height="82" rx="12" fill="#202735"/>
+  <text x="52" y="725" class="t label">Fallback 决策</text>
+  <text x="52" y="748" class="t small mono" fill="#eab64d">ENGINE_HOOK_MIXED</text>
+  <text x="52" y="768" class="t small muted">继续使用 engine；标记混音能力</text>
+  <rect x="36" y="797" width="108" height="38" rx="10" fill="#283142"/><text x="58" y="821" class="t label">重启阶段</text>
+  <rect x="154" y="797" width="110" height="38" rx="10" fill="#283142"/><text x="178" y="821" class="t label">切 loopback</text>
+  <text x="38" y="876" class="t small dim">草图 B · 开发 / 兼容性诊断</text>
+
+  <!-- Metrics top -->
+  <rect x="300" y="84" width="1282" height="142" rx="16" class="panel"/>
+  <text x="322" y="116" class="t title">实时指标</text>
+  <g class="t">
+    <text x="322" y="151" class="small muted">PCM WRITE RATE</text><text x="322" y="184" font-size="26" font-weight="700" fill="#8cf0b5">172.3 KB/s</text><text x="322" y="205" class="small dim">expected 172.3 · Δ 0.0%</text>
+    <line x1="525" y1="128" x2="525" y2="208" class="hair"/>
+    <text x="550" y="151" class="small muted">AUDIO AGE</text><text x="550" y="184" font-size="26" font-weight="700">42 ms</text><text x="550" y="205" class="small dim">last packet</text>
+    <line x1="718" y1="128" x2="718" y2="208" class="hair"/>
+    <text x="743" y="151" class="small muted">TEXT AGE</text><text x="743" y="184" font-size="26" font-weight="700">0.8 s</text><text x="743" y="205" class="small dim">seq 1842</text>
+    <line x1="911" y1="128" x2="911" y2="208" class="hair"/>
+    <text x="936" y="151" class="small muted">RING USAGE</text><text x="936" y="184" font-size="26" font-weight="700">38%</text><text x="936" y="205" class="small dim">overwrites 0</text>
+    <line x1="1104" y1="128" x2="1104" y2="208" class="hair"/>
+    <text x="1129" y="151" class="small muted">MATCH RATE</text><text x="1129" y="184" font-size="26" font-weight="700">92.1%</text><text x="1129" y="205" class="small dim">17 / 18 lines</text>
+    <line x1="1318" y1="128" x2="1318" y2="208" class="hair"/>
+    <text x="1343" y="151" class="small muted">CAPTURE P95</text><text x="1343" y="184" font-size="26" font-weight="700">61 ms</text><text x="1343" y="205" class="small dim">window frame</text>
+  </g>
+
+  <!-- Timeline chart -->
+  <rect x="300" y="244" width="818" height="310" rx="16" class="panel"/>
+  <text x="322" y="278" class="t title">文本 / 音频对齐时间线</text>
+  <text x="932" y="277" class="t small muted">最近 12 秒</text>
+  <rect x="1000" y="259" width="92" height="30" rx="9" fill="#252d3c"/><text x="1023" y="279" class="t small">冻结视图</text>
+  <line x1="340" y1="330" x2="1090" y2="330" stroke="#303848"/>
+  <line x1="340" y1="400" x2="1090" y2="400" stroke="#303848"/>
+  <line x1="340" y1="470" x2="1090" y2="470" stroke="#303848"/>
+  <text x="322" y="334" class="t small dim">TEXT</text><text x="314" y="404" class="t small dim">AUDIO</text><text x="317" y="474" class="t small dim">CARD</text>
+  <g stroke="#2a3140"><line x1="430" y1="310" x2="430" y2="510"/><line x1="560" y1="310" x2="560" y2="510"/><line x1="690" y1="310" x2="690" y2="510"/><line x1="820" y1="310" x2="820" y2="510"/><line x1="950" y1="310" x2="950" y2="510"/></g>
+  <g>
+    <rect x="378" y="318" width="8" height="24" rx="4" fill="#a78bfa"/><rect x="512" y="318" width="8" height="24" rx="4" fill="#a78bfa"/><rect x="646" y="318" width="8" height="24" rx="4" fill="#a78bfa"/><rect x="805" y="318" width="8" height="24" rx="4" fill="#a78bfa"/><rect x="1000" y="318" width="8" height="24" rx="4" fill="#a78bfa"/>
+    <path d="M350 415L365 407L380 420L395 388L410 425L425 399L440 412L455 382L470 423L485 405L500 417L515 372L530 414L545 401L560 421L575 390L590 412L605 382L620 418L635 399L650 425L665 389L680 414L695 376L710 420L725 402L740 417L755 384L770 410L785 397L800 425L815 375L830 411L845 390L860 420L875 401L890 413L905 386L920 422L935 398L950 416L965 381L980 414L995 401L1010 424L1025 389L1040 411L1055 405L1070 417" fill="none" stroke="#4ee28c" stroke-width="2"/>
+    <rect x="508" y="459" width="72" height="22" rx="7" fill="#1d5138"/><text x="524" y="475" class="t small" fill="#8cf0b5">CARD OK</text>
+    <rect x="802" y="459" width="88" height="22" rx="7" fill="#4d3a16"/><text x="815" y="475" class="t small" fill="#ffd680">NO AUDIO</text>
+  </g>
+  <text x="352" y="529" class="t small dim">-12s</text><text x="673" y="529" class="t small dim">-6s</text><text x="1058" y="529" class="t small dim">now</text>
+
+  <!-- Tracks -->
+  <rect x="1136" y="244" width="446" height="310" rx="16" class="panel"/>
+  <text x="1158" y="278" class="t title">活跃音轨</text><text x="1487" y="277" class="t small" fill="#9b83d5">刷新</text>
+  <text x="1158" y="310" class="t small dim">选择语音轨或排除 BGM；指针只在当前会话稳定</text>
+  <g class="t small">
+    <text x="1158" y="344" class="dim">ROLE</text><text x="1222" y="344" class="dim">ORDER / FORMAT</text><text x="1384" y="344" class="dim">ENERGY</text><text x="1465" y="344" class="dim">CLIPS</text>
+    <rect x="1154" y="356" width="404" height="50" rx="9" fill="#203429" stroke="#2fbd73"/>
+    <circle cx="1177" cy="381" r="7" fill="#4ee28c"/><text x="1193" y="386" fill="#8cf0b5">VOICE</text><text x="1262" y="386">#1 · 44.1k / 2 / s16</text><text x="1400" y="386">0.84</text><text x="1486" y="386">184</text>
+    <rect x="1154" y="416" width="404" height="50" rx="9" fill="#202735"/>
+    <circle cx="1177" cy="441" r="7" fill="#eab64d"/><text x="1193" y="446" fill="#ffd680">BGM</text><text x="1262" y="446">#0 · 44.1k / 2 / s16</text><text x="1400" y="446">0.71</text><text x="1486" y="446">221</text>
+    <rect x="1154" y="476" width="404" height="50" rx="9" fill="#202735"/>
+    <circle cx="1177" cy="501" r="7" fill="#6f7b91"/><text x="1193" y="506" class="muted">AUTO</text><text x="1262" y="506">#2 · 44.1k / 2 / s16</text><text x="1400" y="506">0.22</text><text x="1486" y="506">36</text>
+  </g>
+
+  <!-- Event log -->
+  <rect x="300" y="572" width="1282" height="330" rx="16" class="panel"/>
+  <text x="322" y="607" class="t title">结构化事件</text>
+  <rect x="478" y="588" width="120" height="30" rx="9" fill="#252d3c"/><text x="498" y="608" class="t small">ALL STAGES</text>
+  <rect x="608" y="588" width="92" height="30" rx="9" fill="#252d3c"/><text x="630" y="608" class="t small">WARN+</text>
+  <text x="1460" y="607" class="t small muted">128 events</text>
+  <line x1="300" y1="628" x2="1582" y2="628" class="hair"/>
+  <g class="t small mono">
+    <text x="322" y="657" class="dim">18:42:11.619</text><text x="446" y="657" fill="#8cf0b5">TEXT</text><text x="510" y="657">line.received seq=1842 source=luna_ring chars=18 age=5ms</text>
+    <text x="322" y="684" class="dim">18:42:11.641</text><text x="446" y="684" fill="#8cf0b5">AUDIO</text><text x="510" y="684">utterance.matched source_order=1 delta=22ms duration=2840ms peak=-8.4dB</text>
+    <text x="322" y="711" class="dim">18:42:11.648</text><text x="446" y="711" fill="#8bb9ff">CACHE</text><text x="510" y="711">line_audio.locked key_hash=80e4 cache=37/200 bytes=501264</text>
+    <rect x="314" y="727" width="1248" height="34" rx="7" fill="#382d18"/>
+    <text x="322" y="750" class="dim">18:42:14.201</text><text x="446" y="750" fill="#ffd680">WARN</text><text x="510" y="750" fill="#ffd680">capability.engine_output_mixed engine=kirikiriz action=retain_source ui_badge=mixed</text>
+    <text x="322" y="787" class="dim">18:42:18.927</text><text x="446" y="787" fill="#ff9aa3">MATCH</text><text x="510" y="787">utterance.not_found seq=1844 tolerance=8000ms fallback=grab_recent result=silent</text>
+    <text x="322" y="814" class="dim">18:42:22.105</text><text x="446" y="814" fill="#8cf0b5">CARD</text><text x="510" y="814">anki.add_note ok deck=galgame media=audio+gif elapsed=412ms</text>
+    <text x="322" y="841" class="dim">18:42:23.489</text><text x="446" y="841" fill="#8cf0b5">WINDOW</text><text x="510" y="841">frame.capture ok hwnd=0x001208AA size=1280x720 elapsed=34ms</text>
+  </g>
+  <rect x="316" y="858" width="1250" height="30" rx="8" fill="#0f131b"/>
+  <text x="330" y="878" class="t small mono dim">Filter events…  stage:, severity:, code:, pid:</text>
+</svg>

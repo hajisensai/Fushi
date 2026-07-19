@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920">
+  <defs>
+    <linearGradient id="c1" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#5c6bc0"/><stop offset="1" stop-color="#26a69a"/></linearGradient>
+    <linearGradient id="c2" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ec407a"/><stop offset="1" stop-color="#7e57c2"/></linearGradient>
+    <linearGradient id="c3" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff8f00"/><stop offset="1" stop-color="#5d4037"/></linearGradient>
+    <linearGradient id="c4" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00897b"/><stop offset="1" stop-color="#3949ab"/></linearGradient>
+    <linearGradient id="c5" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8e24aa"/><stop offset="1" stop-color="#ef5350"/></linearGradient>
+    <linearGradient id="c6" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#546e7a"/><stop offset="1" stop-color="#283593"/></linearGradient>
+    <filter id="shadowC" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#1d192b" flood-opacity="0.11"/></filter>
+    <style>
+      .t{font-family:"Segoe UI","Microsoft YaHei",sans-serif;fill:#1d1b20}.muted{fill:#6f6b75}
+      .small{font-size:12px}.body{font-size:14px}.label{font-size:14px;font-weight:650}.title{font-size:20px;font-weight:700}.h1{font-size:29px;font-weight:750}.chip{font-size:11px;font-weight:650}
+      .panel{fill:#fff;stroke:#e4e0e7;stroke-width:1}.hair{stroke:#e4e0e7;stroke-width:1}
+    </style>
+  </defs>
+  <rect width="1600" height="920" fill="#f8f6fa"/>
+
+  <!-- Navigation -->
+  <rect x="0" y="0" width="92" height="920" fill="#fffbfe"/>
+  <line x1="92" y1="0" x2="92" y2="920" stroke="#e4e0e7"/>
+  <circle cx="46" cy="38" r="18" fill="#6750a4"/><path d="M38 41c6-12 14-12 18 0" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  <g class="t small" text-anchor="middle">
+    <path d="M36 102h20v16H36zM35 99l11-5 11 5" fill="none" stroke="#77727c" stroke-width="2.5"/><text x="46" y="138" class="muted">书架</text>
+    <rect x="36" y="173" width="20" height="15" rx="2" fill="none" stroke="#77727c" stroke-width="2.5"/><path d="M35 169h22l-4 6H39z" fill="#77727c"/><text x="46" y="209" class="muted">视频</text>
+    <rect x="12" y="228" width="68" height="68" rx="18" fill="#eee8f4"/>
+    <path d="M32 254c0-6 4-10 10-10h8c6 0 10 4 10 10l3 9c1 4-4 7-7 3l-4-4H40l-4 4c-3 4-8 1-7-3z" fill="#6750a4"/><text x="46" y="286" fill="#4f378b">游戏</text>
+    <circle cx="46" cy="343" r="10" fill="none" stroke="#77727c" stroke-width="2.5"/><line x1="53" y1="350" x2="59" y2="356" stroke="#77727c" stroke-width="2.5"/><text x="46" y="378" class="muted">查词</text>
+    <path d="M35 425h22M35 433h22M35 441h22M40 420v10M52 428v10M44 436v10" stroke="#77727c" stroke-width="2"/><text x="46" y="468" class="muted">设置</text>
+  </g>
+  <circle cx="46" cy="862" r="9" fill="#2e7d32"/><text x="46" y="892" class="t small" text-anchor="middle">运行中</text>
+
+  <!-- Top bar -->
+  <rect x="92" y="0" width="1508" height="78" fill="#fffbfe"/>
+  <line x1="92" y1="78" x2="1600" y2="78" stroke="#e4e0e7"/>
+  <text x="124" y="49" class="t h1">游戏 / 高密度库</text>
+  <rect x="404" y="18" width="382" height="44" rx="22" fill="#f2edf5"/>
+  <circle cx="430" cy="39" r="8" fill="none" stroke="#6f6b75" stroke-width="2"/><line x1="436" y1="45" x2="442" y2="51" stroke="#6f6b75" stroke-width="2"/>
+  <text x="455" y="45" class="t body muted">搜索标题、别名、exe、引擎…</text>
+  <rect x="1126" y="18" width="114" height="44" rx="16" fill="#f2edf5"/><text x="1151" y="45" class="t label">筛选排序</text>
+  <rect x="1252" y="18" width="126" height="44" rx="16" fill="#f2edf5"/><text x="1275" y="45" class="t label">扫描文件夹</text>
+  <rect x="1390" y="18" width="178" height="44" rx="16" fill="#6750a4"/><text x="1414" y="46" font-family="Segoe UI,Microsoft YaHei" font-size="14" font-weight="700" fill="#fff">＋ 添加并启动游戏</text>
+
+  <!-- Content header -->
+  <text x="124" y="122" class="t title">全部游戏</text><text x="124" y="147" class="t small muted">12 个本地配置 · 4 个已有真实 hook 验证</text>
+  <rect x="449" y="103" width="92" height="31" rx="15.5" fill="#e8def8"/><text x="469" y="124" class="t small" fill="#4f378b">全部 12</text>
+  <rect x="551" y="103" width="92" height="31" rx="15.5" fill="#f2edf5"/><text x="570" y="124" class="t small">可捕获 7</text>
+  <rect x="653" y="103" width="92" height="31" rx="15.5" fill="#f2edf5"/><text x="670" y="124" class="t small">需诊断 3</text>
+  <rect x="755" y="103" width="92" height="31" rx="15.5" fill="#f2edf5"/><text x="777" y="124" class="t small">未验证 2</text>
+
+  <!-- Grid cards -->
+  <g filter="url(#shadowC)">
+    <rect x="124" y="174" width="214" height="314" rx="20" class="panel"/>
+    <rect x="358" y="174" width="214" height="314" rx="20" class="panel"/>
+    <rect x="592" y="174" width="214" height="314" rx="20" class="panel"/>
+    <rect x="826" y="174" width="214" height="314" rx="20" class="panel"/>
+    <rect x="124" y="510" width="214" height="314" rx="20" class="panel"/>
+    <rect x="358" y="510" width="214" height="314" rx="20" class="panel"/>
+    <rect x="592" y="510" width="214" height="314" rx="20" class="panel"/>
+    <rect x="826" y="510" width="214" height="314" rx="20" class="panel"/>
+  </g>
+  <!-- Covers -->
+  <g>
+    <rect x="124" y="174" width="214" height="218" rx="20" fill="url(#c1)"/><rect x="124" y="372" width="214" height="20" fill="url(#c1)"/>
+    <circle cx="257" cy="244" r="46" fill="#fff" fill-opacity="0.12"/><path d="M150 365l76-94 55 58 57-39v102H150z" fill="#fff" fill-opacity="0.16"/>
+    <rect x="358" y="174" width="214" height="218" rx="20" fill="url(#c2)"/><rect x="358" y="372" width="214" height="20" fill="url(#c2)"/>
+    <circle cx="430" cy="251" r="56" fill="#fff" fill-opacity="0.12"/><path d="M382 360l72-112 86 112z" fill="#fff" fill-opacity="0.16"/>
+    <rect x="592" y="174" width="214" height="218" rx="20" fill="url(#c3)"/><rect x="592" y="372" width="214" height="20" fill="url(#c3)"/>
+    <path d="M626 202h146v160H626z" fill="none" stroke="#fff" stroke-opacity="0.18" stroke-width="10"/><circle cx="699" cy="282" r="36" fill="#fff" fill-opacity="0.16"/>
+    <rect x="826" y="174" width="214" height="218" rx="20" fill="url(#c4)"/><rect x="826" y="372" width="214" height="20" fill="url(#c4)"/>
+    <path d="M849 350c65-118 113-116 169 0" fill="none" stroke="#fff" stroke-opacity="0.19" stroke-width="24"/>
+    <rect x="124" y="510" width="214" height="218" rx="20" fill="url(#c5)"/><rect x="124" y="708" width="214" height="20" fill="url(#c5)"/>
+    <path d="M160 690l55-130 34 78 38-92 33 144z" fill="#fff" fill-opacity="0.14"/>
+    <rect x="358" y="510" width="214" height="218" rx="20" fill="url(#c6)"/><rect x="358" y="708" width="214" height="20" fill="url(#c6)"/>
+    <circle cx="465" cy="618" r="70" fill="none" stroke="#fff" stroke-opacity="0.18" stroke-width="24"/>
+    <rect x="592" y="510" width="214" height="218" rx="20" fill="#d9d5dd"/><rect x="592" y="708" width="214" height="20" fill="#d9d5dd"/>
+    <path d="M631 674h136M648 642h102M668 610h62" stroke="#8c8791" stroke-width="12" stroke-linecap="round" opacity="0.45"/>
+    <rect x="826" y="510" width="214" height="218" rx="20" fill="#ede9ef"/><rect x="826" y="708" width="214" height="20" fill="#ede9ef"/>
+    <path d="M918 594h30v30h-30zM893 624h80v80h-80z" fill="none" stroke="#8c8791" stroke-width="5" opacity="0.5"/>
+  </g>
+  <!-- Status chips on covers -->
+  <g class="t chip">
+    <rect x="138" y="188" width="88" height="24" rx="12" fill="#d7f8dc"/><circle cx="154" cy="200" r="4" fill="#1b5e20"/><text x="164" y="204" fill="#174d1d">全链验证</text>
+    <rect x="372" y="188" width="86" height="24" rx="12" fill="#fff4d1"/><circle cx="388" cy="200" r="4" fill="#8d5a00"/><text x="398" y="204" fill="#744600">混音可用</text>
+    <rect x="606" y="188" width="86" height="24" rx="12" fill="#d7f8dc"/><circle cx="622" cy="200" r="4" fill="#1b5e20"/><text x="632" y="204" fill="#174d1d">全链验证</text>
+    <rect x="840" y="188" width="86" height="24" rx="12" fill="#fde9e7"/><circle cx="856" cy="200" r="4" fill="#ba1a1a"/><text x="866" y="204" fill="#8c1d18">需诊断</text>
+    <rect x="138" y="524" width="86" height="24" rx="12" fill="#fff4d1"/><circle cx="154" cy="536" r="4" fill="#8d5a00"/><text x="164" y="540" fill="#744600">仅 loopback</text>
+    <rect x="372" y="524" width="86" height="24" rx="12" fill="#d7f8dc"/><circle cx="388" cy="536" r="4" fill="#1b5e20"/><text x="398" y="540" fill="#174d1d">全链验证</text>
+    <rect x="606" y="524" width="76" height="24" rx="12" fill="#f2edf5"/><circle cx="622" cy="536" r="4" fill="#77727c"/><text x="632" y="540">未验证</text>
+    <rect x="840" y="524" width="76" height="24" rx="12" fill="#e8def8"/><text x="857" y="540" fill="#4f378b">＋ 添加</text>
+  </g>
+  <!-- Card metadata -->
+  <g class="t">
+    <text x="140" y="420" class="label">オトメ＊ドメイン</text><text x="140" y="442" class="small muted">KiriKiriZ · x86 · 最近今天</text><text x="140" y="466" class="small" fill="#6750a4">启动并捕获  ›</text>
+    <text x="374" y="420" class="label">Sakura Swim Club</text><text x="374" y="442" class="small muted">Ren'Py · x64 · 最近 3 天前</text><text x="374" y="466" class="small" fill="#6750a4">启动并捕获  ›</text>
+    <text x="608" y="420" class="label">星空のメモリア</text><text x="608" y="442" class="small muted">KiriKiri · x86 · 最近 6 天前</text><text x="608" y="466" class="small" fill="#6750a4">启动并捕获  ›</text>
+    <text x="842" y="420" class="label">全年齢時間停止</text><text x="842" y="442" class="small muted">WAFFLE · x86 · 文本未命中</text><text x="842" y="466" class="small" fill="#ba1a1a">打开诊断  ›</text>
+    <text x="140" y="756" class="label">Summer Pockets</text><text x="140" y="778" class="small muted">Siglus · x86 · 最近 2 周前</text><text x="140" y="802" class="small" fill="#6750a4">启动并捕获  ›</text>
+    <text x="374" y="756" class="label">Ever17</text><text x="374" y="778" class="small muted">DirectSound · x86 · 已校准</text><text x="374" y="802" class="small" fill="#6750a4">启动并捕获  ›</text>
+    <text x="608" y="756" class="label">未命名游戏</text><text x="608" y="778" class="small muted">game.exe · 引擎未知</text><text x="608" y="802" class="small" fill="#6750a4">配置  ›</text>
+    <text x="866" y="760" class="title" fill="#6f6b75">添加游戏配置</text><text x="858" y="786" class="small muted">选择 exe 或扫描文件夹</text>
+  </g>
+
+  <!-- Active session drawer -->
+  <rect x="1066" y="94" width="510" height="788" rx="24" fill="#fffbfe" stroke="#d0c9d4" filter="url(#shadowC)"/>
+  <text x="1092" y="130" class="t title">当前捕获会话</text>
+  <rect x="1434" y="108" width="116" height="34" rx="17" fill="#d7f8dc"/><circle cx="1453" cy="125" r="5" fill="#1b5e20"/><text x="1464" y="130" class="t small" fill="#174d1d">运行 37 分</text>
+  <rect x="1092" y="160" width="458" height="142" rx="18" fill="#f4effa"/>
+  <rect x="1108" y="176" width="86" height="110" rx="14" fill="url(#c1)"/>
+  <text x="1212" y="199" class="t title">オトメ＊ドメイン</text>
+  <text x="1212" y="224" class="t small muted">otomeki.exe · PID 8420 · x86</text>
+  <rect x="1212" y="239" width="83" height="24" rx="12" fill="#fff4d1"/><text x="1227" y="255" class="t chip" fill="#744600">混音捕获</text>
+  <rect x="1303" y="239" width="90" height="24" rx="12" fill="#d7f8dc"/><text x="1319" y="255" class="t chip" fill="#174d1d">文本活跃</text>
+  <text x="1212" y="282" class="t small" fill="#6750a4">打开完整捕获台  ›</text>
+  <text x="1092" y="340" class="t label">就绪链</text>
+  <line x1="1120" y1="381" x2="1506" y2="381" stroke="#c8c2cb" stroke-width="3"/>
+  <g class="t small" text-anchor="middle">
+    <circle cx="1120" cy="381" r="10" fill="#2e7d32"/><text x="1120" y="410">进程</text>
+    <circle cx="1197" cy="381" r="10" fill="#2e7d32"/><text x="1197" y="410">注入</text>
+    <circle cx="1274" cy="381" r="10" fill="#2e7d32"/><text x="1274" y="410">文本</text>
+    <circle cx="1351" cy="381" r="10" fill="#ed9f05"/><text x="1351" y="410">音频</text>
+    <circle cx="1428" cy="381" r="10" fill="#2e7d32"/><text x="1428" y="410">画面</text>
+    <circle cx="1505" cy="381" r="10" fill="#2e7d32"/><text x="1505" y="410">Anki</text>
+  </g>
+  <text x="1092" y="458" class="t label">最近台词</text>
+  <rect x="1092" y="474" width="458" height="118" rx="16" fill="#f8f3fa" stroke="#d0bcff"/>
+  <text x="1110" y="500" class="t small muted">18:42:11 · #1842 · 音频已匹配 2.84 秒</text>
+  <text x="1110" y="535" class="t body" font-size="17">先輩、今日は一緒に帰りませんか？</text>
+  <rect x="1110" y="552" width="78" height="25" rx="12.5" fill="#6750a4"/><text x="1128" y="569" font-family="Segoe UI,Microsoft YaHei" font-size="11" font-weight="700" fill="#fff">立即出卡</text>
+  <text x="1464" y="569" class="t small" fill="#6750a4">试听</text>
+  <text x="1092" y="630" class="t label">本局统计</text>
+  <rect x="1092" y="646" width="142" height="78" rx="15" fill="#f2edf5"/><text x="1110" y="673" class="t small muted">文本</text><text x="1110" y="707" class="t title">18 行</text>
+  <rect x="1248" y="646" width="142" height="78" rx="15" fill="#f2edf5"/><text x="1266" y="673" class="t small muted">匹配率</text><text x="1266" y="707" class="t title">92%</text>
+  <rect x="1404" y="646" width="146" height="78" rx="15" fill="#f2edf5"/><text x="1422" y="673" class="t small muted">出卡</text><text x="1422" y="707" class="t title">5 张</text>
+  <rect x="1092" y="752" width="216" height="48" rx="16" fill="#e8def8"/><text x="1144" y="782" class="t label" fill="#4f378b">生成测试卡</text>
+  <rect x="1320" y="752" width="230" height="48" rx="16" fill="#fde9e7"/><text x="1380" y="782" class="t label" fill="#8c1d18">停止捕获</text>
+  <text x="1092" y="844" class="t small muted">草图 C · 游戏库作为长期入口，会话抽屉不打断捕获</text>
+</svg>
