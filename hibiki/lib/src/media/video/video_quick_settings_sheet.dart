@@ -44,6 +44,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.initialDelayMs,
     required this.initialSpeed,
     required this.initialSubtitleObscureMode,
+    required this.initialSecondarySubtitleObscureMode,
     required this.initialSubtitleStyle,
     required this.onSetDelay,
     this.onAutoAlign,
@@ -60,6 +61,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onPreviewSpeed,
     required this.onSetSpeed,
     required this.onSetSubtitleObscureMode,
+    required this.onSetSecondarySubtitleObscureMode,
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
     this.initialRespectAssStyle = true,
@@ -115,6 +117,9 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 当前字幕遮蔽模式三态（TODO-840 Part B：不遮蔽 / 模糊 / 隐藏）。
   final VideoSubtitleObscureMode initialSubtitleObscureMode;
+
+  /// 当前**副字幕**遮蔽模式三态（TODO-1382，独立于主字幕）。
+  final VideoSubtitleObscureMode initialSecondarySubtitleObscureMode;
 
   /// 当前字幕外观样式。
   final VideoSubtitleStyle initialSubtitleStyle;
@@ -175,6 +180,10 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 设字幕遮蔽模式三态（TODO-840 Part B）；即时生效 + 持久化由调用方负责。
   final Future<void> Function(VideoSubtitleObscureMode mode)
       onSetSubtitleObscureMode;
+
+  /// 设**副字幕**遮蔽模式三态（TODO-1382）；即时生效 + 持久化由调用方负责。
+  final Future<void> Function(VideoSubtitleObscureMode mode)
+      onSetSecondarySubtitleObscureMode;
 
   /// 拖动字幕外观滑条时的实时预览（更新页面背后的 overlay，不落盘）。
   final void Function(VideoSubtitleStyle style) onSubtitleStylePreview;
@@ -328,6 +337,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late double _speed = widget.initialSpeed;
   late VideoSubtitleObscureMode _obscureMode =
       widget.initialSubtitleObscureMode;
+  late VideoSubtitleObscureMode _secondaryObscureMode =
+      widget.initialSecondarySubtitleObscureMode;
   late bool _lockWindowAspectRatio = widget.initialLockWindowAspectRatio;
   late VideoFitMode _videoFitMode = widget.initialVideoFitMode;
   late VideoImmersiveMode _immersiveMode = widget.initialImmersiveMode;
@@ -2375,6 +2386,36 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               onChanged: (VideoSubtitleObscureMode mode) async {
                 setState(() => _obscureMode = mode);
                 await widget.onSetSubtitleObscureMode(mode);
+              },
+            ),
+            // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）。快捷键 Shift+G 循环、
+            // Shift+H 隐藏；此处即时回写本地态 + 经回调落盘并实时刷新副字幕层。
+            AdaptiveSettingsSegmentedRow<VideoSubtitleObscureMode>(
+              title: t.video_setting_secondary_subtitle_obscure,
+              subtitle: t.video_setting_secondary_subtitle_obscure_hint,
+              icon: Icons.blur_on_outlined,
+              controlBelow: true,
+              segments: <ButtonSegment<VideoSubtitleObscureMode>>[
+                ButtonSegment<VideoSubtitleObscureMode>(
+                  value: VideoSubtitleObscureMode.none,
+                  label: Text(t.video_setting_subtitle_obscure_none),
+                  tooltip: t.video_setting_subtitle_obscure_none,
+                ),
+                ButtonSegment<VideoSubtitleObscureMode>(
+                  value: VideoSubtitleObscureMode.blur,
+                  label: Text(t.video_setting_subtitle_obscure_blur),
+                  tooltip: t.video_setting_subtitle_obscure_blur,
+                ),
+                ButtonSegment<VideoSubtitleObscureMode>(
+                  value: VideoSubtitleObscureMode.hide,
+                  label: Text(t.video_setting_subtitle_obscure_hide),
+                  tooltip: t.video_setting_subtitle_obscure_hide,
+                ),
+              ],
+              selected: _secondaryObscureMode,
+              onChanged: (VideoSubtitleObscureMode mode) async {
+                setState(() => _secondaryObscureMode = mode);
+                await widget.onSetSecondarySubtitleObscureMode(mode);
               },
             ),
           ],

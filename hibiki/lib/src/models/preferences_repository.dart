@@ -790,6 +790,28 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 视频**副字幕**「遮蔽模式」三态（TODO-1382，镜像主字幕 [videoSubtitleObscureMode]）：
+  /// 不遮蔽 / 模糊 / 隐藏，与主字幕相互独立。preferences 层 lazy 投影（非新 Drift
+  /// schema）：键 `video_secondary_subtitle_blur`（[VideoSubtitleObscureMode.blurFlag]）
+  /// + 判别键 `video_secondary_subtitle_obscure_hide`（[VideoSubtitleObscureMode.hideFlag]），
+  /// 还原走同一纯函数 [VideoSubtitleObscureMode.fromFlags]（读取与单测共享真相源）。
+  /// 默认 none：副字幕历史行为=正常显示、不遮蔽。
+  VideoSubtitleObscureMode get videoSecondarySubtitleObscureMode =>
+      VideoSubtitleObscureMode.fromFlags(
+        blurFlag: getPref('video_secondary_subtitle_blur', defaultValue: false)
+            as bool,
+        hideFlag: getPref('video_secondary_subtitle_obscure_hide',
+            defaultValue: false) as bool,
+      );
+
+  Future<void> setVideoSecondarySubtitleObscureMode(
+    VideoSubtitleObscureMode mode,
+  ) async {
+    await setPref('video_secondary_subtitle_blur', mode.blurFlag);
+    await setPref('video_secondary_subtitle_obscure_hide', mode.hideFlag);
+    notifyListeners();
+  }
+
   /// 视频字幕列表「自动滚动到当前播放句」开关（TODO-613）：默认开启，与
   /// [VideoSubtitleJumpPanel] 头部自动滚动按钮一一对应。旧版本这是面板的纯内存状态、
   /// 每次打开都重置成开；现在落 Drift `preferences`，用户关掉后跨开关 / 跨重启都记住。

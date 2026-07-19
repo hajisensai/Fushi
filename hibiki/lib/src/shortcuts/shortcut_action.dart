@@ -153,6 +153,13 @@ enum ShortcutAction {
   videoCycleSubtitleObscure(
       ShortcutScope.video, 'video_cycle_subtitle_obscure'),
   videoToggleSubtitleHide(ShortcutScope.video, 'video_toggle_subtitle_hide'),
+  // TODO-1382：**副字幕**遮蔽三态（镜像主字幕，独立开关）。videoCycleSecondarySubtitleObscure
+  // 循环 不遮蔽→模糊→隐藏（默认 Shift+G）；videoToggleSecondarySubtitleHide 直接开/关
+  // 「隐藏副字幕」（默认 Shift+H）。执行体在 video_player_shortcuts。
+  videoCycleSecondarySubtitleObscure(
+      ShortcutScope.video, 'video_cycle_secondary_subtitle_obscure'),
+  videoToggleSecondarySubtitleHide(
+      ShortcutScope.video, 'video_toggle_secondary_subtitle_hide'),
   // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
   // 键盘。videoOpenSubtitleAlign 一键弹波形对轴放大视图（复用 SubtitleWaveformZoomView，
   // 与面板入口同一逻辑、零第二套状态）；videoSubtitleDelayIncrease/Decrease 像 mpv 的

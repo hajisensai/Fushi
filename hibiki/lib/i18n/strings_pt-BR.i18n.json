@@ -1998,5 +1998,9 @@
   "custom_fonts_font_roles": "Font roles",
   "video_clip_export_cancelled": "Clip export cancelled",
   "shortcut_action_video_align_subtitle_to_prev": "Align previous subtitle to now",
-  "shortcut_action_video_align_subtitle_to_next": "Align next subtitle to now"
+  "shortcut_action_video_align_subtitle_to_next": "Align next subtitle to now",
+  "shortcut_action_video_cycle_secondary_subtitle_obscure": "Cycle Secondary Subtitle Obscure",
+  "shortcut_action_video_toggle_secondary_subtitle_hide": "Toggle Hide Secondary Subtitle",
+  "video_setting_secondary_subtitle_obscure": "Obscure secondary subtitle",
+  "video_setting_secondary_subtitle_obscure_hint": "Blur or hide the secondary (translation) subtitle"
 }

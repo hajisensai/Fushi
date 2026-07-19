@@ -336,6 +336,15 @@ class ShortcutDefaults {
     ShortcutAction.videoToggleSubtitleHide: _kb([
       _key(LogicalKeyboardKey.keyH),
     ]),
+    // TODO-1382：副字幕遮蔽三态循环默认 Shift+G、直接隐藏副字幕默认 Shift+H——与主字幕
+    // 对称（主 H 隐藏、副 Shift+H 隐藏；主 Shift+B 循环、副 Shift+G 循环）。video 独立
+    // co-active 组内未占用，不与其它键冲突。
+    ShortcutAction.videoCycleSecondarySubtitleObscure: _kb([
+      _key(LogicalKeyboardKey.keyG, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleSecondarySubtitleHide: _kb([
+      _key(LogicalKeyboardKey.keyH, {ModifierKey.shift}),
+    ]),
     // 字幕对轴/匹配（用户请求）：打开波形对轴放大视图默认 Shift+A（A=Align，避开裸 A 的
     // 回退 seek）；字幕延迟 -/+ 默认 z/x（mpv 经典字幕延迟键，每次 ±100ms=mpv 0.1s）。
     // 三键在 video co-active 组内均未占用（裸 z/x、Shift+A 都是空闲位），无冲突。键盘-only

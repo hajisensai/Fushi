@@ -564,6 +564,32 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoSubtitleObscureMode(mode);
             },
           ),
+          // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）——不遮蔽 / 模糊 / 隐藏。
+          // 复用同一 [_videoSubtitleObscureModeLabel] 选项标签；快捷键 Shift+G 循环、
+          // Shift+H 隐藏。持久化同为 preferences lazy 投影（无新 Drift schema）。
+          SettingsSegmentedItem<VideoSubtitleObscureMode>(
+            id: 'video.secondary_subtitle.obscure',
+            title: t.video_setting_secondary_subtitle_obscure,
+            subtitle: t.video_setting_secondary_subtitle_obscure_hint,
+            icon: Icons.blur_on_outlined,
+            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
+              for (final VideoSubtitleObscureMode mode
+                  in VideoSubtitleObscureMode.values)
+                SettingsSegmentOption<VideoSubtitleObscureMode>(
+                  value: mode,
+                  label: _videoSubtitleObscureModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSecondarySubtitleObscureMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              VideoSubtitleObscureMode mode,
+            ) async {
+              await settingsContext.appModel
+                  .setVideoSecondarySubtitleObscureMode(mode);
+            },
+          ),
           // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref，
           // 下次开视频生效），与播放页内字幕设置同源。
           SettingsSwitchItem(
