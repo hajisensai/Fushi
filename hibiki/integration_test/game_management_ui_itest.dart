@@ -40,12 +40,13 @@ void main() {
         await _capture(tester, 'game-library');
 
         final FocusDriver driver = FocusDriver(tester);
-        final Finder openCapture = find.byKey(HomeGamePage.openCaptureKey);
+        final Finder openCapture =
+            find.widgetWithText(HibikiSelectableChip, t.game_capture_workbench);
         expect(openCapture, findsOneWidget);
         expect(
           await driver.focusWidget(openCapture),
           isTrue,
-          reason: '捕获工作台主操作必须可由键盘焦点到达',
+          reason: '捕获工作台页头入口必须可由 Hibiki 键盘焦点到达',
         );
         await driver.activate();
         await tester.pump(const Duration(seconds: 1));
