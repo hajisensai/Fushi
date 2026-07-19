@@ -428,8 +428,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
   }
 
-  Future<void> _playAutoReadWord(String expression, String reading) =>
-      playLookupAudio(appModel, expression, reading);
+  Future<void> _playAutoReadWord(String expression, String reading) {
+    // Prefer the popup's own <audio> (unified fast path); fall back to the Dart
+    // player when the popup WebView is not ready. Capture the state once so the
+    // callback does not re-evaluate the getter mid-play.
+    final DictionaryPopupWebViewState? popup = topPopupState;
+    return autoReadWordUnified(
+      appModel,
+      expression,
+      reading,
+      playInWebView: popup?.playWordAudioUrl,
+    );
+  }
 
   void clearDictionaryResult() => _dismissPopupAt(0);
 

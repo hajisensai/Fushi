@@ -9,12 +9,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/media.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/pages/implementations/popup_settings_injection.dart';
 import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
+import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -608,38 +608,25 @@ JSON.stringify((function(){
         source: ReaderCaretScripts.refreshInvocation());
   }
 
-  Future<String?> _resolveWordAudio(String expression, String reading) async {
-    final appModel = ref.read(appProvider);
-    final WordAudioResolver resolver = WordAudioResolver(
-      queryLocalAudio: (expression, reading) async {
-        try {
-          return await TtsChannel.instance
-              .queryLocalAudio(expression, reading)
-              .timeout(const Duration(milliseconds: 500));
-        } on TimeoutException {
-          return null;
-        }
-      },
-      queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
-        try {
-          return await TtsChannel.instance
-              .queryLocalAudio(expression, reading, dbIndex: dbIndex)
-              .timeout(const Duration(milliseconds: 500));
-        } on TimeoutException {
-          return null;
-        }
-      },
-      extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-      queryRemoteAudio: (expression, reading) => appModel.lookupRemoteAudio(
-        expression,
-        reading,
-      ),
+  /// Resolves the word audio into a URL popup.js can play directly with an HTML5
+  /// `<audio>` element (remote `http(s)://` pass-through, local file → base64
+  /// `data:` URL). Shared single source of truth with the overlay + auto-read so
+  /// every surface plays word audio the same way (see [resolveWordAudioWebViewUrl]).
+  Future<String?> _resolveWordAudio(String expression, String reading) =>
+      resolveWordAudioWebViewUrl(ref.read(appProvider), expression, reading);
+
+  /// Auto-read entry point: drives the popup's own `<audio>` element to play an
+  /// already-resolved URL (from [resolveWordAudioWebViewUrl]). Returns false when
+  /// the WebView is not ready, so the Dart caller can fall back to its player and
+  /// never lose auto-read (Never break userspace).
+  Future<bool> playWordAudioUrl(String url) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || !_ready || url.isEmpty) return false;
+    await controller.evaluateJavascript(
+      source: 'window.__hibikiPlayWordAudioUrl && '
+          'window.__hibikiPlayWordAudioUrl(${jsonEncode(url)})',
     );
-    return resolver.resolveConfigured(
-      expression: expression,
-      reading: reading,
-      sources: appModel.audioSourceConfigs,
-    );
+    return true;
   }
 
   // No dispose() override that disposes _controller here.
@@ -1048,6 +1035,12 @@ JSON.stringify((function(){
         allowUniversalAccessFromFileURLs: true,
         useShouldInterceptRequest: true,
         resourceCustomSchemes: dictionaryMediaCustomSchemes,
+        // 单词发音统一走弹窗自己的 HTML5 <audio>（见 resolveWordAudioWebViewUrl）。
+        // 自动发音（打开词条自动读）没有用户手势，默认的 autoplay 策略
+        // （mediaPlaybackRequiresUserGesture=true）会静默拦截 audio.play() —— 手动 ♪
+        // 有手势不受影响，但自动发音会哑。这里放行媒体自动播放，让 <audio> 统一路径的
+        // 自动发音真正出声（手动路径不受影响）。
+        mediaPlaybackRequiresUserGesture: false,
         // BUG-477（BUG-468 同根，弹窗 WebView 漏修）：Windows 上压制 WebView2 原生右键
         // 菜单的唯一真值是 `disableContextMenu`→`put_AreDefaultContextMenusEnabled`；
         // 上面 `ContextMenu` 的 `hideDefaultSystemContextMenuItems` 是跨平台 API，在
@@ -1638,29 +1631,10 @@ JSON.stringify((function(){
           },
         );
 
-        controller.addJavaScriptHandler(
-          handlerName: 'playWordAudio',
-          callback: (args) async {
-            return _guardJsBridge<bool>(
-              'DictPopupWebview.playWordAudio',
-              false,
-              ErrorLogService.instance,
-              () async {
-                String url = '';
-                if (args.isNotEmpty && args[0] is Map) {
-                  final data = args[0] as Map;
-                  url = data['url']?.toString() ?? '';
-                }
-                // Plays remote URLs and local file paths uniformly, including
-                // Windows drive-letter paths (BUG-046).
-                return TtsChannel.instance.playAudioRef(
-                  url,
-                  volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
-                );
-              },
-            );
-          },
-        );
+        // Word audio no longer round-trips to a native/libmpv player: popup.js
+        // plays the resolved URL itself with an HTML5 <audio> element (unified
+        // with the browser extension and every desktop surface — see
+        // resolveWordAudioWebViewUrl). The old `playWordAudio` handler is gone.
       },
       onLoadStop: (controller, url) {
         _ready = true;

@@ -133,7 +133,7 @@ Future<void> _handleAudioBridge(
           'configs=${model.audioSourceConfigs.length}');
       reply = expression.isEmpty
           ? null
-          : await resolveLookupAudioUrl(model, expression, reading);
+          : await resolveWordAudioWebViewUrl(model, expression, reading);
     }
   } catch (e, st) {
     glog('audio: EXCEPTION $e\n$st');

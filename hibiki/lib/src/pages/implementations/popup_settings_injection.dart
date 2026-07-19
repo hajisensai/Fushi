@@ -274,6 +274,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.__hoshiPopupFontSize = ${appModel.dictionaryFontSize};
     window.audioSources = ${jsonEncode(appModel.enabledAudioSources)};
     window.needsAudio = true;
+    window.lookupAudioVolume = ${ReaderHibikiSource.instance.lookupAudioVolumeGain.clamp(0.0, 1.0).toStringAsFixed(4)};
     window.i18nNoAudioAvailable = ${jsonEncode(t.popup_no_audio_available)};
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
