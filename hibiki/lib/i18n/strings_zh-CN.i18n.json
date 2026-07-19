@@ -1995,5 +1995,6 @@
   "shortcut_action_video_subtitle_delay_decrease": "字幕延迟减小",
   "shortcut_action_video_open_subtitle_align": "打开字幕波形对轴",
   "font_desc_noto_serif_tc": "Google/Adobe 宋体 · 繁中字形优先 · 适合竖排阅读",
-  "custom_fonts_font_roles": "字体用途"
+  "custom_fonts_font_roles": "字体用途",
+  "video_clip_export_cancelled": "已取消片段导出"
 }
