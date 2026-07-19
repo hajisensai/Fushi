@@ -31,6 +31,8 @@ void main() {
         app.main();
         expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
         final appModel = await readyAppModel(tester);
+        UpdateChecker.cancelActiveCheck();
+        await appModel.setUpdateNeverRemind(true);
         await appModel.setExperimentalFocusNavigationEnabled(true);
         for (int i = 0; i < 8; i++) {
           await tester.pump(const Duration(milliseconds: 250));
