@@ -2054,5 +2054,6 @@
   "anime_download_magnet_invalid": "磁力链接无效",
   "anime_download_kind_auto": "自动",
   "anime_download_kind_video": "视频",
-  "anime_download_kind_book": "书"
+  "anime_download_kind_book": "书",
+  "nav_downloads": "下载"
 }

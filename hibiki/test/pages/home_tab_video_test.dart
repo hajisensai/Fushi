@@ -22,39 +22,44 @@ void main() {
       expect(tabs.contains(HomeTab.video), isFalse);
     });
 
-    test('开启实验视频：视频 tab 出现，顺序为 首页→书架→视频→词典→texthooker→设置', () {
+    test('开启实验视频：视频+下载 tab 出现，顺序为 首页→书架→视频→下载→词典→texthooker→设置', () {
       final List<HomeTab> tabs =
           homeActiveTabs(videoEnabled: true, texthookerEnabled: true);
       expect(tabs, <HomeTab>[
         HomeTab.home,
         HomeTab.books,
         HomeTab.video,
+        HomeTab.downloads,
         HomeTab.dictionaries,
         HomeTab.texthooker,
         HomeTab.settings,
       ]);
     });
 
-    test('视频 tab 恰好夹在书架与词典之间（用户要求的位置）', () {
+    test('视频后紧随下载 tab，再到词典（用户要求：下载单独拿出来）', () {
       final List<HomeTab> tabs =
           homeActiveTabs(videoEnabled: true, texthookerEnabled: true);
       final int books = tabs.indexOf(HomeTab.books);
       final int video = tabs.indexOf(HomeTab.video);
+      final int downloads = tabs.indexOf(HomeTab.downloads);
       final int dict = tabs.indexOf(HomeTab.dictionaries);
-      expect(books, lessThan(video));
-      expect(video, lessThan(dict));
-      // 紧邻：书架与词典之间没有其它 tab。
       expect(video, equals(books + 1));
-      expect(dict, equals(video + 1));
+      expect(downloads, equals(video + 1));
+      expect(dict, equals(downloads + 1));
     });
 
-    test('开关只增删视频 tab，不动其它 tab 的相对顺序', () {
+    test('视频开关增删 视频+下载 两个 tab（同门控），不动其它 tab 顺序', () {
       final List<HomeTab> off =
           homeActiveTabs(videoEnabled: false, texthookerEnabled: true);
       final List<HomeTab> on =
           homeActiveTabs(videoEnabled: true, texthookerEnabled: true);
-      // 去掉视频后两者应完全一致（视频是唯一的差异）。
-      expect(on.where((HomeTab t) => t != HomeTab.video).toList(), equals(off));
+      // 去掉视频+下载后两者应完全一致（这两个是仅有的差异）。
+      expect(
+        on
+            .where((HomeTab t) => t != HomeTab.video && t != HomeTab.downloads)
+            .toList(),
+        equals(off),
+      );
     });
   });
 }

@@ -36,7 +36,16 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 /// 进入 [_HomePageState._activeTabs]，故用枚举身份而非位置来切换/路由——插入这个
 /// 条件 tab 不会再打乱「设置/词典」的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊
 /// 情况）。底栏/侧栏只在渲染层把身份映射成位置。texthooker 紧邻设置之前。
-enum HomeTab { home, books, video, dictionaries, texthooker, games, settings }
+enum HomeTab {
+  home,
+  books,
+  video,
+  downloads,
+  dictionaries,
+  texthooker,
+  games,
+  settings,
+}
 
 /// 纯函数：给定实验视频开关与文本钩子开关，返回可见顶层 tab 的**视觉顺序**——视频
 /// 固定插在书架与词典之间（用户要求「在书架和词典管理中间」），texthooker 仅在文本
@@ -52,6 +61,9 @@ List<HomeTab> homeActiveTabs({
       HomeTab.home,
       HomeTab.books,
       if (videoEnabled) HomeTab.video,
+      // 下载 tab 与视频子系统同门控（下载入口原本就在视频页头，把它单独拿出来
+      // 成独立底栏条目）；位置紧随视频。
+      if (videoEnabled) HomeTab.downloads,
       HomeTab.dictionaries,
       if (texthookerEnabled) HomeTab.texthooker,
       if (gamesEnabled) HomeTab.games,
@@ -116,6 +128,12 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         icon: Icons.movie_outlined,
         selectedIcon: Icons.movie,
         label: t.nav_video,
+      );
+    case HomeTab.downloads:
+      return AdaptiveNavItem(
+        icon: Icons.download_outlined,
+        selectedIcon: Icons.download,
+        label: t.nav_downloads,
       );
     case HomeTab.dictionaries:
       return AdaptiveNavItem(
@@ -936,6 +954,8 @@ class _HomePageState extends BasePageState<HomePage>
         return HomeDashboardPage(videoRepo: _videoRepository);
       case HomeTab.video:
         return HomeVideoPage(repo: _videoRepository);
+      case HomeTab.downloads:
+        return const DownloadsPage();
       case HomeTab.dictionaries:
         return HomeDictionaryPage(
           focusSignal: _dictFocusSignal,

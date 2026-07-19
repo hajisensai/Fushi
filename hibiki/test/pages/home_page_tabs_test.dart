@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/home_page.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
 
 /// 守卫 texthooker tab 在首页顶层导航中的存在与位置。v14 时这里断言魔数
 /// `kHomeTabCount`/`kHomeSettingsTabIndex`；v23 首页改用 [HomeTab] 枚举建模 tab 身份，
@@ -89,6 +90,36 @@ void main() {
         ),
         HomeTab.home,
       );
+    });
+  });
+
+  group('downloads home tab', () {
+    test('HomeTab 枚举包含 downloads', () {
+      expect(HomeTab.values, contains(HomeTab.downloads));
+    });
+
+    test('下载 tab 与视频同门控：视频关则不出现', () {
+      expect(
+        homeActiveTabs(videoEnabled: false, texthookerEnabled: false),
+        isNot(contains(HomeTab.downloads)),
+      );
+    });
+
+    test('视频开启时下载 tab 出现且紧随视频', () {
+      final List<HomeTab> tabs =
+          homeActiveTabs(videoEnabled: true, texthookerEnabled: false);
+      final int video = tabs.indexOf(HomeTab.video);
+      final int downloads = tabs.indexOf(HomeTab.downloads);
+      expect(video, isNonNegative);
+      expect(downloads, equals(video + 1));
+    });
+
+    test('每个可见 tab 都有导航项（图标+标签），含 downloads', () {
+      for (final HomeTab tab
+          in homeActiveTabs(videoEnabled: true, texthookerEnabled: true)) {
+        final AdaptiveNavItem item = homeNavItemFor(tab);
+        expect(item.label, isNotEmpty);
+      }
     });
   });
 

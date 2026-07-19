@@ -2054,5 +2054,6 @@
   "anime_download_magnet_invalid": "Invalid magnet link",
   "anime_download_kind_auto": "Auto",
   "anime_download_kind_video": "Video",
-  "anime_download_kind_book": "Book"
+  "anime_download_kind_book": "Book",
+  "nav_downloads": "Downloads"
 }
