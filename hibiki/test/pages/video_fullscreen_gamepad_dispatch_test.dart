@@ -212,6 +212,8 @@ class _Rig {
       toggleSubtitleBlur: _noop,
       cycleSubtitleObscure: _noop,
       toggleSubtitleHide: _noop,
+      cycleSecondarySubtitleObscure: _noop,
+      toggleSecondarySubtitleHide: _noop,
       toggleFavoriteSentence: _noop,
       replayCurrentSubtitle: _noop,
       replayPreviousSubtitle: _noop,

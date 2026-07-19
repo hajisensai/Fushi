@@ -78,7 +78,7 @@ void main() {
     final Map<ShortcutAction, ShortcutBindingSet> desktop =
         ShortcutDefaults.forPlatform(TargetPlatform.windows);
 
-    bool _hasKey(ShortcutAction action, LogicalKeyboardKey key,
+    bool hasKey(ShortcutAction action, LogicalKeyboardKey key,
         Set<ModifierKey> modifiers) {
       final ShortcutBindingSet? set = desktop[action];
       if (set == null) return false;
@@ -90,7 +90,7 @@ void main() {
 
     test('隐藏副字幕默认 Shift+H（与主字幕 H 对称）', () {
       expect(
-        _hasKey(ShortcutAction.videoToggleSecondarySubtitleHide,
+        hasKey(ShortcutAction.videoToggleSecondarySubtitleHide,
             LogicalKeyboardKey.keyH, {ModifierKey.shift}),
         isTrue,
       );
@@ -98,7 +98,7 @@ void main() {
 
     test('循环副字幕遮蔽默认 Shift+G', () {
       expect(
-        _hasKey(ShortcutAction.videoCycleSecondarySubtitleObscure,
+        hasKey(ShortcutAction.videoCycleSecondarySubtitleObscure,
             LogicalKeyboardKey.keyG, {ModifierKey.shift}),
         isTrue,
       );
@@ -106,17 +106,18 @@ void main() {
   });
 
   group('TODO-1382 ③ 接线对称守卫（源码扫描）', () {
-    String _read(String path) => File(path).readAsStringSync();
+    String readSrc(String path) => File(path).readAsStringSync();
 
     test('prefs 副字幕三态投影：独立键 + 复用 fromFlags', () {
-      final String src = _read('lib/src/models/preferences_repository.dart');
+      final String src = readSrc('lib/src/models/preferences_repository.dart');
       expect(src, contains('videoSecondarySubtitleObscureMode'));
       expect(src, contains("'video_secondary_subtitle_blur'"));
       expect(src, contains("'video_secondary_subtitle_obscure_hide'"));
     });
 
     test('快捷键 action→callback 映射含两新 action', () {
-      final String src = _read('lib/src/media/video/video_player_shortcuts.dart');
+      final String src =
+          readSrc('lib/src/media/video/video_player_shortcuts.dart');
       expect(
         src,
         contains('ShortcutAction.videoCycleSecondarySubtitleObscure:'),
@@ -128,8 +129,8 @@ void main() {
     });
 
     test('layout 把副字幕遮蔽映射成 overlay 两正交标志', () {
-      final String src =
-          _read('lib/src/pages/implementations/video_hibiki/layout.part.dart');
+      final String src = readSrc(
+          'lib/src/pages/implementations/video_hibiki/layout.part.dart');
       expect(src, contains('secondaryBlurEnabled:'));
       expect(src, contains('secondaryHidden:'));
       expect(src, contains('appModel.videoSecondarySubtitleObscureMode'));
