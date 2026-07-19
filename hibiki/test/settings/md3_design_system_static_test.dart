@@ -615,6 +615,16 @@ void main() {
       'lib/src/pages/implementations/video_statistics_page.dart':
           'Video statistics charts/metric bars mirror reading_statistics_page: '
               'progress-bar track surface is chart content, not page chrome.',
+      // PR#247 首页活动热力图加翻页 + 选中日数值气泡：GitHub 式贡献热力图是数据可视化
+      // 组件（格子强度按 colorScheme 映射色阶），header 的选中日数值气泡（_bubbleChip
+      // 用 surfaceContainerHighest tonal 底 + labelMedium 文本）是图表标注内容，非普通
+      // 页面 chrome——同 reading_statistics_page / video_statistics_page 的图表内容豁免类。
+      'lib/src/utils/components/stat_contribution_heatmap.dart':
+          'Contribution heatmap is a data-visualization component (cell '
+              'intensity maps to a colorScheme scale); the selected-day value '
+              'bubble (_bubbleChip surfaceContainerHighest tonal chip) is chart '
+              'annotation content, not ordinary page chrome — same reviewed '
+              'exception class as reading_statistics_page / video_statistics_page.',
       'lib/src/pages/implementations/dictionary_popup_native.dart':
           'Dictionary popup chip/content typography is dense lookup content.',
       'lib/src/pages/implementations/dictionary_popup_webview.dart':
