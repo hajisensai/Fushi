@@ -1892,4 +1892,40 @@ function flushTimers() {
     'BUG-859: panel mode never posts dismissPopupAt from the global hook');
 }
 
+// B3. 剪贴板面板：scrollRootToTop 把 ROOT 帧滚动位置复位到顶部（新剪贴板内容从
+//     头看，不残留上一句被滚动过的偏移）。root iframe 复用，其 document 滚动位置
+//     跨渲染保留，故 Dart 在 update / _showTextOnly 渲染后调此函数复位。
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [descriptor('panel-root', -1), descriptor('frame-1', 0)],
+    layoutMode: 'panel',
+  });
+  const shells = shellsOf(document);
+  const rootIframe = shells[0].children.find((c) => c.tagName === 'IFRAME');
+  const childIframe = shells[1].children.find((c) => c.tagName === 'IFRAME');
+  // 模拟用户把 root 卡与子卡都滚到中途。
+  rootIframe.contentDocument.documentElement.scrollTop = 300;
+  rootIframe.contentDocument.body.scrollTop = 300;
+  childIframe.contentDocument.documentElement.scrollTop = 150;
+  childIframe.contentDocument.body.scrollTop = 150;
+  assert.strictEqual(typeof host.scrollRootToTop, 'function',
+    'scrollRootToTop fn exposed');
+  host.scrollRootToTop();
+  assert.strictEqual(rootIframe.contentDocument.documentElement.scrollTop, 0,
+    '剪贴板更新：ROOT 帧 documentElement 滚回顶部');
+  assert.strictEqual(rootIframe.contentDocument.body.scrollTop, 0,
+    '剪贴板更新：ROOT 帧 body 滚回顶部');
+  // 只复位 root（第一个插入的帧）；子卡保留自身滚动（不是剪贴板内容）。
+  assert.strictEqual(childIframe.contentDocument.documentElement.scrollTop, 150,
+    '子帧滚动不被 scrollRootToTop 复位');
+}
+
+// B4. scrollRootToTop 无 root 帧 / 空栈时安全 no-op（不抛）。
+{
+  const { host } = freshHost();
+  assert.doesNotThrow(() => host.scrollRootToTop(),
+    'scrollRootToTop 空栈安全');
+}
+
 console.log('global_lookup_host_test: PASS');
