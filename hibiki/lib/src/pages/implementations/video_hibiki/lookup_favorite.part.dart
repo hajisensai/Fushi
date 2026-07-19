@@ -36,9 +36,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
   ) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final Stopwatch swLookup = Stopwatch()..start();
     final String term = subtitleLookupTerm(sentence, graphemeIndex);
-    debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
     // 仅当视频正在播放才暂停并标记，浮层全关后据此恢复（BUG-072）。查词前本就
@@ -72,9 +70,6 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
       replaceStack: true,
       reuseWarmSlot: true,
       autoRead: true,
-    );
-    debugPrint(
-      '[video-lookup] popup ready in ${swLookup.elapsedMilliseconds}ms term="$term"',
     );
     // 刷新查词浮层顶部收藏星标：判定当前字幕句是否已收藏（异步，不阻塞弹窗）。
     unawaited(_refreshVideoSentenceFavorite());

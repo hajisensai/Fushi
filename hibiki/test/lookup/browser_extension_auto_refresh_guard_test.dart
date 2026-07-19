@@ -42,10 +42,15 @@ void main() {
       final String src =
           File('assets/browser_extension/background.js').readAsStringSync();
       // 查词响应回完后才检查自更新（reload 杀 SW，不能挡响应）。
+      // 锚点用 lookup 处理里唯一的响应数据赋值：TODO-1087 诊断特性把 lookup 的
+      // sendResponse 展开成多行（失败时附带 connection: diagnoseConnection），旧的
+      // 单行字面量已不存在；此赋值紧邻 sendResponse 且仅出现在 lookup 分支，
+      // maybeSelfReload 仍排在其后 → 守卫的「先回响应再自更新」契约不变。
       final int respond =
-          src.indexOf('sendResponse({ ok: r.ok, status: r.status, data });');
+          src.indexOf('const data = r.ok ? await r.json() : null;');
       final int reloadCall = src.indexOf('maybeSelfReload(data);');
-      expect(respond, greaterThanOrEqualTo(0));
+      expect(respond, greaterThanOrEqualTo(0),
+          reason: 'lookup 处理必须先取响应数据（const data）再回 sendResponse');
       expect(reloadCall, greaterThan(respond),
           reason: 'maybeSelfReload 必须在 lookup 的 sendResponse 之后');
       // 三重防护：任一侧缺指纹不动 / 已为该指纹 reload 过不再重试 / 录制中跳过。

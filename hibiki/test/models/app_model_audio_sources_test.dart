@@ -156,4 +156,36 @@ void main() {
     expect(localEnabled.length, 1);
     expect(localEnabled.single.path, a.path);
   });
+
+  /// Guards the BUG-483 fix: "添加本地音频数据库" must support referencing the
+  /// original file instead of unconditionally copying it into AppData. The
+  /// manager-level behaviour (reference import + external-path deletion
+  /// safety) is covered behaviourally in local_audio_manager_test.dart; the
+  /// AppModel/UI/schema threading below cannot be mounted in a host unit
+  /// test, so it stays a source-level guard (moved from
+  /// test/tools/local_audio_reference_guard_test.dart).
+  group('local audio reference-original contract (BUG-483)', () {
+    final String appModel =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+    final String dialog = File(
+            'lib/src/pages/implementations/dictionary_settings_dialog_page.dart')
+        .readAsStringSync();
+    final String schema =
+        File('lib/src/settings/settings_schema_lookup.dart').readAsStringSync();
+
+    test('reference flag is threaded through app model and UI', () {
+      expect(appModel, contains('bool reference = false'),
+          reason: 'AppModel.importLocalAudioDbFile must forward reference.');
+      expect(appModel, contains('reference: reference'),
+          reason: 'AppModel must pass reference into the manager.');
+      expect(dialog, contains('isDesktopPlatform'),
+          reason: 'The reference toggle must be desktop-gated.');
+      expect(dialog, contains('local_audio_reference_original'),
+          reason: 'The dialog must surface the reference toggle label.');
+      expect(dialog, contains('Function(bool reference)?'),
+          reason: 'onPickLocalDb must receive the reference flag.');
+      expect(schema, contains('reference: reference'),
+          reason: 'The lookup settings wiring must forward the flag.');
+    });
+  });
 }

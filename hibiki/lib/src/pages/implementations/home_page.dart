@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -209,6 +210,20 @@ class _HomePageState extends BasePageState<HomePage>
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
 
+  /// 定时后台同步：app 存活期每隔 [_periodicSyncInterval] 重跑一次 app-open 语义的全量
+  /// sweep，让「手机一直开着、电脑那边改了数据」这种没有任何事件触发的场景也能自动拉到
+  /// 远端改动。此前同步纯事件驱动（只在 app 打开 / 进入后台 / 关书时触发），设备静止不
+  /// 动就永远不同步，只能手动点「立即同步」。
+  ///
+  /// 轮询间隔特意**小于** `_runAutoSyncAll` 里的 5 分钟冷却窗（`_syncCooldownMs`）：真正
+  /// 是否发起网络同步由那道冷却闸决定，轮询只是「频繁探一下、到点即跑」。若把间隔取成恰
+  /// 等于冷却窗，tick 会落在冷却下沿（now-lastSync≈4分58秒 < 5分）被跳过，把有效周期翻
+  /// 倍成 10 分钟；小间隔 + 冷却闸则自校正，且 app-open / 关书 / 后台同步都会自然重置冷
+  /// 却。被闸掉的 tick 只是两次本地 DB 读后早退，开销可忽略；退后台 / 熄屏时 OS 会挂起
+  /// timer，不额外耗电。
+  static const Duration _periodicSyncInterval = Duration(minutes: 1);
+  Timer? _periodicSyncTimer;
+
   @override
   void initState() {
     super.initState();
@@ -238,8 +253,6 @@ class _HomePageState extends BasePageState<HomePage>
         .addListener(_onHomeDictionaryTabRequested);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      appModel.populateDefaultMapping(appModel.targetLanguage);
-      appModel.populateBookmarks();
       if (appModel.isFirstTimeSetup) {
         appModel.setLastSelectedDictionaryFormat(
             appModel.targetLanguage.standardFormat);
@@ -264,18 +277,30 @@ class _HomePageState extends BasePageState<HomePage>
         );
       }
 
-      triggerAutoSyncOnAppOpen(
-        db: appModel.database,
-        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-        audioDatabaseRoot:
-            Directory('${appModel.appDirectory.path}/audiobooks'),
-        tempDir: appModel.temporaryDirectory,
-        localAudioEntries: appModel.localAudioDbs,
-        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
-        onPostRun: appModel.refreshAfterSyncRun,
-        onReport: appModel.presentAutoConflicts,
-      );
+      _triggerFullAutoSync();
+      // 首帧同步之后挂定时轮询，让静止不动的设备也能周期性拉到远端改动（见
+      // [_periodicSyncInterval] 注释）。dispose 时 cancel。
+      _periodicSyncTimer =
+          Timer.periodic(_periodicSyncInterval, (_) => _triggerFullAutoSync());
     });
+  }
+
+  /// 触发一次 app-open 语义的全量双向同步（导入远端新书 + 同步进度 / 内容 / 词典 / 有声书
+  /// / 统计 / 合集）。首帧 postFrame 与 [_periodicSyncTimer] 定时轮询共用同一入口，保持
+  /// 单一逻辑。内部经 `_runAutoSyncAll` 的自动开关门控 + 5 分钟冷却 + `__all__` 去重锁，
+  /// 重复触发天然安全。
+  void _triggerFullAutoSync() {
+    if (!mounted) return;
+    triggerAutoSyncOnAppOpen(
+      db: appModel.database,
+      dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
+      audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
+      tempDir: appModel.temporaryDirectory,
+      localAudioEntries: appModel.localAudioDbs,
+      onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+      onPostRun: appModel.refreshAfterSyncRun,
+      onReport: appModel.presentAutoConflicts,
+    );
   }
 
   void refresh() {
@@ -304,6 +329,7 @@ class _HomePageState extends BasePageState<HomePage>
       HomePage.debugSelectTab = null;
       return true;
     }());
+    _periodicSyncTimer?.cancel();
     _dictFocusSignal.dispose();
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);

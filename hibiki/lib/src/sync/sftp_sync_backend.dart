@@ -6,12 +6,14 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
-class SftpSyncBackend extends SyncBackend {
+class SftpSyncBackend extends SyncBackend
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
   SftpSyncBackend._();
   static final SftpSyncBackend instance = SftpSyncBackend._();
 
@@ -30,8 +32,6 @@ class SftpSyncBackend extends SyncBackend {
   String? _username;
   String? _password;
   String? _privateKey;
-  String? _rootFolderId;
-  final Map<String, String> _titleToFolderId = {};
 
   // ── Auth ──────────────────────────────────────────────────────────
 
@@ -114,11 +114,11 @@ class SftpSyncBackend extends SyncBackend {
 
   @override
   Future<String> findOrCreateRootFolder() => _guarded(() async {
-        if (_rootFolderId != null) return _rootFolderId!;
+        if (rootFolderIdCache != null) return rootFolderIdCache!;
 
         final sftp = await _ensureConnected();
         await _mkdirIfAbsent(sftp, rootFolderName);
-        _rootFolderId = rootFolderName;
+        rootFolderIdCache = rootFolderName;
         return rootFolderName;
       });
 
@@ -145,14 +145,14 @@ class SftpSyncBackend extends SyncBackend {
       _guarded(() async {
         final sanitized = requireBookFolderName(bookTitle);
 
-        if (_titleToFolderId.containsKey(sanitized)) {
-          return _titleToFolderId[sanitized]!;
+        if (folderIdCache.containsKey(sanitized)) {
+          return folderIdCache[sanitized]!;
         }
 
         final sftp = await _ensureConnected();
         final path = '$rootFolderId/$sanitized';
         await _mkdirIfAbsent(sftp, path);
-        _titleToFolderId[sanitized] = path;
+        folderIdCache[sanitized] = path;
 
         if (coverData != null) {
           try {
@@ -189,26 +189,10 @@ class SftpSyncBackend extends SyncBackend {
         );
       });
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 SFTP 的下载原语（已 `_guarded` 的 temp-file → utf8 → jsonDecode）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _downloadJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -297,24 +281,15 @@ class SftpSyncBackend extends SyncBackend {
         final totalSize = stat.size ?? 0;
 
         final handle = await sftp.open(fileId, mode: SftpFileOpenMode.read);
-        bool success = false;
-        final sink = destination.openWrite();
         try {
-          int received = 0;
-          await for (final chunk in handle.read()) {
-            sink.add(chunk);
-            received += chunk.length;
-            if (totalSize > 0) onProgress?.call(received / totalSize);
-          }
-          success = true;
+          await writeSyncStreamToFile(
+            source: handle.read(),
+            destination: destination,
+            totalBytes: totalSize,
+            onProgress: onProgress,
+          );
         } finally {
           await handle.close();
-          await sink.close();
-          if (!success) {
-            try {
-              destination.deleteSync();
-            } catch (_) {/* best-effort: failure is non-critical here */}
-          }
         }
       });
 
@@ -374,44 +349,6 @@ class SftpSyncBackend extends SyncBackend {
       });
 
   @override
-  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
-    // Delegates to the already-`_guarded` findContentFile (no re-wrap).
-    final file = await findContentFile(namespaceId, name);
-    if (file == null) return null;
-    return AssetEntry(id: file.id, name: file.name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) {
-    // Delegates to the already-`_guarded` uploadContentFile (no re-wrap).
-    return uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) {
-    // Delegates to the already-`_guarded` downloadContentFile (no re-wrap).
-    return downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
   Future<Object?> getJsonAsset(String assetId) async {
     // Delegates to the already-`_guarded` _downloadJson (no re-wrap). A missing
     // or non-JSON asset yields null per the contract; a missing file surfaces
@@ -466,43 +403,9 @@ class SftpSyncBackend extends SyncBackend {
   }
 
   // ── Cache ─────────────────────────────────────────────────────────
-
-  @override
-  void clearCache() {
-    _rootFolderId = null;
-    _titleToFolderId.clear();
-  }
-
-  @override
-  void restoreCache({
-    String? rootFolderId,
-    Map<String, String>? titleToFolderId,
-  }) {
-    _rootFolderId = rootFolderId;
-    if (titleToFolderId != null) {
-      _titleToFolderId.addAll(titleToFolderId);
-    }
-  }
-
-  @override
-  String? get cachedRootFolderId => _rootFolderId;
-
-  @override
-  Map<String, String> get cachedFolderIds => Map.unmodifiable(_titleToFolderId);
-
-  @override
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final f in folders) {
-      _titleToFolderId[f.name] = f.id;
-    }
-  }
-
-  @override
-  void evictFolderId(String folderId) {
-    // 按值反查逐出书名→folderId 缓存里指向 [folderId] 的条目，消除删书后陈旧态
-    // （BUG-202）。路径式后端的 folderId 是按名派生的路径，逐出仍是廉价正确性。
-    _titleToFolderId.removeWhere((_, id) => id == folderId);
-  }
+  //
+  // 缓存字段 + 六个 cache 方法收敛进 [SyncFolderCache] mixin（恒等 folderId，无尾
+  // 斜杠规范化）。
 
   // ── Test connection ───────────────────────────────────────────────
 

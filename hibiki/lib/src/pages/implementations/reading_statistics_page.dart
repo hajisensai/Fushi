@@ -74,8 +74,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // 按书聚合
   List<_BookData> _bookData = [];
 
-  // 总览：活跃天数 / 日期范围（min/max dateKey，可空表示无数据）。
-  int _activeDays = 0;
+  // 总览：日期范围（min/max dateKey，可空表示无数据）。
   int _streak = 0;
   String? _firstDateKey;
   String? _lastDateKey;
@@ -133,14 +132,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _bookCounters = aggregateStatCountersByTitle(counters);
       _bookFavorites = aggregateStatFavoritesByTitle(favs);
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
-      // 旧条目无 dateKey（null）→ 不参与按日分桶（whereType 过滤掉）。
+      // BUG-893：写入端此前不带 dateKey，旧的 `dateKey != null` 过滤把所有书内收藏
+      // 滤光 → 统计恒为 0。改用 `dateKey ?? statDateKey(createdAt)` 回退——createdAt
+      // 恒非空，已存的无 dateKey 收藏也按创建日归桶（与写入端补 dateKey 双向修复）。
       final List<FavoriteSentence> favSentences =
           await FavoriteSentenceRepository(db).getAll();
       _favoritedSentences = bucketActivityByDateKey(
         favSentences
             .where((FavoriteSentence s) =>
-                s.source != kFavoriteSentenceSourceVideo && s.dateKey != null)
-            .map((FavoriteSentence s) => (s.dateKey!, 1)),
+                s.source != kFavoriteSentenceSourceVideo)
+            .map((FavoriteSentence s) =>
+                (s.dateKey ?? statDateKey(s.createdAt), 1)),
         now,
       );
       await _loadHourlyData();
@@ -229,7 +231,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     // 字典序比较）。
     final Set<String> activeDayKeys =
         _allStats.map((ReadingStatisticRow s) => s.dateKey).toSet();
-    _activeDays = activeDayKeys.length;
     _streak = computeReadingStreak(activeDayKeys, now);
     if (activeDayKeys.isEmpty) {
       _firstDateKey = null;
@@ -433,8 +434,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// TODO-1253：交给自适应的 [StatKpiStrip]——宽屏一排、窄屏换行成 2 列，数值 FittedBox
   /// 缩放不截断。
   Widget _buildKpiStrip() {
-    final int dailyAvgChars =
-        _activeDays > 0 ? (_allChars / _activeDays).round() : 0;
+    // BUG-892 后续：日均字数用与「30 天字符图」同一窗口的活跃日均值（[_dailyData] 即
+    // 字符图数据），不再用终身均值——后者被历史低产日拉低、与同屏近期指标对不上。
+    final int dailyAvgChars = dailyAverageChars(_dailyData);
     final double? weekPct =
         computeWeekOverWeekPercent(_weekChars, _prevWeekChars);
     final String? weekDelta = weekPct == null

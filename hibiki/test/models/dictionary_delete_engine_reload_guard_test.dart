@@ -101,4 +101,33 @@ void main() {
     expect(body.contains('_rebuildDictPathsCache'), isTrue,
         reason: 'deleting a single dictionary must rebuild the engine.');
   });
+
+  // BUG-355 / TODO-641 (merged from dictionary_reorder_search_again_guard_test.dart):
+  // reordering dictionaries went through `AppModel.updateDictionaryOrder`, a pure
+  // forwarder to `DictionaryRepository.updateDictionaryOrder` that — unlike the
+  // delete / hide paths above — did NOT notify open lookup pages to re-query, so an
+  // already-open lookup kept showing the OLD merge order until reopen/restart. Fix:
+  // the app-model layer now fires `dictionarySearchAgainNotifier.notifyListeners()`.
+  // Same app_model.dart source-scan paradigm (live Drift DB + FFI engine can't be
+  // constructed cheaply in flutter_test); a real device pass (reorder, then look the
+  // word up WITHOUT restarting) is still required.
+  test(
+      'updateDictionaryOrder forwards to the repo AND nudges open lookups to '
+      're-query (BUG-355)', () {
+    final String body = bodyOf('void updateDictionaryOrder(');
+    expect(
+      body.contains('dictRepo.updateDictionaryOrder('),
+      isTrue,
+      reason:
+          'must still delegate the persistence/cache/engine work to the repo.',
+    );
+    expect(
+      body.contains('dictionarySearchAgainNotifier.notifyListeners()'),
+      isTrue,
+      reason:
+          'reordering must nudge any already-open lookup page to re-query so '
+          'it picks up the new merge order without an app restart (BUG-355); '
+          'mirrors the delete paths.',
+    );
+  });
 }

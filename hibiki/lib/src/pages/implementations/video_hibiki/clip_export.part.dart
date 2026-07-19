@@ -58,21 +58,31 @@ extension _VideoClipExport on _VideoHibikiPageState {
     final int generation = _clipExportGeneration;
     final int? audioStreamIndex = _clipExportStartAudioStreamIndex;
     final int? audioStreamCount = _clipExportStartAudioStreamCount;
-    final String outputPath = await _clipExportOutputPath(
+    // 桌面弹「另存为」让用户自选目录/文件名（BUG-917 用户诉求「没法设导出路径」），
+    // 移动端落 app 文档目录后走系统分享。dialog 是异步阻塞 UI，返回后需重核
+    // mounted / generation（用户可能中途换源）。取消对话框视为放弃本次导出。
+    final String defaultName = _clipExportFileName(
       inputPath: startPath,
       startMs: startMs,
       endMs: endMs,
     );
-    if (!mounted) {
-      await _deleteClipOutput(outputPath);
+    final bool isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    final String? outputPath = await _resolveClipOutputPath(
+      defaultName: defaultName,
+      isDesktop: isDesktop,
+    );
+    if (!mounted) return;
+    if (outputPath == null) {
+      // 桌面用户取消了「另存为」——此刻尚未产出任何文件，直接清状态收场。
+      _rebuild(_clearClipExportState);
+      _showOsd(t.video_clip_export_cancelled);
+      _refocusVideo();
       return;
     }
     if (generation != _clipExportGeneration || _currentVideoPath != startPath) {
-      await _deleteClipOutput(outputPath);
-      if (mounted) {
-        _rebuild(_clearClipExportState);
-        _showOsd(t.video_clip_export_source_changed);
-      }
+      _rebuild(_clearClipExportState);
+      _showOsd(t.video_clip_export_source_changed);
       return;
     }
     _rebuild(() => _clipExporting = true);
@@ -135,21 +145,49 @@ extension _VideoClipExport on _VideoHibikiPageState {
     _clipExportStartAudioStreamCount = null;
   }
 
-  Future<String> _clipExportOutputPath({
+  /// 片段导出的默认文件名：`<源名>_<起>-<止>.mp4`。扩展名恒 `.mp4`——绝不再跟随
+  /// 源容器（BUG-917：mkv/webm/avi/ts 源会让 ffmpeg 选中桌面精简 ffmpeg 白名单里
+  /// 不存在的 matroska/webm muxer → exit -22 EINVAL）。mp4 桌面 ffmpeg-min 能 mux，
+  /// 且任意播放器/浏览器通吃。
+  String _clipExportFileName({
     required String inputPath,
     required int startMs,
     required int endMs,
-  }) async {
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final Directory dir = Directory(p.join(docs.path, 'video_clips'));
+  }) {
     final String rawStem = _safeFileName(p.basenameWithoutExtension(inputPath));
     final String stem = rawStem.isEmpty ? 'video' : rawStem;
-    final String ext = p.extension(inputPath).isEmpty
-        ? '.mkv'
-        : p.extension(inputPath).toLowerCase();
-    final String name =
-        '${stem}_${_clipExportTimeToken(startMs)}-${_clipExportTimeToken(endMs)}$ext';
-    return p.join(dir.path, name);
+    return '${stem}_${_clipExportTimeToken(startMs)}-'
+        '${_clipExportTimeToken(endMs)}.mp4';
+  }
+
+  /// 决定片段导出目标路径：桌面弹「另存为」让用户选目录/文件名（取消返回 null），
+  /// 移动端落 app 文档目录 `video_clips/`（随后走系统分享）。输出恒 `.mp4`。
+  Future<String?> _resolveClipOutputPath({
+    required String defaultName,
+    required bool isDesktop,
+  }) async {
+    if (isDesktop) {
+      final String? picked = await FilePicker.platform.saveFile(
+        dialogTitle: t.video_clip_export,
+        fileName: defaultName,
+        type: FileType.custom,
+        allowedExtensions: <String>['mp4'],
+      );
+      if (picked == null) return null;
+      return _ensureMp4Extension(picked);
+    }
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory dir = Directory(p.join(docs.path, 'video_clips'));
+    return p.join(dir.path, defaultName);
+  }
+
+  /// 保证路径以 `.mp4` 结尾：用户在「另存为」里删/换了扩展名时补回，否则 ffmpeg 又
+  /// 按扩展名挑 muxer，退回 BUG-917（选中缺失的 matroska/mkv muxer → exit -22）。
+  String _ensureMp4Extension(String path) {
+    if (p.extension(path).toLowerCase() == '.mp4') return path;
+    return p.extension(path).isEmpty
+        ? '$path.mp4'
+        : '${p.withoutExtension(path)}.mp4';
   }
 
   String _clipExportTimeToken(int ms) {

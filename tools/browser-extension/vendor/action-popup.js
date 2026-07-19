@@ -48,6 +48,24 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   const countEl = document.getElementById('hp-count');
   const genEl = document.getElementById('hp-gen');
 
+  // 点扩展图标就能看见连接状态；离线/密钥错/Yomitan 占端口均给可执行提示，齿轮进完整设置。
+  const connEl = document.getElementById('hp-connection');
+  const connTitleEl = document.getElementById('hp-connection-title');
+  const connDetailEl = document.getElementById('hp-connection-detail');
+  try {
+    chrome.runtime.sendMessage({ type: 'connectionStatus' }, (resp) => {
+      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+      const c = resp && resp.connection ? resp.connection : { state: 'offline', port: 19633 };
+      const copy = self.HIBIKI_CONNECTION.copy(c.state, c.port);
+      if (connEl) connEl.dataset.tone = copy.tone;
+      if (connTitleEl) connTitleEl.textContent = copy.title;
+      if (connDetailEl) connDetailEl.textContent = copy.detail;
+      if (connEl) connEl.title = copy.detail;
+    });
+  } catch (_) {}
+  const optionsEl = document.getElementById('hp-open-options');
+  if (optionsEl) optionsEl.addEventListener('click', () => chrome.runtime.openOptionsPage());
+
   function readQueue() {
     return new Promise((resolve) => {
       try {

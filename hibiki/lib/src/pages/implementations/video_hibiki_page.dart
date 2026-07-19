@@ -80,6 +80,7 @@ import 'package:hibiki/src/media/video/video_chapter_panel.dart';
 import 'package:hibiki/src/media/video/audio_energy_probe.dart';
 import 'package:hibiki/src/media/video/waveform_envelope_cache.dart';
 import 'package:hibiki/src/media/video/subtitle_auto_align.dart';
+import 'package:hibiki/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:hibiki/src/media/video/video_chapter_markers.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart';
 import 'package:hibiki/src/media/video/video_episode_panel.dart';
@@ -106,6 +107,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
@@ -932,6 +934,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 让窗口与全屏两种场景都随 L 键 / 入口按钮翻转可见。
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
 
+  /// BUG-877：字幕列表面板左边缘拖拽中的临时宽度（逻辑像素）。仅拖动期间非 null，
+  /// [_subtitleJumpSidePanel] 优先用它实时反映拖动；拖动结束落 Drift preferences 后复位 null，
+  /// 回到读持久化值。避免每次 `onHorizontalDragUpdate` 都写 DB。
+  double? _subtitleListWidthDrag;
+
   /// 剧集列表 push-aside 侧栏可见性（TODO-638）。剧集列表此前是
   /// `showModalBottomSheet`（底部弹层），与其它侧栏（字幕列表 push-aside、设置 /
   /// 倍速等 overlay）显示风格不一致。改成与字幕列表同款的 push-aside 侧栏后，可见性
@@ -1211,6 +1218,50 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 字幕字符命中句柄：查词浮层的 dismiss barrier 用它反查「点到的是不是另一个字幕
   /// 字符」，是则切换查词、保持暂停（见 [_onDismissBarrierTap] / [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester _subtitleHitTester = VideoSubtitleHitTester();
+
+  /// 字幕**列表侧栏**字符命中句柄（BUG-874）：与 [_subtitleHitTester] 对称。查词浮层的
+  /// dismiss barrier 盖在推挤式字幕列表侧栏之上、抢走点击，故 barrier 在底部字幕 miss 后再
+  /// 用本句柄反查「点到的是不是列表里某行某个字符」，是则切换查词、保持浮层（见
+  /// [_onDismissBarrierTap] / [VideoSubtitleListHitTester]）。
+  final VideoSubtitleListHitTester _subtitleListHitTester =
+      VideoSubtitleListHitTester();
+
+  /// BUG-880：最后一次已知的全局指针位置。桌面查词只在鼠标**移动**派发的 `PointerHoverEvent`
+  /// 上触发（画面字幕 overlay 的 `_handleShiftHover`、字幕列表行的 hover、barrier 的
+  /// [_onDismissBarrierHover] 都如此），故光标停在词上不动、按 Shift 却因「没有 hover 移动
+  /// 事件」而查不出来——用户报的「按了不出」核心根因。页面根 [Listener.onPointerHover] 与
+  /// [_onDismissBarrierHover] 持续把最新位置写进这里，Shift 按下瞬间即在此位置反查立即查词。
+  Offset _lastGlobalPointerPos = Offset.zero;
+
+  /// BUG-880：Shift 键按下瞬间用 [_lastGlobalPointerPos] 反查字幕字符并立即查词（不必抖鼠标）。
+  /// 先查画面字幕命中句柄（[_subtitleHitTester]，含嵌套门控 [shouldSwitchWordOnBarrierTap]），
+  /// 未命中再查字幕列表侧栏（[_subtitleListHitTester]）。命中即走与移动触发的 hover 换词同一
+  /// 去重入口 / 列表查词入口，故与连续 hover 查词天然去重、不会同词双查。[Offset.zero]（尚无
+  /// hover：移动端或刚进页面）不触发。
+  void _triggerShiftLookupAtLastPointer() {
+    if (_lastGlobalPointerPos == Offset.zero) return;
+    final SubtitleCharHit? hit =
+        _subtitleHitTester.hitTest(_lastGlobalPointerPos);
+    if (hit != null) {
+      if (VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        topVisibleIndex: _topVisiblePopupIndex,
+        hitSubtitle: true,
+      )) {
+        _handleSubtitleHoverLookup(
+            hit.sentence, hit.graphemeIndex, hit.charRect);
+      }
+      return;
+    }
+    final SubtitleListHit? listHit =
+        _subtitleListHitTester.hitTest(_lastGlobalPointerPos);
+    if (listHit != null) {
+      _handleSubtitleListLookup(
+        listHit.cue,
+        listHit.graphemeIndex,
+        listHit.charRect,
+      );
+    }
+  }
 
   /// 承载查词浮层栈的根 Overlay 入口；非空时浮层栈渲染在根 Overlay（窗口/全屏统一，
   /// 全屏时浮在 media_kit 全屏路由之上）。栈空时移除、栈变化时 `markNeedsBuild`。
@@ -3251,6 +3302,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 命中同一字符（同句同 grapheme）短路去重，避免同词反复 `replaceStack` 闪烁 / 刷 FFI。
   /// 换词经 [_handleSubtitleLookupTap] → [_lookupAt]（`replaceStack: true` 复用热槽无缝替换）。
   void _onDismissBarrierHover(PointerHoverEvent event) {
+    // BUG-880：浮层打开时 barrier 盖住一切、页面根 Listener 收不到 hover，故在此持续更新
+    // 最后指针位置，让「静止光标 + 按 Shift」在浮层已开时也能立即换词（在 Shift 门控之前，
+    // 未按 Shift 也照常记录）。
+    _lastGlobalPointerPos = event.position;
     if (!HardwareKeyboard.instance.isShiftPressed &&
         !ReaderHibikiSource.instance.hoverAutoLookup) {
       // 未按 Shift 且未开「悬停即查词」：复位节流锚 + 去重键，使下次按 Shift 进入即触发。
@@ -3271,15 +3326,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 命中反查复用与 barrier 点击换词（[_onDismissBarrierTap]）同一命中句柄，全局坐标契约
     // 一致（[PointerHoverEvent.position] 已是全局坐标）。
     final SubtitleCharHit? hit = _subtitleHitTester.hitTest(event.position);
-    // 非嵌套（仅顶层可见）且命中字幕字符才换词——与点 barrier 换词的
+    // 非嵌套（仅顶层可见）且命中画面字幕字符才换词——与点 barrier 换词的
     // [shouldSwitchWordOnBarrierTap] 同门控（嵌套态换词会误把整栈 replaceStack 替换掉）。
-    if (!VideoHibikiPage.shouldSwitchWordOnBarrierTap(
-      topVisibleIndex: _topVisiblePopupIndex,
-      hitSubtitle: hit != null,
-    )) {
+    if (hit != null &&
+        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+          topVisibleIndex: _topVisiblePopupIndex,
+          hitSubtitle: true,
+        )) {
+      _handleSubtitleHoverLookup(hit.sentence, hit.graphemeIndex, hit.charRect);
       return;
     }
-    _handleSubtitleHoverLookup(hit!.sentence, hit.graphemeIndex, hit.charRect);
+    // BUG-879/881：画面字幕没命中，再反查**字幕列表侧栏**——barrier 全屏盖在推挤式侧栏上，
+    // 抢走 hover，故 Shift 悬停列表里下一个词若不在此反查就连续换不了词（与 barrier tap 的
+    // 列表兜底 [_onDismissBarrierTap] 对称）。复用 barrier hover 的「同句同 grapheme」去重键
+    // （cue.text 作句 key）避免同词反复 replaceStack 闪烁。
+    final SubtitleListHit? listHit =
+        _subtitleListHitTester.hitTest(event.position);
+    if (listHit != null) {
+      if (listHit.cue.text == _barrierHoverLastSentence &&
+          listHit.graphemeIndex == _barrierHoverLastGrapheme) {
+        return;
+      }
+      _barrierHoverLastSentence = listHit.cue.text;
+      _barrierHoverLastGrapheme = listHit.graphemeIndex;
+      _handleSubtitleListLookup(
+        listHit.cue,
+        listHit.graphemeIndex,
+        listHit.charRect,
+      );
+    }
   }
 
   /// 悬停查词的统一去重入口（BUG-861）：字幕盒自己的 [MouseRegion]（`onCharHover` →
@@ -3330,12 +3405,40 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 单层查词点同句另一个字符切换查词是合理交互。嵌套态（存在父层）下底部字幕仍清晰渲染、
     // 其字符矩形持续绑定，点第 2+ 个窗外面常落在字幕文字上；若仍走反查会 replaceStack 把整栈
     // 替换掉（顶层窗没关而是被换成新词）。故仅当 [shouldSwitchWordOnBarrierTap] 为真才反查。
-    final SubtitleCharHit? hit = _subtitleHitTester.hitTest(globalPos);
+    //
+    // BUG-910：反查用 `exactOnly: true`（只在点**落在字形矩形内**才算命中）。查词的胖手指裙边
+    // 容差（TODO-971 半字宽 ≈18px + BUG-825 描边级垂直边）本服务「点小字好点中」，但 barrier
+    // 判「关闭 vs 切词」若也吃这套 halo，字幕行周围约 18px 空白会被误判成「命中字幕」→ 把「点
+    // 空白想关闭继续看」当成「切词重查」，暂停冻结字幕下反复重查同一句（用户报「点空白一直
+    // 重复查一个词」）。exactOnly 让空白 halo 落回 dismiss+续播（恢复 BUG-410 备注承诺的「落
+    // 纯空白正常」），点在字上仍切词。悬停换词 / Shift 查词是查词意图，仍用宽容差（不改）。
+    final SubtitleCharHit? hit =
+        _subtitleHitTester.hitTest(globalPos, exactOnly: true);
     if (VideoHibikiPage.shouldSwitchWordOnBarrierTap(
       topVisibleIndex: _topVisiblePopupIndex,
       hitSubtitle: hit != null,
     )) {
       _handleSubtitleLookupTap(hit!.sentence, hit.graphemeIndex, hit.charRect);
+      return;
+    }
+    // BUG-874：底部字幕没命中，再反查**字幕列表侧栏**——barrier 全屏盖在推挤式侧栏之上、
+    // 抢走点击，故点列表里下一个词若不在此反查就只会关掉浮层。命中某行某字符即切换查词
+    // （[_handleSubtitleListLookup] → [_lookupAt] 的 `replaceStack`，保持浮层与暂停）。这是
+    // 列表行文本明确点在某字符上的显式换词意图，不吃底部字幕那条的嵌套门控
+    // （[shouldSwitchWordOnBarrierTap]）——replaceStack 本就重置整栈，等价于一次新查词。
+    //
+    // BUG-910：反查同样用 `exactOnly: true`——列表面板占右半屏、行文本满宽，若吃半字格裙边
+    // 容差，点面板行距 / 行尾空白想关闭浮层会被误判成「切列表里的词」反复重查（用户报「点半
+    // 个屏幕外的空白一直重复查一个词」；截图里查到的词根本不在画面字幕里、只在列表面板里）。
+    // exactOnly 只在点**落在列表字形盒内**才切词，点面板空白落回下方 dismiss+续播。
+    final SubtitleListHit? listHit =
+        _subtitleListHitTester.hitTest(globalPos, exactOnly: true);
+    if (listHit != null) {
+      _handleSubtitleListLookup(
+        listHit.cue,
+        listHit.graphemeIndex,
+        listHit.charRect,
+      );
       return;
     }
     // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗外**的真空白 = 一次性清整栈
@@ -3582,11 +3685,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
     VideoPlayerController controller,
   ) {
-    return buildVideoPlayerShortcutsFromRegistry(
-      appModel.shortcutRegistry,
-      _buildVideoShortcutActions(controller),
+    // BUG-924：词典浮层可见时，任一视频快捷键先关顶层浮层（对齐阅读器），否则穿透去控制
+    // 后台视频（用户报「视频里关不掉词典」「按 d 竟然快进」）。守卫是纯函数，逻辑集中在
+    // [guardVideoShortcutsWithPopupDismiss]，此处只提供页面态谓词与关浮层动作。
+    return guardVideoShortcutsWithPopupDismiss(
+      buildVideoPlayerShortcutsFromRegistry(
+        appModel.shortcutRegistry,
+        _buildVideoShortcutActions(controller),
+      ),
+      isPopupVisible: () => _hasVisiblePopup,
+      dismissPopup: _dismissTopVisiblePopup,
     );
   }
+
+  /// BUG-924：关掉当前顶层可见词典浮层（复用 [_handleBackOrExit] / [_onDismissBarrierTap]
+  /// 同款逐层关调用，index 0 保留隐藏热槽 BUG-092）。键盘 / 手柄 / 裸空格三条输入通道在
+  /// 浮层可见时统一调它先关浮层。
+  void _dismissTopVisiblePopup() => _popNestedPopupAt(_topVisiblePopupIndex);
 
   /// TODO-1342：视频播放器动作回调集合的单一构造点。键盘
   /// （[buildVideoPlayerShortcutsFromRegistry]）与手柄（[_handleVideoGamepadButton]
@@ -3718,6 +3833,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _pokeControlsVisible();
         unawaited(controller.nextChapter());
       }),
+      // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
+      // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
+      // 与顶部快速设置面板同源、零第二套状态。
+      openSubtitleAlign: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_openSubtitleWaveformAlign()),
+      ),
+      subtitleDelayIncrease: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_setDelayMs(_delayMs + _kSubtitleDelayNudgeMs)),
+      ),
+      subtitleDelayDecrease: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_setDelayMs(_delayMs - _kSubtitleDelayNudgeMs)),
+      ),
+      // asbplayer 式「字幕偏移对齐」（用户请求，默认 Ctrl+Shift+←/→）：把上一句 / 下一句
+      // 字幕的起点整体平移到当前播放点。决策集中在纯函数 snapSubtitleDelayMs，写穿仍走
+      // _setDelayMs（与 z/x 同一路径）。过沉浸门控，与 z/x 微调互补。
+      alignSubtitleToPrev: () => _runWhenImmersiveAllowsFullControls(
+        () => _snapSubtitleDelayToCue(next: false),
+      ),
+      alignSubtitleToNext: () => _runWhenImmersiveAllowsFullControls(
+        () => _snapSubtitleDelayToCue(next: true),
+      ),
       escape: () {
         if (_videoControlEditMode.value) {
           _hideVideoControlEditOverlay(revealControls: false);
@@ -3768,6 +3904,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       scope: ShortcutScope.video,
     );
     if (action == null) return false;
+    // BUG-924：词典浮层可见时，任一已绑手柄键先关顶层浮层并消费（对齐阅读器 + 键盘通道），
+    // 而非穿透控制后台视频。放在解析出 action 之后——未绑定的键仍交回 GamepadService 兜底
+    // （焦点移动等），不误吞导航。
+    if (_hasVisiblePopup) {
+      _dismissTopVisiblePopup();
+      return true;
+    }
     final VoidCallback? callback =
         videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
     if (callback == null) return false;
@@ -3837,6 +3980,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: (FocusNode node, KeyEvent event) {
+          // BUG-880：Shift 按下瞬间在最后指针位置反查字幕字符立即查词，根治「光标停在词上
+          // 不动、按 Shift 却不触发」（查词只在鼠标移动的 hover 事件上派发）。不消费按键，
+          // Shift 组合键 / 其它快捷键行为不变。
+          if (event is KeyDownEvent &&
+              (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+                  event.logicalKey == LogicalKeyboardKey.shiftRight)) {
+            _triggerShiftLookupAtLastPointer();
+          }
           // BUG-853：IME 改写成 process 的裸空格上浮到此，先按物理键还原播放/暂停；
           // 其余键交回手柄原生入口，行为不变。
           if (_handleVideoImeSpacePlayPause(event)) {
@@ -3844,7 +3995,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           }
           return _handleVideoGamepadNativeKey(node, event);
         },
-        child: child,
+        // BUG-880：页面根持续记录全局指针位置（不消费、不影响下层控制条 / 查词手势），供
+        // Shift 按下时反查。浮层打开后 barrier 盖住这里收不到 hover，由 [_onDismissBarrierHover]
+        // 接力更新同一字段。
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerHover: (PointerHoverEvent event) =>
+              _lastGlobalPointerPos = event.position,
+          child: child,
+        ),
       ),
     );
   }
@@ -4806,20 +4965,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         systemBarsVisible: _systemBarsVisible,
       );
 
-  /// 字幕动态避让的「进度条上缘」高度（BUG-238）：控制条可见时字幕底缘对它取下限
-  /// （`max(bottomPadding, reserve)`，见 [VideoSubtitleOverlay]）。由当前平台真实控制条
+  /// 字幕动态避让的「进度条上缘」高度（BUG-238 / BUG-901）：控制条可见时字幕底缘对它取
+  /// 下限（`max(bottomPadding, reserve)`，见 [VideoSubtitleOverlay]）。由当前平台真实控制条
   /// 几何加总（同名 getter 已 ×[_videoUiScale]），故随界面缩放一起变大——旧默认常量 56
   /// 既不随缩放、又低于默认基线 75，移动端 `max(75,56)=75` 把字幕留在被抬高的进度条
   /// 下面被遮。桌面进度条骑按钮行上沿 → 只让一个按钮行高（保 BUG-228 观感）；移动端
-  /// 进度条整体被 [_mobileControlsTheme] 抬到按钮行上方 → 让出其热区上缘（≈140×缩放）。
+  /// 进度条整体被 [_mobileControlsTheme] 抬到按钮行上方 → 让出其**触摸热区上缘**（含轨道
+  /// 上方那段透明可点区），字幕命中区整体清出 seek 命中区、不再挨太近误触（BUG-901）。
   double _subtitleControlsBottomReserve() {
     return videoSubtitleControlsReserve(
       isDesktop: _isDesktopVideoControls,
       buttonBarHeight: _videoButtonBarHeight,
       seekBarButtonGap: _videoSeekBarButtonGap,
-      // TODO-568：用**可见轨道高** + 呼吸间距（而非整段触摸热区高），字幕底缘骑在可见
-      // 进度条上方一点点、不顶飞那 ~47×缩放 的透明命中区空白。
-      seekBarTrackHeight: _videoSeekBarTrackHeight,
+      // BUG-901：用**触摸热区全高**（进度条真正可点目标，含可见轨道上方那段透明 seek
+      // 命中区）+ 呼吸间距，让字幕命中区整体骑在进度条整段可点区上方，与 seek 不重叠。
+      // 只让可见轨道高（旧 TODO-568）会让字幕落进那段透明热区、两命中区在同一竞技场误触。
+      seekBarContainerHeight: _videoSeekBarContainerHeight,
       subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap,
       bottomChromeBaseline: _videoBottomChromeBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
@@ -5217,6 +5378,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ShortcutAction.videoToggleFullscreen,
                 ShortcutAction.videoToggleSubtitleList,
                 ShortcutAction.videoToggleImmersiveLock,
+                // 对轴弹窗内再按「打开对轴」不叠第二层弹窗（与键盘直达路径一致）。
+                ShortcutAction.videoOpenSubtitleAlign,
               },
             ),
       // 点击字幕波形把播放头跳过去（seek 到该 x 对应的时间，不强制播放，保留当前播放态）。
@@ -5700,10 +5863,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.space): () =>
-            _runWhenImmersiveAllowsFullControls(
-              () => unawaited(controller.playOrPause()),
-            ),
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          // BUG-924：词典浮层可见时，裸空格也先关浮层（与 [_videoKeyboardShortcuts] 守卫
+          // 同语义），而非在浮层后面 play/pause。浮层不可见时保持原「裸空格=播放/暂停」覆写。
+          if (_hasVisiblePopup) {
+            _dismissTopVisiblePopup();
+            return;
+          }
+          _runWhenImmersiveAllowsFullControls(
+            () => unawaited(controller.playOrPause()),
+          );
+        },
       },
       child: child,
     );

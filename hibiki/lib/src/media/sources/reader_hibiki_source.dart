@@ -912,16 +912,15 @@ class ReaderHibikiSource extends ReaderMediaSource {
         defaultValue: true,
       );
 
+  // 注意：本文件里 toggle/setter 的紧凑 `??` 形分两种——ttu 区带
+  // onSettingsChangedLive 尾调，本区（行为开关）不带。收敛冗长双分支时保持
+  // 各自原有的（不）触发语义，勿混淆。
   void toggleInvertSwipeDirection() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleInvertSwipeDirection();
-      return;
-    }
-    await setPreference<bool>(
-      key: 'invert_swipe_direction',
-      value: !invertSwipeDirection,
-    );
+    await (readerSettings?.toggleInvertSwipeDirection() ??
+        setPreference<bool>(
+          key: 'invert_swipe_direction',
+          value: !invertSwipeDirection,
+        ));
   }
 
   // TODO-120: 反转键盘方向键翻页方向（仅键盘方向键），默认 false。
@@ -933,15 +932,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       );
 
   void toggleReverseArrowPageTurn() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleReverseArrowPageTurn();
-      return;
-    }
-    await setPreference<bool>(
-      key: 'reverse_arrow_page_turn',
-      value: !reverseArrowPageTurn,
-    );
+    await (readerSettings?.toggleReverseArrowPageTurn() ??
+        setPreference<bool>(
+          key: 'reverse_arrow_page_turn',
+          value: !reverseArrowPageTurn,
+        ));
   }
 
   // TODO-830: 反转有声书底栏 ⏮⏭ 前进/后退按钮的功能方向（per-reader，分层与
@@ -954,15 +949,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       );
 
   void toggleInvertAudiobookSkipDirection() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleInvertAudiobookSkipDirection();
-      return;
-    }
-    await setPreference<bool>(
-      key: 'invert_audiobook_skip_direction',
-      value: !invertAudiobookSkipDirection,
-    );
+    await (readerSettings?.toggleInvertAudiobookSkipDirection() ??
+        setPreference<bool>(
+          key: 'invert_audiobook_skip_direction',
+          value: !invertAudiobookSkipDirection,
+        ));
   }
 
   // TODO-080B: read through THIS source's profile-aware preference cache
@@ -998,15 +989,8 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   Future<void> setLookupAudioVolume(num volume) async {
     final int clamped = ReaderSettings.normalizeLookupAudioVolume(volume);
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setLookupAudioVolume(clamped);
-      return;
-    }
-    await setPreference<int>(
-      key: 'lookup_audio_volume',
-      value: clamped,
-    );
+    await (readerSettings?.setLookupAudioVolume(clamped) ??
+        setPreference<int>(key: 'lookup_audio_volume', value: clamped));
   }
 
   bool get pauseOnLookup =>
@@ -1074,15 +1058,8 @@ class ReaderHibikiSource extends ReaderMediaSource {
       );
 
   Future<void> setWheelPageTurnInterval(int value) async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setWheelPageTurnInterval(value);
-      return;
-    }
-    await setPreference<int>(
-      key: 'wheel_page_turn_interval',
-      value: value,
-    );
+    await (readerSettings?.setWheelPageTurnInterval(value) ??
+        setPreference<int>(key: 'wheel_page_turn_interval', value: value));
   }
 
   /// 翻页滑动灵敏度系数（TODO-113），缩放 JS `_gestureEnd` 的距离阈值；越大越迟钝。
@@ -1095,16 +1072,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
         ),
       );
 
+  // 分支刻意不对称：settings 路径传原值（其内部自会归一），偏好路径先归一再落库。
   Future<void> setSwipePageTurnSensitivity(double value) async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setSwipePageTurnSensitivity(value);
-      return;
-    }
-    await setPreference<double>(
-      key: 'swipe_page_turn_sensitivity',
-      value: ReaderSettings.normalizeSwipePageTurnSensitivity(value),
-    );
+    await (readerSettings?.setSwipePageTurnSensitivity(value) ??
+        setPreference<double>(
+          key: 'swipe_page_turn_sensitivity',
+          value: ReaderSettings.normalizeSwipePageTurnSensitivity(value),
+        ));
   }
 
   bool get highlightOnTap =>
@@ -1112,15 +1086,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       getPreference<bool>(key: 'highlight_on_tap', defaultValue: true);
 
   void toggleHighlightOnTap() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleHighlightOnTap();
-      return;
-    }
-    await setPreference<bool>(
-      key: 'highlight_on_tap',
-      value: !highlightOnTap,
-    );
+    await (readerSettings?.toggleHighlightOnTap() ??
+        setPreference<bool>(
+          key: 'highlight_on_tap',
+          value: !highlightOnTap,
+        ));
   }
 
   bool get showTopProgressBar =>
@@ -1128,15 +1098,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       getPreference<bool>(key: 'show_top_progress_bar', defaultValue: true);
 
   void toggleShowTopProgressBar() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleShowTopProgressBar();
-      return;
-    }
-    await setPreference<bool>(
-      key: 'show_top_progress_bar',
-      value: !showTopProgressBar,
-    );
+    await (readerSettings?.toggleShowTopProgressBar() ??
+        setPreference<bool>(
+          key: 'show_top_progress_bar',
+          value: !showTopProgressBar,
+        ));
   }
 
   bool get keepScreenAwake =>
@@ -1144,15 +1110,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       getPreference<bool>(key: 'keep_screen_awake', defaultValue: true);
 
   void toggleKeepScreenAwake() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleKeepScreenAwake();
-      return;
-    }
-    await setPreference<bool>(
-      key: 'keep_screen_awake',
-      value: !keepScreenAwake,
-    );
+    await (readerSettings?.toggleKeepScreenAwake() ??
+        setPreference<bool>(
+          key: 'keep_screen_awake',
+          value: !keepScreenAwake,
+        ));
   }
 
   bool get lyricsMode =>
@@ -1167,15 +1129,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       getPreference<bool>(key: 'tap_empty_hide_chrome', defaultValue: false);
 
   void toggleTapEmptyToHideChrome() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleTapEmptyToHideChrome();
-      return;
-    }
-    await setPreference<bool>(
-      key: 'tap_empty_hide_chrome',
-      value: !tapEmptyToHideChrome,
-    );
+    await (readerSettings?.toggleTapEmptyToHideChrome() ??
+        setPreference<bool>(
+          key: 'tap_empty_hide_chrome',
+          value: !tapEmptyToHideChrome,
+        ));
   }
 
   // TODO-728: bottom-bar current-sentence cue toggle (per-reader; layered like
@@ -1185,15 +1143,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       getPreference<bool>(key: 'show_bottom_bar_cue', defaultValue: true);
 
   void toggleShowBottomBarCue() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleShowBottomBarCue();
-      return;
-    }
-    await setPreference<bool>(
-      key: 'show_bottom_bar_cue',
-      value: !showBottomBarCue,
-    );
+    await (readerSettings?.toggleShowBottomBarCue() ??
+        setPreference<bool>(
+          key: 'show_bottom_bar_cue',
+          value: !showBottomBarCue,
+        ));
   }
 
   // TODO-728: top reading-progress position (per-reader; layered like the
@@ -1211,15 +1165,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
   void setTopProgressPosition(String value) async {
     final String normalized =
         ReaderSettings.normalizeTopProgressPosition(value);
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setTopProgressPosition(normalized);
-      return;
-    }
-    await setPreference<String>(
-      key: 'top_progress_position',
-      value: normalized,
-    );
+    await (readerSettings?.setTopProgressPosition(normalized) ??
+        setPreference<String>(
+          key: 'top_progress_position',
+          value: normalized,
+        ));
   }
 
   // TODO-975 决策#2：顶部进度悬浮开关（per-reader，分层同 showTopProgressBar），
@@ -1229,15 +1179,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       getPreference<bool>(key: 'top_progress_floating', defaultValue: false);
 
   void toggleTopProgressFloating() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleTopProgressFloating();
-      return;
-    }
-    await setPreference<bool>(
-      key: 'top_progress_floating',
-      value: !topProgressFloating,
-    );
+    await (readerSettings?.toggleTopProgressFloating() ??
+        setPreference<bool>(
+          key: 'top_progress_floating',
+          value: !topProgressFloating,
+        ));
   }
 
   // TODO-975 决策#1：悬浮 chrome 自动收起时长（毫秒，顶部/底栏共用），默认 3000，
@@ -1253,15 +1199,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   void setAutoHideChromeMillis(int value) async {
     final int normalized = normalizeAutoHideChromeMillis(value);
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setAutoHideChromeMillis(normalized);
-      return;
-    }
-    await setPreference<int>(
-      key: 'auto_hide_chrome_millis',
-      value: normalized,
-    );
+    await (readerSettings?.setAutoHideChromeMillis(normalized) ??
+        setPreference<int>(
+          key: 'auto_hide_chrome_millis',
+          value: normalized,
+        ));
   }
 
   // ── ttu 阅读器设置 ─────────────────────────────────────────────────
@@ -1659,6 +1601,23 @@ class ReaderHibikiSource extends ReaderMediaSource {
     await setCustomFonts(list);
   }
 
+  /// 尽力删除磁盘上的字体文件；失败只记日志（removeCustomFont 两分支原各持
+  /// 一份逐字相同的 try/catch，收敛到此）。
+  Future<void> _deleteCustomFontFile(String? filePath) async {
+    if (filePath == null) {
+      return;
+    }
+    try {
+      final File f = File(filePath);
+      if (await f.exists()) {
+        await f.delete();
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHibikiSource.deleteFont', e, stack);
+      debugPrint('[Hibiki] failed to delete custom font file $filePath: $e');
+    }
+  }
+
   Future<void> removeCustomFont(int index) async {
     final ReaderSettings? settings = readerSettings;
     if (settings != null) {
@@ -1666,20 +1625,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
       if (index < 0 || index >= list.length) {
         return;
       }
-      final String? filePath = list[index]['path'] as String?;
-      if (filePath != null) {
-        try {
-          final File f = File(filePath);
-          if (await f.exists()) {
-            await f.delete();
-          }
-        } catch (e, stack) {
-          ErrorLogService.instance
-              .log('ReaderHibikiSource.deleteFont', e, stack);
-          debugPrint(
-              '[Hibiki] failed to delete custom font file $filePath: $e');
-        }
-      }
+      await _deleteCustomFontFile(list[index]['path'] as String?);
       await settings.removeCustomFont(index);
       onSettingsChangedLive?.call();
       return;
@@ -1689,18 +1635,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
       return;
     }
     final Map<String, dynamic> entry = list.removeAt(index);
-    final String? filePath = entry['path'] as String?;
-    if (filePath != null) {
-      try {
-        final File f = File(filePath);
-        if (await f.exists()) {
-          await f.delete();
-        }
-      } catch (e, stack) {
-        ErrorLogService.instance.log('ReaderHibikiSource.deleteFont', e, stack);
-        debugPrint('[Hibiki] failed to delete custom font file $filePath: $e');
-      }
-    }
+    await _deleteCustomFontFile(entry['path'] as String?);
     await setCustomFonts(list);
   }
 
@@ -1755,10 +1690,6 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   static String cssFontFamilyName(String name) {
     return ReaderCustomFontCss.cssFontFamilyName(name);
-  }
-
-  static String cssFontFamilyList(Iterable<String> names) {
-    return names.map(cssFontFamilyName).join(', ');
   }
 
   static String? safeCustomFontPath(

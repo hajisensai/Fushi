@@ -46,6 +46,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （关=占位全隐藏、开=混排+云角标）。
   'syncBackup/Show remote entries':
       'test/pages/home_video_remote_mixed_grid_test.dart + test/pages/reader_remote_mixed_grid_test.dart',
+  // 互联解耦（用户诉求「互联和同步后端不冲突」）：互联总开关，独立于 backendType
+  // 云备份后端。写 SyncRepository（changed=true），生效点在同步触发的双通道门控 +
+  // 互联各 section 可见性 + 远端内容来源选择（非 reader CSS / 主题树），无适用探针；
+  // 由迁移守卫（hibikiServer→独立开关）+ 可见性守卫（开关常显、配置区门控）咬住。
+  'interconnect/Enable interconnect':
+      'test/sync/sync_interconnect_decouple_migration_test.dart + test/sync/sync_settings_visibility_test.dart',
   // 专项 unit/widget 生效探针（docs/specs/2026-06-03-t4-effect-probes-plan.md T1–T9）
   'reading/Text Orientation': 'test/reader/reader_content_styles_test.dart',
   'reading/Font Kerning (Vertical)':
@@ -92,11 +98,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Auto-add book title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
           'reader_hibiki/mining.part.dart & video_hibiki/lookup_mining.part.dart (bookTitleTag)',
-  // TODO-757: 压缩制卡媒体开关。写 AppModel.compressMiningMedia（prefsRepo），
-  // 焦点遍历能切到并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非
-  // reader CSS / 主题树），无适用探针；由专项纯函数 + pref round-trip 守卫覆盖。
-  'cardCreation/Compress card media':
-      'test/settings/compress_mining_media_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
+  // TODO-1650: 制卡图片/GIF 清晰度 + 音频质量两滑块（替代旧「压缩」开关）。写
+  // AppModel.miningImageQuality / miningAudioQuality（prefsRepo），焦点遍历能切到
+  // 并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非 reader CSS / 主题
+  // 树），无适用探针；由专项纯函数（档位工厂 + GIF 原片滤镜）+ pref round-trip 守卫覆盖。
+  'cardCreation/Image / GIF quality':
+      'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
+  'cardCreation/Audio quality':
+      'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // TODO-135: 默认标签区现无条件显示（hibiki/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡
@@ -209,8 +218,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_subtitle_style_test.dart + test/media/video/video_subtitle_font_consistency_test.dart',
   'video/Shadow': 'test/media/video/video_subtitle_style_test.dart',
   'video/Background opacity': 'test/media/video/video_subtitle_style_test.dart',
-  'video/No background':
-      'test/pages/video_quick_settings_sheet_test.dart + test/pages/video_settings_schema_guard_test.dart',
   'video/Vertical position':
       'test/media/video/video_subtitle_style_test.dart + test/pages/video_subtitle_push_up_guard_test.dart',
   'video/Show danmaku':
@@ -219,6 +226,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_danmaku_settings_test.dart + test/pages/video_danmaku_wiring_guard_test.dart',
   'video/Active danmaku limit':
       'test/media/video/video_danmaku_settings_test.dart + test/media/video/video_danmaku_layout_test.dart',
+  // PR#227: 番剧下载后端选择（外部 qBittorrent / 内置 libtorrent 引擎）。生效点在
+  // QbConnectionConfig.backend 字段（编解码 / 向后兼容 / isConfigured），由专项
+  // codec 测试覆盖；真实引擎切换是桌面 native 集成，widget 测不到。
+  'video/Download backend':
+      'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread Direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
@@ -372,6 +384,11 @@ void main() {
   testWidgets(
       'all settings destinations: focus-driven, change persists and takes effect',
       (WidgetTester tester) async {
+    // 折叠 section 默认收起会把行移出 widget 树、Tab 焦点驱动够不到它们，静默削弱
+    // 本覆盖守卫。强制全展开，让每个 section 的每一行都能被驱动到（见
+    // debugSettingsForceExpandAllSections）。
+    debugSettingsForceExpandAllSections = true;
+    addTearDown(() => debugSettingsForceExpandAllSections = false);
     // cardCreation 详情页现在内联渲染 AnkiSettingsBody（扁平化后不再藏在子路由
     // 后），它经 ankiViewModelProvider → BaseAnkiRepository 调
     // SharedPreferences.getInstance()；host 无插件实现会抛 MissingPluginException。

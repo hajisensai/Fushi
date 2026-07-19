@@ -423,12 +423,32 @@ void main() {
   });
 
   group('v1 -> v2 migration (backward compatibility iron rule)', () {
-    String legacyV1(Map<VideoControlButton, VideoControlPlacement> placements) {
-      VideoControlCustomization c = VideoControlCustomization.defaults;
-      placements.forEach((VideoControlButton b, VideoControlPlacement p) {
-        c = c.copyWithPlacement(b, p);
+    // Build a v1 wire blob ({"version":1,"placements":{...}}) exactly as the old
+    // 3-tier picker persisted it: start from the legacy defaults (speed=bottom,
+    // the rest=rightRail) and apply per-button overrides. The old holder class is
+    // gone, but the surviving enums + the on-disk format it wrote are what
+    // [VideoControlLayout.decode] must still migrate losslessly.
+    String legacyV1(Map<VideoControlButton, VideoControlPlacement> overrides) {
+      const Map<VideoControlButton, VideoControlPlacement> defaults =
+          <VideoControlButton, VideoControlPlacement>{
+        VideoControlButton.speed: VideoControlPlacement.bottom,
+        VideoControlButton.subtitleList: VideoControlPlacement.rightRail,
+        VideoControlButton.favoriteSentence: VideoControlPlacement.rightRail,
+        VideoControlButton.settings: VideoControlPlacement.rightRail,
+      };
+      final Map<VideoControlButton, VideoControlPlacement> merged =
+          <VideoControlButton, VideoControlPlacement>{
+        ...defaults,
+        ...overrides
+      };
+      return jsonEncode(<String, Object>{
+        'version': 1,
+        'placements': <String, String>{
+          for (final MapEntry<VideoControlButton, VideoControlPlacement> e
+              in merged.entries)
+            e.key.storageValue: e.value.storageValue,
+        },
       });
-      return c.encode();
     }
 
     test('legacy bottom maps to bottomRight', () {
@@ -466,7 +486,7 @@ void main() {
     test('full legacy default config migrates every learning key correctly',
         () {
       final VideoControlLayout migrated = VideoControlLayout.decode(
-          VideoControlCustomization.defaults.encode());
+          legacyV1(const <VideoControlButton, VideoControlPlacement>{}));
       expect(migrated.slotOf(VideoControlItem.speed),
           VideoControlSlot.bottomRight);
       for (final VideoControlItem item in <VideoControlItem>[
@@ -510,7 +530,7 @@ void main() {
 
     test('migration leaves every button placed (no orphan)', () {
       final VideoControlLayout migrated = VideoControlLayout.decode(
-          VideoControlCustomization.defaults.encode());
+          legacyV1(const <VideoControlButton, VideoControlPlacement>{}));
       // TODO-642：「无孤儿」= 每个按钮要么在某可见槽、要么在 removedItems（默认精简
       // 右上角后，prev/next 4 个导航键迁移落 removed，可恢复，不是数据丢失）。两者
       // 互不重叠且并集覆盖全集才算无孤儿。
@@ -528,20 +548,6 @@ void main() {
           reason: '一个按钮不能同时既可见又被移除');
       expect(placed, hasLength(VideoControlItem.values.length),
           reason: '可见槽 + removed 恰好覆盖全集，无重复无丢失');
-    });
-  });
-
-  group('legacy model untouched (phase 0 keeps current chrome identical)', () {
-    test('legacy defaults still drive the existing render contract', () {
-      const VideoControlCustomization c = VideoControlCustomization.defaults;
-      expect(c.placementFor(VideoControlButton.speed),
-          VideoControlPlacement.bottom);
-      expect(c.placementFor(VideoControlButton.subtitleList),
-          VideoControlPlacement.rightRail);
-      expect(c.buttonsFor(VideoControlPlacement.bottom),
-          contains(VideoControlButton.speed));
-      expect(c.buttonsFor(VideoControlPlacement.rightRail),
-          contains(VideoControlButton.subtitleList));
     });
   });
 

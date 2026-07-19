@@ -68,11 +68,15 @@ void main() {
   test('_buildSrtCard 对 EPUB-backed 书渲染 _progressBar，纯字幕书不渲染', () {
     // EPUB-backed 有声书画进度条（走与 EPUB 卡同一 _progressBar）；纯字幕书无进度
     // 真值 → 不传 metadata，保持无进度条（不显永远空的条）。
+    // 结构性守卫：门控 `_srtBookHasProgress(book) ?`，真分支画 `_progressBar(srtItem…)`，
+    // 纯字幕书 `: null` 不渲染。用正则而非单行字面量，容忍进度条扩展参数（如 BUG-888
+    // 手动读完态 `completed:`）导致的多行 dart format，同时仍锁死门控与真/假分支。
     expect(
-      booksPart,
-      contains(
-          'metadata: _srtBookHasProgress(book) ? _progressBar(srtItem) : null'),
-      reason: 'SRT 卡进度条须按 _srtBookHasProgress 门控渲染',
+      booksPart.contains(RegExp(
+          r'metadata: _srtBookHasProgress\(book\)\s*\?\s*_progressBar\(\s*srtItem,?[\s\S]*?\)\s*:\s*null')),
+      isTrue,
+      reason: 'SRT 卡进度条须按 _srtBookHasProgress 门控渲染'
+          '（true 分支画 _progressBar(srtItem…)，纯字幕书 : null 不渲染）',
     );
     expect(
       booksPart,

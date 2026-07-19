@@ -2,9 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
+import 'package:hibiki_core/hibiki_core.dart' show HibikiDatabase;
 
 /// BUG-404：插画全屏画廊（`_FullScreenGallery`）必须自己持有键盘处理——
 /// ESC 退出（不依赖整页 PageRoute 下不稳定的全局 `_handleGlobalEscape`），
@@ -32,16 +34,22 @@ void main() {
   ]);
 
   late Directory extractDir;
+  late HibikiDatabase db;
   final List<Directory> tempDirs = <Directory>[];
 
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
+    db = HibikiDatabase.forTesting(NativeDatabase.memory());
     extractDir = Directory.systemTemp.createTempSync('hibiki_illust_kbd');
     tempDirs.add(extractDir);
     // 写 3 张图片（命名带序号，listSync 顺序在同一目录内稳定）。
     for (int i = 0; i < 3; i++) {
       File('${extractDir.path}/img_$i.png').writeAsBytesSync(onePxPng);
     }
+  });
+
+  tearDown(() async {
+    await db.close();
   });
 
   tearDownAll(() {
@@ -63,6 +71,8 @@ void main() {
         home: IllustrationsViewerPage(
           bookTitle: 'Book',
           extractDir: extractDir.path,
+          bookKey: 'test-book',
+          database: db,
         ),
       ),
     );

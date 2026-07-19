@@ -1,0 +1,10 @@
+## BUG-897 · ASS 字幕字号偏小、描边偏细：cell 校准含 lineGap + 居中描边只显一半，与 mpv/libass 不齐
+- **报告**：2026-07-18（用户：同帧截图对比 mpv——对白行 Hibiki 比 mpv 小 ~20% 且描边更细；\pos 屏幕字两边一致 → 样式级错配非全局缩放错）
+- **真实性**：✅ 真 bug，两处根因：
+  1. **字号**：`video_subtitle_overlay.dart` 旧 `_assFontSizeToEm` 用 TextPainter **段落自然行高**当 cell 系数 k，但段落行高**含 hhea lineGap**（SkParagraph 把 leading 折进 ascent/descent，段落 API 剥不掉）。libass 语义（`ass_font.c::ass_face_set_size`：`mscale = hheaCell/winCell` + `FT_SIZE_REQUEST_TYPE_REAL_DIM` 按 hheaCell 定标，两处相消）是 **`em = Fontsize × upem / (usWinAscent+usWinDescent)`**（OS/2 win cell，无 lineGap）。实测本机字体表：Yu Gothic/Yu Mincho（Windows CJK 回退链首选）upem=2048、winCell=2636（1.287em）、lineGap=1024（0.5em）→ 旧近似 k≈1.6~1.79 vs libass 1.287，字号偏小 20~40%；MS Gothic（winCell=1.0、lineGap=0）恰好无差——所以「有的字幕对有的不对」。
+  2. **描边**：`_resolveStroke` 把 ASS `Outline`/`\bord`（libass `FT_Glyph_StrokeBorder` **向外扩的半径**，可见描边=完整半径）直接当 Flutter 居中 stroke 的 `strokeWidth`——内半边被上层 fill 盖住，可见只剩一半，恒比 mpv 细 50%。另 `Outline:0` 被 `clamp(0.5,…)` 下限强制成 0.5px 细边，mpv 则完全不画。
+- **[x] ① 已修复** — worktree-ass-size-outline-mpv-parity：
+  - 新增 `hibiki/lib/src/media/video/ass_font_metrics.dart`：sfnt（ttf/otf/ttc）`head`/`hhea`/`OS/2`/`name` 最小解析 + `AssFontCellIndex`（MKV 内嵌字体注册时同步喂入优先；懒惰后台 isolate 扫描系统字体目录，部分读取不整读大 TTC）；`cellPerEm = winCell/upem`（缺 OS/2 回退 hheaCell），与 libass 完全同源。
+  - `video_subtitle_overlay.dart`：`_cellPerEmFor` 先查真字体表（沿「显式家族→CJK 回退链」取 Skia 实际会用的第一个存在家族），表不可得才回退旧 TextPainter 近似；索引 `revision` bump 时清 k 缓存重绘自动校正。`assOutlineStrokeWidth`：半径×2 成居中 strokeWidth（可见宽=半径）、`Outline<=0` → 0 不画。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/ass_font_metrics_test.dart`（合成 sfnt/TTC：winCell 语义、hhea 回退、Yu Gothic 真实数值量级、索引优先级/大小写/revision）+ `hibiki/test/media/video/video_subtitle_ass_outline_width_test.dart`（Outline=2 → strokeWidth=半径×2；Outline=0 → 无描边层）；旧 `video_subtitle_letterbox_scale_test.dart` / `video_subtitle_overlay_markup_test.dart` 的描边断言同步更新为 ×2 语义。
+- **备注**：真表就绪前（扫描中/平台受限如 iOS 沙箱）字号先按旧近似渲染、就绪后同帧校正；测试环境（FlutterTest 字体）所有家族解析不到 → 不触发扫描、恒走近似，既有测试像素不变。字号索引按 family 级（不分字重面，同族各面 winCell 几乎一致）。`ScaledBorderAndShadow: no`（描边不随画面缩放，罕见）仍未特判。透明填充（\1a）下居中描边内半可见，与 libass 外扩环有细微差，可接受近似。

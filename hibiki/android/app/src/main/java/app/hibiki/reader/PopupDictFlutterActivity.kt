@@ -90,6 +90,9 @@ class PopupDictFlutterActivity : FlutterActivity() {
         engineWasCold = PopupEngineHolder.ensureEngine(this)
         PopupEngineHolder.setOnFinish { runOnUiThread { finish() } }
         super.onCreate(savedInstanceState)
+        // 查词弹窗是独立 :popup 进程、独立 window，绝不继承 MainActivity 的高刷偏好；
+        // 不主动请求就被系统按默认策略压到 60Hz，滚动列表明显卡顿。安全 no-op 退化。
+        HighRefreshRate.applyToActivity(this)
         if (!engineWasCold) {
             // Warm reuse: Dart is already mounted and won't re-poll
             // getInitialProcessText, so push the new term explicitly.

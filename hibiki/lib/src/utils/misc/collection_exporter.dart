@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
@@ -914,7 +915,9 @@ Future<void> saveOrShareExport({
         subject: subject,
       );
     }
-  } catch (_) {
+  } catch (e, s) {
+    // fail-open：保留 notify 提示用户导出失败；补 ErrorLogService.log 便于线上诊断。
+    ErrorLogService.instance.log('collectionExport.saveOrShareExport', e, s);
     notify(t.collection_export_failed);
   } finally {
     if (_isDesktop && tmp != null) {

@@ -175,6 +175,27 @@ class AudiobookPlayerController extends ChangeNotifier {
     return _allBookCueIndex(allBookCues: _allBookCues, currentCue: cue);
   }
 
+  /// [allBookCueIdx] 的「位置驱动」变体：直接按 [_player] 当前位置实时重算的
+  /// cue（[cueAtCurrentPositionInBook]）映射到 allBook 索引，**不依赖**
+  /// [_currentCue]。
+  ///
+  /// BUG-872：重开书时 [load] 已把播放器 seek 回保存位置，但 [_currentCue] 由
+  /// 125ms 播放 tick（[_updateCurrentCue]）填充，且 load 期常先吐一条 posMs≈0 的
+  /// 瞬态把 [_currentCue] 定成首句（[allBookCueIdx]==0）——歌词模式入场直接用它
+  /// 就高亮跳回第一句，等首个真实 tick 才跳到正确行。播放器**位置**已恢复到
+  /// `savedMs`，故按位置重算才是权威（[cueAtCurrentPositionInBook] 内部在位置
+  /// 无命中时仍回退 [_currentCue]）。歌词入场 / 恢复用本 getter，一次性锚定，
+  /// 与悬浮字幕 [displayCueForFloatingLyric] 同源回避 tick 依赖。
+  int get allBookCueIdxAtPosition {
+    final AudioCue? cue = cueAtCurrentPositionInBook();
+    if (cue == null || _allBookCues.isEmpty) return -1;
+    final int? id = cue.id;
+    if (id != null) {
+      return _allBookCueIdToIndex[id] ?? -1;
+    }
+    return _allBookCueIndex(allBookCues: _allBookCues, currentCue: cue);
+  }
+
   // ── PR8b: Follow audio ────────────────────────────────────────────────────
 
   /// 持久化后的 Follow audio 开关。UI 监听这个 ValueNotifier 切换磁铁图标。
@@ -296,6 +317,21 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前是否处于图片暂停等待中。
   bool get isImagePaused => _imagePauseTimer?.isActive ?? false;
 
+  /// BUG-890：图片等待（自动暂停）窗口内用户是否手动翻页离开了插图那句。
+  /// 图片等待到点自动恢复播放时，若为真则**不**强制把 reader 拽回音频位
+  /// （否则把用户手动翻到的位置吃掉）——让跟随只在播放推进到下一句时经
+  /// [_manualReaderOverrideCue] 护栏自然接管。由 [noteManualReaderNavigation]
+  /// 在 [isImagePaused] 期间置真，定时器回调消费后复位，生命周期各点复位防泄漏。
+  bool _readerMovedDuringImagePause = false;
+
+  /// 纯决策：图片等待自动恢复播放时是否应把 reader 强制 snap 回音频位。
+  /// 用户在暂停窗口内手动翻页离开（[readerMovedDuringPause] 为真）→ 不 snap。
+  @visibleForTesting
+  static bool shouldSnapAfterImagePauseResume({
+    required bool readerMovedDuringPause,
+  }) =>
+      !readerMovedDuringPause;
+
   void setImagePauseSec(int sec) {
     final int clamped = sec.clamp(0, 15);
     if (imagePauseSec.value == clamped) return;
@@ -311,15 +347,27 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int sec = imagePauseSec.value;
     if (sec <= 0 || !_player.playing) return;
     _imagePauseTimer?.cancel();
+    // BUG-890：新一轮图片等待开始，复位“窗口内是否手动翻页”标志。
+    _readerMovedDuringImagePause = false;
     unawaited(_player.pause());
     _imagePauseTimer = Timer(Duration(seconds: sec), () {
       _imagePauseTimer = null;
+      // BUG-890：消费并复位标志（无论下面是否恢复都清，防泄漏到下一轮）。
+      final bool readerMoved = _readerMovedDuringImagePause;
+      _readerMovedDuringImagePause = false;
       if (!_player.playing) {
         unawaited(_player.play());
         // 暂停时视口停在插图上；恢复后把视口拉回当前 cue（插图后那句），
         // 让 reader 的 _onCueChanged 以 forceReveal 续上 audio-follow（snapReaderToAudio
         // 内部会 notifyListeners）。
-        snapReaderToAudio();
+        // BUG-890：但若用户在这几秒暂停窗口内已手动翻页离开插图那句，则不强制
+        // snap——否则把用户手动翻到的位置吃掉。既有 _manualReaderOverrideCue 护栏
+        // 会让恢复后“同一句”期间保位不跳，跟随只在播放推进到下一句时自然接管。
+        if (shouldSnapAfterImagePauseResume(
+          readerMovedDuringPause: readerMoved,
+        )) {
+          snapReaderToAudio();
+        }
       }
     });
     notifyListeners();
@@ -486,6 +534,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _imagePauseTimer = null;
     _hasPlayedOnce = false;
     _forceNextReveal = false;
+    _readerMovedDuringImagePause = false;
     _chapterTransition = false;
     _imageChapterPauseActive = false;
 
@@ -628,7 +677,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (_chapterTransition) return;
     // 换 cue 列表是上下文边界：任何挂起的显式 seek 抑制窗都失效，必须复位，
     // 否则下面的 _updateCurrentCue 重算会被旗挡住、_currentCue 卡 null（W-2）。
-    _explicitSeekInFlight = false;
+    _clearExplicitSeekSuppression();
     _currentCue = null;
     _currentCueIndex = -1;
     _updateCurrentCue(_player.position.inMilliseconds);
@@ -681,9 +730,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     _manualReaderOverrideCue = null;
     // 用户在图片自动暂停窗口内手动播放：取消待恢复计时器并把视口从插图拉回当前
     // cue（否则计时器到点见已在播放而跳过 snap，视口卡在插图上直到下次 cue 推进）。
+    // 手动按播放是显式“继续听书”手势，仍 snap；只复位 BUG-890 的窗口内翻页标志。
     if (_imagePauseTimer != null) {
       _imagePauseTimer!.cancel();
       _imagePauseTimer = null;
+      _readerMovedDuringImagePause = false;
       snapReaderToAudio();
     }
     unawaited(_player.play());
@@ -692,6 +743,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   Future<void> pause() async {
     _imagePauseTimer?.cancel();
     _imagePauseTimer = null;
+    _readerMovedDuringImagePause = false;
     _resumeMainAfterClip = false;
     await _player.pause();
     _maybeSavePosition(force: true);
@@ -713,6 +765,13 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 避免 just_audio 将位置重置到 0。
   Future<void> seekMs(int positionMs) async {
     await _loadReady.future;
+    // 手动 seek（拖进度条 / 快进快退，seekRelative 也经此）是一个全新的、取代
+    // 任何 in-flight 显式 seek（skipToCue / playCueOnce）的用户意图：**无条件**先
+    // 复位抑制窗——放在 duration 守卫之前，即便 duration 尚未就绪、物理 seek 因
+    // 守卫早退而没下发，用户「离开旧目标」的意图也已成立。守卫只决定物理 seek
+    // 能否下发，不该门控意图取消；否则暂停态下 [_updateCurrentCue] 会以旧目标
+    // 持续抑制新位置的 tick，cue/高亮卡在旧句直到到达旧目标（BUG-903）。
+    _clearExplicitSeekSuppression();
     final Duration? dur = _player.duration;
     if (dur == null || dur.inMilliseconds <= 0) return;
     final int clampedMs = positionMs.clamp(0, dur.inMilliseconds);
@@ -743,6 +802,22 @@ class AudiobookPlayerController extends ChangeNotifier {
     _explicitSeekTargetFileIndex = targetFileIndex;
     _explicitSeekTargetMs = targetMs;
   }
+
+  /// 复位显式 seek 抑制窗（[_beginExplicitSeek] 的逆操作）。上下文边界
+  /// （换 cue 列表 / 章节恢复完成）或**手动改位置**（拖进度条 / 快进快退 /
+  /// TOC 翻页）时调用：一个全新的用户意图取代了 in-flight 的 explicit seek，
+  /// 必须连 stale 目标字段一起清掉，否则暂停态下 [_updateCurrentCue] 会继续
+  /// 以过期目标判据抑制新位置的瞬态 tick，cue/高亮卡在旧句直到到达旧目标
+  /// （BUG-903）。清零目标维持「flag=false ⟺ 目标为 sentinel」不变式。
+  void _clearExplicitSeekSuppression() {
+    _explicitSeekInFlight = false;
+    _explicitSeekTargetFileIndex = -1;
+    _explicitSeekTargetMs = 0;
+  }
+
+  /// 测试钩子：暴露显式 seek 抑制窗当前是否挂起，用于验证手动 seek 复位它。
+  @visibleForTesting
+  bool get explicitSeekInFlightForTesting => _explicitSeekInFlight;
 
   Future<void> skipToCue(AudioCue cue) async {
     _manualReaderOverrideCue = null;
@@ -1024,12 +1099,12 @@ class AudiobookPlayerController extends ChangeNotifier {
       // !_hasPlayedOnce（本会话首次「从本句播放」）/ restore-in-flight 等守卫
       // 被挡，文字停在原章；之后 cue 一直不变就走这条裸 return、永不再做跨章
       // 检查 → 要用户再点一次才跟过去。在「正在跟随播放」（playing 且非
-      // playCueOnce 单句试听）时补一次安静（不打印）的跨章检查，让文字收敛到
+      // playCueOnce 单句试听）时补一次跨章检查，让文字收敛到
       // 当前 cue 所属章。_maybeEmitCrossChapter 同章早退（已同步时 no-op）、
       // 跳章期间 _chapterTransition 守卫挡住后续 tick，不会 per-tick 抖动；
       // 暂停态不补检查，避免覆盖用户手动翻页。
       if (_player.playing && _stopAtPositionMs == null) {
-        _maybeEmitCrossChapter(cue, quiet: true);
+        _maybeEmitCrossChapter(cue);
       }
       if (forceNotify) {
         notifyListeners();
@@ -1089,13 +1164,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// SMIL/JSON 等非 sasayaki 路径 cue 的 textFragmentId 解码返回 null，
   /// 自然跳过这套逻辑（它们没有跨章同步概念）。
-  void _maybeEmitCrossChapter(AudioCue? cue,
-      {bool bypassPlayGuard = false, bool quiet = false}) {
+  void _maybeEmitCrossChapter(AudioCue? cue, {bool bypassPlayGuard = false}) {
     if (_chapterTransition) {
-      if (!quiet) {
-        // ignore: avoid_print
-        print('[hibiki-crossChapter] blocked: _chapterTransition=true');
-      }
       return;
     }
     if (cue == null) return;
@@ -1105,11 +1175,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (frag == null) return;
     final int cueSec = frag.sectionIndex;
     final int currentSec = getCurrentReaderSection?.call() ?? -1;
-    if (!quiet) {
-      // ignore: avoid_print
-      print(
-          '[hibiki-crossChapter] cueSec=$cueSec currentSec=$currentSec follow=${followAudio.value} played=$_hasPlayedOnce');
-    }
     if (!shouldCrossChapterForTesting(
       cueSec: cueSec,
       currentSec: currentSec,
@@ -1158,7 +1223,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (_imageChapterPauseActive) return;
     _chapterTransition = false;
     // 章节恢复完成是上下文边界：复位显式 seek 抑制窗，避免旧旗挡住重算（W-2）。
-    _explicitSeekInFlight = false;
+    _clearExplicitSeekSuppression();
     _updateCurrentCue(_player.position.inMilliseconds, forceNotify: success);
   }
 
@@ -1173,6 +1238,15 @@ class AudiobookPlayerController extends ChangeNotifier {
   void noteManualReaderNavigation() {
     _chapterTransition = false;
     _manualReaderOverrideCue = _currentCue;
+    // BUG-903：手动翻页（TOC / 链接 / 搜索 / 书签 / 翻页）同样是取代 in-flight
+    // 显式 seek 的新意图。复位抑制窗，否则暂停态下旧目标会继续抑制后续 tick，
+    // 使 cue/高亮无法跟随新位置。
+    _clearExplicitSeekSuppression();
+    // BUG-890：图片等待自动暂停窗口内的手动翻页 → 标记为“用户已离开插图那句”，
+    // 图片等待到点恢复时据此不强制 snap 回音频位（见 triggerImagePause）。
+    if (isImagePaused) {
+      _readerMovedDuringImagePause = true;
+    }
   }
 
   /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落 Hive。相同值调用

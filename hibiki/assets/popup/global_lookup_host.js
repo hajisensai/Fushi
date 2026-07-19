@@ -1711,6 +1711,61 @@
     return frameSources.has(iframe) ? frameSources.get(iframe) : null;
   }
 
+  // 剪贴板面板：把 ROOT 帧的滚动位置复位到顶部。面板的 root iframe 是**复用**的
+  // （renderStack 只换 #entries-container innerHTML，iframe / 其滚动容器不重建），
+  // 故上一句被滚动过的 scrollTop 会跨渲染保留——一条更长的新剪贴板内容渲染进来时
+  // 停在旧偏移而非从头看。Dart 面板控制器在「剪贴板内容更新」路径（update /
+  // _showTextOnly，均 seed 新 root）渲染后调本函数，让新句总是从顶部开始。点句中字
+  // 重查（_lookupFromBanner）/ 关子卡（_rerender）不调，保留其滚动位置。
+  // 面板 iframe 直接加载 popup.html（无 content.js shadow，__hibikiRoot 为 null），
+  // 滚动落在 document 上；#entries-container 兜底（万一改用容器滚动）。no-op 当无
+  // root 帧 / 跨源守卫 / node harness。
+  function scrollRootToTop() {
+    var rootId = null;
+    frames.forEach(function (record, id) {
+      if (rootId === null) {
+        rootId = id;
+      }
+    });
+    var record = rootId !== null ? frames.get(rootId) : null;
+    if (!record) {
+      return;
+    }
+    var win = null;
+    var doc = null;
+    try {
+      win = record.iframe.contentWindow;
+      doc = record.iframe.contentDocument;
+    } catch (e) {
+      win = null;
+      doc = null;
+    }
+    try {
+      if (doc) {
+        if (doc.scrollingElement) {
+          doc.scrollingElement.scrollTop = 0;
+        }
+        if (doc.documentElement) {
+          doc.documentElement.scrollTop = 0;
+        }
+        if (doc.body) {
+          doc.body.scrollTop = 0;
+        }
+        var container = (typeof doc.getElementById === 'function')
+            ? doc.getElementById('entries-container')
+            : null;
+        if (container) {
+          container.scrollTop = 0;
+        }
+      }
+      if (win && typeof win.scrollTo === 'function') {
+        win.scrollTo(0, 0);
+      }
+    } catch (e) {
+      // no-op（跨源 / 未加载）。
+    }
+  }
+
   // TODO-1188 — the contentWindow of a frame record, or null when unavailable
   // (cross-origin guard / torn-down iframe / node harness).
   function frameWindowOf(record) {
@@ -1848,6 +1903,7 @@
     // spec 2026-07-10 — panel-mode hooks (no-ops in cascade mode).
     setPanelPinnedVisual: setPanelPinnedVisual,
     setPanelBlockCaptureVisual: setPanelBlockCaptureVisual,
+    scrollRootToTop: scrollRootToTop,
     _frames: frames,
     // TODO-1188 — exposed for the node bridge-routing harness only (never used to
     // drive behaviour): the live globalId -> {frameId, localId} route map.

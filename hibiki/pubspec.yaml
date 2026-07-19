@@ -1,7 +1,7 @@
 name: hibiki
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 1.2.0+830
+version: 1.2.0+860
 environment:
   sdk: ">=3.5.0 <4.0.0"
   flutter: "^3.41.6"
@@ -48,6 +48,8 @@ dependencies:
     path: ../packages/hibiki_audio
   hibiki_platform:
     path: ../packages/hibiki_platform
+  hibiki_torrent:
+    path: ../packages/hibiki_torrent
   google_sign_in: ^6.2.2
   extension_google_sign_in_as_googleapis_auth: ^2.0.12
   googleapis: ^13.2.0

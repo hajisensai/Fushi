@@ -104,3 +104,75 @@ for (const s of SCENARIOS) {
     assert.equal(reveals(s.html), s.expected);
   });
 }
+
+// BUG-891：纯图片章（无 cue 锚点，走 awaitImageChapterPause 停留）用 __hoshiRevealAllBlurred
+// 揭整章 —— 区间函数 __hoshiRevealBlurredBetween 需要 prev→el 两个 cue，纯图片章走不到，
+// 音频会停在模糊图上。本用例验证：无任何 cue 段落也能揭开全部 blurred 图，且 gaiji 跳过。
+const revealAllSrc = extract("__hoshiRevealAllBlurred");
+
+function revealsAll(bodyHtml) {
+  const stubs = `
+    window.__hoshiImageRevealKey = function(m){ return (m && m.getAttribute && m.getAttribute('src')) || 'key'; };
+    window.__hoshiMarkImageRevealed = function(){};
+  `;
+  return runInDom(bodyHtml, stubs + revealAllSrc, `
+    var n = window.__hoshiRevealAllBlurred();
+    var blurredLeft = document.querySelectorAll('.blurred').length;
+    document.body.setAttribute('data-result', n + '|' + blurredLeft);
+  `);
+}
+
+test("揭整章(纯图片章)：无 cue 锚点也揭开所有 blurred 图，跳过 gaiji", () => {
+  // 纯图片章：两张 blurred 图 + 一个 gaiji（应被 continue 跳过、保持 blurred）。
+  const html =
+    `<img class="block-img blurred" src="a.jpg">` +
+    `<img class="block-img blurred" src="b.jpg">` +
+    `<svg class="gaiji blurred"><image href="g.svg"></image></svg>`;
+  // revealed=2（a,b；gaiji 不计数），剩 1 个 blurred（gaiji 仍模糊）。
+  assert.equal(revealsAll(html), "2|1");
+});
+
+test("揭整章：无 blurred 图时安全返回 0", () => {
+  assert.equal(revealsAll(`<p>纯文字，无图</p>`), "0|0");
+});
+
+// BUG-891 真正根因（诉求1/2「章节正文里的图，音频经过既不暂停也不揭遮罩，被直接无视」）：
+// __hoshiSasayakiAnchorEl 原为 `if(cueRangesMap){...} else if(cueWrappers){...}`。现代
+// WebView __hoshiCssHighlightsSupported 恒 true，而 cueRangesMap 从不被填充（applySasayakiCues
+// 只 set cueWrappers）→ 第一分支恒进入、找不到 range、return null，cueWrappers 兜底被 else
+// 永久跳过 → anchor 恒 null → __hoshiImagePauseAdvance 永不调用 → 整条图片暂停+揭遮罩失效。
+// 修法：cueRangesMap 未命中就无条件兜底 cueWrappers。本用例锁死这个兜底。
+const anchorElSrc = extract("__hoshiSasayakiAnchorEl");
+
+function resolveAnchorId(cssHighlights, rangeMapEntries) {
+  const setup = `
+    window.__hoshiCssHighlightsSupported = ${cssHighlights};
+    window.hoshiReader = {
+      cueRangesMap: new Map(${rangeMapEntries}),
+      cueWrappers: new Map([['K', [document.getElementById('w')]]]),
+    };
+  `;
+  return runInDom(
+    `<span id="w" class="hoshi-sasayaki-cue">句</span>`,
+    anchorElSrc + setup,
+    `var a = window.__hoshiSasayakiAnchorEl('K');
+     document.body.setAttribute('data-result', a ? (a.id || a.nodeName) : 'null');`,
+  );
+}
+
+test("锚点解析：cssHighlights 开 + cueRangesMap 空 → 兜底 cueWrappers（不是 null）", () => {
+  // 生产真实条件。修复前此处返回 'null'（图片暂停+揭遮罩全废）。
+  assert.equal(resolveAnchorId("true", ""), "w");
+});
+
+test("锚点解析：cssHighlights 关也兜底 cueWrappers", () => {
+  assert.equal(resolveAnchorId("false", ""), "w");
+});
+
+test("锚点解析：cueRangesMap 命中时优先用 range 的 startContainer（不破坏原路径）", () => {
+  // range startContainer 指向 #w 元素本身（nodeType===1 直接返回）。
+  assert.equal(
+    resolveAnchorId("true", "[['K', [{ startContainer: document.getElementById('w') }]]]"),
+    "w",
+  );
+});

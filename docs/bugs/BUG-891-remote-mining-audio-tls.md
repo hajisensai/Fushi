@@ -1,0 +1,15 @@
+## BUG-891 · 远端流媒体制卡句子音频 ffmpeg-kit 无 https/自签 Protocol not found
+- **报告**：2026-07-18（用户：真机截图——远端 Hibiki 库流视频制卡，OSD 报 `导出卡片失败：sentence audio export failed: ffmpeg exit 1; executable=ffmpeg-kit; attempted=ffmpeg-kit; stderr=https://192.168.31.160:38765/api/library/videos/.../stream?token=...: Protocol not found`）
+- **真实性**：✅ 真 bug。三层根因（均 file:line 核实）：
+  - **最深层**：移动端自编 ffmpeg-kit 是 **min 变体、不含 gnutls/TLS**（`docs/bugs/BUG-124.md:19`，vendored AAR `third_party/ffmpeg_kit_flutter/android/libs/ffmpeg-kit.aar`）→ `https` 协议未注册 → 把流 URL 当 `-i` 输入即 `Protocol not found`。桌面 bundled ffmpeg-min 有 https/tls，故桌面不出此 bug。
+  - **触发层**：`hibiki/lib/src/mining/immersion_mining_engine.dart:171` `audioSrc = req.audioSource ?? src`；Hibiki muxed 流 `audioSource==null` → `audioSrc` = mediaSource = 自签 https 流 URL，直喂 `extractAudioSegmentViaFfmpeg` → `desktop_audio_clipper.dart` 的 `-i inputPath`。
+  - **证书层**：远端 host 是**自签 HTTPS + TOFU 指纹钉扎**（`hibiki/lib/src/sync/tls/hibiki_tls_identity.dart`、`hibiki_pinning_http.dart`；SAN 被 basic_utils 一律编码为 dNSName，身份靠指纹钉扎不靠 hostname）。故即便给 ffmpeg-kit 加 gnutls，自签证书握手仍被拒——不能只靠 CA/hostname。
+- **[x] ① 已修复** — 两部分：
+  - **ffmpeg 源码补丁**（`third_party/ffmpeg_kit_flutter/patches/ffmpeg-tls-pin-sha256.patch`，基于 ffmpeg 6.0）：给 TLS 层加 `tls_pin_sha256` AVOption + 共享助手 `ff_tls_check_cert_pin`（`libavformat/tls.c`，用 libavutil `av_sha` 算叶证书 DER 的 SHA-256 比对钉扎值）；**openssl（移动端 Android/iOS）** / gnutls（Linux 桌面）/ securetransport（macOS）/ schannel（Windows）四后端各加钉扎分支：命中即接受、绕过 CA/hostname，不命中硬失败；不传 pin 时行为与上游一致。**逐字对齐 app 的 TOFU 钉扎**（`HibikiTlsIdentityStore.fingerprintOf`），非无条件放行。移动端重编用 `android.sh/ios.sh --enable-openssl`（**不用 gnutls**——它拖入 libiconv 的 gnulib/autogen 泥潭，实测本工具链构建失败；openssl 自包含可靠）并应用本补丁（见 patches/README.md）。
+  - **Dart 接线**：`buildFfmpegRemoteInputArgs(inputPath, {tlsPinSha256})` 对远端 https 输入注入 `-tls_pin_sha256 <fp>`（`desktop_audio_clipper.dart`）；三个抽取器（`extractAudioSegmentViaFfmpeg`/`extractClipGifViaFfmpeg`/`extractVideoFrameViaFfmpeg`）+ `extractVideoCover` 透传该参数；引擎 `ImmersionMiningEngine.mine` 从 `ImmersionMiningRequest.mediaSourceTlsPinSha256` 传入；`_mineVideoCard`（`lookup_mining.part.dart`）当 `_effectiveRemoteClient is HibikiClientSyncBackend` 时读其新增的 `activeFingerprintSha256`（源头 `HibikiClientUrl.fingerprintSha256`）。公网源（YouTube/直链有效证书）为 null，不钉扎、走 ffmpeg 默认。
+  - 提交：<待填>。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/ffmpeg_tls_pin_args_test.dart`：纯函数守卫「pin 非空→`-tls_pin_sha256` 在 `-i` 前」「pin 空/本地输入→不含」，三个 arg builder 透传；补丁存在性 + 覆盖三后端守卫。`flutter analyze` 0 issue，相关 32 测试绿。**真机（自编 ffmpeg-kit 加载）验证握手/钉扎生效待办**。
+- **备注**：
+  - ffmpeg TLS 能力还惠及移动端其它「远端公网源→ffmpeg 抽取」（YouTube/直链的 GIF/帧封面、拖动缩略图，现移动端全降级）；这些公网源走正常 CA 校验，不需 pin。
+  - Mac 重编：`~/ffmpegkit-build/ffmpeg-kit`（ffmpeg 6.0，NDK r25c）；`scripts/android/gnutls.sh` recipe 已备。桌面 ffmpeg-min（`tool/ffmpeg-min/`）若也要真钉扎需在其构建里应用同补丁；否则桌面维持上游默认 `tls_verify=0`（能通但不钉扎）。
+  - 关联 `docs/bugs/BUG-124.md`（自编 ffmpeg-kit 的由来）。

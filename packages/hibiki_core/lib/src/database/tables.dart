@@ -246,6 +246,11 @@ class EpubBooks extends Table {
   TextColumn get sourceMetadata => text().nullable()();
   IntColumn get importedAt => integer()();
 
+  /// 书「读完」的时间戳（用户手动标记，或读到全书末尾自动写入）；null = 未完成。
+  /// 镜像 [VideoBooks.completedAt]，书架概览「Completed」统计用。跳过后记/附录的
+  /// 读者靠手动标记即可计入完成，不再受「必须读到最后一字」限制。
+  DateTimeColumn get completedAt => dateTime().nullable()();
+
   /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
   /// onDelete:setNull = 移除来源时保留书目（归 NULL），不连坐删条目。
   IntColumn get sourceId => integer()
@@ -924,4 +929,28 @@ class SyncDeletionTombstones extends Table {
 
   @override
   Set<Column> get primaryKey => {mediaType, itemKey};
+}
+
+// ── revealed_images ─────────────────────────────────────────────────
+// 图片防剧透遮罩「已揭开」状态的持久真相源。per-(bookKey, imageKey)：imageKey =
+// extractDir 相对、解码、正斜杠归一的图片路径（如 `OEBPS/images/foo.jpg`）。阅读器
+// WebView（JS __hoshiImageRevealKey）与图片库 IllustrationsViewerPage（File 相对路径）
+// 都归一到这同一个 key，实现「书内揭开↔图片库揭开」双向同步（同一张图只存一行）。
+// 揭开即 insertOnConflictUpdate 一行（幂等）；空表 = 全部保持遮罩（旧库升级后行为与旧版
+// 完全一致，Never break userspace）。删书经 EpubBooks FK cascade 连带清本表。范式仿
+// [BookCustomCss]（text 复合键 + int 毫秒戳，为将来 sync/backup 留 LWW 口）。
+@DataClassName('RevealedImageRow')
+class RevealedImages extends Table {
+  /// 书稳定身份（= EpubBooks.bookKey，内容派生跨设备一致）。删书 cascade 清本表。
+  TextColumn get bookKey =>
+      text().references(EpubBooks, #bookKey, onDelete: KeyAction.cascade)();
+
+  /// 图片稳定 key（extractDir 相对、解码、正斜杠路径，如 `OEBPS/images/foo.jpg`）。
+  TextColumn get imageKey => text()();
+
+  /// 揭开毫秒戳（LWW 比较键；将来跨端同步/备份合并取较新）。
+  IntColumn get revealedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {bookKey, imageKey};
 }

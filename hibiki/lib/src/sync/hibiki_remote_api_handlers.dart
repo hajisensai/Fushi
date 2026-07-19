@@ -51,6 +51,10 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   }
   final bool wildcards = body['wildcards'] as bool? ?? false;
   final int maximumTerms = (body['maximumTerms'] as num?)?.toInt() ?? 10;
+  // BUG-871：浏览器扩展只消费 popupJson 与 bestLength。完整 result 还会重复携带
+  // popupJson 已渲染的全部词条，真实复杂词可让单次 HTTP 响应超过 1 MB。仅在调用方
+  // 显式请求时收窄 result；默认仍返回旧契约，避免影响同步端与第三方客户端。
+  final bool popupOnly = body['popupOnly'] as bool? ?? false;
   final DictionarySearchResult? result = await lookup.searchDictionary(
     term: term,
     wildcards: wildcards,
@@ -61,7 +65,11 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   }
   return <String, dynamic>{
     'type': 'dictionaryResult',
-    'result': result == null ? null : jsonDecode(result.toJson()),
+    'result': result == null
+        ? null
+        : popupOnly
+            ? <String, dynamic>{'bestLength': result.bestLength}
+            : jsonDecode(result.toJson()),
     'popupJson': result?.popupJson,
     if (theme != null) 'theme': theme,
     if (audioSources != null) 'audioSources': audioSources,

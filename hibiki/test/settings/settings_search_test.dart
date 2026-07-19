@@ -106,14 +106,15 @@ void main() {
   });
 
   test('home page wires search field, results and reveal hook', () {
-    final String home = File('lib/src/settings/settings_home_page.dart')
-        .readAsStringSync();
+    final String home =
+        File('lib/src/settings/settings_home_page.dart').readAsStringSync();
     expect(home, contains('t.settings_search_hint'));
     expect(home, contains('filterSettingsEntries('));
     expect(home, contains('flattenVisibleSettings('));
     expect(home, contains('SettingsSearchReveal.pendingItemId'));
     // 宽屏选中分类、窄屏 push 详情两条路径都要接。
-    expect(home, contains('SettingsDetailPage(destination: entry.destination)'));
+    expect(
+        home, contains('SettingsDetailPage(destination: entry.destination)'));
   });
 
   test('schema item consumes the reveal hook exactly once', () {

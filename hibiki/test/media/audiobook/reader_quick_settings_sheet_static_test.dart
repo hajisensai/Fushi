@@ -413,8 +413,14 @@ void main() {
     // isWide / onWideChanged 与外壳交互（见 master_detail_settings_sheet_test）。
     expect(source, contains('isWide: _isWide'));
     expect(source, contains('onWideChanged:'));
-    expect(source, contains('padding: wideSupportingPadding'));
-    expect(source, contains('padding: widePrimaryPadding'));
+    // 宽屏两 pane 逐字相同的内边距局部量已合并为单一 widePanePadding
+    //（数值走 HibikiMasterDetailSettingsSheet.paneInsets 共享公式，清理 wave2）。
+    // 不变量不变：两个 pane 都用共享局部量、无内联 EdgeInsets。
+    expect(
+      'padding: widePanePadding'.allMatches(source).length,
+      greaterThanOrEqualTo(2),
+    );
+    expect(source, contains('HibikiMasterDetailSettingsSheet.paneInsets('));
     expect(source, contains('Widget _buildWidePane('));
     expect(source, contains('_wideCategories()'));
 

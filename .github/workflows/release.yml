@@ -805,6 +805,27 @@ jobs:
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
         fi
+    # Symmetric with the build job (BUG-290): every job that injects the
+    # google_oauth stub must also inject the log_upload stub so the symmetry
+    # guard (log_upload_workflow_injection_guard_test) stays green and a future
+    # platform job can never silently drop the injection. Harmless here (tests
+    # do not upload logs) - when the secret is unset it leaves the committed
+    # empty placeholder so nothing is exposed.
+    - name: Provide gitignored log upload secret stub
+      shell: bash
+      env:
+        LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+        LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
+      run: |
+        dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+        if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+          printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')" \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+        fi
 
     - name: Provide gitignored dandanplay secret stub
       shell: bash

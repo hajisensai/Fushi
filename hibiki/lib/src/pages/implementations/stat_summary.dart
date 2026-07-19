@@ -76,6 +76,26 @@ double? computeWeekOverWeekPercent(int thisWeek, int lastWeek) {
   return (thisWeek - lastWeek) / lastWeek * 100.0;
 }
 
+/// 纯函数：近期「日均字数」= 窗口内**有阅读的天**的平均字数。
+///
+/// BUG-892 后续：KPI 条的「日均」旧实现是**终身**均值（总字数 ÷ 历史全部活跃天），近期
+/// 读得多、历史含大量低产/零星活跃日时会被拉低，与同屏的「今日 / 本周 / 30 天字符图」
+/// （都近期口径）对不上、显得偏低。改用与字符图**同一窗口**（传入 [recentDays] 即
+/// `_dailyData`，最近 30 天）、且按**活跃日**（chars>0）取均值——正是字符图里非零柱的
+/// 平均高度，直观可对齐。窗口内无活跃日返回 0。
+int dailyAverageChars(List<StatDayData> recentDays) {
+  int total = 0;
+  int activeDays = 0;
+  for (final StatDayData d in recentDays) {
+    if (d.chars > 0) {
+      total += d.chars;
+      activeDays++;
+    }
+  }
+  if (activeDays == 0) return 0;
+  return (total / activeDays).round();
+}
+
 /// 纯函数：目标环填充比例，裁剪到 [0, 1]。[goal] <= 0 时返回 0（避免除零）。
 double goalFraction(num value, num goal) {
   if (goal <= 0) return 0;

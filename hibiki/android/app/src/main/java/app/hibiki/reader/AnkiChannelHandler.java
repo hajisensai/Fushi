@@ -183,7 +183,7 @@ public class AnkiChannelHandler {
                         }
                         break;
                     case "openNote":
-                        // TODO-1007/1008：用 ACTION_VIEW intent 在 AnkiDroid 中打开该 note。
+                        // BUG-891：用 anki://x-callback-url/browser 深链在 AnkiDroid 中打开该 note。
                         if (noteIdArg == null) {
                             result.error("MISSING_ARG", "noteId is required", null);
                         } else {
@@ -617,14 +617,27 @@ public class AnkiChannelHandler {
     }
 
     /**
-     * TODO-1007/1008: open the given note in AnkiDroid via an {@code ACTION_VIEW}
-     * intent on the note's ContentProvider URI. Returns {@code true} when an
-     * activity was launched, {@code false} when no app could handle it.
+     * BUG-891: open the given note in AnkiDroid's Card Browser via the exported
+     * {@code anki://x-callback-url/browser?search=nid:<id>} VIEW deep link.
+     *
+     * The old approach — {@code ACTION_VIEW} on the note ContentProvider URI
+     * ({@code content://com.ichi2.anki.flashcards/notes/<id>}) — never resolved:
+     * that URI is served only by AnkiDroid's ContentProvider (query/insert), and
+     * NO AnkiDroid activity registers an intent-filter for {@code ACTION_VIEW} on
+     * it (nor on its {@code vnd.com.ichi2.anki.note} mimeType). So
+     * {@code resolveActivity} always returned null and the card never opened.
+     *
+     * The supported deep link is the exported {@code CardBrowserDeepLink} alias
+     * (scheme {@code anki}, host {@code x-callback-url}, path {@code /browser});
+     * its {@code search} query param is fed straight into the browser, so
+     * {@code nid:<id>} filters to this note. Returns {@code true} when an activity
+     * was launched, {@code false} when nothing can handle it (e.g. an AnkiDroid
+     * too old to expose the deep link) — the caller then surfaces a toast.
      */
     private boolean openNote(long noteId) {
-        Uri noteUri = Uri.withAppendedPath(
-            FlashCardsContract.Note.CONTENT_URI, Long.toString(noteId));
-        Intent intent = new Intent(Intent.ACTION_VIEW, noteUri);
+        Uri browserUri = Uri.parse("anki://x-callback-url/browser?search="
+            + Uri.encode("nid:" + noteId));
+        Intent intent = new Intent(Intent.ACTION_VIEW, browserUri);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         if (intent.resolveActivity(context.getPackageManager()) == null) {
             return false;

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -12,9 +13,10 @@ import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
 import 'package:hibiki/src/models/audio_source_config.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+    show MiningMediaCompression;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/update_check_cache.dart';
-import 'package:hibiki/src/utils/player/blur_options.dart';
 
 enum DesktopClipboardWindowMode {
   normal('normal'),
@@ -187,32 +189,6 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── player preferences ───────────────────────────────────────────────
 
-  bool get isPlayerListeningComprehensionMode =>
-      getPref('player_listening_comprehension_mode', defaultValue: false)
-          as bool;
-
-  void togglePlayerListeningComprehensionMode() async {
-    await setPref('player_listening_comprehension_mode',
-        !isPlayerListeningComprehensionMode);
-    notifyListeners();
-  }
-
-  bool get isPlayerOrientationPortrait =>
-      getPref('player_orientation_portrait', defaultValue: false) as bool;
-
-  void togglePlayerOrientationPortrait() async {
-    await setPref('player_orientation_portrait', !isPlayerOrientationPortrait);
-    notifyListeners();
-  }
-
-  bool get isStretchToFill =>
-      getPref('stretch_to_fill_screen', defaultValue: false) as bool;
-
-  void toggleStretchToFill() async {
-    await setPref('stretch_to_fill_screen', !isStretchToFill);
-    notifyListeners();
-  }
-
   bool get playerHardwareAcceleration =>
       getPref('player_hardware_acceleration', defaultValue: true) as bool;
 
@@ -221,42 +197,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get playerBackgroundPlay =>
-      getPref('player_background_play', defaultValue: true) as bool;
-
-  void setPlayerBackgroundPlay({required bool value}) async {
-    await setPref('player_background_play', value);
-    notifyListeners();
-  }
-
   /// TODO-702：有声书「退出阅读页后是否继续后台播放」。默认 **false** = 退出即停
   /// （detachReader 卸回调后 [AudiobookSession.stop] 真正止声/释放解码器，符合多数
   /// 用户「关掉书就别再响」的预期）。开启后退书只 detachReader、会话留在进程级常驻
-  /// 持有者里继续后台播放（保 TODO-291 阶段2 的后台续播能力）。这是独立的新偏好，
-  /// **不复用** [playerBackgroundPlay]（那是只有定义、没有任何消费方的死 pref，复用
-  /// 会把语义搅混）。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留
-  /// 其存值。
+  /// 持有者里继续后台播放（保 TODO-291 阶段2 的后台续播能力）。这是独立的偏好，
+  /// **不复用**旧 `player_background_play` 死 pref（其代码通道已删除，复用会把语义
+  /// 搅混）。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留其存值。
   bool get audiobookBackgroundPlay =>
       getPref('audiobook_background_play', defaultValue: false) as bool;
 
   Future<void> setAudiobookBackgroundPlay({required bool value}) async {
     await setPref('audiobook_background_play', value);
-    notifyListeners();
-  }
-
-  bool get showSubtitlesInNotification =>
-      getPref('player_subtitle_notification', defaultValue: true) as bool;
-
-  void setShowSubtitlesInNotification({required bool value}) async {
-    await setPref('player_subtitle_notification', value);
-    notifyListeners();
-  }
-
-  bool get playerUseOpenSLES =>
-      getPref('player_use_opensles', defaultValue: true) as bool;
-
-  void setPlayerUseOpenSLES({required bool value}) async {
-    await setPref('player_use_opensles', value);
     notifyListeners();
   }
 
@@ -747,16 +698,6 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  final int defaultDoubleTapSeekDuration = 5000;
-
-  int get doubleTapSeekDuration => getPref('double_tap_seek_duration',
-      defaultValue: defaultDoubleTapSeekDuration) as int;
-
-  void setDoubleTapSeekDuration(int value) async {
-    await setPref('double_tap_seek_duration', value);
-    notifyListeners();
-  }
-
   bool get isFirstTimeSetup =>
       getPref('first_time_setup', defaultValue: true) as bool;
 
@@ -875,6 +816,30 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 视频字幕列表**行字号档位**（BUG-878）：档位下标（见 [VideoSubtitleJumpPanel] 的
+  /// `_kFontScaleSteps`），默认 1（1.0x）。旧版本这是面板纯内存 State、每次重开都重置成
+  /// 默认档；现在落 Drift `preferences`，用户放大后跨开关 / 跨重启都记住。仅在该 key 从未
+  /// 写过时返回默认；越界由面板 seed 时 clamp（档位数组扩容后旧存值仍安全）。
+  int get videoSubtitleListFontScaleIndex =>
+      getPref('video_subtitle_list_font_scale_index', defaultValue: 1) as int;
+
+  Future<void> setVideoSubtitleListFontScaleIndex(int value) async {
+    await setPref('video_subtitle_list_font_scale_index', value);
+    notifyListeners();
+  }
+
+  /// 视频字幕列表**面板宽度**（逻辑像素，BUG-877）：默认 0 = 未自定义，页面按屏宽自适应
+  /// （`screenWidth*0.28` 钳制）算宽；用户拖拽面板左边缘把手改宽后存实际像素值，跨开关 /
+  /// 跨重启都记住。0 语义即「跟随自适应」，故清除自定义只需存回 0。页面读取时对存值再做
+  /// 一次 clamp（防跨设备屏宽差异下存值超出合理范围）。
+  double get videoSubtitleListWidth =>
+      (getPref('video_subtitle_list_width', defaultValue: 0) as num).toDouble();
+
+  Future<void> setVideoSubtitleListWidth(double value) async {
+    await setPref('video_subtitle_list_width', value);
+    notifyListeners();
+  }
+
   /// 播放列表自动连播开关（TODO-639）：默认开启。一集播完后，开则倒计时自动进下一集
   /// （倒计时期间可点「取消」按钮停在本集），关则停在本集结束不自动推进。
   /// getPref 仅在该 key 从未写过时返回默认 true，已切过开关的用户保留其存值。
@@ -948,6 +913,20 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// qBittorrent WebUI 连接配置（地址/账密/分类，JSON；见 [QbConnectionConfig]）。
+  /// 番剧下载走外部 qb 实例，本配置为空视为功能未启用。
+  QbConnectionConfig? get qbConnectionConfig => decodeQbConnectionConfig(
+        getPref('qb_connection_config', defaultValue: '') as String,
+      );
+
+  Future<void> setQbConnectionConfig(QbConnectionConfig? config) async {
+    await setPref(
+      'qb_connection_config',
+      config == null ? '' : encodeQbConnectionConfig(config),
+    );
+    notifyListeners();
+  }
+
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
   /// 读盘经 [VideoDanmakuStyle.decode] 已 clamp 到合法区间。
   VideoDanmakuStyle get videoDanmakuStyle => VideoDanmakuStyle.decode(
@@ -1016,22 +995,10 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  VideoControlCustomization get videoControlCustomization =>
-      VideoControlCustomization.decode(
-        getPref('video_control_customization', defaultValue: '') as String,
-      );
-
-  Future<void> setVideoControlCustomization(
-    VideoControlCustomization customization,
-  ) async {
-    await setPref('video_control_customization', customization.encode());
-    notifyListeners();
-  }
-
-  /// 视频控制按钮 9-槽位布局（TODO-274/312 phase 2）。与 legacy
-  /// [videoControlCustomization] 共用同一持久化键 `video_control_customization`：
+  /// 视频控制按钮 9-槽位布局（TODO-274/312 phase 2）。持久化键
+  /// `video_control_customization` 沿用旧三档模型时期的键名：
   /// [VideoControlLayout.decode] 自动识别 v1（旧三档 placements）并迁移成 v2 槽位，
-  /// 故老用户配置无损升级、不需要新 schema。新写入一律是 v2 JSON。
+  /// 故老用户配置无损升级、不需要新 schema。新写入一律是 v2/v3 JSON。
   VideoControlLayout get videoControlLayout => VideoControlLayout.decode(
         getPref('video_control_customization', defaultValue: '') as String,
       );
@@ -1184,32 +1151,6 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── transcript ───────────────────────────────────────────────────────
-
-  bool get isTranscriptPlayerMode =>
-      getPref('is_transcript_player_mode', defaultValue: false) as bool;
-
-  void toggleTranscriptPlayerMode() async {
-    await setPref('is_transcript_player_mode', !isTranscriptPlayerMode);
-    notifyListeners();
-  }
-
-  bool get isTranscriptOpaque =>
-      getPref('is_transcript_opaque', defaultValue: false) as bool;
-
-  void toggleTranscriptOpaque() async {
-    await setPref('is_transcript_opaque', !isTranscriptOpaque);
-    notifyListeners();
-  }
-
-  bool get subtitleTimingsShown =>
-      getPref('subtitle_timings_shown', defaultValue: true) as bool;
-
-  void toggleSubtitleTimingsShown() async {
-    await setPref('subtitle_timings_shown', !subtitleTimingsShown);
-    notifyListeners();
-  }
-
   // ── tags & card export ───────────────────────────────────────────────
 
   String get savedTags => getPref('saved_tags', defaultValue: '') as String;
@@ -1226,14 +1167,48 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  // TODO-757 压缩制卡媒体（音频 / GIF 封面 / 截图封面）。默认 true=压缩档（= TODO-646
-  // 现状，零行为破坏）；关闭后走高保真档，媒体更清晰但卡片体积更大。Android 句子
-  // 音频本就无损 re-mux，不受此开关影响。
-  bool get compressMiningMedia =>
-      getPref('compress_mining_media', defaultValue: true) as bool;
+  // TODO-1650 制卡图片/GIF 清晰度档（0..3，见 [MiningMediaCompression.imageTiers]）。
+  // 替代旧的单一「压缩」开关。未显式设过时从旧 `compress_mining_media` 布尔迁移：
+  // 开(默认)→标准档 1（= TODO-646 现状，零行为破坏）；关→高清档 2。读写都夹到 0..3，
+  // 防止损坏/越界值进到底层编码。
+  int get miningImageQuality {
+    final int? explicit =
+        getPref('mining_image_quality', defaultValue: null) as int?;
+    if (explicit != null) {
+      return explicit.clamp(0, MiningMediaCompression.imageTierCount - 1);
+    }
+    final bool oldCompress =
+        getPref('compress_mining_media', defaultValue: true) as bool;
+    return oldCompress
+        ? MiningMediaCompression.defaultImageTier
+        : 2; // 旧「关闭压缩」= 高保真档 = 图片高清档 2
+  }
 
-  void toggleCompressMiningMedia() async {
-    await setPref('compress_mining_media', !compressMiningMedia);
+  void setMiningImageQuality(int tier) async {
+    await setPref('mining_image_quality',
+        tier.clamp(0, MiningMediaCompression.imageTierCount - 1));
+    notifyListeners();
+  }
+
+  // TODO-1650 制卡音频质量档（0..2，见 [MiningMediaCompression.audioTiers]）。未显式设过时
+  // 从旧「压缩」开关迁移：开(默认)→标准档 0（单声道 64k，现状）；关→高音质档 1（立体声
+  // 128k）。Android 句子音频本就无损 re-mux，不受此档影响。
+  int get miningAudioQuality {
+    final int? explicit =
+        getPref('mining_audio_quality', defaultValue: null) as int?;
+    if (explicit != null) {
+      return explicit.clamp(0, MiningMediaCompression.audioTierCount - 1);
+    }
+    final bool oldCompress =
+        getPref('compress_mining_media', defaultValue: true) as bool;
+    return oldCompress
+        ? MiningMediaCompression.defaultAudioTier
+        : 1; // 旧「关闭压缩」= 高保真档 = 音频高音质档 1
+  }
+
+  void setMiningAudioQuality(int tier) async {
+    await setPref('mining_audio_quality',
+        tier.clamp(0, MiningMediaCompression.audioTierCount - 1));
     notifyListeners();
   }
 
@@ -1425,13 +1400,6 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── UI visibility ────────────────────────────────────────────────────
 
-  bool get showPlayBar => getPref('show_play_bar', defaultValue: true) as bool;
-
-  void toggleShowPlayBar() async {
-    await setPref('show_play_bar', !showPlayBar);
-    notifyListeners();
-  }
-
   bool get showMediaNotification =>
       getPref('show_media_notification', defaultValue: true) as bool;
 
@@ -1595,9 +1563,6 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get showFloatingDict =>
-      getPref('show_floating_dict', defaultValue: false) as bool;
-
   // ── update preferences ───────────────────────────────────────────────
 
   bool get updateNeverRemind =>
@@ -1653,79 +1618,6 @@ class PreferencesRepository extends ChangeNotifier {
   /// 后台静默刷新的产物，不驱动 UI 重建，避免无谓 rebuild。
   Future<void> setUpdateCheckCache(UpdateCheckCacheEntry entry) =>
       setPref(updateCheckCachePrefKey, entry.encode());
-
-  // ── bookmarks flag ───────────────────────────────────────────────────
-
-  bool get populateBookmarksFlag =>
-      getPref('populate_bookmarks', defaultValue: false) as bool;
-
-  void setPopulateBookmarksFlag() async {
-    await setPref('populate_bookmarks', true);
-  }
-
-  // ── blur options ─────────────────────────────────────────────────────
-
-  static const _defaultBlurJson =
-      '{"w":200,"h":200,"l":-1,"t":-1,"r":0,"g":0,"b":0,"o":0,"br":5,"v":false}';
-
-  BlurOptions get blurOptions {
-    final String raw =
-        getPref('blur_options_json', defaultValue: _defaultBlurJson) as String;
-    try {
-      final Map<String, dynamic> m =
-          Map<String, dynamic>.from(jsonDecode(raw) as Map);
-      return BlurOptions(
-        width: (m['w'] as num).toDouble(),
-        height: (m['h'] as num).toDouble(),
-        left: (m['l'] as num).toDouble(),
-        top: (m['t'] as num).toDouble(),
-        color: Color.fromRGBO(
-          (m['r'] as num).toInt(),
-          (m['g'] as num).toInt(),
-          (m['b'] as num).toInt(),
-          (m['o'] as num).toDouble(),
-        ),
-        blurRadius: (m['br'] as num).toDouble(),
-        visible: m['v'] as bool,
-      );
-    } catch (_) {
-      return BlurOptions(
-        width: 200,
-        height: 200,
-        left: -1,
-        top: -1,
-        color: Colors.black.withValues(alpha: 0),
-        blurRadius: 5,
-        visible: false,
-      );
-    }
-  }
-
-  Future<void> setBlurOptions(BlurOptions options) async {
-    final String json = jsonEncode(<String, dynamic>{
-      'w': options.width,
-      'h': options.height,
-      'l': options.left,
-      't': options.top,
-      'r': options.color.red,
-      'g': options.color.green,
-      'b': options.color.blue,
-      'o': options.color.opacity,
-      'br': options.blurRadius,
-      'v': options.visible,
-    });
-    await setPref('blur_options_json', json);
-    notifyListeners();
-  }
-
-  // ── per-media-item audio index ───────────────────────────────────────
-
-  int getMediaItemPreferredAudioIndex(String uniqueKey) =>
-      getPref('audio_index/$uniqueKey', defaultValue: 0) as int;
-
-  void setMediaItemPreferredAudioIndex(String uniqueKey, int index) async {
-    await setPref('audio_index/$uniqueKey', index);
-  }
 
   // ── anki deck/model selection ────────────────────────────────────────
 

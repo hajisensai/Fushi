@@ -708,22 +708,16 @@ JSON.stringify((function(){
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
     final ColorScheme scheme = theme.colorScheme;
-    String cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
-        '${(c.g * 255.0).round().clamp(0, 255)}, '
-        '${(c.b * 255.0).round().clamp(0, 255)})';
-    final Color primary = scheme.primary;
-    final String primaryRgba =
-        'rgba(${(primary.r * 255.0).round().clamp(0, 255)}, '
-        '${(primary.g * 255.0).round().clamp(0, 255)}, '
-        '${(primary.b * 255.0).round().clamp(0, 255)}, 0.35)';
-    final String textRgba = cssRgb(scheme.onSurface);
     final appModel = ref.read(appProvider);
-    final Color bgColor = appModel.overrideDictionaryColor ?? scheme.surface;
-    final String bgRgb = cssRgb(bgColor);
-    // TODO-776: drive the per-row dictionary-count grid (experimental). Injected
-    // alongside the theme vars so a live theme switch re-applies it; the popup
-    // CSS falls back to 1 when the property is absent (untouched default).
-    final int dictColumns = appModel.popupDictionaryColumns;
+    // 变量取值统一来自 buildPopupThemeCssVars（与扩展/另一注入器同一真源）；
+    // TODO-776: --dict-columns 随主题变量一起重注（live theme switch 也重应用），
+    // popup CSS 在属性缺席时回退 1（经典单列不受影响）。
+    final Map<String, String> vars = buildPopupThemeCssVars(
+      scheme: scheme,
+      backgroundColor: appModel.overrideDictionaryColor ?? scheme.surface,
+      surfaceContainerHigh: scheme.surfaceContainerHigh,
+      dictionaryColumns: appModel.popupDictionaryColumns,
+    );
     // TODO-1065：app 外 / 悬浮字幕独立查词窗给 <html> 打透明标记（见 popup.css
     // html.mobile-external），消除 documentElement 不透明填充铺满视口的泛白。in-app
     // （transparentDocumentBackground=false）不加，桌面 global-lookup 走独立路径。
@@ -732,17 +726,17 @@ JSON.stringify((function(){
         : '';
     return '''
       $docClassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
-      document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
-      document.documentElement.style.setProperty('--text-color', '$textRgba');
-      document.documentElement.style.setProperty('--background-color', '$bgRgb');
-      document.documentElement.style.setProperty('--md-surface-container', '${cssRgb(scheme.surfaceContainer)}');
-      document.documentElement.style.setProperty('--md-surface-container-high', '${cssRgb(scheme.surfaceContainerHigh)}');
-      document.documentElement.style.setProperty('--md-outline-variant', '${cssRgb(scheme.outlineVariant)}');
-      document.documentElement.style.setProperty('--md-on-surface-variant', '${cssRgb(scheme.onSurfaceVariant)}');
-      document.documentElement.style.setProperty('--md-primary', '${cssRgb(scheme.primary)}');
-      document.documentElement.style.setProperty('--md-on-primary', '${cssRgb(scheme.onPrimary)}');
-      document.documentElement.style.setProperty('--hibiki-radius-card', '${HibikiRadii.cardValue.toInt()}px');
-      document.documentElement.style.setProperty('--dict-columns', '$dictColumns');
+      document.documentElement.style.setProperty('--hoshi-primary-highlight', '${vars['--hoshi-primary-highlight']}');
+      document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
+      document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');
+      document.documentElement.style.setProperty('--md-surface-container', '${vars['--md-surface-container']}');
+      document.documentElement.style.setProperty('--md-surface-container-high', '${vars['--md-surface-container-high']}');
+      document.documentElement.style.setProperty('--md-outline-variant', '${vars['--md-outline-variant']}');
+      document.documentElement.style.setProperty('--md-on-surface-variant', '${vars['--md-on-surface-variant']}');
+      document.documentElement.style.setProperty('--md-primary', '${vars['--md-primary']}');
+      document.documentElement.style.setProperty('--md-on-primary', '${vars['--md-on-primary']}');
+      document.documentElement.style.setProperty('--hibiki-radius-card', '${vars['--hibiki-radius-card']}');
+      document.documentElement.style.setProperty('--dict-columns', '${vars['--dict-columns']}');
 ''';
   }
 
@@ -816,7 +810,6 @@ JSON.stringify((function(){
           window.resetSelectedDictionaries();
           window.renderPopup();
         ''';
-    final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
       ${staticChanged ? staticSettingsJs : ''}
       $entriesJs
@@ -858,11 +851,7 @@ JSON.stringify((function(){
       };
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
-    ''').then((_) {
-      swInject.stop();
-      debugPrint(
-          '[dict-perf] evaluateJavascript: ${swInject.elapsedMilliseconds}ms');
-    });
+    ''');
   }
 
   /// Ensures the current [widget.result] is (or will be) rendered in the WebView.
@@ -907,20 +896,21 @@ JSON.stringify((function(){
   static String? _inlineDictMediaJs;
   static String? _inlineSelectionJs;
   static String? _inlinePopupJs;
-  static bool _inlineAssetsLoadFailed = false;
 
   static bool get _shouldInlinePopupAssets =>
       isWindowsPlatform || defaultTargetPlatform == TargetPlatform.iOS;
 
   static void _ensureInlinePopupAssetsLoaded() {
-    if (_inlineCss != null || _inlineAssetsLoadFailed) return;
+    // BUG-912 #2：成功后 _inlineCss 非空即可防重复读盘；不再用进程级
+    // 永久失败闩——一次瞬时读盘异常（文件锁 / 磁盘抖动）不该把内联资产
+    // 永久降级到不可靠的 file:// 路径，失败时下次唤起自然重试。
+    if (_inlineCss != null) return;
     try {
       _inlineCss = _readPopupAsset('popup.css');
       _inlineDictMediaJs = _readPopupAsset('dict-media.js');
       _inlineSelectionJs = _readPopupAsset('selection.js');
       _inlinePopupJs = _readPopupAsset('popup.js');
     } catch (e, stack) {
-      _inlineAssetsLoadFailed = true;
       debugPrint('[PopupWebView] Popup asset inlining failed, '
           'falling back to file:// URL loading: $e');
       ErrorLogService.instance

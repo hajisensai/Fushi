@@ -55,6 +55,48 @@ void main() {
         reason: 'muxing ADTS AAC into a .mov requires the aac_adtstoasc bsf.');
   });
 
+  test('ffmpeg-min build whitelist enables the mp4 muxer for video clips', () {
+    // BUG-917: video clip export writes .mp4 (was: the source container). The
+    // bundled ffmpeg-min has NO matroska/webm/avi/mpegts muxer, so following the
+    // source extension (mkv/webm/…) auto-selected an absent muxer → exit -22.
+    final String script = workspaceFile('tool/ffmpeg-min/build-ffmpeg-min.sh');
+    final RegExp muxers = RegExp(r'^MUXERS="([^"]*)"', multiLine: true);
+    final List<String> list = muxers.firstMatch(script)!.group(1)!.split(',');
+    expect(list, contains('mp4'),
+        reason: 'video clip export targets .mp4 (h264/hevc copy or libx264 '
+            're-encode); without the mp4 muxer it exits -22. BUG-917.');
+    expect(list, isNot(contains('matroska')),
+        reason: 'ffmpeg-min has no matroska muxer — proof the clip export must '
+            'NOT follow a .mkv source extension. BUG-917.');
+  });
+
+  test('ffmpeg-min build enables libx264 for the clip re-encode fallback', () {
+    // The copy→re-encode fallback (BUG-917) needs libx264; the build turns it on
+    // via --enable-gpl --enable-libx264 (TODO-1257).
+    final String script = workspaceFile('tool/ffmpeg-min/build-ffmpeg-min.sh');
+    expect(script, contains('--enable-libx264'),
+        reason: 'clip re-encode fallback muxes libx264 into .mp4. BUG-917.');
+    final String encoders = RegExp(r'^ENCODERS="([^"]*)"', multiLine: true)
+        .firstMatch(script)!
+        .group(1)!;
+    expect(encoders.split(','), contains('libx264'));
+  });
+
+  test('video clip export names the output .mp4, never the source container',
+      () {
+    // Source-scan guard: the clip export path must build a .mp4 filename and
+    // must not derive the extension from the input path (BUG-917 regression).
+    final String clip = libFile(
+      'lib/src/pages/implementations/video_hibiki/clip_export.part.dart',
+    );
+    expect(clip.contains(".mp4'"), isTrue,
+        reason: 'clip export must write .mp4 (ffmpeg-min muxable + universal). '
+            'BUG-917.');
+    expect(clip.contains('p.extension(inputPath)'), isFalse,
+        reason: 'clip output extension must NOT follow the source container — '
+            'mkv/webm/avi/ts have no muxer in ffmpeg-min → exit -22. BUG-917.');
+  });
+
   test('audiobook clip pipeline emits .aac audio, never .m4a/.mp4', () {
     final String pipeline = libFile(
       'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',

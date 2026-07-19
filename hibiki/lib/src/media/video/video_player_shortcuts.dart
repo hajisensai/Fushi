@@ -35,6 +35,11 @@ class VideoPlayerShortcutActions {
     required this.replayPreviousSubtitle,
     required this.previousChapter,
     required this.nextChapter,
+    required this.openSubtitleAlign,
+    required this.subtitleDelayIncrease,
+    required this.subtitleDelayDecrease,
+    required this.alignSubtitleToPrev,
+    required this.alignSubtitleToNext,
     required this.escape,
   });
 
@@ -84,6 +89,22 @@ class VideoPlayerShortcutActions {
   final VoidCallback previousChapter;
   final VoidCallback nextChapter;
 
+  /// 打开字幕波形对轴放大视图（用户请求，默认 Shift+A）：复用快速设置面板里的
+  /// SubtitleWaveformZoomView，一键从键盘直达埋得很深的「字幕调轴」。无字幕 / 无本地
+  /// 视频路径 / 移动端抽不到波形时降级弹提示、不弹窗。
+  final VoidCallback openSubtitleAlign;
+
+  /// 字幕延迟 +/-（用户请求，默认 z/x）：像 mpv 一样按固定步进整体平移字幕延迟，
+  /// 走现有 _setDelayMs 写穿 delayMs 落盘 + OSD 反馈。
+  final VoidCallback subtitleDelayIncrease;
+  final VoidCallback subtitleDelayDecrease;
+
+  /// asbplayer 式「字幕偏移对齐」（用户请求，默认 Ctrl+Shift+←/→）：把上一句 / 下一句
+  /// 字幕的起点整体平移到当前播放点（按目标 cue 求绝对偏移，一键粗对齐整轨）。决策走
+  /// 纯函数 VideoPlayerController.snapSubtitleDelayMs，写穿仍经 _setDelayMs（与 z/x 同源）。
+  final VoidCallback alignSubtitleToPrev;
+  final VoidCallback alignSubtitleToNext;
+
   final VoidCallback escape;
 }
 
@@ -123,6 +144,11 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
     ShortcutAction.videoPreviousChapter: actions.previousChapter,
     ShortcutAction.videoNextChapter: actions.nextChapter,
+    ShortcutAction.videoOpenSubtitleAlign: actions.openSubtitleAlign,
+    ShortcutAction.videoSubtitleDelayIncrease: actions.subtitleDelayIncrease,
+    ShortcutAction.videoSubtitleDelayDecrease: actions.subtitleDelayDecrease,
+    ShortcutAction.videoAlignSubtitleToPrev: actions.alignSubtitleToPrev,
+    ShortcutAction.videoAlignSubtitleToNext: actions.alignSubtitleToNext,
     ShortcutAction.videoEscape: actions.escape,
   };
 }
@@ -164,6 +190,33 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
     }
   }
   return result;
+}
+
+/// BUG-924：词典浮层开着时，让**任一**已映射的视频快捷键先关掉顶层浮层并消费掉这一次
+/// 按键，而不是穿透去控制后面的视频（对齐阅读器：浮层可见时导航/退出类键先关浮层，见
+/// `reader_hibiki/caret.part.dart` 的 `readerDismissDict` 及各键 `isDictionaryShown` 分支）。
+///
+/// 纯函数、无页面依赖，方便单测：把 [base] 里每个回调包一层守卫——[isPopupVisible] 为真时
+/// 调 [dismissPopup] 关一层浮层后 return（不跑原动作）；为假时原样执行 [base] 的回调。视频
+/// scope 没有任何「作用于浮层本身」的快捷键（制卡走浮层内按钮，非视频快捷键），故整表统一
+/// 守卫等价于阅读器的逐键 `isDictionaryShown` 判定，不误吞需要作用于浮层的键。
+Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithPopupDismiss(
+  Map<ShortcutActivator, VoidCallback> base, {
+  required bool Function() isPopupVisible,
+  required VoidCallback dismissPopup,
+}) {
+  return base.map(
+    (ShortcutActivator activator, VoidCallback callback) => MapEntry(
+      activator,
+      () {
+        if (isPopupVisible()) {
+          dismissPopup();
+          return;
+        }
+        callback();
+      },
+    ),
+  );
 }
 
 /// BUG-853 / TODO-847 对齐（视频版）：Windows 微软 IME 激活时裸 Space 的 [logicalKey]

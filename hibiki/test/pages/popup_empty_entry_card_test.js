@@ -54,6 +54,14 @@ function makeElement(tag) {
       add(name) { this._set.add(name); },
       remove(name) { this._set.delete(name); },
       contains(name) { return this._set.has(name); },
+      // Standard DOMTokenList.toggle(name, force?) semantics: force===true adds,
+      // force===false removes, omitted flips. popup.js setMineState uses the
+      // two-arg force form for the open-anki button (TODO-1360).
+      toggle(name, force) {
+        const shouldHave = force === undefined ? !this._set.has(name) : !!force;
+        if (shouldHave) { this._set.add(name); } else { this._set.delete(name); }
+        return shouldHave;
+      },
     },
     get innerHTML() { return this._innerHTML; },
     set innerHTML(v) {

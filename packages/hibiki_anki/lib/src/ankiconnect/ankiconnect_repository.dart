@@ -439,6 +439,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
       // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
       titleTag: context.bookTitleTag,
+      // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
+      collectionTag: context.collectionTag,
     );
 
     // `fields` only holds entries that rendered to a non-empty value; if it is
@@ -987,7 +989,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     try {
       // 命名/目录与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移，
       // 否则文件名对不上→读不到→卡片留坏图）。HBK-AUDIT-062 无扩展名兜底已并入。
-      final filename = ankiDictionaryMediaCacheFilename(media.path);
+      final filename =
+          ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
       final file = File('${ankiDictionaryMediaCacheDirPath()}/$filename');
       if (!file.existsSync()) return null;
       final bytes = await file.readAsBytes();

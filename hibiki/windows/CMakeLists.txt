@@ -103,6 +103,27 @@ endif()
 install(TARGETS hoshidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# === 内置 libtorrent 引擎（可选，vendored 预编译）===
+# hibiki_torrent 依赖 libtorrent+boost+openssl（vcpkg 首次源码编译约 40min），
+# 不能强制每台构建机装 vcpkg。故采用 vendored 预编译：由
+# native/hibiki_torrent/build_windows_dll.ps1 事先产出 4 个 DLL 到
+# prebuilt/windows-x64/，这里「有则拷、无则跳」——目录不存在时 flutter build
+# windows 照常成功，app 运行期 DLL 缺失自动回退外接 qb（见 EmbeddedTorrentHost）。
+set(HIBIKI_TORRENT_PREBUILT_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/hibiki_torrent/prebuilt/windows-x64")
+set(HIBIKI_TORRENT_DLLS
+  "hibiki_torrent_ffi.dll"
+  "torrent-rasterbar.dll"
+  "libssl-3-x64.dll"
+  "libcrypto-3-x64.dll")
+foreach(_dll ${HIBIKI_TORRENT_DLLS})
+  set(_dll_path "${HIBIKI_TORRENT_PREBUILT_DIR}/${_dll}")
+  if(EXISTS "${_dll_path}")
+    install(FILES "${_dll_path}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+      COMPONENT Runtime)
+  endif()
+endforeach()
+
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
 set(FLUTTER_ASSET_DIR_NAME "flutter_assets")

@@ -97,18 +97,32 @@ class SettingsDestination {
   }
 }
 
+/// 测试钩子：为 true 时，渲染器忽略每个 section 的 [SettingsSection.collapsedByDefault]，
+/// 把所有可折叠 section 一律按展开渲染。默认折叠会把折叠 section 的行移出 widget 树，
+/// 而 `settings_schema_coverage_test` 以 Tab 焦点遍历逐行驱动——够不到的行会被静默跳过、
+/// 削弱这道覆盖守卫。凡「枚举/驱动全部设置行」的测试须在 setUp 里置 true、tearDown 复位。
+bool debugSettingsForceExpandAllSections = false;
+
 class SettingsSection {
   const SettingsSection({
     required this.items,
     this.title,
     this.footer,
     this.visible,
+    this.collapsedByDefault = false,
   });
 
   final String? title;
   final String? footer;
   final SettingsVisibility? visible;
   final List<SettingsItem> items;
+
+  /// 为 true 时本 section 进入详情页默认收起，标题头带可点击的展开箭头（触摸/鼠标
+  /// 点头 + 焦点驱动 Enter/手柄 A 都能展开）。只对带 [title] 的 section 生效——无题
+  /// section（如互联未激活指引）没有可点的头，永远平铺。搜索命中折叠 section 内的项
+  /// 时渲染器强制展开定位（见 SettingsSchemaSection）。仅影响显示，不改 item 集合/顺序/
+  /// 持久化。
+  final bool collapsedByDefault;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 
@@ -117,6 +131,7 @@ class SettingsSection {
       title: title,
       footer: footer,
       visible: visible,
+      collapsedByDefault: collapsedByDefault,
       items: items
           .where((SettingsItem item) => item.isVisible(context))
           .toList(growable: false),

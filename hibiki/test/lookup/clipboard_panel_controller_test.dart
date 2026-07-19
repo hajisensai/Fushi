@@ -234,6 +234,67 @@ void main() {
           reason: '手动查词必须清纯文字态，否则点词后释义被 sentenceOnly 摘掉');
     });
 
+    test('剪贴板内容更新（update / _showTextOnly）渲染后把 root 帧滚回顶部', () {
+      // root iframe 复用，其滚动容器 scrollTop 跨渲染保留，更长的新内容会停在旧
+      // 偏移。update / _showTextOnly（均 seed 新 root）必须以 resetRootScroll:true
+      // 渲染；_renderPanel 据此在渲染脚本追加 host 的 scrollRootToTop 调用。
+      final int renderFnAt =
+          controllerSrc.indexOf('Future<void> _renderPanel(');
+      expect(renderFnAt, greaterThan(0));
+      final int renderFnEnd = controllerSrc.indexOf('\n  }', renderFnAt);
+      final String renderBody =
+          controllerSrc.substring(renderFnAt, renderFnEnd);
+      expect(renderBody.contains('resetRootScroll'), isTrue,
+          reason: '_renderPanel 必须有 resetRootScroll 门控');
+      expect(
+        renderBody.contains('window.__globalLookupHost.scrollRootToTop();'),
+        isTrue,
+        reason: 'resetRootScroll 时渲染脚本必须调 host 的 scrollRootToTop',
+      );
+
+      // update 的自动查词分支以 resetRootScroll:true 渲染。
+      final int updAt = controllerSrc.indexOf('Future<void> update(');
+      final int updEnd = controllerSrc.indexOf('\n  }', updAt);
+      expect(
+        controllerSrc
+            .substring(updAt, updEnd)
+            .contains('_renderPanel(model, resetRootScroll: true)'),
+        isTrue,
+        reason: 'update 剪贴板内容更新必须复位滚动到顶部',
+      );
+
+      // _showTextOnly（关自动查词纯文字态）同样复位。
+      final int textAt = controllerSrc.indexOf('Future<void> _showTextOnly(');
+      final int textEnd = controllerSrc.indexOf('\n  }', textAt);
+      expect(
+        controllerSrc
+            .substring(textAt, textEnd)
+            .contains('_renderPanel(model, resetRootScroll: true)'),
+        isTrue,
+        reason: '纯文字态剪贴板更新同样复位滚动到顶部',
+      );
+
+      // 原地更新路径（点句中字重查 / 关子卡）不复位（保留当前滚动位置）。
+      final int bannerAt =
+          controllerSrc.indexOf('Future<void> _lookupFromBanner(');
+      final int bannerEnd = controllerSrc.indexOf('\n  }', bannerAt);
+      expect(
+        controllerSrc
+            .substring(bannerAt, bannerEnd)
+            .contains('resetRootScroll'),
+        isFalse,
+        reason: '点句中字重查是原地更新，不得复位滚动',
+      );
+
+      // host.js 暴露 scrollRootToTop（跨端契约）。
+      final String hostJs =
+          File('assets/popup/global_lookup_host.js').readAsStringSync();
+      expect(hostJs.contains('function scrollRootToTop('), isTrue,
+          reason: 'host 必须实现 scrollRootToTop');
+      expect(hostJs.contains('scrollRootToTop: scrollRootToTop,'), isTrue,
+          reason: 'host API 必须暴露 scrollRootToTop');
+    });
+
     test('dispatcher panel 分区调 ClipboardPanelController.update', () {
       expect(
         dispatcherSrc.contains('ClipboardPanelController.instance.update'),

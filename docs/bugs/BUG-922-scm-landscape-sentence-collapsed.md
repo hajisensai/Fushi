@@ -1,0 +1,6 @@
+## BUG-922 · 制卡·选择句子上下文对话框横屏塌陷只剩选项看不见句子
+- **报告**：2026-07-19（用户：qqbotxiaoxiao，原话「手机上看不见句子，只有选项。这个选项占位太大了也」，附横屏截图）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/sentence_context_dialog.dart:326`（原 `Flexible(SingleChildScrollView(...))`）。`SentenceContextDialog` 的 `AlertDialog` 正文是 `Column(mainAxisSize: min)`，句子预览卡放在 `Flexible(SingleChildScrollView)` 里、下面跟固定的计数区/±按钮 Row（四颗 `OutlinedButton.icon`）。**横屏矮窗**（用户截图 780×360 逻辑）竖向空间不足时，`Flexible`（loose fit）把全部剩余空间让给固定兄弟 → 滚动区塌成 **0 高**，句子预览整段消失、只剩计数 + 选项按钮，同时 RenderFlex 底部溢出 23px。复现：无头 widget 测试在 780×360 下量到 `SingleChildScrollView` = `Size(600, 0)` + `A RenderFlex overflowed by 23 pixels`。竖屏 360×780 空间够、不塌陷，所以只在横屏（用户当时横屏阅读）暴露。
+- **[x] ① 已修复** — 改为 `AlertDialog(scrollable: true)` + 正文直接铺卡（`...spacedCards`），删掉内层 `Flexible`/`SingleChildScrollView`：整个对话框正文统一滚动，任何朝向/尺寸下句子预览都保有真实高度、按需滚动，不再塌陷也不溢出。附带收紧四颗 ±按钮（`VisualDensity.compact` + 收敛 padding/minSize + `shrinkWrap` tapTarget）回应「选项占位太大」，给句子预览让出竖向空间。提交：见下。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/sentence_context_dialog_landscape_guard_test.dart`：横屏 780×360 + 竖屏 360×780 两向下断言「无 RenderFlex 溢出 + 当前句真正渲染出可见高度（`getRect().height > 4`）+ 句顶落在屏内」。修复前横屏用例因塌成 0 高 + 溢出必失败。原 `sentence_context_dialog_widget_test.dart` 行为用例（当前句/计数/词高亮/后加一句整体替换/确认/取消还原）全绿。
+- **备注**：真机验证待用户（手机横屏 reader/有声书/视频点「调整上下文」，句子预览可见、按钮不占满、增减上下文 + 确认制卡正常）。

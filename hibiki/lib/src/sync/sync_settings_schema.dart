@@ -10,6 +10,8 @@ import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_lookup.dart'
+    show buildManageAudioSourcesItem, buildRemoteDictionaryLookupItem;
 import 'package:hibiki/src/startup/media_handle_registry.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/storage/data_root_migrator.dart';
@@ -112,19 +114,9 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _SftpConfigWidget(settingsContext: ctx),
           ),
-          // 互联的 client 连接配置 / LAN 发现 / 本机作为服务器已整体拆到独立的
-          // 「Hibiki 互联」一级分类（buildInterconnectDestination，本库同文件）。
-          // 选中互联后端时这里只留一行指引，避免用户在同步页找不到配置入口。
-          SettingsCustomItem(
-            id: 'sync.interconnect_pointer',
-            icon: Icons.devices_outlined,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.hibikiServer,
-            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
-              title: t.interconnect_moved_note,
-              icon: Icons.devices_outlined,
-            ),
-          ),
+          // 互联（局域网端到端）已从「同步方式」枚举里解耦成独立分类 + 独立开关
+          // （buildInterconnectDestination），与云备份后端并存、互不排斥；这里不再
+          // 需要「互联被选为同步方式」的指引行。
         ],
       ),
       // ── Group 3: What to sync — global, applies to every backend ──────
@@ -235,21 +227,9 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncVideoFilesEnabled(value);
             },
           ),
-          // 多端库联合视图（spec 2026-07-12 §2.1/§2.4）：书架/视频页主网格是否把
-          // 「远端有、本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。
-          // 纯显示偏好（PreferencesRepository），默认开；关闭时占位卡全部不渲染。离线/
-          // 未配对/后端不可达时占位卡本就不出现，与本开关正交。
-          SettingsSwitchItem(
-            id: 'sync.show_remote_entries',
-            title: t.sync_show_remote_entries,
-            subtitle: t.sync_show_remote_entries_warning,
-            icon: Icons.devices_other_outlined,
-            value: (SettingsContext ctx) =>
-                ctx.appModel.prefsRepo.showRemoteEntries,
-            onChanged: (SettingsContext ctx, bool value) async {
-              await ctx.appModel.prefsRepo.setShowRemoteEntries(value);
-            },
-          ),
+          // 远端占位卡开关抽成共享 builder：同步内容分类与 Hibiki 互联分类共享同一份
+          // 定义（占位卡渲染的是互联对端的远端条目，逻辑上属互联，故互联分类也提供）。
+          buildShowRemoteEntriesItem(),
         ],
       ),
       // ── Group 4: Manual sync actions — global ────────────────────────
@@ -298,6 +278,7 @@ SettingsDestination buildSyncBackupDestination() {
       // ── Group 5: Local backup — independent of sync ──────────────────
       SettingsSection(
         title: t.sync_section_backup,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.backup_export',
@@ -319,6 +300,7 @@ SettingsDestination buildSyncBackupDestination() {
       SettingsSection(
         title: t.settings_section_data_storage,
         visible: (SettingsContext ctx) => isDesktopPlatform,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.data_storage_location',
@@ -340,25 +322,26 @@ SettingsDestination buildSyncBackupDestination() {
 /// 只显示一行指引说明去哪里启用。
 SettingsDestination buildInterconnectDestination() {
   bool interconnectActive(SettingsContext ctx) =>
-      _syncSettings(ctx).backendType == SyncBackendType.hibikiServer;
+      _syncSettings(ctx).interconnectEnabled;
   return SettingsDestination(
     id: SettingsDestinationId.interconnect,
     title: t.settings_destination_interconnect,
     summary: t.interconnect_summary,
     icon: Icons.devices_outlined,
     sections: <SettingsSection>[
-      // 指引：互联未被选为同步方式时，配置区隐藏，说明启用入口。
+      // 互联总开关（独立于云备份后端，二者可并存）。开关常显；关闭时下方配置区隐藏，
+      // 副标题说明互联与云同步互不排斥。
       SettingsSection(
-        visible: (SettingsContext ctx) => !interconnectActive(ctx),
         items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'interconnect.inactive_note',
-            icon: Icons.info_outline,
-            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
-              title: t.interconnect_inactive_note,
-              subtitle: t.interconnect_inactive_note_hint,
-              icon: Icons.info_outline,
-            ),
+          SettingsSwitchItem(
+            id: 'interconnect.enabled',
+            title: t.interconnect_enable,
+            subtitle: t.interconnect_enable_hint,
+            icon: Icons.hub_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectEnabled,
+            onChanged: (SettingsContext ctx, bool value) =>
+                _syncSettings(ctx).setInterconnectEnabled(value),
           ),
         ],
       ),
@@ -397,7 +380,39 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
+      // 互联相关配置镜像：这些项散落在查词/同步分类，但逻辑上都作用于互联对端
+      // （远端词典查询直连对端词典、音频来源含互联音频源 hibikiRemote、远端占位卡
+      // 渲染对端条目）。在互联分类也提供同一入口，用户配互联时一站式可改（原分类
+      // 保留，共享同一 builder 单一真相源，非复制）。与其它互联 section 一致，仅在
+      // 互联被选为同步方式时可见。
+      SettingsSection(
+        title: t.interconnect_section_related,
+        visible: interconnectActive,
+        items: <SettingsItem>[
+          buildRemoteDictionaryLookupItem(),
+          buildManageAudioSourcesItem(),
+          buildShowRemoteEntriesItem(),
+        ],
+      ),
     ],
+  );
+}
+
+/// 远端占位卡开关。同步内容分类与 Hibiki 互联分类共享同一份定义（单一真相源）：
+/// 多端库联合视图（spec 2026-07-12 §2.1/§2.4），书架/视频页主网格是否把「远端有、
+/// 本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。纯显示偏好
+/// （PreferencesRepository），默认开；关闭时占位卡全部不渲染。离线/未配对/后端不可达
+/// 时占位卡本就不出现，与本开关正交。id 沿用 `sync.` 前缀（非持久化 key）。
+SettingsItem buildShowRemoteEntriesItem() {
+  return SettingsSwitchItem(
+    id: 'sync.show_remote_entries',
+    title: t.sync_show_remote_entries,
+    subtitle: t.sync_show_remote_entries_warning,
+    icon: Icons.devices_other_outlined,
+    value: (SettingsContext ctx) => ctx.appModel.prefsRepo.showRemoteEntries,
+    onChanged: (SettingsContext ctx, bool value) async {
+      await ctx.appModel.prefsRepo.setShowRemoteEntries(value);
+    },
   );
 }
 
@@ -415,13 +430,12 @@ AppModel? _activeSyncOwner;
 
 /// Whether this device is actively HOSTING a Hibiki interconnect server — the
 /// only role with no outbound "sync now" / "compare" (BUG-084). Requires BOTH
-/// the persisted host flag AND the interconnect backend: a stale serverEnabled
-/// left over from a past hibikiServer session must NOT gate manual sync on a
-/// cloud backend (observed in the wild: serverEnabled=true while
-/// backendType=googleDrive, which would otherwise hide sync-now on Drive).
+/// the persisted host flag AND interconnect being enabled: a stale serverEnabled
+/// left over from a past interconnect session must NOT gate manual sync when
+/// interconnect is off (observed in the wild: serverEnabled=true while the user
+/// only uses a cloud backend, which would otherwise hide sync-now on the cloud).
 bool _isHostingInterconnect(SettingsContext ctx) =>
-    _syncSettings(ctx).serverEnabled &&
-    _syncSettings(ctx).backendType == SyncBackendType.hibikiServer;
+    _syncSettings(ctx).serverEnabled && _syncSettings(ctx).interconnectEnabled;
 
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
   final AppModel owner = ctx.appModel;
@@ -443,6 +457,10 @@ class _SyncSettingsState {
   final SettingsContext _settingsContext;
   final SyncRepository _repo;
   SyncBackendType backendType = SyncBackendType.googleDrive;
+
+  /// 互联总开关（独立于 [backendType] 云备份后端选择）。为 true 时互联作为一条独立
+  /// 通道运行，与云备份并存（不再是互斥的 backendType==hibikiServer 单选）。
+  bool interconnectEnabled = false;
   bool autoSync = false;
   bool syncStats = true;
   bool syncDictionary = false;
@@ -485,12 +503,22 @@ class _SyncSettingsState {
     roleRevision.value++;
   }
 
+  /// 切换互联总开关并持久化，随后刷新可见性谓词（互联各 section 门控于此），让开关
+  /// 即时生效而非等下次开页。关闭时不清空已配置的对端/host 设置（用户重新打开即恢复）。
+  Future<void> setInterconnectEnabled(bool value) async {
+    if (interconnectEnabled == value) return;
+    interconnectEnabled = value;
+    await _repo.setInterconnectEnabled(value);
+    _settingsContext.refresh();
+  }
+
   Future<void> load() async {
     if (_loaded || _loading) return;
 
     _loading = true;
     try {
       backendType = await _repo.getBackendType();
+      interconnectEnabled = await _repo.isInterconnectEnabled();
       autoSync = await _repo.isAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
       syncDictionary = await _repo.isSyncDictionaryEnabled();

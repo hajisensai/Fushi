@@ -79,8 +79,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         ),
         // BUG-728：EPUB-backed 有声书只以 SRT 卡出现，进度条走与 EPUB 卡同一个
         // [_progressBar]（读 srtItem.position/duration，来自共享 EpubBooks 行）。
-        // 纯字幕书无进度真值则不传 metadata，保持原样（无进度条）。
-        metadata: _srtBookHasProgress(book) ? _progressBar(srtItem) : null,
+        // 纯字幕书无进度真值则不传 metadata，保持原样（无进度条）。已手动标记读完的
+        // 有声书（按配对 bookKey 命中 [_completedBookKeys]）进度条恒满格 + 区分色。
+        metadata: _srtBookHasProgress(book)
+            ? _progressBar(
+                srtItem,
+                completed: book.bookKey.isNotEmpty &&
+                    _completedBookKeys.contains(book.bookKey),
+              )
+            : null,
       ),
     );
   }
@@ -196,6 +203,17 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           },
         ),
       if (bookKey.isNotEmpty) ...[
+        // 与 EPUB 卡菜单对称：手动「标记为已读完 / 取消」。有声书完成状态与 EPUB 共用
+        // 同一 EpubBooks.completedAt（按配对 bookKey），故复用同一 [_toggleBookCompleted]。
+        DialogListAction(
+          label: _completedBookKeys.contains(bookKey)
+              ? t.book_mark_uncompleted_action
+              : t.book_mark_completed_action,
+          icon: _completedBookKeys.contains(bookKey)
+              ? Icons.check_circle
+              : Icons.check_circle_outline,
+          onPressed: () => _toggleBookCompleted(bookKey),
+        ),
         // TODO-1191：与 EPUB 卡菜单对称补「查看插画」。仅在该 SRT 书有对应
         // EpubBooks 行（[_epubBackedBookKeys] 命中 = extractDir 存在）时展示，
         // 复用 EPUB 侧同一 [_openIllustrations]（自行 Navigator.pop + 打开
@@ -761,6 +779,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         builder: (_) => IllustrationsViewerPage(
           bookTitle: item.title,
           extractDir: row.extractDir,
+          bookKey: bookKey,
+          database: appModel.database,
         ),
       ),
     );

@@ -223,15 +223,24 @@ class _RecommendedFont {
   final String description;
 }
 
-// Google Fonts API 为主，jsDelivr CDN（中国可访问）为备选。
+// 下载源顺序：直链单文件 CDN 优先，Google Fonts 打包接口垫底。
+//
+// `https://fonts.google.com/download?family=X` 现在返回的是网站 SPA 的
+// text/html（不再是 zip），对「下载单个字体文件」这条路径已失效——它只会
+// 命中 `_isValidFontFile` 校验失败后回退到镜像。所以把能直接吐字体文件的
+// jsDelivr / GitHub raw 直链排在前面，Google 接口仅作最后兜底。
+//
+// jsDelivr 对整个包 >50MB 的目录会整目录 403（例如 notoserifsc），这类只能
+// 走 GitHub raw；GitHub raw 无此限制，对 CJK 大字体统一补一条兜底直链。
 List<_RecommendedFont> get _recommendedFonts => [
       // ── 推荐首选 ──
       _RecommendedFont(
         name: 'Klee One',
         nameJa: 'クレー One',
         urls: [
-          'https://fonts.google.com/download?family=Klee+One',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
+          'https://raw.githubusercontent.com/google/fonts/main/ofl/kleeone/KleeOne-Regular.ttf',
+          'https://fonts.google.com/download?family=Klee+One',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_klee_one,
@@ -241,8 +250,9 @@ List<_RecommendedFont> get _recommendedFonts => [
         name: 'Noto Sans JP',
         nameJa: 'Noto Sans 日本語',
         urls: [
-          'https://fonts.google.com/download?family=Noto+Sans+JP',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
+          'https://raw.githubusercontent.com/google/fonts/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
+          'https://fonts.google.com/download?family=Noto+Sans+JP',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_noto_sans_jp,
@@ -251,8 +261,9 @@ List<_RecommendedFont> get _recommendedFonts => [
         name: 'Noto Serif JP',
         nameJa: 'Noto Serif 日本語',
         urls: [
-          'https://fonts.google.com/download?family=Noto+Serif+JP',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
+          'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
+          'https://fonts.google.com/download?family=Noto+Serif+JP',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_noto_serif_jp,
@@ -261,8 +272,9 @@ List<_RecommendedFont> get _recommendedFonts => [
         name: 'Noto Sans SC',
         nameJa: 'Noto Sans 简体中文',
         urls: [
-          'https://fonts.google.com/download?family=Noto+Sans+SC',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
+          'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
+          'https://fonts.google.com/download?family=Noto+Sans+SC',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_noto_sans_sc,
@@ -270,7 +282,9 @@ List<_RecommendedFont> get _recommendedFonts => [
       _RecommendedFont(
         name: 'Noto Serif SC',
         nameJa: 'Noto Serif 简体中文',
+        // jsDelivr 整目录 >50MB → notoserifsc 直接 403，只能走 GitHub raw。
         urls: [
+          'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf',
           'https://fonts.google.com/download?family=Noto+Serif+SC',
         ],
         license: 'OFL 1.1',
@@ -280,19 +294,31 @@ List<_RecommendedFont> get _recommendedFonts => [
         name: 'Noto Sans TC',
         nameJa: 'Noto Sans 繁體中文',
         urls: [
-          'https://fonts.google.com/download?family=Noto+Sans+TC',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
+          'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
+          'https://fonts.google.com/download?family=Noto+Sans+TC',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_noto_sans_tc,
+      ),
+      _RecommendedFont(
+        name: 'Noto Serif TC',
+        nameJa: 'Noto Serif 繁體中文',
+        urls: [
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf',
+          'https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf',
+          'https://fonts.google.com/download?family=Noto+Serif+TC',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_noto_serif_tc,
       ),
       // ── 日语特色字体（风格独特，建议搭配 Noto Sans JP 做回退） ──
       _RecommendedFont(
         name: 'Shippori Mincho',
         nameJa: 'しっぽり明朝',
         urls: [
-          'https://fonts.google.com/download?family=Shippori+Mincho',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
+          'https://fonts.google.com/download?family=Shippori+Mincho',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_shippori_mincho,
@@ -301,8 +327,8 @@ List<_RecommendedFont> get _recommendedFonts => [
         name: 'Zen Old Mincho',
         nameJa: '禅オールド明朝',
         urls: [
-          'https://fonts.google.com/download?family=Zen+Old+Mincho',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
+          'https://fonts.google.com/download?family=Zen+Old+Mincho',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_zen_old_mincho,
@@ -311,8 +337,8 @@ List<_RecommendedFont> get _recommendedFonts => [
         name: 'Zen Maru Gothic',
         nameJa: '禅丸ゴシック',
         urls: [
-          'https://fonts.google.com/download?family=Zen+Maru+Gothic',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
+          'https://fonts.google.com/download?family=Zen+Maru+Gothic',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_zen_maru_gothic,
@@ -321,8 +347,8 @@ List<_RecommendedFont> get _recommendedFonts => [
         name: 'M PLUS Rounded 1c',
         nameJa: 'M PLUS Rounded 1c',
         urls: [
-          'https://fonts.google.com/download?family=M+PLUS+Rounded+1c',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
+          'https://fonts.google.com/download?family=M+PLUS+Rounded+1c',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_mplus_rounded_1c,
@@ -331,8 +357,8 @@ List<_RecommendedFont> get _recommendedFonts => [
         name: 'Hina Mincho',
         nameJa: 'ひな明朝',
         urls: [
-          'https://fonts.google.com/download?family=Hina+Mincho',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
+          'https://fonts.google.com/download?family=Hina+Mincho',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_hina_mincho,
@@ -341,8 +367,8 @@ List<_RecommendedFont> get _recommendedFonts => [
         name: 'Zen Kaku Gothic New',
         nameJa: '禅角ゴシック New',
         urls: [
-          'https://fonts.google.com/download?family=Zen+Kaku+Gothic+New',
           'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
+          'https://fonts.google.com/download?family=Zen+Kaku+Gothic+New',
         ],
         license: 'OFL 1.1',
         description: t.font_desc_zen_kaku_gothic_new,
@@ -1142,10 +1168,8 @@ class _CustomFontsPageState extends BasePageState {
           AdaptiveSettingsSection(
             title: t.custom_fonts_manage,
             children: [
-              AdaptiveSettingsRow(
-                title: t.custom_fonts_drag_hint,
-                icon: Icons.info_outline,
-              ),
+              // 拖拽提示不再单列一行：每行左侧的 ☰ 手柄（见 CustomFontCatalogTile）
+              // 直接把「可拖拽重排」这件事画出来，比一句纯文字更直观。
               AdaptiveSettingsRow(
                 title: t.custom_fonts_manage,
                 icon: Icons.format_size,
@@ -1356,7 +1380,7 @@ class _RecommendedFontsPage extends StatelessWidget {
 }
 
 @visibleForTesting
-class CustomFontCatalogTile extends StatelessWidget {
+class CustomFontCatalogTile extends StatefulWidget {
   const CustomFontCatalogTile({
     required this.name,
     required this.isFile,
@@ -1380,6 +1404,15 @@ class CustomFontCatalogTile extends StatelessWidget {
   final VoidCallback onMoveUp;
   final VoidCallback onMoveDown;
 
+  @override
+  State<CustomFontCatalogTile> createState() => _CustomFontCatalogTileState();
+}
+
+class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
+  // 4 个字体用途开关（System UI / Novel Text / Dictionary / Video Subtitle）
+  // 默认折叠：每行不再被四枚 FilterChip 撑高，一屏能看到更多字体。展开后才显示。
+  bool _rolesExpanded = false;
+
   String _targetLabel(FontTarget target) => switch (target) {
         FontTarget.appUi => t.font_target_app_ui,
         FontTarget.body => t.font_target_body,
@@ -1387,11 +1420,15 @@ class CustomFontCatalogTile extends StatelessWidget {
         FontTarget.videoSubtitle => t.font_target_video_subtitle,
       };
 
+  /// 折叠态摘要：把已启用的用途拼成一行，用户不展开也能一眼看到该字体用在哪。
+  String get _rolesSummary => <String>[
+        for (final FontTarget target in FontTarget.values)
+          if (widget.targets.contains(target)) _targetLabel(target),
+      ].join(' · ');
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    // 整行拖拽重排（不再显示 ☰ 手柄）：桌面鼠标按下即拖、移动端长按再拖
-    // （见 HibikiReorderDragListener）；上下箭头按钮是无障碍/手柄重排路径。
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final bool cupertino = isCupertinoPlatform(context);
     final TextStyle? titleStyle = cupertino
@@ -1401,6 +1438,20 @@ class CustomFontCatalogTile extends StatelessWidget {
         Theme.of(context).textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
             );
+    // ☰ 拖拽手柄：整行本就可拖（外层 HibikiReorderDragListener——桌面按下即拖、
+    // 移动端长按再拖），这枚手柄是把「可拖拽重排」画出来的视觉锚点，替代原先
+    // 单列一行的「拖拽以调整优先级」文字提示。
+    final Widget dragHandle = Tooltip(
+      message: t.custom_fonts_drag_hint,
+      child: Padding(
+        padding: EdgeInsets.only(right: tokens.spacing.gap),
+        child: Icon(
+          Icons.drag_indicator,
+          size: 20,
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+    );
     final Widget actions = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1408,16 +1459,16 @@ class CustomFontCatalogTile extends StatelessWidget {
           icon: Icons.keyboard_arrow_up,
           size: 18,
           tooltip: t.move_up,
-          enabled: index > 0,
-          onTap: onMoveUp,
+          enabled: widget.index > 0,
+          onTap: widget.onMoveUp,
         ),
         SizedBox(width: tokens.spacing.gap),
         HibikiIconButton(
           icon: Icons.keyboard_arrow_down,
           size: 18,
           tooltip: t.move_down,
-          enabled: !isLast,
-          onTap: onMoveDown,
+          enabled: !widget.isLast,
+          onTap: widget.onMoveDown,
         ),
         SizedBox(width: tokens.spacing.gap),
         HibikiIconButton(
@@ -1425,12 +1476,44 @@ class CustomFontCatalogTile extends StatelessWidget {
           size: 18,
           enabledColor: scheme.error,
           tooltip: t.custom_fonts_removed,
-          onTap: onDelete,
+          onTap: widget.onDelete,
         ),
       ],
     );
+    // 折叠头：点一下展开/收起 4 个用途开关。用普通 Icon（非 HibikiIconButton）
+    // 与 InkWell，避免破坏「每行恰好 3 个动作按钮」的布局守卫。
+    final Widget rolesHeader = InkWell(
+      onTap: () => setState(() => _rolesExpanded = !_rolesExpanded),
+      borderRadius: tokens.radii.controlRadius,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+        child: Row(
+          children: [
+            Icon(
+              _rolesExpanded ? Icons.expand_less : Icons.expand_more,
+              size: 20,
+              color: scheme.onSurfaceVariant,
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            Text(t.custom_fonts_font_roles, style: subtitleStyle),
+            if (!_rolesExpanded && _rolesSummary.isNotEmpty) ...[
+              SizedBox(width: tokens.spacing.gap),
+              Expanded(
+                child: Text(
+                  _rolesSummary,
+                  style: subtitleStyle,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  textAlign: TextAlign.end,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
     return HibikiReorderDragListener(
-      index: index,
+      index: widget.index,
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: cupertino ? 16 : 12,
@@ -1444,9 +1527,10 @@ class CustomFontCatalogTile extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  dragHandle,
                   Expanded(
                     child: Text(
-                      name,
+                      widget.name,
                       style: titleStyle,
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
@@ -1459,25 +1543,29 @@ class CustomFontCatalogTile extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
-                  isFile ? t.font_source_file : t.font_source_system,
+                  widget.isFile ? t.font_source_file : t.font_source_system,
                   style: subtitleStyle,
                   overflow: TextOverflow.ellipsis,
                   maxLines: 2,
                 ),
               ),
               SizedBox(height: tokens.spacing.gap),
-              Wrap(
-                spacing: tokens.spacing.gap,
-                runSpacing: tokens.spacing.gap,
-                children: [
-                  for (final FontTarget target in FontTarget.values)
-                    FilterChip(
-                      label: Text(_targetLabel(target)),
-                      selected: targets.contains(target),
-                      onSelected: (_) => onTargetToggled(target),
-                    ),
-                ],
-              ),
+              rolesHeader,
+              if (_rolesExpanded) ...[
+                SizedBox(height: tokens.spacing.gap),
+                Wrap(
+                  spacing: tokens.spacing.gap,
+                  runSpacing: tokens.spacing.gap,
+                  children: [
+                    for (final FontTarget target in FontTarget.values)
+                      FilterChip(
+                        label: Text(_targetLabel(target)),
+                        selected: widget.targets.contains(target),
+                        onSelected: (_) => widget.onTargetToggled(target),
+                      ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
