@@ -30,6 +30,8 @@ class VideoPlayerShortcutActions {
     required this.toggleSubtitleBlur,
     required this.cycleSubtitleObscure,
     required this.toggleSubtitleHide,
+    required this.cycleSecondarySubtitleObscure,
+    required this.toggleSecondarySubtitleHide,
     required this.toggleFavoriteSentence,
     required this.replayCurrentSubtitle,
     required this.replayPreviousSubtitle,
@@ -78,6 +80,12 @@ class VideoPlayerShortcutActions {
 
   /// 开/关「隐藏主字幕」（TODO-840 Part B，默认 H）：在隐藏与不遮蔽之间切换。
   final VoidCallback toggleSubtitleHide;
+
+  /// 循环**副字幕**遮蔽模式（TODO-1382，默认 Shift+G）：不遮蔽 → 模糊 → 隐藏 → …。
+  final VoidCallback cycleSecondarySubtitleObscure;
+
+  /// 开/关「隐藏副字幕」（TODO-1382，默认 Shift+H）：在隐藏与不遮蔽之间切换。
+  final VoidCallback toggleSecondarySubtitleHide;
 
   final VoidCallback toggleFavoriteSentence;
   final VoidCallback replayCurrentSubtitle;
@@ -139,6 +147,10 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
     ShortcutAction.videoCycleSubtitleObscure: actions.cycleSubtitleObscure,
     ShortcutAction.videoToggleSubtitleHide: actions.toggleSubtitleHide,
+    ShortcutAction.videoCycleSecondarySubtitleObscure:
+        actions.cycleSecondarySubtitleObscure,
+    ShortcutAction.videoToggleSecondarySubtitleHide:
+        actions.toggleSecondarySubtitleHide,
     ShortcutAction.videoToggleFavoriteSentence: actions.toggleFavoriteSentence,
     ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
     ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,

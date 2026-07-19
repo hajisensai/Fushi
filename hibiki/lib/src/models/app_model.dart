@@ -2593,6 +2593,17 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleObscureMode(VideoSubtitleObscureMode mode) =>
       prefsRepo.setVideoSubtitleObscureMode(mode);
 
+  /// 视频**副字幕**遮蔽模式三态（TODO-1382，独立于主字幕）：不遮蔽 / 模糊 / 隐藏。
+  /// 委托 prefsRepo 的 lazy 投影持久化（见
+  /// [PreferencesRepository.videoSecondarySubtitleObscureMode]）。
+  VideoSubtitleObscureMode get videoSecondarySubtitleObscureMode =>
+      prefsRepo.videoSecondarySubtitleObscureMode;
+
+  Future<void> setVideoSecondarySubtitleObscureMode(
+    VideoSubtitleObscureMode mode,
+  ) =>
+      prefsRepo.setVideoSecondarySubtitleObscureMode(mode);
+
   /// 视频字幕列表自动滚动开关（TODO-613，落 Drift preferences，默认开）。
   bool get videoSubtitleListAutoScroll => prefsRepo.videoSubtitleListAutoScroll;
 

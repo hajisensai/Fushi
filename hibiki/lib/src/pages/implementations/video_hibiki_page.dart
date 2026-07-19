@@ -3811,6 +3811,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       toggleSubtitleHide: () => _runWhenImmersiveAllowsFullControls(
         () => unawaited(_toggleSubtitleHide()),
       ),
+      // TODO-1382：Shift+G 循环副字幕遮蔽三态；Shift+H 开/关「隐藏副字幕」。
+      cycleSecondarySubtitleObscure: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_cycleSecondarySubtitleObscure()),
+      ),
+      toggleSecondarySubtitleHide: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleSecondarySubtitleHide()),
+      ),
       toggleFavoriteSentence: () => _runWhenImmersiveAllowsFullControls(
         () => unawaited(_toggleFavoriteCurrentCue()),
       ),
@@ -5183,6 +5190,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
+  /// 循环**副字幕**遮蔽三态（Shift+G，TODO-1382）：不遮蔽 → 模糊 → 隐藏 → …。
+  Future<void> _cycleSecondarySubtitleObscure() async {
+    await _setSecondarySubtitleObscureMode(
+        appModel.videoSecondarySubtitleObscureMode.next);
+  }
+
+  /// 开/关「隐藏副字幕」（Shift+H，TODO-1382）：隐藏态再按回到不遮蔽，否则置为隐藏。
+  Future<void> _toggleSecondarySubtitleHide() async {
+    final VideoSubtitleObscureMode next =
+        appModel.videoSecondarySubtitleObscureMode ==
+                VideoSubtitleObscureMode.hide
+            ? VideoSubtitleObscureMode.none
+            : VideoSubtitleObscureMode.hide;
+    await _setSecondarySubtitleObscureMode(next);
+  }
+
+  /// 落盘副字幕遮蔽模式并刷新页面 overlay（热键 + 快速设置面板共用，TODO-1382）。
+  Future<void> _setSecondarySubtitleObscureMode(
+      VideoSubtitleObscureMode mode) async {
+    await appModel.setVideoSecondarySubtitleObscureMode(mode);
+    if (mounted) setState(() {});
+  }
+
   /// **一键画质档位应用**（无/低/中/高/极高）：原子写两套正交状态——mpv 内置缩放开关
   /// （[highQuality] → videoMpvConfig）+ GLSL 启用集（[enabledNames] →
   /// videoShadersEnabled），再一次性 applyMpvConfig + applyShaders 实时生效。
@@ -5333,6 +5363,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialDelayMs: _delayMs,
       initialSpeed: _playbackSpeed,
       initialSubtitleObscureMode: appModel.videoSubtitleObscureMode,
+      initialSecondarySubtitleObscureMode:
+          appModel.videoSecondarySubtitleObscureMode,
       initialSubtitleStyle: _subtitleStyle,
       uiScale: _videoUiScale,
       initialAsbConfig: _asbConfig,
@@ -5389,6 +5421,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
       onSetSubtitleObscureMode: _setSubtitleObscureMode,
+      onSetSecondarySubtitleObscureMode: _setSecondarySubtitleObscureMode,
       onAsbConfigChanged: _setAsbConfig,
       onSubtitleStylePreview: (VideoSubtitleStyle s) {
         if (mounted) setState(() => _subtitleStyle = s);

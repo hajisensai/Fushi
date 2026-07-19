@@ -348,6 +348,13 @@ extension _VideoLayout on _VideoHibikiPageState {
                               VideoSubtitleObscureMode.blur,
                           subtitleHidden: appModel.videoSubtitleObscureMode ==
                               VideoSubtitleObscureMode.hide,
+                          // TODO-1382：副字幕遮蔽三态同样映射成两正交标志（独立于主字幕）。
+                          secondaryBlurEnabled:
+                              appModel.videoSecondarySubtitleObscureMode ==
+                                  VideoSubtitleObscureMode.blur,
+                          secondaryHidden:
+                              appModel.videoSecondarySubtitleObscureMode ==
+                                  VideoSubtitleObscureMode.hide,
                           // TODO-1199：字幕字号=用户基准 × 屏幕自适应因子。用户设置的
                           // fontSize 仍是基准（手动可调、不被改写），渲染时乘按视口短边
                           // 算出的 [subtitleScreenScaleFactor]，使字幕占屏比例在小屏手机 /
