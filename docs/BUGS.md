@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 898 条。点号进各自文件。
+> 共 899 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-922](bugs/BUG-922-scm-landscape-sentence-collapsed.md) | ✅ | ✅ | 制卡·选择句子上下文对话框横屏塌陷只剩选项看不见句子 |
 | [BUG-921](bugs/BUG-921-mining-collection-tag.md) | ✅ | ✅ | 制卡缺少所属合集名标签 |
 | [BUG-920](bugs/BUG-920-media-source-open-folder-forward-slash.md) | ✅ | ✅ | 管理来源打开文件夹按钮路径不对 |
 | [BUG-919](bugs/BUG-919-anilist-macron-search.md) | ✅ | ✅ | 番剧下载AniList搜索:带macron长音的罗马字全无结果 |

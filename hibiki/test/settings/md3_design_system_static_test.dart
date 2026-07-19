@@ -905,6 +905,16 @@ void main() {
               'actions) plus an add-duplicate action row — Anki-subsystem content, '
               'the same reviewed exception class as the dictionary import/delete '
               'content rows.',
+      // PR#253 / BUG-922：制卡「选择句子上下文」原生对话框（Niratan 式）的 ±上下文
+      // 调整按钮，在横屏矮窗里刻意收紧到 compact 视觉密度（VisualDensity.compact +
+      // 收敛 padding/minSize），给句子预览让出竖向空间——挖矿子系统的内容对话框，
+      // 非普通页面 chrome，同 anki_mined_card_action_sheet 的内容对话框豁免类。
+      'lib/src/pages/implementations/sentence_context_dialog.dart':
+          'Sentence-context mining dialog deliberately uses compact visual '
+              'density on its context-adjust buttons to free vertical space for '
+              'the sentence preview in short landscape windows (BUG-922); '
+              'mining-subsystem content dialog, not ordinary page chrome — same '
+              'reviewed exception class as anki_mined_card_action_sheet.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
       'lib/src/pages/implementations/dictionary_dialog_import_page.dart':
