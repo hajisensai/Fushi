@@ -9,7 +9,6 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/magnet_utils.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
@@ -17,7 +16,7 @@ import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
     show jimakuLanguageLabel;
-import 'package:hibiki/src/pages/implementations/torrent_upload_consent_dialog.dart';
+import 'package:hibiki/src/pages/implementations/download_actions.dart';
 import 'package:hibiki/utils.dart';
 
 /// 「番剧下载」选种对话框：搜番（AniList）→ 选种（Nyaa）→ 确认字幕（Jimaku）→
@@ -92,18 +91,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
 
   /// 下载后端是否就绪（推送按钮禁用条件；浏览选种不禁）。默认（auto）在桌面
   /// 走内置引擎、开箱即用；只有显式外接 qb 且没填地址才算未就绪。
-  bool get _backendReady {
-    final AppModel appModel = ref.read(appProvider);
-    final QbConnectionConfig config =
-        appModel.qbConnectionConfig ?? const QbConnectionConfig();
-    // 内置引擎宿主就绪（桌面 + DLL）且未显式选外接 qb → 直接可下载。
-    if (appModel.isEmbeddedTorrentReady &&
-        config.backend != QbConnectionConfig.backendQbittorrent) {
-      return true;
-    }
-    // 否则走外接 qb，需要填了地址。
-    return config.baseUrl.trim().isNotEmpty;
-  }
+  bool get _backendReady => torrentBackendReady(ref.read(appProvider));
 
   /// 后端未就绪（推送禁用 + 提示横幅）。
   bool get _qbMissing => !_backendReady;
@@ -255,23 +243,6 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     });
   }
 
-  /// 首次下载弹「上传/做种」一次性提示。用户在其中选是否开启上传并可配上传
-  /// 限速/做种时长/分享率；确认后落偏好（即时应用到内置引擎）并置首用 flag。
-  Future<void> _showUploadIntro(
-      AppModel appModel, QbConnectionConfig config) async {
-    await showAppDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext ctx) => TorrentUploadConsentDialog(
-        initialConfig: config,
-        onApply: (QbConnectionConfig next) async {
-          await appModel.setQbConnectionConfig(next);
-          await appModel.setTorrentUploadIntroShown();
-        },
-      ),
-    );
-  }
-
   /// 推送下载：暂存字幕 → 落计划 → 推 qBittorrent（失败回滚计划）→ 催一轮 tick。
   Future<void> _push() async {
     final AppModel appModel = ref.read(appProvider);
@@ -295,12 +266,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     }
     // 首次下载：弹一次「上传/做种」提示（默认关上传、询问是否开启+配限速/时长/
     // 分享率）。仅内置引擎相关（外接 qb 自管上传）；展示后置 flag 不再弹。
-    if (!appModel.torrentUploadIntroShown &&
-        appModel.isEmbeddedTorrentReady &&
-        config.backend != QbConnectionConfig.backendQbittorrent) {
-      await _showUploadIntro(appModel, config);
-      if (!mounted) return;
-    }
+    await maybeShowTorrentUploadConsent(context, appModel);
+    if (!mounted) return;
     setState(() => _pushing = true);
 
     // ① 逐条下载选中的字幕到计划暂存目录（单条失败跳过该条）。
@@ -592,73 +559,24 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     );
   }
 
-  /// 通用磁力推送：解析 infoHash → 落通用计划（带 contentKind）→ 推后端。
+  /// 通用磁力推送：走共享 [pushGenericMagnet]（首用同意 → 解析 → 落计划 →
+  /// 推后端），与独立下载页同一逻辑。
   Future<void> _pushGeneric() async {
+    if (_pushingGeneric) return;
     final AppModel appModel = ref.read(appProvider);
-    final QbConnectionConfig config =
-        appModel.qbConnectionConfig ?? const QbConnectionConfig();
-    if (!_backendReady || _pushingGeneric) return;
-    final String magnet = _magnetCtrl.text.trim();
-    final String? infoHash = parseMagnetInfoHash(magnet);
-    if (infoHash == null) {
-      _snack(t.anime_download_magnet_invalid);
-      return;
-    }
-    final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
-    if (store == null) {
-      _snack(t.anime_download_store_unavailable);
-      return;
-    }
-    // 首次下载：上传/做种一次性提示（仅内置引擎）。
-    if (!appModel.torrentUploadIntroShown &&
-        appModel.isEmbeddedTorrentReady &&
-        config.backend != QbConnectionConfig.backendQbittorrent) {
-      await _showUploadIntro(appModel, config);
-      if (!mounted) return;
-    }
     setState(() => _pushingGeneric = true);
-
-    final String title = parseMagnetDisplayName(magnet) ?? magnet;
-    final AnimeDownloadPlan plan = AnimeDownloadPlan(
-      id: infoHash,
-      createdAtMs: DateTime.now().millisecondsSinceEpoch,
-      seriesTitle: title,
-      torrentTitle: title,
-      magnet: magnet,
-      qbCategory: config.category,
+    final GenericPushOutcome outcome = await pushGenericMagnet(
+      context: context,
+      appModel: appModel,
+      magnet: _magnetCtrl.text,
       contentKind: _genericKind,
     );
-    await store.save(plan);
-
-    final TorrentBackend backend = appModel.createTorrentBackend(config);
-    bool pushed = false;
-    try {
-      await backend.prepareCategory(config.category);
-      pushed = await backend.addTorrent(
-        magnet,
-        category: config.category,
-        sequential: true,
-        firstLastPiecePrio: true,
-      );
-    } finally {
-      backend.close();
-    }
-    if (!pushed) {
-      await store.delete(infoHash);
-      if (mounted) {
-        setState(() => _pushingGeneric = false);
-        _snack(t.anime_download_push_failed);
-      }
-      return;
-    }
-    unawaited(appModel.animeDownloadService?.tick());
-    await _reloadPlans();
-    if (mounted) {
-      setState(() {
-        _pushingGeneric = false;
-        _magnetCtrl.clear();
-      });
-      _snack(t.anime_download_pushed);
+    if (!mounted) return;
+    setState(() => _pushingGeneric = false);
+    _snack(genericPushMessage(outcome));
+    if (outcome == GenericPushOutcome.ok) {
+      _magnetCtrl.clear();
+      await _reloadPlans();
     }
   }
 
