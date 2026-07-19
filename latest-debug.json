@@ -22,11 +22,11 @@
       "version": "1.2.0-debug.8131"
     },
     {
-      "name": "hibiki-1.2.0-debug.8394-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8394-windows-setup.exe",
-      "releaseSequence": 8394,
-      "tag": "v1.2.0-debug.8394+86c4e68",
-      "version": "1.2.0-debug.8394"
+      "name": "hibiki-1.2.0-debug.8397-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8397-windows-setup.exe",
+      "releaseSequence": 8397,
+      "tag": "v1.2.0-debug.8397+d403c36",
+      "version": "1.2.0-debug.8397"
     },
     {
       "name": "hibiki-1.2.0-debug.8402-c406c31-debug.apk",
