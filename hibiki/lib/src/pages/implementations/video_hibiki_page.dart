@@ -3404,7 +3404,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 单层查词点同句另一个字符切换查词是合理交互。嵌套态（存在父层）下底部字幕仍清晰渲染、
     // 其字符矩形持续绑定，点第 2+ 个窗外面常落在字幕文字上；若仍走反查会 replaceStack 把整栈
     // 替换掉（顶层窗没关而是被换成新词）。故仅当 [shouldSwitchWordOnBarrierTap] 为真才反查。
-    final SubtitleCharHit? hit = _subtitleHitTester.hitTest(globalPos);
+    //
+    // BUG-910：反查用 `exactOnly: true`（只在点**落在字形矩形内**才算命中）。查词的胖手指裙边
+    // 容差（TODO-971 半字宽 ≈18px + BUG-825 描边级垂直边）本服务「点小字好点中」，但 barrier
+    // 判「关闭 vs 切词」若也吃这套 halo，字幕行周围约 18px 空白会被误判成「命中字幕」→ 把「点
+    // 空白想关闭继续看」当成「切词重查」，暂停冻结字幕下反复重查同一句（用户报「点空白一直
+    // 重复查一个词」）。exactOnly 让空白 halo 落回 dismiss+续播（恢复 BUG-410 备注承诺的「落
+    // 纯空白正常」），点在字上仍切词。悬停换词 / Shift 查词是查词意图，仍用宽容差（不改）。
+    final SubtitleCharHit? hit =
+        _subtitleHitTester.hitTest(globalPos, exactOnly: true);
     if (VideoHibikiPage.shouldSwitchWordOnBarrierTap(
       topVisibleIndex: _topVisiblePopupIndex,
       hitSubtitle: hit != null,

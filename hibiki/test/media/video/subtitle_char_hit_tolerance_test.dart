@@ -74,6 +74,52 @@ void main() {
     expect(resolveSubtitleCharHit(<Rect>[], const Offset(5, 10)), -1);
   });
 
+  group('BUG-910：exactOnly（barrier 关闭判定用，跳过裙边兜底）', () {
+    test('exactOnly：点落在字形内仍命中（切词意图保留）', () {
+      // 字上 x=5 正落在字符 0 矩形内 → exactOnly 也命中（点字仍切词，TODO-758 不回归）。
+      expect(
+        resolveSubtitleCharHit(row(), const Offset(5, 10), exactOnly: true),
+        0,
+      );
+      expect(
+        resolveSubtitleCharHit(row(), const Offset(19, 10), exactOnly: true),
+        1,
+      );
+    });
+
+    test('exactOnly：字缝/描边 halo 一律 miss（点空白 → dismiss，不误判切词）', () {
+      // 字缝 x=12（宽容差下会兜底命中相邻字符）：exactOnly 下必须 -1 → barrier 走 dismiss。
+      expect(resolveSubtitleCharHit(row(), const Offset(12, 10)), anyOf(0, 1),
+          reason: '对照：默认宽容差字缝会兜底命中');
+      expect(
+        resolveSubtitleCharHit(row(), const Offset(12, 10), exactOnly: true),
+        -1,
+        reason: 'exactOnly：字缝空白不命中，barrier 应 dismiss 而非切词重查',
+      );
+      // 字符 0 上缘外 3px（默认垂直容差内会命中）：exactOnly 下 miss。
+      expect(resolveSubtitleCharHit(row(), const Offset(5, -3)), 0,
+          reason: '对照：默认容差描边外缘会兜底命中');
+      expect(
+        resolveSubtitleCharHit(row(), const Offset(5, -3), exactOnly: true),
+        -1,
+        reason: 'exactOnly：字身外描边 halo 不命中',
+      );
+    });
+
+    test('BUG-910 核心：字幕行水平裙边 halo 空白 exactOnly 必 miss', () {
+      // 36px 字幕单字，右缘外 12px（x=48）在默认水平半字宽兜底内会命中（用户误以为点的是
+      // 空白，却被吃成命中→切词重查死循环）。exactOnly 下 miss → barrier dismiss+续播。
+      final List<Rect> wide = <Rect>[const Rect.fromLTWH(0, 0, 36, 40)];
+      expect(resolveSubtitleCharHit(wide, const Offset(48, 20)), 0,
+          reason: '对照：默认宽容差右缘 12px halo 会误命中');
+      expect(
+        resolveSubtitleCharHit(wide, const Offset(48, 20), exactOnly: true),
+        -1,
+        reason: 'BUG-910：字幕行右侧空白 halo exactOnly 必 miss，barrier 才会关闭续播',
+      );
+    });
+  });
+
   test('TODO-971：默认容差 ≥ 10（手指比 6px 宽，放宽兜底命中）', () {
     // 极窄字符（width=4 → 半字宽=2）下，默认 minTolerance 决定实际容差。手指比 6px
     // 宽，旧 6.0 仍偏小，手机字幕点词常 miss。默认放宽到 ≥ 10：距字符 9px 的点必须

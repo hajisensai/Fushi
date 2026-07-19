@@ -29,12 +29,16 @@ typedef SubtitleCharHit = ({String sentence, int graphemeIndex, Rect charRect});
 /// 点击 → 点同句第二个词只会关栈+恢复播放，查不了第二个词。让 barrier 先用本句柄反查
 /// 是否点到了字幕字符，是则切换查词（保持暂停），否则才 dismiss。
 class VideoSubtitleHitTester {
-  SubtitleCharHit? Function(Offset globalPos)? _impl;
+  SubtitleCharHit? Function(Offset globalPos, {bool exactOnly})? _impl;
 
-  void bindHitTest(SubtitleCharHit? Function(Offset globalPos) impl) =>
+  void bindHitTest(
+          SubtitleCharHit? Function(Offset globalPos, {bool exactOnly}) impl) =>
       _impl = impl;
 
-  SubtitleCharHit? hitTest(Offset globalPos) => _impl?.call(globalPos);
+  /// [exactOnly]（BUG-910）：为 true 时只在点落在字形矩形内才命中，跳过手指友好的裙边
+  /// 容差——查词浮层 dismiss barrier 用它区分「点空白想关闭」与「点字上想切词」。
+  SubtitleCharHit? hitTest(Offset globalPos, {bool exactOnly = false}) =>
+      _impl?.call(globalPos, exactOnly: exactOnly);
 }
 
 /// 按全局坐标在一组字符屏幕矩形里反查命中的字符下标（纯函数，可测）。
@@ -54,6 +58,13 @@ class VideoSubtitleHitTester {
 /// 顶部一条带时被顶层字幕识别器赢走竞技场，暂停视频 + 弹查词、seek 被吞（BUG-825）。
 /// 垂直方向本就不该放半字宽的裙边。
 ///
+/// [exactOnly] 为 true 时**只跑精确包含**、跳过第二段兜底容差（BUG-910）：查词/悬停要
+/// 手指友好的宽容差（默认 false），但查词浮层的 dismiss barrier 判「关闭 vs 切词」不能用
+/// 这套 halo——字幕行周围约 18px 水平裙边被吃成「命中字幕」会把「点空白想关闭」误判成
+/// 「切词重查」，暂停冻结字幕下反复重查同一句。barrier 用 [exactOnly]=true 只在点**落在
+/// 字形矩形内**才算切词，落 halo 空白照常 dismiss+续播（恢复 BUG-410 备注承诺的「落纯
+/// 空白正常」，同时不动查词的宽容差）。
+///
 /// [Rect.zero]（无 RenderBox 的字符）跳过。无任何有效矩形或全部超容差时返回 -1。
 @visibleForTesting
 int resolveSubtitleCharHit(
@@ -65,6 +76,8 @@ int resolveSubtitleCharHit(
   // BUG-825：垂直兜底半轴。字身外上下只需覆盖描边外缘（默认软阴影半径 3px + 手指余量），
   // 远小于水平半字宽——避免向下溢出到紧贴字幕下方的进度条轨道。
   double edgeTolerance = 6.0,
+  // BUG-910：仅精确包含，跳过第二段裙边容差（barrier 关闭判定用）。
+  bool exactOnly = false,
 }) {
   // 第一段：精确包含。
   for (int i = 0; i < charRects.length; i++) {
@@ -72,6 +85,8 @@ int resolveSubtitleCharHit(
     if (r == Rect.zero) continue;
     if (r.contains(point)) return i;
   }
+  // exactOnly：不跑裙边兜底——点在字形外一律 miss（barrier 据此 dismiss，不误判切词）。
+  if (exactOnly) return -1;
   // 第二段：最近字符兜底（在该字符的方向感知椭圆容差区内）。
   int bestIndex = -1;
   double bestDistance = double.infinity;
@@ -396,20 +411,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 活动集）里反查命中的登记表下标；模糊层字符按 [Rect.zero] 跳过（不参与命中，与点击
   /// 行为一致：模糊时不查词）。无命中返回 -1。是 [_charHitTest] / 竞技场门控 / 悬停查词
   /// 的共享命中内核。
-  int _hitEntryIndexAt(Offset globalPos) {
+  int _hitEntryIndexAt(Offset globalPos, {bool exactOnly = false}) {
     if (_charEntries.isEmpty) return -1;
     final List<Rect> rects = <Rect>[
       for (final _SubtitleCharEntry e in _charEntries)
         e.blurred ? Rect.zero : _globalRectOf(e.context),
     ];
-    return resolveSubtitleCharHit(rects, globalPos);
+    return resolveSubtitleCharHit(rects, globalPos, exactOnly: exactOnly);
   }
 
   /// 按全局坐标反查命中的字幕字符，返回其**所属整条 cue 文本** + 该 cue 内 grapheme 下标
   /// + 字符全局矩形。模糊 / 空 / 无命中返回 null。供 [VideoSubtitleHitTester] 绑定，
   /// 二维登记后点主字幕 / 副字幕 / 重叠某条都能查到正确的整句（TODO-1312）。
-  SubtitleCharHit? _charHitTest(Offset globalPos) {
-    final int i = _hitEntryIndexAt(globalPos);
+  SubtitleCharHit? _charHitTest(Offset globalPos, {bool exactOnly = false}) {
+    final int i = _hitEntryIndexAt(globalPos, exactOnly: exactOnly);
     if (i < 0) return null;
     final _SubtitleCharEntry e = _charEntries[i];
     return (
