@@ -363,6 +363,14 @@ class GalHookSessionController extends ChangeNotifier {
         _activateEngine(engine, format, gamePid: window.pid);
         return;
       }
+      if (engine.textHookReady) {
+        await _activateTextWithLoopback(
+          generation,
+          engine,
+          gamePid: window.pid,
+        );
+        return;
+      }
       await engine.stop();
       _record(
         GalHookEventSeverity.warning,
@@ -438,7 +446,7 @@ class GalHookSessionController extends ChangeNotifier {
       await engine.stop();
       return false;
     }
-    if (format == null) {
+    if (format == null && !engine.textHookReady) {
       await engine.stop();
       _fail(
         'inject',
@@ -448,7 +456,15 @@ class GalHookSessionController extends ChangeNotifier {
       return false;
     }
     final int? gamePid = engine.gamePid;
-    _activateEngine(engine, format, gamePid: gamePid);
+    if (format != null) {
+      _activateEngine(engine, format, gamePid: gamePid);
+    } else if (!await _activateTextWithLoopback(
+      generation,
+      engine,
+      gamePid: gamePid,
+    )) {
+      return false;
+    }
     ExternalWindowInfo? window;
     if (gamePid != null) {
       for (int attempt = 0;
@@ -760,17 +776,7 @@ class GalHookSessionController extends ChangeNotifier {
     int? gamePid,
   }) {
     _audioSource = engine;
-    _engineSource = engine;
-    _lastTextSeq = 0;
-    _pollInFlight = false;
-    _lineVoiceCache.clear();
-    _lineTimestampCache.clear();
-    unawaited(engine.pruneVoiceDump());
-    _textPollTimer?.cancel();
-    _textPollTimer = Timer.periodic(
-      _textPollInterval,
-      (_) => unawaited(_pollHookedText()),
-    );
+    _startEngineTextPolling(engine);
     _setState(
       _state.copyWith(
         phase: GalHookSessionPhase.waitingSignals,
@@ -791,6 +797,86 @@ class GalHookSessionController extends ChangeNotifier {
         'sampleRate': format.sampleRate,
         'channels': format.channels,
       },
+    );
+  }
+
+  /// 保留已就绪的引擎文本 helper，同时以系统 Loopback 作为独立音频源。
+  ///
+  /// Unity/IL2CPP 游戏可能让 Luna 文本 hook 正常工作，却不经过当前 XAudio2/
+  /// DirectSound PCM 钩子。文本与音频是两项独立能力，不能因为引擎 PCM 缺失就关闭
+  /// helper、退化成“只有混音但没有台词”。
+  Future<bool> _activateTextWithLoopback(
+    int generation,
+    EngineHookGalAudioSource engine, {
+    int? gamePid,
+  }) async {
+    final LoopbackGalAudioSource loopback = _loopbackSourceFactory();
+    final PcmFormat? format = await loopback.start();
+    if (generation != _operationGeneration) {
+      await loopback.stop();
+      await engine.stop();
+      return false;
+    }
+    if (format == null) {
+      await loopback.stop();
+    }
+    _audioSource = format == null ? null : loopback;
+    _startEngineTextPolling(engine);
+    _setState(
+      _state.copyWith(
+        phase: GalHookSessionPhase.degraded,
+        audioBackend: format == null
+            ? GalHookAudioBackend.none
+            : GalHookAudioBackend.systemLoopback,
+        audioFormat: format,
+        clearAudioFormat: format == null,
+        gamePid: gamePid,
+        fallbackReason: format == null
+            ? 'all_audio_sources_failed'
+            : 'engine_pcm_unavailable',
+        lastError: format == null
+            ? 'Text hook is ready, but no audio capture source could be started'
+            : null,
+        clearLastError: format != null,
+      ),
+    );
+    _record(
+      GalHookEventSeverity.success,
+      'text',
+      'engine.text_hook_ready',
+      'Engine text hook is ready',
+      details: <String, Object?>{'pid': gamePid, 'audioMode': 'text_only'},
+    );
+    _record(
+      format == null
+          ? GalHookEventSeverity.error
+          : GalHookEventSeverity.warning,
+      'audio',
+      format == null
+          ? 'audio.all_sources_failed'
+          : 'audio.hybrid_loopback_active',
+      format == null
+          ? 'Text capture is active, but no audio source is available'
+          : 'Text hook is active with system loopback audio',
+      details: <String, Object?>{
+        if (format != null) 'sampleRate': format.sampleRate,
+        if (format != null) 'channels': format.channels,
+      },
+    );
+    return true;
+  }
+
+  void _startEngineTextPolling(EngineHookGalAudioSource engine) {
+    _engineSource = engine;
+    _lastTextSeq = 0;
+    _pollInFlight = false;
+    _lineVoiceCache.clear();
+    _lineTimestampCache.clear();
+    unawaited(engine.pruneVoiceDump());
+    _textPollTimer?.cancel();
+    _textPollTimer = Timer.periodic(
+      _textPollInterval,
+      (_) => unawaited(_pollHookedText()),
     );
   }
 
@@ -851,12 +937,16 @@ class GalHookSessionController extends ChangeNotifier {
     _textPollTimer?.cancel();
     _textPollTimer = null;
     _pollInFlight = false;
+    final EngineHookGalAudioSource? engine = _engineSource;
     _engineSource = null;
     _lastTextSeq = 0;
     _lineVoiceCache.clear();
     _lineTimestampCache.clear();
     final GalAudioSource? source = _audioSource;
     _audioSource = null;
+    if (engine != null && !identical(engine, source)) {
+      await engine.stop();
+    }
     await source?.stop();
   }
 
@@ -927,6 +1017,22 @@ class GalHookSessionController extends ChangeNotifier {
             'match',
             'audio.utterance_locked',
             'Audio utterance locked to captured line',
+            details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
+          );
+        } else if (_state.audioBackend == GalHookAudioBackend.systemLoopback) {
+          // 引擎文本 + Loopback 音频的混合模式：没有引擎 utterance 不等于“无音频”。
+          // 保持为可用的 fallback，制卡时从持续录制的 Loopback 环形取最近音频。
+          _textService.updateLineAudio(
+            entry.id,
+            status: TexthookerLineAudioStatus.fallback,
+            backend: 'system_loopback',
+            fallbackReason: 'engine_utterance_unavailable',
+          );
+          _record(
+            GalHookEventSeverity.info,
+            'match',
+            'audio.loopback_available',
+            'Engine utterance unavailable; system loopback remains available',
             details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
           );
         } else {

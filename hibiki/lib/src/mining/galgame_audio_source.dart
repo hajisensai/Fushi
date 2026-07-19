@@ -158,6 +158,11 @@ PcmFormat? parseEngineHookReadyFormat(Map<Object?, Object?> m) {
   return null;
 }
 
+/// 引擎 helper 的文本能力握手。PCM `ready` 可以为 false；只要 DLL proof-of-life
+/// (`hooked`) 与文本 hook 都已就绪，上层就应保留 helper 并组合其它音频源。
+bool parseEngineTextHookReady(Map<Object?, Object?> m) =>
+    m['hooked'] == true && m['textHooked'] == true;
+
 /// 从 injector 子进程 stdout 解析 `OK hooked pid=<N> ...` 里的游戏子进程 PID（launch 模式）。
 /// 纯函数，可单测。未匹配 / 无效返回 null。
 int? parseInjectorHookedPid(String stdout) {
@@ -268,7 +273,7 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
   final String stem = lowerBasename.endsWith('.exe')
       ? basename.substring(0, basename.length - 4)
       : basename;
-  final String dataPath = '${directory.path}${separator}${stem}_Data';
+  final String dataPath = '${directory.path}$separator$stem' '_Data';
   final bool il2cpp =
       File('${directory.path}${separator}GameAssembly.dll').existsSync() ||
           File('$dataPath${separator}il2cpp_data${separator}Metadata'
@@ -374,6 +379,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 找游戏主窗口（截图用），因为拉起游戏的是本源、PID 只有它知道。
   int? get gamePid => _effectivePid > 0 ? _effectivePid : null;
 
+  /// helper 已完成注入且文本 hook 可用，但当前引擎没有暴露可读 PCM/原始语音时为 true。
+  /// 上层据此保留本实例继续轮询文本，同时另启系统 Loopback 作为音频源。
+  bool get textHookReady => _textHookReady;
+  bool _textHookReady = false;
+
   /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
   /// 为 true 即目标为 32 位（多数 KiriKiri galgame），调用方据此选 x86 注入器（DLL 位数必须
   /// 匹配目标进程，否则注入失败）。native 缺失 / 查询失败 / pid<=0 返回 null（调用方降级）。
@@ -446,6 +456,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   @override
   Future<PcmFormat?> start() async {
+    _textHookReady = false;
     final String? path = injectorPath;
     if (path == null || !File(path).existsSync()) {
       return null; // 无 injector -> 降级
@@ -507,6 +518,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
       if (fmt != null) {
         return fmt;
       }
+      // 文本与音频是两项独立能力。Unity/IL2CPP（Manosaba）已验证 Luna 文本 hook
+      // 能就绪，但 XAudio2 环形始终没有 PCM。此时立即把“文本-only 已就绪”交给
+      // 控制器组合 Loopback，不能继续等满 30 秒后关闭 helper、把正确文本一并丢掉。
+      if (_textHookReady) {
+        return null;
+      }
       await Future<void>.delayed(_pollInterval);
     }
     // 超时未就绪（未注入成功 / 该引擎无捕获）：降级。
@@ -557,6 +574,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       if (r == null) {
         return null;
       }
+      _textHookReady = parseEngineTextHookReady(r);
       return parseEngineHookReadyFormat(r);
     } on PlatformException {
       return null;
@@ -920,6 +938,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _injector = null;
     _effectivePid = 0;
     _sessionStartedAt = null;
+    _textHookReady = false;
   }
 }
 

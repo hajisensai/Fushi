@@ -90,6 +90,37 @@ void main() {
     });
   });
 
+  group('parseEngineTextHookReady', () {
+    test('hooked + textHooked 在 PCM 未就绪时仍是可用文本能力', () {
+      expect(
+        parseEngineTextHookReady(<Object?, Object?>{
+          'hooked': true,
+          'textHooked': true,
+          'ready': false,
+          'sampleRate': 0,
+        }),
+        isTrue,
+      );
+    });
+
+    test('只有其中一个信号时不误报文本能力', () {
+      expect(
+        parseEngineTextHookReady(<Object?, Object?>{
+          'hooked': true,
+          'textHooked': false,
+        }),
+        isFalse,
+      );
+      expect(
+        parseEngineTextHookReady(<Object?, Object?>{
+          'hooked': false,
+          'textHooked': true,
+        }),
+        isFalse,
+      );
+    });
+  });
+
   group('pcmDurationMs', () {
     test('一秒混音字节 -> 1000ms', () {
       expect(pcmDurationMs(192000, 192000), 1000);

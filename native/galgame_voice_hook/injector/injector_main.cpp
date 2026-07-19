@@ -812,6 +812,16 @@ bool DirectoryExists(const std::wstring& path) {
          (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
+std::wstring ProcessImagePath(HANDLE process) {
+  std::vector<wchar_t> buffer(32768, L'\0');
+  DWORD size = static_cast<DWORD>(buffer.size());
+  if (!QueryFullProcessImageNameW(process, 0, buffer.data(), &size) ||
+      size == 0) {
+    return L"";
+  }
+  return std::wstring(buffer.data(), size);
+}
+
 bool LooksLikeUnityRuntime(const std::wstring& exe) {
   const std::wstring dir = ExecutableDirectory(exe);
   if (dir.empty() || !FileExists(JoinPath(dir, L"UnityPlayer.dll"))) {
@@ -1028,9 +1038,19 @@ int main() {
     return 1;
   }
 
-  const int rc = RunInjection(target, pid, dll_path, wait_ms, hold,
-                              nullptr,
-                              nullptr, luna);
+  LunaOptions effective_luna = luna;
+  const std::wstring target_exe = ProcessImagePath(target);
+  if (!effective_luna.pc_hooks && !target_exe.empty() &&
+      ShouldAutoUseLunaPcHooks(target_exe)) {
+    effective_luna.pc_hooks = true;
+    fprintf(stderr,
+            "[luna] auto-enabled PC hooks for attached Unity/Mono-style "
+            "target: %ls\n",
+            ExecutableBaseName(target_exe).c_str());
+  }
+
+  const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
+                              nullptr, effective_luna);
   CloseHandle(target);
   return rc;
 }
