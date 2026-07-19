@@ -363,8 +363,18 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   static const double _minZoom = 0.25;
   static const double _maxZoom = 8.0;
 
-  /// 放大波形区高度（逻辑像素）。
-  static const double _waveHeight = 200.0;
+  /// 放大波形区高度（逻辑像素，可拖底部把手调节）。初值按屏高自适应（短屏起始更矮，够
+  /// 到下方缩放 +/-、字幕列表与调轴控件不必滚动整弹窗——用户反馈），随后由
+  /// [_buildResizeHandle] 竖直拖动在 [_minWaveHeight].._maxWaveHeight 间调节。
+  double _waveHeight = _defaultWaveHeight;
+
+  /// [_waveHeight] 初值（高屏封顶）与拖动上下界。
+  static const double _defaultWaveHeight = 200.0;
+  static const double _minWaveHeight = 96.0;
+  static const double _maxWaveHeight = 360.0;
+
+  /// 首帧按屏高自适应 [_waveHeight] 一次的守卫；用户拖动 / 旋转后不再被重置。
+  bool _waveHeightAdapted = false;
 
   /// 调轴细调滑条范围（正负 10 秒）与 clamp 上界（正负 600 秒），与
   /// [VideoQuickSettingsSheet] / VideoPlayerController 一致。
@@ -434,6 +444,18 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         (_) => _onPositionTick(),
       );
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 首帧按屏高自适应波形初始高度一次：短屏起始更矮，进弹窗即可够到下方缩放 +/-、字幕
+    // 列表与调轴控件，不必先把整弹窗滚到底（用户反馈）。用户拖底部把手后此守卫已置位，
+    // 之后旋转 / 键盘弹出等再触发本回调不会覆盖用户手动值。
+    if (_waveHeightAdapted) return;
+    _waveHeightAdapted = true;
+    final double screenH = MediaQuery.sizeOf(context).height;
+    _waveHeight = (screenH * 0.26).clamp(_minWaveHeight, _defaultWaveHeight);
   }
 
   void _onScroll() {
@@ -626,7 +648,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           ),
           SizedBox(height: gap),
           _buildScrollableWaveform(cs),
-          SizedBox(height: gap / 2),
+          _buildResizeHandle(cs),
           _buildViewControls(cs),
           if (_displayCueIndices.isNotEmpty) ...<Widget>[
             SizedBox(height: gap),
@@ -826,6 +848,37 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           ),
         );
       },
+    );
+  }
+
+  /// 波形区底部的高度调节把手（一条居中抓手 + 上下调整光标）。竖直拖动改 [_waveHeight]，
+  /// clamp 到 [_minWaveHeight].._maxWaveHeight。屏幕矮时把波形拖矮即可露出下方缩放 +/-、
+  /// 字幕列表与调轴控件，不必滚动整弹窗（用户反馈）；想看波形细节时也可拖高。
+  Widget _buildResizeHandle(ColorScheme cs) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeUpDown,
+      child: GestureDetector(
+        key: const ValueKey<String>('subtitle-waveform-resize-handle'),
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragUpdate: (DragUpdateDetails details) {
+          setState(() {
+            _waveHeight = (_waveHeight + details.delta.dy)
+                .clamp(_minWaveHeight, _maxWaveHeight);
+          });
+        },
+        child: Container(
+          height: 22,
+          alignment: Alignment.center,
+          child: Container(
+            width: 44,
+            height: 5,
+            decoration: BoxDecoration(
+              color: cs.outlineVariant,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

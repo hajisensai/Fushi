@@ -72,6 +72,19 @@ SubtitleWaveformPainter _zoomPainter(WidgetTester tester) {
   return paint.painter! as SubtitleWaveformPainter;
 }
 
+/// 波形 [CustomPaint] 的高度（= 当前 _waveHeight）。拖调节把手后应随之变化。
+double _waveHeight(WidgetTester tester) {
+  final CustomPaint paint = tester
+      .widgetList<CustomPaint>(find.descendant(
+        of: find.byType(SubtitleWaveformZoomView),
+        matching: find.byType(CustomPaint),
+      ))
+      .firstWhere((CustomPaint w) => w.painter is SubtitleWaveformPainter);
+  return paint.size.height;
+}
+
+const Key _resizeKey = ValueKey<String>('subtitle-waveform-resize-handle');
+
 const Key _openKey = ValueKey<String>('subtitle-waveform-open-button');
 
 /// TODO-1315: tapping the entry lazily probes then opens the zoom dialog.
@@ -528,5 +541,39 @@ void main() {
     expect(seeks, hasLength(1));
     expect(seeks.single, inInclusiveRange(0, 60000));
     expect(seeks.single, lessThan(1000)); // 近左缘 → 时间很小
+  });
+
+  testWidgets('resize handle: dragging up shrinks the waveform height',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(find.byKey(_resizeKey), findsOneWidget);
+    final double before = _waveHeight(tester);
+    // 向上拖把手 → 波形变矮（露出下方控件，短屏不必滚整弹窗）。
+    await tester.drag(find.byKey(_resizeKey), const Offset(0, -80));
+    await tester.pumpAndSettle();
+    final double after = _waveHeight(tester);
+    expect(after, lessThan(before));
+    expect(after, greaterThanOrEqualTo(96.0)); // 不低于 _minWaveHeight
+  });
+
+  testWidgets('resize handle: dragging down grows the waveform height',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final double before = _waveHeight(tester);
+    await tester.drag(find.byKey(_resizeKey), const Offset(0, 120));
+    await tester.pumpAndSettle();
+    final double after = _waveHeight(tester);
+    expect(after, greaterThan(before));
+    expect(after, lessThanOrEqualTo(360.0)); // 不高于 _maxWaveHeight
   });
 }
