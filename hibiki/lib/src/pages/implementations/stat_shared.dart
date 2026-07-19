@@ -25,6 +25,50 @@ Map<String, ({int lookups, int mines})> aggregateStatCountersByTitle(
   return out;
 }
 
+/// 纯函数：把 '<mediaType>|<entryKey>' 归属键解析成合集名。[key] 命中折叠归属的主
+/// collectionId（[primaryByEntry]，即 getPrimaryCollectionIdByEntry），再取 [namesById]
+/// 的名字；任一步缺失返回 null。锁死统计页 'epub|<bookKey>' / 'video|<bookUid>' 键契约
+/// （书架成员表 entryKey：epub=bookKey、video=bookUid）。
+String? statCollectionName(
+  String key,
+  Map<String, int> primaryByEntry,
+  Map<int, String> namesById,
+) {
+  final int? cid = primaryByEntry[key];
+  if (cid == null) return null;
+  return namesById[cid];
+}
+
+/// 统计页 per-book / per-video tile 的「所属合集」小标签（文件夹图标 + 合集名），
+/// 阅读统计与视频统计共用（同一视觉）。合集名为 null 时调用方不渲染本 widget。
+Widget buildStatCollectionLabel(
+  BuildContext context,
+  String collectionName,
+) {
+  final ColorScheme colorScheme = Theme.of(context).colorScheme;
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      Icon(
+        Icons.folder_outlined,
+        size: 13,
+        color: colorScheme.onSurfaceVariant,
+      ),
+      const SizedBox(width: 4),
+      Flexible(
+        child: Text(
+          collectionName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+        ),
+      ),
+    ],
+  );
+}
+
 /// TODO-1252：把收藏活行按 [FavoriteWordRow.title] 聚合成每本书/每个视频的收藏数，
 /// 供 per-book / per-video tile 展示。无书收藏（title 空）不入 tile，只进汇总面板。
 /// 聚合键与查词/制卡 tile 的 title 一致。收藏取消即删行 → 聚合活行天然回落。

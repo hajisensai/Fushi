@@ -28,6 +28,14 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   VideoStatsAggregate _agg = VideoStatsAggregate();
   bool _hasData = false;
 
+  /// 合集归属映射（书架同源）：按视频 tile 显示所属合集名用。
+  /// - [_collectionNamesById]：collectionId → 合集名。
+  /// - [_primaryCollectionByEntry]：'video|<bookUid>' → 折叠归属的主 collectionId。
+  /// - [_bookUidByTitle]：video_watch_statistics 按 title 聚合，经 video_books 反查 uid。
+  Map<int, String> _collectionNamesById = <int, String>{};
+  Map<String, int> _primaryCollectionByEntry = <String, int>{};
+  Map<String, String> _bookUidByTitle = <String, String>{};
+
   // 制卡 / 收藏计数（来源 'video'），按今日/本周/本月/全部分桶。
   StatActivityBuckets _mined = StatActivityBuckets();
   StatActivityBuckets _favorited = StatActivityBuckets();
@@ -71,6 +79,16 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           .map((VideoBookRow b) => b.completedAt)
           .whereType<DateTime>()
           .toList();
+      // 合集归属（书架同源）：title→bookUid→'video|bookUid'→合集名，喂 per-video tile。
+      // bookUid 直接取自已加载的 video_books（无需额外查询）。
+      _bookUidByTitle = <String, String>{
+        for (final VideoBookRow b in books) b.title: b.bookUid,
+      };
+      _collectionNamesById = <int, String>{
+        for (final MediaCollectionRow c in await db.getAllMediaCollections())
+          c.id: c.name,
+      };
+      _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
       final DateTime now = DateTime.now();
       _agg = computeVideoStats(
         stats: stats,
@@ -361,11 +379,24 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     await _loadFromDatabase();
   }
 
+  /// 按视频 tile 的所属合集名（书架同款「主合集」折叠归属，无则 null）。title→bookUid
+  /// 经 video_books 反查（video_watch_statistics 按 title 聚合），拼 'video|<bookUid>'。
+  String? _collectionNameForVideo(String title) {
+    final String? bookUid = _bookUidByTitle[title];
+    if (bookUid == null) return null;
+    return statCollectionName(
+      'video|$bookUid',
+      _primaryCollectionByEntry,
+      _collectionNamesById,
+    );
+  }
+
   Widget _buildVideoTile(VideoStatBookData video) {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
         _videoCounters[video.title] ?? (lookups: 0, mines: 0);
     final int favorites = _videoFavorites[video.title] ?? 0;
+    final String? collectionName = _collectionNameForVideo(video.title);
     // 按观看时长排行（byVideo 已按 ms 降序），进度条与排行同维度。
     final maxMs =
         _agg.byVideo.isEmpty ? 1 : _agg.byVideo.first.ms.clamp(1, 1 << 50);
@@ -393,6 +424,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+              if (collectionName != null) ...[
+                SizedBox(height: tokens.spacing.gap / 4),
+                buildStatCollectionLabel(context, collectionName),
+              ],
               SizedBox(height: tokens.spacing.gap / 2),
               Row(
                 children: [
