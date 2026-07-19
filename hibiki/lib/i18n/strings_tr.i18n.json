@@ -2014,5 +2014,6 @@
   "game_no_active_line": "Select a line to inspect its sentence-audio state.",
   "game_text_thread": "Text thread",
   "game_text_thread_all": "All text threads",
-  "game_text_thread_hint": "Choose the clean dialogue thread, like Luna Translator"
+  "game_text_thread_hint": "Choose the clean dialogue thread, like Luna Translator",
+  "game_audio_backend_resource": "Game resource audio"
 }

@@ -64,4 +64,29 @@ void main() {
       );
     });
   });
+
+  group('pickPairedUnityVoiceWav', () {
+    test('取播放事件时间戳离文本最近的资源 WAV', () {
+      final List<String> files = <String>[
+        '9900_0205Adv01_Noah001.wav',
+        '10040_0205Adv01_Noah002.wav',
+        '10700_0205Adv01_Noah003.wav',
+      ];
+      expect(
+        pickPairedUnityVoiceWav(wavFileNames: files, textTsMs: 10000),
+        '10040_0205Adv01_Noah002.wav',
+      );
+    });
+
+    test('窗口外资源与非语音名不会参与', () {
+      final List<String> files = <String>[
+        '8000_0205Adv01_Noah001.wav',
+        '9990_bgm_theme.wav',
+      ];
+      expect(
+        pickPairedUnityVoiceWav(wavFileNames: files, textTsMs: 10000),
+        isNull,
+      );
+    });
+  });
 }

@@ -1,0 +1,53 @@
+#include <cstdint>
+#include <cstdio>
+#include <vector>
+
+#include "siglus_text.h"
+
+namespace {
+
+bool Expect(bool condition, const char* message) {
+  if (!condition) std::fprintf(stderr, "FAIL: %s\n", message);
+  return condition;
+}
+
+}  // namespace
+
+int main() {
+  bool ok = true;
+  std::vector<uint8_t> image(0x180, 0x41);
+  for (size_t i = 0x7c; i < 0x80; ++i) image[i] = 0xcc;
+
+  // anemoi 正式版运行时 +0x25C880 函数的开头，以及 +0x2b 处 h3_t 特征。
+  const uint8_t prologue[] = {
+      0x53, 0x8b, 0x1d, 0xac, 0x1a, 0xaf, 0x00, 0x57,
+      0x8b, 0xf9, 0x8b, 0x47, 0x10, 0x85, 0xc0, 0x75,
+      0x05, 0x5f, 0x32, 0xc0, 0x5b, 0xc3, 0x83, 0x7f,
+      0x14, 0x07, 0x76, 0x02, 0x8b, 0x0f, 0x56, 0x50,
+      0x8d, 0x73, 0x68, 0x51, 0x8b, 0xce, 0xe8, 0x85,
+      0x66, 0xf0, 0xff,
+  };
+  for (size_t i = 0; i < sizeof(prologue); ++i) image[0x80 + i] = prologue[i];
+  const uint8_t body[] = {
+      0x81, 0xf8, 0x00, 0x00, 0x01, 0x00, 0x00, 0x7e, 0x25,
+      0x8b, 0x4e, 0x10, 0x81, 0xf9, 0x00, 0x01, 0x00, 0x00,
+      0x72, 0x18, 0xc7, 0x46, 0x10, 0x00, 0x01, 0x00, 0x00,
+      0x83, 0x7e, 0x14, 0x07, 0x76, 0x02, 0x8b, 0x36, 0x90,
+  };
+  for (size_t i = 0; i < sizeof(body); ++i) image[0xab + i] = body[i];
+
+  ok &= Expect(hibiki_voice_hook::siglus::FindExactTextFunctionOffset(
+                   image.data(), image.size()) == 0x80,
+               "Siglus body signature should resolve the padded function start");
+  image[0xab + 14] = 0x01;
+  ok &= Expect(hibiki_voice_hook::siglus::FindExactTextFunctionOffset(
+                   image.data(), image.size()) ==
+                   hibiki_voice_hook::siglus::kInvalidTextFunctionOffset,
+               "near misses must not install an unsafe engine hook");
+
+  if (ok) {
+    std::puts("siglus_text_test: PASS");
+    return 0;
+  }
+  return 1;
+}

@@ -112,6 +112,44 @@ void DumpText(const SharedHeader* h) {
   fflush(stdout);
 }
 
+void DumpTextMeta(const SharedHeader* h) {
+  const uint64_t count = h->text_write_count;
+  const uint8_t* base = reinterpret_cast<const uint8_t*>(h) +
+                        h->text_region_offset;
+  const uint64_t start = count > hibiki_voice_hook::kTextSlotCount
+                             ? count - hibiki_voice_hook::kTextSlotCount
+                             : 0;
+  for (uint64_t seq = start + 1; seq <= count; ++seq) {
+    const auto* slot = reinterpret_cast<const hibiki_voice_hook::TextSlot*>(
+        base + static_cast<size_t>((seq - 1) %
+                                   hibiki_voice_hook::kTextSlotCount) *
+                   hibiki_voice_hook::kTextSlotBytes);
+    if (slot->seq != seq || slot->byte_len == 0) continue;
+    char text[1400] = {0};
+    const uint8_t* raw = reinterpret_cast<const uint8_t*>(slot) +
+                         sizeof(hibiki_voice_hook::TextSlot);
+    if (slot->is_utf8 != 0) {
+      memcpy(text, raw, (std::min)(slot->byte_len, 1399u));
+    } else {
+      WideCharToMultiByte(CP_UTF8, 0,
+                          reinterpret_cast<const wchar_t*>(raw),
+                          static_cast<int>(slot->byte_len / 2), text,
+                          sizeof(text) - 1, nullptr, nullptr);
+    }
+    char hook_code[600] = {0};
+    WideCharToMultiByte(CP_UTF8, 0, slot->hook_code,
+                        static_cast<int>(slot->hook_code_len), hook_code,
+                        sizeof(hook_code) - 1, nullptr, nullptr);
+    printf("%llu|%llu|%llu|%u|%.*s|%s|%s\n",
+           static_cast<unsigned long long>(seq),
+           static_cast<unsigned long long>(slot->timestamp_ms),
+           static_cast<unsigned long long>(slot->thread_id),
+           slot->source_kind, static_cast<int>(slot->hook_name_len),
+           slot->hook_name, hook_code, text);
+  }
+  fflush(stdout);
+}
+
 // 找时间戳最近 [ts] 的语音 clip，从音频环形取其 PCM 写成 WAV 到 [path]。成功返回 true。
 bool DumpWav(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
              const char* path) {
@@ -496,6 +534,12 @@ int main(int argc, char** argv) {
     CloseHandle(mapping);
     return 0;
   }
+  if (argc >= 3 && strcmp(argv[2], "--dump-text-meta") == 0) {
+    DumpTextMeta(header);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
   if (argc >= 5 && strcmp(argv[2], "--dump-wav") == 0) {
     const uint64_t ts = strtoull(argv[3], nullptr, 10);
     const bool ok = DumpWav(header, ring, ts, argv[4]);
@@ -578,10 +622,13 @@ int main(int argc, char** argv) {
     const uint32_t text_hooked = header->text_hooked;
     const uint64_t twc = header->text_write_count;
     const uint64_t cwc = header->clip_write_count;
-    printf("     [v2] text_hooked=%u luna_active=%u decdiag=0x%02x text_lines=%llu voice_clips=%llu",
+    const uint64_t uwc = header->unity_voice_write_count;
+    printf("     [v2] text_hooked=%u luna_active=%u decdiag=0x%08x hookdiag=0x%08x text_lines=%llu voice_clips=%llu unity_events=%llu",
            text_hooked, header->luna_active, header->reserved_luna,
+           header->hook_diagnostics,
            static_cast<unsigned long long>(twc),
-           static_cast<unsigned long long>(cwc));
+           static_cast<unsigned long long>(cwc),
+           static_cast<unsigned long long>(uwc));
     if (twc > 0) {
       const uint32_t idx =
           static_cast<uint32_t>((twc - 1) % hibiki_voice_hook::kTextSlotCount);
@@ -598,6 +645,19 @@ int main(int argc, char** argv) {
         WideCharToMultiByte(CP_UTF8, 0, w, wlen, u8, sizeof(u8) - 1, nullptr,
                             nullptr);
         printf(" last=\"%s\"", u8);
+      }
+    }
+    if (uwc > 0) {
+      const auto* event = &header->unity_voice_events[
+          (uwc - 1) % hibiki_voice_hook::kUnityVoiceEventCount];
+      if (event->seq == uwc) {
+        char clip_u8[512] = {0};
+        char bundle_u8[1400] = {0};
+        WideCharToMultiByte(CP_UTF8, 0, event->clip_name, -1, clip_u8,
+                            sizeof(clip_u8) - 1, nullptr, nullptr);
+        WideCharToMultiByte(CP_UTF8, 0, event->bundle_path, -1, bundle_u8,
+                            sizeof(bundle_u8) - 1, nullptr, nullptr);
+        printf(" unity_last=\"%s\" bundle=\"%s\"", clip_u8, bundle_u8);
       }
     }
     printf("\n");

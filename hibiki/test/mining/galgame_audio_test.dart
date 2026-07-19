@@ -121,6 +121,30 @@ void main() {
     });
   });
 
+  group('parseEngineAudioHooksReady', () {
+    test('文本先到时不能提前结束音频探测', () {
+      expect(
+        parseEngineAudioHooksReady(<Object?, Object?>{
+          'hooked': true,
+          'textHooked': true,
+          'audioHooksReady': false,
+        }),
+        isFalse,
+      );
+    });
+
+    test('原生首轮音频 hook 完成后才允许进入混合模式', () {
+      expect(
+        parseEngineAudioHooksReady(<Object?, Object?>{
+          'hooked': true,
+          'textHooked': true,
+          'audioHooksReady': true,
+        }),
+        isTrue,
+      );
+    });
+  });
+
   group('pcmDurationMs', () {
     test('一秒混音字节 -> 1000ms', () {
       expect(pcmDurationMs(192000, 192000), 1000);
@@ -450,6 +474,19 @@ void main() {
       expect(line.threadContext2, 10);
     });
 
+    test('Siglus exact text source has a stable selectable thread label', () {
+      const GalHookedLine line = GalHookedLine(
+        seq: 1,
+        timestampMs: 2,
+        text: '「ひょ、とっ、ほあたぁ！」',
+        threadId: 0x44,
+        threadAddress: 0x25c880,
+        sourceKind: 4,
+      );
+      expect(line.textThreadKey, 'siglus:44');
+      expect(line.textThreadLabel, 'Siglus exact · 0x25c880');
+    });
+
     test('selectTextThread forwards the native thread id and can reset to auto',
         () async {
       final List<Object?> selected = <Object?>[];
@@ -597,6 +634,12 @@ void main() {
     test('manosaba.exe 明确启用 Unity/Mono 文本 hook 兜底', () async {
       final File exe = File(join(dir.path, 'manosaba.exe'));
       await exe.writeAsBytes(_craftPe(0x8664), flush: true);
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+    });
+
+    test('SiglusEngine.exe 启用 PC hooks 以避开 GDI 描边伪影', () async {
+      final File exe = File(join(dir.path, 'SiglusEngine.exe'));
+      await exe.writeAsBytes(_craftPe(0x014c), flush: true);
       expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
     });
 

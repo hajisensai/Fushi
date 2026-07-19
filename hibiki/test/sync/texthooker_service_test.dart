@@ -62,7 +62,7 @@ void main() {
       TexthookerService.instance.updateLineAudio(
         second.id,
         status: TexthookerLineAudioStatus.encoded,
-        backend: 'paired_voice_ogg',
+        backend: 'game_resource',
         durationMs: 840,
       ),
       isTrue,

@@ -163,6 +163,12 @@ PcmFormat? parseEngineHookReadyFormat(Map<Object?, Object?> m) {
 bool parseEngineTextHookReady(Map<Object?, Object?> m) =>
     m['hooked'] == true && m['textHooked'] == true;
 
+/// DLL 已完成首轮音频导出 hook 安装。Luna 文本线程可能比 DLL 工作线程更早写入共享
+/// 内存；只有看到这个信号后，才能把“文本已就绪但音频未就绪”判定为真正的混合模式，
+/// 否则会在 Siglus OVK / Unity 资源 hook 即将就绪前过早切到 Loopback。
+bool parseEngineAudioHooksReady(Map<Object?, Object?> m) =>
+    m['audioHooksReady'] == true;
+
 /// 从 injector 子进程 stdout 解析 `OK hooked pid=<N> ...` 里的游戏子进程 PID（launch 模式）。
 /// 纯函数，可单测。未匹配 / 无效返回 null。
 int? parseInjectorHookedPid(String stdout) {
@@ -216,6 +222,32 @@ String? pickPairedVoiceOgg({
   return best;
 }
 
+/// Unity 资源提取器在 AudioSource 播放入口以同一个 GetTickCount64 时钟写 WAV。相较 Siglus
+/// 的 OGG 会固定早于文本约 220ms，Unity 文本/AudioClip 调用先后由引擎脚本决定，因此在
+/// `T-1000..T+500ms` 内取离文本最近者。调用方始终先选资源 WAV，再退 Siglus OGG。
+String? pickPairedUnityVoiceWav({
+  required List<String> wavFileNames,
+  required int textTsMs,
+  int beforeMs = 1000,
+  int afterMs = 500,
+}) {
+  String? best;
+  int bestDistance = 1 << 62;
+  for (final String name in wavFileNames) {
+    final _ParsedVoiceOgg? parsed = _parseVoiceOggName(name);
+    if (parsed == null || _isNonVoiceBasename(parsed.basename)) continue;
+    if (parsed.tick < textTsMs - beforeMs || parsed.tick > textTsMs + afterMs) {
+      continue;
+    }
+    final int distance = (parsed.tick - textTsMs).abs();
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = name;
+    }
+  }
+  return best;
+}
+
 /// [pickPairedVoiceOgg] 解析出的一条 dump 文件名：`<tick>_<basename>` 的 tick（GetTickCount64）
 /// 与 basename（`<tick>_` 之后的部分，含扩展名）。
 class _ParsedVoiceOgg {
@@ -251,14 +283,14 @@ final RegExp _nonVoiceBasenamePattern = RegExp(
 bool _isNonVoiceBasename(String basename) =>
     _nonVoiceBasenamePattern.hasMatch(basename);
 
-/// Unity/Mono/IL2CPP 游戏的文本通常不走 GDI 渲染，LunaHook 的通用 PC hooks 需要显式补装。
-/// 先覆盖已验证需要的 `manosaba.exe`，再用 Unity 目录布局兜住同类目标。
+/// Unity/Mono/IL2CPP 游戏的文本通常不走 GDI 渲染；Siglus 的 GDI 输出则会包含描边
+/// 重画伪影。两类目标都显式补装 LunaHook 通用 PC hooks，让 UI 能选择干净文本线程。
 bool shouldUseLunaPcHooksForExecutable(String executablePath) {
   final String basename = EngineHookGalAudioSource._fileBaseName(
     executablePath,
   );
   final String lowerBasename = basename.toLowerCase();
-  if (lowerBasename == 'manosaba.exe') {
+  if (lowerBasename == 'manosaba.exe' || lowerBasename == 'siglusengine.exe') {
     return true;
   }
 
@@ -382,7 +414,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// helper 已完成注入且文本 hook 可用，但当前引擎没有暴露可读 PCM/原始语音时为 true。
   /// 上层据此保留本实例继续轮询文本，同时另启系统 Loopback 作为音频源。
   bool get textHookReady => _textHookReady;
+  bool get rawVoiceReady => _rawVoiceReady;
+  bool get pcmReady => _pcmReady;
   bool _textHookReady = false;
+  bool _audioHooksReady = false;
+  bool _rawVoiceReady = false;
+  bool _pcmReady = false;
 
   /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
   /// 为 true 即目标为 32 位（多数 KiriKiri galgame），调用方据此选 x86 注入器（DLL 位数必须
@@ -457,6 +494,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
   @override
   Future<PcmFormat?> start() async {
     _textHookReady = false;
+    _audioHooksReady = false;
+    _rawVoiceReady = false;
+    _pcmReady = false;
     final String? path = injectorPath;
     if (path == null || !File(path).existsSync()) {
       return null; // 无 injector -> 降级
@@ -518,10 +558,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
       if (fmt != null) {
         return fmt;
       }
-      // 文本与音频是两项独立能力。Unity/IL2CPP（Manosaba）已验证 Luna 文本 hook
-      // 能就绪，但 XAudio2 环形始终没有 PCM。此时立即把“文本-only 已就绪”交给
-      // 控制器组合 Loopback，不能继续等满 30 秒后关闭 helper、把正确文本一并丢掉。
-      if (_textHookReady) {
+      // Luna 文本线程可能先于 DLL 音频工作线程出现。必须等首轮音频探针完成后，才把
+      // “文本-only”交给控制器组合 Loopback；否则 Siglus 原始 OVK hook 会被启动竞态
+      // 误判为不可用。helper 仍会保留，因此后续资源语音始终优先于 Loopback。
+      if (_textHookReady && _audioHooksReady) {
         return null;
       }
       await Future<void>.delayed(_pollInterval);
@@ -575,12 +615,25 @@ class EngineHookGalAudioSource implements GalAudioSource {
         return null;
       }
       _textHookReady = parseEngineTextHookReady(r);
+      _audioHooksReady = parseEngineAudioHooksReady(r);
+      _rawVoiceReady = r['rawVoiceReady'] == true;
+      _pcmReady = parseGalPcmFormat(r) != null;
       return parseEngineHookReadyFormat(r);
     } on PlatformException {
       return null;
     } on MissingPluginException {
       return null;
     }
+  }
+
+  /// 刷新运行中 helper 的能力状态。
+  ///
+  /// KiriKiriZ 的 `TVPCreateStream` 等资源层可能晚于 Luna 文本管线初始化；启动阶段
+  /// 因此会先进入“文本 + Loopback”。控制器在后续文本轮询中调用此方法，才能在资源
+  /// hook 晚到后把原始游戏语音提升为主来源。
+  Future<bool> refreshReadiness() async {
+    await _pollFormat();
+    return _rawVoiceReady;
   }
 
   @override
@@ -748,34 +801,38 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// `providedAudioBytes`。这是引擎级最干净的语音（混音前、无 BGM/SE），优先于共享内存里的
   /// [grabUtterance]/[grabClipNear]。非 Windows / 目录不存在 / 无匹配 / 转码失败返回 null
   /// （调用方回退 grabUtterance→grabClipNear→grabRecent 采集链，Never break）。
-  Future<Uint8List?> grabPairedVoiceBytes(
-    int textTsMs, {
-    required String outputExtension,
-  }) async {
-    if (!Platform.isWindows) {
-      return null;
-    }
+  File? _findPairedVoiceFile(int textTsMs) {
+    if (!Platform.isWindows) return null;
     final Directory dir = _galVoiceDumpDir();
-    if (!dir.existsSync()) {
-      return null;
-    }
+    if (!dir.existsSync()) return null;
     final List<String> oggNames = <String>[];
-    final List<File> oggFiles = <File>[];
+    final List<String> wavNames = <String>[];
+    final List<File> voiceFiles = <File>[];
     try {
       for (final FileSystemEntity e in dir.listSync()) {
         if (e is! File) {
           continue;
         }
         final String name = _fileBaseName(e.path);
-        if (name.toLowerCase().endsWith('.ogg')) {
+        final String lower = name.toLowerCase();
+        if (lower.endsWith('.ogg')) {
           oggNames.add(name);
-          oggFiles.add(e);
+          voiceFiles.add(e);
+        } else if (lower.endsWith('.wav')) {
+          wavNames.add(name);
+          voiceFiles.add(e);
         }
       }
     } catch (_) {
       return null;
     }
     String? picked = textTsMs > 0
+        ? pickPairedUnityVoiceWav(
+            wavFileNames: wavNames,
+            textTsMs: textTsMs,
+          )
+        : null;
+    picked ??= textTsMs > 0
         ? pickPairedVoiceOgg(oggFileNames: oggNames, textTsMs: textTsMs)
         : null;
     // Siglus 的 Enigma-safe 晚附着可能没有文本 hook 时间戳。此时（或精确窗口未命中时）只在
@@ -785,7 +842,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       DateTime? latestModified;
       final DateTime floor =
           _sessionStartedAt!.subtract(const Duration(seconds: 2));
-      for (final File file in oggFiles) {
+      for (final File file in voiceFiles) {
         final String name = _fileBaseName(file.path);
         final _ParsedVoiceOgg? parsed = _parseVoiceOggName(name);
         if (parsed == null || _isNonVoiceBasename(parsed.basename)) {
@@ -812,9 +869,22 @@ class EngineHookGalAudioSource implements GalAudioSource {
     if (picked == null) {
       return null;
     }
-    final String oggPath = '${dir.path}${Platform.pathSeparator}$picked';
+    return File('${dir.path}${Platform.pathSeparator}$picked');
+  }
+
+  /// 只检查资源文件是否已落盘，不提前做转码。捕获工作台的文本轮询用它把逐行状态从
+  /// “等待音频”推进到 `game_resource`；真正制卡时仍由 [grabPairedVoiceBytes] 读取并转码。
+  bool hasPairedVoiceCandidate(int textTsMs) =>
+      _findPairedVoiceFile(textTsMs) != null;
+
+  Future<Uint8List?> grabPairedVoiceBytes(
+    int textTsMs, {
+    required String outputExtension,
+  }) async {
+    final File? picked = _findPairedVoiceFile(textTsMs);
+    if (picked == null) return null;
     return transcodeVoiceOggToMiningAudio(
-      oggPath: oggPath,
+      oggPath: picked.path,
       tempDir: Directory.systemTemp.path,
       outputExtension: outputExtension,
     );
@@ -939,6 +1009,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _effectivePid = 0;
     _sessionStartedAt = null;
     _textHookReady = false;
+    _audioHooksReady = false;
   }
 }
 
@@ -982,6 +1053,8 @@ class GalHookedLine {
     final String source = switch (sourceKind) {
       1 => 'gdi',
       2 => 'luna',
+      3 => 'unity_tmp',
+      4 => 'siglus',
       _ => 'hook',
     };
     return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
@@ -994,6 +1067,8 @@ class GalHookedLine {
         : switch (sourceKind) {
             1 => 'GDI fallback',
             2 => 'LunaHook',
+            3 => 'Unity TMP_Text',
+            4 => 'Siglus exact',
             _ => 'Text hook',
           };
     if (threadAddress == 0) return source;

@@ -21,7 +21,7 @@ enum GalHookSessionPhase {
   error,
 }
 
-enum GalHookAudioBackend { none, pairedVoice, enginePcm, systemLoopback }
+enum GalHookAudioBackend { none, gameResource, enginePcm, systemLoopback }
 
 enum GalHookEventSeverity { info, success, warning, error }
 
@@ -243,6 +243,7 @@ class GalHookSessionController extends ChangeNotifier {
 
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
   final Map<String, int> _lineTimestampCache = <String, int>{};
+  final Map<String, int> _pendingResourceTimestamps = <String, int>{};
 
   static EngineHookGalAudioSource _defaultEngineFactory({
     required int targetPid,
@@ -360,7 +361,15 @@ class GalHookSessionController extends ChangeNotifier {
         return;
       }
       if (format != null) {
-        _activateEngine(engine, format, gamePid: window.pid);
+        if (engine.rawVoiceReady) {
+          await _activateResourceWithLoopback(
+            generation,
+            engine,
+            gamePid: window.pid,
+          );
+        } else {
+          _activateEngine(engine, format, gamePid: window.pid);
+        }
         return;
       }
       if (engine.textHookReady) {
@@ -457,7 +466,15 @@ class GalHookSessionController extends ChangeNotifier {
     }
     final int? gamePid = engine.gamePid;
     if (format != null) {
-      _activateEngine(engine, format, gamePid: gamePid);
+      if (engine.rawVoiceReady) {
+        await _activateResourceWithLoopback(
+          generation,
+          engine,
+          gamePid: gamePid,
+        );
+      } else {
+        _activateEngine(engine, format, gamePid: gamePid);
+      }
     } else if (!await _activateTextWithLoopback(
       generation,
       engine,
@@ -681,7 +698,9 @@ class GalHookSessionController extends ChangeNotifier {
         _textService.updateLineAudio(
           lineId,
           status: TexthookerLineAudioStatus.encoded,
-          backend: 'paired_voice_ogg',
+          // 资源来源可能是 Siglus OVK OGG，也可能是 Unity Addressables WAV；
+          // 统一用不泄漏容器格式的名称，避免把 Unity 资源误报成 OGG。
+          backend: 'game_resource',
         );
         _record(
           GalHookEventSeverity.success,
@@ -730,9 +749,7 @@ class GalHookSessionController extends ChangeNotifier {
         return null;
       }
       final String backend =
-          _state.audioBackend == GalHookAudioBackend.enginePcm
-              ? 'engine_pcm'
-              : 'system_loopback';
+          identical(source, engine) ? 'engine_pcm' : 'system_loopback';
       _textService.updateLineAudio(
         lineId,
         status: TexthookerLineAudioStatus.encoded,
@@ -796,6 +813,46 @@ class GalHookSessionController extends ChangeNotifier {
         'pid': gamePid,
         'sampleRate': format.sampleRate,
         'channels': format.channels,
+      },
+    );
+  }
+
+  /// 原始游戏资源音频是首选，系统回环只作为某句没有资源文件时的兜底。资源 hook 本身
+  /// 不提供 PCM 环，因此两条来源必须同时保活：[_engineSource] 负责文本/资源配对，
+  /// [_audioSource] 优先持回环（启动失败则保留 engine 空 PCM 源，资源制卡仍可继续）。
+  Future<void> _activateResourceWithLoopback(
+    int generation,
+    EngineHookGalAudioSource engine, {
+    int? gamePid,
+  }) async {
+    final LoopbackGalAudioSource loopback = _loopbackSourceFactory();
+    final PcmFormat? fallbackFormat = await loopback.start();
+    if (generation != _operationGeneration) {
+      await loopback.stop();
+      await engine.stop();
+      return;
+    }
+    if (fallbackFormat == null) await loopback.stop();
+    _audioSource = fallbackFormat == null ? engine : loopback;
+    _startEngineTextPolling(engine);
+    _setState(
+      _state.copyWith(
+        phase: GalHookSessionPhase.waitingSignals,
+        audioBackend: GalHookAudioBackend.gameResource,
+        clearAudioFormat: true,
+        gamePid: gamePid,
+        clearFallbackReason: true,
+        clearLastError: true,
+      ),
+    );
+    _record(
+      GalHookEventSeverity.success,
+      'audio',
+      'audio.game_resource_ready',
+      'Game resource audio is primary; system loopback is fallback only',
+      details: <String, Object?>{
+        'pid': gamePid,
+        'loopbackAvailable': fallbackFormat != null,
       },
     );
   }
@@ -872,6 +929,7 @@ class GalHookSessionController extends ChangeNotifier {
     _pollInFlight = false;
     _lineVoiceCache.clear();
     _lineTimestampCache.clear();
+    _pendingResourceTimestamps.clear();
     unawaited(engine.pruneVoiceDump());
     _textPollTimer?.cancel();
     _textPollTimer = Timer.periodic(
@@ -956,6 +1014,12 @@ class GalHookSessionController extends ChangeNotifier {
     if (engine == null) return;
     _pollInFlight = true;
     try {
+      final bool hadResourceAudio = engine.rawVoiceReady;
+      await engine.refreshReadiness();
+      if (engine != _engineSource) return;
+      if (!hadResourceAudio && engine.rawVoiceReady) {
+        _promoteLateResourceAudio(engine);
+      }
       final GalTextPoll? poll = await engine.pollText(_lastTextSeq);
       if (poll == null || engine != _engineSource) return;
       final List<GalHookedLine> ordered = List<GalHookedLine>.from(poll.lines)
@@ -1000,10 +1064,35 @@ class GalHookSessionController extends ChangeNotifier {
         }
         _lineTimestampCache[entry.id] = line.timestampMs;
         _trimCache(_lineTimestampCache);
-        final GalAudioSlice? clip =
-            await engine.grabUtterance(line.timestampMs) ??
-                await engine.grabClipNear(line.timestampMs);
-        if (clip != null && !clip.isEmpty) {
+        GalAudioSlice? clip;
+        final bool resourceMatched = engine.rawVoiceReady &&
+            engine.hasPairedVoiceCandidate(line.timestampMs);
+        if (resourceMatched) {
+          _textService.updateLineAudio(
+            entry.id,
+            status: TexthookerLineAudioStatus.matched,
+            backend: 'game_resource',
+          );
+          _record(
+            GalHookEventSeverity.success,
+            'match',
+            'audio.game_resource_matched',
+            'Original game resource audio matched to captured line',
+            details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
+          );
+        } else if (engine.rawVoiceReady) {
+          _pendingResourceTimestamps[entry.id] = line.timestampMs;
+          _trimCache(_pendingResourceTimestamps);
+          _textService.updateLineAudio(
+            entry.id,
+            status: TexthookerLineAudioStatus.pending,
+            backend: 'game_resource',
+          );
+        } else {
+          clip = await engine.grabUtterance(line.timestampMs) ??
+              await engine.grabClipNear(line.timestampMs);
+        }
+        if (!resourceMatched && clip != null && !clip.isEmpty) {
           _lineVoiceCache[entry.id] = clip;
           _trimCache(_lineVoiceCache);
           _textService.updateLineAudio(
@@ -1019,7 +1108,8 @@ class GalHookSessionController extends ChangeNotifier {
             'Audio utterance locked to captured line',
             details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
           );
-        } else if (_state.audioBackend == GalHookAudioBackend.systemLoopback) {
+        } else if (!engine.rawVoiceReady &&
+            _state.audioBackend == GalHookAudioBackend.systemLoopback) {
           // 引擎文本 + Loopback 音频的混合模式：没有引擎 utterance 不等于“无音频”。
           // 保持为可用的 fallback，制卡时从持续录制的 Loopback 环形取最近音频。
           _textService.updateLineAudio(
@@ -1035,7 +1125,7 @@ class GalHookSessionController extends ChangeNotifier {
             'Engine utterance unavailable; system loopback remains available',
             details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
           );
-        } else {
+        } else if (!engine.rawVoiceReady) {
           _textService.updateLineAudio(
             entry.id,
             status: TexthookerLineAudioStatus.missing,
@@ -1051,6 +1141,7 @@ class GalHookSessionController extends ChangeNotifier {
         }
         cursor = line.seq;
       }
+      _refreshPendingResourceMatches(engine);
       // 只推进到实际看见并处理完成的最大 seq；不能盲用 native header count 跳过未提交槽。
       if (cursor > _lastTextSeq) _lastTextSeq = cursor;
       if (ordered.isNotEmpty) {
@@ -1065,6 +1156,49 @@ class GalHookSessionController extends ChangeNotifier {
       }
     } finally {
       _pollInFlight = false;
+    }
+  }
+
+  void _promoteLateResourceAudio(EngineHookGalAudioSource engine) {
+    if (_state.audioBackend == GalHookAudioBackend.gameResource) return;
+    _pendingResourceTimestamps.addAll(_lineTimestampCache);
+    _trimCache(_pendingResourceTimestamps);
+    _setState(
+      _state.copyWith(
+        phase: _state.textSignalReceived
+            ? GalHookSessionPhase.running
+            : GalHookSessionPhase.waitingSignals,
+        audioBackend: GalHookAudioBackend.gameResource,
+        clearAudioFormat: true,
+        clearFallbackReason: true,
+        clearLastError: true,
+      ),
+    );
+    _record(
+      GalHookEventSeverity.success,
+      'audio',
+      'audio.game_resource_late_ready',
+      'Late game resource hook is ready and is now the primary audio source',
+      details: <String, Object?>{'pid': _state.gamePid},
+    );
+    _refreshPendingResourceMatches(engine);
+  }
+
+  void _refreshPendingResourceMatches(EngineHookGalAudioSource engine) {
+    if (!engine.rawVoiceReady || _pendingResourceTimestamps.isEmpty) return;
+    final List<String> matched = <String>[];
+    for (final MapEntry<String, int> pending
+        in _pendingResourceTimestamps.entries) {
+      if (!engine.hasPairedVoiceCandidate(pending.value)) continue;
+      _textService.updateLineAudio(
+        pending.key,
+        status: TexthookerLineAudioStatus.matched,
+        backend: 'game_resource',
+      );
+      matched.add(pending.key);
+    }
+    for (final String lineId in matched) {
+      _pendingResourceTimestamps.remove(lineId);
     }
   }
 

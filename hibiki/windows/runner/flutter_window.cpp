@@ -1547,6 +1547,8 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                flutter::EncodableValue(s.calibrating)},
               {flutter::EncodableValue("textHooked"),
                flutter::EncodableValue(s.text_hooked)},
+              {flutter::EncodableValue("audioHooksReady"),
+               flutter::EncodableValue(s.audio_hooks_ready)},
               {flutter::EncodableValue("rawVoiceReady"),
                flutter::EncodableValue(s.raw_voice_ready)},
               {flutter::EncodableValue("ready"),

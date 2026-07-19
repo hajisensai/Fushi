@@ -328,7 +328,7 @@ class _DiagnosticsOverviewCard extends StatelessWidget {
 
 String _audioBackendLabel(GalHookAudioBackend backend) => switch (backend) {
       GalHookAudioBackend.none => t.game_audio_backend_none,
-      GalHookAudioBackend.pairedVoice => t.game_audio_backend_paired,
+      GalHookAudioBackend.gameResource => t.game_audio_backend_resource,
       GalHookAudioBackend.enginePcm => t.game_audio_backend_engine,
       GalHookAudioBackend.systemLoopback => t.game_audio_backend_loopback,
     };

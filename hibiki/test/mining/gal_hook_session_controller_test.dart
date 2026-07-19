@@ -111,7 +111,7 @@ void main() {
     expect(engine.pairedTimestamps, <int>[0]);
     expect(
         service.entries.single.audioStatus, TexthookerLineAudioStatus.encoded);
-    expect(service.entries.single.audioBackend, 'paired_voice_ogg');
+    expect(service.entries.single.audioBackend, 'game_resource');
 
     await controller.close();
     endpoints.dispose();
@@ -232,6 +232,136 @@ void main() {
     expect(loopback.stopCalls, 1);
     endpoints.dispose();
   });
+
+  test('resource voice is primary while loopback remains a fallback', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[7, 8, 9]),
+      rawReady: true,
+      pairedCandidate: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 609653421,
+          text: '「ひょ、とっ、ほあたぁ！」',
+          threadId: 5,
+          hookName: 'SiglusEngine exact',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 9, pid: 28140, title: 'anemoi'),
+    );
+    expect(controller.state.audioBackend, GalHookAudioBackend.gameResource);
+    expect(controller.state.audioFormat, isNull,
+        reason: 'resource-only readiness must not be presented as fake PCM');
+    expect(loopback.startCalls, 1,
+        reason: 'loopback must remain available behind the resource source');
+
+    for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(
+        service.entries.single.audioStatus, TexthookerLineAudioStatus.matched);
+    expect(service.entries.single.audioBackend, 'game_resource');
+
+    await controller.close();
+    expect(engine.stopCalls, 1);
+    expect(loopback.stopCalls, 1);
+    endpoints.dispose();
+  });
+
+  test('late KiriKiri resource hook upgrades loopback and pairs the line',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[4, 5, 6]),
+      audioFormat: null,
+      textReady: true,
+      lateRawReady: true,
+      pairedCandidate: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 611165750,
+          text: 'これからたくさんデートもできる。',
+          threadId: 4948456556519461331,
+          hookName: 'EmbedKrkrZ',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 11, pid: 22812, title: '9-nine'),
+    );
+    expect(controller.state.audioBackend, GalHookAudioBackend.systemLoopback);
+
+    for (int i = 0;
+        i < 20 &&
+            (service.entries.isEmpty ||
+                controller.state.audioBackend !=
+                    GalHookAudioBackend.gameResource);
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(engine.readinessRefreshCalls, greaterThan(0));
+    expect(controller.state.audioBackend, GalHookAudioBackend.gameResource);
+    expect(controller.state.fallbackReason, isNull);
+    expect(loopback.stopCalls, 0,
+        reason: 'loopback remains alive only as the per-line fallback');
+    expect(
+        service.entries.single.audioStatus, TexthookerLineAudioStatus.matched);
+    expect(service.entries.single.audioBackend, 'game_resource');
+    expect(
+      controller.events.map((event) => event.code),
+      contains('audio.game_resource_late_ready'),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
 }
 
 class _FakeEngineSource extends EngineHookGalAudioSource {
@@ -244,15 +374,22 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
       isFloat: false,
     ),
     this.textReady = false,
+    this.rawReady = false,
+    this.lateRawReady = false,
+    this.pairedCandidate = false,
     this.polledLines = const <GalHookedLine>[],
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final Uint8List pairedBytes;
   final PcmFormat? audioFormat;
   final bool textReady;
+  bool rawReady;
+  final bool lateRawReady;
+  final bool pairedCandidate;
   final List<GalHookedLine> polledLines;
   final List<int> pairedTimestamps = <int>[];
   int stopCalls = 0;
+  int readinessRefreshCalls = 0;
   int _pollCalls = 0;
 
   @override
@@ -262,7 +399,20 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   bool get textHookReady => textReady;
 
   @override
+  bool get rawVoiceReady => rawReady;
+
+  @override
+  bool get pcmReady => !rawReady && audioFormat != null;
+
+  @override
   Future<PcmFormat?> start() async => audioFormat;
+
+  @override
+  Future<bool> refreshReadiness() async {
+    readinessRefreshCalls++;
+    if (lateRawReady) rawReady = true;
+    return rawReady;
+  }
 
   @override
   Future<Uint8List?> grabPairedVoiceBytes(
@@ -272,6 +422,9 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     pairedTimestamps.add(textTsMs);
     return pairedBytes;
   }
+
+  @override
+  bool hasPairedVoiceCandidate(int textTsMs) => pairedCandidate;
 
   @override
   Future<GalAudioSlice?> grabUtterance(
