@@ -48,6 +48,20 @@ void main() {
     }
 
     expect(TexthookerService.instance.lines, ['裸テキスト', '包まれた']);
+    expect(
+      TexthookerService.instance.entries.map((entry) => entry.source),
+      everyElement(TexthookerLineSource.websocket),
+    );
+    expect(
+      TexthookerService.instance.entries.map((entry) => entry.sourceLabel),
+      everyElement(url),
+    );
+    final TexthookerEndpointStatus connectedStatus =
+        client.endpointStatuses.single;
+    expect(
+      connectedStatus.phase,
+      TexthookerEndpointPhase.connected,
+    );
 
     await client.stop();
     await server.close(force: true);
@@ -79,9 +93,25 @@ void main() {
 
     expect(uncaught, isEmpty, reason: '连接失败不得逃逸到 UncaughtZone：$uncaught');
     expect(client.isRunning, true, reason: '连不上应安静重试，仍保持 running');
+    final TexthookerEndpointStatus deadStatus = client.endpointStatuses.single;
+    expect(
+      deadStatus.phase,
+      anyOf(
+        TexthookerEndpointPhase.retrying,
+        TexthookerEndpointPhase.connecting,
+      ),
+      reason: '断线端点应处于退避或下一轮连接中',
+    );
+    if (deadStatus.phase == TexthookerEndpointPhase.retrying) {
+      expect(deadStatus.lastError, isNotEmpty);
+    }
 
     await client.stop();
     expect(client.isRunning, false);
+    expect(
+      client.endpointStatuses.single.phase,
+      TexthookerEndpointPhase.stopped,
+    );
   });
 
   test('connection state exposes running flag', () async {

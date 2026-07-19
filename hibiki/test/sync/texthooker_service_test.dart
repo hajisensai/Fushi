@@ -39,4 +39,41 @@ void main() {
     expect(TexthookerService.instance.lines, isEmpty);
     expect(notifications, 1);
   });
+
+  test('duplicate sentences keep distinct stable ids and audio state', () {
+    final DateTime receivedAt = DateTime(2026, 7, 19, 12);
+    final TexthookerLineEntry first = TexthookerService.instance.appendLine(
+      '同じ台詞',
+      source: TexthookerLineSource.engineHook,
+      sourceSequence: 41,
+      receivedAt: receivedAt,
+    )!;
+    final TexthookerLineEntry second = TexthookerService.instance.appendLine(
+      '同じ台詞',
+      source: TexthookerLineSource.engineHook,
+      sourceSequence: 42,
+      receivedAt: receivedAt,
+    )!;
+
+    expect(first.id, isNot(second.id));
+    expect(TexthookerService.instance.entries, hasLength(2));
+
+    expect(
+      TexthookerService.instance.updateLineAudio(
+        second.id,
+        status: TexthookerLineAudioStatus.encoded,
+        backend: 'paired_voice_ogg',
+        durationMs: 840,
+      ),
+      isTrue,
+    );
+    expect(
+      TexthookerService.instance.entries.first.audioStatus,
+      TexthookerLineAudioStatus.unavailable,
+    );
+    expect(
+      TexthookerService.instance.entries.last.audioStatus,
+      TexthookerLineAudioStatus.encoded,
+    );
+  });
 }

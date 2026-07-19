@@ -58,6 +58,26 @@ void main() {
     expect(disposeCount, 0);
   });
 
+  testWidgets('library opens real diagnostics section',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeGamePage(
+          monitorBuilder: (_, __) => const SizedBox(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.ensureVisible(find.byKey(HomeGamePage.openDiagnosticsKey));
+    await tester.tap(find.byKey(HomeGamePage.openDiagnosticsKey));
+    await tester.pump();
+
+    expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);
+    expect(find.byIcon(Icons.account_tree_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.multitrack_audio_outlined), findsOneWidget);
+  });
+
   for (final Size size in <Size>[const Size(420, 760), const Size(1280, 800)]) {
     testWidgets('game library lays out at ${size.width.toInt()}px',
         (WidgetTester tester) async {
