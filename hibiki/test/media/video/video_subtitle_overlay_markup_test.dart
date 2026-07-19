@@ -35,6 +35,8 @@ void main() {
       home: Scaffold(
         body: VideoSubtitleOverlay(
           controller: c,
+          // BUG-903：\an 定位现属「尊重 .ass」语义（关=纯字幕模式恒底部堆叠）。
+          respectAssStyle: true,
           onCharTap: (String s, int i, Rect r) {
             tappedSentence = s;
             tappedIndex = i;

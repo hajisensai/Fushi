@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 870 条。点号进各自文件。
+> 共 871 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-903](bugs/BUG-903-ass-user-scale-and-plain-off-mode.md) | ✅ | ✅ | 尊重字幕不能调字号；关闭尊重时 ASS 特效层叠印乱字 |
 | [BUG-891](bugs/BUG-891-ass-size-outline-mpv-parity.md) | ✅ | ✅ | ASS 字幕字号偏小、描边偏细：cell 校准含 lineGap + 居中描边只显一半，与 mpv/libass 不齐 |
 | [BUG-890](bugs/BUG-890-paused-audio-follow-image-snap.md) | ✅ | ✅ | 暂停/图片等待时有声书跟随把阅读器拽回音频位置 |
 | [BUG-887](bugs/BUG-887-top-progress-squeeze-frost.md) | ✅ | ✅ | 挤压模式顶部进度不应有毛玻璃且不应压住正文首行 |
