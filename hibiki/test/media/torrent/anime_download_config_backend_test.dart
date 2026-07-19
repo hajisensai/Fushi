@@ -137,4 +137,59 @@ void main() {
         base.copyWith(backend: QbConnectionConfig.backendQbittorrent);
     expect(switched.backend, QbConnectionConfig.backendQbittorrent);
   });
+
+  test('upload disabled by default; seed limits default to 0 (unlimited)', () {
+    const QbConnectionConfig defaults = QbConnectionConfig();
+    expect(defaults.uploadEnabled, isFalse);
+    expect(defaults.seedTimeLimitMinutes, 0);
+    expect(defaults.seedRatioLimit, 0);
+  });
+
+  test('upload/seed fields round-trip through encode/decode', () {
+    const QbConnectionConfig original = QbConnectionConfig(
+      backend: QbConnectionConfig.backendEmbedded,
+      uploadEnabled: true,
+      seedTimeLimitMinutes: 120,
+      seedRatioLimit: 2.5,
+    );
+    final QbConnectionConfig decoded =
+        decodeQbConnectionConfig(encodeQbConnectionConfig(original))!;
+    expect(decoded.uploadEnabled, isTrue);
+    expect(decoded.seedTimeLimitMinutes, 120);
+    expect(decoded.seedRatioLimit, 2.5);
+  });
+
+  test('legacy JSON without upload fields: upload off, seed limits 0', () {
+    // 老配置没有上传字段：开箱即关（尊重带宽/隐私），首用弹窗再征询。
+    final QbConnectionConfig decoded =
+        decodeQbConnectionConfig('{"backend":"embedded"}')!;
+    expect(decoded.uploadEnabled, isFalse);
+    expect(decoded.seedTimeLimitMinutes, 0);
+    expect(decoded.seedRatioLimit, 0);
+  });
+
+  test('negative/garbage seed values clamp to 0', () {
+    final QbConnectionConfig decoded = decodeQbConnectionConfig(
+        '{"seedTimeLimitMinutes":-30,"seedRatioLimit":"x"}')!;
+    expect(decoded.seedTimeLimitMinutes, 0);
+    expect(decoded.seedRatioLimit, 0);
+    final QbConnectionConfig neg =
+        decodeQbConnectionConfig('{"seedRatioLimit":-1.5}')!;
+    expect(neg.seedRatioLimit, 0);
+  });
+
+  test('copyWith preserves/overrides upload+seed fields', () {
+    const QbConnectionConfig base = QbConnectionConfig(
+      uploadEnabled: true,
+      seedTimeLimitMinutes: 60,
+      seedRatioLimit: 1.0,
+    );
+    final QbConnectionConfig kept = base.copyWith(category: 'x');
+    expect(kept.uploadEnabled, isTrue);
+    expect(kept.seedTimeLimitMinutes, 60);
+    expect(kept.seedRatioLimit, 1.0);
+    final QbConnectionConfig off = base.copyWith(uploadEnabled: false);
+    expect(off.uploadEnabled, isFalse);
+    expect(off.seedTimeLimitMinutes, 60);
+  });
 }
