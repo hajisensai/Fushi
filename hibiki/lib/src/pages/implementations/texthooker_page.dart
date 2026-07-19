@@ -316,8 +316,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     for (final GalHookedLine line in poll.lines) {
       TexthookerService.instance.appendLine(line.text);
       _lastHookedLineTs = line.timestampMs;
-      // 出现即锁定该行语音（抗快进/环形覆盖）：立刻按 hook 时间戳抓好 clip 缓存起来。
-      final GalAudioSlice? clip = await eng.grabClipNear(line.timestampMs);
+      // 出现即锁定该行语音（抗快进/环形覆盖）：立刻按 hook 时间戳抓好缓存起来。整句优先
+      // （grabUtterance 拼同源整段，含用户手动选轨），失败退回单 clip（grabClipNear）。
+      final GalAudioSlice? clip = await eng.grabUtterance(line.timestampMs) ??
+          await eng.grabClipNear(line.timestampMs);
       if (clip != null && !clip.isEmpty) {
         _cacheLineVoice(line.text, clip);
       }
@@ -450,7 +452,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if ((slice == null || slice.isEmpty) &&
         eng != null &&
         _lastHookedLineTs > 0) {
-      slice = await eng.grabClipNear(_lastHookedLineTs);
+      slice = await eng.grabUtterance(_lastHookedLineTs) ??
+          await eng.grabClipNear(_lastHookedLineTs);
     }
     // ③ 兜底（loopback / 无 clip）：取最近 N 秒（仍全自动、不弹波形选区）。
     slice ??= await src.grabRecent(_galAudioBackMs);

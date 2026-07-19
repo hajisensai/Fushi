@@ -432,7 +432,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
         return null;
       }
       final int count = (r['count'] as int?) ?? 0;
-      final List<Object?> raw = (r['lines'] as List<Object?>?) ?? const <Object?>[];
+      final List<Object?> raw =
+          (r['lines'] as List<Object?>?) ?? const <Object?>[];
       final List<GalHookedLine> lines = <GalHookedLine>[];
       for (final Object? e in raw) {
         if (e is Map) {
@@ -478,6 +479,81 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
+  /// **会话内**用户手动选定的语音源指针（[grabUtterance] 默认用它，跳过能量自动选源）。0=自动。
+  /// 真机上自动能量选源可能误选 BGM，故让用户从 [listAudioTracks] 里挑一条语音轨。
+  /// TODO(galgame-mining): source_ptr 每次启动会变，UI 侧应把用户选择最终映射到「创建顺序
+  /// orderIndex」或格式签名，下次启动自动套用；本轮先支持会话内按 source_ptr 选。
+  int selectedAudioSourcePtr = 0;
+
+  /// **会话内**用户标记为 BGM（要排除）的源指针集合（[grabUtterance] 自动选源时排除）。
+  final Set<int> excludedAudioSourcePtrs = <int>{};
+
+  /// v2 **按句取「整句」语音**：把同一语音源在该句时刻附近的所有段拼成整句（替代 [grabClipNear]
+  /// 的 ~125ms 碎片）。[sourcePtr] 指定用哪条源（缺省用 [selectedAudioSourcePtr]，0=能量自动选）；
+  /// [exclude] 自动选源时排除的源（缺省用 [excludedAudioSourcePtrs]，标记 BGM）。找不到返回 null
+  /// （调用方回退 [grabClipNear]）。
+  Future<GalAudioSlice?> grabUtterance(
+    int tsMs, {
+    int? sourcePtr,
+    List<int>? exclude,
+  }) async {
+    final int src = sourcePtr ?? selectedAudioSourcePtr;
+    final List<int> ex = exclude ?? excludedAudioSourcePtrs.toList();
+    try {
+      final Map<Object?, Object?>? r =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+        'grabUtterance',
+        <String, Object?>{'tsMs': tsMs, 'sourcePtr': src, 'exclude': ex},
+      );
+      if (r == null || r['error'] != null) {
+        return null;
+      }
+      final Uint8List? pcm = r['pcm'] as Uint8List?;
+      final PcmFormat? fmt = parseGalPcmFormat(r);
+      if (pcm == null || pcm.isEmpty || fmt == null) {
+        return null;
+      }
+      return GalAudioSlice(pcm: pcm, format: fmt);
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  /// v2 **枚举活跃语音源**：列 [tsMs] 附近各 source_ptr 及元数据（格式/平均缓冲/近窗平均能量/
+  /// 创建顺序），供 app UI 显示「音轨列表」让用户手动选（[selectedAudioSourcePtr]）/排除
+  /// （[excludedAudioSourcePtrs]）语音源。native 缺失 / 无源返回空列表。
+  Future<List<GalAudioTrack>> listAudioTracks(int tsMs) async {
+    try {
+      final Map<Object?, Object?>? r =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+        'listAudioTracks',
+        <String, Object?>{'tsMs': tsMs},
+      );
+      if (r == null) {
+        return const <GalAudioTrack>[];
+      }
+      final List<Object?> raw =
+          (r['tracks'] as List<Object?>?) ?? const <Object?>[];
+      final List<GalAudioTrack> tracks = <GalAudioTrack>[];
+      for (final Object? e in raw) {
+        if (e is Map) {
+          final GalAudioTrack? tk =
+              GalAudioTrack.fromMap(Map<Object?, Object?>.from(e));
+          if (tk != null) {
+            tracks.add(tk);
+          }
+        }
+      }
+      return tracks;
+    } on PlatformException {
+      return const <GalAudioTrack>[];
+    } on MissingPluginException {
+      return const <GalAudioTrack>[];
+    }
+  }
+
   @override
   Future<void> stop() async {
     try {
@@ -510,4 +586,52 @@ class GalHookedLine {
   final int seq;
   final int timestampMs;
   final String text;
+}
+
+/// [EngineHookGalAudioSource.listAudioTracks] 的一条：一个活跃语音源（source voice / DS buffer）
+/// 及其元数据快照，供 UI 音轨列表让用户手动选/排除语音源。
+class GalAudioTrack {
+  const GalAudioTrack({
+    required this.sourcePtr,
+    required this.format,
+    required this.avgBytes,
+    required this.avgEnergy,
+    required this.orderIndex,
+    required this.clipCount,
+  });
+
+  /// 源指针（会话内稳定；跨启动会变——UI 宜把用户选择映射到 [orderIndex] 或格式签名）。
+  final int sourcePtr;
+
+  /// 该源 PCM 格式（采样率/声道/位深）；解析失败该轨被丢弃。
+  final PcmFormat format;
+
+  /// 近窗内该源每段平均字节数（缓冲规模）。
+  final int avgBytes;
+
+  /// 文本时刻窗平均能量（16-bit 平均绝对幅值；非 16-bit 为 -1）。越高越可能是当前在说话的语音源。
+  final double avgEnergy;
+
+  /// 近窗内按首次出现排的创建顺序，0-based（跨启动相对稳定，宜作用户选择的持久锚）。
+  final int orderIndex;
+
+  /// 近窗内该源的段数。
+  final int clipCount;
+
+  /// 从 native map 解析；缺格式（sr/ch/bits 非法）或缺 sourcePtr 返回 null。
+  static GalAudioTrack? fromMap(Map<Object?, Object?> m) {
+    final PcmFormat? fmt = parseGalPcmFormat(m);
+    final Object? sp = m['sourcePtr'];
+    if (fmt == null || sp is! int) {
+      return null;
+    }
+    return GalAudioTrack(
+      sourcePtr: sp,
+      format: fmt,
+      avgBytes: (m['avgBytes'] as int?) ?? 0,
+      avgEnergy: (m['avgEnergy'] as num?)?.toDouble() ?? -1.0,
+      orderIndex: (m['orderIndex'] as int?) ?? 0,
+      clipCount: (m['clipCount'] as int?) ?? 0,
+    );
+  }
 }
