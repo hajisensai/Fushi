@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/pages/implementations/home_game_page.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 
@@ -76,6 +78,35 @@ void main() {
     expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);
     expect(find.byIcon(Icons.account_tree_outlined), findsOneWidget);
     expect(find.byIcon(Icons.multitrack_audio_outlined), findsOneWidget);
+  });
+
+  testWidgets('game tabs participate in managed focus navigation',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HibikiFocusRoot(
+          child: HomeGamePage(
+            monitorBuilder: (_, __) => const Text('focused-monitor'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(HomeGamePage)),
+    );
+    expect(
+      controller.requestById(
+        const HibikiFocusId('game-library-tab-capture'),
+      ),
+      isTrue,
+    );
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(find.text('focused-monitor'), findsOneWidget);
   });
 
   for (final Size size in <Size>[const Size(420, 760), const Size(1280, 800)]) {

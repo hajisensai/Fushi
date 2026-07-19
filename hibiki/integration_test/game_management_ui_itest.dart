@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:hibiki/src/pages/implementations/home_game_page.dart';
 import 'package:hibiki/src/pages/implementations/home_page.dart';
@@ -34,6 +35,7 @@ void main() {
         for (int i = 0; i < 8; i++) {
           await tester.pump(const Duration(milliseconds: 250));
         }
+        expect(find.byType(HibikiFocusRoot), findsOneWidget);
         await windowManager.setSize(const Size(1440, 900));
         await tester.pump(const Duration(seconds: 2));
 
@@ -49,6 +51,14 @@ void main() {
         final Finder openCapture =
             find.widgetWithText(HibikiSelectableChip, t.game_capture_workbench);
         expect(openCapture, findsOneWidget);
+        expect(
+          find.descendant(
+            of: openCapture,
+            matching: find.byType(HibikiFocusTarget),
+          ),
+          findsOneWidget,
+          reason: '游戏页签应在真 app 中注册 Hibiki 焦点目标',
+        );
         expect(
           await _focusThroughHibiki(
             driver,
