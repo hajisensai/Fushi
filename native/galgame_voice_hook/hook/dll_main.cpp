@@ -10,14 +10,30 @@
 #define DIRECTSOUND_VERSION 0x0800
 #include <dsound.h>
 
+// C.2e Ren'Py/FFmpeg 捕获：按前缀（avcodec-54*/avformat-54*）枚举已加载模块用 Toolhelp 快照。
+#include <tlhelp32.h>
+
+// C.2f WASAPI loopback 兜底混音捕获（无引擎专属纯人声 hook 的游戏）。标准渲染端点 loopback，
+// 非 vtable hook。GUID 用 __uuidof（SDK 头对这些 coclass/接口带 uuid 属性），免链额外 GUID 库；
+// CoInitializeEx/CoCreateInstance/CoTaskMemFree 需 ole32.lib，用 #pragma 就地声明避免改 CMake。
+#include <mmdeviceapi.h>
+#include <audioclient.h>
+#pragma comment(lib, "ole32.lib")
+
 #include <MinHook.h>
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "voice_hook_ipc.h"
+
+// C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
+// GetFileVersionInfo* 在 version.dll，用 #pragma 就地声明依赖，避免改 CMake（改动集中在本文件）。
+#pragma comment(lib, "version.lib")
 
 // galgame 一键制卡 C 阶段 hook DLL（C.1 注入管线 + C.2 XAudio2/DirectSound 语音捕获）。
 //
@@ -37,10 +53,12 @@
 namespace {
 
 using hibiki_voice_hook::kClipCount;
+using hibiki_voice_hook::kLoopbackMarkerCount;
 using hibiki_voice_hook::kSharedMagic;
 using hibiki_voice_hook::kSharedVersion;
 using hibiki_voice_hook::kTextSlotBytes;
 using hibiki_voice_hook::kTextSlotCount;
+using hibiki_voice_hook::LoopbackMarker;
 using hibiki_voice_hook::ReadyEventName;
 using hibiki_voice_hook::SharedHeader;
 using hibiki_voice_hook::SharedMemoryName;
@@ -66,11 +84,18 @@ bool g_mh_init = false;
 uint8_t* g_text_base = nullptr;
 uint8_t* g_clip_base = nullptr;
 
+// ── C.2f loopback 区基址（HookWorker 按 header 偏移一次性缓存；loopback 线程独占写）──────────
+// g_lb_ring_base：loopback 混音环（16-bit PCM）。g_lb_marker_base：时间戳↔位置标记表。
+// g_lb_thread：独立 loopback 捕获线程句柄（停机时 join）。
+uint8_t* g_lb_ring_base = nullptr;
+uint8_t* g_lb_marker_base = nullptr;
+HANDLE g_lb_thread = nullptr;
+
 // MinHook 去重集：同一 SubmitSourceBuffer/CreateSourceVoice 实现常被多个实例共享同一 vtable，
 // 对同一函数地址只 MH_CreateHook 一次（重复 create 会报 MH_ERROR_ALREADY_CREATED）。
 CRITICAL_SECTION g_cs;
 bool g_cs_ready = false;
-void* g_hooked_fns[16] = {nullptr};
+void* g_hooked_fns[48] = {nullptr};
 int g_hooked_count = 0;
 
 // 首次拿到语音格式的写入闩：多路 CreateSourceVoice 只让第一个写 header 格式字段。
@@ -175,7 +200,7 @@ bool HookFn(void* target, void* detour, void** original) {
     ok = true;
   } else if (MH_CreateHook(target, detour, original) == MH_OK &&
              MH_EnableHook(target) == MH_OK) {
-    if (g_hooked_count < 16) {
+    if (g_hooked_count < 48) {
       g_hooked_fns[g_hooked_count++] = target;
     }
     ok = true;
@@ -212,38 +237,55 @@ void MaybeRecordFormat(const WAVEFORMATEX* wf) {
       static_cast<uint32_t>(wf->nChannels) * (wf->wBitsPerSample / 8);
 }
 
-// 把 [len] 字节推进共享内存环形缓冲（写满即覆盖最旧）。单写者：只推 write_pos（回绕）+
-// total_written（单调）。逻辑照抄 audio_loopback_capture.cpp 的 RingAppendLocked，但这里单写单
-// 读用 volatile 无需锁。写序：memcpy -> write_pos -> total_written（reader 读 total_written 才取数，
-// 至多滞后一包，spec 允许）。
-inline void RingAppendVoice(const uint8_t* data, uint32_t len) {
+// ── 多写者安全的环形缓冲写入（无锁原子预留）─────────────────────────────────
+// 背景：v5 起本环有**多类写者**——XAudio2/DirectSound 混音前回调（各自线程）与 KiriKiri
+// wuvorbis/wuopus 解码回调（解码线程），可能并发写同一个环。旧的「单写者 write_pos/total_written
+// 直接 += 」是非原子 RMW，两写者交错会互相覆盖计数、算错 clip 的 ring_offset。改成：用
+// InterlockedExchangeAdd64 原子把 total_written 前移 len，返回的旧值即本段在**线性字节流**里的
+// 起点——并发写者各拿不相交区间 [start, start+len)，模 cap 落到互不重叠的环内偏移。这是 wait-free
+// 的（一条 lock xadd，常数时间无锁无分配），不违反音频回调零阻塞红线。
+//
+// 写序仍是「先占区间→memcpy→（clip 路径最后写 seq）」。host 侧对 clip 一律用 seq 门控 +
+// total_at_write 覆盖判定，故预留先于 memcpy 完成不会让 host 读到半写数据（clip.seq 未就绪即跳过）。
+// GrabRecent 的裸最近切片本就容忍「至多滞后一包」，此处等价。
+
+// 原子预留 total_len 字节，返回起点环内偏移（start % cap）。多写者不相交。write_pos 仅作
+// GrabRecent 的近似提示（多写者间竞态无害）。调用方保证 total_len<=cap。
+inline uint32_t RingReserve(uint32_t total_len) {
   const uint32_t cap = g_ring_capacity;
-  if (cap == 0 || len == 0 || g_ring_base == nullptr) {
-    return;
-  }
-  if (len >= cap) {
-    // 超过一整圈：只保留最后 cap 字节，从头写。
-    data += (len - cap);
-    memcpy(g_ring_base, data, cap);
-    g_header->write_pos = 0;
-    g_header->total_written += cap;
-    return;
-  }
-  uint32_t wp = g_header->write_pos;
-  uint32_t first = cap - wp;
-  if (first > len) {
-    first = len;
-  }
-  memcpy(g_ring_base + wp, data, first);
+  const uint64_t start = static_cast<uint64_t>(InterlockedExchangeAdd64(
+      reinterpret_cast<volatile LONGLONG*>(&g_header->total_written),
+      static_cast<LONGLONG>(total_len)));
+  g_header->write_pos = static_cast<uint32_t>((start + total_len) % cap);
+  return static_cast<uint32_t>(start % cap);
+}
+
+// 把 [data,len) 写进已预留区间内的绝对环偏移 at（wrap 处理）。多段合一 clip 时，第二段起点
+// = 第一段起点 + 第一段长度（同一次预留内，保证环内连续）。
+inline void RingWriteAt(uint32_t at, const uint8_t* data, uint32_t len) {
+  const uint32_t cap = g_ring_capacity;
+  at %= cap;
+  const uint32_t first = (len <= cap - at) ? len : (cap - at);
+  memcpy(g_ring_base + at, data, first);
   if (len > first) {
     memcpy(g_ring_base, data + first, len - first);
   }
-  wp += len;
-  if (wp >= cap) {
-    wp -= cap;
+}
+
+// 单段追加便捷式：原子预留 + 写入，返回本段起点偏移（供 RecordVoiceClip 记 ring_offset）。
+inline uint32_t RingAppendVoice(const uint8_t* data, uint32_t len) {
+  const uint32_t cap = g_ring_capacity;
+  if (cap == 0 || len == 0 || g_ring_base == nullptr || g_header == nullptr) {
+    return 0;
   }
-  g_header->write_pos = wp;
-  g_header->total_written += len;
+  if (len >= cap) {
+    // 超过一整圈：只保留最后 cap 字节（单段>60s 实际不会发生，防御性）。
+    data += (len - cap);
+    len = cap;
+  }
+  const uint32_t off = RingReserve(len);
+  RingWriteAt(off, data, len);
+  return off;
 }
 
 // ── C.3 语音 clip 索引：每段捕获的语音额外记一条位置/时刻/格式，供 host 按文本时间戳配对
@@ -252,24 +294,43 @@ inline void RingAppendVoice(const uint8_t* data, uint32_t len) {
 // 到新 count 才取该槽，保证读到完整记录）。ring_offset=本段 memcpy 前的 write_pos；
 // total_at_write=写后的 total_written（host 用 (当前 total_written - total_at_write) > ring_capacity
 // 判该 clip 是否已被环形覆盖）。
-inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len) {
+inline void RecordVoiceClipFmt(uint32_t ring_offset, uint32_t byte_len,
+                               uint64_t source_ptr, uint32_t sample_rate,
+                               uint32_t channels, uint32_t bits_per_sample,
+                               uint32_t is_float) {
   if (g_clip_base == nullptr || g_header == nullptr || byte_len == 0) {
     return;
   }
-  const uint64_t idx = g_header->clip_write_count;
+  // 多写者：clip 槽号也要原子预留（XAudio2/DS 回调与解码回调并发写 clip 索引）。原子 fetch-add
+  // 拿唯一 idx，填完所有字段后**最后**写 seq 作完成标记——host 一律 seq==期望值才采纳该槽，
+  // 故预留先于填充不会让 host 读到半写 clip（与文本环同款多写者纪律）。
+  const uint64_t idx = static_cast<uint64_t>(InterlockedExchangeAdd64(
+      reinterpret_cast<volatile LONGLONG*>(&g_header->clip_write_count),
+      1));
   const size_t off = static_cast<size_t>(idx % kClipCount) * sizeof(VoiceClip);
   auto* clip = reinterpret_cast<VoiceClip*>(g_clip_base + off);
   clip->timestamp_ms = GetTickCount64();
-  clip->total_at_write = g_header->total_written;  // 写后累计
+  clip->total_at_write = g_header->total_written;  // 写后累计（含并发写者，判覆盖偏保守，安全）
   clip->ring_offset = ring_offset;
   clip->byte_len = byte_len;
-  clip->sample_rate = g_header->sample_rate;
-  clip->channels = g_header->channels;
-  clip->bits_per_sample = g_header->bits_per_sample;
-  clip->is_float = g_header->is_float;
+  clip->sample_rate = sample_rate;
+  clip->channels = channels;
+  clip->bits_per_sample = bits_per_sample;
+  clip->is_float = is_float;
   clip->pad = 0;
-  clip->seq = idx + 1;                    // 有效性副标记（先于 count）
-  g_header->clip_write_count = idx + 1;   // 最后自增：host 据此取新 clip
+  clip->source_ptr = source_ptr;   // 该段所属源（区分语音源 vs BGM 源；解码路径=解码器句柄）
+  clip->seq = idx + 1;             // 有效性完成标记，**最后**写
+}
+
+// 输出路径（XAudio2/DirectSound）便捷式：clip 格式沿用 header 全局格式（这些路径只装一种格式）。
+inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len,
+                            uint64_t source_ptr) {
+  if (g_header == nullptr) {
+    return;
+  }
+  RecordVoiceClipFmt(ring_offset, byte_len, source_ptr, g_header->sample_rate,
+                     g_header->channels, g_header->bits_per_sample,
+                     g_header->is_float);
 }
 
 // ── C.2 detour：IXAudio2SourceVoice::SubmitSourceBuffer ──────────────────────
@@ -294,11 +355,11 @@ HRESULT STDMETHODCALLTYPE Detour_SubmitSourceBuffer(
         }
         len -= (len % ba);  // 帧对齐（防御性）。
         if (len != 0) {
-          // C.3：这一次 SubmitSourceBuffer = 一段语音，记一条 clip（起始偏移=写前 write_pos）。
-          const uint32_t off = g_header->write_pos;
-          RingAppendVoice(pBuffer->pAudioData + begin,
-                          static_cast<uint32_t>(len));
-          RecordVoiceClip(off, static_cast<uint32_t>(len));
+          // C.3：这一次 SubmitSourceBuffer = 一段语音，记一条 clip（起始偏移=原子预留返回值）。
+          const uint32_t off = RingAppendVoice(pBuffer->pAudioData + begin,
+                                               static_cast<uint32_t>(len));
+          RecordVoiceClip(off, static_cast<uint32_t>(len),
+                          reinterpret_cast<uint64_t>(self));
         }
       }
     }
@@ -402,19 +463,28 @@ void TryHookXAudio2Create() {
 HRESULT STDMETHODCALLTYPE Detour_DsbUnlock(IDirectSoundBuffer* self, LPVOID pv1,
                                            DWORD cb1, LPVOID pv2, DWORD cb2) {
   if (g_capture_enabled && g_header != nullptr) {
-    // C.3：一次 Unlock = 一段语音；pv2/cb2 是 DS 缓冲回绕的第二片，与 pv1 在环形里连续，合成
-    // 一条 clip（起始偏移=写前 write_pos，byte_len=cb1+cb2）。
-    const uint32_t off = g_header->write_pos;
+    // C.3：一次 Unlock = 一段语音；pv2/cb2 是 DS 缓冲回绕的第二片，与 pv1 须在环形里连续，合成
+    // 一条 clip。多写者下必须**一次预留整段**再分段写入，否则并发写者可能插进 pv1/pv2 之间，
+    // 破坏 [ring_offset, byte_len) 的连续性。
     uint32_t seg_len = 0;
     if (pv1 != nullptr && cb1 != 0) {
-      RingAppendVoice(reinterpret_cast<const uint8_t*>(pv1), cb1);
       seg_len += cb1;
     }
     if (pv2 != nullptr && cb2 != 0) {
-      RingAppendVoice(reinterpret_cast<const uint8_t*>(pv2), cb2);
       seg_len += cb2;
     }
-    RecordVoiceClip(off, seg_len);
+    if (seg_len != 0 && seg_len <= g_ring_capacity) {
+      const uint32_t off = RingReserve(seg_len);
+      uint32_t at = off;
+      if (pv1 != nullptr && cb1 != 0) {
+        RingWriteAt(at, reinterpret_cast<const uint8_t*>(pv1), cb1);
+        at += cb1;
+      }
+      if (pv2 != nullptr && cb2 != 0) {
+        RingWriteAt(at, reinterpret_cast<const uint8_t*>(pv2), cb2);
+      }
+      RecordVoiceClip(off, seg_len, reinterpret_cast<uint64_t>(self));
+    }
   }
   return g_orig_DsbUnlock(self, pv1, cb1, pv2, cb2);
 }
@@ -506,6 +576,1485 @@ void TryHookDirectSoundCreate() {
   void* c0 = reinterpret_cast<void*>(GetProcAddress(mod, "DirectSoundCreate"));
   HookFn(c0, reinterpret_cast<void*>(&Detour_DirectSoundCreate),
          reinterpret_cast<void**>(&g_orig_DirectSoundCreate));
+}
+
+// ══ C.2c KiriKiri 解码器捕获链（引擎级干净人声）══════════════════════════════════
+// XAudio2/DirectSound 抓的是**输出**（混音后各源），KiriKiriZ 的人声不走这两条（实测输出源全
+// 是 BGM/SE）。人声在**解码环节**：KiriKiriZ 给每个正在播放的声音建一个独立解码器实例，语音是
+// 台词播放时新建的短时解码器。故在解码后、混音前把每个解码器输出的纯 PCM 抓走——无 BGM 混音。
+//
+// wuvorbis.dll：libvorbisfile 风格封装（wu_ov_open_callbacks/wu_ov_info/wu_ov_read/wu_ov_clear，
+//   dumpbin 确认）。wu_ov_read 返回 16-bit 交织 PCM（word=2,sgned=1 时）。
+// wuopus.dll：dumpbin 确认**没有** wu_op_* 封装，导出的是**原始 libopus**
+//   （opus_decoder_create/opus_decode/opus_decoder_destroy）。故 opus 按原始 libopus API hook：
+//   opus_decode 返回**每通道样本数**（非字节），格式取自 opus_decoder_create 的 Fs/channels。
+//
+// per-handle 表把每个解码器句柄映射到它的真实 rate/channels——clip 必须用**该解码器**的采样率/
+// 声道（不同声音可能不同采样率），不能用 header 全局格式，否则播放变调（本任务最易错点）。
+// source_ptr = 解码器句柄：host 现有 GrabUtterance 按 source_ptr 把同源多段解码 PCM 拼成整句。
+//
+// 并发：wu_ov_read / opus_decode 在解码线程跑，per-handle 表用专用 CRITICAL_SECTION 保护（open/
+// read/clear 的表查改，非混音回调，短临界区可接受）；PCM 入环走无锁原子预留（见 RingReserve）。
+
+// vorbis_info 前三字段（MSVC x86/x64：int=4、long=4，故两架构布局一致）。只读 channels/rate。
+struct MiniVorbisInfo {
+  int version;
+  int channels;
+  long rate;
+};
+// ov_callbacks 按值传参占位：4 个函数指针，detour 只透传不解释（布局须与真 ov_callbacks 一致）。
+struct MiniOvCallbacks {
+  void* read_func;
+  void* seek_func;
+  void* close_func;
+  void* tell_func;
+};
+
+typedef int(__cdecl* wu_ov_open_callbacks_t)(void* datasource, void* vf,
+                                             const char* initial, long ibytes,
+                                             MiniOvCallbacks callbacks);
+typedef void*(__cdecl* wu_ov_info_t)(void* vf, int link);
+typedef long(__cdecl* wu_ov_read_t)(void* vf, char* buffer, int length,
+                                    int bigendianp, int word, int sgned,
+                                    int* bitstream);
+typedef int(__cdecl* wu_ov_clear_t)(void* vf);
+
+// 原始 libopus（opus_int32 = int，opus_int16 = int16_t）。
+typedef void*(__cdecl* opus_decoder_create_t)(int Fs, int channels, int* error);
+typedef int(__cdecl* opus_decode_t)(void* st, const unsigned char* data, int len,
+                                    int16_t* pcm, int frame_size, int decode_fec);
+typedef void(__cdecl* opus_decoder_destroy_t)(void* st);
+
+wu_ov_open_callbacks_t g_orig_wu_ov_open_callbacks = nullptr;
+wu_ov_info_t g_orig_wu_ov_info = nullptr;  // 不 hook，只 GetProcAddress 直接调（读格式）
+wu_ov_read_t g_orig_wu_ov_read = nullptr;
+wu_ov_clear_t g_orig_wu_ov_clear = nullptr;
+opus_decoder_create_t g_orig_opus_decoder_create = nullptr;
+opus_decode_t g_orig_opus_decode = nullptr;
+opus_decoder_destroy_t g_orig_opus_decoder_destroy = nullptr;
+
+// per-handle 解码器表（固定数组 + 线性扫描，无堆分配；表满降级丢弃不阻断解码）。kind 用于
+// 只对 vorbis 句柄做 wu_ov_info 补格式——绝不能把 OpusDecoder* 当 OggVorbis_File* 传给 wu_ov_info。
+enum DecoderKind : uint8_t { kDecVorbis = 0, kDecOpus = 1 };
+struct DecoderState {
+  void* handle;       // OggVorbis_File* / OpusDecoder*；nullptr = 空槽
+  uint32_t rate;      // 该解码器真实采样率
+  uint32_t channels;  // 该解码器真实声道数
+  uint8_t kind;       // DecoderKind
+};
+constexpr int kMaxDecoders = 64;  // 并发解码器上界（BGM+若干 SE+语音，实际远小于此）
+DecoderState g_decoders[kMaxDecoders] = {};
+CRITICAL_SECTION g_dec_cs;
+bool g_dec_cs_ready = false;
+
+// 登记/更新一个解码器句柄的格式（同句柄复用槽；表满则忽略）。调用方不持锁。
+void DecoderAdd(void* handle, uint32_t rate, uint32_t channels, uint8_t kind) {
+  if (handle == nullptr || !g_dec_cs_ready) {
+    return;
+  }
+  EnterCriticalSection(&g_dec_cs);
+  int slot = -1;
+  for (int i = 0; i < kMaxDecoders; i++) {
+    if (g_decoders[i].handle == handle) {
+      slot = i;  // 同句柄优先复用
+      break;
+    }
+    if (slot < 0 && g_decoders[i].handle == nullptr) {
+      slot = i;  // 记住首个空槽（继续找同句柄）
+    }
+  }
+  if (slot >= 0) {
+    g_decoders[slot].handle = handle;
+    g_decoders[slot].rate = rate;
+    g_decoders[slot].channels = channels;
+    g_decoders[slot].kind = kind;
+  }
+  LeaveCriticalSection(&g_dec_cs);
+}
+
+// 取某句柄的 rate/channels；vorbis 开流时拿不到格式（channels==0）则**首次 read 时**补一次
+// wu_ov_info（在锁外调，避免持锁进外部函数）。返回是否命中该句柄。
+bool DecoderGetFormat(void* handle, uint32_t* rate, uint32_t* channels) {
+  if (handle == nullptr || !g_dec_cs_ready) {
+    return false;
+  }
+  int slot = -1;
+  uint8_t kind = kDecVorbis;
+  EnterCriticalSection(&g_dec_cs);
+  for (int i = 0; i < kMaxDecoders; i++) {
+    if (g_decoders[i].handle == handle) {
+      slot = i;
+      *rate = g_decoders[i].rate;
+      *channels = g_decoders[i].channels;
+      kind = g_decoders[i].kind;
+      break;
+    }
+  }
+  LeaveCriticalSection(&g_dec_cs);
+  if (slot < 0) {
+    return false;
+  }
+  if (kind == kDecVorbis && (*channels == 0 || *rate == 0) &&
+      g_orig_wu_ov_info != nullptr) {
+    const auto* info =
+        reinterpret_cast<const MiniVorbisInfo*>(g_orig_wu_ov_info(handle, -1));
+    if (info != nullptr && info->channels > 0 && info->rate > 0) {
+      *rate = static_cast<uint32_t>(info->rate);
+      *channels = static_cast<uint32_t>(info->channels);
+      EnterCriticalSection(&g_dec_cs);
+      if (g_decoders[slot].handle == handle) {  // 槽未被复用才回填
+        g_decoders[slot].rate = *rate;
+        g_decoders[slot].channels = *channels;
+      }
+      LeaveCriticalSection(&g_dec_cs);
+    }
+  }
+  return true;
+}
+
+// 解码器关闭：从表移除该句柄。调用方不持锁。
+void DecoderRemove(void* handle) {
+  if (handle == nullptr || !g_dec_cs_ready) {
+    return;
+  }
+  EnterCriticalSection(&g_dec_cs);
+  for (int i = 0; i < kMaxDecoders; i++) {
+    if (g_decoders[i].handle == handle) {
+      g_decoders[i].handle = nullptr;
+      break;
+    }
+  }
+  LeaveCriticalSection(&g_dec_cs);
+}
+
+// -- detour: wu_ov_open_callbacks --（建解码流 -> 登记句柄 + 尝试拿格式）
+int __cdecl Detour_wu_ov_open_callbacks(void* datasource, void* vf,
+                                        const char* initial, long ibytes,
+                                        MiniOvCallbacks callbacks) {
+  const int r = g_orig_wu_ov_open_callbacks(datasource, vf, initial, ibytes,
+                                            callbacks);
+  if (r == 0 && vf != nullptr) {
+    uint32_t rate = 0, channels = 0;
+    if (g_orig_wu_ov_info != nullptr) {
+      const auto* info =
+          reinterpret_cast<const MiniVorbisInfo*>(g_orig_wu_ov_info(vf, -1));
+      if (info != nullptr) {
+        if (info->channels > 0) channels = static_cast<uint32_t>(info->channels);
+        if (info->rate > 0) rate = static_cast<uint32_t>(info->rate);
+      }
+    }
+    DecoderAdd(vf, rate, channels, kDecVorbis);  // 拿不到格式则首次 read 时补
+  }
+  return r;
+}
+
+// -- detour: wu_ov_read --（解码一段 16-bit PCM -> 入环 + 记 clip，格式用该 vf 真实 rate/channels）
+long __cdecl Detour_wu_ov_read(void* vf, char* buffer, int length, int bigendianp,
+                               int word, int sgned, int* bitstream) {
+  const long ret =
+      g_orig_wu_ov_read(vf, buffer, length, bigendianp, word, sgned, bitstream);
+  if (g_header != nullptr) g_header->reserved_luna |= 4;  // diag: wu_ov_read 触发
+  // 只抓 16-bit signed little-endian 交织 PCM（KiriKiri 语音常态）；其它先跳过。
+  if (g_capture_enabled && g_header != nullptr && ret > 0 && buffer != nullptr &&
+      word == 2 && sgned == 1 && bigendianp == 0) {
+    g_header->reserved_luna |= 8;  // diag: wu_ov_read 写 clip
+    uint32_t rate = 0, channels = 0;
+    if (DecoderGetFormat(vf, &rate, &channels) && channels > 0 && rate > 0) {
+      const uint32_t len = static_cast<uint32_t>(ret);
+      const uint32_t off =
+          RingAppendVoice(reinterpret_cast<const uint8_t*>(buffer), len);
+      RecordVoiceClipFmt(off, len, reinterpret_cast<uint64_t>(vf), rate, channels,
+                         16, 0);
+    }
+  }
+  return ret;
+}
+
+// -- detour: wu_ov_clear --（关闭解码流 -> 移除句柄）
+int __cdecl Detour_wu_ov_clear(void* vf) {
+  const int r = g_orig_wu_ov_clear(vf);
+  DecoderRemove(vf);
+  return r;
+}
+
+// -- detour: opus_decoder_create --（建解码器 -> 登记句柄 + Fs/channels）
+void* __cdecl Detour_opus_decoder_create(int Fs, int channels, int* error) {
+  void* st = g_orig_opus_decoder_create(Fs, channels, error);
+  if (st != nullptr && Fs > 0 && channels > 0) {
+    DecoderAdd(st, static_cast<uint32_t>(Fs), static_cast<uint32_t>(channels),
+               kDecOpus);
+  }
+  return st;
+}
+
+// -- detour: opus_decode --（解码 -> 入环 + 记 clip）。ret=每通道样本数，字节=ret*channels*2。
+int __cdecl Detour_opus_decode(void* st, const unsigned char* data, int len,
+                               int16_t* pcm, int frame_size, int decode_fec) {
+  const int ret =
+      g_orig_opus_decode(st, data, len, pcm, frame_size, decode_fec);
+  if (g_header != nullptr) g_header->reserved_luna |= 16;  // diag: opus_decode 触发
+  if (g_capture_enabled && g_header != nullptr && ret > 0 && pcm != nullptr) {
+    g_header->reserved_luna |= 32;  // diag: opus_decode 写 clip
+    uint32_t rate = 0, channels = 0;
+    if (DecoderGetFormat(st, &rate, &channels) && channels > 0 && rate > 0) {
+      const uint32_t bytes =
+          static_cast<uint32_t>(ret) * channels * 2u;  // 16-bit 交织
+      const uint32_t off =
+          RingAppendVoice(reinterpret_cast<const uint8_t*>(pcm), bytes);
+      RecordVoiceClipFmt(off, bytes, reinterpret_cast<uint64_t>(st), rate,
+                         channels, 16, 0);
+    }
+  }
+  return ret;
+}
+
+// -- detour: opus_decoder_destroy --（销毁 -> 移除句柄）
+void __cdecl Detour_opus_decoder_destroy(void* st) {
+  g_orig_opus_decoder_destroy(st);
+  DecoderRemove(st);
+}
+
+// 装 KiriKiri 解码器 hook：wuvorbis 的 wu_ov_*（+ 直接取 wu_ov_info 供 detour 调）与 wuopus 的
+// 原始 libopus。DLL 未加载则跳过（不是所有游戏是 KiriKiri，或注入时插件尚未载入）。装在
+// XAudio2/DirectSound/文本 hook 之后（见 HookWorker）。
+//
+// 局限（需真实游戏验证）：wuvorbis/wuopus 在游戏 plugin/ 子目录，若注入时尚未 load，按裸名
+// LoadLibrary 找不到即跳过——KiriKiriZ 启动即加载插件，注入进运行中的游戏时通常已就绪；只捕获
+// 注入**之后**新建的解码器（KiriKiri 每句台词新建短解码器，故运行中注入仍能抓到后续台词语音）。
+// 幂等 + 返回是否两个解码器插件都已装齐。CREATE_SUSPENDED 早期注入时 wuvorbis/wuopus 在游戏
+// plugin/ 子目录尚未加载（裸名 LoadLibrary 找不到子目录插件），故不 LoadLibrary，只 GetModuleHandle
+// 轮询——游戏启动后自会用全路径加载插件，之后按基名即可命中。HookWorker 保活循环前段反复调本函数
+// 直到装齐（见下）。静态标志保证每个插件只 hook 一次。
+bool TryHookKirikiriDecoders() {
+  static bool vorb_done = false;
+  static bool opus_done = false;
+  if (!vorb_done) {
+    HMODULE vorb = GetModuleHandleW(L"wuvorbis.dll");
+    if (vorb != nullptr) {
+      // wu_ov_info 不 hook，detour 里直接调它读格式——须在装 open/read hook 前就绪。
+      g_orig_wu_ov_info =
+          reinterpret_cast<wu_ov_info_t>(GetProcAddress(vorb, "wu_ov_info"));
+      HookFn(
+          reinterpret_cast<void*>(GetProcAddress(vorb, "wu_ov_open_callbacks")),
+          reinterpret_cast<void*>(&Detour_wu_ov_open_callbacks),
+          reinterpret_cast<void**>(&g_orig_wu_ov_open_callbacks));
+      void* p_read = reinterpret_cast<void*>(GetProcAddress(vorb, "wu_ov_read"));
+      const bool read_ok =
+          HookFn(p_read, reinterpret_cast<void*>(&Detour_wu_ov_read),
+                 reinterpret_cast<void**>(&g_orig_wu_ov_read));
+      if (g_header != nullptr) {
+        g_header->reserved_luna |=
+            (p_read == nullptr) ? 0x400 : (read_ok ? 0x100 : 0x200);
+      }
+      HookFn(reinterpret_cast<void*>(GetProcAddress(vorb, "wu_ov_clear")),
+             reinterpret_cast<void*>(&Detour_wu_ov_clear),
+             reinterpret_cast<void**>(&g_orig_wu_ov_clear));
+      vorb_done = true;
+      if (g_header != nullptr) g_header->reserved_luna |= 1;  // diag: vorbis 已hook
+    }
+  }
+  if (!opus_done) {
+    HMODULE opus = GetModuleHandleW(L"wuopus.dll");
+    if (opus != nullptr) {
+      HookFn(
+          reinterpret_cast<void*>(GetProcAddress(opus, "opus_decoder_create")),
+          reinterpret_cast<void*>(&Detour_opus_decoder_create),
+          reinterpret_cast<void**>(&g_orig_opus_decoder_create));
+      void* p_dec = reinterpret_cast<void*>(GetProcAddress(opus, "opus_decode"));
+      const bool dec_ok =
+          HookFn(p_dec, reinterpret_cast<void*>(&Detour_opus_decode),
+                 reinterpret_cast<void**>(&g_orig_opus_decode));
+      if (g_header != nullptr) {
+        g_header->reserved_luna |=
+            (p_dec == nullptr) ? 0x2000 : (dec_ok ? 0x800 : 0x1000);
+      }
+      HookFn(
+          reinterpret_cast<void*>(GetProcAddress(opus, "opus_decoder_destroy")),
+          reinterpret_cast<void*>(&Detour_opus_decoder_destroy),
+          reinterpret_cast<void**>(&g_orig_opus_decoder_destroy));
+      opus_done = true;
+      if (g_header != nullptr) g_header->reserved_luna |= 2;  // diag: opus 已hook
+    }
+  }
+  return vorb_done && opus_done;
+}
+
+// ══ C.2d KiriKiriZ 原始语音 OGG 捕获（引擎内部 TVPCreateStream hook）══════════════
+// XAudio2/DirectSound 抓输出、解码器 hook 抓 wuvorbis/wuopus 解码——但 KiriKiriZ 的人声实测三条都
+// 不触发：语音在 voice.xp3 里，播放路径是
+//   storagename("voice/xxx.ogg") → 引擎内部 TVPCreateStream(name,mode) → 已解密 OGG 流 → OggVorbis 解码
+// 故正确 hook 点 = 引擎内部 TVPCreateStream（KrkrExtract 的 GetTVPCreateStreamCall 定位的同一函数）。
+// 它对每次文件访问都带 storagename(ttstr) + 一个能读出**解密后原始字节**的 tTJSBinaryStream。过滤
+// storagename 含 "voice" 或后缀 .ogg/.opus → 拿到"当前播放那句"的原始 OGG，落盘供 host 按时间戳与文
+// 本环配对。参考实现照搬自本机 KrkrExtract（CodeAna.cpp KrkrZ 分支 / tp_stub.*）。
+//
+// 调用约定关键事实（纠正任务描述）：KrkrExtract 的 KrkrZ 分支反汇编显示内部 TVPCreateStream 是 MSVC
+// __fastcall(ecx=name, edx=mode)（stub 里 mov edx,[ebp+C]; mov ecx,[ebp+8]; call）。任务描述里
+// "eax=name / BCB fastcall"其实对应 Krkr2(BCB) 分支（mov eax,[ebp+8]）。otomeki=KrkrZ，故此处按
+// MSVC __fastcall 实现；stub 扫描同时识别 eax(BCB) 变体并置诊断位后安全跳过（避免用错约定崩游戏）。
+
+#if defined(_M_IX86)
+
+// ── tjs 基础对象布局（x86；tjs_char=wchar_t=UTF-16LE，全部照 KrkrExtract tp_stub.h）──────────────
+// ttstr 对象首 4 字节即 tTJSVariantString*（偏移+0）；空串时该指针为 NULL。
+#pragma pack(push, 4)
+struct TjsVariantString {
+  int32_t ref_count;         // +0
+  wchar_t* long_string;      // +4  堆上长字符串（非空优先用它）
+  wchar_t short_string[22];  // +8  内联短字符串（TJS_VS_SHORT_LEN+1）
+  int32_t length;            // +52
+  uint32_t heap_flag;        // +56
+  uint32_t hint;             // +60
+};  // sizeof = 64
+#pragma pack(pop)
+
+// tTJSBinaryStream 抽象类 vtable。TJS_INTF_METHOD = __cdecl（不是 __stdcall，x86 下 this 走栈）。
+// 槽序：0=Seek 1=Read 2=Write 3=SetEndOfStorage 4=GetSize。只用 Seek/Read/GetSize，Write/
+// SetEndOfStorage 必须声明占位以把 GetSize 对齐到槽 4。
+struct TjsBinaryStream {
+  virtual uint64_t __cdecl Seek(int64_t offset, int32_t whence) = 0;             // 0：返回新绝对位置
+  virtual uint32_t __cdecl Read(void* buffer, uint32_t read_size) = 0;          // 1：返回实际读到字节
+  virtual uint32_t __cdecl Write(const void* buffer, uint32_t write_size) = 0;  // 2：占位
+  virtual void __cdecl SetEndOfStorage() = 0;                                   // 3：占位
+  virtual uint64_t __cdecl GetSize() = 0;                                       // 4：返回总字节数
+};
+
+// iTVPFunctionExporter（tp_stub.h:4593），TJS_INTF_METHOD = __cdecl。只用第二个方法按 narrow 串查函数。
+struct ITVPFunctionExporter {
+  virtual bool __cdecl QueryFunctions(const wchar_t** name, void** function, uint32_t count) = 0;
+  virtual bool __cdecl QueryFunctionsByNarrowString(const char** name, void** function,
+                                                    uint32_t count) = 0;
+};
+
+// exe 导出的 TVPGetFunctionExporter（无参 __stdcall，返回 exporter 单例）。
+typedef ITVPFunctionExporter*(__stdcall* TVPGetFunctionExporter_t)();
+// 内部 TVPCreateStream：KrkrZ = MSVC __fastcall(ecx=name(const ttstr&), edx=mode)，返回 tTJSBinaryStream*。
+typedef TjsBinaryStream*(__fastcall* TVPCreateStream_t)(const void* name, uint32_t mode);
+
+TVPCreateStream_t g_orig_TVPCreateStream = nullptr;
+
+// exe 直取 / V2Link 两条拿 exporter 的路径共享的一次性安装闩（InterlockedCompareExchange）。
+volatile LONG g_voice_installed = 0;
+
+constexpr uint32_t kMaxVoiceDumpBytes = 32u * 1024u * 1024u;  // 单个语音/OGG 落盘上限（防御性）
+
+// E8 rel32 的调用目标 = p + 5 + *(int32*)(p+1)（照 my.h GetCallDestination）。
+inline uint8_t* GetCallDest(const uint8_t* p) {
+  const int32_t rel = *reinterpret_cast<const int32_t*>(p + 1);
+  return const_cast<uint8_t*>(p) + 5 + rel;
+}
+
+// 紧凑 x86 指令长度解码器（覆盖 MSVC SEH 序言指令集，够定位 CallIStream 内首个 call；未知返回 0 使
+// 调用方安全放弃定位而非误步）。替代 KrkrExtract 的完整 LDE GetOpCodeSize32，避免移植整套反汇编器。
+uint32_t InsnLen32(const uint8_t* p) {
+  uint32_t i = 0;
+  for (;;) {  // 前缀（段/操作数/地址/rep/lock）逐个吃掉。
+    const uint8_t b = p[i];
+    if (b == 0x66 || b == 0x67 || b == 0xF0 || b == 0xF2 || b == 0xF3 || b == 0x2E ||
+        b == 0x36 || b == 0x3E || b == 0x26 || b == 0x64 || b == 0x65) {
+      i++;
+      continue;
+    }
+    break;
+  }
+  const uint8_t op = p[i++];
+  auto modrm_len = [&]() -> uint32_t {
+    const uint8_t m = p[i];
+    const uint8_t mod = static_cast<uint8_t>(m >> 6);
+    const uint8_t rm = static_cast<uint8_t>(m & 7);
+    uint32_t len = 1;  // modrm 本身
+    if (mod != 3) {
+      if (rm == 4) {  // SIB
+        const uint8_t sib = p[i + 1];
+        len += 1;
+        if (mod == 0 && (sib & 7) == 5) len += 4;  // disp32
+      } else if (mod == 0 && rm == 5) {
+        len += 4;  // disp32
+      }
+      if (mod == 1) {
+        len += 1;  // disp8
+      } else if (mod == 2) {
+        len += 4;  // disp32
+      }
+    }
+    return len;
+  };
+  switch (op) {
+    case 0x90: case 0xC3: case 0xC9: case 0xCC: case 0xF4:
+      return i;
+    case 0xC2:
+      return i + 2;  // ret imm16
+    case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
+    case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4E: case 0x4F:
+    case 0x50: case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:
+    case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5E: case 0x5F:
+    case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: case 0x97:
+      return i;  // push/pop/inc/dec/xchg-eax reg
+    case 0x6A:
+      return i + 1;  // push imm8
+    case 0x68:
+      return i + 4;  // push imm32
+    case 0xEB:
+      return i + 1;  // jmp rel8
+    case 0xE8: case 0xE9:
+      return i + 4;  // call/jmp rel32
+    case 0xA0: case 0xA1: case 0xA2: case 0xA3:
+      return i + 4;  // mov al/eax,[moffs32] 及反向
+    case 0xA8:
+      return i + 1;  // test al,imm8
+    case 0xA9:
+      return i + 4;  // test eax,imm32
+    case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB6: case 0xB7:
+      return i + 1;  // mov r8,imm8
+    case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBE: case 0xBF:
+      return i + 4;  // mov r32,imm32
+    case 0x04: case 0x0C: case 0x14: case 0x1C: case 0x24: case 0x2C: case 0x34: case 0x3C:
+      return i + 1;  // arith al,imm8
+    case 0x05: case 0x0D: case 0x15: case 0x1D: case 0x25: case 0x2D: case 0x35: case 0x3D:
+      return i + 4;  // arith eax,imm32
+    case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x76: case 0x77:
+    case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7E: case 0x7F:
+      return i + 1;  // jcc rel8
+    case 0x80: case 0x83: case 0xC0: case 0xC1: case 0xC6: case 0x6B:
+      return i + modrm_len() + 1;  // modrm + imm8
+    case 0x81: case 0xC7: case 0x69:
+      return i + modrm_len() + 4;  // modrm + imm32
+    case 0x00: case 0x01: case 0x02: case 0x03:
+    case 0x08: case 0x09: case 0x0A: case 0x0B:
+    case 0x10: case 0x11: case 0x12: case 0x13:
+    case 0x18: case 0x19: case 0x1A: case 0x1B:
+    case 0x20: case 0x21: case 0x22: case 0x23:
+    case 0x28: case 0x29: case 0x2A: case 0x2B:
+    case 0x30: case 0x31: case 0x32: case 0x33:
+    case 0x38: case 0x39: case 0x3A: case 0x3B:
+    case 0x84: case 0x85: case 0x86: case 0x87:
+    case 0x88: case 0x89: case 0x8A: case 0x8B:
+    case 0x8D: case 0x8F:
+    case 0xD0: case 0xD1: case 0xD2: case 0xD3:
+    case 0xFE: case 0xFF: case 0x62: case 0x63:
+      return i + modrm_len();  // 纯 modrm
+    case 0x0F: {
+      const uint8_t op2 = p[i++];
+      if (op2 >= 0x80 && op2 <= 0x8F) return i + 4;  // jcc rel32
+      return i + modrm_len();                        // setcc/movzx/movsx/imul 等（best effort）
+    }
+    default:
+      return 0;  // 未知 → 放弃定位
+  }
+}
+
+// 主模块（游戏 exe）映像范围，用于校验定位到的函数指针落在代码段内。
+void GetMainModuleRange(uint8_t** base, uint32_t* size) {
+  *base = nullptr;
+  *size = 0;
+  HMODULE h = GetModuleHandleW(nullptr);
+  if (h == nullptr) return;
+  auto b = reinterpret_cast<uint8_t*>(h);
+  auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(b);
+  if (dos->e_magic != IMAGE_DOS_SIGNATURE) return;
+  auto nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(b + dos->e_lfanew);
+  if (nt->Signature != IMAGE_NT_SIGNATURE) return;
+  *base = b;
+  *size = nt->OptionalHeader.SizeOfImage;
+}
+
+// 目标是否像函数入口（常见 MSVC 序言首字节）；配合模块范围 + IsBadCodePtr 三重校验，杜绝把游戏
+// hook 到中途/垃圾地址（会崩游戏）。
+inline bool PlausiblePrologue(const uint8_t* p) {
+  const uint8_t b = p[0];
+  return b == 0x55 || b == 0x53 || b == 0x56 || b == 0x57 || b == 0x83 || b == 0x6A ||
+         b == 0x68 || b == 0x8B || b == 0xB8 || b == 0xE9;
+}
+
+// 从导入的 TVPCreateIStream stub（stdcall 薄壳）定位 CallIStream（exe::TVPCreateIStream fastcall）。
+// KrkrZ: 8B 55 0C(mov edx,[ebp+C]) 8B 4D 08(mov ecx,[ebp+8]) E8(call)；Krkr2: 8B 45 08(mov eax)。
+// 命中 ecx → MSVC(is_bcb=false)；命中 eax → BCB(is_bcb=true)。返回 CallIStream，未命中返回 nullptr。
+uint8_t* FindCallIStreamFromStub(uint8_t* stub, bool* is_bcb) {
+  *is_bcb = false;
+  for (int i = 0; i < 0x40; i++) {
+    const uint8_t* p = stub + i;
+    if (p[0] == 0x8B && p[1] == 0x55 && p[2] == 0x0C) {  // mov edx,[ebp+0C]
+      const uint8_t* q = p + 3;
+      if (q[0] == 0x8B && q[2] == 0x08 && q[3] == 0xE8) {  // mov ?,[ebp+08] ; call
+        if (q[1] == 0x4D) {                                // ecx → KrkrZ
+          *is_bcb = false;
+          return GetCallDest(q + 3);
+        }
+        if (q[1] == 0x45) {  // eax → Krkr2
+          *is_bcb = true;
+          return GetCallDest(q + 3);
+        }
+      }
+    }
+  }
+  return nullptr;
+}
+
+// 在 CallIStream 体内步进指令、取首个 call 目标 = 引擎内部 TVPCreateStream。逐指令步进（非裸扫 E8）
+// 从根本上避免立即数里的杂散 E8 被误认；再对目标做模块范围 + IsBadCodePtr + 序言三重校验。
+uint8_t* FindInternalTVPCreateStream(uint8_t* call_istream, uint8_t* mod_base, uint32_t mod_size) {
+  uint32_t off = 0;
+  while (off < 0x100) {
+    const uint8_t* p = call_istream + off;
+    if (p[0] == 0xC3 || p[0] == 0xCC) break;  // ret/int3 兜底
+    if (p[0] == 0xE8) {                        // call rel32
+      uint8_t* dest = GetCallDest(p);
+      const bool in_mod =
+          (mod_base != nullptr && dest >= mod_base && dest < mod_base + mod_size);
+      if (in_mod && !IsBadCodePtr(reinterpret_cast<FARPROC>(dest)) && PlausiblePrologue(dest)) {
+        return dest;
+      }
+    }
+    const uint32_t len = InsnLen32(p);
+    if (len == 0) break;  // 未知指令 → 放弃（宁可不 hook 也不误 hook）
+    off += len;
+  }
+  return nullptr;
+}
+
+// SEH 守卫读取整条流字节（malloc 缓冲，无 C++ 析构对象故可用 __try）。读前后都 Seek 回 0，务必把
+// 原流位置还原到 0 再返回给游戏，否则游戏读不到内容。异常一律吞掉，尽力不崩游戏。
+bool ReadStreamAllGuarded(TjsBinaryStream* s, uint8_t** out_buf, uint32_t* out_len) {
+  *out_buf = nullptr;
+  *out_len = 0;
+  __try {
+    const uint64_t size = s->GetSize();
+    if (size == 0 || size > kMaxVoiceDumpBytes) {
+      s->Seek(0, 0);  // 还原位置
+      return false;
+    }
+    uint8_t* buf = static_cast<uint8_t*>(malloc(static_cast<size_t>(size)));
+    if (buf == nullptr) {
+      s->Seek(0, 0);
+      return false;
+    }
+    s->Seek(0, 0);
+    uint64_t done = 0;
+    while (done < size) {
+      const uint64_t remain = size - done;
+      const uint32_t want = static_cast<uint32_t>(remain > 0x100000 ? 0x100000 : remain);
+      const uint32_t got = s->Read(buf + done, want);
+      if (got == 0) break;
+      done += got;
+    }
+    s->Seek(0, 0);  // 还原给游戏
+    if (done == 0) {
+      free(buf);
+      return false;
+    }
+    *out_buf = buf;
+    *out_len = static_cast<uint32_t>(done);
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;  // 流 vtable 异常：放弃本次（buf 若已分配极罕见泄漏，换不崩游戏）。
+  }
+}
+
+// SEH 守卫从 ttstr 拷出 storagename（只用裸数组，可 __try）。判空 Ptr / long?:short。
+bool ExtractStorageNameGuarded(const void* name, wchar_t* out, size_t out_cap) {
+  __try {
+    auto pp = reinterpret_cast<TjsVariantString* const*>(name);
+    TjsVariantString* vs = *pp;
+    if (vs == nullptr) return false;
+    const wchar_t* src = vs->long_string != nullptr ? vs->long_string : vs->short_string;
+    if (src == nullptr) return false;
+    size_t k = 0;
+    for (; src[k] != 0 && k + 1 < out_cap; k++) out[k] = src[k];
+    out[k] = 0;
+    return k > 0;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+// storagename 是否语音：小写化后含 "voice" 或后缀 .ogg/.opus（任务约定过滤；host 侧再按时间戳精配）。
+bool IsVoiceStorageName(const wchar_t* name) {
+  wchar_t low[520];
+  size_t n = 0;
+  for (; name[n] != 0 && n + 1 < 520; n++) {
+    wchar_t c = name[n];
+    if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c - L'A' + L'a');
+    low[n] = c;
+  }
+  low[n] = 0;
+  if (n >= 4 && wcscmp(low + n - 4, L".ogg") == 0) return true;
+  if (n >= 5 && wcscmp(low + n - 5, L".opus") == 0) return true;
+  return wcsstr(low, L"voice") != nullptr;
+}
+
+// 从 storagename 取 basename 并净化非法文件名字符；无扩展名则补 .ogg。
+std::wstring VoiceBaseName(const wchar_t* storagename) {
+  std::wstring s(storagename);
+  const size_t pos = s.find_last_of(L"/\\");
+  std::wstring base = (pos == std::wstring::npos) ? s : s.substr(pos + 1);
+  for (wchar_t& c : base) {
+    if (c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' || c == L'|') {
+      c = L'_';
+    }
+  }
+  if (base.empty()) base = L"voice";
+  if (base.find(L'.') == std::wstring::npos) base += L".ogg";
+  return base;
+}
+
+// 落盘：%TEMP%\hibiki_gal_voice\<GetTickCount64>_<basename>。tick 与文本环 timestamp_ms 同源供配对。
+void WriteVoiceOgg(const uint8_t* data, uint32_t len, const wchar_t* storagename) {
+  if (data == nullptr || len == 0) return;
+  wchar_t temp[MAX_PATH] = {0};
+  const DWORD n = GetTempPathW(MAX_PATH, temp);
+  if (n == 0 || n > MAX_PATH) return;
+  std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  CreateDirectoryW(dir.c_str(), nullptr);  // 已存在则失败无害
+  std::wstring file =
+      dir + L"\\" + std::to_wstring(GetTickCount64()) + L"_" + VoiceBaseName(storagename);
+  HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (f == INVALID_HANDLE_VALUE) return;
+  DWORD written = 0;
+  WriteFile(f, data, len, &written, nullptr);
+  CloseHandle(f);
+}
+
+// ── detour：引擎内部 TVPCreateStream（MSVC __fastcall：ecx=name(const ttstr&), edx=mode）──────────
+// 先调原函数拿到已解密流；storagename 命中语音则读全字节落盘（流位置在 ReadStreamAllGuarded 内还原
+// 回 0）。非命中零开销直接返回。此 hook 不在音频回调线程，允许文件 IO；全程 SEH + 判空防御不崩游戏。
+TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(const void* name, uint32_t mode) {
+  TjsBinaryStream* stream = g_orig_TVPCreateStream(name, mode);
+  if (g_header != nullptr) {
+    g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
+  }
+  if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
+    wchar_t storage[520];
+    if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
+      uint8_t* buf = nullptr;
+      uint32_t buf_len = 0;
+      if (ReadStreamAllGuarded(stream, &buf, &buf_len)) {
+        WriteVoiceOgg(buf, buf_len, storage);
+        free(buf);
+        g_header->reserved_luna |= 0x80000;  // diag: 命中并 dump 过一个 voice OGG
+      }
+    }
+  }
+  return stream;
+}
+
+// 读主模块 VersionInfo 确认 KrkrZ（仅诊断，不门控——真正决策走 stub 反汇编模式自校验）。
+void DetectKrkrVersionDiag() {
+  if (g_header == nullptr) return;
+  wchar_t path[MAX_PATH] = {0};
+  if (GetModuleFileNameW(GetModuleHandleW(nullptr), path, MAX_PATH) == 0) return;
+  DWORD handle = 0;
+  const DWORD size = GetFileVersionInfoSizeW(path, &handle);
+  if (size == 0) return;
+  void* buf = malloc(size);
+  if (buf == nullptr) return;
+  if (GetFileVersionInfoW(path, handle, size, buf)) {
+    const wchar_t* hay = static_cast<const wchar_t*>(buf);
+    const size_t count = size / sizeof(wchar_t);
+    auto has = [&](const wchar_t* needle) -> bool {
+      const size_t nlen = wcslen(needle);
+      if (nlen == 0 || count < nlen) return false;
+      for (size_t i = 0; i + nlen <= count; i++) {
+        if (memcmp(hay + i, needle, nlen * sizeof(wchar_t)) == 0) return true;
+      }
+      return false;
+    };
+    if (has(L"TVP(KIRIKIRI) Z core")) {
+      g_header->reserved_luna |= 0x100000;  // diag: 版本确认 KrkrZ
+    } else if (has(L"TVP(KIRIKIRI) 2 core")) {
+      g_header->reserved_luna |= 0x200000;  // diag: 版本是 Krkr2
+    }
+  }
+  free(buf);
+}
+
+// exe 直取路径：调 exe 导出的 TVPGetFunctionExporter（未加壳游戏最早、最简）。加壳 exe 不导出该符号时
+// 置 0x1000000 返回 nullptr，改由 LoadLibrary→V2Link 兜底（见 InstallLoadLibraryHooks / HandleV2Link）。
+ITVPFunctionExporter* ObtainExporter() {
+  HMODULE exe = GetModuleHandleW(nullptr);
+  if (exe == nullptr) return nullptr;
+  auto getexp =
+      reinterpret_cast<TVPGetFunctionExporter_t>(GetProcAddress(exe, "TVPGetFunctionExporter"));
+  if (getexp == nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x1000000;  // diag: exe 未导出该符号
+    return nullptr;
+  }
+  __try {
+    return getexp();
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return nullptr;
+  }
+}
+
+// 幂等一次性安装：拿到 exporter（任一路径）后跑「导入 TVPCreateIStream + 反汇编定位内部
+// TVPCreateStream + 装 detour」。InterlockedCompareExchange 保证 exe 直取 / V2Link 两条路径只跑一次。
+void InstallVoiceStreamHookWithExporter(ITVPFunctionExporter* exporter) {
+  if (exporter == nullptr) return;
+  if (InterlockedCompareExchange(&g_voice_installed, 1, 0) != 0) return;  // 已装过，幂等
+
+  DetectKrkrVersionDiag();  // 诊断版本（非门控）
+
+  static const char* kSig = "IStream * ::TVPCreateIStream(const ttstr &,tjs_uint32)";
+  const char* name = kSig;
+  void* stub = nullptr;
+  bool ok = false;
+  __try {
+    ok = exporter->QueryFunctionsByNarrowString(&name, &stub, 1);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    ok = false;
+  }
+  if (!ok || stub == nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x400000;
+    return;
+  }
+
+  bool is_bcb = false;
+  uint8_t* call_istream = FindCallIStreamFromStub(static_cast<uint8_t*>(stub), &is_bcb);
+  if (call_istream == nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x400000;  // 定位失败
+    return;
+  }
+  if (is_bcb) {
+    // Krkr2(BCB, eax=name) 变体：MSVC __fastcall detour 不适用，安全跳过（用错约定会崩游戏）。
+    if (g_header != nullptr) g_header->reserved_luna |= 0x800000;
+    return;
+  }
+  uint8_t* mod_base = nullptr;
+  uint32_t mod_size = 0;
+  GetMainModuleRange(&mod_base, &mod_size);
+  uint8_t* internal = FindInternalTVPCreateStream(call_istream, mod_base, mod_size);
+  if (internal == nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x400000;  // 定位失败
+    return;
+  }
+  if (HookFn(internal, reinterpret_cast<void*>(&Detour_TVPCreateBinaryStream),
+             reinterpret_cast<void**>(&g_orig_TVPCreateStream))) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x20000;  // 内部函数定位成功并 hook
+  }
+}
+
+// ── 加壳 exe 兜底：hook LoadLibrary → 截获插件 V2Link 拿 exporter ──────────────────────────────
+// otomeki.exe 加壳、不导出 TVPGetFunctionExporter（真机 decdiag 0x1000000）。照 KrkrExtract
+// InitHookWithDll(KrkrExtract.cpp:1667) + HookV2Link(Hook.cpp:1081) + XeV2Link(Hook.cpp:208)：hook
+// LoadLibrary*，新加载的插件若导出 V2Link 就 hook 它；引擎随后调该 V2Link(exporter) 时，detour 里拿到
+// exporter 完成一次性安装，再转发原 V2Link 保证插件正常初始化。CREATE_SUSPENDED 早注入时插件尚未加载，
+// 正好由后续 LoadLibrary 触发（那时 exe 也已自解壳）。
+typedef HRESULT(NTAPI* V2Link_t)(ITVPFunctionExporter*);
+constexpr int kMaxV2Link = 4;  // 同时 hook 前几个导出 V2Link 的新插件（任一被调用即拿到单例 exporter）
+V2Link_t g_v2link_orig[kMaxV2Link] = {nullptr};
+void* g_v2link_targets[kMaxV2Link] = {nullptr};
+int g_v2link_count = 0;
+
+// V2Link detour 公共体：拿到 exporter → 置诊断 → 幂等安装 → 转发原 V2Link（不破坏插件初始化）。
+HRESULT HandleV2Link(ITVPFunctionExporter* exporter, V2Link_t orig) {
+  if (exporter != nullptr) {
+    if (g_header != nullptr) g_header->reserved_luna |= 0x4000000;  // 经 V2Link 拿到 exporter
+    InstallVoiceStreamHookWithExporter(exporter);                   // 幂等
+  }
+  if (orig != nullptr) return orig(exporter);
+  return S_OK;
+}
+
+// 每个 hook 槽一个独立 detour（MinHook 共享 detour 无法区分各自 trampoline，故按 slot 展开）。
+#define HIBIKI_V2LINK_DETOUR(i)                               \
+  HRESULT NTAPI Detour_V2Link_##i(ITVPFunctionExporter* e) {  \
+    return HandleV2Link(e, g_v2link_orig[i]);                 \
+  }
+HIBIKI_V2LINK_DETOUR(0)
+HIBIKI_V2LINK_DETOUR(1)
+HIBIKI_V2LINK_DETOUR(2)
+HIBIKI_V2LINK_DETOUR(3)
+void* const g_v2link_detours[kMaxV2Link] = {
+    reinterpret_cast<void*>(&Detour_V2Link_0), reinterpret_cast<void*>(&Detour_V2Link_1),
+    reinterpret_cast<void*>(&Detour_V2Link_2), reinterpret_cast<void*>(&Detour_V2Link_3),
+};
+
+// 新加载的模块若导出 V2Link 且未 hook 过就 hook 它（分配下一个 slot）。已完成安装后不再抓新 V2Link。
+// 本函数在 LoadLibrary detour（loader lock 内）被调；MinHook 装 hook 只 VirtualProtect+改 5 字节 +
+// 短暂 SuspendThread，不获取堆锁/不等待其它线程，loader lock 内低风险（与 KrkrExtract 同款时机）。
+void MaybeHookModuleV2Link(HMODULE mod) {
+  if (mod == nullptr || !g_cs_ready || g_voice_installed) return;
+  FARPROC v2 = GetProcAddress(mod, "V2Link");
+  if (v2 == nullptr) return;
+  EnterCriticalSection(&g_cs);
+  bool already = false;
+  for (int i = 0; i < g_v2link_count; i++) {
+    if (g_v2link_targets[i] == reinterpret_cast<void*>(v2)) {
+      already = true;
+      break;
+    }
+  }
+  if (!already && g_v2link_count < kMaxV2Link) {
+    const int slot = g_v2link_count;
+    if (MH_CreateHook(reinterpret_cast<void*>(v2), g_v2link_detours[slot],
+                      reinterpret_cast<void**>(&g_v2link_orig[slot])) == MH_OK &&
+        MH_EnableHook(reinterpret_cast<void*>(v2)) == MH_OK) {
+      g_v2link_targets[g_v2link_count++] = reinterpret_cast<void*>(v2);
+    }
+  }
+  LeaveCriticalSection(&g_cs);
+}
+
+// LoadLibrary(W/ExW/A/ExA) detour：先调原函数拿 HMODULE，再看是否新插件的 V2Link 该 hook。
+typedef HMODULE(WINAPI* LoadLibraryW_t)(LPCWSTR);
+typedef HMODULE(WINAPI* LoadLibraryExW_t)(LPCWSTR, HANDLE, DWORD);
+typedef HMODULE(WINAPI* LoadLibraryA_t)(LPCSTR);
+typedef HMODULE(WINAPI* LoadLibraryExA_t)(LPCSTR, HANDLE, DWORD);
+LoadLibraryW_t g_orig_LoadLibraryW = nullptr;
+LoadLibraryExW_t g_orig_LoadLibraryExW = nullptr;
+LoadLibraryA_t g_orig_LoadLibraryA = nullptr;
+LoadLibraryExA_t g_orig_LoadLibraryExA = nullptr;
+
+HMODULE WINAPI Detour_LoadLibraryW(LPCWSTR lib) {
+  HMODULE m = g_orig_LoadLibraryW(lib);
+  MaybeHookModuleV2Link(m);
+  return m;
+}
+HMODULE WINAPI Detour_LoadLibraryExW(LPCWSTR lib, HANDLE file, DWORD flags) {
+  HMODULE m = g_orig_LoadLibraryExW(lib, file, flags);
+  MaybeHookModuleV2Link(m);
+  return m;
+}
+HMODULE WINAPI Detour_LoadLibraryA(LPCSTR lib) {
+  HMODULE m = g_orig_LoadLibraryA(lib);
+  MaybeHookModuleV2Link(m);
+  return m;
+}
+HMODULE WINAPI Detour_LoadLibraryExA(LPCSTR lib, HANDLE file, DWORD flags) {
+  HMODULE m = g_orig_LoadLibraryExA(lib, file, flags);
+  MaybeHookModuleV2Link(m);
+  return m;
+}
+
+// 装 LoadLibrary hook（kernel32 早已加载）。四个导出各一份，用现有 HookFn（单函数、去重）。W/ExW 覆盖
+// 引擎宽字符加载，A/ExA 兜住少数窄字符路径。任一装上即算就绪。
+bool InstallLoadLibraryHooks() {
+  HMODULE k = GetModuleHandleW(L"kernel32.dll");
+  if (k == nullptr) return false;
+  bool any = false;
+  any |= HookFn(reinterpret_cast<void*>(GetProcAddress(k, "LoadLibraryW")),
+                reinterpret_cast<void*>(&Detour_LoadLibraryW),
+                reinterpret_cast<void**>(&g_orig_LoadLibraryW));
+  any |= HookFn(reinterpret_cast<void*>(GetProcAddress(k, "LoadLibraryExW")),
+                reinterpret_cast<void*>(&Detour_LoadLibraryExW),
+                reinterpret_cast<void**>(&g_orig_LoadLibraryExW));
+  any |= HookFn(reinterpret_cast<void*>(GetProcAddress(k, "LoadLibraryA")),
+                reinterpret_cast<void*>(&Detour_LoadLibraryA),
+                reinterpret_cast<void**>(&g_orig_LoadLibraryA));
+  any |= HookFn(reinterpret_cast<void*>(GetProcAddress(k, "LoadLibraryExA")),
+                reinterpret_cast<void*>(&Detour_LoadLibraryExA),
+                reinterpret_cast<void**>(&g_orig_LoadLibraryExA));
+  return any;
+}
+
+// 装 KiriKiriZ 语音流 hook。两条拿 exporter 的路径，幂等只安装一次：
+//  ① exe 直取 TVPGetFunctionExporter（未加壳游戏更早可用；加壳返回 null，置 0x1000000）。
+//  ② hook LoadLibrary → 插件 V2Link 兜底（对付加壳 exe，异步在游戏加载插件时完成）。
+// LoadLibrary hook 装好即返回 true 停止轮询；真正安装可能稍后由 V2Link detour 异步触发。保活循环里
+// exporter 迟迟没到不必强等——V2Link 会随游戏加载插件自动触发（30s 轮询窗口足够覆盖插件加载）。
+bool TryHookKirikiriVoiceStream() {
+  static bool ll_installed = false;
+
+  if (!ll_installed) {
+    if (InstallLoadLibraryHooks()) {
+      ll_installed = true;
+      if (g_header != nullptr) g_header->reserved_luna |= 0x2000000;  // LoadLibrary hook 已装
+    }
+  }
+
+  if (!g_voice_installed) {
+    ITVPFunctionExporter* exp = ObtainExporter();  // exe 直取（加壳置 0x1000000 返回 null）
+    if (exp != nullptr) {
+      if (g_header != nullptr) g_header->reserved_luna |= 0x10000;  // 经 exe 导出拿到 exporter
+      InstallVoiceStreamHookWithExporter(exp);                      // 幂等
+    }
+  }
+
+  return ll_installed;
+}
+
+#else  // !_M_IX86
+
+// KiriKiriZ 是 32 位引擎；x64 构建此路径为空实现（仅保证两架构都能编译）。
+bool TryHookKirikiriVoiceStream() { return true; }
+
+#endif  // _M_IX86
+
+// ══ C.2e Ren'Py / FFmpeg（libavcodec-54 / libavformat-54）纯人声捕获 ══════════════════
+// Ren'Py（测试 Sakura Swim Club）音频经独立 DLL 解码：avformat-54.dll 打开输入流、
+// avcodec-54.dll 解码。语音文件 url 常带 "voice" 或音频后缀（.ogg/.opus/.wav/.mp3…）。抓法与
+// KiriKiriZ OGG 那条同出口（%TEMP%\hibiki_gal_voice 落盘），只是这里抓的是**解码后 PCM**（Ren'Py
+// 不像 KiriKiri 有可 hook 的 wuvorbis/TVPCreateStream，只能落在 FFmpeg 解码链上）：
+//   avformat_open_input(ps,url,…)        -> url 命中语音则把 *ps（AVFormatContext*）登记为语音 ctx
+//   avformat_find_stream_info(ic,…)      -> 遍历 ic->streams[i]->codec（AVCodecContext*），读该音频
+//                                           流 sample_rate/channels 缓存，并登记 avctx→ctx 关联
+//   avcodec_decode_audio4(avctx,frame,…) -> avctx 命中语音关联 && *got_frame!=0 时，把 frame 解码
+//                                           PCM（交织/planar 合并、统一转 16-bit）累积进该 ctx 缓冲
+//   avformat_close_input / av_close_input_file -> 该 ctx 关闭时把累积 PCM 写成 WAV 落盘
+//
+// avctx↔语音 ctx 关联难点：AVCodecContext 不回指 AVFormatContext。解法＝在 find_stream_info 后遍历
+// fmt_ctx->streams[i]->codec，把这些 avctx 记进 avctx→ctx 表；decode 里按 avctx 查表命中即取该 ctx
+// 缓冲。sample_rate/channels 在 find_stream_info 时（结构里已填好）读一次并缓存，故 decode 热路径
+// **不再触碰 AVCodecContext 偏移**（只读可信度高的 AVFrame 早段字段）。
+//
+// ── 手工结构偏移（最易错点；据 FFmpeg n1.0 = libavcodec 54.59.100 源码逐字段核算）────────────────
+// 假设：目标 DLL 是**标准发行 FFmpeg 1.0**——LIBAVCODEC_VERSION_MAJOR=54 时全部 FF_API_* 废弃宏
+// 判真，故那些"废弃"字段仍占位（共约 24 字节在 AVCodecContext.sample_rate 之前）。若目标 DLL 用
+// -DFF_API_xxx=0 定制剥掉这些字段，sample_rate 会前移最多 24 字节（x86 落 412–436 / x64 落
+// 456–480）——这是全组件最高风险数。故 sample_rate/channels 一律 sanity 校验（rate∈[8000,192000]、
+// ch∈[1,8]），不过关即跳过该流（不落盘、绝不崩游戏）。AVFrame 早段（data/nb_samples/format）在
+// 整个 lavc-54 区间稳定，可信度高。全部读结构处 SEH + 判空兜底。
+// Ren'Py 的 python.exe 是 x86 —— x86 偏移为主目标；x64 仅为两架构编译对齐（lavc-54 x64 的 Ren'Py
+// 基本不存在），x64 偏移可信度更低但不影响主路径。
+#if defined(_M_IX86)
+constexpr size_t kAvfDataOff = 0;          // AVFrame.data[0]
+constexpr size_t kAvfExtDataOff = 64;      // AVFrame.extended_data
+constexpr size_t kAvfNbSamplesOff = 76;    // AVFrame.nb_samples
+constexpr size_t kAvfFormatOff = 80;       // AVFrame.format（enum AVSampleFormat）
+constexpr size_t kAvcSampleRateOff = 436;  // AVCodecContext.sample_rate（高风险，见上）
+constexpr size_t kAvcChannelsOff = 440;    // AVCodecContext.channels（高风险）
+constexpr size_t kAvfmtNbStreamsOff = 24;  // AVFormatContext.nb_streams
+constexpr size_t kAvfmtStreamsOff = 28;    // AVFormatContext.streams（AVStream**）
+constexpr size_t kAvsCodecOff = 8;         // AVStream.codec（AVCodecContext*）
+#else  // _M_X64
+constexpr size_t kAvfDataOff = 0;
+constexpr size_t kAvfExtDataOff = 96;
+constexpr size_t kAvfNbSamplesOff = 112;
+constexpr size_t kAvfFormatOff = 116;
+constexpr size_t kAvcSampleRateOff = 480;
+constexpr size_t kAvcChannelsOff = 484;
+constexpr size_t kAvfmtNbStreamsOff = 44;
+constexpr size_t kAvfmtStreamsOff = 48;
+constexpr size_t kAvsCodecOff = 8;
+#endif
+
+// AVSampleFormat：0..4 交织（U8/S16/S32/FLT/DBL），5..9 planar（U8P/S16P/S32P/FLTP/DBLP），10=NB。
+// planar 每声道一个平面（≤8 声道 data[c] 即平面，>8 走 extended_data）；交织全在 data[0]。
+
+// FFmpeg 函数原型（Win32 x86 = __cdecl；x64 单一 ABI，__cdecl 被忽略无害）。不含 FFmpeg 头（版本
+// 难对齐），全按 void* 透传，只在自家 detour 里按上面手工偏移解释结构。
+typedef int(__cdecl* avformat_open_input_t)(void** ps, const char* url, void* fmt,
+                                            void** options);
+typedef int(__cdecl* avformat_find_stream_info_t)(void* ic, void** options);
+typedef int(__cdecl* avcodec_decode_audio4_t)(void* avctx, void* frame,
+                                              int* got_frame_ptr, const void* avpkt);
+typedef void(__cdecl* avformat_close_input_t)(void** ps);
+typedef void(__cdecl* av_close_input_file_t)(void* ctx);
+
+avformat_open_input_t g_orig_avformat_open_input = nullptr;
+avformat_find_stream_info_t g_orig_avformat_find_stream_info = nullptr;
+avcodec_decode_audio4_t g_orig_avcodec_decode_audio4 = nullptr;
+avformat_close_input_t g_orig_avformat_close_input = nullptr;
+av_close_input_file_t g_orig_av_close_input_file = nullptr;
+
+// 语音 AVFormatContext 表（定长，避堆分配；pcm 累积缓冲懒分配、close 落盘后释放）。
+struct RenpyFmt {
+  void* fmt_ctx;          // AVFormatContext*；nullptr=空槽
+  uint32_t sample_rate;   // 该 ctx 音频流采样率（find_stream_info 缓存）
+  uint32_t channels;      // 声道数
+  uint8_t* pcm;           // 累积的 16-bit 交织 PCM（懒分配 kRenpyPcmCap）
+  uint32_t pcm_len;       // 已累积字节
+  uint32_t pcm_cap;       // 缓冲容量
+  wchar_t basename[128];  // 落盘文件名（从 url 取；url 空则 renpy_<ctx低32位>）
+};
+// avctx→ctx 关联表（find_stream_info 建，decode 查）。
+struct RenpyAvctx {
+  void* avctx;   // AVCodecContext*；nullptr=空
+  int fmt_slot;  // g_renpy_fmt 下标
+};
+constexpr int kMaxRenpyFmt = 64;
+constexpr int kMaxRenpyAvctx = 128;
+constexpr uint32_t kRenpyPcmCap = 8u * 1024u * 1024u;  // 单 ctx 累积上界（~43s 48k 立体声 16bit）
+RenpyFmt g_renpy_fmt[kMaxRenpyFmt] = {};
+RenpyAvctx g_renpy_avctx[kMaxRenpyAvctx] = {};
+CRITICAL_SECTION g_renpy_cs;  // 专用锁：三表查改（非音频混音回调，短临界区）
+bool g_renpy_cs_ready = false;
+
+// 按前缀（小写）枚举已加载模块，命中返回其 HMODULE。用于 "avcodec-54.dll" 精确找不到时兜住命名
+// 变体（仍限 major 54——偏移是 54 专属，别匹配到别的 major，否则用错偏移会读到垃圾）。
+HMODULE FindLoadedModuleByPrefix(const wchar_t* prefix_lower) {
+  HMODULE result = nullptr;
+  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
+                                         GetCurrentProcessId());
+  if (snap == INVALID_HANDLE_VALUE) return nullptr;
+  MODULEENTRY32W me;
+  me.dwSize = sizeof(me);
+  const size_t plen = wcslen(prefix_lower);
+  if (Module32FirstW(snap, &me)) {
+    do {
+      wchar_t name[MAX_MODULE_NAME32 + 1];
+      int i = 0;
+      for (; me.szModule[i] != 0 && i < MAX_MODULE_NAME32; i++) {
+        wchar_t c = me.szModule[i];
+        if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c - L'A' + L'a');
+        name[i] = c;
+      }
+      name[i] = 0;
+      if (wcsncmp(name, prefix_lower, plen) == 0) {
+        result = me.hModule;
+        break;
+      }
+    } while (Module32NextW(snap, &me));
+  }
+  CloseHandle(snap);
+  return result;
+}
+
+// url（char*，UTF-8/本地编码）是否语音：小写后先排 BGM/SE/music/sound，再命中 "voice"/"vo_" 或音频
+// 后缀。粗过滤即可——host 侧再按文本时间戳精配（与 KiriKiri OGG 同款「就近配对」）。
+bool IsVoiceUrl(const char* url) {
+  if (url == nullptr) return false;
+  char low[520];
+  size_t n = 0;
+  for (; url[n] != 0 && n + 1 < 520; n++) {
+    char c = url[n];
+    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    low[n] = c;
+  }
+  low[n] = 0;
+  if (n == 0) return false;
+  if (strstr(low, "bgm") != nullptr || strstr(low, "music") != nullptr ||
+      strstr(low, "sound") != nullptr || strstr(low, "/se/") != nullptr ||
+      strstr(low, "\\se\\") != nullptr || strstr(low, "se_") != nullptr) {
+    return false;  // 明显 BGM/环境音/音效
+  }
+  if (strstr(low, "voice") != nullptr || strstr(low, "/vo/") != nullptr ||
+      strstr(low, "vo_") != nullptr) {
+    return true;
+  }
+  static const char* kExts[] = {".ogg", ".opus", ".wav", ".mp3", ".wma", ".m4a", ".flac"};
+  for (const char* e : kExts) {
+    const size_t el = strlen(e);
+    if (n >= el && strcmp(low + n - el, e) == 0) return true;
+  }
+  return false;
+}
+
+// 从 url 取净化后的 basename 存进定长缓冲（url 空则 renpy_<ctx低32位>）。非音频回调，允许 Win32 调用。
+void MakeRenpyBaseName(const char* url, void* ctx, wchar_t* out, int out_cap) {
+  out[0] = 0;
+  wchar_t wide[520];
+  int wn = 0;
+  if (url != nullptr && url[0] != 0) {
+    wn = MultiByteToWideChar(CP_UTF8, 0, url, -1, wide, 520);
+    if (wn <= 0) wn = MultiByteToWideChar(CP_ACP, 0, url, -1, wide, 520);
+  }
+  if (wn <= 0) {
+    const unsigned low =
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(ctx) & 0xffffffffu);
+    static const wchar_t kHex[] = L"0123456789abcdef";
+    wchar_t tmp[16];
+    int t = 0;
+    tmp[t++] = L'r'; tmp[t++] = L'e'; tmp[t++] = L'n'; tmp[t++] = L'p'; tmp[t++] = L'y';
+    tmp[t++] = L'_';
+    for (int s = 28; s >= 0; s -= 4) tmp[t++] = kHex[(low >> s) & 0xfu];
+    tmp[t] = 0;
+    lstrcpynW(out, tmp, out_cap);
+    return;
+  }
+  const int len = lstrlenW(wide);
+  int pos = 0;
+  for (int i = len; i > 0; i--) {
+    if (wide[i - 1] == L'/' || wide[i - 1] == L'\\') {
+      pos = i;
+      break;
+    }
+  }
+  int o = 0;
+  for (int i = pos; wide[i] != 0 && o + 1 < out_cap; i++) {
+    wchar_t c = wide[i];
+    if (c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' ||
+        c == L'|') {
+      c = L'_';
+    }
+    out[o++] = c;
+  }
+  out[o] = 0;
+  if (o == 0) lstrcpynW(out, L"renpy", out_cap);
+}
+
+// 把累积的 16-bit 交织 PCM 写成 WAV。非热路径（close 时调一次），允许 std::wstring/文件 IO。
+void WriteRenpyWav(const uint8_t* pcm, uint32_t len, uint32_t rate, uint32_t channels,
+                   const wchar_t* basename) {
+  if (pcm == nullptr || len == 0 || rate == 0 || channels == 0) return;
+  wchar_t temp[MAX_PATH] = {0};
+  const DWORD n = GetTempPathW(MAX_PATH, temp);
+  if (n == 0 || n > MAX_PATH) return;
+  std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  CreateDirectoryW(dir.c_str(), nullptr);  // 已存在则失败无害（与 KiriKiri OGG 同目录）
+  std::wstring base =
+      (basename != nullptr && basename[0] != 0) ? std::wstring(basename) : L"renpy";
+  const size_t dot = base.find_last_of(L'.');
+  if (dot != std::wstring::npos) base = base.substr(0, dot);  // 去原扩展名，统一 .wav
+  if (base.empty()) base = L"renpy";
+  std::wstring file =
+      dir + L"\\" + std::to_wstring(GetTickCount64()) + L"_" + base + L".wav";
+  HANDLE fh = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (fh == INVALID_HANDLE_VALUE) return;
+  uint8_t hdr[44];
+  const uint32_t data_size = len;
+  const uint32_t riff_size = 36u + data_size;
+  const uint32_t fmt_size = 16u;
+  const uint16_t audio_fmt = 1u;  // PCM
+  const uint16_t ch16 = static_cast<uint16_t>(channels);
+  const uint32_t byte_rate = rate * channels * 2u;
+  const uint16_t block_align = static_cast<uint16_t>(channels * 2u);
+  const uint16_t bits = 16u;
+  memcpy(hdr + 0, "RIFF", 4);
+  memcpy(hdr + 4, &riff_size, 4);
+  memcpy(hdr + 8, "WAVE", 4);
+  memcpy(hdr + 12, "fmt ", 4);
+  memcpy(hdr + 16, &fmt_size, 4);
+  memcpy(hdr + 20, &audio_fmt, 2);
+  memcpy(hdr + 22, &ch16, 2);
+  memcpy(hdr + 24, &rate, 4);
+  memcpy(hdr + 28, &byte_rate, 4);
+  memcpy(hdr + 32, &block_align, 2);
+  memcpy(hdr + 34, &bits, 2);
+  memcpy(hdr + 36, "data", 4);
+  memcpy(hdr + 40, &data_size, 4);
+  DWORD written = 0;
+  WriteFile(fh, hdr, 44, &written, nullptr);
+  uint32_t off = 0;
+  while (off < len) {
+    const uint32_t chunk = (len - off > 0x100000u) ? 0x100000u : (len - off);
+    if (!WriteFile(fh, pcm + off, chunk, &written, nullptr) || written == 0) break;
+    off += written;
+  }
+  CloseHandle(fh);
+}
+
+// SEH 守卫读 AVFormatContext 的流表，把每个音频流的 avctx（sample_rate/channels 合法）缓存进 slot +
+// 登记 avctx→slot。只读结构、不调外部函数，纯 POD，可安全 __try。调用者持 g_renpy_cs。
+void RenpyRegisterStreamsGuarded(void* ic, int slot) {
+  __try {
+    const unsigned nb = *reinterpret_cast<unsigned*>(
+        reinterpret_cast<uint8_t*>(ic) + kAvfmtNbStreamsOff);
+    void** streams = *reinterpret_cast<void***>(
+        reinterpret_cast<uint8_t*>(ic) + kAvfmtStreamsOff);
+    if (streams == nullptr || nb == 0 || nb > 64) return;
+    for (unsigned i = 0; i < nb; i++) {
+      void* st = streams[i];
+      if (st == nullptr) continue;
+      void* avctx =
+          *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(st) + kAvsCodecOff);
+      if (avctx == nullptr) continue;
+      const int rate = *reinterpret_cast<int*>(
+          reinterpret_cast<uint8_t*>(avctx) + kAvcSampleRateOff);
+      const int ch = *reinterpret_cast<int*>(
+          reinterpret_cast<uint8_t*>(avctx) + kAvcChannelsOff);
+      if (rate < 8000 || rate > 192000 || ch < 1 || ch > 8) {
+        continue;  // 非音频流 / 偏移不对 → 跳过（不误抓、不崩）
+      }
+      if (g_renpy_fmt[slot].sample_rate == 0) {
+        g_renpy_fmt[slot].sample_rate = static_cast<uint32_t>(rate);
+        g_renpy_fmt[slot].channels = static_cast<uint32_t>(ch);
+      }
+      for (int k = 0; k < kMaxRenpyAvctx; k++) {
+        if (g_renpy_avctx[k].avctx == avctx) break;  // 已登记
+        if (g_renpy_avctx[k].avctx == nullptr) {
+          g_renpy_avctx[k].avctx = avctx;
+          g_renpy_avctx[k].fmt_slot = slot;
+          break;
+        }
+      }
+      if (g_header != nullptr) g_header->reserved_luna |= 0x80000000u;  // diag: 登记语音 avctx
+    }
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
+}
+
+// SEH 守卫读 AVFrame 解码 PCM，转 16-bit 交织累积进 slot 缓冲。纯 POD + malloc，可安全 __try。
+// 调用者持 g_renpy_cs。channels 用 slot 缓存值（find_stream_info 读到的真实声道），不再读 avctx。
+void RenpyAppendFrameGuarded(RenpyFmt* f, void* frame) {
+  __try {
+    const int nb = *reinterpret_cast<int*>(
+        reinterpret_cast<uint8_t*>(frame) + kAvfNbSamplesOff);
+    const int fmt = *reinterpret_cast<int*>(
+        reinterpret_cast<uint8_t*>(frame) + kAvfFormatOff);
+    if (nb <= 0 || nb > (1 << 20)) return;
+    if (fmt < 0 || fmt > 9) return;  // AV_SAMPLE_FMT_U8..DBLP
+    const uint32_t ch = f->channels;
+    if (ch < 1 || ch > 8) return;
+    int bps = 0;
+    bool planar = false;
+    switch (fmt) {
+      case 0: bps = 1; planar = false; break;  // U8
+      case 1: bps = 2; planar = false; break;  // S16
+      case 2: bps = 4; planar = false; break;  // S32
+      case 3: bps = 4; planar = false; break;  // FLT
+      case 4: bps = 8; planar = false; break;  // DBL
+      case 5: bps = 1; planar = true; break;   // U8P
+      case 6: bps = 2; planar = true; break;   // S16P
+      case 7: bps = 4; planar = true; break;   // S32P
+      case 8: bps = 4; planar = true; break;   // FLTP
+      case 9: bps = 8; planar = true; break;   // DBLP
+      default: return;
+    }
+    const size_t ptrsz = sizeof(void*);
+    const uint8_t* planes[8] = {nullptr};
+    if (planar) {
+      const uint8_t** ext = *reinterpret_cast<const uint8_t***>(
+          reinterpret_cast<uint8_t*>(frame) + kAvfExtDataOff);
+      for (uint32_t c = 0; c < ch; c++) {
+        const uint8_t* p = *reinterpret_cast<const uint8_t**>(
+            reinterpret_cast<uint8_t*>(frame) + kAvfDataOff +
+            static_cast<size_t>(c) * ptrsz);
+        if (p == nullptr && ext != nullptr) p = ext[c];  // >8 声道走 extended_data
+        if (p == nullptr) return;
+        planes[c] = p;
+      }
+    } else {
+      planes[0] = *reinterpret_cast<const uint8_t**>(
+          reinterpret_cast<uint8_t*>(frame) + kAvfDataOff);
+      if (planes[0] == nullptr) return;
+    }
+    if (f->pcm == nullptr) {
+      f->pcm = static_cast<uint8_t*>(malloc(kRenpyPcmCap));
+      if (f->pcm == nullptr) return;
+      f->pcm_cap = kRenpyPcmCap;
+      f->pcm_len = 0;
+    }
+    const uint32_t bytes_per_out_frame = ch * 2u;  // 16-bit 交织输出
+    const uint32_t room_frames = (f->pcm_cap - f->pcm_len) / bytes_per_out_frame;
+    if (room_frames == 0) return;  // 满（超长语音，防御性）；已积部分等 close 落盘
+    uint32_t frames = static_cast<uint32_t>(nb);
+    if (frames > room_frames) frames = room_frames;
+    int16_t* out = reinterpret_cast<int16_t*>(f->pcm + f->pcm_len);
+    for (uint32_t s = 0; s < frames; s++) {
+      for (uint32_t c = 0; c < ch; c++) {
+        const uint8_t* src = planar
+                                 ? planes[c] + static_cast<size_t>(s) * bps
+                                 : planes[0] + (static_cast<size_t>(s) * ch + c) * bps;
+        int16_t v = 0;
+        switch (fmt) {
+          case 0:
+          case 5: {  // U8 / U8P（无符号，中心 128）
+            const uint8_t u = *src;
+            v = static_cast<int16_t>((static_cast<int>(u) - 128) << 8);
+            break;
+          }
+          case 1:
+          case 6: {  // S16 / S16P
+            v = *reinterpret_cast<const int16_t*>(src);
+            break;
+          }
+          case 2:
+          case 7: {  // S32 / S32P
+            const int32_t x = *reinterpret_cast<const int32_t*>(src);
+            v = static_cast<int16_t>(x >> 16);
+            break;
+          }
+          case 3:
+          case 8: {  // FLT / FLTP
+            float fx = *reinterpret_cast<const float*>(src);
+            if (fx > 1.0f) {
+              fx = 1.0f;
+            } else if (fx < -1.0f) {
+              fx = -1.0f;
+            }
+            v = static_cast<int16_t>(fx * 32767.0f);
+            break;
+          }
+          case 4:
+          case 9: {  // DBL / DBLP
+            double dx = *reinterpret_cast<const double*>(src);
+            if (dx > 1.0) {
+              dx = 1.0;
+            } else if (dx < -1.0) {
+              dx = -1.0;
+            }
+            v = static_cast<int16_t>(dx * 32767.0);
+            break;
+          }
+          default:
+            break;
+        }
+        *out++ = v;
+      }
+    }
+    f->pcm_len += frames * bytes_per_out_frame;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
+}
+
+// ctx 关闭：从表摘出该 ctx 的累积 PCM（持锁清槽 + 清关联），再在锁外落盘 + 释放（避免文件 IO 持锁）。
+void RenpyCloseCtx(void* ctx) {
+  if (ctx == nullptr || !g_renpy_cs_ready) return;
+  uint8_t* pcm = nullptr;
+  uint32_t len = 0, rate = 0, ch = 0;
+  wchar_t base[128];
+  base[0] = 0;
+  EnterCriticalSection(&g_renpy_cs);
+  for (int i = 0; i < kMaxRenpyFmt; i++) {
+    if (g_renpy_fmt[i].fmt_ctx == ctx) {
+      pcm = g_renpy_fmt[i].pcm;
+      len = g_renpy_fmt[i].pcm_len;
+      rate = g_renpy_fmt[i].sample_rate;
+      ch = g_renpy_fmt[i].channels;
+      lstrcpynW(base, g_renpy_fmt[i].basename, 128);
+      g_renpy_fmt[i].fmt_ctx = nullptr;
+      g_renpy_fmt[i].pcm = nullptr;
+      g_renpy_fmt[i].pcm_len = 0;
+      g_renpy_fmt[i].pcm_cap = 0;
+      g_renpy_fmt[i].sample_rate = 0;
+      g_renpy_fmt[i].channels = 0;
+      g_renpy_fmt[i].basename[0] = 0;
+      for (int k = 0; k < kMaxRenpyAvctx; k++) {
+        if (g_renpy_avctx[k].avctx != nullptr && g_renpy_avctx[k].fmt_slot == i) {
+          g_renpy_avctx[k].avctx = nullptr;
+          g_renpy_avctx[k].fmt_slot = -1;
+        }
+      }
+      break;
+    }
+  }
+  LeaveCriticalSection(&g_renpy_cs);
+  if (pcm != nullptr) {
+    if (len > 0 && rate > 0 && ch > 0) {
+      WriteRenpyWav(pcm, len, rate, ch, base);
+      if (g_header != nullptr) g_header->reserved_luna |= 0x40000000;  // diag: 写出语音 WAV
+    }
+    free(pcm);
+  }
+}
+
+// -- detour: avformat_open_input --（url 命中语音则登记 ctx；basename 供落盘命名）
+int __cdecl Detour_avformat_open_input(void** ps, const char* url, void* fmt,
+                                       void** options) {
+  const int ret = g_orig_avformat_open_input(ps, url, fmt, options);
+  if (ret == 0 && ps != nullptr && *ps != nullptr && g_capture_enabled &&
+      g_renpy_cs_ready && IsVoiceUrl(url)) {
+    void* ctx = *ps;
+    wchar_t base[128];
+    MakeRenpyBaseName(url, ctx, base, 128);
+    EnterCriticalSection(&g_renpy_cs);
+    int slot = -1;
+    for (int i = 0; i < kMaxRenpyFmt; i++) {
+      if (g_renpy_fmt[i].fmt_ctx == nullptr) {
+        slot = i;
+        break;
+      }
+    }
+    if (slot >= 0) {
+      g_renpy_fmt[slot].fmt_ctx = ctx;
+      g_renpy_fmt[slot].sample_rate = 0;
+      g_renpy_fmt[slot].channels = 0;
+      g_renpy_fmt[slot].pcm = nullptr;
+      g_renpy_fmt[slot].pcm_len = 0;
+      g_renpy_fmt[slot].pcm_cap = 0;
+      lstrcpynW(g_renpy_fmt[slot].basename, base, 128);
+    }
+    LeaveCriticalSection(&g_renpy_cs);
+    if (g_header != nullptr) g_header->reserved_luna |= 0x10000000;  // diag: open_input 命中语音
+  }
+  // TODO（url 空/自定义 AVIOContext）：Ren'Py 若走内存 AVIOContext，url 可能为空，此处保守不登记
+  // （不误抓 BGM）；后续可靠 decode 端音频时长/特征兜底识别语音 ctx（当前先按有 url 的做）。
+  return ret;
+}
+
+// -- detour: avformat_find_stream_info --（流建好后遍历流表，登记语音 ctx 的音频 avctx + 格式）
+int __cdecl Detour_avformat_find_stream_info(void* ic, void** options) {
+  const int ret = g_orig_avformat_find_stream_info(ic, options);
+  if (ic != nullptr && g_capture_enabled && g_renpy_cs_ready) {
+    EnterCriticalSection(&g_renpy_cs);
+    int slot = -1;
+    for (int i = 0; i < kMaxRenpyFmt; i++) {
+      if (g_renpy_fmt[i].fmt_ctx == ic) {
+        slot = i;
+        break;
+      }
+    }
+    if (slot >= 0) RenpyRegisterStreamsGuarded(ic, slot);
+    LeaveCriticalSection(&g_renpy_cs);
+  }
+  return ret;
+}
+
+// -- detour: avcodec_decode_audio4 --（avctx 命中语音关联且解出帧时累积其 PCM）
+int __cdecl Detour_avcodec_decode_audio4(void* avctx, void* frame, int* got_frame_ptr,
+                                         const void* avpkt) {
+  const int ret = g_orig_avcodec_decode_audio4(avctx, frame, got_frame_ptr, avpkt);
+  if (g_capture_enabled && g_renpy_cs_ready && avctx != nullptr && frame != nullptr &&
+      got_frame_ptr != nullptr && *got_frame_ptr != 0) {
+    EnterCriticalSection(&g_renpy_cs);
+    int slot = -1;
+    for (int k = 0; k < kMaxRenpyAvctx; k++) {
+      if (g_renpy_avctx[k].avctx == avctx) {
+        slot = g_renpy_avctx[k].fmt_slot;
+        break;
+      }
+    }
+    if (slot >= 0 && slot < kMaxRenpyFmt && g_renpy_fmt[slot].fmt_ctx != nullptr) {
+      if (g_header != nullptr) {
+        g_header->reserved_luna |= 0x20000000;  // diag: decode 命中语音 ctx
+      }
+      RenpyAppendFrameGuarded(&g_renpy_fmt[slot], frame);
+    }
+    LeaveCriticalSection(&g_renpy_cs);
+  }
+  return ret;
+}
+
+// -- detour: avformat_close_input（AVFormatContext**，会置 *ps=NULL）--
+void __cdecl Detour_avformat_close_input(void** ps) {
+  void* ctx = (ps != nullptr) ? *ps : nullptr;  // 原函数会释放并置空，先取出
+  if (g_capture_enabled) RenpyCloseCtx(ctx);
+  g_orig_avformat_close_input(ps);
+}
+// -- detour: av_close_input_file（旧 API，AVFormatContext* 直接传）--
+void __cdecl Detour_av_close_input_file(void* ctx) {
+  if (g_capture_enabled) RenpyCloseCtx(ctx);
+  g_orig_av_close_input_file(ctx);
+}
+
+// 装 Ren'Py/FFmpeg 捕获 hook：avformat-54 的 open_input/find_stream_info/close_input(+av_close_input_file
+// 旧 API 兜底) 与 avcodec-54 的 decode_audio4。DLL 名精确找不到再按 "avcodec-54"/"avformat-54" 前缀枚举
+// （仍限 major 54）。未加载则跳过（非 Ren'Py 或注入时 FFmpeg 尚未载入）。幂等，静态标志各只装一次；
+// HookWorker 保活循环反复调直到装齐（Ren'Py 运行中注入时 FFmpeg DLL 通常已就绪）。
+bool TryHookRenpyAudio() {
+  static bool avformat_done = false;
+  static bool avcodec_done = false;
+  if (!avformat_done) {
+    HMODULE m = GetModuleHandleW(L"avformat-54.dll");
+    if (m == nullptr) m = FindLoadedModuleByPrefix(L"avformat-54");
+    if (m != nullptr) {
+      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_open_input")),
+             reinterpret_cast<void*>(&Detour_avformat_open_input),
+             reinterpret_cast<void**>(&g_orig_avformat_open_input));
+      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_find_stream_info")),
+             reinterpret_cast<void*>(&Detour_avformat_find_stream_info),
+             reinterpret_cast<void**>(&g_orig_avformat_find_stream_info));
+      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_close_input")),
+             reinterpret_cast<void*>(&Detour_avformat_close_input),
+             reinterpret_cast<void**>(&g_orig_avformat_close_input));
+      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "av_close_input_file")),
+             reinterpret_cast<void*>(&Detour_av_close_input_file),
+             reinterpret_cast<void**>(&g_orig_av_close_input_file));
+      if (g_orig_avformat_open_input != nullptr) {
+        avformat_done = true;
+        if (g_header != nullptr) {
+          g_header->reserved_luna |= 0x08000000;  // diag: avformat hook 装上
+        }
+      }
+    }
+  }
+  if (!avcodec_done) {
+    HMODULE m = GetModuleHandleW(L"avcodec-54.dll");
+    if (m == nullptr) m = FindLoadedModuleByPrefix(L"avcodec-54");
+    if (m != nullptr) {
+      if (HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avcodec_decode_audio4")),
+                 reinterpret_cast<void*>(&Detour_avcodec_decode_audio4),
+                 reinterpret_cast<void**>(&g_orig_avcodec_decode_audio4))) {
+        avcodec_done = true;
+        if (g_header != nullptr) {
+          g_header->reserved_luna |= 0x08000000;  // diag: avcodec hook 装上
+        }
+      }
+    }
+  }
+  return avformat_done && avcodec_done;
 }
 
 // == wen ben hook (grab dialogue text) ==
@@ -738,6 +2287,246 @@ void TryHookTextRender() {
   }
 }
 
+// ══ C.2f WASAPI loopback 兜底混音捕获 ════════════════════════════════════════════
+// 前述所有 hook（XAudio2/DirectSound/KiriKiri/Ren'Py/GDI 文本）覆盖不到的游戏（Atelier Kaguya、
+// 未识别引擎）音频走未 hook 的私有路径。此处**不** hook 任何 COM vtable，改用标准 WASAPI loopback
+// （AUDCLNT_STREAMFLAGS_LOOPBACK）从系统默认渲染端点抓**最终混音**（voice+BGM）——游戏在放音时，
+// loopback 抓到的就是它送扬声器的输出。制卡时按某句文本时间戳抽 [ts-100ms, ts+5000ms] 窗口即得
+// 该句混音（带 BGM，可闻人声）。抓的是**整个系统输出**——测试/使用时应只有目标游戏在放音。
+//
+// 独立线程（非音频回调）：可 CoInitialize/阻塞轮询，不受零阻塞红线约束；退出必须干净（g_stop
+// 通知退出、显式反序释放 COM/CoUninitialize）。混音格式常是 32-bit float（WAVEFORMATEXTENSIBLE），
+// 统一转 16-bit PCM 入 loopback 专用环（独立于 voice 环，避免与 XAudio2/DS/解码 clip 混淆）。
+
+// 混音源采样格式（GetMixFormat 解析一次）。混音端点几乎恒 float32；int16/int32 兜底；其它罕见
+// 格式（24-bit 等）判 unknown，按静音填 0 保持时间轴（诊断置位）。
+enum LbSrcFmt : int { kLbUnknown = 0, kLbFloat32 = 1, kLbInt16 = 2, kLbInt32 = 3 };
+
+// 解析混音 WAVEFORMATEX：填存储用 sample_rate/channels，返回源采样格式（同 MaybeRecordFormat 口径
+// 用 SubFormat.Data1 判 float/PCM，避免依赖 ksmedia.h 的 GUID 常量）。
+LbSrcFmt LbParseFormat(const WAVEFORMATEX* wf, uint32_t* rate, uint32_t* channels) {
+  if (wf == nullptr) {
+    return kLbUnknown;
+  }
+  *rate = wf->nSamplesPerSec;
+  *channels = wf->nChannels;
+  const WORD tag = wf->wFormatTag;
+  const WORD bits = wf->wBitsPerSample;
+  if (tag == WAVE_FORMAT_EXTENSIBLE &&
+      wf->cbSize >= sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+    const auto* ext = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(wf);
+    if (ext->SubFormat.Data1 == WAVE_FORMAT_IEEE_FLOAT && bits == 32) {
+      return kLbFloat32;
+    }
+    if (ext->SubFormat.Data1 == WAVE_FORMAT_PCM) {
+      if (bits == 16) return kLbInt16;
+      if (bits == 32) return kLbInt32;
+    }
+    return kLbUnknown;
+  }
+  if (tag == WAVE_FORMAT_IEEE_FLOAT && bits == 32) return kLbFloat32;
+  if (tag == WAVE_FORMAT_PCM && bits == 16) return kLbInt16;
+  if (tag == WAVE_FORMAT_PCM && bits == 32) return kLbInt32;
+  return kLbUnknown;
+}
+
+// 把一个 loopback 数据包的源 PCM 转 16-bit 交织写进 loopback 环（**单写者**=loopback 线程，无需
+// 原子）。silent=true（AUDCLNT_BUFFERFLAGS_SILENT）或 src 为空/未知格式时填 0 保持时间轴。
+// frames=每声道帧数，ch=声道数。scratch 复用避免每包分配（本线程非零阻塞红线，堆分配本可接受）。
+void LbConvertStore(const BYTE* src, uint32_t frames, uint32_t ch, LbSrcFmt src_fmt,
+                    bool silent, std::vector<int16_t>* scratch) {
+  if (g_lb_ring_base == nullptr || g_header == nullptr || frames == 0 || ch == 0) {
+    return;
+  }
+  const uint32_t samples = frames * ch;
+  scratch->resize(samples);
+  int16_t* out = scratch->data();
+  const bool zero_fill = silent || src == nullptr || src_fmt == kLbUnknown;
+  if (zero_fill) {
+    memset(out, 0, static_cast<size_t>(samples) * sizeof(int16_t));
+    if (src_fmt == kLbUnknown) {
+      g_header->loopback_diag |= 0x40;  // 未知混音格式，按静音填（保持时间轴，不误抓）
+    }
+  } else if (src_fmt == kLbFloat32) {
+    const float* f = reinterpret_cast<const float*>(src);
+    for (uint32_t i = 0; i < samples; i++) {
+      float v = f[i];
+      if (v > 1.0f) {
+        v = 1.0f;
+      } else if (v < -1.0f) {
+        v = -1.0f;
+      }
+      out[i] = static_cast<int16_t>(v * 32767.0f);
+    }
+  } else if (src_fmt == kLbInt16) {
+    memcpy(out, src, static_cast<size_t>(samples) * sizeof(int16_t));
+  } else {  // kLbInt32：取高 16 位
+    const int32_t* s = reinterpret_cast<const int32_t*>(src);
+    for (uint32_t i = 0; i < samples; i++) {
+      out[i] = static_cast<int16_t>(s[i] >> 16);
+    }
+  }
+  // 写入 loopback 环（单写者直接推进 total/write_pos；wrap 处理）。
+  const uint32_t cap = g_header->loopback_ring_capacity;
+  if (cap == 0) {
+    return;
+  }
+  uint32_t len = samples * static_cast<uint32_t>(sizeof(int16_t));
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(out);
+  if (len >= cap) {  // 单包超一整圈（不会发生，防御性）：只留最后 cap 字节。
+    data += (len - cap);
+    len = cap;
+  }
+  const uint64_t start = g_header->loopback_total_written;
+  const uint32_t at = static_cast<uint32_t>(start % cap);
+  const uint32_t first = (len <= cap - at) ? len : (cap - at);
+  memcpy(g_lb_ring_base + at, data, first);
+  if (len > first) {
+    memcpy(g_lb_ring_base, data + first, len - first);
+  }
+  g_header->loopback_total_written = start + len;
+  g_header->loopback_write_pos = static_cast<uint32_t>((start + len) % cap);
+  if (!zero_fill) {
+    g_header->loopback_diag |= 0x08;  // 捕获到非静音音频包
+  }
+}
+
+// 写一条时间戳↔位置标记（单写者）。填 tick/total 后**最后**写 seq 作完成标记，再自增计数。
+void LbWriteMarker() {
+  if (g_lb_marker_base == nullptr || g_header == nullptr) {
+    return;
+  }
+  const uint64_t idx = g_header->loopback_marker_count;  // 单写者：旧值即 0 基下标
+  const size_t off =
+      static_cast<size_t>(idx % kLoopbackMarkerCount) * sizeof(LoopbackMarker);
+  auto* m = reinterpret_cast<LoopbackMarker*>(g_lb_marker_base + off);
+  m->tick_ms = GetTickCount64();
+  m->total_written = g_header->loopback_total_written;
+  m->seq = idx + 1;                        // 完成标记，最后写
+  g_header->loopback_marker_count = idx + 1;  // 单调自增（reader 用它判有效范围）
+}
+
+// loopback 捕获线程：CoInitialize → 默认渲染端点 → IAudioClient loopback 初始化 → 轮询 GetBuffer
+// 转 16-bit 入环 + 每 ~200ms 记标记，直到 g_stop。退出反序释放 COM。全程判空 + HRESULT 门控，
+// 任一步失败即置诊断位、跳过后续、干净收尾（绝不崩游戏）。
+DWORD WINAPI LoopbackWorker(LPVOID) {
+  if (g_header == nullptr || g_lb_ring_base == nullptr) {
+    return 0;
+  }
+  const HRESULT hrco = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  const bool com_owned = SUCCEEDED(hrco);  // 成功（含 S_FALSE）都须配对 CoUninitialize
+  g_header->loopback_diag |= 0x01;         // 线程启动 + COM init 尝试
+
+  IMMDeviceEnumerator* enumr = nullptr;
+  IMMDevice* device = nullptr;
+  IAudioClient* client = nullptr;
+  IAudioCaptureClient* capture = nullptr;
+  WAVEFORMATEX* mix = nullptr;
+  LbSrcFmt src_fmt = kLbUnknown;
+  uint32_t ch = 0;
+  uint32_t rate = 0;
+  bool started = false;
+
+  HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                __uuidof(IMMDeviceEnumerator),
+                                reinterpret_cast<void**>(&enumr));
+  if (SUCCEEDED(hr) && enumr != nullptr) {
+    hr = enumr->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+  }
+  if (SUCCEEDED(hr) && device != nullptr) {
+    hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                          reinterpret_cast<void**>(&client));
+  }
+  if (SUCCEEDED(hr) && client != nullptr) {
+    hr = client->GetMixFormat(&mix);
+  }
+  if (SUCCEEDED(hr) && mix != nullptr) {
+    src_fmt = LbParseFormat(mix, &rate, &ch);
+    g_header->loopback_diag |= 0x02;  // 设备/客户端就绪 + 拿到混音格式
+    // 存储格式：16-bit（混音已转换），采样率/声道取自混音格式；block_align 最后填作格式就绪信号。
+    g_header->loopback_sample_rate = rate;
+    g_header->loopback_channels = ch;
+    g_header->loopback_bits_per_sample = 16;
+    g_header->loopback_block_align = ch * 2u;
+    // loopback 缓冲时长 1s（容量足够，非实时精度）。共享模式 loopback 用混音格式原样初始化。
+    const REFERENCE_TIME kBufDur = 10000000;  // 1s（100ns 单位）
+    hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
+                            kBufDur, 0, mix, nullptr);
+  }
+  if (SUCCEEDED(hr) && client != nullptr) {
+    hr = client->GetService(__uuidof(IAudioCaptureClient),
+                            reinterpret_cast<void**>(&capture));
+  }
+  if (SUCCEEDED(hr) && capture != nullptr) {
+    hr = client->Start();
+    started = SUCCEEDED(hr);
+    if (started) {
+      g_header->loopback_diag |= 0x04;  // 捕获已启动
+    }
+  }
+
+  std::vector<int16_t> scratch;
+  ULONGLONG last_marker = GetTickCount64();
+  LbWriteMarker();  // 起点标记（total=0）
+
+  if (started) {
+    while (!g_stop) {
+      UINT32 packet = 0;
+      HRESULT gp = capture->GetNextPacketSize(&packet);
+      while (SUCCEEDED(gp) && packet != 0 && !g_stop) {
+        BYTE* data = nullptr;
+        UINT32 frames = 0;
+        DWORD flags = 0;
+        const HRESULT gb =
+            capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
+        if (FAILED(gb)) {
+          break;
+        }
+        const bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
+        if (silent) {
+          g_header->loopback_diag |= 0x10;  // 见过静音包
+        }
+        LbConvertStore(data, frames, ch, src_fmt, silent, &scratch);
+        capture->ReleaseBuffer(frames);
+        gp = capture->GetNextPacketSize(&packet);
+      }
+      // 每 ~200ms 记一条标记（含静音期：total 不变、tick 前进，插值仍单调正确，覆盖静音间隙）。
+      const ULONGLONG now = GetTickCount64();
+      if (now - last_marker >= 200) {
+        LbWriteMarker();
+        last_marker = now;
+      }
+      Sleep(10);
+    }
+  } else {
+    g_header->loopback_diag |= 0x80;  // 初始化/启动失败（无默认渲染端点、格式不支持等）
+  }
+
+  // 收尾：停捕获 + 反序释放全部 COM，CoUninitialize（仅自己 init 成功时配对）。
+  if (client != nullptr && started) {
+    client->Stop();
+  }
+  if (capture != nullptr) {
+    capture->Release();
+  }
+  if (client != nullptr) {
+    client->Release();
+  }
+  if (device != nullptr) {
+    device->Release();
+  }
+  if (enumr != nullptr) {
+    enumr->Release();
+  }
+  if (mix != nullptr) {
+    CoTaskMemFree(mix);
+  }
+  if (com_owned) {
+    CoUninitialize();
+  }
+  return 0;
+}
+
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 装 XAudio2 捕获链 -> 通知 injector。
 DWORD WINAPI HookWorker(LPVOID) {
   const DWORD pid = GetCurrentProcessId();
@@ -764,17 +2553,32 @@ DWORD WINAPI HookWorker(LPVOID) {
           reinterpret_cast<uint8_t*>(g_header) + g_header->text_region_offset;
       g_clip_base =
           reinterpret_cast<uint8_t*>(g_header) + g_header->clip_region_offset;
+      // C.2f：loopback 环 + 标记表基址（injector 已填偏移），供 loopback 线程写。
+      g_lb_ring_base =
+          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_ring_offset;
+      g_lb_marker_base =
+          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_marker_offset;
       InitializeCriticalSection(&g_cs);
       g_cs_ready = true;
       InitializeCriticalSection(&g_text_cs);
       g_text_cs_ready = true;
+      InitializeCriticalSection(&g_dec_cs);
+      g_dec_cs_ready = true;  // 解码器表锁须先于装解码 hook 就绪（detour 立即可能触发）。
+      InitializeCriticalSection(&g_renpy_cs);
+      g_renpy_cs_ready = true;  // Ren'Py 表锁须先于装 FFmpeg hook 就绪（detour 立即可能触发）。
       if (MH_Initialize() == MH_OK) {
         g_mh_init = true;
         g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
         TryHookXAudio2Create();
         TryHookDirectSoundCreate();
-        TryHookTextRender();       // v2：文本 hook（抓台词）。
+        TryHookTextRender();          // v2：文本 hook（抓台词）。
+        TryHookKirikiriDecoders();    // C.2c：KiriKiri 解码器级干净人声。
+        TryHookKirikiriVoiceStream();  // C.2d：KiriKiriZ 原始语音 OGG 捕获。
+        TryHookRenpyAudio();           // C.2e：Ren'Py/FFmpeg avcodec-54 纯人声捕获。
       }
+      // C.2f：起独立 loopback 混音捕获线程（兜底，与上述引擎级 hook 并行；不依赖 MinHook，故
+      // 即便 MH_Initialize 失败也起）。它自带 g_stop 退出门控 + COM 反序释放。
+      g_lb_thread = CreateThread(nullptr, 0, LoopbackWorker, nullptr, 0, nullptr);
     }
   }
 
@@ -786,13 +2590,39 @@ DWORD WINAPI HookWorker(LPVOID) {
     CloseHandle(ready);
   }
 
-  // 承载捕获期间生命周期，保活到停机。
+  // 承载捕获期间生命周期，保活到停机。前 ~30s 反复重试装 KiriKiri 解码器 hook——早期注入时
+  // wuvorbis/wuopus 插件尚未加载，须等游戏启动后加载了插件再装（幂等，装齐即停止重试）。
+  int dec_retry = 0;
+  bool dec_ready = false;
+  int voice_retry = 0;
+  bool voice_ready = false;
+  int renpy_retry = 0;
+  bool renpy_ready = false;
   while (!g_stop) {
+    if (!dec_ready && g_capture_enabled && dec_retry < 150) {
+      dec_ready = TryHookKirikiriDecoders();
+      dec_retry++;
+    }
+    if (!voice_ready && g_capture_enabled && voice_retry < 150) {
+      voice_ready = TryHookKirikiriVoiceStream();
+      voice_retry++;
+    }
+    if (!renpy_ready && g_capture_enabled && renpy_retry < 150) {
+      renpy_ready = TryHookRenpyAudio();
+      renpy_retry++;
+    }
     Sleep(200);
   }
 
-  // 收尾在工作线程里做（不在 loader lock 中）：先关捕获总开关，再拆 MinHook。
+  // 收尾在工作线程里做（不在 loader lock 中）：先关捕获总开关，join loopback 线程，再拆 MinHook。
   g_capture_enabled = false;
+  // g_stop 已置（本 while 因它退出）；等 loopback 线程干净退出后再解映射/拆 hook，避免它悬垂写
+  // g_lb_ring_base。进程正常退出路径由 OS 先杀线程再跑 DETACH，此 join 主要覆盖 FreeLibrary 卸载。
+  if (g_lb_thread != nullptr) {
+    WaitForSingleObject(g_lb_thread, 2000);
+    CloseHandle(g_lb_thread);
+    g_lb_thread = nullptr;
+  }
   if (g_mh_init) {
     MH_DisableHook(MH_ALL_HOOKS);
     MH_Uninitialize();
@@ -817,6 +2647,9 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
       // 极罕见（注入的 hook DLL 常驻进程生命周期），此路径 trampoline 残留由 OS 退出兜底。
       g_capture_enabled = false;
       g_stop = true;
+      // 先断 loopback 环基址（缩小 loopback 线程悬垂写窗口；进程正常退出路径 OS 已先杀线程）。
+      g_lb_ring_base = nullptr;
+      g_lb_marker_base = nullptr;
       if (g_header != nullptr) {
         UnmapViewOfFile(g_header);
         g_header = nullptr;

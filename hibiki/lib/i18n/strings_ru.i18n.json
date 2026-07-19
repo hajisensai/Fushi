@@ -2002,5 +2002,12 @@
   "shortcut_action_video_cycle_secondary_subtitle_obscure": "Cycle Secondary Subtitle Obscure",
   "shortcut_action_video_toggle_secondary_subtitle_hide": "Toggle Hide Secondary Subtitle",
   "video_setting_secondary_subtitle_obscure": "Obscure secondary subtitle",
-  "video_setting_secondary_subtitle_obscure_hint": "Blur or hide the secondary (translation) subtitle"
+  "video_setting_secondary_subtitle_obscure_hint": "Blur or hide the secondary (translation) subtitle",
+  "games": "Games",
+  "games_add": "Add game",
+  "games_empty": "No games added yet",
+  "games_rename": "Rename",
+  "games_remove": "Remove",
+  "games_launch_unsupported": "Launching games is only supported on Windows",
+  "games_exe_missing": "Game executable not found"
 }

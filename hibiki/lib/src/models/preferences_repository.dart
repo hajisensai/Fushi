@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
 import 'package:hibiki/src/models/audio_source_config.dart';
@@ -391,6 +392,19 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setTexthookerUrls(List<String> urls) async {
     await setPref('texthooker_urls', urls.join('\n'));
+    notifyListeners();
+  }
+
+  // ── galgame 游戏库（首页「游戏」tab）─────────────────────────────────────
+
+  /// 用户添加的 galgame 列表（单一 JSON 数组落 KV 表，解析失败回退空，与其它 JSON
+  /// 偏好同款容错）。
+  List<GalgameEntry> get galgames => decodeGalgameLibrary(
+      getPref('galgame_library', defaultValue: '') as String);
+
+  /// 整表覆写游戏库列表（读改写整数组的增/删/改都由调用方组装后调此写入）。
+  Future<void> setGalgames(List<GalgameEntry> games) async {
+    await setPref('galgame_library', encodeGalgameLibrary(games));
     notifyListeners();
   }
 

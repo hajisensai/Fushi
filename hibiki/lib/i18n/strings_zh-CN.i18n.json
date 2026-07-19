@@ -2002,5 +2002,12 @@
   "shortcut_action_video_cycle_secondary_subtitle_obscure": "循环副字幕遮蔽",
   "shortcut_action_video_toggle_secondary_subtitle_hide": "隐藏副字幕",
   "video_setting_secondary_subtitle_obscure": "副字幕遮蔽",
-  "video_setting_secondary_subtitle_obscure_hint": "模糊或隐藏副字幕（翻译参考轨）"
+  "video_setting_secondary_subtitle_obscure_hint": "模糊或隐藏副字幕（翻译参考轨）",
+  "games": "游戏",
+  "games_add": "添加游戏",
+  "games_empty": "还没有添加游戏",
+  "games_rename": "重命名",
+  "games_remove": "移除",
+  "games_launch_unsupported": "启动游戏仅支持 Windows 桌面",
+  "games_exe_missing": "找不到游戏可执行文件"
 }

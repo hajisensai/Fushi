@@ -1673,6 +1673,79 @@ void FlutterWindow::RegisterVoiceHookChannel() {
           result->Success(flutter::EncodableValue(std::move(out)));
           return;
         }
+        if (method == "grabUtterance") {
+          // 按句取「整句」语音：拼同源整段（sourcePtr 非 0=手动选轨；缺省能量自动选，可
+          // exclude BGM 源）。返回 PCM + 格式，或 {error} 让 Dart 回退 grabClipNear。
+          const uint64_t ts = static_cast<uint64_t>(read_long("tsMs"));
+          const uint64_t target =
+              static_cast<uint64_t>(read_long("sourcePtr"));
+          std::vector<uint64_t> exclude;
+          const auto* uargs =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (uargs != nullptr) {
+            const auto exit_it =
+                uargs->find(flutter::EncodableValue("exclude"));
+            if (exit_it != uargs->end()) {
+              const auto* list =
+                  std::get_if<flutter::EncodableList>(&exit_it->second);
+              if (list != nullptr) {
+                for (const auto& e : *list) {
+                  exclude.push_back(
+                      static_cast<uint64_t>(e.TryGetLongValue().value_or(0)));
+                }
+              }
+            }
+          }
+          std::vector<uint8_t> pcm;
+          const hibiki::VoiceHookStatus s =
+              hibiki::VoiceHookReader::Instance().GrabUtterance(ts, target,
+                                                                exclude, pcm);
+          if (!s.ok || pcm.empty()) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(
+                     std::string("no utterance near timestamp"))}}));
+            return;
+          }
+          flutter::EncodableMap out = status_map(s);
+          out[flutter::EncodableValue("pcm")] =
+              flutter::EncodableValue(std::move(pcm));
+          result->Success(flutter::EncodableValue(std::move(out)));
+          return;
+        }
+        if (method == "listAudioTracks") {
+          // 枚举 ts 附近活跃语音源（供 UI 音轨列表让用户手动选/排除语音源）。
+          const uint64_t ts = static_cast<uint64_t>(read_long("tsMs"));
+          std::vector<hibiki::VoiceTrackInfo> tracks;
+          hibiki::VoiceHookReader::Instance().ListAudioTracks(ts, tracks);
+          flutter::EncodableList list;
+          for (const auto& tk : tracks) {
+            list.push_back(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("sourcePtr"),
+                 flutter::EncodableValue(static_cast<int64_t>(tk.source_ptr))},
+                {flutter::EncodableValue("sampleRate"),
+                 flutter::EncodableValue(tk.sample_rate)},
+                {flutter::EncodableValue("channels"),
+                 flutter::EncodableValue(tk.channels)},
+                {flutter::EncodableValue("bitsPerSample"),
+                 flutter::EncodableValue(tk.bits_per_sample)},
+                {flutter::EncodableValue("isFloat"),
+                 flutter::EncodableValue(tk.is_float)},
+                {flutter::EncodableValue("avgBytes"),
+                 flutter::EncodableValue(static_cast<int64_t>(tk.avg_bytes))},
+                {flutter::EncodableValue("avgEnergy"),
+                 flutter::EncodableValue(tk.avg_energy)},
+                {flutter::EncodableValue("orderIndex"),
+                 flutter::EncodableValue(tk.order_index)},
+                {flutter::EncodableValue("clipCount"),
+                 flutter::EncodableValue(tk.clip_count)},
+            }));
+          }
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("tracks"),
+               flutter::EncodableValue(std::move(list))}}));
+          return;
+        }
         if (method == "processIsWow64") {
           // 查目标进程位数：hibiki.exe 是 64 位，故 IsWow64Process==TRUE 即目标为 32 位
           // （多数 KiriKiri 游戏），Dart 据此选 x86 注入器；FALSE 为 64 位选 x64。

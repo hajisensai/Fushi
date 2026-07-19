@@ -13,6 +13,7 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/mining/external_window_mining.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_window_gif.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
@@ -32,7 +33,13 @@ import 'package:hibiki/utils.dart';
 /// 成可点 span，点击后经 [DictionaryPageMixin.pushNestedPopup] 弹查词浮层，挖词
 /// 复用 mixin 的 Anki 逻辑。
 class TexthookerPage extends ConsumerStatefulWidget {
-  const TexthookerPage({super.key});
+  const TexthookerPage({super.key, this.autoLaunchGame});
+
+  /// 从游戏库（[GamesLibraryPage]）点击某个游戏进入时携带的待启动条目：非 null 时
+  /// 页面挂载后自动走引擎-hook launch 路径拉起该游戏并注入（等价于用户手点「拉起
+  /// galgame」并选中这个 exe），随后文本 hook 喂进 texthooker、用户点词制卡。作为
+  /// 首页 texthooker tab 使用时为 null（`const TexthookerPage()`），行为不变。
+  final GalgameEntry? autoLaunchGame;
 
   @override
   ConsumerState<TexthookerPage> createState() => _TexthookerPageState();
@@ -72,6 +79,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 抓——用户快进/多行飞过后再挖某句,它的语音在出现那刻就锁好了、不会因环形覆盖或播放被切而丢。
   /// LRU 上限 [_voiceCacheMax]，最旧的先淘汰。
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
+
+  /// 句子↔hook 时间戳缓存：纯人声 OGG 配对按**这句**的时间戳取语音（而非最近一句），故需
+  /// 记每行文本对应的 hook 时间戳。与 [_lineVoiceCache] 同 LRU 上限、同步淘汰/清空。
+  final Map<String, int> _lineTsCache = <String, int>{};
   static const int _voiceCacheMax = 200;
 
   /// 热键那一刻从环形缓冲回看的时长（毫秒）：引擎-hook 拿不到按句 clip 时的兜底取最近这么久。
@@ -94,6 +105,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     TexthookerService.instance.addListener(_onLines);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
+    // 从游戏库点进来（携带 autoLaunchGame）时：挂载后自动拉起该游戏并注入。放到首帧
+    // 之后跑，避免在 initState 里 toast / 用 context。
+    final GalgameEntry? game = widget.autoLaunchGame;
+    if (game != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_launchGalgameFromExe(game.exePath));
+        }
+      });
+    }
   }
 
   @override
@@ -286,6 +307,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lastTextSeq = 0;
     _lastHookedLineTs = 0;
     _lineVoiceCache.clear();
+    _lineTsCache.clear();
     final GalAudioSource? src = _galAudioSource;
     _galAudioSource = null;
     await src?.stop();
@@ -297,6 +319,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _engineSource = eng;
     _lastTextSeq = 0;
     _lastHookedLineTs = 0;
+    // 清上一局残留的语音 dump（本会话新 dump 都留着），避免跨会话无限增长撑爆磁盘。
+    unawaited(eng.pruneVoiceDump());
     _textPollTimer?.cancel();
     _textPollTimer = Timer.periodic(
       const Duration(milliseconds: 400),
@@ -317,8 +341,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     for (final GalHookedLine line in poll.lines) {
       TexthookerService.instance.appendLine(line.text);
       _lastHookedLineTs = line.timestampMs;
-      // 出现即锁定该行语音（抗快进/环形覆盖）：立刻按 hook 时间戳抓好 clip 缓存起来。
-      final GalAudioSlice? clip = await eng.grabClipNear(line.timestampMs);
+      _cacheLineTs(line.text, line.timestampMs);
+      // 出现即锁定该行语音（抗快进/环形覆盖）：立刻按 hook 时间戳抓好缓存起来。整句优先
+      // （grabUtterance 拼同源整段，含用户手动选轨），失败退回单 clip（grabClipNear）。
+      final GalAudioSlice? clip = await eng.grabUtterance(line.timestampMs) ??
+          await eng.grabClipNear(line.timestampMs);
       if (clip != null && !clip.isEmpty) {
         _cacheLineVoice(line.text, clip);
       }
@@ -335,6 +362,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lineVoiceCache[text] = clip;
     while (_lineVoiceCache.length > _voiceCacheMax) {
       _lineVoiceCache.remove(_lineVoiceCache.keys.first);
+    }
+  }
+
+  /// 记这句台词 [text] 的 hook 时间戳 [ts]（LRU，与 [_cacheLineVoice] 同上限）。供制卡时按
+  /// **这句**的时间戳做纯人声 OGG 配对，而非只用最近一句时间戳。
+  void _cacheLineTs(String text, int ts) {
+    _lineTsCache.remove(text);
+    _lineTsCache[text] = ts;
+    while (_lineTsCache.length > _voiceCacheMax) {
+      _lineTsCache.remove(_lineTsCache.keys.first);
     }
   }
 
@@ -374,6 +411,19 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         : null;
     if (exe == null) {
       return; // 用户取消
+    }
+    await _launchGalgameFromExe(exe);
+  }
+
+  /// [_launchGalgameEngineHook] 的核心：给定游戏 exe 路径，按其位数选 x86/x64 注入器 →
+  /// Hibiki 拉起游戏并早注入 → 就绪后以引擎-hook 为音频源 + 接文本 hook + 按 PID 找主
+  /// 窗口绑定（截图用）。游戏库点击进入（[TexthookerPage.autoLaunchGame]）与页头「拉起
+  /// galgame」按钮共用此方法，避免重复 launch 逻辑。非 Windows / 各步失败均明确 toast、
+  /// 不静默（起不来时保持原状，用户仍可用「绑定窗口 + loopback」路径）。
+  Future<void> _launchGalgameFromExe(String exe) async {
+    if (!Platform.isWindows) {
+      HibikiToast.show(msg: t.external_window_unsupported);
+      return;
     }
     final bool? is32 = await EngineHookGalAudioSource.exeIs32Bit(exe);
     final String? injector = _resolveGalInjectorPath(is32Bit: is32 ?? false);
@@ -439,19 +489,37 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (src == null) {
       return null;
     }
+    final EngineHookGalAudioSource? eng = _engineSource;
+    // ⓪ 最优先：引擎级**纯人声**——按这句台词的 hook 时间戳，在 injector hook DLL dump 的语音
+    //    OGG 里配对出这句对应的原始语音（混音前、无 BGM/SE），转码成 aac 直接作
+    //    providedAudioBytes。句子文本命中 ts 缓存用**该行**时间戳，否则退回最近一句时间戳。
+    //    仅 KiriKiri 等有引擎-hook dump 的引擎命中；其它引擎/loopback 落到下面的采集链。
+    if (eng != null && Platform.isWindows) {
+      final int ts = _lineTsCache[sentence] ?? _lastHookedLineTs;
+      if (ts > 0) {
+        final Uint8List? voice = await eng.grabPairedVoiceBytes(
+          ts,
+          outputExtension: immersionMiningAudioExtension(),
+        );
+        if (voice != null && voice.isNotEmpty) {
+          return voice;
+        }
+      }
+    }
+    // 以下为 PCM 采集链回退（loopback / 非 KiriKiri 引擎 / 无 dump / 配对失败）。
     GalAudioSlice? slice;
-    // ① 最优先：这句台词**出现那刻就锁定**的语音（`_lineVoiceCache`）——最完整对应、抗快进/
-    //    环形覆盖。挖的句子（fields['sentence']）与文本 hook 的行文本一致时命中。
+    // ① 这句台词**出现那刻就锁定**的语音（`_lineVoiceCache`）——抗快进/环形覆盖。挖的句子
+    //    （fields['sentence']）与文本 hook 的行文本一致时命中。
     final GalAudioSlice? cached = _lineVoiceCache[sentence];
     if (cached != null && !cached.isEmpty) {
       slice = cached;
     }
-    final EngineHookGalAudioSource? eng = _engineSource;
     // ② 缓存未命中（该句在接线前出现/文本不完全一致）：按最近台词时间戳现抓该句 clip。
     if ((slice == null || slice.isEmpty) &&
         eng != null &&
         _lastHookedLineTs > 0) {
-      slice = await eng.grabClipNear(_lastHookedLineTs);
+      slice = await eng.grabUtterance(_lastHookedLineTs) ??
+          await eng.grabClipNear(_lastHookedLineTs);
     }
     // ③ 兜底（loopback / 无 clip）：取最近 N 秒（仍全自动、不弹波形选区）。
     slice ??= await src.grabRecent(_galAudioBackMs);

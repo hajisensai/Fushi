@@ -87,6 +87,7 @@ import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show extractVideoCover;
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/immersion_capture_channel.dart';
@@ -4206,6 +4207,12 @@ class AppModel with ChangeNotifier {
   List<String> get texthookerUrls => prefsRepo.texthookerUrls;
   Future<void> setTexthookerUrls(List<String> urls) =>
       prefsRepo.setTexthookerUrls(urls);
+
+  /// galgame 游戏库（首页「游戏」tab）：用户添加的游戏列表。读改写整列表后经
+  /// [setGalgames] 覆写持久化。
+  List<GalgameEntry> get galgames => prefsRepo.galgames;
+  Future<void> setGalgames(List<GalgameEntry> games) =>
+      prefsRepo.setGalgames(games);
 
   bool get desktopClipboardEnabled => prefsRepo.desktopClipboardEnabled;
   Future<void> setDesktopClipboardEnabled(bool v) async {
