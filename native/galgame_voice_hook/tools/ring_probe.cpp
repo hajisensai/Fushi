@@ -340,6 +340,87 @@ bool DumpUtterance(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
   return true;
 }
 
+// 分源导出：ts 附近每个活跃 source voice 的音频各拼成一个 WAV（<prefix>_<srchex>.wav），并打印
+// 每源的统计（段数/时长/平均能量）。用于「手动选轨」——把各条音轨分别落盘让用户听、挑人声轨、
+// 排除 BGM 轨。自动能量选源不可靠（会误选 BGM），故提供人工判定入口。
+void DumpSources(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
+                 const char* prefix) {
+  const uint32_t cap = h->ring_capacity;
+  const uint64_t clips = h->clip_write_count;
+  if (cap == 0 || clips == 0) {
+    printf("no clips\n");
+    return;
+  }
+  const uint32_t cslots = hibiki_voice_hook::kClipCount;
+  const uint8_t* cbase =
+      reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
+  const uint64_t scan = (clips > cslots) ? clips - cslots : 0;
+  // 收集 [ts-300, ts+6000] 窗口内各源的 clip 指针。
+  std::map<uint64_t, std::vector<const hibiki_voice_hook::VoiceClip*>> by_src;
+  for (uint64_t seq = scan + 1; seq <= clips; seq++) {
+    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
+        cbase + static_cast<size_t>((seq - 1) % cslots) *
+                    sizeof(hibiki_voice_hook::VoiceClip));
+    if (c->seq != seq || c->byte_len == 0 || c->byte_len > cap) {
+      continue;
+    }
+    const int64_t d =
+        static_cast<int64_t>(c->timestamp_ms) - static_cast<int64_t>(ts);
+    if (d >= -300 && d <= 6000) {
+      by_src[c->source_ptr].push_back(c);
+    }
+  }
+  int idx = 0;
+  for (const auto& kv : by_src) {
+    std::vector<uint8_t> pcm;
+    const hibiki_voice_hook::VoiceClip* fmt = nullptr;
+    double eacc = 0;
+    size_t esamp = 0;
+    for (const auto* c : kv.second) {
+      if (ReadClipPcm(h, ring, c, pcm) && fmt == nullptr) {
+        fmt = c;
+      }
+    }
+    if (fmt == nullptr || pcm.empty()) {
+      continue;
+    }
+    if (fmt->bits_per_sample == 16 && !fmt->is_float) {
+      const int16_t* s = reinterpret_cast<const int16_t*>(pcm.data());
+      const size_t n = pcm.size() / 2;
+      for (size_t i = 0; i < n; i++) {
+        eacc += (s[i] < 0) ? -static_cast<double>(s[i]) : s[i];
+      }
+      esamp = n;
+    }
+    char path[1024];
+    snprintf(path, sizeof(path), "%s_%d_%08llx.wav", prefix, idx,
+             static_cast<unsigned long long>(kv.first & 0xffffffffull));
+    const uint32_t sr = fmt->sample_rate, ch = fmt->channels,
+                   bits = fmt->bits_per_sample;
+    const uint32_t ba = ch * (bits / 8), br = sr * ba;
+    const uint16_t wfmt = fmt->is_float ? 3 : 1;
+    const uint32_t len = static_cast<uint32_t>(pcm.size());
+    FILE* f = fopen(path, "wb");
+    if (f != nullptr) {
+      auto w32 = [&](uint32_t v) { fwrite(&v, 4, 1, f); };
+      auto w16 = [&](uint16_t v) { fwrite(&v, 2, 1, f); };
+      fwrite("RIFF", 1, 4, f); w32(36 + len); fwrite("WAVE", 1, 4, f);
+      fwrite("fmt ", 1, 4, f); w32(16); w16(wfmt);
+      w16(static_cast<uint16_t>(ch)); w32(sr); w32(br);
+      w16(static_cast<uint16_t>(ba)); w16(static_cast<uint16_t>(bits));
+      fwrite("data", 1, 4, f); w32(len); fwrite(pcm.data(), 1, len, f);
+      fclose(f);
+    }
+    const double dur = br ? static_cast<double>(len) / br * 1000.0 : 0;
+    const double eavg = esamp ? eacc / static_cast<double>(esamp) : -1;
+    printf("track%d src=%08llx clips=%zu dur=%.0fms energy=%.0f fmt=%u/%u/%u %s\n",
+           idx, static_cast<unsigned long long>(kv.first & 0xffffffffull),
+           kv.second.size(), dur, eavg, sr, ch, bits, path);
+    idx++;
+  }
+  fflush(stdout);
+}
+
 // 列出最近的语音 clip：seq / 时间戳 / 与上一条间隔 / 源指针低32位 / 环偏移 / 字节 / 时长ms。
 // 用来看播放模式（语音是不是连续多段同源、BGM 是不是另一持续源），设计整句合成分组用。
 void ListClips(const SharedHeader* h) {
@@ -434,6 +515,13 @@ int main(int argc, char** argv) {
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     return ok ? 0 : 2;
+  }
+  if (argc >= 5 && strcmp(argv[2], "--dump-sources") == 0) {
+    const uint64_t ts = strtoull(argv[3], nullptr, 10);
+    DumpSources(header, ring, ts, argv[4]);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
   }
 
   std::vector<uint8_t> window;
