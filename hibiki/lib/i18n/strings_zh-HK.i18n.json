@@ -1993,5 +1993,6 @@
   "video_setting_torrent_connections_hint": "0 = engine default",
   "shortcut_action_video_subtitle_delay_increase": "Subtitle delay +",
   "shortcut_action_video_subtitle_delay_decrease": "Subtitle delay −",
-  "shortcut_action_video_open_subtitle_align": "Open subtitle waveform align"
+  "shortcut_action_video_open_subtitle_align": "Open subtitle waveform align",
+  "video_clip_export_cancelled": "Clip export cancelled"
 }

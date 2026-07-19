@@ -1993,5 +1993,6 @@
   "video_setting_torrent_connections_hint": "0 = 引擎默认",
   "shortcut_action_video_subtitle_delay_increase": "字幕延迟增大",
   "shortcut_action_video_subtitle_delay_decrease": "字幕延迟减小",
-  "shortcut_action_video_open_subtitle_align": "打开字幕波形对轴"
+  "shortcut_action_video_open_subtitle_align": "打开字幕波形对轴",
+  "video_clip_export_cancelled": "已取消片段导出"
 }

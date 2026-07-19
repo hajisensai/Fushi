@@ -105,7 +105,126 @@ void main() {
     });
   });
 
+  group('buildFfmpegVideoClipReencodeArgs (BUG-917 fallback)', () {
+    test('re-encodes to libx264 + aac and always targets the given .mp4', () {
+      final List<String> args = buildFfmpegVideoClipReencodeArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 1000,
+        endMs: 3000,
+        outputPath: '/out/clip.mp4',
+        audioStreamIndex: 1,
+      );
+
+      // libx264 + mp4 muxer are exactly what tool/ffmpeg-min provisioned for
+      // clip export (TODO-1257); this path guarantees a muxable container even
+      // when -c copy can't hold the source codecs.
+      expect(
+          args,
+          containsAllInOrder(<String>[
+            '-i',
+            '/video/source.mkv',
+            '-map',
+            '0:v:0',
+            '-map',
+            '0:a:1?',
+            '-sn',
+            '-dn',
+            '-c:v',
+            'libx264',
+          ]));
+      expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
+      expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuv420p']));
+      expect(args, containsAllInOrder(<String>['-movflags', '+faststart']));
+      expect(args.last, '/out/clip.mp4');
+      // Never a raw stream copy on this path.
+      expect(args.contains('copy'), isFalse);
+    });
+
+    test('honours the same audio out-of-range drop as the copy path', () {
+      final List<String> args = buildFfmpegVideoClipReencodeArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/out/clip.mp4',
+        audioStreamIndex: 2,
+        audioStreamCount: 2,
+      );
+      expect(args.contains('-map'), isFalse);
+      expect(args.any((String a) => a.startsWith('0:a:')), isFalse);
+    });
+  });
+
   group('exportVideoClipViaFfmpeg', () {
+    test(
+        'falls back to re-encode when stream-copy fails, then succeeds '
+        '(BUG-917)', () async {
+      // Root cause: the bundled ffmpeg-min can only mux mp4/mov for video+audio.
+      // When -c copy into .mp4 fails (codec not mp4-compatible), the exporter
+      // must retry with libx264 + aac rather than surfacing exit -22.
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_export_fallback');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          final bool isReencode = args.contains('libx264');
+          if (isReencode) {
+            output.writeAsBytesSync(<int>[9, 8, 7]);
+            return const FfmpegRunResult(returnCode: 0, output: 'ok');
+          }
+          // Stream-copy path fails the way an mkv-into-a-missing-muxer would.
+          return const FfmpegRunResult(
+            returnCode: 1,
+            output: 'Error opening output files: Invalid argument',
+          );
+        },
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: backend,
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.outputPath, output.path);
+      // Both attempts ran: first stream-copy, then the libx264 fallback.
+      expect(backend.calls.length, 2);
+      expect(backend.calls.first.contains('copy'), isTrue);
+      expect(backend.calls[1].contains('libx264'), isTrue);
+      expect(output.existsSync(), isTrue);
+    });
+
+    test('reports ffmpegFailed only when BOTH copy and re-encode fail',
+        () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_export_bothfail');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) =>
+            const FfmpegRunResult(returnCode: 1, output: 'boom'),
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 1000,
+        outputPath: output.path,
+        backend: backend,
+      );
+
+      expect(result.failure, VideoClipExportFailure.ffmpegFailed);
+      expect(backend.calls.length, 2);
+      expect(output.existsSync(), isFalse);
+    });
+
     test('rejects invalid ranges without running ffmpeg and removes leftovers',
         () async {
       final Directory dir =
