@@ -27,7 +27,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 913 条。点号进各自文件。
+> 共 914 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -35,6 +35,7 @@
 | [BUG-932](bugs/BUG-932-popup-mine-plus-size.md) | ✅ | ✅ | 查词弹窗制卡加号(+)比相邻图标小 |
 | [BUG-931](bugs/BUG-931-video-favorite-osd-topleft.md) | ✅ | ✅ | 视频收藏快捷键唤起进度条+底部提示统一左上角OSD |
 | [BUG-930](bugs/BUG-930-subtitle-list-resize-cursor.md) | ✅ | ✅ | 视频字幕列表左缘调宽把手 hover 不显 resizeLeftRight（左右箭头）光标 |
+| [BUG-929](bugs/BUG-929-ass-mpv-windows-font-fallback.md) | ✅ | ✅ | ASS 缺失字体在 Windows 上与 mpv 回退不一致 |
 | [BUG-928](bugs/BUG-928-video-card-16x9-gap.md) | ✅ | ✅ | 视频卡对标准 16:9 封面留空隙·封面比例随标题长短浮动 |
 | [BUG-927](bugs/BUG-927-reader-native-selection-blocks-lookup-and-rightclick-crash.md) | ✅ | ✅ | 阅读器原生选区残留卡住查词 + 右键闪退 |
 | [BUG-926](bugs/BUG-926-popup-touch-copy-disabled.md) | ✅ | ✅ | 词典弹窗触屏无法复制释义(撤回BUG-762全量禁选) |

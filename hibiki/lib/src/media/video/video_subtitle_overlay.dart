@@ -325,11 +325,24 @@ class VideoSubtitleOverlay extends StatefulWidget {
 /// 单字（典型如假名「の」）字形与周围突兀不一致。
 ///
 /// 这里给出覆盖五个出包平台主流系统日文字体的有序列表。Flutter 引擎按顺序解析、
-/// 自动跳过当前平台不存在的字体名，故无需平台分支：
-/// - Windows：`Yu Gothic` / `Yu Gothic UI` / `Meiryo` / `MS Gothic`
+/// 自动跳过当前平台不存在的字体名：
+/// - Windows：先跟随 mpv/libass DirectWrite 的缺字回退 `Microsoft YaHei UI`，再走
+///   `Yu Gothic` / `Yu Gothic UI` / `Meiryo` / `MS Gothic`。同一列表还用于 ASS
+///   cell/em 字号换算，避免渲染字形与字号度量选到两套字体（BUG-929）。
 /// - macOS / iOS：`Hiragino Sans` / `Hiragino Kaku Gothic ProN`
 /// - Android / Linux：`Noto Sans CJK JP` / `Noto Sans JP`
-const List<String> _kSubtitleCjkFallback = <String>[
+const List<String> _kWindowsSubtitleCjkFallback = <String>[
+  'Microsoft YaHei UI',
+  'Microsoft YaHei',
+  'Yu Gothic',
+  'Yu Gothic UI',
+  'Meiryo',
+  'MS Gothic',
+  'Noto Sans CJK JP',
+  'Noto Sans JP',
+];
+
+const List<String> _kDefaultSubtitleCjkFallback = <String>[
   'Yu Gothic',
   'Yu Gothic UI',
   'Hiragino Sans',
@@ -339,6 +352,42 @@ const List<String> _kSubtitleCjkFallback = <String>[
   'Meiryo',
   'MS Gothic',
 ];
+
+@visibleForTesting
+List<String> subtitleCjkFontFallbacks(TargetPlatform platform) =>
+    platform == TargetPlatform.windows
+        ? _kWindowsSubtitleCjkFallback
+        : _kDefaultSubtitleCjkFallback;
+
+List<String> get _subtitleCjkFallback =>
+    subtitleCjkFontFallbacks(defaultTargetPlatform);
+
+/// Windows 上作者字体缺失时，Flutter/Skia 以同一 YaHei UI face 渲染仍比
+/// mpv/libass FreeType REAL_DIM 的实像素偏窄、偏矮。BUG-929 用用户原片黑底帧校准：
+/// 字号补 1.09、仅纵轴再补 1.055，可把 `きれえ` 从 146×50 对齐到 158×56
+///（mpv 157×56）。仅缺失作者字体的 Windows ASS 路径使用；已安装字体和其他平台不变。
+
+const double _kWindowsMissingAssFontRasterScale = 1.09;
+const double _kWindowsMissingAssFontRasterYScale = 1.055;
+
+@visibleForTesting
+({double fontScale, double yScale}) assMissingFontRasterCompensation(
+  TargetPlatform platform, {
+  required bool hasRequestedFamily,
+  required bool requestedFamilyResolved,
+  required bool fallbackFamilyAvailable,
+}) {
+  if (platform == TargetPlatform.windows &&
+      hasRequestedFamily &&
+      !requestedFamilyResolved &&
+      fallbackFamilyAvailable) {
+    return (
+      fontScale: _kWindowsMissingAssFontRasterScale,
+      yScale: _kWindowsMissingAssFontRasterYScale,
+    );
+  }
+  return (fontScale: 1.0, yScale: 1.0);
+}
 
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     with SingleTickerProviderStateMixin {
@@ -1392,7 +1441,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 样式表 ScaleX/ScaleY（百分比）作为基线缩放；行内 \fscx\fscy（sc）按 ASS 语义
     // **覆盖**样式值而非叠乘。
     final double styleSx = (markup.cueStyle?.scaleXPct ?? 100) / 100.0;
-    final double styleSy = (markup.cueStyle?.scaleYPct ?? 100) / 100.0;
+    final String? cueFontName = markup.cueStyle?.fontName;
+    final bool cueFontResolved = cueFontName == null ||
+        cueFontName.isEmpty ||
+        _resolveAssFontFamily(cueFontName) != null;
+    final ({double fontScale, double yScale}) fallbackRasterCompensation =
+        _missingAssFontRasterCompensation(cueFontName, cueFontResolved);
+    final double styleSy = (markup.cueStyle?.scaleYPct ?? 100) /
+        100.0 *
+        fallbackRasterCompensation.yScale;
     final double? frx = markup.rotationXDeg;
     final double? fry = markup.rotationYDeg;
     final double? fax = markup.shearX;
@@ -1670,7 +1727,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 字号 / 颜色的基线恒为用户统一样式，与历史像素级一致。
   /// respectAssStyle 开：字体名 / 主色 / 字号 / 粗斜下删线优先取 .ass 值（行内 span >
   /// [SubtitleCueStyle] cue 默认 > 用户统一样式，TODO-1105）。字体缺字时仍挂
-  /// [_kSubtitleCjkFallback] 兜底。
+  /// [_subtitleCjkFallback] 兜底。
   TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup,
       {int? elapsedMs, int? durMs}) {
     final bool respect = widget.respectAssStyle && markup != null;
@@ -1683,6 +1740,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 解析不到（未装）沿用原名字符串进回退链（历史行为，CJK 链兜底）。
     final ({String family, FontWeight? weight})? resolvedBase =
         respect ? _resolveAssFontFamily(cue?.fontName) : null;
+    final ({
+      double fontScale,
+      double yScale
+    }) baseMissingFontRasterCompensation = _missingAssFontRasterCompensation(
+      respect ? cue?.fontName : null,
+      resolvedBase != null,
+    );
+
     final String? baseFontFamily = resolvedBase?.family ??
         (respect ? cue?.fontName : null) ??
         widget.fontFamily;
@@ -1712,7 +1777,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final double baseFontSize = cueFontPx != null
         ? _scaleAssFontSize(_assFontSizeToEm(cueFontPx * assFontScale,
                 baseFontFamily, baseWeight, baseItalic) *
-            widget.assUserFontScale)
+            widget.assUserFontScale *
+            baseMissingFontRasterCompensation.fontScale)
         : widget.fontSize;
 
     final TextStyle base = TextStyle(
@@ -1724,7 +1790,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // 时，引擎按本列表顺序找到第一个存在的系统日文字体，而非各字符独立走引擎默认
       // fallback（不同字符可能落到不同字体、字形割裂）。引擎自动忽略当前平台不存在的
       // 项，故一条列表覆盖全平台、无需平台分支（TODO-088）。
-      fontFamilyFallback: _kSubtitleCjkFallback,
+      fontFamilyFallback: _subtitleCjkFallback,
       fontWeight: baseWeight,
       // 样式表 Spacing 字间距（px，PlayRes 空间）与字号同源缩放；行内 \fsp 在 span
       // 分支覆盖。respect 关恒 null（历史像素级不变）。
@@ -1751,6 +1817,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 全名解析成真实家族（装了就用真字体）。
     final ({String family, FontWeight? weight})? resolvedSpan =
         respect ? _resolveAssFontFamily(span.fontName) : null;
+    final ({
+      double fontScale,
+      double yScale
+    }) spanMissingFontRasterCompensation = span.fontName != null &&
+            span.fontName!.isNotEmpty
+        ? _missingAssFontRasterCompensation(span.fontName, resolvedSpan != null)
+        : baseMissingFontRasterCompensation;
+
     final String? spanFontFamily =
         resolvedSpan?.family ?? (respect ? span.fontName : null);
     // \1a/\alpha 主填充透明度（respect 时）：施于最终生效的填充色（行内 \c 优先，否则
@@ -1779,7 +1853,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
                       spanFontFamily ?? baseFontFamily,
                       span.bold ? FontWeight.bold : baseWeight,
                       span.italic || baseItalic) *
-                  widget.assUserFontScale)
+                  widget.assUserFontScale *
+                  spanMissingFontRasterCompensation.fontScale)
               : span.fontSizePx!)
           : base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
@@ -1884,6 +1959,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 字体存在性探测缓存：key=family，value=是否解析到真实字体（而非引擎默认回退）。
   final Map<String, bool> _fontExistsCache = <String, bool>{};
 
+  ({double fontScale, double yScale}) _missingAssFontRasterCompensation(
+    String? requestedFamily,
+    bool requestedFamilyResolved,
+  ) {
+    final bool fallbackFamilyAvailable =
+        defaultTargetPlatform == TargetPlatform.windows &&
+            _subtitleCjkFallback.any(_fontFamilyExists);
+    return assMissingFontRasterCompensation(
+      defaultTargetPlatform,
+      hasRequestedFamily: requestedFamily != null && requestedFamily.isNotEmpty,
+      requestedFamilyResolved: requestedFamilyResolved,
+      fallbackFamilyAvailable: fallbackFamilyAvailable,
+    );
+  }
+
   /// [family] 是否真实存在（Skia 能解析出该家族，而非落到引擎默认字体）。
   ///
   /// Flutter 无系统字体枚举 API，用双测量近似：同一探针串分别以 [family] 与一个必不
@@ -1961,7 +2051,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   double _cellPerEmFor(String? family, FontWeight weight, bool italic) {
     for (final String candidate in <String>[
       if (family != null && family.isNotEmpty) family,
-      ..._kSubtitleCjkFallback,
+      ..._subtitleCjkFallback,
     ]) {
       if (!_fontFamilyExists(candidate)) continue;
       AssFontCellIndex.instance.ensureSystemScan();
@@ -1975,7 +2065,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         style: TextStyle(
           fontSize: 100,
           fontFamily: family,
-          fontFamilyFallback: _kSubtitleCjkFallback,
+          fontFamilyFallback: _subtitleCjkFallback,
           fontWeight: weight,
           fontStyle: italic ? FontStyle.italic : FontStyle.normal,
         ),
