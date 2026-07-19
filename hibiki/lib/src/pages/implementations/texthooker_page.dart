@@ -72,6 +72,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 抓——用户快进/多行飞过后再挖某句,它的语音在出现那刻就锁好了、不会因环形覆盖或播放被切而丢。
   /// LRU 上限 [_voiceCacheMax]，最旧的先淘汰。
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
+
+  /// 句子↔hook 时间戳缓存：纯人声 OGG 配对按**这句**的时间戳取语音（而非最近一句），故需
+  /// 记每行文本对应的 hook 时间戳。与 [_lineVoiceCache] 同 LRU 上限、同步淘汰/清空。
+  final Map<String, int> _lineTsCache = <String, int>{};
   static const int _voiceCacheMax = 200;
 
   /// 热键那一刻从环形缓冲回看的时长（毫秒）：引擎-hook 拿不到按句 clip 时的兜底取最近这么久。
@@ -285,6 +289,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lastTextSeq = 0;
     _lastHookedLineTs = 0;
     _lineVoiceCache.clear();
+    _lineTsCache.clear();
     final GalAudioSource? src = _galAudioSource;
     _galAudioSource = null;
     await src?.stop();
@@ -296,6 +301,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _engineSource = eng;
     _lastTextSeq = 0;
     _lastHookedLineTs = 0;
+    // 清上一局残留的语音 dump（本会话新 dump 都留着），避免跨会话无限增长撑爆磁盘。
+    unawaited(eng.pruneVoiceDump());
     _textPollTimer?.cancel();
     _textPollTimer = Timer.periodic(
       const Duration(milliseconds: 400),
@@ -316,6 +323,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     for (final GalHookedLine line in poll.lines) {
       TexthookerService.instance.appendLine(line.text);
       _lastHookedLineTs = line.timestampMs;
+      _cacheLineTs(line.text, line.timestampMs);
       // 出现即锁定该行语音（抗快进/环形覆盖）：立刻按 hook 时间戳抓好缓存起来。整句优先
       // （grabUtterance 拼同源整段，含用户手动选轨），失败退回单 clip（grabClipNear）。
       final GalAudioSlice? clip = await eng.grabUtterance(line.timestampMs) ??
@@ -336,6 +344,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lineVoiceCache[text] = clip;
     while (_lineVoiceCache.length > _voiceCacheMax) {
       _lineVoiceCache.remove(_lineVoiceCache.keys.first);
+    }
+  }
+
+  /// 记这句台词 [text] 的 hook 时间戳 [ts]（LRU，与 [_cacheLineVoice] 同上限）。供制卡时按
+  /// **这句**的时间戳做纯人声 OGG 配对，而非只用最近一句时间戳。
+  void _cacheLineTs(String text, int ts) {
+    _lineTsCache.remove(text);
+    _lineTsCache[text] = ts;
+    while (_lineTsCache.length > _voiceCacheMax) {
+      _lineTsCache.remove(_lineTsCache.keys.first);
     }
   }
 
@@ -440,14 +458,31 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (src == null) {
       return null;
     }
+    final EngineHookGalAudioSource? eng = _engineSource;
+    // ⓪ 最优先：引擎级**纯人声**——按这句台词的 hook 时间戳，在 injector hook DLL dump 的语音
+    //    OGG 里配对出这句对应的原始语音（混音前、无 BGM/SE），转码成 aac 直接作
+    //    providedAudioBytes。句子文本命中 ts 缓存用**该行**时间戳，否则退回最近一句时间戳。
+    //    仅 KiriKiri 等有引擎-hook dump 的引擎命中；其它引擎/loopback 落到下面的采集链。
+    if (eng != null && Platform.isWindows) {
+      final int ts = _lineTsCache[sentence] ?? _lastHookedLineTs;
+      if (ts > 0) {
+        final Uint8List? voice = await eng.grabPairedVoiceBytes(
+          ts,
+          outputExtension: immersionMiningAudioExtension(),
+        );
+        if (voice != null && voice.isNotEmpty) {
+          return voice;
+        }
+      }
+    }
+    // 以下为 PCM 采集链回退（loopback / 非 KiriKiri 引擎 / 无 dump / 配对失败）。
     GalAudioSlice? slice;
-    // ① 最优先：这句台词**出现那刻就锁定**的语音（`_lineVoiceCache`）——最完整对应、抗快进/
-    //    环形覆盖。挖的句子（fields['sentence']）与文本 hook 的行文本一致时命中。
+    // ① 这句台词**出现那刻就锁定**的语音（`_lineVoiceCache`）——抗快进/环形覆盖。挖的句子
+    //    （fields['sentence']）与文本 hook 的行文本一致时命中。
     final GalAudioSlice? cached = _lineVoiceCache[sentence];
     if (cached != null && !cached.isEmpty) {
       slice = cached;
     }
-    final EngineHookGalAudioSource? eng = _engineSource;
     // ② 缓存未命中（该句在接线前出现/文本不完全一致）：按最近台词时间戳现抓该句 clip。
     if ((slice == null || slice.isEmpty) &&
         eng != null &&
