@@ -70,7 +70,7 @@ void main() {
       expect(decodeGalgameLibrary('not json'), isEmpty);
       expect(decodeGalgameLibrary('{"a":1}'), isEmpty);
       // 数组里缺 exePath 的条目被跳过，合法条目保留。
-      final String raw =
+      const String raw =
           '[{"id":"1","name":"x"},{"id":"2","name":"y","exePath":"D:/g/y.exe"}]';
       final List<GalgameEntry> out = decodeGalgameLibrary(raw);
       expect(out.length, 1);
