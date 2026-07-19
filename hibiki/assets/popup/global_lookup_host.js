@@ -345,6 +345,20 @@
         '.global-lookup-frame-shell[data-theme="dark"] ' +
         '.global-lookup-close:hover{' +
         'background:rgba(235,235,245,0.16);color:rgba(235,235,245,0.92);}' +
+        // 剪贴板复制历史按钮（🕘）——瞬态覆盖窗 ROOT 卡左上角（与 close-X 右上角对称）。
+        // 必须挂 SHELL 内（z-index 高于 iframe、pointer-events:auto），否则被 native 按
+        // shell 卡矩形裁掉（同 close-X / resize-grip 的 BUG-749 约束）。面板模式另有面板
+        // 栏🕘，此按钮只在 cascade 的 root 卡出现。
+        '.global-lookup-frame-shell .global-lookup-history{' +
+        'position:absolute;top:2px;left:6px;z-index:5;' +
+        'width:22px;height:22px;line-height:22px;text-align:center;' +
+        'font-size:14px;cursor:pointer;pointer-events:auto;' +
+        'border-radius:11px;' +
+        'transition:background-color 120ms ease-out;}' +
+        '.global-lookup-frame-shell .global-lookup-history:hover{' +
+        'background:rgba(120,120,128,0.16);}' +
+        '.global-lookup-frame-shell[data-theme="dark"] ' +
+        '.global-lookup-history:hover{background:rgba(235,235,245,0.16);}' +
         // Phase C（弹窗尺寸精细化 2026-07-13）— 瞬态覆盖窗（cascade 模式）ROOT 卡的
         // 右下角 resize grip：拖它进 native 模态 size 循环（beginWindowResize，与面板
         // grip 同一通路）。必须挂在 SHELL 内（z-index 高于 iframe、pointer-events:auto），
@@ -395,7 +409,43 @@
         // 真机反馈：面板 root 卡不画 per-shell 关闭 ×（与面板栏 × 重复；
         // 嵌套子卡的 × 保留）。
         '.global-lookup-frame-shell[data-panel-root="true"] ' +
-        '.global-lookup-close{display:none;}';
+        '.global-lookup-close{display:none;}' +
+        // 剪贴板复制历史覆盖层（面板栏🕘 / 瞬态 root 卡🕘 触发）。渲染进 ROOT 卡
+        // shell 内（绝对铺满、盖住 iframe），避免瞬态窗被 native 按 shell 矩形裁剪
+        // 时历史面板落到透明裁剪区外看不见（与 BUG-749 gap click-through 同源）。
+        '.clipboard-history-overlay{' +
+        'position:absolute;left:0;top:0;width:100%;height:100%;' +
+        'box-sizing:border-box;z-index:5;display:flex;flex-direction:column;' +
+        'background:#ffffff;color:#1c1c1e;' +
+        'font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}' +
+        '.global-lookup-frame-shell[data-theme="dark"] .clipboard-history-overlay{' +
+        'background:#1c1c1e;color:rgba(235,235,245,0.92);}' +
+        '.clipboard-history-overlay .clipboard-history-head{' +
+        'display:flex;align-items:center;gap:8px;padding:8px 10px;' +
+        'border-bottom:1px solid rgba(120,120,128,0.24);flex:0 0 auto;}' +
+        '.clipboard-history-overlay .clipboard-history-title{' +
+        'flex:1 1 auto;font-weight:600;overflow:hidden;text-overflow:ellipsis;' +
+        'white-space:nowrap;}' +
+        '.clipboard-history-overlay .clipboard-history-btn{' +
+        'flex:0 0 auto;cursor:pointer;padding:2px 8px;border-radius:6px;' +
+        'user-select:none;color:inherit;opacity:0.8;}' +
+        '.clipboard-history-overlay .clipboard-history-btn:hover{' +
+        'background:rgba(120,120,128,0.16);opacity:1;}' +
+        '.clipboard-history-overlay .clipboard-history-list{' +
+        'flex:1 1 auto;overflow-y:auto;overflow-x:hidden;}' +
+        '.clipboard-history-overlay .clipboard-history-row{' +
+        'padding:8px 10px;border-bottom:1px solid rgba(120,120,128,0.16);' +
+        'cursor:pointer;user-select:none;}' +
+        '.clipboard-history-overlay .clipboard-history-row:hover{' +
+        'background:rgba(120,120,128,0.12);}' +
+        '.clipboard-history-overlay .clipboard-history-text{' +
+        'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;' +
+        'overflow:hidden;word-break:break-word;}' +
+        '.clipboard-history-overlay .clipboard-history-time{' +
+        'margin-top:2px;font-size:11px;opacity:0.5;}' +
+        '.clipboard-history-overlay .clipboard-history-empty{' +
+        'flex:1 1 auto;display:flex;align-items:center;justify-content:center;' +
+        'opacity:0.5;padding:24px;text-align:center;}';
     var head = document.head ||
         (document.getElementsByTagName &&
             document.getElementsByTagName('head')[0]);
@@ -431,6 +481,25 @@
       postToHost('beginWindowDrag', []);
     }, true);
     bar.appendChild(grip);
+
+    // 剪贴板复制历史按钮（🕘）：postToHost('clipboardHistory') → Dart 从 DB 重载
+    // 历史并注入 showClipboardHistory 渲染覆盖层。与 pin/close 同一 host-chrome 范式
+    // （pointerdown 捕获 + stopPropagation，避免触发面板点外收子层）。
+    var historyBtn = document.createElement('div');
+    historyBtn.className = 'panel-btn panel-history';
+    historyBtn.setAttribute('role', 'button');
+    historyBtn.setAttribute('aria-label', 'Clipboard history');
+    historyBtn.textContent = '🕘';
+    historyBtn.addEventListener('pointerdown', function (event) {
+      if (event) {
+        if (typeof event.stopPropagation === 'function') {
+          event.stopPropagation();
+        }
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+      }
+      postToHost('clipboardHistory', []);
+    }, true);
+    bar.appendChild(historyBtn);
 
     var pinBtn = document.createElement('div');
     pinBtn.className =
@@ -825,6 +894,211 @@
     return grip;
   }
 
+  // 剪贴板复制历史按钮（🕘）——瞬态覆盖窗 root 卡左上角。与面板栏🕘同一 host-chrome
+  // 范式：pointerdown 捕获 + stopPropagation（不触发 root 卡的点外收层），postToHost
+  // 让 Dart 从 DB 重载历史并回注 showClipboardHistory。
+  function createHistoryButton() {
+    if (!document || typeof document.createElement !== 'function') {
+      return null;
+    }
+    var btn = document.createElement('div');
+    btn.className = 'global-lookup-history';
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('aria-label', 'Clipboard history');
+    if (typeof btn.textContent !== 'undefined') {
+      btn.textContent = '🕘';
+    }
+    var onOpen = function (event) {
+      if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+      }
+      if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      postToHost('clipboardHistory', []);
+    };
+    if (typeof btn.addEventListener === 'function') {
+      btn.addEventListener('pointerdown', onOpen, true);
+      btn.addEventListener('click', onOpen, true);
+    }
+    return btn;
+  }
+
+  // 历史覆盖层渲染进 ROOT 卡 shell（parentIndex < 0；面板模式该卡带 data-panel-root，
+  // 瞬态模式即级联根卡）。挂进 shell 内而非窗口层：瞬态窗被 native 按 shell 卡矩形裁剪，
+  // 挂窗口层的覆盖层会落到透明裁剪区外不可见（BUG-749 同源）。返回 root shell 或 null。
+  function rootShellForHistory() {
+    var found = null;
+    if (frames && typeof frames.forEach === 'function') {
+      frames.forEach(function (record) {
+        if (found) return;
+        if (record && record.shell &&
+            typeof record.parentIndex === 'number' &&
+            record.parentIndex < 0) {
+          found = record.shell;
+        }
+      });
+    }
+    return found;
+  }
+
+  // 移除所有历史覆盖层（× 关闭 / 选中一条查词 / 重新打开前清旧层）。优先
+  // querySelectorAll，node harness 的极简 DOM 无此 API 时回退遍历各 shell 子节点。
+  function hideClipboardHistory() {
+    if (!document) return false;
+    var removed = false;
+    var existing = (typeof document.querySelectorAll === 'function')
+        ? document.querySelectorAll('.clipboard-history-overlay')
+        : null;
+    if (existing && existing.length) {
+      for (var i = existing.length - 1; i >= 0; i--) {
+        var node = existing[i];
+        if (node && node.parentNode &&
+            typeof node.parentNode.removeChild === 'function') {
+          node.parentNode.removeChild(node);
+          removed = true;
+        }
+      }
+      return removed;
+    }
+    if (frames && typeof frames.forEach === 'function') {
+      frames.forEach(function (record) {
+        if (!record || !record.shell) return;
+        var kids = record.shell.children || [];
+        for (var j = kids.length - 1; j >= 0; j--) {
+          var kid = kids[j];
+          if (kid &&
+              String(kid.className).indexOf('clipboard-history-overlay') >= 0 &&
+              typeof record.shell.removeChild === 'function') {
+            record.shell.removeChild(kid);
+            removed = true;
+          }
+        }
+      });
+    }
+    return removed;
+  }
+
+  // 由 Dart 注入渲染剪贴板复制历史覆盖层。payload（JSON 串或对象）：
+  //   { entries:[{text, time}], title, clearLabel, emptyLabel }
+  // entries 顺序=最新在前（Dart 已 reverse）。每行点选 → lookupClipboardHistoryEntry
+  // 让 Dart 重查该文本；清空 → clearClipboardHistory；× / 选中一条后自动关层。
+  function showClipboardHistory(payload) {
+    var data = payload;
+    if (typeof payload === 'string') {
+      try {
+        data = JSON.parse(payload);
+      } catch (e) {
+        data = null;
+      }
+    }
+    if (!data || typeof data !== 'object') data = {};
+    var entries = (data.entries && data.entries.length) ? data.entries : [];
+    var title = data.title || 'Clipboard history';
+    var clearLabel = data.clearLabel || 'Clear';
+    var emptyLabel = data.emptyLabel || '';
+    var host = rootShellForHistory();
+    if (!host || typeof document.createElement !== 'function' ||
+        typeof host.appendChild !== 'function') {
+      return false;
+    }
+    hideClipboardHistory();
+
+    var overlay = document.createElement('div');
+    overlay.className = 'clipboard-history-overlay';
+
+    var head = document.createElement('div');
+    head.className = 'clipboard-history-head';
+    var titleEl = document.createElement('div');
+    titleEl.className = 'clipboard-history-title';
+    titleEl.textContent = title;
+    head.appendChild(titleEl);
+
+    var clearBtn = document.createElement('div');
+    clearBtn.className = 'clipboard-history-btn';
+    clearBtn.setAttribute('role', 'button');
+    clearBtn.textContent = clearLabel;
+    if (typeof clearBtn.addEventListener === 'function') {
+      clearBtn.addEventListener('pointerdown', function (event) {
+        if (event && typeof event.stopPropagation === 'function') {
+          event.stopPropagation();
+        }
+        if (event && typeof event.preventDefault === 'function') {
+          event.preventDefault();
+        }
+        postToHost('clearClipboardHistory', []);
+      }, true);
+    }
+    head.appendChild(clearBtn);
+
+    var closeBtn = document.createElement('div');
+    closeBtn.className = 'clipboard-history-btn';
+    closeBtn.setAttribute('role', 'button');
+    closeBtn.textContent = '×';
+    if (typeof closeBtn.addEventListener === 'function') {
+      closeBtn.addEventListener('pointerdown', function (event) {
+        if (event && typeof event.stopPropagation === 'function') {
+          event.stopPropagation();
+        }
+        if (event && typeof event.preventDefault === 'function') {
+          event.preventDefault();
+        }
+        hideClipboardHistory();
+      }, true);
+    }
+    head.appendChild(closeBtn);
+    overlay.appendChild(head);
+
+    if (!entries.length) {
+      var empty = document.createElement('div');
+      empty.className = 'clipboard-history-empty';
+      empty.textContent = emptyLabel;
+      overlay.appendChild(empty);
+    } else {
+      var list = document.createElement('div');
+      list.className = 'clipboard-history-list';
+      for (var k = 0; k < entries.length; k++) {
+        (function (entry) {
+          var row = document.createElement('div');
+          row.className = 'clipboard-history-row';
+          row.setAttribute('role', 'button');
+          var textEl = document.createElement('div');
+          textEl.className = 'clipboard-history-text';
+          textEl.textContent =
+              String(entry && entry.text != null ? entry.text : '');
+          row.appendChild(textEl);
+          if (entry && entry.time) {
+            var timeEl = document.createElement('div');
+            timeEl.className = 'clipboard-history-time';
+            timeEl.textContent = String(entry.time);
+            row.appendChild(timeEl);
+          }
+          var onPick = function (event) {
+            if (event && typeof event.stopPropagation === 'function') {
+              event.stopPropagation();
+            }
+            if (event && typeof event.preventDefault === 'function') {
+              event.preventDefault();
+            }
+            var text = entry && entry.text != null ? String(entry.text) : '';
+            if (!text) return;
+            hideClipboardHistory();
+            postToHost('lookupClipboardHistoryEntry', [text]);
+          };
+          if (typeof row.addEventListener === 'function') {
+            row.addEventListener('pointerdown', onPick, true);
+            row.addEventListener('click', onPick, true);
+          }
+          list.appendChild(row);
+        })(entries[k]);
+      }
+      overlay.appendChild(list);
+    }
+
+    host.appendChild(overlay);
+    return true;
+  }
+
   function createRecord(layer, descriptor) {
     var shell = document.createElement('div');
     shell.className = 'global-lookup-frame-shell';
@@ -867,6 +1141,12 @@
       var grip = createResizeGrip();
       if (grip) {
         shell.appendChild(grip);
+      }
+      // 剪贴板复制历史按钮（🕘）——瞬态窗无面板栏，挂 root 卡左上角（躲 native
+      // shell 裁剪）。postToHost('clipboardHistory') → Dart 重载并注入覆盖层。
+      var histBtn = createHistoryButton();
+      if (histBtn) {
+        shell.appendChild(histBtn);
       }
     }
     layer.appendChild(shell);
@@ -1904,6 +2184,9 @@
     setPanelPinnedVisual: setPanelPinnedVisual,
     setPanelBlockCaptureVisual: setPanelBlockCaptureVisual,
     scrollRootToTop: scrollRootToTop,
+    // 剪贴板复制历史覆盖层（Dart 注入渲染 / 关闭）。
+    showClipboardHistory: showClipboardHistory,
+    hideClipboardHistory: hideClipboardHistory,
     _frames: frames,
     // TODO-1188 — exposed for the node bridge-routing harness only (never used to
     // drive behaviour): the live globalId -> {frameId, localId} route map.

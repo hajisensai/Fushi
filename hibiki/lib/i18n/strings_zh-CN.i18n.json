@@ -1998,5 +1998,8 @@
   "custom_fonts_font_roles": "字体用途",
   "video_clip_export_cancelled": "已取消片段导出",
   "shortcut_action_video_align_subtitle_to_prev": "上一句字幕对齐到当前时间",
-  "shortcut_action_video_align_subtitle_to_next": "下一句字幕对齐到当前时间"
+  "shortcut_action_video_align_subtitle_to_next": "下一句字幕对齐到当前时间",
+  "clipboard_history_title": "复制历史",
+  "clipboard_history_clear": "清空",
+  "clipboard_history_empty": "暂无复制记录"
 }

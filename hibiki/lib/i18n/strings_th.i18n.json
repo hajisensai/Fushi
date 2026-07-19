@@ -1998,5 +1998,8 @@
   "custom_fonts_font_roles": "Font roles",
   "video_clip_export_cancelled": "Clip export cancelled",
   "shortcut_action_video_align_subtitle_to_prev": "Align previous subtitle to now",
-  "shortcut_action_video_align_subtitle_to_next": "Align next subtitle to now"
+  "shortcut_action_video_align_subtitle_to_next": "Align next subtitle to now",
+  "clipboard_history_title": "Clipboard history",
+  "clipboard_history_clear": "Clear",
+  "clipboard_history_empty": "No copy history yet"
 }
