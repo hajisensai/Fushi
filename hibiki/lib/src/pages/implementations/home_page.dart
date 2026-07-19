@@ -35,7 +35,7 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 /// 进入 [_HomePageState._activeTabs]，故用枚举身份而非位置来切换/路由——插入这个
 /// 条件 tab 不会再打乱「设置/词典」的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊
 /// 情况）。底栏/侧栏只在渲染层把身份映射成位置。texthooker 紧邻设置之前。
-enum HomeTab { books, video, dictionaries, texthooker, settings }
+enum HomeTab { books, video, dictionaries, texthooker, games, settings }
 
 /// 纯函数：给定实验视频开关与文本钩子开关，返回可见顶层 tab 的**视觉顺序**——视频
 /// 固定插在书架与词典之间（用户要求「在书架和词典管理中间」），texthooker 仅在文本
@@ -45,12 +45,14 @@ enum HomeTab { books, video, dictionaries, texthooker, settings }
 List<HomeTab> homeActiveTabs({
   required bool videoEnabled,
   required bool texthookerEnabled,
+  bool gamesEnabled = false,
 }) =>
     <HomeTab>[
       HomeTab.books,
       if (videoEnabled) HomeTab.video,
       HomeTab.dictionaries,
       if (texthookerEnabled) HomeTab.texthooker,
+      if (gamesEnabled) HomeTab.games,
       HomeTab.settings,
     ];
 
@@ -118,6 +120,12 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         icon: Icons.sensors_outlined,
         selectedIcon: Icons.sensors,
         label: t.texthooker,
+      );
+    case HomeTab.games:
+      return AdaptiveNavItem(
+        icon: Icons.videogame_asset_outlined,
+        selectedIcon: Icons.videogame_asset,
+        label: t.games,
       );
     case HomeTab.settings:
       return AdaptiveNavItem(
@@ -454,6 +462,8 @@ class _HomePageState extends BasePageState<HomePage>
   List<HomeTab> _activeTabs() => homeActiveTabs(
         videoEnabled: true,
         texthookerEnabled: appModel.texthookerEnabled,
+        // 游戏库（galgame 库）与 texthooker 同属 galgame 沉浸制卡，共用同一实验开关。
+        gamesEnabled: appModel.texthookerEnabled,
       );
 
   /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚关掉实验开关时仍停在
@@ -897,6 +907,8 @@ class _HomePageState extends BasePageState<HomePage>
         );
       case HomeTab.texthooker:
         return const TexthookerPage();
+      case HomeTab.games:
+        return const GamesLibraryPage();
       case HomeTab.settings:
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。

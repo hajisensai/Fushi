@@ -13,6 +13,7 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/mining/external_window_mining.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_window_gif.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
@@ -32,7 +33,13 @@ import 'package:hibiki/utils.dart';
 /// 成可点 span，点击后经 [DictionaryPageMixin.pushNestedPopup] 弹查词浮层，挖词
 /// 复用 mixin 的 Anki 逻辑。
 class TexthookerPage extends ConsumerStatefulWidget {
-  const TexthookerPage({super.key});
+  const TexthookerPage({super.key, this.autoLaunchGame});
+
+  /// 从游戏库（[GamesLibraryPage]）点击某个游戏进入时携带的待启动条目：非 null 时
+  /// 页面挂载后自动走引擎-hook launch 路径拉起该游戏并注入（等价于用户手点「拉起
+  /// galgame」并选中这个 exe），随后文本 hook 喂进 texthooker、用户点词制卡。作为
+  /// 首页 texthooker tab 使用时为 null（`const TexthookerPage()`），行为不变。
+  final GalgameEntry? autoLaunchGame;
 
   @override
   ConsumerState<TexthookerPage> createState() => _TexthookerPageState();
@@ -98,6 +105,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     TexthookerService.instance.addListener(_onLines);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
+    // 从游戏库点进来（携带 autoLaunchGame）时：挂载后自动拉起该游戏并注入。放到首帧
+    // 之后跑，避免在 initState 里 toast / 用 context。
+    final GalgameEntry? game = widget.autoLaunchGame;
+    if (game != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_launchGalgameFromExe(game.exePath));
+        }
+      });
+    }
   }
 
   @override
@@ -393,6 +410,19 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         : null;
     if (exe == null) {
       return; // 用户取消
+    }
+    await _launchGalgameFromExe(exe);
+  }
+
+  /// [_launchGalgameEngineHook] 的核心：给定游戏 exe 路径，按其位数选 x86/x64 注入器 →
+  /// Hibiki 拉起游戏并早注入 → 就绪后以引擎-hook 为音频源 + 接文本 hook + 按 PID 找主
+  /// 窗口绑定（截图用）。游戏库点击进入（[TexthookerPage.autoLaunchGame]）与页头「拉起
+  /// galgame」按钮共用此方法，避免重复 launch 逻辑。非 Windows / 各步失败均明确 toast、
+  /// 不静默（起不来时保持原状，用户仍可用「绑定窗口 + loopback」路径）。
+  Future<void> _launchGalgameFromExe(String exe) async {
+    if (!Platform.isWindows) {
+      HibikiToast.show(msg: t.external_window_unsupported);
+      return;
     }
     final bool? is32 = await EngineHookGalAudioSource.exeIs32Bit(exe);
     final String? injector = _resolveGalInjectorPath(is32Bit: is32 ?? false);

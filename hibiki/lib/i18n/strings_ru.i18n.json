@@ -1933,5 +1933,12 @@
   "interconnect_section_client": "Connect to other devices",
   "interconnect_moved_note": "Connection & server settings are in the Hibiki Interconnect category",
   "settings_search_hint": "Search settings",
-  "settings_search_no_results": "No matching settings"
+  "settings_search_no_results": "No matching settings",
+  "games": "Games",
+  "games_add": "Add game",
+  "games_empty": "No games added yet",
+  "games_rename": "Rename",
+  "games_remove": "Remove",
+  "games_launch_unsupported": "Launching games is only supported on Windows",
+  "games_exe_missing": "Game executable not found"
 }

@@ -1933,5 +1933,12 @@
   "interconnect_section_client": "连接到其他设备",
   "interconnect_moved_note": "互联连接与本机服务器设置在「Hibiki 互联」分类",
   "settings_search_hint": "搜索设置",
-  "settings_search_no_results": "没有匹配的设置项"
+  "settings_search_no_results": "没有匹配的设置项",
+  "games": "游戏",
+  "games_add": "添加游戏",
+  "games_empty": "还没有添加游戏",
+  "games_rename": "重命名",
+  "games_remove": "移除",
+  "games_launch_unsupported": "启动游戏仅支持 Windows 桌面",
+  "games_exe_missing": "找不到游戏可执行文件"
 }
