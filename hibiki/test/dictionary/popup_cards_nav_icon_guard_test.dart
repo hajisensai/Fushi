@@ -87,6 +87,24 @@ void main() {
         expect(m!.group(0)!.contains('Emoji'), isFalse,
             reason: '字体栈不含彩色 emoji 字体');
       });
+
+      test('#8 静息制卡 + 单独放大字号，与相邻 1em SVG 图标目测齐平（BUG-932）', () {
+        // 制卡按钮静息态 '+' 是文本字形（TODO-1325 保留文本标记不走 SVG），与音量/
+        // 收藏/open-anki/tune 的内联 SVG 共用合并选择器 font-size:18px；但文本 '+'
+        // 只占 em 盒约一半高，SVG 铺满 1em，故同 18px 下加号目测明显更小。必须给
+        // 静息态（未制卡 = 无 .duplicate 类）单独放大字号补偿，否则回退成大小不一。
+        final RegExpMatch? m =
+            RegExp(r'\.mine-button:not\(\.duplicate\)\s*\{([^}]*)\}')
+                .firstMatch(css);
+        expect(m, isNotNull,
+            reason: '缺 .mine-button:not(.duplicate) 静息态放大规则，加号会比 SVG 图标小');
+        final RegExpMatch? fs =
+            RegExp(r'font-size\s*:\s*(\d+)px').firstMatch(m!.group(1)!);
+        expect(fs, isNotNull, reason: '静息加号规则必须声明 font-size');
+        expect(int.parse(fs!.group(1)!), greaterThan(18),
+            reason: '静息 + 字号须大于图标共用的 18px 以补偿文本字形空白，'
+                '否则加号目测比 audio/favorite/tune 图标小（BUG-932 回退）');
+      });
     });
   });
 
