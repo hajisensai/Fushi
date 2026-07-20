@@ -46,7 +46,38 @@ void main() {
         reason: '$name 封面不得用 Expanded(child: Stack(...)) 包裹——比例会随下方'
             '文字块高度浮动、把空隙灌回封面区（BUG-928 回归）',
       );
+
+      // BUG-943（续 BUG-926）：标题必须单行——2 行预留在绝大多数单行标题卡下把底部撑出
+      // 约 50px 空白块（用户实报「底部多显示了一块」）。
+      expect(
+        body,
+        contains('maxLines: 1'),
+        reason: '$name 标题必须 maxLines: 1，避免 2 行预留在单行标题卡下留底部空白',
+      );
+      expect(
+        body,
+        isNot(contains('maxLines: 2')),
+        reason: '$name 不得回退到 maxLines: 2 的两行标题预留（BUG-943（续 BUG-926）空白回归）',
+      );
     }
+  });
+
+  test(
+      'video card text block stays compact (no worst-case reservation) '
+      '— BUG-943（续 BUG-926）', () {
+    final String source = File(path).readAsStringSync();
+    final RegExpMatch? m = RegExp(r'_kVideoCardTextBlock\s*=\s*(\d+(?:\.\d+)?)')
+        .firstMatch(source);
+    expect(m, isNotNull, reason: '找不到 _kVideoCardTextBlock 常量');
+    final double block = double.parse(m!.group(1)!);
+    // 单行标题 + 单行进度 + 内边距约 52；旧值 83 是「2 行标题 + 进度行」最坏预留，
+    // 单行标题无进度卡下底部常驻约 50px 空白（用户实报）。守住紧凑上限。
+    expect(
+      block,
+      lessThanOrEqualTo(60),
+      reason: '_kVideoCardTextBlock 不得回退到最坏预留（如 83），否则视频卡底部'
+          '再次出现约 50px 常驻空白块（BUG-943（续 BUG-926））',
+    );
   });
 }
 
