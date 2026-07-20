@@ -402,7 +402,7 @@
   "stat_format_minutes": "$n мин.",
   "stat_format_hours_minutes": "$h ч $m мин.",
   "stat_format_chars": "$n символов",
-  "stat_format_chars_wan": "$n символов",
+  "stat_format_chars_wan": "$n万 символов",
   "error_log_share_subject": "Журнал ошибок hibiki",
   "update_never_remind": "Больше не напоминать",
   "update_auto_install": "Автоустановка обновлений",
