@@ -386,27 +386,43 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, bool is_artifact) {
   }
   st.last_tick = GetTickCount64();
 
-  // 重算赢家：clean_count 最高、且占比 clean/(clean+dirty) >= 0.5 的 hookcode。
-  // 占比 c/(c+d) >= 0.5  <=>  c >= d（整数比较，避免浮点）。
+  // 重算赢家。**优先「纯净」hook（dirty==0，从未产伪影）**，无纯净 hook 才回落
+  // 「clean>=dirty 且 clean_count 最高」的旧规则。
+  //
+  // 根因（真机实证 lunadiag + 模拟）：per-char/整串重复的坏 hook（KiriKiri 的 KiriKiriZ）在读档
+  // 菜单阶段先吐一堆**干净**的存档预览/槽号/时间戳、凭早期高 clean_count 霸占赢家；进对话后它只
+  // 吐每字重复**伪影**（被伪影闸丢弃），而真正干净的对话 hook（textrender）虽已出干净行却因不是
+  // 赢家被拒 → 正文一句不写、只剩菜单文字（用户症状「没正文文字，只有读存档文字」）。旧规则靠
+  // 累计 clean_count 选赢家，坏 hook 的早期干净菜单数长期压过对话 hook。
+  // 纯净优先：坏 hook 一进对话吐出第一条伪影 dirty>0 即失去纯净资格，对话 hook（始终 dirty==0）
+  // 立即接管，正文流出。单 hook 偶发误判伪影的游戏无纯净 hook、回落旧规则，行为不变。
   const std::wstring* best = nullptr;
   uint64_t best_clean = 0;
+  const std::wstring* best_pristine = nullptr;
+  uint64_t best_pristine_clean = 0;
   uint64_t total_clean = 0;
   for (const auto& kv : g_lunaHookStats) {
     total_clean += kv.second.clean_count;
     const uint64_t c = kv.second.clean_count;
     const uint64_t d = kv.second.dirty_count;
-    if (c == 0 || c < d) {
+    if (c == 0) {
       continue;
     }
-    if (c > best_clean) {
-      best_clean = c;
+    if (d == 0 && c > best_pristine_clean) {
+      best_pristine_clean = c;  // 纯净候选（从未产伪影）
+      best_pristine = &kv.first;
+    }
+    if (c >= d && c > best_clean) {
+      best_clean = c;  // 回落候选（占比 c/(c+d)>=0.5 <=> c>=d）
       best = &kv.first;
     }
   }
+  const std::wstring* winner =
+      (best_pristine != nullptr) ? best_pristine : best;
 
-  if (total_clean >= kLunaSelectMinClean && best != nullptr) {
+  if (total_clean >= kLunaSelectMinClean && winner != nullptr) {
     g_lunaSelectPrimed = true;
-    g_lunaSelectedHook = *best;
+    g_lunaSelectedHook = *winner;
   }
 
   // 伪影永不写——无论来自哪个 hook。赢家 hook 自己也会夹带 ×2/×3 伪影行（同一 hookcode 既出
