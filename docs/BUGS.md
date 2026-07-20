@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 920 条。点号进各自文件。
+> 共 921 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-940](bugs/BUG-940-tag-filter-collection-rescue.md) | ✅ | ✅ | 标签筛选:打了标签的合集筛不出来(成员级过滤先于折叠剥空合集组) |
 | [BUG-939](bugs/BUG-939-subtitle-menu-reenumerate.md) | ✅ | ✅ | 字幕轨菜单每次打开都重跑ffprobe显加载条+已有字幕先消失 |
 | [BUG-938](bugs/BUG-938-collections-sync-trigger-gap.md) | ✅ | ✅ | 合集经常没同步：合集维度只搭载低频全量 sweep，日常关书/切后台路径从不推送合集 |
 | [BUG-937](bugs/BUG-937-interconnect-video-cover-n2.md) | ✅ | ✅ | 互联视频浏览极慢：封面端点每张封面重跑整份 listVideos 清单（O(N²)） |

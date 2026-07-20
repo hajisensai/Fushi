@@ -1,0 +1,14 @@
+## BUG-940 · 标签筛选:打了标签的合集筛不出来(成员级过滤先于折叠剥空合集组)
+- **报告**：2026-07-20（用户：标签筛选没筛选合集；追问确认「打了标签的合集筛不出来」，书架页+视频页都有）
+- **真实性**：✅ 真 bug。根因是**时序**：成员级标签过滤发生在合集折叠**之前**。
+  - 书架页 epub `reader_hibiki_history_page.dart:364` 谓词 `filterSet.contains(key)`、srt `:790` 谓词 `srtFilterSet.contains(b.id)` 先把成员剥光；视频页 `home_video_page.dart:1695` `filter.contains(b.bookUid)` 同理。
+  - 折叠 `groupByCollections`/`_groupVideos` 只对**存活成员**折叠——合集组仅当有 ≥1 存活成员才生成。
+  - 合集自身打了标签、但成员没打时，成员被上面的成员级过滤全部剥掉 → 折不出该合集组 → 之后按合集标签保留组的 `filteredCollectionIdsProvider`（书架 `:923 removeWhere` / 视频 `collectionVisible`）**无组可留** → 合集永远筛不出来。
+  - 数据层（`CollectionTagMappings` + `getCollectionIdsForAllTags` database.dart:4334）与 provider（`filteredCollectionIdsProvider` tag_filter_sheet.dart:111）都正确，缺口在页面的过滤/折叠**顺序**。
+- **[x] ① 已修复** — 提交 `88dcc7968`
+  - 新增纯函数 `keepMemberUnderTagFilter({memberMatched, primaryCollectionId, collectionFilter})`（`hibiki/lib/src/media/collections/collection_grouping.dart`）：成员存活 ⟺ 自身命中全部标签 **或** 其主折叠合集在 `collectionFilter` 内。消除特例，三处过滤点共用。
+  - 三处成员过滤谓词改用它，并把 `_primaryCollectionByEntry['<type>|<key>']` 主合集 + `filteredCollectionIdsProvider` 传入：epub（`reader_hibiki_history_page.dart` build 闭包）、srt（`_buildBodyWithSrtBooks`，与末尾 `removeWhere` 共用一次 `collectionFilter` 读取）、video（`home_video_page.dart` FutureBuilder 闭包）。
+  - 效果：打了标签的合集其成员整组存活 → 折叠出合集组 → 由既有 collectionFilter 保留，合集能筛出来（并显示全部成员，符合「按合集标签显隐」语义）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/collection_grouping_test.dart`（提交 `88dcc7968`）
+  - 5 例覆盖 `keepMemberUnderTagFilter`：成员命中→留；**根因场景（成员没命中但合集命中→留）**；成员没命中+合集不在集→剔；散条目没命中→剔；collectionFilter=null 退化旧语义。`flutter test --no-pub` 10/10 通过。
+- **备注**：功能仅存在于 origin/develop（commit a97b74ebd「filter collection cards by selected tags」2026-07-14），主 checkout（落后 648）尚无。修复基于 origin/develop tip。多合集成员按 `getPrimaryCollectionIdByEntry` 的 MIN(collection_id) 主合集判定，与折叠归属同源。

@@ -57,6 +57,29 @@ class CollectionGroup<T> {
 
 String _composite(String mediaType, String entryKey) => '$mediaType|$entryKey';
 
+/// 标签筛选下判断一个媒体条目是否应存活到 [groupByCollections] 折叠阶段。
+///
+/// 根因（BUG-940）：成员级标签过滤发生在折叠**之前**。当一个合集自身打了标签、
+/// 但其成员没打时，只按成员标签过滤会把成员全部剥光，导致折叠不出该合集组；
+/// 之后页面按合集标签保留组的 `collectionFilter` 便无组可留，合集永远筛不出来
+/// （用户实报「打了标签的合集筛不出来」）。
+///
+/// 修法（消除特例）：条目存活当且仅当 —— 条目自身命中全部选中标签
+/// （[memberMatched]），**或**其主折叠合集（[primaryCollectionId]，与
+/// [groupByCollections] 折叠归属同源）命中全部选中标签（在 [collectionFilter] 内）。
+/// 后者让被标签命中的合集其成员整组存活、折叠出合集组，再由页面的 collectionFilter
+/// 保留该组。[collectionFilter] 为 null（无选中合集标签维度）或 [primaryCollectionId]
+/// 为 null（散条目/无归属）时，仅按 [memberMatched] 判定，与旧语义一致。
+bool keepMemberUnderTagFilter({
+  required bool memberMatched,
+  required int? primaryCollectionId,
+  required Set<int>? collectionFilter,
+}) {
+  if (memberMatched) return true;
+  if (collectionFilter == null || primaryCollectionId == null) return false;
+  return collectionFilter.contains(primaryCollectionId);
+}
+
 /// 把 [items] 按所属合集折叠，返回 group 列表（散 group 保持输入序、合集 group 在
 /// 首成员位置；卡片间最终排序由页面按排序模式完成）。
 ///
