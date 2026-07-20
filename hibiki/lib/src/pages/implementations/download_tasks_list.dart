@@ -150,17 +150,14 @@ class _DownloadTasksListState extends ConsumerState<DownloadTasksList> {
           ),
         ),
     };
-    return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+    return HibikiListItem(
+      density: HibikiListDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      subtitleMaxLines: 1,
       leading: statusIcon,
-      title:
-          Text(plan.seriesTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(plan.seriesTitle),
       subtitle: Text(
         plan.torrentTitle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodySmall,
       ),
       trailing: Row(
