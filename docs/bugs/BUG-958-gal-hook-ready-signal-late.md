@@ -1,4 +1,4 @@
-## BUG-943 · Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed
+## BUG-958 · Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed
 - **报告**：2026-07-19（用户：anemoi 捕获工作台显示 `helper_missing`，部署 helper 后变为 `engine_attach_failed`）
 - **真实性**：✅ 真 bug。`native/galgame_voice_hook/hook/dll_main.cpp:2053-2112` 的 `HookWorker` 原先在共享内存契约校验后，先同步执行 MinHook、Siglus、文本和 KiriKiri 探测，最后才 `SetEvent`。anemoi PID 19616 中 DLL 与 marker 均已出现，但 injector 等不到 ready 而超时退出并释放共享内存，Hibiki 因此误判附着失败。
 - **[x] ① 已修复** — `b4dd7bcfe32c5789b130081a350a955fed976bdb`：新增 `SignalReady`，在 `hooked=1` 后、`MH_Initialize` 与所有引擎探测前通知 injector，使其先进入 hold 保住 IPC，再异步完成重型 hook 安装。

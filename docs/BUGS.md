@@ -31,6 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-958](bugs/BUG-958-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
 | [BUG-957](bugs/BUG-957-galgame-dead-session-controller-leftover.md) | 🚧 | 🚧 | 旧 GalgameSessionController 死代码残留致查词面板 galgame 制卡出口失效 |
 | [BUG-956](bugs/BUG-956-gal-mining-serial-queue-poisoning.md) | 🚧 | 🚧 | galgame 制卡串行队列异常毒化后所有后续制卡永久挂起 |
 | [BUG-955](bugs/BUG-955-gal-mining-historical-line-media-mismatch.md) | 🚧 | 🚧 | 历史行制卡错配当前语音与当前画面且无降级标记 |
@@ -46,7 +47,6 @@
 | [BUG-945](bugs/BUG-945-texthooker-popup-ui-scale.md) | ✅ | ✅ | 捕获工作台非默认缩放下查词断言 |
 | [BUG-944](bugs/BUG-944-gal-text-thread-selector.md) | ✅ | ✅ | Galgame 捕获文本缺少 Luna 风格线程选择 |
 | [BUG-943](bugs/BUG-943-video-card-bottom-gap.md) | ✅ | ✅ | 视频卡底部常驻空白（续 BUG-926 16:9 封面修复） |
-| [BUG-943](bugs/BUG-943-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
 | [BUG-942](bugs/BUG-942-prev-cue-button-always-jump.md) | ✅ | ✅ | 上/下一句字幕按钮太远时退化成 3 秒 seek |
 | [BUG-941](bugs/BUG-941-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
 | [BUG-940](bugs/BUG-940-tag-filter-collection-rescue.md) | ✅ | ✅ | 标签筛选:打了标签的合集筛不出来(成员级过滤先于折叠剥空合集组) |
