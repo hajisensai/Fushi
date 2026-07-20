@@ -148,7 +148,8 @@ SettingsDestination buildSystemDestination() {
           SettingsNavigationItem(
             id: 'system.keyboard_shortcuts',
             title: t.shortcut_settings_title,
-            subtitle: t.settings_experimental_suffix,
+            // 「实验性」后缀已摘除（用户决策）：改键/冲突重分配/可视化键盘与
+            // 手柄图/三通道实时录键均已齐备，页面不再是实验功能。
             icon: Icons.keyboard_outlined,
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(

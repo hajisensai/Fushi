@@ -262,7 +262,8 @@ void main() {
       action: ShortcutAction.readerToggleFurigana,
     );
 
-    await tester.tap(find.text(t.shortcut_gamepad).last);
+    // 手柄实时录键上线后，下拉菜单降级为「从列表选择」兜底入口。
+    await tester.tap(find.text(t.shortcut_gamepad_pick_list));
     await tester.pumpAndSettle();
     await tester.tap(find.text(GamepadButton.dpadRight.label).last);
     await tester.pumpAndSettle();

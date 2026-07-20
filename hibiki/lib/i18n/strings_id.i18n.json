@@ -2065,5 +2065,7 @@
   "galgame_helper_download_failed": "Engine component download failed: $error",
   "galgame_helper_install_incomplete": "Engine component install incomplete, please retry",
   "download_settings": "Download settings",
-  "download_backend_not_configured": "Configure the download backend below (expand Download settings)."
+  "download_backend_not_configured": "Configure the download backend below (expand Download settings).",
+  "shortcut_press_gamepad": "Press a gamepad button...",
+  "shortcut_gamepad_pick_list": "Choose from list"
 }
