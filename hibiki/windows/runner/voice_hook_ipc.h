@@ -13,7 +13,7 @@
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 6;
+constexpr uint32_t kSharedVersion = 7;
 
 constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 2048;
@@ -22,6 +22,8 @@ constexpr uint32_t kTextHookCodeChars = 128;
 constexpr uint32_t kTextSourceUnknown = 0;
 constexpr uint32_t kTextSourceGdi = 1;
 constexpr uint32_t kTextSourceLuna = 2;
+constexpr uint32_t kTextEventLine = 0;
+constexpr uint32_t kTextEventThreadDiscovered = 1;
 constexpr uint32_t kClipCount = 1024;
 
 #pragma pack(push, 8)
@@ -38,6 +40,8 @@ struct TextSlot {
   uint32_t source_kind;
   uint32_t hook_name_len;
   uint32_t hook_code_len;
+  uint32_t event_kind;
+  uint32_t event_flags;
   char hook_name[kTextHookNameChars];
   wchar_t hook_code[kTextHookCodeChars];
   // 紧跟文本字节。

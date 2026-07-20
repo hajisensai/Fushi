@@ -255,10 +255,10 @@ bool LunaPassesFilter(const wchar_t* text, int len) {
   return has_wide || non_ws >= 2;
 }
 
-// 把一行文本写进共享内存文本环（host 侧 LunaHook 写者）。与游戏内 DLL 的 WriteTextRingLocked
-// **完全同一套协议**：InterlockedIncrement64 原子占唯一槽号 → 填文本 + 字段 → 最后写 seq 作
-// 完成标记。跨进程双写同环靠原子占号防撞槽、防丢更新。LunaHook 的 Output 回调可能在其内部工作
-// 线程并发触发，原子占号同样保证 injector 侧多次调用互不撞槽。
+// 把台词或线程发现事件写进共享内存文本环（host 侧 LunaHook 写者）。与游戏内 DLL 的
+// WriteTextRingLocked **完全同一套协议**：InterlockedIncrement64 原子占唯一槽号 → 填文本 + 字段
+// → 最后写 seq 作完成标记。跨进程双写同环靠原子占号防撞槽、防丢更新。LunaHook 的回调可能在
+// 其内部工作线程并发触发，原子占号同样保证 injector 侧多次调用互不撞槽。
 uint64_t Fnv1a64(uint64_t hash, const void* data, size_t size) {
   const auto* bytes = static_cast<const uint8_t*>(data);
   for (size_t i = 0; i < size; i++) {
@@ -284,10 +284,13 @@ uint64_t LunaTextThreadId(const wchar_t* hookcode, const char* hookname,
   return hash == 0 ? 1 : hash;
 }
 
-void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
-                       const char* hookname, const LunaThreadParam& tp,
-                       uint64_t thread_id, const wchar_t* text, int wlen) {
-  if (header == nullptr || text == nullptr || wlen <= 0) {
+void WriteLunaTextEvent(SharedHeader* header, const wchar_t* hookcode,
+                        const char* hookname, const LunaThreadParam& tp,
+                        uint64_t thread_id, uint32_t event_kind,
+                        uint32_t event_flags, const wchar_t* text, int wlen) {
+  if (header == nullptr ||
+      (event_kind == hibiki_voice_hook::kTextEventLine &&
+       (text == nullptr || wlen <= 0))) {
     return;
   }
   uint8_t* text_base =
@@ -301,21 +304,27 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
   memset(ts, 0, sizeof(TextSlot));
   uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
   max_bytes -= (max_bytes % static_cast<uint32_t>(sizeof(wchar_t)));  // wchar 边界
-  uint32_t byte_len = static_cast<uint32_t>(wlen) *
-                      static_cast<uint32_t>(sizeof(wchar_t));
+  uint32_t byte_len = text == nullptr || wlen <= 0
+                          ? 0
+                          : static_cast<uint32_t>(wlen) *
+                                static_cast<uint32_t>(sizeof(wchar_t));
   if (byte_len > max_bytes) {
     byte_len = max_bytes;  // 截断到槽容量
   }
-  memcpy(slot + sizeof(TextSlot), text, byte_len);
+  if (byte_len != 0) {
+    memcpy(slot + sizeof(TextSlot), text, byte_len);
+  }
   ts->timestamp_ms = GetTickCount64();
   ts->byte_len = byte_len;
-  ts->is_utf8 = 0;                            // UTF-16LE
+  ts->is_utf8 = 0;  // UTF-16LE
   ts->thread_id = thread_id;
   ts->thread_address = tp.addr;
   ts->thread_context = tp.ctx;
   ts->thread_context2 = tp.ctx2;
   ts->process_id = tp.processId;
   ts->source_kind = hibiki_voice_hook::kTextSourceLuna;
+  ts->event_kind = event_kind;
+  ts->event_flags = event_flags;
   if (hookname != nullptr) {
     const size_t n = (std::min)(strlen(hookname),
                                 static_cast<size_t>(
@@ -336,6 +345,13 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
   if (header->text_hooked == 0) {
     header->text_hooked = 1;  // 首次 flush：文本 hook proof-of-life
   }
+}
+
+void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
+                       const char* hookname, const LunaThreadParam& tp,
+                       uint64_t thread_id, const wchar_t* text, int wlen) {
+  WriteLunaTextEvent(header, hookcode, hookname, tp, thread_id,
+                     hibiki_voice_hook::kTextEventLine, 0, text, wlen);
 }
 
 // ── 多 hook 自动选干净线程（LunaHook 伪影过滤）────
@@ -520,14 +536,21 @@ void LunaConnect(DWORD pid) {
 void LunaDisconnect(DWORD pid) {
   fprintf(stderr, "[luna] disconnected pid=%lu\n", pid);
 }
-// 以下 stub 仅满足 Luna_Start 的前 8 个参数槽及签名，不做业务。
+// ThreadCreate 是 LunaTranslator 线程列表的真相源。不能再只从已通过自动赢家过滤的 Output
+// 反推线程，否则 TextRender 这类候选在线程被选中前没有已发布行，就永远无法出现在选择器里。
 void LunaThreadCreate(const wchar_t* hookcode, const char* hookname,
                       LunaThreadParam tp, bool embedable) {
-  (void)hookcode;
-  (void)hookname;
-  (void)tp;
-  (void)embedable;
+  if (g_luna.header == nullptr) {
+    return;
+  }
+  const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
+  WriteLunaTextEvent(
+      g_luna.header, hookcode, hookname, tp, thread_id,
+      hibiki_voice_hook::kTextEventThreadDiscovered, embedable ? 1u : 0u,
+      nullptr, 0);
 }
+// 线程目录按捕获会话整体清理；移除事件暂不透传，避免用户刚选中的短生命周期线程在 Luna
+// 重建同一 ThreadParam 的间隙被 UI 擅自切回自动。
 void LunaThreadRemove(const wchar_t* hookcode, const char* hookname,
                       LunaThreadParam tp) {
   (void)hookcode;

@@ -121,4 +121,35 @@ void main() {
       hasLength(3),
     );
   });
+
+  test('discovered Luna thread is selectable before it publishes a line', () {
+    final DateTime discoveredAt = DateTime(2026, 7, 21, 12);
+    TexthookerService.instance.registerTextThread(
+      key: 'luna:textrender',
+      label: 'TextRender · 0xf94600',
+      hookCode: 'HS932@f94600',
+      nativeThreadId: 0x9,
+      discoveredAt: discoveredAt,
+    );
+
+    expect(TexthookerService.instance.entries, isEmpty);
+    expect(TexthookerService.instance.textThreads, hasLength(1));
+    expect(
+      TexthookerService.instance.textThreads.single.label,
+      'TextRender · 0xf94600',
+    );
+    expect(TexthookerService.instance.textThreads.single.lineCount, 0);
+
+    TexthookerService.instance.appendLine(
+      'このように、とても素敵な性格のお方である。',
+      textThreadKey: 'luna:textrender',
+      textThreadLabel: 'TextRender · 0xf94600',
+      nativeTextThreadId: 0x9,
+      receivedAt: discoveredAt.add(const Duration(seconds: 1)),
+    );
+    expect(TexthookerService.instance.textThreads.single.lineCount, 1);
+
+    TexthookerService.instance.clear();
+    expect(TexthookerService.instance.textThreads, isEmpty);
+  });
 }

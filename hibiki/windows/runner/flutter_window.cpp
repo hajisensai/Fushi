@@ -1660,6 +1660,12 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                 {flutter::EncodableValue("sourceKind"),
                  flutter::EncodableValue(
                      static_cast<int64_t>(ln.source_kind))},
+                {flutter::EncodableValue("eventKind"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.event_kind))},
+                {flutter::EncodableValue("eventFlags"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.event_flags))},
                 {flutter::EncodableValue("hookName"),
                  flutter::EncodableValue(ln.hook_name)},
                 {flutter::EncodableValue("hookCode"),

@@ -32,7 +32,7 @@ struct VoiceHookStatus {
   bool ok = false;           // 映射有效且格式已就绪（音频格式已填）
 };
 
-// 一条 hook 抓到的台词行（v2 文本环）。
+// 一条 hook 文本事件（台词行或 Luna 线程发现，v7 文本环）。
 struct VoiceHookText {
   uint64_t seq = 0;           // 单调序号
   uint64_t timestamp_ms = 0;  // hook 写入时刻（GetTickCount64）
@@ -43,6 +43,8 @@ struct VoiceHookText {
   uint64_t thread_context2 = 0;
   uint32_t process_id = 0;
   uint32_t source_kind = 0;
+  uint32_t event_kind = 0;
+  uint32_t event_flags = 0;
   std::string hook_name;
   std::string hook_code;
 };
@@ -79,11 +81,11 @@ class VoiceHookReader {
   // 全部。未打开 / hook 未就绪 / 无数据时 [out] 清空、返回 ok=false。
   VoiceHookStatus GrabRecent(int back_ms, std::vector<uint8_t>& out);
 
-  // 当前文本行总数（text_write_count）；未打开返回 0。Dart 侧记住 last，取 (last, count] 的新行。
+  // 当前文本事件总数（text_write_count）；未打开返回 0。Dart 侧记住 last，取 (last, count]。
   uint64_t TextWriteCount();
 
-  // 取序号在 (from_seq, text_write_count] 区间的文本行（供 Dart 喂 texthooker）。最多回最近
-  // kTextSlotCount 条（更旧的已被覆盖）。未打开 / 无新行时 [out] 空。
+  // 取序号在 (from_seq, text_write_count] 区间的文本事件（供 Dart 喂 texthooker/线程目录）。最多
+  // 回最近 kTextSlotCount 个（更旧的已被覆盖）。未打开 / 无新事件时 [out] 空。
   void PollText(uint64_t from_seq, std::vector<VoiceHookText>& out);
 
   // 选择 Luna 文本线程：0 恢复自动选择，非 0 写入共享 header 让 injector 只发布该线程。

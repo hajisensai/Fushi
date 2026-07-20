@@ -412,7 +412,8 @@ void main() {
       await src.stop();
     });
 
-    test('pollText keeps Luna thread metadata for the UI selector', () async {
+    test('pollText keeps Luna thread discovery metadata for the UI selector',
+        () async {
       setHandler((MethodCall call) async {
         if (call.method != 'pollText') return null;
         expect(call.arguments, <String, Object?>{'fromSeq': 7});
@@ -422,14 +423,16 @@ void main() {
             <Object?, Object?>{
               'seq': 8,
               'ts': 123456,
-              'text': '選択する台詞',
+              'text': '',
               'threadId': 0x1234,
               'threadAddress': 0x5678,
               'threadContext': 9,
               'threadContext2': 10,
               'processId': 42,
               'sourceKind': 2,
-              'hookName': 'SiglusEngine',
+              'eventKind': 1,
+              'eventFlags': 1,
+              'hookName': 'TextRender',
               'hookCode': 'HS932@5678',
             },
           ],
@@ -444,10 +447,12 @@ void main() {
       expect(poll!.count, 8);
       final GalHookedLine line = poll.lines.single;
       expect(line.textThreadKey, 'luna:1234');
-      expect(line.textThreadLabel, 'SiglusEngine · 0x5678');
+      expect(line.textThreadLabel, 'TextRender · 0x5678');
       expect(line.hookCode, 'HS932@5678');
       expect(line.processId, 42);
       expect(line.threadContext2, 10);
+      expect(line.eventKind, GalTextEventKind.threadDiscovered);
+      expect(line.eventFlags, 1);
     });
 
     test('selectTextThread forwards the native thread id and can reset to auto',

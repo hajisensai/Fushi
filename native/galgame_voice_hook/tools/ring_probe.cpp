@@ -574,11 +574,11 @@ int main(int argc, char** argv) {
           r, hooked, calibrating, sr, ch, bits, is_float, cap, write_pos,
           static_cast<unsigned long long>(total), state);
     }
-    // v2：文本 hook 计数 + 按句语音 clip 计数 + 最近一条台词（UTF-16LE→UTF-8）。
+    // v7：文本事件计数 + 按句语音 clip 计数 + 最近一条台词（UTF-16LE→UTF-8）。
     const uint32_t text_hooked = header->text_hooked;
     const uint64_t twc = header->text_write_count;
     const uint64_t cwc = header->clip_write_count;
-    printf("     [v2] text_hooked=%u luna_active=%u decdiag=0x%02x text_lines=%llu voice_clips=%llu",
+    printf("     [v7] text_hooked=%u luna_active=%u decdiag=0x%02x text_events=%llu voice_clips=%llu",
            text_hooked, header->luna_active, header->reserved_luna,
            static_cast<unsigned long long>(twc),
            static_cast<unsigned long long>(cwc));

@@ -610,9 +610,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
-  /// v2 文本 hook：取序号在 `(fromSeq, count]` 的新台词行（我们注入 DLL 的文本 hook 抓的），
-  /// 供喂 Hibiki texthooker。返回 `count`(当前总行数) + `lines`(每行 seq/ts(GetTickCount64)/text)。
-  /// native 缺失 / 失败返回 null。
+  /// v7 文本 hook：取序号在 `(fromSeq, count]` 的新台词/线程发现事件，供喂 Hibiki
+  /// texthooker 与线程选择器。native 缺失 / 失败返回 null。
   Future<GalTextPoll?> pollText(int fromSeq) async {
     try {
       final Map<Object?, Object?>? r =
@@ -643,6 +642,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
               threadContext2: (e['threadContext2'] as int?) ?? 0,
               processId: (e['processId'] as int?) ?? 0,
               sourceKind: (e['sourceKind'] as int?) ?? 0,
+              eventKind: GalTextEventKind.fromNative(
+                (e['eventKind'] as int?) ?? 0,
+              ),
+              eventFlags: (e['eventFlags'] as int?) ?? 0,
               hookName: (e['hookName'] as String?) ?? '',
               hookCode: (e['hookCode'] as String?) ?? '',
             ));
@@ -949,8 +952,18 @@ class GalTextPoll {
   final List<GalHookedLine> lines;
 }
 
-/// 一条文本 hook 抓到的台词行：单调 [seq]、hook 写入时刻 [timestampMs]（GetTickCount64，与语音
-/// clip 同一时钟，供 [EngineHookGalAudioSource.grabClipNear] 按句配对语音）、[text]。
+enum GalTextEventKind {
+  line,
+  threadDiscovered;
+
+  static GalTextEventKind fromNative(int value) => switch (value) {
+        1 => GalTextEventKind.threadDiscovered,
+        _ => GalTextEventKind.line,
+      };
+}
+
+/// 一条文本 hook 事件：台词行携带 [text]；线程发现事件的 [text] 为空，只携带 Luna
+/// ThreadParam/hook 元数据。所有事件共享单调 [seq] 与 [timestampMs]（GetTickCount64）。
 class GalHookedLine {
   const GalHookedLine({
     required this.seq,
@@ -962,6 +975,8 @@ class GalHookedLine {
     this.threadContext2 = 0,
     this.processId = 0,
     this.sourceKind = 0,
+    this.eventKind = GalTextEventKind.line,
+    this.eventFlags = 0,
     this.hookName = '',
     this.hookCode = '',
   });
@@ -974,6 +989,8 @@ class GalHookedLine {
   final int threadContext2;
   final int processId;
   final int sourceKind;
+  final GalTextEventKind eventKind;
+  final int eventFlags;
   final String hookName;
   final String hookCode;
 

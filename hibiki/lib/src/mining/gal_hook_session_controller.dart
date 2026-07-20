@@ -961,6 +961,7 @@ class GalHookSessionController extends ChangeNotifier {
       final List<GalHookedLine> ordered = List<GalHookedLine>.from(poll.lines)
         ..sort((a, b) => a.seq.compareTo(b.seq));
       int cursor = _lastTextSeq;
+      bool receivedTextLine = false;
       for (final GalHookedLine line in ordered) {
         if (line.seq <= cursor) {
           _setState(
@@ -982,6 +983,20 @@ class GalHookSessionController extends ChangeNotifier {
             details: <String, Object?>{'from': cursor, 'to': line.seq},
           );
         }
+        if (line.eventKind == GalTextEventKind.threadDiscovered) {
+          final String? threadKey = line.textThreadKey;
+          final String? threadLabel = line.textThreadLabel;
+          if (threadKey != null && threadLabel != null) {
+            _textService.registerTextThread(
+              key: threadKey,
+              label: threadLabel,
+              hookCode: line.hookCode.isEmpty ? null : line.hookCode,
+              nativeThreadId: line.threadId,
+            );
+          }
+          cursor = line.seq;
+          continue;
+        }
         final TexthookerLineEntry? entry = _textService.appendLine(
           line.text,
           source: TexthookerLineSource.engineHook,
@@ -998,6 +1013,7 @@ class GalHookSessionController extends ChangeNotifier {
           cursor = line.seq;
           continue;
         }
+        receivedTextLine = true;
         _lineTimestampCache[entry.id] = line.timestampMs;
         _trimCache(_lineTimestampCache);
         final GalAudioSlice? clip =
@@ -1053,7 +1069,7 @@ class GalHookSessionController extends ChangeNotifier {
       }
       // 只推进到实际看见并处理完成的最大 seq；不能盲用 native header count 跳过未提交槽。
       if (cursor > _lastTextSeq) _lastTextSeq = cursor;
-      if (ordered.isNotEmpty) {
+      if (receivedTextLine) {
         _setState(
           _state.copyWith(
             phase: _state.fallbackReason == null
