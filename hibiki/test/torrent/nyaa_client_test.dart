@@ -268,7 +268,7 @@ void main() {
       // 旧实现走 res.body(latin1) 会把「ソ・ラ・ノ・ヲ・ト」变成「Soã»...」。
       const String jpTitle =
           '[ReinForce] ソ・ラ・ノ・ヲ・ト (BDRip 1920x1080 x264 FLAC)';
-      final String rss = '''
+      const String rss = '''
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa">
   <channel><item>

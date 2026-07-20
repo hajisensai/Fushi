@@ -1995,5 +1995,5 @@
   "video_setting_torrent_memory_limit": "内存占用上限（MB）",
   "video_setting_torrent_memory_hint": "限制引擎内存占用。0 = 自动（按设备内存推导）。",
   "download_settings": "下载设置",
-  "download_backend_not_configured": "请在下方「下载设置」里配置下载后端"
+  "download_backend_not_configured": "请先配置下载后端（右上角设置）"
 }

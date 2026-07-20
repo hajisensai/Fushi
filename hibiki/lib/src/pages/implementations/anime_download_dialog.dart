@@ -26,7 +26,11 @@ import 'package:hibiki/utils.dart';
 /// 种子列表 / 确认推送），底部常驻「下载任务」折叠区列出既有计划。所有网络操作
 /// 容错降级为空结果 + 节内提示，不崩对话框。
 class AnimeDownloadDialog extends ConsumerStatefulWidget {
-  const AnimeDownloadDialog({super.key});
+  const AnimeDownloadDialog({super.key, this.embedded = false});
+
+  /// 内联模式：直接铺在「下载」页里（无对话框外框、无标题栏、无取消按钮），
+  /// 用户要求番剧下载直接摊在页面上而非弹窗按钮。默认 false = 独立对话框。
+  final bool embedded;
 
   @override
   ConsumerState<AnimeDownloadDialog> createState() =>
@@ -973,6 +977,25 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     } else {
       stage = _buildConfirmStage(theme);
     }
+
+    // 内联模式：直接铺进「下载」页（Scaffold body 给有界高度，Expanded 分配空间、
+    // 各阶段内部 ListView 正常滚动）。无外框、无标题（页头已有）、无取消。
+    if (widget.embedded) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (_qbMissing) _buildQbHintBanner(theme),
+            if (_showJimakuKeyField) _buildJimakuKeyField(),
+            Expanded(child: stage),
+            const SizedBox(height: 4),
+            _buildTasksSection(theme),
+          ],
+        ),
+      );
+    }
+
     // scrollable:false：maxHeight 给整个对话框有界高度，Flexible 正常分配空间、
     // 各阶段内部 ListView 正常滚动（同 JimakuSubtitleDialog 的 BUG-279 不变量）。
     return HibikiDialogFrame(
