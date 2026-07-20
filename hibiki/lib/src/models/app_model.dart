@@ -2044,6 +2044,10 @@ class AppModel with ChangeNotifier {
       }).catchError((Object e, StackTrace s) {
         ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
       }));
+      // 合集变更 → 防抖轻量同步（根修「合集经常没同步」：合集维度原本只搭载在
+      // 低频全量 sweep 上，增删合集后长时间不推送）。任何合集表写入都会在防抖
+      // 后跑一轮只含合集维度的双通道同步，见 installCollectionsSyncWatcher 文档。
+      installCollectionsSyncWatcher(db: database);
       if (yomitanApiServerEnabled) {
         // fail-open：自启动失败绝不阻塞 init、不改开关语义，但必须留痕（BUG-911），
         // 与邻居 startSyncServer / refreshBrowserExtensionCopy 一致记日志，避免静默吞异常。

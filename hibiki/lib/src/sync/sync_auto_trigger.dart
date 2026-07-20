@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
@@ -357,6 +359,117 @@ Future<ManualSyncResult> runManualFullSync({
     _activeSyncs--;
     syncInProgress.value = _activeSyncs > 0;
     if (_activeSyncs == 0) syncProgress.value = null;
+  }
+}
+
+Timer? _collectionsSyncDebounce;
+StreamSubscription<void>? _collectionsWatchSub;
+Duration _collectionsSyncDebounceDuration = const Duration(seconds: 8);
+
+/// 装载「合集变更 → 防抖轻量同步」观察者（AppModel 初始化时调用一次；幂等，
+/// 重复调用先撤旧订阅）。
+///
+/// 根因修复：合集维度只搭载在低频的全量 sweep 上（app 冷启动 + 5 分钟冷却，或
+/// 手动「立即同步」），而用户高频触发的关书/切后台同步走单本路径、从不同步合集
+/// ——增删合集/成员后长时间不推送，即「合集经常没同步」。现在任何合集表写入
+/// （合集行/成员/墓碑，无论来自哪个页面）都会在 [debounce] 后跑一轮只含合集
+/// 维度的轻量同步（[SyncOrchestrator.runCollectionsOnly]，云 + 互联双通道）。
+///
+/// 不成环：同步自身 apply 的写入会再触发一轮，但清单 canonicalJson 相等即不
+/// 回写、目标态调和无 diff 即不写库——第二轮收敛为纯读 no-op 后不再有表事件。
+void installCollectionsSyncWatcher({
+  required HibikiDatabase db,
+  Duration debounce = const Duration(seconds: 8),
+}) {
+  uninstallCollectionsSyncWatcher();
+  _collectionsSyncDebounceDuration = debounce;
+  _collectionsWatchSub = db
+      .tableUpdates(TableUpdateQuery.onAllTables([
+        db.mediaCollections,
+        db.mediaCollectionItems,
+        db.collectionMemberTombstones,
+      ]))
+      .listen((_) => _scheduleCollectionsSync(db));
+}
+
+/// 撤销 [installCollectionsSyncWatcher] 的订阅与未决防抖定时器（测试 teardown /
+/// DB 关闭前用；无观察者时 no-op）。
+void uninstallCollectionsSyncWatcher() {
+  _collectionsWatchSub?.cancel();
+  _collectionsWatchSub = null;
+  _collectionsSyncDebounce?.cancel();
+  _collectionsSyncDebounce = null;
+}
+
+/// 测试观察点：观察者累计排定的防抖次数（仅测试断言「合集写入确实触发调度」用）。
+@visibleForTesting
+int collectionsSyncScheduledForTest = 0;
+
+void _scheduleCollectionsSync(HibikiDatabase db) {
+  collectionsSyncScheduledForTest++;
+  _collectionsSyncDebounce?.cancel();
+  _collectionsSyncDebounce = Timer(_collectionsSyncDebounceDuration, () {
+    _collectionsSyncDebounce = null;
+    unawaited(_runCollectionsSync(db: db));
+  });
+}
+
+/// 跑一轮只含合集维度的轻量同步（云备份 + 互联双通道，各自认证成功才跑）。
+/// 全量 sweep 进行中则重排到下个防抖窗——sweep 本就带合集维度，且它 apply 的
+/// 表写入还会再触发一次本观察者，最终收敛。
+@visibleForTesting
+Future<void> runCollectionsSyncNow({required HibikiDatabase db}) =>
+    _runCollectionsSync(db: db);
+
+Future<void> _runCollectionsSync({required HibikiDatabase db}) async {
+  if (_syncingIds.contains('__all__')) {
+    _scheduleCollectionsSync(db);
+    return;
+  }
+  if (!_syncingIds.add('__collections__')) return;
+  _activeSyncs++;
+  syncInProgress.value = true;
+  try {
+    await _autoSyncMutex.withLock(() async {
+      final repo = SyncRepository(db);
+      if (!await repo.isAutoSyncEnabled()) return;
+      for (final SyncBackend backend
+          in await _enabledSyncChannelBackends(repo)) {
+        await backend.restoreAuth(repo);
+        if (!await backend.isAuthenticated) continue;
+        final SyncOrchestrator orchestrator = SyncOrchestrator(
+          db: db,
+          backend: backend,
+          // 合集维度不触碰词典/音频/临时目录；systemTemp 仅为满足构造器形参，
+          // runCollectionsOnly 保证不落任何文件。
+          dictionaryResourceRoot: Directory.systemTemp,
+          audioDatabaseRoot: Directory.systemTemp,
+          tempDir: Directory.systemTemp,
+          deviceId: await repo.getOrCreateDeviceId(),
+          syncStats: false,
+          syncAudioBookPosition: false,
+          syncContent: false,
+          syncAudioBookFiles: false,
+          syncVideoFiles: false,
+          syncDictionary: false,
+          syncLocalAudio: false,
+          localAudioEntries: const <LocalAudioDbEntry>[],
+          onLocalAudioImported: (LocalAudioPackageContents _) async {},
+        );
+        final SyncRunReport report = await orchestrator.runCollectionsOnly();
+        logSyncReportErrors(report);
+      }
+    });
+  } catch (e) {
+    developer.log(
+      'Collections auto-sync failed',
+      error: e,
+      name: 'SyncAutoTrigger',
+    );
+  } finally {
+    _syncingIds.remove('__collections__');
+    _activeSyncs--;
+    syncInProgress.value = _activeSyncs > 0;
   }
 }
 
