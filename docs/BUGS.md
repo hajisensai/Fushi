@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 923 条。点号进各自文件。
+> 共 924 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-946](bugs/BUG-946-local-media-shelf-perf.md) | ✅ | ✅ | 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat |
 | [BUG-942](bugs/BUG-942-prev-cue-button-always-jump.md) | ✅ | ✅ | 上/下一句字幕按钮太远时退化成 3 秒 seek |
 | [BUG-941](bugs/BUG-941-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
 | [BUG-940](bugs/BUG-940-tag-filter-collection-rescue.md) | ✅ | ✅ | 标签筛选:打了标签的合集筛不出来(成员级过滤先于折叠剥空合集组) |
