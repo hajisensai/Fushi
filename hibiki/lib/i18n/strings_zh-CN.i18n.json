@@ -2164,5 +2164,6 @@
   "game_audio_fallback_allow": "允许音频降级",
   "game_audio_fallback_resource_only": "仅游戏资源音频",
   "game_audio_fallback_disabled_missing": "未找到与该句匹配的游戏资源音频；已关闭降级，未制卡",
-  "game_audio_resource_id": "音频资源 ID"
+  "game_audio_resource_id": "音频资源 ID",
+  "home_remote_source": "远端"
 }

@@ -19,6 +19,11 @@ DateTime _uniqueSubtitleCacheMtime(String seed) {
 /// 包含一个 id 含斜杠的视频（bookUid = `video/sample`），指向临时视频文件和字幕文件。
 class _FakeLibraryService implements HibikiLibraryHostService {
   @override
+  Future<List<RemoteActivityEvent>> listActivityEvents(
+          {int limit = 100}) async =>
+      const <RemoteActivityEvent>[];
+
+  @override
   Future<String?> videoCoverPath(String id) async {
     for (final RemoteVideoInfo v in await listVideos()) {
       if (v.id == id) return v.coverPath;

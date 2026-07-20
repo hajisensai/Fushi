@@ -547,6 +547,9 @@ class HibikiSyncServer {
     if (reqPath == '/api/library/aggregate') {
       return _handleLibraryAggregate(request, method, reqPath);
     }
+    if (reqPath == '/api/library/activity') {
+      return _handleLibraryActivity(request, method);
+    }
     if (reqPath == '/api/library/collections') {
       return _handleLibraryCollections(request, method, reqPath);
     }
@@ -1619,6 +1622,29 @@ class HibikiSyncServer {
     // 只拒 `..`（路径穿越），允许 `/`（bookUid 形如 video/xxx）
     if (id.contains('..') || id.contains('\\')) return null;
     return id;
+  }
+
+  /// GET /api/library/activity — host 最近活动事件（新首页 Activity 面板的互联
+  /// 数据源；display-only，client 不落库）。limit 参数钳制 1..500。老 client 不知
+  /// 道此端点、老 host 对此路径 404（client 侧优雅降级为空列表）。
+  Future<shelf.Response> _handleLibraryActivity(
+    shelf.Request request,
+    String method,
+  ) async {
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+    if (method != 'GET') return shelf.Response(405);
+    final int limit =
+        (int.tryParse(request.url.queryParameters['limit'] ?? '') ?? 100)
+            .clamp(1, 500);
+    final List<RemoteActivityEvent> events =
+        await svc.listActivityEvents(limit: limit);
+    return shelf.Response.ok(
+      jsonEncode(<Map<String, Object?>>[
+        for (final RemoteActivityEvent e in events) e.toJson(),
+      ]),
+      headers: <String, String>{'Content-Type': 'application/json'},
+    );
   }
 
   Future<shelf.Response> _handleLibraryVideos(

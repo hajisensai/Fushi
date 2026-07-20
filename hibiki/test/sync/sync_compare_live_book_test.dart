@@ -16,6 +16,11 @@ HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
 
 class _LiveBookLibraryService implements HibikiLibraryHostService {
   @override
+  Future<List<RemoteActivityEvent>> listActivityEvents(
+          {int limit = 100}) async =>
+      const <RemoteActivityEvent>[];
+
+  @override
   Future<String?> videoCoverPath(String id) async {
     for (final RemoteVideoInfo v in await listVideos()) {
       if (v.id == id) return v.coverPath;

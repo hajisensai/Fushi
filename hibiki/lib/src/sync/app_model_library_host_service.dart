@@ -304,6 +304,11 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         await _db.allTagTombstonesByName('epub');
     final Map<String, RemoteCollectionMembership> membership =
         await _primaryCollectionMembership();
+    // 阅读进度内联（首页仪表盘「继续」的互联数据源）：percent 与本地首页同源同算
+    // （MediaItems.position/duration），最近阅读时刻取 reader_positions.updatedAt。
+    // 各一趟批查；旧 client 忽略这两个 additive 字段。
+    final Map<String, ({int percent, int updatedAtMs})> progressByKey =
+        await _bookProgressByKey();
     // BUG-812：srt-backed 有声书（同 bookKey 既有 EpubBooks 又有 SrtBooks 行）加入合集
     // 时以 **`srt|<uid>`** 存进成员表（本地书架把它当 SRT 卡渲染、经 srt|uid 折叠），
     // 而非 `epub|<bookKey>`。互联 client 把这类书作为 EPUB 占位卡收下，只查 `epub|bookKey`
@@ -338,8 +343,60 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
             (srtUidByBookKey[r.bookKey] != null
                 ? membership['srt|${srtUidByBookKey[r.bookKey]}']
                 : null),
+        progressPercent: progressByKey[r.bookKey]?.percent ?? 0,
+        progressUpdatedAtMs: progressByKey[r.bookKey]?.updatedAtMs ?? 0,
       );
     }).toList();
+  }
+
+  static final RegExp _hoshiBookKeyPattern = RegExp(r'^hoshi://book/(.+)$');
+
+  /// 批查全库书籍阅读进度「bookKey → (percent 0..100, 最近阅读毫秒戳)」。
+  ///
+  /// percent 与本地首页仪表盘「继续」完全同算：`MediaItems.position/duration`
+  /// （书的 MediaItem.mediaIdentifier = `hoshi://book/<bookKey>`）；时刻取
+  /// `reader_positions.updatedAt`。两趟全表读，无逐书查询。
+  Future<Map<String, ({int percent, int updatedAtMs})>>
+      _bookProgressByKey() async {
+    final Map<String, int> updatedAtByKey = <String, int>{
+      for (final ReaderPositionRow r in await _db.getAllReaderPositions())
+        r.bookKey: r.updatedAt,
+    };
+    final Map<String, ({int percent, int updatedAtMs})> out =
+        <String, ({int percent, int updatedAtMs})>{};
+    for (final MediaItemRow m in await _db.getAllMediaItems()) {
+      final RegExpMatch? match =
+          _hoshiBookKeyPattern.firstMatch(m.mediaIdentifier);
+      if (match == null) continue;
+      final String bookKey = match.group(1)!;
+      if (m.duration <= 0 || m.position <= 0) continue;
+      out[bookKey] = (
+        percent: ((m.position / m.duration) * 100).clamp(0, 100).round(),
+        updatedAtMs: updatedAtByKey[bookKey] ?? 0,
+      );
+    }
+    return out;
+  }
+
+  /// host 最近 [limit] 条活动事件（新首页 Activity 面板互联数据源）。
+  @override
+  Future<List<RemoteActivityEvent>> listActivityEvents(
+      {int limit = 100}) async {
+    final List<ActivityEventRow> rows =
+        await _db.getRecentActivityEvents(limit: limit);
+    return <RemoteActivityEvent>[
+      for (final ActivityEventRow r in rows)
+        RemoteActivityEvent(
+          eventType: r.eventType,
+          mediaType: r.mediaType,
+          title: r.title,
+          dateKey: r.dateKey,
+          timestampMs: r.timestampMs,
+          mediaKey: r.mediaKey,
+          durationMs: r.durationMs,
+          charsDelta: r.charsDelta,
+        ),
+    ];
   }
 
   /// 即时把书名为 [title] 的书 extractDir 重打包成 .epub 临时文件，返回该文件。
