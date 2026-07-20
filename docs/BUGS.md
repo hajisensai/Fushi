@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 941 条。点号进各自文件。
+> 共 942 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-961](bugs/BUG-961-voice-hook-helper-release-missing.md) | ✅ | ✅ | galgame voice hook helper 引擎组件下载 404（release 从未产出） |
 | [BUG-960](bugs/BUG-960-textrender-thread-catalog.md) | ✅ | ✅ | 9nine 的 Luna 线程列表缺少 TextRender |
 | [BUG-959](bugs/BUG-959-local-media-shelf-perf.md) | ✅ | ✅ | 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat |
 | [BUG-958](bugs/BUG-958-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
