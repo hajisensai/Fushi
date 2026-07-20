@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 915 条。点号进各自文件。
+> 共 916 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-936](bugs/BUG-936-video-ime-space-playpause.md) | ✅ | ✅ | 日文IME激活时视频页空格无法播放暂停（BUG-853 修复真机仍失效） |
 | [BUG-934](bugs/BUG-934-prev-sentence-dup.md) | ✅ | ✅ | 前加一句制卡把当前句重复采集两遍 |
 | [BUG-933](bugs/BUG-933-mining-ui-jank-isolate.md) | ✅ | ✅ | 制卡媒体处理阻塞UI线程未响应 |
 | [BUG-932](bugs/BUG-932-popup-mine-plus-size.md) | ✅ | ✅ | 查词弹窗制卡加号(+)比相邻图标小 |

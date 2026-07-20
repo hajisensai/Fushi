@@ -3979,9 +3979,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 经 [_runWhenImmersiveAllowsShortcuts] 尊重沉浸锁门控）。
   ///
   /// 纯识别逻辑抽到可单测的 [isVideoImeSpacePlayPause]。文本框正在 composing 时
-  /// （[focusedEditableText] 非空）不接管，避免 IME 变换候选词按空格误触暂停。只识别
-  /// `process`（IME 专有逻辑键），裸 Space 仍走既有 SingleActivator 路径不变
-  /// （Never break userspace）。
+  /// （[focusedEditableText] 非空）不接管，避免 IME 变换候选词按空格误触暂停。BUG-936：
+  /// 按**物理键** [PhysicalKeyboardKey.space] 判定（唯一不受 IME 改写的稳定信号），只要
+  /// 逻辑键已被 IME 改写（非裸 `space`）即命中，覆盖 `process` 及任意其它 IME 改写值；
+  /// 裸 Space 仍走既有 SingleActivator 路径不变（Never break userspace）。
   bool _handleVideoImeSpacePlayPause(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     final VideoPlayerController? controller = _controller;
