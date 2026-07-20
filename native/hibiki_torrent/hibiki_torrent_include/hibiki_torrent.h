@@ -78,6 +78,16 @@ HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
                                        int send_buffer_watermark,
                                        int max_peerlist_size);
 
+// 应用会话级设置（抄 qBittorrent 关键项）。[listen_port]>0 时重设监听端口；
+// [enable_dht]/[enable_lsd]/[enable_upnp]/[enable_natpmp] 0/1 开关；[enc_policy]
+// 0=首选(pe_enabled) 1=强制(pe_forced) 2=禁用(pe_disabled)（出入站同设）；
+// [anonymous_mode] 0/1；[active_downloads]/[active_seeds]/[max_upload_slots]
+// >0 时设、<=0 保持默认。返回 1 成功 0 失败。
+HT_EXPORT int ht_apply_session_settings(
+    void* session, int listen_port, int enable_dht, int enable_lsd,
+    int enable_upnp, int enable_natpmp, int enc_policy, int anonymous_mode,
+    int active_downloads, int active_seeds, int max_upload_slots);
+
 // 添加磁力链接，落盘到 [save_path]；[sequential] 非 0 开顺序下载。
 // 成功 {"ok":true,"id":"<infohash>"}；失败 {"ok":false,"error":"..."}。
 // 重复添加同一种子返回已有种子的 id（ok:true）。
