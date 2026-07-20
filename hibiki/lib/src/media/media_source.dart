@@ -379,7 +379,7 @@ abstract class MediaSource {
     if (item.imageUrl != null) {
       if (item.imageUrl!.startsWith('file://')) {
         final String filePath = Uri.parse(item.imageUrl!).toFilePath();
-        // BUG-946: 按物理像素上限解码，避免 EPUB 原始封面(常 1600×2400)整帧撑爆 ImageCache。
+        // BUG-959: 按物理像素上限解码，避免 EPUB 原始封面(常 1600×2400)整帧撑爆 ImageCache。
         return resizedFileImage(File(filePath));
       } else {
         return CachedNetworkImageProvider(
@@ -476,7 +476,7 @@ abstract class MediaSource {
       return null;
     }
 
-    // BUG-946: 降采样解码；existsSync 保留——它区分「有无 override 封面」（同步 API，
+    // BUG-959: 降采样解码；existsSync 保留——它区分「有无 override 封面」（同步 API，
     // 返回 null 表示无 override 由上层回落正常封面），改异步会牵动所有 build 调用点。
     return resizedFileImage(file);
   }

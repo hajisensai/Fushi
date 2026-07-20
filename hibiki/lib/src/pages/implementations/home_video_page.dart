@@ -2839,7 +2839,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       // TODO-616 phase C: 本地视频封面同样用 contain（封面卡槽比 16:9 源更窄，
       // cover 会裁左右），完整显示不裁切。
       fit: BoxFit.contain,
-      // BUG-946: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
+      // BUG-959: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
       cacheWidth: kLocalCoverDecodePixelWidth,
       errorBuilder: (_, __, ___) => _coverPlaceholder(),
     );

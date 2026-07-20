@@ -295,7 +295,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
         imageErrorBuilder: (_, __, ___) =>
             _coverPlaceholderIcon(Icons.menu_book_outlined),
         placeholder: MemoryImage(kTransparentImage),
-        // BUG-946: 降采样解码，已下载书封面同样避免整帧撑爆 ImageCache。
+        // BUG-959: 降采样解码，已下载书封面同样避免整帧撑爆 ImageCache。
         image: resizedFileImage(File(coverPath)),
         alignment: Alignment.topCenter,
         fit: _bookCardCoverFit,

@@ -1,4 +1,4 @@
-## BUG-946 · 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat
+## BUG-959 · 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat
 - **报告**：2026-07-21（用户：桌面端打开「视频」页，合集与封面要等半天；书籍/有声书页同理）
 - **真实性**：✅ 真 bug。桌面本地媒体库首屏三条慢路径（均在 origin/develop `f045b1201` 上验真，主 checkout 落后 683 提交故不可信）：
   - **合集 N+1**：视频页 `hibiki/lib/src/pages/implementations/home_video_page.dart:275-282`（`_loadLibraryMaps` 对每个合集各跑一次 `getCollectionItems`）；书籍页 `hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart:533-540`（`_loadShelfMaps` 同款）。合集横排行渲染被这条串行 N 查询 gate，合集越多越慢——归属映射早已用单条 `GROUP BY MIN` 聚合（`packages/hibiki_core/lib/src/database/database.dart:2648` `getPrimaryCollectionIdByEntry`）拿到，组内 sortIndex 却退回逐合集查。

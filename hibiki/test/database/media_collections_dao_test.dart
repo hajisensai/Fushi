@@ -127,7 +127,7 @@ void main() {
 
   test(
       'getAllCollectionItems 覆盖全部合集全部成员，按 collectionId 分组逐组等于 '
-      'getCollectionItems（BUG-946 消除 N+1）', () async {
+      'getCollectionItems（BUG-959 消除 N+1）', () async {
     final db = await _openDb();
     final int c1 = await db.createMediaCollection('C1');
     final int c2 = await db.createMediaCollection('C2');

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guards the BUG-946 fix: the local video/book shelf first paint must stay fast.
+/// Guards the BUG-959 fix: the local video/book shelf first paint must stay fast.
 ///
 /// Three regressions made the desktop「视频」/ 书架 pages take "half a day" to show
 /// collections and covers, all on the LOCAL path (not interconnect/remote):
@@ -64,7 +64,7 @@ void main() {
     return source.substring(start, end);
   }
 
-  group('BUG-946 · 降采样 helper', () {
+  group('BUG-959 · 降采样 helper', () {
     test('cover_image.dart 定义解码上限常量与 resizedFileImage', () {
       expect(coverImageSrc.contains('const int kLocalCoverDecodePixelWidth'),
           isTrue);
@@ -77,7 +77,7 @@ void main() {
     });
   });
 
-  group('BUG-946 · 合集 N+1 收敛为单查询', () {
+  group('BUG-959 · 合集 N+1 收敛为单查询', () {
     test('database.dart 提供 getAllCollectionItems 批量查询', () {
       expect(
           dbSrc.contains(
@@ -90,7 +90,7 @@ void main() {
       final String body =
           methodBody(videoPageSrc, 'Future<void> _loadLibraryMaps() async {');
       expect(body.contains('getAllCollectionItems()'), isTrue,
-          reason: '视频页合集分组必须一次查全部成员，否则合集行渲染被 N+1 gate（BUG-946）。');
+          reason: '视频页合集分组必须一次查全部成员，否则合集行渲染被 N+1 gate（BUG-959）。');
       expect(body.contains('getCollectionItems('), isFalse,
           reason: '不得再逐合集查询（N+1）。');
     });
@@ -99,17 +99,17 @@ void main() {
       final String body =
           methodBody(historyPageSrc, 'Future<void> _loadShelfMaps() async {');
       expect(body.contains('getAllCollectionItems()'), isTrue,
-          reason: '书架页合集分组必须一次查全部成员（BUG-946）。');
+          reason: '书架页合集分组必须一次查全部成员（BUG-959）。');
       expect(body.contains('getCollectionItems('), isFalse,
           reason: '不得再逐合集查询（N+1）。');
     });
   });
 
-  group('BUG-946 · 本地封面降采样', () {
+  group('BUG-959 · 本地封面降采样', () {
     test('视频 _buildCover 按上限解码降采样', () {
       final String body = methodBody(videoPageSrc, 'Widget _buildCover(');
       expect(body.contains('cacheWidth: kLocalCoverDecodePixelWidth'), isTrue,
-          reason: '视频封面必须降采样，否则原生分辨率整帧撑爆 ImageCache（BUG-946）。');
+          reason: '视频封面必须降采样，否则原生分辨率整帧撑爆 ImageCache（BUG-959）。');
     });
 
     test('书籍封面 provider 走 resizedFileImage（media_source / 卡片 / 已下载书）', () {

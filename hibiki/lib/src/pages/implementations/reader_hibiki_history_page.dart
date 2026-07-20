@@ -530,7 +530,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         await appModel.database.getPrimaryCollectionIdByEntry();
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行，与 primaryMap
     // 同口径；详情页拖完 onChanged 重载本映射，库页行立即同序）。
-    // BUG-946: 一次 getAllCollectionItems 查全部成员内存分组，替代逐合集
+    // BUG-959: 一次 getAllCollectionItems 查全部成员内存分组，替代逐合集
     // getCollectionItems 的 N+1（合集越多首屏合集行渲染越慢）。判据
     // `primaryMap[key] == m.collectionId` 与旧逐合集 `== c.id` 等价。
     final Map<String, int> memberSortIndex = <String, int>{};
