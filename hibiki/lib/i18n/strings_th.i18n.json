@@ -402,7 +402,7 @@
   "stat_format_minutes": "$n นาที",
   "stat_format_hours_minutes": "$h ชม. $m นาที",
   "stat_format_chars": "$n ตัวอักษร",
-  "stat_format_chars_wan": "$n ตัวอักษร",
+  "stat_format_chars_wan": "$n万 ตัวอักษร",
   "error_log_share_subject": "บันทึกข้อผิดพลาด hibiki",
   "update_never_remind": "ไม่ต้องแจ้งเตือน",
   "update_auto_install": "ติดตั้งอัปเดตอัตโนมัติ",

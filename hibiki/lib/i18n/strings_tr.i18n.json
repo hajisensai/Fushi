@@ -402,7 +402,7 @@
   "stat_format_minutes": "$n dk",
   "stat_format_hours_minutes": "$h sa $m dk",
   "stat_format_chars": "$n karakter",
-  "stat_format_chars_wan": "$n karakter",
+  "stat_format_chars_wan": "$n万 karakter",
   "error_log_share_subject": "hibiki Hata Günlüğü",
   "update_never_remind": "Güncellemeleri hatırlatma",
   "update_auto_install": "Güncellemeleri otomatik yükle",

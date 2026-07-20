@@ -402,7 +402,7 @@
   "stat_format_minutes": "$n min",
   "stat_format_hours_minutes": "$h uur $m min",
   "stat_format_chars": "$n tekens",
-  "stat_format_chars_wan": "$n tekens",
+  "stat_format_chars_wan": "$n万 tekens",
   "error_log_share_subject": "hibiki foutenlogboek",
   "update_never_remind": "Niet meer herinneren",
   "update_auto_install": "Updates automatisch installeren",

@@ -402,7 +402,7 @@
   "stat_format_minutes": "$n phút",
   "stat_format_hours_minutes": "$h giờ $m phút",
   "stat_format_chars": "$n ký tự",
-  "stat_format_chars_wan": "$n ký tự",
+  "stat_format_chars_wan": "$n万 ký tự",
   "error_log_share_subject": "Nhật ký lỗi hibiki",
   "update_never_remind": "Không nhắc lại",
   "update_auto_install": "Tự động cài đặt bản cập nhật",
