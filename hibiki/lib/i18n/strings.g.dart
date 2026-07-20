@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 34646 (2038 per locale)
+/// Strings: 34663 (2039 per locale)
 ///
-/// Built on 2026-07-20 at 04:47 UTC
+/// Built on 2026-07-20 at 16:46 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2732,6 +2732,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get clipboard_history_title => 'Clipboard history';
   String get clipboard_history_clear => 'Clear';
   String get clipboard_history_empty => 'No copy history yet';
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -7348,6 +7349,8 @@ class _StringsAr extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -12037,6 +12040,8 @@ class _StringsDe extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -16742,6 +16747,8 @@ class _StringsEs extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -21458,6 +21465,8 @@ class _StringsFr extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -26101,6 +26110,8 @@ class _StringsId extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -30792,6 +30803,8 @@ class _StringsIt extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -35289,6 +35302,8 @@ class _StringsJa extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -39789,6 +39804,8 @@ class _StringsKo extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -44458,6 +44475,8 @@ class _StringsNl extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -49142,6 +49161,8 @@ class _StringsPtBr extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -53809,6 +53830,8 @@ class _StringsRu extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -58421,6 +58444,8 @@ class _StringsTh extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -63065,6 +63090,8 @@ class _StringsTr extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -67696,6 +67723,8 @@ class _StringsVi extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 // Path: <root>
@@ -72007,6 +72036,8 @@ class _StringsZhCn extends _StringsEn {
   String get clipboard_history_clear => '清空';
   @override
   String get clipboard_history_empty => '暂无复制记录';
+  @override
+  String get home_remote_source => '远端';
 }
 
 // Path: <root>
@@ -76426,6 +76457,8 @@ class _StringsZhHk extends _StringsEn {
   String get clipboard_history_clear => 'Clear';
   @override
   String get clipboard_history_empty => 'No copy history yet';
+  @override
+  String get home_remote_source => 'Remote';
 }
 
 /// Flat map(s) containing all translations.
@@ -80592,6 +80625,8 @@ extension on _StringsEn {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -84756,6 +84791,8 @@ extension on _StringsAr {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -88941,6 +88978,8 @@ extension on _StringsDe {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -93125,6 +93164,8 @@ extension on _StringsEs {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -97315,6 +97356,8 @@ extension on _StringsFr {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -101487,6 +101530,8 @@ extension on _StringsId {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -105674,6 +105719,8 @@ extension on _StringsIt {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -109823,6 +109870,8 @@ extension on _StringsJa {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -113976,6 +114025,8 @@ extension on _StringsKo {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -118156,6 +118207,8 @@ extension on _StringsNl {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -122333,6 +122386,8 @@ extension on _StringsPtBr {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -126515,6 +126570,8 @@ extension on _StringsRu {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -130681,6 +130738,8 @@ extension on _StringsTh {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -134856,6 +134915,8 @@ extension on _StringsTr {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -139026,6 +139087,8 @@ extension on _StringsVi {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }
@@ -143163,6 +143226,8 @@ extension on _StringsZhCn {
         return '清空';
       case 'clipboard_history_empty':
         return '暂无复制记录';
+      case 'home_remote_source':
+        return '远端';
       default:
         return null;
     }
@@ -147307,6 +147372,8 @@ extension on _StringsZhHk {
         return 'Clear';
       case 'clipboard_history_empty':
         return 'No copy history yet';
+      case 'home_remote_source':
+        return 'Remote';
       default:
         return null;
     }

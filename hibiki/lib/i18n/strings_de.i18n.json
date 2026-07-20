@@ -2036,5 +2036,6 @@
   "home_dashboard_title": "Home",
   "clipboard_history_title": "Clipboard history",
   "clipboard_history_clear": "Clear",
-  "clipboard_history_empty": "No copy history yet"
+  "clipboard_history_empty": "No copy history yet",
+  "home_remote_source": "Remote"
 }
