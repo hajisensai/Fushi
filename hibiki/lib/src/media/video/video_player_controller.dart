@@ -2464,14 +2464,22 @@ class VideoPlayerController extends ChangeNotifier
     await skipToCue(_cues[prev]);
   }
 
-  /// 视频键盘 Ctrl+← 用：跳上一句，但**上一句太远时退化成回退 [seekSeconds] 秒**
-  /// （TODO-085）。决策走 [prevSeekDecisionFor]：目标上一句起点距当前位置不超过
-  /// `seekSeconds` 秒就跳句；超过就只回退 `seekSeconds` 秒。底栏「上一句」按钮仍走
-  /// 纯 [skipToPrevCue]（按钮语义不退化）。无 cue / 已在首句时 no-op 安全。
-  Future<void> skipToPrevCueOrSeekBack({required int seekSeconds}) async {
+  /// 跳上一句字幕。无 cue 时退化成回退 [seekSeconds] 秒（当回退键，让用户跨过没字幕的
+  /// 转场段，TODO-119/BUG-198）；有 cue 时的行为由 [degradeFarCueToTimeSeek] 决定：
+  ///
+  /// - `false`（**默认**，按钮 / 手柄 / 双击 / 控制项语义，BUG-942）：**恒跳到相邻上一句**，
+  ///   哪怕上一句距当前很远也不退化——「上一句字幕」按钮就该跳句，不该悄悄变成 3 秒 seek。
+  /// - `true`（键盘 Ctrl+← 语义，TODO-085）：上一句起点距当前 > `seekSeconds` 秒时退化成
+  ///   回退 `seekSeconds` 秒（方向键的 seek 心智；纯时间 seek 另有 ←/→）。
+  ///
+  /// 决策集中在纯函数 [prevSeekDecisionFor]。无 cue / 已在首句时 no-op 安全。
+  Future<void> skipToPrevCueOrSeekBack({
+    required int seekSeconds,
+    bool degradeFarCueToTimeSeek = false,
+  }) async {
     if (_cues.isEmpty) {
-      // 无字幕：键盘 ← 本就该当回退键，直接回退 seekSeconds 秒（与页面层「无 cue
-      // 走时间 seek」一致，但这里集中决策便于单测）。
+      // 无字幕：当回退键，直接回退 seekSeconds 秒（与页面层「无 cue 走时间 seek」一致，
+      // 集中决策便于单测）。
       await seekRelative(-seekSeconds * 1000);
       return;
     }
@@ -2480,6 +2488,7 @@ class VideoPlayerController extends ChangeNotifier
       positionMs: _effectivePositionMs,
       seekSeconds: seekSeconds,
       anchorIndex: _seekTargetCueIndex,
+      degradeFarCueToTimeSeek: degradeFarCueToTimeSeek,
     );
     if (decision.cueIndex != null) {
       await skipToCue(_cues[decision.cueIndex!]);
@@ -2636,24 +2645,26 @@ class VideoPlayerController extends ChangeNotifier
     return positionMs - cues[idx].startMs;
   }
 
-  /// 纯函数：「上一句」seek 决策（TODO-085）。普通向后跳句时，若目标上一句的
-  /// 起点距当前位置太远（gap 大于 [seekSeconds] 秒），则**退化成回退 [seekSeconds]
-  /// 秒的时间 seek**，而不是一脚跳到很远的上一句 —— 对照用户诉求「如果上一句话距离
-  /// 很远了，左右键就回退到回退 3 秒的模式」。
+  /// 纯函数：「上一句」seek 决策。目标上一句由 [prevCueIndexFor] 决定；
+  /// [degradeFarCueToTimeSeek] 控制「上一句太远」时的行为：
   ///
-  /// 决策与 [prevCueIndexFor] 共用「上一句索引」语义，只是在「目标存在但太远」时把
-  /// 句子跳转换成时间回退：
-  /// - 目标上一句存在且其起点距当前位置 `<= seekSeconds*1000` ms：跳到该 cue（句子 seek）。
-  /// - 目标上一句存在但起点距当前位置 `> seekSeconds*1000` ms：返回 [PrevSeekDecision.timeSeek]
-  ///   （回退 `seekSeconds` 秒）。
+  /// - `true`（**默认**，键盘 Ctrl+← 语义，TODO-085）：目标上一句起点距当前位置 gap
+  ///   大于 [seekSeconds] 秒时**退化成回退 [seekSeconds] 秒的时间 seek**，而不是一脚跳到
+  ///   很远的上一句——对照用户诉求「如果上一句话距离很远了，左右键就回退到回退 3 秒的模式」。
+  /// - `false`（按钮 / 手柄 / 双击 / 控制项语义，BUG-942）：**永远跳句**，不因太远退化——
+  ///   「上一句字幕」按钮就该跳到相邻上一句。
+  ///
+  /// 具体：
   /// - 无上一句（已在首句 / 空列表）：返回 [PrevSeekDecision.none]（保持原 no-op 不强行 seek）。
-  ///
-  /// [seekSeconds] <= 0 时退化阈值失效，永远跳句（防御性，正常配置恒 >= 1）。
+  /// - `degradeFarCueToTimeSeek == false`，或 [seekSeconds] <= 0（阈值失效，防御性）：跳到该 cue。
+  /// - 目标上一句起点距当前 `<= seekSeconds*1000` ms：跳到该 cue（句子 seek）。
+  /// - 目标上一句起点距当前 `> seekSeconds*1000` ms：返回 [PrevSeekDecision.timeSeek]（回退 `seekSeconds` 秒）。
   static PrevSeekDecision prevSeekDecisionFor({
     required List<AudioCue> cues,
     required int? positionMs,
     required int seekSeconds,
     int? anchorIndex,
+    bool degradeFarCueToTimeSeek = true,
   }) {
     final int? prev = prevCueIndexFor(
       cues: cues,
@@ -2661,7 +2672,9 @@ class VideoPlayerController extends ChangeNotifier
       anchorIndex: anchorIndex,
     );
     if (prev == null) return PrevSeekDecision.none;
-    if (seekSeconds <= 0) return PrevSeekDecision.cue(prev);
+    if (!degradeFarCueToTimeSeek || seekSeconds <= 0) {
+      return PrevSeekDecision.cue(prev);
+    }
     final int pos = positionMs ?? 0;
     final int gapMs = pos - cues[prev].startMs;
     final int thresholdMs = seekSeconds * 1000;

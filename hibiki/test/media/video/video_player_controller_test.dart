@@ -1337,9 +1337,10 @@ void main() {
   //
   // 这是 TODO-073「下一句」方向的反方向。用户复现：动画转场片段没配音和字幕（落在两条
   // cue 之间的长 gap，或整段无字幕轨）时，按「字幕回退键」毫无反应：
-  //   - 有字幕但上一句太远（转场 gap）：旧的底栏「上一句」按钮走裸 skipToPrevCue →
-  //     prevCueIndexFor 会一脚跳到很远的上一句，或在已是首句时 no-op；而键盘已经走
-  //     skipToPrevCueOrSeekBack 退化回退 Xs（TODO-085）。本组钉死按钮也走同一退化决策。
+  //   - 有字幕但上一句太远（转场 gap）：**键盘 Ctrl+←** 走 skipToPrevCueOrSeekBack 退化
+  //     回退 Xs（TODO-085，degradeFarCueToTimeSeek:true）；**底栏 / 手柄 / 双击按钮**则恒
+  //     跳到相邻上一句、不退化（BUG-942，默认 degradeFarCueToTimeSeek:false）。本组钉死
+  //     键盘退化决策；按钮不退化决策见下方 BUG-942 用例。
   //   - 无字幕（空 cue 列表）：旧的 skipToPrevCue() 直接 no-op（按钮毫无反应，用户感知
   //     「卡住 / 回退不了」）。skipToPrevCueOrSeekBack 让无字幕时回退 seekSeconds 秒
   //     （与 skipToNextCueOrSeekForward 前进 Xs 对称），跨过没字幕的转场段往回走。
@@ -1374,6 +1375,21 @@ void main() {
       );
       expect(d, const PrevSeekDecision.cue(0),
           reason: '上一句够近（<= seekSeconds）时仍跳到该 cue，不退化成时间 seek');
+    });
+
+    test('BUG-942 按钮语义(degradeFarCueToTimeSeek:false)：上一句很远也跳句、不退化', () {
+      // 与上面「上一句很远 → 退化回退 3s」同场景（pos=70000，上一句 cue0 距当前
+      // ~31.5s > 3s），但**按钮路径**传 degradeFarCueToTimeSeek:false → 恒跳到相邻上一句
+      // cue0，绝不退化成回退 3 秒。moonbeam 报「上/下一句按钮只 ±3 秒 seek」的根治。
+      final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+        cues: transitionCues,
+        positionMs: 70000,
+        seekSeconds: 3,
+        degradeFarCueToTimeSeek: false,
+      );
+      expect(d, const PrevSeekDecision.cue(0),
+          reason: '按钮「上一句」恒跳句：上一句再远也跳到相邻上一句，不悄悄变成 3 秒 seek');
+      expect(d.timeSeekDeltaMs, isNull);
     });
 
     test('开头边界：回退目标 clamp 到 0（不越过视频开头到负位置）', () {

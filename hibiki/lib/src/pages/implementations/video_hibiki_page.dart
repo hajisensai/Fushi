@@ -3766,9 +3766,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       pause: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.pause()),
       ),
-      // Ctrl+←/→ = 上/下一句字幕（TODO-090）。上一句太远时 Ctrl+← 退化成回退
-      // seekSeconds 秒（TODO-085），决策集中在 [skipToPrevCueOrSeekBack]；无 cue
+      // Ctrl+←/→ = 上/下一句字幕（TODO-090）。**键盘方向键**语义：上一句太远时 Ctrl+←
+      // 退化成回退 seekSeconds 秒（TODO-085，故 degradeFarCueToTimeSeek: true）；无 cue
       // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
+      // 底栏 / 手柄 / 双击的「上一句」按钮走 skipToPrevCueOrSeekBack 的默认（不退化，
+      // 恒跳句，BUG-942）——按钮心智是「跳句」，不是方向键 seek。
       // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
       // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
       previousSubtitle: () {
@@ -3777,6 +3779,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           unawaited(
             controller.skipToPrevCueOrSeekBack(
               seekSeconds: _asbConfig.seekSeconds,
+              degradeFarCueToTimeSeek: true,
             ),
           );
         });
@@ -5309,8 +5312,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _pokeControlsVisible();
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    // 无字幕/转场段：下一句前进 seekSeconds 秒(TODO-073)、上一句对称回退
-    // seekSeconds 秒(TODO-119，BUG-198)。两侧都不再在没字幕时 no-op 卡住。
+    // 按钮 / 双击语义：有字幕时恒跳到相邻上/下一句（**不**因上一句太远退化成 3 秒
+    // seek，BUG-942——skipToPrevCueOrSeekBack 默认 degradeFarCueToTimeSeek:false）。
+    // 无字幕/转场段：下一句前进 seekSeconds 秒(TODO-073)、上一句对称回退 seekSeconds
+    // 秒(TODO-119，BUG-198)，两侧都不再在没字幕时 no-op 卡住。
     await (forward
         ? controller.skipToNextCueOrSeekForward(
             seekSeconds: _asbConfig.seekSeconds,
