@@ -329,6 +329,67 @@ void main() {
     endpoints.dispose();
   });
 
+  test('系统 UI 文字行被 poll 剔除，只有真台词进入文本服务', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        // 读档确认句（系统 UI）——必须被剔除，不进查词面板。
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 111,
+          text: 'No.05のデータをロードします',
+          threadId: 9,
+          hookName: 'TextRender',
+        ),
+        // 真台词——必须放行。
+        GalHookedLine(
+          seq: 2,
+          timestampMs: 222,
+          text: 'やめろ化け物め！',
+          threadId: 9,
+          hookName: 'TextRender',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'Test Game'),
+    );
+    for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(service.entries.map((TexthookerLineEntry e) => e.text).toList(),
+        <String>['やめろ化け物め！'],
+        reason: '系统 UI 文字（读档确认句）应被剔除，只放行真台词');
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('text-only engine hook stays active with loopback audio fallback',
       () async {
     final TexthookerService service = TexthookerService.test();
