@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -11,11 +10,9 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/mining/external_window_mining.dart';
+import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_window_gif.dart';
-import 'package:hibiki/src/mining/immersion_mining_engine.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
@@ -62,7 +59,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   String? _activeLineId;
   String? _activeSentence;
   bool _followLive = true;
-  String? _selectedTextThreadKey;
   int _unreadLines = 0;
   String? _lastObservedLineId;
 
@@ -116,96 +112,92 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _overlayInert = false;
   }
 
-  /// TODO-1162：外部窗口挖矿模式下覆写制卡——先截绑定窗口当前帧作封面，再连同当前句
-  /// 走 [ImmersionMiningEngine]（与 Netflix 后台捕获同形状）。未开启 / 未绑定 / 非
-  /// Windows 时回落 [DictionaryPageMixin.onMineEntry] 的普通逐词制卡（Never break）。
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
-    final Map<String, String> effectiveFields =
-        Map<String, String>.from(fields);
-    final String? activeSentence = _activeSentence;
-    if ((effectiveFields['sentence'] ?? '').isEmpty &&
-        activeSentence != null &&
-        activeSentence.isNotEmpty) {
-      effectiveFields['sentence'] = activeSentence;
-    }
     final GalHookSessionState sessionState = _session.state;
-    final ExternalWindowInfo? bound = sessionState.boundWindow;
     if (!sessionState.externalWindowMode ||
-        bound == null ||
+        sessionState.boundWindow == null ||
         !Platform.isWindows) {
-      return super.onMineEntry(effectiveFields);
+      return super.onMineEntry(fields);
     }
+    return _mineActiveLine(fields: fields);
+  }
+
+  @override
+  Future<MinePopupResult> onUpdateEntry(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    final GalHookSessionState sessionState = _session.state;
+    if (!sessionState.externalWindowMode ||
+        sessionState.boundWindow == null ||
+        !Platform.isWindows) {
+      return super.onUpdateEntry(noteId, fields);
+    }
+    return _mineActiveLine(fields: fields, updateNoteId: noteId);
+  }
+
+  Future<MinePopupResult> _mineActiveLine({
+    required Map<String, String> fields,
+    int? updateNoteId,
+  }) async {
+    final String? lineId = _activeLineId;
+    final TexthookerLineEntry? entry =
+        lineId == null ? null : _session.entryById(lineId);
+    if (entry == null) {
+      HibikiToast.showMine(
+        msg: t.game_hook_line_unavailable,
+        status: MineToastStatus.failed,
+      );
+      return const MinePopupResult();
+    }
+    final Map<String, String> effectiveFields = Map<String, String>.from(fields)
+      ..['sentence'] = entry.text;
     HibikiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
-    // 画面默认出 GIF 短动图（抓角色口型/眨眼）：先试多帧 GIF；不成（帧不足 / 无
-    // ffmpeg / 编码失败）回退单帧 PNG。GIF 成时 [coverName]=.gif 让引擎按动图封面处理，
-    // 单帧回退不传 coverName（=png）。两者都失败才报错中止（fail-open，不产出空壳卡）。
-    final Uint8List? gifBytes = await captureWindowGifBytes(hwnd: bound.hwnd);
-    Uint8List? coverBytes = gifBytes;
-    String? coverName = gifBytes != null ? 'external_window.gif' : null;
-    if (coverBytes == null) {
-      final WindowCaptureResult cap =
-          await WindowCaptureChannel.captureWindow(bound.hwnd);
-      if (!cap.ok) {
-        // 单帧也失败：明确报错，不产出空壳卡（fail-open，不静默假成功）。
-        HibikiToast.showMine(
-          msg: cap.error != null
-              ? '${t.external_window_capture_failed}：${cap.error}'
-              : t.external_window_capture_failed,
-          status: MineToastStatus.failed,
-        );
-        return const MinePopupResult();
-      }
-      coverBytes = cap.pngBytes;
-    }
-    // galgame 一键制卡：若音频源已开，抓最近一段 → 波形选区 → 帧对齐切片 → 编码成 AAC/m4a
-    // 容器字节。任一步不成（无源/无数据/用户取消/切空/编码失败）→ audioBytes 保持 null，
-    // 退化为纯截图卡（Never break：截图卡本就无声，不因无音频中止）。
-    final Uint8List? audioBytes = await _session.captureAudioBytes(
-      lineId: _activeLineId ?? '',
-      sentence: effectiveFields['sentence'] ?? '',
-      outputExtension: immersionMiningAudioExtension(),
-    );
-
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
-    final MiningMediaCompression compression =
-        MiningMediaCompression.forCompressionEnabled(
-            mixinAppModel.compressMiningMedia);
-    final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
-      buildExternalWindowRequest(
-        fields: effectiveFields,
-        sentence: effectiveFields['sentence'] ?? '',
-        screenshotBytes: coverBytes,
-        coverName: coverName,
-        audioBytes: audioBytes,
-        documentTitle: bound.title.isEmpty ? 'External window' : bound.title,
-      ),
-      compression: compression,
-      tempDir: Directory.systemTemp.path,
+    final GalHookMiningResult result =
+        await GalHookMiningCoordinator.instance.mineLine(
+      lineId: entry.id,
+      fields: effectiveFields,
+      compressMiningMedia: mixinAppModel.compressMiningMedia,
       repo: repo,
+      updateNoteId: updateNoteId,
     );
-    if (res.aborted) {
+    if (result.aborted) {
       HibikiToast.showMine(
-        msg: res.abortReason != null
-            ? '${t.external_window_capture_failed}：${res.abortReason}'
+        msg: result.failureReason != null
+            ? '${t.external_window_capture_failed}：${result.failureReason}'
             : t.external_window_capture_failed,
         status: MineToastStatus.failed,
       );
       return const MinePopupResult();
     }
-    final MineOutcome outcome = res.outcome! as MineOutcome;
+    final MineOutcome outcome = result.outcome!;
     final String deckName = outcome.result == MineResult.success
         ? (await repo.loadSettings()).selectedDeckName ?? ''
         : '';
-    final described = describeMineOutcome(outcome, deckName: deckName);
-    if (described.record) {
+    final described = describeMineOutcome(
+      outcome,
+      deckName: deckName,
+      overwrite: updateNoteId != null,
+    );
+    if (updateNoteId == null && described.record) {
       unawaited(recordMined());
       unawaited(recordMinedSentence(effectiveFields, outcome.noteId));
     }
     HibikiToast.showMine(msg: described.message, status: described.status);
+    if (result.sentenceAudioMissing) {
+      HibikiToast.show(msg: t.game_card_sentence_audio_missing);
+    }
+    if (result.unmappedTokens.isNotEmpty) {
+      HibikiToast.show(
+        msg: '${t.game_card_mapping_missing}: '
+            '${result.unmappedTokens.join(', ')}',
+      );
+    }
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
@@ -407,11 +399,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Widget build(BuildContext context) {
     final TexthookerService texthooker = TexthookerService.instance;
     final List<TexthookerTextThread> textThreads = texthooker.textThreads;
-    final String? selectedTextThreadKey = textThreads.any(
-      (thread) => thread.key == _selectedTextThreadKey,
-    )
-        ? _selectedTextThreadKey
-        : null;
+    final String? selectedTextThreadKey = _session.selectedTextThreadKey;
     final List<TexthookerLineEntry> lines =
         texthooker.entriesForTextThread(selectedTextThreadKey);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
@@ -446,6 +434,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       appBar: AppBar(
         title: Text(t.texthooker),
         actions: <Widget>[
+          if (Platform.isWindows)
+            IconButton(
+              tooltip: t.game_show_hook_text_window,
+              icon: const Icon(Icons.subtitles_outlined),
+              onPressed: () => unawaited(
+                GalHookTextOverlayController.instance.showManually(),
+              ),
+            ),
           if (Platform.isWindows)
             IconButton(
               tooltip: t.external_window_mining,
@@ -486,6 +482,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             tooltip: t.game_open_diagnostics,
             label: t.game_diagnostics,
             onTap: widget.onShowDiagnostics,
+          ),
+        if (Platform.isWindows)
+          HibikiIconButton(
+            icon: Icons.subtitles_outlined,
+            tooltip: t.game_show_hook_text_window,
+            label: t.game_show_hook_text_window,
+            onTap: () => unawaited(
+              GalHookTextOverlayController.instance.showManually(),
+            ),
           ),
         if (Platform.isWindows)
           HibikiIconButton(
@@ -760,8 +765,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             }
                           }
                           setState(() {
-                            _selectedTextThreadKey =
-                                value == null || value.isEmpty ? null : value;
                             _activeLineId = null;
                             _activeSentence = null;
                             _unreadLines = 0;
@@ -769,6 +772,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           unawaited(
                             _session.selectTextThread(
                               selectedThread?.nativeThreadId,
+                              threadKey: selectedThread?.key,
                             ),
                           );
                         },

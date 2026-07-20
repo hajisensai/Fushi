@@ -2014,5 +2014,9 @@
   "game_no_active_line": "选择一条台词查看句音状态。",
   "game_text_thread": "文本线程",
   "game_text_thread_all": "全部文本线程",
-  "game_text_thread_hint": "像 Luna Translator 一样选择干净的台词线程"
+  "game_text_thread_hint": "像 Luna Translator 一样选择干净的台词线程",
+  "game_show_hook_text_window": "显示 Hook 文本浮窗",
+  "game_hook_line_unavailable": "这条捕获台词已不可用，未使用其他台词替代。",
+  "game_card_sentence_audio_missing": "卡片已创建，但没有句子音频；未借用其他台词的音频。",
+  "game_card_mapping_missing": "Anki 字段映射缺少游戏卡片字段"
 }

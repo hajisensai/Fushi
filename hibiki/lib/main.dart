@@ -40,6 +40,7 @@ import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_dispatcher.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
+import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
 import 'package:hibiki/src/storage/data_root_migration_view.dart';
 import 'package:hibiki/src/startup/loading_watchdog_view.dart';
@@ -395,6 +396,10 @@ void main([List<String> args = const <String>[]]) {
           // textWindow 分区请求才显示。
           if (ClipboardTextOverlayController.isSupported) {
             await ClipboardTextOverlayController.instance
+                .start(appModel: appModel);
+          }
+          if (GalHookTextOverlayController.isSupported) {
+            await GalHookTextOverlayController.instance
                 .start(appModel: appModel);
           }
           DesktopLookupDispatcher.instance.start(appModel: appModel);

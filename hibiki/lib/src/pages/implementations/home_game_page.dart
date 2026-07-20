@@ -10,6 +10,12 @@ typedef GameMonitorBuilder = Widget Function(
   VoidCallback onShowLibrary,
 );
 
+enum GameSection { library, monitor, diagnostics }
+
+/// App 级游戏页子区导航。原生 Hook 浮窗可在主窗最小化时请求回到捕获工作台。
+final ValueNotifier<GameSection> gameSectionNotifier =
+    ValueNotifier<GameSection>(GameSection.library);
+
 /// 首页一级「游戏」模块。
 ///
 /// M0 先提供真实的 Hook 状态入口和监控工作台；游戏配置/兼容性历史尚未落库时显示
@@ -36,17 +42,43 @@ class HomeGamePage extends StatefulWidget {
   State<HomeGamePage> createState() => _HomeGamePageState();
 }
 
-enum _GameSection { library, monitor, diagnostics }
-
 class _HomeGamePageState extends State<HomeGamePage> {
-  _GameSection _section = _GameSection.library;
+  late GameSection _section = gameSectionNotifier.value;
   late final GalHookSessionController _controller =
       widget.controller ?? GalHookSessionController.instance;
 
-  void _showLibrary() => setState(() => _section = _GameSection.library);
-  void _showMonitor() => setState(() => _section = _GameSection.monitor);
-  void _showDiagnostics() =>
-      setState(() => _section = _GameSection.diagnostics);
+  @override
+  void initState() {
+    super.initState();
+    gameSectionNotifier.addListener(_onSectionRequested);
+  }
+
+  @override
+  void dispose() {
+    gameSectionNotifier.removeListener(_onSectionRequested);
+    // HomeGamePage 生命周期结束后不要把一次外部导航请求泄漏给下一次挂载（也避免
+    // profile/窗口重建后意外停在旧工作台）。运行中的页面仍由 notifier 正常保态。
+    gameSectionNotifier.value = GameSection.library;
+    super.dispose();
+  }
+
+  void _onSectionRequested() {
+    final GameSection requested = gameSectionNotifier.value;
+    if (requested == _section || !mounted) return;
+    setState(() => _section = requested);
+  }
+
+  void _showSection(GameSection section) {
+    if (gameSectionNotifier.value != section) {
+      gameSectionNotifier.value = section;
+      return;
+    }
+    _onSectionRequested();
+  }
+
+  void _showLibrary() => _showSection(GameSection.library);
+  void _showMonitor() => _showSection(GameSection.monitor);
+  void _showDiagnostics() => _showSection(GameSection.diagnostics);
 
   @override
   Widget build(BuildContext context) {

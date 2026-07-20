@@ -402,7 +402,11 @@ class DesktopLookupService extends ChangeNotifier
   /// `SetForegroundWindow` 还会触发任务栏 flash。所以已前台时整个调用 no-op。
   /// 热键/真正的外部复制场景窗口不在前台，`isFocused()` 为 false，照常唤起 +
   /// 置顶，行为不变。
-  Future<void> bringPendingLookupToFront() async {
+  Future<void> bringPendingLookupToFront() => bringMainWindowToFront();
+
+  /// 统一的桌面主窗口显式唤起出口。Hook 台词浮窗的“打开捕获工作台”等非查词
+  /// 场景也必须经过这里，复用 Windows 前台归属判断和任务栏闪烁清理。
+  Future<void> bringMainWindowToFront() async {
     if (!isDesktop) return;
     if (DesktopForegroundGuard.isHiddenWindowsRunner) return;
     // 已在前台无需（也不该）做任何唤起/置顶动作：对前台窗口调

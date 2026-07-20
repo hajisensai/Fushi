@@ -24,11 +24,15 @@ void main() {
   });
 
   test('buffer caps at maxLines, dropping oldest', () {
+    final TexthookerLineEntry first =
+        TexthookerService.instance.appendLine('first')!;
     for (int i = 0; i < TexthookerService.maxLines + 10; i++) {
       TexthookerService.instance.appendLine('line $i');
     }
     expect(TexthookerService.instance.lines.length, TexthookerService.maxLines);
     expect(TexthookerService.instance.lines.first, 'line 10');
+    expect(TexthookerService.instance.entryById(first.id), isNull,
+        reason: 'an evicted line must not silently resolve to newer text');
   });
 
   test('clear empties and notifies', () {
@@ -57,6 +61,8 @@ void main() {
 
     expect(first.id, isNot(second.id));
     expect(TexthookerService.instance.entries, hasLength(2));
+    expect(TexthookerService.instance.entryById(first.id), same(first));
+    expect(TexthookerService.instance.entryById(second.id), same(second));
 
     expect(
       TexthookerService.instance.updateLineAudio(

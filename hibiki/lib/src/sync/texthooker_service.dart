@@ -119,6 +119,14 @@ class TexthookerService extends ChangeNotifier {
   List<String> get lines =>
       List<String>.unmodifiable(_entries.map((entry) => entry.text));
 
+  /// 按稳定行 id 精确取回捕获项。找不到时返回 null，调用方不得回退到最新行。
+  TexthookerLineEntry? entryById(String id) {
+    for (final TexthookerLineEntry entry in _entries.reversed) {
+      if (entry.id == id) return entry;
+    }
+    return null;
+  }
+
   /// 当前缓冲中出现过的可选文本线程，最近活跃的排在前面。
   List<TexthookerTextThread> get textThreads {
     final Map<String, TexthookerTextThread> byKey =

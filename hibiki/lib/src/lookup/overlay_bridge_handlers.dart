@@ -27,6 +27,13 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// (window.__hibikiBridgeResolve via the channel's resolveBridge).
 typedef OverlayBridgeResolver = Future<void> Function(int id, Object? value);
 
+/// 可选的场景制卡委托。瞬态查词窗仍负责解析 popup.js payload 和统计；委托只替换
+/// 最终的创建/覆盖写入，以便 Hook 查词附加精确台词、游戏画面和句子音频。
+typedef OverlayMiningHandler = Future<Map<String, Object?>> Function({
+  required Map<String, String> fields,
+  int? updateNoteId,
+});
+
 /// Dispatches [handler] if it is one of the nine natively-DEFERRED bridges.
 /// Returns true when handled (the caller's _onJsMessage returns immediately);
 /// false = not a deferred bridge, the caller keeps its own dispatch.
@@ -46,6 +53,7 @@ bool maybeHandleOverlayDeferredBridge({
   required Map<String, Object?> message,
   required OverlayBridgeResolver resolveBridge,
   String sentenceContext = '',
+  OverlayMiningHandler? miningHandler,
 }) {
   switch (handler) {
     case 'resolveWordAudio':
@@ -60,8 +68,13 @@ bool maybeHandleOverlayDeferredBridge({
           model, handler! as String, message, resolveBridge));
       return true;
     case 'mineEntry':
-      unawaited(
-          _handleMineBridge(model, message, resolveBridge, sentenceContext));
+      unawaited(_handleMineBridge(
+        model,
+        message,
+        resolveBridge,
+        sentenceContext,
+        miningHandler,
+      ));
       return true;
     case 'duplicateCheck':
       unawaited(_handleDuplicateBridge(model, message, resolveBridge));
@@ -70,8 +83,13 @@ bool maybeHandleOverlayDeferredBridge({
       unawaited(_handleOverwriteTargetBridge(model, message, resolveBridge));
       return true;
     case 'updateEntry':
-      unawaited(
-          _handleUpdateBridge(model, message, resolveBridge, sentenceContext));
+      unawaited(_handleUpdateBridge(
+        model,
+        message,
+        resolveBridge,
+        sentenceContext,
+        miningHandler,
+      ));
       return true;
     default:
       return false;
@@ -228,6 +246,7 @@ Future<void> _handleMineBridge(
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
   String sentenceContext,
+  OverlayMiningHandler? miningHandler,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -242,7 +261,22 @@ Future<void> _handleMineBridge(
     };
     final String expression = fields['expression'] ?? '';
     if (model != null && expression.isNotEmpty) {
-      reply = await _mineEntry(model, fields, sentenceContext);
+      if (miningHandler == null) {
+        reply = await _mineEntry(model, fields, sentenceContext);
+      } else {
+        await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
+        reply = await miningHandler(fields: fields);
+        if (reply['ankiConnect'] == true) {
+          unawaited(
+            _recordMinedStats(
+              model,
+              fields,
+              (reply['noteId'] as num?)?.toInt(),
+              resolveMineSentence(fields, sentenceContext),
+            ),
+          );
+        }
+      }
     }
   } catch (e, st) {
     glog('mine: EXCEPTION $e\n$st');
@@ -394,6 +428,7 @@ Future<void> _handleUpdateBridge(
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
   String sentenceContext,
+  OverlayMiningHandler? miningHandler,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -414,7 +449,12 @@ Future<void> _handleUpdateBridge(
     };
     final String expression = fields['expression'] ?? '';
     if (model != null && noteId != null && expression.isNotEmpty) {
-      reply = await _updateEntry(model, noteId, fields, sentenceContext);
+      if (miningHandler == null) {
+        reply = await _updateEntry(model, noteId, fields, sentenceContext);
+      } else {
+        await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
+        reply = await miningHandler(fields: fields, updateNoteId: noteId);
+      }
     }
   } catch (e, st) {
     glog('update: EXCEPTION $e\n$st');

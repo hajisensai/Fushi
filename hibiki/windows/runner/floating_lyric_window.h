@@ -38,6 +38,8 @@ class FloatingLyricWindow {
   // Reports a tap on a character at |char_index| within the full |text|.
   using LookupCallback =
       std::function<void(const std::string& text, int char_index)>;
+  using ContextLookupCallback = std::function<void(
+      const std::string& context_id, const std::string& text, int char_index)>;
   // Reports a tap on one of the control buttons. |action| is one of
   // "previousCue", "playPause", "nextCue", "close" (the "lock" button is
   // handled internally and surfaced through LockCallback instead).
@@ -45,6 +47,8 @@ class FloatingLyricWindow {
   // Reports the new locked state after the user toggles the lock button, so the
   // Dart side can persist it and refresh any in-app mirror of the strip state.
   using LockCallback = std::function<void(bool locked)>;
+  using BoundsCallback =
+      std::function<void(int left, int top, int width, int height)>;
 
   struct Style {
     double font_size = 20.0;
@@ -58,6 +62,7 @@ class FloatingLyricWindow {
     // 宽 + 可拖拽），>0 时按该 dp 覆盖，保证默认零观感变化。
     double corner_radius = 0.0;
     double window_width = 0.0;
+    double window_height = 0.0;
   };
 
   struct Labels {
@@ -78,11 +83,17 @@ class FloatingLyricWindow {
   void SetLookupCallback(LookupCallback callback) {
     on_lookup_ = std::move(callback);
   }
+  void SetContextLookupCallback(ContextLookupCallback callback) {
+    on_context_lookup_ = std::move(callback);
+  }
   void SetControlCallback(ControlCallback callback) {
     on_control_ = std::move(callback);
   }
   void SetLockCallback(LockCallback callback) {
     on_lock_ = std::move(callback);
+  }
+  void SetBoundsCallback(BoundsCallback callback) {
+    on_bounds_ = std::move(callback);
   }
 
   // Creates (if needed) and shows the strip. Returns false if the OS window
@@ -95,7 +106,8 @@ class FloatingLyricWindow {
   // TODO-708 P4: 多行上下文文本 + 块内当前行区间。current_line_start<0 = 无行
   // 标记（N=0 单行/旧 payload），整块满色 = 今天观感（never-break userspace）。
   void UpdateText(const std::wstring& text, int current_line_start = -1,
-                  int current_line_length = 0);
+                  int current_line_length = 0,
+                  const std::string& context_id = std::string());
   // Highlights [start, start + length) UTF-16 code units of the current text.
   void Highlight(int start, int length);
   void UpdateStyle(const Style& style);
@@ -109,11 +121,23 @@ class FloatingLyricWindow {
   // Show) by the clipboard_text channel; the audiobook lyric instance leaves it
   // false so its rendering + hit-testing stay byte-for-byte unchanged.
   void SetTextOnly(bool text_only) { text_only_ = text_only; }
+  // Rich text-only mode used by the galgame Hook window. It keeps the text-only
+  // rendering surface but enables wrapping, resizing, the six-button core
+  // toolbar, line-context lookup and body pass-through.
+  void SetHookTextMode(bool enabled) {
+    hook_text_mode_ = enabled;
+    if (enabled) text_only_ = true;
+  }
   // Position lock: when locked the strip can no longer be dragged, but word
   // lookup taps and the playback-control buttons keep working (mirrors the
   // Android FloatingLyricService position lock — drag-only restriction).
   void SetLocked(bool locked);
   bool IsLocked() const { return locked_; }
+  void SetPassThrough(bool enabled);
+  bool IsPassThrough() const { return pass_through_; }
+  // Restores a physical-pixel window rectangle before the next Show. Invalid
+  // rectangles are ignored and Show uses its DPI-aware default.
+  void SetInitialBounds(int left, int top, int width, int height);
 
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
@@ -149,6 +173,7 @@ class FloatingLyricWindow {
   // Recomputes the logical strip size from the current window size (after a
   // system resize) so the font + control layout track the new dimensions.
   void SyncStripSizeFromWindow();
+  void NotifyBoundsChanged();
 
   // TODO-708 P2: applies style_.window_width (logical dp, >0) to the live window
   // by resizing it (clamped to the drag min/max), keeping the top-left origin
@@ -186,6 +211,8 @@ class FloatingLyricWindow {
   // Text-only clipboard window: suppress control buttons + resize grip, use the
   // full window height for text. Never true for the audiobook lyric strip.
   bool text_only_ = false;
+  bool hook_text_mode_ = false;
+  bool pass_through_ = false;
   bool hovered_ = false;
   bool tracking_mouse_leave_ = false;
   // Position lock: drag disabled, everything else (lookup + controls) still
@@ -198,7 +225,11 @@ class FloatingLyricWindow {
   float strip_width_dip_ = 720.0f;
   float strip_height_dip_ = 96.0f;
 
+  bool has_initial_bounds_ = false;
+  RECT initial_bounds_ = {0, 0, 0, 0};
+
   std::wstring text_;
+  std::string context_id_;
   int highlight_start_ = -1;
   int highlight_length_ = 0;
   // TODO-708 P4: 块内当前行区间（UTF-16）。-1/0 = 无行标记（不 dim）。
@@ -231,8 +262,10 @@ class FloatingLyricWindow {
   Microsoft::WRL::ComPtr<IDWriteTextLayout> text_layout_;
 
   LookupCallback on_lookup_;
+  ContextLookupCallback on_context_lookup_;
   ControlCallback on_control_;
   LockCallback on_lock_;
+  BoundsCallback on_bounds_;
 };
 
 #endif  // RUNNER_FLOATING_LYRIC_WINDOW_H_

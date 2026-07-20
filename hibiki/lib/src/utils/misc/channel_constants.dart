@@ -36,6 +36,9 @@ abstract final class HibikiChannels {
   // Windows-only，无 Java counterpart。
   static const MethodChannel clipboardText =
       MethodChannel('$_prefix/clipboard_text');
+  // Windows galgame Hook 台词浮窗：独立的第三个 FloatingLyricWindow 实例。
+  static const MethodChannel galHookText =
+      MethodChannel('$_prefix/gal_hook_text');
   // TODO-1232 A3: render-backend experiment toggle (persist "disable Impeller"
   // so MainActivity can force Skia at the next launch; Android-only).
   static const MethodChannel render = MethodChannel('$_prefix/render');

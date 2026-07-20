@@ -76,7 +76,6 @@ void main() {
   test('captureAudioBytes asks paired voice even without a text timestamp',
       () async {
     final TexthookerService service = TexthookerService.test();
-    final TexthookerLineEntry entry = service.appendLine('siglus line')!;
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeEngineSource engine = _FakeEngineSource(
       pairedBytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
@@ -101,6 +100,7 @@ void main() {
     );
 
     expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    final TexthookerLineEntry entry = service.appendLine('siglus line')!;
     final Uint8List? bytes = await controller.captureAudioBytes(
       lineId: entry.id,
       sentence: entry.text,
@@ -226,10 +226,86 @@ void main() {
       reason: 'loopback availability must not be mislabeled as no audio',
     );
     expect(service.entries.single.audioBackend, 'system_loopback');
+    expect(loopback.grabRecentCalls, 1,
+        reason: 'loopback audio is cached when the exact line arrives');
+
+    await controller.captureAudioBytes(
+      lineId: service.entries.single.id,
+      sentence: service.entries.single.text,
+      outputExtension: 'aac',
+    );
+    expect(loopback.grabRecentCalls, 1,
+        reason: 'mining must reuse the line cache instead of recording later');
 
     await controller.close();
     expect(engine.stopCalls, 1);
     expect(loopback.stopCalls, 1);
+    endpoints.dispose();
+  });
+
+  test('engine PCM is frozen on line arrival and reused for that line',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 7,
+          timestampMs: 654321,
+          text: 'エンジン音声の台詞',
+          threadId: 5,
+          hookName: 'Siglus',
+        ),
+      ],
+      utteranceSlice: GalAudioSlice(
+        pcm: Uint8List(17640),
+        format: const PcmFormat(
+          sampleRate: 44100,
+          channels: 1,
+          bitsPerSample: 16,
+          isFloat: false,
+        ),
+      ),
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 9, pid: 777, title: 'Engine game'),
+    );
+    for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    final TexthookerLineEntry entry = service.entries.single;
+    expect(entry.audioStatus, TexthookerLineAudioStatus.matched);
+    expect(entry.audioBackend, 'engine_pcm');
+    expect(engine.utteranceTimestamps, <int>[654321]);
+
+    await controller.captureAudioBytes(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: 'aac',
+    );
+    expect(engine.utteranceTimestamps, <int>[654321],
+        reason: 'mining reuses the exact cached utterance for this line');
+
+    await controller.close();
     endpoints.dispose();
   });
 }
@@ -245,13 +321,16 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     ),
     this.textReady = false,
     this.polledLines = const <GalHookedLine>[],
+    this.utteranceSlice,
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final Uint8List pairedBytes;
   final PcmFormat? audioFormat;
   final bool textReady;
   final List<GalHookedLine> polledLines;
+  final GalAudioSlice? utteranceSlice;
   final List<int> pairedTimestamps = <int>[];
+  final List<int> utteranceTimestamps = <int>[];
   int stopCalls = 0;
   int _pollCalls = 0;
 
@@ -278,8 +357,10 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
-  }) async =>
-      null;
+  }) async {
+    utteranceTimestamps.add(tsMs);
+    return utteranceSlice;
+  }
 
   @override
   Future<GalAudioSlice?> grabClipNear(
@@ -309,6 +390,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
 class _FakeLoopbackSource extends LoopbackGalAudioSource {
   int startCalls = 0;
   int stopCalls = 0;
+  int grabRecentCalls = 0;
 
   @override
   Future<PcmFormat?> start() async {
@@ -324,5 +406,19 @@ class _FakeLoopbackSource extends LoopbackGalAudioSource {
   @override
   Future<void> stop() async {
     stopCalls++;
+  }
+
+  @override
+  Future<GalAudioSlice?> grabRecent(int backMs) async {
+    grabRecentCalls++;
+    return GalAudioSlice(
+      pcm: Uint8List.fromList(<int>[0, 0, 1, 1]),
+      format: const PcmFormat(
+        sampleRate: 44100,
+        channels: 2,
+        bitsPerSample: 16,
+        isFloat: false,
+      ),
+    );
   }
 }

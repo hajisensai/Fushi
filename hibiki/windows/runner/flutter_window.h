@@ -78,6 +78,13 @@ class FlutterWindow : public Win32Window {
   // Wires the clipboard_text MethodChannel to clipboard_text_window_.
   void RegisterClipboardTextChannel();
 
+  // Dedicated galgame Hook text box: a THIRD FloatingLyricWindow instance in
+  // rich text-only mode. It must never contend with the clipboard destination.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      gal_hook_text_channel_;
+  std::unique_ptr<FloatingLyricWindow> gal_hook_text_window_;
+  void RegisterGalHookTextChannel();
+
   // TODO-617: drives the global lookup overlay (bare WebView2 window). The main
   // Dart engine pushes popupJson over this channel; image:// + JS messages route
   // back. See global_lookup_window.h.
