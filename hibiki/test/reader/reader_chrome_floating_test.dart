@@ -12,7 +12,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 ///
 /// reader 页含真实 InAppWebView，整页 widget 测试挂不起来；故拆成
 ///  ① 纯函数真值表（预留高 / 可见性 / 时长归一）——挤压↔悬浮模型的单一真相源；
-///  ② 偏好持久化（per-reader 分层 + 默认值 = 老用户零行为变化）；
+///  ② 偏好持久化（per-reader 分层 + 默认值 = 顶部进度/底栏默认悬浮开启）；
 ///  ③ 源码扫描守卫——钉死「预留高经派生 getter 单一真相、悬浮显隐不重锚、改预留高
 ///     走重锚通道、5 处三元式已收敛」等结构不变式（撤回任一即红）。
 void main() {
@@ -110,12 +110,11 @@ void main() {
     });
   });
 
-  group('preferences default to zero behavior change for old users', () {
+  group('floating chrome defaults on (top progress + bottom bar float)', () {
     setUp(() => ReaderHibikiSource.readerSettings = null);
     tearDown(() => ReaderHibikiSource.readerSettings = null);
 
-    test('topProgressFloating defaults false; autoHide defaults 3000',
-        () async {
+    test('topProgressFloating defaults true; autoHide defaults 3000', () async {
       final db = HibikiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
@@ -123,7 +122,7 @@ void main() {
       final source = ReaderHibikiSource.instance;
       await source.refreshPreferencesFromDb();
 
-      expect(source.topProgressFloating, isFalse);
+      expect(source.topProgressFloating, isTrue);
       expect(source.autoHideChromeMillis, 3000);
     });
 
@@ -140,12 +139,13 @@ void main() {
       await perBook.refreshFromDb();
       ReaderHibikiSource.readerSettings = perBook;
 
-      expect(source.topProgressFloating, isFalse);
+      // 默认悬浮开启；toggle 一次落到关闭并持久化。
+      expect(source.topProgressFloating, isTrue);
       source.toggleTopProgressFloating();
       await Future<void>.delayed(Duration.zero);
-      expect(perBook.topProgressFloating, isTrue);
-      expect(source.topProgressFloating, isTrue);
-      expect(await db.getPref('src:reader_ttu:top_progress_floating'), 'true');
+      expect(perBook.topProgressFloating, isFalse);
+      expect(source.topProgressFloating, isFalse);
+      expect(await db.getPref('src:reader_ttu:top_progress_floating'), 'false');
     });
 
     test('autoHideChromeMillis round-trips + normalizes a bad stored value',
@@ -181,9 +181,10 @@ void main() {
         await bookA.refreshFromDb();
         await bookB.refreshFromDb();
 
+        // 两本书默认都悬浮开启；bookA 关掉不得影响 bookB。
         await bookA.toggleTopProgressFloating();
-        expect(bookA.topProgressFloating, isTrue);
-        expect(bookB.topProgressFloating, isFalse,
+        expect(bookA.topProgressFloating, isFalse);
+        expect(bookB.topProgressFloating, isTrue,
             reason: 'per-reader 偏好不得跨书泄漏');
       });
     });

@@ -1689,11 +1689,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         final List<VideoBookRow> all = loaded;
         final Set<String>? filter =
             ref.watch(filteredVideoBookUidsProvider).valueOrNull;
+        // BUG-940：合集标签维度。视频成员级过滤须并入——否则「合集打了标签但成员
+        // 没打」时成员被剥光、_groupVideos 折叠不出合集组，之后 collectionVisible 也
+        // 救不回（无组可留），合集永远筛不出来。
+        final Set<int>? collectionFilter =
+            ref.watch(filteredCollectionIdsProvider).valueOrNull;
         final List<VideoBookRow> books = filter == null
             ? all
-            : all
-                .where((VideoBookRow b) => filter.contains(b.bookUid))
-                .toList();
+            : all.where((VideoBookRow b) {
+                // 成员命中标签、或所属合集命中标签都保留（后者让打了标签的合集其成员
+                // 整组存活、折叠出合集组）。
+                return keepMemberUnderTagFilter(
+                  memberMatched: filter.contains(b.bookUid),
+                  primaryCollectionId:
+                      _primaryCollectionByEntry['video|${b.bookUid}'],
+                  collectionFilter: collectionFilter,
+                );
+              }).toList();
         // 排序交互重设计：卡片间序在 group 层按当前排序方式做（[_groupVideos]），
         // 这里不再预排散列表（旧 ShelfEntries.sortOrder 死权重已废弃，用户拍板）。
         final List<VideoBookRow> ordered = books;

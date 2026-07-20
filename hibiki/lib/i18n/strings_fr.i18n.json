@@ -402,7 +402,7 @@
   "stat_format_minutes": "$n min",
   "stat_format_hours_minutes": "$h h $m min",
   "stat_format_chars": "$n caractères",
-  "stat_format_chars_wan": "$n caractères",
+  "stat_format_chars_wan": "$n万 caractères",
   "error_log_share_subject": "Journal d'erreurs hibiki",
   "update_never_remind": "Ne plus rappeler",
   "update_auto_install": "Installer automatiquement les mises à jour",
