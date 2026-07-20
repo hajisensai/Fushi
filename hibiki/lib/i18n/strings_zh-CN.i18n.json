@@ -2036,5 +2036,6 @@
   "home_dashboard_title": "首页",
   "clipboard_history_title": "复制历史",
   "clipboard_history_clear": "清空",
-  "clipboard_history_empty": "暂无复制记录"
+  "clipboard_history_empty": "暂无复制记录",
+  "home_remote_source": "远端"
 }
