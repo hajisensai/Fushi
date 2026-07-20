@@ -675,7 +675,16 @@ class SyncOrchestrator {
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
       final CollectionManifest? remote =
           await backend.getRemoteCollectionManifest();
-      if (remote == null) return; // 老 host 无合集端点：优雅跳过。
+      if (remote == null) {
+        // 老 host 无 /api/library/collections 端点（对端 app 版本过旧）。以前静默
+        // return，用户只看见「合集没同步」却无任何线索（BUG-936 次因）。计入
+        // report.errors：错误日志留痕 + 手动「立即同步」按错误计数提示；其余维度
+        // 不受影响照常同步。
+        report.errors.add(
+            'collections live sync: host has no collections endpoint '
+            '(older app version) — update the host app to sync collections');
+        return;
+      }
 
       final CollectionManifest local = await loadLocalCollectionManifest(_db);
       final SyncRepository repo = SyncRepository(_db);
