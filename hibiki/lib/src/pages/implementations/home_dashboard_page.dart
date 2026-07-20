@@ -98,7 +98,19 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   }
 
   /// 一次性异步载入视频库 + 统计行 + 活动事件，并派生热力图/时长窗口/最近观看映射。
+  ///
+  /// 整段包 try/catch fail-open：任一 DB 读抛异常也不会让整页卡在 loading 或抛未捕获
+  /// 异常（各区块对空数据都有降级），并补 [ErrorLogService] 使「首页空」这类问题线上
+  /// 可诊断（对照 reader/video 侧统计 flush 的同款 fail-open）。
   Future<void> _loadDashboardData() async {
+    try {
+      await _loadDashboardDataUnsafe();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('HomeDashboardPage.load', e, stack);
+    }
+  }
+
+  Future<void> _loadDashboardDataUnsafe() async {
     final AppModel appModel = ref.read(appProvider);
     final HibikiDatabase db = appModel.database;
     final List<VideoBookRow> videos = await widget.videoRepo.listForShelf();
@@ -169,11 +181,16 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         final bool wide = constraints.maxWidth >= 900;
         final Widget bodyBelow;
         if (wide) {
+          // 两列并排（左：继续+热力图；右：Activity）。整页在纵向滚动的 ListView 里，
+          // Row 收到的高度约束是无界（h=Infinity）；左列 Column 必须 mainAxisSize.min
+          // 让其高度收敛到内容，否则默认 MainAxisSize.max 会「被迫无限高」而在 layout
+          // 阶段抛 BoxConstraints forces an infinite height，导致宽屏首页整块空白。
           bodyBelow = Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     continueCard,
@@ -244,16 +261,20 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         SizedBox(height: tokens.spacing.gap),
         LayoutBuilder(
           builder: (BuildContext context, BoxConstraints c) {
-            // 宽度足够 4 格横排，否则 2×2 换行。
+            // 宽度足够 4 格横排，否则 2×2 换行。IntrinsicHeight 收界：整页在纵向
+            // ListView 里高度无界，裸 Row(stretch) 会被迫无限高而 layout 崩溃（宽屏
+            // 首页整块空白的同款根因）；IntrinsicHeight 让 Row 高度 = 最高格的自然高。
             if (c.maxWidth >= 560) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  for (int i = 0; i < tiles.length; i++) ...<Widget>[
-                    if (i > 0) SizedBox(width: tokens.spacing.gap),
-                    Expanded(child: tiles[i]),
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (int i = 0; i < tiles.length; i++) ...<Widget>[
+                      if (i > 0) SizedBox(width: tokens.spacing.gap),
+                      Expanded(child: tiles[i]),
+                    ],
                   ],
-                ],
+                ),
               );
             }
             return Column(
@@ -269,15 +290,18 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     );
   }
 
-  /// 2×2 布局的一行两格。
+  /// 2×2 布局的一行两格。IntrinsicHeight 收界（同 4 格横排：纵向 ListView 下裸
+  /// Row(stretch) 会被迫无限高崩溃）。
   Widget _statRow(HibikiDesignTokens tokens, Widget left, Widget right) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(child: left),
-        SizedBox(width: tokens.spacing.gap),
-        Expanded(child: right),
-      ],
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(child: left),
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(child: right),
+        ],
+      ),
     );
   }
 
