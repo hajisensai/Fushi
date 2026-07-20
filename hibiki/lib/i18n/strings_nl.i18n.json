@@ -2189,5 +2189,9 @@
   "video_setting_torrent_max_ip_ports": "Max ports per IP",
   "video_setting_torrent_zero_off": "0 = off",
   "video_setting_torrent_ban_time": "Ban duration (min)",
-  "video_setting_torrent_ban_time_hint": "0 = permanent"
+  "video_setting_torrent_ban_time_hint": "0 = permanent",
+  "anime_download_retry": "Retry",
+  "anime_download_search_failed": "Search failed or timed out. Tap retry.",
+  "anime_download_subs_need_key": "Enter a Jimaku API key above to search subtitles.",
+  "anime_download_subs_failed": "Subtitle search failed. Tap retry."
 }

@@ -2189,5 +2189,9 @@
   "video_setting_torrent_max_ip_ports": "同 IP 最大端口数",
   "video_setting_torrent_zero_off": "0 = 关闭",
   "video_setting_torrent_ban_time": "封禁时长（分钟）",
-  "video_setting_torrent_ban_time_hint": "0 = 永久"
+  "video_setting_torrent_ban_time_hint": "0 = 永久",
+  "anime_download_retry": "重试",
+  "anime_download_search_failed": "搜索失败或超时，请点重试",
+  "anime_download_subs_need_key": "在上方填写 Jimaku API key 后可搜字幕",
+  "anime_download_subs_failed": "字幕搜索失败，请点重试"
 }
