@@ -838,6 +838,11 @@ SettingsDestination buildVideoDestination() {
             visible: _embeddedBackendSelected,
             builder: _buildEmbeddedMaxConnectionsField,
           ),
+          SettingsCustomItem(
+            id: 'video.anime_download.embedded_memory_limit',
+            visible: _embeddedBackendSelected,
+            builder: _buildEmbeddedMemoryLimitField,
+          ),
         ],
       ),
     ],
@@ -957,6 +962,26 @@ Widget _buildSeedRatioLimitField(SettingsContext settingsContext) {
         settingsContext,
         (QbConnectionConfig c) =>
             c.copyWith(seedRatioLimit: _parseNonNegDouble(value)),
+      );
+    },
+  );
+}
+
+Widget _buildEmbeddedMemoryLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.memoryLimitMb ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_memory_limit,
+    icon: Icons.memory_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_memory_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(memoryLimitMb: _parseNonNegLimit(value)),
       );
     },
   );

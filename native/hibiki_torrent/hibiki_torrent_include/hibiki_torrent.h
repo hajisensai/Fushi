@@ -68,6 +68,16 @@ HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
 HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
                                  int upload_enabled);
 
+// 应用内存占用相关 session 设置（把 libtorrent 压进内存预算，避免「有多少内存
+// 吃多少」）：各字段 <=0 时保持 libtorrent 默认，>0 时设置。
+// [connections_limit] 全局最大连接数；[max_queued_disk_bytes] 磁盘写缓冲上限；
+// [send_buffer_watermark] 每连接发送缓冲高水位；[max_peerlist_size] 每种子 peer
+// 列表最大条目数。返回 1 成功 0 失败。
+HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
+                                       int max_queued_disk_bytes,
+                                       int send_buffer_watermark,
+                                       int max_peerlist_size);
+
 // 添加磁力链接，落盘到 [save_path]；[sequential] 非 0 开顺序下载。
 // 成功 {"ok":true,"id":"<infohash>"}；失败 {"ok":false,"error":"..."}。
 // 重复添加同一种子返回已有种子的 id（ok:true）。
