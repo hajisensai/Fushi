@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -13,7 +14,6 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/external_window_mining.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_window_gif.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
@@ -23,6 +23,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
+import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
@@ -140,40 +141,72 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
-    // 画面默认出 GIF 短动图（抓角色口型/眨眼）：先试多帧 GIF；不成（帧不足 / 无
-    // ffmpeg / 编码失败）回退单帧 PNG。GIF 成时 [coverName]=.gif 让引擎按动图封面处理，
-    // 单帧回退不传 coverName（=png）。两者都失败才报错中止（fail-open，不产出空壳卡）。
-    final Uint8List? gifBytes = await captureWindowGifBytes(hwnd: bound.hwnd);
-    Uint8List? coverBytes = gifBytes;
-    String? coverName = gifBytes != null ? 'external_window.gif' : null;
-    if (coverBytes == null) {
-      final WindowCaptureResult cap =
-          await WindowCaptureChannel.captureWindow(bound.hwnd);
-      if (!cap.ok) {
-        // 单帧也失败：明确报错，不产出空壳卡（fail-open，不静默假成功）。
-        HibikiToast.showMine(
-          msg: cap.error != null
-              ? '${t.external_window_capture_failed}：${cap.error}'
-              : t.external_window_capture_failed,
-          status: MineToastStatus.failed,
-        );
-        return const MinePopupResult();
-      }
-      coverBytes = cap.pngBytes;
-    }
-    // galgame 一键制卡：若音频源已开，抓最近一段 → 波形选区 → 帧对齐切片 → 编码成 AAC/m4a
-    // 容器字节。任一步不成（无源/无数据/用户取消/切空/编码失败）→ audioBytes 保持 null，
-    // 退化为纯截图卡（Never break：截图卡本就无声，不因无音频中止）。
-    final Uint8List? audioBytes = await _session.captureAudioBytes(
+    // 历史句子已经固化资源 ID；音频直取与当前游戏画面单帧截图并行执行。截图允许是当前
+    // 画面，但音频必须来自所选历史句自己的资源 ID。去掉 9 秒 GIF 采集后制卡延迟主要只剩
+    // 一次资源转码和 Anki 写入。
+    final Future<Uint8List?> audioFuture = _session.captureAudioBytes(
       lineId: _activeLineId ?? '',
       sentence: effectiveFields['sentence'] ?? '',
       outputExtension: immersionMiningAudioExtension(),
     );
-
-    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final MiningMediaCompression compression =
         MiningMediaCompression.forCompressionEnabled(
             mixinAppModel.compressMiningMedia);
+    final int screenshotMaxLongEdge = compression.screenshotMaxLongEdge;
+    final int screenshotQuality = compression.screenshotQuality;
+    final WindowCaptureResult cap =
+        await WindowCaptureChannel.captureWindow(bound.hwnd);
+    if (!cap.ok) {
+      HibikiToast.showMine(
+        msg: cap.error != null
+            ? '${t.external_window_capture_failed}：${cap.error}'
+            : t.external_window_capture_failed,
+        status: MineToastStatus.failed,
+      );
+      await audioFuture;
+      return const MinePopupResult();
+    }
+    final Uint8List? rawCoverBytes = cap.pngBytes;
+    // WindowCapture 返回的全分辨率 PNG 往往有 5~10 MB。直接经 AnkiConnect
+    // base64 上传会越过其 10 秒响应预算：Anki 已写入媒体，但客户端收到 timeout 后把
+    // Picture 当作失败丢掉。先在后台 isolate 里按制卡图规格缩成 JPEG，既避免 UI 卡顿，
+    // 也把「当前画面」上传从数秒降到通常数百毫秒。音频资源查找仍与截图全程并行。
+    final Uint8List? coverBytes = rawCoverBytes == null
+        ? null
+        : await Isolate.run(
+            () => downsampleCardScreenshot(
+              rawCoverBytes,
+              maxLongEdge: screenshotMaxLongEdge,
+              quality: screenshotQuality,
+            ),
+          );
+    final String coverName = coverBytes != null &&
+            coverBytes.length >= 3 &&
+            coverBytes[0] == 0xff &&
+            coverBytes[1] == 0xd8 &&
+            coverBytes[2] == 0xff
+        ? 'external_window.jpg'
+        : 'external_window.png';
+    final Uint8List? audioBytes = await audioFuture;
+    if (audioBytes == null && !_session.state.allowAudioFallback) {
+      HibikiToast.showMine(
+        msg: t.game_audio_fallback_disabled_missing,
+        status: MineToastStatus.failed,
+      );
+      return const MinePopupResult();
+    }
+    String? capturedAudioBackend;
+    final String? activeLineId = _activeLineId;
+    if (activeLineId != null) {
+      for (final TexthookerLineEntry line in _session.lines) {
+        if (line.id == activeLineId) {
+          capturedAudioBackend = line.audioBackend;
+          break;
+        }
+      }
+    }
+
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
       buildExternalWindowRequest(
         fields: effectiveFields,
@@ -205,7 +238,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       unawaited(recordMined());
       unawaited(recordMinedSentence(effectiveFields, outcome.noteId));
     }
-    HibikiToast.showMine(msg: described.message, status: described.status);
+    final String resultMessage = described.success &&
+            capturedAudioBackend != null
+        ? '${described.message} · ${_lineAudioBackendLabel(capturedAudioBackend)}'
+        : described.message;
+    HibikiToast.showMine(msg: resultMessage, status: described.status);
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
@@ -457,6 +494,23 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               ),
               onPressed: _toggleExternalWindowMode,
             ),
+          IconButton(
+            key: const ValueKey<String>('game-audio-fallback-toggle'),
+            tooltip: _session.state.allowAudioFallback
+                ? t.game_audio_fallback_allow
+                : t.game_audio_fallback_resource_only,
+            icon: Icon(
+              _session.state.allowAudioFallback
+                  ? Icons.alt_route_outlined
+                  : Icons.library_music_outlined,
+              color: _session.state.allowAudioFallback
+                  ? null
+                  : Theme.of(context).colorScheme.primary,
+            ),
+            onPressed: () => _session.setAllowAudioFallback(
+              !_session.state.allowAudioFallback,
+            ),
+          ),
           if (Platform.isWindows)
             IconButton(
               tooltip: t.game_launch_and_capture,
@@ -487,6 +541,24 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             label: t.game_diagnostics,
             onTap: widget.onShowDiagnostics,
           ),
+        HibikiIconButton(
+          key: const ValueKey<String>('game-audio-fallback-toggle'),
+          icon: _session.state.allowAudioFallback
+              ? Icons.alt_route_outlined
+              : Icons.library_music_outlined,
+          tooltip: _session.state.allowAudioFallback
+              ? t.game_audio_fallback_allow
+              : t.game_audio_fallback_resource_only,
+          label: _session.state.allowAudioFallback
+              ? t.game_audio_fallback_allow
+              : t.game_audio_fallback_resource_only,
+          enabledColor: _session.state.allowAudioFallback
+              ? null
+              : Theme.of(context).colorScheme.primary,
+          onTap: () => _session.setAllowAudioFallback(
+            !_session.state.allowAudioFallback,
+          ),
+        ),
         if (Platform.isWindows)
           HibikiIconButton(
             icon: Icons.crop_free,
@@ -1057,6 +1129,11 @@ class _LatestLineCard extends StatelessWidget {
                 label: t.game_health_audio,
                 value: value.audioBackend ?? value.audioStatus.name,
               ),
+              if (value.audioResourceId != null)
+                _MetadataRow(
+                  label: t.game_audio_resource_id,
+                  value: value.audioResourceId!,
+                ),
               if (value.audioDurationMs != null)
                 _MetadataRow(
                   label: t.game_audio_format,
@@ -1250,6 +1327,13 @@ String _audioBackendLabel(GalHookAudioBackend backend) => switch (backend) {
       GalHookAudioBackend.systemLoopback => t.game_audio_backend_loopback,
     };
 
+String _lineAudioBackendLabel(String backend) => switch (backend) {
+      'game_resource' => t.game_audio_backend_resource,
+      'engine_pcm' => t.game_audio_backend_engine,
+      'system_loopback' => t.game_audio_backend_loopback,
+      _ => backend,
+    };
+
 /// 一行文本：日语分词成可点 span（引擎未初始化时按字符降级，widget 测试不崩）。
 class _TexthookerLine extends StatelessWidget {
   const _TexthookerLine({
@@ -1319,11 +1403,13 @@ class _TexthookerLine extends StatelessWidget {
               ],
             ),
             if (line.audioBackend != null ||
+                line.audioResourceId != null ||
                 line.fallbackReason != null) ...<Widget>[
               const SizedBox(height: 6),
               Text(
                 <String>[
                   if (line.audioBackend != null) line.audioBackend!,
+                  if (line.audioResourceId != null) line.audioResourceId!,
                   if (line.audioDurationMs != null)
                     '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',
                   if (line.fallbackReason != null) line.fallbackReason!,

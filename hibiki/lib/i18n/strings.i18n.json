@@ -2015,5 +2015,9 @@
   "game_text_thread": "Text thread",
   "game_text_thread_all": "All text threads",
   "game_text_thread_hint": "Choose the clean dialogue thread, like Luna Translator",
-  "game_audio_backend_resource": "Game resource audio"
+  "game_audio_backend_resource": "Game resource audio",
+  "game_audio_fallback_allow": "Allow audio fallback",
+  "game_audio_fallback_resource_only": "Game resource audio only",
+  "game_audio_fallback_disabled_missing": "No matching game resource audio; fallback is disabled",
+  "game_audio_resource_id": "Audio resource ID"
 }

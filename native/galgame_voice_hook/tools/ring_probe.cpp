@@ -150,6 +150,29 @@ void DumpTextMeta(const SharedHeader* h) {
   fflush(stdout);
 }
 
+void DumpUnityEvents(const SharedHeader* h) {
+  const uint64_t count = h->unity_voice_write_count;
+  const uint64_t start = count > hibiki_voice_hook::kUnityVoiceEventCount
+                             ? count - hibiki_voice_hook::kUnityVoiceEventCount
+                             : 0;
+  for (uint64_t seq = start + 1; seq <= count; ++seq) {
+    const auto* event = &h->unity_voice_events[
+        (seq - 1) % hibiki_voice_hook::kUnityVoiceEventCount];
+    if (event->seq != seq) continue;
+    char clip[512] = {0};
+    char bundle[1600] = {0};
+    WideCharToMultiByte(CP_UTF8, 0, event->clip_name, -1, clip,
+                        sizeof(clip) - 1, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, event->bundle_path, -1, bundle,
+                        sizeof(bundle) - 1, nullptr, nullptr);
+    printf("%llu|%llu|%s|%s\n",
+           static_cast<unsigned long long>(seq),
+           static_cast<unsigned long long>(event->timestamp_ms), clip,
+           bundle);
+  }
+  fflush(stdout);
+}
+
 // 找时间戳最近 [ts] 的语音 clip，从音频环形取其 PCM 写成 WAV 到 [path]。成功返回 true。
 bool DumpWav(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
              const char* path) {
@@ -536,6 +559,12 @@ int main(int argc, char** argv) {
   }
   if (argc >= 3 && strcmp(argv[2], "--dump-text-meta") == 0) {
     DumpTextMeta(header);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
+  if (argc >= 3 && strcmp(argv[2], "--dump-unity-events") == 0) {
+    DumpUnityEvents(header);
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     return 0;

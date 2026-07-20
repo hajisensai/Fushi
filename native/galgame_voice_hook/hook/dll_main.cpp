@@ -436,12 +436,22 @@ using UnityAudioSourcePlayOneShot2 = void (*)(void*, void*, float,
 using UnityAudioSourceSetClip = void (*)(void*, void*, const void*);
 using UnityAudioSourcePlayScheduled = void (*)(void*, double, const void*);
 using UnityAudioSourcePlayDelayed = void (*)(void*, float, const void*);
+using UnityAudioSourcePlayHelper = void (*)(void*, uint64_t, const void*);
+using UnityAudioSourcePlayOneShotHelper = void (*)(void*, void*, float,
+                                                   const void*);
+using UnityAudioSourcePlayDelayedHelper = void (*)(void*, float,
+                                                   const void*);
 UnityAudioSourcePlay g_orig_UnityAudioSourcePlay = nullptr;
 UnityAudioSourcePlayOneShot1 g_orig_UnityAudioSourcePlayOneShot1 = nullptr;
 UnityAudioSourcePlayOneShot2 g_orig_UnityAudioSourcePlayOneShot2 = nullptr;
 UnityAudioSourceSetClip g_orig_UnityAudioSourceSetClip = nullptr;
 UnityAudioSourcePlayScheduled g_orig_UnityAudioSourcePlayScheduled = nullptr;
 UnityAudioSourcePlayDelayed g_orig_UnityAudioSourcePlayDelayed = nullptr;
+UnityAudioSourcePlayHelper g_orig_UnityAudioSourcePlayHelper = nullptr;
+UnityAudioSourcePlayOneShotHelper g_orig_UnityAudioSourcePlayOneShotHelper =
+    nullptr;
+UnityAudioSourcePlayDelayedHelper g_orig_UnityAudioSourcePlayDelayedHelper =
+    nullptr;
 using UnityTmpSetText = void (*)(void*, void*, const void*);
 UnityTmpSetText g_orig_UnityTmpSetText = nullptr;
 using UnityTmpSetText2 = void (*)(void*, void*, bool, const void*);
@@ -607,6 +617,10 @@ void CaptureUnityAudioClip(void* source, void* clip) {
   if (InterlockedCompareExchange(&g_unity_capture_busy, 1, 0) != 0) return;
   g_header->hook_diagnostics |= kDiagUnityIl2CppPlaybackObserved;
   RecordUnityVoiceResourceEvent(clip, now);
+  // Streaming AudioClip 的 GetData 会拒绝读取，但资源事件仍然有效。去重状态必须在这里
+  // 更新，否则 Unity 6 的 public 包装与内部 Helper 会为同一次播放各触发一次解析/转码。
+  g_last_unity_clip = clip;
+  g_last_unity_clip_tick = now;
 
   const int samples = InvokeUnityInt(g_unity_clip_get_samples, clip);
   const int channels = InvokeUnityInt(g_unity_clip_get_channels, clip);
@@ -645,8 +659,6 @@ void CaptureUnityAudioClip(void* source, void* clip) {
           g_header->block_align = static_cast<uint32_t>(channels) * 4;
         }
         g_header->hook_diagnostics |= kDiagUnityIl2CppClipCaptured;
-        g_last_unity_clip = clip;
-        g_last_unity_clip_tick = now;
       } else {
         g_header->hook_diagnostics |= kDiagUnityIl2CppGetDataRejected;
       }
@@ -714,6 +726,42 @@ void Detour_UnityAudioSourcePlayDelayed(void* self, float delay,
   }
   CaptureUnityAudioClip(self, clip);
   g_orig_UnityAudioSourcePlayDelayed(self, delay, method);
+}
+
+// Unity 6 的 IL2CPP 会把 AudioSource.Play/PlayOneShot 的薄托管包装内联，调用方可能
+// 完全绕过上面的 public 方法入口。内部 Helper 才是所有重载最终汇合的位置；Naninovel
+// 的流式 voice 正是走这条链。这里同时 hook Helper，确保角色语音也产生资源事件。
+void Detour_UnityAudioSourcePlayHelper(void* source, uint64_t delay,
+                                       const void* method) {
+  void* clip = nullptr;
+  if (g_il2cpp_runtime_invoke != nullptr && g_unity_source_get_clip != nullptr) {
+    void* exception = nullptr;
+    clip = g_il2cpp_runtime_invoke(g_unity_source_get_clip, source, nullptr,
+                                   &exception);
+    if (exception != nullptr) clip = nullptr;
+  }
+  CaptureUnityAudioClip(source, clip);
+  g_orig_UnityAudioSourcePlayHelper(source, delay, method);
+}
+
+void Detour_UnityAudioSourcePlayOneShotHelper(void* source, void* clip,
+                                              float volume_scale,
+                                              const void* method) {
+  CaptureUnityAudioClip(source, clip);
+  g_orig_UnityAudioSourcePlayOneShotHelper(source, clip, volume_scale, method);
+}
+
+void Detour_UnityAudioSourcePlayDelayedHelper(void* source, float delay,
+                                              const void* method) {
+  void* clip = nullptr;
+  if (g_il2cpp_runtime_invoke != nullptr && g_unity_source_get_clip != nullptr) {
+    void* exception = nullptr;
+    clip = g_il2cpp_runtime_invoke(g_unity_source_get_clip, source, nullptr,
+                                   &exception);
+    if (exception != nullptr) clip = nullptr;
+  }
+  CaptureUnityAudioClip(source, clip);
+  g_orig_UnityAudioSourcePlayDelayedHelper(source, delay, method);
 }
 
 void Detour_UnityTmpSetText(void* self, void* text, const void* method) {
@@ -907,6 +955,11 @@ bool TryHookUnityIl2CppAudio() {
   const void* play_scheduled =
       class_get_method(source_class, "PlayScheduled", 1);
   const void* play_delayed = class_get_method(source_class, "PlayDelayed", 1);
+  const void* play_helper = class_get_method(source_class, "PlayHelper", 2);
+  const void* one_shot_helper =
+      class_get_method(source_class, "PlayOneShotHelper", 3);
+  const void* play_delayed_helper =
+      class_get_method(source_class, "PlayDelayedHelper", 2);
   any |= HookFn(Il2CppMethodPointer(play),
                 reinterpret_cast<void*>(&Detour_UnityAudioSourcePlay),
                 reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlay));
@@ -927,6 +980,17 @@ bool TryHookUnityIl2CppAudio() {
   any |= HookFn(Il2CppMethodPointer(play_delayed),
                 reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayDelayed),
                 reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayDelayed));
+  any |= HookFn(Il2CppMethodPointer(play_helper),
+                reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayHelper),
+                reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayHelper));
+  any |= HookFn(
+      Il2CppMethodPointer(one_shot_helper),
+      reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayOneShotHelper),
+      reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayOneShotHelper));
+  any |= HookFn(
+      Il2CppMethodPointer(play_delayed_helper),
+      reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayDelayedHelper),
+      reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayDelayedHelper));
   bool tmp_text_ready = false;
   if (tmp_text_class != nullptr) {
     const char* property_params[] = {"System.String"};

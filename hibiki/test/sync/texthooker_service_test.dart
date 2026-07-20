@@ -63,6 +63,7 @@ void main() {
         second.id,
         status: TexthookerLineAudioStatus.encoded,
         backend: 'game_resource',
+        resourceId: '12345.voice.ogg',
         durationMs: 840,
       ),
       isTrue,
@@ -74,6 +75,10 @@ void main() {
     expect(
       TexthookerService.instance.entries.last.audioStatus,
       TexthookerLineAudioStatus.encoded,
+    );
+    expect(
+      TexthookerService.instance.entries.last.audioResourceId,
+      '12345.voice.ogg',
     );
   });
 

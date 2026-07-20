@@ -51,6 +51,7 @@ class GalHookSessionState {
   const GalHookSessionState({
     this.phase = GalHookSessionPhase.idle,
     this.externalWindowMode = false,
+    this.allowAudioFallback = true,
     this.boundWindow,
     this.gamePid,
     this.launchExe,
@@ -69,6 +70,7 @@ class GalHookSessionState {
 
   final GalHookSessionPhase phase;
   final bool externalWindowMode;
+  final bool allowAudioFallback;
   final ExternalWindowInfo? boundWindow;
   final int? gamePid;
   final String? launchExe;
@@ -94,6 +96,7 @@ class GalHookSessionState {
   GalHookSessionState copyWith({
     GalHookSessionPhase? phase,
     bool? externalWindowMode,
+    bool? allowAudioFallback,
     ExternalWindowInfo? boundWindow,
     bool clearBoundWindow = false,
     int? gamePid,
@@ -119,6 +122,7 @@ class GalHookSessionState {
     return GalHookSessionState(
       phase: phase ?? this.phase,
       externalWindowMode: externalWindowMode ?? this.externalWindowMode,
+      allowAudioFallback: allowAudioFallback ?? this.allowAudioFallback,
       boundWindow: clearBoundWindow ? null : boundWindow ?? this.boundWindow,
       gamePid: clearGamePid ? null : gamePid ?? this.gamePid,
       launchExe: clearLaunchExe ? null : launchExe ?? this.launchExe,
@@ -172,6 +176,8 @@ class GalHookSessionController extends ChangeNotifier {
     bool? isWindows,
     Duration textPollInterval = const Duration(milliseconds: 400),
     Duration windowPollInterval = const Duration(milliseconds: 500),
+    Duration resourceAudioWait = const Duration(milliseconds: 1200),
+    Duration resourceAudioPollInterval = const Duration(milliseconds: 80),
     int windowPollAttempts = 20,
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
@@ -189,6 +195,8 @@ class GalHookSessionController extends ChangeNotifier {
         _isWindows = isWindows ?? Platform.isWindows,
         _textPollInterval = textPollInterval,
         _windowPollInterval = windowPollInterval,
+        _resourceAudioWait = resourceAudioWait,
+        _resourceAudioPollInterval = resourceAudioPollInterval,
         _windowPollAttempts = windowPollAttempts,
         _endpointListenable =
             endpointListenable ?? TexthookerWsClientHost.instance,
@@ -218,6 +226,8 @@ class GalHookSessionController extends ChangeNotifier {
   final bool _isWindows;
   final Duration _textPollInterval;
   final Duration _windowPollInterval;
+  final Duration _resourceAudioWait;
+  final Duration _resourceAudioPollInterval;
   final int _windowPollAttempts;
   final Listenable _endpointListenable;
   final List<TexthookerEndpointStatus> Function() _endpointStatusLoader;
@@ -690,8 +700,10 @@ class GalHookSessionController extends ChangeNotifier {
     final EngineHookGalAudioSource? engine = _engineSource;
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
     if (engine != null && _isWindows) {
-      final Uint8List? paired = await engine.grabPairedVoiceBytes(
-        timestamp,
+      final Uint8List? paired = await _waitForPairedResourceAudio(
+        engine,
+        lineId: lineId,
+        timestamp: timestamp,
         outputExtension: outputExtension,
       );
       if (paired != null && paired.isNotEmpty) {
@@ -722,6 +734,22 @@ class GalHookSessionController extends ChangeNotifier {
           'No paired original voice candidate; falling back to PCM',
           details: <String, Object?>{'lineId': lineId},
         );
+      }
+      if (!_state.allowAudioFallback) {
+        _textService.updateLineAudio(
+          lineId,
+          status: TexthookerLineAudioStatus.missing,
+          backend: 'game_resource',
+          fallbackReason: 'paired_voice_not_found_fallback_disabled',
+        );
+        _record(
+          GalHookEventSeverity.warning,
+          'match',
+          'audio.fallback_disabled',
+          'No paired game resource audio and fallback is disabled',
+          details: <String, Object?>{'lineId': lineId},
+        );
+        return null;
       }
     }
     GalAudioSlice? slice = _lineVoiceCache[lineId];
@@ -771,6 +799,68 @@ class GalHookSessionController extends ChangeNotifier {
         await jobDirectory.delete(recursive: true);
       } catch (_) {}
     }
+  }
+
+  /// 资源 hook 已就绪时，资源文件仍可能比文本环晚几十到几百毫秒落盘。制卡不能在第一次
+  /// 未命中后立刻录 Loopback；先给资源一个短暂、有上限的等待窗口，超时后才走既有降级链。
+  Future<Uint8List?> _waitForPairedResourceAudio(
+    EngineHookGalAudioSource engine, {
+    required String lineId,
+    required int timestamp,
+    required String outputExtension,
+  }) async {
+    final Stopwatch elapsed = Stopwatch()..start();
+    final int waitUs = _resourceAudioWait.inMicroseconds;
+    final int pollUs = _resourceAudioPollInterval.inMicroseconds;
+    while (true) {
+      String? resourceId = _resourceIdForLine(lineId);
+      resourceId ??= engine.findPairedVoiceResourceId(timestamp);
+      if (resourceId != null && _resourceIdForLine(lineId) == null) {
+        _textService.updateLineAudio(
+          lineId,
+          status: TexthookerLineAudioStatus.matched,
+          backend: 'game_resource',
+          resourceId: resourceId,
+        );
+      }
+      final Uint8List? bytes = await engine.grabPairedVoiceBytes(
+        timestamp,
+        outputExtension: outputExtension,
+        resourceId: resourceId,
+      );
+      if (bytes != null && bytes.isNotEmpty) return bytes;
+      if (!engine.rawVoiceReady ||
+          waitUs <= 0 ||
+          elapsed.elapsedMicroseconds >= waitUs) {
+        return null;
+      }
+      final int remainingUs = waitUs - elapsed.elapsedMicroseconds;
+      final int delayUs = pollUs <= 0
+          ? remainingUs
+          : (pollUs < remainingUs ? pollUs : remainingUs);
+      if (delayUs <= 0) return null;
+      await Future<void>.delayed(Duration(microseconds: delayUs));
+    }
+  }
+
+  String? _resourceIdForLine(String lineId) {
+    for (final TexthookerLineEntry line in _textService.entries) {
+      if (line.id == lineId) return line.audioResourceId;
+    }
+    return null;
+  }
+
+  void setAllowAudioFallback(bool value) {
+    if (_state.allowAudioFallback == value) return;
+    _setState(_state.copyWith(allowAudioFallback: value));
+    _record(
+      GalHookEventSeverity.info,
+      'audio',
+      value ? 'audio.fallback_enabled' : 'audio.fallback_disabled_by_user',
+      value
+          ? 'Audio fallback enabled'
+          : 'Audio fallback disabled; game resource audio is required',
+    );
   }
 
   void clearEvents() {
@@ -1065,13 +1155,16 @@ class GalHookSessionController extends ChangeNotifier {
         _lineTimestampCache[entry.id] = line.timestampMs;
         _trimCache(_lineTimestampCache);
         GalAudioSlice? clip;
-        final bool resourceMatched = engine.rawVoiceReady &&
-            engine.hasPairedVoiceCandidate(line.timestampMs);
+        final String? resourceId = engine.rawVoiceReady
+            ? engine.findPairedVoiceResourceId(line.timestampMs)
+            : null;
+        final bool resourceMatched = resourceId != null;
         if (resourceMatched) {
           _textService.updateLineAudio(
             entry.id,
             status: TexthookerLineAudioStatus.matched,
             backend: 'game_resource',
+            resourceId: resourceId,
           );
           _record(
             GalHookEventSeverity.success,
@@ -1189,11 +1282,14 @@ class GalHookSessionController extends ChangeNotifier {
     final List<String> matched = <String>[];
     for (final MapEntry<String, int> pending
         in _pendingResourceTimestamps.entries) {
-      if (!engine.hasPairedVoiceCandidate(pending.value)) continue;
+      final String? resourceId =
+          engine.findPairedVoiceResourceId(pending.value);
+      if (resourceId == null) continue;
       _textService.updateLineAudio(
         pending.key,
         status: TexthookerLineAudioStatus.matched,
         backend: 'game_resource',
+        resourceId: resourceId,
       );
       matched.add(pending.key);
     }

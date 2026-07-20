@@ -94,6 +94,7 @@ void main() {
         int? lunaCodepage,
       }) =>
           engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
       windowListLoader: () async => const <ExternalWindowInfo>[],
       windowPollAttempts: 1,
       endpointListenable: endpoints,
@@ -112,6 +113,111 @@ void main() {
     expect(
         service.entries.single.audioStatus, TexthookerLineAudioStatus.encoded);
     expect(service.entries.single.audioBackend, 'game_resource');
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('capture waits for a late resource file before falling back', () async {
+    final TexthookerService service = TexthookerService.test();
+    final TexthookerLineEntry entry = service.appendLine('late resource line')!;
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[9, 8, 7]),
+      pairedReadyAfterCalls: 2,
+      rawReady: true,
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      resourceAudioWait: const Duration(milliseconds: 50),
+      resourceAudioPollInterval: const Duration(milliseconds: 1),
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    final Uint8List? bytes = await controller.captureAudioBytes(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: 'aac',
+    );
+
+    expect(bytes, <int>[9, 8, 7]);
+    expect(engine.pairedTimestamps, <int>[0, 0]);
+    expect(service.entries.single.audioBackend, 'game_resource');
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      isNot(contains('audio.paired_voice_not_found')),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('fallback can be disabled and then missing resource refuses PCM capture',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final TexthookerLineEntry entry = service.appendLine('resource only')!;
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      rawReady: true,
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      resourceAudioWait: Duration.zero,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    controller.setAllowAudioFallback(false);
+    expect(controller.state.allowAudioFallback, isFalse);
+
+    final Uint8List? bytes = await controller.captureAudioBytes(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: 'aac',
+    );
+
+    expect(bytes, isNull);
+    expect(service.entries.single.audioBackend, 'game_resource');
+    expect(
+      service.entries.single.fallbackReason,
+      'paired_voice_not_found_fallback_disabled',
+    );
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      contains('audio.fallback_disabled'),
+    );
 
     await controller.close();
     endpoints.dispose();
@@ -285,6 +391,23 @@ void main() {
     expect(
         service.entries.single.audioStatus, TexthookerLineAudioStatus.matched);
     expect(service.entries.single.audioBackend, 'game_resource');
+    expect(
+      service.entries.single.audioResourceId,
+      'fake-609653421.ogg',
+    );
+
+    final TexthookerLineEntry historicalLine = service.entries.single;
+    final Uint8List? historicalAudio = await controller.captureAudioBytes(
+      lineId: historicalLine.id,
+      sentence: historicalLine.text,
+      outputExtension: 'aac',
+    );
+    expect(historicalAudio, <int>[7, 8, 9]);
+    expect(
+      engine.pairedResourceIds,
+      <String?>['fake-609653421.ogg'],
+      reason: '历史句必须按行内固化的资源 ID 直接导出，不能重新猜最新语音',
+    );
 
     await controller.close();
     expect(engine.stopCalls, 1);
@@ -377,6 +500,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     this.rawReady = false,
     this.lateRawReady = false,
     this.pairedCandidate = false,
+    this.pairedReadyAfterCalls = 1,
     this.polledLines = const <GalHookedLine>[],
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
@@ -386,8 +510,10 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   bool rawReady;
   final bool lateRawReady;
   final bool pairedCandidate;
+  final int pairedReadyAfterCalls;
   final List<GalHookedLine> polledLines;
   final List<int> pairedTimestamps = <int>[];
+  final List<String?> pairedResourceIds = <String?>[];
   int stopCalls = 0;
   int readinessRefreshCalls = 0;
   int _pollCalls = 0;
@@ -418,13 +544,20 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,
+    String? resourceId,
   }) async {
     pairedTimestamps.add(textTsMs);
+    pairedResourceIds.add(resourceId);
+    if (pairedTimestamps.length < pairedReadyAfterCalls) return null;
     return pairedBytes;
   }
 
   @override
   bool hasPairedVoiceCandidate(int textTsMs) => pairedCandidate;
+
+  @override
+  String? findPairedVoiceResourceId(int textTsMs) =>
+      pairedCandidate ? 'fake-$textTsMs.ogg' : null;
 
   @override
   Future<GalAudioSlice?> grabUtterance(

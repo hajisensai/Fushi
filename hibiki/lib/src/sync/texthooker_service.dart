@@ -50,6 +50,7 @@ class TexthookerLineEntry {
     this.nativeTextThreadId,
     this.audioStatus = TexthookerLineAudioStatus.unavailable,
     this.audioBackend,
+    this.audioResourceId,
     this.audioDurationMs,
     this.fallbackReason,
   });
@@ -67,14 +68,20 @@ class TexthookerLineEntry {
   final DateTime receivedAt;
   final TexthookerLineAudioStatus audioStatus;
   final String? audioBackend;
+
+  /// 与本句时间戳精确配对的游戏资源文件名。只保存 dump 目录内的 basename，
+  /// 历史句子制卡时可直接定位同一份资源，避免重新扫描后误配到较新的语音。
+  final String? audioResourceId;
   final int? audioDurationMs;
   final String? fallbackReason;
 
   TexthookerLineEntry copyWith({
     TexthookerLineAudioStatus? audioStatus,
     String? audioBackend,
+    String? audioResourceId,
     int? audioDurationMs,
     String? fallbackReason,
+    bool clearAudioResourceId = false,
     bool clearFallbackReason = false,
   }) {
     return TexthookerLineEntry(
@@ -91,6 +98,8 @@ class TexthookerLineEntry {
       receivedAt: receivedAt,
       audioStatus: audioStatus ?? this.audioStatus,
       audioBackend: audioBackend ?? this.audioBackend,
+      audioResourceId:
+          clearAudioResourceId ? null : audioResourceId ?? this.audioResourceId,
       audioDurationMs: audioDurationMs ?? this.audioDurationMs,
       fallbackReason:
           clearFallbackReason ? null : fallbackReason ?? this.fallbackReason,
@@ -192,16 +201,20 @@ class TexthookerService extends ChangeNotifier {
     String id, {
     required TexthookerLineAudioStatus status,
     String? backend,
+    String? resourceId,
     int? durationMs,
     String? fallbackReason,
+    bool clearResourceId = false,
   }) {
     final int index = _entries.indexWhere((entry) => entry.id == id);
     if (index < 0) return false;
     _entries[index] = _entries[index].copyWith(
       audioStatus: status,
       audioBackend: backend,
+      audioResourceId: resourceId,
       audioDurationMs: durationMs,
       fallbackReason: fallbackReason,
+      clearAudioResourceId: clearResourceId,
       clearFallbackReason: fallbackReason == null,
     );
     notifyListeners();

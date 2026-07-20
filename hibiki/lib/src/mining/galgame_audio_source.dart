@@ -182,11 +182,10 @@ int? parseInjectorHookedPid(String stdout) {
 
 /// galgame 纯人声配对（真机验证，docs/specs/galgame-mining）：注入 hook DLL 把每句原始语音
 /// OGG dump 到 `%TEMP%\hibiki_gal_voice\<tickMs>_<basename>.ogg`（tickMs=GetTickCount64，与
-/// 文本环 `TextSlot.timestamp_ms` 同源）。实测语音**先**开流、文本约 220ms **后**才显示，故某
-/// 条文本行（时间戳 [textTsMs]）对应的语音 = 文件名 tick 落在 `[textTsMs-windowHighMs,
-/// textTsMs-windowLowMs]` 内、离期望偏移（`textTsMs-expectedOffsetMs`，窗口中心附近）最近的
-/// 那个 OGG。BGM/SE/系统音（basename 以 bgm/se/sys/amb/env/title/logo/movie/jingle 起头）排除
-/// ——语音是角色名（yui/osy/aka/hea…）。
+/// 文本环 `TextSlot.timestamp_ms` 同源）。新版 Siglus 资源导出会直接沿用当前文本 tick，
+/// 因此先取 [exactToleranceMs] 内的同 tick 文件；旧引擎仍可能让语音先开流、文本约 220ms
+/// 后显示，精确 tick 不存在时再在 `[textTsMs-windowHighMs, textTsMs-windowLowMs]` 内取离
+/// `textTsMs-expectedOffsetMs` 最近者。BGM/SE/系统音始终排除。
 ///
 /// 纯函数（只吃文件名列表 [oggFileNames]，不碰文件系统），可单测。无匹配返回 null。
 String? pickPairedVoiceOgg({
@@ -195,12 +194,15 @@ String? pickPairedVoiceOgg({
   int windowLowMs = 130,
   int windowHighMs = 330,
   int expectedOffsetMs = 220,
+  int exactToleranceMs = 0,
 }) {
   final int lo = textTsMs - windowHighMs;
   final int hi = textTsMs - windowLowMs;
   final int target = textTsMs - expectedOffsetMs;
-  String? best;
-  int bestDist = 1 << 62;
+  String? exactBest;
+  int exactBestDist = 1 << 62;
+  String? offsetBest;
+  int offsetBestDist = 1 << 62;
   for (final String name in oggFileNames) {
     final _ParsedVoiceOgg? parsed = _parseVoiceOggName(name);
     if (parsed == null) {
@@ -210,16 +212,22 @@ String? pickPairedVoiceOgg({
       continue;
     }
     final int tick = parsed.tick;
+    final int exactDist = (tick - textTsMs).abs();
+    if (exactDist <= exactToleranceMs && exactDist < exactBestDist) {
+      exactBestDist = exactDist;
+      exactBest = name;
+      continue;
+    }
     if (tick < lo || tick > hi) {
       continue;
     }
     final int dist = (tick - target).abs();
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = name;
+    if (dist < offsetBestDist) {
+      offsetBestDist = dist;
+      offsetBest = name;
     }
   }
-  return best;
+  return exactBest ?? offsetBest;
 }
 
 /// Unity 资源提取器在 AudioSource 播放入口以同一个 GetTickCount64 时钟写 WAV。相较 Siglus
@@ -246,6 +254,29 @@ String? pickPairedUnityVoiceWav({
     }
   }
   return best;
+}
+
+/// 在同一条文本时间戳下选择游戏资源语音。
+///
+/// 有有效 [textTsMs] 时只接受时间窗内的 Unity WAV / Siglus-KiriKiri OGG；即使调用方
+/// 提供了 [latestSessionVoiceName]，精确配对失败也必须返回 null，交给上层明确降级到
+/// PCM/Loopback，不能把本会话另一句“最新语音”冒充成当前句。只有没有文本时间戳的
+/// Siglus 晚附着兼容路径才允许使用会话内最新资源。
+String? pickPairedGameResource({
+  required List<String> oggFileNames,
+  required List<String> wavFileNames,
+  required int textTsMs,
+  String? latestSessionVoiceName,
+}) {
+  if (textTsMs <= 0) return latestSessionVoiceName;
+  return pickPairedUnityVoiceWav(
+        wavFileNames: wavFileNames,
+        textTsMs: textTsMs,
+      ) ??
+      pickPairedVoiceOgg(
+        oggFileNames: oggFileNames,
+        textTsMs: textTsMs,
+      );
 }
 
 /// [pickPairedVoiceOgg] 解析出的一条 dump 文件名：`<tick>_<basename>` 的 tick（GetTickCount64）
@@ -826,18 +857,15 @@ class EngineHookGalAudioSource implements GalAudioSource {
     } catch (_) {
       return null;
     }
-    String? picked = textTsMs > 0
-        ? pickPairedUnityVoiceWav(
-            wavFileNames: wavNames,
-            textTsMs: textTsMs,
-          )
-        : null;
-    picked ??= textTsMs > 0
-        ? pickPairedVoiceOgg(oggFileNames: oggNames, textTsMs: textTsMs)
-        : null;
-    // Siglus 的 Enigma-safe 晚附着可能没有文本 hook 时间戳。此时（或精确窗口未命中时）只在
-    // 本会话新文件里选修改时间最新的一条；跨会话旧 dump 绝不参与。
-    if (picked == null && _sessionStartedAt != null) {
+    String? picked = pickPairedGameResource(
+      oggFileNames: oggNames,
+      wavFileNames: wavNames,
+      textTsMs: textTsMs,
+    );
+    // Siglus 的 Enigma-safe 晚附着可能没有文本 hook 时间戳。只有这种无时间戳路径才在本会话
+    // 新文件里选修改时间最新的一条；有时间戳但窗口未命中必须返回 null，让上层明确降级，
+    // 否则会把别句资源语音错配给当前文本。跨会话旧 dump 始终不参与。
+    if (picked == null && textTsMs <= 0 && _sessionStartedAt != null) {
       File? latest;
       DateTime? latestModified;
       final DateTime floor =
@@ -863,7 +891,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
         }
       }
       if (latest != null) {
-        picked = _fileBaseName(latest.path);
+        picked = pickPairedGameResource(
+          oggFileNames: oggNames,
+          wavFileNames: wavNames,
+          textTsMs: textTsMs,
+          latestSessionVoiceName: _fileBaseName(latest.path),
+        );
       }
     }
     if (picked == null) {
@@ -877,11 +910,35 @@ class EngineHookGalAudioSource implements GalAudioSource {
   bool hasPairedVoiceCandidate(int textTsMs) =>
       _findPairedVoiceFile(textTsMs) != null;
 
+  /// 返回与文本时间戳精确配对的资源 ID（dump 目录内的 basename）。控制器在台词刚到达时
+  /// 把它固化到该行；之后即使用户从历史列表制卡，也不再按“当前最新资源”重新猜测。
+  String? findPairedVoiceResourceId(int textTsMs) {
+    final File? file = _findPairedVoiceFile(textTsMs);
+    return file == null ? null : _fileBaseName(file.path);
+  }
+
+  File? _voiceFileForResourceId(String resourceId) {
+    if (!Platform.isWindows ||
+        resourceId.isEmpty ||
+        _fileBaseName(resourceId) != resourceId) {
+      return null;
+    }
+    final String lower = resourceId.toLowerCase();
+    if (!lower.endsWith('.ogg') && !lower.endsWith('.wav')) return null;
+    final File file = File(
+      '${_galVoiceDumpDir().path}${Platform.pathSeparator}$resourceId',
+    );
+    return file.existsSync() ? file : null;
+  }
+
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,
+    String? resourceId,
   }) async {
-    final File? picked = _findPairedVoiceFile(textTsMs);
+    final File? picked = resourceId == null
+        ? _findPairedVoiceFile(textTsMs)
+        : _voiceFileForResourceId(resourceId);
     if (picked == null) return null;
     return transcodeVoiceOggToMiningAudio(
       oggPath: picked.path,

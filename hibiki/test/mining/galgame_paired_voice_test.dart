@@ -2,10 +2,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 
 /// galgame 纯人声配对纯函数 [pickPairedVoiceOgg] 单测（真机验证的配对规律固化）：文本行
-/// 时间戳对应的语音 = 文件名 tick 落在 [T-330, T-130] 内、离期望偏移 T-220 最近、且非 BGM/SE
-/// 的那个 OGG。
+/// 时间戳对应的语音优先取同 tick 资源；没有时再取 [T-330, T-130] 内、离期望偏移
+/// T-220 最近、且非 BGM/SE 的 OGG。
 void main() {
   group('pickPairedVoiceOgg', () {
+    test('Anemoi 新资源导出同 tick 时优先于旧的 T-220 候选', () {
+      final List<String> files = <String>[
+        '636939592_old_style.ogg',
+        '636939812_z5044.ovk_125778.ogg',
+      ];
+      expect(
+        pickPairedVoiceOgg(oggFileNames: files, textTsMs: 636939812),
+        '636939812_z5044.ovk_125778.ogg',
+      );
+    });
+
     test('挑窗口内、离期望偏移(约 T-220)最近的语音', () {
       // 文本 T=10000 → 窗口 [9670, 9870]，期望中心 9780。
       final List<String> files = <String>[
@@ -86,6 +97,44 @@ void main() {
       expect(
         pickPairedUnityVoiceWav(wavFileNames: files, textTsMs: 10000),
         isNull,
+      );
+    });
+  });
+
+  group('pickPairedGameResource', () {
+    test('有时间戳但精确窗口未命中时绝不冒用会话最新语音', () {
+      expect(
+        pickPairedGameResource(
+          oggFileNames: const <String>['9000_old_line.ogg'],
+          wavFileNames: const <String>[],
+          textTsMs: 10000,
+          latestSessionVoiceName: '11000_other_line.ogg',
+        ),
+        isNull,
+      );
+    });
+
+    test('无文本时间戳时允许 Siglus 晚附着使用本会话最新语音', () {
+      expect(
+        pickPairedGameResource(
+          oggFileNames: const <String>[],
+          wavFileNames: const <String>[],
+          textTsMs: 0,
+          latestSessionVoiceName: '11000_current_session.ogg',
+        ),
+        '11000_current_session.ogg',
+      );
+    });
+
+    test('有时间戳时精确 Unity 资源优先于会话最新语音', () {
+      expect(
+        pickPairedGameResource(
+          oggFileNames: const <String>['9780_siglus.ogg'],
+          wavFileNames: const <String>['10020_unity.wav'],
+          textTsMs: 10000,
+          latestSessionVoiceName: '11000_other_line.ogg',
+        ),
+        '10020_unity.wav',
       );
     });
   });
