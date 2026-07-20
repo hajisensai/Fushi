@@ -127,5 +127,36 @@ void main() {
       await db.clearAllActivityEvents();
       expect(await db.getRecentActivityEvents(), isEmpty);
     });
+
+    test('watchDashboardDataChanges 在写入活动事件时 emit（首页自动刷新信号）', () async {
+      final db = await _openDb();
+      // .first 订阅后即挂上 tableUpdates；写入活动事件触发表变更 → 流 emit → 完成。
+      final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(
+            const Duration(seconds: 3),
+          );
+      await db.addActivityEvent(
+        eventType: kActivityRead,
+        mediaType: kActivityMediaBook,
+        title: 'X',
+        dateKey: '2026-07-20',
+        timestampMs: 1,
+      );
+      // 不抛 = 收到 emit（.first 自行取消订阅，onCancel 收敛不挂测试）。
+      await emitted;
+    });
+
+    test('watchDashboardDataChanges 在写入阅读统计时也 emit', () async {
+      final db = await _openDb();
+      final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(
+            const Duration(seconds: 3),
+          );
+      await db.addReadingStatistic(
+        title: 'Y',
+        dateKey: '2026-07-20',
+        charsRead: 10,
+        timeMs: 1000,
+      );
+      await emitted;
+    });
   });
 }
