@@ -161,6 +161,74 @@ void main() {
     expect(decoded.memoryLimitMb, 512);
   });
 
+  test('session/anti-leech 字段默认值合理（发现开关默认开、加密首选、反吸血开）', () {
+    const QbConnectionConfig d = QbConnectionConfig();
+    expect(d.listenPort, 0);
+    expect(d.enableDht, isTrue);
+    expect(d.enableLsd, isTrue);
+    expect(d.enableUpnp, isTrue);
+    expect(d.enableNatpmp, isTrue);
+    expect(d.encryptionMode, QbConnectionConfig.encryptionPrefer);
+    expect(d.anonymousMode, isFalse);
+    expect(d.maxActiveDownloads, 0);
+    expect(d.maxActiveSeeds, 0);
+    expect(d.maxUploadSlots, 0);
+    expect(d.antiLeechEnabled, isTrue);
+    expect(d.banProgressCheat, isFalse);
+    expect(d.banRelativeProgressCheat, isFalse);
+    expect(d.maxIpPortCount, 0);
+    expect(d.banTimeMinutes, 0);
+  });
+
+  test('session/anti-leech 字段 round-trip', () {
+    const QbConnectionConfig o = QbConnectionConfig(
+      listenPort: 51413,
+      enableDht: false,
+      enableLsd: false,
+      enableUpnp: false,
+      enableNatpmp: false,
+      encryptionMode: QbConnectionConfig.encryptionForced,
+      anonymousMode: true,
+      maxActiveDownloads: 5,
+      maxActiveSeeds: 3,
+      maxUploadSlots: 8,
+      antiLeechEnabled: false,
+      banProgressCheat: true,
+      banRelativeProgressCheat: true,
+      maxIpPortCount: 4,
+      banTimeMinutes: 120,
+    );
+    final QbConnectionConfig r =
+        decodeQbConnectionConfig(encodeQbConnectionConfig(o))!;
+    expect(r.listenPort, 51413);
+    expect(r.enableDht, isFalse);
+    expect(r.encryptionMode, QbConnectionConfig.encryptionForced);
+    expect(r.anonymousMode, isTrue);
+    expect(r.maxActiveDownloads, 5);
+    expect(r.maxActiveSeeds, 3);
+    expect(r.maxUploadSlots, 8);
+    expect(r.antiLeechEnabled, isFalse);
+    expect(r.banProgressCheat, isTrue);
+    expect(r.banRelativeProgressCheat, isTrue);
+    expect(r.maxIpPortCount, 4);
+    expect(r.banTimeMinutes, 120);
+  });
+
+  test('老 JSON 缺 session 字段：发现开关回落 true、反吸血回落 on、加密首选', () {
+    final QbConnectionConfig c =
+        decodeQbConnectionConfig('{"backend":"embedded"}')!;
+    expect(c.enableDht, isTrue);
+    expect(c.enableLsd, isTrue);
+    expect(c.enableUpnp, isTrue);
+    expect(c.enableNatpmp, isTrue);
+    expect(c.antiLeechEnabled, isTrue);
+    expect(c.encryptionMode, QbConnectionConfig.encryptionPrefer);
+    expect(c.anonymousMode, isFalse);
+    // 越界加密值 → 首选。
+    expect(decodeQbConnectionConfig('{"encryptionMode":9}')!.encryptionMode,
+        QbConnectionConfig.encryptionPrefer);
+  });
+
   test('memoryLimitMb defaults to 0 (auto); legacy JSON → 0', () {
     expect(const QbConnectionConfig().memoryLimitMb, 0);
     expect(

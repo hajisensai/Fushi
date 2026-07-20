@@ -34,8 +34,12 @@ class EmbeddedTorrentHost {
   final String _baseSavePath;
   final int Function() _clockMs;
 
-  /// 全局反吸血引擎（共享连坐段，见 anti_leech.dart 类 doc 建议）。
-  final AntiLeechEngine _antiLeech = AntiLeechEngine();
+  /// 全局反吸血引擎（共享连坐段，见 anti_leech.dart 类 doc 建议）。用户在设置里
+  /// 调开关/阈值时 [applyAntiLeechConfig] 会用新 [AntiLeechConfig] 重建它。
+  AntiLeechEngine _antiLeech = AntiLeechEngine();
+
+  /// 反吸血总开关（关时 [sweepAntiLeech] 清空 ip_filter 且不再判定）。
+  bool _antiLeechEnabled = true;
 
   /// 当前 ip_filter 里的封段快照（避免无变化时重复 set_ip_filter）。
   Set<String> _appliedBans = <String>{};
@@ -118,6 +122,38 @@ class EmbeddedTorrentHost {
     );
   }
 
+  /// 应用会话级设置（qb 关键项：端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/
+  /// 上传槽）到常驻 session。config 变更/启动时由 AppModel 调用。
+  bool applySessionSettings(QbConnectionConfig config) {
+    return _session.applySessionSettings(
+      listenPort: config.listenPort,
+      enableDht: config.enableDht,
+      enableLsd: config.enableLsd,
+      enableUpnp: config.enableUpnp,
+      enableNatpmp: config.enableNatpmp,
+      encPolicy: config.encryptionMode,
+      anonymousMode: config.anonymousMode,
+      activeDownloads: config.maxActiveDownloads,
+      activeSeeds: config.maxActiveSeeds,
+      maxUploadSlots: config.maxUploadSlots,
+    );
+  }
+
+  /// 用配置里的反吸血开关/阈值重建反吸血引擎（丢弃旧封禁状态，会自然重建）。
+  /// 总开关关时下一次 [sweepAntiLeech] 会清空 ip_filter。config 变更时调用。
+  void applyAntiLeechConfig(QbConnectionConfig config) {
+    _antiLeechEnabled = config.antiLeechEnabled;
+    _antiLeech = AntiLeechEngine(
+      config: AntiLeechConfig(
+        banByProgressUploaded: config.banProgressCheat,
+        banByRelativeProgressUploaded: config.banRelativeProgressCheat,
+        maxIpPortCount: config.maxIpPortCount,
+        banTimeMs:
+            config.banTimeMinutes > 0 ? config.banTimeMinutes * 60 * 1000 : 0,
+      ),
+    );
+  }
+
   /// 派发一个短命后端适配器（共享常驻 session；其 close 不销毁会话）。
   /// 供 `AnimeDownloadService.backendFactory` 每 tick 调用。
   EmbeddedTorrentBackend backendView() {
@@ -133,6 +169,13 @@ class EmbeddedTorrentHost {
   /// 封禁的 peer 数（诊断用）。异常静默吞（不打断下载轮询）。
   int sweepAntiLeech() {
     try {
+      // 总开关关：清掉可能残留的 ip_filter 封段，之后不判定。
+      if (!_antiLeechEnabled) {
+        if (_appliedBans.isNotEmpty && _session.applyIpFilter(<String>{})) {
+          _appliedBans = <String>{};
+        }
+        return 0;
+      }
       final int nowMs = _clockMs();
       int newlyBanned = 0;
       for (final HtTorrentStatus t in _session.listTorrents()) {
