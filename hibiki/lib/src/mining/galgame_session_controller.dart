@@ -236,7 +236,9 @@ class GalgameSessionController extends ChangeNotifier {
         continue;
       }
       // 台词进悬浮查词面板（与剪贴板文本同去向；destination 默认空串 → panel）。
-      DesktopLookupService.instance.submitText(line.text);
+      // passiveStream=true：连续台词流，用户点词看释义时面板只刷新可点句子横幅、不冲掉点词
+      // 结果（见 DesktopLookupRequest.passiveStream / ClipboardPanelController 的用户拥有根）。
+      DesktopLookupService.instance.submitText(line.text, passiveStream: true);
       _lastHookedLineTs = line.timestampMs;
       _cacheLineTs(line.text, line.timestampMs);
       // 出现即锁定该行语音（抗快进/环形覆盖）：立刻按 hook 时间戳抓好缓存起来。整句优先
