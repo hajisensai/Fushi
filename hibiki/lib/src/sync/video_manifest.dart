@@ -1,5 +1,4 @@
-import 'dart:convert';
-
+import 'package:hibiki/src/sync/sync_manifest_codec.dart';
 import 'package:path/path.dart' as p;
 
 /// 云视频资产目录清单（多端库联合视图 §2.6 / 任务12）。
@@ -14,7 +13,7 @@ import 'package:path/path.dart' as p;
 /// 编排器靠 canonical JSON 比对决定要不要回写，避免反复同步产生写放大。
 ///
 /// 纯 Dart：零 IO、零 Flutter 依赖，便于 roundtrip 单测。
-class RemoteVideoManifest {
+class RemoteVideoManifest implements CanonicalJsonManifest {
   const RemoteVideoManifest({
     this.version = currentVersion,
     this.videos = const <RemoteVideoManifestEntry>[],
@@ -32,25 +31,14 @@ class RemoteVideoManifest {
   final List<RemoteVideoManifestEntry> videos;
 
   /// 解码。[json] 是 `jsonDecode` 的产物（Map）。结构非法抛 [FormatException]
-  /// （编排器捕获后计入 report.errors，不让一份坏清单毁掉整轮同步）。
+  /// （编排器捕获后计入 report.errors，不让一份坏清单毁掉整轮同步）。严格门
+  /// （object/version/list 校验 + 版本过新拒绝）走共享 sync_manifest_codec。
   factory RemoteVideoManifest.fromJson(Object? json) {
-    if (json is! Map<String, dynamic>) {
-      throw const FormatException('video manifest: not a JSON object');
-    }
-    final Object? version = json['version'];
-    if (version is! int || version < 1) {
-      throw const FormatException('video manifest: bad version');
-    }
-    if (version > currentVersion) {
-      // 更新版 app 写的清单：拒绝解析（宁可跳过本轮云视频同步，也不能按旧语义误读
-      // 新字段后把降级结果写回，破坏新端数据——与合集清单 / DB 降级保护同一律）。
-      throw FormatException('video manifest: version $version is newer than '
-          'supported $currentVersion');
-    }
-    final Object? rawVideos = json['videos'];
-    if (rawVideos is! List) {
-      throw const FormatException('video manifest: bad videos');
-    }
+    const String label = 'video manifest';
+    final Map<String, dynamic> map = requireManifestObject(json, label);
+    final int version = requireManifestVersion(map,
+        currentVersion: currentVersion, label: label);
+    final List<Object?> rawVideos = requireManifestList(map, 'videos', label);
     return RemoteVideoManifest(
       version: version,
       videos: <RemoteVideoManifestEntry>[
@@ -60,6 +48,7 @@ class RemoteVideoManifest {
   }
 
   /// 编码为确定性排序（按 uid）的 JSON 结构。
+  @override
   Map<String, dynamic> toJson() {
     final List<RemoteVideoManifestEntry> sorted =
         List<RemoteVideoManifestEntry>.of(videos)
@@ -73,8 +62,13 @@ class RemoteVideoManifest {
     };
   }
 
+  /// 内容身份 = 完整 JSON（本清单无文件级元数据）。
+  @override
+  Map<String, dynamic> contentJson() => toJson();
+
   /// 规范化 JSON 字符串（确定性排序 ⇒ 内容相等则字节相等，供变更检测）。
-  String canonicalJson() => jsonEncode(toJson());
+  @override
+  String canonicalJson() => canonicalManifestJson(this);
 }
 
 /// 清单里的一个云视频条目。
