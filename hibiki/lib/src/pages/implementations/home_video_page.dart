@@ -54,6 +54,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
+import 'package:hibiki/src/utils/cover_image.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
@@ -270,15 +271,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final Map<String, int> primaryMap =
         await db.getPrimaryCollectionIdByEntry();
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
-    // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。
+    // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。一次 [getAllCollectionItems]
+    // 查全部成员内存分组，替代逐合集 [getCollectionItems] 的 N+1（合集越多越慢，
+    // 首屏合集行渲染被它 gate）。判据 `primaryMap[key] == m.collectionId` 与旧
+    // 逐合集 `== c.id` 等价（旧循环里 members 的 collectionId 恒为 c.id）。
     final Map<String, int> memberSortIndex = <String, int>{};
-    for (final MediaCollectionRow c in collections) {
-      final List<MediaCollectionItemRow> members =
-          await db.getCollectionItems(c.id);
-      for (final MediaCollectionItemRow m in members) {
-        final String key = '${m.mediaType}|${m.entryKey}';
-        if (primaryMap[key] == c.id) memberSortIndex[key] = m.sortIndex;
-      }
+    for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
+      final String key = '${m.mediaType}|${m.entryKey}';
+      if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
     }
     // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
@@ -2827,16 +2827,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   Widget _buildCover(VideoBookRow book) {
     final String? cover = book.coverPath;
-    if (cover != null && File(cover).existsSync()) {
-      return Image.file(
-        File(cover),
-        // TODO-616 phase C: 本地视频封面同样用 contain（封面卡槽比 16:9 源更窄，
-        // cover 会裁左右），完整显示不裁切。
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _coverPlaceholder(),
-      );
+    // 保留同步 existsSync 短路：对已知不存在的封面直接占位，避免对缺失文件发起
+    // 无谓的异步解码（真机少一次失败 IO；widget 测试里也不会因缺失文件挂在解码上）。
+    // 单卡一次 stat 成本极小；首屏真正的开销是解码尺寸（下方 cacheWidth 降采样）
+    // 与 _repairMovedCoverPaths 的全库 stat（已改异步）。
+    if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
+      return _coverPlaceholder();
     }
-    return _coverPlaceholder();
+    return Image.file(
+      File(cover),
+      // TODO-616 phase C: 本地视频封面同样用 contain（封面卡槽比 16:9 源更窄，
+      // cover 会裁左右），完整显示不裁切。
+      fit: BoxFit.contain,
+      // BUG-946: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
+      cacheWidth: kLocalCoverDecodePixelWidth,
+      errorBuilder: (_, __, ___) => _coverPlaceholder(),
+    );
   }
 
   Widget _coverPlaceholder() {
