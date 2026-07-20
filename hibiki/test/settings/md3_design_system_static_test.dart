@@ -912,6 +912,22 @@ void main() {
               'Jimaku subtitle rows plus a download-task list as transient '
               'video-subsystem content — the same reviewed content exception '
               'class as the sibling jimaku_subtitle_dialog / jimaku_batch_dialog.',
+      // PR#295：galgame Hook 诊断页把实时语音轨候选行与 hook 事件日志行渲染为
+      // hook 子系统的瞬态内容行（含状态横幅胶囊），非普通页面 chrome——同
+      // jimaku/anime 下载对话框与 anki_mined_card_action_sheet 的内容豁免类。
+      'lib/src/pages/implementations/game_diagnostics_page.dart':
+          'Galgame hook diagnostics page lists live voice-track candidate rows '
+              'and hook event-log rows as transient hook-subsystem content '
+              '(plus a status banner pill), not ordinary page chrome — same '
+              'reviewed content exception class as the jimaku/anime download '
+              'dialogs and anki_mined_card_action_sheet.',
+      // PR#295：Hook 控制台的状态胶囊（hook-ready / 未读行数 / 每行句音状态）是
+      // hook 子系统的实时内容指示器，非普通页面 chrome——同视频子系统内容行豁免类。
+      'lib/src/pages/implementations/texthooker_page.dart':
+          'Hook console status pills (hook-ready / unread-lines / per-line '
+              'audio status capsules) are live hook-subsystem content '
+              'indicators, not ordinary page chrome — same reviewed content '
+              'exception class as the video-subsystem content rows.',
       'lib/src/anki/anki_mined_card_action_sheet.dart':
           'TODO-1007/1008 mined-card action sheet lists matching Anki notes '
               'as transient content rows (note preview + per-note overwrite/view '
