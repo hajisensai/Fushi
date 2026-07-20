@@ -136,6 +136,8 @@ class EmbeddedTorrentHost {
               client: pi.client,
               reportedProgress: pi.progress,
               totalUpload: pi.totalUpload,
+              totalDownload: pi.totalDownload,
+              port: pi.port,
               uploadSpeed: pi.upSpeed,
               peerInterested: pi.remoteInterested,
             ),
@@ -144,6 +146,9 @@ class EmbeddedTorrentHost {
             _antiLeech.evaluate(snapshots, ctx, nowMs: nowMs);
         newlyBanned += verdicts.values.where((BanVerdict v) => v.banned).length;
       }
+      // 抄 ClientBlocker banTime：清理到期封段（banTimeMs>0 时生效）→ 变化随
+      // 下面的 setEquals 比较自然触发 ip_filter 重建。
+      _antiLeech.pruneExpired(nowMs);
       final Set<String> bans = _antiLeech.bannedCidrs;
       if (!_setEquals(bans, _appliedBans)) {
         if (_session.applyIpFilter(bans)) {

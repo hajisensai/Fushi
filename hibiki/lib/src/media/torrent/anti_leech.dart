@@ -23,6 +23,8 @@ class PeerSnapshot {
     required this.client,
     required this.reportedProgress,
     required this.totalUpload,
+    this.totalDownload = 0,
+    this.port = 0,
     this.uploadSpeed = 0,
     this.peerInterested = true,
   });
@@ -41,6 +43,13 @@ class PeerSnapshot {
 
   /// 本连接我实际上传给它的字节（可信，反吸血基准）。
   final int totalUpload;
+
+  /// 本连接我从它实际下载到的字节（它给过我们数据 → 抄 ClientBlocker 的
+  /// ignoreByDownloaded：下载超阈值不自动封，避免误伤真正在喂我们的 peer）。
+  final int totalDownload;
+
+  /// peer 端口（抄 ClientBlocker 的 maxIPPortCount 多端口检测；0=未知）。
+  final int port;
 
   /// 当前上传速率 B/s（预留字段，当前规则未使用）。
   final int uploadSpeed;
@@ -92,6 +101,17 @@ enum BanReason {
   /// 多拨/PCDN：同段同种子连接数超容忍值。
   multiDialing,
 
+  /// 多端口：同 IP 用的端口数超容忍值（抄 ClientBlocker maxIPPortCount）。
+  multiPort,
+
+  /// 绝对「进度+上传」作弊（抄 ClientBlocker banByProgressUploaded：实喂字节
+  /// 远超自报进度应得的量 × 容错倍率）。
+  progressUploadedCheat,
+
+  /// 相对「进度+上传」作弊（抄 ClientBlocker banByRelativeProgressUploaded：
+  /// 两次采样间的上传增量远超进度增量应得的量）。
+  relativeProgressUploadedCheat,
+
   /// 连坐：IP 落在已封 CIDR 段内。
   autoRangeBan,
 }
@@ -132,6 +152,16 @@ class AntiLeechConfig {
     this.ipv4PrefixLength = 24,
     this.ipv6PrefixLength = 60,
     this.multiDialTolerance = 8,
+    this.ignoreEmptyPeer = true,
+    this.ignoreByDownloadedBytes = 100 * 1024 * 1024,
+    this.banByProgressUploaded = false,
+    this.progressUploadedStartBytes = 20 * 1024 * 1024,
+    this.progressUploadedAntiErrorRatio = 3.0,
+    this.banByRelativeProgressUploaded = false,
+    this.relativeStartBytes = 20 * 1024 * 1024,
+    this.relativeAntiErrorRatio = 3.0,
+    this.maxIpPortCount = 0,
+    this.banTimeMs = 0,
     this.peerIdBlacklistPrefixes = const <String>[
       '-XL',
       '-SD',
@@ -174,6 +204,44 @@ class AntiLeechConfig {
 
   /// 同段同种子容忍的连接数，超即多拨。
   final int multiDialTolerance;
+
+  /// 抄 ClientBlocker `ignoreEmptyPeer`：peerId 与 client 都为空的 peer 跳过所有
+  /// 判定（除已在封段的连坐）——握手未完成/信息缺失时不误判。默认开。
+  final bool ignoreEmptyPeer;
+
+  /// 抄 ClientBlocker `ignoreByDownloaded`：从该 peer 下载到的字节达此值即不再对它
+  /// 做自动封（进度/上传类规则）——它确实在给我们喂数据。0=不启用该豁免。
+  final int ignoreByDownloadedBytes;
+
+  /// 抄 ClientBlocker `banByProgressUploaded`（默认关，opt-in）：绝对「进度+上传」
+  /// 作弊——实喂字节超过 `自报进度 × 种子大小 × [progressUploadedAntiErrorRatio]`
+  /// 且超过 [progressUploadedStartBytes] 起测量即判作弊。
+  final bool banByProgressUploaded;
+
+  /// [banByProgressUploaded] 起测的最小上传字节（低于此不判，避早期误判）。
+  final int progressUploadedStartBytes;
+
+  /// [banByProgressUploaded] 容错倍率（抗自报进度滞后误判，越大越宽松）。
+  final double progressUploadedAntiErrorRatio;
+
+  /// 抄 ClientBlocker `banByRelativeProgressUploaded`（默认关，opt-in）：相对
+  /// 「进度+上传」作弊——两次采样间的上传增量超过 `进度增量 × 种子大小 ×
+  /// [relativeAntiErrorRatio]` 且增量超 [relativeStartBytes] 即判。
+  final bool banByRelativeProgressUploaded;
+
+  /// [banByRelativeProgressUploaded] 起测的最小上传增量字节。
+  final int relativeStartBytes;
+
+  /// [banByRelativeProgressUploaded] 容错倍率。
+  final double relativeAntiErrorRatio;
+
+  /// 抄 ClientBlocker `maxIPPortCount`：同 IP 用的端口数超此值即封（多端口白嫖/
+  /// 多拨的另一维度）。0=关闭该检测。
+  final int maxIpPortCount;
+
+  /// 抄 ClientBlocker `banTime`：封禁时长（毫秒）。0=永久（保持既有行为，需调用
+  /// 方 [AntiLeechEngine.pruneExpired] 才会解封）。>0 时封禁到期可被 prune 解封。
+  final int banTimeMs;
 
   /// peer_id 前缀黑名单。
   final List<String> peerIdBlacklistPrefixes;
@@ -291,14 +359,37 @@ class AntiLeechEngine {
   /// 每 IP 上次自报进度（progressRewind 基准）。
   final Map<String, double> _lastProgress = <String, double>{};
 
-  /// 已封段（AutoRangeBan 连坐源）。
-  final Set<String> _bannedCidrs = <String>{};
+  /// 每 IP 上次 computedUploaded（相对「进度+上传」增量基准）。
+  final Map<String, int> _lastUpload = <String, int>{};
+
+  /// 每 IP 见过的端口集（maxIpPortCount 多端口检测）。
+  final Map<String, Set<int>> _ipPorts = <String, Set<int>>{};
+
+  /// 已封段 → 到期时刻（毫秒）；[_permanentBan] = 永久。AutoRangeBan 连坐源。
+  final Map<String, int> _bannedCidrs = <String, int>{};
+
+  /// 永久封禁哨兵（[AntiLeechConfig.banTimeMs]==0 时）。
+  static const int _permanentBan = -1;
 
   /// `infoHash@cidr` → 该段该种子见过的 IP 集（MultiDialing 计数）。
   final Map<String, Set<String>> _torrentSegmentIps = <String, Set<String>>{};
 
   /// 当前已封段的只读视图（native 层可据此重建 ip_filter）。
-  Set<String> get bannedCidrs => Set<String>.unmodifiable(_bannedCidrs);
+  Set<String> get bannedCidrs => Set<String>.unmodifiable(_bannedCidrs.keys);
+
+  /// 抄 ClientBlocker `banTime`：清理已到期的封段（[AntiLeechConfig.banTimeMs]>0
+  /// 时生效；永久封段不动）。返回 true 表示封段集有变化（调用方据此重建
+  /// ip_filter）。[nowMs] 单调毫秒时钟注入。
+  bool pruneExpired(int nowMs) {
+    final List<String> expired = <String>[
+      for (final MapEntry<String, int> e in _bannedCidrs.entries)
+        if (e.value != _permanentBan && e.value <= nowMs) e.key,
+    ];
+    for (final String cidr in expired) {
+      _bannedCidrs.remove(cidr);
+    }
+    return expired.isNotEmpty;
+  }
 
   /// 对一批 peer 快照做判定，返回 `ip → 判定` 映射。
   ///
@@ -314,20 +405,34 @@ class AntiLeechEngine {
     for (final PeerSnapshot peer in peers) {
       final BanVerdict verdict = _evaluatePeer(peer, ctx, nowMs);
       if (verdict.banned) {
-        _bannedCidrs.add(verdict.cidr ?? _segmentOf(peer.ip));
+        _registerBan(verdict.cidr ?? _segmentOf(peer.ip), nowMs);
       }
       out[peer.ip] = verdict;
     }
     return out;
   }
 
+  /// 登记/续期一个封段：banTimeMs>0 时到期时刻 = nowMs+banTimeMs（可被
+  /// [pruneExpired] 解封），否则永久。
+  void _registerBan(String cidr, int nowMs) {
+    _bannedCidrs[cidr] =
+        config.banTimeMs > 0 ? nowMs + config.banTimeMs : _permanentBan;
+  }
+
   /// 单 peer 判定（规则顺序见类 doc）。
   BanVerdict _evaluatePeer(PeerSnapshot peer, TorrentContext ctx, int nowMs) {
     // ① AutoRangeBan（连坐，先查）：IP 落在任一已封段直接 ban。
-    for (final String cidr in _bannedCidrs) {
+    for (final String cidr in _bannedCidrs.keys) {
       if (ipInCidr(peer.ip, cidr)) {
         return BanVerdict.ban(BanReason.autoRangeBan, cidr: cidr);
       }
+    }
+
+    // ①.5 ignoreEmptyPeer：peerId 与 client 都空（握手未完成）→ 不判定，避误封。
+    if (config.ignoreEmptyPeer &&
+        peer.peerId.trim().isEmpty &&
+        peer.client.trim().isEmpty) {
+      return const BanVerdict.allow();
     }
 
     // ② PeerId/ClientName 黑名单 + 迅雷特例。
@@ -351,6 +456,15 @@ class AntiLeechEngine {
         if (clientLower.contains(keyword)) {
           return const BanVerdict.ban(BanReason.clientBlacklist);
         }
+      }
+    }
+
+    // ②.5 maxIpPortCount（多端口白嫖）：同 IP 端口数超容忍值封 IP。
+    if (config.maxIpPortCount > 0 && peer.port > 0) {
+      final Set<int> ports = _ipPorts.putIfAbsent(peer.ip, () => <int>{})
+        ..add(peer.port);
+      if (ports.length > config.maxIpPortCount) {
+        return const BanVerdict.ban(BanReason.multiPort);
       }
     }
 
@@ -378,6 +492,14 @@ class AntiLeechEngine {
     // 宽限窗口：只更新状态不判定，避 bitfield 未就绪误封。
     if (nowMs - firstSeen < config.handshakeGraceMs) {
       _lastProgress[peer.ip] = peer.reportedProgress;
+      _lastUpload[peer.ip] = computedUploaded;
+      return const BanVerdict.allow();
+    }
+    // ignoreByDownloaded：它确实喂过我们足够数据 → 不做自动封（但更新状态）。
+    if (config.ignoreByDownloadedBytes > 0 &&
+        peer.totalDownload >= config.ignoreByDownloadedBytes) {
+      _lastProgress[peer.ip] = peer.reportedProgress;
+      _lastUpload[peer.ip] = computedUploaded;
       return const BanVerdict.allow();
     }
     // 小种子噪声大，跳过 PCB。
@@ -387,8 +509,15 @@ class AntiLeechEngine {
     // 没喂出过任何字节（含峰值）就无从判「喂了却自报低」。
     if (computedUploaded == 0) {
       _lastProgress[peer.ip] = peer.reportedProgress;
+      _lastUpload[peer.ip] = computedUploaded;
       return const BanVerdict.allow();
     }
+
+    // 上一轮基准（relative / rewind 用），随后立即更新为本轮值。
+    final double? prevProgress = _lastProgress[peer.ip];
+    final int? prevUpload = _lastUpload[peer.ip];
+    _lastProgress[peer.ip] = peer.reportedProgress;
+    _lastUpload[peer.ip] = computedUploaded;
 
     // differenceTest：我喂给你的量对应的进度，比你自报的高出一大截 =
     // 你谎报低进度骗我持续上传。
@@ -400,11 +529,35 @@ class AntiLeechEngine {
     }
 
     // progressRewind：自报进度倒退超阈值。
-    final double? lastProgress = _lastProgress[peer.ip];
-    _lastProgress[peer.ip] = peer.reportedProgress;
-    if (lastProgress != null &&
-        lastProgress - peer.reportedProgress > config.progressRewindThreshold) {
+    if (prevProgress != null &&
+        prevProgress - peer.reportedProgress > config.progressRewindThreshold) {
       return const BanVerdict.ban(BanReason.progressRewind);
+    }
+
+    // banByProgressUploaded（抄 ClientBlocker，opt-in）：实喂字节超「自报进度 ×
+    // 种子大小 × 容错倍率」且过起测量 = 谎报低进度白嫖。
+    if (config.banByProgressUploaded &&
+        computedUploaded >= config.progressUploadedStartBytes &&
+        computedUploaded >
+            ctx.totalSize *
+                peer.reportedProgress *
+                config.progressUploadedAntiErrorRatio) {
+      return const BanVerdict.ban(BanReason.progressUploadedCheat);
+    }
+
+    // banByRelativeProgressUploaded（抄 ClientBlocker，opt-in）：两次采样间的上传
+    // 增量超「进度增量 × 种子大小 × 容错倍率」且过起测量 = 边报进度边白嫖。
+    if (config.banByRelativeProgressUploaded &&
+        prevUpload != null &&
+        prevProgress != null) {
+      final int deltaUpload = computedUploaded - prevUpload;
+      final double deltaProgress = peer.reportedProgress - prevProgress;
+      final double allowed = ctx.totalSize *
+          math.max(deltaProgress, 0.0) *
+          config.relativeAntiErrorRatio;
+      if (deltaUpload >= config.relativeStartBytes && deltaUpload > allowed) {
+        return const BanVerdict.ban(BanReason.relativeProgressUploadedCheat);
+      }
     }
 
     // excessiveDownload：单 peer 下走的量超整个种子数倍 = PCDN 回源。
