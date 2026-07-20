@@ -28,6 +28,8 @@ struct VoiceHookStatus {
   bool hooked = false;       // hook DLL 是否已注入并安装钩子（proof-of-life）
   bool calibrating = false;  // 是否处于校准模式（识别 voice callsite 中）
   bool text_hooked = false;  // 文本 hook 是否已装（v2）
+  bool audio_hooks_ready = false;  // 首轮音频导出 hook 探测是否已完成
+  bool raw_voice_ready = false;  // 游戏资源逐句音频 hook 已就绪（可无 PCM 格式）
   bool ok = false;           // 映射有效且格式已就绪（音频格式已填）
 };
 
@@ -36,6 +38,14 @@ struct VoiceHookText {
   uint64_t seq = 0;           // 单调序号
   uint64_t timestamp_ms = 0;  // hook 写入时刻（GetTickCount64）
   std::string utf8;           // UTF-8 文本
+  uint64_t thread_id = 0;     // 会话内稳定 Hook 线程 id
+  uint64_t thread_address = 0;
+  uint64_t thread_context = 0;
+  uint64_t thread_context2 = 0;
+  uint32_t process_id = 0;
+  uint32_t source_kind = 0;
+  std::string hook_name;
+  std::string hook_code;
 };
 
 // 一条**活跃语音源**（source voice / DS buffer）的元数据快照（[ListAudioTracks] 产出）。游戏常有
@@ -76,6 +86,10 @@ class VoiceHookReader {
   // 取序号在 (from_seq, text_write_count] 区间的文本行（供 Dart 喂 texthooker）。最多回最近
   // kTextSlotCount 条（更旧的已被覆盖）。未打开 / 无新行时 [out] 空。
   void PollText(uint64_t from_seq, std::vector<VoiceHookText>& out);
+
+  // 选择 Luna 文本线程：0 恢复自动选择，非 0 写入共享 header 让 injector 只发布该线程。
+  // 映射未打开或契约不匹配返回 false。
+  bool SelectTextThread(uint64_t thread_id);
 
   // **按句取语音**：找时间戳与 [ts_ms] 最近（且差 <= [tolerance_ms]）的语音 clip，把它那段 PCM
   // 从音频环形拷进 [out]（clip 已被环形覆盖则跳过）。找不到则 [out] 空、返回 ok=false。

@@ -140,9 +140,9 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
       );
     case HomeTab.games:
       return AdaptiveNavItem(
-        icon: Icons.videogame_asset_outlined,
-        selectedIcon: Icons.videogame_asset,
-        label: t.games,
+        icon: Icons.sports_esports_outlined,
+        selectedIcon: Icons.sports_esports,
+        label: t.nav_game,
       );
     case HomeTab.settings:
       return AdaptiveNavItem(
@@ -497,7 +497,7 @@ class _HomePageState extends BasePageState<HomePage>
     return KeyEventResult.ignored;
   }
 
-  /// 当前可见的顶层 tab，按视觉顺序：书架 →（视频）→ 词典 →（游戏）→ 设置。视频 tab
+  /// 当前可见的顶层 tab：首页 → 书架 → 视频 → 下载 → 词典 → 游戏 → 设置。视频 tab
   /// 已毕业为常驻（位于书架与词典之间）；games（galgame 库）仅 Windows 桌面出现（galgame
   /// 引擎-hook 注入本就 Windows-only，故以平台而非实验开关门控，默认可见），位于词典与设置
   /// 之间。底栏/侧栏的位置索引由此列表导出。
@@ -880,21 +880,25 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// 需要跨 tab 切换**保活**（State 不随切走而销毁）的顶层 tab：书架与视频。
+  /// 需要跨 tab 切换**保活**（State 不随切走而销毁）的顶层 tab：书架、视频与游戏。
   ///
-  /// 只有这两个 tab 进入时会做**无持久缓存的远端加载**——`listRemoteBooks()` /
+  /// 书架与视频进入时会做**无持久缓存的远端加载**——`listRemoteBooks()` /
   /// `listRemoteVideos()` 每次都实打实打网络，远端封面（`RemoteCoverImage`）只走进程
   /// 内 `ImageCache`、无磁盘缓存。若页面 State 随切走被销毁，切回时 `initState` 重跑
   /// 就会把远端列表 + 封面全部重新联网拉一遍（用户报「每次进书架/视频都重新加载」）。
   /// 保活让 State 常驻 → 切回沿用已加载的列表/封面/滚动位置，秒回。
   ///
-  /// 其余 tab（词典 / games / 设置）**故意不保活**、按需重建，以保留其依赖
+  /// 游戏页也必须保活：捕获工作台拥有文本订阅、音频源与轮询会话，切去查词或设置时
+  /// 只能隐藏，不能因 dispose 停止正在进行的 Hook。
+  ///
+  /// 其余 tab（词典 / 设置）**故意不保活**、按需重建，以保留其依赖
   /// `initState` 挂载的语义——尤其 [HomeDictionaryPage] 靠切到查词 tab 时 re-mount
   /// 消费桌面悬浮字幕的 pending 查词（TODO-376，见 [_onHomeDictionaryTabRequested]）；
   /// 若把它也保活会不再 re-mount 而漏消费。
   static const Set<HomeTab> _keepAliveTabs = <HomeTab>{
     HomeTab.books,
     HomeTab.video,
+    HomeTab.games,
   };
 
   /// 用户已实际打开过至少一次的保活 tab。惰性构建：没进过的视频/书架 tab 不预建，
@@ -950,7 +954,7 @@ class _HomePageState extends BasePageState<HomePage>
           focusSignal: _dictFocusSignal,
         );
       case HomeTab.games:
-        return const GamesLibraryPage();
+        return const HomeGamePage();
       case HomeTab.settings:
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。

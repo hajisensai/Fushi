@@ -6,14 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
+import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/galgame_session_controller.dart';
 import 'package:hibiki/utils.dart';
 
 /// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
-/// [GalgameSessionController.launch]（引擎-hook launch 路径）拉起并注入——台词自动喂进悬浮
-/// 查词面板（与剪贴板查词同去向），用户在面板里点词查词 / 制卡，制卡自动带该句语音 + 游戏
-/// 窗口封面。不再进独立文本页（texthooker tab / TexthookerPage 已删）。
+/// [GalHookSessionController.launchGame]（引擎-hook launch 路径）拉起并注入。
+/// 台词进入同一个捕获会话，原生浮窗点词与工作台制卡共享稳定 lineId。
 ///
 /// 仿书籍/视频库的网格布局，但**不含**「继续游戏」（续玩恢复）与「活动热力图」——只是
 /// 干净的游戏网格 + 添加入口。
@@ -22,7 +23,16 @@ import 'package:hibiki/utils.dart';
 /// Drift 表。仅 Windows 桌面有注入能力；非 Windows 点击启动时优雅提示不支持，添加/管理
 /// 列表仍可用。
 class GamesLibraryPage extends ConsumerStatefulWidget {
-  const GamesLibraryPage({super.key});
+  const GamesLibraryPage({
+    super.key,
+    this.embedded = false,
+    this.sessionController,
+    this.onLaunched,
+  });
+
+  final bool embedded;
+  final GalHookSessionController? sessionController;
+  final VoidCallback? onLaunched;
 
   @override
   ConsumerState<GamesLibraryPage> createState() => _GamesLibraryPageState();
@@ -110,9 +120,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 启动一个游戏 → 台词进查词弹窗：非 Windows 优雅提示不支持；Windows 上交给
-  /// [GalgameSessionController.launch]（拉起游戏 + 注入引擎-hook + 接文本 hook）。台词从此
-  /// 自动喂进悬浮查词面板，用户在面板里点词查词 / 制卡（制卡自动带该句语音 + 游戏窗口封面）。
-  /// 不再 push 独立文本页——galgame 台词与剪贴板查词统一走同一去向路由（UX 统一）。
+  /// 启动前先按 exe 位数确保 helper 就位，再交给 app 级 Hook 会话。
   Future<void> _launchGame(GalgameEntry game) async {
     if (!Platform.isWindows) {
       HibikiToast.show(msg: t.games_launch_unsupported);
@@ -122,21 +130,55 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       HibikiToast.show(msg: t.games_exe_missing);
       return;
     }
-    await GalgameSessionController.instance.launch(game, context: context);
+    final bool is32Bit =
+        await EngineHookGalAudioSource.exeIs32Bit(game.exePath) ?? false;
+    if (GalHookSessionController.defaultInjectorResolver(is32Bit: is32Bit) ==
+        null) {
+      if (!mounted) return;
+      final bool installed = await GalgameHelperInstaller().ensureInjector(
+        is32Bit: is32Bit,
+        context: context,
+      );
+      if (!installed || !mounted) return;
+    }
+    final bool launched =
+        await (widget.sessionController ?? GalHookSessionController.instance)
+            .launchGame(game.exePath);
+    if (!mounted) return;
+    if (!launched) {
+      final String? reason =
+          (widget.sessionController ?? GalHookSessionController.instance)
+              .state
+              .lastError;
+      HibikiToast.show(msg: reason ?? t.game_capture_launch_failed);
+      return;
+    }
+    widget.onLaunched?.call();
   }
 
   @override
   Widget build(BuildContext context) {
+    final Widget body =
+        _games.isEmpty ? _buildEmpty(context) : _buildGrid(context);
+    final Widget addButton = FloatingActionButton.extended(
+      onPressed: _addGame,
+      icon: const Icon(Icons.add),
+      label: Text(t.games_add),
+    );
+    if (widget.embedded) {
+      return Stack(
+        children: <Widget>[
+          Positioned.fill(child: body),
+          Positioned(right: 16, bottom: 16, child: addButton),
+        ],
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(t.games),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addGame,
-        icon: const Icon(Icons.add),
-        label: Text(t.games_add),
-      ),
-      body: _games.isEmpty ? _buildEmpty(context) : _buildGrid(context),
+      floatingActionButton: addButton,
+      body: body,
     );
   }
 

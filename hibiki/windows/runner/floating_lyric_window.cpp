@@ -45,6 +45,7 @@ constexpr float kBaseStripHeightForFontDip = 96.0f;
 // and ControlActionAt() derive their geometry from this single count so the
 // hit areas can never drift from what is drawn.
 constexpr int kControlSlotCount = 5;
+constexpr int kHookTextControlSlotCount = 6;
 
 // Text-only clipboard window (Luna-style hover toolbar). A thin top strip is
 // ALWAYS a mouse catch (drawn at ~2% alpha across the full width) so the fully
@@ -235,7 +236,11 @@ bool FloatingLyricWindow::Show(HWND owner) {
                            ? std::clamp(static_cast<float>(style_.window_width),
                                         kMinStripWidthDip, kMaxStripWidthDip)
                            : kStripWidthDip;
-    strip_height_dip_ = kStripHeightDip;
+    strip_height_dip_ = style_.window_height > 0.0
+                            ? std::clamp(
+                                  static_cast<float>(style_.window_height),
+                                  kMinStripHeightDip, kMaxStripHeightDip)
+                            : kStripHeightDip;
     const int width = static_cast<int>(ScaleForDpi(strip_width_dip_));
     const int height = static_cast<int>(ScaleForDpi(strip_height_dip_));
     const int work_w = mi.rcWork.right - mi.rcWork.left;
@@ -247,10 +252,22 @@ bool FloatingLyricWindow::Show(HWND owner) {
     // keeps that click from stealing keyboard focus.
     hwnd_ = CreateWindowExW(
         WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-        kWindowClassName, L"Hibiki Lyric", WS_POPUP, x, y, width, height,
+        kWindowClassName, hook_text_mode_ ? L"Hibiki Hook Text" : L"Hibiki Lyric",
+        WS_POPUP, x, y, width, height,
         nullptr, nullptr, GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {
       return false;
+    }
+    if (has_initial_bounds_) {
+      const int restored_width = initial_bounds_.right - initial_bounds_.left;
+      const int restored_height = initial_bounds_.bottom - initial_bounds_.top;
+      if (restored_width > 0 && restored_height > 0) {
+        SetWindowPos(hwnd_, HWND_TOPMOST, initial_bounds_.left,
+                     initial_bounds_.top, restored_width, restored_height,
+                     SWP_NOACTIVATE);
+        SyncStripSizeFromWindow();
+        ClampCurrentPositionToWindowMonitor();
+      }
     }
   }
 
@@ -278,8 +295,10 @@ bool FloatingLyricWindow::IsShowing() const {
 
 void FloatingLyricWindow::UpdateText(const std::wstring& text,
                                     int current_line_start,
-                                    int current_line_length) {
+                                    int current_line_length,
+                                    const std::string& context_id) {
   text_ = text;
+  context_id_ = context_id;
   current_line_start_ = current_line_start;
   current_line_length_ = current_line_length;
   highlight_start_ = -1;
@@ -357,6 +376,48 @@ void FloatingLyricWindow::SetLocked(bool locked) {
     }
   }
   RequestRender();
+}
+
+void FloatingLyricWindow::SetPassThrough(bool enabled) {
+  if (pass_through_ == enabled) {
+    return;
+  }
+  pass_through_ = enabled;
+  pressed_ = false;
+  dragging_ = false;
+  if (GetCapture() == hwnd_) {
+    ReleaseCapture();
+  }
+  RequestRender();
+}
+
+void FloatingLyricWindow::SetInitialBounds(int left, int top, int width,
+                                           int height) {
+  if (width <= 0 || height <= 0) {
+    has_initial_bounds_ = false;
+    return;
+  }
+  initial_bounds_ = {left, top, left + width, top + height};
+  has_initial_bounds_ = true;
+  if (hwnd_ != nullptr) {
+    SetWindowPos(hwnd_, HWND_TOPMOST, left, top, width, height,
+                 SWP_NOACTIVATE);
+    SyncStripSizeFromWindow();
+    ClampCurrentPositionToWindowMonitor();
+    RequestRender();
+  }
+}
+
+void FloatingLyricWindow::NotifyBoundsChanged() {
+  if (hwnd_ == nullptr || !on_bounds_) {
+    return;
+  }
+  RECT rect;
+  if (!GetWindowRect(hwnd_, &rect)) {
+    return;
+  }
+  on_bounds_(rect.left, rect.top, rect.right - rect.left,
+             rect.bottom - rect.top);
 }
 
 void FloatingLyricWindow::RequestRender() {
@@ -494,8 +555,8 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       press_origin_ = cursor;
       press_client_.x = static_cast<LONG>(x);
       press_client_.y = static_cast<LONG>(y);
-      press_was_text_ =
-          click_lookup_enabled_ && CharIndexAt(x, y) >= 0 && on_lookup_;
+      press_was_text_ = click_lookup_enabled_ && CharIndexAt(x, y) >= 0 &&
+                        (on_lookup_ || on_context_lookup_);
       SetCapture(hwnd_);
       return 0;
     }
@@ -521,7 +582,8 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       }
       // A press that never moved into a drag over the lyric text fires the word
       // lookup now — single-tap lookup preserved.
-      if (!was_dragging && was_pressed && was_text && on_lookup_) {
+      if (!was_dragging && was_pressed && was_text &&
+          (on_lookup_ || on_context_lookup_)) {
         const int index = CharIndexAt(static_cast<float>(lookup_pt.x),
                                       static_cast<float>(lookup_pt.y));
         if (index >= 0) {
@@ -532,8 +594,15 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
           WideCharToMultiByte(CP_UTF8, 0, text_.c_str(),
                               static_cast<int>(text_.size()), utf8.data(),
                               utf8_len, nullptr, nullptr);
-          on_lookup_(utf8, index);
+          if (on_context_lookup_) {
+            on_context_lookup_(context_id_, utf8, index);
+          } else if (on_lookup_) {
+            on_lookup_(utf8, index);
+          }
         }
+      }
+      if (was_dragging) {
+        NotifyBoundsChanged();
       }
       return 0;
     }
@@ -545,6 +614,13 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       POINT screen = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       POINT client = screen;
       ScreenToClient(hwnd_, &client);
+      if (hook_text_mode_ && pass_through_) {
+        const float recovery_height =
+            ScaleForDpi(kControlsTopDip + kButtonSizeDip);
+        if (static_cast<float>(client.y) > recovery_height) {
+          return HTTRANSPARENT;
+        }
+      }
       if (ResizeGripContains(static_cast<float>(client.x),
                              static_cast<float>(client.y))) {
         return HTBOTTOMRIGHT;
@@ -558,6 +634,12 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       text_format_.Reset();
       text_layout_.Reset();
       RequestRender();
+      return 0;
+    }
+    case WM_EXITSIZEMOVE: {
+      SyncStripSizeFromWindow();
+      ClampCurrentPositionToWindowMonitor();
+      NotifyBoundsChanged();
       return 0;
     }
     case WM_GETMINMAXINFO: {
@@ -653,8 +735,10 @@ void FloatingLyricWindow::Render() {
   // height; the live font scales with strip_height_dip_ so dragging the resize
   // grip larger enlarges the lyric text too.
   if (text_format_ == nullptr) {
-    const float height_scale =
-        strip_height_dip_ / kBaseStripHeightForFontDip;
+    const float height_scale = hook_text_mode_
+                                   ? 1.0f
+                                   : strip_height_dip_ /
+                                         kBaseStripHeightForFontDip;
     const float scaled_font = static_cast<float>(style_.font_size) *
                               std::max(0.5f, height_scale);
     dwrite_factory_->CreateTextFormat(
@@ -665,7 +749,9 @@ void FloatingLyricWindow::Render() {
     if (text_format_ != nullptr) {
       text_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
       text_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-      text_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+      text_format_->SetWordWrapping(
+          hook_text_mode_ ? DWRITE_WORD_WRAPPING_WRAP
+                          : DWRITE_WORD_WRAPPING_NO_WRAP);
     }
     text_layout_.Reset();
   }
@@ -792,9 +878,8 @@ void FloatingLyricWindow::Render() {
         grip_h / 2.0f, grip_h / 2.0f);
     render_target_->FillRoundedRectangle(grip_rect, grip_brush.Get());
 
-    // Lock + one-click-transparency buttons appear only on hover, right-aligned
-    // (transparency then lock). Their hit areas in ControlActionAt() are gated
-    // on hovered_ too, so a click can never hit an invisible button.
+    // Controls appear only on hover. Clipboard mode keeps its historical two
+    // right-aligned buttons; Hook mode uses a centred six-button core toolbar.
     if (hovered_) {
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_bg;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_fg;
@@ -805,8 +890,6 @@ void FloatingLyricWindow::Render() {
                                             tb_fg.GetAddressOf());
       render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
                                             tb_active.GetAddressOf());
-      const float lock_x = width - t_pad - t_btn;
-      const float trans_x = lock_x - t_gap - t_btn;
       auto draw_tbtn = [&](float bx, const wchar_t* glyph, bool active) {
         D2D1_ROUNDED_RECT br = D2D1::RoundedRect(
             D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn), ScaleForDpi(6),
@@ -825,8 +908,45 @@ void FloatingLyricWindow::Render() {
                                     active ? tb_active.Get() : tb_fg.Get());
         }
       };
-      draw_tbtn(trans_x, L"◐", false);  // one-click background transparency
-      draw_tbtn(lock_x, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);  // lock
+      if (hook_text_mode_) {
+        const float controls_total =
+            t_btn * kHookTextControlSlotCount +
+            t_gap * (kHookTextControlSlotCount - 1);
+        const float left = (width - controls_total) / 2.0f;
+        auto hook_button = [&](int slot, const wchar_t* glyph, bool active) {
+          draw_tbtn(left + slot * (t_btn + t_gap), glyph, active);
+        };
+        hook_button(0, playing_ ? L"⏸" : L"▶", !playing_);
+        hook_button(1, L"↗", pass_through_);
+        hook_button(2, L"◐", false);
+        hook_button(3, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);
+        hook_button(4, L"▣", false);
+        hook_button(5, L"✕", false);
+      } else {
+        const float lock_x = width - t_pad - t_btn;
+        const float trans_x = lock_x - t_gap - t_btn;
+        draw_tbtn(trans_x, L"◐", false);
+        draw_tbtn(lock_x, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);
+      }
+    }
+
+    // Hook text is a real resizable text box. The clipboard text destination
+    // remains intentionally grip-less for compatibility.
+    if (hook_text_mode_ && !locked_) {
+      const float resize = ScaleForDpi(kResizeGripDip);
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> resize_brush;
+      render_target_->CreateSolidColorBrush(
+          ColorFromArgb(style_.button_text_color),
+          resize_brush.GetAddressOf());
+      resize_brush->SetOpacity(hovered_ ? 0.7f : 0.2f);
+      const float stroke = std::max(1.0f, ScaleForDpi(1.5f));
+      for (int i = 1; i <= 3; ++i) {
+        const float off = resize * (i / 4.0f);
+        render_target_->DrawLine(
+            D2D1::Point2F(width - off, height - 2.0f),
+            D2D1::Point2F(width - 2.0f, height - off), resize_brush.Get(),
+            stroke);
+      }
     }
   } else {
   // Controls row (only fully visible while hovered, like QQ Music). The hit
@@ -943,6 +1063,33 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
     if (y < ctrl_top || y > ctrl_top + btn) {
       return std::string();
     }
+    if (hook_text_mode_) {
+      const float controls_total =
+          btn * kHookTextControlSlotCount +
+          gap * (kHookTextControlSlotCount - 1);
+      const float left = (width - controls_total) / 2.0f;
+      for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
+        const float bx = left + slot * (btn + gap);
+        if (x < bx || x > bx + btn) continue;
+        switch (slot) {
+          case 0:
+            return "toggleFollow";
+          case 1:
+            return "togglePassThrough";
+          case 2:
+            return "toggleTransparency";
+          case 3:
+            return "lock";
+          case 4:
+            return "openWorkbench";
+          case 5:
+            return "close";
+          default:
+            return std::string();
+        }
+      }
+      return std::string();
+    }
     const float lock_x = width - pad - btn;
     const float trans_x = lock_x - gap - btn;
     if (x >= lock_x && x <= lock_x + btn) {
@@ -991,7 +1138,7 @@ bool FloatingLyricWindow::ResizeGripContains(float x, float y) const {
   // Text-only clipboard window has no resize grip — WM_NCHITTEST stays HTCLIENT
   // everywhere so the whole surface keeps driving drag / lookup, never a system
   // resize loop.
-  if (text_only_ || hwnd_ == nullptr) {
+  if ((text_only_ && !hook_text_mode_) || locked_ || hwnd_ == nullptr) {
     return false;
   }
   RECT rc;

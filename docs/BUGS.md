@@ -27,10 +27,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 923 条。点号进各自文件。
+> 共 930 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-949](bugs/BUG-949-unity-resource-audio-extractor-stall.md) | ✅ | ✅ | Unity 资源音频提取队列阻塞后持续降级 |
+| [BUG-948](bugs/BUG-948-dual-game-capture-acceptance.md) | ✅ | ✅ | Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡 |
+| [BUG-947](bugs/BUG-947-manosaba-text-loopback-hybrid.md) | ✅ | ✅ | Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留 |
+| [BUG-946](bugs/BUG-946-database-schema-v48-compat.md) | ✅ | ✅ | 游戏分支无法打开 schema v48 用户数据库 |
+| [BUG-945](bugs/BUG-945-texthooker-popup-ui-scale.md) | ✅ | ✅ | 捕获工作台非默认缩放下查词断言 |
+| [BUG-944](bugs/BUG-944-gal-text-thread-selector.md) | ✅ | ✅ | Galgame 捕获文本缺少 Luna 风格线程选择 |
+| [BUG-943](bugs/BUG-943-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
 | [BUG-942](bugs/BUG-942-prev-cue-button-always-jump.md) | ✅ | ✅ | 上/下一句字幕按钮太远时退化成 3 秒 seek |
 | [BUG-941](bugs/BUG-941-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
 | [BUG-940](bugs/BUG-940-tag-filter-collection-rescue.md) | ✅ | ✅ | 标签筛选:打了标签的合集筛不出来(成员级过滤先于折叠剥空合集组) |

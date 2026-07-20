@@ -32,6 +32,17 @@ ReaderState& State() {
   return state;
 }
 
+std::string WideToUtf8(const wchar_t* text, int length) {
+  if (text == nullptr || length <= 0) return std::string();
+  const int need = WideCharToMultiByte(CP_UTF8, 0, text, length, nullptr, 0,
+                                        nullptr, nullptr);
+  if (need <= 0) return std::string();
+  std::string utf8(static_cast<size_t>(need), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, text, length, &utf8[0], need, nullptr,
+                      nullptr);
+  return utf8;
+}
+
 // 从 header 填状态（不读环形缓冲）。契约不匹配返回 ok=false。调用方持锁。
 VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   VoiceHookStatus s;
@@ -45,6 +56,13 @@ VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   s.channels = static_cast<int>(h->channels);
   s.bits_per_sample = static_cast<int>(h->bits_per_sample);
   s.is_float = h->is_float != 0;
+  s.audio_hooks_ready =
+      (h->hook_diagnostics &
+       hibiki_voice_hook::kDiagStartupAudioHooksReady) != 0;
+  // 原始资源语音不要求共享环已有 PCM：KiriKiriZ/Siglus 直接导出逐句 Ogg；Unity
+  // 由 injector 落逐句 WAV。统一契约确保资源优先，系统回环只作某句配对失败时的 fallback。
+  s.raw_voice_ready = hibiki_voice_hook::HasReadyGameResourceAudio(
+      h->reserved_luna, h->hook_diagnostics);
   // 格式就绪（hook 已填有效格式）才算 ok；hooked 但格式全 0（还没收到语音）时 ok=false。
   s.ok = s.hooked && s.sample_rate > 0 && s.channels > 0 && s.bits_per_sample > 0;
   return s;
@@ -159,12 +177,13 @@ VoiceHookStatus VoiceHookReader::Open(uint32_t pid) {
     CloseLocked(st);
   }
   const std::wstring name = SharedMemoryName(static_cast<DWORD>(pid));
-  HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, name.c_str());
+  HANDLE mapping =
+      OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, name.c_str());
   if (mapping == nullptr) {
     return VoiceHookStatus{};  // injector 未拉起 / pid 不符
   }
   auto* header = static_cast<SharedHeader*>(
-      MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
+      MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
   if (header == nullptr) {
     CloseHandle(mapping);
     return VoiceHookStatus{};
@@ -287,23 +306,40 @@ void VoiceHookReader::PollText(uint64_t from_seq,
     VoiceHookText line;
     line.seq = seq;
     line.timestamp_ms = slot->timestamp_ms;
+    line.thread_id = slot->thread_id;
+    line.thread_address = slot->thread_address;
+    line.thread_context = slot->thread_context;
+    line.thread_context2 = slot->thread_context2;
+    line.process_id = slot->process_id;
+    line.source_kind = slot->source_kind;
+    const uint32_t hook_name_len = (std::min)(
+        slot->hook_name_len, hibiki_voice_hook::kTextHookNameChars);
+    line.hook_name.assign(slot->hook_name, hook_name_len);
+    const uint32_t hook_code_len = (std::min)(
+        slot->hook_code_len, hibiki_voice_hook::kTextHookCodeChars);
+    line.hook_code = WideToUtf8(slot->hook_code,
+                                static_cast<int>(hook_code_len));
     if (slot->is_utf8) {
       line.utf8.assign(reinterpret_cast<const char*>(txt), blen);
     } else {
       const int wlen = static_cast<int>(blen / 2);
-      if (wlen > 0) {
-        const wchar_t* w = reinterpret_cast<const wchar_t*>(txt);
-        const int need = WideCharToMultiByte(CP_UTF8, 0, w, wlen, nullptr, 0,
-                                              nullptr, nullptr);
-        if (need > 0) {
-          line.utf8.resize(static_cast<size_t>(need));
-          WideCharToMultiByte(CP_UTF8, 0, w, wlen, &line.utf8[0], need, nullptr,
-                              nullptr);
-        }
-      }
+      line.utf8 = WideToUtf8(reinterpret_cast<const wchar_t*>(txt), wlen);
     }
     out.push_back(std::move(line));
   }
+}
+
+bool VoiceHookReader::SelectTextThread(uint64_t thread_id) {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  SharedHeader* h = st.header;
+  if (h == nullptr || h->magic != kSharedMagic || h->version != kSharedVersion) {
+    return false;
+  }
+  InterlockedExchange64(
+      reinterpret_cast<volatile LONGLONG*>(&h->selected_text_thread_id),
+      static_cast<LONGLONG>(thread_id));
+  return true;
 }
 
 VoiceHookStatus VoiceHookReader::GrabClipNear(uint64_t ts_ms,

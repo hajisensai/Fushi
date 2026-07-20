@@ -145,4 +145,78 @@ void main() {
     await _pumpUntil(() => repo.captured != null);
     expect(repo.captured!.sentence, '');
   });
+
+  test('Hook mining delegate receives the current lookup payload', () async {
+    final _CapturingAnkiRepo repo = _CapturingAnkiRepo();
+    Map<String, String>? delegatedFields;
+    Object? reply;
+
+    final bool handled = maybeHandleOverlayDeferredBridge(
+      model: _desktopModel(repo),
+      handler: 'mineEntry',
+      message: _mineMessage(<String, Object?>{
+        'expression': '化け物',
+        'reading': 'ばけもの',
+        'dictionaryMedia': '',
+      }),
+      resolveBridge: (int id, Object? value) async => reply = value,
+      sentenceContext: '浮窗中的完整台词',
+      miningHandler: ({
+        required Map<String, String> fields,
+        int? updateNoteId,
+      }) async {
+        delegatedFields = fields;
+        expect(updateNoteId, isNull);
+        return const <String, Object?>{
+          'ankiConnect': false,
+          'noteId': null,
+        };
+      },
+    );
+
+    expect(handled, isTrue);
+    await _pumpUntil(() => delegatedFields != null && reply != null);
+    expect(delegatedFields?['expression'], '化け物');
+    expect(repo.captured, isNull,
+        reason: 'the generic clipboard mining path must be bypassed');
+    expect(reply, isA<Map<String, Object?>>());
+  });
+
+  test('Hook mining delegate receives update note id', () async {
+    final _CapturingAnkiRepo repo = _CapturingAnkiRepo();
+    int? delegatedNoteId;
+    bool replied = false;
+
+    maybeHandleOverlayDeferredBridge(
+      model: _desktopModel(repo),
+      handler: 'updateEntry',
+      message: <String, Object?>{
+        '__bridgeId': 8,
+        'args': <Object?>[
+          <String, Object?>{
+            'noteId': 731,
+            'fields': <String, Object?>{
+              'expression': '怪物',
+              'dictionaryMedia': '',
+            },
+          },
+        ],
+      },
+      resolveBridge: (int id, Object? value) async => replied = true,
+      miningHandler: ({
+        required Map<String, String> fields,
+        int? updateNoteId,
+      }) async {
+        delegatedNoteId = updateNoteId;
+        return const <String, Object?>{
+          'ankiConnect': false,
+          'noteId': null,
+        };
+      },
+    );
+
+    await _pumpUntil(() => delegatedNoteId != null && replied);
+    expect(delegatedNoteId, 731);
+    expect(repo.captured, isNull);
+  });
 }

@@ -16,9 +16,10 @@ import 'package:hibiki/src/mining/immersion_mining_request.dart';
 /// 「no cover and no audio produced」中止（fail-open，不产出空壳卡）。调用方应在截图
 /// 失败时优先给出明确错误提示，不把 null 字节喂进来假装成功。
 ///
-/// galgame 一键制卡（docs/specs/galgame-mining）在 M0 基础上补 [audioBytes]：热键抓
-/// loopback 混音切片 → 波形选区 → 编码成 AAC/m4a 容器字节喂进来（**必须是已封装容器，
-/// 不能是裸 PCM**——引擎对 `providedAudioBytes` 逐字节写盘不重编码，裸流 Anki 播不了）。
+/// galgame 一键制卡（docs/specs/galgame-mining）在 M0 基础上补 [audioBytes]：优先使用逐句
+/// 游戏资源语音并转码，资源不可用时才由上层降级为引擎 PCM / Loopback 混音切片；传入的必须是
+/// 已封装 AAC/m4a 容器字节（不能是裸 PCM——引擎对 `providedAudioBytes` 逐字节写盘不重编码，
+/// 裸流 Anki 播不了）。
 /// 只有 [audioBytes] 非空时才把 [ImmersionMiningRequest.requireAudio] 打开——「本应有音频
 /// 却最终丢了」才算失败；纯截图卡（无 [audioBytes]）保持 M0 的 `requireAudio:false`，
 /// 不因无声中止（Never break：截图卡本就无声）。

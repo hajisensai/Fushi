@@ -17,17 +17,26 @@ DLL 位数必须匹配目标进程：32 位游戏用 `*32.dll`，64 位用 `*64.
 
 ## 来源与 ABI 版本（**换 DLL 前必读**）
 
-- 来源：LunaTranslator（<https://github.com/HIllya51/LunaTranslator>）随附的 LunaHook 引擎。
-  取自本机安装 `D:\LunaTranslator\files\plugins\LunaHook\`。
-- **ABI 定死**：本批 DLL 是一个**回调式**过渡版本，其确切 C 导出契约由同版本安装自带的
-  `LunaTranslator/textsource/texthook.py`（那份 `ctypes` 声明）给出。injector 里
-  `injector_main.cpp` 的 `Luna_Start`（8 个 __cdecl 回调）/`Luna_CreatePipeAndCheck`/`Luna_Detach`
-  /`LunaThreadParam`(32B) 签名逐一按它对齐。
-- ⚠️ 与当前 GitHub HEAD 的 LunaHost API **不同**（HEAD 已改名 `Luna_ConnectProcess`/
-  `Luna_DetachProcess` + 10 回调）。**升级 DLL 时**：先 `dumpbin /exports LunaHost64.dll` 核导出集，
-  再找配套 `texthook.py` 重新定签名，同步改 `injector_main.cpp`——别直接照 HEAD 源接线。
+- 来源：LunaTranslator [`v10.16.1.2`](https://github.com/HIllya51/LunaTranslator/releases/tag/v10.16.1.2)
+  官方发布包。64 位 DLL 来自 `LunaTranslator_x64.zip`，32 位 DLL 来自
+  `LunaTranslator_x86_win7.zip`，避免把不同 Windows 目标的 Host/Hook 混用。
+- **ABI 定死**：以该 tag 发布包内 `LunaTranslator/textio/textsource/texthook.py` 和同 tag
+  `src/NativeImpl/LunaHook/LunaHost/LunaHostDll.cpp` 为准。injector 的 `Luna_Start`（10 个
+  `__cdecl` 回调槽）、`Luna_ConnectProcess` / `Luna_CheckIfNeedInject` / `Luna_DetachProcess`、
+  `Luna_Settings`（6 参）和 `LunaThreadParam`（32B）均逐一与其对齐。
+- **升级纪律**：先核发布包 DLL 的版本/哈希与导出，再读配套 `texthook.py` 和上游导出实现，同步改
+  `injector_main.cpp` 与 `luna_symcheck.cpp`；禁止只覆盖 DLL。
 - 校验：`hibiki_luna_symcheck.exe`（`tools/luna_symcheck.cpp`）纯 `LoadLibrary`+`GetProcAddress`，
-  离线确认 3 个必需导出（`Luna_Start`/`Luna_CreatePipeAndCheck`/`Luna_Detach`）齐全。
+  离线确认 4 个必需导出齐全。
+
+## 发布文件校验
+
+| 文件 | SHA-256 |
+|---|---|
+| `LunaHook32.dll` | `78580D5108A7E47B955508F1181DEB0EA76FF80C240F693FEEAA06711E41406C` |
+| `LunaHost32.dll` | `532EAF37D20A0DB0B96DA9FE97314F6A0BBFB9F3F4EDE69AD8F6BE5115E2BFE3` |
+| `LunaHook64.dll` | `5415A8DA6AB7F0B0A17310B1B46B9601BBECA8100161D516CBDE64452BCAF10B` |
+| `LunaHost64.dll` | `A159B93D15DD91A756B9A48324AE0F68A9B1A010673E9A48D2CED8723C02C7A6` |
 
 ## 许可
 

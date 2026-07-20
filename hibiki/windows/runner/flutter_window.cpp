@@ -537,6 +537,7 @@ bool FlutterWindow::OnCreate() {
 
   RegisterFloatingLyricChannel();
   RegisterClipboardTextChannel();
+  RegisterGalHookTextChannel();
   RegisterGlobalLookupChannel();
   RegisterClipboardPanelChannel();
   RegisterForegroundSelectionChannel();
@@ -663,6 +664,8 @@ FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。旧 payload 缺字段回退结构体默认 0=平台默认。
   style.corner_radius = DoubleFromValue(args, "cornerRadius", style.corner_radius);
   style.window_width = DoubleFromValue(args, "windowWidth", style.window_width);
+  style.window_height =
+      DoubleFromValue(args, "windowHeight", style.window_height);
   return style;
 }
 
@@ -875,6 +878,117 @@ void FlutterWindow::RegisterClipboardTextChannel() {
         } else if (method == "setClickLookupEnabled") {
           clipboard_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "enabled", true));
+          result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
+}
+
+void FlutterWindow::RegisterGalHookTextChannel() {
+  gal_hook_text_window_ = std::make_unique<FloatingLyricWindow>();
+  gal_hook_text_window_->SetHookTextMode(true);
+
+  gal_hook_text_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/gal_hook_text",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  gal_hook_text_window_->SetContextLookupCallback(
+      [this](const std::string& line_id, const std::string& text,
+             int char_index) {
+        flutter::EncodableMap map{
+            {flutter::EncodableValue("lineId"),
+             flutter::EncodableValue(line_id)},
+            {flutter::EncodableValue("text"), flutter::EncodableValue(text)},
+            {flutter::EncodableValue("index"),
+             flutter::EncodableValue(char_index)},
+        };
+        gal_hook_text_channel_->InvokeMethod(
+            "lookupText",
+            std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+  gal_hook_text_window_->SetControlCallback(
+      [this](const std::string& action) {
+        gal_hook_text_channel_->InvokeMethod(
+            action, std::make_unique<flutter::EncodableValue>());
+      });
+  gal_hook_text_window_->SetLockCallback([this](bool locked) {
+    flutter::EncodableMap map{
+        {flutter::EncodableValue("locked"), flutter::EncodableValue(locked)},
+    };
+    gal_hook_text_channel_->InvokeMethod(
+        "lockChanged",
+        std::make_unique<flutter::EncodableValue>(std::move(map)));
+  });
+  gal_hook_text_window_->SetBoundsCallback(
+      [this](int left, int top, int width, int height) {
+        flutter::EncodableMap map{
+            {flutter::EncodableValue("left"), flutter::EncodableValue(left)},
+            {flutter::EncodableValue("top"), flutter::EncodableValue(top)},
+            {flutter::EncodableValue("width"), flutter::EncodableValue(width)},
+            {flutter::EncodableValue("height"),
+             flutter::EncodableValue(height)},
+        };
+        gal_hook_text_channel_->InvokeMethod(
+            "windowRectChanged",
+            std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+
+  gal_hook_text_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        const std::string& method = call.method_name();
+        if (method == "canDrawOverlays") {
+          result->Success(flutter::EncodableValue(true));
+        } else if (method == "show") {
+          gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
+          gal_hook_text_window_->SetClickLookupEnabled(
+              BoolFromValue(args, "clickLookupEnabled", true));
+          gal_hook_text_window_->SetLocked(
+              BoolFromValue(args, "locked", false));
+          gal_hook_text_window_->SetPassThrough(
+              BoolFromValue(args, "passThrough", false));
+          gal_hook_text_window_->SetPlaybackState(
+              BoolFromValue(args, "following", true));
+          gal_hook_text_window_->SetInitialBounds(
+              IntFromValue(args, "left", 0), IntFromValue(args, "top", 0),
+              IntFromValue(args, "width", 0),
+              IntFromValue(args, "height", 0));
+          result->Success(
+              flutter::EncodableValue(gal_hook_text_window_->Show(GetHandle())));
+        } else if (method == "hide") {
+          gal_hook_text_window_->Hide();
+          result->Success();
+        } else if (method == "isShowing") {
+          result->Success(
+              flutter::EncodableValue(gal_hook_text_window_->IsShowing()));
+        } else if (method == "updateText") {
+          gal_hook_text_window_->UpdateText(
+              WideFromValue(args, "text", L""), -1, 0,
+              StringFromValue(args, "lineId", ""));
+          result->Success();
+        } else if (method == "updateStyle") {
+          gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
+          result->Success();
+        } else if (method == "setClickLookupEnabled") {
+          gal_hook_text_window_->SetClickLookupEnabled(
+              BoolFromValue(args, "enabled", true));
+          result->Success();
+        } else if (method == "setLocked") {
+          gal_hook_text_window_->SetLocked(
+              BoolFromValue(args, "locked", false));
+          result->Success();
+        } else if (method == "setPassThrough") {
+          gal_hook_text_window_->SetPassThrough(
+              BoolFromValue(args, "enabled", false));
+          result->Success();
+        } else if (method == "setFollowing") {
+          gal_hook_text_window_->SetPlaybackState(
+              BoolFromValue(args, "following", true));
           result->Success();
         } else {
           result->NotImplemented();
@@ -1547,8 +1661,12 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                flutter::EncodableValue(s.calibrating)},
               {flutter::EncodableValue("textHooked"),
                flutter::EncodableValue(s.text_hooked)},
+              {flutter::EncodableValue("audioHooksReady"),
+               flutter::EncodableValue(s.audio_hooks_ready)},
+              {flutter::EncodableValue("rawVoiceReady"),
+               flutter::EncodableValue(s.raw_voice_ready)},
               {flutter::EncodableValue("ready"),
-               flutter::EncodableValue(s.ok)},
+               flutter::EncodableValue(s.ok || s.raw_voice_ready)},
           };
         };
         auto read_long = [&call](const char* key) -> int64_t {
@@ -1641,6 +1759,27 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                  flutter::EncodableValue(static_cast<int64_t>(ln.timestamp_ms))},
                 {flutter::EncodableValue("text"),
                  flutter::EncodableValue(ln.utf8)},
+                {flutter::EncodableValue("threadId"),
+                 flutter::EncodableValue(static_cast<int64_t>(ln.thread_id))},
+                {flutter::EncodableValue("threadAddress"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.thread_address))},
+                {flutter::EncodableValue("threadContext"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.thread_context))},
+                {flutter::EncodableValue("threadContext2"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.thread_context2))},
+                {flutter::EncodableValue("processId"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.process_id))},
+                {flutter::EncodableValue("sourceKind"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(ln.source_kind))},
+                {flutter::EncodableValue("hookName"),
+                 flutter::EncodableValue(ln.hook_name)},
+                {flutter::EncodableValue("hookCode"),
+                 flutter::EncodableValue(ln.hook_code)},
             }));
           }
           result->Success(flutter::EncodableValue(flutter::EncodableMap{
@@ -1648,6 +1787,16 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                flutter::EncodableValue(static_cast<int64_t>(count))},
               {flutter::EncodableValue("lines"),
                flutter::EncodableValue(std::move(list))},
+          }));
+          return;
+        }
+        if (method == "selectTextThread") {
+          const uint64_t thread_id =
+              static_cast<uint64_t>(read_long("threadId"));
+          const bool ok =
+              hibiki::VoiceHookReader::Instance().SelectTextThread(thread_id);
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
           }));
           return;
         }

@@ -10,8 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// `listRemoteVideos()` / `listRemoteBooks()`（二者都**无持久缓存**，每次实打实打网络，
 /// 远端封面只走进程内 ImageCache）。
 ///
-/// 修复——只让**书架 + 视频**两个 tab 保活（State 常驻、用 `Offstage` 隐藏未选中者），
-/// 切回沿用已加载列表/封面/滚动位置。其余 tab（词典 / games / 设置）**故意不保活**、
+/// 修复——让**书架 + 视频 + 游戏**保活（State 常驻、用 `Offstage` 隐藏未选中者），
+/// 切回沿用已加载列表/封面/滚动位置；游戏保活则保证 Hook 会话不因切 tab 停止。
+/// 其余 tab（词典 / 设置）**故意不保活**、
 /// 按需重建，以保留其依赖 initState 挂载的语义——尤其 HomeDictionaryPage 靠切到查词
 /// tab 时 re-mount 消费桌面悬浮字幕 pending 查词（TODO-376，见
 /// desktop_lookup_to_dictionary_tab_test.dart）。
@@ -23,11 +24,11 @@ void main() {
   final String src =
       File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
 
-  test('保活集合恰为「书架 + 视频」两个远端加载 tab', () {
+  test('保活集合包含书架、视频和游戏', () {
     final int start = src.indexOf('_keepAliveTabs');
     expect(start, isNonNegative,
         reason: 'buildBody 必须声明保活 tab 集合 _keepAliveTabs');
-    // 取声明处到其初始化字面量结束的一小段，验证集合内容恰好是 books + video。
+    // 取声明处到其初始化字面量结束的一小段，验证集合内容。
     final int braceOpen = src.indexOf('{', start);
     final int braceClose = src.indexOf('}', braceOpen);
     expect(braceOpen, isNonNegative);
@@ -37,12 +38,12 @@ void main() {
         reason: '书架 tab 必须保活（远端书列表 + 封面无持久缓存）');
     expect(literal.contains('HomeTab.video'), isTrue,
         reason: '视频 tab 必须保活（远端视频列表 + 封面无持久缓存）');
+    expect(literal.contains('HomeTab.games'), isTrue,
+        reason: '游戏 tab 必须保活（切换导航不能 dispose 正在进行的 Hook 会话）');
     expect(literal.contains('HomeTab.dictionaries'), isFalse,
         reason: '查词 tab 不得保活：靠 re-mount 消费桌面悬浮字幕 pending（TODO-376）');
     expect(literal.contains('HomeTab.settings'), isFalse,
         reason: '设置 tab 不得保活：保留其 initState 挂载语义（现状不变）');
-    expect(literal.contains('HomeTab.games'), isFalse,
-        reason: 'games tab 不得保活：保留现状按需重建');
   });
 
   test('buildBody 用 Offstage 保活而非 switch 每次重建', () {

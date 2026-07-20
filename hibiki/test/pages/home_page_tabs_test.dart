@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/pages/implementations/home_page.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
 
@@ -43,14 +45,6 @@ void main() {
       );
 
       expect(initial, HomeTab.dictionaries);
-      expect(
-        homeVisualIndexForTab(
-          tabs: tabs,
-          tab: initial,
-          reversed: false,
-        ),
-        tabs.indexOf(HomeTab.dictionaries),
-      );
       expect(
         homeTabForVisualIndex(
           tabs: tabs,
@@ -131,6 +125,13 @@ void main() {
       final int dict = tabs.indexOf(HomeTab.dictionaries);
       final int settings = tabs.indexOf(HomeTab.settings);
       expect(settings, equals(dict + 1));
+    });
+
+    test('游戏导航使用 Hook 工作台标签与手柄图标', () {
+      final AdaptiveNavItem item = homeNavItemFor(HomeTab.games);
+      expect(item.icon, Icons.sports_esports_outlined);
+      expect(item.selectedIcon, Icons.sports_esports);
+      expect(item.label, t.nav_game);
     });
   });
 }

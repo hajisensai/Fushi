@@ -35,6 +35,7 @@ void main() {
         HomeTab.games,
         HomeTab.settings,
       ]);
+      expect(tabs.indexOf(HomeTab.video), tabs.indexOf(HomeTab.books) + 1);
     });
 
     test('视频后紧随下载 tab，再到词典（用户要求：下载单独拿出来）', () {

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:hibiki/src/mining/galgame_audio_encode.dart'
@@ -136,6 +136,39 @@ PcmFormat? parseGalPcmFormat(Map<Object?, Object?> m) {
   );
 }
 
+/// 引擎 hook 的就绪 map 转格式。常规路径返回共享内存 PCM 格式；Siglus 的晚附着路径只
+/// 导出原始 OVK Ogg、没有已错过的 DirectSound PCM，此时用其已验证的解码格式作为会话
+/// 能力标记，让上层保留 [EngineHookGalAudioSource] 并走 [grabPairedVoiceBytes]。
+PcmFormat? parseEngineHookReadyFormat(Map<Object?, Object?> m) {
+  if (m['ready'] != true) {
+    return null;
+  }
+  final PcmFormat? pcm = parseGalPcmFormat(m);
+  if (pcm != null) {
+    return pcm;
+  }
+  if (m['rawVoiceReady'] == true) {
+    return const PcmFormat(
+      sampleRate: 44100,
+      channels: 1,
+      bitsPerSample: 16,
+      isFloat: false,
+    );
+  }
+  return null;
+}
+
+/// 引擎 helper 的文本能力握手。PCM `ready` 可以为 false；只要 DLL proof-of-life
+/// (`hooked`) 与文本 hook 都已就绪，上层就应保留 helper 并组合其它音频源。
+bool parseEngineTextHookReady(Map<Object?, Object?> m) =>
+    m['hooked'] == true && m['textHooked'] == true;
+
+/// DLL 已完成首轮音频导出 hook 安装。Luna 文本线程可能比 DLL 工作线程更早写入共享
+/// 内存；只有看到这个信号后，才能把“文本已就绪但音频未就绪”判定为真正的混合模式，
+/// 否则会在 Siglus OVK / Unity 资源 hook 即将就绪前过早切到 Loopback。
+bool parseEngineAudioHooksReady(Map<Object?, Object?> m) =>
+    m['audioHooksReady'] == true;
+
 /// 从 injector 子进程 stdout 解析 `OK hooked pid=<N> ...` 里的游戏子进程 PID（launch 模式）。
 /// 纯函数，可单测。未匹配 / 无效返回 null。
 int? parseInjectorHookedPid(String stdout) {
@@ -149,11 +182,10 @@ int? parseInjectorHookedPid(String stdout) {
 
 /// galgame 纯人声配对（真机验证，docs/specs/galgame-mining）：注入 hook DLL 把每句原始语音
 /// OGG dump 到 `%TEMP%\hibiki_gal_voice\<tickMs>_<basename>.ogg`（tickMs=GetTickCount64，与
-/// 文本环 `TextSlot.timestamp_ms` 同源）。实测语音**先**开流、文本约 220ms **后**才显示，故某
-/// 条文本行（时间戳 [textTsMs]）对应的语音 = 文件名 tick 落在 `[textTsMs-windowHighMs,
-/// textTsMs-windowLowMs]` 内、离期望偏移（`textTsMs-expectedOffsetMs`，窗口中心附近）最近的
-/// 那个 OGG。BGM/SE/系统音（basename 以 bgm/se/sys/amb/env/title/logo/movie/jingle 起头）排除
-/// ——语音是角色名（yui/osy/aka/hea…）。
+/// 文本环 `TextSlot.timestamp_ms` 同源）。新版 Siglus 资源导出会直接沿用当前文本 tick，
+/// 因此先取 [exactToleranceMs] 内的同 tick 文件；旧引擎仍可能让语音先开流、文本约 220ms
+/// 后显示，精确 tick 不存在时再在 `[textTsMs-windowHighMs, textTsMs-windowLowMs]` 内取离
+/// `textTsMs-expectedOffsetMs` 最近者。BGM/SE/系统音始终排除。
 ///
 /// 纯函数（只吃文件名列表 [oggFileNames]，不碰文件系统），可单测。无匹配返回 null。
 String? pickPairedVoiceOgg({
@@ -162,12 +194,15 @@ String? pickPairedVoiceOgg({
   int windowLowMs = 130,
   int windowHighMs = 330,
   int expectedOffsetMs = 220,
+  int exactToleranceMs = 0,
 }) {
   final int lo = textTsMs - windowHighMs;
   final int hi = textTsMs - windowLowMs;
   final int target = textTsMs - expectedOffsetMs;
-  String? best;
-  int bestDist = 1 << 62;
+  String? exactBest;
+  int exactBestDist = 1 << 62;
+  String? offsetBest;
+  int offsetBestDist = 1 << 62;
   for (final String name in oggFileNames) {
     final _ParsedVoiceOgg? parsed = _parseVoiceOggName(name);
     if (parsed == null) {
@@ -177,16 +212,71 @@ String? pickPairedVoiceOgg({
       continue;
     }
     final int tick = parsed.tick;
+    final int exactDist = (tick - textTsMs).abs();
+    if (exactDist <= exactToleranceMs && exactDist < exactBestDist) {
+      exactBestDist = exactDist;
+      exactBest = name;
+      continue;
+    }
     if (tick < lo || tick > hi) {
       continue;
     }
     final int dist = (tick - target).abs();
-    if (dist < bestDist) {
-      bestDist = dist;
+    if (dist < offsetBestDist) {
+      offsetBestDist = dist;
+      offsetBest = name;
+    }
+  }
+  return exactBest ?? offsetBest;
+}
+
+/// Unity 资源提取器在 AudioSource 播放入口以同一个 GetTickCount64 时钟写 WAV。相较 Siglus
+/// 的 OGG 会固定早于文本约 220ms，Unity 文本/AudioClip 调用先后由引擎脚本决定，因此在
+/// `T-1000..T+500ms` 内取离文本最近者。调用方始终先选资源 WAV，再退 Siglus OGG。
+String? pickPairedUnityVoiceWav({
+  required List<String> wavFileNames,
+  required int textTsMs,
+  int beforeMs = 1000,
+  int afterMs = 500,
+}) {
+  String? best;
+  int bestDistance = 1 << 62;
+  for (final String name in wavFileNames) {
+    final _ParsedVoiceOgg? parsed = _parseVoiceOggName(name);
+    if (parsed == null || _isNonVoiceBasename(parsed.basename)) continue;
+    if (parsed.tick < textTsMs - beforeMs || parsed.tick > textTsMs + afterMs) {
+      continue;
+    }
+    final int distance = (parsed.tick - textTsMs).abs();
+    if (distance < bestDistance) {
+      bestDistance = distance;
       best = name;
     }
   }
   return best;
+}
+
+/// 在同一条文本时间戳下选择游戏资源语音。
+///
+/// 有有效 [textTsMs] 时只接受时间窗内的 Unity WAV / Siglus-KiriKiri OGG；即使调用方
+/// 提供了 [latestSessionVoiceName]，精确配对失败也必须返回 null，交给上层明确降级到
+/// PCM/Loopback，不能把本会话另一句“最新语音”冒充成当前句。只有没有文本时间戳的
+/// Siglus 晚附着兼容路径才允许使用会话内最新资源。
+String? pickPairedGameResource({
+  required List<String> oggFileNames,
+  required List<String> wavFileNames,
+  required int textTsMs,
+  String? latestSessionVoiceName,
+}) {
+  if (textTsMs <= 0) return latestSessionVoiceName;
+  return pickPairedUnityVoiceWav(
+        wavFileNames: wavFileNames,
+        textTsMs: textTsMs,
+      ) ??
+      pickPairedVoiceOgg(
+        oggFileNames: oggFileNames,
+        textTsMs: textTsMs,
+      );
 }
 
 /// [pickPairedVoiceOgg] 解析出的一条 dump 文件名：`<tick>_<basename>` 的 tick（GetTickCount64）
@@ -224,6 +314,84 @@ final RegExp _nonVoiceBasenamePattern = RegExp(
 bool _isNonVoiceBasename(String basename) =>
     _nonVoiceBasenamePattern.hasMatch(basename);
 
+/// Unity/Mono/IL2CPP 游戏的文本通常不走 GDI 渲染；Siglus 的 GDI 输出则会包含描边
+/// 重画伪影。两类目标都显式补装 LunaHook 通用 PC hooks，让 UI 能选择干净文本线程。
+bool shouldUseLunaPcHooksForExecutable(String executablePath) {
+  final String basename = EngineHookGalAudioSource._fileBaseName(
+    executablePath,
+  );
+  final String lowerBasename = basename.toLowerCase();
+  if (lowerBasename == 'manosaba.exe' || lowerBasename == 'siglusengine.exe') {
+    return true;
+  }
+
+  final Directory directory = File(executablePath).parent;
+  final String separator = Platform.pathSeparator;
+  final bool hasUnityPlayer =
+      File('${directory.path}${separator}UnityPlayer.dll').existsSync();
+  if (!hasUnityPlayer) {
+    return false;
+  }
+
+  final String stem = lowerBasename.endsWith('.exe')
+      ? basename.substring(0, basename.length - 4)
+      : basename;
+  final String dataPath = '${directory.path}$separator$stem' '_Data';
+  final bool il2cpp =
+      File('${directory.path}${separator}GameAssembly.dll').existsSync() ||
+          File('$dataPath${separator}il2cpp_data${separator}Metadata'
+                  '${separator}global-metadata.dat')
+              .existsSync();
+  final bool mono = Directory('$dataPath${separator}Managed').existsSync() ||
+      Directory('$dataPath${separator}MonoBleedingEdge').existsSync() ||
+      File('${directory.path}${separator}mono-2.0-bdwgc.dll').existsSync();
+  return il2cpp || mono;
+}
+
+/// 构造 voice injector 命令行参数。保持 `--hold` 默认开启，让共享内存与 LunaHost
+/// 在游戏会话期间存活。
+List<String> buildEngineHookInjectorArguments({
+  required int targetPid,
+  required String? launchExe,
+  bool lunaPcHooks = false,
+  int? lunaCodepage,
+}) {
+  final String? exe = launchExe;
+  final bool launchMode = exe != null && exe.isNotEmpty;
+  final List<String> args = launchMode
+      ? <String>['--launch', exe, '--hold']
+      : <String>['--pid', '$targetPid', '--hold'];
+  if (lunaPcHooks) {
+    args.add('--luna-pchooks');
+  }
+  if (lunaCodepage != null && lunaCodepage > 0) {
+    args.addAll(<String>['--luna-codepage', '$lunaCodepage']);
+  }
+  return args;
+}
+
+typedef GalHookProcessStarter = Future<Process> Function(
+  String executable,
+  List<String> arguments,
+);
+
+typedef GalHookProcessOutputSink = void Function(
+  bool isStderr,
+  String chunk,
+);
+
+Future<Process> _startGalHookProcess(
+  String executable,
+  List<String> arguments,
+) =>
+    Process.start(executable, arguments);
+
+void _logGalHookProcessOutput(bool isStderr, String chunk) {
+  final String message = chunk.trimRight();
+  if (message.isEmpty) return;
+  debugPrint('[gal-hook:${isStderr ? 'stderr' : 'stdout'}] $message');
+}
+
 /// C 阶段实现：引擎级 voice hook 的**干净语音**源（混音前抓，无 BGM/SE）。
 ///
 /// 隔离红线（docs/specs/galgame-mining）：注入进游戏、装 XAudio2/DirectSound hook 的代码在
@@ -238,20 +406,27 @@ bool _isNonVoiceBasename(String basename) =>
 /// **两种模式**（二选一）：
 ///   - **attach**（给 [targetPid]）：附着**已运行**的游戏进程（`injector --pid`）。适合已在跑、
 ///     且引擎在注入时刻**之后**才建音频对象的场景。
-///   - **launch**（给 [launchExe]）：由 Hibiki **拉起游戏** exe（`injector --launch <exe>`，
-///     CREATE_SUSPENDED 早注入），在游戏 WinMain 前把 hook 装好——**KiriKiriZ 等「启动即建
+///   - **launch**（给 [launchExe]）：由 Hibiki **拉起游戏** exe（`injector --launch <exe>`）。
+///     通常 CREATE_SUSPENDED 早注入，在游戏 WinMain 前把 hook 装好——**KiriKiriZ 等「启动即建
 ///     DirectSound 设备」的引擎必须走这条**（attach 会漏掉启动时创建的设备）。子进程 PID 由
-///     injector stdout 的 `OK hooked pid=<N>` 回报（[parseInjectorHookedPid] 解析）。
+///     injector stdout 的 `OK hooked pid=<N>` 回报（[parseInjectorHookedPid] 解析）。Siglus 的
+///     Enigma 保护壳例外：injector 会先正常启动、等游戏窗口出现后再附着，捕获后续 OVK 原始语音。
 class EngineHookGalAudioSource implements GalAudioSource {
   EngineHookGalAudioSource({
     this.targetPid = 0,
     this.launchExe,
     required this.injectorPath,
+    this.lunaPcHooks = false,
+    this.lunaCodepage,
     MethodChannel? channel,
-    Duration readyTimeout = const Duration(seconds: 12),
+    GalHookProcessStarter? processStarter,
+    GalHookProcessOutputSink? processOutputSink,
+    Duration readyTimeout = const Duration(seconds: 30),
     Duration pollInterval = const Duration(milliseconds: 200),
   })  : _channel =
             channel ?? const MethodChannel('app.hibiki.reader/voice_hook'),
+        _processStarter = processStarter ?? _startGalHookProcess,
+        _processOutputSink = processOutputSink ?? _logGalHookProcessOutput,
         _readyTimeout = readyTimeout,
         _pollInterval = pollInterval;
 
@@ -267,20 +442,46 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// （降级回 loopback，绝不假装注入成功）。**位数必须匹配目标游戏**（KiriKiriZ 多 32 位 -> x86）。
   final String? injectorPath;
 
+  /// 是否让 LunaHook 连接后额外插入通用 PC hooks。Unity/Mono/IL2CPP 这类自绘文本路径需要它，
+  /// 经典 GDI/KiriKiri/Siglus 默认关闭以减少重复线程。
+  final bool lunaPcHooks;
+
+  /// LunaHook 默认文本代码页。null 时沿用 injector 默认值（日文 Shift-JIS/932）。
+  final int? lunaCodepage;
+
   final MethodChannel _channel;
+  final GalHookProcessStarter _processStarter;
+  final GalHookProcessOutputSink _processOutputSink;
   final Duration _readyTimeout;
   final Duration _pollInterval;
 
   /// 拉起的 injector 子进程句柄（[stop] 时杀掉）。
   Process? _injector;
+  final List<StreamSubscription<String>> _injectorOutputSubscriptions =
+      <StreamSubscription<String>>[];
+  Completer<int?>? _launchedPidCompleter;
 
   /// 实际注入命中的游戏 PID：attach=`targetPid`；launch=从 injector stdout 解析出的子进程 PID。
   /// [grabRecent]/`open` 都用它开共享内存。
   int _effectivePid = 0;
 
+  /// 本次 injector 会话起点。Siglus 晚附着可能抓不到文本时间戳，制卡时只允许用本会话之后
+  /// 新落盘的最新 Ogg，避免误配上一局残留。
+  DateTime? _sessionStartedAt;
+
   /// 注入命中的游戏进程 PID（[start] 成功后有效）；未就绪返回 null。launch 模式下调用方据此
   /// 找游戏主窗口（截图用），因为拉起游戏的是本源、PID 只有它知道。
   int? get gamePid => _effectivePid > 0 ? _effectivePid : null;
+
+  /// helper 已完成注入且文本 hook 可用，但当前引擎没有暴露可读 PCM/原始语音时为 true。
+  /// 上层据此保留本实例继续轮询文本，同时另启系统 Loopback 作为音频源。
+  bool get textHookReady => _textHookReady;
+  bool get rawVoiceReady => _rawVoiceReady;
+  bool get pcmReady => _pcmReady;
+  bool _textHookReady = false;
+  bool _audioHooksReady = false;
+  bool _rawVoiceReady = false;
+  bool _pcmReady = false;
 
   /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
   /// 为 true 即目标为 32 位（多数 KiriKiri galgame），调用方据此选 x86 注入器（DLL 位数必须
@@ -354,6 +555,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   @override
   Future<PcmFormat?> start() async {
+    _textHookReady = false;
+    _audioHooksReady = false;
+    _rawVoiceReady = false;
+    _pcmReady = false;
     final String? path = injectorPath;
     if (path == null || !File(path).existsSync()) {
       return null; // 无 injector -> 降级
@@ -363,19 +568,24 @@ class EngineHookGalAudioSource implements GalAudioSource {
     if (!launchMode && targetPid <= 0) {
       return null; // 既无 launchExe 又无有效 targetPid -> 无目标
     }
+    _sessionStartedAt = DateTime.now();
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。
     try {
-      _injector = await Process.start(
+      _injector = await _processStarter(
         path,
-        launchMode
-            ? <String>['--launch', exe, '--hold']
-            : <String>['--pid', '$targetPid', '--hold'],
+        buildEngineHookInjectorArguments(
+          targetPid: targetPid,
+          launchExe: exe,
+          lunaPcHooks: lunaPcHooks,
+          lunaCodepage: lunaCodepage,
+        ),
       );
     } on ProcessException {
       return null;
     }
+    _beginInjectorOutputDrain(_injector!, awaitLaunchedPid: launchMode);
     if (launchMode) {
       // 等 injector 打印 `OK hooked pid=<子进程>`（注入成功 proof-of-life）解析出游戏 PID。
       final int? childPid = await _awaitLaunchedPid();
@@ -411,6 +621,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
       if (fmt != null) {
         return fmt;
       }
+      // Luna 文本线程可能先于 DLL 音频工作线程出现。必须等首轮音频探针完成后，才把
+      // “文本-only”交给控制器组合 Loopback；否则 Siglus 原始 OVK hook 会被启动竞态
+      // 误判为不可用。helper 仍会保留，因此后续资源语音始终优先于 Loopback。
+      if (_textHookReady && _audioHooksReady) {
+        return null;
+      }
       await Future<void>.delayed(_pollInterval);
     }
     // 超时未就绪（未注入成功 / 该引擎无捕获）：降级。
@@ -418,39 +634,67 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return null;
   }
 
-  /// launch 模式：读 injector 子进程 stdout，等到 `OK hooked pid=<N>` 解析出游戏子进程 PID。
-  /// [_readyTimeout] 内没等到（exe 起不来 / 注入失败 / injector 提前退出）返回 null。
-  Future<int?> _awaitLaunchedPid() async {
-    final Process? proc = _injector;
-    if (proc == null) {
-      return null;
-    }
-    final Completer<int?> completer = Completer<int?>();
-    final StringBuffer buf = StringBuffer();
-    late final StreamSubscription<String> sub;
-    sub = proc.stdout.transform(const SystemEncoding().decoder).listen(
-      (String chunk) {
-        buf.write(chunk);
-        final int? pid = parseInjectorHookedPid(buf.toString());
-        if (pid != null && !completer.isCompleted) {
-          completer.complete(pid);
-        }
-      },
-      onDone: () {
-        if (!completer.isCompleted) {
-          completer.complete(parseInjectorHookedPid(buf.toString()));
-        }
-      },
-      onError: (Object _) {
-        if (!completer.isCompleted) {
-          completer.complete(null);
-        }
-      },
+  /// injector 是常驻 helper，stdout/stderr 也必须贯穿会话持续排空。只在解析到 launch PID
+  /// 后取消 stdout 订阅会让后续输出填满匿名管道；完全不订阅 stderr 更会使 native 卡死在
+  /// `fprintf(stderr, ...)`，Unity 资源事件队列随之停止消费但进程仍显示存活。
+  void _beginInjectorOutputDrain(
+    Process process, {
+    required bool awaitLaunchedPid,
+  }) {
+    final Completer<int?>? pidCompleter =
+        awaitLaunchedPid ? Completer<int?>() : null;
+    final StringBuffer stdoutBuffer = StringBuffer();
+    _launchedPidCompleter = pidCompleter;
+    _injectorOutputSubscriptions.add(
+      process.stdout.transform(const SystemEncoding().decoder).listen(
+        (String chunk) {
+          _emitInjectorOutput(isStderr: false, chunk: chunk);
+          if (pidCompleter == null || pidCompleter.isCompleted) return;
+          stdoutBuffer.write(chunk);
+          final int? pid = parseInjectorHookedPid(stdoutBuffer.toString());
+          if (pid != null) pidCompleter.complete(pid);
+        },
+        onDone: () {
+          if (pidCompleter != null && !pidCompleter.isCompleted) {
+            pidCompleter
+                .complete(parseInjectorHookedPid(stdoutBuffer.toString()));
+          }
+        },
+        onError: (Object _) {
+          if (pidCompleter != null && !pidCompleter.isCompleted) {
+            pidCompleter.complete(null);
+          }
+        },
+      ),
     );
-    final int? pid =
-        await completer.future.timeout(_readyTimeout, onTimeout: () => null);
-    await sub.cancel();
-    return pid;
+    _injectorOutputSubscriptions.add(
+      process.stderr.transform(const SystemEncoding().decoder).listen(
+            (String chunk) => _emitInjectorOutput(isStderr: true, chunk: chunk),
+            onError: (Object error) => _emitInjectorOutput(
+              isStderr: true,
+              chunk: 'stderr stream error: $error',
+            ),
+          ),
+    );
+  }
+
+  void _emitInjectorOutput({
+    required bool isStderr,
+    required String chunk,
+  }) {
+    try {
+      _processOutputSink(isStderr, chunk);
+    } catch (_) {
+      // 诊断输出消费者不得反向阻塞 helper 管道。
+    }
+  }
+
+  /// launch 模式：等 stdout 中的 `OK hooked pid=<N>`；订阅本身不会在解析成功后取消，
+  /// 仍负责排空 helper 余生的输出。
+  Future<int?> _awaitLaunchedPid() async {
+    final Completer<int?>? completer = _launchedPidCompleter;
+    if (completer == null) return null;
+    return completer.future.timeout(_readyTimeout, onTimeout: () => null);
   }
 
   /// 轮询 native `status`：hook 就绪（ready）且格式有效时返回 [PcmFormat]，否则 null。
@@ -458,15 +702,29 @@ class EngineHookGalAudioSource implements GalAudioSource {
     try {
       final Map<Object?, Object?>? r =
           await _channel.invokeMethod<Map<Object?, Object?>>('status');
-      if (r == null || r['ready'] != true) {
+      if (r == null) {
         return null;
       }
-      return parseGalPcmFormat(r);
+      _textHookReady = parseEngineTextHookReady(r);
+      _audioHooksReady = parseEngineAudioHooksReady(r);
+      _rawVoiceReady = r['rawVoiceReady'] == true;
+      _pcmReady = parseGalPcmFormat(r) != null;
+      return parseEngineHookReadyFormat(r);
     } on PlatformException {
       return null;
     } on MissingPluginException {
       return null;
     }
+  }
+
+  /// 刷新运行中 helper 的能力状态。
+  ///
+  /// KiriKiriZ 的 `TVPCreateStream` 等资源层可能晚于 Luna 文本管线初始化；启动阶段
+  /// 因此会先进入“文本 + Loopback”。控制器在后续文本轮询中调用此方法，才能在资源
+  /// hook 晚到后把原始游戏语音提升为主来源。
+  Future<bool> refreshReadiness() async {
+    await _pollFormat();
+    return _rawVoiceReady;
   }
 
   @override
@@ -519,7 +777,19 @@ class EngineHookGalAudioSource implements GalAudioSource {
           final Object? ts = e['ts'];
           final Object? text = e['text'];
           if (seq is int && ts is int && text is String) {
-            lines.add(GalHookedLine(seq: seq, timestampMs: ts, text: text));
+            lines.add(GalHookedLine(
+              seq: seq,
+              timestampMs: ts,
+              text: text,
+              threadId: (e['threadId'] as int?) ?? 0,
+              threadAddress: (e['threadAddress'] as int?) ?? 0,
+              threadContext: (e['threadContext'] as int?) ?? 0,
+              threadContext2: (e['threadContext2'] as int?) ?? 0,
+              processId: (e['processId'] as int?) ?? 0,
+              sourceKind: (e['sourceKind'] as int?) ?? 0,
+              hookName: (e['hookName'] as String?) ?? '',
+              hookCode: (e['hookCode'] as String?) ?? '',
+            ));
           }
         }
       }
@@ -528,6 +798,22 @@ class EngineHookGalAudioSource implements GalAudioSource {
       return null;
     } on MissingPluginException {
       return null;
+    }
+  }
+
+  /// 选择 Luna 文本线程。null/0 恢复 helper 自动选择；非 0 时 helper 只发布该线程。
+  Future<bool> selectTextThread(int? threadId) async {
+    try {
+      final Map<Object?, Object?>? result =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+        'selectTextThread',
+        <String, Object?>{'threadId': threadId ?? 0},
+      );
+      return result?['ok'] == true;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
     }
   }
 
@@ -606,39 +892,116 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// `providedAudioBytes`。这是引擎级最干净的语音（混音前、无 BGM/SE），优先于共享内存里的
   /// [grabUtterance]/[grabClipNear]。非 Windows / 目录不存在 / 无匹配 / 转码失败返回 null
   /// （调用方回退 grabUtterance→grabClipNear→grabRecent 采集链，Never break）。
-  Future<Uint8List?> grabPairedVoiceBytes(
-    int textTsMs, {
-    required String outputExtension,
-  }) async {
-    if (!Platform.isWindows || textTsMs <= 0) {
-      return null;
-    }
+  File? _findPairedVoiceFile(int textTsMs) {
+    if (!Platform.isWindows) return null;
     final Directory dir = _galVoiceDumpDir();
-    if (!dir.existsSync()) {
-      return null;
-    }
+    if (!dir.existsSync()) return null;
     final List<String> oggNames = <String>[];
+    final List<String> wavNames = <String>[];
+    final List<File> voiceFiles = <File>[];
     try {
       for (final FileSystemEntity e in dir.listSync()) {
         if (e is! File) {
           continue;
         }
         final String name = _fileBaseName(e.path);
-        if (name.toLowerCase().endsWith('.ogg')) {
+        final String lower = name.toLowerCase();
+        if (lower.endsWith('.ogg')) {
           oggNames.add(name);
+          voiceFiles.add(e);
+        } else if (lower.endsWith('.wav')) {
+          wavNames.add(name);
+          voiceFiles.add(e);
         }
       }
     } catch (_) {
       return null;
     }
-    final String? picked =
-        pickPairedVoiceOgg(oggFileNames: oggNames, textTsMs: textTsMs);
+    String? picked = pickPairedGameResource(
+      oggFileNames: oggNames,
+      wavFileNames: wavNames,
+      textTsMs: textTsMs,
+    );
+    // Siglus 的 Enigma-safe 晚附着可能没有文本 hook 时间戳。只有这种无时间戳路径才在本会话
+    // 新文件里选修改时间最新的一条；有时间戳但窗口未命中必须返回 null，让上层明确降级，
+    // 否则会把别句资源语音错配给当前文本。跨会话旧 dump 始终不参与。
+    if (picked == null && textTsMs <= 0 && _sessionStartedAt != null) {
+      File? latest;
+      DateTime? latestModified;
+      final DateTime floor =
+          _sessionStartedAt!.subtract(const Duration(seconds: 2));
+      for (final File file in voiceFiles) {
+        final String name = _fileBaseName(file.path);
+        final _ParsedVoiceOgg? parsed = _parseVoiceOggName(name);
+        if (parsed == null || _isNonVoiceBasename(parsed.basename)) {
+          continue;
+        }
+        DateTime modified;
+        try {
+          modified = file.statSync().modified;
+        } catch (_) {
+          continue;
+        }
+        if (modified.isBefore(floor)) {
+          continue;
+        }
+        if (latestModified == null || modified.isAfter(latestModified)) {
+          latest = file;
+          latestModified = modified;
+        }
+      }
+      if (latest != null) {
+        picked = pickPairedGameResource(
+          oggFileNames: oggNames,
+          wavFileNames: wavNames,
+          textTsMs: textTsMs,
+          latestSessionVoiceName: _fileBaseName(latest.path),
+        );
+      }
+    }
     if (picked == null) {
       return null;
     }
-    final String oggPath = '${dir.path}${Platform.pathSeparator}$picked';
+    return File('${dir.path}${Platform.pathSeparator}$picked');
+  }
+
+  /// 只检查资源文件是否已落盘，不提前做转码。捕获工作台的文本轮询用它把逐行状态从
+  /// “等待音频”推进到 `game_resource`；真正制卡时仍由 [grabPairedVoiceBytes] 读取并转码。
+  bool hasPairedVoiceCandidate(int textTsMs) =>
+      _findPairedVoiceFile(textTsMs) != null;
+
+  /// 返回与文本时间戳精确配对的资源 ID（dump 目录内的 basename）。控制器在台词刚到达时
+  /// 把它固化到该行；之后即使用户从历史列表制卡，也不再按“当前最新资源”重新猜测。
+  String? findPairedVoiceResourceId(int textTsMs) {
+    final File? file = _findPairedVoiceFile(textTsMs);
+    return file == null ? null : _fileBaseName(file.path);
+  }
+
+  File? _voiceFileForResourceId(String resourceId) {
+    if (!Platform.isWindows ||
+        resourceId.isEmpty ||
+        _fileBaseName(resourceId) != resourceId) {
+      return null;
+    }
+    final String lower = resourceId.toLowerCase();
+    if (!lower.endsWith('.ogg') && !lower.endsWith('.wav')) return null;
+    final File file = File(
+      '${_galVoiceDumpDir().path}${Platform.pathSeparator}$resourceId',
+    );
+    return file.existsSync() ? file : null;
+  }
+
+  Future<Uint8List?> grabPairedVoiceBytes(
+    int textTsMs, {
+    required String outputExtension,
+    String? resourceId,
+  }) async {
+    final File? picked = resourceId == null
+        ? _findPairedVoiceFile(textTsMs)
+        : _voiceFileForResourceId(resourceId);
+    if (picked == null) return null;
     return transcodeVoiceOggToMiningAudio(
-      oggPath: oggPath,
+      oggPath: picked.path,
       tempDir: Directory.systemTemp.path,
       outputExtension: outputExtension,
     );
@@ -703,7 +1066,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   /// 取路径 [path] 的文件名（最后一段，兼容 `\` 与 `/` 分隔）。
   static String _fileBaseName(String path) {
-    final int slash = path.lastIndexOf(RegExp(r'[\/]'));
+    final int slash = path.lastIndexOf(RegExp(r'[\\/]'));
     return slash < 0 ? path : path.substring(slash + 1);
   }
 
@@ -760,6 +1123,23 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
     _injector?.kill();
     _injector = null;
+    final List<StreamSubscription<String>> outputSubscriptions =
+        List<StreamSubscription<String>>.of(_injectorOutputSubscriptions);
+    _injectorOutputSubscriptions.clear();
+    final Completer<int?>? pidCompleter = _launchedPidCompleter;
+    _launchedPidCompleter = null;
+    if (pidCompleter != null && !pidCompleter.isCompleted) {
+      pidCompleter.complete(null);
+    }
+    await Future.wait(
+      outputSubscriptions.map(
+        (StreamSubscription<String> subscription) => subscription.cancel(),
+      ),
+    );
+    _effectivePid = 0;
+    _sessionStartedAt = null;
+    _textHookReady = false;
+    _audioHooksReady = false;
   }
 }
 
@@ -777,10 +1157,53 @@ class GalHookedLine {
     required this.seq,
     required this.timestampMs,
     required this.text,
+    this.threadId = 0,
+    this.threadAddress = 0,
+    this.threadContext = 0,
+    this.threadContext2 = 0,
+    this.processId = 0,
+    this.sourceKind = 0,
+    this.hookName = '',
+    this.hookCode = '',
   });
   final int seq;
   final int timestampMs;
   final String text;
+  final int threadId;
+  final int threadAddress;
+  final int threadContext;
+  final int threadContext2;
+  final int processId;
+  final int sourceKind;
+  final String hookName;
+  final String hookCode;
+
+  String? get textThreadKey {
+    if (threadId == 0) return null;
+    final String source = switch (sourceKind) {
+      1 => 'gdi',
+      2 => 'luna',
+      3 => 'unity_tmp',
+      4 => 'siglus',
+      _ => 'hook',
+    };
+    return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
+  }
+
+  String? get textThreadLabel {
+    if (threadId == 0) return null;
+    final String source = hookName.trim().isNotEmpty
+        ? hookName.trim()
+        : switch (sourceKind) {
+            1 => 'GDI fallback',
+            2 => 'LunaHook',
+            3 => 'Unity TMP_Text',
+            4 => 'Siglus exact',
+            _ => 'Text hook',
+          };
+    if (threadAddress == 0) return source;
+    return '$source · 0x${threadAddress.toUnsigned(64).toRadixString(16)}';
+  }
 }
 
 /// [EngineHookGalAudioSource.listAudioTracks] 的一条：一个活跃语音源（source voice / DS buffer）
