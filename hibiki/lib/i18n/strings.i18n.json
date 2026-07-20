@@ -2018,5 +2018,10 @@
   "game_show_hook_text_window": "Show Hook text window",
   "game_hook_line_unavailable": "This captured line is no longer available.",
   "game_card_sentence_audio_missing": "The card was created without sentence audio; no other line's audio was substituted.",
-  "game_card_mapping_missing": "Anki field mappings are missing game-card tokens"
+  "game_card_mapping_missing": "Anki field mappings are missing game-card tokens",
+  "game_audio_backend_resource": "Game resource audio",
+  "game_audio_fallback_allow": "Allow audio fallback",
+  "game_audio_fallback_resource_only": "Game resource audio only",
+  "game_audio_fallback_disabled_missing": "No matching game resource audio; fallback is disabled",
+  "game_audio_resource_id": "Audio resource ID"
 }

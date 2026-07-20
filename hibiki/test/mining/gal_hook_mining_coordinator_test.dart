@@ -281,6 +281,33 @@ void main() {
         reason: 'there is no sentence-audio media to map for this card');
   });
 
+  test('resource-only mode rejects a card when sentence audio is missing',
+      () async {
+    activeState = activeState.copyWith(allowAudioFallback: false);
+    final TexthookerLineEntry entry = service.appendLine('必须匹配资源音频')!;
+    final _RecordingRepo repo = _RecordingRepo();
+
+    final GalHookMiningResult result = await coordinator(
+      validator: (_) => true,
+      audio: ({
+        required String lineId,
+        required String sentence,
+        required String outputExtension,
+      }) async =>
+          null,
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '资源音频'},
+      compressMiningMedia: true,
+      repo: repo,
+    );
+
+    expect(result.aborted, isTrue);
+    expect(result.audioFallbackDisabled, isTrue);
+    expect(result.sentenceAudioMissing, isTrue);
+    expect(repo.contexts, isEmpty);
+  });
+
   test('concurrent jobs serialize and use isolated temporary directories',
       () async {
     final TexthookerLineEntry first = service.appendLine('第一句')!;

@@ -267,12 +267,14 @@ Rect anchorPopupTopLeft({
 /// 此前各写一份此 parking + Visibility 几何（BUG-135 的 `parked ? width+8` 改一处忘另
 /// 一处即漂移），收口于此；两宿主各自的 [DictionaryPopupLayer] 回调差异留在各自方法。
 Widget parkedPopupLayer({
+  Key? key,
   required Rect pos,
   required bool visible,
   required Size screen,
   required Widget child,
 }) {
   return Positioned(
+    key: key,
     left: visible ? pos.left : screen.width + 8,
     top: visible ? pos.top : 0,
     width: pos.width,

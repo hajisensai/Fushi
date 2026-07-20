@@ -68,7 +68,8 @@ void main() {
       TexthookerService.instance.updateLineAudio(
         second.id,
         status: TexthookerLineAudioStatus.encoded,
-        backend: 'paired_voice_ogg',
+        backend: 'game_resource',
+        resourceId: '12345.voice.ogg',
         durationMs: 840,
       ),
       isTrue,
@@ -80,6 +81,10 @@ void main() {
     expect(
       TexthookerService.instance.entries.last.audioStatus,
       TexthookerLineAudioStatus.encoded,
+    );
+    expect(
+      TexthookerService.instance.entries.last.audioResourceId,
+      '12345.voice.ogg',
     );
   });
 

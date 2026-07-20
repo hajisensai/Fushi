@@ -2018,5 +2018,10 @@
   "game_show_hook_text_window": "显示 Hook 文本浮窗",
   "game_hook_line_unavailable": "这条捕获台词已不可用，未使用其他台词替代。",
   "game_card_sentence_audio_missing": "卡片已创建，但没有句子音频；未借用其他台词的音频。",
-  "game_card_mapping_missing": "Anki 字段映射缺少游戏卡片字段"
+  "game_card_mapping_missing": "Anki 字段映射缺少游戏卡片字段",
+  "game_audio_backend_resource": "游戏资源音频",
+  "game_audio_fallback_allow": "允许音频降级",
+  "game_audio_fallback_resource_only": "仅游戏资源音频",
+  "game_audio_fallback_disabled_missing": "未找到与该句匹配的游戏资源音频；已关闭降级，未制卡",
+  "game_audio_resource_id": "音频资源 ID"
 }

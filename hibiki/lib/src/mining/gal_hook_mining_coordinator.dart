@@ -33,6 +33,7 @@ class GalHookMiningResult {
     this.failureReason,
     this.sentenceAudioMissing = false,
     this.degradedToStill = false,
+    this.audioFallbackDisabled = false,
     this.unmappedTokens = const <String>[],
   });
 
@@ -40,6 +41,7 @@ class GalHookMiningResult {
   final String? failureReason;
   final bool sentenceAudioMissing;
   final bool degradedToStill;
+  final bool audioFallbackDisabled;
   final List<String> unmappedTokens;
 
   bool get aborted => outcome == null;
@@ -184,6 +186,14 @@ class GalHookMiningCoordinator {
       outputExtension: audioExtension,
     );
     final bool sentenceAudioMissing = audioBytes == null || audioBytes.isEmpty;
+    if (sentenceAudioMissing && !state.allowAudioFallback) {
+      return const GalHookMiningResult(
+        failureReason:
+            'no matching game resource audio; audio fallback is disabled',
+        sentenceAudioMissing: true,
+        audioFallbackDisabled: true,
+      );
+    }
 
     final Directory jobDirectory = await _createTempDirectory();
     try {

@@ -54,6 +54,37 @@ add_executable(hibiki_siglus_ovk_test
 target_include_directories(hibiki_siglus_ovk_test PRIVATE "hook")
 add_test(NAME hibiki_siglus_ovk_test COMMAND hibiki_siglus_ovk_test)
 
+add_executable(hibiki_siglus_text_test
+  "tests/siglus_text_test.cpp"
+)
+target_include_directories(hibiki_siglus_text_test PRIVATE "hook")
+add_test(NAME hibiki_siglus_text_test COMMAND hibiki_siglus_text_test)
+
+add_executable(hibiki_resource_audio_ready_test
+  "tests/resource_audio_ready_test.cpp"
+)
+target_include_directories(hibiki_resource_audio_ready_test PRIVATE "include")
+target_compile_definitions(hibiki_resource_audio_ready_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_resource_audio_ready_test COMMAND hibiki_resource_audio_ready_test)
+
+# injector 重连同一游戏进程时必须复用 DLL 持有的映射，不能把 hooked/text/audio 环清零。
+add_executable(hibiki_voice_session_reuse_test
+  "tests/session_reuse_test.cpp"
+)
+target_include_directories(hibiki_voice_session_reuse_test PRIVATE "include")
+target_compile_definitions(hibiki_voice_session_reuse_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_voice_session_reuse_test COMMAND hibiki_voice_session_reuse_test)
+
+add_executable(hibiki_steam_launch_test
+  "tests/steam_launch_test.cpp"
+)
+target_include_directories(hibiki_steam_launch_test PRIVATE "include")
+add_test(NAME hibiki_steam_launch_test COMMAND hibiki_steam_launch_test)
+
+add_executable(hibiki_luna_hook_config_test tests/luna_hook_config_test.cpp)
+target_include_directories(hibiki_luna_hook_config_test PRIVATE include)
+add_test(NAME hibiki_luna_hook_config_test COMMAND hibiki_luna_hook_config_test)
+
 # 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(hibiki_voice_injector
@@ -62,6 +93,38 @@ add_executable(hibiki_voice_injector
 target_include_directories(hibiki_voice_injector PRIVATE "include")
 target_compile_definitions(hibiki_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(hibiki_voice_injector PRIVATE shell32)
+
+# Unity IL2CPP Streaming AudioClip 资源提取器（仅 x64 Unity 游戏需要）。它在 injector
+# 宿主进程解析 AssetBundle，并调用开源 vgmstream 解码 FSB5；游戏内 DLL 只写资源事件。
+# 依赖按固定 release + SHA256 获取到 build staging，不把第三方二进制提交进仓库。
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+  find_program(DOTNET_EXECUTABLE dotnet REQUIRED)
+  find_program(POWERSHELL_EXECUTABLE powershell REQUIRED)
+  set(_UNITY_AUDIO_PROJECT
+      "${CMAKE_CURRENT_SOURCE_DIR}/unity_audio_extract/Hibiki.UnityAudioExtract.csproj")
+  set(_UNITY_AUDIO_RUNTIME "${CMAKE_CURRENT_BINARY_DIR}/unity_audio_runtime")
+  add_custom_target(hibiki_unity_audio_runtime ALL
+    COMMAND "${POWERSHELL_EXECUTABLE}" -NoProfile -ExecutionPolicy Bypass
+      -File "${CMAKE_CURRENT_SOURCE_DIR}/unity_audio_extract/fetch_runtime.ps1"
+      -RuntimeDir "${_UNITY_AUDIO_RUNTIME}"
+    COMMAND "${DOTNET_EXECUTABLE}" publish "${_UNITY_AUDIO_PROJECT}"
+      --configuration Release --runtime win-x64 --self-contained true
+      -p:PublishSingleFile=true -p:PublishTrimmed=false
+      --output "${_UNITY_AUDIO_RUNTIME}"
+    DEPENDS
+      "${_UNITY_AUDIO_PROJECT}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/unity_audio_extract/Program.cs"
+      "${CMAKE_CURRENT_SOURCE_DIR}/unity_audio_extract/fetch_runtime.ps1"
+    COMMENT "构建 Unity Streaming AudioClip 资源提取运行时"
+    VERBATIM)
+  add_dependencies(hibiki_voice_injector hibiki_unity_audio_runtime)
+  add_custom_command(TARGET hibiki_voice_injector POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      "${_UNITY_AUDIO_RUNTIME}"
+      "$<TARGET_FILE_DIR:hibiki_voice_injector>/unity_audio_runtime"
+    COMMENT "部署 Unity 音频资源提取器到 injector 隔离目录"
+    VERBATIM)
+endif()
 
 # 环形缓冲诊断读取器（只读共享内存，不注入）。命名文件映射跨 32/64 位可读，故只出 x64 一份即
 # 可读任意位数游戏里 hook 填的缓冲——仅在 64 位构建时加入本目标（x86 配置跳过）。

@@ -565,6 +565,11 @@ mixin DictionaryPageMixin {
             Brightness.dark;
     // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
     return parkedPopupLayer(
+      // BUG-881：搜索占位层消失时本层会在 Stack children 中前移一位。若顶层
+      // Positioned 无 key，Flutter 会按位置把「占位层的 Positioned」更新成本层、
+      // 再销毁旧位置的平台 WebView；Windows 上最终只剩空白弹窗外壳。以 entry
+      // 身份钉住整层，让元素真正搬位而不是拆建原生表面。
+      key: ObjectKey(entry),
       pos: pos,
       // BUG-797：「选择句子上下文」原生对话框打开期间把弹窗停靠屏外，否则原生平台视图盖住对话框。
       visible: entry.visible && !_sentenceContextDialogOpen,

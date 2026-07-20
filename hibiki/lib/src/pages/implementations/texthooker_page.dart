@@ -168,9 +168,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
     if (result.aborted) {
       HibikiToast.showMine(
-        msg: result.failureReason != null
-            ? '${t.external_window_capture_failed}：${result.failureReason}'
-            : t.external_window_capture_failed,
+        msg: result.audioFallbackDisabled
+            ? t.game_audio_fallback_disabled_missing
+            : result.failureReason != null
+                ? '${t.external_window_capture_failed}：${result.failureReason}'
+                : t.external_window_capture_failed,
         status: MineToastStatus.failed,
       );
       return const MinePopupResult();
@@ -453,6 +455,23 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               ),
               onPressed: _toggleExternalWindowMode,
             ),
+          IconButton(
+            key: const ValueKey<String>('game-audio-fallback-toggle'),
+            tooltip: _session.state.allowAudioFallback
+                ? t.game_audio_fallback_allow
+                : t.game_audio_fallback_resource_only,
+            icon: Icon(
+              _session.state.allowAudioFallback
+                  ? Icons.alt_route_outlined
+                  : Icons.library_music_outlined,
+              color: _session.state.allowAudioFallback
+                  ? null
+                  : Theme.of(context).colorScheme.primary,
+            ),
+            onPressed: () => _session.setAllowAudioFallback(
+              !_session.state.allowAudioFallback,
+            ),
+          ),
           if (Platform.isWindows)
             IconButton(
               tooltip: t.game_launch_and_capture,
@@ -483,6 +502,24 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             label: t.game_diagnostics,
             onTap: widget.onShowDiagnostics,
           ),
+        HibikiIconButton(
+          key: const ValueKey<String>('game-audio-fallback-toggle'),
+          icon: _session.state.allowAudioFallback
+              ? Icons.alt_route_outlined
+              : Icons.library_music_outlined,
+          tooltip: _session.state.allowAudioFallback
+              ? t.game_audio_fallback_allow
+              : t.game_audio_fallback_resource_only,
+          label: _session.state.allowAudioFallback
+              ? t.game_audio_fallback_allow
+              : t.game_audio_fallback_resource_only,
+          enabledColor: _session.state.allowAudioFallback
+              ? null
+              : Theme.of(context).colorScheme.primary,
+          onTap: () => _session.setAllowAudioFallback(
+            !_session.state.allowAudioFallback,
+          ),
+        ),
         if (Platform.isWindows)
           HibikiIconButton(
             icon: Icons.subtitles_outlined,
@@ -1061,6 +1098,11 @@ class _LatestLineCard extends StatelessWidget {
                 label: t.game_health_audio,
                 value: value.audioBackend ?? value.audioStatus.name,
               ),
+              if (value.audioResourceId != null)
+                _MetadataRow(
+                  label: t.game_audio_resource_id,
+                  value: value.audioResourceId!,
+                ),
               if (value.audioDurationMs != null)
                 _MetadataRow(
                   label: t.game_audio_format,
@@ -1249,7 +1291,7 @@ class _StatusPill extends StatelessWidget {
 
 String _audioBackendLabel(GalHookAudioBackend backend) => switch (backend) {
       GalHookAudioBackend.none => t.game_audio_backend_none,
-      GalHookAudioBackend.pairedVoice => t.game_audio_backend_paired,
+      GalHookAudioBackend.gameResource => t.game_audio_backend_resource,
       GalHookAudioBackend.enginePcm => t.game_audio_backend_engine,
       GalHookAudioBackend.systemLoopback => t.game_audio_backend_loopback,
     };
@@ -1323,11 +1365,13 @@ class _TexthookerLine extends StatelessWidget {
               ],
             ),
             if (line.audioBackend != null ||
+                line.audioResourceId != null ||
                 line.fallbackReason != null) ...<Widget>[
               const SizedBox(height: 6),
               Text(
                 <String>[
                   if (line.audioBackend != null) line.audioBackend!,
+                  if (line.audioResourceId != null) line.audioResourceId!,
                   if (line.audioDurationMs != null)
                     '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',
                   if (line.fallbackReason != null) line.fallbackReason!,
