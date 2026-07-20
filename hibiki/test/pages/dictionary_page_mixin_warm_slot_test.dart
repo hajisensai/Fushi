@@ -101,6 +101,13 @@ class MixinHostPageState extends ConsumerState<MixinHostPage>
         autoRead: false,
       );
 
+  void reveal(DictionaryPopupEntry entry) {
+    setState(() {
+      controller.revealRendered(entry);
+      controller.endSearchUi();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -108,6 +115,11 @@ class MixinHostPageState extends ConsumerState<MixinHostPage>
         final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
         return Stack(
           children: <Widget>[
+            if (controller.isSearchingUi && controller.pendingRect != null)
+              buildPopupLoadingPlaceholder(
+                rect: controller.pendingRect!,
+                screen: screen,
+              ),
             for (int i = 0; i < controller.entries.length; i++)
               buildNestedPopupLayer(
                 index: i,
@@ -209,6 +221,45 @@ void main() {
     expect(entry.visible, isTrue);
     expect(entry.revealOnRender, isFalse);
     expect(state.controller.isSearchingUi, isFalse);
+  });
+
+  testWidgets(
+      'cold popup keeps its keyed layer element when loading placeholder is removed',
+      (WidgetTester tester) async {
+    final key = GlobalKey<MixinHostPageState>();
+    await tester.pumpWidget(
+      wrap(
+        MixinTestAppModel(
+          results: <DictionaryEntry>[
+            DictionaryEntry(word: '語', reading: 'ご', meaning: 'word'),
+          ],
+        ),
+        key,
+      ),
+    );
+
+    final MixinHostPageState state = key.currentState!;
+    await state.lookup('語');
+    await tester.pump();
+
+    final DictionaryPopupEntry entry = state.controller.entries.single;
+    final Finder popupLayer = find.byKey(ObjectKey(entry));
+    expect(state.controller.isSearchingUi, isTrue);
+    expect(popupLayer, findsOneWidget,
+        reason: 'The parked platform-view layer needs an entry-identity key so '
+            'removing the preceding loading placeholder moves, rather than '
+            'recreates, the Windows WebView subtree.');
+    final Element beforeReveal = tester.element(popupLayer);
+    final Object? webViewBeforeReveal = entry.webViewKey.currentState;
+    expect(webViewBeforeReveal, isNotNull);
+
+    state.reveal(entry);
+    await tester.pump();
+
+    expect(state.controller.isSearchingUi, isFalse);
+    expect(popupLayer, findsOneWidget);
+    expect(tester.element(popupLayer), same(beforeReveal));
+    expect(entry.webViewKey.currentState, same(webViewBeforeReveal));
   });
 
   testWidgets('reuseWarmSlot drops nested children but keeps the warm WebView',
