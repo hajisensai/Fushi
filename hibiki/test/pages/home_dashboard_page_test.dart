@@ -163,6 +163,56 @@ void main() {
     expect(find.text(t.home_activity), findsOneWidget);
   });
 
+  testWidgets('宽屏 1280 + 真实载入数据（异步回填后）：下段两列渲染不抛无限高度',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final DateTime now = DateTime.now();
+    for (int i = 0; i < 20; i++) {
+      final String dk =
+          HibikiTimeFormat.dayKey(now.subtract(Duration(days: i)));
+      await db.addReadingStatistic(
+        title: '书$i',
+        dateKey: dk,
+        charsRead: 500 + i * 10,
+        timeMs: 300000,
+      );
+      await db.addActivityEvent(
+        eventType: i.isEven ? kActivityRead : kActivityWatch,
+        mediaType: i.isEven ? kActivityMediaBook : kActivityMediaVideo,
+        title: '活动$i',
+        dateKey: dk,
+        timestampMs: now.subtract(Duration(days: i)).millisecondsSinceEpoch,
+        durationMs: 120000,
+      );
+    }
+    for (int i = 0; i < 3; i++) {
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value('video/watch$i'),
+        title: Value('在看$i'),
+        videoPath: Value('/abs/w$i.mp4'),
+        lastPositionMs: const Value(60000),
+      ));
+    }
+
+    // runAsync 让真实 DB isolate 的 _loadDashboardData 跑完（fakeAsync 的 pump 不推进
+    // 后台 isolate），再退出 runAsync pump 应用 setState → 用真数据重建下段。
+    await tester.runAsync(() async {
+      await tester.pumpWidget(buildApp());
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.home_continue), findsOneWidget);
+    expect(find.text(t.home_activity), findsOneWidget);
+    expect(find.byType(StatContributionHeatmap), findsOneWidget);
+  });
+
   testWidgets('宽屏 560~900 临界（4 格横排统计卡）不抛无限高度', (WidgetTester tester) async {
     // 700px：走「统计卡 4 格横排」但「主体单列堆叠」——曾是 stretch Row 崩溃点。
     tester.view.physicalSize = const Size(700, 900);
