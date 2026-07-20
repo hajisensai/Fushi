@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 35139 (2067 per locale)
+/// Strings: 35173 (2069 per locale)
 ///
-/// Built on 2026-07-20 at 17:45 UTC
+/// Built on 2026-07-20 at 18:35 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2772,6 +2772,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get download_settings => 'Download settings';
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -7457,6 +7459,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -12215,6 +12221,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -16989,6 +16999,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -21774,6 +21788,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -26486,6 +26504,10 @@ class _StringsId extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -31246,6 +31268,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -35812,6 +35838,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -40381,6 +40411,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -45119,6 +45153,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -49872,6 +49910,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -54608,6 +54650,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -59289,6 +59335,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -64002,6 +64052,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -68702,6 +68756,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 // Path: <root>
@@ -73075,6 +73133,10 @@ class _StringsZhCn extends _StringsEn {
   String get download_settings => '下载设置';
   @override
   String get download_backend_not_configured => '请在下方「下载设置」里配置下载后端';
+  @override
+  String get shortcut_press_gamepad => '按下手柄按钮…';
+  @override
+  String get shortcut_gamepad_pick_list => '从列表选择';
 }
 
 // Path: <root>
@@ -77563,6 +77625,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get download_backend_not_configured =>
       'Configure the download backend below (expand Download settings).';
+  @override
+  String get shortcut_press_gamepad => 'Press a gamepad button...';
+  @override
+  String get shortcut_gamepad_pick_list => 'Choose from list';
 }
 
 /// Flat map(s) containing all translations.
@@ -81789,6 +81855,10 @@ extension on _StringsEn {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -86013,6 +86083,10 @@ extension on _StringsAr {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -90258,6 +90332,10 @@ extension on _StringsDe {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -94502,6 +94580,10 @@ extension on _StringsEs {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -98752,6 +98834,10 @@ extension on _StringsFr {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -102984,6 +103070,10 @@ extension on _StringsId {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -107231,6 +107321,10 @@ extension on _StringsIt {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -111440,6 +111534,10 @@ extension on _StringsJa {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -115653,6 +115751,10 @@ extension on _StringsKo {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -119893,6 +119995,10 @@ extension on _StringsNl {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -124130,6 +124236,10 @@ extension on _StringsPtBr {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -128372,6 +128482,10 @@ extension on _StringsRu {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -132598,6 +132712,10 @@ extension on _StringsTh {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -136833,6 +136951,10 @@ extension on _StringsTr {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -141063,6 +141185,10 @@ extension on _StringsVi {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }
@@ -145259,6 +145385,10 @@ extension on _StringsZhCn {
         return '下载设置';
       case 'download_backend_not_configured':
         return '请在下方「下载设置」里配置下载后端';
+      case 'shortcut_press_gamepad':
+        return '按下手柄按钮…';
+      case 'shortcut_gamepad_pick_list':
+        return '从列表选择';
       default:
         return null;
     }
@@ -149463,6 +149593,10 @@ extension on _StringsZhHk {
         return 'Download settings';
       case 'download_backend_not_configured':
         return 'Configure the download backend below (expand Download settings).';
+      case 'shortcut_press_gamepad':
+        return 'Press a gamepad button...';
+      case 'shortcut_gamepad_pick_list':
+        return 'Choose from list';
       default:
         return null;
     }

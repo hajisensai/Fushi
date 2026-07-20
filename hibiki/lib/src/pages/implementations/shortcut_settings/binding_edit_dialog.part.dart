@@ -99,7 +99,12 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   // (keyboard) so pressing a key while mouse-capturing doesn't record a key, and
   // vice-versa.
   bool _mouseCapturing = false;
+  // 手柄实时录键：与键盘/鼠标同一套「捕获区 + 显式停止」交互（此前手柄是下拉
+  // 菜单选按钮，三通道交互割裂）。桌面轮询路径按 [GamepadButtonIntent] 分发到
+  // 主焦点，Android 原生路径按 gameButton* KeyEvent 冒泡——捕获区两条都接。
+  bool _gamepadCapturing = false;
   final FocusNode _captureFocusNode = FocusNode();
+  final FocusNode _gamepadCaptureFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -127,6 +132,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   @override
   void dispose() {
     _captureFocusNode.dispose();
+    _gamepadCaptureFocusNode.dispose();
     super.dispose();
   }
 
@@ -176,6 +182,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     setState(() {
       _mouseCapturing = true;
       _capturing = false;
+      _gamepadCapturing = false;
       _conflictWarning = null;
     });
   }
@@ -238,6 +245,8 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   void _startCapture() {
     setState(() {
       _capturing = true;
+      _mouseCapturing = false;
+      _gamepadCapturing = false;
       _conflictWarning = null;
     });
     // TODO-838: the capture Focus lives in the `if (_capturing)` subtree, which
@@ -392,6 +401,47 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     return confirmed == true;
   }
 
+  void _startGamepadCapture() {
+    setState(() {
+      _gamepadCapturing = true;
+      _capturing = false;
+      _mouseCapturing = false;
+      _conflictWarning = null;
+    });
+    // Mirror TODO-838: the capture Focus subtree only exists on the NEXT frame,
+    // so a synchronous requestFocus is a no-op; defer to a post-frame callback
+    // so the gamepad's intent dispatch (which targets the primary focus
+    // context) deterministically lands on the capture region.
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (!mounted || !_gamepadCapturing) return;
+      _gamepadCaptureFocusNode.requestFocus();
+    });
+  }
+
+  void _cancelGamepadCapture() {
+    setState(() => _gamepadCapturing = false);
+  }
+
+  /// 捕获到一次手柄按键：结束捕获态并复用 [_addGamepad] 的
+  /// 重复检测 → 冲突查询 → 重分配确认三段式（不造第二套写入逻辑）。
+  void _recordCapturedGamepadButton(GamepadButton button) {
+    if (!_gamepadCapturing) return;
+    setState(() => _gamepadCapturing = false);
+    unawaited(_addGamepad(button));
+  }
+
+  // While gamepad-capturing, every key event is consumed (mirrors the keyboard
+  // capture contract) so controller presses that arrive as gameButton* key
+  // events (Android's native path) are recorded here instead of leaking to
+  // focus traversal / global navigation, and stray keyboard presses do nothing.
+  // Capture is aborted via the explicit cancel control, not a key.
+  KeyEventResult _onGamepadCaptureKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.handled;
+    final GamepadButton? button = GamepadButton.fromKeyEvent(event);
+    if (button != null) _recordCapturedGamepadButton(button);
+    return KeyEventResult.handled;
+  }
+
   Future<void> _addGamepad(GamepadButton button) async {
     final GamepadBinding binding = GamepadBinding(button);
     if (_gamepad.contains(binding)) return;
@@ -540,38 +590,109 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               ],
             ),
             SizedBox(height: tokens.spacing.gap),
-            HibikiOverflowMenu<GamepadButton>(
-              onSelected: (GamepadButton button) {
-                unawaited(_addGamepad(button));
-              },
-              items: <PopupMenuEntry<GamepadButton>>[
-                for (final GamepadButton btn in GamepadButton.values)
-                  HibikiPopupMenuItem<GamepadButton>(
-                    label: btn.label,
-                    icon: Icons.gamepad_outlined,
-                    value: btn,
+            if (_gamepadCapturing)
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  // 桌面轮询路径：GamepadService 把按键作为 GamepadButtonIntent
+                  // 分发到主焦点上下文；这里在捕获 Focus 之上挂 Actions 消费，
+                  // 返回 true 即阻断 A→Activate / B→返回 / 十字键→移焦点等回退。
+                  Actions(
+                    actions: <Type, Action<Intent>>{
+                      GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+                        onInvoke: (GamepadButtonIntent intent) {
+                          _recordCapturedGamepadButton(intent.button);
+                          return true;
+                        },
+                      ),
+                    },
+                    child: Focus(
+                      focusNode: _gamepadCaptureFocusNode,
+                      autofocus: true,
+                      onKeyEvent: _onGamepadCaptureKeyEvent,
+                      child: Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.symmetric(
+                          vertical: tokens.spacing.gap + 4,
+                          horizontal: tokens.spacing.gap,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: themeData.colorScheme.primary,
+                          ),
+                          borderRadius: tokens.radii.controlRadius,
+                        ),
+                        child: Text(
+                          t.shortcut_press_gamepad,
+                          textAlign: TextAlign.center,
+                          style: themeData.textTheme.bodyMedium?.copyWith(
+                            color: themeData.colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-              ],
-              padding: EdgeInsets.zero,
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      Icons.add,
-                      size: 18,
-                      color: themeData.colorScheme.primary,
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      key: const Key('shortcut_stop_gamepad_capture'),
+                      onPressed: _cancelGamepadCapture,
+                      child: Text(t.shortcut_stop_capture),
                     ),
-                    SizedBox(width: tokens.spacing.gap / 2),
-                    Text(
-                      t.shortcut_gamepad,
-                      style: TextStyle(color: themeData.colorScheme.primary),
+                  ),
+                ],
+              )
+            else
+              Wrap(
+                spacing: tokens.spacing.gap,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  TextButton.icon(
+                    key: const Key('shortcut_add_gamepad_capture'),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: Text(t.shortcut_gamepad),
+                    onPressed: _startGamepadCapture,
+                  ),
+                  // 无手柄在手/远程配置时的兜底：仍可从列表点选按钮。
+                  HibikiOverflowMenu<GamepadButton>(
+                    onSelected: (GamepadButton button) {
+                      unawaited(_addGamepad(button));
+                    },
+                    items: <PopupMenuEntry<GamepadButton>>[
+                      for (final GamepadButton btn in GamepadButton.values)
+                        HibikiPopupMenuItem<GamepadButton>(
+                          label: btn.label,
+                          icon: Icons.gamepad_outlined,
+                          value: btn,
+                        ),
+                    ],
+                    padding: EdgeInsets.zero,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        vertical: tokens.spacing.gap / 2,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            Icons.list_outlined,
+                            size: 18,
+                            color: themeData.colorScheme.primary,
+                          ),
+                          SizedBox(width: tokens.spacing.gap / 2),
+                          Text(
+                            t.shortcut_gamepad_pick_list,
+                            style: TextStyle(
+                              color: themeData.colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
 
             // Mouse section (TODO-1088): editable. Existing bindings render as
             // deletable chips; on desktop a capture region records the next

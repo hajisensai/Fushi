@@ -2065,5 +2065,7 @@
   "galgame_helper_download_failed": "引擎组件下载失败：$error",
   "galgame_helper_install_incomplete": "引擎组件安装不完整，请重试",
   "download_settings": "下载设置",
-  "download_backend_not_configured": "请在下方「下载设置」里配置下载后端"
+  "download_backend_not_configured": "请在下方「下载设置」里配置下载后端",
+  "shortcut_press_gamepad": "按下手柄按钮…",
+  "shortcut_gamepad_pick_list": "从列表选择"
 }
