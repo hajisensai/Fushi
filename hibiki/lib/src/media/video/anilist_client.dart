@@ -155,7 +155,9 @@ query ($search: String) {
         }),
       );
       if (res.statusCode != 200) return const <AniListMedia>[];
-      return parseAniListSearchResponse(res.body);
+      // 显式 UTF-8 解码（res.body 无 charset 时按 latin1 → 日文/罗马音乱码）。
+      return parseAniListSearchResponse(
+          utf8.decode(res.bodyBytes, allowMalformed: true));
     } catch (_) {
       return const <AniListMedia>[];
     }

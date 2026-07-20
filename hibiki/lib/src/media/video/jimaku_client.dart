@@ -247,7 +247,8 @@ class JimakuClient {
           Uri.parse('$_base/entries/search').replace(queryParameters: params);
       final http.Response res = await _client.get(uri, headers: _headers);
       if (res.statusCode != 200) return const <JimakuEntry>[];
-      return parseJimakuEntries(res.body);
+      return parseJimakuEntries(
+          utf8.decode(res.bodyBytes, allowMalformed: true));
     } catch (_) {
       return const <JimakuEntry>[];
     }
@@ -263,7 +264,7 @@ class JimakuClient {
       final Uri uri = buildListFilesUri(_base, entryId, episode: episode);
       final http.Response res = await _client.get(uri, headers: _headers);
       if (res.statusCode != 200) return const <JimakuFile>[];
-      return parseJimakuFiles(res.body);
+      return parseJimakuFiles(utf8.decode(res.bodyBytes, allowMalformed: true));
     } catch (_) {
       return const <JimakuFile>[];
     }
