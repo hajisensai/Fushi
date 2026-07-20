@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 34340 (2020 per locale)
+/// Strings: 34408 (2024 per locale)
 ///
-/// Built on 2026-07-20 at 17:44 UTC
+/// Built on 2026-07-20 at 17:58 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2710,6 +2710,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_setting_torrent_zero_off => '0 = off';
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  String get anime_download_retry => 'Retry';
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -7286,6 +7292,16 @@ class _StringsAr extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -11935,6 +11951,16 @@ class _StringsDe extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -16600,6 +16626,16 @@ class _StringsEs extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -21276,6 +21312,16 @@ class _StringsFr extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -25879,6 +25925,16 @@ class _StringsId extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -30530,6 +30586,16 @@ class _StringsIt extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -34987,6 +35053,16 @@ class _StringsJa extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -39447,6 +39523,16 @@ class _StringsKo extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -44076,6 +44162,16 @@ class _StringsNl extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -48720,6 +48816,16 @@ class _StringsPtBr extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -53347,6 +53453,16 @@ class _StringsRu extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -57919,6 +58035,16 @@ class _StringsTh extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -62523,6 +62649,16 @@ class _StringsTr extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -67114,6 +67250,16 @@ class _StringsVi extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 // Path: <root>
@@ -71389,6 +71535,14 @@ class _StringsZhCn extends _StringsEn {
   String get video_setting_torrent_ban_time => '封禁时长（分钟）';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = 永久';
+  @override
+  String get anime_download_retry => '重试';
+  @override
+  String get anime_download_search_failed => '搜索失败或超时，请点重试';
+  @override
+  String get anime_download_subs_need_key => '在上方填写 Jimaku API key 后可搜字幕';
+  @override
+  String get anime_download_subs_failed => '字幕搜索失败，请点重试';
 }
 
 // Path: <root>
@@ -75768,6 +75922,16 @@ class _StringsZhHk extends _StringsEn {
   String get video_setting_torrent_ban_time => 'Ban duration (min)';
   @override
   String get video_setting_torrent_ban_time_hint => '0 = permanent';
+  @override
+  String get anime_download_retry => 'Retry';
+  @override
+  String get anime_download_search_failed =>
+      'Search failed or timed out. Tap retry.';
+  @override
+  String get anime_download_subs_need_key =>
+      'Enter a Jimaku API key above to search subtitles.';
+  @override
+  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
 }
 
 /// Flat map(s) containing all translations.
@@ -79897,6 +80061,14 @@ extension on _StringsEn {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -84024,6 +84196,14 @@ extension on _StringsAr {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -88172,6 +88352,14 @@ extension on _StringsDe {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -92319,6 +92507,14 @@ extension on _StringsEs {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -96472,6 +96668,14 @@ extension on _StringsFr {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -100607,6 +100811,14 @@ extension on _StringsId {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -104757,6 +104969,14 @@ extension on _StringsIt {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -108869,6 +109089,14 @@ extension on _StringsJa {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -112985,6 +113213,14 @@ extension on _StringsKo {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -117128,6 +117364,14 @@ extension on _StringsNl {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -121268,6 +121512,14 @@ extension on _StringsPtBr {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -125413,6 +125665,14 @@ extension on _StringsRu {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -129542,6 +129802,14 @@ extension on _StringsTh {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -133680,6 +133948,14 @@ extension on _StringsTr {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -137813,6 +138089,14 @@ extension on _StringsVi {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
@@ -141914,6 +142198,14 @@ extension on _StringsZhCn {
         return '封禁时长（分钟）';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = 永久';
+      case 'anime_download_retry':
+        return '重试';
+      case 'anime_download_search_failed':
+        return '搜索失败或超时，请点重试';
+      case 'anime_download_subs_need_key':
+        return '在上方填写 Jimaku API key 后可搜字幕';
+      case 'anime_download_subs_failed':
+        return '字幕搜索失败，请点重试';
       default:
         return null;
     }
@@ -146021,6 +146313,14 @@ extension on _StringsZhHk {
         return 'Ban duration (min)';
       case 'video_setting_torrent_ban_time_hint':
         return '0 = permanent';
+      case 'anime_download_retry':
+        return 'Retry';
+      case 'anime_download_search_failed':
+        return 'Search failed or timed out. Tap retry.';
+      case 'anime_download_subs_need_key':
+        return 'Enter a Jimaku API key above to search subtitles.';
+      case 'anime_download_subs_failed':
+        return 'Subtitle search failed. Tap retry.';
       default:
         return null;
     }
