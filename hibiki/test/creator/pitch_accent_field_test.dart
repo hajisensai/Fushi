@@ -126,27 +126,4 @@ void main() {
       expect(result.split('<svg').length, 3); // two SVGs
     });
   });
-
-  group('PitchAccentField.extraValuesFromMineFields', () {
-    test('extracts pitch positions and categories from mine fields', () {
-      final fields = {
-        'pitchPositions': '<svg>...</svg>',
-        'pitchCategories': 'heiban',
-      };
-
-      final result = PitchAccentField.extraValuesFromMineFields(fields);
-
-      expect(result[PitchAccentField.pitchPositionsExtraKey], '<svg>...</svg>');
-      expect(result[PitchAccentField.pitchCategoriesExtraKey], 'heiban');
-    });
-
-    test('missing keys default to empty strings', () {
-      final fields = <String, String>{};
-
-      final result = PitchAccentField.extraValuesFromMineFields(fields);
-
-      expect(result[PitchAccentField.pitchPositionsExtraKey], '');
-      expect(result[PitchAccentField.pitchCategoriesExtraKey], '');
-    });
-  });
 }

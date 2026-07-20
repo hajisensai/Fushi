@@ -10,15 +10,28 @@
 #define DIRECTSOUND_VERSION 0x0800
 #include <dsound.h>
 
+// C.2e Ren'Py/FFmpeg 捕获：按前缀（avcodec-54*/avformat-54*）枚举已加载模块用 Toolhelp 快照。
+#include <tlhelp32.h>
+
+// C.2f WASAPI loopback 兜底混音捕获（无引擎专属纯人声 hook 的游戏）。标准渲染端点 loopback，
+// 非 vtable hook。GUID 用 __uuidof（SDK 头对这些 coclass/接口带 uuid 属性），免链额外 GUID 库；
+// CoInitializeEx/CoCreateInstance/CoTaskMemFree 需 ole32.lib，用 #pragma 就地声明避免改 CMake。
+#include <mmdeviceapi.h>
+#include <audioclient.h>
+#pragma comment(lib, "ole32.lib")
+
 #include <MinHook.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <intrin.h>
 #include <string>
+#include <vector>
 
 #include "siglus_ovk.h"
+#include "siglus_text.h"
 #include "voice_hook_ipc.h"
 
 // C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
@@ -43,15 +56,35 @@
 namespace {
 
 using hibiki_voice_hook::kClipCount;
+using hibiki_voice_hook::kDiagStartupAudioHooksReady;
+using hibiki_voice_hook::kDiagSiglusExactTextHookReady;
+using hibiki_voice_hook::kDiagSiglusExactTextObserved;
+using hibiki_voice_hook::kDiagSiglusOvkHooksReady;
+using hibiki_voice_hook::kDiagKirikiriVoiceStreamDumped;
+using hibiki_voice_hook::kDiagKirikiriVoiceStreamHookReady;
+using hibiki_voice_hook::kDiagUnityIl2CppClipCaptured;
+using hibiki_voice_hook::kDiagUnityIl2CppGetDataRejected;
+using hibiki_voice_hook::kDiagUnityIl2CppHooksReady;
+using hibiki_voice_hook::kDiagUnityIl2CppPlaybackObserved;
+using hibiki_voice_hook::kDiagUnityNaninovelTextHookReady;
+using hibiki_voice_hook::kDiagUnityTmpTextHooksReady;
+using hibiki_voice_hook::kUnityBundlePathChars;
+using hibiki_voice_hook::kUnityClipNameChars;
+using hibiki_voice_hook::kUnityVoiceEventCount;
+using hibiki_voice_hook::kLoopbackMarkerCount;
 using hibiki_voice_hook::kSharedMagic;
 using hibiki_voice_hook::kSharedVersion;
 using hibiki_voice_hook::kTextSlotBytes;
 using hibiki_voice_hook::kTextSlotCount;
+using hibiki_voice_hook::kTextHookCodeChars;
+using hibiki_voice_hook::kTextHookNameChars;
+using hibiki_voice_hook::LoopbackMarker;
 using hibiki_voice_hook::ReadyEventName;
 using hibiki_voice_hook::SharedHeader;
 using hibiki_voice_hook::SharedMemoryName;
 using hibiki_voice_hook::TextSlot;
 using hibiki_voice_hook::VoiceClip;
+using hibiki_voice_hook::UnityVoiceEvent;
 
 HANDLE g_mapping = nullptr;
 SharedHeader* g_header = nullptr;
@@ -72,10 +105,19 @@ bool g_mh_init = false;
 uint8_t* g_text_base = nullptr;
 uint8_t* g_clip_base = nullptr;
 
+// ── C.2f loopback 区基址（HookWorker 按 header 偏移一次性缓存；loopback 线程独占写）──────────
+// g_lb_ring_base：loopback 混音环（16-bit PCM）。g_lb_marker_base：时间戳↔位置标记表。
+// g_lb_thread：独立 loopback 捕获线程句柄（停机时 join）。
+uint8_t* g_lb_ring_base = nullptr;
+uint8_t* g_lb_marker_base = nullptr;
+HANDLE g_lb_thread = nullptr;
+
 // MinHook 去重集：同一 SubmitSourceBuffer/CreateSourceVoice 实现常被多个实例共享同一 vtable，
 // 对同一函数地址只 MH_CreateHook 一次（重复 create 会报 MH_ERROR_ALREADY_CREATED）。
 CRITICAL_SECTION g_cs;
 bool g_cs_ready = false;
+CRITICAL_SECTION g_text_cs;
+bool g_text_cs_ready = false;
 void* g_hooked_fns[64] = {nullptr};
 int g_hooked_count = 0;
 
@@ -358,6 +400,655 @@ inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len,
   RecordVoiceClipFmt(ring_offset, byte_len, source_ptr, g_header->sample_rate,
                      g_header->channels, g_header->bits_per_sample,
                      g_header->is_float);
+}
+
+// ══ C.2e Unity IL2CPP AudioClip 资源捕获 ═══════════════════════════════════════
+// Unity 6 桌面播放器会在 UnityPlayer 内部直接混音并经 WASAPI 输出，不一定创建可见的
+// IXAudio2 source voice。对这种游戏，XAudio2/Loopback 都不是“游戏资源音频”。IL2CPP 仍会
+// 调 UnityEngine.AudioSource.Play/PlayOneShot；在这两个托管入口拿到当前 AudioClip，再通过
+// AudioClip.GetData 读取该资源的解码后 float PCM，写入和其它引擎相同的 clip 环。这样每条
+// VoiceClip 的 timestamp 就是实际播放调用时刻，能和 Luna 文本按时间戳一一配对。
+using Il2CppDomainGet = void* (*)();
+using Il2CppDomainGetAssemblies = const void** (*)(const void*, size_t*);
+using Il2CppAssemblyGetImage = const void* (*)(const void*);
+using Il2CppClassFromName = void* (*)(const void*, const char*, const char*);
+using Il2CppClassGetMethodFromName = const void* (*)(void*, const char*, int);
+using Il2CppClassGetMethods = const void* (*)(void*, void**);
+using Il2CppMethodGetName = const char* (*)(const void*);
+using Il2CppMethodGetParamCount = uint32_t (*)(const void*);
+using Il2CppMethodGetParam = const void* (*)(const void*, uint32_t);
+using Il2CppTypeGetName = char* (*)(const void*);
+using Il2CppFree = void (*)(void*);
+using Il2CppRuntimeInvoke = void* (*)(const void*, void*, void**, void**);
+using Il2CppArrayNew = void* (*)(void*, uintptr_t);
+using Il2CppObjectUnbox = void* (*)(void*);
+using Il2CppGetCorlib = const void* (*)();
+using Il2CppStringChars = const wchar_t* (*)(void*);
+using Il2CppStringLength = int (*)(void*);
+
+Il2CppRuntimeInvoke g_il2cpp_runtime_invoke = nullptr;
+Il2CppArrayNew g_il2cpp_array_new = nullptr;
+Il2CppObjectUnbox g_il2cpp_object_unbox = nullptr;
+Il2CppStringChars g_il2cpp_string_chars = nullptr;
+Il2CppStringLength g_il2cpp_string_length = nullptr;
+Il2CppClassGetMethods g_il2cpp_class_get_methods = nullptr;
+Il2CppMethodGetName g_il2cpp_method_get_name = nullptr;
+Il2CppMethodGetParamCount g_il2cpp_method_get_param_count = nullptr;
+Il2CppMethodGetParam g_il2cpp_method_get_param = nullptr;
+Il2CppTypeGetName g_il2cpp_type_get_name = nullptr;
+Il2CppFree g_il2cpp_free = nullptr;
+const void* g_unity_clip_get_samples = nullptr;
+const void* g_unity_clip_get_channels = nullptr;
+const void* g_unity_clip_get_frequency = nullptr;
+const void* g_unity_clip_get_data = nullptr;
+const void* g_unity_source_get_clip = nullptr;
+const void* g_unity_object_get_name = nullptr;
+void* g_system_single_class = nullptr;
+volatile LONG g_unity_capture_busy = 0;
+void* g_last_unity_clip = nullptr;
+ULONGLONG g_last_unity_clip_tick = 0;
+wchar_t g_last_unity_voice_bundle[kUnityBundlePathChars] = {0};
+
+using UnityAudioSourcePlay = void (*)(void*, const void*);
+using UnityAudioSourcePlayOneShot1 = void (*)(void*, void*, const void*);
+using UnityAudioSourcePlayOneShot2 = void (*)(void*, void*, float,
+                                               const void*);
+using UnityAudioSourceSetClip = void (*)(void*, void*, const void*);
+using UnityAudioSourcePlayScheduled = void (*)(void*, double, const void*);
+using UnityAudioSourcePlayDelayed = void (*)(void*, float, const void*);
+using UnityAudioSourcePlayHelper = void (*)(void*, uint64_t, const void*);
+using UnityAudioSourcePlayOneShotHelper = void (*)(void*, void*, float,
+                                                   const void*);
+using UnityAudioSourcePlayDelayedHelper = void (*)(void*, float,
+                                                   const void*);
+UnityAudioSourcePlay g_orig_UnityAudioSourcePlay = nullptr;
+UnityAudioSourcePlayOneShot1 g_orig_UnityAudioSourcePlayOneShot1 = nullptr;
+UnityAudioSourcePlayOneShot2 g_orig_UnityAudioSourcePlayOneShot2 = nullptr;
+UnityAudioSourceSetClip g_orig_UnityAudioSourceSetClip = nullptr;
+UnityAudioSourcePlayScheduled g_orig_UnityAudioSourcePlayScheduled = nullptr;
+UnityAudioSourcePlayDelayed g_orig_UnityAudioSourcePlayDelayed = nullptr;
+UnityAudioSourcePlayHelper g_orig_UnityAudioSourcePlayHelper = nullptr;
+UnityAudioSourcePlayOneShotHelper g_orig_UnityAudioSourcePlayOneShotHelper =
+    nullptr;
+UnityAudioSourcePlayDelayedHelper g_orig_UnityAudioSourcePlayDelayedHelper =
+    nullptr;
+using UnityTmpSetText = void (*)(void*, void*, const void*);
+UnityTmpSetText g_orig_UnityTmpSetText = nullptr;
+using UnityTmpSetText2 = void (*)(void*, void*, bool, const void*);
+UnityTmpSetText2 g_orig_UnityTmpSetText2 = nullptr;
+using NaninovelRevealableSetText = void (*)(void*, void*, const void*);
+NaninovelRevealableSetText g_orig_NaninovelRevealableSetText = nullptr;
+
+int InvokeUnityInt(const void* method, void* instance) {
+  if (method == nullptr || instance == nullptr ||
+      g_il2cpp_runtime_invoke == nullptr || g_il2cpp_object_unbox == nullptr) {
+    return 0;
+  }
+  void* exception = nullptr;
+  void* boxed = g_il2cpp_runtime_invoke(method, instance, nullptr, &exception);
+  if (boxed == nullptr || exception != nullptr) return 0;
+  void* value = g_il2cpp_object_unbox(boxed);
+  return value == nullptr ? 0 : *static_cast<int*>(value);
+}
+
+bool InvokeUnityBool(const void* method, void* instance, void** args) {
+  if (method == nullptr || instance == nullptr ||
+      g_il2cpp_runtime_invoke == nullptr || g_il2cpp_object_unbox == nullptr) {
+    return false;
+  }
+  void* exception = nullptr;
+  void* boxed = g_il2cpp_runtime_invoke(method, instance, args, &exception);
+  if (boxed == nullptr || exception != nullptr) return false;
+  void* value = g_il2cpp_object_unbox(boxed);
+  return value != nullptr && *static_cast<uint8_t*>(value) != 0;
+}
+
+bool CopyUnityClipName(void* clip, wchar_t* out, size_t out_chars) {
+  if (clip == nullptr || out == nullptr || out_chars == 0 ||
+      g_unity_object_get_name == nullptr || g_il2cpp_runtime_invoke == nullptr ||
+      g_il2cpp_string_chars == nullptr || g_il2cpp_string_length == nullptr) {
+    return false;
+  }
+  void* exception = nullptr;
+  void* string_object = g_il2cpp_runtime_invoke(
+      g_unity_object_get_name, clip, nullptr, &exception);
+  if (string_object == nullptr || exception != nullptr) return false;
+  const wchar_t* chars = g_il2cpp_string_chars(string_object);
+  const int length = g_il2cpp_string_length(string_object);
+  if (chars == nullptr || length <= 0) return false;
+  const size_t copy = (static_cast<size_t>(length) < out_chars - 1)
+                          ? static_cast<size_t>(length)
+                          : out_chars - 1;
+  memcpy(out, chars, copy * sizeof(wchar_t));
+  out[copy] = 0;
+  return true;
+}
+
+void RecordUnityTmpText(void* text_component, void* string_object,
+                        const char* hook_name, const wchar_t* hook_code) {
+  if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
+      text_component == nullptr || string_object == nullptr ||
+      g_il2cpp_string_chars == nullptr || g_il2cpp_string_length == nullptr) {
+    return;
+  }
+  const wchar_t* chars = g_il2cpp_string_chars(string_object);
+  const int source_length = g_il2cpp_string_length(string_object);
+  if (chars == nullptr || source_length <= 0) return;
+
+  // TMP 富文本标签不显示为正文；移除 <...> 后保存用户实际看到的文本。保留换行与标点，
+  // 由 component 指针充当线程 id，让 UI 像 Luna 一样选择“正文 TextMeshPro 组件”。
+  wchar_t clean[501] = {0};
+  int length = 0;
+  bool in_tag = false;
+  bool has_cjk = false;
+  int meaningful = 0;
+  for (int i = 0; i < source_length && length < 500; ++i) {
+    const wchar_t c = chars[i];
+    if (c == L'<') {
+      in_tag = true;
+      continue;
+    }
+    if (in_tag) {
+      if (c == L'>') in_tag = false;
+      continue;
+    }
+    clean[length++] = c;
+    if (c != L' ' && c != L'\t' && c != L'\r' && c != L'\n' && c >= 0x20) {
+      ++meaningful;
+      if (c >= 0x3000) has_cjk = true;
+    }
+  }
+  if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) return;
+
+  const LONGLONG reserved = InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(&g_header->text_write_count));
+  const uint64_t index = static_cast<uint64_t>(reserved) - 1;
+  uint8_t* slot = g_text_base +
+      static_cast<size_t>(index % kTextSlotCount) * kTextSlotBytes;
+  auto* text_slot = reinterpret_cast<TextSlot*>(slot);
+  memset(text_slot, 0, sizeof(TextSlot));
+  uint32_t byte_length = static_cast<uint32_t>(length) * sizeof(wchar_t);
+  uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
+  max_bytes -= max_bytes % sizeof(wchar_t);
+  if (byte_length > max_bytes) byte_length = max_bytes;
+  memcpy(slot + sizeof(TextSlot), clean, byte_length);
+  text_slot->timestamp_ms = GetTickCount64();
+  text_slot->byte_len = byte_length;
+  text_slot->is_utf8 = 0;
+  text_slot->thread_id = reinterpret_cast<uint64_t>(text_component);
+  text_slot->thread_context = reinterpret_cast<uint64_t>(text_component);
+  text_slot->process_id = GetCurrentProcessId();
+  text_slot->source_kind = hibiki_voice_hook::kTextSourceUnityTmp;
+  const size_t hook_name_capacity = sizeof(text_slot->hook_name) - 1;
+  const size_t hook_name_length =
+      hook_name == nullptr ? 0 : strnlen_s(hook_name, hook_name_capacity);
+  text_slot->hook_name_len = static_cast<uint32_t>(hook_name_length);
+  if (hook_name_length != 0) {
+    memcpy(text_slot->hook_name, hook_name, hook_name_length);
+  }
+  const size_t hook_code_capacity =
+      sizeof(text_slot->hook_code) / sizeof(wchar_t) - 1;
+  const size_t hook_code_length =
+      hook_code == nullptr ? 0 : wcsnlen_s(hook_code, hook_code_capacity);
+  text_slot->hook_code_len = static_cast<uint32_t>(hook_code_length);
+  if (hook_code_length != 0) {
+    memcpy(text_slot->hook_code, hook_code,
+           hook_code_length * sizeof(wchar_t));
+  }
+  MemoryBarrier();
+  text_slot->seq = static_cast<uint64_t>(reserved);
+  g_header->text_hooked = 1;
+}
+
+void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
+  if (g_header == nullptr || clip == nullptr) return;
+  wchar_t clip_name[kUnityClipNameChars] = {0};
+  if (!CopyUnityClipName(clip, clip_name, kUnityClipNameChars)) return;
+
+  wchar_t bundle_path[kUnityBundlePathChars] = {0};
+  if (g_cs_ready) {
+    EnterCriticalSection(&g_cs);
+    wcsncpy_s(bundle_path, g_last_unity_voice_bundle, _TRUNCATE);
+    LeaveCriticalSection(&g_cs);
+  }
+
+  const uint64_t index = static_cast<uint64_t>(InterlockedExchangeAdd64(
+      reinterpret_cast<volatile LONGLONG*>(
+          &g_header->unity_voice_write_count),
+      1));
+  UnityVoiceEvent* event =
+      &g_header->unity_voice_events[index % kUnityVoiceEventCount];
+  event->seq = 0;
+  event->timestamp_ms = timestamp_ms;
+  wcsncpy_s(event->clip_name, clip_name, _TRUNCATE);
+  wcsncpy_s(event->bundle_path, bundle_path, _TRUNCATE);
+  MemoryBarrier();
+  event->seq = index + 1;
+}
+
+void CaptureUnityAudioClip(void* source, void* clip) {
+  if (!g_capture_enabled || clip == nullptr || g_header == nullptr ||
+      g_system_single_class == nullptr || g_il2cpp_array_new == nullptr) {
+    return;
+  }
+  const ULONGLONG now = GetTickCount64();
+  // PlayOneShot(AudioClip) 的一参数包装会继续调用二参数重载；同一资源同一播放只写一次。
+  if (clip == g_last_unity_clip && now - g_last_unity_clip_tick < 100) return;
+  if (InterlockedCompareExchange(&g_unity_capture_busy, 1, 0) != 0) return;
+  g_header->hook_diagnostics |= kDiagUnityIl2CppPlaybackObserved;
+  RecordUnityVoiceResourceEvent(clip, now);
+  // Streaming AudioClip 的 GetData 会拒绝读取，但资源事件仍然有效。去重状态必须在这里
+  // 更新，否则 Unity 6 的 public 包装与内部 Helper 会为同一次播放各触发一次解析/转码。
+  g_last_unity_clip = clip;
+  g_last_unity_clip_tick = now;
+
+  const int samples = InvokeUnityInt(g_unity_clip_get_samples, clip);
+  const int channels = InvokeUnityInt(g_unity_clip_get_channels, clip);
+  const int frequency = InvokeUnityInt(g_unity_clip_get_frequency, clip);
+  const uint64_t value_count =
+      samples > 0 && channels > 0
+          ? static_cast<uint64_t>(samples) * static_cast<uint64_t>(channels)
+          : 0;
+  const uint64_t byte_count = value_count * sizeof(float);
+  // 跳过 BGM/整轨资源与异常元数据。角色单句上限取 120 秒；同时必须装得进共享音频环。
+  const bool sane = frequency >= 8000 && frequency <= 192000 &&
+                    channels >= 1 && channels <= 8 && samples > 0 &&
+                    static_cast<uint64_t>(samples) <=
+                        static_cast<uint64_t>(frequency) * 120 &&
+                    byte_count > 0 && byte_count <= g_ring_capacity;
+  if (sane) {
+    void* array = g_il2cpp_array_new(g_system_single_class,
+                                     static_cast<uintptr_t>(value_count));
+    if (array != nullptr) {
+      int offset_samples = 0;
+      void* args[2] = {array, &offset_samples};
+      if (InvokeUnityBool(g_unity_clip_get_data, clip, args)) {
+        // Il2CppArray = Il2CppObject(klass,monitor) + bounds + max_length；随后即 vector。
+        const auto* pcm = reinterpret_cast<const uint8_t*>(array) +
+                          sizeof(void*) * 4;
+        const uint32_t len = static_cast<uint32_t>(byte_count);
+        const uint32_t off = RingAppendVoice(pcm, len);
+        RecordVoiceClipFmt(off, len, reinterpret_cast<uint64_t>(source),
+                           static_cast<uint32_t>(frequency),
+                           static_cast<uint32_t>(channels), 32, 1);
+        if (InterlockedCompareExchange(&g_format_set, 1, 0) == 0) {
+          g_header->sample_rate = static_cast<uint32_t>(frequency);
+          g_header->channels = static_cast<uint32_t>(channels);
+          g_header->bits_per_sample = 32;
+          g_header->is_float = 1;
+          g_header->block_align = static_cast<uint32_t>(channels) * 4;
+        }
+        g_header->hook_diagnostics |= kDiagUnityIl2CppClipCaptured;
+      } else {
+        g_header->hook_diagnostics |= kDiagUnityIl2CppGetDataRejected;
+      }
+    }
+  } else {
+    g_header->hook_diagnostics |= kDiagUnityIl2CppGetDataRejected;
+  }
+  InterlockedExchange(&g_unity_capture_busy, 0);
+}
+
+void Detour_UnityAudioSourcePlay(void* self, const void* method) {
+  void* clip = nullptr;
+  if (g_il2cpp_runtime_invoke != nullptr && g_unity_source_get_clip != nullptr) {
+    void* exception = nullptr;
+    clip = g_il2cpp_runtime_invoke(g_unity_source_get_clip, self, nullptr,
+                                   &exception);
+    if (exception != nullptr) clip = nullptr;
+  }
+  CaptureUnityAudioClip(self, clip);
+  g_orig_UnityAudioSourcePlay(self, method);
+}
+
+void Detour_UnityAudioSourcePlayOneShot1(void* self, void* clip,
+                                         const void* method) {
+  CaptureUnityAudioClip(self, clip);
+  g_orig_UnityAudioSourcePlayOneShot1(self, clip, method);
+}
+
+void Detour_UnityAudioSourcePlayOneShot2(void* self, void* clip,
+                                         float volume_scale,
+                                         const void* method) {
+  CaptureUnityAudioClip(self, clip);
+  g_orig_UnityAudioSourcePlayOneShot2(self, clip, volume_scale, method);
+}
+
+void Detour_UnityAudioSourceSetClip(void* self, void* clip,
+                                    const void* method) {
+  g_orig_UnityAudioSourceSetClip(self, clip, method);
+  // Naninovel 的 voice player 复用 AudioSource：每句先 set_clip，随后直接走 UnityPlayer
+  // 内部的 scheduled play。资源在 set_clip 返回后已绑定，适合立即读取且时间戳仍紧邻台词。
+  CaptureUnityAudioClip(self, clip);
+}
+
+void Detour_UnityAudioSourcePlayScheduled(void* self, double time,
+                                          const void* method) {
+  void* clip = nullptr;
+  if (g_il2cpp_runtime_invoke != nullptr && g_unity_source_get_clip != nullptr) {
+    void* exception = nullptr;
+    clip = g_il2cpp_runtime_invoke(g_unity_source_get_clip, self, nullptr,
+                                   &exception);
+    if (exception != nullptr) clip = nullptr;
+  }
+  CaptureUnityAudioClip(self, clip);
+  g_orig_UnityAudioSourcePlayScheduled(self, time, method);
+}
+
+void Detour_UnityAudioSourcePlayDelayed(void* self, float delay,
+                                        const void* method) {
+  void* clip = nullptr;
+  if (g_il2cpp_runtime_invoke != nullptr && g_unity_source_get_clip != nullptr) {
+    void* exception = nullptr;
+    clip = g_il2cpp_runtime_invoke(g_unity_source_get_clip, self, nullptr,
+                                   &exception);
+    if (exception != nullptr) clip = nullptr;
+  }
+  CaptureUnityAudioClip(self, clip);
+  g_orig_UnityAudioSourcePlayDelayed(self, delay, method);
+}
+
+// Unity 6 的 IL2CPP 会把 AudioSource.Play/PlayOneShot 的薄托管包装内联，调用方可能
+// 完全绕过上面的 public 方法入口。内部 Helper 才是所有重载最终汇合的位置；Naninovel
+// 的流式 voice 正是走这条链。这里同时 hook Helper，确保角色语音也产生资源事件。
+void Detour_UnityAudioSourcePlayHelper(void* source, uint64_t delay,
+                                       const void* method) {
+  void* clip = nullptr;
+  if (g_il2cpp_runtime_invoke != nullptr && g_unity_source_get_clip != nullptr) {
+    void* exception = nullptr;
+    clip = g_il2cpp_runtime_invoke(g_unity_source_get_clip, source, nullptr,
+                                   &exception);
+    if (exception != nullptr) clip = nullptr;
+  }
+  CaptureUnityAudioClip(source, clip);
+  g_orig_UnityAudioSourcePlayHelper(source, delay, method);
+}
+
+void Detour_UnityAudioSourcePlayOneShotHelper(void* source, void* clip,
+                                              float volume_scale,
+                                              const void* method) {
+  CaptureUnityAudioClip(source, clip);
+  g_orig_UnityAudioSourcePlayOneShotHelper(source, clip, volume_scale, method);
+}
+
+void Detour_UnityAudioSourcePlayDelayedHelper(void* source, float delay,
+                                              const void* method) {
+  void* clip = nullptr;
+  if (g_il2cpp_runtime_invoke != nullptr && g_unity_source_get_clip != nullptr) {
+    void* exception = nullptr;
+    clip = g_il2cpp_runtime_invoke(g_unity_source_get_clip, source, nullptr,
+                                   &exception);
+    if (exception != nullptr) clip = nullptr;
+  }
+  CaptureUnityAudioClip(source, clip);
+  g_orig_UnityAudioSourcePlayDelayedHelper(source, delay, method);
+}
+
+void Detour_UnityTmpSetText(void* self, void* text, const void* method) {
+  g_orig_UnityTmpSetText(self, text, method);
+  RecordUnityTmpText(self, text, "Unity TMP_Text",
+                     L"TMPro.TMP_Text.set_text");
+}
+
+void Detour_UnityTmpSetText2(void* self, void* text, bool sync_input_box,
+                            const void* method) {
+  g_orig_UnityTmpSetText2(self, text, sync_input_box, method);
+  RecordUnityTmpText(self, text, "Unity TMP_Text",
+                     L"TMPro.TMP_Text.SetText(string,bool)");
+}
+
+void Detour_NaninovelRevealableSetText(void* self, void* text,
+                                       const void* method) {
+  g_orig_NaninovelRevealableSetText(self, text, method);
+  RecordUnityTmpText(self, text, "Naninovel RevealableText",
+                     L"Naninovel.UI.RevealableText.set_Text");
+}
+
+void* Il2CppMethodPointer(const void* method) {
+  return method == nullptr ? nullptr
+                           : *reinterpret_cast<void* const*>(method);
+}
+
+bool Il2CppMethodHasParams(const void* method,
+                           const char* const* expected,
+                           uint32_t count) {
+  if (method == nullptr || g_il2cpp_method_get_param_count == nullptr ||
+      g_il2cpp_method_get_param == nullptr || g_il2cpp_type_get_name == nullptr ||
+      g_il2cpp_free == nullptr ||
+      g_il2cpp_method_get_param_count(method) != count) {
+    return false;
+  }
+  for (uint32_t i = 0; i < count; ++i) {
+    const void* type = g_il2cpp_method_get_param(method, i);
+    char* name = type == nullptr ? nullptr : g_il2cpp_type_get_name(type);
+    const bool matches = name != nullptr && strcmp(name, expected[i]) == 0;
+    if (name != nullptr) g_il2cpp_free(name);
+    if (!matches) return false;
+  }
+  return true;
+}
+
+const void* FindIl2CppMethod(void* klass, const char* method_name,
+                             const char* const* expected,
+                             uint32_t count) {
+  if (klass == nullptr || method_name == nullptr ||
+      g_il2cpp_class_get_methods == nullptr ||
+      g_il2cpp_method_get_name == nullptr) {
+    return nullptr;
+  }
+  void* iterator = nullptr;
+  while (const void* method =
+             g_il2cpp_class_get_methods(klass, &iterator)) {
+    const char* name = g_il2cpp_method_get_name(method);
+    if (name != nullptr && strcmp(name, method_name) == 0 &&
+        Il2CppMethodHasParams(method, expected, count)) {
+      return method;
+    }
+  }
+  return nullptr;
+}
+
+bool TryHookUnityIl2CppAudio() {
+  const bool audio_ready =
+      g_orig_UnityAudioSourcePlay != nullptr ||
+      g_orig_UnityAudioSourcePlayOneShot1 != nullptr ||
+      g_orig_UnityAudioSourcePlayOneShot2 != nullptr ||
+      g_orig_UnityAudioSourceSetClip != nullptr ||
+      g_orig_UnityAudioSourcePlayScheduled != nullptr ||
+      g_orig_UnityAudioSourcePlayDelayed != nullptr;
+  const bool text_ready =
+      (g_orig_UnityTmpSetText != nullptr &&
+       g_orig_UnityTmpSetText2 != nullptr) ||
+      g_orig_NaninovelRevealableSetText != nullptr;
+  if (audio_ready && text_ready) {
+    return true;
+  }
+  HMODULE game = GetModuleHandleW(L"GameAssembly.dll");
+  if (game == nullptr) return false;
+  const auto domain_get = reinterpret_cast<Il2CppDomainGet>(
+      GetProcAddress(game, "il2cpp_domain_get"));
+  const auto domain_get_assemblies = reinterpret_cast<Il2CppDomainGetAssemblies>(
+      GetProcAddress(game, "il2cpp_domain_get_assemblies"));
+  const auto assembly_get_image = reinterpret_cast<Il2CppAssemblyGetImage>(
+      GetProcAddress(game, "il2cpp_assembly_get_image"));
+  const auto class_from_name = reinterpret_cast<Il2CppClassFromName>(
+      GetProcAddress(game, "il2cpp_class_from_name"));
+  const auto class_get_method = reinterpret_cast<Il2CppClassGetMethodFromName>(
+      GetProcAddress(game, "il2cpp_class_get_method_from_name"));
+  const auto get_corlib = reinterpret_cast<Il2CppGetCorlib>(
+      GetProcAddress(game, "il2cpp_get_corlib"));
+  g_il2cpp_runtime_invoke = reinterpret_cast<Il2CppRuntimeInvoke>(
+      GetProcAddress(game, "il2cpp_runtime_invoke"));
+  g_il2cpp_array_new = reinterpret_cast<Il2CppArrayNew>(
+      GetProcAddress(game, "il2cpp_array_new"));
+  g_il2cpp_object_unbox = reinterpret_cast<Il2CppObjectUnbox>(
+      GetProcAddress(game, "il2cpp_object_unbox"));
+  g_il2cpp_string_chars = reinterpret_cast<Il2CppStringChars>(
+      GetProcAddress(game, "il2cpp_string_chars"));
+  g_il2cpp_string_length = reinterpret_cast<Il2CppStringLength>(
+      GetProcAddress(game, "il2cpp_string_length"));
+  g_il2cpp_class_get_methods = reinterpret_cast<Il2CppClassGetMethods>(
+      GetProcAddress(game, "il2cpp_class_get_methods"));
+  g_il2cpp_method_get_name = reinterpret_cast<Il2CppMethodGetName>(
+      GetProcAddress(game, "il2cpp_method_get_name"));
+  g_il2cpp_method_get_param_count =
+      reinterpret_cast<Il2CppMethodGetParamCount>(
+          GetProcAddress(game, "il2cpp_method_get_param_count"));
+  g_il2cpp_method_get_param = reinterpret_cast<Il2CppMethodGetParam>(
+      GetProcAddress(game, "il2cpp_method_get_param"));
+  g_il2cpp_type_get_name = reinterpret_cast<Il2CppTypeGetName>(
+      GetProcAddress(game, "il2cpp_type_get_name"));
+  g_il2cpp_free = reinterpret_cast<Il2CppFree>(
+      GetProcAddress(game, "il2cpp_free"));
+  if (domain_get == nullptr || domain_get_assemblies == nullptr ||
+      assembly_get_image == nullptr || class_from_name == nullptr ||
+      class_get_method == nullptr || get_corlib == nullptr ||
+      g_il2cpp_runtime_invoke == nullptr || g_il2cpp_array_new == nullptr ||
+      g_il2cpp_object_unbox == nullptr || g_il2cpp_string_chars == nullptr ||
+      g_il2cpp_string_length == nullptr ||
+      g_il2cpp_class_get_methods == nullptr ||
+      g_il2cpp_method_get_name == nullptr ||
+      g_il2cpp_method_get_param_count == nullptr ||
+      g_il2cpp_method_get_param == nullptr ||
+      g_il2cpp_type_get_name == nullptr || g_il2cpp_free == nullptr) {
+    return false;
+  }
+
+  void* source_class = nullptr;
+  void* clip_class = nullptr;
+  void* object_class = nullptr;
+  void* tmp_text_class = nullptr;
+  void* naninovel_revealable_text_class = nullptr;
+  size_t assembly_count = 0;
+  const void** assemblies = domain_get_assemblies(domain_get(), &assembly_count);
+  for (size_t i = 0; i < assembly_count; ++i) {
+    const void* image = assembly_get_image(assemblies[i]);
+    if (image == nullptr) continue;
+    if (source_class == nullptr) {
+      source_class = class_from_name(image, "UnityEngine", "AudioSource");
+    }
+    if (clip_class == nullptr) {
+      clip_class = class_from_name(image, "UnityEngine", "AudioClip");
+    }
+    if (object_class == nullptr) {
+      object_class = class_from_name(image, "UnityEngine", "Object");
+    }
+    if (tmp_text_class == nullptr) {
+      tmp_text_class = class_from_name(image, "TMPro", "TMP_Text");
+    }
+    if (naninovel_revealable_text_class == nullptr) {
+      naninovel_revealable_text_class =
+          class_from_name(image, "Naninovel.UI", "RevealableText");
+    }
+  }
+  const void* corlib = get_corlib();
+  g_system_single_class =
+      corlib == nullptr ? nullptr
+                        : class_from_name(corlib, "System", "Single");
+  if (source_class == nullptr || clip_class == nullptr || object_class == nullptr ||
+      g_system_single_class == nullptr) {
+    return false;
+  }
+
+  g_unity_clip_get_samples =
+      class_get_method(clip_class, "get_samples", 0);
+  g_unity_clip_get_channels =
+      class_get_method(clip_class, "get_channels", 0);
+  g_unity_clip_get_frequency =
+      class_get_method(clip_class, "get_frequency", 0);
+  g_unity_clip_get_data = class_get_method(clip_class, "GetData", 2);
+  g_unity_source_get_clip = class_get_method(source_class, "get_clip", 0);
+  g_unity_object_get_name = class_get_method(object_class, "get_name", 0);
+  if (g_unity_clip_get_samples == nullptr ||
+      g_unity_clip_get_channels == nullptr ||
+      g_unity_clip_get_frequency == nullptr ||
+      g_unity_clip_get_data == nullptr || g_unity_source_get_clip == nullptr ||
+      g_unity_object_get_name == nullptr) {
+    return false;
+  }
+
+  bool any = false;
+  const void* play = class_get_method(source_class, "Play", 0);
+  const void* one_shot_1 = class_get_method(source_class, "PlayOneShot", 1);
+  const void* one_shot_2 = class_get_method(source_class, "PlayOneShot", 2);
+  const void* set_clip = class_get_method(source_class, "set_clip", 1);
+  const void* play_scheduled =
+      class_get_method(source_class, "PlayScheduled", 1);
+  const void* play_delayed = class_get_method(source_class, "PlayDelayed", 1);
+  const void* play_helper = class_get_method(source_class, "PlayHelper", 2);
+  const void* one_shot_helper =
+      class_get_method(source_class, "PlayOneShotHelper", 3);
+  const void* play_delayed_helper =
+      class_get_method(source_class, "PlayDelayedHelper", 2);
+  any |= HookFn(Il2CppMethodPointer(play),
+                reinterpret_cast<void*>(&Detour_UnityAudioSourcePlay),
+                reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlay));
+  any |= HookFn(
+      Il2CppMethodPointer(one_shot_1),
+      reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayOneShot1),
+      reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayOneShot1));
+  any |= HookFn(
+      Il2CppMethodPointer(one_shot_2),
+      reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayOneShot2),
+      reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayOneShot2));
+  any |= HookFn(Il2CppMethodPointer(set_clip),
+                reinterpret_cast<void*>(&Detour_UnityAudioSourceSetClip),
+                reinterpret_cast<void**>(&g_orig_UnityAudioSourceSetClip));
+  any |= HookFn(Il2CppMethodPointer(play_scheduled),
+                reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayScheduled),
+                reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayScheduled));
+  any |= HookFn(Il2CppMethodPointer(play_delayed),
+                reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayDelayed),
+                reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayDelayed));
+  any |= HookFn(Il2CppMethodPointer(play_helper),
+                reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayHelper),
+                reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayHelper));
+  any |= HookFn(
+      Il2CppMethodPointer(one_shot_helper),
+      reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayOneShotHelper),
+      reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayOneShotHelper));
+  any |= HookFn(
+      Il2CppMethodPointer(play_delayed_helper),
+      reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayDelayedHelper),
+      reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayDelayedHelper));
+  bool tmp_text_ready = false;
+  if (tmp_text_class != nullptr) {
+    const char* property_params[] = {"System.String"};
+    const char* method_params[] = {"System.String", "System.Boolean"};
+    const void* set_text = FindIl2CppMethod(
+        tmp_text_class, "set_text", property_params, 1);
+    const void* set_text_2 = FindIl2CppMethod(
+        tmp_text_class, "SetText", method_params, 2);
+    const bool property_ready = HookFn(
+        Il2CppMethodPointer(set_text),
+        reinterpret_cast<void*>(&Detour_UnityTmpSetText),
+        reinterpret_cast<void**>(&g_orig_UnityTmpSetText));
+    const bool method_ready = HookFn(
+        Il2CppMethodPointer(set_text_2),
+        reinterpret_cast<void*>(&Detour_UnityTmpSetText2),
+        reinterpret_cast<void**>(&g_orig_UnityTmpSetText2));
+    tmp_text_ready = property_ready && method_ready;
+  }
+  bool naninovel_text_ready = false;
+  if (naninovel_revealable_text_class != nullptr) {
+    const char* text_params[] = {"System.String"};
+    const void* set_text = FindIl2CppMethod(
+        naninovel_revealable_text_class, "set_Text", text_params, 1);
+    naninovel_text_ready = HookFn(
+        Il2CppMethodPointer(set_text),
+        reinterpret_cast<void*>(&Detour_NaninovelRevealableSetText),
+        reinterpret_cast<void**>(&g_orig_NaninovelRevealableSetText));
+  }
+  if (any && g_header != nullptr) {
+    g_header->hook_diagnostics |= kDiagUnityIl2CppHooksReady;
+  }
+  if (tmp_text_ready && g_header != nullptr) {
+    g_header->hook_diagnostics |= kDiagUnityTmpTextHooksReady;
+  }
+  if (naninovel_text_ready && g_header != nullptr) {
+    g_header->hook_diagnostics |= kDiagUnityNaninovelTextHookReady;
+  }
+  return any && (tmp_text_ready || naninovel_text_ready);
 }
 
 // ── C.2 detour：IXAudio2SourceVoice::SubmitSourceBuffer ──────────────────────
@@ -652,7 +1343,6 @@ void TryHookDirectSoundCreate() {
 constexpr size_t kSiglusPathChars = 520;
 constexpr int kSiglusHandleSlots = 32;
 constexpr int kSiglusTaskSlots = 32;
-constexpr uint32_t kDiagSiglusHooksReady = 0x10000000u;
 constexpr uint32_t kDiagSiglusOvkOpened = 0x20000000u;
 constexpr uint32_t kDiagSiglusVoiceQueued = 0x40000000u;
 constexpr uint32_t kDiagSiglusVoiceDumped = 0x80000000u;
@@ -687,6 +1377,29 @@ bool HasOvkSuffix(const char* path) {
   if (path == nullptr) return false;
   const size_t len = strlen(path);
   return len >= 4 && _stricmp(path + len - 4, ".ovk") == 0;
+}
+
+bool ContainsInsensitive(const wchar_t* text, const wchar_t* needle) {
+  if (text == nullptr || needle == nullptr || *needle == 0) return false;
+  const size_t needle_len = wcslen(needle);
+  for (const wchar_t* p = text; *p != 0; ++p) {
+    if (_wcsnicmp(p, needle, needle_len) == 0) return true;
+  }
+  return false;
+}
+
+bool IsUnityVoiceBundle(const wchar_t* path) {
+  if (path == nullptr) return false;
+  const size_t len = wcslen(path);
+  return len >= 7 && _wcsicmp(path + len - 7, L".bundle") == 0 &&
+         ContainsInsensitive(path, L"voice");
+}
+
+void RememberUnityVoiceBundle(const wchar_t* path) {
+  if (!IsUnityVoiceBundle(path) || !g_cs_ready) return;
+  EnterCriticalSection(&g_cs);
+  wcsncpy_s(g_last_unity_voice_bundle, path, _TRUNCATE);
+  LeaveCriticalSection(&g_cs);
 }
 
 void RememberSiglusOvk(HANDLE handle, const wchar_t* path) {
@@ -751,6 +1464,7 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   if (result != INVALID_HANDLE_VALUE && HasOvkSuffix(file_name)) {
     RememberSiglusOvk(result, file_name);
   }
+  if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
 
@@ -768,6 +1482,12 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
     const int converted = MultiByteToWideChar(CP_ACP, 0, file_name, -1, wide,
                                                kSiglusPathChars);
     if (converted > 0) RememberSiglusOvk(result, wide);
+  }
+  if (result != INVALID_HANDLE_VALUE && file_name != nullptr) {
+    wchar_t wide[kUnityBundlePathChars] = {0};
+    const int converted = MultiByteToWideChar(
+        CP_ACP, 0, file_name, -1, wide, kUnityBundlePathChars);
+    if (converted > 0) RememberUnityVoiceBundle(wide);
   }
   return result;
 }
@@ -917,7 +1637,7 @@ bool IsSiglusEngine() {
 }
 
 bool TryHookSiglusOvk() {
-  if (!IsSiglusEngine()) return true;
+  const bool siglus = IsSiglusEngine();
   // Windows 10/11 上 kernel32 的文件 API 是 forwarder；MinHook 不能对那段转发桩建 trampoline。
   // 游戏 IAT 最终也落到 KernelBase 实现，故优先 hook KernelBase，旧系统再退 kernel32。
   HMODULE kernel = GetModuleHandleW(L"KernelBase.dll");
@@ -931,17 +1651,17 @@ bool TryHookSiglusOvk() {
       reinterpret_cast<void*>(GetProcAddress(kernel, "CreateFileA")),
       reinterpret_cast<void*>(&Detour_CreateFileA),
       reinterpret_cast<void**>(&g_orig_CreateFileA));
-  const bool read = HookFn(
+  const bool read = !siglus || HookFn(
       reinterpret_cast<void*>(GetProcAddress(kernel, "ReadFile")),
       reinterpret_cast<void*>(&Detour_ReadFile),
       reinterpret_cast<void**>(&g_orig_ReadFile));
-  const bool close = HookFn(
+  const bool close = !siglus || HookFn(
       reinterpret_cast<void*>(GetProcAddress(kernel, "CloseHandle")),
       reinterpret_cast<void*>(&Detour_CloseHandle),
       reinterpret_cast<void**>(&g_orig_CloseHandle));
   const bool ready = create_w && create_a && read && close;
-  if (ready && g_header != nullptr) {
-    g_header->reserved_luna |= kDiagSiglusHooksReady;
+  if (ready && siglus && g_header != nullptr) {
+    g_header->reserved_luna |= kDiagSiglusOvkHooksReady;
   }
   return ready;
 }
@@ -1571,7 +2291,8 @@ TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(const void* name, uint3
       if (ReadStreamAllGuarded(stream, &buf, &buf_len)) {
         WriteVoiceOgg(buf, buf_len, storage);
         free(buf);
-        g_header->reserved_luna |= 0x80000;  // diag: 命中并 dump 过一个 voice OGG
+        g_header->reserved_luna |=
+            kDiagKirikiriVoiceStreamDumped;  // 命中并 dump 过一个 voice OGG
       }
     }
   }
@@ -1669,7 +2390,10 @@ void InstallVoiceStreamHookWithExporter(ITVPFunctionExporter* exporter) {
   }
   if (HookFn(internal, reinterpret_cast<void*>(&Detour_TVPCreateBinaryStream),
              reinterpret_cast<void**>(&g_orig_TVPCreateStream))) {
-    if (g_header != nullptr) g_header->reserved_luna |= 0x20000;  // 内部函数定位成功并 hook
+    if (g_header != nullptr) {
+      g_header->reserved_luna |=
+          kDiagKirikiriVoiceStreamHookReady;  // 内部函数定位成功并 hook
+    }
   }
 }
 
@@ -1820,6 +2544,583 @@ bool TryHookKirikiriVoiceStream() { return true; }
 
 #endif  // _M_IX86
 
+// ══ C.2e Ren'Py / FFmpeg（libavcodec-54 / libavformat-54）纯人声捕获 ══════════════════
+// Ren'Py（测试 Sakura Swim Club）音频经独立 DLL 解码：avformat-54.dll 打开输入流、
+// avcodec-54.dll 解码。语音文件 url 常带 "voice" 或音频后缀（.ogg/.opus/.wav/.mp3…）。抓法与
+// KiriKiriZ OGG 那条同出口（%TEMP%\hibiki_gal_voice 落盘），只是这里抓的是**解码后 PCM**（Ren'Py
+// 不像 KiriKiri 有可 hook 的 wuvorbis/TVPCreateStream，只能落在 FFmpeg 解码链上）：
+//   avformat_open_input(ps,url,…)        -> url 命中语音则把 *ps（AVFormatContext*）登记为语音 ctx
+//   avformat_find_stream_info(ic,…)      -> 遍历 ic->streams[i]->codec（AVCodecContext*），读该音频
+//                                           流 sample_rate/channels 缓存，并登记 avctx→ctx 关联
+//   avcodec_decode_audio4(avctx,frame,…) -> avctx 命中语音关联 && *got_frame!=0 时，把 frame 解码
+//                                           PCM（交织/planar 合并、统一转 16-bit）累积进该 ctx 缓冲
+//   avformat_close_input / av_close_input_file -> 该 ctx 关闭时把累积 PCM 写成 WAV 落盘
+//
+// avctx↔语音 ctx 关联难点：AVCodecContext 不回指 AVFormatContext。解法＝在 find_stream_info 后遍历
+// fmt_ctx->streams[i]->codec，把这些 avctx 记进 avctx→ctx 表；decode 里按 avctx 查表命中即取该 ctx
+// 缓冲。sample_rate/channels 在 find_stream_info 时（结构里已填好）读一次并缓存，故 decode 热路径
+// **不再触碰 AVCodecContext 偏移**（只读可信度高的 AVFrame 早段字段）。
+//
+// ── 手工结构偏移（最易错点；据 FFmpeg n1.0 = libavcodec 54.59.100 源码逐字段核算）────────────────
+// 假设：目标 DLL 是**标准发行 FFmpeg 1.0**——LIBAVCODEC_VERSION_MAJOR=54 时全部 FF_API_* 废弃宏
+// 判真，故那些"废弃"字段仍占位（共约 24 字节在 AVCodecContext.sample_rate 之前）。若目标 DLL 用
+// -DFF_API_xxx=0 定制剥掉这些字段，sample_rate 会前移最多 24 字节（x86 落 412–436 / x64 落
+// 456–480）——这是全组件最高风险数。故 sample_rate/channels 一律 sanity 校验（rate∈[8000,192000]、
+// ch∈[1,8]），不过关即跳过该流（不落盘、绝不崩游戏）。AVFrame 早段（data/nb_samples/format）在
+// 整个 lavc-54 区间稳定，可信度高。全部读结构处 SEH + 判空兜底。
+// Ren'Py 的 python.exe 是 x86 —— x86 偏移为主目标；x64 仅为两架构编译对齐（lavc-54 x64 的 Ren'Py
+// 基本不存在），x64 偏移可信度更低但不影响主路径。
+#if defined(_M_IX86)
+constexpr size_t kAvfDataOff = 0;          // AVFrame.data[0]
+constexpr size_t kAvfExtDataOff = 64;      // AVFrame.extended_data
+constexpr size_t kAvfNbSamplesOff = 76;    // AVFrame.nb_samples
+constexpr size_t kAvfFormatOff = 80;       // AVFrame.format（enum AVSampleFormat）
+constexpr size_t kAvcSampleRateOff = 436;  // AVCodecContext.sample_rate（高风险，见上）
+constexpr size_t kAvcChannelsOff = 440;    // AVCodecContext.channels（高风险）
+constexpr size_t kAvfmtNbStreamsOff = 24;  // AVFormatContext.nb_streams
+constexpr size_t kAvfmtStreamsOff = 28;    // AVFormatContext.streams（AVStream**）
+constexpr size_t kAvsCodecOff = 8;         // AVStream.codec（AVCodecContext*）
+#else  // _M_X64
+constexpr size_t kAvfDataOff = 0;
+constexpr size_t kAvfExtDataOff = 96;
+constexpr size_t kAvfNbSamplesOff = 112;
+constexpr size_t kAvfFormatOff = 116;
+constexpr size_t kAvcSampleRateOff = 480;
+constexpr size_t kAvcChannelsOff = 484;
+constexpr size_t kAvfmtNbStreamsOff = 44;
+constexpr size_t kAvfmtStreamsOff = 48;
+constexpr size_t kAvsCodecOff = 8;
+#endif
+
+// AVSampleFormat：0..4 交织（U8/S16/S32/FLT/DBL），5..9 planar（U8P/S16P/S32P/FLTP/DBLP），10=NB。
+// planar 每声道一个平面（≤8 声道 data[c] 即平面，>8 走 extended_data）；交织全在 data[0]。
+
+// FFmpeg 函数原型（Win32 x86 = __cdecl；x64 单一 ABI，__cdecl 被忽略无害）。不含 FFmpeg 头（版本
+// 难对齐），全按 void* 透传，只在自家 detour 里按上面手工偏移解释结构。
+typedef int(__cdecl* avformat_open_input_t)(void** ps, const char* url, void* fmt,
+                                            void** options);
+typedef int(__cdecl* avformat_find_stream_info_t)(void* ic, void** options);
+typedef int(__cdecl* avcodec_decode_audio4_t)(void* avctx, void* frame,
+                                              int* got_frame_ptr, const void* avpkt);
+typedef void(__cdecl* avformat_close_input_t)(void** ps);
+typedef void(__cdecl* av_close_input_file_t)(void* ctx);
+
+avformat_open_input_t g_orig_avformat_open_input = nullptr;
+avformat_find_stream_info_t g_orig_avformat_find_stream_info = nullptr;
+avcodec_decode_audio4_t g_orig_avcodec_decode_audio4 = nullptr;
+avformat_close_input_t g_orig_avformat_close_input = nullptr;
+av_close_input_file_t g_orig_av_close_input_file = nullptr;
+
+// 语音 AVFormatContext 表（定长，避堆分配；pcm 累积缓冲懒分配、close 落盘后释放）。
+struct RenpyFmt {
+  void* fmt_ctx;          // AVFormatContext*；nullptr=空槽
+  uint32_t sample_rate;   // 该 ctx 音频流采样率（find_stream_info 缓存）
+  uint32_t channels;      // 声道数
+  uint8_t* pcm;           // 累积的 16-bit 交织 PCM（懒分配 kRenpyPcmCap）
+  uint32_t pcm_len;       // 已累积字节
+  uint32_t pcm_cap;       // 缓冲容量
+  wchar_t basename[128];  // 落盘文件名（从 url 取；url 空则 renpy_<ctx低32位>）
+};
+// avctx→ctx 关联表（find_stream_info 建，decode 查）。
+struct RenpyAvctx {
+  void* avctx;   // AVCodecContext*；nullptr=空
+  int fmt_slot;  // g_renpy_fmt 下标
+};
+constexpr int kMaxRenpyFmt = 64;
+constexpr int kMaxRenpyAvctx = 128;
+constexpr uint32_t kRenpyPcmCap = 8u * 1024u * 1024u;  // 单 ctx 累积上界（~43s 48k 立体声 16bit）
+RenpyFmt g_renpy_fmt[kMaxRenpyFmt] = {};
+RenpyAvctx g_renpy_avctx[kMaxRenpyAvctx] = {};
+CRITICAL_SECTION g_renpy_cs;  // 专用锁：三表查改（非音频混音回调，短临界区）
+bool g_renpy_cs_ready = false;
+
+// 按前缀（小写）枚举已加载模块，命中返回其 HMODULE。用于 "avcodec-54.dll" 精确找不到时兜住命名
+// 变体（仍限 major 54——偏移是 54 专属，别匹配到别的 major，否则用错偏移会读到垃圾）。
+HMODULE FindLoadedModuleByPrefix(const wchar_t* prefix_lower) {
+  HMODULE result = nullptr;
+  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
+                                         GetCurrentProcessId());
+  if (snap == INVALID_HANDLE_VALUE) return nullptr;
+  MODULEENTRY32W me;
+  me.dwSize = sizeof(me);
+  const size_t plen = wcslen(prefix_lower);
+  if (Module32FirstW(snap, &me)) {
+    do {
+      wchar_t name[MAX_MODULE_NAME32 + 1];
+      int i = 0;
+      for (; me.szModule[i] != 0 && i < MAX_MODULE_NAME32; i++) {
+        wchar_t c = me.szModule[i];
+        if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c - L'A' + L'a');
+        name[i] = c;
+      }
+      name[i] = 0;
+      if (wcsncmp(name, prefix_lower, plen) == 0) {
+        result = me.hModule;
+        break;
+      }
+    } while (Module32NextW(snap, &me));
+  }
+  CloseHandle(snap);
+  return result;
+}
+
+// url（char*，UTF-8/本地编码）是否语音：小写后先排 BGM/SE/music/sound，再命中 "voice"/"vo_" 或音频
+// 后缀。粗过滤即可——host 侧再按文本时间戳精配（与 KiriKiri OGG 同款「就近配对」）。
+bool IsVoiceUrl(const char* url) {
+  if (url == nullptr) return false;
+  char low[520];
+  size_t n = 0;
+  for (; url[n] != 0 && n + 1 < 520; n++) {
+    char c = url[n];
+    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    low[n] = c;
+  }
+  low[n] = 0;
+  if (n == 0) return false;
+  if (strstr(low, "bgm") != nullptr || strstr(low, "music") != nullptr ||
+      strstr(low, "sound") != nullptr || strstr(low, "/se/") != nullptr ||
+      strstr(low, "\\se\\") != nullptr || strstr(low, "se_") != nullptr) {
+    return false;  // 明显 BGM/环境音/音效
+  }
+  if (strstr(low, "voice") != nullptr || strstr(low, "/vo/") != nullptr ||
+      strstr(low, "vo_") != nullptr) {
+    return true;
+  }
+  static const char* kExts[] = {".ogg", ".opus", ".wav", ".mp3", ".wma", ".m4a", ".flac"};
+  for (const char* e : kExts) {
+    const size_t el = strlen(e);
+    if (n >= el && strcmp(low + n - el, e) == 0) return true;
+  }
+  return false;
+}
+
+// 从 url 取净化后的 basename 存进定长缓冲（url 空则 renpy_<ctx低32位>）。非音频回调，允许 Win32 调用。
+void MakeRenpyBaseName(const char* url, void* ctx, wchar_t* out, int out_cap) {
+  out[0] = 0;
+  wchar_t wide[520];
+  int wn = 0;
+  if (url != nullptr && url[0] != 0) {
+    wn = MultiByteToWideChar(CP_UTF8, 0, url, -1, wide, 520);
+    if (wn <= 0) wn = MultiByteToWideChar(CP_ACP, 0, url, -1, wide, 520);
+  }
+  if (wn <= 0) {
+    const unsigned low =
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(ctx) & 0xffffffffu);
+    static const wchar_t kHex[] = L"0123456789abcdef";
+    wchar_t tmp[16];
+    int t = 0;
+    tmp[t++] = L'r'; tmp[t++] = L'e'; tmp[t++] = L'n'; tmp[t++] = L'p'; tmp[t++] = L'y';
+    tmp[t++] = L'_';
+    for (int s = 28; s >= 0; s -= 4) tmp[t++] = kHex[(low >> s) & 0xfu];
+    tmp[t] = 0;
+    lstrcpynW(out, tmp, out_cap);
+    return;
+  }
+  const int len = lstrlenW(wide);
+  int pos = 0;
+  for (int i = len; i > 0; i--) {
+    if (wide[i - 1] == L'/' || wide[i - 1] == L'\\') {
+      pos = i;
+      break;
+    }
+  }
+  int o = 0;
+  for (int i = pos; wide[i] != 0 && o + 1 < out_cap; i++) {
+    wchar_t c = wide[i];
+    if (c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' ||
+        c == L'|') {
+      c = L'_';
+    }
+    out[o++] = c;
+  }
+  out[o] = 0;
+  if (o == 0) lstrcpynW(out, L"renpy", out_cap);
+}
+
+// 把累积的 16-bit 交织 PCM 写成 WAV。非热路径（close 时调一次），允许 std::wstring/文件 IO。
+void WriteRenpyWav(const uint8_t* pcm, uint32_t len, uint32_t rate, uint32_t channels,
+                   const wchar_t* basename) {
+  if (pcm == nullptr || len == 0 || rate == 0 || channels == 0) return;
+  wchar_t temp[MAX_PATH] = {0};
+  const DWORD n = GetTempPathW(MAX_PATH, temp);
+  if (n == 0 || n > MAX_PATH) return;
+  std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  CreateDirectoryW(dir.c_str(), nullptr);  // 已存在则失败无害（与 KiriKiri OGG 同目录）
+  std::wstring base =
+      (basename != nullptr && basename[0] != 0) ? std::wstring(basename) : L"renpy";
+  const size_t dot = base.find_last_of(L'.');
+  if (dot != std::wstring::npos) base = base.substr(0, dot);  // 去原扩展名，统一 .wav
+  if (base.empty()) base = L"renpy";
+  std::wstring file =
+      dir + L"\\" + std::to_wstring(GetTickCount64()) + L"_" + base + L".wav";
+  HANDLE fh = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (fh == INVALID_HANDLE_VALUE) return;
+  uint8_t hdr[44];
+  const uint32_t data_size = len;
+  const uint32_t riff_size = 36u + data_size;
+  const uint32_t fmt_size = 16u;
+  const uint16_t audio_fmt = 1u;  // PCM
+  const uint16_t ch16 = static_cast<uint16_t>(channels);
+  const uint32_t byte_rate = rate * channels * 2u;
+  const uint16_t block_align = static_cast<uint16_t>(channels * 2u);
+  const uint16_t bits = 16u;
+  memcpy(hdr + 0, "RIFF", 4);
+  memcpy(hdr + 4, &riff_size, 4);
+  memcpy(hdr + 8, "WAVE", 4);
+  memcpy(hdr + 12, "fmt ", 4);
+  memcpy(hdr + 16, &fmt_size, 4);
+  memcpy(hdr + 20, &audio_fmt, 2);
+  memcpy(hdr + 22, &ch16, 2);
+  memcpy(hdr + 24, &rate, 4);
+  memcpy(hdr + 28, &byte_rate, 4);
+  memcpy(hdr + 32, &block_align, 2);
+  memcpy(hdr + 34, &bits, 2);
+  memcpy(hdr + 36, "data", 4);
+  memcpy(hdr + 40, &data_size, 4);
+  DWORD written = 0;
+  WriteFile(fh, hdr, 44, &written, nullptr);
+  uint32_t off = 0;
+  while (off < len) {
+    const uint32_t chunk = (len - off > 0x100000u) ? 0x100000u : (len - off);
+    if (!WriteFile(fh, pcm + off, chunk, &written, nullptr) || written == 0) break;
+    off += written;
+  }
+  CloseHandle(fh);
+}
+
+// SEH 守卫读 AVFormatContext 的流表，把每个音频流的 avctx（sample_rate/channels 合法）缓存进 slot +
+// 登记 avctx→slot。只读结构、不调外部函数，纯 POD，可安全 __try。调用者持 g_renpy_cs。
+void RenpyRegisterStreamsGuarded(void* ic, int slot) {
+  __try {
+    const unsigned nb = *reinterpret_cast<unsigned*>(
+        reinterpret_cast<uint8_t*>(ic) + kAvfmtNbStreamsOff);
+    void** streams = *reinterpret_cast<void***>(
+        reinterpret_cast<uint8_t*>(ic) + kAvfmtStreamsOff);
+    if (streams == nullptr || nb == 0 || nb > 64) return;
+    for (unsigned i = 0; i < nb; i++) {
+      void* st = streams[i];
+      if (st == nullptr) continue;
+      void* avctx =
+          *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(st) + kAvsCodecOff);
+      if (avctx == nullptr) continue;
+      const int rate = *reinterpret_cast<int*>(
+          reinterpret_cast<uint8_t*>(avctx) + kAvcSampleRateOff);
+      const int ch = *reinterpret_cast<int*>(
+          reinterpret_cast<uint8_t*>(avctx) + kAvcChannelsOff);
+      if (rate < 8000 || rate > 192000 || ch < 1 || ch > 8) {
+        continue;  // 非音频流 / 偏移不对 → 跳过（不误抓、不崩）
+      }
+      if (g_renpy_fmt[slot].sample_rate == 0) {
+        g_renpy_fmt[slot].sample_rate = static_cast<uint32_t>(rate);
+        g_renpy_fmt[slot].channels = static_cast<uint32_t>(ch);
+      }
+      for (int k = 0; k < kMaxRenpyAvctx; k++) {
+        if (g_renpy_avctx[k].avctx == avctx) break;  // 已登记
+        if (g_renpy_avctx[k].avctx == nullptr) {
+          g_renpy_avctx[k].avctx = avctx;
+          g_renpy_avctx[k].fmt_slot = slot;
+          break;
+        }
+      }
+      if (g_header != nullptr) g_header->reserved_luna |= 0x80000000u;  // diag: 登记语音 avctx
+    }
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
+}
+
+// SEH 守卫读 AVFrame 解码 PCM，转 16-bit 交织累积进 slot 缓冲。纯 POD + malloc，可安全 __try。
+// 调用者持 g_renpy_cs。channels 用 slot 缓存值（find_stream_info 读到的真实声道），不再读 avctx。
+void RenpyAppendFrameGuarded(RenpyFmt* f, void* frame) {
+  __try {
+    const int nb = *reinterpret_cast<int*>(
+        reinterpret_cast<uint8_t*>(frame) + kAvfNbSamplesOff);
+    const int fmt = *reinterpret_cast<int*>(
+        reinterpret_cast<uint8_t*>(frame) + kAvfFormatOff);
+    if (nb <= 0 || nb > (1 << 20)) return;
+    if (fmt < 0 || fmt > 9) return;  // AV_SAMPLE_FMT_U8..DBLP
+    const uint32_t ch = f->channels;
+    if (ch < 1 || ch > 8) return;
+    int bps = 0;
+    bool planar = false;
+    switch (fmt) {
+      case 0: bps = 1; planar = false; break;  // U8
+      case 1: bps = 2; planar = false; break;  // S16
+      case 2: bps = 4; planar = false; break;  // S32
+      case 3: bps = 4; planar = false; break;  // FLT
+      case 4: bps = 8; planar = false; break;  // DBL
+      case 5: bps = 1; planar = true; break;   // U8P
+      case 6: bps = 2; planar = true; break;   // S16P
+      case 7: bps = 4; planar = true; break;   // S32P
+      case 8: bps = 4; planar = true; break;   // FLTP
+      case 9: bps = 8; planar = true; break;   // DBLP
+      default: return;
+    }
+    const size_t ptrsz = sizeof(void*);
+    const uint8_t* planes[8] = {nullptr};
+    if (planar) {
+      const uint8_t** ext = *reinterpret_cast<const uint8_t***>(
+          reinterpret_cast<uint8_t*>(frame) + kAvfExtDataOff);
+      for (uint32_t c = 0; c < ch; c++) {
+        const uint8_t* p = *reinterpret_cast<const uint8_t**>(
+            reinterpret_cast<uint8_t*>(frame) + kAvfDataOff +
+            static_cast<size_t>(c) * ptrsz);
+        if (p == nullptr && ext != nullptr) p = ext[c];  // >8 声道走 extended_data
+        if (p == nullptr) return;
+        planes[c] = p;
+      }
+    } else {
+      planes[0] = *reinterpret_cast<const uint8_t**>(
+          reinterpret_cast<uint8_t*>(frame) + kAvfDataOff);
+      if (planes[0] == nullptr) return;
+    }
+    if (f->pcm == nullptr) {
+      f->pcm = static_cast<uint8_t*>(malloc(kRenpyPcmCap));
+      if (f->pcm == nullptr) return;
+      f->pcm_cap = kRenpyPcmCap;
+      f->pcm_len = 0;
+    }
+    const uint32_t bytes_per_out_frame = ch * 2u;  // 16-bit 交织输出
+    const uint32_t room_frames = (f->pcm_cap - f->pcm_len) / bytes_per_out_frame;
+    if (room_frames == 0) return;  // 满（超长语音，防御性）；已积部分等 close 落盘
+    uint32_t frames = static_cast<uint32_t>(nb);
+    if (frames > room_frames) frames = room_frames;
+    int16_t* out = reinterpret_cast<int16_t*>(f->pcm + f->pcm_len);
+    for (uint32_t s = 0; s < frames; s++) {
+      for (uint32_t c = 0; c < ch; c++) {
+        const uint8_t* src = planar
+                                 ? planes[c] + static_cast<size_t>(s) * bps
+                                 : planes[0] + (static_cast<size_t>(s) * ch + c) * bps;
+        int16_t v = 0;
+        switch (fmt) {
+          case 0:
+          case 5: {  // U8 / U8P（无符号，中心 128）
+            const uint8_t u = *src;
+            v = static_cast<int16_t>((static_cast<int>(u) - 128) << 8);
+            break;
+          }
+          case 1:
+          case 6: {  // S16 / S16P
+            v = *reinterpret_cast<const int16_t*>(src);
+            break;
+          }
+          case 2:
+          case 7: {  // S32 / S32P
+            const int32_t x = *reinterpret_cast<const int32_t*>(src);
+            v = static_cast<int16_t>(x >> 16);
+            break;
+          }
+          case 3:
+          case 8: {  // FLT / FLTP
+            float fx = *reinterpret_cast<const float*>(src);
+            if (fx > 1.0f) {
+              fx = 1.0f;
+            } else if (fx < -1.0f) {
+              fx = -1.0f;
+            }
+            v = static_cast<int16_t>(fx * 32767.0f);
+            break;
+          }
+          case 4:
+          case 9: {  // DBL / DBLP
+            double dx = *reinterpret_cast<const double*>(src);
+            if (dx > 1.0) {
+              dx = 1.0;
+            } else if (dx < -1.0) {
+              dx = -1.0;
+            }
+            v = static_cast<int16_t>(dx * 32767.0);
+            break;
+          }
+          default:
+            break;
+        }
+        *out++ = v;
+      }
+    }
+    f->pcm_len += frames * bytes_per_out_frame;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
+}
+
+// ctx 关闭：从表摘出该 ctx 的累积 PCM（持锁清槽 + 清关联），再在锁外落盘 + 释放（避免文件 IO 持锁）。
+void RenpyCloseCtx(void* ctx) {
+  if (ctx == nullptr || !g_renpy_cs_ready) return;
+  uint8_t* pcm = nullptr;
+  uint32_t len = 0, rate = 0, ch = 0;
+  wchar_t base[128];
+  base[0] = 0;
+  EnterCriticalSection(&g_renpy_cs);
+  for (int i = 0; i < kMaxRenpyFmt; i++) {
+    if (g_renpy_fmt[i].fmt_ctx == ctx) {
+      pcm = g_renpy_fmt[i].pcm;
+      len = g_renpy_fmt[i].pcm_len;
+      rate = g_renpy_fmt[i].sample_rate;
+      ch = g_renpy_fmt[i].channels;
+      lstrcpynW(base, g_renpy_fmt[i].basename, 128);
+      g_renpy_fmt[i].fmt_ctx = nullptr;
+      g_renpy_fmt[i].pcm = nullptr;
+      g_renpy_fmt[i].pcm_len = 0;
+      g_renpy_fmt[i].pcm_cap = 0;
+      g_renpy_fmt[i].sample_rate = 0;
+      g_renpy_fmt[i].channels = 0;
+      g_renpy_fmt[i].basename[0] = 0;
+      for (int k = 0; k < kMaxRenpyAvctx; k++) {
+        if (g_renpy_avctx[k].avctx != nullptr && g_renpy_avctx[k].fmt_slot == i) {
+          g_renpy_avctx[k].avctx = nullptr;
+          g_renpy_avctx[k].fmt_slot = -1;
+        }
+      }
+      break;
+    }
+  }
+  LeaveCriticalSection(&g_renpy_cs);
+  if (pcm != nullptr) {
+    if (len > 0 && rate > 0 && ch > 0) {
+      WriteRenpyWav(pcm, len, rate, ch, base);
+      if (g_header != nullptr) g_header->reserved_luna |= 0x40000000;  // diag: 写出语音 WAV
+    }
+    free(pcm);
+  }
+}
+
+// -- detour: avformat_open_input --（url 命中语音则登记 ctx；basename 供落盘命名）
+int __cdecl Detour_avformat_open_input(void** ps, const char* url, void* fmt,
+                                       void** options) {
+  const int ret = g_orig_avformat_open_input(ps, url, fmt, options);
+  if (ret == 0 && ps != nullptr && *ps != nullptr && g_capture_enabled &&
+      g_renpy_cs_ready && IsVoiceUrl(url)) {
+    void* ctx = *ps;
+    wchar_t base[128];
+    MakeRenpyBaseName(url, ctx, base, 128);
+    EnterCriticalSection(&g_renpy_cs);
+    int slot = -1;
+    for (int i = 0; i < kMaxRenpyFmt; i++) {
+      if (g_renpy_fmt[i].fmt_ctx == nullptr) {
+        slot = i;
+        break;
+      }
+    }
+    if (slot >= 0) {
+      g_renpy_fmt[slot].fmt_ctx = ctx;
+      g_renpy_fmt[slot].sample_rate = 0;
+      g_renpy_fmt[slot].channels = 0;
+      g_renpy_fmt[slot].pcm = nullptr;
+      g_renpy_fmt[slot].pcm_len = 0;
+      g_renpy_fmt[slot].pcm_cap = 0;
+      lstrcpynW(g_renpy_fmt[slot].basename, base, 128);
+    }
+    LeaveCriticalSection(&g_renpy_cs);
+    if (g_header != nullptr) g_header->reserved_luna |= 0x10000000;  // diag: open_input 命中语音
+  }
+  // TODO（url 空/自定义 AVIOContext）：Ren'Py 若走内存 AVIOContext，url 可能为空，此处保守不登记
+  // （不误抓 BGM）；后续可靠 decode 端音频时长/特征兜底识别语音 ctx（当前先按有 url 的做）。
+  return ret;
+}
+
+// -- detour: avformat_find_stream_info --（流建好后遍历流表，登记语音 ctx 的音频 avctx + 格式）
+int __cdecl Detour_avformat_find_stream_info(void* ic, void** options) {
+  const int ret = g_orig_avformat_find_stream_info(ic, options);
+  if (ic != nullptr && g_capture_enabled && g_renpy_cs_ready) {
+    EnterCriticalSection(&g_renpy_cs);
+    int slot = -1;
+    for (int i = 0; i < kMaxRenpyFmt; i++) {
+      if (g_renpy_fmt[i].fmt_ctx == ic) {
+        slot = i;
+        break;
+      }
+    }
+    if (slot >= 0) RenpyRegisterStreamsGuarded(ic, slot);
+    LeaveCriticalSection(&g_renpy_cs);
+  }
+  return ret;
+}
+
+// -- detour: avcodec_decode_audio4 --（avctx 命中语音关联且解出帧时累积其 PCM）
+int __cdecl Detour_avcodec_decode_audio4(void* avctx, void* frame, int* got_frame_ptr,
+                                         const void* avpkt) {
+  const int ret = g_orig_avcodec_decode_audio4(avctx, frame, got_frame_ptr, avpkt);
+  if (g_capture_enabled && g_renpy_cs_ready && avctx != nullptr && frame != nullptr &&
+      got_frame_ptr != nullptr && *got_frame_ptr != 0) {
+    EnterCriticalSection(&g_renpy_cs);
+    int slot = -1;
+    for (int k = 0; k < kMaxRenpyAvctx; k++) {
+      if (g_renpy_avctx[k].avctx == avctx) {
+        slot = g_renpy_avctx[k].fmt_slot;
+        break;
+      }
+    }
+    if (slot >= 0 && slot < kMaxRenpyFmt && g_renpy_fmt[slot].fmt_ctx != nullptr) {
+      if (g_header != nullptr) {
+        g_header->reserved_luna |= 0x20000000;  // diag: decode 命中语音 ctx
+      }
+      RenpyAppendFrameGuarded(&g_renpy_fmt[slot], frame);
+    }
+    LeaveCriticalSection(&g_renpy_cs);
+  }
+  return ret;
+}
+
+// -- detour: avformat_close_input（AVFormatContext**，会置 *ps=NULL）--
+void __cdecl Detour_avformat_close_input(void** ps) {
+  void* ctx = (ps != nullptr) ? *ps : nullptr;  // 原函数会释放并置空，先取出
+  if (g_capture_enabled) RenpyCloseCtx(ctx);
+  g_orig_avformat_close_input(ps);
+}
+// -- detour: av_close_input_file（旧 API，AVFormatContext* 直接传）--
+void __cdecl Detour_av_close_input_file(void* ctx) {
+  if (g_capture_enabled) RenpyCloseCtx(ctx);
+  g_orig_av_close_input_file(ctx);
+}
+
+// 装 Ren'Py/FFmpeg 捕获 hook：avformat-54 的 open_input/find_stream_info/close_input(+av_close_input_file
+// 旧 API 兜底) 与 avcodec-54 的 decode_audio4。DLL 名精确找不到再按 "avcodec-54"/"avformat-54" 前缀枚举
+// （仍限 major 54）。未加载则跳过（非 Ren'Py 或注入时 FFmpeg 尚未载入）。幂等，静态标志各只装一次；
+// HookWorker 保活循环反复调直到装齐（Ren'Py 运行中注入时 FFmpeg DLL 通常已就绪）。
+bool TryHookRenpyAudio() {
+  static bool avformat_done = false;
+  static bool avcodec_done = false;
+  if (!avformat_done) {
+    HMODULE m = GetModuleHandleW(L"avformat-54.dll");
+    if (m == nullptr) m = FindLoadedModuleByPrefix(L"avformat-54");
+    if (m != nullptr) {
+      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_open_input")),
+             reinterpret_cast<void*>(&Detour_avformat_open_input),
+             reinterpret_cast<void**>(&g_orig_avformat_open_input));
+      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_find_stream_info")),
+             reinterpret_cast<void*>(&Detour_avformat_find_stream_info),
+             reinterpret_cast<void**>(&g_orig_avformat_find_stream_info));
+      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_close_input")),
+             reinterpret_cast<void*>(&Detour_avformat_close_input),
+             reinterpret_cast<void**>(&g_orig_avformat_close_input));
+      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "av_close_input_file")),
+             reinterpret_cast<void*>(&Detour_av_close_input_file),
+             reinterpret_cast<void**>(&g_orig_av_close_input_file));
+      if (g_orig_avformat_open_input != nullptr) {
+        avformat_done = true;
+        if (g_header != nullptr) {
+          g_header->reserved_luna |= 0x08000000;  // diag: avformat hook 装上
+        }
+      }
+    }
+  }
+  if (!avcodec_done) {
+    HMODULE m = GetModuleHandleW(L"avcodec-54.dll");
+    if (m == nullptr) m = FindLoadedModuleByPrefix(L"avcodec-54");
+    if (m != nullptr) {
+      if (HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avcodec_decode_audio4")),
+                 reinterpret_cast<void*>(&Detour_avcodec_decode_audio4),
+                 reinterpret_cast<void**>(&g_orig_avcodec_decode_audio4))) {
+        avcodec_done = true;
+        if (g_header != nullptr) {
+          g_header->reserved_luna |= 0x08000000;  // diag: avcodec hook 装上
+        }
+      }
+    }
+  }
+  return avformat_done && avcodec_done;
+}
+
 // == wen ben hook (grab dialogue text) ==
 // 覆盖 GDI 文本渲染 API（galgame 经典 hook 面）：GetGlyphOutlineW 逐字形渲染逐字累积成行，
 // ExtTextOutW/TextOutW/DrawTextW 整串直接成行；写进共享内存文本环供 host 消费。
@@ -1845,9 +3146,7 @@ ExtTextOutW_t g_orig_ExtTextOutW = nullptr;
 TextOutW_t g_orig_TextOutW = nullptr;
 DrawTextW_t g_orig_DrawTextW = nullptr;
 
-// 文本累积/去重的锁与缓冲（与音频回调隔离，允许加锁）。
-CRITICAL_SECTION g_text_cs;
-bool g_text_cs_ready = false;
+// 文本累积/去重的锁与缓冲（与音频回调隔离，允许加锁；锁在全局捕获状态区声明）。
 constexpr int kMaxLineChars = 500;           // 一行台词上界（UTF-16 字符数）
 wchar_t g_glyph_buf[kMaxLineChars + 8];      // GetGlyphOutlineW 逐字累积缓冲
 int g_glyph_len = 0;                         // 当前累积字符数
@@ -1862,14 +3161,19 @@ int g_last_flushed_len = 0;
 // 原子写者交错时会互相覆盖计数、丢行或读到半写槽）。写序：原子占号 → 填文本字节 + 字段 →
 // **最后**写 seq=占到的号作完成标记（reader 校验 slot.seq==text_write_count 才取该槽；x86/x64
 // store 有序 TSO，前面的数据写对 reader 先于 seq 可见）。首次 flush 置 text_hooked=1。
-void WriteTextRingLocked(const wchar_t* text, int char_len) {
+void WriteTextRingEntryLocked(const wchar_t* text, int char_len,
+                              uint64_t thread_id, uint64_t thread_address,
+                              uint64_t thread_context, uint32_t source_kind,
+                              const char* hook_name,
+                              const wchar_t* hook_code) {
   if (g_text_base == nullptr || g_header == nullptr || char_len <= 0) {
     return;
   }
   // LunaHook（引擎精确、干净）一旦活跃，GDI 文本 hook 让位，不再写文本环——否则游戏为粗体/描边
   // 每字重画会让 GetGlyphOutlineW 累加出「ここのの」式伪影，与 LunaHook 干净行混在一起污染卡片。
   // GDI 仅在 LunaHook 覆盖不到的引擎（luna_active==0）时作兜底文本源。音频 hook 不看此标志。
-  if (g_header->luna_active != 0) {
+  if (source_kind == hibiki_voice_hook::kTextSourceGdi &&
+      g_header->luna_active != 0) {
     return;
   }
   // 原子预留唯一槽位：返回自增后的新值（=占到的 1 基序号，0 基 idx=reserved-1）。
@@ -1892,16 +3196,31 @@ void WriteTextRingLocked(const wchar_t* text, int char_len) {
   ts->timestamp_ms = GetTickCount64();
   ts->byte_len = byte_len;
   ts->is_utf8 = 0;                            // UTF-16LE
-  ts->thread_id = 1;                          // GDI 兜底统一为一条可选源
+  ts->thread_id = thread_id;
+  ts->thread_address = thread_address;
+  ts->thread_context = thread_context;
   ts->process_id = GetCurrentProcessId();
-  ts->source_kind = hibiki_voice_hook::kTextSourceGdi;
-  constexpr char kGdiHookName[] = "GDI fallback";
-  ts->hook_name_len = static_cast<uint32_t>(sizeof(kGdiHookName) - 1);
-  memcpy(ts->hook_name, kGdiHookName, sizeof(kGdiHookName));
+  ts->source_kind = source_kind;
+  if (hook_name != nullptr) {
+    const size_t name_len = strnlen_s(hook_name, kTextHookNameChars - 1);
+    ts->hook_name_len = static_cast<uint32_t>(name_len);
+    memcpy(ts->hook_name, hook_name, name_len);
+  }
+  if (hook_code != nullptr) {
+    const size_t code_len = wcsnlen_s(hook_code, kTextHookCodeChars - 1);
+    ts->hook_code_len = static_cast<uint32_t>(code_len);
+    memcpy(ts->hook_code, hook_code, code_len * sizeof(wchar_t));
+  }
   ts->seq = static_cast<uint64_t>(reserved);  // 完成标记，**最后**写
   if (g_header->text_hooked == 0) {
     g_header->text_hooked = 1;            // 首次 flush：文本 hook proof-of-life
   }
+}
+
+void WriteTextRingLocked(const wchar_t* text, int char_len) {
+  WriteTextRingEntryLocked(text, char_len, 1, 0, 0,
+                           hibiki_voice_hook::kTextSourceGdi,
+                           "GDI fallback", nullptr);
 }
 
 // 过滤 + 去重 + 写环（调用者持 g_text_cs）。过滤：跳空串/纯空白/纯 ASCII 控制；只保留含至少
@@ -1950,6 +3269,145 @@ void FlushGlyphAccumLocked() {
     g_glyph_len = 0;
   }
 }
+
+#if defined(_M_IX86)
+
+// Siglus 3 使用与 32 位 MSVC std::wstring 相同的 24-byte 小字符串布局。当前 Luna 的
+// EmbedSiglus2 也从该函数入口的 ECX 读取此对象；在引擎逻辑层拿整句可彻底避开 GDI
+// 描边/逐字重画造成的重复字与漏标点。
+struct SiglusTextUnionW {
+  union {
+    const wchar_t* text;
+    wchar_t chars[8];
+  } storage;
+  uint32_t size;
+  uint32_t capacity;
+};
+static_assert(sizeof(SiglusTextUnionW) == 24,
+              "Siglus TextUnionW layout changed");
+
+using SiglusExactTextFn = uintptr_t(__thiscall*)(SiglusTextUnionW* self);
+SiglusExactTextFn g_orig_SiglusExactText = nullptr;
+uintptr_t g_siglus_text_function_rva = 0;
+
+bool IsReadableSpan(const void* pointer, size_t bytes) {
+  if (pointer == nullptr || bytes == 0) return false;
+  uintptr_t cursor = reinterpret_cast<uintptr_t>(pointer);
+  const uintptr_t end = cursor + bytes;
+  if (end < cursor) return false;
+  while (cursor < end) {
+    MEMORY_BASIC_INFORMATION memory = {};
+    if (VirtualQuery(reinterpret_cast<const void*>(cursor), &memory,
+                     sizeof(memory)) != sizeof(memory) ||
+        memory.State != MEM_COMMIT ||
+        (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
+      return false;
+    }
+    const uintptr_t region_end =
+        reinterpret_cast<uintptr_t>(memory.BaseAddress) + memory.RegionSize;
+    if (region_end <= cursor) return false;
+    cursor = region_end;
+  }
+  return true;
+}
+
+const wchar_t* ReadSiglusText(const SiglusTextUnionW* value,
+                              uint32_t* length) {
+  if (length == nullptr ||
+      !IsReadableSpan(value, sizeof(SiglusTextUnionW)) || value->size == 0 ||
+      value->size > 1500 || value->size > value->capacity) {
+    return nullptr;
+  }
+  const wchar_t* text = value->capacity < 8 ? value->storage.chars
+                                             : value->storage.text;
+  const size_t bytes =
+      (static_cast<size_t>(value->size) + 1) * sizeof(wchar_t);
+  if (!IsReadableSpan(text, bytes) || text[value->size] != L'\0') {
+    return nullptr;
+  }
+  *length = value->size;
+  return text;
+}
+
+uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
+  uint32_t length = 0;
+  const wchar_t* text = ReadSiglusText(self, &length);
+  if (text != nullptr && g_capture_enabled && g_text_cs_ready) {
+    const uintptr_t module =
+        reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    const uintptr_t return_address =
+        reinterpret_cast<uintptr_t>(_ReturnAddress());
+    const uint64_t callsite_rva =
+        return_address >= module ? return_address - module : return_address;
+    // Luna 以 hook 地址 + caller context 区分文本线程。沿用同一粒度，名字/正文等不同
+    // caller 会出现在下拉框中，用户可像 Luna Translator 一样只选干净台词线程。
+    const uint64_t thread_id =
+        (static_cast<uint64_t>(g_siglus_text_function_rva) << 32) ^
+        callsite_rva;
+    wchar_t hook_code[kTextHookCodeChars] = {0};
+    _snwprintf_s(hook_code, kTextHookCodeChars, _TRUNCATE,
+                 L"EXBWX0@%llX:SiglusEngine.exe",
+                 static_cast<unsigned long long>(g_siglus_text_function_rva));
+
+    EnterCriticalSection(&g_text_cs);
+    WriteTextRingEntryLocked(
+        text, static_cast<int>(length), thread_id,
+        g_siglus_text_function_rva, callsite_rva,
+        hibiki_voice_hook::kTextSourceSiglus, "SiglusEngine exact", hook_code);
+    LeaveCriticalSection(&g_text_cs);
+    if (g_header != nullptr) {
+      g_header->luna_active = 1;  // 精确引擎文本已实锤，GDI 兜底从此让位。
+      g_header->hook_diagnostics |= kDiagSiglusExactTextObserved;
+    }
+  }
+  return g_orig_SiglusExactText(self);
+}
+
+bool TryHookSiglusExactText() {
+  if (!IsSiglusEngine()) return true;
+  if (g_orig_SiglusExactText != nullptr) return true;
+  HMODULE module = GetModuleHandleW(nullptr);
+  if (module == nullptr) return false;
+  const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
+  if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+  const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(
+      reinterpret_cast<const uint8_t*>(module) + dos->e_lfanew);
+  if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
+
+  const IMAGE_SECTION_HEADER* section = IMAGE_FIRST_SECTION(nt);
+  for (uint16_t i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+    if ((section[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) == 0) continue;
+    const size_t section_bytes = section[i].Misc.VirtualSize;
+    const auto* section_base = reinterpret_cast<const uint8_t*>(module) +
+                               section[i].VirtualAddress;
+    if (!IsReadableSpan(section_base, section_bytes)) continue;
+    const size_t offset = hibiki_voice_hook::siglus::FindExactTextFunctionOffset(
+        section_base, section_bytes);
+    if (offset == hibiki_voice_hook::siglus::kInvalidTextFunctionOffset) {
+      continue;
+    }
+    void* target = const_cast<uint8_t*>(section_base + offset);
+    g_siglus_text_function_rva =
+        static_cast<uintptr_t>(section[i].VirtualAddress) + offset;
+    if (!HookFn(target, reinterpret_cast<void*>(&Detour_SiglusExactText),
+                reinterpret_cast<void**>(&g_orig_SiglusExactText))) {
+      g_siglus_text_function_rva = 0;
+      return false;
+    }
+    if (g_header != nullptr) {
+      g_header->text_hooked = 1;
+      g_header->hook_diagnostics |= kDiagSiglusExactTextHookReady;
+    }
+    return true;
+  }
+  return false;
+}
+
+#else
+
+bool TryHookSiglusExactText() { return true; }
+
+#endif  // _M_IX86
 
 // -- detour: GetGlyphOutlineW（gdi32，galgame 最经典逐字形文本 hook）--
 // 多数 GDI VN 逐字渲染字形经此。uChar 是当前渲染字符：逐字累积成行，用**时间空隙**判行界
@@ -2069,10 +3527,252 @@ bool SignalReady(DWORD pid) {
 }
 
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked/通知 injector -> 装捕获链。
+// ══ C.2f WASAPI loopback 兜底混音捕获 ════════════════════════════════════════════
+// 前述所有 hook（XAudio2/DirectSound/KiriKiri/Ren'Py/GDI 文本）覆盖不到的游戏（Atelier Kaguya、
+// 未识别引擎）音频走未 hook 的私有路径。此处**不** hook 任何 COM vtable，改用标准 WASAPI loopback
+// （AUDCLNT_STREAMFLAGS_LOOPBACK）从系统默认渲染端点抓**最终混音**（voice+BGM）——游戏在放音时，
+// loopback 抓到的就是它送扬声器的输出。制卡时按某句文本时间戳抽 [ts-100ms, ts+5000ms] 窗口即得
+// 该句混音（带 BGM，可闻人声）。抓的是**整个系统输出**——测试/使用时应只有目标游戏在放音。
+//
+// 独立线程（非音频回调）：可 CoInitialize/阻塞轮询，不受零阻塞红线约束；退出必须干净（g_stop
+// 通知退出、显式反序释放 COM/CoUninitialize）。混音格式常是 32-bit float（WAVEFORMATEXTENSIBLE），
+// 统一转 16-bit PCM 入 loopback 专用环（独立于 voice 环，避免与 XAudio2/DS/解码 clip 混淆）。
+
+// 混音源采样格式（GetMixFormat 解析一次）。混音端点几乎恒 float32；int16/int32 兜底；其它罕见
+// 格式（24-bit 等）判 unknown，按静音填 0 保持时间轴（诊断置位）。
+enum LbSrcFmt : int { kLbUnknown = 0, kLbFloat32 = 1, kLbInt16 = 2, kLbInt32 = 3 };
+
+// 解析混音 WAVEFORMATEX：填存储用 sample_rate/channels，返回源采样格式（同 MaybeRecordFormat 口径
+// 用 SubFormat.Data1 判 float/PCM，避免依赖 ksmedia.h 的 GUID 常量）。
+LbSrcFmt LbParseFormat(const WAVEFORMATEX* wf, uint32_t* rate, uint32_t* channels) {
+  if (wf == nullptr) {
+    return kLbUnknown;
+  }
+  *rate = wf->nSamplesPerSec;
+  *channels = wf->nChannels;
+  const WORD tag = wf->wFormatTag;
+  const WORD bits = wf->wBitsPerSample;
+  if (tag == WAVE_FORMAT_EXTENSIBLE &&
+      wf->cbSize >= sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+    const auto* ext = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(wf);
+    if (ext->SubFormat.Data1 == WAVE_FORMAT_IEEE_FLOAT && bits == 32) {
+      return kLbFloat32;
+    }
+    if (ext->SubFormat.Data1 == WAVE_FORMAT_PCM) {
+      if (bits == 16) return kLbInt16;
+      if (bits == 32) return kLbInt32;
+    }
+    return kLbUnknown;
+  }
+  if (tag == WAVE_FORMAT_IEEE_FLOAT && bits == 32) return kLbFloat32;
+  if (tag == WAVE_FORMAT_PCM && bits == 16) return kLbInt16;
+  if (tag == WAVE_FORMAT_PCM && bits == 32) return kLbInt32;
+  return kLbUnknown;
+}
+
+// 把一个 loopback 数据包的源 PCM 转 16-bit 交织写进 loopback 环（**单写者**=loopback 线程，无需
+// 原子）。silent=true（AUDCLNT_BUFFERFLAGS_SILENT）或 src 为空/未知格式时填 0 保持时间轴。
+// frames=每声道帧数，ch=声道数。scratch 复用避免每包分配（本线程非零阻塞红线，堆分配本可接受）。
+void LbConvertStore(const BYTE* src, uint32_t frames, uint32_t ch, LbSrcFmt src_fmt,
+                    bool silent, std::vector<int16_t>* scratch) {
+  if (g_lb_ring_base == nullptr || g_header == nullptr || frames == 0 || ch == 0) {
+    return;
+  }
+  const uint32_t samples = frames * ch;
+  scratch->resize(samples);
+  int16_t* out = scratch->data();
+  const bool zero_fill = silent || src == nullptr || src_fmt == kLbUnknown;
+  if (zero_fill) {
+    memset(out, 0, static_cast<size_t>(samples) * sizeof(int16_t));
+    if (src_fmt == kLbUnknown) {
+      g_header->loopback_diag |= 0x40;  // 未知混音格式，按静音填（保持时间轴，不误抓）
+    }
+  } else if (src_fmt == kLbFloat32) {
+    const float* f = reinterpret_cast<const float*>(src);
+    for (uint32_t i = 0; i < samples; i++) {
+      float v = f[i];
+      if (v > 1.0f) {
+        v = 1.0f;
+      } else if (v < -1.0f) {
+        v = -1.0f;
+      }
+      out[i] = static_cast<int16_t>(v * 32767.0f);
+    }
+  } else if (src_fmt == kLbInt16) {
+    memcpy(out, src, static_cast<size_t>(samples) * sizeof(int16_t));
+  } else {  // kLbInt32：取高 16 位
+    const int32_t* s = reinterpret_cast<const int32_t*>(src);
+    for (uint32_t i = 0; i < samples; i++) {
+      out[i] = static_cast<int16_t>(s[i] >> 16);
+    }
+  }
+  // 写入 loopback 环（单写者直接推进 total/write_pos；wrap 处理）。
+  const uint32_t cap = g_header->loopback_ring_capacity;
+  if (cap == 0) {
+    return;
+  }
+  uint32_t len = samples * static_cast<uint32_t>(sizeof(int16_t));
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(out);
+  if (len >= cap) {  // 单包超一整圈（不会发生，防御性）：只留最后 cap 字节。
+    data += (len - cap);
+    len = cap;
+  }
+  const uint64_t start = g_header->loopback_total_written;
+  const uint32_t at = static_cast<uint32_t>(start % cap);
+  const uint32_t first = (len <= cap - at) ? len : (cap - at);
+  memcpy(g_lb_ring_base + at, data, first);
+  if (len > first) {
+    memcpy(g_lb_ring_base, data + first, len - first);
+  }
+  g_header->loopback_total_written = start + len;
+  g_header->loopback_write_pos = static_cast<uint32_t>((start + len) % cap);
+  if (!zero_fill) {
+    g_header->loopback_diag |= 0x08;  // 捕获到非静音音频包
+  }
+}
+
+// 写一条时间戳↔位置标记（单写者）。填 tick/total 后**最后**写 seq 作完成标记，再自增计数。
+void LbWriteMarker() {
+  if (g_lb_marker_base == nullptr || g_header == nullptr) {
+    return;
+  }
+  const uint64_t idx = g_header->loopback_marker_count;  // 单写者：旧值即 0 基下标
+  const size_t off =
+      static_cast<size_t>(idx % kLoopbackMarkerCount) * sizeof(LoopbackMarker);
+  auto* m = reinterpret_cast<LoopbackMarker*>(g_lb_marker_base + off);
+  m->tick_ms = GetTickCount64();
+  m->total_written = g_header->loopback_total_written;
+  m->seq = idx + 1;                        // 完成标记，最后写
+  g_header->loopback_marker_count = idx + 1;  // 单调自增（reader 用它判有效范围）
+}
+
+// loopback 捕获线程：CoInitialize → 默认渲染端点 → IAudioClient loopback 初始化 → 轮询 GetBuffer
+// 转 16-bit 入环 + 每 ~200ms 记标记，直到 g_stop。退出反序释放 COM。全程判空 + HRESULT 门控，
+// 任一步失败即置诊断位、跳过后续、干净收尾（绝不崩游戏）。
+DWORD WINAPI LoopbackWorker(LPVOID) {
+  if (g_header == nullptr || g_lb_ring_base == nullptr) {
+    return 0;
+  }
+  const HRESULT hrco = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  const bool com_owned = SUCCEEDED(hrco);  // 成功（含 S_FALSE）都须配对 CoUninitialize
+  g_header->loopback_diag |= 0x01;         // 线程启动 + COM init 尝试
+
+  IMMDeviceEnumerator* enumr = nullptr;
+  IMMDevice* device = nullptr;
+  IAudioClient* client = nullptr;
+  IAudioCaptureClient* capture = nullptr;
+  WAVEFORMATEX* mix = nullptr;
+  LbSrcFmt src_fmt = kLbUnknown;
+  uint32_t ch = 0;
+  uint32_t rate = 0;
+  bool started = false;
+
+  HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                __uuidof(IMMDeviceEnumerator),
+                                reinterpret_cast<void**>(&enumr));
+  if (SUCCEEDED(hr) && enumr != nullptr) {
+    hr = enumr->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+  }
+  if (SUCCEEDED(hr) && device != nullptr) {
+    hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                          reinterpret_cast<void**>(&client));
+  }
+  if (SUCCEEDED(hr) && client != nullptr) {
+    hr = client->GetMixFormat(&mix);
+  }
+  if (SUCCEEDED(hr) && mix != nullptr) {
+    src_fmt = LbParseFormat(mix, &rate, &ch);
+    g_header->loopback_diag |= 0x02;  // 设备/客户端就绪 + 拿到混音格式
+    // 存储格式：16-bit（混音已转换），采样率/声道取自混音格式；block_align 最后填作格式就绪信号。
+    g_header->loopback_sample_rate = rate;
+    g_header->loopback_channels = ch;
+    g_header->loopback_bits_per_sample = 16;
+    g_header->loopback_block_align = ch * 2u;
+    // loopback 缓冲时长 1s（容量足够，非实时精度）。共享模式 loopback 用混音格式原样初始化。
+    const REFERENCE_TIME kBufDur = 10000000;  // 1s（100ns 单位）
+    hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
+                            kBufDur, 0, mix, nullptr);
+  }
+  if (SUCCEEDED(hr) && client != nullptr) {
+    hr = client->GetService(__uuidof(IAudioCaptureClient),
+                            reinterpret_cast<void**>(&capture));
+  }
+  if (SUCCEEDED(hr) && capture != nullptr) {
+    hr = client->Start();
+    started = SUCCEEDED(hr);
+    if (started) {
+      g_header->loopback_diag |= 0x04;  // 捕获已启动
+    }
+  }
+
+  std::vector<int16_t> scratch;
+  ULONGLONG last_marker = GetTickCount64();
+  LbWriteMarker();  // 起点标记（total=0）
+
+  if (started) {
+    while (!g_stop) {
+      UINT32 packet = 0;
+      HRESULT gp = capture->GetNextPacketSize(&packet);
+      while (SUCCEEDED(gp) && packet != 0 && !g_stop) {
+        BYTE* data = nullptr;
+        UINT32 frames = 0;
+        DWORD flags = 0;
+        const HRESULT gb =
+            capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
+        if (FAILED(gb)) {
+          break;
+        }
+        const bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
+        if (silent) {
+          g_header->loopback_diag |= 0x10;  // 见过静音包
+        }
+        LbConvertStore(data, frames, ch, src_fmt, silent, &scratch);
+        capture->ReleaseBuffer(frames);
+        gp = capture->GetNextPacketSize(&packet);
+      }
+      // 每 ~200ms 记一条标记（含静音期：total 不变、tick 前进，插值仍单调正确，覆盖静音间隙）。
+      const ULONGLONG now = GetTickCount64();
+      if (now - last_marker >= 200) {
+        LbWriteMarker();
+        last_marker = now;
+      }
+      Sleep(10);
+    }
+  } else {
+    g_header->loopback_diag |= 0x80;  // 初始化/启动失败（无默认渲染端点、格式不支持等）
+  }
+
+  // 收尾：停捕获 + 反序释放全部 COM，CoUninitialize（仅自己 init 成功时配对）。
+  if (client != nullptr && started) {
+    client->Stop();
+  }
+  if (capture != nullptr) {
+    capture->Release();
+  }
+  if (client != nullptr) {
+    client->Release();
+  }
+  if (device != nullptr) {
+    device->Release();
+  }
+  if (enumr != nullptr) {
+    enumr->Release();
+  }
+  if (mix != nullptr) {
+    CoTaskMemFree(mix);
+  }
+  if (com_owned) {
+    CoUninitialize();
+  }
+  return 0;
+}
+
+// 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 装 XAudio2 捕获链 -> 通知 injector。
 DWORD WINAPI HookWorker(LPVOID) {
   const DWORD pid = GetCurrentProcessId();
   const bool siglus_engine = IsSiglusEngine();
   bool siglus_ready = false;
+  bool unity_audio_ready = false;
   WriteMarkerFile(pid);
 
   const std::wstring shm = SharedMemoryName(pid);
@@ -2100,22 +3800,40 @@ DWORD WINAPI HookWorker(LPVOID) {
           reinterpret_cast<uint8_t*>(g_header) + g_header->text_region_offset;
       g_clip_base =
           reinterpret_cast<uint8_t*>(g_header) + g_header->clip_region_offset;
+      // C.2f：loopback 环 + 标记表基址（injector 已填偏移），供 loopback 线程写。
+      g_lb_ring_base =
+          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_ring_offset;
+      g_lb_marker_base =
+          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_marker_offset;
       InitializeCriticalSection(&g_cs);
       g_cs_ready = true;
       InitializeCriticalSection(&g_text_cs);
       g_text_cs_ready = true;
       InitializeCriticalSection(&g_dec_cs);
       g_dec_cs_ready = true;  // 解码器表锁须先于装解码 hook 就绪（detour 立即可能触发）。
+      InitializeCriticalSection(&g_renpy_cs);
+      g_renpy_cs_ready = true;  // Ren'Py 表锁须先于装 FFmpeg hook 就绪（detour 立即可能触发）。
       if (MH_Initialize() == MH_OK) {
         g_mh_init = true;
         g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
         TryHookXAudio2Create();
         TryHookDirectSoundCreate();
-        siglus_ready = TryHookSiglusOvk();  // C.3：Siglus koe/*.ovk 原始逐句 OGG。
+        // CreateFile hook 同时记录 Unity Addressables 的 voice bundle；也必须在 launch
+        // 主线程恢复前安装，否则启动早期加载的资源包路径无法与 AudioClip 名配对。
+        siglus_ready = TryHookSiglusOvk();
+        // launch injector 在恢复 CREATE_SUSPENDED 主线程前等这个完成标记，保证游戏首次
+        // 创建音频引擎/打开资源包时已经命中导出 hook。
+        g_header->hook_diagnostics |= kDiagStartupAudioHooksReady;
+        unity_audio_ready = TryHookUnityIl2CppAudio();
         TryHookTextRender();          // v2：文本 hook（抓台词）。
+        TryHookSiglusExactText();     // Siglus 3：引擎层整句 UTF-16。
         TryHookKirikiriDecoders();    // C.2c：KiriKiri 解码器级干净人声。
         TryHookKirikiriVoiceStream();  // C.2d：KiriKiriZ 原始语音 OGG 捕获。
+        TryHookRenpyAudio();           // C.2e：Ren'Py/FFmpeg avcodec-54 纯人声捕获。
       }
+      // C.2f：起独立 loopback 混音捕获线程（兜底，与上述引擎级 hook 并行；不依赖 MinHook，故
+      // 即便 MH_Initialize 失败也起）。它自带 g_stop 退出门控 + COM 反序释放。
+      g_lb_thread = CreateThread(nullptr, 0, LoopbackWorker, nullptr, 0, nullptr);
     }
   }
 
@@ -2127,6 +3845,8 @@ DWORD WINAPI HookWorker(LPVOID) {
   bool voice_ready = false;
   int generic_retry = 0;
   int siglus_retry = 0;
+  int renpy_retry = 0;
+  bool renpy_ready = false;
   while (!g_stop) {
     ProcessSiglusVoiceTasks();
     // Siglus 的保护壳在 CREATE_SUSPENDED 极早期会让 Toolhelp 线程快照瞬时失败，MinHook
@@ -2135,6 +3855,9 @@ DWORD WINAPI HookWorker(LPVOID) {
     if (g_capture_enabled && generic_retry < 150) {
       TryHookXAudio2Create();
       TryHookDirectSoundCreate();
+      if (!unity_audio_ready) {
+        unity_audio_ready = TryHookUnityIl2CppAudio();
+      }
       generic_retry++;
     }
     if (!siglus_ready && g_capture_enabled && siglus_retry < 150) {
@@ -2149,13 +3872,24 @@ DWORD WINAPI HookWorker(LPVOID) {
       voice_ready = TryHookKirikiriVoiceStream();
       voice_retry++;
     }
+    if (!renpy_ready && g_capture_enabled && renpy_retry < 150) {
+      renpy_ready = TryHookRenpyAudio();
+      renpy_retry++;
+    }
     // Siglus 保护壳的 Toolhelp 快照在主线程刚 Resume 的极短窗口内才恢复；未装好前 1ms
     // 紧凑重试，避免等 200ms 后音频/归档对象早已创建。装好后回到常规低频保活。
     Sleep(siglus_engine && !siglus_ready ? 1 : 200);
   }
 
-  // 收尾在工作线程里做（不在 loader lock 中）：先关捕获总开关，再拆 MinHook。
+  // 收尾在工作线程里做（不在 loader lock 中）：先关捕获总开关，join loopback 线程，再拆 MinHook。
   g_capture_enabled = false;
+  // g_stop 已置（本 while 因它退出）；等 loopback 线程干净退出后再解映射/拆 hook，避免它悬垂写
+  // g_lb_ring_base。进程正常退出路径由 OS 先杀线程再跑 DETACH，此 join 主要覆盖 FreeLibrary 卸载。
+  if (g_lb_thread != nullptr) {
+    WaitForSingleObject(g_lb_thread, 2000);
+    CloseHandle(g_lb_thread);
+    g_lb_thread = nullptr;
+  }
   if (g_mh_init) {
     MH_DisableHook(MH_ALL_HOOKS);
     MH_Uninitialize();
@@ -2180,6 +3914,9 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
       // 极罕见（注入的 hook DLL 常驻进程生命周期），此路径 trampoline 残留由 OS 退出兜底。
       g_capture_enabled = false;
       g_stop = true;
+      // 先断 loopback 环基址（缩小 loopback 线程悬垂写窗口；进程正常退出路径 OS 已先杀线程）。
+      g_lb_ring_base = nullptr;
+      g_lb_marker_base = nullptr;
       if (g_header != nullptr) {
         UnmapViewOfFile(g_header);
         g_header = nullptr;

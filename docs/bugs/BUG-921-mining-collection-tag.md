@@ -1,0 +1,17 @@
+## BUG-921 · 制卡缺少所属合集名标签
+- **报告**：2026-07-19（用户：）
+- **真实性**：✅ 真 bug（功能缺口，非回归）。制卡的标签一直只有「用户自定义 + hibiki + 分类(video/book) + 单集/单本标题」四类，**从未把条目所属合集/系列名加进 tag**。
+  - 标签组装：`packages/hibiki_anki/lib/src/base_anki_repository.dart:246`（`buildNoteTags`，只接 `titleTag`，无合集概念）。
+  - 视频入口：`hibiki/lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart:315` 只用单集名 `_title`；合集/系列名 `_playlistTitle` 已在内存（`video_hibiki_page.dart:872/1694`）却只喂给 `documentTitle`，未进 tag。
+  - 阅读器入口：`hibiki/lib/src/pages/implementations/reader_hibiki/mining.part.dart:170` 只用单本书名 `_book?.title`，reader 未反查所属合集。
+  - 对比 `origin/develop`：这几行未被改动，全仓库 `seriesTag`/`collectionTag` 零命中 → 确认从未实现，不是被删。
+- **[x] ① 已修复** — 新增贯穿 mining 链路的 `collectionTag`（与 `bookTitleTag` 并列、同「自动添加书名到标签」开关、经 `sanitizeTitleTag` 清洗、`buildNoteTags` 去重）。
+  - 模型/组装：`packages/hibiki_anki/lib/src/anki_models.dart`（`AnkiMiningContext.collectionTag`）、`base_anki_repository.dart`（`buildNoteTags` 加 `collectionTag` 参数并追加，去重合并）。
+  - 三 backend 透传：`ankidroid/anki_repository.dart` / `ankiconnect/ankiconnect_repository.dart` / `hibiki/lib/src/anki/ankimobile_repository.dart`（含其 context 重建）。
+  - 链路透传：`hibiki/lib/src/mining/immersion_mining_request.dart`（新字段）、`immersion_mining_engine.dart`（注入 context）。
+  - 视频注入：`lookup_mining.part.dart` 用 `_playlistTitle`（系列名）。
+  - 阅读器注入：`reader_hibiki/mining.part.dart` 新增 `_resolveCollectionName()`——按 `getPrimaryCollectionIdByEntry()` 折叠归属反查（EPUB/EPUB-有声书用 `epub|<bookKey>`，纯 SRT 有声书用 `srt|<uid>`，srt-backed 两身份都试兜 BUG-812），一处覆盖书+有声书。
+  - 行为：合集名与单集/单本名**并列各成一个 tag**（用户选定方案）；不属合集/开关关闭时为 null 不追加（Never break userspace）。
+  - 提交：（见本分支提交哈希）
+- **[x] ② 已加自动化测试** — `packages/hibiki_anki/test/mining_tag_and_parallel_test.dart` 新增 `collectionTag ...` 测试组 6 例：合集名追加于书名后、单独存在、与书名/分类/用户 tag 去重、空值不加、空格清洗成单 tag。撤掉 `buildNoteTags` 的 `collectionTag` 追加即转红。全量 28 例通过。
+- **备注**：合集名标签复用现有「自动添加书名到标签」（`autoAddBookNameToTags`）开关，不新增偏好项——它本就是「标题类标签」总开关。视频侧 `_playlistTitle` 只在播放列表下非空，单视频/远端无系列名 → null。撞号说明：`bug.dart` 初取 918 与本会话 PR#253 冲突，已改为 919。

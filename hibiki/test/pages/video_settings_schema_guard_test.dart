@@ -93,7 +93,8 @@ void main() {
       'video.subtitle.font_weight',
       'video.subtitle.shadow',
       'video.subtitle.bg_opacity',
-      'video.subtitle.no_background',
+      // 'video.subtitle.no_background' 已从设置页删除：它一键把字幕背景透明度置 0，
+      // 与相邻 bg_opacity 滑块拖到 0 等效（冗余）。播放页快捷面板仍保留该便捷动作。
       'video.subtitle.position',
       // Danmaku
       'video.danmaku.enabled',
@@ -146,7 +147,8 @@ void main() {
 
     expect(body.contains("id: 'video.controls.reset_layout'"), isTrue);
     expect(body.contains('t.video_control_reset_layout'), isTrue);
-    expect(body.contains('t.video_control_reset_layout_hint'), isTrue);
+    // 副标题 t.video_control_reset_layout_hint 已从设置页删除（复述标题的冗余提示）；
+    // 播放页快捷面板仍保留该 hint。守卫只断言「重置布局」能力（id/标题/动作）仍在。
     expect(body.contains('setVideoControlLayout('), isTrue);
     expect(body.contains('VideoControlLayout.currentChrome'), isTrue);
   });

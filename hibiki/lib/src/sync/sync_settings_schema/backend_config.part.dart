@@ -2,52 +2,122 @@
 part of '../sync_settings_schema.dart';
 
 // Backend picker + per-backend credential config widgets (WebDAV / FTP / SFTP) and their selection helpers.
-// Shares the parent library's imports + private scope (_syncSettings / _showSnackBar / _SyncSettingsState); moved verbatim.
+// Shares the parent library's imports + private scope (_syncSettings / _showSnackBar / _SyncSettingsState).
+// The three credential forms are thin configurations of one shared scaffold
+// (_CredentialConfigWidget); per-backend trim/parse/persist semantics live in
+// each form's static callbacks, moved verbatim from the former copies.
 
-// ── WebDAV config widget ─────────────────────────────────────────────
+// ── Shared credential form scaffold ─────────────────────────────────
 
-class _WebDavConfigWidget extends StatefulWidget {
-  const _WebDavConfigWidget({required this.settingsContext});
-  final SettingsContext settingsContext;
+/// One text field of a [_CredentialConfigWidget] form. [initialText] is only
+/// the pre-load controller seed (the form renders nothing until the async
+/// load lands, mirroring the former per-backend widgets).
+class _CredentialFieldSpec {
+  const _CredentialFieldSpec({
+    required this.label,
+    this.hint,
+    this.obscure = false,
+    this.keyboardType = TextInputType.text,
+    this.maxLines = 1,
+    this.initialText = '',
+  });
 
-  @override
-  State<_WebDavConfigWidget> createState() => _WebDavConfigWidgetState();
+  final String label;
+  final String? hint;
+  final bool obscure;
+  final TextInputType keyboardType;
+  final int maxLines;
+  final String initialText;
 }
 
-class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
-  late final TextEditingController _urlController;
-  late final TextEditingController _usernameController;
-  late final TextEditingController _passwordController;
+/// Shared scaffold for the WebDAV / FTP / SFTP credential forms: owns the
+/// [TextEditingController] lifecycle, the load-once gate, the fire-and-forget
+/// save with [ErrorLogService] logging (HBK-AUDIT-162), and the test-connection
+/// spinner/button row. Persistence and probe semantics stay per-backend:
+/// [load] returns one text per [fields] entry (plus the switch value), [save]
+/// receives the RAW controller texts (each backend keeps its own trim/parse
+/// rules verbatim), and [runTest] performs the probe and returns the snackbar
+/// message (success or failure — it must not throw).
+class _CredentialConfigWidget extends StatefulWidget {
+  const _CredentialConfigWidget({
+    required this.settingsContext,
+    required this.fields,
+    required this.load,
+    required this.save,
+    required this.runTest,
+    required this.saveLogTag,
+    this.switchTitle,
+    this.testButtonChild,
+  });
+
+  final SettingsContext settingsContext;
+  final List<_CredentialFieldSpec> fields;
+
+  /// Reads the persisted values: one string per [fields] entry, plus the
+  /// switch value (ignored when [switchTitle] is null).
+  final Future<(List<String>, bool)> Function(SyncRepository repo) load;
+
+  /// Persists the raw controller texts (+ switch value).
+  final Future<void> Function(
+      SyncRepository repo, List<String> texts, bool switchValue) save;
+
+  /// Probes the backend with the raw controller texts (+ switch value) and
+  /// returns the snackbar message. Must handle its own errors.
+  final Future<String> Function(List<String> texts, bool switchValue) runTest;
+
+  /// [ErrorLogService] tag for save failures (called fire-and-forget from
+  /// onChanged, so failures must be logged, not silently dropped).
+  final String saveLogTag;
+
+  /// When non-null, renders an [AdaptiveSettingsSwitchRow] between the fields
+  /// and the test button (FTP's TLS toggle).
+  final String? switchTitle;
+
+  /// Custom test-button content; defaults to `Text(t.sync_test_connection)`.
+  final Widget? testButtonChild;
+
+  @override
+  State<_CredentialConfigWidget> createState() =>
+      _CredentialConfigWidgetState();
+}
+
+class _CredentialConfigWidgetState extends State<_CredentialConfigWidget> {
+  late final List<TextEditingController> _controllers;
+  bool _switchValue = false;
   bool _isTesting = false;
   bool _loaded = false;
 
   @override
   void initState() {
     super.initState();
-    _urlController = TextEditingController();
-    _usernameController = TextEditingController();
-    _passwordController = TextEditingController();
+    _controllers = <TextEditingController>[
+      for (final _CredentialFieldSpec field in widget.fields)
+        TextEditingController(text: field.initialText),
+    ];
     _loadCredentials();
   }
 
   @override
   void dispose() {
-    _urlController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
+    for (final TextEditingController controller in _controllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
+  List<String> get _texts => _controllers
+      .map((TextEditingController c) => c.text)
+      .toList(growable: false);
+
   Future<void> _loadCredentials() async {
     final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final url = await repo.getWebDavUrl();
-    final username = await repo.getWebDavUsername();
-    final password = await repo.getWebDavPassword();
+    final (List<String> texts, bool switchValue) = await widget.load(repo);
     if (mounted) {
       setState(() {
-        _urlController.text = url ?? '';
-        _usernameController.text = username ?? '';
-        _passwordController.text = password ?? '';
+        for (int i = 0; i < _controllers.length; i++) {
+          _controllers[i].text = texts[i];
+        }
+        _switchValue = switchValue;
         _loaded = true;
       });
     }
@@ -58,14 +128,9 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
     // not silently dropped (HBK-AUDIT-162).
     try {
       final repo = SyncRepository(widget.settingsContext.appModel.database);
-      final url = _urlController.text.trim();
-      final username = _usernameController.text.trim();
-      final password = _passwordController.text;
-      await repo.setWebDavUrl(url.isEmpty ? null : url);
-      await repo.setWebDavUsername(username.isEmpty ? null : username);
-      await repo.setWebDavPassword(password.isEmpty ? null : password);
+      await widget.save(repo, _texts, _switchValue);
     } catch (e, stack) {
-      ErrorLogService.instance.log('SyncConfig.saveWebDav', e, stack);
+      ErrorLogService.instance.log(widget.saveLogTag, e, stack);
     }
   }
 
@@ -73,37 +138,8 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
     await _saveCredentials();
     setState(() => _isTesting = true);
     try {
-      final url = _urlController.text.trim();
-      final username = _usernameController.text.trim();
-      final password = _passwordController.text;
-      if (url.isEmpty || username.isEmpty || password.isEmpty) {
-        if (mounted) {
-          _showSnackBar(context,
-              t.sync_webdav_test_failed(message: t.sync_webdav_missing_fields));
-        }
-        return;
-      }
-      await WebDavSyncBackend.instance.testConnection(
-        url: url,
-        username: username,
-        password: password,
-      );
-      if (mounted) _showSnackBar(context, t.sync_webdav_test_success);
-    } on SyncAuthError catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            t.sync_webdav_test_failed(message: friendlySyncErrorDetail(e)));
-      }
-    } on SyncBackendError catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            t.sync_webdav_test_failed(message: friendlySyncErrorDetail(e)));
-      }
-    } catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            t.sync_webdav_test_failed(message: friendlySyncErrorDetail(e)));
-      }
+      final String message = await widget.runTest(_texts, _switchValue);
+      if (mounted) _showSnackBar(context, message);
     } finally {
       if (mounted) setState(() => _isTesting = false);
     }
@@ -112,33 +148,36 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
   @override
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          HibikiTextField(
-            controller: _urlController,
-            labelText: t.sync_webdav_url,
-            hintText: 'https://cloud.example.com/remote.php/dav/files/user',
-            keyboardType: TextInputType.url,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _usernameController,
-            labelText: t.sync_webdav_username,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _passwordController,
-            labelText: t.sync_webdav_password,
-            obscureText: true,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
+          for (int i = 0; i < widget.fields.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(height: 12),
+            HibikiTextField(
+              controller: _controllers[i],
+              labelText: widget.fields[i].label,
+              hintText: widget.fields[i].hint,
+              obscureText: widget.fields[i].obscure,
+              keyboardType: widget.fields[i].keyboardType,
+              maxLines: widget.fields[i].maxLines,
+              onChanged: (_) => _saveCredentials(),
+            ),
+          ],
+          if (widget.switchTitle != null) ...<Widget>[
+            const SizedBox(height: 8),
+            AdaptiveSettingsSwitchRow(
+              title: widget.switchTitle!,
+              value: _switchValue,
+              onChanged: (bool v) {
+                setState(() => _switchValue = v);
+                _saveCredentials();
+              },
+            ),
+            const SizedBox(height: 8),
+          ] else
+            const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerRight,
             child: _isTesting
@@ -149,16 +188,87 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
                   )
                 : FilledButton.tonal(
                     onPressed: _testConnection,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        const Icon(Icons.wifi_find, size: 18),
-                        const SizedBox(width: 8),
-                        Text(t.sync_webdav_test),
-                      ],
-                    ),
+                    child:
+                        widget.testButtonChild ?? Text(t.sync_test_connection),
                   ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── WebDAV config widget ─────────────────────────────────────────────
+
+class _WebDavConfigWidget extends StatelessWidget {
+  const _WebDavConfigWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  static Future<(List<String>, bool)> _load(SyncRepository repo) async {
+    return (
+      <String>[
+        await repo.getWebDavUrl() ?? '',
+        await repo.getWebDavUsername() ?? '',
+        await repo.getWebDavPassword() ?? '',
+      ],
+      false,
+    );
+  }
+
+  static Future<void> _save(
+      SyncRepository repo, List<String> texts, bool _) async {
+    final String url = texts[0].trim();
+    final String username = texts[1].trim();
+    final String password = texts[2];
+    await repo.setWebDavUrl(url.isEmpty ? null : url);
+    await repo.setWebDavUsername(username.isEmpty ? null : username);
+    await repo.setWebDavPassword(password.isEmpty ? null : password);
+  }
+
+  static Future<String> _runTest(List<String> texts, bool _) async {
+    final String url = texts[0].trim();
+    final String username = texts[1].trim();
+    final String password = texts[2];
+    if (url.isEmpty || username.isEmpty || password.isEmpty) {
+      return t.sync_webdav_test_failed(message: t.sync_webdav_missing_fields);
+    }
+    try {
+      await WebDavSyncBackend.instance.testConnection(
+        url: url,
+        username: username,
+        password: password,
+      );
+      return t.sync_webdav_test_success;
+    } catch (e) {
+      // SyncAuthError / SyncBackendError / anything else all render the same
+      // friendly detail (the former three catch arms were identical).
+      return t.sync_webdav_test_failed(message: friendlySyncErrorDetail(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _CredentialConfigWidget(
+      settingsContext: settingsContext,
+      saveLogTag: 'SyncConfig.saveWebDav',
+      fields: <_CredentialFieldSpec>[
+        _CredentialFieldSpec(
+          label: t.sync_webdav_url,
+          hint: 'https://cloud.example.com/remote.php/dav/files/user',
+          keyboardType: TextInputType.url,
+        ),
+        _CredentialFieldSpec(label: t.sync_webdav_username),
+        _CredentialFieldSpec(label: t.sync_webdav_password, obscure: true),
+      ],
+      load: _load,
+      save: _save,
+      runTest: _runTest,
+      testButtonChild: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(Icons.wifi_find, size: 18),
+          const SizedBox(width: 8),
+          Text(t.sync_webdav_test),
         ],
       ),
     );
@@ -175,11 +285,15 @@ bool _isBackendSelectable(SyncBackendType type) {
       return OneDriveSyncBackend.isConfigured;
     case SyncBackendType.dropbox:
       return DropboxSyncBackend.isConfigured;
+    // 互联（hibikiServer）不再是「同步方式」的互斥单选项——它已解耦成独立分类 +
+    // 独立开关（buildInterconnectDestination），与云备份并存。故从后端选择器隐藏；
+    // 枚举值与 [_backendLabel] 仅为防御性回显（迁移前的历史持久化值）保留。
+    case SyncBackendType.hibikiServer:
+      return false;
     case SyncBackendType.googleDrive:
     case SyncBackendType.webDav:
     case SyncBackendType.ftp:
     case SyncBackendType.sftp:
-    case SyncBackendType.hibikiServer:
       return true;
   }
 }
@@ -272,322 +386,146 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
 
 // ── FTP config widget ───────────────────────────────────────────────
 
-class _FtpConfigWidget extends StatefulWidget {
+class _FtpConfigWidget extends StatelessWidget {
   const _FtpConfigWidget({required this.settingsContext});
   final SettingsContext settingsContext;
 
-  @override
-  State<_FtpConfigWidget> createState() => _FtpConfigWidgetState();
-}
-
-class _FtpConfigWidgetState extends State<_FtpConfigWidget> {
-  late final TextEditingController _hostController;
-  late final TextEditingController _portController;
-  late final TextEditingController _usernameController;
-  late final TextEditingController _passwordController;
-  bool _useTls = false;
-  bool _isTesting = false;
-  bool _loaded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _hostController = TextEditingController();
-    _portController = TextEditingController(text: '21');
-    _usernameController = TextEditingController();
-    _passwordController = TextEditingController();
-    _loadCredentials();
+  static Future<(List<String>, bool)> _load(SyncRepository repo) async {
+    return (
+      <String>[
+        await repo.getFtpHost() ?? '',
+        (await repo.getFtpPort()).toString(),
+        await repo.getFtpUsername() ?? '',
+        await repo.getFtpPassword() ?? '',
+      ],
+      await repo.isFtpTlsEnabled(),
+    );
   }
 
-  @override
-  void dispose() {
-    _hostController.dispose();
-    _portController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    super.dispose();
+  static Future<void> _save(
+      SyncRepository repo, List<String> texts, bool useTls) async {
+    final String host = texts[0].trim();
+    final String user = texts[2].trim();
+    final String pass = texts[3];
+    final int port = int.tryParse(texts[1].trim()) ?? 21;
+    await repo.setFtpHost(host.isEmpty ? null : host);
+    await repo.setFtpPort(port);
+    await repo.setFtpUsername(user.isEmpty ? null : user);
+    await repo.setFtpPassword(pass.isEmpty ? null : pass);
+    await repo.setFtpTlsEnabled(useTls);
   }
 
-  Future<void> _loadCredentials() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final host = await repo.getFtpHost();
-    final port = await repo.getFtpPort();
-    final user = await repo.getFtpUsername();
-    final pass = await repo.getFtpPassword();
-    final tls = await repo.isFtpTlsEnabled();
-    if (mounted) {
-      setState(() {
-        _hostController.text = host ?? '';
-        _portController.text = port.toString();
-        _usernameController.text = user ?? '';
-        _passwordController.text = pass ?? '';
-        _useTls = tls;
-        _loaded = true;
-      });
-    }
-  }
-
-  Future<void> _saveCredentials() async {
-    try {
-      final repo = SyncRepository(widget.settingsContext.appModel.database);
-      final host = _hostController.text.trim();
-      final user = _usernameController.text.trim();
-      final pass = _passwordController.text;
-      final port = int.tryParse(_portController.text.trim()) ?? 21;
-      await repo.setFtpHost(host.isEmpty ? null : host);
-      await repo.setFtpPort(port);
-      await repo.setFtpUsername(user.isEmpty ? null : user);
-      await repo.setFtpPassword(pass.isEmpty ? null : pass);
-      await repo.setFtpTlsEnabled(_useTls);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SyncConfig.saveFtp', e, stack);
-    }
-  }
-
-  Future<void> _testConnection() async {
-    await _saveCredentials();
-    setState(() => _isTesting = true);
+  static Future<String> _runTest(List<String> texts, bool useTls) async {
     try {
       await FtpSyncBackend.testConnection(
-        host: _hostController.text.trim(),
-        port: int.tryParse(_portController.text.trim()) ?? 21,
-        username: _usernameController.text.trim(),
-        password: _passwordController.text,
-        useTls: _useTls,
+        host: texts[0].trim(),
+        port: int.tryParse(texts[1].trim()) ?? 21,
+        username: texts[2].trim(),
+        password: texts[3],
+        useTls: useTls,
       );
-      if (mounted) _showSnackBar(context, t.sync_connection_success);
+      return t.sync_connection_success;
     } catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}');
-      }
-    } finally {
-      if (mounted) setState(() => _isTesting = false);
+      return '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_loaded) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          HibikiTextField(
-            controller: _hostController,
-            labelText: t.sync_host,
-            hintText: 'ftp.example.com',
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _portController,
-            labelText: t.sync_port,
-            keyboardType: TextInputType.number,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _usernameController,
-            labelText: t.sync_username,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _passwordController,
-            labelText: t.sync_password,
-            obscureText: true,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 8),
-          AdaptiveSettingsSwitchRow(
-            title: t.sync_use_tls,
-            value: _useTls,
-            onChanged: (bool v) {
-              setState(() => _useTls = v);
-              _saveCredentials();
-            },
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _isTesting
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: adaptiveIndicator(context: context, strokeWidth: 2),
-                  )
-                : FilledButton.tonal(
-                    onPressed: _testConnection,
-                    child: Text(t.sync_test_connection),
-                  ),
-          ),
-        ],
-      ),
+    return _CredentialConfigWidget(
+      settingsContext: settingsContext,
+      saveLogTag: 'SyncConfig.saveFtp',
+      fields: <_CredentialFieldSpec>[
+        _CredentialFieldSpec(label: t.sync_host, hint: 'ftp.example.com'),
+        _CredentialFieldSpec(
+          label: t.sync_port,
+          keyboardType: TextInputType.number,
+          initialText: '21',
+        ),
+        _CredentialFieldSpec(label: t.sync_username),
+        _CredentialFieldSpec(label: t.sync_password, obscure: true),
+      ],
+      load: _load,
+      save: _save,
+      runTest: _runTest,
+      switchTitle: t.sync_use_tls,
     );
   }
 }
 
 // ── SFTP config widget ──────────────────────────────────────────────
 
-class _SftpConfigWidget extends StatefulWidget {
+class _SftpConfigWidget extends StatelessWidget {
   const _SftpConfigWidget({required this.settingsContext});
   final SettingsContext settingsContext;
 
-  @override
-  State<_SftpConfigWidget> createState() => _SftpConfigWidgetState();
-}
-
-class _SftpConfigWidgetState extends State<_SftpConfigWidget> {
-  late final TextEditingController _hostController;
-  late final TextEditingController _portController;
-  late final TextEditingController _usernameController;
-  late final TextEditingController _passwordController;
-  late final TextEditingController _keyController;
-  bool _isTesting = false;
-  bool _loaded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _hostController = TextEditingController();
-    _portController = TextEditingController(text: '22');
-    _usernameController = TextEditingController();
-    _passwordController = TextEditingController();
-    _keyController = TextEditingController();
-    _loadCredentials();
+  static Future<(List<String>, bool)> _load(SyncRepository repo) async {
+    return (
+      <String>[
+        await repo.getSftpHost() ?? '',
+        (await repo.getSftpPort()).toString(),
+        await repo.getSftpUsername() ?? '',
+        await repo.getSftpPassword() ?? '',
+        await repo.getSftpPrivateKey() ?? '',
+      ],
+      false,
+    );
   }
 
-  @override
-  void dispose() {
-    _hostController.dispose();
-    _portController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    _keyController.dispose();
-    super.dispose();
+  static Future<void> _save(
+      SyncRepository repo, List<String> texts, bool _) async {
+    final String host = texts[0].trim();
+    final String user = texts[2].trim();
+    final String pass = texts[3];
+    final int port = int.tryParse(texts[1].trim()) ?? 22;
+    final String key = texts[4].trim();
+    await repo.setSftpHost(host.isEmpty ? null : host);
+    await repo.setSftpPort(port);
+    await repo.setSftpUsername(user.isEmpty ? null : user);
+    await repo.setSftpPassword(pass.isEmpty ? null : pass);
+    await repo.setSftpPrivateKey(key.isEmpty ? null : key);
   }
 
-  Future<void> _loadCredentials() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final host = await repo.getSftpHost();
-    final port = await repo.getSftpPort();
-    final user = await repo.getSftpUsername();
-    final pass = await repo.getSftpPassword();
-    final key = await repo.getSftpPrivateKey();
-    if (mounted) {
-      setState(() {
-        _hostController.text = host ?? '';
-        _portController.text = port.toString();
-        _usernameController.text = user ?? '';
-        _passwordController.text = pass ?? '';
-        _keyController.text = key ?? '';
-        _loaded = true;
-      });
-    }
-  }
-
-  Future<void> _saveCredentials() async {
+  static Future<String> _runTest(List<String> texts, bool _) async {
     try {
-      final repo = SyncRepository(widget.settingsContext.appModel.database);
-      final host = _hostController.text.trim();
-      final user = _usernameController.text.trim();
-      final pass = _passwordController.text;
-      final port = int.tryParse(_portController.text.trim()) ?? 22;
-      final key = _keyController.text.trim();
-      await repo.setSftpHost(host.isEmpty ? null : host);
-      await repo.setSftpPort(port);
-      await repo.setSftpUsername(user.isEmpty ? null : user);
-      await repo.setSftpPassword(pass.isEmpty ? null : pass);
-      await repo.setSftpPrivateKey(key.isEmpty ? null : key);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SyncConfig.saveSftp', e, stack);
-    }
-  }
-
-  Future<void> _testConnection() async {
-    await _saveCredentials();
-    setState(() => _isTesting = true);
-    try {
-      final pass = _passwordController.text;
-      final key = _keyController.text.trim();
+      final String pass = texts[3];
+      final String key = texts[4].trim();
       await SftpSyncBackend.instance.testConnection(
-        host: _hostController.text.trim(),
-        port: int.tryParse(_portController.text.trim()) ?? 22,
-        username: _usernameController.text.trim(),
+        host: texts[0].trim(),
+        port: int.tryParse(texts[1].trim()) ?? 22,
+        username: texts[2].trim(),
         password: pass.isEmpty ? null : pass,
         privateKey: key.isEmpty ? null : key,
       );
-      if (mounted) _showSnackBar(context, t.sync_connection_success);
+      return t.sync_connection_success;
     } catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}');
-      }
-    } finally {
-      if (mounted) setState(() => _isTesting = false);
+      return '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_loaded) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          HibikiTextField(
-            controller: _hostController,
-            labelText: t.sync_host,
-            hintText: 'ssh.example.com',
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _portController,
-            labelText: t.sync_port,
-            keyboardType: TextInputType.number,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _usernameController,
-            labelText: t.sync_username,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _passwordController,
-            labelText: t.sync_password,
-            obscureText: true,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _keyController,
-            labelText: t.sync_private_key,
-            hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
-            maxLines: 4,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _isTesting
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: adaptiveIndicator(context: context, strokeWidth: 2),
-                  )
-                : FilledButton.tonal(
-                    onPressed: _testConnection,
-                    child: Text(t.sync_test_connection),
-                  ),
-          ),
-        ],
-      ),
+    return _CredentialConfigWidget(
+      settingsContext: settingsContext,
+      saveLogTag: 'SyncConfig.saveSftp',
+      fields: <_CredentialFieldSpec>[
+        _CredentialFieldSpec(label: t.sync_host, hint: 'ssh.example.com'),
+        _CredentialFieldSpec(
+          label: t.sync_port,
+          keyboardType: TextInputType.number,
+          initialText: '22',
+        ),
+        _CredentialFieldSpec(label: t.sync_username),
+        _CredentialFieldSpec(label: t.sync_password, obscure: true),
+        _CredentialFieldSpec(
+          label: t.sync_private_key,
+          hint: '-----BEGIN OPENSSH PRIVATE KEY-----',
+          maxLines: 4,
+        ),
+      ],
+      load: _load,
+      save: _save,
+      runTest: _runTest,
     );
   }
 }

@@ -44,7 +44,7 @@ void main() {
               'builder 必须先调 _onReaderConstraintsChanged 再返回原 reader 子树（零几何变换）');
     });
 
-    test('_onReaderConstraintsChanged 用纯谓词判定 + Timer 50ms 尾沿防抖调 _syncPageSize',
+    test('_onReaderConstraintsChanged 用纯谓词判定 + 共享 50ms 尾沿防抖调 _syncPageSize',
         () {
       final int idx = src.indexOf(
           'void _onReaderConstraintsChanged(BoxConstraints constraints) {');
@@ -54,7 +54,20 @@ void main() {
       expect(body.contains('readerLayoutResizeNeedsRepaginate('), isTrue,
           reason:
               '必须用纯谓词 readerLayoutResizeNeedsRepaginate 判定（复用 1px 容差，不另写阈值）');
-      // 尾沿防抖：先取消旧 timer 再起新的，超阈值才起。
+      // 尾沿防抖收敛到共享武装点（与 didChangeMetrics 逐字重复的两份 dedup）。
+      expect(body.contains('_armResizeRepaginateDebounce()'), isTrue,
+          reason: '超阈值必须经共享武装点 _armResizeRepaginateDebounce 去抖');
+    });
+
+    test(
+        '_armResizeRepaginateDebounce 先取消旧 timer 再起 50ms Timer 调 _syncPageSize',
+        () {
+      final int idx = src.indexOf('void _armResizeRepaginateDebounce() {');
+      expect(idx, greaterThan(0),
+          reason: '共享防抖武装点 _armResizeRepaginateDebounce 必须存在'
+              '（didChangeMetrics 与 _onReaderConstraintsChanged 共用）');
+      final String body = src.substring(idx, idx + 400);
+      // 尾沿防抖：先取消旧 timer 再起新的。
       final int idxCancel = body.indexOf('_resizeRepaginateDebounce?.cancel()');
       final int idxNewTimer =
           body.indexOf('_resizeRepaginateDebounce = Timer(');
@@ -68,7 +81,7 @@ void main() {
       expect(body.contains('if (mounted) _syncPageSize()'), isTrue,
           reason:
               'timer 回调必须 mounted 守卫后调 _syncPageSize（不另起 updatePageSize 调用）');
-      // 绝不在 builder/判定里 Future.delayed（会泄漏/重入）——用 Timer 字段。
+      // 绝不 Future.delayed（会泄漏/重入）——用可取消的 Timer 字段。
       expect(body.contains('Future.delayed'), isFalse,
           reason: '禁止 Future.delayed（会泄漏 timer/重入）；尾沿防抖必须用可取消的 Timer 字段');
     });

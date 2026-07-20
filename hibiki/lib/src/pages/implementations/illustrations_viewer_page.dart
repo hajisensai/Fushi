@@ -1,30 +1,45 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:hibiki_core/hibiki_core.dart' show HibikiDatabase;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:hibiki/src/epub/epub_book.dart' show fallbackMimeType;
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart'
+    show ReaderHibikiSource;
+import 'package:hibiki/src/reader/image_reveal_key.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 
-/// 一张插画：解码用的字节 + 源磁盘文件（复制/分享需要真实文件路径）。
+/// 一张插画：解码用的字节 + 源磁盘文件（复制/分享需要真实文件路径）+ reveal key。
 class _Illustration {
-  const _Illustration({required this.bytes, required this.file});
+  const _Illustration({
+    required this.bytes,
+    required this.file,
+    required this.revealKey,
+  });
 
   final Uint8List bytes;
   final File file;
+
+  /// BUG-898：extractDir 相对归一 key，与阅读器 WebView / Drift `revealed_images`
+  /// 共享同一标识；`null` = 无法归一（不参与防剧透遮罩，始终原图）。
+  final String? revealKey;
 }
 
 class IllustrationsViewerPage extends StatefulWidget {
   const IllustrationsViewerPage({
     required this.bookTitle,
     required this.extractDir,
+    required this.bookKey,
+    required this.database,
     super.key,
   });
 
@@ -32,6 +47,12 @@ class IllustrationsViewerPage extends StatefulWidget {
 
   /// The book's on-disk extracted directory (`EpubBooks.extractDir`).
   final String extractDir;
+
+  /// 书稳定身份（= EpubBooks.bookKey）；图片 reveal 状态按它键控持久化。
+  final String bookKey;
+
+  /// 图片 reveal 状态真相源（与阅读器 WebView 共享，实现书内↔图片库双向同步）。
+  final HibikiDatabase database;
 
   @override
   State<IllustrationsViewerPage> createState() =>
@@ -43,10 +64,52 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   bool _loading = true;
   String? _error;
 
+  /// BUG-898：本书已揭开的图片 key（与阅读器共享 Drift 真相源）。开页时一次性加载，
+  /// 与阅读器不同时活跃（图片库仅从书架进入），故各自打开 get 即达成双向同步，无需
+  /// live watch（避开 drift keyed watch 的 widget teardown 隐患）。
+  final Set<String> _revealed = <String>{};
+
+  /// 防剧透遮罩总开关：与阅读器同一偏好（`ttu_blur_images`）。关闭时图片库始终原图。
+  bool get _blurEnabled =>
+      ReaderHibikiSource.readerSettings?.blurImages ?? false;
+
   @override
   void initState() {
     super.initState();
-    _extractImages();
+    _loadRevealedThenImages();
+  }
+
+  Future<void> _loadRevealedThenImages() async {
+    try {
+      final Set<String> keys =
+          await widget.database.getRevealedImageKeys(widget.bookKey);
+      if (!mounted) return;
+      _revealed.addAll(keys);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('IllustrationsViewer.loadRevealed', e, stack);
+    }
+    await _extractImages();
+  }
+
+  /// 某图当前是否应遮罩（共用判据，缩略图 / 全屏一致）。
+  bool _isBlurred(_Illustration im) => ImageRevealKey.shouldBlur(
+        blurEnabled: _blurEnabled,
+        revealKey: im.revealKey,
+        revealed: _revealed,
+      );
+
+  /// 揭开一张图（幂等）：登记内存集 + 持久化到 Drift（阅读器下次开书据此不遮罩）。
+  Future<void> _revealImage(_Illustration im) async {
+    final String? key = im.revealKey;
+    if (key == null || !_revealed.add(key)) return;
+    setState(() {});
+    try {
+      await widget.database.markImageRevealed(
+          widget.bookKey, key, DateTime.now().millisecondsSinceEpoch);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('IllustrationsViewer.reveal', e, stack);
+    }
   }
 
   static const Set<String> _imageExtensions = {
@@ -86,9 +149,12 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         try {
           final Uint8List bytes = await file.readAsBytes();
           if (bytes.isNotEmpty) {
-            setState(
-              () => _images.add(_Illustration(bytes: bytes, file: file)),
+            final _Illustration illust = _Illustration(
+              bytes: bytes,
+              file: file,
+              revealKey: ImageRevealKey.fromFile(file.path, widget.extractDir),
             );
+            setState(() => _images.add(illust));
           }
         } catch (e, stack) {
           ErrorLogService.instance
@@ -168,18 +234,49 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
             ),
             itemCount: _images.length,
             itemBuilder: (context, index) {
+              final _Illustration im = _images[index];
+              final bool blurred = _isBlurred(im);
               return HibikiCard(
                 padding: EdgeInsets.zero,
-                onTap: () => _openFullScreen(index),
-                child: Image.memory(
-                  _images[index].bytes,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) =>
-                      const Center(child: Icon(Icons.broken_image_outlined)),
-                ),
+                // 未揭开：点击先揭开（防剧透）；已揭开：点击进全屏。
+                onTap: blurred
+                    ? () => _revealImage(im)
+                    : () => _openFullScreen(index),
+                child: _thumb(im, blurred),
               );
             },
           ),
+        ),
+      ],
+    );
+  }
+
+  /// 缩略图：未遮罩直接原图；遮罩则模糊 + 蒙层 + 图标。
+  Widget _thumb(_Illustration im, bool blurred) {
+    final Widget img = Image.memory(
+      im.bytes,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) =>
+          const Center(child: Icon(Icons.broken_image_outlined)),
+    );
+    return blurred ? _blurCover(img) : img;
+  }
+
+  /// 防剧透遮罩视觉：模糊图 + 半透明蒙层 + 「点击查看」图标。点击揭开由外层 onTap 处理。
+  Widget _blurCover(Widget img) {
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        ClipRect(
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: img,
+          ),
+        ),
+        const ColoredBox(color: Color(0x33000000)),
+        const Center(
+          child: Icon(Icons.visibility_off_outlined,
+              color: Colors.white70, size: 36),
         ),
       ],
     );
@@ -193,9 +290,15 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         builder: (_) => _FullScreenGallery(
           images: _images,
           initialIndex: initialIndex,
+          revealed: _revealed,
+          blurEnabled: _blurEnabled,
+          onReveal: _revealImage,
         ),
       ),
-    );
+    ).then((_) {
+      // 全屏页可能揭开新图（写入共享 _revealed 集 + DB）；返回刷新网格遮罩。
+      if (mounted) setState(() {});
+    });
   }
 }
 
@@ -203,10 +306,20 @@ class _FullScreenGallery extends StatefulWidget {
   const _FullScreenGallery({
     required this.images,
     required this.initialIndex,
+    required this.revealed,
+    required this.blurEnabled,
+    required this.onReveal,
   });
 
   final List<_Illustration> images;
   final int initialIndex;
+
+  /// 与网格页共享的已揭开集（同一 Set 引用，揭开双向可见，BUG-898）。
+  final Set<String> revealed;
+  final bool blurEnabled;
+
+  /// 揭开一张图（写共享集 + 持久化）；全屏点击遮罩时调。
+  final Future<void> Function(_Illustration) onReveal;
 
   @override
   State<_FullScreenGallery> createState() => _FullScreenGalleryState();
@@ -277,6 +390,19 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
   }
 
   File _currentFile() => widget.images[_currentIndex].file;
+
+  /// 该图当前是否遮罩（与网格页同判据，读共享集）。
+  bool _isBlurred(_Illustration im) => ImageRevealKey.shouldBlur(
+        blurEnabled: widget.blurEnabled,
+        revealKey: im.revealKey,
+        revealed: widget.revealed,
+      );
+
+  /// 全屏点击遮罩 → 揭开（写共享集 + DB）后本地刷新为原图。
+  Future<void> _revealCurrent(_Illustration im) async {
+    await widget.onReveal(im);
+    if (mounted) setState(() {});
+  }
 
   /// 移动端：长按 / 顶栏分享按钮 → 系统分享面板（复用 TODO-023 范式）。
   Future<void> _shareCurrentImage() async {
@@ -398,8 +524,9 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
               itemCount: widget.images.length,
               onPageChanged: _setCurrentIndex,
               itemBuilder: (context, index) {
+                final _Illustration im = widget.images[index];
                 final Widget image = Image.memory(
-                  widget.images[index].bytes,
+                  im.bytes,
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => Icon(
                     Icons.broken_image_outlined,
@@ -407,6 +534,30 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
                     size: 64,
                   ),
                 );
+                if (_isBlurred(im)) {
+                  // 遮罩态：模糊全屏 + 图标，点击揭开（揭开前不许缩放/复制/分享，防剧透）。
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _revealCurrent(im),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        ClipRect(
+                          child: ImageFiltered(
+                            imageFilter:
+                                ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                            child: Center(child: image),
+                          ),
+                        ),
+                        const ColoredBox(color: Color(0x66000000)),
+                        const Center(
+                          child: Icon(Icons.visibility_off_outlined,
+                              color: Colors.white70, size: 48),
+                        ),
+                      ],
+                    ),
+                  );
+                }
                 final Widget viewer = InteractiveViewer(
                   transformationController: _transformationController,
                   minScale: 0.5,

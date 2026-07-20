@@ -172,7 +172,7 @@ void main() {
     final dictCacheDir = Directory(ankiDictionaryMediaCacheDirPath());
     if (!dictCacheDir.existsSync()) dictCacheDir.createSync(recursive: true);
     final dictFile = File(
-      '${dictCacheDir.path}/${ankiDictionaryMediaCacheFilename(dictMediaPath)}',
+      '${dictCacheDir.path}/${ankiDictionaryMediaCacheFilename('明鏡国語辞典 第三版', dictMediaPath)}',
     );
     await dictFile.writeAsString('<svg xmlns="http://www.w3.org/2000/svg"/>');
     addTearDown(() {

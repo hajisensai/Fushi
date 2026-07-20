@@ -399,6 +399,7 @@ SettingsDestination buildReadingDestination() {
       ),
       SettingsSection(
         title: t.section_advanced_typography,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'reading_display.text_justify',
@@ -740,6 +741,7 @@ SettingsDestination buildReadingDestination() {
       // 消费点全不变；面板分组（ReaderGroup.behavior）也不动。
       SettingsSection(
         title: t.section_page_turn_direction,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'reading_controls.invert_volume_buttons',
@@ -809,6 +811,7 @@ SettingsDestination buildReadingDestination() {
       // 翻页方向无关，仅左右调换底栏控件位置，左右手布局偏好）。
       SettingsSection(
         title: t.section_bottom_bar_layout,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'reading_display.reverse_reader_bottom_bar',

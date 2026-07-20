@@ -6,40 +6,74 @@ String _read(String path) => File(path).readAsStringSync();
 
 void main() {
   group('lookup audio volume wiring', () {
-    test('all lookup playback paths pass the configured gain to TtsChannel',
-        () {
-      // 自动发音的 gain 接线收口在 playLookupAudio（lookup_audio_playback.dart）；
-      // reader/source（base）与 dictionary/video（mixin）都转调它，不再各自手抄一份
-      // playAudioRef + gain。popup webview 的手动发音按钮另走自己的路径（仍带 gain）。
+    test(
+        'auto-read routes through the unified WebView-first path with a '
+        'volume-carrying Dart fallback', () {
+      // 单词发音已统一：弹窗自己用 HTML5 <audio> 播（三端 + 扩展同一路径），不再回
+      // Dart 交给 native/libmpv。自动发音走 autoReadWordUnified —— 优先驱动弹窗
+      // <audio>，WebView 未就绪时回退 playLookupAudio（仍带 gain，Never break userspace）。
       final String playback =
           _read('lib/src/utils/misc/lookup_audio_playback.dart');
-      expect(playback, contains('lookupAudioVolumeGain'),
-          reason: 'playLookupAudio must read the lookup audio volume setting');
+      // Dart 兜底仍把配置音量传进播放器。
       expect(playback, contains('playAudioRef('));
       expect(
         playback,
         contains('volume: ReaderHibikiSource.instance.lookupAudioVolumeGain'),
-        reason: 'playLookupAudio must pass the configured volume to playback',
+        reason: 'the Dart fallback (playLookupAudio) must still pass the '
+            'configured volume',
+      );
+      // 统一入口 + 兜底接线。
+      expect(playback, contains('autoReadWordUnified('));
+      expect(
+        playback,
+        contains('await playLookupAudio(appModel, expression, reading)'),
+        reason: 'autoReadWordUnified must fall back to the Dart player when no '
+            'popup WebView is ready',
       );
 
-      // base/mixin 经 playLookupAudio 转调（gain 接线随之统一到上面那一处）。
+      // base/mixin 自动发音都经统一 helper（不再各自手抄 playLookupAudio + gain）。
       for (final String path in <String>[
         'lib/src/pages/base_source_page.dart',
         'lib/src/pages/implementations/dictionary_page_mixin.dart',
       ]) {
-        expect(_read(path), contains('playLookupAudio('),
-            reason: '$path auto-read must route through playLookupAudio');
+        expect(_read(path), contains('autoReadWordUnified('),
+            reason: '$path auto-read must route through the unified helper');
       }
+    });
 
-      // popup webview 的手动发音按钮仍各自传 gain（不经 playLookupAudio）。
-      final String popup =
+    test(
+        'manual + auto word audio applies the configured volume in the '
+        'WebView <audio>', () {
+      // 音量不再在 Dart 侧 playAudioRef 应用（弹窗不回 Dart 播），改注入
+      // window.lookupAudioVolume（0..1，源自 lookupAudioVolumeGain），popup.js 设
+      // audio.volume。
+      final String injection =
+          _read('lib/src/pages/implementations/popup_settings_injection.dart');
+      expect(injection, contains('window.lookupAudioVolume'));
+      expect(injection, contains('lookupAudioVolumeGain'));
+
+      final String popupJs = _read('assets/popup/popup.js');
+      expect(popupJs, contains('new Audio('),
+          reason:
+              'popup.js must play word audio with an HTML5 <audio> element');
+      expect(popupJs, contains('audio.volume'),
+          reason: 'popup.js must apply the injected lookup audio volume');
+      expect(popupJs, contains('window.lookupAudioVolume'));
+
+      // 旧的 Dart 往返已删：弹窗不再自己回 Dart 播音频。
+      final String popupWebView =
           _read('lib/src/pages/implementations/dictionary_popup_webview.dart');
-      expect(popup, contains('lookupAudioVolumeGain'));
-      expect(popup, contains('playAudioRef('));
       expect(
-        popup,
-        contains('volume: ReaderHibikiSource.instance.lookupAudioVolumeGain'),
-        reason: 'manual popup audio must still pass the configured volume',
+        popupWebView,
+        isNot(contains("handlerName: 'playWordAudio'")),
+        reason: 'the playWordAudio Dart bridge must be removed (unified to '
+            '<audio>)',
+      );
+      expect(
+        popupWebView,
+        isNot(contains('playAudioRef(')),
+        reason: 'the popup must not round-trip word audio to a native/libmpv '
+            'player',
       );
     });
 

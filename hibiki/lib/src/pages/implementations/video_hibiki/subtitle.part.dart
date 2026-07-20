@@ -272,20 +272,20 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     );
   }
 
-  /// 副字幕源行（TODO-857 / TODO-1312 视频双字幕）：顶部「关闭」项 + 内嵌字幕轨（复用
-  /// [_subtitleMenuSources] 只取内嵌轨——图形位图轨抽不出文本 cue，选中时 loadCuesForSource
-  /// 返回空、诚实提示失败）。副字幕走 Flutter overlay 副层 cue 流（**可逐字符查词**），与
-  /// 主字幕同款。TODO-1350：这些行以前住在一个独立浮层侧栏里（点「副字幕」跳到另一个窗口，
-  /// 用户报「副字幕打开会去到另一个窗口」）；现直接内联在「字幕」分类的可展开区里就地切换。
+  /// 副字幕源行（TODO-857 / TODO-1312 视频双字幕）：顶部「关闭」项 + 与主字幕**同一份**
+  /// 可用字幕列表 [_subtitleMenuSources]（内嵌轨 + 同目录外挂文件；BUG-900：此前只取
+  /// 内嵌轨，用户下载的外挂字幕没法选为副字幕——「副字幕没办法添加」）。选择链路
+  /// [_selectSecondarySubtitleSource] 走同一 [loadCuesForSource]（内嵌 ffmpeg demux、
+  /// 外挂读文件）本就支持两类源；图形位图轨抽不出文本 cue，选中时返回空、诚实提示失败。
+  /// 副字幕走 Flutter overlay 副层 cue 流（**可逐字符查词**），与主字幕同款。TODO-1350：
+  /// 这些行以前住在一个独立浮层侧栏里（点「副字幕」跳到另一个窗口，用户报「副字幕打开
+  /// 会去到另一个窗口」）；现直接内联在「字幕」分类的可展开区里就地切换。
   /// [context] 是设置面板（浅色 MD3）的构建上下文，配色随之解析（与主字幕轨行一致）。
   List<Widget> _buildSecondarySubtitleRows(
     BuildContext context,
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final List<SubtitleSource> embedded = _subtitleMenuSources
-        .where((SubtitleSource s) => s.isEmbedded)
-        .toList(growable: false);
     return <Widget>[
       if (_subtitleMenuLoading) const LinearProgressIndicator(),
       ListTile(
@@ -301,10 +301,15 @@ extension _VideoSubtitle on _VideoHibikiPageState {
             : () => unawaited(_selectSecondarySubtitleOff(controller)),
       ),
       const Divider(height: 1),
-      for (final SubtitleSource source in embedded)
+      // BUG-900：遍历完整 [_subtitleMenuSources]（与主字幕轨行同一份可用列表），外挂
+      // 字幕文件也能选为副字幕。图标与主字幕轨行一致：图形轨 image / 内嵌 movie /
+      // 外挂 subtitles。
+      for (final SubtitleSource source in _subtitleMenuSources)
         ListTile(
           leading: Icon(
-            source.isGraphicEmbedded ? Icons.image_outlined : Icons.movie,
+            source.isGraphicEmbedded
+                ? Icons.image_outlined
+                : (source.isEmbedded ? Icons.movie : Icons.subtitles),
           ),
           title: Text(source.label),
           selected: source.matchesPersisted(_currentSecondarySubtitleSource),
@@ -326,49 +331,25 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     VideoPlayerController controller, {
     VideoControlSlot? sourceSlot,
   }) async {
-    if (_isRemote) {
-      _rebuild(() {
-        _subtitleMenuSources = const <SubtitleSource>[];
-        _subtitleMenuLoading = false;
-      });
-      // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
-      _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
-      return;
+    // BUG-939：控制条「字幕轨」按钮不再自己枚举字幕源。枚举的单一真相源是
+    // [_ensureSubtitleMenuSourcesLoaded]——它由设置面板「字幕」分类被打开这一事件驱动
+    // （[VideoQuickSettingsSheet.onSubtitleCategoryShown]，initState / didUpdateWidget /
+    // 手动切分类三条路径都会触发），并按视频路径缓存。此前这里额外清空 `_subtitleMenuSources`
+    // 再重跑 ffprobe，导致每次点按钮已枚举的字幕轨先消失、且与面板回调重复枚举显加载条。
+    // 现在退化为纯粹打开面板即可；无本地路径时顺手清掉可能残留的旧枚举缓存。
+    if (_isRemote || _currentVideoPath == null) {
+      if (_subtitleMenuSources.isNotEmpty ||
+          _subtitleMenuLoading ||
+          _subtitleMenuSourcesPath != null) {
+        _rebuild(() {
+          _subtitleMenuSources = const <SubtitleSource>[];
+          _subtitleMenuLoading = false;
+          _subtitleMenuSourcesPath = null;
+        });
+      }
     }
-    final String? videoPath = _currentVideoPath;
-    if (videoPath == null) {
-      _rebuild(() {
-        _subtitleMenuSources = const <SubtitleSource>[];
-        _subtitleMenuLoading = false;
-      });
-      // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
-      _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
-      return;
-    }
-
-    _rebuild(() {
-      _subtitleMenuSources = const <SubtitleSource>[];
-      _subtitleMenuLoading = true;
-    });
     // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
     _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
-    final List<SubtitleSource> sources;
-    try {
-      sources = await _subtitleSourcesForMenu(
-        videoPath: videoPath,
-        currentSubtitleSource: _currentSubtitleSource,
-        currentCues: controller.cues,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      _rebuild(() => _subtitleMenuLoading = false);
-      return;
-    }
-    if (!mounted) return;
-    _rebuild(() {
-      _subtitleMenuSources = sources;
-      _subtitleMenuLoading = false;
-    });
   }
 
   /// TODO-1350（字幕轨即时加载）：进入设置面板「字幕」分类时（重新）枚举当前视频的字幕源
@@ -387,14 +368,22 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     if (controller == null) return;
     final String? videoPath = _currentVideoPath;
     if (_isRemote || videoPath == null) {
-      if (_subtitleMenuSources.isNotEmpty || _subtitleMenuLoading) {
+      if (_subtitleMenuSources.isNotEmpty ||
+          _subtitleMenuLoading ||
+          _subtitleMenuSourcesPath != null) {
         _rebuild(() {
           _subtitleMenuSources = const <SubtitleSource>[];
           _subtitleMenuLoading = false;
+          _subtitleMenuSourcesPath = null;
         });
       }
       return;
     }
+    // BUG-939：已为当前视频枚举过就直接用缓存，不再重跑 ffprobe、不再显加载条。
+    // 修「每次进字幕分类都要加载、明明没可加载的地方」——无内嵌轨/外挂的视频枚举结果
+    // 恒空，但只跑一次；有轨的视频重开时也不再把已枚举的字幕轨先清空重来。缓存在换视频
+    // （路径变）与导入新字幕档（[_invalidateSubtitleMenuSourcesCache]）时失效。
+    if (_subtitleMenuSourcesPath == videoPath) return;
     if (_subtitleMenuLoading) return;
     _rebuild(() => _subtitleMenuLoading = true);
     final List<SubtitleSource> sources;
@@ -405,6 +394,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         currentCues: controller.cues,
       );
     } catch (_) {
+      // 枚举失败不写缓存 key，下次打开重试（ffprobe 偶发失败不该被缓存成「已加载空」）。
       if (!mounted) return;
       _rebuild(() => _subtitleMenuLoading = false);
       return;
@@ -413,7 +403,15 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     _rebuild(() {
       _subtitleMenuSources = sources;
       _subtitleMenuLoading = false;
+      _subtitleMenuSourcesPath = videoPath;
     });
+  }
+
+  /// BUG-939：让字幕轨枚举缓存失效（下次打开「字幕」分类重新 ffprobe 枚举）。导入新字幕
+  /// 档（[_importExternalSubtitleInner] / Jimaku 下载）后调用——新档不在旧枚举结果里，
+  /// 靠这条让它下次出现在字幕轨列表。换视频不需调它（缓存 key 是视频路径，路径变自然失效）。
+  void _invalidateSubtitleMenuSourcesCache() {
+    _subtitleMenuSourcesPath = null;
   }
 
   /// 选中某副字幕源（TODO-857 / TODO-1312）：抽 cue → [VideoPlayerController.setSecondaryCues]
@@ -463,28 +461,43 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         () => _currentSecondarySubtitleSource = SubtitleSource.offSentinel);
   }
 
-  /// 视频就绪后恢复用户选过的副字幕轨（TODO-857 / TODO-1312）。仅内嵌轨（`embedded:<n>`）：
-  /// 解析 streamIndex → [loadCuesForSource] 抽 cue → [VideoPlayerController.setSecondaryCues]。
-  /// null=无偏好 / `off:`=显式关闭 / 外挂路径（首版恢复不支持）都不加载，保持无副字幕。
-  /// 空 cue（图形轨 / 抽取失败）静默跳过（不弹失败——恢复是后台行为，不打扰用户）。
+  /// 视频就绪后恢复用户选过的副字幕轨（TODO-857 / TODO-1312）。支持内嵌轨（`embedded:<n>`）
+  /// 与外挂字幕文件绝对路径（BUG-900：与主字幕同一份可用列表后，副字幕也能选外挂，恢复
+  /// 须对称支持外挂——否则重开视频副字幕丢失）：
+  ///  - 内嵌：解析 streamIndex → [SubtitleSource.embedded]。
+  ///  - 外挂：绝对路径存在 → [SubtitleSource.external]（文件不在则跳过，与主字幕
+  ///    [_restorePersistedSubtitle] 同判据）。
+  /// 再 [loadCuesForSource] 抽 cue → [VideoPlayerController.setSecondaryCues]。
+  /// null=无偏好 / `off:`=显式关闭 都不加载，保持无副字幕。空 cue（图形轨 / 抽取失败 /
+  /// 坏文件）静默跳过（不弹失败——恢复是后台行为，不打扰用户）。
   Future<void> _restoreSecondarySubtitle(
     VideoPlayerController controller,
   ) async {
     final String? persisted = _currentSecondarySubtitleSource;
     if (persisted == null || persisted.isEmpty) return;
     if (SubtitleSource.isOff(persisted)) return;
-    if (!persisted.startsWith(SubtitleSource.embeddedPrefix)) return;
-    final int? streamIndex = int.tryParse(
-      persisted.substring(SubtitleSource.embeddedPrefix.length),
-    );
-    if (streamIndex == null) return;
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return;
+    final SubtitleSource? source;
+    if (persisted.startsWith(SubtitleSource.embeddedPrefix)) {
+      final int? streamIndex = int.tryParse(
+        persisted.substring(SubtitleSource.embeddedPrefix.length),
+      );
+      if (streamIndex == null) return;
+      source = SubtitleSource.embedded(
+        streamIndex: streamIndex,
+        label: 'embedded:$streamIndex',
+      );
+    } else if (File(persisted).existsSync()) {
+      // 外挂源持久化值即其绝对路径（[SubtitleSource.toPersistedValue]）。
+      source = SubtitleSource.external(
+        externalPath: persisted,
+        label: p.basename(persisted),
+      );
+    } else {
+      return;
+    }
     if (!mounted || _controller != controller) return;
-    final SubtitleSource source = SubtitleSource.embedded(
-      streamIndex: streamIndex,
-      label: 'embedded:$streamIndex',
-    );
     final List<AudioCue> cues =
         await loadCuesForSource(source, videoPath, widget.bookUid);
     if (!mounted || _controller != controller) return;
@@ -580,6 +593,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       label: p.basename(downloaded),
     );
     final bool applied = await _selectSubtitleSource(controller, source);
+    // BUG-939：Jimaku 下载的新字幕档不在旧枚举结果里 → 失效缓存，下次打开字幕分类重枚举。
+    if (applied) {
+      _invalidateSubtitleMenuSourcesCache();
+    }
     // 仅在字幕真被应用（解析出 cue）时报「已下载并应用」；cue 为空时
     // _selectSubtitleSource 已弹失败提示，不再叠加误导性的成功提示。
     if (applied && mounted) {
@@ -842,6 +859,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       label: p.basename(dest),
     );
     await _selectSubtitleSource(controller, source);
+    // BUG-939：导入了新外挂字幕档，它不在旧枚举结果里 → 失效缓存，下次打开「字幕」分类
+    // 重新枚举把它列进字幕轨列表。
+    _invalidateSubtitleMenuSourcesCache();
     debugPrint(
       '[hibiki-drop] [video-playback] externalSubtitle imported '
       'path=$dest',
@@ -987,7 +1007,17 @@ extension _VideoSubtitle on _VideoHibikiPageState {
   ) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double screenWidth = MediaQuery.sizeOf(context).width;
-    final double panelWidth = (screenWidth * 0.28).clamp(240.0, 420.0);
+    // BUG-877：面板宽度可自定义并持久化。未自定义（存值 0）时按屏宽自适应；用户拖拽左边缘
+    // 把手改宽后存实际像素、跨开关 / 跨重启记住。存值 / 拖拽值都再 clamp 到 [minWidth,
+    // maxWidth]（防跨设备屏宽差异下越界，且面板不至于宽到吞掉整块画面）。
+    final double autoWidth = (screenWidth * 0.28).clamp(240.0, 420.0);
+    const double minPanelWidth = 240.0;
+    final double maxPanelWidth =
+        (screenWidth * 0.6).clamp(minPanelWidth, 720.0);
+    final double storedWidth = appModel.videoSubtitleListWidth;
+    final double panelWidth =
+        (_subtitleListWidthDrag ?? (storedWidth > 0 ? storedWidth : autoWidth))
+            .clamp(minPanelWidth, maxPanelWidth);
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
@@ -1019,31 +1049,62 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                     child: _withSubtitleListCursorReveal(
                       SafeArea(
                         left: false,
-                        child: VideoSubtitleJumpPanel(
-                          key: const ValueKey<String>(
-                              'video-subtitle-jump-panel'),
-                          controller: controller,
-                          onTapCue: _handleSubtitleJumpTap,
-                          onLookupCue: _handleSubtitleListLookup,
-                          onCopyCue: _copyCueText,
-                          onFavoriteCue: _toggleFavoriteCueForVideo,
-                          isCueFavorited: _isCueFavorited,
-                          isCueSelectedForCard: _isCueSelectedForCard,
-                          onToggleCueSelection: _toggleCueSelectedForCard,
-                          onClearCueSelection: _clearSelectedMiningCues,
-                          // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
-                          initialAutoScroll:
-                              appModel.videoSubtitleListAutoScroll,
-                          onAutoScrollChanged: (bool value) => unawaited(
-                            appModel.setVideoSubtitleListAutoScroll(value),
-                          ),
-                          onClose: _closeSubtitleJumpList,
-                          colorScheme: cs,
-                          title: t.video_subtitle_list,
-                          emptyHint: t.video_subtitle_list_empty,
-                          loadingHint: t.video_subtitle_list_loading,
-                          fontSize: 14 * _videoUiScale,
-                          width: panelWidth,
+                        // BUG-877：面板叠一层左边缘拖拽把手（[_subtitleListResizeHandle]）
+                        // 改宽度并持久化；Stack 让把手浮在面板左边缘、不占面板内容宽度。
+                        child: Stack(
+                          children: <Widget>[
+                            VideoSubtitleJumpPanel(
+                              key: const ValueKey<String>(
+                                  'video-subtitle-jump-panel'),
+                              controller: controller,
+                              onTapCue: _handleSubtitleJumpTap,
+                              onLookupCue: _handleSubtitleListLookup,
+                              // BUG-874：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
+                              // 「点列表下一个词」切换查词而非吞成关闭浮层。
+                              hitTester: _subtitleListHitTester,
+                              onCopyCue: _copyCueText,
+                              onFavoriteCue: _toggleFavoriteCueForVideo,
+                              isCueFavorited: _isCueFavorited,
+                              isCueSelectedForCard: _isCueSelectedForCard,
+                              onToggleCueSelection: _toggleCueSelectedForCard,
+                              onClearCueSelection: _clearSelectedMiningCues,
+                              // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
+                              initialAutoScroll:
+                                  appModel.videoSubtitleListAutoScroll,
+                              onAutoScrollChanged: (bool value) => unawaited(
+                                appModel.setVideoSubtitleListAutoScroll(value),
+                              ),
+                              // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
+                              // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
+                              initialFontScaleIndex:
+                                  appModel.videoSubtitleListFontScaleIndex,
+                              onFontScaleIndexChanged: (int value) => unawaited(
+                                appModel
+                                    .setVideoSubtitleListFontScaleIndex(value),
+                              ),
+                              // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
+                              hoverAutoLookupEnabled:
+                                  ReaderHibikiSource.instance.hoverAutoLookup,
+                              onClose: _closeSubtitleJumpList,
+                              colorScheme: cs,
+                              title: t.video_subtitle_list,
+                              emptyHint: t.video_subtitle_list_empty,
+                              loadingHint: t.video_subtitle_list_loading,
+                              fontSize: 14 * _videoUiScale,
+                              width: panelWidth,
+                            ),
+                            Positioned(
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              child: _subtitleListResizeHandle(
+                                currentWidth: panelWidth,
+                                minWidth: minPanelWidth,
+                                maxWidth: maxPanelWidth,
+                                colorScheme: cs,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -1053,6 +1114,79 @@ extension _VideoSubtitle on _VideoHibikiPageState {
             : const SizedBox.shrink(),
       ),
     );
+  }
+
+  /// BUG-877：字幕列表面板左边缘拖拽把手。面板在屏幕右侧，把左边缘向左（`delta.dx < 0`）
+  /// 拖即变宽，故 `base - delta.dx`；松手把最终宽度落 Drift preferences；双击复位为自适应
+  /// （存 0 = 跟随屏宽）。8px 命中宽度 + resizeLeftRight 光标，中间画一条细可视竖条提示可拖。
+  Widget _subtitleListResizeHandle({
+    required double currentWidth,
+    required double minWidth,
+    required double maxWidth,
+    required ColorScheme colorScheme,
+  }) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      // BUG-930：进 / 出把手时翻 [_pointerOverSubtitleResizeHandle]，让侧栏
+      // [_forceRevealOsCursorForPanel] 的每帧原生「强设 basic」在把手上让位，
+      // 使框架声明的 resizeLeftRight 光标不被盖掉（enter 早于同帧 parent onHover 处理，
+      // 稳态下光标即为 resize；退出把手复位、面板其余区域仍走 basic 唤回缓解）。
+      onEnter: (PointerEnterEvent _) => _pointerOverSubtitleResizeHandle = true,
+      onExit: (PointerExitEvent _) => _pointerOverSubtitleResizeHandle = false,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: (DragUpdateDetails details) {
+          final double base = _subtitleListWidthDrag ?? currentWidth;
+          final double next =
+              (base - details.delta.dx).clamp(minWidth, maxWidth);
+          _rebuild(() => _subtitleListWidthDrag = next);
+        },
+        onHorizontalDragEnd: (DragEndDetails details) {
+          final double? dragged = _subtitleListWidthDrag;
+          if (dragged != null) {
+            unawaited(appModel.setVideoSubtitleListWidth(dragged));
+          }
+          _rebuild(() => _subtitleListWidthDrag = null);
+        },
+        onDoubleTap: () {
+          unawaited(appModel.setVideoSubtitleListWidth(0));
+          _rebuild(() => _subtitleListWidthDrag = null);
+        },
+        child: SizedBox(
+          width: 8,
+          child: Center(
+            child: Container(
+              width: 2,
+              decoration: BoxDecoration(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// asbplayer 式「字幕偏移对齐」快捷键胶水（用户请求，默认 Ctrl+Shift+←/→）：把
+  /// **上一句 / 下一句**字幕的起点整体平移到当前播放点，一键把整轨粗对齐到当前台词时刻
+  /// （再配合 z/x 微调）。与 z/x 的固定步进平移不同——这里按目标 cue 求**绝对**偏移。
+  ///
+  /// 决策全部集中在纯函数 [VideoPlayerController.snapSubtitleDelayMs]（选相邻 cue + 求
+  /// 新 delayMs，可单测）；本方法只做胶水：取 controller 实时 cues/positionMs 与当前
+  /// `_delayMs`，拿到新延迟后走既有权威写穿 [_setDelayMs]（clamp + 落盘 + OSD + 即时重算）。
+  /// 无 controller / 无 cue / 位置未就绪 / 已是首末句无相邻 cue 时 no-op（不弹窗、不改延迟）。
+  void _snapSubtitleDelayToCue({required bool next}) {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final int? newDelayMs = VideoPlayerController.snapSubtitleDelayMs(
+      cues: controller.cues,
+      positionMs: controller.positionMs,
+      currentDelayMs: _delayMs,
+      next: next,
+    );
+    if (newDelayMs == null) return;
+    unawaited(_setDelayMs(newDelayMs));
   }
 
   /// TODO-701 阶段1：一键字幕自动对轴。抽当前视频的逐帧音频能量包络（[extractAudioEnergyEnvelope]
@@ -1159,4 +1293,83 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       ),
     );
   }
+
+  /// 字幕对轴/匹配快捷键（用户请求，默认 Shift+A）：从键盘一键弹波形对轴放大视图，
+  /// 免去「控制栏 tune → 快速设置面板 → 字幕调轴区 → 点入口」四级操作。逻辑与
+  /// [SubtitleWaveformAlignPanel] 的入口点击（懒抽波形 → 非空才弹 [SubtitleWaveformZoomView]）
+  /// 完全一致、零第二套状态：调轴仍经 [_setDelayMs] 写回权威 `_delayMs`，自动对轴复用
+  /// [_autoAlignSubtitle]，逐句试听 / 播放头 / 弹窗内快捷键与快速设置面板路径同源。
+  ///
+  /// 降级路径与面板入口同款：无 controller / 无字幕 cue / 无本地视频路径 / 抽波形返回空
+  /// （移动端拿不到逐帧行 / ffmpeg 不可用）时不弹窗，改弹 OSD 提示不可用（不崩不空白）。
+  Future<void> _openSubtitleWaveformAlign() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final List<AudioCue> cues = controller.cues;
+    final String? videoPath = controller.videoPath;
+    if (cues.isEmpty || videoPath == null || videoPath.isEmpty) {
+      _showOsd(t.video_subtitle_waveform_unavailable);
+      return;
+    }
+    final List<double> env = await _loadSubtitleWaveformEnvelope();
+    if (!mounted) return;
+    if (env.isEmpty) {
+      _showOsd(t.video_subtitle_waveform_unavailable);
+      return;
+    }
+    // 波形时间窗上界：与 extractAudioEnergyEnvelope 探测上界同源（前 N 分钟截断），
+    // 与 _SubtitleWaveformAlignPanelState._windowEndMs 同一算式，保证键盘直达路径与
+    // 面板入口路径画出的时间轴一致。
+    final int durationMs = controller.durationMs ?? 0;
+    final int windowEndMs =
+        (durationMs > 0 && durationMs < kSubtitleAutoAlignProbeLimitMs)
+            ? durationMs
+            : kSubtitleAutoAlignProbeLimitMs;
+    final bool canAutoAlign = cues.isNotEmpty && videoPath.isNotEmpty;
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (BuildContext _) => SubtitleWaveformZoomView(
+        rawEnvelope: env,
+        cues: cues,
+        windowEndMs: windowEndMs,
+        initialDelayMs: _delayMs,
+        onCommitDelay: _setDelayMs,
+        onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
+        onPlayCue: (int startMs) async {
+          await controller.seekMs(startMs);
+          await controller.play();
+        },
+        isPlaying: () => controller.isPlaying,
+        onTogglePlayPause: () async {
+          await controller.togglePlayPause();
+        },
+        // 弹窗内复用视频页 registry 驱动的整表（尊重重映射）；排除会破坏弹窗自身的动作
+        // （Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁 / 再次打开对轴弹窗——避免递归叠栈）。
+        keyboardShortcuts: buildVideoPlayerShortcutsFromRegistry(
+          appModel.shortcutRegistry,
+          _buildVideoShortcutActions(controller),
+          exclude: const <ShortcutAction>{
+            ShortcutAction.videoEscape,
+            ShortcutAction.videoToggleFullscreen,
+            ShortcutAction.videoToggleSubtitleList,
+            ShortcutAction.videoToggleImmersiveLock,
+            ShortcutAction.videoOpenSubtitleAlign,
+          },
+        ),
+        onSeek: (int ms) async {
+          await controller.seekMs(ms);
+        },
+        positionListenable: controller,
+        // positionMs 可空（未就绪）；与快速设置面板路径同用 -1 哨兵 = 不画播放头。
+        currentPositionMs: () => controller.positionMs ?? -1,
+      ),
+    );
+  }
 }
+
+/// 字幕延迟 +/- 快捷键（用户请求，默认 z/x）每次整体平移的步进（毫秒）。取 100ms
+/// = mpv 字幕延迟键 `z`/`x` 的 0.1s 惯例；与快速设置面板 ±50 / ±1000 步进正交（都经
+/// [_setDelayMs] 写穿同一权威 `_delayMs`）。
+const int _kSubtitleDelayNudgeMs = 100;

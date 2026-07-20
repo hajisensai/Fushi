@@ -875,9 +875,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         // TODO-806 [806-TAP] 框选点击坐标取证探针（默认 off，由 DebugLogService 门控
         // 注入：${DebugLogService.instance.enabled} 为 false 时整段不进 JS）。打印 onTap
         // 实际回传的点击坐标，口径=WebView CSS 视口像素（e.clientX/clientY），**不是** OS
-        // 屏幕坐标——差一个 devicePixelRatio + 页面在屏内的偏移。用户曾把 [792-REVEAL]
-        // 的 WebView 内部滚动几何探针误当框选坐标，这条标明口径以正本清源。走 console.log
-        // → onConsoleMessage → debugPrint → DebugLogService 环形缓冲，与 [792-REVEAL] 同管道。
+        // 屏幕坐标——差一个 devicePixelRatio + 页面在屏内的偏移，这条标明口径以正本清源。
+        // 走 console.log → onConsoleMessage → debugPrint → DebugLogService 环形缓冲。
         if (${DebugLogService.instance.enabled}) {
           try {
             console.log('[806-TAP] clientX=' + x + ' clientY=' + y
@@ -1053,14 +1052,20 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       var nativeDx = e.clientX - startX;
       var nativeDy = e.clientY - startY;
       var nativeMoved = (nativeDx * nativeDx + nativeDy * nativeDy) > 36;
-      var nativeSelection = window.getSelection && window.getSelection();
-      var hasNativeSelection = nativeSelection && !nativeSelection.isCollapsed;
       _hoshiReaderMouseNativeTextStart = false;
       _hoshiReaderMouseDragActive = false;
       _hoshiReaderMouseDragPointerId = null;
       _hoshiReaderMouseDragPageDirection = null;
       _hoshiReaderPointerNoSelect(false);
-      if (nativeMoved || hasNativeSelection) {
+      // 只有「本次手势里指针真的移动过」(nativeMoved) 才当作用户在拖动划原生选区，
+      // 保留选区供复制 / 桌面 Ctrl+C，不再当作查词 tap。
+      // 旧代码还把「残留原生选区未折叠」也塞进这条早退：只要上一轮的选区还在，纯 tap
+      //（未移动）也会在此提前 return，跳过 _gestureEnd -> selectText -> clearSelection
+      // 整条链——于是残留选区会让之后每一次点击都被吞（查词永远打不开）。桌面细指针鼠标
+      // 拖选/右键复制刻意保留原生选区，最容易触发这个死循环。纯 tap 时改为落到下方
+      // _gestureEnd：selectText 会先 clearSelection(removeAllRanges) 再查词，既清掉残留
+      // 选区又能正常弹词典。BUG-927。
+      if (nativeMoved) {
         hasStart = false;
         return;
       }
@@ -1431,6 +1436,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                     if (text == null || text.isEmpty) return;
                     await Clipboard.setData(ClipboardData(text: text));
                     HibikiToast.show(msg: t.copied_to_clipboard);
+                    // 复制后清掉 ActionMode 残留的原生选区，和桌面右键 'copy' 对齐，
+                    // 避免残留选区卡住后续查词。BUG-927。
+                    await _clearReaderAppSelection();
                   },
                 ),
               ],
@@ -1502,8 +1510,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             _audiobookController!.setChapterCues(allCues);
           }
           _lyricsEntryChapter = _currentChapter;
+          // BUG-872：位置优先索引，避免暂停态重建时 _currentCue 未填充导致
+          // 入场高亮 clamp 回第一句。
           _lyricsEntryCueIndex = allCues.isNotEmpty
-              ? _audiobookController!.allBookCueIdx
+              ? _audiobookController!.allBookCueIdxAtPosition
               : _audiobookController!.currentCueIdx;
           _loadLyricsPage();
         } else {
@@ -1558,6 +1568,20 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         controller.addJavaScriptHandler(
           handlerName: 'onRestoreComplete',
           callback: (_) => _onRestoreComplete(),
+        );
+
+        // BUG-493 根因修复：JS 侧 `_reanchorPending` 清旗已单点化（_sharedJs 的
+        // `_setReanchorPending`），true→false（重锚 settle）那一刻回调此处。settle 即补
+        // 刷一次进度，事件驱动替代旧的 Dart 侧 120ms×8 轮询重试——commit 成功 / gate 不
+        // 放行 / begin 采不到锚 / 已有别处重锚在飞等**所有**清旗路径都会通知，进度不再
+        // 依赖轮询猜测清旗时机。图片/封面章的 null 稳态仍由 _refreshProgress 内的
+        // _applyImagePageProgressFallback 兜底，不受影响。
+        controller.addJavaScriptHandler(
+          handlerName: 'onReanchorSettled',
+          callback: (_) {
+            if (!mounted) return;
+            unawaited(_refreshProgress());
+          },
         );
 
         // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸·trackpad·键盘
@@ -1804,15 +1828,24 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           callback: (_) => _audiobookController?.triggerImagePause(),
         );
 
-        // TODO-1289：JS 揭开防剧透图后回传稳定 key，登记进本次阅读会话内存集；
-        // 章节 (重)载时 _buildReaderHtml 会把该集嵌回分页脚本，跳过重新遮罩。
+        // TODO-1289 / BUG-898：JS 揭开防剧透图后回传稳定 key（extractDir 相对归一路径）。
+        // 归一化后登记进本次阅读会话内存集（章节重载 _buildReaderHtml 嵌回分页脚本跳过重
+        // 遮罩），并持久化到 Drift（跨 app 重启永久 + 图片库双向同步的真相源）。
         controller.addJavaScriptHandler(
           handlerName: 'onImageRevealed',
           callback: (List<dynamic> args) {
             if (args.isEmpty) return;
-            final String key = args[0]?.toString() ?? '';
-            if (key.isEmpty) return;
-            _revealedImageKeys.add(key);
+            final String? key =
+                ImageRevealKey.normalize(args[0]?.toString() ?? '');
+            if (key == null) return;
+            // 仅新揭开才写库（省重复写）；DB 失败不阻塞 UI（内存集已生效）。
+            if (_revealedImageKeys.add(key)) {
+              unawaited(appModel.database.markImageRevealed(
+                widget.bookKey,
+                key,
+                DateTime.now().millisecondsSinceEpoch,
+              ));
+            }
           },
         );
 
@@ -2048,6 +2081,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         });
       }
       _lyricsPageReady = true;
+      // 首次进入歌词模式的提示对话框：挂在歌词文档真正就绪的这一刻消费一次性旗
+      // （_toggleLyricsMode 进入分支置位），替代旧的裸 delay 100ms（事件驱动，见旗注释）。
+      if (_pendingLyricsHintOnReady) {
+        _pendingLyricsHintOnReady = false;
+        _showLyricsModeHintIfNeeded();
+      }
       // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 hoshiCaret 注入。
       // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
       await controller.evaluateJavascript(

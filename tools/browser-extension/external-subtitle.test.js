@@ -67,21 +67,29 @@ function loadPanel(opts) {
   opts = opts || {};
   const src = fs.readFileSync(PANEL, 'utf8');
   const body = makeEl('body');
-  const video = { currentTime: 0 };
+  const video = {
+    currentTime: 0,
+    paused: false,
+    pauseCount: 0,
+    pause() { this.paused = true; this.pauseCount++; },
+    getBoundingClientRect() { return { left: 100, top: 50, width: 800, height: 450 }; },
+  };
   const storageListeners = [];
+  const documentListeners = {};
+  const intervals = [];
   const createdInputs = [];
   const toasts = [];
   let captionResp = opts.response;
   const windowObj = {
     hibikiEpisodeCues: opts.store || {},
     postMessage() {},
-    addEventListener() {},
+    addEventListener: (type, fn) => { (documentListeners[type] = documentListeners[type] || []).push(fn); },
     hibikiToast: (m) => toasts.push(m),
   };
   const documentObj = {
     body,
     fullscreenElement: null,
-    addEventListener() {},
+    addEventListener: (type, fn) => { (documentListeners[type] = documentListeners[type] || []).push(fn); },
     getElementById: (id) => findByIdDeep(body, id),
     querySelector: (sel) => (sel === 'video' ? video : null),
     querySelectorAll: () => [],
@@ -97,7 +105,7 @@ function loadPanel(opts) {
     window: windowObj,
     document: documentObj,
     location: { hostname: opts.hostname || 'example.com', pathname: opts.pathname || '/video/1', origin: 'https://' + (opts.hostname || 'example.com') },
-    setInterval: (fn, ms) => ({ fn, ms }),
+    setInterval: (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; },
     clearInterval() {},
     FileReader: FileReaderStub,
     chrome: {
@@ -119,6 +127,16 @@ function loadPanel(opts) {
     panel: () => findByIdDeep(body, 'hibiki-subtitle-panel'),
     reopen: () => findByIdDeep(body, 'hibiki-subtitle-reopen'),
     setResponse: (r) => { captionResp = r; },
+    tick: () => { const t = intervals.find((it) => it.ms === 200); if (t) t.fn(); },
+    dropFiles: function (files) {
+      const ev = {
+        dataTransfer: { files, types: ['Files'], dropEffect: '' },
+        prevented: false,
+        preventDefault() { this.prevented = true; },
+      };
+      for (const fn of documentListeners.drop || []) fn(ev);
+      return ev;
+    },
     // 驱动加载：点重开片→点＋→喂文件→触发 change。
     loadFile: function (name, content) {
       const chip = findByIdDeep(body, 'hibiki-subtitle-reopen');
@@ -187,4 +205,57 @@ test('③ 不支持格式 → 提示、不造轨', () => {
   const store = h.windowObj.hibikiEpisodeCues;
   assert.strictEqual(Object.keys(store).length, 0, '不支持格式不得造轨');
   assert.ok(h.toasts.some((t) => t.indexOf('不支持') >= 0), '必须提示格式不支持');
+});
+
+test('④ 拖放外挂字幕会自动开启列表并加载轨道', () => {
+  const h = loadPanel({
+    hostname: 'example.com', pathname: '/video/1', stored: { subtitleDragDropEnabled: true },
+    response: OK([{ text: '拖放字幕', startMs: 1000, endMs: 3000 }]),
+  });
+  const ev = h.dropFiles([{ name: 'drop.ja.srt', size: 120, _content: 'dummy' }]);
+  assert.strictEqual(ev.prevented, true, '支持的字幕文件 drop 必须被接管');
+  assert.ok(h.panel(), '主动拖放字幕后应自动开启并显示列表');
+  assert.ok(h.windowObj.hibikiEpisodeCues['example.com/video/1|外挂:drop.ja.srt']);
+});
+
+test('⑤ 外挂字幕按视频矩形叠到画面上，站点轨不重复叠字', () => {
+  const h = loadPanel({
+    hostname: 'example.com', pathname: '/video/1',
+    stored: { netflixSubtitlePanel: true, subtitleOverlayEnabled: true },
+    response: OK([{ text: '画面上的外挂字幕', startMs: 1000, endMs: 3000 }]),
+  });
+  h.loadFile('overlay.srt', 'dummy');
+  h.video.currentTime = 2;
+  h.tick();
+  const overlay = findByIdDeep(h.body, 'hibiki-subtitle-overlay');
+  assert.ok(overlay, '当前外挂 cue 应创建视频叠字');
+  assert.strictEqual(overlay.textContent, '画面上的外挂字幕');
+  assert.strictEqual(overlay.style.left, '500px');
+});
+
+test('⑥ 自动暂停与精简播放按当前字幕轨工作', () => {
+  const pause = loadPanel({
+    hostname: 'example.com', pathname: '/video/1',
+    stored: { netflixSubtitlePanel: true, subtitleAutoPause: true },
+    response: OK([{ text: 'a', startMs: 1000, endMs: 2000 }]),
+  });
+  pause.loadFile('pause.srt', 'dummy');
+  pause.video.currentTime = 1.5;
+  pause.tick();
+  pause.video.currentTime = 2.1;
+  pause.tick();
+  assert.strictEqual(pause.video.pauseCount, 1, '字幕句结束时应暂停一次');
+
+  const condensed = loadPanel({
+    hostname: 'example.com', pathname: '/video/1',
+    stored: { netflixSubtitlePanel: true, subtitleCondensedPlayback: true },
+    response: OK([
+      { text: 'a', startMs: 1000, endMs: 2000 },
+      { text: 'b', startMs: 5000, endMs: 6000 },
+    ]),
+  });
+  condensed.loadFile('condensed.srt', 'dummy');
+  condensed.video.currentTime = 2.5;
+  condensed.tick();
+  assert.strictEqual(condensed.video.currentTime, 5, '长无字幕区间应跳到下一句');
 });

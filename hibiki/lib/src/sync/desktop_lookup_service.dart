@@ -31,12 +31,19 @@ class DesktopLookupRequest {
     required this.origin,
     this.foregroundPolicy = DesktopLookupForegroundPolicy.bringToFront,
     this.showSourcePanel = true,
+    this.passiveStream = false,
   });
 
   final String text;
   final DesktopLookupOrigin origin;
   final DesktopLookupForegroundPolicy foregroundPolicy;
   final bool showSourcePanel;
+
+  /// 被动连续文本流（galgame 台词 hook 每 ~400ms 灌一条新台词）而非用户一次性显式意图
+  /// （剪贴板复制 / 热键）。悬浮面板据此决定：用户已点词查看释义时，被动流只刷新可点句子
+  /// 横幅、不抢占/不重置用户的查词结果（否则连续流会把点词的 searchDictionary 作废 + 整帧
+  /// 重置冲掉释义，表现为「对话流动时点词没反应」）。真剪贴板复制（false）仍正常重查。
+  final bool passiveStream;
 }
 
 /// 桌面剪贴板 + 全局热键查词触发器。单例 ChangeNotifier（仿 TexthookerService）。
@@ -79,13 +86,18 @@ class DesktopLookupService extends ChangeNotifier
   /// 引用计数正确建模「N 个并发持有者」：每次 [start] 计数 +1，每次 [stop] 计数 -1，
   /// 只有 0→1 才真正挂 watcher、只有 1→0 才真正拆。断点期计数 1→2→1 恒 >0，watcher 始终
   /// 存活；真正切离查词 tab（无第二个 owner）时计数归 0 才拆，故仍满足「仅在查词界面监听
-  /// 剪贴板/全局热键」的既定契约（见设置文案 desktop_clipboard_window_mode_hint）。
+  /// 剪贴板/全局热键」的既定契约。
   /// 计数的自增/分支判定都在首个 `await` 之前同步完成，故与 start/stop 的 `unawaited`
   /// 异步穿插无关，结果确定。
   int _startRefCount = 0;
   DesktopClipboardWindowMode _windowMode = DesktopClipboardWindowMode.normal;
   bool _focused = true;
   HotKey? _hotKey;
+
+  /// 剪贴板复制历史采集回调（AppModel 接上 `addClipboardHistoryEntry`）。仅在真实
+  /// 剪贴板变化（origin=clipboard、去重通过）时触发；热键 / 悬浮字幕点词不计入
+  /// 「复制历史」。桌面单例，主进程设一次。
+  void Function(String text)? onClipboardCaptured;
 
   bool get isRunning => _startRefCount > 0;
 
@@ -97,11 +109,12 @@ class DesktopLookupService extends ChangeNotifier
   /// 仍可按全局热键（Ctrl+Shift+D，origin=hotkey）或在悬浮字幕上点词（origin=explicit）
   /// ——那些是显式意图，保留 bringToFront。窗口置顶策略（[DesktopClipboardWindowMode]）
   /// 不改变本约定：无论选哪种策略，被动剪贴板变化都不抢焦点。
-  void submitText(String raw) {
+  void submitText(String raw, {bool passiveStream = false}) {
     _queueLookupRequest(
       raw,
       origin: DesktopLookupOrigin.clipboard,
       foregroundPolicy: DesktopLookupForegroundPolicy.none,
+      passiveStream: passiveStream,
     );
   }
 
@@ -112,6 +125,7 @@ class DesktopLookupService extends ChangeNotifier
         DesktopLookupForegroundPolicy.bringToFront,
     bool showSourcePanel = true,
     bool dedupe = true,
+    bool passiveStream = false,
   }) {
     // BUG-442：剪贴板/热键/显式查词的统一入口。所有来源在排队前先按同一码点上限
     // 截断（用 characters 不切碎代理对 / 字素簇），避免超长串一路流到逐字渲染的
@@ -126,6 +140,7 @@ class DesktopLookupService extends ChangeNotifier
         origin: origin,
         foregroundPolicy: foregroundPolicy,
         showSourcePanel: showSourcePanel,
+        passiveStream: passiveStream,
       );
       notifyListeners();
       return;
@@ -138,6 +153,7 @@ class DesktopLookupService extends ChangeNotifier
       origin: origin,
       foregroundPolicy: foregroundPolicy,
       showSourcePanel: showSourcePanel,
+      passiveStream: passiveStream,
     );
     notifyListeners();
   }
@@ -402,7 +418,11 @@ class DesktopLookupService extends ChangeNotifier
   /// `SetForegroundWindow` 还会触发任务栏 flash。所以已前台时整个调用 no-op。
   /// 热键/真正的外部复制场景窗口不在前台，`isFocused()` 为 false，照常唤起 +
   /// 置顶，行为不变。
-  Future<void> bringPendingLookupToFront() async {
+  Future<void> bringPendingLookupToFront() => bringMainWindowToFront();
+
+  /// 统一的桌面主窗口显式唤起出口。Hook 台词浮窗的“打开捕获工作台”等非查词
+  /// 场景也必须经过这里，复用 Windows 前台归属判断和任务栏闪烁清理。
+  Future<void> bringMainWindowToFront() async {
     if (!isDesktop) return;
     if (DesktopForegroundGuard.isHiddenWindowsRunner) return;
     // 已在前台无需（也不该）做任何唤起/置顶动作：对前台窗口调

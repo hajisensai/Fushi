@@ -16,6 +16,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/lookup/clipboard_history_payload.dart';
 import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/lookup/global_lookup_channel.dart';
 import 'package:hibiki/src/lookup/global_lookup_layout.dart';
@@ -125,6 +127,7 @@ class GlobalLookupController {
   // sentence still feeds mining even when the banner is suppressed. Empty when
   // no sentence was captured. Reset per lookup in _lookupExternal.
   String _currentSentence = '';
+  OverlayMiningHandler? _currentMiningHandler;
 
   // 用户 2026-07-12 — 整句横幅（框）只给「剪切板自动唤出的瞬态窗」显示；手动
   // 快捷键查词不显示（其整句仍进制卡 sentence，只是不贴横幅）。与 _currentSentence
@@ -375,7 +378,7 @@ class GlobalLookupController {
       // 制卡 `{sentence}` 兜底（sentenceContext），但 showSentenceBanner:false
       // 让 root 卡不贴横幅。只有剪切板自动唤出的瞬态窗（dispatcher）才带横幅。
       await _lookupExternal(text,
-          sentence: sentence, showSentenceBanner: false);
+          sentence: sentence, showSentenceBanner: false, miningHandler: null);
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
     }
@@ -397,6 +400,7 @@ class GlobalLookupController {
     String sentence = '',
     Rect? anchorScreenRect,
     bool showSentenceBanner = true,
+    OverlayMiningHandler? miningHandler,
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
@@ -419,8 +423,47 @@ class GlobalLookupController {
     await _lookupExternal(term,
         sentence: sentence,
         anchorScreenRect: anchorScreenRect,
-        showSentenceBanner: showSentenceBanner);
+        showSentenceBanner: showSentenceBanner,
+        miningHandler: miningHandler);
     return true;
+  }
+
+  /// 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入，覆盖窗进程只读）后注入
+  /// 覆盖层。best-effort：任何失败记日志吞掉，绝不打断覆盖窗。
+  Future<void> _showClipboardHistory() async {
+    final AppModel? model = _appModel;
+    if (model == null) return;
+    try {
+      await model.clipboardHistoryRepo.loadFromDb();
+      await _renderClipboardHistory(model);
+    } catch (e, st) {
+      glog('lookup: clipboard-history EXCEPTION $e\n$st');
+    }
+  }
+
+  /// 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
+  Future<void> _clearClipboardHistoryAndRefresh() async {
+    final AppModel? model = _appModel;
+    if (model == null) return;
+    try {
+      await model.clearClipboardHistory();
+      await _renderClipboardHistory(model);
+    } catch (e, st) {
+      glog('lookup: clipboard-history clear EXCEPTION $e\n$st');
+    }
+  }
+
+  /// 把当前 [AppModel.clipboardHistory] + 本地化标签转成 host payload 注入渲染。
+  Future<void> _renderClipboardHistory(AppModel model) async {
+    final String payload = buildClipboardHistoryPayloadJson(
+      entries: model.clipboardHistory,
+      title: t.clipboard_history_title,
+      clearLabel: t.clipboard_history_clear,
+      emptyLabel: t.clipboard_history_empty,
+      now: DateTime.now(),
+    );
+    await GlobalLookupChannel.render('window.__globalLookupHost && '
+        'window.__globalLookupHost.showClipboardHistory($payload);');
   }
 
   /// TODO-872 — the shared app-external lookup chain for BOTH triggers (the
@@ -439,6 +482,7 @@ class GlobalLookupController {
     required String sentence,
     Rect? anchorScreenRect,
     bool showSentenceBanner = true,
+    OverlayMiningHandler? miningHandler,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -458,6 +502,7 @@ class GlobalLookupController {
       // not look like a user dismissal.
       GlobalLookupChannel.hide(notify: false);
       _currentSentence = sentence;
+      _currentMiningHandler = miningHandler;
       _showSentenceBanner = showSentenceBanner;
 
       final DictionarySearchResult result = await model.searchDictionary(
@@ -685,6 +730,7 @@ class GlobalLookupController {
     // next lookup re-computes its own from the fresh cursor position.
     _originFloorLeft = 0;
     _originFloorTop = 0;
+    _currentMiningHandler = null;
     glog('overlayHidden: dismissed — reveal state reset');
     onHidden?.call();
   }
@@ -751,6 +797,27 @@ class GlobalLookupController {
     // 本实例（global_lookup channel）的去向只落 overlay 键。见 _onOverlayResized。
     if (handler == 'windowMoved') {
       _onOverlayResized(message);
+      return;
+    }
+    // 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入）并注入覆盖层。
+    if (handler == 'clipboardHistory') {
+      unawaited(_showClipboardHistory());
+      return;
+    }
+    // 历史某条被点：以该文本重查（复用共享 app-external 查词链 lookupText）。
+    if (handler == 'lookupClipboardHistoryEntry') {
+      final Object? args = message['args'];
+      if (args is List && args.isNotEmpty) {
+        final String text = args.first?.toString() ?? '';
+        if (text.isNotEmpty) {
+          unawaited(lookupText(text));
+        }
+      }
+      return;
+    }
+    // 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
+    if (handler == 'clearClipboardHistory') {
+      unawaited(_clearClipboardHistoryAndRefresh());
       return;
     }
     if (handler == 'tapOutside' || handler == 'dismiss') {
@@ -826,6 +893,7 @@ class GlobalLookupController {
       // UIA 捕获的前台句即句子上下文：制卡 `{sentence}` 用它兜底（JS 不发
       // sentence）。与句子横幅同一 `_currentSentence`（嵌套子查词无句 → ''）。
       sentenceContext: _currentSentence,
+      miningHandler: _currentMiningHandler,
     )) {
       return;
     }

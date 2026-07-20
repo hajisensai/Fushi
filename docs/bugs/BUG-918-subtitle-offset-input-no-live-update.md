@@ -1,0 +1,14 @@
+## BUG-918 · 字幕偏移输入框不按回车不更新·退格没反应
+- **报告**：2026-07-19（用户：视频字幕对轴「偏移(ms)」输入框——不按回车不更新、backspace 没反应）
+- **真实性**：✅ 真 bug（单一根因，两条症状同源）。「偏移(ms)」数值输入框只有 `onSubmitted`（回车）提交、**没有 `onChanged`**：
+  - `hibiki/lib/src/media/video/video_quick_settings_sheet.dart:1092` 的 `AdaptiveSettingsTextField`（快速设置面板字幕分类的偏移框，即用户截图那个）。
+  - `hibiki/lib/src/media/video/subtitle_waveform_align_panel.dart:1251` 的 `AdaptiveSettingsTextField`（波形对轴放大视图内同款偏移框）。
+  - **不按回车不更新**：无 `onChanged`，键入的值不落到延迟，必须按回车（`onSubmitted`）才 `_commitDelay` / `_commit`。
+  - **backspace 没反应**：同源。退格能删字符（TextField 本身正常——排查过全局 / media_kit / 焦点控制器均无夺 backspace 的路径：焦点在输入框时 `EditableText` 的文本编辑 Action 比任何祖先 `Shortcuts`（含 `videoResetSpeed`=Backspace）更靠近焦点、先消费），但删完不落到延迟 → 用户观感「退格没反应」。**不是按键被吞，是编辑不实时生效。**
+- **[x] ① 已修复** — 两个偏移框都加「边键入边去抖生效」：新增 `onChanged: _onDelayInputChanged`，解析成功就去抖 350ms 后走既有权威提交（`_commitDelay` / `_commit`，与滑条 / ± 按钮同源、实时生效），**无需回车**；退格 / 键入实时反映到延迟。
+  - 去抖（`Timer? _delayInputDebounce`）避免逐键提交把字幕来回跳 + OSD 刷屏；`syncField:false` 不回写输入框文本，保住光标与退格（若回写会把光标弹到行尾、下一次退格看似「没反应」）。
+  - 空 / 只有正负号等未成形输入解析失败 → 不提交、不回退，保留用户正在敲的中间态。
+  - 权威提交（滑条 / ± 按钮 / 回车）取消任何待触发的键入去抖，免得陈旧键入值迟到覆盖。`dispose` 取消 timer。
+  - 提交：<PENDING>
+- **[x] ② 已加自动化测试** — 行为测试 `hibiki/test/media/video/subtitle_waveform_align_panel_test.dart`（3 条 BUG-918 用例）：① 键入 `1230` **不按回车**、过 350ms 去抖窗口后 `onCommitDelay` 收到 `1230`，且输入框文本未被回写（`find.text('1230')` 仍在 → 光标/退格不错位）；② 退格删末位 `1230→123` 实时重提交 `123`；③ 清空 / 只留 `-` 等未成形输入不提交、不回退。快速设置面板同款字段逻辑完全一致（develop 无该 sheet 的 widget test harness，共享同一行为守卫）。
+- **备注**：去抖 350ms。实时提交仍走既有 `onSetDelay`→`_setDelayMs`→OSD 反馈路径（BUG-373 范式），慢速键入每位会弹一次 OSD、属可接受的即时反馈。需**真机复测**：在字幕对轴偏移框键入 / 退格，不按回车即看到字幕延迟随之变化。

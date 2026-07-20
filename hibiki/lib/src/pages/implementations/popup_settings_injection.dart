@@ -15,7 +15,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/popup_theme_css.dart';
 import 'package:hibiki/src/reader/dictionary_font_css.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -52,20 +52,13 @@ class PopupSettingsOptions {
   final bool sentenceDraftEnabled;
 }
 
-String _cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
-    '${(c.g * 255.0).round().clamp(0, 255)}, '
-    '${(c.b * 255.0).round().clamp(0, 255)})';
-
-/// spec 2026-07-10 §6 — the bare `r, g, b` triplet of [c]，供 popup.css 的
-/// `rgba(var(--hibiki-card-bg-rgb), var(--hibiki-card-bg-alpha))` 组装半透明卡
-/// 背景（`--background-color` 是不透明 `rgb()`，纯 CSS 无法给它加 alpha）。
-String _cssRgbTriplet(Color c) => '${(c.r * 255.0).round().clamp(0, 255)}, '
-    '${(c.g * 255.0).round().clamp(0, 255)}, '
-    '${(c.b * 255.0).round().clamp(0, 255)}';
-
 /// Builds the theme-derived CSS custom properties + `data-theme` (+ the
 /// `global-lookup` document class when [globalLookup]). Shared by both paths so
 /// the WebView surfaces follow the app ColorScheme identically.
+///
+/// 变量取值统一来自 [buildPopupThemeCssVars]（与浏览器扩展的
+/// `browserExtensionThemeColors()` 同一真源）；变量名字面量保留在本模板里，
+/// 供源码扫描守卫（parity guard 等）钉住「in-app 注入了哪些变量」。
 String _themeVariablesJs({
   required AppModel appModel,
   required ThemeData theme,
@@ -74,12 +67,12 @@ String _themeVariablesJs({
 }) {
   final bool isDark = theme.brightness == Brightness.dark;
   final ColorScheme scheme = theme.colorScheme;
-  final Color primary = scheme.primary;
-  final String primaryRgba =
-      'rgba(${(primary.r * 255.0).round().clamp(0, 255)}, '
-      '${(primary.g * 255.0).round().clamp(0, 255)}, '
-      '${(primary.b * 255.0).round().clamp(0, 255)}, 0.35)';
-  final Color bgColor = appModel.overrideDictionaryColor ?? scheme.surface;
+  final Map<String, String> vars = buildPopupThemeCssVars(
+    scheme: scheme,
+    backgroundColor: appModel.overrideDictionaryColor ?? scheme.surface,
+    surfaceContainerHigh: scheme.surfaceContainerHigh,
+    dictionaryColumns: appModel.popupDictionaryColumns,
+  );
   // TODO-1065: mobileExternal tags the doc so popup.css `html.mobile-external`
   // turns the documentElement transparent (external popup washout fix), the
   // mobile analogue of the desktop global-lookup transparent-html rule.
@@ -90,18 +83,18 @@ String _themeVariablesJs({
           : '');
   return '''
       $classLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
-      document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
-      document.documentElement.style.setProperty('--text-color', '${_cssRgb(scheme.onSurface)}');
-      document.documentElement.style.setProperty('--background-color', '${_cssRgb(bgColor)}');
-      document.documentElement.style.setProperty('--hibiki-card-bg-rgb', '${_cssRgbTriplet(bgColor)}');
-      document.documentElement.style.setProperty('--md-surface-container', '${_cssRgb(scheme.surfaceContainer)}');
-      document.documentElement.style.setProperty('--md-surface-container-high', '${_cssRgb(scheme.surfaceContainerHigh)}');
-      document.documentElement.style.setProperty('--md-outline-variant', '${_cssRgb(scheme.outlineVariant)}');
-      document.documentElement.style.setProperty('--md-on-surface-variant', '${_cssRgb(scheme.onSurfaceVariant)}');
-      document.documentElement.style.setProperty('--md-primary', '${_cssRgb(scheme.primary)}');
-      document.documentElement.style.setProperty('--md-on-primary', '${_cssRgb(scheme.onPrimary)}');
-      document.documentElement.style.setProperty('--hibiki-radius-card', '${HibikiRadii.cardValue.toInt()}px');
-      document.documentElement.style.setProperty('--dict-columns', '${appModel.popupDictionaryColumns}');
+      document.documentElement.style.setProperty('--hoshi-primary-highlight', '${vars['--hoshi-primary-highlight']}');
+      document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
+      document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');
+      document.documentElement.style.setProperty('--hibiki-card-bg-rgb', '${vars['--hibiki-card-bg-rgb']}');
+      document.documentElement.style.setProperty('--md-surface-container', '${vars['--md-surface-container']}');
+      document.documentElement.style.setProperty('--md-surface-container-high', '${vars['--md-surface-container-high']}');
+      document.documentElement.style.setProperty('--md-outline-variant', '${vars['--md-outline-variant']}');
+      document.documentElement.style.setProperty('--md-on-surface-variant', '${vars['--md-on-surface-variant']}');
+      document.documentElement.style.setProperty('--md-primary', '${vars['--md-primary']}');
+      document.documentElement.style.setProperty('--md-on-primary', '${vars['--md-on-primary']}');
+      document.documentElement.style.setProperty('--hibiki-radius-card', '${vars['--hibiki-radius-card']}');
+      document.documentElement.style.setProperty('--dict-columns', '${vars['--dict-columns']}');
 ''';
 }
 
@@ -163,31 +156,24 @@ const String _globalLookupIconFontJs = '''
       }
     })();''';
 
-/// BUG-762 修「词典弹窗里长按释义文本弹出系统选择菜单（翻译/复制/分享/全选…）后 app
-/// 卡住」：弹窗 WebView（Android 原生平台视图）默认允许原生文本选区（popup.css 全局
-/// `-webkit-user-select:text` 且无触屏抑制），长按进入原生选区态 → 系统 ActionMode 浮动
-/// 工具栏弹出并接管该区域后续触摸，弹窗关不掉、点击无响应 → 观感「卡死」。查词根本不
-/// 依赖原生选区（走 selection.js 的 caretPositionFromPoint + CSS Custom Highlight 程序化
-/// 选区），故与阅读器 reader_content_styles.dart 的 TODO-1279 修复同款：粗指针（触屏，
-/// `@media (pointer: coarse)`）禁用原生 user-select + iOS 长按 callout，从根上不再进原生
-/// 选区态。CSS 层自门控——桌面细指针（Windows 裸 WebView2 全局查词）不受影响，复制/右键
-/// 照旧。刻意不放进共享 popup.css（那份还被 content.css 生成器 re-root 进浏览器扩展宿主页，
-/// 会误杀扩展在触屏宿主页里选文本；且生成器不支持 @media 嵌套 at-rule 会直接抛错），改由本
-/// 注入体以 id 守卫的 `<style>` 幂等注入，只作用于 app 内三种弹窗表面（in-app / 视频 /
-/// app 外悬浮），三端 WebView 复用同一注入体，一处全覆盖。
-const String _touchNoSelectStyleJs = '''
-    (function(){
-      var s = document.getElementById('hoshi-popup-touch-noselect');
-      if (!s) {
-        s = document.createElement('style');
-        s.id = 'hoshi-popup-touch-noselect';
-        s.textContent =
-          '@media (pointer: coarse){html,body,body *{' +
-          '-webkit-user-select:none !important;user-select:none !important;' +
-          '-webkit-touch-callout:none !important;}}';
-        document.head.appendChild(s);
-      }
-    })();''';
+// BUG-926：撤回 BUG-762 引入的触屏全量禁选注入（旧常量在粗指针 media query 下对整棵
+// body 子树强制 user-select:none !important）。
+// 该规则以 !important 碾平了 popup.css 已精细分区的选区设计（正文
+// `-webkit-user-select:text`，交互 chrome=按钮/标签/音高行 逐元素 `none`），导致触屏
+// 上词典释义**无法选中→无法复制**（1.2.0 用户报「查词界面文字无法复制」）。桌面细指针
+// 因 `pointer:coarse` 不命中而幸免，故只在触屏暴露。
+//
+// BUG-762 担心的「长按释义→系统 ActionMode 接管→弹窗关不掉」其实已被 popup.js 的
+// document click 处理器优雅化解：`__hibikiSel().toString().length>0` 时先 `removeAllRanges()`
+// 清原生选区再 return（点一下取消选择、再点才关窗），加上弹窗 chrome 的关闭按钮/横拖关
+// 都在 WebView 之外、不受 ActionMode 阻挡——始终有退路。用整块 CSS 禁选去修一个已被 JS
+// 处理的标准选中态，是修在了错误的层，代价是牺牲词典核心能力「复制释义」。
+//
+// 复制释义在触屏是刚需（安卓走 ActionMode 复制、iOS 走长按 callout 复制），恢复方式=
+// 不再注入任何触屏 user-select/callout 抑制，回落到 popup.css 的跨平台逐元素选区分区
+// （正文可选、chrome 不可选，无平台门控，触屏同样生效）。阅读器 reader_content_styles
+// TODO-1279 的同款抑制**保留不动**——阅读器复制本就桌面门控（Ctrl+C / 右键均
+// isWindowsPlatform），触屏确无原生选区消费者，正当性成立；弹窗恰相反。
 
 /// BUG-712 ③：静态设置负载的两半（词条行在原模板里插在 head 与 tail 之间）。
 /// [combined] 供 in-app 热槽路径做串级比对去重（变了才重发）；head+entries+tail
@@ -279,7 +265,6 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     $themeVarsJs
     $fontStyleJs
     $iconFontJs
-    $_touchNoSelectStyleJs
     document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';
     // TODO-1353: Ctrl+滚轮缩放查词内容需要在 JS 侧就地重算 zoom（即时反馈），故把
     // 当前「界面大小」系数与「词典字号」暴露给弹窗（与上面 zoom 同源，每次注入刷新为
@@ -289,6 +274,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.__hoshiPopupFontSize = ${appModel.dictionaryFontSize};
     window.audioSources = ${jsonEncode(appModel.enabledAudioSources)};
     window.needsAudio = true;
+    window.lookupAudioVolume = ${ReaderHibikiSource.instance.lookupAudioVolumeGain.clamp(0.0, 1.0).toStringAsFixed(4)};
     window.i18nNoAudioAvailable = ${jsonEncode(t.popup_no_audio_available)};
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};

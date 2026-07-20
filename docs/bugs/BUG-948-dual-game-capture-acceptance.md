@@ -1,0 +1,11 @@
+## BUG-948 · Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡
+- **报告**：2026-07-20（用户：Anemoi / Manosaba 文本与音频对不上，资源语音应优先于系统回环；随后要求适配 9-nine Episode 1）
+- **真实性**：✅ 真 bug。原会话把“文本 hook 已出现”和“音频探针已完成”混成一个启动结果，Siglus / KiriKiriZ 的资源 hook 晚到时会被过早判为 `engine_attach_failed`，随后只保留混有 BGM/SE 的系统回环；逐行配对只认 Siglus OGG，Unity WAV 无法成为制卡素材；文本侧又缺少 Siglus 的稳定直连 hook、9-nine 的已知 KiriKiriZ 文本 hook，以及按 Luna Translator 风格选择干净线程的完整路径。根因集中在 `hibiki/lib/src/mining/galgame_audio_source.dart` 的能力握手/资源选择、`hibiki/lib/src/mining/gal_hook_session_controller.dart` 的音频后端状态与逐行配对，以及 `native/galgame_voice_hook/` 的引擎 hook 与会话生命周期。
+- **[x] ① 已修复** — 将文本、PCM、资源音频和“首轮音频探针完成”拆为独立能力；原始游戏 OGG/WAV 始终作为逐句首选，系统 Loopback 只在该句无资源候选时兜底。控制器会轮询晚到的资源就绪位并回补已有台词；Siglus 增加直接文本 hook 与 OVK 资源导出，Unity 增加 AudioClip/TMP 提取，KiriKiriZ 增加资源就绪诊断和 9-nine Episode 1 的已知 `EXHVXN0@2198:nine_kokoiro.exe` 文本 hook。工作台可按线程筛选，逐行状态统一显示 `game_resource`，制卡时才转码为 Anki 可用 AAC。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_hook_session_controller_test.dart` 覆盖资源优先、逐句回环兜底和晚到资源升级；`hibiki/test/mining/galgame_audio_test.dart` / `galgame_paired_voice_test.dart` 覆盖能力握手、Unity WAV 与 Siglus/KiriKiri OGG 配对；原生 `siglus_text_test`、`resource_audio_ready_test`、`session_reuse_test`、`luna_hook_config_test`、`steam_launch_test` 覆盖各引擎和会话边界。
+- **[x] ③ 资源来源复核加固** — 复测发现两个会让用户听起来像“录音/错句”的竞态：资源文件稍晚落盘时制卡会立即退到 Loopback；有文本时间戳但精确窗口未命中时会误取本会话最新资源。现改为制卡最多等待 1.2 秒资源落盘，随后才允许 PCM/Loopback 兜底；有时间戳的句子只接受精确时间窗资源，无时间戳的 Siglus 晚附着才可使用会话内最新语音。对应回归测试固定“晚到资源仍优先”和“精确未命中不冒用别句”；制卡成功提示会直接显示本卡实际使用的“游戏资源音频 / 引擎 PCM / 系统 Loopback”，不再让降级来源隐形。
+- **[x] ④ 可关闭音频降级** — 捕获工作台页头提供“允许音频降级 / 仅游戏资源音频”按钮；关闭后该句资源音频未匹配时直接拒绝制卡，不会继续抓引擎 PCM、系统 Loopback 或静默生成无声卡。测试模式统一关闭该开关，用来证明各引擎实际走资源 Hook。
+- **备注**：已在真实 Windows 游戏进程完成端到端验收并保留 Anki 卡：
+  - Manosaba：Naninovel `RevealableText` 与同 tick Unity 资源 WAV 配对，Lapis note `1784487792303` 含句子、资源 AAC 与截图。
+  - Anemoi：Siglus 直接 hook 捕获 `「ひょ、とっ、ほあたぁ！」`，同 tick `z5044.ovk_159966.ogg`（45,266 bytes）配对；Lapis note `1784491971665` 含资源 AAC 与截图。
+  - 9-nine Episode 1：专用线程 `EmbedKrkrZ · 0x362198` 捕获都的 `「こんばんは。ごめんなさい、遅くに……」`；05:38:19 同 tick 导出 `614882359_my1340.ogg`（109,478 bytes，Vorbis 44.1 kHz mono，SHA-256 `DE47F217BA432D6153190CED894557A74A3AE069E1844DE9A46E0B574D2249FA`）。Lapis note/card `1784497210640` 的 `SentenceAudio` 为 AAC（60,303 bytes，44.1 kHz mono），截图 GIF 802,488 bytes；词典查询“遅く”和加粗制卡均成功。

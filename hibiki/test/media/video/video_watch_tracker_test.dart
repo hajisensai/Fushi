@@ -184,4 +184,70 @@ void main() {
       expect(committed.first, greaterThan(0));
     });
   });
+
+  group('recordActivity (v49 首页 Activity 事件流)', () {
+    test('一次观看 session 结束落一条活动事件，携带累积净观看时长', () async {
+      final List<(String, String, int, int)> events =
+          <(String, String, int, int)>[];
+      final _FakeSource src = _FakeSource()..isPlaying = true;
+      final VideoWatchTracker tracker = VideoWatchTracker(
+        title: 'A',
+        bookUid: 'u1',
+        addStat: (String t, String dateKey, int chars, int ms) async {},
+        markCompleted: (_) async {},
+        recordActivity: (String t, String uid, String dateKey, int timestampMs,
+            int durationMs, int chars) {
+          events.add((t, uid, durationMs, chars));
+        },
+      )..attach(src);
+
+      tracker.start();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tracker.stop();
+
+      expect(events, hasLength(1));
+      expect(events.single.$1, 'A');
+      expect(events.single.$2, 'u1');
+      expect(events.single.$3, greaterThan(0)); // 净观看时长
+    });
+
+    test('二次 stop 幂等：不重复写活动事件（累积已清零）', () async {
+      final List<int> durations = <int>[];
+      final _FakeSource src = _FakeSource()..isPlaying = true;
+      final VideoWatchTracker tracker = VideoWatchTracker(
+        title: 'A',
+        bookUid: 'u1',
+        addStat: (String t, String dateKey, int chars, int ms) async {},
+        markCompleted: (_) async {},
+        recordActivity: (String t, String uid, String dateKey, int timestampMs,
+                int durationMs, int chars) =>
+            durations.add(durationMs),
+      )..attach(src);
+
+      tracker.start();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tracker.stop();
+      await tracker.stop(); // 第二次不应再写（会话累积已清零）
+      expect(durations, hasLength(1));
+    });
+
+    test('从未播放（无净时长）不落活动事件', () async {
+      final List<int> durations = <int>[];
+      final _FakeSource src = _FakeSource()..isPlaying = false;
+      final VideoWatchTracker tracker = VideoWatchTracker(
+        title: 'A',
+        bookUid: 'u1',
+        addStat: (String t, String dateKey, int chars, int ms) async {},
+        markCompleted: (_) async {},
+        recordActivity: (String t, String uid, String dateKey, int timestampMs,
+                int durationMs, int chars) =>
+            durations.add(durationMs),
+      )..attach(src);
+
+      tracker.start();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await tracker.stop();
+      expect(durations, isEmpty);
+    });
+  });
 }

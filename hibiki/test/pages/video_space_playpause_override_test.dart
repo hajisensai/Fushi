@@ -111,8 +111,8 @@ void main() {
     expect(body, contains('CallbackShortcuts'),
         reason: '页内局部覆盖必须用 CallbackShortcuts（位于全局 DoNothingIntent 之下）');
     expect(body, contains('LogicalKeyboardKey.space'), reason: '必须绑裸空格');
-    expect(body, contains('_runWhenImmersiveAllowsFullControls'),
-        reason: '必须经沉浸锁门控（与注册表 togglePlayPause 同语义）');
+    expect(body, contains('_runWhenImmersiveAllowsShortcuts'),
+        reason: '必须经沉浸锁快捷键门控（与注册表 togglePlayPause 同语义）');
     expect(body, contains('controller.playOrPause()'), reason: '裸空格应触发播放/暂停');
 
     // body 真正用上了它（包在 _pageDropTarget 外层），否则 helper 是死代码。

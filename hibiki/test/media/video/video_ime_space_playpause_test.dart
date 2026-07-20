@@ -13,12 +13,30 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 /// `logicalKey`，故 IME 下按空格既不被内层消费、也不被页级兜底消费 → 按了没反应。
 /// 修复与阅读器 TODO-847（[resolveReaderSpaceOverride]）同范式：在最外层 Focus 的
 /// onKeyEvent 里按**物理键**还原 Space 语义（[isVideoImeSpacePlayPause]）。
+///
+/// BUG-936：BUG-853 只认 `logicalKey == process` 这一种 IME 改写值，真机仍失效——日文 IME
+/// 在不同输入模式下把物理空格改写成的逻辑键未必是 `process`。改判据为「物理键是 Space +
+/// 逻辑键非裸 space」，覆盖 `process` 及任意其它 IME 改写值。
 void main() {
   group('isVideoImeSpacePlayPause', () {
     test('IME 改写成 process 的物理空格（无修饰、无文本框）→ 命中', () {
       expect(
         isVideoImeSpacePlayPause(
           logicalKey: LogicalKeyboardKey.process,
+          physicalKey: PhysicalKeyboardKey.space,
+          hasModifier: false,
+          hasEditableFocus: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('BUG-936：IME 改写成非 process 的其它逻辑键但物理是空格 → 仍命中', () {
+      // 日文 IME 在某些模式下把物理空格的逻辑键改写成非 process 值（这里以 nonConvert
+      // 代表任意 IME 改写值）。旧的 `logicalKey == process` 判据会漏掉，导致真机仍失效。
+      expect(
+        isVideoImeSpacePlayPause(
+          logicalKey: LogicalKeyboardKey.nonConvert,
           physicalKey: PhysicalKeyboardKey.space,
           hasModifier: false,
           hasEditableFocus: false,
@@ -90,8 +108,8 @@ void main() {
         reason: '必须复用可单测的纯谓词识别 IME 空格');
     expect(body, contains('focusedEditableText()'),
         reason: '必须在文本框 composing 时关闭回退');
-    expect(body, contains('_runWhenImmersiveAllowsFullControls'),
-        reason: '必须经沉浸锁门控（与页级 _withPageSpaceOverride 同语义）');
+    expect(body, contains('_runWhenImmersiveAllowsShortcuts'),
+        reason: '必须经沉浸锁快捷键门控（与页级 _withPageSpaceOverride 同语义）');
     expect(body, contains('controller.playOrPause()'),
         reason: 'IME 空格应触发播放/暂停');
 

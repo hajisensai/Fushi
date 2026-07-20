@@ -36,30 +36,12 @@ class FrequencyField extends Field {
   /// Extra value key for the full frequency HTML list.
   static const String frequenciesHtmlExtraKey = 'frequenciesHtml';
 
-  /// Extracts frequency values returned by the popup mining JavaScript.
-  static Map<String, String> extraValuesFromMineFields(
-    Map<String, String> fields,
-  ) {
-    return {
-      frequencyRankExtraKey: fields[frequencyRankExtraKey] ?? '',
-      frequenciesHtmlExtraKey: fields[frequenciesHtmlExtraKey] ?? '',
-    };
-  }
-
   /// Builds frequency extra values from a dictionary entry.
   static Map<String, String> extraValuesFromEntry(DictionaryEntry entry) {
     return {
       frequencyRankExtraKey: getFrequencyRank(entry: entry),
       frequenciesHtmlExtraKey: getFrequenciesHtml(entry: entry),
     };
-  }
-
-  /// Returns the sortable harmonic-rank frequency value.
-  static String getFrequency({
-    required AppModel appModel,
-    required DictionaryEntry entry,
-  }) {
-    return getFrequencyRank(entry: entry);
   }
 
   /// Returns the frequency rank used for sorting Anki cards.

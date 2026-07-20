@@ -336,6 +336,40 @@ class ShortcutDefaults {
     ShortcutAction.videoToggleSubtitleHide: _kb([
       _key(LogicalKeyboardKey.keyH),
     ]),
+    // TODO-1382：副字幕遮蔽三态循环默认 Shift+G、直接隐藏副字幕默认 Shift+H——与主字幕
+    // 对称（主 H 隐藏、副 Shift+H 隐藏；主 Shift+B 循环、副 Shift+G 循环）。video 独立
+    // co-active 组内未占用，不与其它键冲突。
+    ShortcutAction.videoCycleSecondarySubtitleObscure: _kb([
+      _key(LogicalKeyboardKey.keyG, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleSecondarySubtitleHide: _kb([
+      _key(LogicalKeyboardKey.keyH, {ModifierKey.shift}),
+    ]),
+    // 字幕对轴/匹配（用户请求）：打开波形对轴放大视图默认 Shift+A（A=Align，避开裸 A 的
+    // 回退 seek）；字幕延迟 -/+ 默认 z/x（mpv 经典字幕延迟键，每次 ±100ms=mpv 0.1s）。
+    // 三键在 video co-active 组内均未占用（裸 z/x、Shift+A 都是空闲位），无冲突。键盘-only
+    // （手柄不绑，与 videoToggleMute/videoSpeedUp 同范式）。
+    ShortcutAction.videoOpenSubtitleAlign: _kb([
+      _key(LogicalKeyboardKey.keyA, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoSubtitleDelayDecrease: _kb([
+      _key(LogicalKeyboardKey.keyZ),
+    ]),
+    ShortcutAction.videoSubtitleDelayIncrease: _kb([
+      _key(LogicalKeyboardKey.keyX),
+    ]),
+    // asbplayer 式「字幕偏移对齐」（用户请求）：Ctrl+Shift+← 把上一句、Ctrl+Shift+→ 把
+    // 下一句字幕的起点整体平移到当前播放点（按目标 cue 求绝对偏移，与 z/x 步进微调互补）。
+    // 镜像既有 Ctrl+←/→（跳句）的手感、asbplayer 用户肌肉记忆一致；Ctrl+Shift+箭头在
+    // video co-active 组内空闲（裸箭头=seek、Ctrl+箭头=跳句、上下=音量，均不冲突）。
+    // 键盘-only（手柄不绑）。macOS 表自动把 Ctrl→Meta（见 _macOS，与 Ctrl+箭头同款）。
+    ShortcutAction.videoAlignSubtitleToPrev: _kb([
+      _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoAlignSubtitleToNext: _kb([
+      _key(
+          LogicalKeyboardKey.arrowRight, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
     // TODO-700 T6：dpad 四向可绑触发键。默认各绑对应 dpad 键；键盘留空（方向焦点
     // 移动由箭头键 / 摇杆负责，避免与各页面方向键语义重复）。执行体 = 通用方向焦点
     // 移动（gamepadMoveFocusInDirection），见 gamepad_service._dispatchButton。

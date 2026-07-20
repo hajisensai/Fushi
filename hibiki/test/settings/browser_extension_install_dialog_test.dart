@@ -24,6 +24,7 @@ void main() {
     required bool serverEnabled,
     required bool hasToken,
     String path = r'/home/u/.local/share/hibiki/hibiki-browser-extension',
+    bool portConflict = false,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -32,6 +33,7 @@ void main() {
             path: path,
             serverEnabled: serverEnabled,
             hasToken: hasToken,
+            portConflict: portConflict,
           ),
         ),
       ),
@@ -91,6 +93,20 @@ void main() {
       (WidgetTester tester) async {
     await pumpDialog(tester, serverEnabled: false, hasToken: false);
     expect(find.text(t.browser_extension_enable_server_first), findsOneWidget);
+  });
+
+  testWidgets('port conflict explains how to hand 19633 from Yomitan to Hibiki',
+      (WidgetTester tester) async {
+    await pumpDialog(
+      tester,
+      serverEnabled: false,
+      hasToken: true,
+      portConflict: true,
+    );
+    expect(
+      find.text(t.browser_extension_yomitan_port_conflict(port: 19633)),
+      findsOneWidget,
+    );
   });
 
   // TODO-1146：源码/i18n 静态守卫。isDesktop 走 Platform.is*（宿主 OS），widget 测试无法

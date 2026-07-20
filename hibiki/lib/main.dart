@@ -40,6 +40,7 @@ import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_dispatcher.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
+import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
 import 'package:hibiki/src/storage/data_root_migration_view.dart';
 import 'package:hibiki/src/startup/loading_watchdog_view.dart';
@@ -395,6 +396,10 @@ void main([List<String> args = const <String>[]]) {
           // textWindow 分区请求才显示。
           if (ClipboardTextOverlayController.isSupported) {
             await ClipboardTextOverlayController.instance
+                .start(appModel: appModel);
+          }
+          if (GalHookTextOverlayController.isSupported) {
+            await GalHookTextOverlayController.instance
                 .start(appModel: appModel);
           }
           DesktopLookupDispatcher.instance.start(appModel: appModel);
@@ -1444,7 +1449,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                       // a MacosWindowScope and can use native MacosScaffold/ToolBar.
                       // MacosTheme is derived from the SAME live ColorScheme as the
                       // rest of the app. The sidebar destinations come from the
-                      // dynamic HomeTab list (video/texthooker toggles) so they
+                      // dynamic HomeTab list (video/games toggles) so they
                       // stay in lock-step with HomePage's rail; selection is shared
                       // via homeShellTabNotifier. Hide the sidebar while a media
                       // item (reader/video) is open so reading is full-width; the
@@ -1469,7 +1474,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                                   : buildHibikiMacosSidebar(
                                       activeTabs: homeActiveTabs(
                                         // 「视频」tab 已毕业为常驻（原
-                                        // experimentalVideoEnabled 恒 true）。
+                                        // experimentalVideoEnabled 恒 true）。games
+                                        // （galgame 库）仅 Windows；macOS 根侧栏此处
+                                        // 恒 false（gamesEnabled 缺省），不显示。
                                         videoEnabled: true,
                                       ),
                                     ),

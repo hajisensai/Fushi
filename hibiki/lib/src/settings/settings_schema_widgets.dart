@@ -52,12 +52,28 @@ class SettingsSchemaSection extends StatelessWidget {
           ),
         )
         .toList(growable: false);
+    // 折叠能力只取决于「有没有标题」（无标题 section 没有可点的折叠头）；
+    // 「默认展开还是收起」由 collapsedByDefault 单独决定（见下方 initiallyExpanded）。
+    // 两者解耦——所有带标题分区都可折叠，各自默认态互不影响。
+    final bool collapsible = section.title?.isNotEmpty ?? false;
+    // 搜索跳转落在折叠 section 内的项时强制展开——否则收起态下目标行不入树、
+    // SettingsSearchReveal 的一次性挂点永不被消费，定位失效。测试钩子强制全展开
+    // 让覆盖守卫能焦点驱动到所有行（见 debugSettingsForceExpandAllSections）。
+    final bool containsPendingReveal =
+        SettingsSearchReveal.pendingItemId != null &&
+            section.items.any((SettingsItem item) =>
+                item.id == SettingsSearchReveal.pendingItemId);
+    final bool initiallyExpanded = debugSettingsForceExpandAllSections ||
+        !section.collapsedByDefault ||
+        containsPendingReveal;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         AdaptiveSettingsSection(
           title: section.title,
           titlePlacement: SettingsSectionTitlePlacement.inside,
+          collapsible: collapsible,
+          initiallyExpanded: initiallyExpanded,
           children: rows,
         ),
         if (section.footer != null && section.footer!.isNotEmpty)

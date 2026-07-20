@@ -163,6 +163,48 @@ void main() {
       expect(j['popupJson'], contains('走る'));
     });
 
+    test('/api/extension/status identifies Hibiki on the configured port',
+        () async {
+      await startServer(apiKey: 'k123');
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/extension/status',
+        <String, dynamic>{},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      final Map<String, dynamic> j = await _json(resp);
+      expect(j['app'], 'hibiki');
+      expect(j['ready'], true);
+      expect(j['port'], server.port);
+    });
+
+    test('popupOnly returns only bestLength while default keeps full result',
+        () async {
+      await startServer(apiKey: 'k123');
+
+      final Map<String, dynamic> compact = await _json(await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{
+          'term': '見る',
+          'record': false,
+          'popupOnly': true,
+        },
+        auth: _basic('k123'),
+      ));
+      expect(compact['result'], <String, dynamic>{'bestLength': 0});
+      expect(compact['popupJson'], contains('見る'));
+
+      final Map<String, dynamic> full = await _json(await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{'term': '見る', 'record': false},
+        auth: _basic('k123'),
+      ));
+      expect((full['result'] as Map<String, dynamic>)['searchTerm'], '見る');
+    });
+
     test(
         'lookup response carries popup size vars from themeColorsProvider '
         '(TODO-1185)', () async {

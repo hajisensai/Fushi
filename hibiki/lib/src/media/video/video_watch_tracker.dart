@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/video/video_playback_source.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
 /// 完成判定纯函数：进度 ≥ 90% 且尚未完成、且时长已知。
@@ -68,9 +69,13 @@ class VideoWatchTracker {
         addStat,
     required Future<void> Function(String bookUid) markCompleted,
     Future<void> Function(String dateKey, int hour, int deltaMs)? addHourly,
+    FutureOr<void> Function(String title, String bookUid, String dateKey,
+            int timestampMs, int durationMs, int subtitleChars)?
+        recordActivity,
   })  : _addStat = addStat,
         _markCompleted = markCompleted,
-        _addHourly = addHourly;
+        _addHourly = addHourly,
+        _recordActivity = recordActivity;
 
   final String title;
   final String bookUid;
@@ -81,6 +86,12 @@ class VideoWatchTracker {
   final Future<void> Function(String dateKey, int hour, int deltaMs)?
       _addHourly;
 
+  /// v49：一次观看 session（attach→stop 生命周期）结束时写一条精确时刻的活动事件，
+  /// 喂首页 Activity 时间轴。与按 60s tick 落库的 [_addStat] 不同——那会一坐产生几十
+  /// 行噪声，故活动事件在 session 累积后**只落一行**（总时长 + 总字幕字数）。
+  final FutureOr<void> Function(String title, String bookUid, String dateKey,
+      int timestampMs, int durationMs, int subtitleChars)? _recordActivity;
+
   static const Duration _interval = Duration(seconds: 60);
 
   VideoPlaybackSource? _source;
@@ -88,6 +99,11 @@ class VideoWatchTracker {
   DateTime? _tickStart;
   final Set<int> _countedIndices = <int>{};
   bool _completed = false;
+
+  /// v49 session 累积：本次观看的净观看时长（[_flush] 里过滤挂起后累加）与字幕字数，
+  /// [stop] 时聚合成一条活动事件后清零（幂等：二次 stop 见 0 不重复写）。
+  int _sessionWatchMs = 0;
+  int _sessionChars = 0;
 
   @visibleForTesting
   int debugSubtitleChars = 0;
@@ -112,6 +128,21 @@ class VideoWatchTracker {
     _timer?.cancel();
     _timer = null;
     _tickStart = null;
+    // v49：session 结束落一条活动事件（有净观看时长才记）。清零保证幂等——
+    // dispose 与进程退出路径可能各调一次 stop，第二次见 0 不重复写。
+    final int ms = _sessionWatchMs;
+    if (ms > 0 && _recordActivity != null) {
+      final int chars = _sessionChars;
+      _sessionWatchMs = 0;
+      _sessionChars = 0;
+      final DateTime now = DateTime.now();
+      try {
+        await _recordActivity(title, bookUid, _dateKey(now),
+            now.millisecondsSinceEpoch, ms, chars);
+      } catch (e, st) {
+        ErrorLogService.instance.log('VideoWatchTracker.recordActivity', e, st);
+      }
+    }
   }
 
   /// 换集：清空字幕去重集（新集字幕从头计），完成标记不变（按整本书）。
@@ -134,6 +165,7 @@ class VideoWatchTracker {
       final int chars = text.runes.length;
       if (chars > 0) {
         debugSubtitleChars += chars;
+        _sessionChars += chars;
         unawaited(Future<void>.value(
             _addStat(title, _dateKey(DateTime.now()), chars, 0)));
       }
@@ -150,21 +182,29 @@ class VideoWatchTracker {
     _tickStart = now;
     if (s == null || start == null) return;
 
-    // 仅在连续前台播放窗口内累加：[isContinuousWatchGap] 过滤异常大间隔（后台挂起 /
-    // 系统睡眠 / 长 GC 停顿致定时器跨越非播放窗口），整窗丢弃而非凭空计入观看时长，
-    // 并保证 [splitWatchTime] 输入恒 ≤ kMaxWatchGap（单次至多跨一个边界）。
-    if (s.isPlaying && isContinuousWatchGap(start, now)) {
-      for (final (String dateKey, int hour, int ms)
-          in splitWatchTime(start, now)) {
-        await _addHourly?.call(dateKey, hour, ms);
-        // 逐桶配各自 dateKey：跨午夜正确归两天。
-        await _addStat(title, dateKey, 0, ms);
+    // 周期 tick 经 `unawaited(_flush())` fire-and-forget 调用，DB 写异常无处捕获会被
+    // 静默丢弃且线上不可诊断。整段 DB 写包 try/catch：fail-open（异常不冒泡、不阻塞
+    // 播放，仅丢本次统计增量），并补 ErrorLogService.log 使其可诊断。
+    try {
+      // 仅在连续前台播放窗口内累加：[isContinuousWatchGap] 过滤异常大间隔（后台挂起 /
+      // 系统睡眠 / 长 GC 停顿致定时器跨越非播放窗口），整窗丢弃而非凭空计入观看时长，
+      // 并保证 [splitWatchTime] 输入恒 ≤ kMaxWatchGap（单次至多跨一个边界）。
+      if (s.isPlaying && isContinuousWatchGap(start, now)) {
+        for (final (String dateKey, int hour, int ms)
+            in splitWatchTime(start, now)) {
+          await _addHourly?.call(dateKey, hour, ms);
+          // 逐桶配各自 dateKey：跨午夜正确归两天。
+          await _addStat(title, dateKey, 0, ms);
+          _sessionWatchMs += ms; // v49 session 累积（净观看时长，已过挂起守卫）。
+        }
       }
-    }
 
-    if (shouldMarkCompleted(s.positionMs, s.durationMs, _completed)) {
-      _completed = true;
-      await _markCompleted(bookUid);
+      if (shouldMarkCompleted(s.positionMs, s.durationMs, _completed)) {
+        _completed = true;
+        await _markCompleted(bookUid);
+      }
+    } catch (e, st) {
+      ErrorLogService.instance.log('VideoWatchTracker.flush', e, st);
     }
   }
 }

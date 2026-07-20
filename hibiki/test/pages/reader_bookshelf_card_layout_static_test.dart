@@ -244,28 +244,25 @@ void main() {
     );
   });
 
-  test(
-      'shelf book card slot uses the narrow book cover ratio while video keeps '
-      'its own ratio (TODO-786)', () {
+  test('shelf book card slot uses the narrow book cover ratio (TODO-786)', () {
     final String source = readReaderHistorySource();
 
-    // ① 两个卡槽比例常量必须存在：书类（窄）与视频（保留原值）。
+    // ① 书类卡槽比例常量必须存在（窄，接近书封比例）。
     expect(
       source,
       contains('const double kShelfBookCardAspectRatio = 160 / 260;'),
       reason: 'TODO-786: book/audiobook/SRT/remote cards must use the narrow '
           'book cover ratio so fitHeight fills the slot without side white',
     );
-    expect(
-      source,
-      contains('const double kShelfVideoCardAspectRatio = 176 / 250;'),
-      reason: 'video cards keep their 16:9-friendly ratio; narrowing makes the '
-          'thumbnail look worse',
-    );
 
     // ② 书架不再渲染视频卡/分区（视频归「视频」tab 独占，书架视频分区死路径已删）。
-    //    kShelfVideoCardAspectRatio 常量保留（视频卡槽比例文档 + reader_media_source
-    //    注释引用），但书架已无视频 grid/卡片壳，故不再校验其在书架的渲染次数。
+    //    kShelfVideoCardAspectRatio 常量随之删除（零代码引用，孤儿清理）。
+    expect(
+      source,
+      isNot(contains('kShelfVideoCardAspectRatio')),
+      reason: 'the orphaned video slot ratio constant must stay deleted; the '
+          'video tab owns its own card geometry',
+    );
 
     // 书类卡壳与三处书类 grid delegate（SRT × 2 + EPUB + remote）走书比例：
     // slotAspectRatio: kShelfBookCardAspectRatio 与 childAspectRatio:

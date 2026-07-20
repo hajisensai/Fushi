@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
@@ -91,6 +92,68 @@ String hibikiAnkiMediaFilenameForBytes({
     fallbackExtension: fallbackExtension,
   );
   return '${_safeMediaPrefix(prefix)}${_sha256Hex(bytes)}.$ext';
+}
+
+/// BUG-933：制卡「未响应」根因之一——旧代码在 **UI isolate** 对整段媒体字节同步跑
+/// [_sha256Hex]（纯 Dart 逐字节 SHA256，几 MB 音频=数百万次迭代）和 [base64Encode]，
+/// 阻塞主线程。这里把「哈希文件名 + base64」一次卸到后台 isolate，同段字节只跨 isolate
+/// 拷贝一次。
+///
+/// 阈值兜底：词典外字（单卡可能数十个、每个仅几 KB）走同步分支——为几 KB 图各起一个
+/// isolate 反而挤占资源、拖慢总时长（且不会 jank）；只有封面/音频等大媒体才卸后台。
+const int _isolateMediaThresholdBytes = 64 * 1024;
+
+/// AnkiConnect 上传路径：计算 sha256 文件名 + base64 数据。大媒体在后台 isolate 完成，
+/// 小媒体同步完成。返回记录 `(filename, base64Data)` 供 `storeMediaFile`。
+Future<({String filename, String base64Data})>
+    hibikiAnkiMediaEncodeForUploadAsync({
+  required String prefix,
+  required List<int> bytes,
+  required String sourceName,
+  String fallbackExtension = 'bin',
+}) {
+  ({String filename, String base64Data}) encode() => (
+        filename: hibikiAnkiMediaFilenameForBytes(
+          prefix: prefix,
+          bytes: bytes,
+          sourceName: sourceName,
+          fallbackExtension: fallbackExtension,
+        ),
+        base64Data: base64Encode(bytes),
+      );
+  if (bytes.length < _isolateMediaThresholdBytes) {
+    return Future<({String filename, String base64Data})>.value(encode());
+  }
+  return Isolate.run(encode);
+}
+
+/// AnkiDroid 路径：媒体由 platform channel 按文件路径落库（不走 base64），只需 sha256
+/// 文件名。大媒体在后台 isolate 完成，小媒体同步完成。
+Future<String> hibikiAnkiMediaFilenameForBytesAsync({
+  required String prefix,
+  required List<int> bytes,
+  required String sourceName,
+  String fallbackExtension = 'bin',
+}) {
+  String compute() => hibikiAnkiMediaFilenameForBytes(
+        prefix: prefix,
+        bytes: bytes,
+        sourceName: sourceName,
+        fallbackExtension: fallbackExtension,
+      );
+  if (bytes.length < _isolateMediaThresholdBytes) {
+    return Future<String>.value(compute());
+  }
+  return Isolate.run(compute);
+}
+
+/// [base64Encode] 的按需后台变体（BUG-933）：大媒体卸到 isolate，小媒体同步。用于
+/// 文件名已定、只剩 base64 的路径（远端下载音频 / 词典外字上传）。
+Future<String> hibikiAnkiBase64EncodeAsync(List<int> bytes) {
+  if (bytes.length < _isolateMediaThresholdBytes) {
+    return Future<String>.value(base64Encode(bytes));
+  }
+  return Isolate.run(() => base64Encode(bytes));
 }
 
 String _safeMediaPrefix(String prefix) {
@@ -439,6 +502,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
       // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
       titleTag: context.bookTitleTag,
+      // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
+      collectionTag: context.collectionTag,
     );
 
     // `fields` only holds entries that rendered to a non-empty value; if it is
@@ -849,16 +914,17 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       final file = File(filePath);
       if (!file.existsSync()) return null;
       final bytes = await file.readAsBytes();
-      final filename = hibikiAnkiMediaFilenameForBytes(
+      // BUG-933：sha256 + base64 卸到后台 isolate（大媒体），避免阻塞 UI。
+      final encoded = await hibikiAnkiMediaEncodeForUploadAsync(
         prefix: prefix,
         bytes: bytes,
         sourceName: filePath,
       );
       await service.storeMediaFile(
-        filename: filename,
-        data: base64Encode(bytes),
+        filename: encoded.filename,
+        data: encoded.base64Data,
       );
-      return filename;
+      return encoded.filename;
     } catch (e, stack) {
       debugPrint('AnkiConnectRepository._storeLocalMedia: $e\n$stack');
       return null;
@@ -880,17 +946,18 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           final file = File(AnkiAudioRef.localPath(url));
           if (!file.existsSync()) return const AudioFetchOutcome.none();
           final bytes = await file.readAsBytes();
-          final filename = hibikiAnkiMediaFilenameForBytes(
+          // BUG-933：本地音频 sha256 + base64 卸到后台 isolate。
+          final encoded = await hibikiAnkiMediaEncodeForUploadAsync(
             prefix: 'hibiki_audio_',
             bytes: bytes,
             sourceName: file.path,
             fallbackExtension: 'mp3',
           );
           await service.storeMediaFile(
-            filename: filename,
-            data: base64Encode(bytes),
+            filename: encoded.filename,
+            data: encoded.base64Data,
           );
-          return AudioFetchOutcome.stored(filename);
+          return AudioFetchOutcome.stored(encoded.filename);
         case AnkiAudioRefKind.remoteUrl:
           final client = HttpClient();
           try {
@@ -915,7 +982,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             // Content-Type (falling back to the URL path, then mp3) so non-mp3
             // audio is not mislabeled as .mp3 in Anki.
             final ext = _audioExtension(response.headers.contentType, url);
-            final filename = hibikiAnkiMediaFilenameForBytes(
+            // BUG-933：远端音频 sha256 卸到后台 isolate。
+            final filename = await hibikiAnkiMediaFilenameForBytesAsync(
               prefix: 'hibiki_audio_',
               bytes: bytes,
               sourceName: url,
@@ -933,9 +1001,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       if (!audioFile.existsSync()) return const AudioFetchOutcome.none();
       final bytes = await audioFile.readAsBytes();
       final filename = audioFile.uri.pathSegments.last;
+      // BUG-933：文件名已定（下载时已按 sha256 命名），只剩 base64 卸到后台 isolate。
       await service.storeMediaFile(
         filename: filename,
-        data: base64Encode(bytes),
+        data: await hibikiAnkiBase64EncodeAsync(bytes),
       );
       return AudioFetchOutcome.stored(filename);
     } catch (e, stack) {
@@ -987,13 +1056,15 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     try {
       // 命名/目录与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移，
       // 否则文件名对不上→读不到→卡片留坏图）。HBK-AUDIT-062 无扩展名兜底已并入。
-      final filename = ankiDictionaryMediaCacheFilename(media.path);
+      final filename =
+          ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
       final file = File('${ankiDictionaryMediaCacheDirPath()}/$filename');
       if (!file.existsSync()) return null;
       final bytes = await file.readAsBytes();
+      // BUG-933：外字通常几 KB（走同步分支），偶发大图才卸后台 isolate。
       await service.storeMediaFile(
         filename: filename,
-        data: base64Encode(bytes),
+        data: await hibikiAnkiBase64EncodeAsync(bytes),
       );
       // 返回**裸文件名**（与 AnkiDroid 经 ankiInlineMediaReference 对称）。义项 HTML
       // 已是 <img src="hoshi_dict_N.ext">，buildMinedFields 用 replaceAll 把 src 里的占位符

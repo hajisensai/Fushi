@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
@@ -64,11 +65,16 @@ Future<VideoDanmakuLoadResult> loadDanmakuSidecarFile(
         tooLarge: true,
       );
     }
+    // IO（读盘 + 编码探测）留在主 isolate；CPU 密集解析（XmlDocument.parse /
+    // jsonDecode + 遍历 + sort，20MB sidecar 可卡帧）搬进后台 isolate。
+    // 入参 (String, bool) 与出参 List<VideoDanmakuItem>（纯 int/String/enum 数据类）
+    // 均可跨 isolate 传输，`_parseDanmakuContent` 是无闭包捕获的顶层纯函数。
     final String content = await readTextWithEncoding(file);
     final String ext = p.extension(file.path).toLowerCase();
-    final List<VideoDanmakuItem> items = ext == '.json'
-        ? parseDandanplayDanmakuJson(content)
-        : parseBilibiliDanmakuXml(content);
+    final List<VideoDanmakuItem> items = await compute(
+      _parseDanmakuContent,
+      (content, ext == '.json'),
+    );
     return VideoDanmakuLoadResult(items: items, sourcePath: file.path);
   } catch (e) {
     return VideoDanmakuLoadResult(
@@ -77,6 +83,15 @@ Future<VideoDanmakuLoadResult> loadDanmakuSidecarFile(
       error: e,
     );
   }
+}
+
+/// [compute] 入口（顶层、无闭包捕获）：按 `isJson` 标记把 sidecar 文本分派给
+/// 弹弹play JSON / Bilibili XML 解析器。放后台 isolate 避免 20MB 文件卡主线程。
+List<VideoDanmakuItem> _parseDanmakuContent((String, bool) request) {
+  final (String content, bool isJson) = request;
+  return isJson
+      ? parseDandanplayDanmakuJson(content)
+      : parseBilibiliDanmakuXml(content);
 }
 
 List<VideoDanmakuItem> parseBilibiliDanmakuXml(String xml) {

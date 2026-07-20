@@ -8,6 +8,7 @@ import 'package:hibiki/src/sync/pkce_oauth.dart';
 import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -18,7 +19,8 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// Auth: OAuth 2.0 PKCE flow.
 /// Folder IDs are path strings like `/hibiki-data/BookTitle`.
-class DropboxSyncBackend extends SyncBackend {
+class DropboxSyncBackend extends SyncBackend
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
   DropboxSyncBackend._();
   static final DropboxSyncBackend instance = DropboxSyncBackend._();
 
@@ -38,8 +40,6 @@ class DropboxSyncBackend extends SyncBackend {
   String? _accessToken;
   String? _refreshToken;
   String? _email;
-  String? _rootFolderId; // Path string.
-  final Map<String, String> _titleToFolderId = {};
 
   /// Shared OAuth 2.0 PKCE token exchange (verifier/challenge + code/refresh).
   static final PkceOAuthFlow _oauth = PkceOAuthFlow(
@@ -257,13 +257,13 @@ class DropboxSyncBackend extends SyncBackend {
 
   @override
   Future<String> findOrCreateRootFolder() async {
-    if (_rootFolderId != null) return _rootFolderId!;
+    if (rootFolderIdCache != null) return rootFolderIdCache!;
 
     // Try to get metadata for the root folder.
     try {
       await _apiPost('/files/get_metadata', {'path': _rootFolderPath});
-      _rootFolderId = _rootFolderPath;
-      return _rootFolderId!;
+      rootFolderIdCache = _rootFolderPath;
+      return rootFolderIdCache!;
     } on SyncBackendError catch (e) {
       if (!e.isRetryable) rethrow;
     }
@@ -279,8 +279,8 @@ class DropboxSyncBackend extends SyncBackend {
       if (!e.message.contains('409')) rethrow;
     }
 
-    _rootFolderId = _rootFolderPath;
-    return _rootFolderId!;
+    rootFolderIdCache = _rootFolderPath;
+    return rootFolderIdCache!;
   }
 
   @override
@@ -303,8 +303,8 @@ class DropboxSyncBackend extends SyncBackend {
   }) async {
     final sanitized = requireBookFolderName(bookTitle);
 
-    if (_titleToFolderId.containsKey(sanitized)) {
-      return _titleToFolderId[sanitized]!;
+    if (folderIdCache.containsKey(sanitized)) {
+      return folderIdCache[sanitized]!;
     }
 
     final folderPath = '$rootFolderId/$sanitized';
@@ -319,7 +319,7 @@ class DropboxSyncBackend extends SyncBackend {
       if (!e.message.contains('409')) rethrow;
     }
 
-    _titleToFolderId[sanitized] = folderPath;
+    folderIdCache[sanitized] = folderPath;
 
     if (coverData != null) {
       try {
@@ -359,26 +359,10 @@ class DropboxSyncBackend extends SyncBackend {
     );
   }
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 Dropbox 的下载原语（files/download API + jsonDecode）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _downloadFileJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _downloadFileJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _downloadFileJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _downloadFileJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -472,27 +456,12 @@ class DropboxSyncBackend extends SyncBackend {
           'Download failed: HTTP ${streamedResp.statusCode}');
     }
 
-    final totalBytes = streamedResp.contentLength ?? -1;
-    final sink = destination.openWrite();
-    int bytesReceived = 0;
-    bool success = false;
-    try {
-      await for (final chunk in streamedResp.stream) {
-        sink.add(chunk);
-        bytesReceived += chunk.length;
-        if (totalBytes > 0) {
-          onProgress?.call(bytesReceived / totalBytes);
-        }
-      }
-      success = true;
-    } finally {
-      await sink.close();
-      if (!success) {
-        try {
-          destination.deleteSync();
-        } catch (_) {/* best-effort: failure is non-critical here */}
-      }
-    }
+    await writeSyncStreamToFile(
+      source: streamedResp.stream,
+      destination: destination,
+      totalBytes: streamedResp.contentLength,
+      onProgress: onProgress,
+    );
   }
 
   @override
@@ -512,43 +481,9 @@ class DropboxSyncBackend extends SyncBackend {
   }
 
   // ── Cache ─────────────────────────────────────────────────────────
-
-  @override
-  void clearCache() {
-    _rootFolderId = null;
-    _titleToFolderId.clear();
-  }
-
-  @override
-  void restoreCache({
-    String? rootFolderId,
-    Map<String, String>? titleToFolderId,
-  }) {
-    _rootFolderId = rootFolderId;
-    if (titleToFolderId != null) {
-      _titleToFolderId.addAll(titleToFolderId);
-    }
-  }
-
-  @override
-  String? get cachedRootFolderId => _rootFolderId;
-
-  @override
-  Map<String, String> get cachedFolderIds => Map.unmodifiable(_titleToFolderId);
-
-  @override
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final f in folders) {
-      _titleToFolderId[f.name] = f.id;
-    }
-  }
-
-  @override
-  void evictFolderId(String folderId) {
-    // 按值反查逐出书名→folderId 缓存里指向 [folderId] 的条目，消除删书后陈旧态
-    // （BUG-202）。路径式后端的 folderId 是按名派生的路径，逐出仍是廉价正确性。
-    _titleToFolderId.removeWhere((_, id) => id == folderId);
-  }
+  //
+  // 缓存字段 + 六个 cache 方法收敛进 [SyncFolderCache] mixin（恒等 folderId，无尾
+  // 斜杠规范化）。
 
   // ── SyncAssetStore ────────────────────────────────────────────────
 
@@ -583,41 +518,6 @@ class DropboxSyncBackend extends SyncBackend {
               isFolder: e['.tag'] == 'folder',
             ))
         .toList();
-  }
-
-  @override
-  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
-    final file = await findContentFile(namespaceId, name);
-    if (file == null) return null;
-    return AssetEntry(id: file.id, name: file.name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
   }
 
   @override

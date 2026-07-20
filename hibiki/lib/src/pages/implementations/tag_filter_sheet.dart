@@ -54,6 +54,25 @@ final srtBookTagMapProvider =
   return result;
 });
 
+/// 合集 → 标签列表（keyed by collectionId）。与 [bookTagMapProvider] 等同形，
+/// 共用同一 [BookTags] 标签池。让书架/视频列表里的合集行也能展示已打的标签 chip
+/// （详情页早有展示，列表行此前没有——用户实报「打了标签但列表上看不见」）。
+final collectionTagMapProvider =
+    FutureProvider<Map<int, List<BookTagRow>>>((ref) async {
+  final db = ref.watch(appProvider).database;
+  final tags = await db.getAllTags();
+  final mappings = await db.getAllCollectionTagMappings();
+  final tagById = {for (final t in tags) t.id: t};
+  final Map<int, List<BookTagRow>> result = {};
+  for (final m in mappings) {
+    final tag = tagById[m.tagId];
+    if (tag != null) {
+      result.putIfAbsent(m.collectionId, () => []).add(tag);
+    }
+  }
+  return result;
+});
+
 final filteredSrtBookIdsProvider = FutureProvider<Set<int>?>((ref) async {
   final tagIds = ref.watch(selectedTagIdsProvider);
   if (tagIds.isEmpty) return null;

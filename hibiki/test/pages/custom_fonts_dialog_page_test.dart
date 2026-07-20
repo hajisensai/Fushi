@@ -80,6 +80,13 @@ void main() {
     );
 
     expect(find.text('Klee One'), findsOneWidget);
+
+    // Target chips are collapsed by default so the row stays compact; expand
+    // the "Font roles" section before asserting on the individual toggles.
+    expect(find.widgetWithText(FilterChip, t.font_target_app_ui), findsNothing);
+    await tester.tap(find.text(t.custom_fonts_font_roles));
+    await tester.pumpAndSettle();
+
     expect(find.text(t.font_target_app_ui), findsOneWidget);
     expect(find.text(t.font_target_body), findsOneWidget);
     expect(find.text(t.font_target_dictionary), findsOneWidget);

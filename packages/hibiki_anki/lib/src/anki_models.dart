@@ -379,6 +379,7 @@ class AnkiMiningContext {
     this.sentenceOffset,
     this.source,
     this.bookTitleTag,
+    this.collectionTag,
   });
   final String sentence;
   final String? cueSentence;
@@ -399,6 +400,15 @@ class AnkiMiningContext {
   /// app；标题来源也按来源不同（书=书名 / 视频=番名）。故由调用方读开关 + 取标题 + 清洗后
   /// 注入，本包只负责按既有 [buildNoteTags] 去重规则追加，与 `book`/`video` 分类标签同构。
   final String? bookTitleTag;
+
+  /// 「自动添加书名到标签」开关开启且当前条目**归属某合集**时，调用方（reader / video）
+  /// 算好的**已清洗合集名标签**（空格/Tab→下划线，单个 Anki tag 字面量）；不属任何合集、
+  /// 开关关闭或无合集名时为 `null`，[BaseAnkiRepository.buildNoteTags] 不追加。
+  ///
+  /// 与 [bookTitleTag] 并列：视频从播放列表（系列）名取、reader 从书所属合集反查取，
+  /// 二者字面量不同则各成一个 tag（Anki 里可按系列聚合、也可按单集/单本区分）；相同时由
+  /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
+  final String? collectionTag;
 }
 
 class AnkiHandlebarRenderer {
@@ -630,20 +640,26 @@ String mimeTypeForPath(String path) {
 String ankiDictionaryMediaCacheDirPath() =>
     '${Directory.systemTemp.path}/anki-media';
 
-/// 词典媒体在缓存目录中的文件名：`hibiki_dict_<sha1(path)>.<ext>`。
+/// 词典媒体在缓存目录中的文件名：`hibiki_dict_<sha1(dictionary NUL path)>.<ext>`。
+///
+/// 哈希输入是 **词典名 + NUL(`\u0000`) 分隔 + 相对路径**（BUG-904）：只对 `path`
+/// 求哈希时，两本词典含同一相对路径的外字（例如都叫 `gaiji/参照.svg`）会算出同一
+/// 文件名 → 后制卡的词典嵌入前者的图片（跨词典串味）。把词典名纳入哈希输入即可让
+/// 同 path 不同词典产生不同文件名；用 NUL 分隔避免 `('ab','c')` 与 `('a','bc')`
+/// 拼接后相同的歧义。writer 与各 Anki backend 都传各自 [DictionaryMedia] 的
+/// `dictionary`，共用这个 helper 读写缓存，命名才对得上。
 ///
 /// 无扩展名（path 不含 `.` 或以 `.` 结尾）时回退 `bin`（HBK-AUDIT-062：旧
 /// `split('.').last` 在无点时返回整串当扩展名）。
 ///
 /// 不使用 [String.hashCode]：它不是持久化文件名契约，跨运行时/平台/编译模式不保证
-/// 稳定。writer 与各 Anki backend 都通过这个 helper 读写缓存，稳定 SHA-1 文件名可避免
-/// iOS/Android/桌面制卡时偶发读不到外字 SVG。
-String ankiDictionaryMediaCacheFilename(String path) {
+/// 稳定（BUG-640）。稳定 SHA-1 文件名可避免 iOS/Android/桌面制卡时偶发读不到外字 SVG。
+String ankiDictionaryMediaCacheFilename(String dictionary, String path) {
   final lastDot = path.lastIndexOf('.');
   final ext = (lastDot >= 0 && lastDot < path.length - 1)
       ? path.substring(lastDot + 1)
       : 'bin';
-  final digest = sha1.convert(utf8.encode(path)).toString();
+  final digest = sha1.convert(utf8.encode('$dictionary\u0000$path')).toString();
   return 'hibiki_dict_$digest.$ext';
 }
 

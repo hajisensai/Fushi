@@ -26,7 +26,7 @@ void main() {
         emojiRegex: emojiRegex,
         punctuationRegex: punctuationRegex,
         loneSurrogateRegex: loneSurrogateRegex,
-      ).term;
+      );
 
   void expectEquivalent(String input) {
     expect(normalize(input), legacyNormalize(input),
@@ -102,18 +102,6 @@ void main() {
       const String input = '。図書\n\u{1F600}館\uD800！';
       expect(normalize(input), legacyNormalize(input));
       expectEquivalent(input);
-    });
-
-    test('micro timing fields non-negative (observability passthrough)', () {
-      final result = normalizeSearchTerm(
-        '図書\n\u{1F600}館',
-        emojiRegex: emojiRegex,
-        punctuationRegex: punctuationRegex,
-        loneSurrogateRegex: loneSurrogateRegex,
-      );
-      expect(result.emojiMicros, greaterThanOrEqualTo(0));
-      expect(result.punctMicros, greaterThanOrEqualTo(0));
-      expect(result.surrogateMicros, greaterThanOrEqualTo(0));
     });
   });
 

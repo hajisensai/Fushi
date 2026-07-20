@@ -97,12 +97,13 @@ extension _ReaderMining on _ReaderHibikiPageState {
           'sentence.${immersionMiningAudioExtension()}',
         );
         requestedSentenceAudioClip = true;
-        // TODO-757 压缩开关：默认压缩档（单声道 64k=现状），关闭压缩走立体声 128k。
+        // TODO-1650 音频质量档：默认档 0（单声道 64k=现状），更高档立体声 128k/192k。
         // TODO-970：句子音频已全平台统一走 ffmpeg（extractAudioSegment 不再有 Android
-        // 原生 Transformer + AacAdtsCueAudioRewriter 特例），两端都吃压缩开关。
+        // 原生 Transformer + AacAdtsCueAudioRewriter 特例），两端都吃这个档。
         final MiningMediaCompression mediaCompression =
-            MiningMediaCompression.forCompressionEnabled(
-          appModel.compressMiningMedia,
+            MiningMediaCompression.resolve(
+          imageTier: appModel.miningImageQuality,
+          audioTier: appModel.miningAudioQuality,
         );
         sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
           inputPath: inputFile.path,
@@ -152,6 +153,12 @@ extension _ReaderMining on _ReaderHibikiPageState {
       return (context: null, cleanup: cleanupSasayakiTempDir);
     }
 
+    // 合集名标签（同「自动添加书名到标签」开关）：反查当前书/有声书所属合集名，作独立 tag。
+    // 开关关闭或不属任何合集时 null 不追加。DB 反查放此处（_prepareMiningContext 本就 async）。
+    final String? collectionTag = appModel.autoAddBookNameToTags
+        ? BaseAnkiRepository.sanitizeTitleTag(await _resolveCollectionName())
+        : null;
+
     // TODO-644 / BUG-357：用 await 前的快照值构造上下文（cue 句 / 加粗偏移），不再
     // 读 currentCueSentence / _cachedSentenceOffset 这两个会被并发查词改写的可变成员。
     final AnkiMiningContext miningContext = AnkiMiningContext(
@@ -169,9 +176,31 @@ extension _ReaderMining on _ReaderHibikiPageState {
       bookTitleTag: appModel.autoAddBookNameToTags
           ? BaseAnkiRepository.sanitizeTitleTag(_book?.title)
           : null,
+      collectionTag: collectionTag,
     );
 
     return (context: miningContext, cleanup: cleanupSasayakiTempDir);
+  }
+
+  /// 反查当前书/有声书所属合集名（供制卡「合集名标签」用）。折叠归属跟随
+  /// [HibikiDatabase.getPrimaryCollectionIdByEntry] 的「最小 collectionId」语义，与书架
+  /// 折叠归行一致。键构造（见 collection_grouping / shelf_ordering）：
+  /// - EPUB / 普通 EPUB-有声书 → `'epub|<bookKey>'`（[bookKey] 恒同步可用）。
+  /// - 纯 SRT 有声书（[_srtBookUid] 非空）→ `'srt|<uid>'`；srt-backed 有声书两身份都试
+  ///   （BUG-812：可能存成 `srt|uid`，先 epub 键 miss 再回退，与 host service 同策略）。
+  /// 不属任何合集 / 合集已删（孤儿）→ `null`，[buildNoteTags] 不追加。
+  Future<String?> _resolveCollectionName() async {
+    final HibikiDatabase db = appModel.database;
+    final Map<String, int> primaryByEntry =
+        await db.getPrimaryCollectionIdByEntry();
+    if (primaryByEntry.isEmpty) return null;
+    final String? srtUid = _srtBookUid;
+    final int? collectionId = srtUid != null
+        ? (primaryByEntry['srt|$srtUid'] ??
+            primaryByEntry['epub|${widget.bookKey}'])
+        : primaryByEntry['epub|${widget.bookKey}'];
+    if (collectionId == null) return null;
+    return (await db.getMediaCollectionById(collectionId))?.name;
   }
 
   Future<MinePopupResult> _onMineFromPopupInner(

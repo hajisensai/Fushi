@@ -29,6 +29,19 @@ class FakeClassList {
     this.values.delete(name);
     this.element.className = [...this.values].join(' ');
   }
+
+  // Standard DOMTokenList.toggle(name, force?): force===true adds, force===false
+  // removes, omitted flips. popup.js setMineState toggles 'open-anki-hidden' on
+  // the open-anki button via the two-arg force form (TODO-1360).
+  toggle(name, force) {
+    const shouldHave = force === undefined ? !this.values.has(name) : !!force;
+    if (shouldHave) {
+      this.add(name);
+    } else {
+      this.remove(name);
+    }
+    return shouldHave;
+  }
 }
 
 class FakeStyle {

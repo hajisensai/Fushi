@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -18,6 +19,46 @@ Uint8List _craftPe(int machine) {
   b[peOff + 3] = 0;
   bd.setUint16(peOff + 4, machine, Endian.little);
   return b;
+}
+
+class _FakeProcess implements Process {
+  _FakeProcess() : stdin = IOSink(StreamController<List<int>>().sink);
+
+  final StreamController<List<int>> stdoutController =
+      StreamController<List<int>>();
+  final StreamController<List<int>> stderrController =
+      StreamController<List<int>>();
+  final Completer<int> _exitCode = Completer<int>();
+
+  @override
+  final int pid = 9876;
+
+  @override
+  final IOSink stdin;
+
+  bool killed = false;
+
+  @override
+  Stream<List<int>> get stdout => stdoutController.stream;
+
+  @override
+  Stream<List<int>> get stderr => stderrController.stream;
+
+  @override
+  Future<int> get exitCode => _exitCode.future;
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    killed = true;
+    if (!_exitCode.isCompleted) _exitCode.complete(0);
+    return true;
+  }
+
+  Future<void> dispose() async {
+    await stdoutController.close();
+    await stderrController.close();
+    unawaited(stdin.close());
+  }
 }
 
 /// galgame 一键制卡（docs/specs/galgame-mining）纯逻辑契约：
@@ -117,6 +158,30 @@ void main() {
           'textHooked': true,
         }),
         isFalse,
+      );
+    });
+  });
+
+  group('parseEngineAudioHooksReady', () {
+    test('文本先到时不能提前结束音频探测', () {
+      expect(
+        parseEngineAudioHooksReady(<Object?, Object?>{
+          'hooked': true,
+          'textHooked': true,
+          'audioHooksReady': false,
+        }),
+        isFalse,
+      );
+    });
+
+    test('原生首轮音频 hook 完成后才允许进入混合模式', () {
+      expect(
+        parseEngineAudioHooksReady(<Object?, Object?>{
+          'hooked': true,
+          'textHooked': true,
+          'audioHooksReady': true,
+        }),
+        isTrue,
       );
     });
   });
@@ -350,6 +415,93 @@ void main() {
       expect(await src.start(), isNull);
     });
 
+    test('launch PID 就绪后仍持续排空 helper stdout 和 stderr', () async {
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'hibiki_helper_output_test_',
+      );
+      final File injector =
+          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      await injector.writeAsBytes(const <int>[0]);
+      final _FakeProcess process = _FakeProcess();
+      final StringBuffer stdoutSeen = StringBuffer();
+      var stderrCharacters = 0;
+      const int stderrTarget = 128 * 4096;
+      final Completer<void> postReadyStdout = Completer<void>();
+      final Completer<void> stderrDrained = Completer<void>();
+
+      setHandler((MethodCall call) async {
+        switch (call.method) {
+          case 'open':
+            expect(call.arguments, <String, Object?>{'pid': 4321});
+            return <String, Object?>{'ok': true};
+          case 'status':
+            return <String, Object?>{
+              'hooked': true,
+              'textHooked': true,
+              'audioHooksReady': true,
+              'ready': false,
+              'rawVoiceReady': false,
+            };
+          case 'close':
+            return null;
+        }
+        return null;
+      });
+
+      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+        launchExe: 'game.exe',
+        injectorPath: injector.path,
+        processStarter: (String executable, List<String> arguments) async {
+          expect(executable, injector.path);
+          expect(
+              arguments, containsAllInOrder(<String>['--launch', 'game.exe']));
+          scheduleMicrotask(() {
+            process.stdoutController.add(
+              'OK hooked pid=4321 mode=launch\n'.codeUnits,
+            );
+          });
+          return process;
+        },
+        processOutputSink: (bool isStderr, String chunk) {
+          if (isStderr) {
+            stderrCharacters += chunk.length;
+            if (stderrCharacters >= stderrTarget &&
+                !stderrDrained.isCompleted) {
+              stderrDrained.complete();
+            }
+            return;
+          }
+          stdoutSeen.write(chunk);
+          if (stdoutSeen.toString().contains('post-ready') &&
+              !postReadyStdout.isCompleted) {
+            postReadyStdout.complete();
+          }
+        },
+        readyTimeout: const Duration(seconds: 1),
+        pollInterval: Duration.zero,
+      );
+
+      try {
+        expect(await source.start(), isNull);
+        expect(source.gamePid, 4321);
+        process.stdoutController.add('post-ready\n'.codeUnits);
+        final List<int> stderrChunk = List<int>.filled(4096, 0x78);
+        for (var i = 0; i < 128; i++) {
+          process.stderrController.add(stderrChunk);
+        }
+        await Future.wait(<Future<void>>[
+          postReadyStdout.future,
+          stderrDrained.future,
+        ]).timeout(const Duration(seconds: 2));
+        expect(stderrCharacters, stderrTarget);
+      } finally {
+        await source.stop();
+        expect(process.killed, isTrue);
+        await process.dispose();
+        await temp.delete(recursive: true);
+      }
+    });
+
     test('targetPid<=0 -> start null', () async {
       final src =
           EngineHookGalAudioSource(targetPid: 0, injectorPath: 'C:/nope.exe');
@@ -453,6 +605,19 @@ void main() {
       expect(line.threadContext2, 10);
       expect(line.eventKind, GalTextEventKind.threadDiscovered);
       expect(line.eventFlags, 1);
+    });
+
+    test('Siglus exact text source has a stable selectable thread label', () {
+      const GalHookedLine line = GalHookedLine(
+        seq: 1,
+        timestampMs: 2,
+        text: '「ひょ、とっ、ほあたぁ！」',
+        threadId: 0x44,
+        threadAddress: 0x25c880,
+        sourceKind: 4,
+      );
+      expect(line.textThreadKey, 'siglus:44');
+      expect(line.textThreadLabel, 'Siglus exact · 0x25c880');
     });
 
     test('selectTextThread forwards the native thread id and can reset to auto',
@@ -602,6 +767,12 @@ void main() {
     test('manosaba.exe 明确启用 Unity/Mono 文本 hook 兜底', () async {
       final File exe = File(join(dir.path, 'manosaba.exe'));
       await exe.writeAsBytes(_craftPe(0x8664), flush: true);
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+    });
+
+    test('SiglusEngine.exe 启用 PC hooks 以避开 GDI 描边伪影', () async {
+      final File exe = File(join(dir.path, 'SiglusEngine.exe'));
+      await exe.writeAsBytes(_craftPe(0x014c), flush: true);
       expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
     });
 

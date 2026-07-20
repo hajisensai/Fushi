@@ -250,9 +250,21 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   Future<void> _showReaderTextContextMenu(Offset globalPosition) async {
     if (!mounted || !isWindowsPlatform) return;
     // 没有原生选区文本就不弹菜单（右键空白处不打扰）。
-    final Object? rawText = await _controller?.evaluateJavascript(
-      source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
-    );
+    // 本方法从 onSecondaryTapDown fire-and-forget 调用，异常会逃出当前 zone 被记为
+    // fatal（main.dart runZonedGuarded）——WebView 半销毁 / 插件通道异常时右键
+    // evaluateJavascript 会抛 PlatformException / MissingPluginException，表现为闪退。
+    // 与孪生的 _fillLookupStateFromNativeSelection / _copyNativeSelectionToClipboard
+    // 同款：eval 必须 try/catch 吞掉。BUG-927。
+    Object? rawText;
+    try {
+      rawText = await _controller?.evaluateJavascript(
+        source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.showReaderTextContextMenu', e, stack);
+      return;
+    }
     final String selectedText =
         ReaderSelectionScripts.nativeSelectionTextFromResult(rawText);
     if (selectedText.isEmpty) return;
@@ -368,6 +380,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       case 'copy':
         await Clipboard.setData(ClipboardData(text: selectedText));
         HibikiToast.show(msg: t.copied_to_clipboard);
+        // 复制是终结动作：清掉刻意保留的原生选区，和移动端拖选菜单的 'copy'
+        // （_clearReaderAppSelection）对齐。否则残留的原生蓝色选区会一直卡住后续
+        // 查词（见 webview.part.dart pointerup 里对 nativeMoved 的处理）。BUG-927。
+        await _clearReaderAppSelection();
         return;
       case 'favorite':
         // BUG-854：右键收藏也走「原生选区 → 查词状态」补写（与 search 同源），确保
@@ -734,8 +750,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         final Uint8List bytes = await file.readAsBytes();
         if (bytes.isEmpty) continue;
         // 降采样护体积（长边 1000px / JPEG q90，与制卡截图同档）；小图/无法解码时
-        // downsampleCardScreenshot 原样返回，绝不把有效插图变空。
-        final Uint8List downsampled = downsampleCardScreenshot(bytes);
+        // downsampleCardScreenshot 原样返回，绝不把有效插图变空。BUG-933：解码/编码
+        // 卸到后台 isolate，避免逐张插图的纯 Dart CPU 阻塞 UI。
+        final Uint8List downsampled =
+            await downsampleCardScreenshotAsync(bytes);
         images.add((normOffset: ref.normOffset, bytes: downsampled));
       } catch (e, stack) {
         ErrorLogService.instance
@@ -1184,6 +1202,49 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     );
   }
 
+  // Shared scaffold for the two bottom chrome bars ([_buildAudiobookBar] /
+  // [_buildSettingsBar]): Positioned(bottom) -> ExcludeFocus -> FocusScope ->
+  // Column(min) -> ReaderChromeScaler-scaled bar -> bottom-inset ColoredBox.
+  //
+  // TODO-700 T8: ExcludeFocus removes every bar control from the focus traversal
+  // pool so the reading content ([_focusNode]) is the only home for focus. The
+  // bar stays operable by touch/mouse but is never a directional-nav destination,
+  // so it can neither steal a hidden shortcut nor strand the page-turn keys.
+  // _chromeFocusScope is kept as the bar's structural scope; its `.hasFocus` is
+  // now always false, which [_reclaimReaderFocusAfterGesture] relies on. The
+  // audiobook bar passes a ValueKey so element identity survives the play-bar ↔
+  // settings-bar swap; the settings bar passes none (as before).
+  Widget _wrapBottomChromeBar({Key? key, required Widget bar}) {
+    return Positioned(
+      key: key,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: ExcludeFocus(
+        child: FocusScope(
+          node: _chromeFocusScope,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ReaderChromeScaler(
+                scale: _readerChromeScale,
+                baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
+                child: bar,
+              ),
+              ColoredBox(
+                color: _themeBackgroundColor(),
+                child: SizedBox(
+                  height: _stableBottomInset,
+                  width: double.infinity,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBottomChrome() {
     // 底栏可见性只取决于用户意图（_showChrome）和「首次冷加载是否完成」
     // （_hasEverLoaded，只置 true、从不复位），不再耦合每次切章都会翻转的
@@ -1206,53 +1267,21 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     return ListenableBuilder(
       listenable: ctrl,
       builder: (context, _) {
-        return Positioned(
+        return _wrapBottomChromeBar(
           key: const ValueKey<String>('hoshi_play_bar'),
-          left: 0,
-          right: 0,
-          bottom: 0,
-          // TODO-700 T8: ExcludeFocus removes every bar control from the
-          // focus traversal pool so the reading content ([_focusNode]) is the
-          // only home for focus. The bar stays operable by touch/mouse but is
-          // never a directional-nav destination, so it can neither steal a
-          // hidden shortcut nor strand the page-turn keys. _chromeFocusScope is
-          // kept as the bar's structural scope; its `.hasFocus` is now always
-          // false, which [_reclaimReaderFocusAfterGesture] relies on.
-          child: ExcludeFocus(
-            child: FocusScope(
-              node: _chromeFocusScope,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  ReaderChromeScaler(
-                    scale: _readerChromeScale,
-                    baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
-                    child: AudiobookPlayBar(
-                      controller: ctrl,
-                      skipActionSeconds:
-                          ReaderHibikiSource.instance.skipActionSeconds,
-                      onOpenSettings: _showAppearanceSheet,
-                      backgroundColor: _themeBackgroundColor(),
-                      foregroundColor: _themeTextColor(),
-                      reversed: appModel.reverseReaderBottomBar,
-                      // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
-                      // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
-                      invertSkip: ReaderHibikiSource
-                          .instance.invertAudiobookSkipDirection,
-                      // TODO-728: per-reader toggle for the current-sentence cue.
-                      showCue: ReaderHibikiSource.instance.showBottomBarCue,
-                    ),
-                  ),
-                  ColoredBox(
-                    color: _themeBackgroundColor(),
-                    child: SizedBox(
-                      height: _stableBottomInset,
-                      width: double.infinity,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          bar: AudiobookPlayBar(
+            controller: ctrl,
+            skipActionSeconds: ReaderHibikiSource.instance.skipActionSeconds,
+            onOpenSettings: _showAppearanceSheet,
+            backgroundColor: _themeBackgroundColor(),
+            foregroundColor: _themeTextColor(),
+            reversed: appModel.reverseReaderBottomBar,
+            // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
+            // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
+            invertSkip:
+                ReaderHibikiSource.instance.invertAudiobookSkipDirection,
+            // TODO-728: per-reader toggle for the current-sentence cue.
+            showCue: ReaderHibikiSource.instance.showBottomBarCue,
           ),
         );
       },
@@ -1290,45 +1319,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         ),
       ),
     ];
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      // TODO-700 T8: see [_buildAudiobookBar] — ExcludeFocus keeps the settings
-      // bar out of the focus traversal pool so focus stays on the reading
-      // content. _chromeFocusScope is kept as the structural scope only.
-      child: ExcludeFocus(
-        child: FocusScope(
-          node: _chromeFocusScope,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ReaderChromeScaler(
-                scale: _readerChromeScale,
-                baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
-                child: ColoredBox(
-                  color: _themeBackgroundColor(),
-                  child: SizedBox(
-                    height: _ReaderHibikiPageState._readerChromeBaseHeight,
-                    child: Padding(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
-                      child: Row(
-                        children:
-                            reversed ? barItems.reversed.toList() : barItems,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              ColoredBox(
-                color: _themeBackgroundColor(),
-                child: SizedBox(
-                  height: _stableBottomInset,
-                  width: double.infinity,
-                ),
-              ),
-            ],
+    return _wrapBottomChromeBar(
+      bar: ColoredBox(
+        color: _themeBackgroundColor(),
+        child: SizedBox(
+          height: _ReaderHibikiPageState._readerChromeBaseHeight,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+            child: Row(
+              children: reversed ? barItems.reversed.toList() : barItems,
+            ),
           ),
         ),
       ),
@@ -1458,6 +1458,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           );
         },
         favoriteSentences: favorites,
+        favoritePositionLabel: _favoritePositionLabel,
         onDeleteFavorite: (fav) async {
           await favRepo.removeById(fav.id);
           _invalidateFavoriteSentenceCache();
@@ -1646,12 +1647,14 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final Color infoColor = _themeTextColor();
     final String position = ReaderHibikiSource.instance.topProgressPosition;
 
-    // TODO-1136 / BUG-frosted：进度文字直接叠在正文上，浅色书/复杂背景下
-    //  看不清。在文字后面加一层毛玻璃（frosted glass）背景提升可读性——
-    //  复用 blur_options.dart 的既有配方（ClipRRect > BackdropFilter(ImageFilter.blur)
-    //  > 半透明 Container），背景色/文字色跟随当前主题
-    //  （_themeBackgroundColor / _themeTextColor），不硬编码。BackdropFilter 必须
-    //  在 ClipRRect 内限定到 pill 自身矩形，避免整页模糊。
+    // TODO-1136 / BUG-frosted：进度文字直接叠在正文上，浅色书/复杂背景下看不清，
+    //  在文字后面加一层毛玻璃（frosted glass）背景提升可读性——经典配方
+    //  （ClipRRect > BackdropFilter(ImageFilter.blur) > 半透明 Container），背景/文字
+    //  色跟随当前主题（_themeBackgroundColor / _themeTextColor），不硬编码。
+    //  BUG-887：毛玻璃只在**悬浮**模式有意义——那时进度真正浮在正文之上。挤压模式
+    //  下 strip 预留了自身高度、正文被推到其下方，pill 落在预留区（正文空白顶边距
+    //  = 主题背景）之上，背后并无正文，毛玻璃既无意义又会显出一块贴着正文首行的模糊
+    //  矩形（横线字如「一」「ー」尤为明显）。故 frostedFill 仅悬浮态使用。
     final Color frostedFill = _themeBackgroundColor()
         .withValues(alpha: _isReaderThemeDark ? 0.42 : 0.55);
 
@@ -1666,6 +1669,43 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     //    (penetration guard).
     //  - No Focus/canRequestFocus wrapper: this stays a pure pointer surface and
     //    must never enter the focus-traversal pool (TODO-700 invariant).
+    final Text label = Text(
+      '$_progressCurrentChars / $_progressTotalChars'
+      '  ${(ratio * 100).toStringAsFixed(2)}%',
+      key: const ValueKey<String>('hoshi_progress'),
+      style: TextStyle(
+          fontSize: _ReaderHibikiPageState._infoFontSize, color: infoColor),
+      textAlign: readerTopProgressTextAlign(position),
+    );
+
+    // BUG-887：仅悬浮态套毛玻璃；挤压态是纯文字，无背景无模糊（见上方 frostedFill
+    //  注释）。两态纵向内边距同源 [kTopProgressPillVerticalPadding]，pill 实高不超
+    //  预留 [_infoStripHeight]（= [kTopProgressStripHeight]，BUG-547 已把预留同步含
+    //  该内边距），保证挤压态 pill 落在预留区内、绝不压住正文首行。
+    final Widget pill =
+        topProgressUsesFrostedGlass(floating: _topProgressFloating)
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    color: frostedFill,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: kTopProgressPillVerticalPadding,
+                    ),
+                    child: label,
+                  ),
+                ),
+              )
+            : Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: kTopProgressPillVerticalPadding,
+                ),
+                child: label,
+              );
+
     return Positioned(
       top: _stableTopInset,
       left: 16,
@@ -1679,32 +1719,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           onTap: _anyChromeFloating
               ? () => _handleFloatingChromeReveal()
               : _toggleChrome,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                color: frostedFill,
-                // TODO-975 铁律：pill 上下内边距与预留高 [_infoStripHeight]
-                // （= [kTopProgressStripHeight]）共享同一常量
-                // [kTopProgressPillVerticalPadding]，pill 实高绝不超预留（BUG-547
-                // 曾只加 padding 未同步预留 → 压住正文首行）。
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: kTopProgressPillVerticalPadding,
-                ),
-                child: Text(
-                  '$_progressCurrentChars / $_progressTotalChars'
-                  '  ${(ratio * 100).toStringAsFixed(2)}%',
-                  key: const ValueKey<String>('hoshi_progress'),
-                  style: TextStyle(
-                      fontSize: _ReaderHibikiPageState._infoFontSize,
-                      color: infoColor),
-                  textAlign: readerTopProgressTextAlign(position),
-                ),
-              ),
-            ),
-          ),
+          child: pill,
         ),
       ),
     );
@@ -1946,6 +1961,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       sectionIndex: section,
       normCharOffset: sentenceRange?.offset,
       normCharLength: sentenceRange?.length,
+      // BUG-893：补 dateKey，否则阅读统计「收藏语句」计数恒为 0（视频收藏路径早已带
+      // dateKey，唯独书内收藏漏了）。source 用默认（书籍），与统计分桶口径一致。
+      dateKey: statTodayKey(),
     );
     await repo.add(fav);
     // BUG-494：记住刚写入条目的精确 id，供随后取消收藏 removeById 精确删单条。
@@ -1978,22 +1996,56 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         (normCharOffset != null && favLen != null && favLen > 0)
             ? normCharOffset + favLen
             : -1;
+    // BUG-876（「点收藏有时跳不过去」根因修复）：normCharOffset 可能缺失——收藏写入端
+    // （`_toggleFavoriteSentence`）的 `sentenceRange?.offset` 依赖 JS getNormalizedOffset
+    // 解析出章内偏移，跨 ruby / 复杂节点的选区可能返 null → 存 null。此时旧跳转：同章
+    // `restoreToCharOffset` 被 `normCharOffset != null` 门吞成**静默 no-op**（什么都不动），
+    // 跨章 charOffset=null → progress 0 落**章首**——正是用户报的「有时能跳、有时跳不过去」
+    // （能否跳取决于该条收藏写入时有没有拿到 offset）。收藏条目**总有文本**，故缺 offset 时
+    // 回退到与「搜索跳转」同一条 by-text 定位原语 `scrollToSearchMatch`（按句文本在章内命中，
+    // 不依赖脆弱的持久化 offset；整句文本在章内通常唯一，hint=0 即命中）。有效 offset 仍走
+    // 精确 `restoreToCharOffset` / 字符锚导航（现有正常路径逐字节不变，向后兼容既有可跳收藏）。
+    final String favText = fav.text.trim();
+    final bool useOffset = normCharOffset != null;
+    final String? textLocateJs = useOffset || favText.isEmpty
+        ? null
+        : ReaderPaginationScripts.scrollToSearchMatchInvocation(favText, 0);
     if (fav.sectionIndex != _currentChapter) {
       await _navigateToChapterAndWait(
         fav.sectionIndex!,
         manual: true,
-        charOffset: normCharOffset,
+        charOffset: useOffset ? normCharOffset : null,
         charOffsetEnd: charOffsetEnd,
+        preciseLocateJs: textLocateJs,
       );
       return;
     }
     if (!mounted || _controller == null) return;
-    if (normCharOffset != null) {
+    if (useOffset) {
       await _controller!.evaluateJavascript(
         source: 'window.hoshiReader && window.hoshiReader'
             '.restoreToCharOffset($normCharOffset, $charOffsetEnd);',
       );
+    } else if (textLocateJs != null) {
+      await _controller!.evaluateJavascript(source: textLocateJs);
     }
+  }
+
+  /// 收藏面板每行的「阅读位置」标签（如 `78.6%`）。用本次阅读会话已建好的每章字符
+  /// 账本（`_chapterCumulativeChars` / `_chapterCharCounts`，与顶栏进度同源）把收藏的
+  /// (章节, 章内偏移) 折算成全书进度分数（[favoriteBookProgressFraction]）。账本未就绪
+  /// / 无 sectionIndex / 折算失败时返回 null（不显示，绝不显示错误位置）。
+  String? _favoritePositionLabel(FavoriteSentence fav) {
+    final int? section = fav.sectionIndex;
+    if (section == null) return null;
+    final double? fraction = favoriteBookProgressFraction(
+      cumulativeChars: _chapterCumulativeChars,
+      charCounts: _chapterCharCounts,
+      sectionIndex: section,
+      normCharOffset: fav.normCharOffset,
+    );
+    if (fraction == null) return null;
+    return '${(fraction * 100).toStringAsFixed(1)}%';
   }
 }
 

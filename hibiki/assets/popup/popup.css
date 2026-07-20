@@ -58,6 +58,14 @@ body {
        rule at #entries-container, so in the browser extension it only affects the
        popup container and never flips the host page's direction (zero leakage). */
     direction: ltr;
+    /* BUG-870: browser-extension popup content lives in a shadow root. Shadow
+       DOM blocks selector leakage, but inherited properties still cross the
+       host boundary. A host page/container with text-align:center therefore
+       centered every headword and glossary line. Pin the popup root to its
+       intended reading alignment; intentionally-centered descendants (ruby,
+       empty states, controls) keep their more-specific rules below. The
+       content-css generator re-roots this declaration at #entries-container. */
+    text-align: left;
 }
 
 /* TODO-893 v2 (symptom 2) — app-external global lookup ONLY: the visible card
@@ -320,6 +328,17 @@ html {
     color: #2e9e4f;
     opacity: 1;
     font-size: 15px;
+}
+
+/* BUG-932: 制卡按钮静息态 '+' 是文本字形（TODO-1325 应用户要求保留 + / ✓ / ✓↩ 文本
+   标记，不走 SVG），与相邻 audio/favorite/open-anki/tune 的 1em SVG 图标共用上面的
+   font-size:18px；但一个文本 '+' 字形只占 em 盒约一半高（≈9px），SVG 却铺满 1em
+   （可见 ≈14px），故静息加号目测明显比其余图标小/不齐。仅给静息 '+' 态（未制卡 =
+   无 .duplicate 类）单独放大字号补偿文本字形的空白，使其与 SVG 图标目测齐平；已制卡
+   ✓ / ✓↩（.duplicate / .latest）是高字形本就接近、且各有专属尺寸，保持不动。表头行高
+   由词条大标题主导，放大按钮不改行高。守卫见 popup_cards_nav_icon_guard #8。 */
+.mine-button:not(.duplicate) {
+    font-size: 24px;
 }
 
 .mine-button:disabled {

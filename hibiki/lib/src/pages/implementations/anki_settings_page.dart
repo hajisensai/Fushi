@@ -177,27 +177,76 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             ),
           ],
         ),
-        // TODO-777 压缩制卡媒体开关：媒体压缩与「卡片带哪些标签」语义无关，单独占
-        // 一个无标题区，紧随默认标签区之后。同样无条件显示（与标签区一致，不藏在
-        // `uiState.isConfigured` 门控里）。默认开=压缩档（现状，省体积）；关闭走高
-        // 保真档（音频立体声 128k / GIF 480px·12fps / 截图长边 2000px·质量 95），
-        // 更清晰但卡片体积更大。
+        // TODO-1650 制卡媒体清晰度：媒体清晰度与「卡片带哪些标签」语义无关，单独占
+        // 一个无标题区，紧随默认标签区之后。无条件显示（与标签区一致，不藏在
+        // `uiState.isConfigured` 门控里）。图片/GIF 清晰度与音频质量各是一个独立滑块
+        // （替代旧的单一「压缩」开关）：越高越清晰、体积越大；满档=原片（源分辨率/帧率）。
         AdaptiveSettingsSection(
           children: [
-            AdaptiveSettingsSwitchRow(
-              title: t.compress_mining_media,
-              subtitle: t.compress_mining_media_hint,
-              icon: Icons.compress,
-              value: appModel.compressMiningMedia,
-              onChanged: (bool value) {
-                appModel.toggleCompressMiningMedia();
-                setState(() {});
-              },
-            ),
+            _buildMiningImageQualityRow(),
+            _buildMiningAudioQualityRow(),
             _buildVideoMiningImageModePicker(),
           ],
         ),
       ],
+    );
+  }
+
+  /// TODO-1650 图片/GIF 清晰度滑块（4 档 0..3，透传 [AppModel.miningImageQuality]）。
+  /// 只管截图分辨率/质量 + GIF 帧率/宽度；满档=原片（源分辨率+源帧率）。滑块值即档位下标，
+  /// `divisions/step=1` 让它按档吸附，`readout`/`label` 显示当前档名。
+  Widget _buildMiningImageQualityRow() {
+    final List<String> labels = <String>[
+      t.mining_image_quality_thrift,
+      t.mining_image_quality_standard,
+      t.mining_image_quality_hd,
+      t.mining_image_quality_native,
+    ];
+    final int tier =
+        appModel.miningImageQuality.clamp(0, labels.length - 1);
+    return AdaptiveSettingsSliderRow(
+      title: t.mining_image_quality,
+      subtitle: t.mining_image_quality_hint,
+      icon: Icons.hd_outlined,
+      value: tier.toDouble(),
+      min: 0,
+      max: (labels.length - 1).toDouble(),
+      divisions: labels.length - 1,
+      step: 1,
+      label: labels[tier],
+      readout: labels[tier],
+      onChanged: (double value) {
+        appModel.setMiningImageQuality(value.round());
+        setState(() {});
+      },
+    );
+  }
+
+  /// TODO-1650 音频质量滑块（3 档 0..2，透传 [AppModel.miningAudioQuality]）。只管句子/cue
+  /// 音频声道 + 比特率；满档=原片（立体声 192k）。
+  Widget _buildMiningAudioQualityRow() {
+    final List<String> labels = <String>[
+      t.mining_audio_quality_standard,
+      t.mining_audio_quality_high,
+      t.mining_audio_quality_native,
+    ];
+    final int tier =
+        appModel.miningAudioQuality.clamp(0, labels.length - 1);
+    return AdaptiveSettingsSliderRow(
+      title: t.mining_audio_quality,
+      subtitle: t.mining_audio_quality_hint,
+      icon: Icons.graphic_eq,
+      value: tier.toDouble(),
+      min: 0,
+      max: (labels.length - 1).toDouble(),
+      divisions: labels.length - 1,
+      step: 1,
+      label: labels[tier],
+      readout: labels[tier],
+      onChanged: (double value) {
+        appModel.setMiningAudioQuality(value.round());
+        setState(() {});
+      },
     );
   }
 

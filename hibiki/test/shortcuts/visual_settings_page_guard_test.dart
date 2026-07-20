@@ -188,4 +188,68 @@ void main() {
       reason: 'list-view gamepad chips must render brand glyphs',
     );
   });
+
+  // ── TODO-134 source guard（并自 shortcut_settings_video_scope_guard_test.dart）──
+  // The shortcut settings page must list the video scope alongside reader /
+  // home / global / audiobook, and it does so by iterating ALL
+  // [ShortcutScope.values] (not a hard-coded subset). If someone narrows the
+  // scope loop back to a fixed list, or forgets the video scope/action label
+  // branches, the video keys silently vanish from the settings UI even though
+  // they exist in the registry -- exactly the regression this guards.
+  // （ShortcutScope.values 枚举正则与本文件第一个 test 完全重复，按裁决只保留
+  // 一份；其余断言逐字搬运。）
+
+  test('settings page expands each scope via actionsForScope(scope) (TODO-134)',
+      () {
+    // The build loop must expand the per-scope actions via
+    // actionsForScope(scope).
+    expect(
+      src.contains('ShortcutAction.actionsForScope(scope)'),
+      isTrue,
+      reason: 'settings page must expand each scope via actionsForScope(scope)',
+    );
+  });
+
+  test('settings page has a label branch for the video scope', () {
+    // _scopeLabel must handle ShortcutScope.video (the section header), so the
+    // video block renders a real localised title rather than throwing.
+    expect(
+      src.contains('case ShortcutScope.video:'),
+      isTrue,
+      reason: 'settings page _scopeLabel must have a video branch',
+    );
+    expect(
+      src.contains('t.shortcut_scope_video'),
+      isTrue,
+      reason: 'video section header must use shortcut_scope_video',
+    );
+  });
+
+  test('settings page labels every video action (no missing tile title)', () {
+    // Each video action needs a label branch in _actionLabel; spot-check a
+    // representative set covering migrated keys. A missing branch would surface
+    // as an unlabeled / crashing tile in the video section.
+    for (final String label in <String>[
+      't.shortcut_action_video_toggle_play_pause',
+      't.shortcut_action_video_seek_forward',
+      't.shortcut_action_video_screenshot',
+      't.shortcut_action_video_toggle_fullscreen',
+      't.shortcut_action_video_toggle_subtitle_blur',
+      't.shortcut_action_video_escape',
+    ]) {
+      expect(src.contains(label), isTrue,
+          reason: 'settings page is missing video action label: $label');
+    }
+  });
+
+  test('settings page labels reader lookup and card shortcut actions', () {
+    for (final String label in <String>[
+      't.shortcut_action_reader_lookup_at_cursor',
+      't.shortcut_action_reader_shift_lookup',
+      't.shortcut_action_reader_create_card_from_popup',
+    ]) {
+      expect(src.contains(label), isTrue,
+          reason: 'settings page is missing reader shortcut label: $label');
+    }
+  });
 }

@@ -64,14 +64,19 @@ void main() {
       expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
       await tester.pump(const Duration(seconds: 2));
 
-      // 顶部进度默认 ON、非悬浮（show_top_progress_bar=true / top_progress_floating
-      // =false，见 reader_hibiki_source.dart）——这正是 BUG-470 触发配置，无需改偏好。
-      // 显式断言一次，免得默认值被悄悄改掉后测试静默失效。
+      // BUG-470 关心「挤压模式首载 inset 缺口」。顶部进度默认已改为悬浮
+      // （top_progress_floating=true，悬浮不占预留），故本测试在开书前显式切回挤压
+      // 模式，保住原始触发场景（进度键经单一 app DB 共享，开书前写入会被 per-book
+      // ReaderSettings 首载读到）。
       expect(ReaderHibikiSource.instance.showTopProgressBar, isTrue,
           reason: '顶部阅读进度必须默认开启（BUG-470 的触发条件）。若默认被改，'
               '此测试需显式经偏好开启 show_top_progress_bar。');
+      if (ReaderHibikiSource.instance.topProgressFloating) {
+        ReaderHibikiSource.instance.toggleTopProgressFloating();
+        await tester.pump(const Duration(milliseconds: 500));
+      }
       expect(ReaderHibikiSource.instance.topProgressFloating, isFalse,
-          reason: '顶部进度默认应为挤压（非悬浮）模式——挤压模式才会占 18px 预留，'
+          reason: '本测试需挤压（非悬浮）模式——挤压模式才会占 18px 预留，'
               '正是 BUG-470 关心的首载 inset 缺口场景。');
 
       final FocusDriver driver = FocusDriver(tester);

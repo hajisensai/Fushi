@@ -24,11 +24,15 @@ void main() {
   });
 
   test('buffer caps at maxLines, dropping oldest', () {
+    final TexthookerLineEntry first =
+        TexthookerService.instance.appendLine('first')!;
     for (int i = 0; i < TexthookerService.maxLines + 10; i++) {
       TexthookerService.instance.appendLine('line $i');
     }
     expect(TexthookerService.instance.lines.length, TexthookerService.maxLines);
     expect(TexthookerService.instance.lines.first, 'line 10');
+    expect(TexthookerService.instance.entryById(first.id), isNull,
+        reason: 'an evicted line must not silently resolve to newer text');
   });
 
   test('clear empties and notifies', () {
@@ -57,12 +61,15 @@ void main() {
 
     expect(first.id, isNot(second.id));
     expect(TexthookerService.instance.entries, hasLength(2));
+    expect(TexthookerService.instance.entryById(first.id), same(first));
+    expect(TexthookerService.instance.entryById(second.id), same(second));
 
     expect(
       TexthookerService.instance.updateLineAudio(
         second.id,
         status: TexthookerLineAudioStatus.encoded,
-        backend: 'paired_voice_ogg',
+        backend: 'game_resource',
+        resourceId: '12345.voice.ogg',
         durationMs: 840,
       ),
       isTrue,
@@ -74,6 +81,10 @@ void main() {
     expect(
       TexthookerService.instance.entries.last.audioStatus,
       TexthookerLineAudioStatus.encoded,
+    );
+    expect(
+      TexthookerService.instance.entries.last.audioResourceId,
+      '12345.voice.ogg',
     );
   });
 

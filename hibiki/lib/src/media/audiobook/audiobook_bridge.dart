@@ -114,6 +114,37 @@ window.__hoshiRevealBlurredBetween = function(prev, el) {
   return revealed;
 };
 
+// BUG-898：揭开当前章（文档）内**全部**防剧透模糊图。纯图片章（无 cue，音频跨到它时走
+// _pauseThroughImageOnlyChapters → awaitImageChapterPause 停留，不经 __hoshiRevealBlurredBetween
+// 的 prev→el 区间判定）音频停在模糊图上——用户看到「暂停在一张仍然模糊的图上」。逻辑与
+// __hoshiRevealBlurredBetween 一致（登记 key 进已揭活集 + 删 blurred 类 + 回传 onImageRevealed
+// 持久化），只是不限区间、揭整章。仅 blurImages 开时 __hoshiImageRevealKey 存在，否则前置
+// 守卫 no-op（无 blurred 类 / 无 key 机制，向后兼容零副作用）。返回处理的图片数。
+window.__hoshiRevealAllBlurred = function() {
+  if (typeof window.__hoshiImageRevealKey !== 'function') return 0;
+  var media = document.querySelectorAll('img, svg');
+  var revealed = 0;
+  for (var i = 0; i < media.length; i++) {
+    var m = media[i];
+    if (m.classList &&
+        (m.classList.contains('gaiji') || m.classList.contains('gaiji-line'))) {
+      continue;
+    }
+    var key = window.__hoshiImageRevealKey(m);
+    if (key && typeof window.__hoshiMarkImageRevealed === 'function') {
+      window.__hoshiMarkImageRevealed(key);
+    }
+    if (m.classList && m.classList.contains('blurred')) {
+      m.classList.remove('blurred');
+    }
+    if (key && window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('onImageRevealed', key);
+    }
+    revealed++;
+  }
+  return revealed;
+};
+
 window.__hoshiRevealTarget = function(t) {
   if (!t) return;
   var r = window.hoshiReader;
@@ -264,13 +295,21 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
 window.__hoshiSasayakiAnchorEl = function(key) {
   var r = window.hoshiReader;
   if (!r) return null;
+  // BUG-898 根因：这里原本是 `if(cueRangesMap) {...} else if(cueWrappers) {...}`。
+  // 但 __hoshiCssHighlightsSupported 在现代 WebView 恒为 true 且 cueRangesMap **从不被
+  // 填充**（applySasayakiCues 只 set cueWrappers，无 cueRangesMap.set），于是第一分支恒
+  // 进入、`ranges` 恒 undefined、直接 return null——cueWrappers 兜底被 `else` 永久跳过。
+  // 结果 anchor 恒为 null → __hoshiHighlightSasayakiCueById 的 `if(anchor)` 守卫使
+  // __hoshiImagePauseAdvance 永不调用 → 有声书跨图既不暂停也不揭遮罩（用户报「章节正文里
+  // 的图被直接无视」）。修法：cueRangesMap 命中不了就**无条件兜底** cueWrappers（拆 else）。
   if (window.__hoshiCssHighlightsSupported && r.cueRangesMap && r.cueRangesMap.get) {
     var ranges = r.cueRangesMap.get(key);
     if (ranges && ranges[0]) {
       var n = ranges[0].startContainer;
       return n && n.nodeType === 1 ? n : (n ? n.parentElement : null);
     }
-  } else if (r.cueWrappers && r.cueWrappers.get) {
+  }
+  if (r.cueWrappers && r.cueWrappers.get) {
     var w = r.cueWrappers.get(key);
     if (w && w[0]) return w[0];
   }
@@ -417,9 +456,6 @@ window.__hoshiAnnotate = function(chapterHref) {
     // 的 textFragmentId='[data-cue-id=...]'）走普通 __hoshiHighlight，完全不碰
     // sasayaki 高亮系统——即使 setup 期建了 range 也不会激活 ::highlight。
     // TODO-724：pauseEnabled = imagePauseSec>0；仅它为真时跨图才滚到插图。
-    debugPrint('[sasayaki-hl] highlight raw="$raw" '
-        'frag=${frag == null ? "NULL->__hoshiHighlight(non-sasayaki)" : "sasayaki"} '
-        'reveal=$reveal pauseEnabled=$pauseEnabled');
     if (frag != null) {
       await controller.evaluateJavascript(
         source: 'if(typeof __hoshiHighlightSasayakiCueById!=="undefined")'
@@ -446,6 +482,19 @@ window.__hoshiAnnotate = function(chapterHref) {
     await controller.evaluateJavascript(
       source: 'if(typeof __hoshiResetPrevHighlight!=="undefined")'
           '__hoshiResetPrevHighlight();',
+    );
+  }
+
+  /// BUG-898：揭开当前章内全部防剧透模糊图。纯图片章走 [awaitImageChapterPause] 停留、
+  /// 不经 `__hoshiRevealBlurredBetween`（那要 prev→el 两个 cue 锚点），音频会停在模糊图
+  /// 上。停留前调本方法揭遮罩——回传的 key 经 `onImageRevealed` handler 持久化 + 登记
+  /// 会话集。`blurImages` 关时 JS 前置守卫 no-op（零副作用）。
+  static Future<void> revealAllBlurred(
+    InAppWebViewController controller,
+  ) async {
+    await controller.evaluateJavascript(
+      source: 'if(typeof __hoshiRevealAllBlurred!=="undefined")'
+          '__hoshiRevealAllBlurred();',
     );
   }
 
@@ -504,9 +553,6 @@ window.__hoshiAnnotate = function(chapterHref) {
     final List<Map<String, dynamic>> payload =
         buildSasayakiPayload(cues, sectionIndex);
     if (payload.isEmpty) {
-      // BUG-366/TODO-630 诊断：payload 空 → JS __hoshiApplySasayakiCues 不被调用。
-      debugPrint('[sasayaki-hl] applySasayakiCues section=$sectionIndex '
-          'EMPTY payload (cues=${cues.length}) -> JS not invoked');
       return;
     }
     final String json = jsonEncode(payload);

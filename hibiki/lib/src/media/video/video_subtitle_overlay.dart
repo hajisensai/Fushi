@@ -10,6 +10,7 @@ import 'package:flutter/rendering.dart'
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
+import 'package:hibiki/src/media/video/ass_font_metrics.dart';
 import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
@@ -28,12 +29,16 @@ typedef SubtitleCharHit = ({String sentence, int graphemeIndex, Rect charRect});
 /// 点击 → 点同句第二个词只会关栈+恢复播放，查不了第二个词。让 barrier 先用本句柄反查
 /// 是否点到了字幕字符，是则切换查词（保持暂停），否则才 dismiss。
 class VideoSubtitleHitTester {
-  SubtitleCharHit? Function(Offset globalPos)? _impl;
+  SubtitleCharHit? Function(Offset globalPos, {bool exactOnly})? _impl;
 
-  void bindHitTest(SubtitleCharHit? Function(Offset globalPos) impl) =>
+  void bindHitTest(
+          SubtitleCharHit? Function(Offset globalPos, {bool exactOnly}) impl) =>
       _impl = impl;
 
-  SubtitleCharHit? hitTest(Offset globalPos) => _impl?.call(globalPos);
+  /// [exactOnly]（BUG-910）：为 true 时只在点落在字形矩形内才命中，跳过手指友好的裙边
+  /// 容差——查词浮层 dismiss barrier 用它区分「点空白想关闭」与「点字上想切词」。
+  SubtitleCharHit? hitTest(Offset globalPos, {bool exactOnly = false}) =>
+      _impl?.call(globalPos, exactOnly: exactOnly);
 }
 
 /// 按全局坐标在一组字符屏幕矩形里反查命中的字符下标（纯函数，可测）。
@@ -53,6 +58,13 @@ class VideoSubtitleHitTester {
 /// 顶部一条带时被顶层字幕识别器赢走竞技场，暂停视频 + 弹查词、seek 被吞（BUG-825）。
 /// 垂直方向本就不该放半字宽的裙边。
 ///
+/// [exactOnly] 为 true 时**只跑精确包含**、跳过第二段兜底容差（BUG-910）：查词/悬停要
+/// 手指友好的宽容差（默认 false），但查词浮层的 dismiss barrier 判「关闭 vs 切词」不能用
+/// 这套 halo——字幕行周围约 18px 水平裙边被吃成「命中字幕」会把「点空白想关闭」误判成
+/// 「切词重查」，暂停冻结字幕下反复重查同一句。barrier 用 [exactOnly]=true 只在点**落在
+/// 字形矩形内**才算切词，落 halo 空白照常 dismiss+续播（恢复 BUG-410 备注承诺的「落纯
+/// 空白正常」，同时不动查词的宽容差）。
+///
 /// [Rect.zero]（无 RenderBox 的字符）跳过。无任何有效矩形或全部超容差时返回 -1。
 @visibleForTesting
 int resolveSubtitleCharHit(
@@ -64,6 +76,8 @@ int resolveSubtitleCharHit(
   // BUG-825：垂直兜底半轴。字身外上下只需覆盖描边外缘（默认软阴影半径 3px + 手指余量），
   // 远小于水平半字宽——避免向下溢出到紧贴字幕下方的进度条轨道。
   double edgeTolerance = 6.0,
+  // BUG-910：仅精确包含，跳过第二段裙边容差（barrier 关闭判定用）。
+  bool exactOnly = false,
 }) {
   // 第一段：精确包含。
   for (int i = 0; i < charRects.length; i++) {
@@ -71,6 +85,8 @@ int resolveSubtitleCharHit(
     if (r == Rect.zero) continue;
     if (r.contains(point)) return i;
   }
+  // exactOnly：不跑裙边兜底——点在字形外一律 miss（barrier 据此 dismiss，不误判切词）。
+  if (exactOnly) return -1;
   // 第二段：最近字符兜底（在该字符的方向感知椭圆容差区内）。
   int bestIndex = -1;
   double bestDistance = double.infinity;
@@ -100,6 +116,17 @@ int resolveSubtitleCharHit(
 /// `\blur 值 × (显示/PlayRes 缩放) × blur_radius_scale`。**ASS 的 `\blur` 数值不是直接的高斯
 /// sigma**——少了这个因子就比 mpv/libass 明显偏糊（约 1/0.8493 ≈ 1.18×）。
 final double kLibassBlurRadiusScale = 2 / math.sqrt(math.log(256));
+
+/// 把 ASS `Outline`/`\bord`（**向外扩的描边半径**，已按 PlayRes 缩放成逻辑像素）换算成
+/// Flutter 居中 stroke 的 `strokeWidth`（BUG-897）：libass 用 FreeType stroker 沿字形
+/// 轮廓**向外**描 [outlinePx] 半径（`FT_Glyph_StrokeBorder`，可见描边=完整半径）；
+/// Flutter `PaintingStyle.stroke` 沿轮廓**居中**描，内半边被上层 fill 盖住，可见只剩
+/// `strokeWidth/2`——必须 ×2 才与 mpv/libass 同宽（旧实现直接把半径当 strokeWidth，
+/// 描边恒比 mpv 细一半，用户报「描边偏细」）。<=0（含 `Outline:0` 明示无描边）返回 0
+/// （不画描边层——旧实现被 `clamp(0.5,…)` 强制成 0.5px 细边，mpv 则完全不画）。
+@visibleForTesting
+double assOutlineStrokeWidth(double outlinePx) =>
+    outlinePx <= 0 ? 0 : outlinePx * 2;
 
 /// 把 ASS `\blur` 值 [blurValue] 换算成 Flutter 高斯模糊 sigma（逻辑像素），对齐 libass/mpv：
 /// `sigma = blurValue × [assFontScale]（显示区高 / PlayResY）× [kLibassBlurRadiusScale]`，
@@ -134,6 +161,8 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.isCueFavorited,
     this.blurEnabled = false,
     this.subtitleHidden = false,
+    this.secondaryBlurEnabled = false,
+    this.secondaryHidden = false,
     this.fontSize = 36,
     this.textColor,
     this.fontWeight = VideoSubtitleStyle.defaultFontWeight,
@@ -146,6 +175,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.fontFamily,
     this.respectAssStyle = false,
+    this.assUserFontScale = 1.0,
     super.key,
   });
 
@@ -195,6 +225,15 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 不隐藏，外观与历史一致。隐藏只针对底部主字幕 overlay，不影响查词 / 字幕列表 /
   /// cue 同步等其它文本通道。
   final bool subtitleHidden;
+
+  /// 副字幕「模糊」（TODO-1382，镜像 [blurEnabled]）：为 true 时**副字幕层**默认高斯模糊，
+  /// 悬停/点击显形。与主字幕 [blurEnabled] 相互独立（各有独立 reveal 态）。默认 false。
+  final bool secondaryBlurEnabled;
+
+  /// 副字幕「隐藏」（TODO-1382，镜像 [subtitleHidden]）：为 true 时副字幕层整条不渲染
+  /// （build 时清空 secondaryCues），与 [secondaryBlurEnabled] 正交且优先级更高。默认
+  /// false。隐藏只针对顶部副字幕 overlay，不影响查词 / 字幕列表 / cue 同步等其它通道。
+  final bool secondaryHidden;
 
   /// 字幕字号（外观设置）。
   final double fontSize;
@@ -250,6 +289,16 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 出现前既有行为、不受影响）。
   final bool respectAssStyle;
 
+  /// 尊重 .ass 模式下的**用户字号倍率**（mpv `sub-scale` 同语义，BUG-915）。
+  ///
+  /// 此前 [respectAssStyle] 开时 ASS 绝对字号完全接管、[fontSize] 滑块失效——用户要调
+  /// 大小只能关掉尊重开关（又会失去自带样式，特效字幕塌成叠印乱字）。本倍率乘在 ASS
+  /// 字号换算出的 em 上：页面传「用户字号基准 / 默认 36」，默认基准时 =1.0（完全按作者
+  /// 字号，mpv 平价基线不变），滑块±即整体缩放。只乘字号，不乘描边/阴影/字间距/边距
+  /// （对齐 mpv `sub-scale` 只缩文字的语义）；不含屏幕自适应因子（ASS 路径已按显示区
+  /// 几何缩放，再叠屏幕因子会双重放大）。respectAssStyle 关时不参与（[fontSize] 直用）。
+  final double assUserFontScale;
+
   /// 听力沉浸「模糊态」的高斯模糊 sigma（逻辑像素）。以前是硬编码 8——一个只对默认字号
   /// 36 勉强够用的绝对值（8/36≈0.22×字宽），用户把字幕字号调大后同样的 8px 相对字形就
   /// 太浅、字还读得清（用户报「模糊度不够」）。字幕遮蔽的本意是**让人读不出**（只在悬停/
@@ -276,11 +325,24 @@ class VideoSubtitleOverlay extends StatefulWidget {
 /// 单字（典型如假名「の」）字形与周围突兀不一致。
 ///
 /// 这里给出覆盖五个出包平台主流系统日文字体的有序列表。Flutter 引擎按顺序解析、
-/// 自动跳过当前平台不存在的字体名，故无需平台分支：
-/// - Windows：`Yu Gothic` / `Yu Gothic UI` / `Meiryo` / `MS Gothic`
+/// 自动跳过当前平台不存在的字体名：
+/// - Windows：先跟随 mpv/libass DirectWrite 的缺字回退 `Microsoft YaHei UI`，再走
+///   `Yu Gothic` / `Yu Gothic UI` / `Meiryo` / `MS Gothic`。同一列表还用于 ASS
+///   cell/em 字号换算，避免渲染字形与字号度量选到两套字体（BUG-929）。
 /// - macOS / iOS：`Hiragino Sans` / `Hiragino Kaku Gothic ProN`
 /// - Android / Linux：`Noto Sans CJK JP` / `Noto Sans JP`
-const List<String> _kSubtitleCjkFallback = <String>[
+const List<String> _kWindowsSubtitleCjkFallback = <String>[
+  'Microsoft YaHei UI',
+  'Microsoft YaHei',
+  'Yu Gothic',
+  'Yu Gothic UI',
+  'Meiryo',
+  'MS Gothic',
+  'Noto Sans CJK JP',
+  'Noto Sans JP',
+];
+
+const List<String> _kDefaultSubtitleCjkFallback = <String>[
   'Yu Gothic',
   'Yu Gothic UI',
   'Hiragino Sans',
@@ -291,9 +353,49 @@ const List<String> _kSubtitleCjkFallback = <String>[
   'MS Gothic',
 ];
 
+@visibleForTesting
+List<String> subtitleCjkFontFallbacks(TargetPlatform platform) =>
+    platform == TargetPlatform.windows
+        ? _kWindowsSubtitleCjkFallback
+        : _kDefaultSubtitleCjkFallback;
+
+List<String> get _subtitleCjkFallback =>
+    subtitleCjkFontFallbacks(defaultTargetPlatform);
+
+/// Windows 上作者字体缺失时，Flutter/Skia 以同一 YaHei UI face 渲染仍比
+/// mpv/libass FreeType REAL_DIM 的实像素偏窄、偏矮。BUG-929 用用户原片黑底帧校准：
+/// 字号补 1.09、仅纵轴再补 1.055，可把 `きれえ` 从 146×50 对齐到 158×56
+///（mpv 157×56）。仅缺失作者字体的 Windows ASS 路径使用；已安装字体和其他平台不变。
+
+const double _kWindowsMissingAssFontRasterScale = 1.09;
+const double _kWindowsMissingAssFontRasterYScale = 1.055;
+
+@visibleForTesting
+({double fontScale, double yScale}) assMissingFontRasterCompensation(
+  TargetPlatform platform, {
+  required bool hasRequestedFamily,
+  required bool requestedFamilyResolved,
+  required bool fallbackFamilyAvailable,
+}) {
+  if (platform == TargetPlatform.windows &&
+      hasRequestedFamily &&
+      !requestedFamilyResolved &&
+      fallbackFamilyAvailable) {
+    return (
+      fontScale: _kWindowsMissingAssFontRasterScale,
+      yScale: _kWindowsMissingAssFontRasterYScale,
+    );
+  }
+  return (fontScale: 1.0, yScale: 1.0);
+}
+
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     with SingleTickerProviderStateMixin {
   bool _revealed = false;
+
+  /// 副字幕模糊态的独立显形标志（TODO-1382）：主/副字幕各有自己的 reveal，悬停/点击
+  /// 副字幕层只显形副字幕、不误显形主字幕（两层可同时开模糊）。
+  bool _secondaryRevealed = false;
 
   /// `\fad`/`\fade` 淡入淡出逐帧刷新驱动（TODO-1373）：活动集里有带 fade 的 cue（且开
   /// respectAssStyle）时启动，每帧 setState 重读 [VideoPlayerController.effectivePositionMs]
@@ -384,20 +486,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 活动集）里反查命中的登记表下标；模糊层字符按 [Rect.zero] 跳过（不参与命中，与点击
   /// 行为一致：模糊时不查词）。无命中返回 -1。是 [_charHitTest] / 竞技场门控 / 悬停查词
   /// 的共享命中内核。
-  int _hitEntryIndexAt(Offset globalPos) {
+  int _hitEntryIndexAt(Offset globalPos, {bool exactOnly = false}) {
     if (_charEntries.isEmpty) return -1;
     final List<Rect> rects = <Rect>[
       for (final _SubtitleCharEntry e in _charEntries)
         e.blurred ? Rect.zero : _globalRectOf(e.context),
     ];
-    return resolveSubtitleCharHit(rects, globalPos);
+    return resolveSubtitleCharHit(rects, globalPos, exactOnly: exactOnly);
   }
 
   /// 按全局坐标反查命中的字幕字符，返回其**所属整条 cue 文本** + 该 cue 内 grapheme 下标
   /// + 字符全局矩形。模糊 / 空 / 无命中返回 null。供 [VideoSubtitleHitTester] 绑定，
   /// 二维登记后点主字幕 / 副字幕 / 重叠某条都能查到正确的整句（TODO-1312）。
-  SubtitleCharHit? _charHitTest(Offset globalPos) {
-    final int i = _hitEntryIndexAt(globalPos);
+  SubtitleCharHit? _charHitTest(Offset globalPos, {bool exactOnly = false}) {
+    final int i = _hitEntryIndexAt(globalPos, exactOnly: exactOnly);
     if (i < 0) return null;
     final _SubtitleCharEntry e = _charEntries[i];
     return (
@@ -468,6 +570,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   @override
   void initState() {
     super.initState();
+    // BUG-897：字体表索引（内嵌字体注册 / 系统扫描完成）更新时，k=cell/em 缓存里可能
+    // 还存着索引就绪前的 TextPainter 近似值——清缓存重算并重绘，使字号自动校正到真表值。
+    AssFontCellIndex.instance.revision.addListener(_onFontMetricsRevision);
     _fadeTicker = createTicker((_) {
       // 每帧强制重建：build 里按最新播放位置重算各 cue 的 fade 不透明度（值来自
       // controller，不在此保存，故空 setState 足矣）。
@@ -475,8 +580,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     });
   }
 
+  /// 字体表索引代次变化（BUG-897）：清依赖字号的缓存并重绘（见 [initState] 注释）。
+  void _onFontMetricsRevision() {
+    _fontCellFactorCache.clear();
+    _charSizeCache.clear();
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    AssFontCellIndex.instance.revision.removeListener(_onFontMetricsRevision);
     // 停并释放 ticker：SingleTickerProviderStateMixin.dispose 会断言 ticker 不再 active，
     // 故必须在 super.dispose 之前 dispose 掉它（dispose 内部会取消在途 tick）。
     _fadeTicker?.dispose();
@@ -498,13 +611,24 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   @override
   void didUpdateWidget(VideoSubtitleOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 关闭模糊时重置显形态，避免下次开启残留。
+    // 关闭模糊时重置显形态，避免下次开启残留（主/副各自独立）。
     if (!widget.blurEnabled && _revealed) _revealed = false;
+    if (!widget.secondaryBlurEnabled && _secondaryRevealed) {
+      _secondaryRevealed = false;
+    }
   }
 
-  void _setRevealed(bool v) {
-    if (_revealed == v) return;
-    setState(() => _revealed = v);
+  bool _revealedFor({required bool isSecondary}) =>
+      isSecondary ? _secondaryRevealed : _revealed;
+
+  void _setRevealed(bool v, {required bool isSecondary}) {
+    if (isSecondary) {
+      if (_secondaryRevealed == v) return;
+      setState(() => _secondaryRevealed = v);
+    } else {
+      if (_revealed == v) return;
+      setState(() => _revealed = v);
+    }
   }
 
   @override
@@ -522,9 +646,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         final List<AudioCue> mainCues = widget.subtitleHidden
             ? const <AudioCue>[]
             : widget.controller.activeCues;
-        // 副字幕活动集（TODO-1312：并入 Flutter overlay 多层渲染、可查词）。
-        final List<AudioCue> secondaryCues =
-            widget.controller.secondaryActiveCues;
+        // 副字幕活动集（TODO-1312：并入 Flutter overlay 多层渲染、可查词）。遮蔽模式
+        // 「隐藏」时副层不渲染（TODO-1382，镜像主字幕），不影响查词 / 字幕列表 / cue 同步。
+        final List<AudioCue> secondaryCues = widget.secondaryHidden
+            ? const <AudioCue>[]
+            : widget.controller.secondaryActiveCues;
 
         // TODO-1372/BUG-698：清扫「组内已无任何在屏 cue」的槽位状态——整组离场即重置，
         // 下一条从锚点侧基线重新开始；同一活动集重复 build 幂等。放在空集早退之前，
@@ -582,18 +708,22 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 不同锚点的 cue 各自独立定位（[Stack] 叠放），两条字幕**各就各位**、不再来回跳。每条
   /// cue 仍用**自己的** markup 逐字符描边 / 上色（双轨样式独立，各遵自带样式，TODO-1246）。
   ///
-  /// [isSecondary]：副字幕层——强制置顶（画面顶部）、不吃自带 pos/anchor、不模糊、不显
-  /// 收藏角标（副字幕=纯翻译参考），全部 cue 归一到一个顶部盒；但仍逐字符可查词（登记进
-  /// 同一 [_charEntries]）。单组 / 单 cue 时结构退化为单字幕盒，与历史几何等价。
+  /// [isSecondary]：副字幕层——强制置顶（画面顶部）、不吃自带 pos/anchor、不显收藏角标
+  /// （副字幕=纯翻译参考），全部 cue 归一到一个顶部盒；但仍逐字符可查词（登记进同一
+  /// [_charEntries]）。单组 / 单 cue 时结构退化为单字幕盒，与历史几何等价。TODO-1382：
+  /// 副字幕也可经 [secondaryBlurEnabled]（模糊，独立 reveal）/ [secondaryHidden]（隐藏，
+  /// build 时已清空 cue）遮蔽，与主字幕对称。
   Widget _buildSubtitleLayer(
     BuildContext context,
     List<AudioCue> cues, {
     required bool isSecondary,
   }) {
-    // 听力沉浸模糊只主层、只播放中生效（暂停 / 查词时清晰，BUG-199；副字幕不模糊）。
-    final bool blurred = !isSecondary &&
-        widget.blurEnabled &&
-        !_revealed &&
+    // 听力沉浸模糊只在播放中生效（暂停 / 查词时清晰，BUG-199）。TODO-1382：主/副字幕
+    // 各按自己的 obscure 开关与独立 reveal 态决定是否模糊（副字幕不再无条件清晰）。
+    final bool obscureBlurEnabled =
+        isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled;
+    final bool blurred = obscureBlurEnabled &&
+        !_revealedFor(isSecondary: isSecondary) &&
         widget.controller.isPlaying;
 
     return LayoutBuilder(
@@ -619,8 +749,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
         // 位置（\pos 或 \an，即 ASS 副字幕）的组遵自带位置；纯 SRT 副字幕（anchor / pos 皆空）
         // 无位置信息才在 [_positionCueGroup] 里回退置顶（翻译参考，避让主字幕底部）。
-        final List<(String, List<AudioCue>)> groups =
-            _groupMainCuesByPosition(cues);
+        //
+        // respectAssStyle 关 = **纯字幕模式**（asbplayer 语义，BUG-915）：不但样式统一，
+        // 位置/层/边距也统一——全部 cue 折进**一个**底部组（副字幕仍置顶），并按文本去重
+        // （KFX/多层特效把一句拆成多条同时事件，样式被统一后只剩裸文本拷贝，同位叠印成
+        // 乱字——正是「样式不尊重、位置却尊重」的半吊子语义的病根；文本互异的堆叠分行）。
+        final List<(String, List<AudioCue>)> groups = widget.respectAssStyle
+            ? _groupMainCuesByPosition(cues)
+            : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))];
 
         final List<(String, Widget)> positioned = <(String, Widget)>[
           for (final (String key, List<AudioCue> group) in groups)
@@ -679,6 +815,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       clipper: _AssClipClipper(clip: clip, videoW: videoW, videoH: videoH),
       child: child,
     );
+  }
+
+  /// 纯字幕模式（respectAssStyle 关，BUG-915）：按 `text` 去重、保留发现顺序。KFX/
+  /// 多层卡拉 OK 的同句多层拷贝（样式统一后内容全同）只渲染一条；文本互异的保留（由
+  /// 单组竖排堆叠、不叠印）。respectAssStyle 开不走本路径（层语义由分组键承载）。
+  List<AudioCue> _uniqueByText(List<AudioCue> cues) {
+    final Set<String> seen = <String>{};
+    return <AudioCue>[
+      for (final AudioCue cue in cues)
+        if (seen.add(cue.text)) cue,
+    ];
   }
 
   /// TODO-1341：把主字幕活动集按「有效定位」（\pos 分数 + 锚点，或纯锚点）分组，保留发现
@@ -928,7 +1075,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // （\pos 或 \an，即 ASS 副字幕）遵其自带位置（各遵自带位置，消除「副字幕总被拽到顶部」的
     // 降级）；纯 SRT 副字幕（anchor / pos 皆空、无位置信息）才回退强制置顶（翻译参考，避让主
     // 字幕底部，与历史一致）。
-    final SubtitleMarkup? ownMarkup = cues.first.markup;
+    // 纯字幕模式（respectAssStyle 关，BUG-915）：位置语义整体归零——\pos / \an / MarginV /
+    // \move 全不参与，主字幕恒底部居中基线、副字幕恒置顶（asbplayer 语义）。ownMarkup 置
+    // null 让下游 ownPos / ownAnchor / posMarkup / margins 全走「无位置信息」分支，零特例。
+    final SubtitleMarkup? ownMarkup =
+        widget.respectAssStyle ? cues.first.markup : null;
     // 副字幕默认置顶（翻译参考，避让主字幕底部对白）；但若它自带**非底部**位置——\pos，或
     // \an 顶部 / 中部（作者本就把它放在别处，如顶部歌词 / 招牌 / 中部注释）——则遵其自带位置，
     // 不再硬拽到顶（消除「副字幕总被降级到顶部」）。自带底部 / 无位置的副字幕（纯 SRT、\an2
@@ -1101,29 +1252,32 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             child: GestureDetector(
               key: const Key('video-subtitle-reveal'),
               behavior: HitTestBehavior.translucent,
-              onTap: () => _setRevealed(true),
+              onTap: () => _setRevealed(true, isSecondary: isSecondary),
             ),
           ),
         ],
       );
     }
 
-    // 桌面悬停：①听力沉浸显形/复原（主层 blurEnabled）②向页面回报 hover（唤回光标 + 续命
-    // 控制条，BUG-283/284）③Shift-鼠标悬停查词（TODO-756a）。三者合一个 opaque:false 的
-    // MouseRegion（不阻断 hover 下探 media_kit，BUG-198）。仅确需 hover 时挂（外观零变化）。
-    final bool needHover = (!isSecondary && widget.blurEnabled) ||
+    // 桌面悬停：①听力沉浸显形/复原（主/副各按自己的模糊开关，TODO-1382）②向页面回报
+    // hover（唤回光标 + 续命控制条，BUG-283/284）③Shift-鼠标悬停查词（TODO-756a）。三者
+    // 合一个 opaque:false 的 MouseRegion（不阻断 hover 下探 media_kit，BUG-198）。仅确需
+    // hover 时挂（外观零变化）。
+    final bool layerBlurEnabled =
+        isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled;
+    final bool needHover = layerBlurEnabled ||
         widget.onHoverChanged != null ||
         widget.onCharHover != null;
     if (!needHover) return content;
     return MouseRegion(
       opaque: false,
       onEnter: (_) {
-        if (!isSecondary && widget.blurEnabled) _setRevealed(true);
+        if (layerBlurEnabled) _setRevealed(true, isSecondary: isSecondary);
         widget.onHoverChanged?.call(true);
       },
       onHover: _handleShiftHover,
       onExit: (_) {
-        if (!isSecondary && widget.blurEnabled) _setRevealed(false);
+        if (layerBlurEnabled) _setRevealed(false, isSecondary: isSecondary);
         widget.onHoverChanged?.call(false);
         _lastShiftHoverPos = Offset.zero;
         _lastShiftHoverEntry = -1;
@@ -1287,7 +1441,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 样式表 ScaleX/ScaleY（百分比）作为基线缩放；行内 \fscx\fscy（sc）按 ASS 语义
     // **覆盖**样式值而非叠乘。
     final double styleSx = (markup.cueStyle?.scaleXPct ?? 100) / 100.0;
-    final double styleSy = (markup.cueStyle?.scaleYPct ?? 100) / 100.0;
+    final String? cueFontName = markup.cueStyle?.fontName;
+    final bool cueFontResolved = cueFontName == null ||
+        cueFontName.isEmpty ||
+        _resolveAssFontFamily(cueFontName) != null;
+    final ({double fontScale, double yScale}) fallbackRasterCompensation =
+        _missingAssFontRasterCompensation(cueFontName, cueFontResolved);
+    final double styleSy = (markup.cueStyle?.scaleYPct ?? 100) /
+        100.0 *
+        fallbackRasterCompensation.yScale;
     final double? frx = markup.rotationXDeg;
     final double? fry = markup.rotationYDeg;
     final double? fax = markup.shearX;
@@ -1529,9 +1691,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             from + (tr.bordTo! - from) * tr.progressAt(elapsedMs, durMs);
       }
     }
-    final double outlineWidth = outlineWidthAss != null
-        ? (outlineWidthAss * _assFontScale(markup)).clamp(0.5, 24.0).toDouble()
-        : baseWidth;
+    // BUG-897：ASS 值是「向外扩的半径」——缩放夹范围后经 [assOutlineStrokeWidth] ×2 成
+    // 居中 strokeWidth（可见宽=半径，与 mpv 对齐）；Outline<=0 明示无描边 → 0（不再被
+    // clamp 下限强制成 0.5px 细边）。回退用户统一宽（baseWidth，历史居中语义）不变换。
+    final double outlineWidth;
+    if (outlineWidthAss == null) {
+      outlineWidth = baseWidth;
+    } else if (outlineWidthAss <= 0) {
+      outlineWidth = 0;
+    } else {
+      outlineWidth = assOutlineStrokeWidth(
+        (outlineWidthAss * _assFontScale(markup)).clamp(0.5, 24.0).toDouble(),
+      );
+    }
     return (
       outlineArgb != null ? Color(outlineArgb) : baseColor,
       outlineWidth,
@@ -1555,7 +1727,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 字号 / 颜色的基线恒为用户统一样式，与历史像素级一致。
   /// respectAssStyle 开：字体名 / 主色 / 字号 / 粗斜下删线优先取 .ass 值（行内 span >
   /// [SubtitleCueStyle] cue 默认 > 用户统一样式，TODO-1105）。字体缺字时仍挂
-  /// [_kSubtitleCjkFallback] 兜底。
+  /// [_subtitleCjkFallback] 兜底。
   TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup,
       {int? elapsedMs, int? durMs}) {
     final bool respect = widget.respectAssStyle && markup != null;
@@ -1568,6 +1740,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 解析不到（未装）沿用原名字符串进回退链（历史行为，CJK 链兜底）。
     final ({String family, FontWeight? weight})? resolvedBase =
         respect ? _resolveAssFontFamily(cue?.fontName) : null;
+    final ({
+      double fontScale,
+      double yScale
+    }) baseMissingFontRasterCompensation = _missingAssFontRasterCompensation(
+      respect ? cue?.fontName : null,
+      resolvedBase != null,
+    );
+
     final String? baseFontFamily = resolvedBase?.family ??
         (respect ? cue?.fontName : null) ??
         widget.fontFamily;
@@ -1592,10 +1772,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             : _fontWeight(widget.fontWeight));
     final bool baseItalic = respect && (cue?.italic ?? false);
     // ASS 字号 → em：先按 PlayRes 占比缩放，再按字体 cell/em 系数校准
-    // （libass REAL_DIM 语义，见 [_assFontSizeToEm]），最后夹上限。
+    // （libass REAL_DIM 语义，见 [_assFontSizeToEm]），再乘用户字号倍率
+    // （[VideoSubtitleOverlay.assUserFontScale]，mpv sub-scale 语义，BUG-915），最后夹上限。
     final double baseFontSize = cueFontPx != null
-        ? _scaleAssFontSize(_assFontSizeToEm(
-            cueFontPx * assFontScale, baseFontFamily, baseWeight, baseItalic))
+        ? _scaleAssFontSize(_assFontSizeToEm(cueFontPx * assFontScale,
+                baseFontFamily, baseWeight, baseItalic) *
+            widget.assUserFontScale *
+            baseMissingFontRasterCompensation.fontScale)
         : widget.fontSize;
 
     final TextStyle base = TextStyle(
@@ -1607,7 +1790,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // 时，引擎按本列表顺序找到第一个存在的系统日文字体，而非各字符独立走引擎默认
       // fallback（不同字符可能落到不同字体、字形割裂）。引擎自动忽略当前平台不存在的
       // 项，故一条列表覆盖全平台、无需平台分支（TODO-088）。
-      fontFamilyFallback: _kSubtitleCjkFallback,
+      fontFamilyFallback: _subtitleCjkFallback,
       fontWeight: baseWeight,
       // 样式表 Spacing 字间距（px，PlayRes 空间）与字号同源缩放；行内 \fsp 在 span
       // 分支覆盖。respect 关恒 null（历史像素级不变）。
@@ -1634,6 +1817,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 全名解析成真实家族（装了就用真字体）。
     final ({String family, FontWeight? weight})? resolvedSpan =
         respect ? _resolveAssFontFamily(span.fontName) : null;
+    final ({
+      double fontScale,
+      double yScale
+    }) spanMissingFontRasterCompensation = span.fontName != null &&
+            span.fontName!.isNotEmpty
+        ? _missingAssFontRasterCompensation(span.fontName, resolvedSpan != null)
+        : baseMissingFontRasterCompensation;
+
     final String? spanFontFamily =
         resolvedSpan?.family ?? (respect ? span.fontName : null);
     // \1a/\alpha 主填充透明度（respect 时）：施于最终生效的填充色（行内 \c 优先，否则
@@ -1658,10 +1849,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       fontSize: span.fontSizePx != null
           ? (respect
               ? _scaleAssFontSize(_assFontSizeToEm(
-                  span.fontSizePx! * assFontScale,
-                  spanFontFamily ?? baseFontFamily,
-                  span.bold ? FontWeight.bold : baseWeight,
-                  span.italic || baseItalic))
+                      span.fontSizePx! * assFontScale,
+                      spanFontFamily ?? baseFontFamily,
+                      span.bold ? FontWeight.bold : baseWeight,
+                      span.italic || baseItalic) *
+                  widget.assUserFontScale *
+                  spanMissingFontRasterCompensation.fontScale)
               : span.fontSizePx!)
           : base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
@@ -1766,6 +1959,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 字体存在性探测缓存：key=family，value=是否解析到真实字体（而非引擎默认回退）。
   final Map<String, bool> _fontExistsCache = <String, bool>{};
 
+  ({double fontScale, double yScale}) _missingAssFontRasterCompensation(
+    String? requestedFamily,
+    bool requestedFamilyResolved,
+  ) {
+    final bool fallbackFamilyAvailable =
+        defaultTargetPlatform == TargetPlatform.windows &&
+            _subtitleCjkFallback.any(_fontFamilyExists);
+    return assMissingFontRasterCompensation(
+      defaultTargetPlatform,
+      hasRequestedFamily: requestedFamily != null && requestedFamily.isNotEmpty,
+      requestedFamilyResolved: requestedFamilyResolved,
+      fallbackFamilyAvailable: fallbackFamilyAvailable,
+    );
+  }
+
   /// [family] 是否真实存在（Skia 能解析出该家族，而非落到引擎默认字体）。
   ///
   /// Flutter 无系统字体枚举 API，用双测量近似：同一探针串分别以 [family] 与一个必不
@@ -1816,36 +2024,57 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return (family: fam, weight: w);
   }
 
-  /// libass/VSFilter 的字号语义（`FT_SIZE_REQUEST_TYPE_REAL_DIM`）：ASS `Fontsize`
-  /// 等于字体**上升部+下降部（cell 高）**，不是 em；Flutter `TextStyle.fontSize` 是
-  /// em。常见 CJK 字体 cell≈1.1~1.25 em——直接把 Fontsize 当 em 用会比 mpv 整体大
-  /// 一截（用户报「字号比 mpv 大/小一截、各布局都有」的根因）。本方法用 [TextPainter]
-  /// 实测「目标字体+回退链」在指定字重/斜体下的自然行高系数 k=cell/em（不设 height
-  /// 覆盖=字体自然度量），返回 em' = px/k，使渲染 cell 高 == ASS 请求的 Fontsize。
-  /// 结果按 (family|weight|italic) 缓存；测试字体（FlutterTest）k=1.0，既有测试像素
-  /// 不变。异常度量（k∉(0.5,2.0)）回退 1.0 不校准。
+  /// libass/VSFilter 的字号语义（`ass_face_set_size` + `FT_SIZE_REQUEST_TYPE_REAL_DIM`）：
+  /// ASS `Fontsize` 等于字体 **OS/2 win cell 高**（`usWinAscent+usWinDescent`，净效果
+  /// `em = Fontsize × upem / winCell`，推导见 [AssFontCellIndex] 文件头），不是 em；
+  /// Flutter `TextStyle.fontSize` 是 em，故换算 em' = px / k（k=cell/em）。
+  /// 结果按 (family|weight|italic) 缓存；真相源见 [_cellPerEmFor]。
   double _assFontSizeToEm(
       double px, String? family, FontWeight weight, bool italic) {
     final String key = '${family ?? ''}|${weight.index}|${italic ? 1 : 0}';
-    final double k = _fontCellFactorCache.putIfAbsent(key, () {
-      final TextPainter tp = TextPainter(
-        text: TextSpan(
-          text: 'Ｍぽ',
-          style: TextStyle(
-            fontSize: 100,
-            fontFamily: family,
-            fontFamilyFallback: _kSubtitleCjkFallback,
-            fontWeight: weight,
-            fontStyle: italic ? FontStyle.italic : FontStyle.normal,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      final double factor = tp.height / 100.0;
-      tp.dispose();
-      return (factor.isFinite && factor > 0.5 && factor < 2.0) ? factor : 1.0;
-    });
+    final double k = _fontCellFactorCache.putIfAbsent(
+        key, () => _cellPerEmFor(family, weight, italic));
     return px / k;
+  }
+
+  /// k=cell/em 的真相源（BUG-897 根修）：
+  ///
+  /// ① **真字体表**：沿「显式家族 → CJK 回退链」找 Skia 实际会解析到的第一个存在家族，
+  ///   查 [AssFontCellIndex]（MKV 内嵌字体 + 系统字体目录扫描）的 `winCell/upem`——与
+  ///   libass 完全同源。只对第一个真实存在的家族查表（后续家族不会被用来渲染）；同时
+  ///   懒惰踢一次系统扫描（测试环境所有家族都解析不到 → 不踢、恒走 ②，既有测试像素不变）。
+  /// ② **TextPainter 行高近似**（仅兜底：扫描未就绪 / 平台受限 / 家族无表）：实测段落
+  ///   自然行高当 cell。注意它**含 hhea lineGap**：日文系统字体 lineGap 极大（Yu Gothic
+  ///   lineGap=0.5em、winCell=1.287em → 行高 ≈1.79em），把字算小 20%~40%，正是「字号比
+  ///   mpv 小一截」的旧病根——真表就绪后 [AssFontCellIndex.revision] bump → 清缓存重算，
+  ///   自动校正到 ①。异常度量（k∉(0.5,2.0)）回退 1.0 不校准。
+  double _cellPerEmFor(String? family, FontWeight weight, bool italic) {
+    for (final String candidate in <String>[
+      if (family != null && family.isNotEmpty) family,
+      ..._subtitleCjkFallback,
+    ]) {
+      if (!_fontFamilyExists(candidate)) continue;
+      AssFontCellIndex.instance.ensureSystemScan();
+      final double? k = AssFontCellIndex.instance.cellPerEmOf(candidate);
+      if (k != null) return k;
+      break; // Skia 会用它渲染但表未就绪/未收录 → 落到 ② 近似。
+    }
+    final TextPainter tp = TextPainter(
+      text: TextSpan(
+        text: 'Ｍぽ',
+        style: TextStyle(
+          fontSize: 100,
+          fontFamily: family,
+          fontFamilyFallback: _subtitleCjkFallback,
+          fontWeight: weight,
+          fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final double factor = tp.height / 100.0;
+    tp.dispose();
+    return (factor.isFinite && factor > 0.5 && factor < 2.0) ? factor : 1.0;
   }
 
   /// 缩放后的 ASS 字号夹到合理范围：下限 8px、上限 = 显示区高的 40%（防 PlayResY 缺失 /

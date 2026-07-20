@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'package:hibiki/src/sync/sync_manifest_codec.dart';
 
 /// 合集同步清单（多端库联合视图 §2.3 任务3）。
 ///
@@ -11,7 +11,7 @@ import 'dart:convert';
 /// 输出**确定性排序**（合集按自然键、成员按 sortIndex、墓碑按成员键），使
 /// 「内容相等 ⇒ 字节相等」成立：编排器靠 canonical JSON 比对决定要不要回写
 /// 远端清单，两端反复同步不产生无意义的写放大。
-class CollectionManifest {
+class CollectionManifest implements CanonicalJsonManifest {
   const CollectionManifest({
     this.version = currentVersion,
     this.lastWrittenAt = 0,
@@ -48,29 +48,18 @@ class CollectionManifest {
       );
 
   /// 解码。[json] 是 `jsonDecode` 的产物（Map）。结构非法抛 [FormatException]
-  /// （编排器捕获后计入 report.errors，不让一份坏清单毁掉整轮同步）。
+  /// （编排器捕获后计入 report.errors，不让一份坏清单毁掉整轮同步）。严格门
+  /// （object/version/list 校验 + 版本过新拒绝）走共享 sync_manifest_codec。
   factory CollectionManifest.fromJson(Object? json) {
-    if (json is! Map<String, dynamic>) {
-      throw const FormatException('collection manifest: not a JSON object');
-    }
-    final Object? version = json['version'];
-    if (version is! int || version < 1) {
-      throw const FormatException('collection manifest: bad version');
-    }
-    if (version > currentVersion) {
-      // 更新版 app 写的清单：拒绝解析（宁可跳过本轮合集同步，也不能按旧语义
-      // 误读新字段后把降级结果写回去，破坏新端数据——与 DB 降级保护同一律）。
-      throw FormatException(
-          'collection manifest: version $version is newer than '
-          'supported $currentVersion');
-    }
-    final Object? rawCollections = json['collections'];
-    if (rawCollections is! List) {
-      throw const FormatException('collection manifest: bad collections');
-    }
+    const String label = 'collection manifest';
+    final Map<String, dynamic> map = requireManifestObject(json, label);
+    final int version = requireManifestVersion(map,
+        currentVersion: currentVersion, label: label);
+    final List<Object?> rawCollections =
+        requireManifestList(map, 'collections', label);
     // lastWrittenAt 是 additive 文件级字段（finding 1）：旧清单缺它 / 非法 / 负值一律
     // 解码为 0（恒陈旧），绝不因缺字段拒绝解析——向后兼容读老写新。
-    final Object? lastWrittenAt = json['lastWrittenAt'];
+    final Object? lastWrittenAt = map['lastWrittenAt'];
     return CollectionManifest(
       version: version,
       lastWrittenAt:
@@ -83,16 +72,19 @@ class CollectionManifest {
   }
 
   /// 编码为确定性排序的 JSON 结构（见类注释）。写盘用：含 [lastWrittenAt] 文件级字段。
+  @override
   Map<String, dynamic> toJson() {
-    final Map<String, dynamic> map = _contentJson();
+    final Map<String, dynamic> map = contentJson();
     // lastWrittenAt 单独附在内容之后：写盘时携带文件级时戳，但不进 canonicalJson（内容
     // 等价判据），故内容不变时回写门槛不触发、时戳不被每轮重盖（幂等，见类注释）。
     map['lastWrittenAt'] = lastWrittenAt;
     return map;
   }
 
-  /// 内容部分的确定性排序 JSON（不含 [lastWrittenAt]）——变更检测的唯一依据。
-  Map<String, dynamic> _contentJson() {
+  /// 内容部分的确定性排序 JSON（不含 [lastWrittenAt]）——变更检测的唯一依据
+  /// （[CanonicalJsonManifest.canonicalJson] 用它）。
+  @override
+  Map<String, dynamic> contentJson() {
     // 跳过非法自然键条目（空 name / 空 collectionType）：绝不把本地脏行原样发布
     // 毒害对端（对端 fromJson 对空自然键抛 FormatException，拖垮整份清单解析）。
     final List<CollectionManifestEntry> sorted = <CollectionManifestEntry>[
@@ -112,9 +104,10 @@ class CollectionManifest {
   }
 
   /// 规范化 JSON 字符串（确定性排序 ⇒ 内容相等则字节相等，供变更检测）。**不含
-  /// [lastWrittenAt]**：文件级写盘时戳每轮不同，若纳入判据会让每轮都误判「内容变了」
-  /// 而无谓回写，破坏幂等。
-  String canonicalJson() => jsonEncode(_contentJson());
+  /// [lastWrittenAt]**（见 [contentJson]）——文件级写盘时戳每轮不同，纳入判据会
+  /// 让每轮都误判「内容变了」而无谓回写，破坏幂等。
+  @override
+  String canonicalJson() => canonicalManifestJson(this);
 }
 
 /// 清单里的一个合集：活合集（[deletedAt] == null）或删除墓碑壳（!= null，

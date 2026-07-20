@@ -72,6 +72,9 @@ SubtitleWaveformPainter _zoomPainter(WidgetTester tester) {
   return paint.painter! as SubtitleWaveformPainter;
 }
 
+const Key _stripKey = ValueKey<String>('subtitle-waveform-cue-strip');
+const Key _hscrollKey = ValueKey<String>('subtitle-waveform-hscroll');
+
 const Key _openKey = ValueKey<String>('subtitle-waveform-open-button');
 
 /// TODO-1315: tapping the entry lazily probes then opens the zoom dialog.
@@ -510,6 +513,91 @@ void main() {
     expect(spaceHits, 1);
   });
 
+  testWidgets(
+      'BUG-918: typing the offset commits live (no Enter) via debounce, '
+      'without clobbering the typed text', (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int ms) async => committed.add(ms),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final Finder field = find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byType(TextField),
+    );
+    expect(field, findsOneWidget);
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+
+    // 键入偏移值但**不按回车**：去抖窗口内还未提交。
+    await tester.enterText(field, '1230');
+    await tester.pump();
+    expect(committed, isEmpty);
+
+    // 停手过了去抖窗口 → 无需回车即落到延迟（onCommitDelay 收到键入值）。
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(committed, <int>[1230]);
+
+    // 去抖提交走 syncField:false，不回写输入框文本：用户键入的字符仍在，
+    // 光标不被弹到行尾（保证随后退格 / 继续编辑不错位）。
+    expect(find.text('1230'), findsWidgets);
+  });
+
+  testWidgets(
+      'BUG-918: erasing a digit re-commits the shortened value live (no Enter)',
+      (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      initialDelayMs: 1230,
+      onCommitDelay: (int ms) async => committed.add(ms),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final Finder field = find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byType(TextField),
+    );
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+
+    // 模拟退格删掉末位 0：文本从 1230 → 123，不按回车。
+    await tester.enterText(field, '123');
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(committed, <int>[123]);
+  });
+
+  testWidgets(
+      'BUG-918: partial input (empty / lone sign) does not commit or revert',
+      (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int ms) async => committed.add(ms),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final Finder field = find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byType(TextField),
+    );
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+
+    // 清空 + 只留正负号：解析失败 → 不提交、不回退（保留中间态可继续键入）。
+    await tester.enterText(field, '');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.enterText(field, '-');
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(committed, isEmpty);
+    expect(find.text('-'), findsWidgets);
+  });
+
   testWidgets('waveform tap seeks the playhead to the tapped time',
       (WidgetTester tester) async {
     final List<int> seeks = <int>[];
@@ -528,5 +616,46 @@ void main() {
     expect(seeks, hasLength(1));
     expect(seeks.single, inInclusiveRange(0, 60000));
     expect(seeks.single, lessThan(1000)); // 近左缘 → 时间很小
+  });
+
+  testWidgets(
+      'cue strip drag: sliding the subtitle strip right commits a larger delay',
+      (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[
+        _cue(1000, 2000, text: 'ohayou'),
+        _cue(30000, 31000, text: 'konbanwa'),
+      ],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5, -50, -12],
+      onCommitDelay: (int ms) async => committed.add(ms),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(_zoomPainter(tester).previewDelayMs, 0);
+    expect(find.byKey(_stripKey), findsOneWidget);
+    // 字幕条铺满整条时间轴、宽超视口，其几何中心在视口外；改用视口内、落在底部字幕条
+    // 高度上的点起拖（波形容器上部是波形区、底部 56px 是字幕条）。
+    final Rect box = tester.getRect(find.byKey(_hscrollKey));
+    final Offset start = Offset(box.left + 60, box.bottom - 18);
+    await tester.dragFrom(start, const Offset(140, 0));
+    await tester.pumpAndSettle();
+    // 向右拖字幕块 → 延迟增大（正），松手落盘一次。
+    expect(committed, hasLength(1));
+    expect(committed.single, greaterThan(0));
+    expect(_zoomPainter(tester).previewDelayMs, committed.single);
+  });
+
+  testWidgets(
+      'cue strip drag: read-only (no onCommitDelay) => no align-drag gesture',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    // 无 onCommitDelay：字幕条只读，不挂对轴拖动手势（key 不存在）。
+    expect(find.byKey(_stripKey), findsNothing);
   });
 }

@@ -116,4 +116,27 @@ void main() {
     expect(onclickBody.contains('mineButton.disabled = false'), isTrue,
         reason: 'finally must always re-enable the button');
   });
+
+  // BUG-077: the popup mine button sets `mineButton.disabled = true` and then
+  // `await mineEntry(...)`. Before the fix the onclick had no try/catch, so a
+  // rejected mineEntry (Dart handler threw / JS payload-builder error) left the
+  // '+' stuck disabled with zero feedback. Guard that the failure path always
+  // restores the button to a clickable '+', so it can never get permanently
+  // stuck. Pairs with the Dart-side contract test
+  // (`packages/hibiki_anki/test/mine_entry_never_throws_test.dart`).
+  // (Merged verbatim from popup_mine_button_recovers_static_test.dart.)
+  test('popup mine button restores itself when mining throws (BUG-077)', () {
+    final int onclickIdx = mineButtonBlock.indexOf('onclick: async () => {');
+    expect(onclickIdx, greaterThanOrEqualTo(0),
+        reason: 'mine button onclick handler not found');
+    final String onclickBody = mineButtonBlock.substring(onclickIdx);
+
+    expect(onclickBody, contains('try {'),
+        reason: 'mine onclick must guard the await in a try block');
+    expect(onclickBody, contains('} catch (e) {'),
+        reason: 'mine onclick must catch a rejected mineEntry');
+    expect(onclickBody, contains('mineButton.disabled = false'),
+        reason:
+            'failure path must re-enable the button (never leave it stuck)');
+  });
 }

@@ -338,7 +338,8 @@ class SyncAssetPackageService {
         targetDir.path,
         _resourceName(resources, _stringValue(srtBook, 'srtPath')),
       ),
-      coverPath: Value(_nullablePathIn(targetDir, resources, srtBook, 'coverPath')),
+      coverPath:
+          Value(_nullablePathIn(targetDir, resources, srtBook, 'coverPath')),
       importedAt: _intValue(srtBook, 'importedAt'),
       bookKey: const Value(''), // standalone：bookKey 恒空（纯 SRT 身份判据）。
     ));

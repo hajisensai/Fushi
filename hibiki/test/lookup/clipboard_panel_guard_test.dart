@@ -106,7 +106,9 @@ void main() {
   group('半透明卡背景（--hibiki-card-bg-* 三端契约）', () {
     test('注入端产出 rgb 三元组变量', () {
       expect(injectionDart.contains('--hibiki-card-bg-rgb'), isTrue);
-      expect(injectionDart.contains('_cssRgbTriplet'), isTrue);
+      // 三元组值经共享真源 popup_theme_css.dart（cssRgbTriplet →
+      // buildPopupThemeCssVars）派生，注入端不再本地手抄格式化。
+      expect(injectionDart.contains('buildPopupThemeCssVars('), isTrue);
     });
 
     test('render 端恒注入 alpha 变量（1.0 也写——防调回 100% 后旧值残留）', () {

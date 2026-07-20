@@ -12,6 +12,9 @@
 #include <vector>
 
 #include "voice_hook_ipc.h"
+#include "voice_hook_session.h"
+#include "steam_launch.h"
+#include "luna_hook_config.h"
 
 // galgame 一键制卡 C 阶段注入器（C.1）。把 hook DLL 注入目标游戏进程，建立共享内存 + 就绪
 // 事件，确认注入成功后读回语音格式。Hibiki 主进程把它当子进程拉起（部署红线：注入代码只在
@@ -39,17 +42,34 @@
 namespace {
 
 using hibiki_voice_hook::kClipCount;
+using hibiki_voice_hook::kDiagLunaConnected;
+using hibiki_voice_hook::kDiagLunaHostReady;
+using hibiki_voice_hook::kDiagLunaInjectFailed;
+using hibiki_voice_hook::kDiagLunaOutputObserved;
+using hibiki_voice_hook::kDiagStartupAudioHooksReady;
+using hibiki_voice_hook::kDiagUnityResourceExtracted;
+using hibiki_voice_hook::kDiagUnityResourceExtractFailed;
+using hibiki_voice_hook::kDiagUnityResourceExtractorReady;
+using hibiki_voice_hook::kLoopbackMarkerCount;
+using hibiki_voice_hook::kLoopbackSeconds;
+using hibiki_voice_hook::kMaxLoopbackBytes;
 using hibiki_voice_hook::kMaxRingBytes;
 using hibiki_voice_hook::kRingSeconds;
 using hibiki_voice_hook::kSharedMagic;
 using hibiki_voice_hook::kSharedVersion;
 using hibiki_voice_hook::kTextSlotBytes;
 using hibiki_voice_hook::kTextSlotCount;
+using hibiki_voice_hook::kUnityVoiceEventCount;
+using hibiki_voice_hook::LoopbackMarker;
 using hibiki_voice_hook::ReadyEventName;
 using hibiki_voice_hook::SharedHeader;
 using hibiki_voice_hook::SharedMemoryName;
 using hibiki_voice_hook::TextSlot;
 using hibiki_voice_hook::VoiceClip;
+using hibiki_voice_hook::UnityVoiceEvent;
+using hibiki_voice_hook::InspectMappingSession;
+using hibiki_voice_hook::AdvanceUnityEventCursorIfCommitted;
+using hibiki_voice_hook::MappingSessionAction;
 
 // 目标与自身位数（WOW64）必须一致才能注入：x86 DLL 只能进 32 位进程，x64 只能进 64 位。
 // 返回 true 表示匹配。CREATE_SUSPENDED 的新进程也能查（此刻映像已就绪，IsWow64Process 有效）。
@@ -130,6 +150,17 @@ uint32_t ComputeRingCapacity() {
   return static_cast<uint32_t>(cap);
 }
 
+// loopback 环固定容量（注入前分配，尚不知真实混音格式）：按名义 48k 立体声 16-bit 存储 * 60s。
+// 混音若多声道则同容量下历史时长变短，仍够抽窗；上界 kMaxLoopbackBytes 护住 32 位地址空间。
+uint32_t ComputeLoopbackCapacity() {
+  uint64_t cap = 48000ull * 2ull * 2ull * kLoopbackSeconds;  // sr*ch*16bit*秒
+  if (cap > kMaxLoopbackBytes) {
+    cap = kMaxLoopbackBytes;
+  }
+  cap -= (cap % 8);
+  return static_cast<uint32_t>(cap);
+}
+
 int Fail(const char* msg) {
   fprintf(stderr, "%s\n", msg);
   return 1;
@@ -198,6 +229,7 @@ using PFN_Luna_DetachProcess = void (*)(DWORD);
 //               maxHistorySize, enablePCHooks)。PC hooks 仍由连接回调按目标决定，末参传 false。
 using PFN_Luna_Settings = void (*)(int, bool, int, int, int, bool);
 using PFN_Luna_InsertPCHooks = void (*)(DWORD, int);
+using PFN_Luna_InsertHookCode = bool (*)(DWORD, const wchar_t*);
 
 // host 侧 LunaHook 运行时上下文（单目标进程，injector 一对一）。
 struct LunaCtx {
@@ -206,7 +238,9 @@ struct LunaCtx {
   DWORD pid = 0;                   // 目标游戏 pid（Detach 用）
   PFN_Luna_DetachProcess detach = nullptr;
   PFN_Luna_InsertPCHooks insert_pc = nullptr;
+  PFN_Luna_InsertHookCode insert_hook = nullptr;
   bool use_pc_hooks = false;       // 连接后是否补装通用 PC hooks（默认否，避免与 GDI 重复）
+  std::vector<std::wstring> hook_codes;
 };
 LunaCtx g_luna;
 
@@ -225,6 +259,144 @@ std::wstring InjectorDir() {
     path.clear();
   }
   return path;
+}
+
+struct UnityExtractorRuntime {
+  std::wstring executable;
+  std::wstring classdata;
+  std::wstring decoder;
+  bool ready = false;
+};
+
+bool RegularFileExists(const std::wstring& path) {
+  const DWORD attr = GetFileAttributesW(path.c_str());
+  return attr != INVALID_FILE_ATTRIBUTES &&
+         (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+UnityExtractorRuntime FindUnityExtractorRuntime() {
+  const std::wstring base = InjectorDir() + L"unity_audio_runtime\\";
+  UnityExtractorRuntime runtime;
+  runtime.executable = base + L"hibiki_unity_audio_extract.exe";
+  runtime.classdata = base + L"classdata.tpk";
+  runtime.decoder = base + L"vgmstream-cli.exe";
+  runtime.ready = RegularFileExists(runtime.executable) &&
+                  RegularFileExists(runtime.classdata) &&
+                  RegularFileExists(runtime.decoder);
+  return runtime;
+}
+
+std::wstring QuoteWindowsArgument(const std::wstring& value) {
+  std::wstring quoted = L"\"";
+  size_t slashes = 0;
+  for (wchar_t c : value) {
+    if (c == L'\\') {
+      ++slashes;
+      continue;
+    }
+    if (c == L'\"') {
+      quoted.append(slashes * 2 + 1, L'\\');
+      quoted.push_back(c);
+      slashes = 0;
+      continue;
+    }
+    quoted.append(slashes, L'\\');
+    slashes = 0;
+    quoted.push_back(c);
+  }
+  quoted.append(slashes * 2, L'\\');
+  quoted.push_back(L'\"');
+  return quoted;
+}
+
+std::wstring SafeVoiceFileName(const wchar_t* clip_name) {
+  std::wstring result = clip_name == nullptr ? L"unity_voice" : clip_name;
+  for (wchar_t& c : result) {
+    if (c < 0x20 || c == L'\\' || c == L'/' || c == L':' || c == L'*' ||
+        c == L'?' || c == L'\"' || c == L'<' || c == L'>' || c == L'|') {
+      c = L'_';
+    }
+  }
+  if (result.empty()) result = L"unity_voice";
+  return result;
+}
+
+bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
+                       const UnityVoiceEvent& event) {
+  if (!runtime.ready || event.bundle_path[0] == 0 ||
+      event.clip_name[0] == 0) {
+    return false;
+  }
+  wchar_t temp[MAX_PATH] = {0};
+  const DWORD temp_len = GetTempPathW(MAX_PATH, temp);
+  if (temp_len == 0 || temp_len >= MAX_PATH) return false;
+  const std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  CreateDirectoryW(dir.c_str(), nullptr);
+  const std::wstring output =
+      dir + L"\\" + std::to_wstring(event.timestamp_ms) + L"_" +
+      SafeVoiceFileName(event.clip_name) + L".wav";
+
+  std::wstring command = QuoteWindowsArgument(runtime.executable) +
+      L" --bundle " + QuoteWindowsArgument(event.bundle_path) +
+      L" --clip " + QuoteWindowsArgument(event.clip_name) +
+      L" --output " + QuoteWindowsArgument(output) +
+      L" --classdata " + QuoteWindowsArgument(runtime.classdata) +
+      L" --decoder " + QuoteWindowsArgument(runtime.decoder);
+  std::vector<wchar_t> command_buffer(command.begin(), command.end());
+  command_buffer.push_back(0);
+  STARTUPINFOW startup = {0};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process = {0};
+  if (!CreateProcessW(runtime.executable.c_str(), command_buffer.data(),
+                      nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
+                      InjectorDir().c_str(), &startup, &process)) {
+    fprintf(stderr, "[unity-audio] extractor launch failed=%lu clip=%ls\n",
+            GetLastError(), event.clip_name);
+    return false;
+  }
+  CloseHandle(process.hThread);
+  const DWORD wait = WaitForSingleObject(process.hProcess, 30000);
+  DWORD exit_code = 2;
+  if (wait == WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess, &exit_code);
+  CloseHandle(process.hProcess);
+  const bool ok = wait == WAIT_OBJECT_0 && exit_code == 0 &&
+                  RegularFileExists(output);
+  fprintf(stderr, "[unity-audio] %s clip=%ls bundle=%ls output=%ls\n",
+          ok ? "extracted" : "failed", event.clip_name,
+          event.bundle_path, output.c_str());
+  return ok;
+}
+
+void ProcessUnityVoiceEvents(SharedHeader* header,
+                             const UnityExtractorRuntime& runtime,
+                             uint64_t* next_event) {
+  if (header == nullptr || next_event == nullptr || !runtime.ready) return;
+  const uint64_t count = header->unity_voice_write_count;
+  if (*next_event + kUnityVoiceEventCount < count) {
+    *next_event = count - kUnityVoiceEventCount;
+  }
+  while (*next_event < count) {
+    const uint64_t expected_seq = *next_event + 1;
+    const UnityVoiceEvent* source =
+        &header->unity_voice_events[*next_event % kUnityVoiceEventCount];
+    // write_count 在生产者填槽前预留；seq 尚未提交时不能跳过，留给下轮 50ms 重试。
+    if (source->seq != expected_seq) break;
+    MemoryBarrier();
+    UnityVoiceEvent event = {};
+    event.seq = source->seq;
+    event.timestamp_ms = source->timestamp_ms;
+    wcsncpy_s(event.clip_name, source->clip_name, _TRUNCATE);
+    wcsncpy_s(event.bundle_path, source->bundle_path, _TRUNCATE);
+    if (source->seq != expected_seq) break;
+    if (ExtractUnityVoice(runtime, event)) {
+      header->hook_diagnostics |= kDiagUnityResourceExtracted;
+    } else {
+      header->hook_diagnostics |= kDiagUnityResourceExtractFailed;
+    }
+    const bool advanced = AdvanceUnityEventCursorIfCommitted(
+        expected_seq, event.seq, next_event);
+    if (!advanced) break;
+  }
 }
 
 // injector 与目标同位数（BitnessMatches 已强制），故 LunaHost/LunaHook 位数 = 本编译位数。
@@ -458,27 +630,43 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
   }
   st.last_tick = GetTickCount64();
 
-  // 重算赢家：clean_count 最高、且占比 clean/(clean+dirty) >= 0.5 的 hookcode。
-  // 占比 c/(c+d) >= 0.5  <=>  c >= d（整数比较，避免浮点）。
+  // 重算赢家。**优先「纯净」hook（dirty==0，从未产伪影）**，无纯净 hook 才回落
+  // 「clean>=dirty 且 clean_count 最高」的旧规则。
+  //
+  // 根因（真机实证 lunadiag + 模拟）：per-char/整串重复的坏 hook（KiriKiri 的 KiriKiriZ）在读档
+  // 菜单阶段先吐一堆**干净**的存档预览/槽号/时间戳、凭早期高 clean_count 霸占赢家；进对话后它只
+  // 吐每字重复**伪影**（被伪影闸丢弃），而真正干净的对话 hook（textrender）虽已出干净行却因不是
+  // 赢家被拒 → 正文一句不写、只剩菜单文字（用户症状「没正文文字，只有读存档文字」）。旧规则靠
+  // 累计 clean_count 选赢家，坏 hook 的早期干净菜单数长期压过对话 hook。
+  // 纯净优先：坏 hook 一进对话吐出第一条伪影 dirty>0 即失去纯净资格，对话 hook（始终 dirty==0）
+  // 立即接管，正文流出。单 hook 偶发误判伪影的游戏无纯净 hook、回落旧规则，行为不变。
   const std::wstring* best = nullptr;
   uint64_t best_clean = 0;
+  const std::wstring* best_pristine = nullptr;
+  uint64_t best_pristine_clean = 0;
   uint64_t total_clean = 0;
   for (const auto& kv : g_lunaHookStats) {
     total_clean += kv.second.clean_count;
     const uint64_t c = kv.second.clean_count;
     const uint64_t d = kv.second.dirty_count;
-    if (c == 0 || c < d) {
+    if (c == 0) {
       continue;
     }
-    if (c > best_clean) {
-      best_clean = c;
+    if (d == 0 && c > best_pristine_clean) {
+      best_pristine_clean = c;  // 纯净候选（从未产伪影）
+      best_pristine = &kv.first;
+    }
+    if (c >= d && c > best_clean) {
+      best_clean = c;  // 回落候选（占比 c/(c+d)>=0.5 <=> c>=d）
       best = &kv.first;
     }
   }
+  const std::wstring* winner =
+      (best_pristine != nullptr) ? best_pristine : best;
 
-  if (total_clean >= kLunaSelectMinClean && best != nullptr) {
+  if (total_clean >= kLunaSelectMinClean && winner != nullptr) {
     g_lunaSelectPrimed = true;
-    g_lunaSelectedHook = *best;
+    g_lunaSelectedHook = *winner;
   }
 
   // 伪影永不写——无论来自哪个 hook。赢家 hook 自己也会夹带 ×2/×3 伪影行（同一 hookcode 既出
@@ -502,10 +690,55 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
 
 // ── Luna_Start 的回调实现（__cdecl 默认约定）─────────────────────────────────
 // Output：全引擎精确台词入口。过滤 + 写文本环。v10.16.1.2 ABI 返回 void。
+// LunaHook 逐行诊断（env `HIBIKI_LUNA_DIAG=1` 打开）：把**每一行**（含随后被 filter/伪影/线程
+// 选择丢弃的）连同其 hook 上下文（hookname / hookcode 签名 / addr / ctx / ctx2）打到 stderr。用于
+// 实证「系统菜单标题（读/存档确认）是否与对话走不同 hook」——若不同则可在 hook 层白名单精确排除，
+// 若同 hook 则只能回落文本层启发式。默认关（零开销）；不改任何写入路径，纯观测。
+bool LunaDiagEnabled() {
+  static const bool enabled = []() {
+    char buf[8] = {0};
+    const DWORD n = GetEnvironmentVariableA("HIBIKI_LUNA_DIAG", buf, sizeof(buf));
+    return n > 0 && buf[0] != '0';
+  }();
+  return enabled;
+}
+
+// 把 UTF-16 文本转 UTF-8 写进定长栈缓冲（截断到 [out_cap-1]），供诊断打印。返回写入字节数。
+int LunaWideToUtf8(const wchar_t* text, int wlen, char* out, int out_cap) {
+  if (text == nullptr || wlen <= 0 || out_cap <= 1) {
+    if (out_cap > 0) out[0] = '\0';
+    return 0;
+  }
+  const int n = WideCharToMultiByte(CP_UTF8, 0, text, wlen, out, out_cap - 1,
+                                    nullptr, nullptr);
+  const int written = (n > 0) ? n : 0;
+  out[written] = '\0';
+  return written;
+}
+
+// ── Luna_Start 的 8 个回调实现（__cdecl 默认约定）─────────────────────────────
+// Output：全引擎精确台词入口。过滤 + 写文本环。返回值在本 vendored 版恒 true（不作门控）。
 void LunaOutput(const wchar_t* hookcode, const char* hookname,
                 LunaThreadParam tp, const wchar_t* text) {
   if (g_luna.header != nullptr && text != nullptr) {
+    g_luna.header->hook_diagnostics |= kDiagLunaOutputObserved;
     const int len = static_cast<int>(wcslen(text));
+    if (LunaDiagEnabled()) {
+      char u8[1024];
+      LunaWideToUtf8(text, len, u8, sizeof(u8));
+      char hc[512];
+      LunaWideToUtf8(hookcode != nullptr ? hookcode : L"",
+                     hookcode != nullptr ? static_cast<int>(wcslen(hookcode)) : 0,
+                     hc, sizeof(hc));
+      fprintf(stderr,
+              "[lunadiag] name=%s code=%s addr=0x%llx ctx=0x%llx ctx2=0x%llx "
+              "len=%d text=%s\n",
+              (hookname != nullptr) ? hookname : "(null)", hc,
+              static_cast<unsigned long long>(tp.addr),
+              static_cast<unsigned long long>(tp.ctx),
+              static_cast<unsigned long long>(tp.ctx2), len, u8);
+      fflush(stderr);
+    }
     if (LunaPassesFilter(text, len)) {
       // 多 hook 自动选干净线程：先判伪影并累计，再决定本行是否写入文本环。
       const bool artifact = LunaTextIsArtifact(text, len);
@@ -527,6 +760,19 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
 // GDI hook 产生重复行；LunaHook 内置的各引擎精确 hook 本就自动上线，无需在此手动插）。
 void LunaConnect(DWORD pid) {
   fprintf(stderr, "[luna] connected pid=%lu\n", pid);
+  // 连接成功即代表 LunaHook 的文本管线已经安装并可接收内容。不能等到第一句 Output
+  // 才置 text_hooked：游戏停在标题/菜单超过 Dart 等待窗口时会把健康 helper 误判失败。
+  if (g_luna.header != nullptr && pid == g_luna.pid) {
+    g_luna.header->hook_diagnostics |= kDiagLunaConnected;
+    g_luna.header->text_hooked = 1;
+  }
+  if (g_luna.insert_hook != nullptr) {
+    for (const std::wstring& code : g_luna.hook_codes) {
+      const bool inserted = g_luna.insert_hook(pid, code.c_str());
+      fprintf(stderr, "[luna] known hook %ls pid=%lu result=%d\n",
+              code.c_str(), pid, inserted ? 1 : 0);
+    }
+  }
   if (g_luna.use_pc_hooks && g_luna.insert_pc != nullptr) {
     g_luna.insert_pc(pid, 0);
     g_luna.insert_pc(pid, 1);
@@ -575,7 +821,8 @@ void LunaEmbed(const wchar_t* text, LunaThreadParam tp) {
 // 缺 DLL / 缺关键导出 / 加载失败 → 打日志跳过，**不致命**（仍走游戏内 GDI hook）。
 // target 是目标进程句柄（复用 InjectDll 把 LunaHook<arch>.dll 注入游戏）。成功接线返回 true。
 bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
-                  bool use_pc_hooks) {
+                  bool use_pc_hooks,
+                  const std::vector<std::wstring>& hook_codes) {
   const std::wstring host_path =
       InjectorDir() + L"LunaHost" + kLunaArch + L".dll";
   HMODULE host = LoadLibraryW(host_path.c_str());
@@ -606,13 +853,18 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
       GetProcAddress(host, "Luna_Settings"));  // 可选
   auto insert_pc = reinterpret_cast<PFN_Luna_InsertPCHooks>(
       GetProcAddress(host, "Luna_InsertPCHooks"));  // 可选
+  auto insert_hook = reinterpret_cast<PFN_Luna_InsertHookCode>(
+      GetProcAddress(host, "Luna_InsertHookCode"));  // 可选
 
   g_luna.host_dll = host;
   g_luna.header = header;
   g_luna.pid = pid;
   g_luna.detach = detach;
   g_luna.insert_pc = insert_pc;
+  g_luna.insert_hook = insert_hook;
   g_luna.use_pc_hooks = use_pc_hooks && (insert_pc != nullptr);
+  g_luna.hook_codes = hook_codes;
+  header->hook_diagnostics |= kDiagLunaHostReady;
 
   // flushDelay=200ms（一句停顿 flush 一行）、filterRepetition=true（LunaHook 侧先去重）、
   // codepage（日文 galgame 默认 932/SHIFT_JIS）、maxBufferSize/maxHistorySize 保守非零值。
@@ -646,6 +898,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
       fprintf(stderr, "[luna] LunaHook%ls.dll 缺失，无法注入；仅 GDI hook\n",
               kLunaArch);
     } else if (!InjectDll(target, hook_path)) {
+      header->hook_diagnostics |= kDiagLunaInjectFailed;
       fprintf(stderr, "[luna] LunaHook%ls.dll 注入失败；仅 GDI hook\n",
               kLunaArch);
     } else {
@@ -680,6 +933,7 @@ struct LunaOptions {
   bool enabled = true;    // --no-luna 关闭
   int codepage = 932;     // --luna-codepage（日文默认 SHIFT_JIS）
   bool pc_hooks = false;  // --luna-pchooks 补装通用 PC hooks
+  std::vector<std::wstring> hook_codes;  // 版本专用、已验证的 H-code
 };
 
 // attach 与 launch 共用的注入编排。target=目标进程句柄，pid=目标 pid（命名共享内存/事件）。
@@ -703,19 +957,26 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // 建共享内存（header + 环形缓冲）并清零、写契约头。injector 持有映射句柄=内存所有者；
   // hold 模式下常驻维持它存活，供 host 消费。
   const uint32_t ring_capacity = ComputeRingCapacity();
-  // v2 布局：[SharedHeader][音频环形 ring_capacity][文本环 kTextSlotCount*kTextSlotBytes]
-  //          [clip 索引 kClipCount*sizeof(VoiceClip)]。各区偏移下面填进 header。
+  const uint32_t loopback_capacity = ComputeLoopbackCapacity();
+  // v6 布局：[SharedHeader][音频环形 ring_capacity][文本环 kTextSlotCount*kTextSlotBytes]
+  //          [clip 索引 kClipCount*sizeof(VoiceClip)][loopback 环 loopback_capacity]
+  //          [loopback 标记表 kLoopbackMarkerCount*sizeof(LoopbackMarker)]。各区偏移下面填进 header。
   const uint64_t text_region_bytes =
       static_cast<uint64_t>(kTextSlotCount) * kTextSlotBytes;
   const uint64_t clip_region_bytes =
       static_cast<uint64_t>(kClipCount) * sizeof(VoiceClip);
+  const uint64_t loopback_marker_bytes =
+      static_cast<uint64_t>(kLoopbackMarkerCount) * sizeof(LoopbackMarker);
   const uint64_t total_size = sizeof(SharedHeader) + ring_capacity +
-                              text_region_bytes + clip_region_bytes;
+                              text_region_bytes + clip_region_bytes +
+                              loopback_capacity + loopback_marker_bytes;
   const std::wstring shm = SharedMemoryName(pid);
+  SetLastError(ERROR_SUCCESS);
   HANDLE mapping = CreateFileMappingW(
       INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
       static_cast<DWORD>(total_size >> 32),
       static_cast<DWORD>(total_size & 0xFFFFFFFF), shm.c_str());
+  const bool mapping_already_exists = GetLastError() == ERROR_ALREADY_EXISTS;
   if (mapping == nullptr) {
     return Fail("CreateFileMapping failed");
   }
@@ -725,17 +986,50 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     CloseHandle(mapping);
     return Fail("MapViewOfFile failed");
   }
-  // 清零整块映射（页文件后备本就零，显式清零防旧内容并保 v2 各计数/偏移干净起步）。
-  memset(header, 0, static_cast<size_t>(total_size));
-  header->magic = kSharedMagic;
-  header->version = kSharedVersion;
-  header->ring_capacity = ring_capacity;
-  // 文本环紧随音频环形；clip 索引紧随文本环。hook DLL 据此偏移定位两区。
-  header->text_region_offset =
+  const uint32_t expected_text_offset =
       static_cast<uint32_t>(sizeof(SharedHeader) + ring_capacity);
-  header->clip_region_offset =
-      static_cast<uint32_t>(header->text_region_offset + text_region_bytes);
-
+  const uint32_t expected_clip_offset =
+      static_cast<uint32_t>(expected_text_offset + text_region_bytes);
+  const MappingSessionAction mapping_action = InspectMappingSession(
+      mapping_already_exists, header, ring_capacity, expected_text_offset,
+      expected_clip_offset);
+  if (mapping_action == MappingSessionAction::kRejectStale) {
+    fprintf(stderr,
+            "已存在但不可复用的 hook 会话（契约不匹配或 hooked=0）；请重启一次游戏以清理旧 DLL。\n");
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 2;
+  }
+  const bool reuse_ready = mapping_action == MappingSessionAction::kReuseReady;
+  if (!reuse_ready) {
+    // 仅新映射允许清零。旧映射由游戏内 DLL 持有；重连时清零会让 hooked 永久丢失。
+    memset(header, 0, static_cast<size_t>(total_size));
+    header->magic = kSharedMagic;
+    header->version = kSharedVersion;
+    header->ring_capacity = ring_capacity;
+    // 文本环紧随音频环形；clip 索引紧随文本环。hook DLL 据此偏移定位两区。
+    header->text_region_offset = expected_text_offset;
+    header->clip_region_offset = expected_clip_offset;
+    // v9：loopback 环紧随 clip 索引；标记表紧随 loopback 环。
+    header->loopback_ring_offset =
+        static_cast<uint32_t>(header->clip_region_offset + clip_region_bytes);
+    header->loopback_ring_capacity = loopback_capacity;
+    header->loopback_marker_offset = static_cast<uint32_t>(
+        header->loopback_ring_offset + loopback_capacity);
+    header->loopback_marker_slot_count = kLoopbackMarkerCount;
+  } else {
+    fprintf(stderr,
+            "[session] reusing live hook mapping pid=%lu text=%u audioBytes=%llu\n",
+            pid, header->text_hooked,
+            static_cast<unsigned long long>(header->total_written));
+  }
+  const UnityExtractorRuntime unity_extractor = FindUnityExtractorRuntime();
+  if (unity_extractor.ready) {
+    header->hook_diagnostics |= kDiagUnityResourceExtractorReady;
+  } else {
+    fprintf(stderr,
+            "[unity-audio] resource extractor runtime missing; Unity audio will use normal fallback\n");
+  }
   // 就绪事件（auto-reset，初始未触发）；hook DLL 装好后 SetEvent。
   const std::wstring evt = ReadyEventName(pid);
   HANDLE ready = CreateEventW(nullptr, FALSE, FALSE, evt.c_str());
@@ -745,15 +1039,41 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     return Fail("CreateEvent failed");
   }
 
-  if (!InjectDll(target, dll_path)) {
+  if (!reuse_ready && !InjectDll(target, dll_path)) {
     CloseHandle(ready);
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     return Fail("injection failed");
   }
 
-  // launch 模式：hook 已装好，此刻才放游戏跑（它随后调 DirectSoundCreate 命中我们的 hook）。
+  // 等 hook DLL 的 proof-of-life。超时=注入了但 DLL 没跑到通知点（arch/契约/权限问题）。
+  if (!reuse_ready) {
+    const DWORD w = WaitForSingleObject(ready, wait_ms);
+    if (w != WAIT_OBJECT_0) {
+      fprintf(stderr, "注入完成但未收到就绪信号（%lums 超时）；hooked=%u\n",
+              wait_ms, header->hooked);
+      CloseHandle(ready);
+      UnmapViewOfFile(header);
+      CloseHandle(mapping);
+      return 2;
+    }
+  }
+
+  // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
+  // 再恢复主线程。否则 Unity 可能先创建全部 source voice，之后晚 attach 只能拿到混音。
   if (resume_thread != nullptr) {
+    const ULONGLONG deadline = GetTickCount64() + wait_ms;
+    while ((header->hook_diagnostics & kDiagStartupAudioHooksReady) == 0 &&
+           GetTickCount64() < deadline) {
+      Sleep(1);
+    }
+    if ((header->hook_diagnostics & kDiagStartupAudioHooksReady) == 0) {
+      fprintf(stderr,
+              "startup audio hook readiness timed out; resuming game with text/late-hook fallback\n");
+    }
+
+    // 只有游戏内 DLL 完成首轮音频导出 hook 后才允许游戏主线程继续。
+    // Unity 会在启动早期创建 XAudio2 engine/source voice，提前恢复会永久错过这些对象。
     if (ResumeThread(resume_thread) == static_cast<DWORD>(-1)) {
       fprintf(stderr, "ResumeThread failed: %lu\n", GetLastError());
       CloseHandle(ready);
@@ -761,17 +1081,6 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       CloseHandle(mapping);
       return 1;
     }
-  }
-
-  // 等 hook DLL 的 proof-of-life。超时=注入了但 DLL 没跑到通知点（arch/契约/权限问题）。
-  const DWORD w = WaitForSingleObject(ready, wait_ms);
-  if (w != WAIT_OBJECT_0) {
-    fprintf(stderr, "注入完成但未收到就绪信号（%lums 超时）；hooked=%u\n",
-            wait_ms, header->hooked);
-    CloseHandle(ready);
-    UnmapViewOfFile(header);
-    CloseHandle(mapping);
-    return 2;
   }
 
   printf("OK hooked pid=%lu hooked=%u ring=%u sr=%u ch=%u bits=%u float=%u\n",
@@ -782,17 +1091,24 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // host 模式（--hold）才接入 LunaHook 全引擎文本 hook：写同一文本环，与游戏内 GDI hook
   // 并存（原子占号防撞槽）。probe 模式确认即退，LunaHook 没有捕获窗口，故不接。
   if (hold && luna.enabled) {
-    InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks);
+    InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
+                 luna.hook_codes);
   }
 
   if (hold) {
     // host 模式：常驻维持共享内存存活，供 Hibiki 消费（C.2 起真正读 PCM）。
-    // launch 时挂到游戏进程退出；attach 时无限 Sleep（Ctrl-C 结束）。
+    // 同时消费 Unity Streaming AudioClip 资源事件；重解析/解码在 injector 子进程完成，
+    // 游戏内 hook 回调始终只写固定大小共享内存事件。
+    uint64_t next_unity_event = 0;
     if (hold_process != nullptr) {
-      WaitForSingleObject(hold_process, INFINITE);
+      while (WaitForSingleObject(hold_process, 50) == WAIT_TIMEOUT) {
+        ProcessUnityVoiceEvents(header, unity_extractor, &next_unity_event);
+      }
+      ProcessUnityVoiceEvents(header, unity_extractor, &next_unity_event);
     } else {
       for (;;) {
-        Sleep(1000);
+        ProcessUnityVoiceEvents(header, unity_extractor, &next_unity_event);
+        Sleep(50);
       }
     }
   }
@@ -878,7 +1194,8 @@ bool LooksLikeUnityRuntime(const std::wstring& exe) {
 
 bool ShouldAutoUseLunaPcHooks(const std::wstring& exe) {
   const std::wstring base = ExecutableBaseName(exe);
-  if (_wcsicmp(base.c_str(), L"manosaba.exe") == 0) {
+  if (_wcsicmp(base.c_str(), L"manosaba.exe") == 0 ||
+      _wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
     return true;
   }
   return LooksLikeUnityRuntime(exe);
@@ -921,6 +1238,93 @@ bool WaitForSiglusGameWindow(HANDLE process, DWORD pid, DWORD timeout_ms) {
   return false;
 }
 
+bool ReadSmallUtf8File(const std::wstring& path, std::wstring* out) {
+  if (out == nullptr) return false;
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE |
+                                FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                            nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+  LARGE_INTEGER size = {};
+  if (!GetFileSizeEx(file, &size) || size.QuadPart <= 0 ||
+      size.QuadPart > 2 * 1024 * 1024) {
+    CloseHandle(file);
+    return false;
+  }
+  std::vector<char> bytes(static_cast<size_t>(size.QuadPart));
+  DWORD read = 0;
+  const bool ok = ReadFile(file, bytes.data(), static_cast<DWORD>(bytes.size()),
+                           &read, nullptr) != FALSE &&
+                  read == bytes.size();
+  CloseHandle(file);
+  if (!ok) return false;
+  int chars = MultiByteToWideChar(CP_UTF8, 0, bytes.data(), read, nullptr, 0);
+  UINT codepage = CP_UTF8;
+  if (chars <= 0) {
+    codepage = CP_ACP;
+    chars = MultiByteToWideChar(codepage, 0, bytes.data(), read, nullptr, 0);
+  }
+  if (chars <= 0) return false;
+  out->assign(static_cast<size_t>(chars), L'\0');
+  MultiByteToWideChar(codepage, 0, bytes.data(), read, &(*out)[0], chars);
+  return true;
+}
+
+std::wstring DiscoverSteamAppId(const std::wstring& executable) {
+  hibiki_voice_hook::SteamLibraryPath library;
+  if (!hibiki_voice_hook::ParseSteamLibraryPath(executable, &library)) {
+    return L"";
+  }
+  const std::wstring pattern = library.steamapps_dir + L"\\appmanifest_*.acf";
+  WIN32_FIND_DATAW data = {};
+  HANDLE search = FindFirstFileW(pattern.c_str(), &data);
+  if (search == INVALID_HANDLE_VALUE) return L"";
+  std::wstring found;
+  do {
+    if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+    std::wstring manifest;
+    if (!ReadSmallUtf8File(library.steamapps_dir + L"\\" + data.cFileName,
+                           &manifest)) {
+      continue;
+    }
+    const std::wstring install = hibiki_voice_hook::ParseAcfQuotedValue(
+        manifest, L"installdir");
+    if (_wcsicmp(install.c_str(), library.install_dir.c_str()) != 0) continue;
+    const std::wstring app_id =
+        hibiki_voice_hook::ParseAcfQuotedValue(manifest, L"appid");
+    if (!app_id.empty() &&
+        std::all_of(app_id.begin(), app_id.end(),
+                    [](wchar_t c) { return c >= L'0' && c <= L'9'; })) {
+      found = app_id;
+      break;
+    }
+  } while (FindNextFileW(search, &data));
+  FindClose(search);
+  return found;
+}
+
+struct EnvironmentValue {
+  bool existed = false;
+  std::wstring value;
+};
+
+EnvironmentValue CaptureEnvironment(const wchar_t* name) {
+  EnvironmentValue result;
+  const DWORD need = GetEnvironmentVariableW(name, nullptr, 0);
+  if (need == 0) return result;
+  std::vector<wchar_t> value(need, 0);
+  if (GetEnvironmentVariableW(name, value.data(), need) > 0) {
+    result.existed = true;
+    result.value = value.data();
+  }
+  return result;
+}
+
+void RestoreEnvironment(const wchar_t* name, const EnvironmentValue& value) {
+  SetEnvironmentVariableW(name, value.existed ? value.value.c_str() : nullptr);
+}
+
 // launch 模式：一般 CREATE_SUSPENDED 早注入；Siglus 因 Enigma 保护壳改为正常启动后附着。
 // 命令行含 exe 本身（CreateProcessW 约定）；workdir 缺省=exe 所在目录。
 int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
@@ -931,6 +1335,8 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     return Fail("目标 exe 不存在（--launch <exe路径>）");
   }
   LunaOptions effective_luna = luna;
+  effective_luna.hook_codes =
+      hibiki_voice_hook::KnownLunaHookCodesForExecutable(exe);
   if (!effective_luna.pc_hooks && ShouldAutoUseLunaPcHooks(exe)) {
     effective_luna.pc_hooks = true;
     fprintf(stderr,
@@ -960,10 +1366,26 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi = {0};
   const bool delayed_siglus = IsSiglusExecutable(exe);
+  // Steam 游戏被直接 CreateProcess 时常会立即退出，再由 Steam 拉起一个未注入子进程。
+  // 从 exe 所在库的 appmanifest 自动发现 AppID，并只在本次 CreateProcess 的继承窗口内设置
+  // 官方环境变量，避免 Steam 二次拉起导致“看似启动成功、实际 hook 的是已退出进程”。
+  const std::wstring steam_app_id = DiscoverSteamAppId(exe);
+  const EnvironmentValue old_steam_app = CaptureEnvironment(L"SteamAppId");
+  const EnvironmentValue old_steam_game = CaptureEnvironment(L"SteamGameId");
+  if (!steam_app_id.empty()) {
+    SetEnvironmentVariableW(L"SteamAppId", steam_app_id.c_str());
+    SetEnvironmentVariableW(L"SteamGameId", steam_app_id.c_str());
+    fprintf(stderr, "[steam] inherited AppID=%ls for %ls\n",
+            steam_app_id.c_str(), ExecutableBaseName(exe).c_str());
+  }
   const BOOL created = CreateProcessW(
       exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE,
       delayed_siglus ? 0 : CREATE_SUSPENDED,
       nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
+  if (!steam_app_id.empty()) {
+    RestoreEnvironment(L"SteamAppId", old_steam_app);
+    RestoreEnvironment(L"SteamGameId", old_steam_game);
+  }
   if (!created) {
     fprintf(stderr, "CreateProcessW failed: %lu\n", GetLastError());
     return 1;
@@ -1077,6 +1499,8 @@ int main() {
 
   LunaOptions effective_luna = luna;
   const std::wstring target_exe = ProcessImagePath(target);
+  effective_luna.hook_codes =
+      hibiki_voice_hook::KnownLunaHookCodesForExecutable(target_exe);
   if (!effective_luna.pc_hooks && !target_exe.empty() &&
       ShouldAutoUseLunaPcHooks(target_exe)) {
     effective_luna.pc_hooks = true;

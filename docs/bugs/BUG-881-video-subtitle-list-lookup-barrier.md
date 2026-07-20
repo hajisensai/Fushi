@@ -1,0 +1,6 @@
+## BUG-881 · 查词浮层开着时列表下一个词被 dismiss barrier 吞掉
+- **报告**：2026-07-18（用户：看 2 分钟动漫默认设置反馈，第 5 点「用 shift 查词，第一个弹窗不关掉不能查第二个」）
+- **真实性**：✅ 真 bug（仅字幕列表场景）。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart`：查词浮层打开后根 Overlay 全屏 dismiss barrier 盖住一切，barrier 换词只反查画面字幕 `_subtitleHitTester`，字幕列表侧栏的字符矩形没登记进任何 hitTester → 点 / 悬停列表里第二个词落到「关闭浮层」而非换词。画面字幕能连续换词（BUG-861 已修），故本 bug 只在**列表**上复现。此前 PR#208(旧号 BUG-872/874) 已写 barrier tap 兜底但**未合并进 develop**，用户命中的正是这个未修 bug。
+- **[x] ① 已修复** — 新增 `VideoSubtitleListHitTester`（`video_subtitle_jump_panel.dart`），`VideoSubtitleJumpPanel` 每帧把可见行 `RenderParagraph` 命中绑进来；`_onDismissBarrierTap`（承自 PR#208）+ 本次补的 `_onDismissBarrierHover` 在画面字幕 miss 后再反查列表句柄，命中即走 `_handleSubtitleListLookup`（→ `_lookupAt` 的 `replaceStack`，保持浮层 + 暂停）。barrier hover 兜底复用「同 cue 同 grapheme」去重键避免同词反复 replaceStack 闪烁。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_jump_panel_hit_tester_test.dart`（`VideoSubtitleListHitTester` 绑定 / 反查 / 越界返 null / dispose 解绑，承自 PR#208）；`hibiki/test/pages/video_subtitle_list_zoom_lookup_wiring_guard_test.dart`（BUG-881 组：`_onDismissBarrierHover` 画面字幕 miss 后反查 `_subtitleListHitTester` + 接力更新 `_lastGlobalPointerPos`）。
+- **备注**：与 BUG-879/880 同一 PR。本 PR 覆盖并取代未合并的 PR#208（其 BUG-874 号已与已合并的 PR#210 撞号，本 PR 用全新号 877-881）。修复提交 `96763ac23`。真机验收：浮层开着点 / Shift 悬停列表第二个词直接换词。

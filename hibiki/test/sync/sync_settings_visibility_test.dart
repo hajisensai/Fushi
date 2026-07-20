@@ -48,25 +48,23 @@ void main() {
     });
 
     test('group 1 (sync method) holds selector + scoped account/config', () {
+      // 互联已从「同步方式」解耦成独立分类 + 独立开关（不再是 backendType 单选项），
+      // 故这里不再有 'sync.interconnect_pointer' 指引行。
       expect(idsOf(dest.sections[0]), <String>[
         'sync.mode',
         'sync.account_status',
         'sync.webdav_config',
         'sync.ftp_config',
         'sync.sftp_config',
-        // 互联配置移出后留下的指引行（仅选中互联后端时可见）。
-        'sync.interconnect_pointer',
       ]);
     });
 
-    test('selector is unconditional; account + interconnect pointer are gated',
-        () {
+    test('selector is unconditional; account config is gated', () {
       final SettingsSection method = dest.sections[0];
       SettingsItem byId(String id) =>
           method.items.firstWhere((SettingsItem i) => i.id == id);
       expect(byId('sync.mode').visible, isNull);
       expect(byId('sync.account_status').visible, isNotNull);
-      expect(byId('sync.interconnect_pointer').visible, isNotNull);
     });
 
     test('content / actions / backup groups remain global', () {
@@ -185,13 +183,15 @@ void main() {
         expect(src.substring(at, at + 200), contains('_isHostingInterconnect'),
             reason: 'manual-sync gate must use the hosting-interconnect role');
       }
-      // The helper itself must require both conditions (not serverEnabled alone).
+      // The helper itself must require both conditions (not serverEnabled alone):
+      // 互联解耦后由独立的 interconnectEnabled 开关取代 backendType==hibikiServer，
+      // 故 stale serverEnabled（互联关闭时）不得再隐藏云后端的 sync-now。
       final int helperAt = src.indexOf('bool _isHostingInterconnect(');
       expect(helperAt, greaterThanOrEqualTo(0));
       final String helper = src.substring(helperAt, helperAt + 200);
       expect(helper, contains('serverEnabled'));
-      expect(helper, contains('SyncBackendType.hibikiServer'),
-          reason: 'hosting role must also require the interconnect backend');
+      expect(helper, contains('interconnectEnabled'),
+          reason: 'hosting role must also require interconnect to be enabled');
     });
 
     test('server-mode explanatory note uses compact row layout', () {
@@ -226,19 +226,40 @@ void main() {
 
     test('is its own top-level destination (not inside syncBackup)', () {
       expect(dest.id, SettingsDestinationId.interconnect);
-      expect(dest.sections, hasLength(3));
+      // 启用开关 + 连接设备 + 本机服务器 + 互联相关配置镜像（远端词典/音频来源/远端
+      // 占位卡）。
+      expect(dest.sections, hasLength(4));
     });
 
-    test('inactive note + client config + host server, all backend-gated', () {
-      // 指引行只在互联未被选为同步方式时可见；两个配置区反向门控——
-      // 与拆分前在同步分类内 backendType == hibikiServer 的行为一致。
-      expect(idsOf(dest.sections[0]), <String>['interconnect.inactive_note']);
-      expect(dest.sections[0].visible, isNotNull);
+    test('enable toggle is unconditional; config sections gated on the toggle',
+        () {
+      // 互联总开关（独立于 backendType 云备份后端）常显、无门控；连接设备 / 本机服务器
+      // 两个配置区仅在互联启用（interconnectEnabled）时可见——取代解耦前的
+      // backendType == hibikiServer 门控。
+      expect(idsOf(dest.sections[0]), <String>['interconnect.enabled']);
+      expect(dest.sections[0].visible, isNull,
+          reason: 'the enable toggle must always be visible');
       expect(idsOf(dest.sections[1]),
           <String>['sync.hibiki_server_config', 'sync.lan_devices']);
       expect(dest.sections[1].visible, isNotNull);
       expect(idsOf(dest.sections[2]), <String>['sync.server_mode']);
       expect(dest.sections[2].visible, isNotNull);
+    });
+
+    test('mirrors interconnect-related settings from lookup/sync categories',
+        () {
+      // 远端词典查询/管理音频来源/远端占位卡在查词、同步分类各有其位，但逻辑上都
+      // 作用于互联对端；在互联分类镜像同一入口（共享 builder，非复制），仅互联被选为
+      // 同步方式时可见（与其它互联配置区一致）。
+      expect(
+        idsOf(dest.sections[3]),
+        <String>[
+          'lookup.remote_lookup',
+          'lookup.audio_sources',
+          'sync.show_remote_entries',
+        ],
+      );
+      expect(dest.sections[3].visible, isNotNull);
     });
 
     test('host-server group keeps its explanatory footer', () {

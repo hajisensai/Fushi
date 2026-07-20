@@ -70,6 +70,14 @@
        rule at #entries-container, so in the browser extension it only affects the
        popup container and never flips the host page's direction (zero leakage). */
     direction: ltr;
+    /* BUG-870: browser-extension popup content lives in a shadow root. Shadow
+       DOM blocks selector leakage, but inherited properties still cross the
+       host boundary. A host page/container with text-align:center therefore
+       centered every headword and glossary line. Pin the popup root to its
+       intended reading alignment; intentionally-centered descendants (ruby,
+       empty states, controls) keep their more-specific rules below. The
+       content-css generator re-roots this declaration at #entries-container. */
+    text-align: left;
 }
 
 :where(#entries-container) {
@@ -297,6 +305,17 @@
     color: #2e9e4f;
     opacity: 1;
     font-size: 15px;
+}
+
+/* BUG-932: 制卡按钮静息态 '+' 是文本字形（TODO-1325 应用户要求保留 + / ✓ / ✓↩ 文本
+   标记，不走 SVG），与相邻 audio/favorite/open-anki/tune 的 1em SVG 图标共用上面的
+   font-size:18px；但一个文本 '+' 字形只占 em 盒约一半高（≈9px），SVG 却铺满 1em
+   （可见 ≈14px），故静息加号目测明显比其余图标小/不齐。仅给静息 '+' 态（未制卡 =
+   无 .duplicate 类）单独放大字号补偿文本字形的空白，使其与 SVG 图标目测齐平；已制卡
+   ✓ / ✓↩（.duplicate / .latest）是高字形本就接近、且各有专属尺寸，保持不动。表头行高
+   由词条大标题主导，放大按钮不改行高。守卫见 popup_cards_nav_icon_guard #8。 */
+.mine-button:not(.duplicate) {
+    font-size: 24px;
 }
 
 .mine-button:disabled {
@@ -1714,4 +1733,39 @@
 
 #hibiki-subtitle-reopen[data-theme="light"] {
     background: rgba(56, 106, 88, 0.94);
+}
+
+/* 用户外挂字幕：只显示当前外挂轨，不复制站点原生字幕。按 video rect 动态定位，文本仍可点击查词。 */
+#hibiki-subtitle-overlay {
+    position: fixed;
+    z-index: 2147483637;
+    transform: translate(-50%, -50%);
+    padding: 6px 12px 7px;
+    border-radius: 8px;
+    color: #f7f8f2;
+    background: rgba(12, 15, 13, 0.72);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
+    font: 600 clamp(18px, 2.2vw, 32px)/1.45 "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    letter-spacing: 0.01em;
+    text-align: center;
+    text-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
+    white-space: pre-wrap;
+    user-select: text;
+    cursor: text;
+}
+
+/* 拖字幕文件时的单一全局提示；pointer-events:none，绝不抢宿主页 drop。 */
+#hibiki-subtitle-drop-hint {
+    position: fixed;
+    inset: 24px;
+    z-index: 2147483646;
+    display: grid;
+    place-items: center;
+    border: 2px dashed var(--md-primary, #9dd7b8);
+    border-radius: 18px;
+    color: var(--md-on-primary-container, #b9f2cf);
+    background: rgba(12, 20, 16, 0.82);
+    font: 700 18px/1.4 "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    letter-spacing: 0.04em;
+    pointer-events: none;
 }

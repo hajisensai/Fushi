@@ -623,12 +623,21 @@ function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackgroun
 }
 
 function getMediaFilename(dictionary, path) {
-    const key = `${dictionary}\n${path}`;
+    // BUG-902：制卡登记的 path 必须与显示路径一样先归一化（trim / \\→/ / 去开头
+    // ./ 或 /）。否则 writeDictionaryMediaCache 用生 path 引 HoshiDicts.getMediaFile
+    // 会 miss（path 带开头 ./ 或 / 的词典），字节不落盘 → 两个 Anki repo 读不到缓存
+    // → 卡片里 <img src="hoshi_dict_N.ext"> 占位符不被替换成真实文件名，留成坏图。
+    // 显示路径（rewriteDictionaryMediaPath）早已归一化，故弹窗里图仍看得见，只有制卡
+    // 掉图——这正是 BUG-902 的病症（外字/内容图混排时，脏 path 的词典排在后面就末尾掉图）。
+    // 归一化后 payload.path 干净，writer 与三个 Anki repo（AnkiConnect/AnkiDroid/
+    // AnkiMobile）都按同一干净 path 的 sha1 命名缓存文件，契约天然一致。
+    const normalizedPath = normalizeDictMediaPath(path);
+    const key = `${dictionary}\n${normalizedPath}`;
     if (!currentDictionaryMedia.has(key)) {
-        const extension = path.split('.').pop();
+        const extension = normalizedPath.split('.').pop();
         currentDictionaryMedia.set(key, {
             dictionary,
-            path,
+            path: normalizedPath,
             filename: `hoshi_dict_${currentDictionaryMedia.size}.${extension}`,
         });
     }
@@ -1874,16 +1883,34 @@ async function fetchAudioUrl(expression, reading) {
     }
 }
 
-async function playWordAudio(audioUrl) {
+// 单词音频播放：统一走 WebView 自己的 HTML5 <audio>，不再回 Dart 交给 native
+// MediaPlayer（Android）或 libmpv（桌面 just_audio）——那条桌面路径每播一次都要
+// stop→loadfile→play，比手机的原生同步 prepare 慢。三端（app 内 InAppWebView / app 外
+// overlay WebView2 / 浏览器扩展真实浏览器）现在同一路径：resolveWordAudio 已返回可直接
+// 播放的 URL（远端 http、本地 base64 data:）。interrupt 模式先掐上一段，留 window.
+// __hibikiWordAudio 句柄。音量取 window.lookupAudioVolume（0..1，宿主注入；扩展缺省 1）。
+function playWordAudio(audioUrl) {
     try {
-        return await window.flutter_inappwebview.callHandler('playWordAudio', {
-            url: audioUrl,
-            mode: window.audioPlaybackMode || 'interrupt'
-        });
-    } catch {
-        return false;
+        if (!audioUrl) return Promise.resolve(false);
+        if ((window.audioPlaybackMode || 'interrupt') === 'interrupt'
+                && window.__hibikiWordAudio) {
+            try { window.__hibikiWordAudio.pause(); } catch (_) { /* no-op */ }
+        }
+        const audio = new Audio(audioUrl);
+        const v = window.lookupAudioVolume;
+        if (typeof v === 'number' && isFinite(v)) {
+            audio.volume = Math.max(0, Math.min(1, v));
+        }
+        window.__hibikiWordAudio = audio;
+        return audio.play().then(() => true).catch(() => false);
+    } catch (_) {
+        return Promise.resolve(false);
     }
 }
+
+// Dart 自动发音（打开词条自动读）驱动入口：宿主解析好 URL 后经 evaluateJavascript
+// 调此函数，让弹窗用同一 <audio> 路径播，桌面自动发音同样变快、且与手动 ♪ 一致。
+window.__hibikiPlayWordAudioUrl = playWordAudio;
 
 function showAudioError(button) {
     setButtonIcon(button, 'audioOff');

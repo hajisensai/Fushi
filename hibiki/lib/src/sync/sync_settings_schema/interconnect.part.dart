@@ -1227,9 +1227,10 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
     // minute waiting on the host's approval dialog.
     if (_pairingUrl != null) return;
     final state = _syncSettings(widget.settingsContext);
-    state.backendType = SyncBackendType.hibikiServer;
     final repo = SyncRepository(widget.settingsContext.appModel.database);
-    await repo.setBackendType(SyncBackendType.hibikiServer);
+    // 配对即启用互联（独立开关），不再强写 backendType——互联与云备份并存，配对不该
+    // 擦掉用户已选的云同步后端（解耦前的 UX 反模式）。
+    await state.setInterconnectEnabled(true);
 
     setState(() => _pairingUrl = device.webDavUrl);
     try {

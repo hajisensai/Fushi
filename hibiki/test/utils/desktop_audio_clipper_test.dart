@@ -1138,11 +1138,112 @@ void main() {
       expect(h.screenshotQuality, 95);
     });
 
-    test('forCompressionEnabled selects by the compression toggle', () {
-      expect(MiningMediaCompression.forCompressionEnabled(true),
-          same(MiningMediaCompression.compressed));
-      expect(MiningMediaCompression.forCompressionEnabled(false),
-          same(MiningMediaCompression.highFidelity));
+    test('resolve(标准档 1 + 音频档 0) = compressed 现状（零行为破坏）', () {
+      final MiningMediaCompression r = MiningMediaCompression.resolve(
+        imageTier: MiningMediaCompression.defaultImageTier,
+        audioTier: MiningMediaCompression.defaultAudioTier,
+      );
+      const MiningMediaCompression c = MiningMediaCompression.compressed;
+      expect(r.gifFps, c.gifFps);
+      expect(r.gifWidth, c.gifWidth);
+      expect(r.screenshotMaxLongEdge, c.screenshotMaxLongEdge);
+      expect(r.screenshotQuality, c.screenshotQuality);
+      expect(r.audioChannels, c.audioChannels);
+      expect(r.audioBitrate, c.audioBitrate);
+    });
+
+    test('resolve(高清档 2 + 音频档 1) = highFidelity', () {
+      final MiningMediaCompression r = MiningMediaCompression.resolve(
+        imageTier: 2,
+        audioTier: 1,
+      );
+      const MiningMediaCompression h = MiningMediaCompression.highFidelity;
+      expect(r.gifFps, h.gifFps);
+      expect(r.gifWidth, h.gifWidth);
+      expect(r.screenshotMaxLongEdge, h.screenshotMaxLongEdge);
+      expect(r.screenshotQuality, h.screenshotQuality);
+      expect(r.audioChannels, h.audioChannels);
+      expect(r.audioBitrate, h.audioBitrate);
+    });
+
+    test('原片档（满档）用 0 哨兵表达源分辨率/源帧率/不缩放', () {
+      final MiningMediaCompression r = MiningMediaCompression.resolve(
+        imageTier: MiningMediaCompression.imageTierNative,
+        audioTier: MiningMediaCompression.audioTierCount - 1,
+      );
+      expect(r.gifFps, 0, reason: '0 = 源帧率');
+      expect(r.gifWidth, 0, reason: '0 = 源分辨率');
+      expect(r.screenshotMaxLongEdge, 0, reason: '0 = 不缩放');
+      expect(r.audioChannels, 2);
+      expect(r.audioBitrate, '192k');
+    });
+
+    test('图片档单调递增（清晰度越高，分辨率/质量/GIF 越大）', () {
+      // 原片档 maxLongEdge=0 是「不缩放」哨兵（语义上最大），单独排除在数值比较外。
+      for (int t = 1; t < MiningMediaCompression.imageTierNative; t++) {
+        final MiningMediaCompression lo =
+            MiningMediaCompression.resolve(imageTier: t - 1, audioTier: 0);
+        final MiningMediaCompression hi =
+            MiningMediaCompression.resolve(imageTier: t, audioTier: 0);
+        expect(hi.screenshotMaxLongEdge,
+            greaterThanOrEqualTo(lo.screenshotMaxLongEdge));
+        expect(hi.gifWidth, greaterThanOrEqualTo(lo.gifWidth));
+        expect(hi.gifFps, greaterThanOrEqualTo(lo.gifFps));
+      }
+    });
+
+    test('resolve 越界档位自动夹取（防损坏偏好值）', () {
+      final MiningMediaCompression under =
+          MiningMediaCompression.resolve(imageTier: -5, audioTier: -3);
+      final MiningMediaCompression zero =
+          MiningMediaCompression.resolve(imageTier: 0, audioTier: 0);
+      expect(under.gifWidth, zero.gifWidth);
+      expect(under.audioBitrate, zero.audioBitrate);
+
+      final MiningMediaCompression over =
+          MiningMediaCompression.resolve(imageTier: 99, audioTier: 99);
+      final MiningMediaCompression top = MiningMediaCompression.resolve(
+        imageTier: MiningMediaCompression.imageTierNative,
+        audioTier: MiningMediaCompression.audioTierCount - 1,
+      );
+      expect(over.screenshotMaxLongEdge, top.screenshotMaxLongEdge);
+      expect(over.audioBitrate, top.audioBitrate);
+    });
+  });
+
+  group('buildFfmpegClipGifArgs 原片档滤镜', () {
+    test('fps>0 & width>0：含 fps 与 scale 滤镜（压缩/高清档）', () {
+      final List<String> args = buildFfmpegClipGifArgs(
+        inputPath: '/tmp/in.mkv',
+        startMs: 1000,
+        endMs: 3000,
+        outputPath: '/tmp/out.gif',
+        fps: 8,
+        width: 480,
+      );
+      final int fi = args.indexOf('-filter_complex');
+      final String filter = args[fi + 1];
+      expect(filter, contains('fps=8'));
+      expect(filter, contains('scale=480:-2:flags=lanczos'));
+      expect(filter, contains('palettegen'));
+    });
+
+    test('fps<=0 & width<=0：省略 fps/scale 滤镜（原片档=源帧率+源分辨率）', () {
+      final List<String> args = buildFfmpegClipGifArgs(
+        inputPath: '/tmp/in.mkv',
+        startMs: 1000,
+        endMs: 3000,
+        outputPath: '/tmp/out.gif',
+        fps: 0,
+        width: 0,
+      );
+      final int fi = args.indexOf('-filter_complex');
+      final String filter = args[fi + 1];
+      expect(filter, isNot(contains('fps=')));
+      expect(filter, isNot(contains('scale=')));
+      expect(filter, startsWith('split[s0][s1]'),
+          reason: '原片档滤镜链只剩 palettegen/paletteuse 双遍');
+      expect(filter, contains('palettegen'));
     });
   });
 }

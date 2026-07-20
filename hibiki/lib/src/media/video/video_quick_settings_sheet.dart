@@ -8,6 +8,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
+import 'package:hibiki/src/media/video/video_control_item_presentation.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
@@ -43,6 +44,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.initialDelayMs,
     required this.initialSpeed,
     required this.initialSubtitleObscureMode,
+    required this.initialSecondarySubtitleObscureMode,
     required this.initialSubtitleStyle,
     required this.onSetDelay,
     this.onAutoAlign,
@@ -59,6 +61,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onPreviewSpeed,
     required this.onSetSpeed,
     required this.onSetSubtitleObscureMode,
+    required this.onSetSecondarySubtitleObscureMode,
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
     this.initialRespectAssStyle = true,
@@ -114,6 +117,9 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 当前字幕遮蔽模式三态（TODO-840 Part B：不遮蔽 / 模糊 / 隐藏）。
   final VideoSubtitleObscureMode initialSubtitleObscureMode;
+
+  /// 当前**副字幕**遮蔽模式三态（TODO-1382，独立于主字幕）。
+  final VideoSubtitleObscureMode initialSecondarySubtitleObscureMode;
 
   /// 当前字幕外观样式。
   final VideoSubtitleStyle initialSubtitleStyle;
@@ -174,6 +180,10 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 设字幕遮蔽模式三态（TODO-840 Part B）；即时生效 + 持久化由调用方负责。
   final Future<void> Function(VideoSubtitleObscureMode mode)
       onSetSubtitleObscureMode;
+
+  /// 设**副字幕**遮蔽模式三态（TODO-1382）；即时生效 + 持久化由调用方负责。
+  final Future<void> Function(VideoSubtitleObscureMode mode)
+      onSetSecondarySubtitleObscureMode;
 
   /// 拖动字幕外观滑条时的实时预览（更新页面背后的 overlay，不落盘）。
   final void Function(VideoSubtitleStyle style) onSubtitleStylePreview;
@@ -327,6 +337,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late double _speed = widget.initialSpeed;
   late VideoSubtitleObscureMode _obscureMode =
       widget.initialSubtitleObscureMode;
+  late VideoSubtitleObscureMode _secondaryObscureMode =
+      widget.initialSecondarySubtitleObscureMode;
   late bool _lockWindowAspectRatio = widget.initialLockWindowAspectRatio;
   late VideoFitMode _videoFitMode = widget.initialVideoFitMode;
   late VideoImmersiveMode _immersiveMode = widget.initialImmersiveMode;
@@ -372,6 +384,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 避免每个拖动 tick 都写 DB。null = 未在拖动。
   int? _delayDragMs;
 
+  /// 数值输入框「边键入边生效」的去抖（BUG-918）：用户报「不按回车不更新、backspace 没反应」——
+  /// 原字段只有 [onSubmitted]（Enter）提交、无 [onChanged]，故键入 / 退格不落到延迟上，观感像
+  /// 「输入框没反应」。改为键入即去抖提交（350ms 停手后 [_commitDelay]，与滑条 / ± 按钮同源、
+  /// 实时生效），不再要求按回车。去抖避免逐键提交把字幕来回跳 + OSD 刷屏；[syncField:false]
+  /// 不回写文本，保住光标与退格（回写会把光标弹到行尾、下一次退格看似「没反应」）。
+  Timer? _delayInputDebounce;
+
   /// 一键自动对轴进行中（TODO-701）：按钮显示 spinner 并禁用，防重入。
   bool _autoAligning = false;
 
@@ -396,10 +415,24 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   @override
   void dispose() {
+    _delayInputDebounce?.cancel();
     _rawConfController.dispose();
     _delayController.dispose();
     _danmakuBlockRulesController.dispose();
     super.dispose();
+  }
+
+  /// 数值输入框 [onChanged]：解析成功就去抖 350ms 后走 [_commitDelay] 实时生效（BUG-918），
+  /// 无需回车。空 / 只有正负号等未成形输入解析失败 → 不提交、不回退（保留用户正在敲的中间态）。
+  void _onDelayInputChanged(String raw) {
+    _delayInputDebounce?.cancel();
+    final int? parsed = int.tryParse(raw.trim());
+    if (parsed == null) return;
+    _delayInputDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      // syncField:false —— 键入过程中不回写输入框文本，避免光标弹到行尾、退格错位。
+      _commitDelay(parsed, syncField: false);
+    });
   }
 
   @override
@@ -459,19 +492,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       narrowKey: () => null,
       // TODO-344：四边按 MD3 spacing 放宽，消除「上下左右贴死」。水平用
       // page + gap（24），垂直顶部用 card（16）让内容离 sheet header / 分栏
-      // divider 留出呼吸位，底部叠 card + gap + 键盘 inset。全部走 token，无裸值。
+      // divider 留出呼吸位，底部叠 card + gap + 键盘 inset（共享公式
+      // [HibikiMasterDetailSettingsSheet.paneInsets]）。全部走 token，无裸值。
       narrowPadding: (BuildContext context, BoxConstraints constraints) {
-        final double viewInsetsBottom =
-            MediaQuery.of(context).viewInsets.bottom;
-        final double horizontalInset = tokens.spacing.page + tokens.spacing.gap;
-        final double topInset = tokens.spacing.card;
-        final double bottomInset =
-            tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom;
-        return EdgeInsets.fromLTRB(
-          horizontalInset,
-          topInset,
-          horizontalInset,
-          bottomInset,
+        return HibikiMasterDetailSettingsSheet.paneInsets(
+          context,
+          horizontal: tokens.spacing.page + tokens.spacing.gap,
+          top: tokens.spacing.card,
         );
       },
       narrowChild: (BuildContext context, BoxConstraints constraints) {
@@ -480,29 +507,26 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       // 宽窗顶部横向分类条 + 下方详情上下分栏（TODO-556）——阅读器走左右
       // master-detail，两边发散，故 Column / _buildTopCategoryBar 等留在此回调里。
       wideBuilder: (BuildContext context, BoxConstraints constraints) {
-        final double viewInsetsBottom =
-            MediaQuery.of(context).viewInsets.bottom;
         final double horizontalInset = tokens.spacing.page + tokens.spacing.gap;
         final double topInset = tokens.spacing.card;
-        final double bottomInset =
-            tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom;
         final String selectedId = _subPage ?? 'playback';
         final Color dividerColor = isCupertinoPlatform(context)
             ? CupertinoColors.separator.resolveFrom(context)
             : tokens.surfaces.outline;
         // 顶部分类条 padding：水平 + 顶部按 token 留白，底部留 gap/2 与下方
-        // 分隔线呼吸（不吃 bottomInset，键盘 inset 留给详情区）。
+        // 分隔线呼吸（不吃底部键盘 inset，那份留给详情区）。
         final EdgeInsets wideCategoryPadding = EdgeInsets.fromLTRB(
           horizontalInset,
           topInset,
           horizontalInset,
           tokens.spacing.gap / 2,
         );
-        final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
-          horizontalInset,
-          topInset,
-          horizontalInset,
-          bottomInset,
+        // 详情区四边走共享公式（底部 = card + gap + 键盘 inset）。
+        final EdgeInsets widePrimaryPadding =
+            HibikiMasterDetailSettingsSheet.paneInsets(
+          context,
+          horizontal: horizontalInset,
+          top: topInset,
         );
         // TODO-556：大分类从左栏 master-detail 改成「顶部横向分类 chip 行（固定）
         // + 下方全宽详情（独立滚动）」。顶部 chip 行钉在 sheet 顶部、随详情滚动
@@ -887,7 +911,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     switch (mode) {
       case VideoImmersiveMode.full:
         return t.video_immersive_mode_full;
-      case VideoImmersiveMode.seekAndLookup:
+      case VideoImmersiveMode.shortcutAndLookup:
         return t.video_immersive_mode_seek_lookup;
       case VideoImmersiveMode.lookupOnly:
         return t.video_immersive_mode_lookup_only;
@@ -901,6 +925,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 即时回调 [VideoQuickSettingsSheet.onSetDelay] 落盘+实时生效。
   Future<void> _commitDelay(int next, {bool syncField = true}) async {
     final int clamped = next.clamp(-_subtitleSyncClampMs, _subtitleSyncClampMs);
+    // 权威提交（syncField，即滑条 / ± 按钮 / 回车回写文本的路径）取消任何待触发的键入去抖，
+    // 免得一个陈旧的键入值在按钮点击后姗姗迟到覆盖掉刚设的值（BUG-918）。
+    if (syncField) _delayInputDebounce?.cancel();
     setState(() => _delayMs = clamped);
     if (syncField && _delayController.text != '$clamped') {
       _delayController.text = '$clamped';
@@ -1056,7 +1083,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             labelText: t.video_setting_subtitle_sync_input,
             keyboardType: const TextInputType.numberWithOptions(signed: true),
             textInputAction: TextInputAction.done,
+            // 边键入边去抖生效（BUG-918）：不再要求按回车，退格 / 键入实时反映到延迟。
+            onChanged: _onDelayInputChanged,
             onSubmitted: (String raw) {
+              _delayInputDebounce?.cancel();
               final int? parsed = int.tryParse(raw.trim());
               if (parsed == null) {
                 // 非法输入 → 回退到当前权威值，不改延迟。
@@ -2058,7 +2088,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   }) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final String label = _controlItemLabel(item);
+    final String label = videoControlItemLabel(item, context);
     final Color background =
         highlighted ? cs.primaryContainer : cs.secondaryContainer;
     final Color foreground =
@@ -2085,7 +2115,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 ]
               : null,
         ),
-        child: Icon(_controlItemIcon(item), size: 18, color: foreground),
+        child: Icon(videoControlItemIcon(item), size: 18, color: foreground),
       ),
     );
     return Tooltip(
@@ -2218,146 +2248,6 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         return t.video_control_slot_hidden;
       case VideoControlSlot.topCenter:
         return t.video_control_slot_top_center;
-    }
-  }
-
-  String _controlItemLabel(VideoControlItem item) {
-    final VideoControlButton? legacy = item.legacyButton;
-    if (legacy != null) return _controlButtonLabel(legacy);
-    switch (item) {
-      case VideoControlItem.playPause:
-        return t.video_control_play_pause;
-      case VideoControlItem.back:
-        return MaterialLocalizations.of(context).backButtonTooltip;
-      case VideoControlItem.immersiveLock:
-        return t.video_menu_lock;
-      case VideoControlItem.seekBackward:
-        return t.video_control_seek_backward;
-      case VideoControlItem.seekForward:
-        return t.video_control_seek_forward;
-      case VideoControlItem.frameBackward:
-        return t.shortcut_action_video_previous_frame;
-      case VideoControlItem.frameForward:
-        return t.shortcut_action_video_next_frame;
-      case VideoControlItem.previousCue:
-        return t.video_control_previous_cue;
-      case VideoControlItem.nextCue:
-        return t.video_control_next_cue;
-      case VideoControlItem.fullscreen:
-        return t.video_control_fullscreen;
-      case VideoControlItem.screenshot:
-        return t.video_control_screenshot;
-      case VideoControlItem.clipExport:
-        return t.video_clip_export;
-      case VideoControlItem.subtitleTrack:
-        return t.video_control_subtitle_track;
-      case VideoControlItem.audioTrack:
-        return t.video_control_audio_track;
-      case VideoControlItem.previousEpisode:
-        return t.video_prev_episode;
-      case VideoControlItem.nextEpisode:
-        return t.video_next_episode;
-      case VideoControlItem.episodeList:
-        return t.video_control_episode_list;
-      case VideoControlItem.previousChapter:
-        return t.shortcut_action_video_previous_chapter;
-      case VideoControlItem.nextChapter:
-        return t.shortcut_action_video_next_chapter;
-      case VideoControlItem.chapterList:
-        return t.video_chapters;
-      case VideoControlItem.volume:
-        return t.video_control_volume;
-      case VideoControlItem.title:
-        return t.video_control_title;
-      case VideoControlItem.positionIndicator:
-      case VideoControlItem.speed:
-      case VideoControlItem.subtitleList:
-      case VideoControlItem.favoriteSentence:
-      case VideoControlItem.settings:
-        return item.storageValue;
-    }
-  }
-
-  IconData _controlItemIcon(VideoControlItem item) {
-    final VideoControlButton? legacy = item.legacyButton;
-    if (legacy != null) return _controlButtonIcon(legacy);
-    switch (item) {
-      case VideoControlItem.playPause:
-        return Icons.play_arrow_rounded;
-      case VideoControlItem.back:
-        return Icons.arrow_back;
-      case VideoControlItem.immersiveLock:
-        return Icons.lock_outline;
-      case VideoControlItem.seekBackward:
-        return Icons.fast_rewind;
-      case VideoControlItem.seekForward:
-        return Icons.fast_forward;
-      case VideoControlItem.frameBackward:
-        return Icons.arrow_left;
-      case VideoControlItem.frameForward:
-        return Icons.arrow_right;
-      case VideoControlItem.previousCue:
-        return Icons.skip_previous;
-      case VideoControlItem.nextCue:
-        return Icons.skip_next;
-      case VideoControlItem.fullscreen:
-        return Icons.fullscreen;
-      case VideoControlItem.screenshot:
-        return Icons.photo_camera_outlined;
-      case VideoControlItem.clipExport:
-        return Icons.movie_creation_outlined;
-      case VideoControlItem.subtitleTrack:
-        return Icons.subtitles;
-      case VideoControlItem.audioTrack:
-        return Icons.audiotrack;
-      case VideoControlItem.previousEpisode:
-        return Icons.skip_previous_outlined;
-      case VideoControlItem.nextEpisode:
-        return Icons.skip_next_outlined;
-      case VideoControlItem.episodeList:
-        return Icons.playlist_play;
-      case VideoControlItem.previousChapter:
-        return Icons.first_page;
-      case VideoControlItem.nextChapter:
-        return Icons.last_page;
-      case VideoControlItem.chapterList:
-        return Icons.format_list_numbered;
-      case VideoControlItem.volume:
-        return Icons.volume_up_outlined;
-      case VideoControlItem.title:
-        return Icons.title;
-      case VideoControlItem.positionIndicator:
-      case VideoControlItem.speed:
-      case VideoControlItem.subtitleList:
-      case VideoControlItem.favoriteSentence:
-      case VideoControlItem.settings:
-        return Icons.tune;
-    }
-  }
-
-  String _controlButtonLabel(VideoControlButton button) {
-    switch (button) {
-      case VideoControlButton.speed:
-        return t.video_control_speed;
-      case VideoControlButton.subtitleList:
-        return t.video_control_subtitle_list;
-      case VideoControlButton.favoriteSentence:
-        return t.video_control_favorite_sentence;
-      case VideoControlButton.settings:
-        return t.video_control_settings;
-    }
-  }
-
-  IconData _controlButtonIcon(VideoControlButton button) {
-    switch (button) {
-      case VideoControlButton.speed:
-        return Icons.speed_outlined;
-      case VideoControlButton.subtitleList:
-        return Icons.format_list_bulleted;
-      case VideoControlButton.favoriteSentence:
-        return Icons.star_border_rounded;
-      case VideoControlButton.settings:
-        return Icons.tune;
     }
   }
 
@@ -2496,6 +2386,36 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               onChanged: (VideoSubtitleObscureMode mode) async {
                 setState(() => _obscureMode = mode);
                 await widget.onSetSubtitleObscureMode(mode);
+              },
+            ),
+            // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）。快捷键 Shift+G 循环、
+            // Shift+H 隐藏；此处即时回写本地态 + 经回调落盘并实时刷新副字幕层。
+            AdaptiveSettingsSegmentedRow<VideoSubtitleObscureMode>(
+              title: t.video_setting_secondary_subtitle_obscure,
+              subtitle: t.video_setting_secondary_subtitle_obscure_hint,
+              icon: Icons.blur_on_outlined,
+              controlBelow: true,
+              segments: <ButtonSegment<VideoSubtitleObscureMode>>[
+                ButtonSegment<VideoSubtitleObscureMode>(
+                  value: VideoSubtitleObscureMode.none,
+                  label: Text(t.video_setting_subtitle_obscure_none),
+                  tooltip: t.video_setting_subtitle_obscure_none,
+                ),
+                ButtonSegment<VideoSubtitleObscureMode>(
+                  value: VideoSubtitleObscureMode.blur,
+                  label: Text(t.video_setting_subtitle_obscure_blur),
+                  tooltip: t.video_setting_subtitle_obscure_blur,
+                ),
+                ButtonSegment<VideoSubtitleObscureMode>(
+                  value: VideoSubtitleObscureMode.hide,
+                  label: Text(t.video_setting_subtitle_obscure_hide),
+                  tooltip: t.video_setting_subtitle_obscure_hide,
+                ),
+              ],
+              selected: _secondaryObscureMode,
+              onChanged: (VideoSubtitleObscureMode mode) async {
+                setState(() => _secondaryObscureMode = mode);
+                await widget.onSetSecondarySubtitleObscureMode(mode);
               },
             ),
           ],

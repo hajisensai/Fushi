@@ -53,27 +53,3 @@ class PrepareDictionaryParams extends IsolateParams {
     alertSendPort.send(message);
   }
 }
-
-class DeleteDictionaryParams extends IsolateParams {
-  DeleteDictionaryParams({
-    required super.sendPort,
-    required super.directoryPath,
-    this.dictionaryName,
-  });
-
-  final String? dictionaryName;
-}
-
-class UpdateDictionaryHistoryParams extends IsolateParams {
-  UpdateDictionaryHistoryParams({
-    required this.resultId,
-    required this.newPosition,
-    required this.maximumDictionaryHistoryItems,
-    required super.sendPort,
-    required super.directoryPath,
-  });
-
-  final int resultId;
-  final int newPosition;
-  final int maximumDictionaryHistoryItems;
-}

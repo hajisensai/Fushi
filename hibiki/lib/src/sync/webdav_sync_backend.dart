@@ -3,20 +3,24 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
 
-class WebDavSyncBackend extends SyncBackend {
+class WebDavSyncBackend extends SyncBackend
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
   WebDavSyncBackend._();
   static final WebDavSyncBackend instance = WebDavSyncBackend._();
 
   WebDavOps? _ops;
   String? _username;
-  String? _rootFolderId;
-  final Map<String, String> _titleToFolderId = {};
+
+  // 路径式后端：folderId 是裸路径前缀，必须以 `/` 结尾（BUG-845）。
+  @override
+  String normalizeFolderId(String id) => ensureFolderIdTrailingSlash(id);
 
   // ── Auth ──────────────────────────────────────────────────────────
 
@@ -77,11 +81,11 @@ class WebDavSyncBackend extends SyncBackend {
 
   @override
   Future<String> findOrCreateRootFolder() async {
-    if (_rootFolderId != null) return _rootFolderId!;
+    if (rootFolderIdCache != null) return rootFolderIdCache!;
 
     final path = '${_ops!.baseUrl}/$kSyncRootFolderName/';
     await _ops!.ensureCollection(path);
-    _rootFolderId = path;
+    rootFolderIdCache = path;
     return path;
   }
 
@@ -102,17 +106,17 @@ class WebDavSyncBackend extends SyncBackend {
   }) async {
     final sanitized = requireBookFolderName(bookTitle);
 
-    if (_titleToFolderId.containsKey(sanitized)) {
+    if (folderIdCache.containsKey(sanitized)) {
       // A cached id may have entered slash-less from a server PROPFIND href
       // (some WebDAV servers omit the trailing slash on collection hrefs).
       // Normalize on return so `folderId + fileName` never fuses the file into
       // the root as `<title>audioBook_…` (BUG-845).
-      return ensureFolderIdTrailingSlash(_titleToFolderId[sanitized]!);
+      return ensureFolderIdTrailingSlash(folderIdCache[sanitized]!);
     }
 
     final path = '$rootFolderId${Uri.encodeComponent(sanitized)}/';
     await _ops!.ensureCollection(path);
-    _titleToFolderId[sanitized] = path;
+    folderIdCache[sanitized] = path;
 
     if (coverData != null) {
       try {
@@ -147,26 +151,10 @@ class WebDavSyncBackend extends SyncBackend {
     );
   }
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 WebDAV 的下载原语（size-capped GET + jsonDecode，见 WebDavOps）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _ops!.downloadJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _ops!.downloadJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _ops!.downloadJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _ops!.downloadJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -243,29 +231,14 @@ class WebDavSyncBackend extends SyncBackend {
     final response = await request.close();
     _ops!.checkStatus(response.statusCode, 'GET $fileId');
 
-    final contentLength = response.contentLength;
-    final sink = destination.openWrite();
-    int bytesReceived = 0;
-    bool success = false;
-    try {
-      await for (final chunk in response) {
-        sink.add(chunk);
-        bytesReceived += chunk.length;
-        if (contentLength > 0) {
-          onProgress?.call(bytesReceived / contentLength);
-        }
-      }
-      success = true;
-    } finally {
-      await sink.close();
-      if (!success) {
-        try {
-          destination.deleteSync();
-        } catch (e) {
-          debugPrint('[webdav] failed to clean up temp file: $e');
-        }
-      }
-    }
+    await writeSyncStreamToFile(
+      source: response,
+      destination: destination,
+      totalBytes: response.contentLength,
+      onProgress: onProgress,
+      onCleanupError: (e) =>
+          debugPrint('[webdav] failed to clean up temp file: $e'),
+    );
   }
 
   @override
@@ -277,55 +250,10 @@ class WebDavSyncBackend extends SyncBackend {
   }
 
   // ── Cache ─────────────────────────────────────────────────────────
-
-  @override
-  void clearCache() {
-    _rootFolderId = null;
-    _titleToFolderId.clear();
-  }
-
-  @override
-  void restoreCache({
-    String? rootFolderId,
-    Map<String, String>? titleToFolderId,
-  }) {
-    // Persisted ids may have been stored slash-less (from a server href); heal
-    // them on load so every cached folderId ends with `/` (BUG-845).
-    _rootFolderId = rootFolderId == null
-        ? null
-        : ensureFolderIdTrailingSlash(rootFolderId);
-    if (titleToFolderId != null) {
-      titleToFolderId.forEach((title, id) {
-        _titleToFolderId[title] = ensureFolderIdTrailingSlash(id);
-      });
-    }
-  }
-
-  @override
-  String? get cachedRootFolderId => _rootFolderId;
-
-  @override
-  Map<String, String> get cachedFolderIds => Map.unmodifiable(_titleToFolderId);
-
-  @override
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final f in folders) {
-      // listBooks maps DriveFile.id = the server's collection href, which some
-      // WebDAV servers return WITHOUT a trailing slash. Normalize before caching
-      // so a later `folderId + fileName` write cannot spill into the root
-      // (BUG-845).
-      _titleToFolderId[f.name] = ensureFolderIdTrailingSlash(f.id);
-    }
-  }
-
-  @override
-  void evictFolderId(String folderId) {
-    // 按值反查逐出书名→folderId 缓存里指向 [folderId] 的条目，消除删书后陈旧态
-    // （BUG-202）。路径式后端的 folderId 是按名派生的路径，逐出仍是廉价正确性。
-    // 缓存值已统一规范化为带尾斜杠（BUG-845），入参也归一后再比，避免尾斜杠差异漏逐出。
-    final normalized = ensureFolderIdTrailingSlash(folderId);
-    _titleToFolderId.removeWhere((_, id) => id == normalized);
-  }
+  //
+  // 缓存字段 + clearCache / restoreCache / cachedRootFolderId / cachedFolderIds
+  // / cacheBookFolderIds / evictFolderId 六方法收敛进 [SyncFolderCache] mixin；
+  // 本后端仅覆写 [normalizeFolderId] 保持尾斜杠规范化（BUG-845，见类顶部）。
 
   // ── SyncAssetStore ────────────────────────────────────────────────
 
@@ -362,34 +290,6 @@ class WebDavSyncBackend extends SyncBackend {
     final path = '$namespaceId${Uri.encodeComponent(name)}';
     if (!await _ops!.headFile(path)) return null;
     return AssetEntry(id: path, name: name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) {
-    return uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) {
-    return downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
   }
 
   @override

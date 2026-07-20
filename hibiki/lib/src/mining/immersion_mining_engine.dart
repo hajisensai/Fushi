@@ -17,6 +17,7 @@ typedef GifExtractor = Future<String?> Function({
   int fps,
   int width,
   FfmpegFailureReporter? onFailure,
+  String? tlsPinSha256,
 });
 typedef AudioExtractor = Future<String?> Function({
   required String inputPath,
@@ -28,12 +29,14 @@ typedef AudioExtractor = Future<String?> Function({
   FfmpegFailureReporter? onFailure,
   int audioChannels,
   String audioBitrate,
+  String? tlsPinSha256,
 });
 typedef FrameExtractor = Future<String?> Function({
   required String inputPath,
   required String outputPath,
   double atSeconds,
   FfmpegFailureReporter? onFailure,
+  String? tlsPinSha256,
 });
 
 /// TODO-1314（B5）：把远端 audio-only DASH 流物化到本地临时文件（yt-dlp 式 range 分片下载）
@@ -115,6 +118,7 @@ class ImmersionMiningEngine {
         fps: compression.gifFps,
         width: compression.gifWidth,
         onFailure: onFailure,
+        tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
     }
 
@@ -126,6 +130,7 @@ class ImmersionMiningEngine {
         outputPath: '$tempDir/immersion_frame.jpg',
         atSeconds: req.clipStartMs / 1000.0,
         onFailure: onFailure,
+        tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
     }
 
@@ -134,7 +139,9 @@ class ImmersionMiningEngine {
       if (req.stillFallback == null) return null;
       final Uint8List? shot = await req.stillFallback!();
       if (shot == null) return null;
-      final Uint8List small = downsampleCardScreenshot(
+      // BUG-933：降采样（decode/resize/encodeJpg）卸到后台 isolate，避免 1080p/4K
+      // 截图的纯 Dart CPU 重活阻塞 UI 线程（制卡「未响应」根因之一）。
+      final Uint8List small = await downsampleCardScreenshotAsync(
         shot,
         maxLongEdge: compression.screenshotMaxLongEdge,
         quality: compression.screenshotQuality,
@@ -204,6 +211,9 @@ class ImmersionMiningEngine {
         audioChannels: compression.audioChannels,
         audioBitrate: compression.audioBitrate,
         onFailure: onFailure,
+        // BUG-891：cutInput 若是物化后的本地文件（YouTube）pin 被 buildFfmpegRemoteInputArgs
+        // 的远端判定忽略；Hibiki muxed 时 cutInput 是远端 https host，pin 生效。
+        tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
       // 物化的整段音频临时文件用完即删（裁好的 immersion_audio.* 才是产物）。
       if (materialized != null) {
@@ -243,6 +253,7 @@ class ImmersionMiningEngine {
       sasayakiAudioPath: audioPath,
       source: req.source,
       bookTitleTag: req.bookTitleTag,
+      collectionTag: req.collectionTag,
     );
 
     final MineOutcome outcome = req.updateNoteId == null

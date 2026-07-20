@@ -1,0 +1,17 @@
+## BUG-933 · 制卡媒体处理阻塞UI线程未响应
+- **报告**：2026-07-20（用户：制卡的时候 anki 总会未响应感觉）
+- **真实性**：✅ 真 bug。制卡媒体处理链**整条在 UI isolate（main）同步跑 CPU 重活**，无一处 `compute()`/`Isolate.run`，几 MB 媒体触发几十~几百 ms 纯 Dart 计算堵住事件循环。根因三处：
+  - 手写 SHA256 逐字节循环算媒体哈希：`packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart:186` `_sha256Hex`（经 `hibikiAnkiMediaFilenameForBytes:84`），被 AnkiConnect 的 `_storeLocalMedia`/`_storeRemoteAudio` 与 AnkiDroid 的 `_preferredMediaNameForFile:584`/`_addRemoteAudio` 同步调用。
+  - 截图 JPEG 解码/缩放/重编码（`package:image` 纯 Dart）：`hibiki/lib/src/utils/misc/card_screenshot_downsampler.dart:48` `downsampleCardScreenshot`，被 `hibiki/lib/src/mining/immersion_mining_engine.dart:137`（视频制卡封面）与 `reader_hibiki/chrome.part.dart:681`（选区插图）同步 await。
+  - base64 编码大媒体：`ankiconnect_repository.dart` 的 `_store*Media`（`base64Encode(bytes)`）。
+  - 排除项：ffmpeg 走子进程/FFI 原生线程、AnkiConnect HTTP / AnkiDroid platform channel / addNote 均正确 await，是异步 I/O（非 jank）；媒体读取用异步 `readAsBytes()`。
+- **[x] ① 已修复** — 把三处 CPU 重活卸到后台 isolate（对齐既有 `encodeClipTextFrameAsJpgAsync` 范式）：
+  - 新增 `downsampleCardScreenshotAsync`（`card_screenshot_downsampler.dart`，`Isolate.run` 包纯函数），改上述两调用点 await 它。
+  - 新增 `hibikiAnkiMediaEncodeForUploadAsync`（一次隔离算完「sha256 文件名+base64」，同段字节只跨隔离拷一次）、`hibikiAnkiMediaFilenameForBytesAsync`、`hibikiAnkiBase64EncodeAsync`（`ankiconnect_repository.dart`），改 AnkiConnect `_storeLocalMedia`/`_storeRemoteAudio`/`_storeDictionaryMedia` 与 AnkiDroid `_preferredMediaNameForFile`/`_addRemoteAudio` 接入。
+  - 阈值兜底 `_isolateMediaThresholdBytes = 64KB`：词典外字（单卡数十个、每个几 KB）走同步分支，避免为小图各起一个 isolate 的风暴/资源挤占；封面/音频等大媒体才卸后台。
+  - 提交哈希：（见 PR）
+- **[x] ② 已加自动化测试** —
+  - `packages/hibiki_anki/test/mining_isolate_offload_test.dart`：三个异步 helper 结果与同步直算逐字节一致（大媒体 200KB 真走 `Isolate.run`，小媒体走同步分支）+ 源码扫描守卫（AnkiDroid 不再裸调同步 sha256/base64；AnkiConnect 调用点已接入 Async 变体）。
+  - `hibiki/test/utils/card_screenshot_downsampler_test.dart`：`downsampleCardScreenshotAsync` 大图后台降采样长边钉 1000、空/坏字节保守回退（内容一致）。
+  - 既有 `packages/hibiki_anki/test/media_filename_guard_test.dart` 的 `mineEntry` 端到端测试已过新异步路径（回归守卫）。
+- **备注**：BUG 编号 931→932→933 两次改号（931 被 PR#275、932 被 PR#276 草稿占用，本机并发撞号）。

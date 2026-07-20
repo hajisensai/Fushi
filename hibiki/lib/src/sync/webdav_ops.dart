@@ -271,15 +271,9 @@ class WebDavOps {
       '</d:prop>'
       '</d:propfind>';
 
-  static String guessContentType(String fileName) {
-    final lower = fileName.toLowerCase();
-    if (lower.endsWith('.epub')) return 'application/epub+zip';
-    if (lower.endsWith('.m4b') || lower.endsWith('.m4a')) return 'audio/mp4';
-    if (lower.endsWith('.mp3')) return 'audio/mpeg';
-    if (lower.endsWith('.ogg')) return 'audio/ogg';
-    if (lower.endsWith('.flac')) return 'audio/flac';
-    return 'application/octet-stream';
-  }
+  // MIME 猜测收敛到 sync_utils.guessSyncContentType；保留薄 shim 供既有调用方。
+  static String guessContentType(String fileName) =>
+      guessSyncContentType(fileName);
 
   // HBK-AUDIT-085: delegate to the single canonical matcher in sync_utils so
   // file-matching semantics live in one place. Kept as a thin shim only for the

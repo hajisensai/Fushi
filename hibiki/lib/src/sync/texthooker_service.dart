@@ -50,6 +50,7 @@ class TexthookerLineEntry {
     this.nativeTextThreadId,
     this.audioStatus = TexthookerLineAudioStatus.unavailable,
     this.audioBackend,
+    this.audioResourceId,
     this.audioDurationMs,
     this.fallbackReason,
   });
@@ -67,14 +68,20 @@ class TexthookerLineEntry {
   final DateTime receivedAt;
   final TexthookerLineAudioStatus audioStatus;
   final String? audioBackend;
+
+  /// 与本句时间戳精确配对的游戏资源文件名。只保存 dump 目录内的 basename，
+  /// 历史句子制卡时可直接定位同一份资源，避免重新扫描后误配到较新的语音。
+  final String? audioResourceId;
   final int? audioDurationMs;
   final String? fallbackReason;
 
   TexthookerLineEntry copyWith({
     TexthookerLineAudioStatus? audioStatus,
     String? audioBackend,
+    String? audioResourceId,
     int? audioDurationMs,
     String? fallbackReason,
+    bool clearAudioResourceId = false,
     bool clearFallbackReason = false,
   }) {
     return TexthookerLineEntry(
@@ -91,6 +98,8 @@ class TexthookerLineEntry {
       receivedAt: receivedAt,
       audioStatus: audioStatus ?? this.audioStatus,
       audioBackend: audioBackend ?? this.audioBackend,
+      audioResourceId:
+          clearAudioResourceId ? null : audioResourceId ?? this.audioResourceId,
       audioDurationMs: audioDurationMs ?? this.audioDurationMs,
       fallbackReason:
           clearFallbackReason ? null : fallbackReason ?? this.fallbackReason,
@@ -98,10 +107,10 @@ class TexthookerLineEntry {
   }
 }
 
-/// 收到的 texthooker 结构化文本行 buffer。
-///
-/// [lines] 保留旧字符串接口；捕获工作台与句音配对使用 [entries] 的稳定 id、来源、序号
-/// 和时间戳，重复台词不会再因以 sentence 字符串作 key 而互相覆盖。
+/// 收到的 texthooker 结构化文本行 buffer。单例 + [ChangeNotifier]，
+/// 外部 texthooker 软件可经 WebSocket 接入，游戏 Hook 则追加带线程与时间戳的行。
+/// [lines] 保留旧字符串接口；捕获工作台与句音配对使用 [entries] 的稳定 id、
+/// 来源、序号和时间戳，重复台词不会再因以 sentence 字符串作 key 而相互覆盖。
 class TexthookerService extends ChangeNotifier {
   TexthookerService._();
   static final TexthookerService instance = TexthookerService._();
@@ -120,6 +129,14 @@ class TexthookerService extends ChangeNotifier {
       List<TexthookerLineEntry>.unmodifiable(_entries);
   List<String> get lines =>
       List<String>.unmodifiable(_entries.map((entry) => entry.text));
+
+  /// 按稳定行 id 精确取回捕获项。找不到时返回 null，调用方不得回退到最新行。
+  TexthookerLineEntry? entryById(String id) {
+    for (final TexthookerLineEntry entry in _entries.reversed) {
+      if (entry.id == id) return entry;
+    }
+    return null;
+  }
 
   /// 当前会话已发现的可选文本线程，最近活跃的排在前面。
   ///
@@ -224,16 +241,20 @@ class TexthookerService extends ChangeNotifier {
     String id, {
     required TexthookerLineAudioStatus status,
     String? backend,
+    String? resourceId,
     int? durationMs,
     String? fallbackReason,
+    bool clearResourceId = false,
   }) {
     final int index = _entries.indexWhere((entry) => entry.id == id);
     if (index < 0) return false;
     _entries[index] = _entries[index].copyWith(
       audioStatus: status,
       audioBackend: backend,
+      audioResourceId: resourceId,
       audioDurationMs: durationMs,
       fallbackReason: fallbackReason,
+      clearAudioResourceId: clearResourceId,
       clearFallbackReason: fallbackReason == null,
     );
     notifyListeners();

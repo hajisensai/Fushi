@@ -30,6 +30,11 @@ function makeEl(tag) {
     getAttribute() { return null; },
     classList: { add(c) { el.className += ' ' + c; } },
     addEventListener() {},
+    attachShadow() {
+      const shadow = makeEl('shadow-root');
+      shadow.getElementById = (id) => findById(shadow, id);
+      return shadow;
+    },
     appendChild(child) { child.parentNode = el; el.children.push(child); return child; },
     insertBefore(child) { child.parentNode = el; el.children.push(child); return child; },
     removeChild(child) {
@@ -106,6 +111,7 @@ function loadAndLookup() {
   sandbox.chrome = {
     runtime: {
       id: 'test-ext-id',
+      getURL: (rel) => `chrome-extension://test-ext-id/${rel}`,
       lastError: null,
       onMessage: { addListener() {} },
       sendMessage: (msg, cb) => {

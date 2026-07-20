@@ -69,3 +69,21 @@ Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别�
 - **pub-cache 补丁**：`ci/apply-patches.sh` 把 `ci/patches/{hosted,git}/<包-版本>/` 覆盖到 pub cache，按精确版本号命名；版本漂移就跳过并警告（HBK-AUDIT-005）。每次清 cache 或 `pub get` 后要重跑（bootstrap 已含）。
 
 > `carousel_slider` / `fading_edge_scrollview` / `network_to_file_image` 两边都有：`dependency_overrides` 生效，pub-cache 同名补丁因版本对不上被自动跳过，以 vendored 为准。
+
+## galgame 引擎-hook 注入器 helper（独立分发）
+
+galgame 一键制卡的引擎-hook 注入器（`native/galgame_voice_hook`：injector.exe + hook.dll +
+vendored LunaHook/Host DLL）含 `CreateRemoteThread`/`WriteProcessMemory`，**必被杀软报毒**，故
+与 `hibiki.exe` **物理隔离、单独构建/分发**，绝不进主 app 安装包（维持主包分发口碑）。
+
+- **构建/发布**：workflow `.github/workflows/voice-hook-helper.yml`，**仅手动** `workflow_dispatch`
+  （windows-2022）。cmake 编 x64（`-A x64`）+ x86（`-A Win32`），每架构打 `voice_hook_<arch>.zip`
+  （4 个文件平铺）+ `.sha256` 侧车，`softprops/action-gh-release@v3` upsert 到**固定 tag
+  `voice-hook-helper`** 的 **prerelease、`make_latest: false`**（遵守发布通道硬规则；push 不建 Latest）。
+- **发布守卫**：`tool/check_release_policy.ps1` 只扫 `release.yml` / `release-desktop.yml`，此独立
+  workflow 天然豁免；固定 tag + prerelease + 非 Latest 不违反任何红线。
+- **稳定下载 URL**（按 tag 而非 run 号）：
+  `https://github.com/<owner>/<repo>/releases/download/voice-hook-helper/voice_hook_<arch>.zip`（+ `.sha256`）。
+- **app 端按需下载**：开 galgame 需要注入器却缺失时，`GalgameHelperInstaller`（`hibiki/lib/src/mining/
+  galgame_helper_installer.dart`）弹确认对话框（标大小）→ 下载对应架构 zip（走系统代理 + gh 镜像回退
+  + sha256 校验）→ 解压到 `<app目录>\voice_hook\<arch>\` → 继续启动。幂等：已存在跳过。

@@ -253,11 +253,13 @@ class _SubtitleWaveformAlignPanelState
 /// 弹出（showDialog）。
 ///
 /// **交互模型（平移查看 vs 调轴，物理分离、永不冲突）**：
-/// - **横向拖动波形 = 平移查看**：波形按固定像素密度铺开在一条可横向滚动的时间轴上，
-///   拖动 / 滚轮平移查看不同时间段（默认只抽了前 N 分钟）。可用缩放按钮改密度看细节。
-/// - **调轴 = 底部专用控件条**：滑条（细调）/ 步进 / 归零 / 数值输入，改动经 [onCommitDelay]
-///   写回上方权威 `_delayMs`（同源、零第二套状态）。波形上的 cue 线随之**实时平移**——
-///   用户滚到有语音的段落，拖底部滑条让 cue 线对齐波形峰值即完成对轴。
+/// - **横向拖动上方波形区 = 平移查看**：波形按固定像素密度铺开在一条可横向滚动的时间轴
+///   上，拖动 / 滚轮平移查看不同时间段（默认只抽了前 N 分钟）。可用缩放按钮改密度看细节。
+/// - **横向拖动波形下方的字幕条 = 直接对轴**：抓住字幕块沿时间轴左右滑，把它对到语音波峰
+///   即完成对轴（整体延迟平移，cue 线 / 字幕块 / 列表实时跟手，松手落盘）。这与上一条的
+///   平移查看落在不同 widget、不同拖动手势上，永不冲突——省得为了 ±50ms 滚到底用控件条。
+/// - **调轴控件条（细调兜底）**：滑条 / 步进 / 归零 / 数值输入，改动经 [onCommitDelay]
+///   写回上方权威 `_delayMs`（同源、零第二套状态），与拖字幕条对轴同一个延迟值。
 ///
 /// 两类操作作用在不同 widget（波形区 = 滚动手势；控件条 = 独立控件），故横向拖查看永不
 /// 误触调轴，反之亦然。
@@ -335,8 +337,12 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// 本地权威延迟（毫秒，乐观更新）。改动经 [_commit] 写回上方 `_delayMs`。
   late int _delayMs = widget.initialDelayMs;
 
-  /// 拖动滑条时的临时预览值（松手才 [_commit] 落盘）。null = 未拖动。
+  /// 拖动滑条 / 波形上拖字幕条时的临时预览值（松手才 [_commit] 落盘）。null = 未拖动。
   int? _dragMs;
+
+  /// 直接在波形上横拖字幕条对轴时的精确累计延迟（毫秒，含小数）。落 [_dragMs]（取整）前
+  /// 保留亚像素精度，避免每帧小位移取整丢步。null = 未在拖字幕条。
+  double? _cueDragMsPrecise;
 
   /// TODO-1316：波形对轴视图内自动对轴进行中；true 时按钮切 spinner 并禁用（防重入）。
   bool _autoAligning = false;
@@ -352,6 +358,11 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// 数值输入框控制器（与滑条 / 步进共享同一权威 [_delayMs]，经 [_commit] 同步）。
   late final TextEditingController _delayController =
       TextEditingController(text: '${widget.initialDelayMs}');
+
+  /// 数值输入框「边键入边生效」去抖（BUG-918）：与 [VideoQuickSettingsSheet] 同款——原字段只在
+  /// [onSubmitted]（Enter）提交、无 [onChanged]，用户报「不按回车不更新、backspace 没反应」。改为
+  /// 键入即去抖 350ms 后 [_commit]，无需回车；[syncField:false] 不回写文本，保住光标与退格。
+  Timer? _delayInputDebounce;
 
   final ScrollController _scrollController = ScrollController();
 
@@ -516,6 +527,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   @override
   void dispose() {
+    _delayInputDebounce?.cancel();
     _positionTicker?.cancel();
     _positionTicker = null;
     _livePositionMs.dispose();
@@ -526,9 +538,25 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     super.dispose();
   }
 
+  /// 数值输入框 [onChanged]：解析成功就去抖 350ms 后 [_commit] 实时生效（BUG-918），无需回车。
+  /// 空 / 只有正负号等未成形输入解析失败 → 不提交、不回退，保留用户正在敲的中间态。
+  void _onDelayInputChanged(String raw) {
+    _delayInputDebounce?.cancel();
+    final int? parsed = int.tryParse(raw.trim());
+    if (parsed == null) return;
+    _delayInputDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      // syncField:false —— 键入过程中不回写输入框文本，避免光标弹到行尾、退格错位。
+      _commit(parsed, syncField: false);
+    });
+  }
+
   /// 调轴权威提交：clamp -> 本地 setState -> 可选回写输入框 -> 回调写回上方 `_delayMs`。
   Future<void> _commit(int next, {bool syncField = true}) async {
     final int clamped = next.clamp(-_clampMs, _clampMs);
+    // 权威提交（滑条 / 步进 / 回车回写文本的路径）取消待触发的键入去抖，免得陈旧键入值
+    // 迟到覆盖刚设的值（BUG-918）。
+    if (syncField) _delayInputDebounce?.cancel();
     if (mounted) {
       setState(() {
         _delayMs = clamped;
@@ -880,10 +908,48 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         child: _buildCueChip(theme, cs, cue, text, delayMs),
       ));
     }
-    return SizedBox(
+    final Widget stripBody = SizedBox(
       width: contentWidth,
       height: _stripHeight,
       child: Stack(clipBehavior: Clip.hardEdge, children: chips),
+    );
+    // 直接在波形上横拖底部字幕条对轴（用户反馈：不想滚到底用 +/-）：横向拖 = 平移整体
+    // 延迟，波形上的 cue 线 / 字幕块 / 下方字幕列表高亮随之实时移动，松手 [_commit] 落盘并
+    // 实时生效——与「拖上方波形区 = 平移查看时间轴」物理分离（不同 widget、不同拖动手势），
+    // 永不冲突。只在可调轴（[SubtitleWaveformZoomView.onCommitDelay] 非空）且时间窗有效时挂。
+    if (widget.onCommitDelay == null ||
+        widget.windowEndMs <= 0 ||
+        contentWidth <= 0) {
+      return stripBody;
+    }
+    // 像素↔毫秒：整条时间轴 windowEndMs 铺在 contentWidth 上，1 逻辑像素 = 该毫秒数。
+    final double msPerPx = widget.windowEndMs / contentWidth;
+    return MouseRegion(
+      cursor: SystemMouseCursors.grab,
+      child: GestureDetector(
+        key: const ValueKey<String>('subtitle-waveform-cue-strip'),
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (DragStartDetails _) {
+          _cueDragMsPrecise = (_dragMs ?? _delayMs).toDouble();
+          setState(() => _dragMs = _dragMs ?? _delayMs);
+        },
+        onHorizontalDragUpdate: (DragUpdateDetails details) {
+          // 向右拖字幕块 → 字幕出现更晚（延迟增大）；块跟手移动。
+          final double base = _cueDragMsPrecise ?? _delayMs.toDouble();
+          final double next = base + details.delta.dx * msPerPx;
+          _cueDragMsPrecise = next;
+          setState(
+              () => _dragMs = next.round().clamp(-_clampMs, _clampMs).toInt());
+        },
+        onHorizontalDragEnd: (DragEndDetails _) {
+          final int? preview = _dragMs;
+          _cueDragMsPrecise = null;
+          if (preview == null) return;
+          setState(() => _dragMs = null);
+          _commit(preview);
+        },
+        child: stripBody,
+      ),
     );
   }
 
@@ -1231,7 +1297,10 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           labelText: t.video_setting_subtitle_sync_input,
           keyboardType: const TextInputType.numberWithOptions(signed: true),
           textInputAction: TextInputAction.done,
+          // 边键入边去抖生效（BUG-918）：不再要求按回车，退格 / 键入实时反映到延迟。
+          onChanged: _onDelayInputChanged,
           onSubmitted: (String raw) {
+            _delayInputDebounce?.cancel();
             final int? parsed = int.tryParse(raw.trim());
             if (parsed == null) {
               _delayController.text = '$_delayMs';

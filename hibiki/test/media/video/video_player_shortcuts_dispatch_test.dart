@@ -31,11 +31,19 @@ VideoPlayerShortcutActions _recordingVideoActions(List<String> log) {
     toggleSubtitleBlur: () => record('toggleSubtitleBlur'),
     cycleSubtitleObscure: () => record('cycleSubtitleObscure'),
     toggleSubtitleHide: () => record('toggleSubtitleHide'),
+    cycleSecondarySubtitleObscure: () =>
+        record('cycleSecondarySubtitleObscure'),
+    toggleSecondarySubtitleHide: () => record('toggleSecondarySubtitleHide'),
     toggleFavoriteSentence: () => record('toggleFavoriteSentence'),
     replayCurrentSubtitle: () => record('replayCurrentSubtitle'),
     replayPreviousSubtitle: () => record('replayPreviousSubtitle'),
     previousChapter: () => record('previousChapter'),
     nextChapter: () => record('nextChapter'),
+    openSubtitleAlign: () => record('openSubtitleAlign'),
+    subtitleDelayIncrease: () => record('subtitleDelayIncrease'),
+    subtitleDelayDecrease: () => record('subtitleDelayDecrease'),
+    alignSubtitleToPrev: () => record('alignSubtitleToPrev'),
+    alignSubtitleToNext: () => record('alignSubtitleToNext'),
     escape: () => record('escape'),
   );
 }

@@ -219,6 +219,11 @@ Future<AppModel> _prefsBackedAppModel(
 }
 
 void main() {
+  // 部分 section（如系统「诊断」）现在默认折叠会把行移出树；这些渲染器测试直查
+  // 具体行，强制全展开以还原折叠前的渲染（见 debugSettingsForceExpandAllSections）。
+  setUp(() => debugSettingsForceExpandAllSections = true);
+  tearDown(() => debugSettingsForceExpandAllSections = false);
+
   testWidgets('material renderer maps schema to Material controls',
       (WidgetTester tester) async {
     await tester.pumpWidget(
@@ -1162,6 +1167,88 @@ void main() {
         reason: 'titleMaxLines: 2 必须真透传到标题的 RenderParagraph');
     expect(paragraph.didExceedMaxLines, isFalse,
         reason: '两行内「同步与备份（实验性）」应完整显示，不触发 ellipsis');
+  });
+
+  testWidgets(
+      'BUG-925: every titled section is collapsible; collapsedByDefault only '
+      'controls the initial open/closed state, not the ability to fold',
+      (WidgetTester tester) async {
+    // 折叠「能力」与「默认收起」解耦后（settings_schema_widgets.dart）：
+    //   有标题 → 一定有折叠头（chevron），不管 collapsedByDefault；
+    //   collapsedByDefault 只决定进页面时展开还是收起；
+    //   无标题 → 没有可点的折叠头，永远平铺。
+    // 关掉全展开钩子，才能同时验「默认收起」这一半（setUp 默认置 true）。
+    debugSettingsForceExpandAllSections = false;
+
+    final SettingsDestination destination = SettingsDestination(
+      id: SettingsDestinationId.appearance,
+      title: 'Folding',
+      icon: Icons.palette_outlined,
+      sections: <SettingsSection>[
+        SettingsSection(
+          title: 'Expanded group',
+          // collapsedByDefault 缺省 = false → 默认展开。
+          items: <SettingsItem>[
+            SettingsSwitchItem(
+              id: 'alpha',
+              title: 'Alpha row',
+              value: (_) => true,
+              onChanged: (_, __) {},
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: 'Collapsed group',
+          collapsedByDefault: true, // 默认收起。
+          items: <SettingsItem>[
+            SettingsSwitchItem(
+              id: 'bravo',
+              title: 'Bravo row',
+              value: (_) => true,
+              onChanged: (_, __) {},
+            ),
+          ],
+        ),
+        SettingsSection(
+          // 无标题 → 不可折叠。
+          items: <SettingsItem>[
+            SettingsSwitchItem(
+              id: 'charlie',
+              title: 'Charlie row',
+              value: (_) => true,
+              onChanged: (_, __) {},
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        builder: (SettingsContext settingsContext) {
+          return MaterialSettingsRenderer().buildDetailPage(
+            settingsContext: settingsContext,
+            destination: destination,
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 两个带标题分区各有一个折叠头；无标题分区没有。
+    expect(find.byIcon(Icons.expand_more), findsNWidgets(2),
+        reason: '每个带标题 section 都必须长出折叠头；无标题 section 不出');
+
+    // collapsedByDefault 决定默认态：展开组的行在树内，收起组的行不入树。
+    expect(find.text('Alpha row'), findsOneWidget,
+        reason: 'collapsedByDefault:false 的分区默认展开，行应可见');
+    expect(find.text('Bravo row'), findsNothing,
+        reason: 'collapsedByDefault:true 的分区默认收起，行应不入树');
+
+    // 无标题分区永远平铺，行始终可见。
+    expect(find.text('Charlie row'), findsOneWidget,
+        reason: '无标题 section 不可折叠，行始终平铺可见');
   });
 }
 

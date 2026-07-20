@@ -1,11 +1,9 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/utils/player/blur_options.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(
@@ -75,16 +73,8 @@ void main() {
       expect(repo.searchDebounceDelay, 100);
     });
 
-    test('isPlayerListeningComprehensionMode defaults to false', () {
-      expect(repo.isPlayerListeningComprehensionMode, false);
-    });
-
     test('playerHardwareAcceleration defaults to true', () {
       expect(repo.playerHardwareAcceleration, true);
-    });
-
-    test('showPlayBar defaults to true', () {
-      expect(repo.showPlayBar, true);
     });
 
     test('savedTags defaults to empty string', () {
@@ -177,26 +167,8 @@ void main() {
       repo2.dispose();
     });
 
-    test('blurOptions returns default values', () {
-      final opts = repo.blurOptions;
-      expect(opts.width, 200.0);
-      expect(opts.height, 200.0);
-      expect(opts.left, -1.0);
-      expect(opts.top, -1.0);
-      expect(opts.blurRadius, 5.0);
-      expect(opts.visible, false);
-    });
-
-    test('showFloatingDict defaults to false', () {
-      expect(repo.showFloatingDict, false);
-    });
-
     test('collapseDictionaries defaults to true', () {
       expect(repo.collapseDictionaries, true);
-    });
-
-    test('doubleTapSeekDuration defaults to 5000', () {
-      expect(repo.doubleTapSeekDuration, 5000);
     });
 
     test('maximumTerms defaults to 10', () {
@@ -318,29 +290,6 @@ void main() {
       repo2.dispose();
     });
 
-    test('setBlurOptions round-trips through DB', () async {
-      final opts = BlurOptions(
-        width: 300,
-        height: 150,
-        left: 10,
-        top: 20,
-        color: const Color.fromRGBO(255, 128, 64, 0.5),
-        blurRadius: 12.0,
-        visible: true,
-      );
-      await repo.setBlurOptions(opts);
-
-      final repo2 = PreferencesRepository(db);
-      await repo2.loadFromDb();
-      expect(repo2.blurOptions.width, 300);
-      expect(repo2.blurOptions.height, 150);
-      expect(repo2.blurOptions.left, 10);
-      expect(repo2.blurOptions.top, 20);
-      expect(repo2.blurOptions.blurRadius, 12.0);
-      expect(repo2.blurOptions.visible, true);
-      repo2.dispose();
-    });
-
     test('setAudioSources persists list', () async {
       repo.setAudioSources(['https://a.com', 'https://b.com']);
       await Future<void>.delayed(Duration.zero);
@@ -421,14 +370,14 @@ void main() {
       repo2.dispose();
     });
 
-    test('bool toggles cycle correctly (showPlayBar)', () async {
-      expect(repo.showPlayBar, true);
-      repo.toggleShowPlayBar();
+    test('bool toggles cycle correctly (autoSearchEnabled)', () async {
+      expect(repo.autoSearchEnabled, true);
+      repo.toggleAutoSearchEnabled();
       await Future<void>.delayed(Duration.zero);
-      expect(repo.showPlayBar, false);
-      repo.toggleShowPlayBar();
+      expect(repo.autoSearchEnabled, false);
+      repo.toggleAutoSearchEnabled();
       await Future<void>.delayed(Duration.zero);
-      expect(repo.showPlayBar, true);
+      expect(repo.autoSearchEnabled, true);
     });
 
     test('setLastSelectedDeck persists', () async {
@@ -445,12 +394,6 @@ void main() {
       await repo2.loadFromDb();
       expect(repo2.lastSelectedModel, 'BasicModel');
       repo2.dispose();
-    });
-
-    test('setMediaItemPreferredAudioIndex persists', () async {
-      repo.setMediaItemPreferredAudioIndex('item-1', 3);
-      await Future<void>.delayed(Duration.zero);
-      expect(repo.getMediaItemPreferredAudioIndex('item-1'), 3);
     });
 
     test('toggleReverseNavigationBar cycles correctly', () async {
@@ -516,9 +459,11 @@ void main() {
     });
 
     test('desktop clipboard prefs round-trip', () async {
-      expect(repo.desktopClipboardEnabled, false);
+      // galgame UX 统一后默认开（剪贴板 / galgame 台词共用查词面板去向，开箱即用）。
+      expect(repo.desktopClipboardEnabled, true);
       expect(
           repo.desktopClipboardWindowMode, DesktopClipboardWindowMode.normal);
+      await repo.setDesktopClipboardEnabled(false);
       await repo.setDesktopClipboardEnabled(true);
       await repo
           .setDesktopClipboardWindowMode(DesktopClipboardWindowMode.always);
@@ -712,13 +657,6 @@ void main() {
       repo.addListener(() => count++);
       repo.setDictionaryFontSize(20.0);
       await Future<void>.delayed(Duration.zero);
-      expect(count, greaterThan(0));
-    });
-
-    test('setBlurOptions notifies listeners', () async {
-      int count = 0;
-      repo.addListener(() => count++);
-      await repo.setBlurOptions(repo.blurOptions);
       expect(count, greaterThan(0));
     });
 

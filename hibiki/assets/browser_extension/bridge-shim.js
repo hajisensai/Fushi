@@ -87,25 +87,10 @@ window.flutter_inappwebview = {
             return null;
           }
         })();
-      case 'playWordAudio':
-        // 单词音频②播放：拿 resolveWordAudio 返回的 file URL 用 HTML5 Audio 播（扩展宿主是
-        // 真实浏览器，直接 new Audio(url).play()）。mode==='interrupt' 时先掐掉上一段。
-        // 成功 resolve(true)、失败 resolve(false) → popup 显示 ✕。
-        return (async function () {
-          try {
-            var opts = args[0] || {};
-            if (!opts.url) return false;
-            if ((opts.mode || 'interrupt') === 'interrupt' && window.__hibikiWordAudio) {
-              try { window.__hibikiWordAudio.pause(); } catch (_) {}
-            }
-            var audio = new Audio(opts.url);
-            window.__hibikiWordAudio = audio;
-            await audio.play();
-            return true;
-          } catch (_) {
-            return false;
-          }
-        })();
+      // 单词音频播放已统一到 popup.js 自身（playWordAudio 直接 new Audio(url).play()），
+      // 三端同一路径，不再经 callHandler('playWordAudio')。故此处旧的 playWordAudio 桥
+      // 已删除。resolveWordAudio 仍返回可直接播放的 URL（扩展侧是 sync server 的
+      // /api/lookup/audio/file 短命 URL），popup.js 拿到后本地播放。
       default:
         return Promise.resolve(null);
     }

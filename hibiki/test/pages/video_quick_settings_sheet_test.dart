@@ -56,6 +56,7 @@ VideoQuickSettingsSheet _sheet({
     initialDelayMs: initialDelayMs,
     initialSpeed: 1.0,
     initialSubtitleObscureMode: VideoSubtitleObscureMode.none,
+    initialSecondarySubtitleObscureMode: VideoSubtitleObscureMode.none,
     initialSubtitleStyle: initialSubtitleStyle ?? VideoSubtitleStyle.defaults,
     onSetDelay: (int v) async => onSetDelay?.call(v),
     onAutoAlign: onAutoAlign,
@@ -65,6 +66,7 @@ VideoQuickSettingsSheet _sheet({
     onPreviewSpeed: (double v) async => onPreviewSpeed?.call(v),
     onSetSpeed: (double v) async => onSetSpeed?.call(v),
     onSetSubtitleObscureMode: (_) async {},
+    onSetSecondarySubtitleObscureMode: (_) async {},
     onSubtitleStylePreview: (VideoSubtitleStyle style) =>
         onSubtitleStylePreview?.call(style),
     onSubtitleStyleCommit: (VideoSubtitleStyle style) async =>

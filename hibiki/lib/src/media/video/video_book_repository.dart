@@ -10,6 +10,8 @@ import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/media/video/video_storage.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
 /// VideoBooks 仓库：视频元数据 + 进度；字幕 cue 复用 audioCues 表。
 class VideoBookRepository {
@@ -26,6 +28,38 @@ class VideoBookRepository {
     final VideoBooksCompanion withSource =
         sourceId == null ? book : book.copyWith(sourceId: Value(sourceId));
     return _db.upsertVideoBook(withSource);
+  }
+
+  /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户明示导入
+  /// 视频成功后**由 [VideoImportDialog] 显式调用（单文件 / 文件夹单集 / 播放列表首集 /
+  /// 流媒体各调一次；播放列表整本只调一次，title=合集名、mediaKey=首集 uid）——刻意
+  /// **不放进 [saveVideoBook]**，让自动库扫描（media_source_scanner，批量）、远端打开
+  /// （home_video_page，打开≠导入）、云同步（app_model_library_host_service）等非明示
+  /// 导入路径天然不 emit，避免刷屏或语义错误（对齐 EpubImporter 只在用户导入管线
+  /// emit 的做法）。timestamp/dateKey 用调用时刻。best-effort：记账失败只 log，不影响
+  /// 视频已导入。
+  Future<void> recordVideoImportActivity({
+    required String bookUid,
+    required String title,
+  }) async {
+    try {
+      final int nowMs = DateTime.now().millisecondsSinceEpoch;
+      await _db.addActivityEvent(
+        eventType: kActivityAdded,
+        mediaType: kActivityMediaVideo,
+        title: title,
+        mediaKey: bookUid,
+        dateKey:
+            HibikiTimeFormat.dayKey(DateTime.fromMillisecondsSinceEpoch(nowMs)),
+        timestampMs: nowMs,
+      );
+    } catch (e) {
+      ErrorLogService.instance.log(
+        'VideoBookRepository.recordVideoImportActivity',
+        e,
+        StackTrace.current,
+      );
+    }
   }
 
   /// 按标签名重建视频书标签映射（TODO-1165 跨设备下载后恢复标签）。标签是每设备

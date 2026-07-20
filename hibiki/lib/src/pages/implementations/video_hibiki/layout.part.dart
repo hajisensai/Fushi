@@ -348,6 +348,13 @@ extension _VideoLayout on _VideoHibikiPageState {
                               VideoSubtitleObscureMode.blur,
                           subtitleHidden: appModel.videoSubtitleObscureMode ==
                               VideoSubtitleObscureMode.hide,
+                          // TODO-1382：副字幕遮蔽三态同样映射成两正交标志（独立于主字幕）。
+                          secondaryBlurEnabled:
+                              appModel.videoSecondarySubtitleObscureMode ==
+                                  VideoSubtitleObscureMode.blur,
+                          secondaryHidden:
+                              appModel.videoSecondarySubtitleObscureMode ==
+                                  VideoSubtitleObscureMode.hide,
                           // TODO-1199：字幕字号=用户基准 × 屏幕自适应因子。用户设置的
                           // fontSize 仍是基准（手动可调、不被改写），渲染时乘按视口短边
                           // 算出的 [subtitleScreenScaleFactor]，使字幕占屏比例在小屏手机 /
@@ -397,6 +404,12 @@ extension _VideoLayout on _VideoHibikiPageState {
                           // TODO-1105：尊重 .ass 自带样式（字体/主色/描边/阴影）。开关默认开；
                           // 关时 overlay 全走上面的统一样式，外观与历史像素级一致。
                           respectAssStyle: appModel.videoRespectAssStyle,
+                          // BUG-903：尊重模式下用户字号滑块=ASS 字号的整体倍率（mpv
+                          // sub-scale 语义）。用**用户基准/默认 36**而非上面已乘屏幕因子的
+                          // fontSize——ASS 路径按显示区几何缩放已与 mpv 同源，再叠屏幕
+                          // 因子会双重放大；默认基准 36 → 1.0 = 完全按作者字号。
+                          assUserFontScale: _subtitleStyle.fontSize /
+                              VideoSubtitleStyle.defaults.fontSize,
                         ),
                       ),
                       _buildOsdOverlay(),

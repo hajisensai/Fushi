@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
@@ -78,6 +80,66 @@ void logSyncReportErrors(SyncRunReport report) {
     'SyncRunReport.errors',
     report.errors.join('\n'),
   );
+}
+
+/// option B 双通道：把每轮完整同步要跑的通道后端列出来。云备份通道恒尝试（用户
+/// 选定的 [SyncRepository.getBackendType]），互联通道仅当 [SyncRepository
+/// .isInterconnectEnabled] 时追加——互联与云备份不再互斥（backendType 曾把互联
+/// 当成互斥单选项，现已解耦成独立开关）。两条通道各用自己的后端实例、各自认证成功
+/// 才真正跑（未配置的通道在 [_runSyncChannel] 里 no-op）。
+///
+/// 去重：互联后端 [HibikiClientSyncBackend] 是单例；若云通道解析出的恰是同一单例
+/// （历史遗留 backendType=='hibikiServer'，迁移后不再出现，仅防御测试直接构造），
+/// 只保留一条，避免同一通道跑两遍。
+Future<List<SyncBackend>> _enabledSyncChannelBackends(
+  SyncRepository repo,
+) async {
+  final SyncBackend cloud = resolveSyncBackend(await repo.getBackendType());
+  final List<SyncBackend> backends = <SyncBackend>[cloud];
+  if (await repo.isInterconnectEnabled()) {
+    final SyncBackend interconnect =
+        resolveSyncBackend(SyncBackendType.hibikiServer);
+    if (!identical(interconnect, cloud)) backends.add(interconnect);
+  }
+  return backends;
+}
+
+/// 为单个 [backend] 通道构建并运行一轮完整同步编排。认证失败（未配置该通道）返回
+/// null，调用方视为该通道 no-op 跳过。云备份通道与互联通道各调一次（见
+/// [_enabledSyncChannelBackends]），互不排斥（option B 双通道）。
+Future<SyncRunReport?> _runSyncChannel({
+  required HibikiDatabase db,
+  required SyncRepository repo,
+  required SyncBackend backend,
+  required Directory dictionaryResourceRoot,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+  required List<LocalAudioDbEntry> localAudioEntries,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
+  required void Function(SyncProgress) onProgress,
+}) async {
+  await backend.restoreAuth(repo);
+  if (!await backend.isAuthenticated) return null;
+  final SyncOrchestrator orchestrator = SyncOrchestrator(
+    db: db,
+    backend: backend,
+    dictionaryResourceRoot: dictionaryResourceRoot,
+    audioDatabaseRoot: audioDatabaseRoot,
+    tempDir: tempDir,
+    deviceId: await repo.getOrCreateDeviceId(),
+    syncStats: await repo.isSyncStatsEnabled(),
+    syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
+    syncContent: await repo.isSyncContentEnabled(),
+    syncAudioBookFiles: await repo.isSyncAudioBookFilesEnabled(),
+    syncVideoFiles: await repo.isSyncVideoFilesEnabled(),
+    syncDictionary: await repo.isSyncDictionaryEnabled(),
+    syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
+    localAudioEntries: localAudioEntries,
+    onLocalAudioImported: onLocalAudioImported,
+    onProgress: onProgress,
+  );
+  return orchestrator.run();
 }
 
 void triggerAutoSyncAfterClose({
@@ -167,34 +229,28 @@ Future<void> _runAutoSyncAll({
       final now = DateTime.now().millisecondsSinceEpoch;
       if (lastSync != null && (now - lastSync) < _syncCooldownMs) return;
 
-      final backend = resolveSyncBackend(await repo.getBackendType());
-      await backend.restoreAuth(repo);
-      if (!await backend.isAuthenticated) return;
-
-      final orchestrator = SyncOrchestrator(
-        db: db,
-        backend: backend,
-        dictionaryResourceRoot: dictionaryResourceRoot,
-        audioDatabaseRoot: audioDatabaseRoot,
-        tempDir: tempDir,
-        deviceId: await repo.getOrCreateDeviceId(),
-        syncStats: await repo.isSyncStatsEnabled(),
-        syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
-        syncContent: await repo.isSyncContentEnabled(),
-        syncAudioBookFiles: await repo.isSyncAudioBookFilesEnabled(),
-        syncVideoFiles: await repo.isSyncVideoFilesEnabled(),
-        syncDictionary: await repo.isSyncDictionaryEnabled(),
-        syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
-        localAudioEntries: localAudioEntries,
-        onLocalAudioImported: onLocalAudioImported,
-        // Publish progress globally so a settings "立即同步" row visible during
-        // the app-open sweep shows the live bar instead of a bare toast.
-        onProgress: (SyncProgress p) => syncProgress.value = p,
-      );
-      final SyncRunReport report = await orchestrator.run();
-      logSyncReportErrors(report);
-      await onPostRun?.call(report);
-      onReport?.call(report, backend);
+      // option B 双通道：依次跑云备份通道 + 互联通道（若启用），互不排斥。每条通道
+      // 各自认证成功才实际跑；未配置的通道 no-op（_runSyncChannel 返回 null）。
+      for (final SyncBackend backend
+          in await _enabledSyncChannelBackends(repo)) {
+        final SyncRunReport? report = await _runSyncChannel(
+          db: db,
+          repo: repo,
+          backend: backend,
+          dictionaryResourceRoot: dictionaryResourceRoot,
+          audioDatabaseRoot: audioDatabaseRoot,
+          tempDir: tempDir,
+          localAudioEntries: localAudioEntries,
+          onLocalAudioImported: onLocalAudioImported,
+          // Publish progress globally so a settings "立即同步" row visible during
+          // the app-open sweep shows the live bar instead of a bare toast.
+          onProgress: (SyncProgress p) => syncProgress.value = p,
+        );
+        if (report == null) continue;
+        logSyncReportErrors(report);
+        await onPostRun?.call(report);
+        onReport?.call(report, backend);
+      }
     });
   } catch (e) {
     developer.log(
@@ -213,10 +269,28 @@ Future<void> _runAutoSyncAll({
 /// 手动「立即同步」的结果。
 enum ManualSyncOutcome { completed, notConfigured, busy }
 
+/// 单条同步通道（云备份 or 互联）的报告 + 它自己的后端实例。手动同步冲突对话框按
+/// 通道逐条呈现，用**各自的** backend 去 apply——否则合并报告的冲突可能来自互联
+/// 通道却被云后端错误地 apply（option B 双通道）。
+class ManualSyncChannelReport {
+  const ManualSyncChannelReport(this.backend, this.report);
+  final SyncBackend backend;
+  final SyncRunReport report;
+}
+
 class ManualSyncResult {
-  const ManualSyncResult(this.outcome, [this.report]);
+  const ManualSyncResult(
+    this.outcome, [
+    this.report,
+    this.channelReports = const <ManualSyncChannelReport>[],
+  ]);
   final ManualSyncOutcome outcome;
+
+  /// 合并所有通道后的汇总报告（用于「立即同步」结果 SnackBar 的计数摘要）。
   final SyncRunReport? report;
+
+  /// 逐通道报告（用于把每条通道的冲突用其自身后端呈现/解决）。
+  final List<ManualSyncChannelReport> channelReports;
 }
 
 /// 用户手点"立即同步"：跑完整双向全量同步（同 [triggerAutoSyncOnAppOpen]），
@@ -241,44 +315,161 @@ Future<ManualSyncResult> runManualFullSync({
   try {
     return await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
-      final backend = resolveSyncBackend(await repo.getBackendType());
-      await backend.restoreAuth(repo);
-      if (!await backend.isAuthenticated) {
+      // option B 双通道：云备份通道 + 互联通道（若启用），互不排斥。合并两条通道的
+      // 报告成单一汇总返回；任一通道认证成功即算 completed，两条都未配置才是
+      // notConfigured。
+      final SyncRunReport merged = SyncRunReport();
+      final List<ManualSyncChannelReport> channelReports =
+          <ManualSyncChannelReport>[];
+      for (final SyncBackend backend
+          in await _enabledSyncChannelBackends(repo)) {
+        final SyncRunReport? report = await _runSyncChannel(
+          db: db,
+          repo: repo,
+          backend: backend,
+          dictionaryResourceRoot: dictionaryResourceRoot,
+          audioDatabaseRoot: audioDatabaseRoot,
+          tempDir: tempDir,
+          localAudioEntries: localAudioEntries,
+          onLocalAudioImported: onLocalAudioImported,
+          // Publish to the app-wide notifier in addition to the caller's
+          // callback, so any other visible "立即同步" surface reflects the bar.
+          onProgress: (SyncProgress p) {
+            syncProgress.value = p;
+            onProgress?.call(p);
+          },
+        );
+        if (report == null) continue;
+        logSyncReportErrors(report);
+        await onPostRun?.call(report);
+        merged.mergeFrom(report);
+        channelReports.add(ManualSyncChannelReport(backend, report));
+      }
+      if (channelReports.isEmpty) {
         return const ManualSyncResult(ManualSyncOutcome.notConfigured);
       }
-      final orchestrator = SyncOrchestrator(
-        db: db,
-        backend: backend,
-        dictionaryResourceRoot: dictionaryResourceRoot,
-        audioDatabaseRoot: audioDatabaseRoot,
-        tempDir: tempDir,
-        deviceId: await repo.getOrCreateDeviceId(),
-        syncStats: await repo.isSyncStatsEnabled(),
-        syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
-        syncContent: await repo.isSyncContentEnabled(),
-        syncAudioBookFiles: await repo.isSyncAudioBookFilesEnabled(),
-        syncVideoFiles: await repo.isSyncVideoFilesEnabled(),
-        syncDictionary: await repo.isSyncDictionaryEnabled(),
-        syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
-        localAudioEntries: localAudioEntries,
-        onLocalAudioImported: onLocalAudioImported,
-        // Publish to the app-wide notifier in addition to the caller's callback,
-        // so any other visible "立即同步" surface reflects the same live bar.
-        onProgress: (SyncProgress p) {
-          syncProgress.value = p;
-          onProgress?.call(p);
-        },
+      return ManualSyncResult(
+        ManualSyncOutcome.completed,
+        merged,
+        channelReports,
       );
-      final SyncRunReport report = await orchestrator.run();
-      logSyncReportErrors(report);
-      await onPostRun?.call(report);
-      return ManualSyncResult(ManualSyncOutcome.completed, report);
     });
   } finally {
     _syncingIds.remove('__all__');
     _activeSyncs--;
     syncInProgress.value = _activeSyncs > 0;
     if (_activeSyncs == 0) syncProgress.value = null;
+  }
+}
+
+Timer? _collectionsSyncDebounce;
+StreamSubscription<void>? _collectionsWatchSub;
+Duration _collectionsSyncDebounceDuration = const Duration(seconds: 8);
+
+/// 装载「合集变更 → 防抖轻量同步」观察者（AppModel 初始化时调用一次；幂等，
+/// 重复调用先撤旧订阅）。
+///
+/// 根因修复：合集维度只搭载在低频的全量 sweep 上（app 冷启动 + 5 分钟冷却，或
+/// 手动「立即同步」），而用户高频触发的关书/切后台同步走单本路径、从不同步合集
+/// ——增删合集/成员后长时间不推送，即「合集经常没同步」。现在任何合集表写入
+/// （合集行/成员/墓碑，无论来自哪个页面）都会在 [debounce] 后跑一轮只含合集
+/// 维度的轻量同步（[SyncOrchestrator.runCollectionsOnly]，云 + 互联双通道）。
+///
+/// 不成环：同步自身 apply 的写入会再触发一轮，但清单 canonicalJson 相等即不
+/// 回写、目标态调和无 diff 即不写库——第二轮收敛为纯读 no-op 后不再有表事件。
+void installCollectionsSyncWatcher({
+  required HibikiDatabase db,
+  Duration debounce = const Duration(seconds: 8),
+}) {
+  uninstallCollectionsSyncWatcher();
+  _collectionsSyncDebounceDuration = debounce;
+  _collectionsWatchSub = db
+      .tableUpdates(TableUpdateQuery.onAllTables([
+        db.mediaCollections,
+        db.mediaCollectionItems,
+        db.collectionMemberTombstones,
+      ]))
+      .listen((_) => _scheduleCollectionsSync(db));
+}
+
+/// 撤销 [installCollectionsSyncWatcher] 的订阅与未决防抖定时器（测试 teardown /
+/// DB 关闭前用；无观察者时 no-op）。
+void uninstallCollectionsSyncWatcher() {
+  _collectionsWatchSub?.cancel();
+  _collectionsWatchSub = null;
+  _collectionsSyncDebounce?.cancel();
+  _collectionsSyncDebounce = null;
+}
+
+/// 测试观察点：观察者累计排定的防抖次数（仅测试断言「合集写入确实触发调度」用）。
+@visibleForTesting
+int collectionsSyncScheduledForTest = 0;
+
+void _scheduleCollectionsSync(HibikiDatabase db) {
+  collectionsSyncScheduledForTest++;
+  _collectionsSyncDebounce?.cancel();
+  _collectionsSyncDebounce = Timer(_collectionsSyncDebounceDuration, () {
+    _collectionsSyncDebounce = null;
+    unawaited(_runCollectionsSync(db: db));
+  });
+}
+
+/// 跑一轮只含合集维度的轻量同步（云备份 + 互联双通道，各自认证成功才跑）。
+/// 全量 sweep 进行中则重排到下个防抖窗——sweep 本就带合集维度，且它 apply 的
+/// 表写入还会再触发一次本观察者，最终收敛。
+@visibleForTesting
+Future<void> runCollectionsSyncNow({required HibikiDatabase db}) =>
+    _runCollectionsSync(db: db);
+
+Future<void> _runCollectionsSync({required HibikiDatabase db}) async {
+  if (_syncingIds.contains('__all__')) {
+    _scheduleCollectionsSync(db);
+    return;
+  }
+  if (!_syncingIds.add('__collections__')) return;
+  _activeSyncs++;
+  syncInProgress.value = true;
+  try {
+    await _autoSyncMutex.withLock(() async {
+      final repo = SyncRepository(db);
+      if (!await repo.isAutoSyncEnabled()) return;
+      for (final SyncBackend backend
+          in await _enabledSyncChannelBackends(repo)) {
+        await backend.restoreAuth(repo);
+        if (!await backend.isAuthenticated) continue;
+        final SyncOrchestrator orchestrator = SyncOrchestrator(
+          db: db,
+          backend: backend,
+          // 合集维度不触碰词典/音频/临时目录；systemTemp 仅为满足构造器形参，
+          // runCollectionsOnly 保证不落任何文件。
+          dictionaryResourceRoot: Directory.systemTemp,
+          audioDatabaseRoot: Directory.systemTemp,
+          tempDir: Directory.systemTemp,
+          deviceId: await repo.getOrCreateDeviceId(),
+          syncStats: false,
+          syncAudioBookPosition: false,
+          syncContent: false,
+          syncAudioBookFiles: false,
+          syncVideoFiles: false,
+          syncDictionary: false,
+          syncLocalAudio: false,
+          localAudioEntries: const <LocalAudioDbEntry>[],
+          onLocalAudioImported: (LocalAudioPackageContents _) async {},
+        );
+        final SyncRunReport report = await orchestrator.runCollectionsOnly();
+        logSyncReportErrors(report);
+      }
+    });
+  } catch (e) {
+    developer.log(
+      'Collections auto-sync failed',
+      error: e,
+      name: 'SyncAutoTrigger',
+    );
+  } finally {
+    _syncingIds.remove('__collections__');
+    _activeSyncs--;
+    syncInProgress.value = _activeSyncs > 0;
   }
 }
 
@@ -304,10 +495,6 @@ Future<void> _runAutoSync({
       final repo = SyncRepository(db);
       if (!await repo.isAutoSyncEnabled()) return;
 
-      final backend = resolveSyncBackend(await repo.getBackendType());
-      await backend.restoreAuth(repo);
-      if (!await backend.isAuthenticated) return;
-
       final book = await db.getEpubBook(bookKey);
       if (book == null) return;
 
@@ -315,37 +502,45 @@ Future<void> _runAutoSync({
       final syncAudioBook = await repo.isSyncAudioBookEnabled();
       final syncContent = await repo.isSyncContentEnabled();
 
-      final manager = SyncManager(db: db, backend: backend);
-      final result = await manager.syncBook(
-        book: book,
-        syncStats: syncStats,
-        statsSyncMode: StatisticsSyncMode.merge,
-        syncAudioBook: syncAudioBook,
-        syncContent: syncContent,
-      );
+      // option B 双通道：退出书时对每条启用的通道（云备份 + 互联）各跑一次 per-book
+      // 同步，互不排斥。每条通道各自认证成功才跑；未配置的通道 continue 跳过。
+      for (final SyncBackend backend
+          in await _enabledSyncChannelBackends(repo)) {
+        await backend.restoreAuth(repo);
+        if (!await backend.isAuthenticated) continue;
 
-      // TODO-132 诉求B：退出书同步静默——不再弹 imported/exported「同步成功」
-      // SnackBar（打断用户、让用户误以为「必须等同步成功条才能离开」=卡手）。
-      // 同步是 fire-and-forget 后台动作，成功无需打断式提示；真正需要用户介入的
-      // **冲突**仍经下方 onReport → presentAutoConflicts 弹对话框（不是 SnackBar）。
-      // messenger 参数保留（签名兼容，背景/app-open 路径本就传 null）。
+        final manager = SyncManager(db: db, backend: backend);
+        final result = await manager.syncBook(
+          book: book,
+          syncStats: syncStats,
+          statsSyncMode: StatisticsSyncMode.merge,
+          syncAudioBook: syncAudioBook,
+          syncContent: syncContent,
+        );
 
-      // Surface a genuine fork to the caller as a one-conflict report so the
-      // book-exit flow can prompt resolution. The single-book path runs
-      // SyncManager.syncBook (not the orchestrator), so build the report here
-      // from the conflict fields SyncManager fills on SyncResult.conflict.
-      if (onReport != null) {
-        final SyncRunReport report = SyncRunReport();
-        if (result.direction == SyncResult.conflict) {
-          report.conflicts.add(SyncConflict(
-            assetKey: result.conflictAssetKey!,
-            dimension: result.conflictDimension!,
-            title: result.title,
-            localVersion: result.conflictLocalVersion,
-            remoteVersion: result.conflictRemoteVersion,
-          ));
+        // TODO-132 诉求B：退出书同步静默——不再弹 imported/exported「同步成功」
+        // SnackBar（打断用户、让用户误以为「必须等同步成功条才能离开」=卡手）。
+        // 同步是 fire-and-forget 后台动作，成功无需打断式提示；真正需要用户介入的
+        // **冲突**仍经下方 onReport → presentAutoConflicts 弹对话框（不是 SnackBar）。
+        // messenger 参数保留（签名兼容，背景/app-open 路径本就传 null）。
+
+        // Surface a genuine fork to the caller as a one-conflict report so the
+        // book-exit flow can prompt resolution. The single-book path runs
+        // SyncManager.syncBook (not the orchestrator), so build the report here
+        // from the conflict fields SyncManager fills on SyncResult.conflict.
+        if (onReport != null) {
+          final SyncRunReport report = SyncRunReport();
+          if (result.direction == SyncResult.conflict) {
+            report.conflicts.add(SyncConflict(
+              assetKey: result.conflictAssetKey!,
+              dimension: result.conflictDimension!,
+              title: result.title,
+              localVersion: result.conflictLocalVersion,
+              remoteVersion: result.conflictRemoteVersion,
+            ));
+          }
+          onReport(report, backend);
         }
-        onReport(report, backend);
       }
     });
   } catch (e) {

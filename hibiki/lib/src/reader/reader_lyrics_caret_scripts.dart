@@ -63,6 +63,14 @@ class ReaderLyricsCaretScripts {
       "window.hoshiLyricsCaret.init({color:'$color',insetTop:$insetTop,"
       'insetBottom:$insetBottom})';
 
+  // 互指注释（参照本仓 _jsStringLiteral 双实现先例）：本对象的字符模型 / 焦点环 JS 辅助与
+  // [ReaderCaretScripts]（window.hoshiCaret）各自内联一份——两者注入**不同文档**（本文件=有声书
+  // 歌词模式 LyricsModeHtml，reader_caret=分页 reader 页 / 词典弹窗），运行时无共享对象，且两侧
+  // source() 都是不可插值的 r"""...""" 原始串，无法经 Dart 常量收敛。下列辅助与 reader_caret 对应
+  // 方法**逐字节相同**，改任一侧必须同步另一侧：_charLen / _charRect / _applyRingStyle / _rectJson
+  // / _prevIndex / _hideRing。故意分叉（各自特化，勿强行同步）：_isStop（本文件仅剥空白，无弹窗
+  // 标点/scope 门控）、_ensureRing（ring id hoshi-lyrics-caret-ring vs hoshi-caret-ring）、
+  // _drawRing（本文件不做视口 clamp）、_walker（本文件按 cue 子树取 root 参数）。
   static String source() => r"""
 window.hoshiLyricsCaret = {
   active: false,
@@ -103,7 +111,7 @@ window.hoshiLyricsCaret = {
     var j = i - 1;
     if (j > 0) {
       var c = text.charCodeAt(j);
-      if (c >= 0xDC00 && c <= 0xDFFF) j -= 1;
+      if (c >= 0xDC00 && c <= 0xDFFF) j -= 1; // step over a low surrogate
     }
     return j;
   },
@@ -199,7 +207,9 @@ window.hoshiLyricsCaret = {
     r.style.width = (rect.width + pad * 2) + 'px';
     r.style.height = (rect.height + pad * 2) + 'px';
   },
-  _hideRing: function() { if (this._ring) this._ring.style.display = 'none'; },
+  _hideRing: function() {
+    if (this._ring) this._ring.style.display = 'none';
+  },
   _rectJson: function(rect) {
     return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
   },

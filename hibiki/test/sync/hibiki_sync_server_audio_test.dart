@@ -9,6 +9,22 @@ import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 /// Fake 库服务：本地音频 + 有声书方法真实记录调用；dict/books 方法存根。
 class _FakeLibraryService implements HibikiLibraryHostService {
   @override
+  Future<String?> videoCoverPath(String id) async {
+    for (final RemoteVideoInfo v in await listVideos()) {
+      if (v.id == id) return v.coverPath;
+    }
+    return null;
+  }
+
+  @override
+  Future<String?> bookCoverPath(String id) async {
+    for (final RemoteBookInfo b in await listBooks()) {
+      if (b.downloadId == id || b.title == id) return b.coverPath;
+    }
+    return null;
+  }
+
+  @override
   Future<AggregateSnapshot> getAggregateSnapshot() async =>
       const AggregateSnapshot();
 

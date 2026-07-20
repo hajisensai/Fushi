@@ -513,7 +513,11 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   Future<void> _openFolder(MediaSourceRow row) async {
     if (!Platform.isWindows || row.transport != 'local') return;
     try {
-      await Process.run('explorer', <String>[row.rootPath]);
+      // rootPath 由 normalizeSourceRootPath 归一化为正斜杠（跨平台一致 + dedup），
+      // 但 Windows explorer.exe 只认反斜杠路径参数：传正斜杠会被忽略、改开默认
+      // 「文档」目录（BUG-920）。仅在 explorer 这个平台边界把 `/` 转回 `\`。
+      final String windowsPath = row.rootPath.replaceAll('/', r'\');
+      await Process.run('explorer', <String>[windowsPath]);
     } catch (_) {
       // 打开失败不致命（路径可能已不存在）；静默即可。
     }

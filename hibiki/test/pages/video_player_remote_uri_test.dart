@@ -36,8 +36,8 @@ void main() {
       final int end = page.indexOf('Future<void> _saveScreenshot(', idx);
       final String body = page.substring(idx, end);
 
-      final int outputPathAwait =
-          body.indexOf('final String outputPath = await _clipExportOutputPath');
+      final int outputPathAwait = body
+          .indexOf('final String? outputPath = await _resolveClipOutputPath');
       final int preStartGuard = body.indexOf(
         'generation != _clipExportGeneration || _currentVideoPath != startPath',
         outputPathAwait,

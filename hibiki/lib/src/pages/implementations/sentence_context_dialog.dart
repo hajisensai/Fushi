@@ -244,6 +244,8 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
   }
 
   /// ±上下文按钮：图标（−/+）+ 文案的描边按钮。保持 [OutlinedButton] 语义。
+  /// 收紧到 compact 视觉密度 + 收敛内边距/最小尺寸——横屏矮窗里四颗按钮占位太重
+  /// （用户报「这个选项占位太大」），压扁后给句子预览让出竖向空间。
   Widget _adjustButton({
     required IconData icon,
     required String label,
@@ -251,6 +253,12 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
   }) =>
       OutlinedButton.icon(
         onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          minimumSize: const Size(0, 36),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
         icon: Icon(icon, size: 18),
         label: Text(label),
       );
@@ -278,6 +286,12 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
     }
 
     return AlertDialog(
+      // BUG-922：横屏矮窗里正文竖向空间不足时，旧的 `Flexible(SingleChildScrollView)`
+      // 会把整块滚动区让给固定的计数/按钮区、塌成 0 高——句子预览整段消失，只剩选项
+      // （用户报「手机上看不见句子，只有选项」）。改为让整个对话框正文可滚动
+      // （`scrollable: true` + 正文直接铺卡，不再嵌 Flexible），任何朝向/尺寸下句子预览
+      // 都保有真实高度、按需滚动，不再塌陷也不溢出。
+      scrollable: true,
       // 标题区对齐 Niratan header：小 eyebrow 在上、大标题在下，右侧一个关闭 X（=取消）。
       title: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,16 +337,10 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
                           ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   ),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: spacedCards,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
+                  // 正文已由 AlertDialog(scrollable: true) 统一滚动，这里直接铺卡，
+                  // 不再嵌 Flexible/SingleChildScrollView（那在矮窗会塌成 0 高）。
+                  ...spacedCards,
+                  const SizedBox(height: 12),
                   // ±上下文：前一组靠左、后一组靠右（对齐 Niratan rangeControls 的
                   // 「Remove/Add Previous … Remove/Add Next」分组）。各半区内用 Wrap
                   // 兜底换行，窄屏不会溢出。

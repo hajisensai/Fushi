@@ -29,7 +29,6 @@ SettingsDestination buildVideoDestination() {
           SettingsSwitchItem(
             id: 'video.playback.auto_play_next',
             title: t.video_setting_auto_play_next,
-            subtitle: t.video_setting_auto_play_next_hint,
             icon: Icons.playlist_play_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoAutoPlayNext,
@@ -61,7 +60,6 @@ SettingsDestination buildVideoDestination() {
           SettingsSegmentedItem<VideoFitMode>(
             id: 'video.playback.picture_fit',
             title: t.video_setting_picture_fit,
-            subtitle: t.video_setting_picture_fit_hint,
             icon: Icons.fit_screen_outlined,
             options: <SettingsSegmentOption<VideoFitMode>>[
               SettingsSegmentOption<VideoFitMode>(
@@ -138,7 +136,6 @@ SettingsDestination buildVideoDestination() {
           SettingsSliderItem(
             id: 'video.playback.long_press_speed',
             title: t.video_setting_long_press_speed,
-            subtitle: t.video_setting_long_press_speed_hint,
             icon: Icons.touch_app_outlined,
             min: 1.0,
             max: 4.0,
@@ -203,7 +200,6 @@ SettingsDestination buildVideoDestination() {
           SettingsActionItem(
             id: 'video.controls.reset_layout',
             title: t.video_control_reset_layout,
-            subtitle: t.video_control_reset_layout_hint,
             icon: Icons.restart_alt_outlined,
             onTap: (SettingsContext settingsContext) async {
               await settingsContext.appModel.setVideoControlLayout(
@@ -215,6 +211,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.video_setting_mpv_group_quality,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           // 画质增强（mpv 内置高质量缩放开关）+ 解码 / 去色带 / 循环：这些 mpv 配置项
           // 都序列化进 videoMpvConfig（纯 pref），下次打开视频时 applyMpvConfigToPlayer
@@ -355,6 +352,7 @@ SettingsDestination buildVideoDestination() {
       // videoMpvConfig（纯 pref，下次开视频 applyMpvConfig 应用），与播放页内设置同源。
       SettingsSection(
         title: t.video_setting_mpv_group_geometry,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSegmentedItem<int>(
             id: 'video.geometry.rotate',
@@ -447,6 +445,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.video_setting_mpv_group_color,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           _videoMpvColorSliderItem(
             id: 'video.color.brightness',
@@ -487,6 +486,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.video_setting_mpv_group_audio,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           _videoMpvSwitchItem(
             id: 'video.audio.pitch',
@@ -561,6 +561,32 @@ SettingsDestination buildVideoDestination() {
               VideoSubtitleObscureMode mode,
             ) async {
               await settingsContext.appModel.setVideoSubtitleObscureMode(mode);
+            },
+          ),
+          // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）——不遮蔽 / 模糊 / 隐藏。
+          // 复用同一 [_videoSubtitleObscureModeLabel] 选项标签；快捷键 Shift+G 循环、
+          // Shift+H 隐藏。持久化同为 preferences lazy 投影（无新 Drift schema）。
+          SettingsSegmentedItem<VideoSubtitleObscureMode>(
+            id: 'video.secondary_subtitle.obscure',
+            title: t.video_setting_secondary_subtitle_obscure,
+            subtitle: t.video_setting_secondary_subtitle_obscure_hint,
+            icon: Icons.blur_on_outlined,
+            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
+              for (final VideoSubtitleObscureMode mode
+                  in VideoSubtitleObscureMode.values)
+                SettingsSegmentOption<VideoSubtitleObscureMode>(
+                  value: mode,
+                  label: _videoSubtitleObscureModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSecondarySubtitleObscureMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              VideoSubtitleObscureMode mode,
+            ) async {
+              await settingsContext.appModel
+                  .setVideoSecondarySubtitleObscureMode(mode);
             },
           ),
           // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref，
@@ -661,18 +687,6 @@ SettingsDestination buildVideoDestination() {
             },
             onChanged: (SettingsContext settingsContext, double v) {},
           ),
-          SettingsActionItem(
-            id: 'video.subtitle.no_background',
-            title: t.video_setting_subtitle_no_background,
-            subtitle: t.video_setting_subtitle_no_background_hint,
-            icon: Icons.format_color_reset_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              await _commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: 0),
-              );
-            },
-          ),
           SettingsSliderItem(
             id: 'video.subtitle.position',
             title: t.video_setting_subtitle_position,
@@ -696,6 +710,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.section_video_danmaku,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           // 弹幕开关 / 在线匹配 / 同屏上限都是纯 pref（appModel 直接读写 prefsRepo），
           // 与播放页内弹幕设置语义一致，下次播放生效。
@@ -895,7 +910,7 @@ String _videoImmersiveModeLabel(VideoImmersiveMode mode) {
   switch (mode) {
     case VideoImmersiveMode.full:
       return t.video_immersive_mode_full;
-    case VideoImmersiveMode.seekAndLookup:
+    case VideoImmersiveMode.shortcutAndLookup:
       return t.video_immersive_mode_seek_lookup;
     case VideoImmersiveMode.lookupOnly:
       return t.video_immersive_mode_lookup_only;

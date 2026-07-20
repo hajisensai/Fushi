@@ -37,6 +37,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   List<ReadingStatisticRow> _allStats = [];
 
+  /// 合集归属映射（书架同源）：按书 tile 显示所属合集名用。
+  /// - [_collectionNamesById]：collectionId → 合集名。
+  /// - [_primaryCollectionByEntry]：'epub|<bookKey>' → 折叠归属的主 collectionId。
+  /// - [_bookKeyByTitle]：reading_statistics 只存 title，经 epub_books 反查 bookKey。
+  Map<int, String> _collectionNamesById = <int, String>{};
+  Map<String, int> _primaryCollectionByEntry = <String, int>{};
+  Map<String, String> _bookKeyByTitle = <String, String>{};
+
   // 聚合数据
   int _todayChars = 0;
   int _todayMs = 0;
@@ -74,8 +82,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // 按书聚合
   List<_BookData> _bookData = [];
 
-  // 总览：活跃天数 / 日期范围（min/max dateKey，可空表示无数据）。
-  int _activeDays = 0;
+  // 总览：日期范围（min/max dateKey，可空表示无数据）。
   int _streak = 0;
   String? _firstDateKey;
   String? _lastDateKey;
@@ -132,15 +139,28 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       );
       _bookCounters = aggregateStatCountersByTitle(counters);
       _bookFavorites = aggregateStatFavoritesByTitle(favs);
+      // 合集归属（书架同源）：title→bookKey→'epub|bookKey'→合集名，喂 per-book tile。
+      _collectionNamesById = <int, String>{
+        for (final MediaCollectionRow c in await db.getAllMediaCollections())
+          c.id: c.name,
+      };
+      _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
+      _bookKeyByTitle = <String, String>{
+        for (final EpubBookRow r in await db.getAllEpubBooks())
+          r.title: r.bookKey,
+      };
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
-      // 旧条目无 dateKey（null）→ 不参与按日分桶（whereType 过滤掉）。
+      // BUG-893：写入端此前不带 dateKey，旧的 `dateKey != null` 过滤把所有书内收藏
+      // 滤光 → 统计恒为 0。改用 `dateKey ?? statDateKey(createdAt)` 回退——createdAt
+      // 恒非空，已存的无 dateKey 收藏也按创建日归桶（与写入端补 dateKey 双向修复）。
       final List<FavoriteSentence> favSentences =
           await FavoriteSentenceRepository(db).getAll();
       _favoritedSentences = bucketActivityByDateKey(
         favSentences
             .where((FavoriteSentence s) =>
-                s.source != kFavoriteSentenceSourceVideo && s.dateKey != null)
-            .map((FavoriteSentence s) => (s.dateKey!, 1)),
+                s.source != kFavoriteSentenceSourceVideo)
+            .map((FavoriteSentence s) =>
+                (s.dateKey ?? statDateKey(s.createdAt), 1)),
         now,
       );
       await _loadHourlyData();
@@ -229,7 +249,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     // 字典序比较）。
     final Set<String> activeDayKeys =
         _allStats.map((ReadingStatisticRow s) => s.dateKey).toSet();
-    _activeDays = activeDayKeys.length;
     _streak = computeReadingStreak(activeDayKeys, now);
     if (activeDayKeys.isEmpty) {
       _firstDateKey = null;
@@ -433,8 +452,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// TODO-1253：交给自适应的 [StatKpiStrip]——宽屏一排、窄屏换行成 2 列，数值 FittedBox
   /// 缩放不截断。
   Widget _buildKpiStrip() {
-    final int dailyAvgChars =
-        _activeDays > 0 ? (_allChars / _activeDays).round() : 0;
+    // BUG-892 后续：日均字数用与「30 天字符图」同一窗口的活跃日均值（[_dailyData] 即
+    // 字符图数据），不再用终身均值——后者被历史低产日拉低、与同屏近期指标对不上。
+    final int dailyAvgChars = dailyAverageChars(_dailyData);
     final double? weekPct =
         computeWeekOverWeekPercent(_weekChars, _prevWeekChars);
     final String? weekDelta = weekPct == null
@@ -1112,11 +1132,24 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     await _loadFromDatabase();
   }
 
+  /// 按书 tile 的所属合集名（书架同款「主合集」折叠归属，无则 null）。title→bookKey
+  /// 经 epub_books 反查（reading_statistics 只存 title），拼 'epub|<bookKey>' 命中。
+  String? _collectionNameForBook(String title) {
+    final String? bookKey = _bookKeyByTitle[title];
+    if (bookKey == null) return null;
+    return statCollectionName(
+      'epub|$bookKey',
+      _primaryCollectionByEntry,
+      _collectionNamesById,
+    );
+  }
+
   Widget _buildBookTile(_BookData book) {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
         _bookCounters[book.title] ?? (lookups: 0, mines: 0);
     final int favorites = _bookFavorites[book.title] ?? 0;
+    final String? collectionName = _collectionNameForBook(book.title);
     // 进度条填充维度 = 当前排序维度（W1）：first 是当前排序下第一名（最大值）。
     final double topMetric =
         _bookData.isEmpty ? 0 : _sortMetric(_bookData.first);
@@ -1143,6 +1176,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+              if (collectionName != null) ...[
+                SizedBox(height: tokens.spacing.gap / 4),
+                buildStatCollectionLabel(context, collectionName),
+              ],
               SizedBox(height: tokens.spacing.gap / 2),
               Row(
                 children: [

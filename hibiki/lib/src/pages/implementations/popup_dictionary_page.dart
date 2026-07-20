@@ -66,7 +66,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     onLookupStackDepthChanged: recordLookupStackDepth,
   );
   final GlobalKey _resultStackKey = GlobalKey();
-  final Stopwatch _startupStopwatch = Stopwatch()..start();
   bool _isClosing = false;
   String _sourceLookupText = '';
 
@@ -96,7 +95,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
     _sourceLookupText = widget.searchTerm.trim();
-    debugPrint('[popup-perf] init search="${widget.searchTerm}"');
     // TODO-951 症状C：开页 seed 一个常驻隐藏热槽，弹窗 WebView 冷加载一次后全程复用
     // （与 reader/video/首页查词同范式），消除「每次查词重建 WebView 露白屏一瞬」。
     // appModel 未初始化时 seedWarmSlot 内部据 lowMemory 早退前先设真值；此处与首页
@@ -167,8 +165,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
-    debugPrint('[popup-perf] search start "$trimmed" '
-        '${_startupStopwatch.elapsedMilliseconds}ms');
     if (_searchController.text != trimmed) {
       _searchController.text = trimmed;
       _searchController.selection = TextSelection.collapsed(
@@ -187,8 +183,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // DictionaryPopupLayer 的加载盖板兜住——不走「搜索期隐藏 + anchored 占位卡」。
       revealWhileSearching: true,
     );
-    debugPrint('[popup-perf] ffi done "$trimmed" '
-        '${_startupStopwatch.elapsedMilliseconds}ms');
   }
 
   void _popAt(int index) {
@@ -471,8 +465,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onClose: isBase ? null : () => _popAt(index),
       onBack: null,
       onRendered: () {
-        debugPrint('[popup-perf] render "${entry.searchTerm}" '
-            '${_startupStopwatch.elapsedMilliseconds}ms');
         if (_popup.revealRendered(entry) && mounted) setState(() {});
       },
       // TODO-951 症状A：点**本层卡片本体的空白区**（popup.js 在 __hasChildPopup 为真时

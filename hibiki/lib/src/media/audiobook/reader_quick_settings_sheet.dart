@@ -37,6 +37,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.pageProgress,
     this.onThemeChanged,
     this.favoriteSentences = const [],
+    this.favoritePositionLabel,
     this.onDeleteFavorite,
     this.onJumpToFavorite,
     this.onPlayFavorite,
@@ -82,6 +83,10 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final WidgetRef ref;
   final Future<void> Function()? onThemeChanged;
   final List<FavoriteSentence> favoriteSentences;
+
+  /// 收藏行「阅读位置」标签（如 `78.6%`）解析器，由阅读器页面用每章字符账本折算全书
+  /// 进度。返回 null 时该行不显示位置（账本未就绪 / 无 sectionIndex）。
+  final String? Function(FavoriteSentence fav)? favoritePositionLabel;
   final Future<void> Function(FavoriteSentence fav)? onDeleteFavorite;
   final Future<void> Function(FavoriteSentence fav)? onJumpToFavorite;
   final Future<void> Function(FavoriteSentence fav)? onPlayFavorite;
@@ -266,15 +271,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       onWideChanged: (bool wide) => _isWide = wide,
       narrowKey: () => ValueKey<String>(_subPage ?? 'main'),
       // 窄窗 padding：水平 page + gap/2，底部叠 card + gap + 键盘 inset（与视频不同，
-      // 视频用 page + gap，不可统一）。
+      // 视频用 page + gap，不可统一；底部走共享公式
+      // [HibikiMasterDetailSettingsSheet.paneInsets]）。
       narrowPadding: (BuildContext context, BoxConstraints constraints) {
-        final double viewInsetsBottom =
-            MediaQuery.of(context).viewInsets.bottom;
-        return EdgeInsets.fromLTRB(
-          tokens.spacing.page + tokens.spacing.gap / 2,
-          tokens.spacing.gap / 2,
-          tokens.spacing.page + tokens.spacing.gap / 2,
-          tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+        return HibikiMasterDetailSettingsSheet.paneInsets(
+          context,
+          horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
+          top: tokens.spacing.gap / 2,
         );
       },
       // 窄窗（含全部手机 bottom sheet）：维持现有 push 行为，外观仍内联。
@@ -286,26 +289,18 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       // 宽窗左右 master-detail（左父菜单 + 右详情）——视频走顶部分类条，两边发散，
       // 故 MaterialSupportingPaneLayout / SupportingPaneSide 等符号留在此回调里。
       wideBuilder: (BuildContext context, BoxConstraints constraints) {
-        final double viewInsetsBottom =
-            MediaQuery.of(context).viewInsets.bottom;
         // TODO-725：导航置首后宽窗默认选中改 'location'（不再默认 appearance）。
         final String selectedId = _subPage ?? 'location';
         final Color dividerColor = isCupertinoPlatform(context)
             ? CupertinoColors.separator.resolveFrom(context)
             : HibikiDesignTokens.of(context).surfaces.outline;
-        final double wideHorizontalInset =
-            tokens.spacing.page + tokens.spacing.gap / 2;
-        final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
-          wideHorizontalInset,
-          tokens.spacing.gap / 2,
-          wideHorizontalInset,
-          tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
-        );
-        final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
-          wideHorizontalInset,
-          tokens.spacing.gap / 2,
-          wideHorizontalInset,
-          tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+        // 左父菜单与右详情两个 pane 同一份 padding（此前两份逐字相同的
+        // EdgeInsets.fromLTRB，收敛为共享公式 paneInsets 的一次调用）。
+        final EdgeInsets widePanePadding =
+            HibikiMasterDetailSettingsSheet.paneInsets(
+          context,
+          horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
+          top: tokens.spacing.gap / 2,
         );
         // 用可用的有界高度撑满整张 master-detail（等价于主页设置把
         // MaterialSupportingPaneLayout 放进 Expanded）：Row(stretch) 才能给
@@ -326,12 +321,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 BuildContext context,
                 BoxConstraints paneConstraints,
               ) {
-                final double minContentHeight = paneConstraints.maxHeight >
-                        wideSupportingPadding.vertical
-                    ? paneConstraints.maxHeight - wideSupportingPadding.vertical
-                    : 0;
+                final double minContentHeight =
+                    paneConstraints.maxHeight > widePanePadding.vertical
+                        ? paneConstraints.maxHeight - widePanePadding.vertical
+                        : 0;
                 return SingleChildScrollView(
-                  padding: wideSupportingPadding,
+                  padding: widePanePadding,
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       minHeight: minContentHeight,
@@ -347,7 +342,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             primary: KeyedSubtree(
               key: ValueKey<String>(selectedId),
               child: SingleChildScrollView(
-                padding: widePrimaryPadding,
+                padding: widePanePadding,
                 child: _buildWidePrimary(context, theme, selectedId),
               ),
             ),
@@ -607,7 +602,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       settingsContext: settingsContext,
       destination: destination,
       shrinkWrap: true,
-      // 本面板已在外层 SingleChildScrollView 提供横向 padding（widePrimaryPadding /
+      // 本面板已在外层 SingleChildScrollView 提供横向 padding（widePanePadding /
       // narrowPadding）；让渲染器别再自带横向缩进，否则 schema 投影子页（布局 / 阅读
       // 控制 / 查词）会双重缩进、比 bespoke 的「导航 / 有声书」子页更窄（TODO-1321）。
       insetHorizontally: false,
@@ -1520,6 +1515,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
+  /// 收藏行副标题：`书名 - 章节 - 时间`，末尾追加阅读位置百分比（解析成功时）。
+  String _favoriteMetaLabel(FavoriteSentence favorite, DateFormat fmt) {
+    final String base =
+        '${favorite.bookTitle}${favorite.chapterLabel != null ? ' - ${favorite.chapterLabel}' : ''} - ${fmt.format(favorite.createdAt)}';
+    final String? position = widget.favoritePositionLabel?.call(favorite);
+    return position == null ? base : '$base · $position';
+  }
+
   Widget _buildFavoritesSection(BuildContext context, ThemeData theme) {
     final DateFormat fmt = DateFormat('MM/dd HH:mm');
     return AdaptiveSettingsSection(
@@ -1528,8 +1531,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         for (final FavoriteSentence favorite in _favorites)
           _InBookFavoriteRow(
             favorite: favorite,
-            metaLabel:
-                '${favorite.bookTitle}${favorite.chapterLabel != null ? ' - ${favorite.chapterLabel}' : ''} - ${fmt.format(favorite.createdAt)}',
+            // BUG-875 附带（用户反馈）：收藏行右侧加「阅读位置」百分比（如 78.6%），
+            // 让用户不放音频 / 不复制文本也能一眼看出这条收藏在书里的位置。位置解析
+            // 失败（章字符账本未就绪）时不追加、只显示原元信息。
+            metaLabel: _favoriteMetaLabel(favorite, fmt),
             color: _highlightColor(favorite.color),
             onPlay: widget.onPlayFavorite == null
                 ? null
@@ -2008,6 +2013,11 @@ class _RepeatIconButtonState extends State<_RepeatIconButton> {
     return GestureDetector(
       onLongPressStart: (_) => _start(),
       onLongPressEnd: (_) => _stop(),
+      // BUG-912 #3：手势被取消（指针滑出 / 识别器被上层夺走）而非正常 End 时，
+      // onLongPressEnd 不必然回调；不补 cancel 的话 _timer 会持续每 100ms 连触
+      // widget.onPressed()（数值狂涨 / 狂降）直到 dispose。与 video_hibiki_page.dart
+      // 的 _VideoRepeatGestureButton 对齐。
+      onLongPressCancel: () => _stop(),
       child: HibikiIconButton(
         icon: widget.icon,
         size: 18,

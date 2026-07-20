@@ -232,6 +232,8 @@ class AnkiRepository extends BaseAnkiRepository {
       // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
       // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
       titleTag: context.bookTitleTag,
+      // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
+      collectionTag: context.collectionTag,
     );
 
     try {
@@ -612,7 +614,8 @@ class AnkiRepository extends BaseAnkiRepository {
     final file = File(path);
     if (!file.existsSync()) return null;
     final bytes = await file.readAsBytes();
-    return hibikiAnkiMediaFilenameForBytes(
+    // BUG-933：sha256 卸到后台 isolate（大媒体），避免阻塞 UI。
+    return hibikiAnkiMediaFilenameForBytesAsync(
       prefix: prefix,
       bytes: bytes,
       sourceName: file.path,
@@ -665,7 +668,8 @@ class AnkiRepository extends BaseAnkiRepository {
                 await response.fold<List<int>>([], (a, b) => a..addAll(b));
             final cacheDir = await _mediaCacheDir();
             final ext = _audioExtension(response.headers.contentType, url);
-            final preferredName = hibikiAnkiMediaFilenameForBytes(
+            // BUG-933：远端音频 sha256 卸到后台 isolate。
+            final preferredName = await hibikiAnkiMediaFilenameForBytesAsync(
               prefix: 'hibiki_audio_',
               bytes: bytes,
               sourceName: url,
@@ -703,7 +707,8 @@ class AnkiRepository extends BaseAnkiRepository {
       final cacheDir = await _mediaCacheDir();
       // 命名与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移；也修了旧
       // split('.').last 在无扩展名时把整串当扩展名的边角）。
-      final filename = ankiDictionaryMediaCacheFilename(media.path);
+      final filename =
+          ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
       final file = File('${cacheDir.path}/$filename');
       if (!file.existsSync()) return null;
       final result =

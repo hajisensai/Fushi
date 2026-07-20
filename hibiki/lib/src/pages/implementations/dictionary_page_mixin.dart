@@ -328,18 +328,34 @@ mixin DictionaryPageMixin {
     return const MinePopupResult();
   }
 
-  /// Resolves and plays the audio for [expression] / [reading] via
-  /// [WordAudioResolver] + [TtsChannel].
-  Future<void> autoReadWord(String expression, String reading) async {
+  /// Resolves and plays the audio for [expression] / [reading]. [popupState] is
+  /// the just-rendered popup WebView (when this surface renders results in a
+  /// popup): auto-read then plays through its own `<audio>` element — the unified
+  /// fast path shared with the manual ♪ button and every surface. Null (e.g. an
+  /// inline full-page view with no popup WebView) falls back to the Dart player.
+  Future<void> autoReadWord(
+    String expression,
+    String reading, {
+    DictionaryPopupWebViewState? popupState,
+  }) async {
     await LookupAutoReadCoordinator.instance.runAutomatic(
       expression: expression,
       reading: reading,
-      play: () => _playAutoReadWord(expression, reading),
+      play: () => _playAutoReadWord(expression, reading, popupState),
     );
   }
 
-  Future<void> _playAutoReadWord(String expression, String reading) =>
-      playLookupAudio(mixinAppModel, expression, reading);
+  Future<void> _playAutoReadWord(
+    String expression,
+    String reading,
+    DictionaryPopupWebViewState? popupState,
+  ) =>
+      autoReadWordUnified(
+        mixinAppModel,
+        expression,
+        reading,
+        playInWebView: popupState?.playWordAudioUrl,
+      );
 
   /// Checks whether a card for [expression] / [reading] already exists in Anki.
   Future<bool> checkDuplicate(String expression, String reading) async {
@@ -565,6 +581,11 @@ mixin DictionaryPageMixin {
             Brightness.dark;
     // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
     return parkedPopupLayer(
+      // BUG-941：搜索占位层消失时本层会在 Stack children 中前移一位。若顶层
+      // Positioned 无 key，Flutter 会按位置把「占位层的 Positioned」更新成本层、
+      // 再销毁旧位置的平台 WebView；Windows 上最终只剩空白弹窗外壳。以 entry
+      // 身份钉住整层，让元素真正搬位而不是拆建原生表面。
+      key: ObjectKey(entry),
       pos: pos,
       // BUG-797：「选择句子上下文」原生对话框打开期间把弹窗停靠屏外，否则原生平台视图盖住对话框。
       visible: entry.visible && !_sentenceContextDialogOpen,
@@ -736,7 +757,6 @@ mixin DictionaryPageMixin {
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return 0;
-    final Stopwatch swPush = Stopwatch()..start();
     final int maxTerms = mixinAppModel.maximumTerms;
     final Rect rect = fallbackSelectionRect(selectionRect);
     final DictionaryPopupEntry entry = controller.beginTop(
@@ -764,9 +784,6 @@ mixin DictionaryPageMixin {
         searchWithWildcards: true,
         overrideMaximumTerms: maxTerms,
       );
-      debugPrint('[dict-perf] pushNestedPopup search done in '
-          '${swPush.elapsedMilliseconds}ms reuseWarm=$reuseWarmSlot '
-          'entries=${result.entries.length} "$trimmed"');
       if (mounted && controller.entries.contains(entry)) {
         setState(() {
           controller.fillResult(
@@ -831,7 +848,8 @@ mixin DictionaryPageMixin {
       if (autoRead && ReaderHibikiSource.instance.autoReadOnLookup) {
         final first = result.entries.first;
         if (first.word.isNotEmpty) {
-          autoReadWord(first.word, first.reading);
+          autoReadWord(first.word, first.reading,
+              popupState: entry.webViewKey.currentState);
         }
       }
     }

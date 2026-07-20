@@ -557,16 +557,11 @@ class HoshiDicts {
   }) {
     final tp = text.toNativeUtf8(allocator: calloc);
     try {
-      final swNative = Stopwatch()..start();
       final r = _bindings!.lookup(_handle!, tp, maxResults, scanLength);
-      swNative.stop();
-      debugPrint(
-          '[dict-perf]     native call: ${swNative.elapsedMicroseconds}µs count=${r.count}');
 
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
       try {
-        final swConvert = Stopwatch()..start();
         final results = <HoshiLookupResult>[];
         for (int i = 0; i < r.count; i++) {
           final src = r.results[i];
@@ -585,9 +580,6 @@ class HoshiDicts {
             preprocessorSteps: src.preprocessorSteps,
           ));
         }
-        swConvert.stop();
-        debugPrint(
-            '[dict-perf]     ffi→dart convert: ${swConvert.elapsedMicroseconds}µs');
         return results;
       } finally {
         _bindings!.freeLookupResults(rPtr);

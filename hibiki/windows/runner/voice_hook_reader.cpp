@@ -56,9 +56,13 @@ VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   s.channels = static_cast<int>(h->channels);
   s.bits_per_sample = static_cast<int>(h->bits_per_sample);
   s.is_float = h->is_float != 0;
-  // reserved_luna 高位由 Siglus 专属文件 hook 写：0x10000000=OVK hooks ready。
-  // 这条路径直接导出压缩 Ogg，不要求已错过的 DirectSound 对象提供 PCM 格式。
-  s.raw_voice_ready = (h->reserved_luna & 0x10000000u) != 0;
+  s.audio_hooks_ready =
+      (h->hook_diagnostics &
+       hibiki_voice_hook::kDiagStartupAudioHooksReady) != 0;
+  // 原始资源语音不要求共享环已有 PCM：KiriKiriZ/Siglus 直接导出逐句 Ogg；Unity
+  // 由 injector 落逐句 WAV。统一契约确保资源优先，系统回环只作某句配对失败时的 fallback。
+  s.raw_voice_ready = hibiki_voice_hook::HasReadyGameResourceAudio(
+      h->reserved_luna, h->hook_diagnostics);
   // 格式就绪（hook 已填有效格式）才算 ok；hooked 但格式全 0（还没收到语音）时 ok=false。
   s.ok = s.hooked && s.sample_rate > 0 && s.channels > 0 && s.bits_per_sample > 0;
   return s;

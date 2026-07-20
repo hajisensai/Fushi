@@ -251,6 +251,13 @@ void main() {
     'lib/src/utils/misc/hibiki_toast.dart': <String>[
       'HibikiDesignTokens',
     ],
+    // Merged from app_model_popup_dictionary_md3_static_test.dart: the desktop
+    // popup dictionary lookup (AppModel.openPopupDictionaryLookup) uses the shared
+    // MD3 dialog frame + PopupDictionaryPage instead of a bespoke Dialog shell.
+    'lib/src/models/app_model.dart': <String>[
+      'HibikiDialogFrame(',
+      'PopupDictionaryPage(',
+    ],
   };
 
   test('MD3 design token and shared component files exist', () {
@@ -474,10 +481,6 @@ void main() {
         'fontSize: 13',
         'OutlineInputBorder',
       ],
-      'lib/src/pages/implementations/blur_options_dialog_page.dart': <String>[
-        'TextField(',
-        'OutlineInputBorder',
-      ],
       'lib/src/pages/implementations/media_item_edit_dialog_page.dart':
           <String>[
         'TextField(',
@@ -538,6 +541,13 @@ void main() {
       'lib/src/utils/misc/hibiki_toast.dart': <String>[
         'BorderRadius.circular(24)',
         'fontSize: 14',
+      ],
+      // Merged from app_model_popup_dictionary_md3_static_test.dart: the popup
+      // dictionary lookup must not fall back to a bespoke Dialog + ConstrainedBox
+      // shell (it flows through HibikiDialogFrame instead).
+      'lib/src/models/app_model.dart': <String>[
+        '=> Dialog(',
+        'child: ConstrainedBox(',
       ],
     };
 
@@ -605,6 +615,16 @@ void main() {
       'lib/src/pages/implementations/video_statistics_page.dart':
           'Video statistics charts/metric bars mirror reading_statistics_page: '
               'progress-bar track surface is chart content, not page chrome.',
+      // PR#247 首页活动热力图加翻页 + 选中日数值气泡：GitHub 式贡献热力图是数据可视化
+      // 组件（格子强度按 colorScheme 映射色阶），header 的选中日数值气泡（_bubbleChip
+      // 用 surfaceContainerHighest tonal 底 + labelMedium 文本）是图表标注内容，非普通
+      // 页面 chrome——同 reading_statistics_page / video_statistics_page 的图表内容豁免类。
+      'lib/src/utils/components/stat_contribution_heatmap.dart':
+          'Contribution heatmap is a data-visualization component (cell '
+              'intensity maps to a colorScheme scale); the selected-day value '
+              'bubble (_bubbleChip surfaceContainerHighest tonal chip) is chart '
+              'annotation content, not ordinary page chrome — same reviewed '
+              'exception class as reading_statistics_page / video_statistics_page.',
       'lib/src/pages/implementations/dictionary_popup_native.dart':
           'Dictionary popup chip/content typography is dense lookup content.',
       'lib/src/pages/implementations/dictionary_popup_webview.dart':
@@ -615,6 +635,12 @@ void main() {
               'etc.) from the MD3 ColorScheme; surface roles are injected into '
               'popup CSS, not ordinary Flutter page chrome — same reviewed '
               'exception class as dictionary_popup_webview / global_lookup_render.',
+      'lib/src/utils/popup_theme_css.dart':
+          'Popup theme CSS single source of truth maps MD3 ColorScheme surface '
+              'roles (surfaceContainerHigh etc.) to WebView CSS custom '
+              'properties for the three popup injectors — same reviewed '
+              'exception class as popup_settings_injection / '
+              'dictionary_popup_webview.',
       'lib/src/lookup/global_lookup_render.dart':
           'Global lookup popup theming injects MD3 ColorScheme surface roles into popup CSS (same as dictionary_popup_webview).',
       'lib/src/pages/implementations/history_reader_page.dart':
@@ -644,6 +670,19 @@ void main() {
               'placeholder using surfaceContainerHighest); episode cover art / '
               'media-shelf content, not ordinary page chrome — same reviewed '
               'exception class as series_shelf_card mosaic covers.',
+      // galgame 游戏库页把每个游戏渲染成封面卡片（有 coverPath 用 Image.file，
+      // 否则 surfaceContainerHighest letterbox + 手柄图标占位），点击卡片启动游戏
+      // 进入制卡。卡片外框 Card + 无封面占位面色 surfaceContainerHighest 是游戏
+      // 封面美术 / 媒体书架内容，非普通页面 chrome，同 series_shelf_card 马赛克封面
+      // / media_collection_detail_page 每集封面 / 书架封面豁免类。
+      'lib/src/pages/implementations/games_library_page.dart':
+          'Galgame library renders each game as a cover card (Image.file cover '
+              'or surfaceContainerHighest letterbox + gamepad-icon placeholder '
+              'when no cover); the card frame (Card) and no-cover placeholder '
+              'surface (surfaceContainerHighest) are game cover art / media-shelf '
+              'content, not ordinary page chrome — same reviewed exception class '
+              'as series_shelf_card mosaic covers / media_collection_detail_page '
+              'per-episode covers / reader-shelf book covers.',
       // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
@@ -867,12 +906,28 @@ void main() {
       'lib/src/pages/implementations/jimaku_subtitle_dialog.dart':
           'Experimental Jimaku subtitle dialog lists downloadable subtitle '
               'files as transient video-subsystem content rows.',
+      'lib/src/pages/implementations/anime_download_dialog.dart':
+          'Anime download dialog lists Nyaa torrent candidates (release group / '
+              'resolution / seeders / subtitle-coverage badges) and per-episode '
+              'Jimaku subtitle rows plus a download-task list as transient '
+              'video-subsystem content — the same reviewed content exception '
+              'class as the sibling jimaku_subtitle_dialog / jimaku_batch_dialog.',
       'lib/src/anki/anki_mined_card_action_sheet.dart':
           'TODO-1007/1008 mined-card action sheet lists matching Anki notes '
               'as transient content rows (note preview + per-note overwrite/view '
               'actions) plus an add-duplicate action row — Anki-subsystem content, '
               'the same reviewed exception class as the dictionary import/delete '
               'content rows.',
+      // PR#253 / BUG-922：制卡「选择句子上下文」原生对话框（Niratan 式）的 ±上下文
+      // 调整按钮，在横屏矮窗里刻意收紧到 compact 视觉密度（VisualDensity.compact +
+      // 收敛 padding/minSize），给句子预览让出竖向空间——挖矿子系统的内容对话框，
+      // 非普通页面 chrome，同 anki_mined_card_action_sheet 的内容对话框豁免类。
+      'lib/src/pages/implementations/sentence_context_dialog.dart':
+          'Sentence-context mining dialog deliberately uses compact visual '
+              'density on its context-adjust buttons to free vertical space for '
+              'the sentence preview in short landscape windows (BUG-922); '
+              'mining-subsystem content dialog, not ordinary page chrome — same '
+              'reviewed exception class as anki_mined_card_action_sheet.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
       'lib/src/pages/implementations/dictionary_dialog_import_page.dart':
@@ -1318,13 +1373,26 @@ void main() {
     expect(audiobookBuild, isNot(contains('adaptiveAlertDialog(')));
     expect(removeDialog, isNot(contains('adaptiveAlertDialog(')));
 
+    // 导入对话框外框 chrome 已收敛到共享 ImportDialogFrame（清理 wave2）：
+    // 两侧 Frame 断言走委托，共享件内再断言真实 chrome，MD3 保证传递闭环
+    // （参照 BatchTagPickerDialogFrame 先例）。RemoveConfirmation 仍直持 chrome。
+    final String sharedImportFrame = _sectionSource(
+      bookImportSource,
+      'class ImportDialogFrame',
+      'class BookImportDialogFrame',
+    );
+    expect(bookImportFrame, contains('return ImportDialogFrame('));
+    expect(audiobookFrame, contains('return ImportDialogFrame('));
+    expect(sharedImportFrame, contains('HibikiDialogFrame('));
+    expect(sharedImportFrame, contains('HibikiModalSheetFrame('));
+    expect(removeFrame, contains('HibikiDialogFrame('));
+    expect(removeFrame, contains('HibikiModalSheetFrame('));
     for (final String dialogSource in <String>[
       bookImportFrame,
       audiobookFrame,
       removeFrame,
+      sharedImportFrame,
     ]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
   });
@@ -1383,6 +1451,24 @@ void main() {
       '  Widget _audioSourceRow()',
     );
 
+    // 导入中 spinner 按钮（含 tokens.surfaces.primary 的进度指示）已收敛到
+    // import_dialog_progress_mixin.buildImportAction：两侧 flow 断言委托，
+    // mixin 体内再断言真实 token，保证传递闭环。
+    final String progressMixinSource = File(
+      'lib/src/media/audiobook/import_dialog_progress_mixin.dart',
+    ).readAsStringSync();
+    final String importActionBody = _functionSource(
+      progressMixinSource,
+      'Widget buildImportAction(',
+      '  List<Widget> buildProgressSection(',
+    );
+    expect(importActionBody, contains('HibikiDesignTokens.of(context)'));
+    expect(importActionBody, contains('tokens.surfaces.primary'));
+    expect(
+      importActionBody,
+      isNot(contains('Theme.of(context).colorScheme.primary')),
+    );
+
     for (final String section in <String>[
       bookImportFlow,
       audiobookImportFlow,
@@ -1390,7 +1476,7 @@ void main() {
       expect(section, contains('HibikiDesignTokens.of(context)'));
       expect(section, contains('tokens.spacing'));
       expect(section, contains('tokens.type.metadata'));
-      expect(section, contains('tokens.surfaces.primary'));
+      expect(section, contains('buildImportAction('));
       expect(section, isNot(contains('Theme.of(context).textTheme.bodySmall')));
       expect(
         section,
@@ -2402,6 +2488,13 @@ void main() {
     final String deleteDialog = _functionSource(
       source,
       'Future<void> showDictionaryDeleteDialog(Dictionary dictionary)',
+      '  /// 「清空全部词典 / 删除单本词典」共用的确认对话框流程',
+    );
+    // 清空/删除两个确认流程已收敛到共用 helper（原为两份逐字复制的构造样板），
+    // MD3 对话框铬件断言随之锚到 helper 本体；两个入口只需保证仍委托给它。
+    final String confirmHelper = _functionSource(
+      source,
+      'Future<void> _showDictionaryActionConfirmDialog({',
       '  Future<void> _importDictionaryFiles()',
     );
     final String confirmationFrame = _sectionSource(
@@ -2416,9 +2509,11 @@ void main() {
     );
 
     for (final String dialogSource in <String>[clearDialog, deleteDialog]) {
-      expect(dialogSource, contains('DictionaryConfirmationDialog('));
+      expect(dialogSource, contains('_showDictionaryActionConfirmDialog('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
+    expect(confirmHelper, contains('DictionaryConfirmationDialog('));
+    expect(confirmHelper, isNot(contains('adaptiveAlertDialog(')));
 
     for (final String dialogSource in <String>[
       confirmationFrame,
