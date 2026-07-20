@@ -124,4 +124,79 @@ void main() {
     expect((await db.getCollectionItems(c2)).map((m) => m.entryKey),
         <String>['v2']);
   });
+
+  test(
+      'getAllCollectionItems 覆盖全部合集全部成员，按 collectionId 分组逐组等于 '
+      'getCollectionItems（BUG-959 消除 N+1）', () async {
+    final db = await _openDb();
+    final int c1 = await db.createMediaCollection('C1');
+    final int c2 = await db.createMediaCollection('C2');
+    await db.addToCollection(c1, 'video', 'v1');
+    await db.addToCollection(c1, 'video', 'v2');
+    await db.addToCollection(c2, 'epub', 'b1');
+    await db.addToCollection(c2, 'video', 'v1'); // v1 同属 c1、c2
+
+    final List<MediaCollectionItemRow> all = await db.getAllCollectionItems();
+    // 4 条：c1 的 v1/v2 + c2 的 b1/v1。
+    expect(all.length, 4);
+
+    final Map<int, List<MediaCollectionItemRow>> grouped =
+        <int, List<MediaCollectionItemRow>>{};
+    for (final MediaCollectionItemRow m in all) {
+      grouped
+          .putIfAbsent(m.collectionId, () => <MediaCollectionItemRow>[])
+          .add(m);
+    }
+    // 每组（同序）必须等于逐合集查询结果——保证内存分组可替代 N+1。
+    for (final int cid in <int>[c1, c2]) {
+      final List<MediaCollectionItemRow> per = await db.getCollectionItems(cid);
+      expect(
+        grouped[cid]!
+            .map((MediaCollectionItemRow m) =>
+                '${m.mediaType}|${m.entryKey}#${m.sortIndex}')
+            .toList(),
+        per
+            .map((MediaCollectionItemRow m) =>
+                '${m.mediaType}|${m.entryKey}#${m.sortIndex}')
+            .toList(),
+      );
+    }
+  });
+
+  test('memberSortIndex 内存分组（primaryMap[key]==m.collectionId）与旧逐合集逻辑等价',
+      () async {
+    final db = await _openDb();
+    final int c1 = await db.createMediaCollection('C1');
+    final int c2 = await db.createMediaCollection('C2');
+    await db.addToCollection(c1, 'video', 'v1'); // c1 内 sortIndex 0
+    await db.addToCollection(c1, 'video', 'v2'); // c1 内 sortIndex 1
+    await db.addToCollection(c2, 'video', 'v1'); // c2 内 sortIndex 0
+    await db.addToCollection(c2, 'video', 'v3'); // c2 内 sortIndex 1
+
+    final Map<String, int> primaryMap =
+        await db.getPrimaryCollectionIdByEntry();
+
+    // 新实现：一次 getAllCollectionItems + 内存分组。
+    final Map<String, int> newMap = <String, int>{};
+    for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
+      final String key = '${m.mediaType}|${m.entryKey}';
+      if (primaryMap[key] == m.collectionId) newMap[key] = m.sortIndex;
+    }
+
+    // 旧实现：逐合集 getCollectionItems（判据 == c.id）。
+    final Map<String, int> oldMap = <String, int>{};
+    for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
+      for (final MediaCollectionItemRow m
+          in await db.getCollectionItems(c.id)) {
+        final String key = '${m.mediaType}|${m.entryKey}';
+        if (primaryMap[key] == c.id) oldMap[key] = m.sortIndex;
+      }
+    }
+
+    expect(newMap, oldMap);
+    // v1 折叠归 c1(min)，取 c1 内 sortIndex 0；v2→1；v3 在 c2 内 1。
+    expect(newMap['video|v1'], 0);
+    expect(newMap['video|v2'], 1);
+    expect(newMap['video|v3'], 1);
+  });
 }
