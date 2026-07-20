@@ -2065,6 +2065,8 @@
   "galgame_helper_downloading": "Downloading engine component…",
   "galgame_helper_download_failed": "Engine component download failed: $error",
   "galgame_helper_install_incomplete": "Engine component install incomplete, please retry",
+  "download_settings": "Download settings",
+  "download_backend_not_configured": "Configure the download backend below (expand Download settings).",
   "floating_lyric_text_opacity_hint": "Verringern, um den schwebenden Untertiteltext transparenter zu machen",
   "floating_lyric_button_bg_opacity_hint": "Stellt ein, wie transparent die Hintergründe der schwebenden Untertitel-Bedienknöpfe sind",
   "floating_lyric_bg_opacity_hint": "Verringern, um die schwebende Untertitelleiste transparenter zu machen, damit sie weniger Sicht verdeckt",

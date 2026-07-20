@@ -2065,6 +2065,8 @@
   "galgame_helper_downloading": "Downloading engine component…",
   "galgame_helper_download_failed": "Engine component download failed: $error",
   "galgame_helper_install_incomplete": "Engine component install incomplete, please retry",
+  "download_settings": "Download settings",
+  "download_backend_not_configured": "Configure the download backend below (expand Download settings).",
   "floating_lyric_text_opacity_hint": "Уменьшите, чтобы текст плавающих субтитров стал прозрачнее",
   "floating_lyric_button_bg_opacity_hint": "Настройте прозрачность фона кнопок управления плавающими субтитрами",
   "floating_lyric_bg_opacity_hint": "Уменьшите, чтобы панель плавающих субтитров стала прозрачнее и меньше закрывала обзор",

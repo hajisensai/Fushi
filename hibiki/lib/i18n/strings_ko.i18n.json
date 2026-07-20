@@ -2065,6 +2065,8 @@
   "galgame_helper_downloading": "Downloading engine component…",
   "galgame_helper_download_failed": "Engine component download failed: $error",
   "galgame_helper_install_incomplete": "Engine component install incomplete, please retry",
+  "download_settings": "Download settings",
+  "download_backend_not_configured": "Configure the download backend below (expand Download settings).",
   "floating_lyric_text_opacity_hint": "낮추면 플로팅 자막 텍스트가 더 투명해집니다",
   "floating_lyric_button_bg_opacity_hint": "플로팅 자막 조작 버튼의 배경 투명도를 조절합니다",
   "floating_lyric_bg_opacity_hint": "낮추면 플로팅 자막 바가 더 투명해져 시야를 덜 가립니다",

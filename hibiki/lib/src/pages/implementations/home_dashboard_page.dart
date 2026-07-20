@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -91,10 +91,38 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     all: 0,
   );
 
+  /// 订阅「数据变了」信号（阅读/观看/导入落库）以自动刷新，及其防抖定时器。
+  /// 首页不保活、且阅读器是 pushed 路由（读完回来首页不重建 initState），故必须靠
+  /// DB 表级变更主动重查，否则「打开一本书读完回来」活动/热力图仍是旧数据。
+  StreamSubscription<void>? _dataChangeSub;
+  Timer? _reloadDebounce;
+
   @override
   void initState() {
     super.initState();
     unawaited(_loadDashboardData());
+    // 阅读/观看/导入写库 → 表级变更 → 防抖后重查聚合，首页自动刷新（竞态无关：
+    // 信号在写入 commit 后才发，重查读到的是已落库数据）。
+    _dataChangeSub = ref
+        .read(appProvider)
+        .database
+        .watchDashboardDataChanges()
+        .listen((_) => _scheduleReload());
+  }
+
+  /// 表变更后防抖重载（多次连续写只重查一次，避免频繁 setState）。
+  void _scheduleReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) unawaited(_loadDashboardData());
+    });
+  }
+
+  @override
+  void dispose() {
+    _reloadDebounce?.cancel();
+    unawaited(_dataChangeSub?.cancel());
+    super.dispose();
   }
 
   /// 一次性异步载入视频库 + 统计行 + 活动事件，并派生热力图/时长窗口/最近观看映射。
@@ -122,10 +150,15 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         await db.getAllVideoWatchStatistics();
     final DateTime now = DateTime.now();
 
-    // 每日阅读字数聚合（热力图数据源）。
+    // 每日「读到的字数」聚合（活动热力图数据源）：书内阅读字数 + 视频字幕字数
+    // 一起计入——看带字幕的视频也是在读字，故热力图同时反映阅读与观看活动，不再
+    // 只有书籍点亮（用户反馈「阅读活动只有书籍，其他的呢」）。
     final Map<String, int> charsByDay = <String, int>{};
     for (final ReadingStatisticRow r in reading) {
       charsByDay[r.dateKey] = (charsByDay[r.dateKey] ?? 0) + r.charactersRead;
+    }
+    for (final VideoWatchStatisticRow w in watch) {
+      charsByDay[w.dateKey] = (charsByDay[w.dateKey] ?? 0) + w.subtitleChars;
     }
 
     // 时长窗口：阅读时长 + 视频观看时长一起喂进纯函数聚合。

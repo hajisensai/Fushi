@@ -119,7 +119,7 @@ String genericPushMessage(GenericPushOutcome outcome) {
     case GenericPushOutcome.storeUnavailable:
       return t.anime_download_store_unavailable;
     case GenericPushOutcome.notReady:
-      return t.anime_download_qb_hint;
+      return t.download_backend_not_configured;
     case GenericPushOutcome.pushFailed:
       return t.anime_download_push_failed;
   }

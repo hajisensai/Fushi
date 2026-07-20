@@ -2065,6 +2065,8 @@
   "galgame_helper_downloading": "Downloading engine component…",
   "galgame_helper_download_failed": "Engine component download failed: $error",
   "galgame_helper_install_incomplete": "Engine component install incomplete, please retry",
+  "download_settings": "Download settings",
+  "download_backend_not_configured": "Configure the download backend below (expand Download settings).",
   "floating_lyric_text_opacity_hint": "Baissez cette valeur pour rendre le texte du sous-titre flottant plus transparent",
   "floating_lyric_button_bg_opacity_hint": "Réglez la transparence du fond des boutons de contrôle du sous-titre flottant",
   "floating_lyric_bg_opacity_hint": "Baissez cette valeur pour rendre la barre de sous-titre flottant plus transparente et moins gênante",

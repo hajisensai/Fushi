@@ -2065,6 +2065,8 @@
   "galgame_helper_downloading": "Downloading engine component…",
   "galgame_helper_download_failed": "Engine component download failed: $error",
   "galgame_helper_install_incomplete": "Engine component install incomplete, please retry",
+  "download_settings": "Download settings",
+  "download_backend_not_configured": "Configure the download backend below (expand Download settings).",
   "floating_lyric_text_opacity_hint": "Abbassa questo valore per rendere più trasparente il testo del sottotitolo fluttuante",
   "floating_lyric_button_bg_opacity_hint": "Regola la trasparenza dello sfondo dei pulsanti di controllo del sottotitolo fluttuante",
   "floating_lyric_bg_opacity_hint": "Abbassa questo valore per rendere più trasparente la barra del sottotitolo fluttuante, così da ostacolare meno la visuale",
