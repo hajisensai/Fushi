@@ -396,7 +396,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              t.anime_download_qb_hint,
+              t.download_backend_not_configured,
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),

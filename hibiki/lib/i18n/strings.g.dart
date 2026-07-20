@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 33915 (1995 per locale)
+/// Strings: 33949 (1997 per locale)
 ///
-/// Built on 2026-07-20 at 04:33 UTC
+/// Built on 2026-07-20 at 12:22 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2683,6 +2683,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_setting_torrent_memory_limit => 'Memory limit (MB)';
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  String get download_settings => 'Download settings';
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -7207,6 +7210,11 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -11804,6 +11812,11 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -16417,6 +16430,11 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -21041,6 +21059,11 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -25592,6 +25615,11 @@ class _StringsId extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -30191,6 +30219,11 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -34596,6 +34629,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -39004,6 +39042,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -43581,6 +43624,11 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -48173,6 +48221,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -52748,6 +52801,11 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -57268,6 +57326,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -61820,6 +61883,11 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -66359,6 +66427,11 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 // Path: <root>
@@ -70584,6 +70657,10 @@ class _StringsZhCn extends _StringsEn {
   String get video_setting_torrent_memory_limit => '内存占用上限（MB）';
   @override
   String get video_setting_torrent_memory_hint => '限制引擎内存占用。0 = 自动（按设备内存推导）。';
+  @override
+  String get download_settings => '下载设置';
+  @override
+  String get download_backend_not_configured => '请在下方「下载设置」里配置下载后端';
 }
 
 // Path: <root>
@@ -74911,6 +74988,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_setting_torrent_memory_hint =>
       'Cap engine memory. 0 = auto (based on device RAM).';
+  @override
+  String get download_settings => 'Download settings';
+  @override
+  String get download_backend_not_configured =>
+      'Configure the download backend below (expand Download settings).';
 }
 
 /// Flat map(s) containing all translations.
@@ -78990,6 +79072,10 @@ extension on _StringsEn {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -83067,6 +83153,10 @@ extension on _StringsAr {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -87165,6 +87255,10 @@ extension on _StringsDe {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -91262,6 +91356,10 @@ extension on _StringsEs {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -95365,6 +95463,10 @@ extension on _StringsFr {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -99450,6 +99552,10 @@ extension on _StringsId {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -103550,6 +103656,10 @@ extension on _StringsIt {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -107612,6 +107722,10 @@ extension on _StringsJa {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -111678,6 +111792,10 @@ extension on _StringsKo {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -115771,6 +115889,10 @@ extension on _StringsNl {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -119861,6 +119983,10 @@ extension on _StringsPtBr {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -123956,6 +124082,10 @@ extension on _StringsRu {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -128035,6 +128165,10 @@ extension on _StringsTh {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -132123,6 +132257,10 @@ extension on _StringsTr {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -136206,6 +136344,10 @@ extension on _StringsVi {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
@@ -140257,6 +140399,10 @@ extension on _StringsZhCn {
         return '内存占用上限（MB）';
       case 'video_setting_torrent_memory_hint':
         return '限制引擎内存占用。0 = 自动（按设备内存推导）。';
+      case 'download_settings':
+        return '下载设置';
+      case 'download_backend_not_configured':
+        return '请在下方「下载设置」里配置下载后端';
       default:
         return null;
     }
@@ -144314,6 +144460,10 @@ extension on _StringsZhHk {
         return 'Memory limit (MB)';
       case 'video_setting_torrent_memory_hint':
         return 'Cap engine memory. 0 = auto (based on device RAM).';
+      case 'download_settings':
+        return 'Download settings';
+      case 'download_backend_not_configured':
+        return 'Configure the download backend below (expand Download settings).';
       default:
         return null;
     }
