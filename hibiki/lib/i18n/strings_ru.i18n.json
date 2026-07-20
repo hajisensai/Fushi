@@ -768,7 +768,6 @@
   "shortcut_reset_confirm": "Сбросить все сочетания в этом разделе к значениям по умолчанию?",
   "shortcut_keyboard": "Клавиатура",
   "shortcut_gamepad": "Геймпад",
-  "shortcut_none": "Нет",
   "shortcut_clear": "Очистить",
   "shortcut_stop_capture": "Стоп",
   "section_advanced_typography": "Дополнительно",

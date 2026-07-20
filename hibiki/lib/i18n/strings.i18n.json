@@ -768,7 +768,6 @@
   "shortcut_reset_confirm": "Reset all shortcuts in this section to defaults?",
   "shortcut_keyboard": "Keyboard",
   "shortcut_gamepad": "Gamepad",
-  "shortcut_none": "None",
   "shortcut_clear": "Clear",
   "shortcut_stop_capture": "Stop",
   "section_advanced_typography": "Advanced",

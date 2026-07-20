@@ -174,20 +174,25 @@ void main() {
   });
 
   group('settings page label exhaustiveness', () {
+    // Labels moved into the shared shortcut_labels extensions (shortcut
+    // settings refactor); the page renders via `action.label` / `scope.label`.
+    final String labelsSrc = File(
+      'lib/src/shortcuts/shortcut_labels.dart',
+    ).readAsStringSync();
     final String pageSrc = File(
       'lib/src/pages/implementations/shortcut_settings_page.dart',
     ).readAsStringSync();
 
-    test('_actionLabel covers globalExternalLookup', () {
+    test('ShortcutActionLabel covers globalExternalLookup', () {
       expect(
-        pageSrc.contains('case ShortcutAction.globalExternalLookup:'),
+        labelsSrc.contains('case ShortcutAction.globalExternalLookup:'),
         isTrue,
       );
     });
 
-    test('_scopeLabel covers globalExternal', () {
+    test('ShortcutScopeLabel covers globalExternal', () {
       expect(
-        pageSrc.contains('case ShortcutScope.globalExternal:'),
+        labelsSrc.contains('case ShortcutScope.globalExternal:'),
         isTrue,
       );
     });

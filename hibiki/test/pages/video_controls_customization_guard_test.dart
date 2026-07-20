@@ -305,8 +305,11 @@ void main() {
     final String defaults = read('lib/src/shortcuts/shortcut_defaults.dart');
     final String shortcuts =
         read('lib/src/media/video/video_player_shortcuts.dart');
-    final String settings =
-        read('lib/src/pages/implementations/shortcut_settings_page.dart');
+    // Action display labels moved from the settings page into the shared
+    // shortcut_labels extensions (shortcut settings refactor); the settings
+    // page renders every action via `action.label`, so labels-file coverage is
+    // what proves the tile can render these actions.
+    final String settings = read('lib/src/shortcuts/shortcut_labels.dart');
     final String page = readVideoHibikiSource();
 
     for (final String action in <String>[

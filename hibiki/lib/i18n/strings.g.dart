@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 35156 (2068 per locale)
+/// Strings: 35139 (2067 per locale)
 ///
-/// Built on 2026-07-20 at 17:02 UTC
+/// Built on 2026-07-20 at 17:45 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1083,7 +1083,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Reset all shortcuts in this section to defaults?';
   String get shortcut_keyboard => 'Keyboard';
   String get shortcut_gamepad => 'Gamepad';
-  String get shortcut_none => 'None';
   String get shortcut_clear => 'Clear';
   String get shortcut_stop_capture => 'Stop';
   String get section_advanced_typography => 'Advanced';
@@ -4468,8 +4467,6 @@ class _StringsAr extends _StringsEn {
   String get shortcut_keyboard => 'لوحة المفاتيح';
   @override
   String get shortcut_gamepad => 'يد التحكّم';
-  @override
-  String get shortcut_none => 'بلا';
   @override
   String get shortcut_clear => 'مسح';
   @override
@@ -9183,8 +9180,6 @@ class _StringsDe extends _StringsEn {
   String get shortcut_keyboard => 'Tastatur';
   @override
   String get shortcut_gamepad => 'Gamepad';
-  @override
-  String get shortcut_none => 'Keine';
   @override
   String get shortcut_clear => 'Löschen';
   @override
@@ -13954,8 +13949,6 @@ class _StringsEs extends _StringsEn {
   String get shortcut_keyboard => 'Teclado';
   @override
   String get shortcut_gamepad => 'Mando';
-  @override
-  String get shortcut_none => 'Ninguno';
   @override
   String get shortcut_clear => 'Borrar';
   @override
@@ -18740,8 +18733,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get shortcut_gamepad => 'Manette';
   @override
-  String get shortcut_none => 'Aucun';
-  @override
   String get shortcut_clear => 'Effacer';
   @override
   String get shortcut_stop_capture => 'Arrêter';
@@ -23487,8 +23478,6 @@ class _StringsId extends _StringsEn {
   @override
   String get shortcut_gamepad => 'Gamepad';
   @override
-  String get shortcut_none => 'Tidak Ada';
-  @override
   String get shortcut_clear => 'Hapus';
   @override
   String get shortcut_stop_capture => 'Berhenti';
@@ -28224,8 +28213,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get shortcut_gamepad => 'Gamepad';
   @override
-  String get shortcut_none => 'Nessuna';
-  @override
   String get shortcut_clear => 'Cancella';
   @override
   String get shortcut_stop_capture => 'Arresta';
@@ -32905,8 +32892,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get shortcut_gamepad => 'ゲームパッド';
   @override
-  String get shortcut_none => 'なし';
-  @override
   String get shortcut_clear => 'クリア';
   @override
   String get shortcut_stop_capture => '停止';
@@ -37475,8 +37460,6 @@ class _StringsKo extends _StringsEn {
   String get shortcut_keyboard => '키보드';
   @override
   String get shortcut_gamepad => '게임패드';
-  @override
-  String get shortcut_none => '없음';
   @override
   String get shortcut_clear => '지우기';
   @override
@@ -42114,8 +42097,6 @@ class _StringsNl extends _StringsEn {
   String get shortcut_keyboard => 'Toetsenbord';
   @override
   String get shortcut_gamepad => 'Gamepad';
-  @override
-  String get shortcut_none => 'Geen';
   @override
   String get shortcut_clear => 'Wissen';
   @override
@@ -46864,8 +46845,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get shortcut_gamepad => 'Controle';
   @override
-  String get shortcut_none => 'Nenhum';
-  @override
   String get shortcut_clear => 'Limpar';
   @override
   String get shortcut_stop_capture => 'Parar';
@@ -51611,8 +51590,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get shortcut_gamepad => 'Геймпад';
   @override
-  String get shortcut_none => 'Нет';
-  @override
   String get shortcut_clear => 'Очистить';
   @override
   String get shortcut_stop_capture => 'Стоп';
@@ -56323,8 +56300,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get shortcut_gamepad => 'เกมแพด';
   @override
-  String get shortcut_none => 'ไม่มี';
-  @override
   String get shortcut_clear => 'ล้าง';
   @override
   String get shortcut_stop_capture => 'หยุด';
@@ -61023,8 +60998,6 @@ class _StringsTr extends _StringsEn {
   String get shortcut_keyboard => 'Klavye';
   @override
   String get shortcut_gamepad => 'Oyun kumandası';
-  @override
-  String get shortcut_none => 'Yok';
   @override
   String get shortcut_clear => 'Temizle';
   @override
@@ -65731,8 +65704,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get shortcut_gamepad => 'Tay cầm';
   @override
-  String get shortcut_none => 'Không có';
-  @override
   String get shortcut_clear => 'Xóa';
   @override
   String get shortcut_stop_capture => 'Dừng';
@@ -70353,8 +70324,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get shortcut_gamepad => '手柄';
   @override
-  String get shortcut_none => '无';
-  @override
   String get shortcut_clear => '清除';
   @override
   String get shortcut_stop_capture => '停止捕获';
@@ -74726,8 +74695,6 @@ class _StringsZhHk extends _StringsEn {
   String get shortcut_keyboard => '鍵盤';
   @override
   String get shortcut_gamepad => '手掣';
-  @override
-  String get shortcut_none => '無';
   @override
   String get shortcut_clear => '清除';
   @override
@@ -79175,8 +79142,6 @@ extension on _StringsEn {
         return 'Keyboard';
       case 'shortcut_gamepad':
         return 'Gamepad';
-      case 'shortcut_none':
-        return 'None';
       case 'shortcut_clear':
         return 'Clear';
       case 'shortcut_stop_capture':
@@ -83399,8 +83364,6 @@ extension on _StringsAr {
         return 'لوحة المفاتيح';
       case 'shortcut_gamepad':
         return 'يد التحكّم';
-      case 'shortcut_none':
-        return 'بلا';
       case 'shortcut_clear':
         return 'مسح';
       case 'shortcut_stop_capture':
@@ -87640,8 +87603,6 @@ extension on _StringsDe {
         return 'Tastatur';
       case 'shortcut_gamepad':
         return 'Gamepad';
-      case 'shortcut_none':
-        return 'Keine';
       case 'shortcut_clear':
         return 'Löschen';
       case 'shortcut_stop_capture':
@@ -91886,8 +91847,6 @@ extension on _StringsEs {
         return 'Teclado';
       case 'shortcut_gamepad':
         return 'Mando';
-      case 'shortcut_none':
-        return 'Ninguno';
       case 'shortcut_clear':
         return 'Borrar';
       case 'shortcut_stop_capture':
@@ -96134,8 +96093,6 @@ extension on _StringsFr {
         return 'Clavier';
       case 'shortcut_gamepad':
         return 'Manette';
-      case 'shortcut_none':
-        return 'Aucun';
       case 'shortcut_clear':
         return 'Effacer';
       case 'shortcut_stop_capture':
@@ -100376,8 +100333,6 @@ extension on _StringsId {
         return 'Keyboard';
       case 'shortcut_gamepad':
         return 'Gamepad';
-      case 'shortcut_none':
-        return 'Tidak Ada';
       case 'shortcut_clear':
         return 'Hapus';
       case 'shortcut_stop_capture':
@@ -104616,8 +104571,6 @@ extension on _StringsIt {
         return 'Tastiera';
       case 'shortcut_gamepad':
         return 'Gamepad';
-      case 'shortcut_none':
-        return 'Nessuna';
       case 'shortcut_clear':
         return 'Cancella';
       case 'shortcut_stop_capture':
@@ -108846,8 +108799,6 @@ extension on _StringsJa {
         return 'キーボード';
       case 'shortcut_gamepad':
         return 'ゲームパッド';
-      case 'shortcut_none':
-        return 'なし';
       case 'shortcut_clear':
         return 'クリア';
       case 'shortcut_stop_capture':
@@ -113059,8 +113010,6 @@ extension on _StringsKo {
         return '키보드';
       case 'shortcut_gamepad':
         return '게임패드';
-      case 'shortcut_none':
-        return '없음';
       case 'shortcut_clear':
         return '지우기';
       case 'shortcut_stop_capture':
@@ -117288,8 +117237,6 @@ extension on _StringsNl {
         return 'Toetsenbord';
       case 'shortcut_gamepad':
         return 'Gamepad';
-      case 'shortcut_none':
-        return 'Geen';
       case 'shortcut_clear':
         return 'Wissen';
       case 'shortcut_stop_capture':
@@ -121529,8 +121476,6 @@ extension on _StringsPtBr {
         return 'Teclado';
       case 'shortcut_gamepad':
         return 'Controle';
-      case 'shortcut_none':
-        return 'Nenhum';
       case 'shortcut_clear':
         return 'Limpar';
       case 'shortcut_stop_capture':
@@ -125771,8 +125716,6 @@ extension on _StringsRu {
         return 'Клавиатура';
       case 'shortcut_gamepad':
         return 'Геймпад';
-      case 'shortcut_none':
-        return 'Нет';
       case 'shortcut_clear':
         return 'Очистить';
       case 'shortcut_stop_capture':
@@ -130007,8 +129950,6 @@ extension on _StringsTh {
         return 'แป้นพิมพ์';
       case 'shortcut_gamepad':
         return 'เกมแพด';
-      case 'shortcut_none':
-        return 'ไม่มี';
       case 'shortcut_clear':
         return 'ล้าง';
       case 'shortcut_stop_capture':
@@ -134238,8 +134179,6 @@ extension on _StringsTr {
         return 'Klavye';
       case 'shortcut_gamepad':
         return 'Oyun kumandası';
-      case 'shortcut_none':
-        return 'Yok';
       case 'shortcut_clear':
         return 'Temizle';
       case 'shortcut_stop_capture':
@@ -138473,8 +138412,6 @@ extension on _StringsVi {
         return 'Bàn phím';
       case 'shortcut_gamepad':
         return 'Tay cầm';
-      case 'shortcut_none':
-        return 'Không có';
       case 'shortcut_clear':
         return 'Xóa';
       case 'shortcut_stop_capture':
@@ -142694,8 +142631,6 @@ extension on _StringsZhCn {
         return '键盘';
       case 'shortcut_gamepad':
         return '手柄';
-      case 'shortcut_none':
-        return '无';
       case 'shortcut_clear':
         return '清除';
       case 'shortcut_stop_capture':
@@ -146892,8 +146827,6 @@ extension on _StringsZhHk {
         return '鍵盤';
       case 'shortcut_gamepad':
         return '手掣';
-      case 'shortcut_none':
-        return '無';
       case 'shortcut_clear':
         return '清除';
       case 'shortcut_stop_capture':

@@ -768,7 +768,6 @@
   "shortcut_reset_confirm": "確定要將此部分的所有快捷鍵還原為預設值嗎？",
   "shortcut_keyboard": "鍵盤",
   "shortcut_gamepad": "手掣",
-  "shortcut_none": "無",
   "shortcut_clear": "清除",
   "shortcut_stop_capture": "停止擷取",
   "section_advanced_typography": "進階選項",
