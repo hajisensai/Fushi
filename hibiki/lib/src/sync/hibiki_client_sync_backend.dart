@@ -414,18 +414,81 @@ class HibikiClientSyncBackend extends SyncBackend
     required File destination,
     void Function(double progress)? onProgress,
   }) async {
-    final request = await _ops!.buildRequest('GET', fileId);
-    final response = await request.close();
-    _ops!.checkStatus(response.statusCode, 'GET $fileId');
-
-    await writeSyncStreamToFile(
-      source: response,
+    // Range 续传（视频 TODO-819 同款范式推广到库包下载：epub/词典/有声书/本地
+    // 音频）。旧实现是裸 GET，中断即删截断文件、下次从 0——大词典/有声书包在
+    // 抖动 Wi-Fi 上反复整包重下。host 包端点现带 ETag + If-Range（导出缓存保证
+    // TTL 内字节稳定）；ResumableDownloader 把 ETag 经 `.part.etag` 侧车持久化，
+    // 续传时以 If-Range 携带——host 字节换代则收 200 全量重写，绝不拼错字节。
+    // 旧 host 无 Range 支持时同样收 200 → 丢弃旧 part 从 0，零兼容破坏。
+    final File partFile = File('${destination.path}.part');
+    final File etagFile = File('${destination.path}.part.etag');
+    await destination.parent.create(recursive: true);
+    String? storedEtag;
+    try {
+      if (partFile.existsSync() && etagFile.existsSync()) {
+        storedEtag = etagFile.readAsStringSync();
+      }
+    } catch (_) {
+      // 侧车读不出：当无验证器处理（host 端会因缺 If-Range 而整包 200，安全）。
+    }
+    final ResumableDownloader downloader = ResumableDownloader(
+      url: fileId,
       destination: destination,
-      totalBytes: response.contentLength,
-      onProgress: onProgress,
-      onCleanupError: (e) =>
-          debugPrint('[hibiki-client] failed to clean up temp file: $e'),
+      partFile: partFile,
+      resumeState: ResumableDownloadState(etag: storedEtag),
+      open: (Uri uri, Map<String, String> headers) async {
+        final HttpClientRequest req =
+            await _ops!.buildRequest('GET', uri.toString());
+        for (final MapEntry<String, String> entry in headers.entries) {
+          req.headers.set(entry.key, entry.value);
+        }
+        final HttpClientResponse res = await req.close();
+        // 保留原错误契约：401/403 → SyncAuthError、404 → 可重试 SyncBackendError
+        // （上层认证/重试流依赖这些类型）。416 放行给 ResumableDownloader——那是
+        // 它「丢弃旧 part 从 0 重来」的合法信号。
+        if (res.statusCode >= 400 && res.statusCode != 416) {
+          await res.drain<void>().catchError((_) {});
+          _ops!.checkStatus(res.statusCode, 'GET $fileId');
+        }
+        final Map<String, String> responseHeaders = <String, String>{};
+        res.headers.forEach((String name, List<String> values) {
+          if (values.isNotEmpty) responseHeaders[name] = values.join(',');
+        });
+        return ResumableDownloadResponse(
+          statusCode: res.statusCode,
+          headers: responseHeaders,
+          stream: res,
+        );
+      },
+      onMeta: (ResumableDownloadMetaInfo meta) {
+        // 把本次响应的 ETag 落侧车，供中断后下次进程的 If-Range 使用。
+        try {
+          final String? etag = meta.etag;
+          if (etag != null && etag.isNotEmpty) {
+            etagFile.writeAsStringSync(etag);
+          } else if (etagFile.existsSync()) {
+            etagFile.deleteSync();
+          }
+        } catch (_) {
+          // best-effort：侧车写失败只损失续传能力，不影响本次下载。
+        }
+      },
+      onProgress: (int received, int? total) {
+        if (total != null && total > 0) onProgress?.call(received / total);
+      },
     );
+    try {
+      await downloader.download();
+    } finally {
+      // 成功后清侧车；失败保留（与 .part 配对供续传）。
+      if (!partFile.existsSync()) {
+        try {
+          if (etagFile.existsSync()) etagFile.deleteSync();
+        } catch (_) {
+          // best-effort
+        }
+      }
+    }
   }
 
   @override
