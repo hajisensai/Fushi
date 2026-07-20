@@ -2164,5 +2164,7 @@
   "game_audio_fallback_resource_only": "Game resource audio only",
   "game_audio_fallback_disabled_missing": "No matching game resource audio; fallback is disabled",
   "game_audio_resource_id": "Audio resource ID",
-  "home_remote_source": "Remote"
+  "home_remote_source": "Remote",
+  "shortcut_press_gamepad": "Press a gamepad button...",
+  "shortcut_gamepad_pick_list": "Choose from list"
 }
