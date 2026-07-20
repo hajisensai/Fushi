@@ -1688,7 +1688,10 @@ void main() {
   test('popup menus use the shared MD3 menu item primitive', () {
     final List<String> menuFiles = <String>[
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
-      'lib/src/pages/implementations/shortcut_settings_page.dart',
+      // Gamepad add menu lives in the binding-edit-dialog part of the
+      // shortcut settings library (shortcut settings refactor).
+      'lib/src/pages/implementations/shortcut_settings/'
+          'binding_edit_dialog.part.dart',
       'lib/src/sync/sync_compare_dialog.dart',
       'lib/src/utils/components/hibiki_text_selection_controls.dart',
     ];
@@ -2054,7 +2057,8 @@ void main() {
 
   test('shortcut binding editor uses shared MD3 dialog chrome', () {
     final String source = File(
-      'lib/src/pages/implementations/shortcut_settings_page.dart',
+      'lib/src/pages/implementations/shortcut_settings/'
+      'binding_edit_dialog.part.dart',
     ).readAsStringSync();
     final String editDialog = _sectionSource(
       source,
@@ -2068,13 +2072,15 @@ void main() {
   });
 
   test('shortcut action rows use shared MD3 list and tag chips', () {
+    // _ActionTile + _MouseChip are the whole action_tile part (shortcut
+    // settings refactor), so the section spans from the tile class to EOF.
     final String source = File(
-      'lib/src/pages/implementations/shortcut_settings_page.dart',
+      'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart',
     ).readAsStringSync();
     final String tileSource = _sectionSource(
       source,
       'class _ActionTile',
-      'class ShortcutBindingEditDialog',
+      source.length,
     );
 
     expect(tileSource, contains('HibikiListItem('));
@@ -2100,7 +2106,7 @@ void main() {
     );
 
     expect(scopeSections, contains('AdaptiveSettingsSection('));
-    expect(scopeSections, contains('title: _scopeLabel(scope)'));
+    expect(scopeSections, contains('title: scope.label'));
     expect(scopeSections, contains('AdaptiveSettingsRow('));
     expect(scopeSections, contains('t.shortcut_reset_defaults'));
     expect(scopeSections, contains('_ActionTile('));
@@ -2116,7 +2122,8 @@ void main() {
 
   test('shortcut binding editor uses shared MD3 tag chips', () {
     final String source = File(
-      'lib/src/pages/implementations/shortcut_settings_page.dart',
+      'lib/src/pages/implementations/shortcut_settings/'
+      'binding_edit_dialog.part.dart',
     ).readAsStringSync();
     final String editDialog = _sectionSource(
       source,

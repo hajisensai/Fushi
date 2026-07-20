@@ -768,7 +768,6 @@
   "shortcut_reset_confirm": "¿Restablecer todos los atajos de esta sección a los valores predeterminados?",
   "shortcut_keyboard": "Teclado",
   "shortcut_gamepad": "Mando",
-  "shortcut_none": "Ninguno",
   "shortcut_clear": "Borrar",
   "shortcut_stop_capture": "Detener",
   "section_advanced_typography": "Avanzado",

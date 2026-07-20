@@ -768,7 +768,6 @@
   "shortcut_reset_confirm": "确定要将此部分的所有快捷键恢复为默认值吗？",
   "shortcut_keyboard": "键盘",
   "shortcut_gamepad": "手柄",
-  "shortcut_none": "无",
   "shortcut_clear": "清除",
   "shortcut_stop_capture": "停止捕获",
   "section_advanced_typography": "高级选项",

@@ -16,9 +16,11 @@ void main() {
   late final String source;
 
   setUpAll(() {
-    source = File('lib/src/pages/implementations/shortcut_settings_page.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
+    // _ActionTile lives in the action_tile part of shortcut_settings_page.dart
+    // (shortcut settings refactor).
+    source = File(
+      'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
   });
 
   // 截取 `_ActionTile` 类体，断言只针对这张行 widget。

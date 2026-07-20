@@ -768,7 +768,6 @@
   "shortcut_reset_confirm": "이 섹션의 모든 단축키를 기본값으로 초기화할까요?",
   "shortcut_keyboard": "키보드",
   "shortcut_gamepad": "게임패드",
-  "shortcut_none": "없음",
   "shortcut_clear": "지우기",
   "shortcut_stop_capture": "중지",
   "section_advanced_typography": "고급",
