@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
 void main() {
@@ -365,5 +366,52 @@ void main() {
         expect(tester.getTopLeft(find.byKey(childKey)).dy, 0);
       },
     );
+  });
+
+  group('video shelf card layout (BUG-895)', () {
+    // 手机窄屏视频卡不得再退化成「1 列铺满整屏」。视频页 targetWidth 从硬编码 240
+    // 改成书架同款响应式 readerShelfGridExtentForWidth，必须让手机（宽<600）出 ≥2 列。
+    // 卡宽内边距按视频页构建：availableWidth = maxWidth - tokens.spacing.card*2。
+    // 这里用保守的 12*2 内边距（tokens.spacing.card 实际 16，减得更多列数只会更多，
+    // 用 12 是列数下界的安全估计）。
+    double phoneAvailable(double maxWidth) => maxWidth - 12 * 2;
+
+    test('regression: hardcoded targetWidth 240 yielded 1 column on phone', () {
+      // 复现旧行为：手机可用宽下 240 目标宽只算出 1 列（铺满整屏 = 卡片过大）。
+      final layout = unifiedShelfCardLayout(
+        availableWidth: phoneAvailable(384),
+        targetWidth: 240,
+      );
+      expect(layout.columns, 1, reason: '旧硬编码 240 在手机窄屏退化为 1 列');
+    });
+
+    test('responsive target gives >=2 columns across phone widths', () {
+      for (final double w in <double>[360, 384, 393, 412, 480, 599]) {
+        final layout = unifiedShelfCardLayout(
+          availableWidth: phoneAvailable(w),
+          targetWidth: readerShelfGridExtentForWidth(w),
+        );
+        expect(
+          layout.columns,
+          greaterThanOrEqualTo(2),
+          reason: '手机宽 $w 应出至少 2 列（targetWidth='
+              '${readerShelfGridExtentForWidth(w)}）',
+        );
+      }
+    });
+
+    test('wide screens still collapse to comfortable multi-column', () {
+      // 宽屏不受影响：仍按断点收敛列数（不会因目标宽变小而爆出过多超小卡）。
+      final tablet = unifiedShelfCardLayout(
+        availableWidth: phoneAvailable(840),
+        targetWidth: readerShelfGridExtentForWidth(840),
+      );
+      expect(tablet.columns, greaterThanOrEqualTo(3));
+      final desktop = unifiedShelfCardLayout(
+        availableWidth: phoneAvailable(1440),
+        targetWidth: readerShelfGridExtentForWidth(1440),
+      );
+      expect(desktop.columns, greaterThanOrEqualTo(5));
+    });
   });
 }

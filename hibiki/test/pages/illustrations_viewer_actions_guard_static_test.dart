@@ -19,7 +19,9 @@ void main() {
     // 数据结构：插画保留字节 + 源文件，而非只剩 Uint8List。
     expect(source, contains('class _Illustration'));
     expect(source, contains('final File file;'));
-    expect(source, contains('_Illustration(bytes: bytes, file: file)'));
+    // BUG-898 起 _Illustration 增加 revealKey 字段、构造改多行；仍守护 bytes+file 一并透传。
+    expect(source, contains('bytes: bytes,'));
+    expect(source, contains('file: file,'));
     expect(source, contains('File _currentFile()'));
   });
 

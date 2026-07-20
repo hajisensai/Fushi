@@ -803,4 +803,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(MenuItemButton, 'Work'), findsNothing);
   });
+
+  testWidgets(
+      'collapsible section header title is vertically centered with its chevron '
+      '(BUG-886)', (tester) async {
+    // Regression guard (BUG-886): the collapsible header reused the label-above-
+    // rows padding (top-heavy 10/4), so the title text sat ~3px below the chevron
+    // (which is center-aligned in the header Row). The interactive header must use
+    // symmetric vertical padding so title and chevron share one vertical center.
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: Scaffold(
+          body: AdaptiveSettingsSection(
+            title: 'Local backup',
+            titlePlacement: SettingsSectionTitlePlacement.inside,
+            collapsible: true,
+            children: [
+              AdaptiveSettingsSwitchRow(
+                title: 'Highlight on tap',
+                value: true,
+                onChanged: (_) {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // The collapsible header renders the folding chevron alongside the title.
+    expect(find.byIcon(Icons.expand_more), findsOneWidget);
+    final double titleCenter = tester.getCenter(find.text('Local backup')).dy;
+    final double chevronCenter =
+        tester.getCenter(find.byIcon(Icons.expand_more)).dy;
+    expect(
+      (titleCenter - chevronCenter).abs(),
+      lessThan(1.5),
+      reason:
+          'collapsible header title and chevron must be on the same vertical '
+          'center; a top-heavy label padding would drop the title below it',
+    );
+  });
 }

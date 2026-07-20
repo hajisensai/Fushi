@@ -160,7 +160,10 @@ void main() {
       final File bg = File('assets/browser_extension/background.js');
       final String src = bg.readAsStringSync();
       // 必须 importScripts 默认文件 + cfg() 引用 HIBIKI_DEFAULTS 作回落。
-      expect(src, contains("importScripts('hibiki-defaults.js')"));
+      // 不匹配闭合括号：TODO-1087 诊断特性后 importScripts 追加了
+      // 'connection-diagnostics.js'（同一 importScripts 调用多参），
+      // hibiki-defaults.js 仍被导入，守卫只认「该文件被 importScripts」这个契约。
+      expect(src, contains("importScripts('hibiki-defaults.js'"));
       expect(src, contains('HIBIKI_DEFAULTS'));
       // 不再无条件默认 port=0（那会导致默认连不上）。
       expect(src, isNot(contains('port = 0')));

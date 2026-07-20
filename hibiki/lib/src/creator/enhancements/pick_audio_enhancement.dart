@@ -25,10 +25,6 @@ class PickAudioEnhancement extends AudioEnhancement {
   /// default mappings value of [AnkiMapping].
   static const String key = 'pick_audio';
 
-  static final Set<String> _audioExtensions = AudiobookStorage.audioExtensions
-      .map((String ext) => ext.replaceFirst('.', ''))
-      .toSet();
-
   @override
   String getLocalisedLabel(AppModel appModel) =>
       t.creator_enhancement_pick_audio;
@@ -45,7 +41,7 @@ class PickAudioEnhancement extends AudioEnhancement {
     final String? pickedPath = await pickRealFilePath(
       context: context,
       appModel: appModel,
-      allowedExtensions: _audioExtensions,
+      allowedExtensions: AudiobookStorage.audioExtensionsNoDot,
     );
 
     if (pickedPath == null) {

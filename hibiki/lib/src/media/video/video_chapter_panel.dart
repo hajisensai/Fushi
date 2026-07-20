@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/video/video_panel_auto_scroll.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart'
     show formatCueTimestamp;
@@ -40,8 +41,8 @@ class VideoChapterPanel extends StatefulWidget {
 }
 
 class _VideoChapterPanelState extends State<VideoChapterPanel> {
-  final ScrollController _scrollController = ScrollController();
-  int _lastScrolledIndex = -1;
+  // 「当前章滚到视口中部偏上」的机器与剧集面板共享（[VideoPanelAutoScroller]）。
+  final VideoPanelAutoScroller _autoScroller = VideoPanelAutoScroller();
 
   @override
   void initState() {
@@ -63,7 +64,7 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
-    _scrollController.dispose();
+    _autoScroller.dispose();
     super.dispose();
   }
 
@@ -72,22 +73,9 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
   }
 
   void _scrollToCurrentChapter() {
-    final int index = widget.currentIndex;
-    final List<VideoChapter> chapters = widget.controller.chapters;
-    if (index < 0 || index >= chapters.length) return;
-    if (index == _lastScrolledIndex) return;
-    if (!_scrollController.hasClients) return;
-    _lastScrolledIndex = index;
-    // 估算行高（dense ListTile + 时间戳行）约 56；把当前章滚到视口中部偏上。
-    const double rowExtent = 56;
-    final double viewport = _scrollController.position.viewportDimension;
-    final double target = (index * rowExtent) - (viewport / 2) + rowExtent;
-    final double clamped =
-        target.clamp(0.0, _scrollController.position.maxScrollExtent);
-    _scrollController.animateTo(
-      clamped,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
+    _autoScroller.scrollToIndex(
+      widget.currentIndex,
+      itemCount: widget.controller.chapters.length,
     );
   }
 
@@ -117,7 +105,7 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
       );
     }
     return ListView.builder(
-      controller: _scrollController,
+      controller: _autoScroller.controller,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: chapters.length,
       itemBuilder: (BuildContext _, int i) {

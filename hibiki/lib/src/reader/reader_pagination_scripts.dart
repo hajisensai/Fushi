@@ -191,6 +191,35 @@ class ReaderPaginationScripts {
     return (safe / pageSize).floorToDouble() * pageSize;
   }
 
+  /// JS `scrollToRange` reveal 决策的纯 Dart 影子（BUG-875）。
+  ///
+  /// 返回值：`null` = 不翻页（句首已在本页可见 / pageSize 非法 / 目标==当前）；
+  /// 非空 = 应翻到的目标 scroll。
+  ///
+  /// 根因：`pageSize`（列周期）因 chrome inset / body padding 可比 client
+  /// `viewportExtent` 小最多半页。竖排一句 cue 句首若是行尾单字（列底），其起始边
+  /// `rectStart`(=rect.top) 落在 `[pageSize, viewportExtent)` 带内 —— 视觉仍在本页底部、
+  /// 却已越过 pitch 网格边界 → 旧 floor 判进下一页 → 有声书读到该句凭空前翻、下一句又
+  /// 翻回 = 抖动。修复：起始边落在真实 client 视口 `[0, viewportExtent)` 内即「已可见」，
+  /// 不翻页。`rectStart<0`（句首滚出视口首边）或 `>=viewportExtent`（句首真在下一页）
+  /// 才照常 floor 落页。
+  static double? revealScrollTargetForTesting({
+    required double rectStart,
+    required double currentScroll,
+    required double pageSize,
+    required double viewportExtent,
+  }) {
+    if (pageSize <= 0) return null;
+    if (rectStart >= 0 && rectStart < viewportExtent) return null;
+    final double target = revealAnchorTargetScrollForTesting(
+      rectStart: rectStart,
+      currentScroll: currentScroll,
+      pageSize: pageSize,
+    );
+    if (target == currentScroll) return null;
+    return target;
+  }
+
   /// JS `buildPaginationMetrics` 的 min/maxScroll 落页纯 Dart 影子（TODO-1179）。
   ///
   /// 手动跳章分页恢复用 `contentFirstPageScroll`(=minScroll，前进 progress=0) /
@@ -827,6 +856,30 @@ class ReaderPaginationScripts {
   nodeStartOffsets: new WeakMap(),
   isVertical: function() {
     return window.getComputedStyle(document.body).writingMode === "vertical-rl";
+  },
+  // BUG-493 根因修复：_reanchorPending 的唯一写入口（清旗单点化，_sharedJs 两 shell 共用）。
+  // true→false 转换 = 重锚 settle，那一刻（bridge 可用时）callHandler('onReanchorSettled')
+  // 通知 Dart 补刷一次进度（webview.part.dart 注册），事件驱动替代旧的 Dart 侧 120ms×8
+  // 轮询重试——setChromeInsets/updatePageSize/begin·commit 系列任何一处清旗（含 commit
+  // 成功之外的逃逸路径）都会通知，进度不再锁死等 10s 轮询。
+  _setReanchorPending: function(value) {
+    var settled = this._reanchorPending === true && value !== true;
+    this._reanchorPending = value === true;
+    if (settled && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try { window.flutter_inappwebview.callHandler('onReanchorSettled'); } catch (e) {}
+    }
+  },
+  // wave1 去重：content-box 尺寸探针（body clientWidth/Height 扣 padding）。曾在分页/连续
+  // 两 shell 尾部各挂一份逐字相同的 window.hoshiReader._contentSize = function(){...}；上移进
+  // _sharedJs 作对象字面量属性，两 shell 经 $_sharedJs 各得一份、字节等价（_imageMaxBox 经
+  // this._contentSize() 调用，属性先于 initialize 求值，定义先于使用）。
+  _contentSize: function() {
+    var cs = getComputedStyle(document.body);
+    var pl = parseFloat(cs.paddingLeft) || 0;
+    var pr = parseFloat(cs.paddingRight) || 0;
+    var pt = parseFloat(cs.paddingTop) || 0;
+    var pb = parseFloat(cs.paddingBottom) || 0;
+    return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
   },
   // TODO-1285（图片挤压根因修复）：每页多列(pageColumns>=2)时 multicol 把「turn 轴」
   // （横排=宽 / 竖排=高）切成 N 个子列，但图片 max 约束过去恒用整 content-box（cs.w/cs.h）
@@ -1581,6 +1634,11 @@ class ReaderPaginationScripts {
   window.__hoshiMarkImageRevealed = function(key) {
     if (key) _hoshiRevealedKeys[key] = true;
   };
+  // BUG-898：稳定 reveal key 归一到「extractDir 相对、decode、正斜杠」路径（如
+  // OEBPS/images/foo.jpg），与图片库磁盘 File 的相对路径、Dart ImageRevealKey.normalize
+  // 完全一致 —— 三端（阅读器 WebView / 图片库 / Drift 持久表）共享同一 key，才能双向同步。
+  // 用 new URL(raw, baseURI) 折叠 ../ 并解析相对 src → 剥 hoshi.local 的 /epub/ 前缀 +
+  // decodeURIComponent → 相对路径。host 非本资源域（不该发生）时回退原始串。
   function _hoshiImageRevealKey(element) {
     if (!element) return '';
     var raw = '';
@@ -1591,7 +1649,15 @@ class ReaderPaginationScripts {
       if (im) raw = im.getAttribute('xlink:href') || im.getAttribute('href') || '';
     }
     if (!raw) return '';
-    try { return new URL(raw, document.baseURI).href; } catch (e) { return raw; }
+    try {
+      var u = new URL(raw, document.baseURI);
+      if (u.host !== 'hoshi.local') return raw;
+      var path = decodeURIComponent(u.pathname);
+      var pfx = '/epub/';
+      var i = path.indexOf(pfx);
+      if (i < 0) return raw;
+      return path.substring(i + pfx.length);
+    } catch (e) { return raw; }
   }
   window.__hoshiImageRevealKey = _hoshiImageRevealKey;
   function _hoshiBlurImage(element) {
@@ -1886,7 +1952,8 @@ $_sharedJs
       scrollEl: scrollEl,
       pageSize: pageStep,
       maxScroll: maxScroll,
-      physicalMaxScroll: physicalMaxScroll
+      physicalMaxScroll: physicalMaxScroll,
+      viewportExtent: viewportExtent
     };
   },
   getPagePosition: function(context) {
@@ -1975,43 +2042,26 @@ $_sharedJs
     // 旧实现用首段 rect 的几何中点（top/bottom 或 left/right 取中），句首落列后
     // 半段时中点越界相邻列 → floor 前翻，下一句又翻回 = 有声书自动读翻页抖动。
     // 起始边锚恒落「句子起点所在页」，不越界。轴向语义已被起始边路径锁定，不自创轴向。
-    var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
+    var startEdge = context.vertical ? rect.top : rect.left;
+    var anchor = startEdge + currentScroll;
     var targetScroll = this.alignToPage(context, anchor);
-    // TODO-792 [792-REVEAL] 逐句 reveal 取证探针（仅竖排，零行为变化）。
-    // 有声书跨章自动翻页时连续打印 delta = anchor − targetScroll 数列：
-    //   有界震荡(<pageStep 随机) → floor 不累积，根因前移到 rect 串列/别处；
-    //   单调增长 → 坐实 anchor/floor 累积 → 候选A(scrollToRange 加 page-stable hint)；
-    //   配套 [792-REVEAL-RB] 若 readback≠target 且随句增长 → 竖排 scrollTop 亚像素回读漂移 → 候选B。
-    // 走 console.log → onConsoleMessage → debugPrint → DebugLogService，与 [753-DIAG] 同管道。
-    if (context.vertical) {
-      try {
-        console.log('[792-REVEAL]'
-          + ' rectTop=' + (rect.top != null ? rect.top.toFixed(2) : 'null')
-          + ' rectBot=' + (rect.bottom != null ? rect.bottom.toFixed(2) : 'null')
-          + ' currentScroll=' + currentScroll.toFixed(2)
-          + ' anchor=' + anchor.toFixed(2)
-          + ' targetScroll=' + targetScroll.toFixed(2)
-          + ' delta=' + (anchor - targetScroll).toFixed(3)
-          + ' pageStep=' + context.pageSize.toFixed(3)
-          + ' maxScroll=' + context.maxScroll
-          + ' scrollHeight=' + document.body.scrollHeight);
-      } catch (e) {}
-    }
+    // BUG-875（竖排行尾单字凭空翻页根因修复）：pageStep（列周期 = N×(used 列宽+gap)）
+    // 因 chrome inset / body padding 可比 client 视口 extent 小最多半页（见 getScrollContext
+    // 的 physicalMaxScroll 注释「两者因此可相差半页」）。当一句 cue 的**句首**是一行的**行尾
+    // 单字**（竖排=列底），其首段 rect 的起始边 rect.top 落在 [pageStep, viewportExtent) 这条
+    // 「视觉仍在本页底部、却已越过 pitch 网格边界」的带内 → 旧 floor 网格把它判进下一 pitch
+    // 页 → 有声书读到该句凭空前翻一页、下一句句首起始边回到 [0,pageStep) 又翻回 = 来回抖动。
+    // 起始边只要落在真实 client 视口内即「已在本页可见」，reveal 原语不该再翻页（与
+    // scrollToTarget「已可见即 return false」同哲学，但分页模式整页对齐无需 15% 安全边距：
+    // 句子落在本页任意位置都是合法阅读位）。用真实 viewportExtent 作可见判据，从根上消除
+    // pitch 网格与 client 视口在页底的坐标失配，不引入延迟/特例分支。startEdge<0（句首已滚出
+    // 视口首边）或 >=viewportExtent（句首在下一页、真需翻页）时不短路，照常 floor 落页。
+    if (startEdge >= 0 && startEdge < context.viewportExtent) return false;
     if (targetScroll === currentScroll) return false;
     this.setPagePosition(context, targetScroll);
     var self = this;
     requestAnimationFrame(function() {
       self.setPagePosition(context, targetScroll);
-      // [792-REVEAL-RB] rAF 复读：核验 vertical-rl scrollTop 是否亚像素回读漂移。
-      if (context.vertical) {
-        try {
-          var readback = self.getPagePosition(context);
-          console.log('[792-REVEAL-RB]'
-            + ' targetScroll=' + targetScroll.toFixed(2)
-            + ' readbackScroll=' + readback.toFixed(2)
-            + ' rbDelta=' + (readback - targetScroll).toFixed(3));
-        } catch (e) {}
-      }
     });
     return true;
   },
@@ -2165,6 +2215,17 @@ $_sharedJs
     if (page > totalPages) page = totalPages;
     return { currentPage: page, totalPages: totalPages };
   },
+  // 纯 dedup（零行为变化）：恢复/跳锚共用的落点 settle 双发——16ms 后重设落点 + 注册
+  // snap 基线，再 16ms 后 notifyRestoreComplete 通知 Dart 恢复完成。与原
+  // restoreProgress / restoreToCharOffset / jumpToFragment 三处内联展开逐字节等时序。
+  _settleAndNotify: function(context, pos) {
+    var self = this;
+    setTimeout(function() {
+      self.setPagePosition(context, pos);
+      self.registerSnapScroll(pos);
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
+  },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var context = this.getScrollContext();
@@ -2178,12 +2239,7 @@ $_sharedJs
     // 精确 char 锚不登记（重锚到粗 progress 反更差）。任一用户翻页(paginate)清资格。
     this.__imgReanchorProgress = (progress <= 0 || progress >= 0.99) ? progress : null;
     var pos = this.getPagePosition(context);
-    var self = this;
-    setTimeout(function() {
-      self.setPagePosition(context, pos);
-      self.registerSnapScroll(pos);
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify(context, pos);
   },
   // BUG-162: 退出再进的精确恢复——按 section 内绝对字符偏移落到该字符真实所在页
   // （成熟 scrollToCharOffset 路径，是「存→取」不动点），替代粗粒度
@@ -2207,12 +2263,7 @@ $_sharedJs
       this.scrollToCharOffset(charOffset);
     }
     var pos = this.getPagePosition(context);
-    var self = this;
-    setTimeout(function() {
-      self.setPagePosition(context, pos);
-      self.registerSnapScroll(pos);
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify(context, pos);
   },
   jumpToFragment: async function(fragment) {
     await document.fonts.ready;
@@ -2229,12 +2280,7 @@ $_sharedJs
     var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
     var targetScroll = this.alignToPage(context, anchor);
     this.setPagePosition(context, targetScroll);
-    var self = this;
-    setTimeout(function() {
-      self.setPagePosition(context, targetScroll);
-      self.registerSnapScroll(targetScroll);
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify(context, targetScroll);
     return true;
   },
   paginate: function(direction) {
@@ -2275,7 +2321,6 @@ $_sharedJs
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
       if (targetForward <= stepScroll + 1) return "limit";
       this.setPagePosition(context, targetForward);
-      this._diagTurn(context, direction, currentScroll, stepScroll, targetForward);
       return "scrolled";
     } else {
       var targetBack = (Math.ceil(pageCoordinate) - 1) * pitch;
@@ -2283,7 +2328,6 @@ $_sharedJs
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
       if (targetBack >= stepScroll - 1) return "limit";
       this.setPagePosition(context, targetBack);
-      this._diagTurn(context, direction, currentScroll, stepScroll, targetBack);
       return "scrolled";
     }
   },
@@ -2415,13 +2459,13 @@ $_sharedJs
     // changes. Invalidate even when a re-anchor is already in flight.
     this.paginationMetrics = null;
     if (inFlight || charOffset < 0) return;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     var self = this;
     requestAnimationFrame(function() {
       try {
         self.scrollToCharOffset(charOffset, scrollBefore);
       } finally {
-        self._reanchorPending = false;
+        self._setReanchorPending(false);
       }
     });
   },
@@ -2451,7 +2495,7 @@ $_sharedJs
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
     this._resetImageMaxVars();
     if (charOffset < 0) return -1;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     this._styleReanchorOffset = charOffset;
     this._styleReanchorHint = hint;
     return charOffset;
@@ -2465,206 +2509,10 @@ $_sharedJs
     } finally {
       this._styleReanchorOffset = undefined;
       this._styleReanchorHint = undefined;
-      this._reanchorPending = false;
+      this._setReanchorPending(false);
     }
     return true;
   }
-};
-window.hoshiReader._contentSize = function() {
-  var cs = getComputedStyle(document.body);
-  var pl = parseFloat(cs.paddingLeft) || 0;
-  var pr = parseFloat(cs.paddingRight) || 0;
-  var pt = parseFloat(cs.paddingTop) || 0;
-  var pb = parseFloat(cs.paddingBottom) || 0;
-  return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
-};
-// TODO-792/753 诊断取证（纯只读，零行为改动）：竖排翻页「文字越翻越偏 / 叠加漂移」。
-// 根因候选（代数已证 contentBox==columnWidth 成对，故 δ 是亚像素级，与横排 TODO-753
-// 同源）：竖排 getScrollContext 的 contentBox = injectedV − parseFloat(paddingTop) −
-// parseFloat(paddingBottom)（两次 parseFloat 后相减的浮点路径），而浏览器对
-// `column-width: max(F, calc(injectedV − mt·vh − mb·vh − F − cT − cB))` 是**单次**解析出
-// used 列高（亚像素）。两条舍入路径在真机 vh 单位 + chrome inset 下可差零点几 px/页 →
-// paginate 的 N×pageStep 绝对网格与浏览器真实列周期(columnWidth+gap)失配 → 文字相对
-// 页框每页线性右移、长章累积成可见漂移。headless 测不出（probe 的 column-width 省了
-// −cT−cB、vh 也无 notch，两条路径天然同值 δ=0），必须真机取证。
-// 关键新增字段 pitchDelta = contentBox − parseFloat(columnWidth) = **每页 δ**：>0 则坐实
-// 竖排该跟横排一样改读 getComputedStyle.columnWidth 消 δ；≈0 则漂移另有来源（reanchor/
-// chrome inset 遮挡），诊断指向新方向。一行 [753-DIAG] 经 onConsoleMessage → debugPrint
-// → DebugLogService 环形缓冲，用户在「设置 → 诊断 → 调试日志」开开关后可「复制全部」。
-// 旧版只在竖排+横屏打，漏掉用户竖屏竖排场景；现竖排横/竖屏都打，按 phase+朝向去重避免刷屏。
-window.hoshiReader._diag753 = function(phase) {
-  try {
-    var vertical = this.isVertical();
-    // 横排亚像素 δ 已由 TODO-753 修复（getScrollContext 横排读 columnWidth），这里只为竖排取证。
-    if (!vertical) return;
-    var landscape = window.innerWidth > window.innerHeight;
-    var orient = landscape ? 'landscape' : 'portrait';
-    var key = phase + '_' + orient; // phase+朝向去重：横竖屏切换各打一次，仍不刷屏
-    if (!this._diag753Seen) this._diag753Seen = {};
-    if (this._diag753Seen[key]) return;
-    this._diag753Seen[key] = true;
-    var rootStyle = getComputedStyle(document.documentElement);
-    var topInset = rootStyle.getPropertyValue('--chrome-top-inset').trim();
-    var bottomInset = rootStyle.getPropertyValue('--chrome-bottom-inset').trim();
-    var bodyCs = getComputedStyle(document.body);
-    var ctx = this.getScrollContext();
-    var gap = parseFloat(bodyCs.columnGap) || 0;
-    // resolvedColumnWidth = 浏览器对 column-width 单次解析出的 used 列高（亚像素），竖排翻页轴=列高方向，
-    // 真实列周期 == resolvedColumnWidth + gap。
-    var resolvedColW = parseFloat(bodyCs.columnWidth);
-    // contentBox = 现行 JS 翻页网格用的列高（pageStep − gap）。TODO-792 修复后 getScrollContext
-    // 竖排已改读 used columnWidth，故此值 == resolvedColumnWidth → pitchDelta≈0 = 网格已对齐
-    // 浏览器真实列周期（修复生效的正向信号）。
-    var contentBox = ctx.pageSize - gap;
-    var pitchDelta = (resolvedColW > 0) ? (contentBox - resolvedColW) : null;
-    // legacyContentBox = 修复前竖排重建路径（injectedV − 双 parseFloat(padding)），独立复算。
-    // legacyPitchDelta = 它 − resolvedColumnWidth = **TODO-792 修复消除掉的每页 δ**：真机日志据此
-    // 证明 δ 真实存在（legacyPitchDelta≠0 而 pitchDelta≈0 = 修复确实对齐了一个真实失配，非 no-op）；
-    // 若 legacyPitchDelta 也≈0 但仍漂移，则根因在 reveal/inset（看 [792-REVEAL] delta 数列）。
-    var legPt = parseFloat(bodyCs.paddingTop) || 0;
-    var legPb = parseFloat(bodyCs.paddingBottom) || 0;
-    var legacyContentBox = (this.viewportHeight || document.body.clientHeight || window.innerHeight) - legPt - legPb;
-    var legacyPitchDelta = (resolvedColW > 0) ? (legacyContentBox - resolvedColW) : null;
-    // TODO-792 [792-RPITCH] 直测真实渲染列周期 realPitch（init 一次，竖排，read-only）。
-    // 真机 [792-TURN] 坐实 rbDelta 有界（scrollTop 没问题）但 progress 每页新增递减 →
-    // realPitch（浏览器实际列周期）> pageStep（候选②/审查 C2：columnWidth 只是 hint，单列
-    // 拉伸填满可用 inline 空间后真实周期更大）。这里用 getClientRects 实测：竖排-rl 列内行向左
-    // 推进（left 递减），换列时 left 跳回右侧（大幅增大）= 列边界，取相邻列顶绝对 top 差 = realPitch；
-    // 并 dump 前 40 个 rect 的 (top:left) 供离线核轴向/周期。同时打 body/html/scrollH 尺寸，
-    // 离线对照 pageStep 定位多出来的量从哪来（gap / bottomOverlap O / 拉伸）。
-    try {
-      var rpInfo = 'na';
-      var tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
-      var firstN = null, lastN = null, cnt = 0, nn;
-      while ((nn = tw.nextNode()) != null) {
-        if (nn.textContent && nn.textContent.trim().length) {
-          if (!firstN) firstN = nn;
-          lastN = nn;
-          cnt++;
-          if (cnt >= 80) break;
-        }
-      }
-      if (firstN && lastN) {
-        var rrng = document.createRange();
-        rrng.setStart(firstN, 0);
-        rrng.setEnd(lastN, lastN.length || 0);
-        var rrects = rrng.getClientRects();
-        var sc = this.getPagePosition(ctx) || 0;
-        // 列边界检测：竖排-rl 列内行向左推进(left 递减)，换列时 left 跳回右侧(大幅增大)。
-        // 记录每个 left 大跳处的绝对 top = 列顶；相邻列顶差 = realPitch。同时 dump 前 40
-        // 个 rect 的 (round top : round left) 供离线核轴向/周期(怕检测阈值不准)。
-        var raw = [];
-        var breakTops = [];
-        var prevLeft = null;
-        for (var ri = 0; ri < rrects.length; ri++) {
-          var L = rrects[ri].left;
-          var T = rrects[ri].top + sc;
-          if (ri < 40) raw.push(Math.round(T) + ':' + Math.round(L));
-          if (prevLeft !== null && L > prevLeft + 40) breakTops.push(Math.round(T));
-          prevLeft = L;
-        }
-        var rpDiffs = [];
-        for (var bi = 1; bi < breakTops.length; bi++) { var d = breakTops[bi] - breakTops[bi - 1]; if (d > 0) rpDiffs.push(d); }
-        rpDiffs.sort(function(a, b) { return a - b; });
-        var medRP = rpDiffs.length ? rpDiffs[Math.floor(rpDiffs.length / 2)] : null;
-        rpInfo = 'nRects=' + rrects.length + ' nBreaks=' + breakTops.length + ' realPitchMed=' + (medRP != null ? medRP : 'na') + ' rpDiffs=' + rpDiffs.slice(0, 12).join('|') + ' raw=' + raw.join(' ');
-      }
-      console.log('[792-RPITCH] ' + rpInfo
-        + ' pageStep=' + ctx.pageSize.toFixed(3)
-        + ' columnWidthHint=' + (resolvedColW > 0 ? resolvedColW.toFixed(3) : 'na')
-        + ' gap=' + gap
-        + ' bodyClientH=' + document.body.clientHeight
-        + ' bodyScrollH=' + document.body.scrollHeight
-        + ' bodyOffsetH=' + document.body.offsetHeight
-        + ' docClientH=' + document.documentElement.clientHeight
-        + ' bodyContentBoxH=' + (document.body.clientHeight - legPt - legPb).toFixed(2));
-    } catch (eRP) {
-      console.log('[792-RPITCH] error=' + (eRP && eRP.message ? eRP.message : eRP));
-    }
-    // dartH = Flutter 注入的原始 viewportHeight（MediaQuery.size.height），编译期常量。
-    var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
-    console.log('[753-DIAG] phase=' + phase
-      + ' orient=' + orient
-      + ' writingMode=' + bodyCs.writingMode
-      + ' vertical=' + vertical
-      + ' dartH=' + dartH
-      + ' innerH=' + window.innerHeight
-      + ' innerW=' + window.innerWidth
-      + ' bodyClientH=' + document.body.clientHeight
-      + ' docClientH=' + document.documentElement.clientHeight
-      + ' injectedV=' + this.viewportHeight
-      + ' chromeTopInset=' + topInset
-      + ' chromeBottomInset=' + bottomInset
-      + ' contentBox=' + contentBox.toFixed(3)
-      + ' resolvedColumnWidth=' + (resolvedColW > 0 ? resolvedColW.toFixed(3) : 'NaN')
-      + ' pitchDelta=' + (pitchDelta != null ? pitchDelta.toFixed(3) : 'null')
-      + ' legacyContentBox=' + legacyContentBox.toFixed(3)
-      + ' legacyPitchDelta=' + (legacyPitchDelta != null ? legacyPitchDelta.toFixed(3) : 'null')
-      + ' pageStep=' + ctx.pageSize.toFixed(3)
-      + ' maxScroll=' + ctx.maxScroll
-      + ' scrollHeight=' + document.body.scrollHeight);
-  } catch (e) {
-    console.log('[753-DIAG] phase=' + phase + ' error=' + (e && e.message ? e.message : e));
-  }
-};
-// TODO-792 [792-TURN] 手动翻页逐页漂移取证（仅竖排，零行为变化）。用户报「竖排手动翻页
-// 文字向下偏移越翻越大」，但 pageStep δ 已被证伪（默认边距 contentBox==columnWidth）。
-// paginate 的 target 恒是绝对网格 N×pitch，故若漂移累积，只能来自：
-//   ① vertical-rl scrollTop 守不住分数 target（每页 readback≠target 且 rbDelta 同号累积）
-//      → 根因=竖排 scrollTop 量化漂移，候选修=按逻辑页号定位 / target 整数化；
-//   ② readback≈target（rbDelta≈0）但 firstCharTop 随 seq 单调增大 → 渲染层真实文字位置逐页
-//      下移（放大字号 multicol 列内布局/行高累积，几何量 pageStep 看不到）→ 根因在 CSS 列高/
-//      行盒，非 scroll 逻辑。firstCharTop 经 caretRangeFromPoint 直测首字像素位置（直接量「文字
-//      向下偏移」本身）。seq 递增让真机日志直接看出是否单调累积。走 console.log 同 [753-DIAG] 管道。
-window.hoshiReader._diagTurn = function(context, direction, currentScroll, stepScroll, target) {
-  try {
-    if (!context || !context.vertical) return;
-    if (this._turnSeq == null) this._turnSeq = 0;
-    this._turnSeq += 1;
-    var seq = this._turnSeq;
-    var self = this;
-    requestAnimationFrame(function() {
-      try {
-        var readback = self.getPagePosition(context);
-        // 直接量「文字向下偏移」：vertical-rl 首列在右、首字在顶。从右缘向左扫
-        // caretRangeFromPoint 找首个可见字，取其字符 rect.top。无漂移时该值每页恒
-        // ≈ paddingTop（首字贴页顶）；若随 seq 单调增大 = 文字逐页下移（候选②=渲染层
-        // 真实文字位置漂移，与 rbDelta≈0 并存可坐实非 scrollTop 问题）。read-only。
-        var bodyCs = getComputedStyle(document.body);
-        var padTop = parseFloat(bodyCs.paddingTop) || 0;
-        var probeY = padTop + 2;
-        var firstCharTop = null;
-        for (var px = window.innerWidth - 2; px > window.innerWidth * 0.4; px -= 6) {
-          var cr = document.caretRangeFromPoint ? document.caretRangeFromPoint(px, probeY) : null;
-          if (cr && cr.startContainer && cr.startContainer.nodeType === 3) {
-            var tr = document.createRange();
-            var off = cr.startOffset;
-            tr.setStart(cr.startContainer, off);
-            tr.setEnd(cr.startContainer, Math.min(off + 1, cr.startContainer.length || off + 1));
-            var rects = tr.getClientRects();
-            if (rects && rects.length && (rects[0].width || rects[0].height)) {
-              firstCharTop = rects[0].top;
-              break;
-            }
-          }
-        }
-        console.log('[792-TURN] seq=' + seq
-          + ' dir=' + direction
-          + ' fromScroll=' + currentScroll.toFixed(3)
-          + ' stepScroll=' + stepScroll.toFixed(3)
-          + ' target=' + target.toFixed(3)
-          + ' pitch=' + context.pageSize.toFixed(3)
-          + ' readback=' + readback.toFixed(3)
-          + ' rbDelta=' + (readback - target).toFixed(3)
-          + ' firstCharTop=' + (firstCharTop != null ? firstCharTop.toFixed(2) : 'null')
-          + ' firstCharTopVsInset=' + (firstCharTop != null ? (firstCharTop - padTop).toFixed(2) : 'null')
-          + ' scrollHeight=' + document.body.scrollHeight
-          + ' pages=' + (context.pageSize > 0 ? (document.body.scrollHeight / context.pageSize).toFixed(2) : 'NaN'));
-      } catch (e) {
-        console.log('[792-TURN] seq=' + seq + ' error=' + (e && e.message ? e.message : e));
-      }
-    });
-  } catch (e) {}
 };
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
@@ -2714,8 +2562,6 @@ $initImages
     }
     $sasayakiInit
     $initialRestoreScript
-    // TODO-753 诊断：首帧布局/恢复完成后取一行证据（仅竖排+横屏，phase 去重）。
-    window.hoshiReader._diag753('init');
   });
 };
 window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
@@ -2740,16 +2586,14 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
-  // TODO-753 诊断：尺寸变化（横竖屏切换 / chrome inset 变化）后再取一行（phase 去重）。
-  this._diag753('resize');
   if (inFlight) return;
-  this._reanchorPending = true;
+  this._setReanchorPending(true);
   var self = this;
   requestAnimationFrame(function() {
     try {
       self.scrollToProgressPaged(self.getScrollContext(), progress);
     } finally {
-      self._reanchorPending = false;
+      self._setReanchorPending(false);
     }
   });
 };
@@ -2907,6 +2751,16 @@ $_sharedJs
     }
     return totalChars > 0 ? exploredChars / totalChars : 0;
   },
+  // 纯 dedup（零行为变化）：恢复落点 settle 的 16ms 双层延迟后 notifyRestoreComplete。
+  // 与原 restoreProgress（中段分数分支）/ jumpToFragment / restoreToCharOffset 三处内联
+  // 展开逐字节等时序。章首/章末分支是「单层 16ms + 重发滚动后立即通知」的另一形态
+  // （时序不同），保留原样不并入。
+  _settleAndNotify: function() {
+    var self = this;
+    setTimeout(function() {
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
+  },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var self = this;
@@ -2939,9 +2793,7 @@ $_sharedJs
     }
     this.__imgReanchorProgress = null;
     this.scrollToProgressContinuous(progress);
-    setTimeout(function() {
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify();
   },
   jumpToFragment: async function(fragment) {
     await document.fonts.ready;
@@ -2951,11 +2803,8 @@ $_sharedJs
       this.notifyRestoreComplete();
       return false;
     }
-    var self = this;
     target.scrollIntoView();
-    setTimeout(function() {
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify();
     return true;
   },
   paginate: function(direction) {
@@ -3139,7 +2988,6 @@ $_sharedJs
   // 收藏句句尾偏移，透传给 scrollToCharOffset 做整句区间对齐（不传则单点句首锚）。
   restoreToCharOffset: async function(charOffset, endCharOffset) {
     await document.fonts.ready;
-    var self = this;
     // TODO-1229 (BUG-594)：charOffset 0 == 章首（0 字已读）。连续模式章首插图同理不得越过，
     // scrollToChapterStart 滚到顶（含前导图），与 restoreProgress 章首语义一致。>0 走精确锚不变。
     if (charOffset <= 0) { this.scrollToChapterStart(); }
@@ -3156,9 +3004,7 @@ $_sharedJs
         this.scrollToCharOffset(charOffset, endCharOffset);
       }
     }
-    setTimeout(function() {
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    this._settleAndNotify();
   },
   setChromeInsets: function(topPx, bottomPx) {
     // See the paginated setChromeInsets: re-anchoring is serialised through the
@@ -3173,13 +3019,13 @@ $_sharedJs
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
     if (inFlight || charOffset < 0) return;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     var self = this;
     requestAnimationFrame(function() {
       try {
         self.scrollToCharOffset(charOffset, undefined, scrollBefore);
       } finally {
-        self._reanchorPending = false;
+        self._setReanchorPending(false);
       }
     });
   },
@@ -3200,7 +3046,7 @@ $_sharedJs
     if (this._reanchorPending === true) return -1;
     var charOffset = this.getFirstVisibleCharOffset();
     if (charOffset < 0) return -1;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     this._uiScaleReanchorOffset = charOffset;
     // TODO-1229：暂存重锚前滚动位，commit 时用作 <=0 章首区保位 hint。
     this._uiScaleReanchorScroll = this._readContinuousScroll();
@@ -3216,7 +3062,7 @@ $_sharedJs
     } finally {
       this._uiScaleReanchorOffset = undefined;
       this._uiScaleReanchorScroll = undefined;
-      this._reanchorPending = false;
+      this._setReanchorPending(false);
     }
     return true;
   },
@@ -3256,7 +3102,7 @@ $_sharedJs
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
     this._resetImageMaxVars();
     if (charOffset < 0) return -1;
-    this._reanchorPending = true;
+    this._setReanchorPending(true);
     this._styleReanchorOffset = charOffset;
     this._styleReanchorHint = hint;
     return charOffset;
@@ -3274,18 +3120,10 @@ $_sharedJs
     } finally {
       this._styleReanchorOffset = undefined;
       this._styleReanchorHint = undefined;
-      this._reanchorPending = false;
+      this._setReanchorPending(false);
     }
     return true;
   }
-};
-window.hoshiReader._contentSize = function() {
-  var cs = getComputedStyle(document.body);
-  var pl = parseFloat(cs.paddingLeft) || 0;
-  var pr = parseFloat(cs.paddingRight) || 0;
-  var pt = parseFloat(cs.paddingTop) || 0;
-  var pb = parseFloat(cs.paddingBottom) || 0;
-  return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
 };
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
@@ -3332,13 +3170,13 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   if (inFlight || progress <= 0) return;
-  this._reanchorPending = true;
+  this._setReanchorPending(true);
   var self = this;
   requestAnimationFrame(function() {
     try {
       self.scrollToProgressContinuous(progress);
     } finally {
-      self._reanchorPending = false;
+      self._setReanchorPending(false);
     }
   });
 };

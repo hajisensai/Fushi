@@ -54,8 +54,13 @@ void main() {
             '/10000 当分数会恒落章节开头（BUG-696 根因①）');
     expect(fav.contains('restoreProgress('), isFalse,
         reason: '同章收藏跳转必须走 restoreToCharOffset 绝对锚，不得走分数 restoreProgress');
-    expect(norm(fav).contains('charOffset: normCharOffset'), isTrue,
-        reason: '跨章收藏跳转必须把绝对字符锚烘进 _navigateToChapterAndWait(charOffset:)');
+    // BUG-876：offset 缺失时回退按文本定位后，charOffset 由 `useOffset` 门控条件运输
+    // （offset 有效才烘绝对锚，null 走 scrollToSearchMatch 文本回退）；仍必须把绝对字符锚
+    // 烘进 _navigateToChapterAndWait(charOffset:)，只是从裸 `normCharOffset` 变条件形。
+    expect(norm(fav).contains('charOffset: useOffset ? normCharOffset : null'),
+        isTrue,
+        reason: '跨章收藏跳转必须把绝对字符锚（offset 有效时）烘进 '
+            '_navigateToChapterAndWait(charOffset:)');
     expect(fav.contains('.restoreToCharOffset('), isTrue,
         reason: '同章收藏跳转必须直接 restoreToCharOffset（与冷启动 charAnchor 同构）');
   });

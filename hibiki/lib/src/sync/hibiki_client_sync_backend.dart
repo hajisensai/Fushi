@@ -10,6 +10,7 @@ import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -111,6 +112,7 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
 class HibikiClientSyncBackend extends SyncBackend
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
     implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
   HibikiClientSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
@@ -140,8 +142,11 @@ class HibikiClientSyncBackend extends SyncBackend
   WebDavOps? _ops;
   // TODO-961 M1: 当前选中地址的钉扎指纹（https 走 pinned client；http=null）。
   String? _activeFingerprint;
-  String? _rootFolderId;
-  final Map<String, String> _titleToFolderId = {};
+
+  // 文件夹缓存收敛进 [SyncFolderCache] mixin；路径式定位符覆写归一化钩子保持
+  // 「缓存的 folderId 必以 `/` 结尾」不变量（BUG-845）。
+  @override
+  String normalizeFolderId(String id) => ensureFolderIdTrailingSlash(id);
 
   /// Test seam: force address resolution without performing a folder op.
   @visibleForTesting
@@ -150,6 +155,10 @@ class HibikiClientSyncBackend extends SyncBackend
   /// Test seam: the base URL the session has settled on.
   @visibleForTesting
   String? get activeBaseUrl => _ops?.baseUrl;
+
+  /// BUG-891：当前选中 host 的 TOFU 钉扎证书 SHA-256 指纹（`aa:bb:..`），供制卡把它
+  /// 下发给 ffmpeg 的 `-tls_pin_sha256` 以按指纹接受自签流。http 主机 / 未解析 = null。
+  String? get activeFingerprintSha256 => _activeFingerprint;
 
   // ── Auth ──────────────────────────────────────────────────────────
 
@@ -264,11 +273,11 @@ class HibikiClientSyncBackend extends SyncBackend
   @override
   Future<String> findOrCreateRootFolder() async {
     await _ensureResolved();
-    if (_rootFolderId != null) return _rootFolderId!;
+    if (rootFolderIdCache != null) return rootFolderIdCache!;
 
     final path = '${_ops!.baseUrl}/$kSyncRootFolderName/';
     await _ops!.ensureCollection(path);
-    _rootFolderId = path;
+    rootFolderIdCache = path;
     return path;
   }
 
@@ -289,14 +298,14 @@ class HibikiClientSyncBackend extends SyncBackend
   }) async {
     final sanitized = requireBookFolderName(bookTitle);
 
-    if (_titleToFolderId.containsKey(sanitized)) {
+    if (folderIdCache.containsKey(sanitized)) {
       // Normalize a possibly slash-less cached href on return (BUG-845).
-      return ensureFolderIdTrailingSlash(_titleToFolderId[sanitized]!);
+      return ensureFolderIdTrailingSlash(folderIdCache[sanitized]!);
     }
 
     final path = '$rootFolderId${Uri.encodeComponent(sanitized)}/';
     await _ops!.ensureCollection(path);
-    _titleToFolderId[sanitized] = path;
+    folderIdCache[sanitized] = path;
 
     if (coverData != null) {
       try {
@@ -332,26 +341,11 @@ class HibikiClientSyncBackend extends SyncBackend
     );
   }
 
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 hibiki client 的下载原语（size-capped GET + jsonDecode，见
+  // WebDavOps.downloadJson）。读取不经 _ensureResolved（沿用原实现，直接用 _ops!）。
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _ops!.downloadJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _ops!.downloadJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _ops!.downloadJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  Future<Object?> readJsonById(String fileId) => _ops!.downloadJson(fileId);
 
   @override
   Future<void> updateProgressFile({
@@ -424,29 +418,14 @@ class HibikiClientSyncBackend extends SyncBackend
     final response = await request.close();
     _ops!.checkStatus(response.statusCode, 'GET $fileId');
 
-    final contentLength = response.contentLength;
-    final sink = destination.openWrite();
-    int bytesReceived = 0;
-    bool success = false;
-    try {
-      await for (final chunk in response) {
-        sink.add(chunk);
-        bytesReceived += chunk.length;
-        if (contentLength > 0) {
-          onProgress?.call(bytesReceived / contentLength);
-        }
-      }
-      success = true;
-    } finally {
-      await sink.close();
-      if (!success) {
-        try {
-          destination.deleteSync();
-        } catch (e) {
-          debugPrint('[hibiki-client] failed to clean up temp file: $e');
-        }
-      }
-    }
+    await writeSyncStreamToFile(
+      source: response,
+      destination: destination,
+      totalBytes: response.contentLength,
+      onProgress: onProgress,
+      onCleanupError: (e) =>
+          debugPrint('[hibiki-client] failed to clean up temp file: $e'),
+    );
   }
 
   @override
@@ -459,57 +438,18 @@ class HibikiClientSyncBackend extends SyncBackend
 
   // ── Cache ─────────────────────────────────────────────────────────
 
+  // restoreCache / cachedRootFolderId / cachedFolderIds / cacheBookFolderIds
+  // / evictFolderId 收敛进 [SyncFolderCache] mixin；本后端覆写 [normalizeFolderId]
+  // 保持尾斜杠规范化（BUG-845，见类顶部）。
   @override
   void clearCache() {
-    _rootFolderId = null;
-    _titleToFolderId.clear();
+    super.clearCache();
     // Re-probe the candidate addresses on the next op. SyncManager calls
     // clearCache() before retrying a retryable failure; if the resolved
     // address just went down, the retry must be free to fail over to the next
-    // one (HBK-AUDIT-157). The folder cache is cleared here too, so switching
-    // addresses is safe — no stale base-URL-coupled paths survive.
+    // one (HBK-AUDIT-157). The folder cache is cleared by super.clearCache(), so
+    // switching addresses is safe — no stale base-URL-coupled paths survive.
     _sessionResolved = false;
-  }
-
-  @override
-  void restoreCache({
-    String? rootFolderId,
-    Map<String, String>? titleToFolderId,
-  }) {
-    // Heal slash-less persisted ids on load so every cached folderId ends with
-    // `/` (BUG-845): `folderId + fileName` must never spill into the root.
-    _rootFolderId =
-        rootFolderId == null ? null : ensureFolderIdTrailingSlash(rootFolderId);
-    if (titleToFolderId != null) {
-      titleToFolderId.forEach((title, id) {
-        _titleToFolderId[title] = ensureFolderIdTrailingSlash(id);
-      });
-    }
-  }
-
-  @override
-  String? get cachedRootFolderId => _rootFolderId;
-
-  @override
-  Map<String, String> get cachedFolderIds => Map.unmodifiable(_titleToFolderId);
-
-  @override
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final f in folders) {
-      // DriveFile.id = the server's collection href; normalize the trailing
-      // slash before caching so a later `folderId + fileName` write cannot spill
-      // into the root (BUG-845).
-      _titleToFolderId[f.name] = ensureFolderIdTrailingSlash(f.id);
-    }
-  }
-
-  @override
-  void evictFolderId(String folderId) {
-    // 按值反查逐出书名→folderId 缓存里指向 [folderId] 的条目，消除删书后陈旧态
-    // （BUG-202）。路径式后端的 folderId 是按名派生的路径，逐出仍是廉价正确性。
-    // 缓存值已统一带尾斜杠（BUG-845），入参也归一后再比。
-    final normalized = ensureFolderIdTrailingSlash(folderId);
-    _titleToFolderId.removeWhere((_, id) => id == normalized);
   }
 
   // ── SyncAssetStore ────────────────────────────────────────────────
@@ -545,42 +485,19 @@ class HibikiClientSyncBackend extends SyncBackend
         .toList();
   }
 
+  // interconnect must settle on a reachable host before any per-asset op, so the
+  // base [putAsset]/[getAsset] defaults await this readiness hook. The path-style
+  // findAsset override and the folder-op methods below still call
+  // [_ensureResolved] directly (same idempotent gate, unchanged from before).
+  @override
+  Future<void> ensureAssetReady() => _ensureResolved();
+
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async {
     await _ensureResolved();
     final path = '$namespaceId${Uri.encodeComponent(name)}';
     if (!await _ops!.headFile(path)) return null;
     return AssetEntry(id: path, name: name);
-  }
-
-  @override
-  Future<void> putAsset(
-    String namespaceId,
-    String name,
-    File file, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await _ensureResolved();
-    await uploadContentFile(
-      folderId: namespaceId,
-      fileName: name,
-      file: file,
-      onProgress: onProgress,
-    );
-  }
-
-  @override
-  Future<void> getAsset(
-    String assetId,
-    File destination, {
-    void Function(double progress)? onProgress,
-  }) async {
-    await _ensureResolved();
-    await downloadContentFile(
-      fileId: assetId,
-      destination: destination,
-      onProgress: onProgress,
-    );
   }
 
   @override

@@ -27,18 +27,62 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 862 条。点号进各自文件。
+> 共 906 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-881](bugs/BUG-881-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
-| [BUG-880](bugs/BUG-880-dual-game-capture-acceptance.md) | ✅ | ✅ | Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡 |
-| [BUG-879](bugs/BUG-879-manosaba-text-loopback-hybrid.md) | ✅ | ✅ | Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留 |
-| [BUG-878](bugs/BUG-878-database-schema-v48-compat.md) | ✅ | ✅ | 游戏分支无法打开 schema v48 用户数据库 |
-| [BUG-877](bugs/BUG-877-texthooker-popup-ui-scale.md) | ✅ | ✅ | 捕获工作台非默认缩放下查词断言 |
-| [BUG-876](bugs/BUG-876-gal-text-thread-selector.md) | ✅ | ✅ | Galgame 捕获文本缺少 Luna 风格线程选择 |
-| [BUG-875](bugs/BUG-875-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
-| [BUG-874](bugs/BUG-874-ext-shift-hover-miss.md) | 🚧 | 🚧 | 浏览器扩展 Shift 悬停查词约 80% 不弹（机器相关，本机未复现） |
+| [BUG-929](bugs/BUG-929-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
+| [BUG-928](bugs/BUG-928-dual-game-capture-acceptance.md) | ✅ | ✅ | Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡 |
+| [BUG-927](bugs/BUG-927-manosaba-text-loopback-hybrid.md) | ✅ | ✅ | Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留 |
+| [BUG-926](bugs/BUG-926-database-schema-v48-compat.md) | ✅ | ✅ | 游戏分支无法打开 schema v48 用户数据库 |
+| [BUG-925](bugs/BUG-925-texthooker-popup-ui-scale.md) | ✅ | ✅ | 捕获工作台非默认缩放下查词断言 |
+| [BUG-924](bugs/BUG-924-gal-text-thread-selector.md) | ✅ | ✅ | Galgame 捕获文本缺少 Luna 风格线程选择 |
+| [BUG-923](bugs/BUG-923-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
+| [BUG-922](bugs/BUG-922-scm-landscape-sentence-collapsed.md) | ✅ | ✅ | 制卡·选择句子上下文对话框横屏塌陷只剩选项看不见句子 |
+| [BUG-921](bugs/BUG-921-mining-collection-tag.md) | ✅ | ✅ | 制卡缺少所属合集名标签 |
+| [BUG-920](bugs/BUG-920-media-source-open-folder-forward-slash.md) | ✅ | ✅ | 管理来源打开文件夹按钮路径不对 |
+| [BUG-919](bugs/BUG-919-anilist-macron-search.md) | ✅ | ✅ | 番剧下载AniList搜索:带macron长音的罗马字全无结果 |
+| [BUG-918](bugs/BUG-918-subtitle-offset-input-no-live-update.md) | ✅ | ✅ | 字幕偏移输入框不按回车不更新·退格没反应 |
+| [BUG-917](bugs/BUG-917-video-clip-mp4-muxer.md) | ✅ | ✅ | 视频片段导出 exit -22（捆绑 ffmpeg-min 无 matroska muxer，输出跟随源容器） |
+| [BUG-916](bugs/BUG-916-subtitle-list-shift-hover-offset.md) | ✅ | ✅ | 视频字幕列表Shift悬停查词偏左一格 |
+| [BUG-915](bugs/BUG-915-ass-user-scale-and-plain-off-mode.md) | ✅ | ✅ | 尊重字幕不能调字号；关闭尊重时 ASS 特效层叠印乱字 |
+| [BUG-910](bugs/BUG-910-video-subtitle-dismiss-halo-reloop.md) | ✅ | ✅ | 视频字幕查词点空白想关闭却重复查同一个词 |
+| [BUG-909](bugs/BUG-909-remove-vertical-forensic-probes.md) | ✅ | ✅ | 移除发布版残留的竖排取证探针（TODO-792/753 系列 + 753-DIAG） |
+| [BUG-908](bugs/BUG-908-lan-sync-server-hardening.md) | ✅ | ✅ | LAN 局域网同步服务器健壮性欠账（token 膨胀 / PROPFIND 同步阻塞 / 写无互斥） |
+| [BUG-907](bugs/BUG-907-danmaku-layout-binary-and-isolate-parse.md) | ✅ | ✅ | 弹幕两项性能缺陷：布局每帧 O(N) 全量扫描 + 20MB sidecar 主 isolate 同步解析 |
+| [BUG-906](bugs/BUG-906-prefs-version-txn-and-indexes.md) | ✅ | ✅ | 偏好版本并发自增丢失 + 查询热路径缺索引 |
+| [BUG-905](bugs/BUG-905-ffmpegkit-precise-cancel.md) | ✅ | ✅ | 移动端 ffmpeg 超时用 FFmpegKit.cancel() 误杀全部并发会话 |
+| [BUG-904](bugs/BUG-904-anki-gaiji-cache-key-per-dict.md) | ✅ | ✅ | Anki 外字(gaiji)媒体缓存键漏词典名 → 跨词典串味 |
+| [BUG-903](bugs/BUG-903-audiobook-manual-seek-explicit-flag.md) | ✅ | ✅ | 有声书暂停态手动 seek 后显式 seek 抑制旗不复位，cue/高亮卡住 |
+| [BUG-902](bugs/BUG-902-anki-dict-media-path-normalize.md) | ✅ | ✅ | 制卡词典图片脏path未归一化导致坏图 |
+| [BUG-901](bugs/BUG-901-subtitle-seekbar-tap-proximity.md) | ✅ | ✅ | 字幕点击与进度条点击命中区重叠误触 |
+| [BUG-900](bugs/BUG-900-secondary-subtitle-same-list.md) | ✅ | ✅ | 副字幕无法添加外挂字幕·应与主字幕共用同一可用字幕列表 |
+| [BUG-899](bugs/BUG-899-collection-tag-drop-target.md) | ✅ | ✅ | 标签拖到合集行头无接收（合集打标签仅详情页按钮入口） |
+| [BUG-898](bugs/BUG-898-audio-follow-image-pause-mask-persist.md) | ✅ | ✅ | 音频跟随遇图片暂停失效且遮罩未揭，遮罩揭开状态应持久化并与图片库双向同步 |
+| [BUG-897](bugs/BUG-897-ass-size-outline-mpv-parity.md) | ✅ | ✅ | ASS 字幕字号偏小、描边偏细：cell 校准含 lineGap + 居中描边只显一半，与 mpv/libass 不齐 |
+| [BUG-896](bugs/BUG-896-ankidroid-open-note-view-uri.md) | ✅ | ✅ | AnkiDroid 中打开卡片失败：ACTION_VIEW note URI 无 activity 处理 |
+| [BUG-895](bugs/BUG-895-video-cards-too-large-on-phone.md) | ✅ | ✅ | 手机端视频卡片过大（窄屏只出 1 列铺满整屏） |
+| [BUG-894](bugs/BUG-894-remote-video-reload-on-return.md) | ✅ | ✅ | 互联远端视频看完返回即重拉列表 |
+| [BUG-893](bugs/BUG-893-favorited-sentences-stat-zero.md) | ✅ | ✅ | 阅读统计「收藏语句」计数恒为 0 |
+| [BUG-892](bugs/BUG-892-reading-time-suspend-inflation.md) | ✅ | ✅ | 阅读时长记账把后台/挂起/睡眠时长计为阅读（34h 的书 / 单小时 >1h / 凌晨幻影 / 纵轴 "2h 2h"） |
+| [BUG-891](bugs/BUG-891-remote-mining-audio-tls.md) | ✅ | ✅ | 远端流媒体制卡句子音频 ffmpeg-kit 无 https/自签 Protocol not found |
+| [BUG-890](bugs/BUG-890-paused-audio-follow-image-snap.md) | ✅ | ✅ | 暂停/图片等待时有声书跟随把阅读器拽回音频位置 |
+| [BUG-889](bugs/BUG-889-book-completed-status.md) | ✅ | ✅ | 书/有声书无「已读完」状态·概览 Completed 恒 0·无手动标记入口 |
+| [BUG-888](bugs/BUG-888-tag-count-multimedia.md) | ✅ | ✅ | 标签管理器对有声书/视频标签显示 0 本 |
+| [BUG-887](bugs/BUG-887-top-progress-squeeze-frost.md) | ✅ | ✅ | 挤压模式顶部进度不应有毛玻璃且不应压住正文首行 |
+| [BUG-886](bugs/BUG-886-collapse-header-center.md) | ✅ | ✅ | 折叠设置分组标题头文字与箭头未垂直居中 |
+| [BUG-885](bugs/BUG-885-ext-shift-hover-miss.md) | 🚧 | 🚧 | 浏览器扩展 Shift 悬停查词约 80% 不弹（机器相关，本机未复现） |
+| [BUG-884](bugs/BUG-884-extension-lookup-compact-result.md) | ✅ | ✅ | 浏览器扩展查词响应重复携带原始词条导致冷链路慢 |
+| [BUG-883](bugs/BUG-883-extension-shadow-text-align.md) | ✅ | ✅ | 浏览器扩展弹窗继承宿主页居中对齐 |
+| [BUG-882](bugs/BUG-882-lyrics-restore-position.md) | ✅ | ✅ | 歌词模式重开书高亮跳回开头 |
+| [BUG-881](bugs/BUG-881-video-subtitle-list-lookup-barrier.md) | ✅ | ✅ | 查词浮层开着时列表下一个词被 dismiss barrier 吞掉 |
+| [BUG-880](bugs/BUG-880-video-shift-lookup-static-cursor.md) | ✅ | ✅ | Shift 查词静止光标不触发（"按了不出"） |
+| [BUG-879](bugs/BUG-879-video-subtitle-list-shift-hover.md) | ✅ | ✅ | 字幕列表单词无法 Shift 悬停查词 |
+| [BUG-878](bugs/BUG-878-video-subtitle-list-font-persist.md) | ✅ | ✅ | 字幕列表字号每次重开重置且上限太小 |
+| [BUG-877](bugs/BUG-877-video-subtitle-list-panel-resize.md) | ✅ | ✅ | 字幕列表面板大小不可自定义 |
+| [BUG-876](bugs/BUG-876-favorite-jump-missing-offset-text-fallback.md) | ✅ | ✅ | 书内点收藏「有时」跳不到句子位置（normCharOffset 缺失时静默失败/落章首） |
+| [BUG-875](bugs/BUG-875-reader-vertical-single-char-line-end-flip.md) | ✅ | ✅ | 竖排有声书读到「句首是行尾单字」的句子时凭空前翻一页、下一句又翻回 |
+| [BUG-874](bugs/BUG-874-subtitle-list-lookup-barrier.md) | ✅ | ✅ | 查词浮层打开时点字幕列表下一个词被 dismiss barrier 吞掉，必须先关弹窗 |
 | [BUG-873](bugs/BUG-873-macos-trafficlight-overlap.md) | ✅ | ✅ | macOS 交通灯按钮与顶部导航/返回按钮重叠 |
 | [BUG-872](bugs/BUG-872-update-channel-pingpong.md) | ✅ | ✅ | 调试版与正式版来回更新 |
 | [BUG-871](bugs/BUG-871-win-touch-popup-scroll-primary.md) | ✅ | ✅ | Windows 触屏手指滑不动查词弹窗：注入触点缺 POINTER_FLAG_PRIMARY |

@@ -22,6 +22,11 @@ abstract final class AudiobookStorage {
     '.mp4',
   };
 
+  /// [audioExtensions] 的去点形式（file picker 的 `allowedExtensions` 用）。
+  /// 两个导入对话框原各持同一派生副本，收敛到源集合旁的单一真相。
+  static final Set<String> audioExtensionsNoDot =
+      audioExtensions.map((String ext) => ext.replaceFirst('.', '')).toSet();
+
   static bool isAudioFile(String path) =>
       audioExtensions.contains(p.extension(path).toLowerCase());
 
@@ -84,32 +89,6 @@ abstract final class AudiobookStorage {
       dir.createSync(recursive: true);
     }
     return dir;
-  }
-
-  static Future<String> persistFile(
-    File src,
-    Directory persistDir, {
-    int? dedupeIndex,
-  }) async {
-    if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
-      return src.path;
-    }
-    String baseName = p.basename(src.path);
-    if (baseName.contains('..')) {
-      throw ArgumentError('Invalid filename: $baseName');
-    }
-    if (dedupeIndex != null) {
-      final String ext = p.extension(baseName);
-      final String stem = p.basenameWithoutExtension(baseName);
-      baseName = '$stem _$dedupeIndex$ext';
-    }
-    final String dest = p.join(persistDir.path, baseName);
-    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
-      throw ArgumentError('Path traversal detected: $dest');
-    }
-    await src.copy(dest);
-    debugPrint('[hibiki-import] persisted ${src.path} → $dest');
-    return dest;
   }
 
   static Future<String> persistFileWithProgress(

@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_player_controller.dart';
@@ -79,6 +81,51 @@ Rect _unionRects(Iterable<Rect> rects) {
   expect(targetRect, isNot(Rect.zero));
   return (
     tapPoint: textBox.localToGlobal(targetRect.center),
+    graphemeIndex: targetIndex,
+  );
+}
+
+/// 同 [_tapPointForGrapheme]，但取目标字的**左 1/4** 处（而非中心）。BUG-916：中心点会被
+/// getPositionForOffset 丸到字的**末尾**边界、旧命中偶然对；左半格才暴露「偏左一格」病根。
+({Offset tapPoint, int graphemeIndex}) _leftPortionPointForGrapheme(
+  WidgetTester tester,
+  String sentence,
+  String targetGrapheme,
+) {
+  final Finder textFinder = find.text(sentence, findRichText: true);
+  expect(textFinder, findsOneWidget);
+  final BuildContext context = tester.element(textFinder);
+  final RichText richText = tester.widget<RichText>(textFinder);
+  final RenderBox textBox = tester.renderObject<RenderBox>(textFinder);
+  final List<String> graphemes = sentence.characters.toList(growable: false);
+  final int targetIndex = graphemes.indexOf(targetGrapheme);
+  expect(targetIndex, greaterThanOrEqualTo(0), reason: targetGrapheme);
+  int startOffset = 0;
+  for (int i = 0; i < targetIndex; i++) {
+    startOffset += graphemes[i].length;
+  }
+  final int endOffset = startOffset + graphemes[targetIndex].length;
+  final TextPainter painter = TextPainter(
+    text: richText.text,
+    textAlign: TextAlign.start,
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: null,
+    ellipsis: null,
+  )..layout(maxWidth: textBox.size.width);
+  final Rect targetRect = _unionRects(
+    painter
+        .getBoxesForSelection(
+          TextSelection(baseOffset: startOffset, extentOffset: endOffset),
+        )
+        .map((TextBox box) => box.toRect()),
+  );
+  painter.dispose();
+  expect(targetRect, isNot(Rect.zero));
+  final Offset leftPortion =
+      Offset(targetRect.left + targetRect.width * 0.25, targetRect.center.dy);
+  return (
+    tapPoint: textBox.localToGlobal(leftPortion),
     graphemeIndex: targetIndex,
   );
 }
@@ -767,8 +814,12 @@ void main() {
           reason: 'per-character BuildContext capture must stay removed');
       expect(body, contains('RichText('));
       expect(body, contains('TextPainter('));
-      expect(body, contains('getPositionForOffset'));
       expect(body, contains('getBoxesForSelection'));
+      // BUG-916：命中走 grapheme 真实盒的几何反查，不再用 getPositionForOffset 的 caret
+      // 边界（会把某字左右半格塌陷到同一边界、系统性偏左一格）。
+      expect(body, contains('resolveSubtitleListGraphemeHit'));
+      expect(body, isNot(contains('getPositionForOffset(')),
+          reason: 'BUG-916：tap 命中不得再回落 caret 偏移映射');
       expect(body, contains('MediaQuery.textScalerOf(context)'));
       expect(body, contains('Directionality.of(context)'));
       expect(body, contains('constraints.maxWidth'));
@@ -884,6 +935,39 @@ void main() {
       expect(lookupRect!.contains(tapPoint), isTrue,
           reason: 'returned global charRect must contain the actual tap point');
       expect(seeked, isNull, reason: 'tapping text must look up, not seek');
+    });
+
+    testWidgets(
+        'BUG-916: tapping a character\'s LEFT portion looks up THAT character, '
+        'not the one to its left', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      // 全角方块字（视频里的真实场景：の護衛ね…），字宽足够、左半格明显。
+      const String sentence = 'あいうえお';
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+      int? lookupIndex;
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onLookupCue: (AudioCue _, int i, Rect __) => lookupIndex = i,
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      // 点「う」（下标 2）的左 1/4 处：旧实现（caret 偏移映射）会查到「い」（下标 1）。
+      final ({int graphemeIndex, Offset tapPoint}) target =
+          _leftPortionPointForGrapheme(tester, sentence, 'う');
+      await tester.tapAt(target.tapPoint);
+      await tester.pump();
+
+      expect(lookupIndex, target.graphemeIndex,
+          reason: '指向某字左半格必须查该字（BUG-916：原本偏左一格查到左邻字）');
     });
 
     testWidgets(
@@ -1399,6 +1483,187 @@ void main() {
           reason: 'un-favoriting must drop the row immediately, not keep a '
               'stale cached member');
       expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
+    });
+
+    // ── BUG-878：行字号档位持久化 + 上限提到 2.0× ──────────────────────────
+    testWidgets(
+        'BUG-878: initialFontScaleIndex seeds the row font (persists across '
+        'reopen) and the max step reaches 2.0x', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
+
+      double fontOf(String text) =>
+          tester.widget<Text>(find.text(text)).style!.fontSize!;
+
+      // 种子档位 = 最大档（下标 6 = 2.0×），基准 fontSize 14 → 有效 28。旧上限只到 1.3×
+      // （最大 18.2），撤修复 → 数组不含 2.0 / 种子回默认 → 字号回 14 → 红。
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        key: const ValueKey<String>('seed-max'),
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        initialFontScaleIndex: 6,
+        fontSize: 14,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      expect(fontOf('sized'), closeTo(28.0, 0.01),
+          reason: '种子字号档位 6 = 2.0× × 基准 14 = 28（持久化 + 提高上限）');
+      // 已在最大档：A+ 应禁用（越界短路不再放大）。
+      final IconButton increase = tester.widget<IconButton>(
+        find.ancestor(
+          of: find.byIcon(Icons.text_increase),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(increase.onPressed, isNull, reason: '已在最大档，A+ 禁用');
+    });
+
+    testWidgets(
+        'BUG-878: stepping font fires onFontScaleIndexChanged with the new '
+        'index (to persist)', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+      final List<int> changes = <int>[];
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        initialFontScaleIndex: 1,
+        onFontScaleIndexChanged: changes.add,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.pump();
+      expect(changes, <int>[2], reason: 'A+ 报新档位 2 供页面层落盘');
+      await tester.tap(find.byIcon(Icons.text_decrease));
+      await tester.pump();
+      expect(changes, <int>[2, 1], reason: 'A- 报回档位 1');
+    });
+
+    // ── BUG-879：字幕列表行 Shift-悬停查词（与画面字幕对称）─────────────────
+    testWidgets(
+        'BUG-879: shift-hover over a row character fires onLookupCue; plain '
+        'hover without shift does not', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      const String sentence = 'abcdefg';
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+      AudioCue? lookedUp;
+      int? lookupIndex;
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onLookupCue: (AudioCue c, int i, Rect r) {
+          lookedUp = c;
+          lookupIndex = i;
+        },
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+        width: 320,
+      )));
+
+      final ({int graphemeIndex, Offset tapPoint}) charA =
+          _tapPointForGrapheme(tester, sentence, 'a');
+      final ({int graphemeIndex, Offset tapPoint}) charE =
+          _tapPointForGrapheme(tester, sentence, 'e');
+
+      final TestGesture gesture =
+          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+
+      // 未按 Shift 悬停某字符：不查词（仅高亮，复位节流锚）。
+      await gesture.moveTo(charA.tapPoint);
+      await tester.pump();
+      expect(lookedUp, isNull, reason: '未按 Shift 悬停不查词');
+
+      // 按住 Shift 后移动到另一个字符：立即对该字符查词（与画面字幕 Shift-hover 对称）。
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      addTearDown(() => tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft));
+      await gesture.moveTo(charE.tapPoint);
+      await tester.pump();
+      expect(lookedUp, isNotNull,
+          reason: 'Shift 悬停列表字符必须查词（BUG-879：原本列表只挂 tap、无 hover）');
+      expect(lookedUp!.text, sentence);
+      expect(lookupIndex, charE.graphemeIndex, reason: 'Shift 悬停命中的是光标下那个字符');
+    });
+
+    // Source guard：Shift-悬停查词走面板级单一 Listener（复用 RenderParagraph 反查，轻量），
+    // 不再逐行 MouseRegion 每次 hover 重排 TextPainter。撤 BUG-879 → 红。
+    test('BUG-879 source guard: panel-level shift-hover reuses _hitTestRows',
+        () {
+      final String source =
+          File('lib/src/media/video/video_subtitle_jump_panel.dart')
+              .readAsStringSync();
+      expect(source, contains('onPointerHover: _handleListShiftHover'),
+          reason: '列表 Shift-悬停查词必须挂在面板级 Listener 上');
+      expect(source, contains('void _handleListShiftHover('),
+          reason: '必须有面板级 Shift-悬停处理器');
+      final String hoverBody = _sourceBetween(
+        source,
+        'void _handleListShiftHover(',
+        'Widget build(',
+      );
+      expect(hoverBody, contains('_hitTestRows('),
+          reason: 'hover 查词复用 RenderParagraph 反查（不为每次 hover 重排 TextPainter）');
+      expect(hoverBody, contains('isShiftPressed'),
+          reason: 'hover 查词门控需读 Shift 键状态');
+    });
+
+    // Source guard（BUG-879 命中收窄 + BUG-916 偏左一格）：tap / hover / barrier 三路共用的
+    // 两个命中 helper 都必须①用 BoxHeightStyle.max 覆盖整行视觉格（点在行距 leading 不落空
+    // 退 seek），②走 grapheme 真实盒的几何反查 resolveSubtitleListGraphemeHit（不再用
+    // getPositionForOffset 的 caret 边界，否则某字左半格查到左边一个字）。撤任一 → 红。
+    test(
+        'BUG-879/910 source guard: list char hit uses forgiving box + geometry',
+        () {
+      final String source =
+          File('lib/src/media/video/video_subtitle_jump_panel.dart')
+              .readAsStringSync();
+      // barrier / hover / keydown 共用的 RenderParagraph 反查。
+      final String paraHit = _sourceBetween(
+        source,
+        'SubtitleListCharHit? subtitleListCharHitFromParagraph(',
+        'enum VideoSubtitleListFilter',
+      );
+      expect(paraHit, contains('BoxHeightStyle.max'),
+          reason: 'RenderParagraph 反查须用 BoxHeightStyle.max 覆盖行距 leading');
+      expect(paraHit, contains('resolveSubtitleListGraphemeHit'),
+          reason: 'BUG-916：须用 grapheme 真实盒几何反查');
+      expect(paraHit, isNot(contains('getPositionForOffset(')),
+          reason: 'BUG-916：不得再用 caret 偏移映射（偏左一格病根）');
+      // tap 路径的 TextPainter 反查。
+      final String tapHit = _sourceBetween(
+        source,
+        'SubtitleListCharHit? hitAt({',
+        'return GestureDetector(',
+      );
+      expect(tapHit, contains('BoxHeightStyle.max'),
+          reason: 'tap 命中也须用 BoxHeightStyle.max');
+      expect(tapHit, contains('resolveSubtitleListGraphemeHit'),
+          reason: 'BUG-916：tap 命中同走 grapheme 真实盒几何反查');
+      expect(tapHit, isNot(contains('getPositionForOffset(')),
+          reason: 'BUG-916：tap 命中不得再用 caret 偏移映射');
     });
   });
 

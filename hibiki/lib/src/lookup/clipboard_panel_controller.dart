@@ -210,7 +210,8 @@ class ClipboardPanelController {
         await _channel.raise(topmost: model.clipboardPanelPinned);
         if (seq != _updateSeq) return;
       }
-      await _renderPanel(model);
+      // 剪贴板内容更新：新句从顶部开始（复用 root iframe 的旧 scrollTop 会残留）。
+      await _renderPanel(model, resetRootScroll: true);
       glog('panel: updated "${request.text.length} chars" '
           'entries=${result.entries.length}');
     } catch (e, st) {
@@ -241,7 +242,8 @@ class ClipboardPanelController {
       await _channel.raise(topmost: model.clipboardPanelPinned);
       if (seq != _updateSeq) return;
     }
-    await _renderPanel(model);
+    // 剪贴板内容更新（纯文字态）：新句从顶部开始，与自动查词路径口径一致。
+    await _renderPanel(model, resetRootScroll: true);
     glog('panel: text-only "${text.length} chars" (auto-lookup off)');
   }
 
@@ -329,7 +331,12 @@ class ClipboardPanelController {
 
   /// 组栈渲染。screen/max 尺寸都以面板视口（CSS px）为边界：嵌套子卡的
   /// computeFrameRect 级联在面板内 clamp（spec §5），不再引用显示器工作区。
-  Future<void> _renderPanel(AppModel model) async {
+  /// [resetRootScroll]：仅「剪贴板内容更新」路径（[update] / [_showTextOnly]，均
+  /// seed 全新 root 帧）传 true——面板 root iframe 复用，其滚动容器的 scrollTop 会
+  /// 跨渲染保留，一条更长的新内容会停在旧偏移；渲染后调 host 的 scrollRootToTop 把
+  /// root 帧滚回顶部。点句中字重查 / 关子卡等原地更新传 false（保留当前滚动位置）。
+  Future<void> _renderPanel(AppModel model,
+      {bool resetRootScroll = false}) async {
     final BuildContext? ctx = model.navigatorKey.currentContext;
     if (ctx == null) return;
     final double viewportW = _panelRect.width;
@@ -403,7 +410,16 @@ class ClipboardPanelController {
     final String blockCaptureVisualJs = 'window.__globalLookupHost && '
         'window.__globalLookupHost.setPanelBlockCaptureVisual('
         '${model.clipboardPanelBlockCapture});';
-    await _channel.render('$script\n$pinVisualJs\n$blockCaptureVisualJs');
+    // 剪贴板内容更新（新 root）时把 root 帧滚回顶部：root iframe 复用，其滚动位置
+    // 会跨渲染保留，否则更长的新内容停在旧偏移而非从头看。并进同一渲染脚本（native
+    // pending_json_ 单槽缓存，独立脚本会互相覆盖）。原地更新（点字重查 / 关子卡）
+    // 不传，保留当前滚动位置。
+    final String scrollResetJs = resetRootScroll
+        ? '\nwindow.__globalLookupHost && '
+            'window.__globalLookupHost.scrollRootToTop();'
+        : '';
+    await _channel
+        .render('$script\n$pinVisualJs\n$blockCaptureVisualJs$scrollResetJs');
   }
 
   void _onJsMessage(Map<String, Object?> message) {

@@ -12,6 +12,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/interconnect_download_manager.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -83,25 +84,34 @@ void main() {
         ),
       );
 
-  /// 触发下载并等到 VideoBooks 行落库为止。下载注册关键路径有真实文件 IO（下载写盘、
-  /// 字幕读盘、封面抽帧跑 ffmpeg 子进程），fake async 在 widget 测试里必须经
-  /// [WidgetTester.runAsync] 才会真正完成；不用 pumpAndSettle（会等 ffmpeg 进程静止
-  /// 而超时）。建行在封面抽帧之前落库，故这里轮询建行落库即可、不必等封面。
+  /// 触发下载并等到整条下载链在本 runAsync zone 内彻底排干为止。下载注册关键路径有真实
+  /// 文件 IO（下载写盘、字幕读盘、封面抽帧跑 ffmpeg 子进程），fake async 在 widget 测试里
+  /// 必须经 [WidgetTester.runAsync] 才会真正完成；不用 pumpAndSettle（会等 ffmpeg 进程静止
+  /// 而超时）。
+  ///
+  /// 完成信号取 [InterconnectDownloadManager] 任务的**终态**而非「DB 行出现 + 固定多等几拍」：
+  /// [InterconnectDownloadManager.startVideoDownload] 在标 completed 前 await 了整链（下载 →
+  /// onComplete 建行 + 字幕 + ffmpeg 封面抽帧），故任务到达 completed/failed = 全部真实异步
+  /// 已排干，无 pending ffmpeg future 泄漏到下个测试（旧实现靠 `i > 6` 固定迭代数瞎猜排干
+  /// 时机）。等待用 [Stopwatch] 墙钟兜底（高分辨率、不受 Windows ~15.6ms 定时器粒度影响，
+  /// 早退保持快路径）——旧实现固定 200 次 20ms 迭代在满负载多 isolate 争用下会被批量 timer
+  /// 饿死（isolate 长时间被抢占后 200 个到期定时器瞬间连发、下载续体尚未调度就退出）而误红。
   Future<void> tapDownloadAwaitRow(WidgetTester tester) async {
+    final InterconnectDownloadManager manager =
+        ProviderScope.containerOf(tester.element(find.byType(HomeVideoPage)))
+            .read(interconnectDownloadManagerProvider);
     await tester.runAsync(() async {
       await tester.tap(find.byKey(
         const ValueKey<String>('remote_video_download_remote-clip'),
       ));
-      bool saved = false;
-      for (int i = 0; i < 200; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        if (!saved && await repo.getByBookUid('remote-clip') != null) {
-          saved = true;
+      final Stopwatch sw = Stopwatch()..start();
+      while (sw.elapsed < const Duration(seconds: 30)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        final InterconnectDownloadTask? task = manager.tasks['remote-clip'];
+        if (task != null &&
+            task.status != InterconnectDownloadStatus.running) {
+          return;
         }
-        // 建行已落库后再多等几拍，让 _downloadRemote 整链（封面抽帧 ffmpeg ~0.03s +
-        // updateCover 回写 + _refresh）在本 runAsync zone 内收尾，避免 pending 真实
-        // 异步泄漏到下个测试（否则上一个测试的 ffmpeg future 会干扰后续测试挂起）。
-        if (saved && i > 6) return;
       }
     });
     await tester.pump();

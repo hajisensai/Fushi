@@ -79,7 +79,7 @@ class DesktopLookupService extends ChangeNotifier
   /// 引用计数正确建模「N 个并发持有者」：每次 [start] 计数 +1，每次 [stop] 计数 -1，
   /// 只有 0→1 才真正挂 watcher、只有 1→0 才真正拆。断点期计数 1→2→1 恒 >0，watcher 始终
   /// 存活；真正切离查词 tab（无第二个 owner）时计数归 0 才拆，故仍满足「仅在查词界面监听
-  /// 剪贴板/全局热键」的既定契约（见设置文案 desktop_clipboard_window_mode_hint）。
+  /// 剪贴板/全局热键」的既定契约。
   /// 计数的自增/分支判定都在首个 `await` 之前同步完成，故与 start/stop 的 `unawaited`
   /// 异步穿插无关，结果确定。
   int _startRefCount = 0;

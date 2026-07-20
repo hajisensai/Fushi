@@ -1,0 +1,15 @@
+## BUG-917 · 视频片段导出 exit -22（捆绑 ffmpeg-min 无 matroska muxer，输出跟随源容器）
+- **报告**：2026-07-19（用户：导出视频片段报 "Clip Export failed"，日志 `VideoClipExport ffmpeg exit -22 ... stderr=Error opening output files: Invalid argument`；且没有地方设置片段导出路径）
+- **真实性**：✅ 真 bug。根因在 `hibiki/lib/src/pages/implementations/video_hibiki/clip_export.part.dart:147`（`_clipExportOutputPath` 用 `p.extension(inputPath)` 让输出**跟随源容器**扩展名）+ ffmpeg-min build 契约（`tool/ffmpeg-min/build-ffmpeg-min.sh:60` 的 MUXERS 白名单 `gif,adts,image2,mjpeg,mov,mp4,srt,ass,webvtt,null` **没有 matroska/webm/avi/mpegts muxer**）。这是 BUG-460 的同源问题，当时只修了有声书音频路径，视频片段路径漏修。
+- **根因**：桌面捆绑的精简 ffmpeg 用 `--disable-everything` 构建。视频片段导出 `-c copy` 把输出写成**与源同扩展名**（多数番剧是 `.mkv`）→ ffmpeg 按 `.mkv` 自动选不存在的 matroska muxer → `Error opening output files: Invalid argument` → exit -22（EINVAL）。`.mp4` 源恰好能成功（mp4 muxer 在白名单里），故只有非 mp4 源（mkv/webm/avi/ts，即绝大多数）中招。
+  - build 脚本第 8/22/58 行早已为「片段导出 mp4」编入 `libx264` + `mp4` muxer（TODO-1257），但 Dart 端 `buildFfmpegVideoClipExportArgs` 仍写源容器 + `-c copy`，实现从未对齐 mp4 契约。
+  - 附带诉求：桌面端片段固定落 `getApplicationDocumentsDirectory()/video_clips/`，用户无法选导出位置。
+- **[x] ① 根因修复** — 提交 <PENDING>。
+  - `clip_export.part.dart`：删 `_clipExportOutputPath` 里「扩展名跟随源容器」逻辑，改 `_clipExportFileName` 恒生成 `<源名>_<起>-<止>.mp4`（`.mp4` 桌面 ffmpeg-min 能 mux + 任意播放器/浏览器通吃）。
+  - `video_clip_exporter.dart`：`exportVideoClipViaFfmpeg` 改「快路径 `-c copy` → 失败兜底重编码」两级：copy 成功（h264/hevc + aac 等）瞬时无损返回；copy 失败（源编码不入 mp4：vc1/wmv/dts/pcm…）自动用新增 `buildFfmpegVideoClipReencodeArgs`（`libx264 + aac -pix_fmt yuv420p -movflags +faststart`）重写同一个 `.mp4`。任何可解码源都不再 exit -22，代价（较慢/有损）只在快路径失败时付。
+  - 桌面新增「另存为」路径选择：`_resolveClipOutputPath` 桌面弹 `FilePicker.saveFile`（默认名 = 生成的 `.mp4` 名，`allowedExtensions:['mp4']`），`_ensureMp4Extension` 兜底用户删/换扩展名；取消 = 放弃导出（新 i18n key `video_clip_export_cancelled`）。移动端不变（落 app 目录后走系统分享）。
+- **[x] ② 自动化测试** — 提交 <PENDING>。
+  - `hibiki/test/media/video/video_clip_exporter_test.dart`：新增 `buildFfmpegVideoClipReencodeArgs`（libx264/aac/yuv420p/faststart/音频越界丢弃）与 `exportVideoClipViaFfmpeg`「copy 失败→reencode 成功」「两轮皆失败才 ffmpegFailed」两个行为测试（fake backend 按 args 含 `libx264` 区分两轮）。
+  - `hibiki/test/build/ffmpeg_min_clip_muxer_guard_test.dart`：源码扫描守卫——① build 白名单含 `mp4` 且**不含** `matroska` ② build `--enable-libx264` + ENCODERS 含 `libx264` ③ `clip_export.part.dart` 写 `.mp4` 且**不再**用 `p.extension(inputPath)` 取容器。
+  - `hibiki/test/pages/video_player_remote_uri_test.dart`：切源守卫锚点同步 `_clipExportOutputPath` → `_resolveClipOutputPath`（顺序不变量不动）。
+- **备注**：真机复测由验证代理执行——桌面对 `.mkv` 源导出应出可播 `.mp4`（快路径 copy）、能弹另存为选路径；对非 mp4 兼容编码源应自动重编码成功。桌面 ffmpeg-min 二进制若尚未随发布更新，重编码兜底依赖新 build 产物（libx264 已在白名单，属重编产物随发布更新范畴，同 BUG-460）。

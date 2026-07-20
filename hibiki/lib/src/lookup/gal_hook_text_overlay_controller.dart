@@ -352,7 +352,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
     final GalHookMiningResult result = await _miningCoordinator.mineLine(
       lineId: lineId,
       fields: fields,
-      compressMiningMedia: model.compressMiningMedia,
+      compression: MiningMediaCompression.resolve(
+        imageTier: model.miningImageQuality,
+        audioTier: model.miningAudioQuality,
+      ),
       repo: repo,
       updateNoteId: updateNoteId,
     );

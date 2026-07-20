@@ -162,7 +162,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         await GalHookMiningCoordinator.instance.mineLine(
       lineId: entry.id,
       fields: effectiveFields,
-      compressMiningMedia: mixinAppModel.compressMiningMedia,
+      compression: MiningMediaCompression.resolve(
+        imageTier: mixinAppModel.miningImageQuality,
+        audioTier: mixinAppModel.miningAudioQuality,
+      ),
       repo: repo,
       updateNoteId: updateNoteId,
     );

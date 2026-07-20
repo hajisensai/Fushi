@@ -2,12 +2,18 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 守卫：视频页（HomeVideoPage）顶栏必须有「视频统计」入口，且导航到
-/// VideoStatisticsPage。与书架页的阅读统计入口位置对等（一个在书架、一个在视频）。
+/// 守卫：视频页（HomeVideoPage）的「视频统计」入口必须接上导航链路——导入
+/// VideoStatisticsPage、有 _openStatistics 处理器、并 push VideoStatisticsPage。
+///
+/// 收窄记录：按钮的存在性 + 位置（tooltip=t.video_statistics、bar_chart 图标在
+/// 顶栏 actions 内且顺序钉死）已由 video_header_button_order_guard_test.dart
+/// (TODO-162) 双重覆盖，故本守卫只保留导航接线 3 个 token 断言，删去脆弱的
+/// substring(idx, idx+220) 窗口锚以及 t.video_statistics / Icons.bar_chart_outlined
+/// 这类纯外观/位置断言（避免合法重排即转红）。
 void main() {
   final File src = File('lib/src/pages/implementations/home_video_page.dart');
 
-  test('home_video_page imports VideoStatisticsPage', () {
+  test('home_video_page wires the statistics entry to VideoStatisticsPage', () {
     final String text = src.readAsStringSync();
     expect(
       text.contains(
@@ -15,25 +21,9 @@ void main() {
       isTrue,
       reason: '视频页应导入 VideoStatisticsPage',
     );
-  });
-
-  test('home_video_page toolbar has a statistics IconButton', () {
-    final String text = src.readAsStringSync();
-    expect(text.contains('t.video_statistics'), isTrue,
-        reason: '统计按钮 tooltip 应使用 t.video_statistics');
-    expect(text.contains('Icons.bar_chart_outlined'), isTrue,
-        reason: '统计入口应使用 bar_chart 图标（与书架阅读统计入口一致）');
     expect(text.contains('_openStatistics'), isTrue,
         reason: '应有 _openStatistics 处理器');
-  });
-
-  test('_openStatistics navigates to VideoStatisticsPage', () {
-    final String text = src.readAsStringSync();
-    final int idx = text.indexOf('void _openStatistics()');
-    expect(idx, greaterThanOrEqualTo(0), reason: '应定义 _openStatistics 方法');
-    final String body = text.substring(idx, idx + 220);
-    expect(body.contains('Navigator.push'), isTrue);
-    expect(body.contains('VideoStatisticsPage()'), isTrue,
+    expect(text.contains('VideoStatisticsPage()'), isTrue,
         reason: '_openStatistics 应 push VideoStatisticsPage');
   });
 }

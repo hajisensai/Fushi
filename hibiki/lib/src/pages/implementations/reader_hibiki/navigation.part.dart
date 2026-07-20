@@ -50,10 +50,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         // BUG-868：兜底超时是「JS 侧 hoshiReader 迟迟不回 onRestoreComplete」时的最终解锁，
         // 光翻 _readerContentReady 不够——_restoreInFlight / _isNavigatingToChapter /
         // _restoreCompleter 仍悬空，_paginationInFlight（chrome.part.dart）恒真：遮罩摘掉、
-        // 书看似打开，但翻页永久被守卫吞掉、进度不再保存。这里连同解开导航态，与
-        // _navigateToChapterAndWait 的等待超时收尾（本文件 _restoreCompleter.future.timeout
-        // onTimeout）同构：清 _isNavigatingToChapter，_failNavigation 清 _restoreInFlight
-        // 并 complete(false)+清空 completer，让等待方立即返回而非各等各的 10s 超时。
+        // 书看似打开，但翻页永久被守卫吞掉、进度不再保存。这里连同解开导航态：三份中止
+        // 变体已收敛进 _failNavigation（清 _isNavigatingToChapter + _restoreInFlight 并
+        // complete(false)+清空 completer，让等待方立即返回而非各等各的 10s 超时）。
+        // 前一行显式清导航旗与 _failNavigation 内部重复，保留作源码守卫锚点
+        // （test/pages/reader_content_ready_timeout_unwind_guard_static_test.dart 钉住
+        // 该行存在），幂等无副作用。
         _isNavigatingToChapter = false;
         _failNavigation();
         // TODO-1229 第三次复诉：兜底超时也算内容就绪，消费 pending 并 stamp 冷却窗，
@@ -220,36 +222,6 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     );
   }
 
-  /// BUG-493 (TODO-1053 Bug B)：重锚在飞导致进度刷新拿到 null 时武装一次短延迟重试。
-  /// 只对「真实文本章」（非纯图片/封面章）武装——图片章的 null 是合法稳态由
-  /// [_applyImagePageProgressFallback] 兜底显示，重试会空转。有界（[_kProgressRetryMax]）：
-  /// 超界回落 10s 轮询，避免罕见永不 settle 场景无限重试。已武装则不重复排队（coalesce）。
-  void _maybeArmProgressReanchorRetry() {
-    if (!mounted) return;
-    if (_progressReanchorRetryTimer != null) return;
-    final EpubBook? book = _book;
-    if (book == null) return;
-    // 纯图片/封面章的 null 是稳态 → 不重试（避免空转）。
-    if (book.isImageOnlyChapter(_currentChapter)) return;
-    if (_progressReanchorRetryCount >=
-        _ReaderHibikiPageState._kProgressRetryMax) {
-      return;
-    }
-    _progressReanchorRetryCount++;
-    _progressReanchorRetryTimer =
-        Timer(_ReaderHibikiPageState._kProgressRetryDelay, () {
-      _progressReanchorRetryTimer = null;
-      if (mounted) _refreshProgress();
-    });
-  }
-
-  /// 撤销待重试并复位计数（拿到真实快照 / dispose 时）。
-  void _cancelProgressReanchorRetry() {
-    _progressReanchorRetryTimer?.cancel();
-    _progressReanchorRetryTimer = null;
-    _progressReanchorRetryCount = 0;
-  }
-
   /// BUG-213：setup 脚本的 scroll reporter 在章内原生滚动时（BUG-380 后改为 rAF 节流
   /// 边滑边回传 + 尾沿补一发）回传到此。门控通过则重算章内进度（high-water-mark 计字
   /// 不重复累计、`_debouncedSavePosition` 自带 500ms 去抖，不改字数累加路径）。恢复期/
@@ -392,8 +364,14 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _startContentReadyTimeout();
   }
 
-  /// 导航装载失败的共用收尾：清 restoreInFlight、完成并清空 restore completer。
+  /// 导航中止的统一收尾（三份变体收敛单点）：清导航在飞旗 `_isNavigatingToChapter`、
+  /// 清恢复在飞旗 `_restoreInFlight`、complete(false) 并清空 restore completer，让等待方
+  /// 立即返回。装载失败 catch（三入口）、[_navigateToChapterAndWait] 等待超时、
+  /// content-ready 兜底超时（BUG-868）共用此一份——行为对齐到最完整变体（旧超时分支
+  /// 弃置 completer 不 complete、旧装载失败分支不清导航旗，各自分叉）。对已复位的字段
+  /// 幂等（装载失败路径 `_isNavigatingToChapter` 已在 rethrow 前清过，再清无副作用）。
   void _failNavigation() {
+    _isNavigatingToChapter = false;
     _restoreInFlight = false;
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
       _restoreCompleter!.complete(false);
@@ -510,9 +488,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
           const Duration(seconds: 10),
           onTimeout: () {
             debugPrint('[ReaderHibiki] _navigateToChapterAndWait timed out');
-            _isNavigatingToChapter = false;
-            _restoreCompleter = null;
-            _restoreInFlight = false;
+            // 与装载失败 / content-ready 兜底超时共用同一份导航中止收尾。旧写法只弃置
+            // completer 不 complete（行为分叉）；_failNavigation 额外 complete(false)——
+            // 本 future 已超时返回，completer 再 complete 无副作用，且让其它等待方也
+            // 立即放行，不再各等各的超时。
+            _failNavigation();
             return false;
           },
         ) ??
@@ -836,10 +816,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     );
     if (result == null) {
       // BUG-493：null = JS stableProgressInvocation 早退（重锚在飞 _reanchorPending / 尚未
-      // settle）。真实文本章遇此是**瞬态**，武装一次短延迟重试，重锚一清旗即补到真值；
-      // 图片/封面章的 null 是**合法稳态**（无文本进度），不重试（由下方 snapshot==null 分支
-      // 兜底显示）。区分靠 _shouldRetryProgressRefresh（真文本章 && 未超界）。
-      if (mounted) _maybeArmProgressReanchorRetry();
+      // settle）。这是**瞬态**：JS 侧清旗已单点化（_sharedJs 的 _setReanchorPending），
+      // true→false 转换时经 onReanchorSettled 事件（webview.part.dart 注册）通知 Dart 补刷
+      // 一次进度——事件驱动替代旧的 120ms×8 轮询重试，覆盖所有清旗路径。此处直接早退等
+      // 事件即可；图片/封面章的 null 走空串→snapshot==null 分支由
+      // _applyImagePageProgressFallback 兜底显示。
       return;
     }
     if (!mounted) return;
@@ -854,8 +835,6 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       return;
     }
 
-    // BUG-493：拿到真实快照 → 重锚已 settle，撤销待重试并复位计数。
-    _cancelProgressReanchorRetry();
     final int total = snapshot.total;
     final int charOffset = snapshot.charOffset;
     final double progress = snapshot.progress;
@@ -1054,6 +1033,20 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       // 逐句跟随。还原 null 守卫，把同/跨 section 的取舍交回 repo.save。
       charOffset: charOffset >= 0 ? charOffset : null,
     );
+
+    // 读到全书末尾（最后一章 + 章内进度到末尾）→ 自动写「已读完」时间戳。
+    // markEpubBookCompletedIfUnset 幂等（仅 completed_at IS NULL 时写），不刷新时间戳、
+    // 绝不覆盖用户手动标记/取消的状态。手动翻页与有声书自动推进到末章末句都汇聚
+    // _persistPosition，故两条路径统一由此接线；临时跳转已被上方 _suppressPositionPersist
+    // 提前返回，不会误触发。widget.bookKey 即当前书（有声书会话为其配对 EpubBooks 行）。
+    final EpubBook? book = _book;
+    if (book != null &&
+        book.chapters.isNotEmpty &&
+        section >= book.chapters.length - 1 &&
+        progress >= 0.999) {
+      await appModel.database
+          .markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
+    }
   }
 
   void _syncPositionFromCurrentCue() {

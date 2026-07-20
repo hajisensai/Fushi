@@ -555,7 +555,7 @@ async function hibikiRunNetflixBatch() {
     // TODO-1219 P2：字幕列表面板 + 重开小片同批隐藏（GIF 不该录进面板）；P3 再补录制前撤推挤 margin。
     // TODO-1270 Bug B：Hibiki 自己的「生成中」浮层(#hibiki-toast)也在被 tabCapture 录进 GIF
     // （用户报「底部生成中条送给了网飞」）→ 整场批量期间一并隐藏，进度改由扩展图标红点徽标传达。
-    '.player-timedtext,#hibiki-subtitle-panel,#hibiki-subtitle-reopen,#hibiki-toast{visibility:hidden!important}' +
+    '.player-timedtext,#hibiki-subtitle-panel,#hibiki-subtitle-reopen,#hibiki-subtitle-overlay,#hibiki-subtitle-drop-hint,#hibiki-toast{visibility:hidden!important}' +
     // TODO-1270 Bug B：Netflix 自己的返回按钮(左上)+举报旗帜(右上)是顶部控制层，逐句 seek/pause
     // 会强制其显示 → 落进录制窗。底部控制条之外再隐藏顶部返回/举报容器（多选择器兜底改类名）。
     '.watch-video--bottom-controls-container,.PlayerControlsNeo__layout,' +
@@ -1245,6 +1245,23 @@ document.addEventListener('mousemove', (e) => {
   hibikiSendLookup(term, hibikiAnchorRect);
 });
 
+let hibikiLastConnectionHintAt = 0;
+function hibikiShowConnectionFailure(resp) {
+  const now = Date.now();
+  if (now - hibikiLastConnectionHintAt < 8000) return; // hover 连发时只提醒一次，避免刷屏
+  hibikiLastConnectionHintAt = now;
+  const c = resp && resp.connection;
+  let message = 'Hibiki API 未开启：请在 Hibiki 设置 → 查词中开启 Yomitan API 服务器';
+  if (c && c.state === 'yomitan-conflict') {
+    message = '端口 ' + (c.port || 19633) + ' 被 Yomitan API 占用：请在 Yomitan 高级设置关闭 Enable Yomitan API，再开启 Hibiki 的 Yomitan API 服务器';
+  } else if (c && c.state === 'unauthorized') {
+    message = 'Hibiki API 密钥不匹配：请打开扩展设置并恢复自动配置';
+  } else if (c && c.state === 'wrong-service') {
+    message = '扩展端口连接到了其他服务：请打开扩展设置检查连接';
+  }
+  try { window.hibikiToast('⚠ ' + message); } catch (_) {}
+}
+
 // 查词即自动暂停 + 发查词请求 + 渲染弹窗的共享收尾（mousemove 划词与面板行显式点击查词同源）。
 // 暂停：**仅对 Netflix 播放器**（按域名判定，不碰别的站点/后台视频）。定格画面+字幕（方便看词/看
 // 弹窗），冻结 video.currentTime → 句子窗口停在句末，offscreen 随之暂停录制保住这句 → 制卡得整句、
@@ -1269,7 +1286,8 @@ function hibikiSendLookup(term, anchorRect, cueWindow) {
       } catch (_) {
         return;
       }
-      if (!resp || !resp.ok || !resp.data || !resp.data.popupJson) return;
+      if (!resp || !resp.ok) { hibikiShowConnectionFailure(resp); return; }
+      if (!resp.data || !resp.data.popupJson) return;
       // TODO-1150（yomitan 式）：弹窗钉在被查词旁 + 高亮词。匹配长度取服务端 result.bestLength（日语=
       // 去屈折后命中的词长，与 app 阅读器 lookupHighlightCharCount → result.bestLength 同源），只高亮真正
       // 匹配的词而非整个 12 字扫描窗；缺失/为 0 时回落扫描窗长度 term.length。
@@ -1322,7 +1340,8 @@ window.__hibikiOnLinkClick = function (query) {
   try {
     chrome.runtime.sendMessage({ type: 'lookup', term }, (resp) => {
       try { if (chrome.runtime.lastError) return; } catch (_) { return; }
-      if (!resp || !resp.ok || !resp.data || !resp.data.popupJson) return;
+      if (!resp || !resp.ok) { hibikiShowConnectionFailure(resp); return; }
+      if (!resp.data || !resp.data.popupJson) return;
       const best = resp.data.result && typeof resp.data.result.bestLength === 'number'
         ? resp.data.result.bestLength : 0;
       const termLen = best > 0 ? best : term.length;

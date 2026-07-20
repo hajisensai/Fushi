@@ -219,6 +219,11 @@ Future<AppModel> _prefsBackedAppModel(
 }
 
 void main() {
+  // 部分 section（如系统「诊断」）现在默认折叠会把行移出树；这些渲染器测试直查
+  // 具体行，强制全展开以还原折叠前的渲染（见 debugSettingsForceExpandAllSections）。
+  setUp(() => debugSettingsForceExpandAllSections = true);
+  tearDown(() => debugSettingsForceExpandAllSections = false);
+
   testWidgets('material renderer maps schema to Material controls',
       (WidgetTester tester) async {
     await tester.pumpWidget(

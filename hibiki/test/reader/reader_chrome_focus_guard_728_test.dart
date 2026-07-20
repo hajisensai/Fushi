@@ -20,7 +20,15 @@ void main() {
       .join('\n');
 
   test('bottom chrome bars remain ExcludeFocus', () {
-    expect('ExcludeFocus('.allMatches(chrome).length, greaterThanOrEqualTo(2));
+    // 底栏外壳已收敛到单一 _wrapBottomChromeBar helper（清理 wave2）：
+    // ExcludeFocus 唯一落在 helper 内、两条底栏都经它包装——不变量（两条底栏
+    // 都被排出焦点遍历池）不变且更强（与 reader_focus_chrome_excluded 一致）。
+    expect(chrome, contains('Widget _wrapBottomChromeBar('));
+    expect('ExcludeFocus('.allMatches(chrome).length, 1);
+    expect(
+      '_wrapBottomChromeBar('.allMatches(chrome).length,
+      greaterThanOrEqualTo(3),
+    );
   });
 
   test('_toggleChrome only flips chrome + insets + requestFocus', () {

@@ -237,8 +237,9 @@ void main() {
       );
       expect(
         src,
-        contains('s.dateKey != null'),
-        reason: '旧条目无 dateKey 不参与分桶（不崩）',
+        contains('s.dateKey ?? statDateKey(s.createdAt)'),
+        reason: 'BUG-893：书内旧收藏无 dateKey 按 createdAt 回退归桶'
+            '（旧的 `dateKey != null` 过滤把所有书内收藏滤光 → 统计恒 0，已根治）',
       );
     });
 

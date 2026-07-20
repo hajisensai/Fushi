@@ -1,0 +1,258 @@
+--- a/libavformat/tls.h
++++ b/libavformat/tls.h
+@@ -36,6 +36,12 @@
+     char *host;
+     char *http_proxy;
+ 
++    /* Hibiki: SHA-256 fingerprint (hex, colons optional) the peer leaf
++     * certificate must match. When set, it authoritatively replaces the
++     * CA/hostname checks (accepts exactly this cert, e.g. a self-signed LAN
++     * host pinned via TOFU). Empty/NULL = unchanged upstream behaviour. */
++    char *pin_sha256;
++
+     char underlying_host[200];
+     int numerichost;
+ 
+@@ -51,10 +57,17 @@
+     {"key_file",   "Private key file",                    offsetof(pstruct, options_field . key_file),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+     {"listen",     "Listen for incoming connections",     offsetof(pstruct, options_field . listen),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
+     {"verifyhost", "Verify against a specific hostname",  offsetof(pstruct, options_field . host),      AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+-    {"http_proxy", "Set proxy to tunnel through",         offsetof(pstruct, options_field . http_proxy), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }
++    {"http_proxy", "Set proxy to tunnel through",         offsetof(pstruct, options_field . http_proxy), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
++    {"tls_pin_sha256", "Pin the peer certificate to this SHA-256 fingerprint (hex)", offsetof(pstruct, options_field . pin_sha256), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }
+ 
+ int ff_tls_open_underlying(TLSShared *c, URLContext *parent, const char *uri, AVDictionary **options);
+ 
++/* Hibiki: return 0 when the DER-encoded [der_cert] SHA-256 fingerprint matches
++ * [pin] (hex, colons/whitespace ignored, case-insensitive); a negative AVERROR
++ * on mismatch or malformed input. [pin] NULL/empty returns 0 (no-op). Shared by
++ * every TLS backend so pinning behaves identically across gnutls/openssl/etc. */
++int ff_tls_check_cert_pin(void *logctx, const uint8_t *der_cert, int der_len, const char *pin);
++
+ void ff_gnutls_init(void);
+ void ff_gnutls_deinit(void);
+ 
+--- a/libavformat/tls.c
++++ b/libavformat/tls.c
+@@ -27,8 +27,80 @@
+ #include "tls.h"
+ #include "libavutil/avstring.h"
+ #include "libavutil/getenv_utf8.h"
++#include "libavutil/mem.h"
+ #include "libavutil/opt.h"
+ #include "libavutil/parseutils.h"
++#include "libavutil/sha.h"
++
++/* Hibiki: certificate fingerprint pinning shared by all TLS backends. Mirrors
++ * the app's TOFU pinning (SHA-256 over the leaf certificate DER); see
++ * hibiki_tls_identity.dart fingerprintOf(). Backend code calls this after the
++ * handshake with the peer leaf certificate; a match authoritatively accepts the
++ * connection without CA/hostname checks (self-signed LAN hosts), a mismatch
++ * fails the handshake. */
++int ff_tls_check_cert_pin(void *logctx, const uint8_t *der_cert, int der_len,
++                          const char *pin)
++{
++    static const char hexdig[] = "0123456789abcdef";
++    struct AVSHA *sha;
++    uint8_t digest[32];
++    char have[65];
++    char want[65];
++    int i, j;
++
++    if (!pin || !*pin)
++        return 0;
++    if (!der_cert || der_len <= 0) {
++        av_log(logctx, AV_LOG_ERROR,
++               "tls_pin_sha256: no peer certificate to pin against\n");
++        return AVERROR(EIO);
++    }
++
++    /* Normalise the expected pin: drop ':'/whitespace, lowercase, expect 64 hex. */
++    for (i = 0, j = 0; pin[i] && j < 64; i++) {
++        char ch = pin[i];
++        if (ch == ':' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r')
++            continue;
++        if (ch >= 'A' && ch <= 'F')
++            ch = ch - 'A' + 'a';
++        if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) {
++            av_log(logctx, AV_LOG_ERROR,
++                   "tls_pin_sha256: non-hex character in pin\n");
++            return AVERROR(EINVAL);
++        }
++        want[j++] = ch;
++    }
++    want[j] = '\0';
++    if (j != 64 || pin[i]) {
++        av_log(logctx, AV_LOG_ERROR,
++               "tls_pin_sha256: expected 64 hex digits (SHA-256)\n");
++        return AVERROR(EINVAL);
++    }
++
++    sha = av_sha_alloc();
++    if (!sha)
++        return AVERROR(ENOMEM);
++    av_sha_init(sha, 256);
++    av_sha_update(sha, der_cert, der_len);
++    av_sha_final(sha, digest);
++    av_free(sha);
++
++    for (i = 0; i < 32; i++) {
++        have[i * 2]     = hexdig[digest[i] >> 4];
++        have[i * 2 + 1] = hexdig[digest[i] & 0x0f];
++    }
++    have[64] = '\0';
++
++    if (memcmp(have, want, 64)) {
++        av_log(logctx, AV_LOG_ERROR,
++               "tls_pin_sha256: peer certificate fingerprint %s does not match pin\n",
++               have);
++        return AVERROR(EIO);
++    }
++    av_log(logctx, AV_LOG_VERBOSE,
++           "tls_pin_sha256: peer certificate fingerprint verified\n");
++    return 0;
++}
+ 
+ static void set_options(TLSShared *c, const char *uri)
+ {
+--- a/libavformat/tls_gnutls.c
++++ b/libavformat/tls_gnutls.c
+@@ -206,7 +206,28 @@
+         }
+     } while (ret);
+     p->need_shutdown = 1;
+-    if (c->verify) {
++    if (c->pin_sha256 && *c->pin_sha256) {
++        /* Hibiki: certificate fingerprint pinning. When a pin is supplied it is
++         * authoritative and replaces the CA/hostname checks below, so a
++         * self-signed LAN host (pinned via TOFU) is accepted iff its leaf
++         * certificate matches, and rejected otherwise. */
++        const gnutls_datum_t *cert_list;
++        unsigned int cert_list_size;
++        if (gnutls_certificate_type_get(p->session) != GNUTLS_CRT_X509) {
++            av_log(h, AV_LOG_ERROR, "Unsupported certificate type\n");
++            ret = AVERROR(EIO);
++            goto fail;
++        }
++        cert_list = gnutls_certificate_get_peers(p->session, &cert_list_size);
++        if (!cert_list || cert_list_size == 0) {
++            av_log(h, AV_LOG_ERROR, "No peer certificate to pin against\n");
++            ret = AVERROR(EIO);
++            goto fail;
++        }
++        if ((ret = ff_tls_check_cert_pin(h, cert_list[0].data,
++                                         cert_list[0].size, c->pin_sha256)) < 0)
++            goto fail;
++    } else if (c->verify) {
+         unsigned int status, cert_list_size;
+         gnutls_x509_crt_t cert;
+         const gnutls_datum_t *cert_list;
+--- a/libavformat/tls_openssl.c
++++ b/libavformat/tls_openssl.c
+@@ -325,6 +325,30 @@
+         goto fail;
+     }
+ 
++    if (c->pin_sha256 && *c->pin_sha256) {
++        /* Hibiki: certificate fingerprint pinning. Authoritative — replaces the
++         * (here disabled by default) CA/hostname verification, so a self-signed
++         * LAN host is accepted iff its leaf certificate matches the pin. */
++        X509 *peer = SSL_get_peer_certificate(p->ssl);
++        unsigned char *der = NULL;
++        int der_len;
++        int pinret = AVERROR(EIO);
++        if (peer) {
++            der_len = i2d_X509(peer, &der);
++            if (der_len > 0 && der)
++                pinret = ff_tls_check_cert_pin(h, der, der_len, c->pin_sha256);
++            if (der)
++                OPENSSL_free(der);
++            X509_free(peer);
++        } else {
++            av_log(h, AV_LOG_ERROR, "No peer certificate to pin against\n");
++        }
++        if (pinret < 0) {
++            ret = pinret;
++            goto fail;
++        }
++    }
++
+     return 0;
+ fail:
+     tls_close(h);
+--- a/libavformat/tls_securetransport.c
++++ b/libavformat/tls_securetransport.c
+@@ -283,7 +283,7 @@
+         if ((ret = load_ca(h)) < 0)
+             goto fail;
+     }
+-    if (s->ca_file || !s->verify)
++    if (s->ca_file || !s->verify || (s->pin_sha256 && *s->pin_sha256))
+         CHECK_ERROR(SSLSetSessionOption, c->ssl_context, kSSLSessionOptionBreakOnServerAuth, true);
+     if (s->cert_file)
+         if ((ret = load_cert(h)) < 0)
+@@ -296,6 +296,33 @@
+         if (status == errSSLServerAuthCompleted) {
+             SecTrustRef peerTrust;
+             SecTrustResultType trustResult;
++            if (s->pin_sha256 && *s->pin_sha256) {
++                /* Hibiki: certificate fingerprint pinning is authoritative and
++                 * replaces the anchor/hostname trust evaluation below, so a
++                 * self-signed LAN host is accepted iff its leaf certificate
++                 * matches the pin. */
++                SecTrustRef pinTrust = NULL;
++                CFDataRef der = NULL;
++                int pinret = AVERROR(EIO);
++                if (SSLCopyPeerTrust(c->ssl_context, &pinTrust) == noErr && pinTrust) {
++                    if (SecTrustGetCertificateCount(pinTrust) > 0)
++                        der = SecCertificateCopyData(
++                            SecTrustGetCertificateAtIndex(pinTrust, 0));
++                    if (der)
++                        pinret = ff_tls_check_cert_pin(h, CFDataGetBytePtr(der),
++                                                       (int)CFDataGetLength(der),
++                                                       s->pin_sha256);
++                }
++                if (der)
++                    CFRelease(der);
++                if (pinTrust)
++                    CFRelease(pinTrust);
++                if (pinret < 0) {
++                    ret = pinret;
++                    goto fail;
++                }
++                continue; /* pinned certificate matched: re-drive the handshake */
++            }
+             if (!s->verify)
+                 continue;
+ 
+--- a/libavformat/tls_schannel.c
++++ b/libavformat/tls_schannel.c
+@@ -372,6 +372,28 @@
+     if (ret < 0)
+         goto fail;
+ 
++    if (s->pin_sha256 && *s->pin_sha256) {
++        /* Hibiki: certificate fingerprint pinning replaces the chain validation
++         * we disabled via SCH_CRED_MANUAL_CRED_VALIDATION, accepting exactly the
++         * pinned self-signed leaf certificate (and rejecting anything else). */
++        PCCERT_CONTEXT cert_ctx = NULL;
++        sspi_ret = QueryContextAttributes(&c->ctxt_handle,
++                                          SECPKG_ATTR_REMOTE_CERT_CONTEXT,
++                                          &cert_ctx);
++        if (sspi_ret != SEC_E_OK || !cert_ctx) {
++            av_log(h, AV_LOG_ERROR,
++                   "Unable to retrieve peer certificate for pinning (0x%lx)\n",
++                   sspi_ret);
++            ret = AVERROR(EIO);
++            goto fail;
++        }
++        ret = ff_tls_check_cert_pin(h, cert_ctx->pbCertEncoded,
++                                    cert_ctx->cbCertEncoded, s->pin_sha256);
++        CertFreeCertificateContext(cert_ctx);
++        if (ret < 0)
++            goto fail;
++    }
++
+     c->connected = 1;
+ 
+     return 0;

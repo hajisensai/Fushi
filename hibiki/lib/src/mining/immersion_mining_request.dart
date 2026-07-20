@@ -73,6 +73,7 @@ class ImmersionMiningRequest {
     this.audioStreamCount,
     this.source = AnkiMiningSource.video,
     this.bookTitleTag,
+    this.collectionTag,
     this.updateNoteId,
     this.stillFallback,
     this.providedCoverBytes,
@@ -81,6 +82,7 @@ class ImmersionMiningRequest {
     this.providedAudioName,
     this.requireAudio = true,
     this.imageMode = VideoMiningImageMode.gif,
+    this.mediaSourceTlsPinSha256,
   });
 
   final Map<String, String> fields;
@@ -98,6 +100,11 @@ class ImmersionMiningRequest {
   final int? audioStreamCount;
   final AnkiMiningSource source;
   final String? bookTitleTag;
+
+  /// 合集/系列名标签（视频=播放列表系列名）：与 [bookTitleTag] 同「自动添加书名到标签」
+  /// 开关，非 null 时经 [BaseAnkiRepository.buildNoteTags] 追加为独立 tag。不属合集/单视频
+  /// 无系列名时为 null。透传进 [AnkiMiningContext.collectionTag]。
+  final String? collectionTag;
 
   /// 非 null = 覆盖现有卡（走 updateMinedNote，不计统计）。
   final int? updateNoteId;
@@ -117,6 +124,12 @@ class ImmersionMiningRequest {
   /// 视频制卡封面图片模式（见 [VideoMiningImageMode]）。默认 [VideoMiningImageMode.gif]
   /// = 现状。仅本地/有 range 的封面解析路径读取；providedCoverBytes 路径不受影响。
   final VideoMiningImageMode imageMode;
+
+  /// BUG-891：[mediaSource]/[audioSource] 若是远端自签 Hibiki 主机的 https 流，这里带上
+  /// 该 host 经 TOFU 钉扎的证书 SHA-256 指纹（`aa:bb:..`）。引擎把它透传给 ffmpeg 抽取器的
+  /// `-tls_pin_sha256`，使自编 ffmpeg-kit（`--enable-gnutls` + pin 补丁）按指纹接受自签，
+  /// 而非无条件放行。null = 本地源 / 公网有效证书源（YouTube 等），不钉扎、走 ffmpeg 默认。
+  final String? mediaSourceTlsPinSha256;
 
   bool get hasRange => clipEndMs > clipStartMs;
 }

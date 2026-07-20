@@ -2350,21 +2350,40 @@ class VideoPlayerController extends ChangeNotifier
         _seekTargetCueIndex == null ? 0 : _seekSnapGraceTicks;
   }
 
-  /// 求 [cue] 在升序 [_cues] 中的下标；优先按对象同一性（面板/导航传的就是 _cues 元素），
-  /// 退而按 `startMs` 二分（防御性，cue 是等价副本时）。找不到返回 null。
-  int? _resolveCueIndex(AudioCue cue) {
-    final int direct = _cues.indexOf(cue);
-    if (direct >= 0) return direct;
+  /// 升序 cue 列表上按 `startMs` 二分求分界下标（要求 [cues] 已按 startMs 升序）：
+  /// - [inclusive] 为 false：lower bound——返回首个 `startMs >= value` 的下标；
+  /// - [inclusive] 为 true：upper bound——返回首个 `startMs > value` 的下标
+  ///   （即「起点 <= value」的条数）。
+  /// 全部更小 / 全部更大时相应返回 `cues.length` / 0。此前 [_resolveCueIndex] /
+  /// [_prevCueStartMsBefore] / [prevCueIndexFor] gap 分支 / [_floorCueIndexByPosition]
+  /// 各内联一份同形 `while (lo < hi)` 二分（仅比较符不同），收敛于此；各点的边界语义
+  /// （首个 >= / 最后一个 < / 最后一个 <=）由调用方对返回值加减与判空表达。
+  static int _cueStartMsBinaryBound(
+    List<AudioCue> cues,
+    int value, {
+    required bool inclusive,
+  }) {
     int lo = 0;
-    int hi = _cues.length;
+    int hi = cues.length;
     while (lo < hi) {
       final int mid = (lo + hi) >>> 1;
-      if (_cues[mid].startMs < cue.startMs) {
+      final int startMs = cues[mid].startMs;
+      if (inclusive ? startMs <= value : startMs < value) {
         lo = mid + 1;
       } else {
         hi = mid;
       }
     }
+    return lo;
+  }
+
+  /// 求 [cue] 在升序 [_cues] 中的下标；优先按对象同一性（面板/导航传的就是 _cues 元素），
+  /// 退而按 `startMs` 二分（防御性，cue 是等价副本时）。找不到返回 null。
+  int? _resolveCueIndex(AudioCue cue) {
+    final int direct = _cues.indexOf(cue);
+    if (direct >= 0) return direct;
+    // lower bound（首个 startMs >= cue.startMs），起点相等才算命中。
+    final int lo = _cueStartMsBinaryBound(_cues, cue.startMs, inclusive: false);
     if (lo < _cues.length && _cues[lo].startMs == cue.startMs) return lo;
     return null;
   }
@@ -2372,16 +2391,8 @@ class VideoPlayerController extends ChangeNotifier
   /// 在升序 [_cues] 上求「起点严格早于 [cueStartMs] 的最后一条」的起点（即上一句起点）；
   /// 无更早的 cue 时返回 null。供 [skipToCue] 钳前导余量下界，避免 seek 串回前一句。
   int? _prevCueStartMsBefore(int cueStartMs) {
-    int lo = 0;
-    int hi = _cues.length;
-    while (lo < hi) {
-      final int mid = (lo + hi) >>> 1;
-      if (_cues[mid].startMs < cueStartMs) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
+    // lower bound 左侧即「起点严格 < cueStartMs」的全部 cue，取其最后一条的起点。
+    final int lo = _cueStartMsBinaryBound(_cues, cueStartMs, inclusive: false);
     return lo == 0 ? null : _cues[lo - 1].startMs;
   }
 
@@ -2588,17 +2599,9 @@ class VideoPlayerController extends ChangeNotifier
       return hit == 0 ? null : hit - 1; // 已在首句无上一句。
     }
     // gap / 早于首句：找起点 < 位置的最后一条（gap 之前刚播完那句）；位置正好压在
-    // 某句起点上时由上面 hit 分支处理，这里恒落在 gap，故二分用严格 `<`。
-    int lo = 0;
-    int hi = cues.length;
-    while (lo < hi) {
-      final int mid = (lo + hi) >>> 1;
-      if (cues[mid].startMs < pos) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
+    // 某句起点上时由上面 hit 分支处理，这里恒落在 gap，故二分用严格 `<`（lower
+    // bound，inclusive: false）；早于全部 cue 时落首句（索引 0）。
+    final int lo = _cueStartMsBinaryBound(cues, pos, inclusive: false);
     return lo == 0 ? 0 : lo - 1;
   }
 
@@ -2640,17 +2643,8 @@ class VideoPlayerController extends ChangeNotifier
   /// 二分求「起点 <= [positionMs] 的最后一条 cue」的下标（floor 语义）；位置早于
   /// 全部 cue 时返回 -1。要求 [cues] 已按 `startMs` 升序（[setCues] 保证）。
   static int _floorCueIndexByPosition(List<AudioCue> cues, int positionMs) {
-    int lo = 0;
-    int hi = cues.length;
-    while (lo < hi) {
-      final int mid = (lo + hi) >>> 1;
-      if (cues[mid].startMs <= positionMs) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
-    return lo - 1;
+    // upper bound（首个 startMs > positionMs）减一即 floor。
+    return _cueStartMsBinaryBound(cues, positionMs, inclusive: true) - 1;
   }
 
   @override

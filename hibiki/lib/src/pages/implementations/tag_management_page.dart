@@ -23,6 +23,9 @@ const List<int> kTagPresetColors = [
   0xFF78909C, // blue grey
 ];
 
+/// 标签行长按 / 右键上下文菜单的动作。
+enum _TagMenuAction { edit, delete }
+
 class TagManagementPage extends ConsumerStatefulWidget {
   const TagManagementPage({super.key});
 
@@ -98,6 +101,58 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       rethrow;
     }
     await _reload();
+  }
+
+  /// 长按（原地松手）/ 右键弹出上下文菜单：编辑 + 删除。照仓库既有卡片长按菜单
+  /// 范式（[_showMemberMenu] 的 showMenu + Overlay.globalToLocal 换算）。桌面端鼠标
+  /// 既无 swipe 又无 gamepad，删除此前无入口——本菜单补齐，同时保留 tap→编辑、
+  /// swipe→删除、gamepad X→删除。
+  Future<void> _showTagMenu(BookTagRow tag, Offset globalPosition) async {
+    final RenderObject? overlay =
+        Overlay.of(context).context.findRenderObject();
+    if (overlay is! RenderBox) return;
+    // 与 media_collection_grid_detail_page 同理：globalPosition 是真实视口坐标，
+    // 需经 Overlay 的 RenderBox 换算到根 Navigator Overlay 坐标系，界面缩放≠100%
+    // 时才不偏移（scale=1 时为单位阵，逐像素等价）。
+    final Offset anchor = overlay.globalToLocal(globalPosition);
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(anchor, anchor),
+      Offset.zero & overlay.size,
+    );
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final _TagMenuAction? action = await showMenu<_TagMenuAction>(
+      context: context,
+      position: position,
+      items: <PopupMenuEntry<_TagMenuAction>>[
+        PopupMenuItem<_TagMenuAction>(
+          value: _TagMenuAction.edit,
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.edit_outlined, size: 20),
+              const SizedBox(width: 12),
+              Text(t.dialog_edit),
+            ],
+          ),
+        ),
+        PopupMenuItem<_TagMenuAction>(
+          value: _TagMenuAction.delete,
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.delete_outline, size: 20, color: scheme.error),
+              const SizedBox(width: 12),
+              Text(t.dialog_delete, style: TextStyle(color: scheme.error)),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case _TagMenuAction.edit:
+        await _editTag(tag);
+      case _TagMenuAction.delete:
+        await _deleteTag(tag);
+    }
   }
 
   Future<void> _deleteTag(BookTagRow tag) async {
@@ -211,14 +266,21 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                         },
                       ),
                     },
-                    child: HibikiListItem(
-                      leading: CircleAvatar(
-                        backgroundColor: Color(tag.colorValue),
-                        radius: 14,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onLongPressStart: (LongPressStartDetails d) =>
+                          _showTagMenu(tag, d.globalPosition),
+                      onSecondaryTapDown: (TapDownDetails d) =>
+                          _showTagMenu(tag, d.globalPosition),
+                      child: HibikiListItem(
+                        leading: CircleAvatar(
+                          backgroundColor: Color(tag.colorValue),
+                          radius: 14,
+                        ),
+                        title: Text(tag.name),
+                        trailing: Text(t.tag_book_count(count: count)),
+                        onTap: () => _editTag(tag),
                       ),
-                      title: Text(tag.name),
-                      trailing: Text(t.tag_book_count(count: count)),
-                      onTap: () => _editTag(tag),
                     ),
                   ),
                 );

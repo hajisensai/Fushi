@@ -8,6 +8,7 @@ import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_transient_error.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -75,43 +76,20 @@ bool googleDriveErrorIsInsufficientScope(Object error) {
   return false;
 }
 
-typedef FolderCache = Map<String, String>;
-
-class GoogleDriveHandler {
+class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   GoogleDriveHandler._();
   static final GoogleDriveHandler instance = GoogleDriveHandler._();
 
-  String? _rootFolderId;
-  final FolderCache _titleToFolderId = {};
   drive.DriveApi? _cachedApi;
 
+  // 缓存字段（rootFolderIdCache / folderIdCache）+ restoreCache /
+  // cachedRootFolderId / cachedFolderIds / cacheBookFolderIds / evictFolderId
+  // 收敛进 [SyncFolderCache] mixin（恒等 folderId，无尾斜杠规范化）。clearCache 额外
+  // 清掉本地缓存的 DriveApi 句柄，故覆写并 super 调用。
+  @override
   void clearCache() {
-    _rootFolderId = null;
-    _titleToFolderId.clear();
+    super.clearCache();
     _cachedApi = null;
-  }
-
-  /// 按 folderId 反查并逐出书名→folderId 缓存里所有指向 [folderId] 的条目。
-  /// 删除某本书的远端文件夹后调用，消除「书名仍映射到已删/已 trash folderId」的
-  /// 陈旧态（BUG-202）。同一 folderId 理论上只对一个书名，但反查删全保险。
-  void evictFolderId(String folderId) {
-    _titleToFolderId.removeWhere((_, id) => id == folderId);
-  }
-
-  void restoreCache({String? rootFolderId, FolderCache? titleToFolderId}) {
-    _rootFolderId = rootFolderId;
-    if (titleToFolderId != null) {
-      _titleToFolderId.addAll(titleToFolderId);
-    }
-  }
-
-  String? get cachedRootFolderId => _rootFolderId;
-  FolderCache get cachedFolderIds => Map.unmodifiable(_titleToFolderId);
-
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final f in folders) {
-      _titleToFolderId[f.name] = f.id;
-    }
   }
 
   // ── API client ────────────────────────────────────────────────────
@@ -201,7 +179,7 @@ class GoogleDriveHandler {
   // ── Folder operations ─────────────────────────────────────────────
 
   Future<String> findOrCreateRootFolder() async {
-    if (_rootFolderId != null) return _rootFolderId!;
+    if (rootFolderIdCache != null) return rootFolderIdCache!;
 
     return _call((api) async {
       final list = await api.files.list(
@@ -213,8 +191,8 @@ class GoogleDriveHandler {
       );
 
       if (list.files != null && list.files!.isNotEmpty) {
-        _rootFolderId = list.files!.first.id!;
-        return _rootFolderId!;
+        rootFolderIdCache = list.files!.first.id!;
+        return rootFolderIdCache!;
       }
 
       final created = await api.files.create(
@@ -225,8 +203,8 @@ class GoogleDriveHandler {
           // space root; this anchors the sync root inside the hidden space.
           ..parents = ['appDataFolder'],
       );
-      _rootFolderId = created.id!;
-      return _rootFolderId!;
+      rootFolderIdCache = created.id!;
+      return rootFolderIdCache!;
     });
   }
 
@@ -267,12 +245,12 @@ class GoogleDriveHandler {
     // 双保险（BUG-202）：命中缓存仅在该 folderId 仍存在且未 trash 时才信任。
     // folderId 是不可变 ID，删后进回收站；陈旧命中会让上传打向 trashed 文件夹
     // 而永不回云。校验失败则丢弃陈旧条目，回退到下面的按名查/建。
-    final cachedId = _titleToFolderId[sanitized];
+    final cachedId = folderIdCache[sanitized];
     if (cachedId != null) {
       if (await _isFolderUsable(cachedId)) {
         return cachedId;
       }
-      _titleToFolderId.remove(sanitized);
+      folderIdCache.remove(sanitized);
     }
 
     final qRoot = _escapeQuery(rootFolder);
@@ -289,7 +267,7 @@ class GoogleDriveHandler {
 
       if (list.files != null && list.files!.isNotEmpty) {
         final id = list.files!.first.id!;
-        _titleToFolderId[sanitized] = id;
+        folderIdCache[sanitized] = id;
         return id;
       }
 
@@ -301,7 +279,7 @@ class GoogleDriveHandler {
       );
 
       final folderId = created.id!;
-      _titleToFolderId[sanitized] = folderId;
+      folderIdCache[sanitized] = folderId;
 
       if (coverData != null) {
         try {
@@ -425,23 +403,10 @@ class GoogleDriveHandler {
     });
   }
 
-  Future<TtuProgress> getProgressFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuProgress.fromJson(json as Map<String, dynamic>);
-  }
-
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return (json as List)
-        .cast<Map<String, dynamic>>()
-        .map(TtuStatistics.fromJson)
-        .toList();
-  }
-
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async {
-    final json = await _downloadJson(fileId);
-    return TtuAudioBook.fromJson(json as Map<String, dynamic>);
-  }
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 Google Drive 的下载原语（size-capped fullMedia GET + jsonDecode）。
+  @override
+  Future<Object?> readJsonById(String fileId) => _downloadJson(fileId);
 
   Future<void> updateProgressFile({
     required String folderId,
@@ -636,28 +601,14 @@ class GoogleDriveHandler {
         downloadOptions: drive.DownloadOptions.fullMedia,
       ) as drive.Media;
 
-      final sink = destination.openWrite();
-      int bytesDownloaded = 0;
-      bool success = false;
-      try {
-        await for (final chunk in media.stream) {
-          sink.add(chunk);
-          bytesDownloaded += chunk.length;
-          if (totalSize != null && totalSize > 0) {
-            onProgress?.call(bytesDownloaded / totalSize);
-          }
-        }
-        success = true;
-      } finally {
-        await sink.close();
-        if (!success) {
-          try {
-            destination.deleteSync();
-          } catch (e) {
-            debugPrint('[sync] failed to clean up temp file: $e');
-          }
-        }
-      }
+      await writeSyncStreamToFile(
+        source: media.stream,
+        destination: destination,
+        totalBytes: totalSize,
+        onProgress: onProgress,
+        onCleanupError: (e) =>
+            debugPrint('[sync] failed to clean up temp file: $e'),
+      );
     });
   }
 
@@ -716,15 +667,8 @@ class GoogleDriveHandler {
     return file?.id;
   }
 
-  static String _guessContentType(String fileName) {
-    final lower = fileName.toLowerCase();
-    if (lower.endsWith('.epub')) return 'application/epub+zip';
-    if (lower.endsWith('.m4b') || lower.endsWith('.m4a')) return 'audio/mp4';
-    if (lower.endsWith('.mp3')) return 'audio/mpeg';
-    if (lower.endsWith('.ogg')) return 'audio/ogg';
-    if (lower.endsWith('.flac')) return 'audio/flac';
-    return 'application/octet-stream';
-  }
+  static String _guessContentType(String fileName) =>
+      guessSyncContentType(fileName);
 
   static String _escapeQuery(String value) => value.replaceAll("'", "\\'");
 

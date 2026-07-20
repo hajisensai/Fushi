@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -29,7 +30,6 @@ SettingsDestination buildVideoDestination() {
           SettingsSwitchItem(
             id: 'video.playback.auto_play_next',
             title: t.video_setting_auto_play_next,
-            subtitle: t.video_setting_auto_play_next_hint,
             icon: Icons.playlist_play_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoAutoPlayNext,
@@ -61,7 +61,6 @@ SettingsDestination buildVideoDestination() {
           SettingsSegmentedItem<VideoFitMode>(
             id: 'video.playback.picture_fit',
             title: t.video_setting_picture_fit,
-            subtitle: t.video_setting_picture_fit_hint,
             icon: Icons.fit_screen_outlined,
             options: <SettingsSegmentOption<VideoFitMode>>[
               SettingsSegmentOption<VideoFitMode>(
@@ -138,7 +137,6 @@ SettingsDestination buildVideoDestination() {
           SettingsSliderItem(
             id: 'video.playback.long_press_speed',
             title: t.video_setting_long_press_speed,
-            subtitle: t.video_setting_long_press_speed_hint,
             icon: Icons.touch_app_outlined,
             min: 1.0,
             max: 4.0,
@@ -203,7 +201,6 @@ SettingsDestination buildVideoDestination() {
           SettingsActionItem(
             id: 'video.controls.reset_layout',
             title: t.video_control_reset_layout,
-            subtitle: t.video_control_reset_layout_hint,
             icon: Icons.restart_alt_outlined,
             onTap: (SettingsContext settingsContext) async {
               await settingsContext.appModel.setVideoControlLayout(
@@ -215,6 +212,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.video_setting_mpv_group_quality,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           // 画质增强（mpv 内置高质量缩放开关）+ 解码 / 去色带 / 循环：这些 mpv 配置项
           // 都序列化进 videoMpvConfig（纯 pref），下次打开视频时 applyMpvConfigToPlayer
@@ -355,6 +353,7 @@ SettingsDestination buildVideoDestination() {
       // videoMpvConfig（纯 pref，下次开视频 applyMpvConfig 应用），与播放页内设置同源。
       SettingsSection(
         title: t.video_setting_mpv_group_geometry,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSegmentedItem<int>(
             id: 'video.geometry.rotate',
@@ -447,6 +446,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.video_setting_mpv_group_color,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           _videoMpvColorSliderItem(
             id: 'video.color.brightness',
@@ -487,6 +487,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.video_setting_mpv_group_audio,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           _videoMpvSwitchItem(
             id: 'video.audio.pitch',
@@ -661,18 +662,6 @@ SettingsDestination buildVideoDestination() {
             },
             onChanged: (SettingsContext settingsContext, double v) {},
           ),
-          SettingsActionItem(
-            id: 'video.subtitle.no_background',
-            title: t.video_setting_subtitle_no_background,
-            subtitle: t.video_setting_subtitle_no_background_hint,
-            icon: Icons.format_color_reset_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              await _commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: 0),
-              );
-            },
-          ),
           SettingsSliderItem(
             id: 'video.subtitle.position',
             title: t.video_setting_subtitle_position,
@@ -696,6 +685,7 @@ SettingsDestination buildVideoDestination() {
       ),
       SettingsSection(
         title: t.section_video_danmaku,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           // 弹幕开关 / 在线匹配 / 同屏上限都是纯 pref（appModel 直接读写 prefsRepo），
           // 与播放页内弹幕设置语义一致，下次播放生效。
@@ -750,7 +740,234 @@ SettingsDestination buildVideoDestination() {
           ),
         ],
       ),
+      SettingsSection(
+        title: t.section_video_anime_download,
+        items: <SettingsItem>[
+          // 后端二选一：外接 qBittorrent（全平台）或内置 libtorrent 引擎
+          // （桌面）。选内置时下面的 qb 连接字段隐藏（内置无需连接参数）。
+          SettingsSegmentedItem<String>(
+            id: 'video.anime_download.backend',
+            title: t.video_setting_torrent_backend,
+            icon: Icons.dns_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: QbConnectionConfig.backendQbittorrent,
+                label: t.video_setting_torrent_backend_qb,
+              ),
+              SettingsSegmentOption<String>(
+                value: QbConnectionConfig.backendEmbedded,
+                label: t.video_setting_torrent_backend_embedded,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                (settingsContext.appModel.qbConnectionConfig ??
+                        const QbConnectionConfig())
+                    .resolveBackend(isDesktop: isDesktopPlatform),
+            onChanged: (SettingsContext settingsContext, String backend) async {
+              await _commitQbConfig(
+                settingsContext,
+                (QbConnectionConfig c) => c.copyWith(backend: backend),
+              );
+            },
+          ),
+          // qb 连接字段（内置引擎时隐藏）：纯 pref（一个 JSON 配置），
+          // URL 留空 = 外接后端未启用。
+          SettingsCustomItem(
+            id: 'video.anime_download.qb_url',
+            visible: _qbBackendSelected,
+            builder: _buildQbUrlField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.qb_username',
+            visible: _qbBackendSelected,
+            builder: _buildQbUsernameField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.qb_password',
+            visible: _qbBackendSelected,
+            builder: _buildQbPasswordField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.qb_category',
+            builder: _buildQbCategoryField,
+          ),
+          // 内置引擎资源限制（仅内置后端显示；外接 qb 有自己的设置）。
+          // 均为数字输入，0 = 不限；改动即时应用到常驻引擎会话。
+          SettingsCustomItem(
+            id: 'video.anime_download.embedded_download_limit',
+            visible: _embeddedBackendSelected,
+            builder: _buildEmbeddedDownloadLimitField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.embedded_upload_limit',
+            visible: _embeddedBackendSelected,
+            builder: _buildEmbeddedUploadLimitField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.embedded_max_connections',
+            visible: _embeddedBackendSelected,
+            builder: _buildEmbeddedMaxConnectionsField,
+          ),
+        ],
+      ),
     ],
+  );
+}
+
+/// 当前是否选外接 qBittorrent 后端（决定 qb 连接字段是否显示）。历史配置
+/// 无 backend 字段回退 qb（既有用户看得见连接字段，行为不变）。
+bool _qbBackendSelected(SettingsContext settingsContext) {
+  return (settingsContext.appModel.qbConnectionConfig ??
+              const QbConnectionConfig())
+          .resolveBackend(isDesktop: isDesktopPlatform) ==
+      QbConnectionConfig.backendQbittorrent;
+}
+
+/// 当前是否选内置 libtorrent 引擎后端（决定内置引擎资源限制字段是否显示）。
+bool _embeddedBackendSelected(SettingsContext settingsContext) {
+  return (settingsContext.appModel.qbConnectionConfig ??
+              const QbConnectionConfig())
+          .resolveBackend(isDesktop: isDesktopPlatform) ==
+      QbConnectionConfig.backendEmbedded;
+}
+
+/// 把限制字段的文本输入解析为非负整数（空/非数/负数 → 0 = 不限）。
+int _parseNonNegLimit(String value) {
+  final int n = int.tryParse(value.trim()) ?? 0;
+  return n < 0 ? 0 : n;
+}
+
+Widget _buildEmbeddedDownloadLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.downloadLimitKbps ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_download_limit,
+    icon: Icons.south_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_limit_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(downloadLimitKbps: _parseNonNegLimit(value)),
+      );
+    },
+  );
+}
+
+Widget _buildEmbeddedUploadLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.uploadLimitKbps ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_upload_limit,
+    icon: Icons.north_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_limit_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(uploadLimitKbps: _parseNonNegLimit(value)),
+      );
+    },
+  );
+}
+
+Widget _buildEmbeddedMaxConnectionsField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.maxConnections ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_max_connections,
+    icon: Icons.lan_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_connections_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(maxConnections: _parseNonNegLimit(value)),
+      );
+    },
+  );
+}
+
+/// 读改写 qbConnectionConfig（纯 pref）：取当前（null 视为空配置）→ [mutate] → 落盘。
+Future<void> _commitQbConfig(
+  SettingsContext settingsContext,
+  QbConnectionConfig Function(QbConnectionConfig config) mutate,
+) async {
+  final QbConnectionConfig current =
+      settingsContext.appModel.qbConnectionConfig ?? const QbConnectionConfig();
+  await settingsContext.appModel.setQbConnectionConfig(mutate(current));
+  settingsContext.refresh();
+}
+
+Widget _buildQbUrlField(SettingsContext settingsContext) {
+  return SettingsSecretField(
+    title: t.video_setting_qb_url,
+    icon: Icons.download_outlined,
+    initialValue: settingsContext.appModel.qbConnectionConfig?.baseUrl ?? '',
+    keyboardType: TextInputType.url,
+    hintText: t.video_setting_qb_url_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) => c.copyWith(baseUrl: value.trim()),
+      );
+    },
+  );
+}
+
+Widget _buildQbUsernameField(SettingsContext settingsContext) {
+  return SettingsSecretField(
+    title: t.video_setting_qb_username,
+    icon: Icons.person_outline,
+    initialValue: settingsContext.appModel.qbConnectionConfig?.username ?? '',
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) => c.copyWith(username: value.trim()),
+      );
+    },
+  );
+}
+
+Widget _buildQbPasswordField(SettingsContext settingsContext) {
+  return SettingsSecretField(
+    title: t.video_setting_qb_password,
+    icon: Icons.password_outlined,
+    initialValue: settingsContext.appModel.qbConnectionConfig?.password ?? '',
+    obscureText: true,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) => c.copyWith(password: value),
+      );
+    },
+  );
+}
+
+Widget _buildQbCategoryField(SettingsContext settingsContext) {
+  return SettingsSecretField(
+    title: t.video_setting_qb_category,
+    icon: Icons.label_outline,
+    initialValue:
+        settingsContext.appModel.qbConnectionConfig?.category ?? 'hibiki',
+    hintText: t.video_setting_qb_category_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) => c.copyWith(
+          category: value.trim().isEmpty ? 'hibiki' : value.trim(),
+        ),
+      );
+    },
   );
 }
 

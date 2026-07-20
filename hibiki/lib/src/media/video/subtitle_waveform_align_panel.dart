@@ -353,6 +353,11 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   late final TextEditingController _delayController =
       TextEditingController(text: '${widget.initialDelayMs}');
 
+  /// 数值输入框「边键入边生效」去抖（BUG-918）：与 [VideoQuickSettingsSheet] 同款——原字段只在
+  /// [onSubmitted]（Enter）提交、无 [onChanged]，用户报「不按回车不更新、backspace 没反应」。改为
+  /// 键入即去抖 350ms 后 [_commit]，无需回车；[syncField:false] 不回写文本，保住光标与退格。
+  Timer? _delayInputDebounce;
+
   final ScrollController _scrollController = ScrollController();
 
   /// 每根波形柱的目标像素宽（含间隙）。
@@ -363,8 +368,18 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   static const double _minZoom = 0.25;
   static const double _maxZoom = 8.0;
 
-  /// 放大波形区高度（逻辑像素）。
-  static const double _waveHeight = 200.0;
+  /// 放大波形区高度（逻辑像素，可拖底部把手调节）。初值按屏高自适应（短屏起始更矮，够
+  /// 到下方缩放 +/-、字幕列表与调轴控件不必滚动整弹窗——用户反馈），随后由
+  /// [_buildResizeHandle] 竖直拖动在 [_minWaveHeight].._maxWaveHeight 间调节。
+  double _waveHeight = _defaultWaveHeight;
+
+  /// [_waveHeight] 初值（高屏封顶）与拖动上下界。
+  static const double _defaultWaveHeight = 200.0;
+  static const double _minWaveHeight = 96.0;
+  static const double _maxWaveHeight = 360.0;
+
+  /// 首帧按屏高自适应 [_waveHeight] 一次的守卫；用户拖动 / 旋转后不再被重置。
+  bool _waveHeightAdapted = false;
 
   /// 调轴细调滑条范围（正负 10 秒）与 clamp 上界（正负 600 秒），与
   /// [VideoQuickSettingsSheet] / VideoPlayerController 一致。
@@ -434,6 +449,18 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         (_) => _onPositionTick(),
       );
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 首帧按屏高自适应波形初始高度一次：短屏起始更矮，进弹窗即可够到下方缩放 +/-、字幕
+    // 列表与调轴控件，不必先把整弹窗滚到底（用户反馈）。用户拖底部把手后此守卫已置位，
+    // 之后旋转 / 键盘弹出等再触发本回调不会覆盖用户手动值。
+    if (_waveHeightAdapted) return;
+    _waveHeightAdapted = true;
+    final double screenH = MediaQuery.sizeOf(context).height;
+    _waveHeight = (screenH * 0.26).clamp(_minWaveHeight, _defaultWaveHeight);
   }
 
   void _onScroll() {
@@ -516,6 +543,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   @override
   void dispose() {
+    _delayInputDebounce?.cancel();
     _positionTicker?.cancel();
     _positionTicker = null;
     _livePositionMs.dispose();
@@ -526,9 +554,25 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     super.dispose();
   }
 
+  /// 数值输入框 [onChanged]：解析成功就去抖 350ms 后 [_commit] 实时生效（BUG-918），无需回车。
+  /// 空 / 只有正负号等未成形输入解析失败 → 不提交、不回退，保留用户正在敲的中间态。
+  void _onDelayInputChanged(String raw) {
+    _delayInputDebounce?.cancel();
+    final int? parsed = int.tryParse(raw.trim());
+    if (parsed == null) return;
+    _delayInputDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      // syncField:false —— 键入过程中不回写输入框文本，避免光标弹到行尾、退格错位。
+      _commit(parsed, syncField: false);
+    });
+  }
+
   /// 调轴权威提交：clamp -> 本地 setState -> 可选回写输入框 -> 回调写回上方 `_delayMs`。
   Future<void> _commit(int next, {bool syncField = true}) async {
     final int clamped = next.clamp(-_clampMs, _clampMs);
+    // 权威提交（滑条 / 步进 / 回车回写文本的路径）取消待触发的键入去抖，免得陈旧键入值
+    // 迟到覆盖刚设的值（BUG-918）。
+    if (syncField) _delayInputDebounce?.cancel();
     if (mounted) {
       setState(() {
         _delayMs = clamped;
@@ -626,7 +670,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           ),
           SizedBox(height: gap),
           _buildScrollableWaveform(cs),
-          SizedBox(height: gap / 2),
+          _buildResizeHandle(cs),
           _buildViewControls(cs),
           if (_displayCueIndices.isNotEmpty) ...<Widget>[
             SizedBox(height: gap),
@@ -826,6 +870,37 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           ),
         );
       },
+    );
+  }
+
+  /// 波形区底部的高度调节把手（一条居中抓手 + 上下调整光标）。竖直拖动改 [_waveHeight]，
+  /// clamp 到 [_minWaveHeight].._maxWaveHeight。屏幕矮时把波形拖矮即可露出下方缩放 +/-、
+  /// 字幕列表与调轴控件，不必滚动整弹窗（用户反馈）；想看波形细节时也可拖高。
+  Widget _buildResizeHandle(ColorScheme cs) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeUpDown,
+      child: GestureDetector(
+        key: const ValueKey<String>('subtitle-waveform-resize-handle'),
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragUpdate: (DragUpdateDetails details) {
+          setState(() {
+            _waveHeight = (_waveHeight + details.delta.dy)
+                .clamp(_minWaveHeight, _maxWaveHeight);
+          });
+        },
+        child: Container(
+          height: 22,
+          alignment: Alignment.center,
+          child: Container(
+            width: 44,
+            height: 5,
+            decoration: BoxDecoration(
+              color: cs.outlineVariant,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1231,7 +1306,10 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           labelText: t.video_setting_subtitle_sync_input,
           keyboardType: const TextInputType.numberWithOptions(signed: true),
           textInputAction: TextInputAction.done,
+          // 边键入边去抖生效（BUG-918）：不再要求按回车，退格 / 键入实时反映到延迟。
+          onChanged: _onDelayInputChanged,
           onSubmitted: (String raw) {
+            _delayInputDebounce?.cancel();
             final int? parsed = int.tryParse(raw.trim());
             if (parsed == null) {
               _delayController.text = '$_delayMs';

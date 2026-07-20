@@ -58,6 +58,14 @@ body {
        rule at #entries-container, so in the browser extension it only affects the
        popup container and never flips the host page's direction (zero leakage). */
     direction: ltr;
+    /* BUG-870: browser-extension popup content lives in a shadow root. Shadow
+       DOM blocks selector leakage, but inherited properties still cross the
+       host boundary. A host page/container with text-align:center therefore
+       centered every headword and glossary line. Pin the popup root to its
+       intended reading alignment; intentionally-centered descendants (ruby,
+       empty states, controls) keep their more-specific rules below. The
+       content-css generator re-roots this declaration at #entries-container. */
+    text-align: left;
 }
 
 /* TODO-893 v2 (symptom 2) — app-external global lookup ONLY: the visible card

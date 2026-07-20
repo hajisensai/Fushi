@@ -344,25 +344,35 @@ AudioPlaybackRange? _expandAroundCue({
   );
 }
 
+/// 归一化拼接索引：各 cue 归一化文本、其在拼接串中的起点，与拼接串本身。
+/// [_anchoredAdjacentMatch] 与 [_collectSpanCuesByText] 原各持一份逐字相同的
+/// 构建循环，收敛为文件内单一构建点。hibiki_audio 侧
+/// `CollectionAudioMatcher._normalizedAdjacentMatch` 的第三份刻意保持包内独立
+/// （不跨包新增共享面；归一化本体 AudioTextNormalizer / BUG-060 白名单不动）。
+({List<int> cueStarts, List<String> normTexts, String concat})
+    _normalizedCueConcat(List<AudioCue> cues) {
+  final List<int> cueStarts = <int>[];
+  final List<String> normTexts = <String>[];
+  final StringBuffer buf = StringBuffer();
+  for (final AudioCue cue in cues) {
+    cueStarts.add(buf.length);
+    final String normalizedText = AudioTextNormalizer.normalize(cue.text);
+    normTexts.add(normalizedText);
+    buf.write(normalizedText);
+  }
+  return (cueStarts: cueStarts, normTexts: normTexts, concat: buf.toString());
+}
+
 AudioPlaybackRange? _anchoredAdjacentMatch({
   required List<AudioCue> cues,
   required int cueIndex,
   required String normalizedSentence,
 }) {
-  final List<String> normalizedTexts = <String>[];
-  final List<int> cueStarts = <int>[];
-  final StringBuffer buffer = StringBuffer();
-
-  for (final AudioCue cue in cues) {
-    cueStarts.add(buffer.length);
-    final String normalizedText = AudioTextNormalizer.normalize(cue.text);
-    normalizedTexts.add(normalizedText);
-    buffer.write(normalizedText);
-  }
-
-  final String concat = buffer.toString();
-  final int anchorStart = cueStarts[cueIndex];
-  final int anchorEnd = anchorStart + normalizedTexts[cueIndex].length;
+  final ({List<int> cueStarts, List<String> normTexts, String concat}) index =
+      _normalizedCueConcat(cues);
+  final String concat = index.concat;
+  final int anchorStart = index.cueStarts[cueIndex];
+  final int anchorEnd = anchorStart + index.normTexts[cueIndex].length;
 
   int found = concat.indexOf(normalizedSentence);
   while (found >= 0) {
@@ -375,8 +385,8 @@ AudioPlaybackRange? _anchoredAdjacentMatch({
     )) {
       return _cueRangeForNormalizedSpan(
         cues: cues,
-        normalizedTexts: normalizedTexts,
-        cueStarts: cueStarts,
+        normalizedTexts: index.normTexts,
+        cueStarts: index.cueStarts,
         spanStart: found,
         spanEnd: foundEnd,
       );
@@ -608,25 +618,17 @@ List<AudioCue> _collectSpanCuesByText(List<AudioCue> cues, String query) {
   if (normQuery.isEmpty) {
     return const <AudioCue>[];
   }
-  final List<int> cueStarts = <int>[];
-  final List<String> normTexts = <String>[];
-  final StringBuffer buf = StringBuffer();
-  for (final AudioCue c in cues) {
-    cueStarts.add(buf.length);
-    final String nt = AudioTextNormalizer.normalize(c.text);
-    normTexts.add(nt);
-    buf.write(nt);
-  }
-  final String concat = buf.toString();
-  final int found = concat.indexOf(normQuery);
+  final ({List<int> cueStarts, List<String> normTexts, String concat}) index =
+      _normalizedCueConcat(cues);
+  final int found = index.concat.indexOf(normQuery);
   if (found < 0) {
     return const <AudioCue>[];
   }
   final int foundEnd = found + normQuery.length;
   final List<AudioCue> hits = <AudioCue>[];
   for (int i = 0; i < cues.length; i++) {
-    final int cueStart = cueStarts[i];
-    final int cueEnd = cueStart + normTexts[i].length;
+    final int cueStart = index.cueStarts[i];
+    final int cueEnd = cueStart + index.normTexts[i].length;
     if (cueStart < foundEnd && cueEnd > found) {
       hits.add(cues[i]);
     }

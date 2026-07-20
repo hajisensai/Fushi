@@ -11,6 +11,8 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/pages/implementations/stat_shared.dart';
+import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
@@ -198,11 +200,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 时间；SRT 卡的 SrtBook 自带）。
   Map<String, int> _epubImportedAtByKey = const <String, int>{};
 
+  /// 已标记「读完」的书 bookKey 集合（EpubBooks.completedAt 非 null 的单一真值）。
+  /// EPUB 小说卡按自身 bookKey、有声书 SRT 卡按其配对 bookKey 命中同一集合，供概览
+  /// 「Completed」统计、卡片完成视觉、菜单「标记/取消」标签联动。随 [_loadShelfMaps]
+  /// 一次性预取，手动切换或删书后 `_shelfMapsFuture = _loadShelfMaps()` 重取。
+  Set<String> _completedBookKeys = const <String>{};
+
   /// 统一合集 Phase 4：书籍合集字典（id → 行）+ 条目折叠归属（'mediaType|entryKey' →
   /// 最小 collectionId），与上述映射同一次 [_loadShelfMaps] 预取，替代 Series 折叠。
   Map<int, MediaCollectionRow> _collectionsById =
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
+
+  /// 每日阅读字数（dateKey → charactersRead 之和），驱动顶部概览的阅读热力图
+  /// （GitHub 式）。与折叠映射同批 [_loadShelfMaps] 预取。
+  Map<String, int> _readingCharsByDay = const <String, int>{};
   RemoteBookClient? _remoteBookClient;
 
   /// 正在下载中的远端书（key = book.title）。值为进度分数 0..1；收到首个
@@ -523,6 +535,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _epubImportedAtByKey = <String, int>{
       for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
     };
+    // 每日阅读字数聚合（dateKey → sum charactersRead），供顶部阅读热力图。
+    final List<ReadingStatisticRow> readingRows =
+        await appModel.database.getAllReadingStatistics();
+    final Map<String, int> readingCharsByDay = <String, int>{};
+    for (final ReadingStatisticRow r in readingRows) {
+      readingCharsByDay[r.dateKey] =
+          (readingCharsByDay[r.dateKey] ?? 0) + r.charactersRead;
+    }
+    _readingCharsByDay = readingCharsByDay;
+    _completedBookKeys = await appModel.database.getCompletedEpubBookKeys();
     _memberSortIndex = memberSortIndex;
     _collectionsById = <int, MediaCollectionRow>{
       for (final MediaCollectionRow c in collections) c.id: c,
@@ -695,6 +717,26 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  /// 把标签拖到书架合集行头 = 给整个合集打标签（`CollectionShelfRow.onTagDropped`）。
+  /// 不复用 [_addTagToMedia]：它的「已存在」提示固定是 `tag_already_on_book`，对合集
+  /// 文案不对。`addTagToCollection` 幂等，这里先查现有标签给合集专属提示，成功后失效
+  /// [filteredCollectionIdsProvider] 让标签过滤下合集卡显隐立即刷新。
+  Future<void> _addTagToCollection(int collectionId, BookTagRow tag) async {
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final List<BookTagRow> existing =
+        await db.getTagsForCollection(collectionId);
+    if (existing.any((BookTagRow t) => t.id == tag.id)) {
+      HibikiToast.show(msg: t.tag_already_on_collection(name: tag.name));
+      return;
+    }
+    await db.addTagToCollection(collectionId, tag.id);
+    ref.invalidate(collectionTagMapProvider);
+    ref.invalidate(filteredCollectionIdsProvider);
+    if (mounted) {
+      HibikiToast.show(msg: t.tag_added_to_collection(name: tag.name));
+    }
+  }
+
   /// 某媒体卡上挂的标签列：标签 map 为空 / 该 key 无标签都返回 null，否则渲染
   /// [_adaptiveTagColumn]。三种媒体（epub/srt/video）只差「watch 哪个标签 provider +
   /// key 类型」，故各 caller 自己 `ref.watch(provider).valueOrNull`（保响应式订阅）后
@@ -744,18 +786,17 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       progressBooks,
       (MediaItem item) => item.position,
       (MediaItem item) => item.duration,
+      isCompleted: (MediaItem item) {
+        final String? key = _parseBookKey(item.mediaIdentifier);
+        return key != null && _completedBookKeys.contains(key);
+      },
     );
     final MediaItem? hero = mostRecentlyReadCandidate(
       tally.inProgress,
       (MediaItem item) =>
           _lastReadAtByBookKey[_parseBookKey(item.mediaIdentifier)] ?? 0,
     );
-    final Widget stats = _buildShelfOverviewStats(
-      total: libraryTotal,
-      reading: tally.reading,
-      finished: tally.finished,
-      tokens: tokens,
-    );
+    final Widget stats = _buildReadingHeatmapCard(tokens);
     final Widget? heroCard =
         hero == null ? null : _buildContinueReadingHero(hero, tokens);
     return Padding(
@@ -862,28 +903,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 书库概览统计三格：总数 / 在读 / 读完。
-  Widget _buildShelfOverviewStats({
-    required int total,
-    required int reading,
-    required int finished,
-    required HibikiDesignTokens tokens,
-  }) {
-    Widget cell(String label, int value) => Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text('$value', style: tokens.type.pageTitle),
-              SizedBox(height: tokens.spacing.gap / 2),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tokens.type.metadata,
-              ),
-            ],
-          ),
-        );
+  /// 顶部阅读活动热力图卡（GitHub 式贡献图）：按每日阅读字数 [_readingCharsByDay]
+  /// 铺数周方格。可点**标题**打开完整阅读统计页；点某天格子弹气泡看当日阅读字数；
+  /// 数据超首屏时热力图右上出现翻页箭头看更早历史。取代旧的「总数/在读/读完」三格
+  /// 状态计数——那是状态而非统计（用户反馈），热力图直观展示阅读活跃度。
+  Widget _buildReadingHeatmapCard(HibikiDesignTokens tokens) {
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: tokens.surfaces.group,
@@ -898,14 +922,47 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Text(t.book_library_overview, style: tokens.type.sectionLabel),
+            _buildStatHeatmapTitle(
+              tokens,
+              t.reading_activity,
+              _openReadingStatistics,
+            ),
             SizedBox(height: tokens.spacing.gap),
-            Row(
-              children: <Widget>[
-                cell(t.video_stat_total_videos, total),
-                cell(t.shelf_stat_reading, reading),
-                cell(t.video_stat_completed, finished),
-              ],
+            StatContributionHeatmap(
+              valueByDateKey: _readingCharsByDay,
+              now: DateTime.now(),
+              baseColor: tokens.surfaces.primary,
+              emptyColor: tokens.surfaces.card,
+              valueLabel: (String dateKey, int chars) =>
+                  '${formatStatHeatmapDay(dateKey)} · ${formatStatChars(chars)}',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 热力图卡可点标题：文字 + 尾随小箭头，点击打开对应统计页（取代旧的整卡 onTap，
+  /// 好把格子点击让给「查看每日数值」）。
+  Widget _buildStatHeatmapTitle(
+    HibikiDesignTokens tokens,
+    String label,
+    VoidCallback onOpen,
+  ) {
+    return InkWell(
+      onTap: onOpen,
+      borderRadius: const BorderRadius.all(Radius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(label, style: tokens.type.sectionLabel),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.chevron_right,
+              size: 16,
+              color: tokens.type.sectionLabel.color,
             ),
           ],
         ),
@@ -1303,6 +1360,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         onToggleSelected: _selectionMode
             ? () => _toggleCollectionSelection(collection.id)
             : null,
+        // 拖标签到行头 = 给整个合集打标签（与散书书级拖放一致）。
+        onTagDropped: (BookTagRow tag) =>
+            _addTagToCollection(collection.id, tag),
+        // 行头下方展示该合集已打的标签 chip（与散书标签列同形）。
+        tags: ref.watch(collectionTagMapProvider).valueOrNull?[collection.id],
         itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
           group.items[i].payload,
           epubCoverUrisByBookKey,
@@ -1623,7 +1685,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               background: theme.colorScheme.surfaceContainerHighest,
               foreground: theme.colorScheme.onSurfaceVariant,
             ),
-      metadata: _progressBar(item),
+      metadata: _progressBar(
+        item,
+        completed: bookKey != null && _completedBookKeys.contains(bookKey),
+      ),
     );
   }
 
@@ -1707,6 +1772,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         onPressed: () => _openAudiobookImport(item, bookKey),
       ),
       DialogListAction(
+        label: _completedBookKeys.contains(bookKey)
+            ? t.book_mark_uncompleted_action
+            : t.book_mark_completed_action,
+        icon: _completedBookKeys.contains(bookKey)
+            ? Icons.check_circle
+            : Icons.check_circle_outline,
+        onPressed: () => _toggleBookCompleted(bookKey),
+      ),
+      DialogListAction(
         label: t.profile_book_profile,
         icon: Icons.account_circle_outlined,
         onPressed: () => _openBookProfilePicker(item, bookKey),
@@ -1727,6 +1801,27 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
         ),
     ];
+  }
+
+  /// 手动切换书 / 有声书「已读完」状态：写 EpubBooks.completedAt（单一真值，按
+  /// bookKey），有声书 SRT 卡也调它（传其配对 bookKey）。已完成 → 清除；未完成 →
+  /// 置当前时间。切换后重取完成集合并重绘，概览统计与卡片视觉下一帧即同步。
+  /// [bookKey] 为空（无 EPUB 正文的纯字幕书）时静默忽略——该书无进度维度、也无
+  /// 完成真值载体，与 [_openSrtBook] 的 `srt_epub_not_ready` 门控一致。
+  Future<void> _toggleBookCompleted(String bookKey) async {
+    Navigator.pop(context);
+    if (bookKey.isEmpty) return;
+    final bool wasCompleted = _completedBookKeys.contains(bookKey);
+    await appModel.database.setEpubBookCompleted(
+      bookKey,
+      wasCompleted ? null : DateTime.now(),
+    );
+    if (!mounted) return;
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
+    HibikiToast.show(
+      msg: wasCompleted ? t.book_marked_uncompleted : t.book_marked_completed,
+    );
   }
 
   String? _parseBookKey(String mediaIdentifier) =>

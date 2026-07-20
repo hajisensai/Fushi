@@ -74,7 +74,19 @@ void main() {
     });
   });
 
-  Future<void> tick() => Future<void>.delayed(const Duration(milliseconds: 3));
+  // 相邻操作之间必须让墙钟严格跨过一毫秒：合集裁决用 `DateTime.now().millisecondsSinceEpoch`
+  // 作 publishedAt/文件 lastWrittenAt，[CollectionSyncEngine] 的死活比较是严格 `aliveT >
+  // tombPubDecision`（见 collection_sync_engine.dart resolve()）。Windows 系统时钟粒度约
+  // 15.6ms：固定 3ms delay 可能整段落在同一 tick 内，两次 now() 返回同一毫秒 → 相邻
+  // sync 的时戳撞成平值 → 严格比较退化为平局，成员在满负载并行下随机复活/消失。这里自旋
+  // 到 now() 真正前进，保证时戳严格递增，与平台定时器粒度、CPU 负载无关（Stopwatch 无关，
+  // 因裁决用的是 DateTime 毫秒，必须让 DateTime 本身前进）。
+  Future<void> tick() async {
+    final int start = DateTime.now().millisecondsSinceEpoch;
+    while (DateTime.now().millisecondsSinceEpoch <= start) {
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+    }
+  }
 
   Future<List<AssetEntry>> manifestFiles() async {
     final List<AssetEntry> children =

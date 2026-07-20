@@ -106,7 +106,7 @@ class GalHookMiningCoordinator {
   Future<GalHookMiningResult> mineLine({
     required String lineId,
     required Map<String, String> fields,
-    required bool compressMiningMedia,
+    required MiningMediaCompression compression,
     required BaseAnkiRepository repo,
     int? updateNoteId,
   }) {
@@ -118,7 +118,7 @@ class GalHookMiningCoordinator {
           await _mineLineNow(
             lineId: lineId,
             fields: fields,
-            compressMiningMedia: compressMiningMedia,
+            compression: compression,
             repo: repo,
             updateNoteId: updateNoteId,
           ),
@@ -140,7 +140,7 @@ class GalHookMiningCoordinator {
   Future<GalHookMiningResult> _mineLineNow({
     required String lineId,
     required Map<String, String> fields,
-    required bool compressMiningMedia,
+    required MiningMediaCompression compression,
     required BaseAnkiRepository repo,
     required int? updateNoteId,
   }) async {
@@ -210,9 +210,7 @@ class GalHookMiningCoordinator {
               window.title.isEmpty ? 'External window' : window.title,
           updateNoteId: updateNoteId,
         ),
-        compression: MiningMediaCompression.forCompressionEnabled(
-          compressMiningMedia,
-        ),
+        compression: compression,
         tempDir: jobDirectory.path,
         repo: repo,
       );

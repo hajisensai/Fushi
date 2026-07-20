@@ -51,6 +51,7 @@ SettingsDestination buildAppearanceDestination() {
       ),
       SettingsSection(
         title: t.section_typography,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           // TODO-231: one visible font library; each row manages app UI /
           // body / dictionary target membership via font_catalog/font_targets.
@@ -70,6 +71,7 @@ SettingsDestination buildAppearanceDestination() {
       ),
       SettingsSection(
         title: t.settings_section_app_shell,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'appearance.app_icon',
@@ -107,7 +109,3 @@ SettingsDestination buildAppearanceDestination() {
     ],
   );
 }
-
-// TODO-049: `customFontsTitlePlaceholder` removed — the single font entry was
-// split into three per-target rows (see appearance.fonts_* above), each using
-// its own `t.font_target_*` title.

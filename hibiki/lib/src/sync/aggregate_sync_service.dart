@@ -20,7 +20,7 @@ const String _aggregateAssetSuffix = '.hibikiaggregate';
 
 /// Preference key holding the favorite-sentence JSON list. Mirrors
 /// `FavoriteSentenceRepository._key` and BackupMergeEngine's constant; kept in
-/// sync by favorite_sentence_pref_key_guard_test.dart.
+/// sync behaviourally by favorite_sentence_merge_import_test.dart.
 const String _favoriteSentencesPrefKey = 'favorite_sentences';
 
 /// Drives the `aggregate` sync dimension over any cloud [SyncAssetStore]

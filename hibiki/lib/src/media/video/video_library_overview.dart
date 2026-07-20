@@ -181,6 +181,43 @@ int _heroRank(
   return b.bookUid.compareTo(a.bookUid);
 }
 
+/// 远端「继续观看」候选的最小投影（页面从 `RemoteVideoInfo` 映射；测试直接构造）。
+class RemoteContinueEntry {
+  const RemoteContinueEntry({
+    required this.id,
+    required this.positionMs,
+    required this.completed,
+    required this.updatedAtMs,
+  });
+
+  final String id;
+
+  /// host 端记录的断点（毫秒，0=从头）。
+  final int positionMs;
+
+  /// 是否看完（页面由 positionMs / durationMs 派生——远端无 completed 列）。
+  final bool completed;
+
+  /// host 端断点最后更新时间（epoch 毫秒，0=无记录）。用于跨候选/跨本地排序。
+  final int updatedAtMs;
+}
+
+/// 纯函数：从远端视频投影里挑「继续观看」候选——有断点（positionMs>0）、未看完，
+/// 按 [RemoteContinueEntry.updatedAtMs]（host 端上次播放时间戳）最新者。无则 null。
+///
+/// 纯流播远端视频无本地进度行，故不进 [computeVideoLibraryOverview] 的本地 hero
+/// 推导（其合集 Next-Up 逻辑按本地 uid 键控）；本函数独立挑远端候选，页面层再按
+/// 时间戳与本地 hero 比较取胜者，让「继续观看」也覆盖互联远端视频（用户反馈）。
+RemoteContinueEntry? pickRemoteContinueEntry(
+    List<RemoteContinueEntry> entries) {
+  RemoteContinueEntry? best;
+  for (final RemoteContinueEntry e in entries) {
+    if (e.completed || e.positionMs <= 0) continue;
+    if (best == null || e.updatedAtMs > best.updatedAtMs) best = e;
+  }
+  return best;
+}
+
 /// 毫秒 → `m:ss` / `h:mm:ss`（视频「已看至」外显）。委托 [HibikiTimeFormat.clock]。
 String formatVideoPosition(int positionMs) =>
     HibikiTimeFormat.clock(Duration(milliseconds: positionMs));

@@ -19,3 +19,14 @@
   （断言 null 分支武装重试、只对文本章武装、有界 + coalesce、字段声明 + dispose 清理、
   onAfterCommit 补刷仍在）。
 - **备注**：TODO-1053 Bug B。纯时序修复，向后兼容。
+- **2026-07-18 后续（轮询 → 事件驱动根因修复）**：120ms×8 轮询重试兜的是「JS 侧
+  `_reanchorPending` true→false 转换时机 Dart 不可知」——现已根治：JS 侧把该旗的写入收敛到
+  单一 setter `_setReanchorPending`（`reader_pagination_scripts.dart` `_sharedJs`，两 shell
+  共用，全部 14 处赋值改走 setter），true→false（重锚 settle）那一刻
+  `callHandler('onReanchorSettled')`；Dart 侧（`webview.part.dart`）注册该 handler，收到即
+  `_refreshProgress()` 补刷。任何清旗路径（含 commit 之外的逃逸路径）都会通知，
+  `_maybeArmProgressReanchorRetry` / `_cancelProgressReanchorRetry` / 重试 timer·计数·
+  `_kProgressRetryMax` 等轮询机制整体删除；onAfterCommit 补刷（TODO-933/1309，兼负责
+  精确定位后的进度落库）保留不动。守卫测试
+  `hibiki/test/reader/progress_reanchor_retry_guard_test.dart` 同步改为断言「清旗单点化 +
+  settle 通知 + handler 接线 + 轮询不复活」。

@@ -279,8 +279,18 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final Directory tmp = await getTemporaryDirectory();
     final MiningMediaCompression mediaCompression =
-        MiningMediaCompression.forCompressionEnabled(
-            appModel.compressMiningMedia);
+        MiningMediaCompression.resolve(
+      imageTier: appModel.miningImageQuality,
+      audioTier: appModel.miningAudioQuality,
+    );
+    // BUG-891：远端 Hibiki 库视频的 miningSource 是自签 https 流 URL。把该 host 当前会话
+    // 已 TOFU 钉扎的证书指纹带给引擎，使 ffmpeg（自编 ffmpeg-kit `--enable-gnutls` + pin
+    // 补丁）按指纹接受自签流抽音频/帧，绕过「Protocol not found」。非 Hibiki host（本地 /
+    // YouTube / 直链）为 null，不钉扎。
+    final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
+    final String? mediaSourceTlsPin = remoteClient is HibikiClientSyncBackend
+        ? remoteClient.activeFingerprintSha256
+        : null;
     // TODO-1000：委托统一沉浸制卡引擎。媒体降级阶梯 / 无音频中止 / 组 context / 落卡都在
     // 引擎内；本壳只管 OSD + 视频统计。onFailure 捕获 GIF(首)/音频(末)失败摘要供 OSD。
     String? gifFailure;
@@ -290,6 +300,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         fields: fields,
         mediaSource: controller.miningSource,
         audioSource: controller.miningAudioSource,
+        mediaSourceTlsPinSha256: mediaSourceTlsPin,
         clipStartMs: clipStartMs,
         clipEndMs: clipEndMs,
         sentence: sentence,
@@ -303,6 +314,11 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         // TODO-681 / BUG-393：番名/标题作书名标签，开关关闭或无标题时 null 不追加。
         bookTitleTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(_title)
+            : null,
+        // 合集/系列名标签（同上开关）：播放列表下用系列名 _playlistTitle（col.name，已在内存）
+        // 作独立 tag，与剧集名并列；单视频/远端无系列名时为 null 不追加。
+        collectionTag: appModel.autoAddBookNameToTags
+            ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
             : null,
         updateNoteId: updateNoteId,
         stillFallback: controller.screenshot,

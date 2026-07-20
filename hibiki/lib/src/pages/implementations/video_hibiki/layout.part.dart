@@ -397,6 +397,12 @@ extension _VideoLayout on _VideoHibikiPageState {
                           // TODO-1105：尊重 .ass 自带样式（字体/主色/描边/阴影）。开关默认开；
                           // 关时 overlay 全走上面的统一样式，外观与历史像素级一致。
                           respectAssStyle: appModel.videoRespectAssStyle,
+                          // BUG-903：尊重模式下用户字号滑块=ASS 字号的整体倍率（mpv
+                          // sub-scale 语义）。用**用户基准/默认 36**而非上面已乘屏幕因子的
+                          // fontSize——ASS 路径按显示区几何缩放已与 mpv 同源，再叠屏幕
+                          // 因子会双重放大；默认基准 36 → 1.0 = 完全按作者字号。
+                          assUserFontScale: _subtitleStyle.fontSize /
+                              VideoSubtitleStyle.defaults.fontSize,
                         ),
                       ),
                       _buildOsdOverlay(),

@@ -291,11 +291,13 @@ void main() {
 String _extractVnLayoutCssBody(String source) {
   final int sigIdx = source.indexOf('static String _vnLayoutCss(');
   expect(sigIdx >= 0, isTrue, reason: '_vnLayoutCss must exist');
-  // The signature uses a `{required ...}` named-parameter list, so the method
-  // body brace is the first `{` AFTER the params close with `}) {`.
-  final int paramsEndIdx = source.indexOf('}) {', sigIdx);
+  // 清理 wave2 后签名收敛为单个 record 参数 `(_LayoutCssArgs a) {`（原为
+  // `{required ...}` 命名参数表结尾 `}) {`）。两种形状统一按「签名后第一个
+  // `) {` 的花括号」定位方法体开括号，不变量（函数体消费 isVertical、
+  // vn-content 用 max-width）不受签名形状影响。
+  final int paramsEndIdx = source.indexOf(') {', sigIdx);
   expect(paramsEndIdx >= 0, isTrue, reason: '_vnLayoutCss must have a body');
-  final int braceIdx = source.indexOf('{', paramsEndIdx + 2);
+  final int braceIdx = source.indexOf('{', paramsEndIdx + 1);
   expect(braceIdx >= 0, isTrue, reason: '_vnLayoutCss must have a body brace');
   int depth = 0;
   for (int i = braceIdx; i < source.length; i++) {

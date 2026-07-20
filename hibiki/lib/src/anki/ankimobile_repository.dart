@@ -302,6 +302,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
         titleTag: context.bookTitleTag,
+        collectionTag: context.collectionTag,
       );
       final success = Uri.parse(hibikiAnkiSuccessCallback).replace(
         queryParameters: <String, String>{
@@ -370,6 +371,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       sentenceOffset: context.sentenceOffset,
       source: context.source,
       bookTitleTag: context.bookTitleTag,
+      collectionTag: context.collectionTag,
     );
 
     final mediaPayload = AnkiMiningPayload(
@@ -421,7 +423,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     DictionaryMedia media,
     _AnkiMobileLocalMediaRefBuilder localMediaRef,
   ) {
-    final filename = ankiDictionaryMediaCacheFilename(media.path);
+    final filename =
+        ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
     final path = '${ankiDictionaryMediaCacheDirPath()}/$filename';
     return localMediaRef(path, mimePath: filename);
   }

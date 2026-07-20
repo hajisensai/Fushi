@@ -7,6 +7,7 @@ import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 
 class _RecordingRepo extends BaseAnkiRepository {
@@ -161,13 +162,13 @@ void main() {
         'audio': '[sound:word.mp3]',
         'image': '<img src="dictionary.jpg">',
       },
-      compressMiningMedia: true,
+      compression: MiningMediaCompression.compressed,
       repo: repo,
     );
     final GalHookMiningResult secondResult = await subject.mineLine(
       lineId: second.id,
       fields: const <String, String>{'expression': '台詞'},
-      compressMiningMedia: false,
+      compression: MiningMediaCompression.highFidelity,
       repo: repo,
       updateNoteId: 731,
     );
@@ -192,7 +193,7 @@ void main() {
     ).mineLine(
       lineId: entry.id,
       fields: const <String, String>{'expression': '画面'},
-      compressMiningMedia: true,
+      compression: MiningMediaCompression.compressed,
       repo: pngRepo,
     );
 
@@ -209,7 +210,7 @@ void main() {
     ).mineLine(
       lineId: entry.id,
       fields: const <String, String>{'expression': '画面'},
-      compressMiningMedia: true,
+      compression: MiningMediaCompression.compressed,
       repo: failedRepo,
     );
 
@@ -239,7 +240,7 @@ void main() {
     ).mineLine(
       lineId: entry.id,
       fields: const <String, String>{'expression': '过期'},
-      compressMiningMedia: true,
+      compression: MiningMediaCompression.compressed,
       repo: _RecordingRepo(),
     );
 
@@ -268,7 +269,7 @@ void main() {
     ).mineLine(
       lineId: entry.id,
       fields: const <String, String>{'expression': '句音'},
-      compressMiningMedia: true,
+      compression: MiningMediaCompression.compressed,
       repo: repo,
     );
 
@@ -298,7 +299,7 @@ void main() {
     ).mineLine(
       lineId: entry.id,
       fields: const <String, String>{'expression': '资源音频'},
-      compressMiningMedia: true,
+      compression: MiningMediaCompression.compressed,
       repo: repo,
     );
 
@@ -332,13 +333,13 @@ void main() {
         subject.mineLine(
           lineId: first.id,
           fields: const <String, String>{'expression': '一'},
-          compressMiningMedia: true,
+          compression: MiningMediaCompression.compressed,
           repo: repo,
         ),
         subject.mineLine(
           lineId: second.id,
           fields: const <String, String>{'expression': '二'},
-          compressMiningMedia: true,
+          compression: MiningMediaCompression.compressed,
           repo: repo,
         ),
       ],

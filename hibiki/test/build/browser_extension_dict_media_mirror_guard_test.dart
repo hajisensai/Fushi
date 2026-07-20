@@ -220,6 +220,53 @@ void main() {
                 '$root options.js must persist the netflixSubtitlePanel setting');
       });
 
+      test('[$name] options expose user-subtitle playback controls', () {
+        final String html = File('$root/options.html').readAsStringSync();
+        final String js = File('$root/options.js').readAsStringSync();
+        for (final String id in <String>[
+          'subtitleOverlayEnabled',
+          'subtitleDragDropEnabled',
+          'subtitleAutoScroll',
+          'subtitleAutoPause',
+          'subtitleCondensedPlayback',
+        ]) {
+          expect(html.contains('id="$id"'), isTrue,
+              reason: '$root options.html missing $id');
+          expect(js.contains(id), isTrue,
+              reason: '$root options.js must persist $id');
+        }
+        expect(js.contains("type: 'connectionStatus'"), isTrue,
+            reason: '$root options.js must display live connection health');
+      });
+
+      test('[$name] subtitle-panel accepts and renders user subtitles', () {
+        final String src = File('$root/subtitle-panel.js').readAsStringSync();
+        expect(src.contains("inp.accept = '.srt,.ass,.ssa,.vtt'"), isTrue,
+            reason: '$root subtitle-panel.js missing supported file picker');
+        expect(src.contains("document.addEventListener('drop'"), isTrue,
+            reason: '$root subtitle-panel.js missing drag-and-drop loading');
+        expect(src.contains("'hibiki-subtitle-overlay'"), isTrue,
+            reason: '$root subtitle-panel.js missing video subtitle overlay');
+        expect(src.contains('st.autoPause'), isTrue,
+            reason: '$root subtitle-panel.js missing auto-pause mode');
+        expect(src.contains('st.condensedPlayback'), isTrue,
+            reason: '$root subtitle-panel.js missing condensed playback mode');
+      });
+
+      test('[$name] background diagnoses Hibiki/Yomitan port ownership', () {
+        final String src = File('$root/background.js').readAsStringSync();
+        final String diagnostic =
+            File('$root/connection-diagnostics.js').readAsStringSync();
+        expect(src.contains("msg.type === 'connectionStatus'"), isTrue,
+            reason: '$root background.js missing connectionStatus handler');
+        expect(src.contains("'/api/extension/status'"), isTrue,
+            reason: '$root background.js must identify Hibiki explicitly');
+        expect(src.contains("'/serverVersion'"), isTrue,
+            reason: '$root background.js must probe Yomitan API conflicts');
+        expect(diagnostic.contains('yomitan-conflict'), isTrue,
+            reason: '$root connection diagnostic missing conflict state');
+      });
+
       // TODO-1219 方案 B：字幕列表面板开关也放进扩展 action-popup（点扩展图标即可开），读写同一
       // chrome.storage.local.netflixSubtitlePanel。守卫两镜像的 popup 里都有这个开关且读写正确。
       test('[$name] action-popup exposes the Netflix subtitle-list toggle', () {
@@ -358,6 +405,7 @@ void main() {
       'vendor/dict-media.js',
       'bridge-shim.js',
       'background.js',
+      'connection-diagnostics.js',
       // TODO-1219 P1：Netflix 整集字幕拦截链改动的共享文件，纳入字节守卫防两镜像漂移。
       'netflix-bridge.js',
       'subtitle-adapters.js',
@@ -369,6 +417,7 @@ void main() {
       // TODO-1219：字幕列表面板默认关开关（options UI）——两镜像同步纳入字节守卫。
       'options.html',
       'options.js',
+      'options.css',
       // TODO-1219 方案 B：字幕列表面板开关的第二入口（action-popup）——两镜像同步纳入字节守卫。
       'vendor/action-popup.html',
       'vendor/action-popup.js',

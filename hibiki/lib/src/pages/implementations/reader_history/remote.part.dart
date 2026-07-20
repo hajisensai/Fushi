@@ -9,19 +9,21 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     if (injected != null) return injected();
 
     final SyncRepository syncRepo = SyncRepository(appModel.database);
-    final SyncBackendType type = await syncRepo.getBackendType();
 
-    // 局域网互联（hibiki 自有 server）：仍走裸 HibikiClientSyncBackend（含 live 库
-    // API 的 listRemoteBooks/getRemoteBook），不变。
-    if (type == SyncBackendType.hibikiServer) {
+    // 互联（局域网 hibiki server）已从 backendType 解耦成独立开关，可与云备份并存。
+    // 互联启用且已配对对端时优先用它的 live 库 API（listRemoteBooks/getRemoteBook），
+    // 因为端到端 live 库比云盘备份更适合浏览对端在读书。未启用/未配对则回退云后端。
+    // 注：两源同时展示（互联对端 + 云盘 远端书合并去重）留作后续，本轮先「有互联走
+    // 互联，否则走云」——满足「选了云备份仍能看到互联对端」的核心诉求。
+    if (await syncRepo.isInterconnectEnabled()) {
       final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
-      if (!await backend.restoreAuth(syncRepo)) return null;
-      return backend;
+      if (await backend.restoreAuth(syncRepo)) return backend;
     }
 
     // 云盘备份后端（Google Drive 等）：经 resolveSyncBackend 得带解混淆装饰层的
     // 后端，鉴权恢复成功后用 CloudRemoteBookClient 把远端书库适配成可下载条目
     // （TODO-665 阶段1）。鉴权失败返 null（书架不显示远端区）。
+    final SyncBackendType type = await syncRepo.getBackendType();
     final SyncBackend backend = resolveSyncBackend(type);
     if (!await backend.restoreAuth(syncRepo)) return null;
     final String rootFolderId = await backend.findOrCreateRootFolder();

@@ -70,19 +70,18 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         case ManualSyncOutcome.completed:
           final SyncRunReport report = result.report!;
           _showSnackBar(context, summarizeSyncReport(report));
-          if (report.conflicts.isNotEmpty) {
-            // Manual sync is an explicit user action: prompt resolution
-            // immediately, unconstrained by in-book/snooze (ConflictSource
-            // .manual). Re-resolve the backend (auth was just exercised by the
-            // run, so this is cheap) to drive the conflicts-only dialog.
-            final SyncBackend backend = resolveSyncBackend(
-              await SyncRepository(appModel.database).getBackendType(),
-            );
+          // Manual sync is an explicit user action: prompt resolution
+          // immediately, unconstrained by in-book/snooze (ConflictSource.manual).
+          // option B 双通道：逐通道用**各自的**后端呈现该通道的冲突——合并报告的
+          // 冲突可能来自互联通道，用云后端去 apply 会写错端。
+          for (final ManualSyncChannelReport channel in result.channelReports) {
+            if (channel.report.conflicts.isEmpty) continue;
+            if (!mounted) return;
             await appModel.syncConflictPrompter.present(
               navigatorKey: appModel.navigatorKey,
               db: appModel.database,
-              backend: backend,
-              conflicts: report.conflicts,
+              backend: channel.backend,
+              conflicts: channel.report.conflicts,
               source: ConflictSource.manual,
               inBook: appModel.isMediaOpen,
             );
