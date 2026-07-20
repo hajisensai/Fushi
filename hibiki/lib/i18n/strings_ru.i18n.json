@@ -2055,5 +2055,7 @@
   "anime_download_kind_auto": "Auto",
   "anime_download_kind_video": "Video",
   "anime_download_kind_book": "Book",
-  "nav_downloads": "Downloads"
+  "nav_downloads": "Downloads",
+  "video_setting_torrent_memory_limit": "Memory limit (MB)",
+  "video_setting_torrent_memory_hint": "Cap engine memory. 0 = auto (based on device RAM)."
 }

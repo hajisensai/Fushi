@@ -50,6 +50,7 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/anime_download_importer.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
+import 'package:hibiki/src/media/torrent/torrent_memory.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -2765,6 +2766,16 @@ class AppModel with ChangeNotifier {
       downloadKbps: config.downloadLimitKbps,
       uploadKbps: config.uploadLimitKbps,
       maxConnections: config.maxConnections,
+    );
+    // 内存占用上限（按物理内存或用户设定推导；避免 libtorrent 吃满内存）。
+    // 用户显式设了 maxConnections 就不用内存预算的连接数覆盖它（传 0）。
+    final TorrentMemorySettings mem = computeTorrentMemorySettings(
+      memoryLimitMb: config.memoryLimitMb,
+      totalRamMb: detectTotalMemoryMb() ?? 0,
+    );
+    host.applyMemorySettings(
+      mem,
+      connectionsLimit: config.maxConnections > 0 ? 0 : mem.connectionsLimit,
     );
     // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
     host.setUploadPolicy(config);

@@ -151,12 +151,22 @@ void main() {
       uploadEnabled: true,
       seedTimeLimitMinutes: 120,
       seedRatioLimit: 2.5,
+      memoryLimitMb: 512,
     );
     final QbConnectionConfig decoded =
         decodeQbConnectionConfig(encodeQbConnectionConfig(original))!;
     expect(decoded.uploadEnabled, isTrue);
     expect(decoded.seedTimeLimitMinutes, 120);
     expect(decoded.seedRatioLimit, 2.5);
+    expect(decoded.memoryLimitMb, 512);
+  });
+
+  test('memoryLimitMb defaults to 0 (auto); legacy JSON → 0', () {
+    expect(const QbConnectionConfig().memoryLimitMb, 0);
+    expect(
+        decodeQbConnectionConfig('{"backend":"embedded"}')!.memoryLimitMb, 0);
+    // 负数/垃圾 clamp 0。
+    expect(decodeQbConnectionConfig('{"memoryLimitMb":-9}')!.memoryLimitMb, 0);
   });
 
   test('legacy JSON without upload fields: upload off, seed limits 0', () {

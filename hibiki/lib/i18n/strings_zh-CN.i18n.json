@@ -2055,5 +2055,7 @@
   "anime_download_kind_auto": "自动",
   "anime_download_kind_video": "视频",
   "anime_download_kind_book": "书",
-  "nav_downloads": "下载"
+  "nav_downloads": "下载",
+  "video_setting_torrent_memory_limit": "内存占用上限（MB）",
+  "video_setting_torrent_memory_hint": "限制引擎内存占用。0 = 自动（按设备内存推导）。"
 }

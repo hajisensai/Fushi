@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anti_leech.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_backend.dart';
+import 'package:hibiki/src/media/torrent/torrent_memory.dart';
 import 'package:hibiki/src/media/torrent/torrent_upload_policy.dart';
 import 'package:hibiki_torrent/hibiki_torrent.dart';
 
@@ -99,6 +100,21 @@ class EmbeddedTorrentHost {
       downloadBps: downloadKbps > 0 ? downloadKbps * 1024 : 0,
       uploadBps: uploadKbps > 0 ? uploadKbps * 1024 : 0,
       connectionsLimit: maxConnections,
+    );
+  }
+
+  /// 应用内存占用设置（把 libtorrent 压进内存预算，见 [TorrentMemorySettings]）。
+  /// [connectionsLimit] 传 0 时不覆盖（让用户显式 maxConnections 或 applyLimits
+  /// 决定）。config 变更/启动时由 AppModel 调用。
+  bool applyMemorySettings(
+    TorrentMemorySettings settings, {
+    int connectionsLimit = 0,
+  }) {
+    return _session.applyMemorySettings(
+      connectionsLimit: connectionsLimit,
+      maxQueuedDiskBytes: settings.maxQueuedDiskBytes,
+      sendBufferWatermark: settings.sendBufferWatermark,
+      maxPeerlistSize: settings.maxPeerlistSize,
     );
   }
 

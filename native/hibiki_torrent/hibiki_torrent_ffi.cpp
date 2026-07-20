@@ -261,6 +261,34 @@ HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
   }
 }
 
+HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
+                                       int max_queued_disk_bytes,
+                                       int send_buffer_watermark,
+                                       int max_peerlist_size) {
+  if (session == nullptr) return 0;
+  try {
+    lt::settings_pack sp;
+    if (connections_limit > 0) {
+      sp.set_int(lt::settings_pack::connections_limit, connections_limit);
+    }
+    if (max_queued_disk_bytes > 0) {
+      sp.set_int(lt::settings_pack::max_queued_disk_bytes,
+                 max_queued_disk_bytes);
+    }
+    if (send_buffer_watermark > 0) {
+      sp.set_int(lt::settings_pack::send_buffer_watermark,
+                 send_buffer_watermark);
+    }
+    if (max_peerlist_size > 0) {
+      sp.set_int(lt::settings_pack::max_peerlist_size, max_peerlist_size);
+    }
+    as_session(session)->apply_settings(std::move(sp));
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
 HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
                                  int upload_enabled) {
   if (session == nullptr) return 0;
