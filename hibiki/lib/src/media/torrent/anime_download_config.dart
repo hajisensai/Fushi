@@ -19,6 +19,7 @@ class QbConnectionConfig {
     this.uploadEnabled = false,
     this.seedTimeLimitMinutes = 0,
     this.seedRatioLimit = 0,
+    this.memoryLimitMb = 0,
   });
 
   /// 本应用管理的下载在 qBittorrent 里归入的默认分类名。
@@ -82,6 +83,11 @@ class QbConnectionConfig {
   /// 率达到该值即停止上传（host tick 在 Dart 侧执行）。仅内置引擎生效。
   final double seedRatioLimit;
 
+  /// 内置引擎内存占用上限（MB，0 = 自动按物理内存推导）。libtorrent 不设限会
+  /// 「有多少内存吃多少」；据此推导连接数/磁盘缓冲/peer 列表等设置压住占用。
+  /// 仅内置引擎生效。
+  final int memoryLimitMb;
+
   /// 是否已配置：内置引擎/自动无需连接参数恒为真（桌面开箱即用）；外接 qb
   /// 要求 [baseUrl] 非空。未配置时下载入队与完成监听均不动作。
   bool get isConfigured =>
@@ -99,6 +105,7 @@ class QbConnectionConfig {
     bool? uploadEnabled,
     int? seedTimeLimitMinutes,
     double? seedRatioLimit,
+    int? memoryLimitMb,
   }) {
     return QbConnectionConfig(
       backend: backend ?? this.backend,
@@ -112,6 +119,7 @@ class QbConnectionConfig {
       uploadEnabled: uploadEnabled ?? this.uploadEnabled,
       seedTimeLimitMinutes: seedTimeLimitMinutes ?? this.seedTimeLimitMinutes,
       seedRatioLimit: seedRatioLimit ?? this.seedRatioLimit,
+      memoryLimitMb: memoryLimitMb ?? this.memoryLimitMb,
     );
   }
 }
@@ -173,6 +181,7 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
       uploadEnabled: json['uploadEnabled'] == true,
       seedTimeLimitMinutes: _nonNegInt(json['seedTimeLimitMinutes']),
       seedRatioLimit: _nonNegDouble(json['seedRatioLimit']),
+      memoryLimitMb: _nonNegInt(json['memoryLimitMb']),
     );
   } catch (_) {
     return null;
@@ -194,5 +203,6 @@ String encodeQbConnectionConfig(QbConnectionConfig config) {
     'uploadEnabled': config.uploadEnabled,
     'seedTimeLimitMinutes': config.seedTimeLimitMinutes,
     'seedRatioLimit': config.seedRatioLimit,
+    'memoryLimitMb': config.memoryLimitMb,
   });
 }
