@@ -768,7 +768,6 @@
   "shortcut_reset_confirm": "Réinitialiser tous les raccourcis de cette section aux valeurs par défaut ?",
   "shortcut_keyboard": "Clavier",
   "shortcut_gamepad": "Manette",
-  "shortcut_none": "Aucun",
   "shortcut_clear": "Effacer",
   "shortcut_stop_capture": "Arrêter",
   "section_advanced_typography": "Avancé",

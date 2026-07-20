@@ -31,12 +31,12 @@ void main() {
   });
 
   test('shortcut action rows use HibikiIconButton for edit command', () {
-    final String source = File(
-      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    // _ActionTile lives in the action_tile part of shortcut_settings_page.dart
+    // (shortcut settings refactor); the part file only contains the tile + the
+    // mouse chip, so the whole file is the tile section.
+    final String actionTile = File(
+      'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart',
     ).readAsStringSync();
-    final int tileStart = source.indexOf('class _ActionTile');
-    final int dialogStart = source.indexOf('class ShortcutBindingEditDialog');
-    final String actionTile = source.substring(tileStart, dialogStart);
 
     expect(actionTile, contains('HibikiIconButton('));
     expect(actionTile, isNot(contains('trailing: IconButton(')));
