@@ -18,6 +18,22 @@ const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
 
 class _FakeLibraryService implements HibikiLibraryHostService {
   @override
+  Future<String?> videoCoverPath(String id) async {
+    for (final RemoteVideoInfo v in await listVideos()) {
+      if (v.id == id) return v.coverPath;
+    }
+    return null;
+  }
+
+  @override
+  Future<String?> bookCoverPath(String id) async {
+    for (final RemoteBookInfo b in await listBooks()) {
+      if (b.downloadId == id || b.title == id) return b.coverPath;
+    }
+    return null;
+  }
+
+  @override
   Future<AggregateSnapshot> getAggregateSnapshot() async =>
       const AggregateSnapshot();
 

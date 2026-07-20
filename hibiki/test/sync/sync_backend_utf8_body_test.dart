@@ -29,6 +29,22 @@ import 'package:drift/native.dart';
 /// Fake library service: captures the aggregate snapshot and book progress the
 /// client PUTs, so the test can assert the UTF-8 round-trip.
 class _CapturingLibraryService implements HibikiLibraryHostService {
+  @override
+  Future<String?> videoCoverPath(String id) async {
+    for (final RemoteVideoInfo v in await listVideos()) {
+      if (v.id == id) return v.coverPath;
+    }
+    return null;
+  }
+
+  @override
+  Future<String?> bookCoverPath(String id) async {
+    for (final RemoteBookInfo b in await listBooks()) {
+      if (b.downloadId == id || b.title == id) return b.coverPath;
+    }
+    return null;
+  }
+
   AggregateSnapshot? applied;
   final Map<String, RemoteBookProgress> bookProgress =
       <String, RemoteBookProgress>{};

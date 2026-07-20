@@ -520,6 +520,26 @@ class SyncOrchestrator {
   /// 调和，重放幂等，不会重复删除/复活。
   ///
   /// 整段 try/catch，错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
+  /// 只跑合集维度的轻量同步（合集变更防抖触发用，见 sync_auto_trigger 的
+  /// `installCollectionsSyncWatcher`）。
+  ///
+  /// 与 [run] 的合集段完全同路：互联走 host live 端点（[_syncCollectionsLive]），
+  /// 云后端走 `__collections__` per-device 清单（[syncCollections]）；两者内部
+  /// 自捕获异常进 [SyncRunReport.errors]。**不写** lastSyncMs 冷却戳——那是完整
+  /// sweep 的语义（TODO-1332），轻量路径不得压制下一次 app-open 全量同步。
+  Future<SyncRunReport> runCollectionsOnly() async {
+    final SyncRunReport report = SyncRunReport();
+    final SyncBackend b = _backend;
+    if (b is HibikiClientSyncBackend) {
+      await _syncCollectionsLive(report, b);
+    } else {
+      // 云路径的 ensureNamespace 依赖同步根已解析（与 [run] 开头一致）。
+      await _backend.findOrCreateRootFolder();
+      await syncCollections(report);
+    }
+    return report;
+  }
+
   Future<void> syncCollections(SyncRunReport report) async {
     try {
       final String ns =

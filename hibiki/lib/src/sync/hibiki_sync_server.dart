@@ -293,6 +293,7 @@ class HibikiSyncServer {
     // half-bound socket to roll back.
     await Directory(syncDataDir).create(recursive: true);
     final handler = const shelf.Pipeline()
+        .addMiddleware(_gzipTextMiddleware())
         .addMiddleware(_authMiddleware())
         .addHandler(_handleRequest);
     try {
@@ -313,6 +314,44 @@ class HibikiSyncServer {
   Future<void> stop() async {
     await _server?.close(force: true);
     _server = null;
+  }
+
+  /// gzip 压缩 JSON/XML 文本响应（`Accept-Encoding: gzip` 内容协商）。
+  ///
+  /// 只压 `application/json` 与 XML（WebDAV PROPFIND 207）——文件流（epub/视频/
+  /// 封面/音频包，含 Range/206 与断点续传）一律不碰：`Content-Encoding` 与
+  /// `Content-Range`/`Content-Length` 字节账在下载器（ResumableDownloader）与
+  /// libmpv 侧语义交叉，且媒体本身已压缩、gzip 无收益。清单 JSON（books/videos/
+  /// aggregate/collections，大库数百 KB CJK 文本）压到约 1/5~1/6。不带该头的旧
+  /// client 收到原样明文——纯内容协商，零协议破坏（dart:io HttpClient 默认发
+  /// gzip accept 并透明解压，新旧 client 均无需改动）。
+  shelf.Middleware _gzipTextMiddleware() {
+    return (shelf.Handler innerHandler) {
+      return (shelf.Request request) async {
+        final shelf.Response response = await innerHandler(request);
+        final String accept =
+            (request.headers['accept-encoding'] ?? '').toLowerCase();
+        if (!accept.contains('gzip')) return response;
+        final String type =
+            (response.headers['content-type'] ?? '').toLowerCase();
+        final bool compressible =
+            type.contains('application/json') || type.contains('xml');
+        if (!compressible) return response;
+        if (response.headers['content-encoding'] != null) return response;
+        final List<int> body = <int>[
+          for (final List<int> chunk in await response.read().toList())
+            ...chunk,
+        ];
+        final List<int> gzipped = gzip.encode(body);
+        return response.change(
+          headers: <String, String>{
+            'Content-Encoding': 'gzip',
+            'Content-Length': '${gzipped.length}',
+          },
+          body: gzipped,
+        );
+      };
+    };
   }
 
   shelf.Middleware _authMiddleware() {
@@ -1362,13 +1401,9 @@ class HibikiSyncServer {
     HibikiLibraryHostService service,
     String bookId,
   ) async {
-    final List<RemoteBookInfo> books = await service.listBooks();
-    for (final RemoteBookInfo book in books) {
-      if (book.downloadId == bookId || book.title == bookId) {
-        return _coverFile(book.coverPath);
-      }
-    }
-    return null;
+    // 单行直查（bookCoverPath 按 bookKey 优先、title 兜底），不再每张封面重跑
+    // 整份 listBooks()（逐书标签/有声书/合集重活），与 [_resolveVideoCover] 对称。
+    return _coverFile(await service.bookCoverPath(bookId));
   }
 
   Future<shelf.Response> _handleLibraryLocalAudio(
@@ -1996,11 +2031,10 @@ class HibikiSyncServer {
     HibikiLibraryHostService service,
     String id,
   ) async {
-    final List<RemoteVideoInfo> videos = await service.listVideos();
-    for (final RemoteVideoInfo video in videos) {
-      if (video.id == id) return _coverFile(video.coverPath);
-    }
-    return null;
+    // 单行直查（videoCoverPath = 1 次 DB 查询 + stat）。旧实现每张封面请求重跑
+    // 整份 listVideos()（每行一次目录扫描 + 多次 DB 查询），N 张封面 = O(N²)，
+    // 500 视频的封面墙一次浏览拖成分钟级——这是「互联视频极慢」的主根因。
+    return _coverFile(await service.videoCoverPath(id));
   }
 
   static File? _coverFile(String? path) {

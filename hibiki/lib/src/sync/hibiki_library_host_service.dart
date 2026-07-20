@@ -1162,6 +1162,19 @@ abstract class HibikiLibraryHostService {
   /// 那一集的文件（仍 DB-only，不接受外部 path）；0 = 当前选中集（`videoPath`）。
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0});
 
+  /// 按 [id]（即 `VideoBooks.bookUid`）单查该视频封面的磁盘绝对路径；无封面 /
+  /// 文件不存在 / id 未知时返回 null。
+  ///
+  /// 封面端点的廉价存在判据：**只做一次 DB 单行查询 + 文件 stat**，绝不 materialize
+  /// 整份 [listVideos] 清单（旧实现每张封面请求重跑全量清单——每行一次目录扫描 +
+  /// 多次 DB 查询，N 张封面就是 O(N²)，大库浏览一次封面墙拖成分钟级）。
+  Future<String?> videoCoverPath(String id);
+
+  /// 按 [id]（downloadId：bookKey 或 title）单查该书封面的磁盘绝对路径；无封面 /
+  /// 文件不存在 / id 未知时返回 null。与 [videoCoverPath] 同理——封面端点专用的
+  /// 单行查询，不 materialize 整份 [listBooks]。
+  Future<String?> bookCoverPath(String id);
+
   /// 按 [id] 查找对应视频的外挂字幕文件（sidecar）。
   ///
   /// 用 [langCode] 优先匹配带语言标记的字幕（如 `.ja.srt`）；内封字幕不在此列。

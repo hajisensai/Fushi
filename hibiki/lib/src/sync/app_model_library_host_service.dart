@@ -5,7 +5,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
 import 'package:hibiki/src/media/video/video_sidecar.dart'
-    show findSidecarSubtitle;
+    show findSidecarSubtitle, pickSidecar;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
@@ -296,16 +296,12 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     final Map<String, List<String>> tagsByBookKey = await _tagNamesByBookKey();
     // tags 稳健档：host 为每本书带上标签 LWW 时钟（名→加入戳）+ 移除墓碑，供 client
     // mergeRemoteBookTags 传播 host 侧的删除/改名、防复活（旧 client 忽略这些键、按
-    // tags 名单只增，向后兼容）。逐书查（个人库规模可接受）。
+    // tags 名单只增，向后兼容）。批量一趟查（旧实现逐书 2 次查询，大库清单端点 O(N)
+    // 次 DB 往返）。
     final Map<String, Map<String, int>> tagAddedAtByKey =
-        <String, Map<String, int>>{};
+        await _db.allBookTagAddedAtByName();
     final Map<String, Map<String, int>> tagTombByKey =
-        <String, Map<String, int>>{};
-    for (final EpubBookRow r in rows) {
-      tagAddedAtByKey[r.bookKey] = await _db.bookTagAddedAtByName(r.bookKey);
-      tagTombByKey[r.bookKey] =
-          await _db.tagTombstonesByName(r.bookKey, 'epub');
-    }
+        await _db.allTagTombstonesByName('epub');
     final Map<String, RemoteCollectionMembership> membership =
         await _primaryCollectionMembership();
     // BUG-812：srt-backed 有声书（同 bookKey 既有 EpubBooks 又有 SrtBooks 行）加入合集
@@ -830,30 +826,88 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         await _tagNamesByVideoUid();
     final Map<String, RemoteCollectionMembership> membership =
         await _primaryCollectionMembership();
+    // 批量预取：位置 prefs / 标签 LWW 时钟 / 移除墓碑各一趟查询，sidecar 同目录只扫
+    // 一次。旧实现逐行 2~3 次 prefs 读 + 1 次行重查 + 2 次标签查询 + 1 次全目录
+    // listSync——500 行清单一次 ≈ 2500 次 DB 往返 + 500 次目录扫描，且封面端点每张
+    // 封面重跑整份清单时按 N² 放大（见 [videoCoverPath]）。
+    final Map<String, String> allPrefs = await _db.getAllPrefs();
+    final Map<String, Map<String, int>> tagAddedAtByUid =
+        await _db.allVideoTagAddedAtByName();
+    final Map<String, Map<String, int>> tagTombByUid =
+        await _db.allTagTombstonesByName('video');
+    final Map<String, List<String>?> sidecarDirCache =
+        <String, List<String>?>{};
     final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[];
     for (final VideoBookRow row in rows) {
-      videos.add(await _videoInfoFromRow(
+      videos.add(_videoInfoFromRow(
         row,
         tags: tagsByVideoUid[row.bookUid] ?? const <String>[],
         // 合集成员键：video 条目 mediaType='video'、entryKey=bookUid（§2.3 任务5.1）。
         collection: membership['video|${row.bookUid}'],
+        prefs: allPrefs,
+        tagsAddedAt: tagAddedAtByUid[row.bookUid] ?? const <String, int>{},
+        tagTombstones: tagTombByUid[row.bookUid] ?? const <String, int>{},
+        sidecarDirCache: sidecarDirCache,
       ));
     }
     return videos;
   }
 
-  /// 构建单条 [RemoteVideoInfo]（内部辅助，不做 IO 之外的副作用）。
-  Future<RemoteVideoInfo> _videoInfoFromRow(
+  /// 按 [id] 单查视频封面磁盘路径（封面端点专用，一次 DB 单行查询 + stat；绝不
+  /// materialize 整份 [listVideos]——旧封面路径每张封面重跑全量清单是 O(N²) 主犯）。
+  @override
+  Future<String?> videoCoverPath(String id) async {
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) return null;
+    return _existingFilePath(row.coverPath);
+  }
+
+  /// 按 [id]（downloadId：bookKey 或 title）单查书封面磁盘路径（对称
+  /// [videoCoverPath]）。优先按 bookKey 单行查；未命中（旧 client 用 title 当
+  /// downloadId）回退全表按 title/bookKey 匹配——仍只是一次 DB 查询 + 几次 stat，
+  /// 没有旧 listBooks 的逐书标签/有声书/合集重活。
+  @override
+  Future<String?> bookCoverPath(String id) async {
+    EpubBookRow? row = await _db.getEpubBook(id);
+    row ??= _findBookByTitleOrKey(await _db.getAllEpubBooks(), id);
+    if (row == null) return null;
+    return resolveEpubCoverFilePath(
+      extractDir: row.extractDir,
+      coverPath: row.coverPath,
+    );
+  }
+
+  /// 列出 [dir] 下的文件名（仅文件，不含子目录）；目录不存在/读取失败返回 null。
+  /// [listVideos] 用它配合每次调用内的目录缓存，同目录 500 个视频只扫一次。
+  static List<String>? _listDirFileNames(String dir) {
+    final Directory directory = Directory(dir);
+    try {
+      if (!directory.existsSync()) return null;
+      return directory
+          .listSync(followLinks: false)
+          .whereType<File>()
+          .map((File f) => p.basename(f.path))
+          .toList();
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// 构建单条 [RemoteVideoInfo]（内部辅助，纯同步：所有 DB 数据均由 [listVideos]
+  /// 批量预取后经参数注入，仅保留文件 stat 与目录缓存内的 sidecar 匹配）。
+  RemoteVideoInfo _videoInfoFromRow(
     VideoBookRow row, {
+    required Map<String, String> prefs,
+    required Map<String, int> tagsAddedAt,
+    required Map<String, int> tagTombstones,
+    required Map<String, List<String>?> sidecarDirCache,
     List<String> tags = const <String>[],
     RemoteCollectionMembership? collection,
-  }) async {
+  }) {
     final String videoPath = row.videoPath;
     int? sizeBytes;
     bool hasSubtitle = false;
     String? subtitleFileName;
-    List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks =
-        const <RemoteVideoEmbeddedSubtitleTrack>[];
 
     if (videoPath.isNotEmpty) {
       final File f = File(videoPath);
@@ -863,12 +917,20 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         } catch (_) {
           // stat 失败：保守返回 null
         }
-        // 检查外挂字幕 sidecar（廉价：仅文件存在性探测）。
-        final String? sub =
-            findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
-        if (sub != null && File(sub).existsSync()) {
+        // 检查外挂字幕 sidecar（廉价：目录 listing 每目录只扫一次 + 纯字符串匹配）。
+        final String dir = p.dirname(videoPath);
+        final List<String>? dirFiles =
+            sidecarDirCache.putIfAbsent(dir, () => _listDirFileNames(dir));
+        final String? picked = dirFiles == null
+            ? null
+            : pickSidecar(
+                p.basenameWithoutExtension(videoPath),
+                dirFiles,
+                langCode: _videoSubtitleLangCode,
+              );
+        if (picked != null) {
           hasSubtitle = true;
-          subtitleFileName = p.basename(sub);
+          subtitleFileName = picked;
         }
         // BUG-814：列表端点**不做**内嵌字幕轨 ffmpeg 探测。旧实现在此逐视频串行
         // spawn `ffmpeg -i`（每项超时基线 60s、大文件到 1200s、无缓存、每次 GET 全量
@@ -884,8 +946,18 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
 
     final String? coverPath = _existingFilePath(row.coverPath);
     // TODO-653: 把 host 端记录的播放断点带进清单条目，供 client 跨设备恢复。
+    // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致：prefs 断点（本机/
+    // 远端播放统一键）与旧 `VideoBooks.lastPositionMs`（时间戳 0）取较新——只是行
+    // 已在手、prefs 已批量预取，不再逐行发查询。
     final ({int positionMs, int updatedAtMs}) progress =
-        await getVideoPosition(row.bookUid);
+        resolveVideoPositionSync(
+      localPositionMs: PrefCodec.decode<int>(
+          prefs[videoRemotePositionPrefKey(row.bookUid)] ?? '', 0),
+      localUpdatedAtMs: PrefCodec.decode<int>(
+          prefs[videoRemotePositionAtPrefKey(row.bookUid)] ?? '', 0),
+      remotePositionMs: row.lastPositionMs,
+      remoteUpdatedAtMs: 0,
+    );
     // TODO-885: 解析 playlistJson → 远端剧集（只 index+title，绝不带 host path）。
     final List<RemoteVideoEpisode> episodes = _episodesFromRow(row);
     final int currentEpisode = episodes.length > 1
@@ -897,7 +969,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       sizeBytes: sizeBytes,
       hasSubtitle: hasSubtitle,
       subtitleFileName: subtitleFileName,
-      embeddedSubtitleTracks: embeddedSubtitleTracks,
+      embeddedSubtitleTracks: const <RemoteVideoEmbeddedSubtitleTrack>[],
       // durationMs: 暂为 null，DB 无此列（后续接线任务填充）
       hasCover: coverPath != null,
       coverPath: coverPath,
@@ -908,8 +980,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       tags: tags,
       // tags 稳健档：带上标签 LWW 时钟 + 移除墓碑，供 client mergeRemoteVideoTags 传播
       // host 侧删除/改名、防复活（旧 client 忽略、按 tags 名单只增）。
-      tagsAddedAt: await _db.videoTagAddedAtByName(row.bookUid),
-      tagTombstones: await _db.tagTombstonesByName(row.bookUid, 'video'),
+      tagsAddedAt: tagsAddedAt,
+      tagTombstones: tagTombstones,
       collection: collection,
     );
   }
