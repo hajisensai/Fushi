@@ -268,6 +268,28 @@ KeyEventResult _handleGlobalToggleFullscreen(
 bool get _isDesktopWindow =>
     Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
+/// 裸空格中和：焦点确认永不走空格（确认键统一 Enter / 手柄 A，由框架默认提供），故在
+/// 无文本输入时吞掉裸空格的按下沿，阻断 [WidgetsApp] 默认的 space→ActivateIntent。
+///
+/// **但仅在没有文本框聚焦时中和**。以前把 `space → DoNothingIntent` 挂进 [Shortcuts]，
+/// 而 [DoNothingAction.consumesKey] 恒为 true——它无条件吞空格，包括文本框聚焦时
+/// （BUG-962）。文本框里裸空格没有任何 text-editing 动作，不会在近处被消费，会一路冒泡
+/// 到全局被吞掉；物理键盘走 KeyEvent 管线故被吞，屏幕键盘走 IME text-input 通道绕过快捷
+/// 键层故能打——「重命名对话框只有屏幕键盘能打空格」正是这个漏判。现改为：仅按下沿且
+/// [focusedEditableText] 为空时才消费——文本框聚焦时放行，空格落到 text-input 正常插入。
+///
+/// 只吞按下沿（[KeyDownEvent]），与原 [SingleActivator] 一致（激活是按下沿动作）；
+/// repeat/up 放行无害。阅读器翻页 / 视频·有声书播放暂停在更近作用域先消费空格，根本到
+/// 不了这里，故不受影响。始终生效，不受实验性焦点导航开关影响。
+KeyEventResult _neutralizeBareSpace(KeyEvent event) {
+  if (event is! KeyDownEvent ||
+      event.logicalKey != LogicalKeyboardKey.space ||
+      focusedEditableText() != null) {
+    return KeyEventResult.ignored;
+  }
+  return KeyEventResult.handled;
+}
+
 /// Flips the main window between fullscreen and windowed.
 ///
 /// TODO-1375：全屏切换必须由 NSWindow 的**唯一所有者**执行。macOS 壳用
@@ -315,9 +337,10 @@ Future<void> _toggleWindowFullscreen() async {
 ///   没开焦点导航时按 Tab 不该有动作（TODO-112）。开启时不中和，原生 Tab 遍历照常。
 ///   与焦点导航无关、始终生效的两件事不受其影响：
 ///     * Escape 退出整页层级（桌面键盘惯例）；
-///     * 裸空格中和为 [DoNothingIntent]，使焦点确认永不走空格（确认键统一 Enter /
-///       手柄 A，由框架默认提供）。空格被更近作用域消费（阅读器翻页 / 视频·有声书
-///       播放暂停 / 文本框输入空格）时根本到不了这里，故不受影响。
+///     * 裸空格中和（[_neutralizeBareSpace]），使焦点确认永不走空格（确认键统一
+///       Enter / 手柄 A，由框架默认提供）。**仅在没有文本框聚焦时中和**——文本框输入
+///       空格必须放行，否则重命名等输入框打不出空格（BUG-962）。空格被更近作用域消费
+///       （阅读器翻页 / 视频·有声书播放暂停）时根本到不了这里，故不受影响。
 Widget wrapWithGlobalNavigation({
   required GlobalKey<NavigatorState> navigatorKey,
   required Widget child,
@@ -325,7 +348,6 @@ Widget wrapWithGlobalNavigation({
   HibikiShortcutRegistry? registry,
 }) {
   final Map<ShortcutActivator, Intent> shortcuts = <ShortcutActivator, Intent>{
-    const SingleActivator(LogicalKeyboardKey.space): const DoNothingIntent(),
     // 焦点导航总开关关闭时，把 Tab / Shift+Tab 中和成 DoNothingIntent，使 Flutter
     // [WidgetsApp] 内建的 NextFocusIntent/PreviousFocusIntent 遍历不再生效——本
     // Shortcuts 比 WidgetsApp 默认 shortcuts 更靠近焦点节点，故先匹配并阻断冒泡。
@@ -350,6 +372,11 @@ Widget wrapWithGlobalNavigation({
     canRequestFocus: false,
     skipTraversal: true,
     onKeyEvent: (FocusNode node, KeyEvent event) {
+      // 裸空格中和（始终生效，不受焦点导航开关影响）；仅非文本输入时消费，见
+      // [_neutralizeBareSpace]（BUG-962）。放在最前，先于框架 space→ActivateIntent。
+      if (_neutralizeBareSpace(event) == KeyEventResult.handled) {
+        return KeyEventResult.handled;
+      }
       if (focusNavigationEnabled) {
         final KeyEventResult gamepadResult =
             dispatchNativeGamepadButtonIntent(event);
