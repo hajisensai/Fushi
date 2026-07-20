@@ -1993,5 +1993,7 @@
   "anime_download_kind_book": "Book",
   "nav_downloads": "Downloads",
   "video_setting_torrent_memory_limit": "Memory limit (MB)",
-  "video_setting_torrent_memory_hint": "Cap engine memory. 0 = auto (based on device RAM)."
+  "video_setting_torrent_memory_hint": "Cap engine memory. 0 = auto (based on device RAM).",
+  "download_settings": "Download settings",
+  "download_backend_not_configured": "Configure the download backend below (expand Download settings)."
 }
