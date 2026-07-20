@@ -16,6 +16,17 @@ enum class MappingSessionAction {
   kRejectStale,
 };
 
+// Unity 事件生产者先原子预留 write_count，再填槽并最后提交 seq。消费者若撞在这段极短
+// 窗口内，必须保留游标重试；把未提交槽当成“已消费”会永久丢失该句资源音频。
+inline bool AdvanceUnityEventCursorIfCommitted(
+    uint64_t expected_seq, uint64_t observed_seq, uint64_t* next_event) {
+  if (next_event == nullptr || observed_seq != expected_seq) {
+    return false;
+  }
+  ++*next_event;
+  return true;
+}
+
 inline MappingSessionAction InspectMappingSession(
     bool already_exists, const SharedHeader* header,
     uint32_t expected_ring_capacity, uint32_t expected_text_offset,

@@ -64,6 +64,7 @@ using hibiki_voice_hook::TextSlot;
 using hibiki_voice_hook::VoiceClip;
 using hibiki_voice_hook::UnityVoiceEvent;
 using hibiki_voice_hook::InspectMappingSession;
+using hibiki_voice_hook::AdvanceUnityEventCursorIfCommitted;
 using hibiki_voice_hook::MappingSessionAction;
 
 // 目标与自身位数（WOW64）必须一致才能注入：x86 DLL 只能进 32 位进程，x64 只能进 64 位。
@@ -363,22 +364,23 @@ void ProcessUnityVoiceEvents(SharedHeader* header,
     const uint64_t expected_seq = *next_event + 1;
     const UnityVoiceEvent* source =
         &header->unity_voice_events[*next_event % kUnityVoiceEventCount];
-    if (source->seq == expected_seq) {
-      MemoryBarrier();
-      UnityVoiceEvent event = {};
-      event.seq = source->seq;
-      event.timestamp_ms = source->timestamp_ms;
-      wcsncpy_s(event.clip_name, source->clip_name, _TRUNCATE);
-      wcsncpy_s(event.bundle_path, source->bundle_path, _TRUNCATE);
-      if (source->seq == expected_seq) {
-        if (ExtractUnityVoice(runtime, event)) {
-          header->hook_diagnostics |= kDiagUnityResourceExtracted;
-        } else {
-          header->hook_diagnostics |= kDiagUnityResourceExtractFailed;
-        }
-      }
+    // write_count 在生产者填槽前预留；seq 尚未提交时不能跳过，留给下轮 50ms 重试。
+    if (source->seq != expected_seq) break;
+    MemoryBarrier();
+    UnityVoiceEvent event = {};
+    event.seq = source->seq;
+    event.timestamp_ms = source->timestamp_ms;
+    wcsncpy_s(event.clip_name, source->clip_name, _TRUNCATE);
+    wcsncpy_s(event.bundle_path, source->bundle_path, _TRUNCATE);
+    if (source->seq != expected_seq) break;
+    if (ExtractUnityVoice(runtime, event)) {
+      header->hook_diagnostics |= kDiagUnityResourceExtracted;
+    } else {
+      header->hook_diagnostics |= kDiagUnityResourceExtractFailed;
     }
-    ++*next_event;
+    const bool advanced = AdvanceUnityEventCursorIfCommitted(
+        expected_seq, event.seq, next_event);
+    if (!advanced) break;
   }
 }
 

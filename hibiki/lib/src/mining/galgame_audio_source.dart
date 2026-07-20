@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:hibiki/src/mining/galgame_audio_encode.dart'
@@ -370,6 +370,28 @@ List<String> buildEngineHookInjectorArguments({
   return args;
 }
 
+typedef GalHookProcessStarter = Future<Process> Function(
+  String executable,
+  List<String> arguments,
+);
+
+typedef GalHookProcessOutputSink = void Function(
+  bool isStderr,
+  String chunk,
+);
+
+Future<Process> _startGalHookProcess(
+  String executable,
+  List<String> arguments,
+) =>
+    Process.start(executable, arguments);
+
+void _logGalHookProcessOutput(bool isStderr, String chunk) {
+  final String message = chunk.trimRight();
+  if (message.isEmpty) return;
+  debugPrint('[gal-hook:${isStderr ? 'stderr' : 'stdout'}] $message');
+}
+
 /// C 阶段实现：引擎级 voice hook 的**干净语音**源（混音前抓，无 BGM/SE）。
 ///
 /// 隔离红线（docs/specs/galgame-mining）：注入进游戏、装 XAudio2/DirectSound hook 的代码在
@@ -397,10 +419,14 @@ class EngineHookGalAudioSource implements GalAudioSource {
     this.lunaPcHooks = false,
     this.lunaCodepage,
     MethodChannel? channel,
+    GalHookProcessStarter? processStarter,
+    GalHookProcessOutputSink? processOutputSink,
     Duration readyTimeout = const Duration(seconds: 30),
     Duration pollInterval = const Duration(milliseconds: 200),
   })  : _channel =
             channel ?? const MethodChannel('app.hibiki.reader/voice_hook'),
+        _processStarter = processStarter ?? _startGalHookProcess,
+        _processOutputSink = processOutputSink ?? _logGalHookProcessOutput,
         _readyTimeout = readyTimeout,
         _pollInterval = pollInterval;
 
@@ -424,11 +450,16 @@ class EngineHookGalAudioSource implements GalAudioSource {
   final int? lunaCodepage;
 
   final MethodChannel _channel;
+  final GalHookProcessStarter _processStarter;
+  final GalHookProcessOutputSink _processOutputSink;
   final Duration _readyTimeout;
   final Duration _pollInterval;
 
   /// 拉起的 injector 子进程句柄（[stop] 时杀掉）。
   Process? _injector;
+  final List<StreamSubscription<String>> _injectorOutputSubscriptions =
+      <StreamSubscription<String>>[];
+  Completer<int?>? _launchedPidCompleter;
 
   /// 实际注入命中的游戏 PID：attach=`targetPid`；launch=从 injector stdout 解析出的子进程 PID。
   /// [grabRecent]/`open` 都用它开共享内存。
@@ -542,7 +573,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。
     try {
-      _injector = await Process.start(
+      _injector = await _processStarter(
         path,
         buildEngineHookInjectorArguments(
           targetPid: targetPid,
@@ -554,6 +585,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     } on ProcessException {
       return null;
     }
+    _beginInjectorOutputDrain(_injector!, awaitLaunchedPid: launchMode);
     if (launchMode) {
       // 等 injector 打印 `OK hooked pid=<子进程>`（注入成功 proof-of-life）解析出游戏 PID。
       final int? childPid = await _awaitLaunchedPid();
@@ -602,39 +634,67 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return null;
   }
 
-  /// launch 模式：读 injector 子进程 stdout，等到 `OK hooked pid=<N>` 解析出游戏子进程 PID。
-  /// [_readyTimeout] 内没等到（exe 起不来 / 注入失败 / injector 提前退出）返回 null。
-  Future<int?> _awaitLaunchedPid() async {
-    final Process? proc = _injector;
-    if (proc == null) {
-      return null;
-    }
-    final Completer<int?> completer = Completer<int?>();
-    final StringBuffer buf = StringBuffer();
-    late final StreamSubscription<String> sub;
-    sub = proc.stdout.transform(const SystemEncoding().decoder).listen(
-      (String chunk) {
-        buf.write(chunk);
-        final int? pid = parseInjectorHookedPid(buf.toString());
-        if (pid != null && !completer.isCompleted) {
-          completer.complete(pid);
-        }
-      },
-      onDone: () {
-        if (!completer.isCompleted) {
-          completer.complete(parseInjectorHookedPid(buf.toString()));
-        }
-      },
-      onError: (Object _) {
-        if (!completer.isCompleted) {
-          completer.complete(null);
-        }
-      },
+  /// injector 是常驻 helper，stdout/stderr 也必须贯穿会话持续排空。只在解析到 launch PID
+  /// 后取消 stdout 订阅会让后续输出填满匿名管道；完全不订阅 stderr 更会使 native 卡死在
+  /// `fprintf(stderr, ...)`，Unity 资源事件队列随之停止消费但进程仍显示存活。
+  void _beginInjectorOutputDrain(
+    Process process, {
+    required bool awaitLaunchedPid,
+  }) {
+    final Completer<int?>? pidCompleter =
+        awaitLaunchedPid ? Completer<int?>() : null;
+    final StringBuffer stdoutBuffer = StringBuffer();
+    _launchedPidCompleter = pidCompleter;
+    _injectorOutputSubscriptions.add(
+      process.stdout.transform(const SystemEncoding().decoder).listen(
+        (String chunk) {
+          _emitInjectorOutput(isStderr: false, chunk: chunk);
+          if (pidCompleter == null || pidCompleter.isCompleted) return;
+          stdoutBuffer.write(chunk);
+          final int? pid = parseInjectorHookedPid(stdoutBuffer.toString());
+          if (pid != null) pidCompleter.complete(pid);
+        },
+        onDone: () {
+          if (pidCompleter != null && !pidCompleter.isCompleted) {
+            pidCompleter
+                .complete(parseInjectorHookedPid(stdoutBuffer.toString()));
+          }
+        },
+        onError: (Object _) {
+          if (pidCompleter != null && !pidCompleter.isCompleted) {
+            pidCompleter.complete(null);
+          }
+        },
+      ),
     );
-    final int? pid =
-        await completer.future.timeout(_readyTimeout, onTimeout: () => null);
-    await sub.cancel();
-    return pid;
+    _injectorOutputSubscriptions.add(
+      process.stderr.transform(const SystemEncoding().decoder).listen(
+            (String chunk) => _emitInjectorOutput(isStderr: true, chunk: chunk),
+            onError: (Object error) => _emitInjectorOutput(
+              isStderr: true,
+              chunk: 'stderr stream error: $error',
+            ),
+          ),
+    );
+  }
+
+  void _emitInjectorOutput({
+    required bool isStderr,
+    required String chunk,
+  }) {
+    try {
+      _processOutputSink(isStderr, chunk);
+    } catch (_) {
+      // 诊断输出消费者不得反向阻塞 helper 管道。
+    }
+  }
+
+  /// launch 模式：等 stdout 中的 `OK hooked pid=<N>`；订阅本身不会在解析成功后取消，
+  /// 仍负责排空 helper 余生的输出。
+  Future<int?> _awaitLaunchedPid() async {
+    final Completer<int?>? completer = _launchedPidCompleter;
+    if (completer == null) return null;
+    return completer.future.timeout(_readyTimeout, onTimeout: () => null);
   }
 
   /// 轮询 native `status`：hook 就绪（ready）且格式有效时返回 [PcmFormat]，否则 null。
@@ -1063,6 +1123,19 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
     _injector?.kill();
     _injector = null;
+    final List<StreamSubscription<String>> outputSubscriptions =
+        List<StreamSubscription<String>>.of(_injectorOutputSubscriptions);
+    _injectorOutputSubscriptions.clear();
+    final Completer<int?>? pidCompleter = _launchedPidCompleter;
+    _launchedPidCompleter = null;
+    if (pidCompleter != null && !pidCompleter.isCompleted) {
+      pidCompleter.complete(null);
+    }
+    await Future.wait(
+      outputSubscriptions.map(
+        (StreamSubscription<String> subscription) => subscription.cancel(),
+      ),
+    );
     _effectivePid = 0;
     _sessionStartedAt = null;
     _textHookReady = false;

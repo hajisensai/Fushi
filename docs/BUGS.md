@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 906 条。点号进各自文件。
+> 共 907 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-930](bugs/BUG-930-unity-resource-audio-extractor-stall.md) | ✅ | ✅ | Unity 资源音频提取队列阻塞后持续降级 |
 | [BUG-929](bugs/BUG-929-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
 | [BUG-928](bugs/BUG-928-dual-game-capture-acceptance.md) | ✅ | ✅ | Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡 |
 | [BUG-927](bugs/BUG-927-manosaba-text-loopback-hybrid.md) | ✅ | ✅ | Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留 |

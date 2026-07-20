@@ -75,6 +75,12 @@ target_include_directories(hibiki_voice_session_reuse_test PRIVATE "include")
 target_compile_definitions(hibiki_voice_session_reuse_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME hibiki_voice_session_reuse_test COMMAND hibiki_voice_session_reuse_test)
 
+add_executable(hibiki_unity_event_cursor_test
+  "tests/unity_event_cursor_test.cpp"
+)
+target_include_directories(hibiki_unity_event_cursor_test PRIVATE "include")
+add_test(NAME hibiki_unity_event_cursor_test COMMAND hibiki_unity_event_cursor_test)
+
 add_executable(hibiki_steam_launch_test
   "tests/steam_launch_test.cpp"
 )
