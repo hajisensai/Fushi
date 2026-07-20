@@ -329,7 +329,7 @@ class GalgameHelperInstaller {
         },
       );
 
-      // 3) 解压到 archDir（覆盖写；4 个文件平铺在 zip 根）。
+      // 3) 解压到 archDir（覆盖写；保留 x64 unity_audio_runtime/ 子目录）。
       await _extractZip(zip, _archDir(arch));
 
       // 记录本次已装 zip 的 sha256 作自动更新比对基线；无 sha 侧车时不写标记（下次不自动更新，
@@ -475,20 +475,24 @@ class GalgameHelperInstaller {
 
   /// 解压 zip 到 [targetDir]（覆盖写）。用 archive 包 ZipDecoder；写字节用 file.content
   /// getter（archive 3.6.1 下 ArchiveFile.decompress(out) 会写 0 字节，见
-  /// sync_asset_package_service.dart 注释，故取 content 字节直接写）。只写常规文件、剥掉
-  /// 目录前缀防 zip-slip。
+  /// sync_asset_package_service.dart 注释，故取 content 字节直接写）。只写常规文件、保留
+  /// 相对目录结构，并拒绝绝对路径或逃出目标目录的条目以防 zip-slip。
   Future<void> _extractZip(File zip, Directory targetDir) async {
     await targetDir.create(recursive: true);
     final Uint8List bytes = await zip.readAsBytes();
     final Archive archive = ZipDecoder().decodeBytes(bytes);
+    final String targetRoot = p.normalize(targetDir.absolute.path);
     for (final ArchiveFile entry in archive) {
       if (!entry.isFile) continue;
-      // 只取文件名（zip 根平铺），防路径穿越。
-      final String name = p.basename(entry.name);
-      if (name.isEmpty) continue;
+      final String relativePath =
+          entry.name.replaceAll('/', p.separator).replaceAll('\\', p.separator);
+      if (relativePath.isEmpty || p.isAbsolute(relativePath)) continue;
+      final String outputPath = p.normalize(p.join(targetRoot, relativePath));
+      if (!p.isWithin(targetRoot, outputPath)) continue;
       final Object? content = entry.content;
       if (content is! List<int>) continue;
-      final File out = File(p.join(targetDir.path, name));
+      final File out = File(outputPath);
+      await out.parent.create(recursive: true);
       await out.writeAsBytes(content, flush: true);
     }
   }

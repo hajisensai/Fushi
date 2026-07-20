@@ -78,7 +78,8 @@ vendored LunaHook/Host DLL）含 `CreateRemoteThread`/`WriteProcessMemory`，**�
 
 - **构建/发布**：workflow `.github/workflows/voice-hook-helper.yml`，**仅手动** `workflow_dispatch`
   （windows-2022）。cmake 编 x64（`-A x64`）+ x86（`-A Win32`），每架构打 `voice_hook_<arch>.zip`
-  （4 个文件平铺）+ `.sha256` 侧车，`softprops/action-gh-release@v3` upsert 到**固定 tag
+  （两架构均含 injector/hook/LunaHook/LunaHost；x64 另保留 `unity_audio_runtime/`）+ `.sha256`
+  侧车，`softprops/action-gh-release@v3` upsert 到**固定 tag
   `voice-hook-helper`** 的 **prerelease、`make_latest: false`**（遵守发布通道硬规则；push 不建 Latest）。
 - **发布守卫**：`tool/check_release_policy.ps1` 只扫 `release.yml` / `release-desktop.yml`，此独立
   workflow 天然豁免；固定 tag + prerelease + 非 Latest 不违反任何红线。
