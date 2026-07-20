@@ -70,16 +70,26 @@ void main() {
         expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
         await tester.pump(const Duration(seconds: 2));
 
-        // Defaults ARE the 975 baseline: top progress ON + squeeze (18px),
-        // bottom squeeze (bar height), top floating off, bottom floating
-        // (tap_empty_hide_chrome) off. Assert once so a silently-changed default
+        // Defaults now float: top progress ON, top floating ON, bottom floating
+        // (tap_empty_hide_chrome) ON. Assert once so a silently-changed default
         // fails loudly here.
         expect(ReaderHibikiSource.instance.showTopProgressBar, isTrue,
-            reason: 'top progress must default ON (975 baseline).');
+            reason: 'top progress must default ON.');
+        expect(ReaderHibikiSource.instance.topProgressFloating, isTrue,
+            reason: 'top progress must default to floating.');
+        expect(ReaderHibikiSource.instance.tapEmptyToHideChrome, isTrue,
+            reason: 'bottom bar must default to floating.');
+
+        // This test exercises the squeeze -> floating transition, so force both
+        // back to the squeeze baseline BEFORE the reader mounts (prefs land in
+        // the single app DB and are read on first load).
+        ReaderHibikiSource.instance.toggleTopProgressFloating();
+        ReaderHibikiSource.instance.toggleTapEmptyToHideChrome();
+        await _pumpForPref(tester);
         expect(ReaderHibikiSource.instance.topProgressFloating, isFalse,
-            reason: 'top progress must default to squeeze (non-floating).');
+            reason: 'forced squeeze baseline: top floating off.');
         expect(ReaderHibikiSource.instance.tapEmptyToHideChrome, isFalse,
-            reason: 'bottom bar must default to squeeze.');
+            reason: 'forced squeeze baseline: bottom floating off.');
 
         final FocusDriver driver = FocusDriver(tester);
 
