@@ -10,7 +10,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'fake_asset_store.dart';
 import 'sync_orchestrator_test.dart' show FakeSyncBackend;
 
-/// 「合集经常没同步」根修守卫（BUG-936）：
+/// 「合集经常没同步」根修守卫（BUG-938）：
 ///
 /// 根因：合集维度只搭载在低频全量 sweep（app 冷启动 + 5 分钟冷却 / 手动同步）上，
 /// 用户高频触发的关书/切后台同步走单本路径、从不同步合集。修复 =
