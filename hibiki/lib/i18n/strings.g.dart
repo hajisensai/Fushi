@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 33949 (1997 per locale)
 ///
-/// Built on 2026-07-20 at 12:22 UTC
+/// Built on 2026-07-20 at 17:26 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2685,7 +2685,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Cap engine memory. 0 = auto (based on device RAM).';
   String get download_settings => 'Download settings';
   String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
+      'Configure the download backend first (settings, top-right).';
 }
 
 // Path: <root>
@@ -70660,7 +70660,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get download_settings => '下载设置';
   @override
-  String get download_backend_not_configured => '请在下方「下载设置」里配置下载后端';
+  String get download_backend_not_configured => '请先配置下载后端（右上角设置）';
 }
 
 // Path: <root>
@@ -79075,7 +79075,7 @@ extension on _StringsEn {
       case 'download_settings':
         return 'Download settings';
       case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
+        return 'Configure the download backend first (settings, top-right).';
       default:
         return null;
     }
@@ -140402,7 +140402,7 @@ extension on _StringsZhCn {
       case 'download_settings':
         return '下载设置';
       case 'download_backend_not_configured':
-        return '请在下方「下载设置」里配置下载后端';
+        return '请先配置下载后端（右上角设置）';
       default:
         return null;
     }
