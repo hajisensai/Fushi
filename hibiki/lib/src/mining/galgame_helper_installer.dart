@@ -68,6 +68,20 @@ String? parseSha256Sidecar(String content) {
 bool sha256Matches(String expected, String actual) =>
     expected.trim().toLowerCase() == actual.trim().toLowerCase();
 
+/// 已装 helper 的版本标记文件名：装成功后在 `voice_hook/<arch>/` 写入该 zip 的 sha256，供下次
+/// 启动比对 release 侧车判断是否有新版（自动更新）。放在 arch 目录内，随 helper 一起被覆盖/清理。
+String galgameHelperMarkerName() => 'installed.sha256';
+
+/// 是否需要自动更新 helper：**仅当**本地有装机标记 [localSha]、远端侧车可取 [remoteSha]、且两者
+/// 不等时才更新。任一为 null（无标记=手动放置/旧装、或离线取不到远端）都返回 false —— 保守沿用
+/// 现有，绝不因无法判定就重下或阻塞启动（Never break）。
+bool galgameHelperNeedsUpdate(String? localSha, String? remoteSha) {
+  if (localSha == null || remoteSha == null) {
+    return false;
+  }
+  return !sha256Matches(localSha, remoteSha);
+}
+
 /// 把字节数格式化成人类可读大小（用于确认对话框「约 N MB」）。
 String formatDownloadSize(int bytes) {
   if (bytes <= 0) return '';
@@ -101,6 +115,10 @@ class GalgameHelperInstaller {
   File _injectorFile(String arch) =>
       File(p.join(_archDir(arch).path, 'hibiki_voice_injector.exe'));
 
+  /// 目标架构已装版本标记文件（内容 = 已装 zip 的 sha256）。
+  File _markerFile(String arch) =>
+      File(p.join(_archDir(arch).path, galgameHelperMarkerName()));
+
   /// 确保对应架构注入器就位：
   /// - 已存在 → true（幂等，直接放行启动）；
   /// - 缺失 → 弹确认对话框（标大小）→ 确认后下载+校验+解压→复检；
@@ -112,7 +130,14 @@ class GalgameHelperInstaller {
     if (!Platform.isWindows) return false;
     final String arch = galgameHelperArch(is32Bit: is32Bit);
     final File injector = _injectorFile(arch);
-    if (injector.existsSync()) return true; // 幂等：已装好
+    if (injector.existsSync()) {
+      // 已装：best-effort 检查 release 是否有新版（sha256 侧车比对），有则静默刷新（带进度框）。
+      // 离线/超时/无标记/更新失败一律沿用现有，绝不阻塞启动（Never break）。
+      if (context.mounted) {
+        await _maybeAutoUpdate(arch: arch, context: context);
+      }
+      return true; // 幂等：已装好（可能刚被刷新）
+    }
 
     // 探测大小（best-effort，供确认对话框展示；失败则显示「大小未知」）。
     final int? sizeBytes = await _probeSize(arch);
@@ -136,6 +161,47 @@ class GalgameHelperInstaller {
       return false;
     }
     return true;
+  }
+
+  /// 已装 helper 的**自动更新**（方案 B 的补强）：读本地装机标记 sha → best-effort 取 release
+  /// 侧车 sha（**硬 6s 上限**，绝不为一次网络卡死拖慢每次启动）→ 若确实有新版则复用下载+解压流程
+  /// 静默刷新（带进度框，会顺带覆盖标记）。任一步失败/离线/无标记/用户取消更新都静默返回、沿用
+  /// 现有 helper（Never break：更新是锦上添花，不该挡住启动）。
+  Future<void> _maybeAutoUpdate({
+    required String arch,
+    required BuildContext context,
+  }) async {
+    try {
+      final File marker = _markerFile(arch);
+      if (!marker.existsSync()) {
+        return; // 无标记（手动放置 / 旧装 / 上次无侧车）：不自动更新，保守沿用现有
+      }
+      final String localSha = (await marker.readAsString()).trim();
+
+      final HttpClient client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 6);
+      await applyUpdateProxy(client);
+      String? remoteSha;
+      try {
+        // 硬上限：镜像轮询可能慢，超 6s 视作取不到（离线/卡），本次不更新。
+        remoteSha = await _fetchSha256(client, arch).timeout(
+          const Duration(seconds: 6),
+          onTimeout: () => null,
+        );
+      } finally {
+        client.close(force: true);
+      }
+
+      if (!galgameHelperNeedsUpdate(localSha, remoteSha)) {
+        return; // 同版本 / 取不到远端：沿用现有
+      }
+      if (!context.mounted) return;
+      // 有新版：复用下载+解压（带进度框，成功后覆盖 helper 与标记）。失败/取消由其自身处理，
+      // 返回后 injector 仍在原地，启动继续用现有版本。
+      await _downloadAndExtract(context: context, arch: arch, expectedSize: null);
+    } catch (_) {
+      // 离线 / 解析失败 / 任意异常：静默沿用现有 helper。
+    }
   }
 
   /// 弹确认对话框（复用 app 统一对话框外框），返回用户是否确认下载。
@@ -264,6 +330,14 @@ class GalgameHelperInstaller {
 
       // 3) 解压到 archDir（覆盖写；4 个文件平铺在 zip 根）。
       await _extractZip(zip, _archDir(arch));
+
+      // 记录本次已装 zip 的 sha256 作自动更新比对基线；无 sha 侧车时不写标记（下次不自动更新，
+      // 保守）。写标记失败不影响安装成功（best-effort）。
+      if (expectedSha != null) {
+        try {
+          await _markerFile(arch).writeAsString(expectedSha, flush: true);
+        } catch (_) {}
+      }
 
       // 清理临时 zip（best-effort）。
       try {

@@ -425,14 +425,55 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, bool is_artifact) {
   return should_write;
 }
 
+// LunaHook 逐行诊断（env `HIBIKI_LUNA_DIAG=1` 打开）：把**每一行**（含随后被 filter/伪影/线程
+// 选择丢弃的）连同其 hook 上下文（hookname / hookcode 签名 / addr / ctx / ctx2）打到 stderr。用于
+// 实证「系统菜单标题（读/存档确认）是否与对话走不同 hook」——若不同则可在 hook 层白名单精确排除，
+// 若同 hook 则只能回落文本层启发式。默认关（零开销）；不改任何写入路径，纯观测。
+bool LunaDiagEnabled() {
+  static const bool enabled = []() {
+    char buf[8] = {0};
+    const DWORD n = GetEnvironmentVariableA("HIBIKI_LUNA_DIAG", buf, sizeof(buf));
+    return n > 0 && buf[0] != '0';
+  }();
+  return enabled;
+}
+
+// 把 UTF-16 文本转 UTF-8 写进定长栈缓冲（截断到 [out_cap-1]），供诊断打印。返回写入字节数。
+int LunaWideToUtf8(const wchar_t* text, int wlen, char* out, int out_cap) {
+  if (text == nullptr || wlen <= 0 || out_cap <= 1) {
+    if (out_cap > 0) out[0] = '\0';
+    return 0;
+  }
+  const int n = WideCharToMultiByte(CP_UTF8, 0, text, wlen, out, out_cap - 1,
+                                    nullptr, nullptr);
+  const int written = (n > 0) ? n : 0;
+  out[written] = '\0';
+  return written;
+}
+
 // ── Luna_Start 的 8 个回调实现（__cdecl 默认约定）─────────────────────────────
 // Output：全引擎精确台词入口。过滤 + 写文本环。返回值在本 vendored 版恒 true（不作门控）。
 bool LunaOutput(const wchar_t* hookcode, const char* hookname, LunaThreadParam tp,
                 const wchar_t* text) {
-  (void)hookname;
   (void)tp;
   if (g_luna.header != nullptr && text != nullptr) {
     const int len = static_cast<int>(wcslen(text));
+    if (LunaDiagEnabled()) {
+      char u8[1024];
+      LunaWideToUtf8(text, len, u8, sizeof(u8));
+      char hc[512];
+      LunaWideToUtf8(hookcode != nullptr ? hookcode : L"",
+                     hookcode != nullptr ? static_cast<int>(wcslen(hookcode)) : 0,
+                     hc, sizeof(hc));
+      fprintf(stderr,
+              "[lunadiag] name=%s code=%s addr=0x%llx ctx=0x%llx ctx2=0x%llx "
+              "len=%d text=%s\n",
+              (hookname != nullptr) ? hookname : "(null)", hc,
+              static_cast<unsigned long long>(tp.addr),
+              static_cast<unsigned long long>(tp.ctx),
+              static_cast<unsigned long long>(tp.ctx2), len, u8);
+      fflush(stderr);
+    }
     if (LunaPassesFilter(text, len)) {
       // 多 hook 自动选干净线程：先判伪影并累计，再决定本行是否写入文本环。
       const bool artifact = LunaTextIsArtifact(text, len);

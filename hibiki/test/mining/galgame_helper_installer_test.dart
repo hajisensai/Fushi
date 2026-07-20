@@ -96,4 +96,33 @@ void main() {
       expect(formatDownloadSize(-1), '');
     });
   });
+
+  group('自动更新（版本标记 + 更新判据）', () {
+    const String shaA =
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+    const String shaB =
+        'da39a3ee5e6b4b0d3255bfef95601890afd80709da39a3ee5e6b4b0d32551234';
+
+    test('标记文件名稳定', () {
+      expect(galgameHelperMarkerName(), 'installed.sha256');
+    });
+
+    test('本地与远端 sha 不同 → 需要更新', () {
+      expect(galgameHelperNeedsUpdate(shaA, shaB), isTrue);
+    });
+
+    test('本地与远端 sha 相同（大小写/空白无关）→ 不更新', () {
+      expect(galgameHelperNeedsUpdate(shaA, shaA), isFalse);
+      expect(galgameHelperNeedsUpdate(shaA, ' ${shaA.toUpperCase()} '), isFalse);
+    });
+
+    test('无本地标记（手动放置/旧装）→ 不自动更新（保守）', () {
+      expect(galgameHelperNeedsUpdate(null, shaB), isFalse);
+    });
+
+    test('远端取不到（离线）→ 不更新（不阻塞启动）', () {
+      expect(galgameHelperNeedsUpdate(shaA, null), isFalse);
+      expect(galgameHelperNeedsUpdate(null, null), isFalse);
+    });
+  });
 }
