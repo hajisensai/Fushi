@@ -20,7 +20,7 @@ import 'package:path/path.dart' as p;
 ///    字节不稳定，绝不允许两代字节拼接成损坏包。
 /// 3. [ExportPackageCache] TTL 过期后重导出，ETag 必换代。
 /// 4. 老 host 缺合集端点：`_syncCollectionsLive` 不再静默跳过，进
-///    `report.errors`（错误日志 + 手动同步失败计数可见，BUG-936 次因）。
+///    `report.errors`（错误日志 + 手动同步失败计数可见，BUG-938 次因）。
 class _PkgService implements HibikiLibraryHostService {
   int exportCalls = 0;
 
@@ -167,7 +167,7 @@ void main() {
     });
   });
 
-  group('老 host 缺合集端点可见性（BUG-936 次因）', () {
+  group('老 host 缺合集端点可见性（BUG-938 次因）', () {
     test('_syncCollectionsLive 不再静默跳过，错误可见', () async {
       // 老 host 模拟：不挂 libraryService → /api/library/collections 404。
       final HibikiSyncServer server = HibikiSyncServer(

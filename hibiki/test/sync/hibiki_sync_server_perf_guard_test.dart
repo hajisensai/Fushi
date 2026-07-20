@@ -6,7 +6,7 @@ import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:path/path.dart' as p;
 
-/// 互联传输层性能守卫（BUG-935 / 提速批次）：
+/// 互联传输层性能守卫（BUG-937 / 提速批次）：
 ///
 /// 1. 封面端点必须走单行直查（[HibikiLibraryHostService.videoCoverPath] /
 ///    [HibikiLibraryHostService.bookCoverPath]），**绝不** materialize 整份

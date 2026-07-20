@@ -10,7 +10,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
 /// [AppModelLibraryHostService.videoCoverPath] / [bookCoverPath] 单行直查行为
-/// （BUG-935 封面 O(N²) 根修的服务层）：结果必须与 listVideos()/listBooks()
+/// （BUG-937 封面 O(N²) 根修的服务层）：结果必须与 listVideos()/listBooks()
 /// 清单里对应条目的 coverPath 一致，但只做单行 DB 查询 + stat。
 AppModelLibraryHostService _makeService({
   required HibikiDatabase db,
