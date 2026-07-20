@@ -817,12 +817,12 @@ int main(int argc, char** argv) {
           r, hooked, calibrating, sr, ch, bits, is_float, cap, write_pos,
           static_cast<unsigned long long>(total), state);
     }
-    // v2：文本 hook 计数 + 按句语音 clip 计数 + 最近一条台词（UTF-16LE→UTF-8）。
+    // v10：文本事件计数 + 按句语音 clip 计数 + 最近一条台词（UTF-16LE→UTF-8）。
     const uint32_t text_hooked = header->text_hooked;
     const uint64_t twc = header->text_write_count;
     const uint64_t cwc = header->clip_write_count;
     const uint64_t uwc = header->unity_voice_write_count;
-    printf("     [v2] text_hooked=%u luna_active=%u decdiag=0x%08x hookdiag=0x%08x text_lines=%llu voice_clips=%llu unity_events=%llu",
+    printf("     [v10] text_hooked=%u luna_active=%u decdiag=0x%08x hookdiag=0x%08x text_events=%llu voice_clips=%llu unity_events=%llu",
            text_hooked, header->luna_active, header->reserved_luna,
            header->hook_diagnostics,
            static_cast<unsigned long long>(twc),

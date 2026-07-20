@@ -270,6 +270,65 @@ void main() {
     }
   });
 
+  test('thread discovery reaches selector without becoming a captured line',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 123456,
+          text: '',
+          threadId: 9,
+          threadAddress: 0xf94600,
+          sourceKind: 2,
+          eventKind: GalTextEventKind.threadDiscovered,
+          hookName: 'TextRender',
+          hookCode: 'HS932@f94600',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: '9nine'),
+    );
+    for (int i = 0; i < 20 && service.textThreads.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(service.entries, isEmpty);
+    expect(service.textThreads, hasLength(1));
+    expect(service.textThreads.single.label, 'TextRender · 0xf94600');
+    expect(service.textThreads.single.lineCount, 0);
+    expect(service.textThreads.single.nativeThreadId, 9);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('text-only engine hook stays active with loopback audio fallback',
       () async {
     final TexthookerService service = TexthookerService.test();

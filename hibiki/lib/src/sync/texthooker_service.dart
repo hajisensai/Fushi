@@ -121,6 +121,8 @@ class TexthookerService extends ChangeNotifier {
   static const int maxLines = 500;
 
   final List<TexthookerLineEntry> _entries = <TexthookerLineEntry>[];
+  final Map<String, TexthookerTextThread> _discoveredTextThreads =
+      <String, TexthookerTextThread>{};
   int _nextId = 0;
 
   List<TexthookerLineEntry> get entries =>
@@ -136,10 +138,13 @@ class TexthookerService extends ChangeNotifier {
     return null;
   }
 
-  /// 当前缓冲中出现过的可选文本线程，最近活跃的排在前面。
+  /// 当前会话已发现的可选文本线程，最近活跃的排在前面。
+  ///
+  /// Luna 的 ThreadCreate 事件会先放入 [_discoveredTextThreads]，因此被自动赢家过滤、当前
+  /// 尚无已发布台词的候选也会以 0 行显示；已有台词再从 [_entries] 聚合计数。
   List<TexthookerTextThread> get textThreads {
     final Map<String, TexthookerTextThread> byKey =
-        <String, TexthookerTextThread>{};
+        Map<String, TexthookerTextThread>.from(_discoveredTextThreads);
     for (final TexthookerLineEntry entry in _entries) {
       final String? key = entry.textThreadKey;
       if (key == null || key.isEmpty) continue;
@@ -156,6 +161,33 @@ class TexthookerService extends ChangeNotifier {
     final List<TexthookerTextThread> result = byKey.values.toList()
       ..sort((a, b) => b.latestAt.compareTo(a.latestAt));
     return List<TexthookerTextThread>.unmodifiable(result);
+  }
+
+  void registerTextThread({
+    required String key,
+    required String label,
+    String? hookCode,
+    int? nativeThreadId,
+    DateTime? discoveredAt,
+  }) {
+    final String normalizedKey = key.trim();
+    if (normalizedKey.isEmpty) return;
+    final TexthookerTextThread? previous =
+        _discoveredTextThreads[normalizedKey];
+    final DateTime observedAt = discoveredAt ?? DateTime.now();
+    _discoveredTextThreads[normalizedKey] = TexthookerTextThread(
+      key: normalizedKey,
+      label: label.trim().isEmpty
+          ? previous?.label ?? normalizedKey
+          : label.trim(),
+      hookCode: hookCode ?? previous?.hookCode,
+      nativeThreadId: nativeThreadId ?? previous?.nativeThreadId,
+      lineCount: 0,
+      latestAt: previous != null && previous.latestAt.isAfter(observedAt)
+          ? previous.latestAt
+          : observedAt,
+    );
+    notifyListeners();
   }
 
   /// [threadKey] 为 null 时返回所有行；否则只返回指定 Hook 线程的文本。
@@ -230,8 +262,9 @@ class TexthookerService extends ChangeNotifier {
   }
 
   void clear() {
-    if (_entries.isEmpty) return;
+    if (_entries.isEmpty && _discoveredTextThreads.isEmpty) return;
     _entries.clear();
+    _discoveredTextThreads.clear();
     notifyListeners();
   }
 }

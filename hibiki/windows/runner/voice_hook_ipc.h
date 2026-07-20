@@ -10,11 +10,12 @@
 // **host 端副本**（真相源 `native/galgame_voice_hook/include/voice_hook_ipc.h`，须同步）。
 // v2：音频环形 + 文本环（hook 抓的台词行）+ 语音 clip 索引（按句切的语音片段，含时间戳供配对）。
 // v6：clip 索引之后追加 loopback 混音环 + 时间戳↔环位置标记表（无引擎专属纯人声 hook 时的兜底）。
+// v10：文本槽追加事件类型，透传 Luna ThreadCreate，使尚无台词的候选线程也可被选择。
 // 读共享内存不是注入、不被杀软标记，可安全进 hibiki.exe。契约用 magic/version 版本化。
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 9;
+constexpr uint32_t kSharedVersion = 10;
 
 constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 2048;
@@ -25,6 +26,8 @@ constexpr uint32_t kTextSourceGdi = 1;
 constexpr uint32_t kTextSourceLuna = 2;
 constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
+constexpr uint32_t kTextEventLine = 0;
+constexpr uint32_t kTextEventThreadDiscovered = 1;
 constexpr uint32_t kClipCount = 1024;
 constexpr uint32_t kDiagStartupAudioHooksReady = 0x00000001u;
 constexpr uint32_t kDiagUnityIl2CppHooksReady = 0x00000002u;
@@ -76,6 +79,8 @@ struct TextSlot {
   uint32_t source_kind;
   uint32_t hook_name_len;
   uint32_t hook_code_len;
+  uint32_t event_kind;
+  uint32_t event_flags;
   char hook_name[kTextHookNameChars];
   wchar_t hook_code[kTextHookCodeChars];
   // 紧跟文本字节。

@@ -312,6 +312,8 @@ void VoiceHookReader::PollText(uint64_t from_seq,
     line.thread_context2 = slot->thread_context2;
     line.process_id = slot->process_id;
     line.source_kind = slot->source_kind;
+    line.event_kind = slot->event_kind;
+    line.event_flags = slot->event_flags;
     const uint32_t hook_name_len = (std::min)(
         slot->hook_name_len, hibiki_voice_hook::kTextHookNameChars);
     line.hook_name.assign(slot->hook_name, hook_name_len);

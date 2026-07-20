@@ -28,16 +28,17 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     hook 的游戏（Atelier Kaguya、未识别引擎等）的**兜底**——WASAPI loopback 抓系统渲染端点的
 //     最终混音（voice+BGM），按文本时刻抽窗口做卡。与引擎级纯人声路径并存，互不干扰。
 // v9：合并 v8 的引擎诊断/Unity 资源事件与 v6 的 loopback 环。
-constexpr uint32_t kSharedVersion = 9;
+// v10：文本槽追加事件类型，透传 Luna ThreadCreate，使尚无台词的候选线程也可被选择。
+constexpr uint32_t kSharedVersion = 10;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
 constexpr uint32_t kRingSeconds = 60;
 constexpr uint32_t kMaxRingBytes = 64u * 1024u * 1024u;  // ≤64MB（spec C 阶段预算）
 
-// 文本环：最近 kTextSlotCount 条台词行，循环覆盖。每槽固定 kTextSlotBytes 字节
-// （TextSlot 头 + 紧跟的文本字节）。v6 保留 Luna ThreadParam / hook 名称与 hookcode，
-// host 才能像 Luna Translator 一样列出并选择干净文本线程。
+// 文本事件环：最近 kTextSlotCount 个台词/线程发现事件，循环覆盖。每槽固定 kTextSlotBytes 字节
+// （TextSlot 头 + 紧跟的文本字节）。v6 保留 Luna ThreadParam / hook 名称与 hookcode；v10 再透传
+// Luna ThreadCreate，使被自动赢家过滤、尚无已发布台词的 TextRender 等线程也能先出现在选择器里。
 constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 2048;
 constexpr uint32_t kTextHookNameChars = 64;
@@ -47,6 +48,8 @@ constexpr uint32_t kTextSourceGdi = 1;
 constexpr uint32_t kTextSourceLuna = 2;
 constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
+constexpr uint32_t kTextEventLine = 0;
+constexpr uint32_t kTextEventThreadDiscovered = 1;
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
 constexpr uint32_t kClipCount = 1024;  // clip 索引环：128≈仅2秒历史不够重建整句语音，扩到 ~16秒
@@ -103,7 +106,8 @@ constexpr uint32_t kMaxLoopbackBytes = 16u * 1024u * 1024u;  // ≤16MB（32 位
 // 时间戳↔环位置标记表槽数。loopback 线程每 ~200ms 记一条 {tick, total}；60s → 300 条，512 留余。
 constexpr uint32_t kLoopbackMarkerCount = 512;
 
-// 文本槽：seq==全局 text_write_count 对应值时该槽有效；文本紧跟本头之后（kTextSlotBytes-头长）。
+// 文本事件槽：seq==全局 text_write_count 对应值时该槽有效；event_kind==kTextEventLine 时，文本
+// 紧跟本头之后（kTextSlotBytes-头长）；线程发现事件的 byte_len 为 0、只携带线程元数据。
 #pragma pack(push, 8)
 struct TextSlot {
   volatile uint64_t seq;    // 写入序号（0=空；等于所在 text_write_count 快照即有效）
@@ -118,6 +122,8 @@ struct TextSlot {
   uint32_t source_kind;     // kTextSource*；决定 UI 标签
   uint32_t hook_name_len;   // hook_name 有效字节数（不含结尾 0）
   uint32_t hook_code_len;   // hook_code 有效 wchar 数（不含结尾 0）
+  uint32_t event_kind;      // kTextEvent*；0 保持旧写者默认语义为台词行
+  uint32_t event_flags;     // 预留（当前线程发现事件写 Luna embedable 到 bit 0）
   char hook_name[kTextHookNameChars];
   wchar_t hook_code[kTextHookCodeChars];
   // 紧跟文本字节。
@@ -179,7 +185,7 @@ struct SharedHeader {
   // ── v2 区偏移（injector 填，header 起算的字节偏移）──
   uint32_t text_region_offset;      // 文本环起始
   uint32_t clip_region_offset;      // clip 索引起始
-  volatile uint64_t text_write_count;  // 单调：已写文本行数（host 取 last..count 的新行）
+  volatile uint64_t text_write_count;  // 单调：已写文本事件数（host 取 last..count 的新事件）
   volatile uint64_t clip_write_count;  // 单调：已写语音 clip 数
   // 0=injector 自动选干净线程；非 0=用户在 Hibiki 选择的 TextSlot::thread_id。
   // injector 仍无条件过滤重复伪影，再仅写该线程。
@@ -190,7 +196,7 @@ struct SharedHeader {
   volatile uint32_t luna_active;
   uint32_t reserved_luna;  // 32 位引擎诊断位（已满，loopback 另立字段）
   // Helper 自身诊断位。不能复用 reserved_luna：其 32 位已被各引擎探针占满，且 Siglus
-  // 原始 OGG dump 也使用最高位。v7 单独扩展，避免启动同步与 Siglus 状态互相误判。
+  // 原始 OGG dump 也使用最高位。v10 单独扩展，避免启动同步与 Siglus 状态互相误判。
   volatile uint32_t hook_diagnostics;
   uint32_t reserved_hook_diagnostics;
   volatile uint64_t unity_voice_write_count;

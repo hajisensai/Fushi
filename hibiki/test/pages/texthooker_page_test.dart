@@ -76,6 +76,27 @@ void main() {
     expect(find.textContaining('坏'), findsNothing);
   });
 
+  testWidgets('thread selector lists discovered TextRender before any output',
+      (WidgetTester tester) async {
+    TexthookerService.instance.registerTextThread(
+      key: 'luna:textrender',
+      label: 'TextRender · 0xf94600',
+      hookCode: 'HS932@f94600',
+      nativeThreadId: 0x9,
+    );
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: TexthookerPage())),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('game-text-thread-selector')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('TextRender · 0xf94600 · 0'), findsWidgets);
+  });
+
   testWidgets('embedded mode reuses parent scaffold and exposes back action',
       (WidgetTester tester) async {
     bool returned = false;
