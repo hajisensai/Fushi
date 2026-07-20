@@ -1780,7 +1780,7 @@
   "video_danmaku_manual_no_result": "未找到匹配的番剧。",
   "video_danmaku_manual_network_error": "网络错误，请检查连接后重试。",
   "video_danmaku_manual_server_error": "搜索失败，请稍后重试。",
-  "desktop_clipboard_destination": "剪贴板查词显示位置",
+  "desktop_clipboard_destination": "查词弹窗位置",
   "desktop_clipboard_destination_main": "主窗口",
   "desktop_clipboard_destination_panel": "悬浮面板",
   "desktop_clipboard_destination_transient": "光标处弹卡",
@@ -2057,5 +2057,12 @@
   "anime_download_kind_book": "书",
   "nav_downloads": "下载",
   "video_setting_torrent_memory_limit": "内存占用上限（MB）",
-  "video_setting_torrent_memory_hint": "限制引擎内存占用。0 = 自动（按设备内存推导）。"
+  "video_setting_torrent_memory_hint": "限制引擎内存占用。0 = 自动（按设备内存推导）。",
+  "galgame_helper_needed_title": "需要下载 galgame 引擎组件",
+  "galgame_helper_needed_body": "启动 galgame 需要引擎-hook 注入器组件（约 $size）。它含进程注入代码，与主程序分离分发以避免杀软误报。现在下载吗？",
+  "galgame_helper_size_unknown": "大小未知",
+  "galgame_helper_download": "下载",
+  "galgame_helper_downloading": "正在下载引擎组件…",
+  "galgame_helper_download_failed": "引擎组件下载失败：$error",
+  "galgame_helper_install_incomplete": "引擎组件安装不完整，请重试"
 }

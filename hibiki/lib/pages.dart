@@ -1,5 +1,4 @@
 export 'src/pages/implementations/crop_image_dialog_page.dart';
-export 'src/pages/implementations/texthooker_page.dart';
 export 'src/pages/implementations/games_library_page.dart';
 export 'src/pages/implementations/example_sentences_dialog_page.dart';
 export 'src/pages/implementations/dictionary_dialog_page.dart';

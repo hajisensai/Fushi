@@ -459,9 +459,11 @@ void main() {
     });
 
     test('desktop clipboard prefs round-trip', () async {
-      expect(repo.desktopClipboardEnabled, false);
+      // galgame UX 统一后默认开（剪贴板 / galgame 台词共用查词面板去向，开箱即用）。
+      expect(repo.desktopClipboardEnabled, true);
       expect(
           repo.desktopClipboardWindowMode, DesktopClipboardWindowMode.normal);
+      await repo.setDesktopClipboardEnabled(false);
       await repo.setDesktopClipboardEnabled(true);
       await repo
           .setDesktopClipboardWindowMode(DesktopClipboardWindowMode.always);

@@ -1780,7 +1780,7 @@
   "video_danmaku_manual_no_result": "No matching anime found.",
   "video_danmaku_manual_network_error": "Network error. Check your connection and try again.",
   "video_danmaku_manual_server_error": "Search failed. Try again later.",
-  "desktop_clipboard_destination": "Clipboard lookup destination",
+  "desktop_clipboard_destination": "Lookup popup position",
   "desktop_clipboard_destination_main": "Main window",
   "desktop_clipboard_destination_panel": "Floating panel",
   "desktop_clipboard_destination_transient": "Popup at cursor",
@@ -2057,5 +2057,12 @@
   "anime_download_kind_book": "Book",
   "nav_downloads": "Downloads",
   "video_setting_torrent_memory_limit": "Memory limit (MB)",
-  "video_setting_torrent_memory_hint": "Cap engine memory. 0 = auto (based on device RAM)."
+  "video_setting_torrent_memory_hint": "Cap engine memory. 0 = auto (based on device RAM).",
+  "galgame_helper_needed_title": "Galgame engine component required",
+  "galgame_helper_needed_body": "Launching a galgame needs the engine-hook injector component (about $size). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?",
+  "galgame_helper_size_unknown": "unknown size",
+  "galgame_helper_download": "Download",
+  "galgame_helper_downloading": "Downloading engine component…",
+  "galgame_helper_download_failed": "Engine component download failed: $error",
+  "galgame_helper_install_incomplete": "Engine component install incomplete, please retry"
 }

@@ -6,10 +6,12 @@ import 'video_hibiki_page_source_corpus.dart';
 
 /// TODO-1052 (parent TODO-716 phase 2): the desktop "horizontal swipe over the
 /// dismiss barrier closes one popup layer" gesture — first shipped on
-/// reader/audiobook via base_source_page — is extended to the three surfaces
-/// that own their OWN dismiss barrier (they do NOT extend BaseSourcePage):
-/// video, home_dictionary and texthooker. This source-level guard locks the
-/// wiring contract on all three so a future refactor cannot silently drop it:
+/// reader/audiobook via base_source_page — is extended to the surfaces that own
+/// their OWN dismiss barrier (they do NOT extend BaseSourcePage): video and
+/// home_dictionary. This source-level guard locks the wiring contract so a
+/// future refactor cannot silently drop it:
+/// (texthooker was a third such surface; its page was removed when galgame
+/// captions were unified into the lookup popup, so it is no longer guarded.)
 ///   - each barrier gates its onHorizontalDrag* handlers on
 ///     `ReaderHibikiSource.instance.enableSwipeToClose` (switch OFF => only tap,
 ///     old desktop behaviour, never-break);
@@ -30,7 +32,6 @@ String _read(String path) =>
 
 const String _homeDictionary =
     'lib/src/pages/implementations/home_dictionary_page.dart';
-const String _texthooker = 'lib/src/pages/implementations/texthooker_page.dart';
 
 /// Assert a source references the shared tracker and gates barrier drag on the
 /// swipe-to-close preference, closing one layer (not clearing the stack).
@@ -57,8 +58,7 @@ void _assertBarrierSwipeWiring(String label, String src) {
 }
 
 void main() {
-  group('barrier swipe-to-close wiring (video / home_dictionary / texthooker)',
-      () {
+  group('barrier swipe-to-close wiring (video / home_dictionary)', () {
     test(
         'video routes barrier drag through the shared tracker, closes one '
         'layer', () {
@@ -90,25 +90,6 @@ void main() {
       expect(src.contains('onTap: () => _popNestedPopupAt(0)'), isTrue,
           reason:
               'home_dictionary barrier still taps to dismiss (never-break)');
-    });
-
-    test(
-        'texthooker gains a dismiss barrier routing drag through the shared '
-        'tracker, closes one layer', () {
-      final String src = _read(_texthooker);
-      _assertBarrierSwipeWiring('texthooker', src);
-      expect(
-        src.contains('popNestedPopupAt(_topVisiblePopupIndex, _popup)'),
-        isTrue,
-        reason: 'texthooker barrier drag closes one layer',
-      );
-      // texthooker previously had NO barrier; the new barrier renders only when
-      // a popup is visible / searching (so it never blocks the text list).
-      expect(
-        src.contains('_popup.hasVisiblePopup || _popup.isSearchingUi'),
-        isTrue,
-        reason: 'texthooker barrier only renders while a popup is visible',
-      );
     });
   });
 }

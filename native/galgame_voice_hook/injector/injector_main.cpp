@@ -386,27 +386,43 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, bool is_artifact) {
   }
   st.last_tick = GetTickCount64();
 
-  // 重算赢家：clean_count 最高、且占比 clean/(clean+dirty) >= 0.5 的 hookcode。
-  // 占比 c/(c+d) >= 0.5  <=>  c >= d（整数比较，避免浮点）。
+  // 重算赢家。**优先「纯净」hook（dirty==0，从未产伪影）**，无纯净 hook 才回落
+  // 「clean>=dirty 且 clean_count 最高」的旧规则。
+  //
+  // 根因（真机实证 lunadiag + 模拟）：per-char/整串重复的坏 hook（KiriKiri 的 KiriKiriZ）在读档
+  // 菜单阶段先吐一堆**干净**的存档预览/槽号/时间戳、凭早期高 clean_count 霸占赢家；进对话后它只
+  // 吐每字重复**伪影**（被伪影闸丢弃），而真正干净的对话 hook（textrender）虽已出干净行却因不是
+  // 赢家被拒 → 正文一句不写、只剩菜单文字（用户症状「没正文文字，只有读存档文字」）。旧规则靠
+  // 累计 clean_count 选赢家，坏 hook 的早期干净菜单数长期压过对话 hook。
+  // 纯净优先：坏 hook 一进对话吐出第一条伪影 dirty>0 即失去纯净资格，对话 hook（始终 dirty==0）
+  // 立即接管，正文流出。单 hook 偶发误判伪影的游戏无纯净 hook、回落旧规则，行为不变。
   const std::wstring* best = nullptr;
   uint64_t best_clean = 0;
+  const std::wstring* best_pristine = nullptr;
+  uint64_t best_pristine_clean = 0;
   uint64_t total_clean = 0;
   for (const auto& kv : g_lunaHookStats) {
     total_clean += kv.second.clean_count;
     const uint64_t c = kv.second.clean_count;
     const uint64_t d = kv.second.dirty_count;
-    if (c == 0 || c < d) {
+    if (c == 0) {
       continue;
     }
-    if (c > best_clean) {
-      best_clean = c;
+    if (d == 0 && c > best_pristine_clean) {
+      best_pristine_clean = c;  // 纯净候选（从未产伪影）
+      best_pristine = &kv.first;
+    }
+    if (c >= d && c > best_clean) {
+      best_clean = c;  // 回落候选（占比 c/(c+d)>=0.5 <=> c>=d）
       best = &kv.first;
     }
   }
+  const std::wstring* winner =
+      (best_pristine != nullptr) ? best_pristine : best;
 
-  if (total_clean >= kLunaSelectMinClean && best != nullptr) {
+  if (total_clean >= kLunaSelectMinClean && winner != nullptr) {
     g_lunaSelectPrimed = true;
-    g_lunaSelectedHook = *best;
+    g_lunaSelectedHook = *winner;
   }
 
   // 伪影永不写——无论来自哪个 hook。赢家 hook 自己也会夹带 ×2/×3 伪影行（同一 hookcode 既出
@@ -425,14 +441,55 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, bool is_artifact) {
   return should_write;
 }
 
+// LunaHook 逐行诊断（env `HIBIKI_LUNA_DIAG=1` 打开）：把**每一行**（含随后被 filter/伪影/线程
+// 选择丢弃的）连同其 hook 上下文（hookname / hookcode 签名 / addr / ctx / ctx2）打到 stderr。用于
+// 实证「系统菜单标题（读/存档确认）是否与对话走不同 hook」——若不同则可在 hook 层白名单精确排除，
+// 若同 hook 则只能回落文本层启发式。默认关（零开销）；不改任何写入路径，纯观测。
+bool LunaDiagEnabled() {
+  static const bool enabled = []() {
+    char buf[8] = {0};
+    const DWORD n = GetEnvironmentVariableA("HIBIKI_LUNA_DIAG", buf, sizeof(buf));
+    return n > 0 && buf[0] != '0';
+  }();
+  return enabled;
+}
+
+// 把 UTF-16 文本转 UTF-8 写进定长栈缓冲（截断到 [out_cap-1]），供诊断打印。返回写入字节数。
+int LunaWideToUtf8(const wchar_t* text, int wlen, char* out, int out_cap) {
+  if (text == nullptr || wlen <= 0 || out_cap <= 1) {
+    if (out_cap > 0) out[0] = '\0';
+    return 0;
+  }
+  const int n = WideCharToMultiByte(CP_UTF8, 0, text, wlen, out, out_cap - 1,
+                                    nullptr, nullptr);
+  const int written = (n > 0) ? n : 0;
+  out[written] = '\0';
+  return written;
+}
+
 // ── Luna_Start 的 8 个回调实现（__cdecl 默认约定）─────────────────────────────
 // Output：全引擎精确台词入口。过滤 + 写文本环。返回值在本 vendored 版恒 true（不作门控）。
 bool LunaOutput(const wchar_t* hookcode, const char* hookname, LunaThreadParam tp,
                 const wchar_t* text) {
-  (void)hookname;
   (void)tp;
   if (g_luna.header != nullptr && text != nullptr) {
     const int len = static_cast<int>(wcslen(text));
+    if (LunaDiagEnabled()) {
+      char u8[1024];
+      LunaWideToUtf8(text, len, u8, sizeof(u8));
+      char hc[512];
+      LunaWideToUtf8(hookcode != nullptr ? hookcode : L"",
+                     hookcode != nullptr ? static_cast<int>(wcslen(hookcode)) : 0,
+                     hc, sizeof(hc));
+      fprintf(stderr,
+              "[lunadiag] name=%s code=%s addr=0x%llx ctx=0x%llx ctx2=0x%llx "
+              "len=%d text=%s\n",
+              (hookname != nullptr) ? hookname : "(null)", hc,
+              static_cast<unsigned long long>(tp.addr),
+              static_cast<unsigned long long>(tp.ctx),
+              static_cast<unsigned long long>(tp.ctx2), len, u8);
+      fflush(stderr);
+    }
     if (LunaPassesFilter(text, len)) {
       // 多 hook 自动选干净线程：先判伪影并累计，再决定本行是否写入文本环。
       const bool artifact = LunaTextIsArtifact(text, len);

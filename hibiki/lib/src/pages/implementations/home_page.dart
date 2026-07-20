@@ -32,29 +32,27 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
-/// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。视频 tab 仅在实验开关开启时
-/// 进入 [_HomePageState._activeTabs]，故用枚举身份而非位置来切换/路由——插入这个
-/// 条件 tab 不会再打乱「设置/词典」的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊
-/// 情况）。底栏/侧栏只在渲染层把身份映射成位置。texthooker 紧邻设置之前。
+/// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
+/// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
+/// 的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊情况）。底栏/侧栏只在渲染层把身份映射
+/// 成位置。games（galgame 库）紧邻设置之前。texthooker tab 已删（galgame 台词统一进悬浮
+/// 查词面板，见 [GalgameSessionController]）。
 enum HomeTab {
   home,
   books,
   video,
   downloads,
   dictionaries,
-  texthooker,
   games,
   settings,
 }
 
-/// 纯函数：给定实验视频开关与文本钩子开关，返回可见顶层 tab 的**视觉顺序**——视频
-/// 固定插在书架与词典之间（用户要求「在书架和词典管理中间」），texthooker 仅在文本
-/// 钩子开关开启时出现（用户要求「只有开了文本钩子才会显示」），位置固定在词典与设置
-/// 之间。提取成顶层函数便于单测条件插入与顺序，不必实例化整个 [HomePage]。底栏/侧栏
-/// 的位置索引由此列表导出。
+/// 纯函数：给定视频开关与游戏库开关，返回可见顶层 tab 的**视觉顺序**——视频固定插在书架
+/// 与词典之间（用户要求「在书架和词典管理中间」），games（galgame 库）仅在开启时出现，
+/// 位置固定在词典与设置之间。提取成顶层函数便于单测条件插入与顺序，不必实例化整个
+/// [HomePage]。底栏/侧栏的位置索引由此列表导出。
 List<HomeTab> homeActiveTabs({
   required bool videoEnabled,
-  required bool texthookerEnabled,
   bool gamesEnabled = false,
 }) =>
     <HomeTab>[
@@ -65,7 +63,6 @@ List<HomeTab> homeActiveTabs({
       // 成独立底栏条目）；位置紧随视频。
       if (videoEnabled) HomeTab.downloads,
       HomeTab.dictionaries,
-      if (texthookerEnabled) HomeTab.texthooker,
       if (gamesEnabled) HomeTab.games,
       HomeTab.settings,
     ];
@@ -100,7 +97,7 @@ HomeTab homeTabForVisualIndex({
 }
 
 /// 顶层 home-shell 选中 tab 的共享真值（[HomeTab] 身份，不用整数位置——插入 video /
-/// texthooker 条件 tab 不再打乱索引）。macOS 根 [MacosWindow] 的原生侧栏在 main.dart
+/// games 条件 tab 不再打乱索引）。macOS 根 [MacosWindow] 的原生侧栏在 main.dart
 /// 的 builder 里（Approach B，让 MacosWindow 包住整个 navigator，pushed 路由也拿到
 /// MacosWindowScope）构建，与 HomePage 自绘的 rail / 底栏驱动**同一个**选中身份。
 /// 非 macOS 平台不读写它，纯 no-op。
@@ -141,12 +138,6 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         selectedIcon: Icons.search,
         label: t.nav_lookup,
       );
-    case HomeTab.texthooker:
-      return AdaptiveNavItem(
-        icon: Icons.sensors_outlined,
-        selectedIcon: Icons.sensors,
-        label: t.texthooker,
-      );
     case HomeTab.games:
       return AdaptiveNavItem(
         icon: Icons.videogame_asset_outlined,
@@ -165,7 +156,7 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
 /// 为根 [MacosWindow] 构建 macOS 原生 [Sidebar]。住在根（不在 HomePage 内）才能让
 /// pushed 路由——阅读器、设置详情、对话框——继承 MacosWindowScope 用原生 ToolBar。
 /// 侧栏项由 [activeTabs] 动态生成（与底栏/rail 的 [homeActiveTabs] 同一真值，video /
-/// texthooker 开关变化时自动增删），选中身份走 [homeShellTabNotifier]。
+/// games 开关变化时自动增删），选中身份走 [homeShellTabNotifier]。
 Sidebar buildHibikiMacosSidebar({required List<HomeTab> activeTabs}) {
   return Sidebar(
     minWidth: 220,
@@ -506,15 +497,13 @@ class _HomePageState extends BasePageState<HomePage>
     return KeyEventResult.ignored;
   }
 
-  /// 当前可见的顶层 tab，按视觉顺序：书架 →（视频）→ 词典 →（文本钩子）→ 设置。
-  /// 视频 tab 已毕业为常驻（原 experimentalVideoEnabled 恒 true，位于书架与词典
-  /// 之间）；文本钩子仅在其开关开启时插入（位于词典与设置之间）。底栏/侧栏的位置
-  /// 索引由此列表导出。
+  /// 当前可见的顶层 tab，按视觉顺序：书架 →（视频）→ 词典 →（游戏）→ 设置。视频 tab
+  /// 已毕业为常驻（位于书架与词典之间）；games（galgame 库）仅 Windows 桌面出现（galgame
+  /// 引擎-hook 注入本就 Windows-only，故以平台而非实验开关门控，默认可见），位于词典与设置
+  /// 之间。底栏/侧栏的位置索引由此列表导出。
   List<HomeTab> _activeTabs() => homeActiveTabs(
         videoEnabled: true,
-        texthookerEnabled: appModel.texthookerEnabled,
-        // 游戏库（galgame 库）与 texthooker 同属 galgame 沉浸制卡，共用同一实验开关。
-        gamesEnabled: appModel.texthookerEnabled,
+        gamesEnabled: Platform.isWindows,
       );
 
   /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚关掉实验开关时仍停在
@@ -725,7 +714,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// destination. Settings tab reuses the same full-screen two-pane content the
   /// desktop layout uses (the sidebar IS the destination switcher, so no extra
   /// back button). Tab identity is [HomeTab]-driven — the dynamic [_activeTabs]
-  /// list (video/texthooker toggles) flows through the same enum, never int.
+  /// list (video/games toggles) flows through the same enum, never int.
   Widget _buildMacosLayout() {
     final AdaptiveNavItem currentItem = _navItemFor(_visibleTab);
     // TODO-1375（症状③）：macOS ToolBar 的 automaticallyImplyLeading 只在
@@ -899,7 +888,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// 就会把远端列表 + 封面全部重新联网拉一遍（用户报「每次进书架/视频都重新加载」）。
   /// 保活让 State 常驻 → 切回沿用已加载的列表/封面/滚动位置，秒回。
   ///
-  /// 其余 tab（词典 / texthooker / 设置）**故意不保活**、按需重建，以保留其依赖
+  /// 其余 tab（词典 / games / 设置）**故意不保活**、按需重建，以保留其依赖
   /// `initState` 挂载的语义——尤其 [HomeDictionaryPage] 靠切到查词 tab 时 re-mount
   /// 消费桌面悬浮字幕的 pending 查词（TODO-376，见 [_onHomeDictionaryTabRequested]）；
   /// 若把它也保活会不再 re-mount 而漏消费。
@@ -960,8 +949,6 @@ class _HomePageState extends BasePageState<HomePage>
         return HomeDictionaryPage(
           focusSignal: _dictFocusSignal,
         );
-      case HomeTab.texthooker:
-        return const TexthookerPage();
       case HomeTab.games:
         return const GamesLibraryPage();
       case HomeTab.settings:

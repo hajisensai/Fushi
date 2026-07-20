@@ -7,14 +7,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
+import 'package:hibiki/src/mining/galgame_session_controller.dart';
 import 'package:hibiki/utils.dart';
 
-/// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经引擎-hook
-/// launch 路径拉起并注入（复用 [TexthookerPage] 的 galgame 一键制卡逻辑），进入制卡。
+/// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
+/// [GalgameSessionController.launch]（引擎-hook launch 路径）拉起并注入——台词自动喂进悬浮
+/// 查词面板（与剪贴板查词同去向），用户在面板里点词查词 / 制卡，制卡自动带该句语音 + 游戏
+/// 窗口封面。不再进独立文本页（texthooker tab / TexthookerPage 已删）。
 ///
 /// 仿书籍/视频库的网格布局，但**不含**「继续游戏」（续玩恢复）与「活动热力图」——只是
-/// 干净的游戏网格 + 添加入口。与现有 texthooker 制卡覆盖层 tab 共存（那个不动）。
+/// 干净的游戏网格 + 添加入口。
 ///
 /// 持久化走偏好表单一 JSON key（[AppModel.galgames] / [AppModel.setGalgames]），不建
 /// Drift 表。仅 Windows 桌面有注入能力；非 Windows 点击启动时优雅提示不支持，添加/管理
@@ -107,9 +109,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     return result;
   }
 
-  /// 启动一个游戏 → 进入制卡：非 Windows 优雅提示不支持；Windows 上 push 一个携带
-  /// [TexthookerPage.autoLaunchGame] 的 texthooker 页，由它自动拉起游戏 + 注入 + 接
-  /// 文本 hook，用户在该页点词制卡（复用现有 galgame 一键制卡，零重写）。
+  /// 启动一个游戏 → 台词进查词弹窗：非 Windows 优雅提示不支持；Windows 上交给
+  /// [GalgameSessionController.launch]（拉起游戏 + 注入引擎-hook + 接文本 hook）。台词从此
+  /// 自动喂进悬浮查词面板，用户在面板里点词查词 / 制卡（制卡自动带该句语音 + 游戏窗口封面）。
+  /// 不再 push 独立文本页——galgame 台词与剪贴板查词统一走同一去向路由（UX 统一）。
   Future<void> _launchGame(GalgameEntry game) async {
     if (!Platform.isWindows) {
       HibikiToast.show(msg: t.games_launch_unsupported);
@@ -119,11 +122,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       HibikiToast.show(msg: t.games_exe_missing);
       return;
     }
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (BuildContext _) => TexthookerPage(autoLaunchGame: game),
-      ),
-    );
+    await GalgameSessionController.instance.launch(game, context: context);
   }
 
   @override

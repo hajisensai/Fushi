@@ -287,6 +287,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_host_test.dart)',
   'lookup/Desktop clipboard lookup':
       'DEVICE: clipboard watcher + hotkey lifecycle (test/sync/desktop_lookup_service_test.dart)',
+  // galgame UX 统一后 desktop_clipboard_enabled 默认开（剪贴板 / galgame 台词都走
+  // 悬浮查词面板），下列三项子设置随之在 coverage 中可达；其运行时效果由 desktop
+  // lookup service 行为守卫 / 设备验证覆盖，非 widget-tree 可断言。
+  'lookup/Auto-look-up on copy':
+      'DEVICE: clipboard auto-lookup on copy (test/sync/desktop_lookup_service_test.dart)',
+  'lookup/Lookup popup position':
+      'DEVICE: clipboard lookup destination routing main/panel/transient (test/sync/desktop_lookup_service_test.dart)',
+  'lookup/Panel opacity':
+      'DEVICE: floating clipboard panel opacity (native/WebView render)',
   'lookup/Auto read word on lookup': 'DEVICE: TTS auto-read',
   'lookup/Lookup audio volume':
       'test/reader/lookup_audio_volume_settings_test.dart + test/utils/misc/lookup_audio_volume_wiring_static_test.dart + test/settings/settings_renderer_test.dart',
