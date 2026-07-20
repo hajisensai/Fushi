@@ -35,15 +35,16 @@ std::wstring SelfDir() {
   return path;
 }
 
-// injector 真正依赖的 3 个必需导出 + 其余 injector 可选用到的。
-const char* kRequired[] = {"Luna_Start", "Luna_CreatePipeAndCheck",
-                           "Luna_Detach"};
+// injector 真正依赖的 4 个必需导出 + 其余 injector 可选用到的。
+const char* kRequired[] = {"Luna_Start", "Luna_ConnectProcess",
+                           "Luna_CheckIfNeedInject", "Luna_DetachProcess"};
 const char* kOptional[] = {"Luna_Settings", "Luna_InsertPCHooks",
-                           "Luna_SetLanguage", "Luna_InsertHookCode",
+                           "Luna_SettingsEx", "Luna_ResetLang",
+                           "Luna_AllocString", "Luna_InsertHookCode",
                            "Luna_QueryThreadHistory", "Luna_RemoveHook",
                            "Luna_FindHooks", "Luna_SyncThread",
-                           "Luna_EmbedSettings", "Luna_checkisusingembed",
-                           "Luna_useembed", "Luna_embedcallback"};
+                           "Luna_CheckIsUsingEmbed", "Luna_UseEmbed",
+                           "Luna_EmbedCallback"};
 
 }  // namespace
 
