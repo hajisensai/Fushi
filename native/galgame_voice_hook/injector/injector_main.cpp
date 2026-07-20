@@ -145,19 +145,11 @@ int Fail(const char* msg) {
 // 环**（injector 本就 map 着共享内存）。与游戏内 GDI hook 双写同一环，靠 InterlockedIncrement64
 // 原子占号防撞槽。
 //
-// ABI 定死来源（务必与 vendored 二进制版本一致）：本机 D:\LunaTranslator 安装自带的
-// LunaTranslator/textsource/texthook.py（调用 files/plugins/LunaHook/LunaHost64.dll 的那份
-// ctypes 声明）——即本仓库 third_party/lunahook/ 下这批 DLL 的确切导出契约。它是一个**回调式**
-//（非管道式）过渡版本：Luna_Start 收 8 个 __cdecl 回调指针；attach 由 Luna_CreatePipeAndCheck
-//(pid) 触发；Luna_Detach(pid) 收尾。dumpbin 实测 LunaHost64.dll 15 个导出：Luna_Start /
-// Luna_CreatePipeAndCheck / Luna_Detach / Luna_Settings / Luna_SetLanguage / Luna_InsertHookCode
-// / Luna_InsertPCHooks / Luna_QueryThreadHistory / Luna_RemoveHook / Luna_FindHooks /
-// Luna_SyncThread / Luna_EmbedSettings / Luna_checkisusingembed / Luna_useembed /
-// Luna_embedcallback。
-//
-// 与当前 GitHub HEAD（HIllya51/LunaTranslator）的 LunaHost API **不同**（HEAD 已改名为
-// Luna_ConnectProcess/Luna_DetachProcess + 10 回调）。别按 HEAD 源接线，必须按 vendored 版本；
-// 换 DLL 版本时重新用 dumpbin 核导出 + 找配套 texthook.py 定签名。
+// ABI 定死来源（务必与 vendored 二进制版本一致）：LunaTranslator v10.16.1.2 发布包自带的
+// LunaTranslator/textio/textsource/texthook.py，以及同 tag 的 LunaHostDll.cpp。Luna_Start 收
+// 10 个 __cdecl 回调指针；attach 先建 host 管道（Luna_ConnectProcess），再由
+// Luna_CheckIfNeedInject 判断是否需要注入；Luna_DetachProcess 收尾。换 DLL 版本时必须重新核对
+// 发布包内 texthook.py、上游导出实现和本文件，不能只覆盖二进制。
 
 // LunaHook ThreadParam：按 texthook.py 的 ctypes 结构 1:1 定死（processId=c_uint 后跟三个
 // c_uint64，8 对齐 → 4+4pad+8+8+8 = 32 字节）。回调里**按值**传入，布局必须精确匹配。
@@ -172,22 +164,39 @@ struct LunaThreadParam {
 static_assert(sizeof(LunaThreadParam) == 32,
               "LunaThreadParam 必须 32 字节，匹配 LunaHost ABI");
 
-// Luna_Start 的 8 个回调（默认 __cdecl，匹配 LunaHost 内部自由函数指针约定 / texthook.py 的
-// CFUNCTYPE）。只真正用第 5 个 Output；其余最小 stub。参数逐个对齐 texthook.py：
+// Luna_Start 的 10 个回调槽（默认 __cdecl，匹配 LunaHost 内部自由函数指针约定 / texthook.py 的
+// CFUNCTYPE）。只真正用第 5 个 Output；1-4、6-8 是最小 stub，9-10（i18n/emulator info）传空。
+// 参数逐个对齐 texthook.py：
 //   ProcessEvent            = void(DWORD)
 //   ThreadEvent_maybe_embed = void(const wchar_t* hookcode, const char* hookname, TP, bool)
 //   ThreadEvent             = void(const wchar_t* hookcode, const char* hookname, TP)
-//   OutputCallback          = bool(const wchar_t* hookcode, const char* hookname, TP, const wchar_t* text)
+//   OutputCallback          = void(const wchar_t* hookcode, const char* hookname, TP, const wchar_t* text)
 //   HostInfoHandler         = void(int type, const wchar_t* log)
 //   HookInsertHandler       = void(DWORD pid, uint64_t addr, const wchar_t* hookcode)
 //   EmbedCallback           = void(const wchar_t* text, TP)
-using PFN_Luna_Start = void (*)(void*, void*, void*, void*, void*, void*, void*,
-                                void*);
-using PFN_Luna_CreatePipeAndCheck = bool (*)(DWORD);
-using PFN_Luna_Detach = void (*)(DWORD);
+using LunaProcessEvent = void (*)(DWORD);
+using LunaThreadEventMaybeEmbed = void (*)(const wchar_t*, const char*,
+                                            LunaThreadParam, bool);
+using LunaThreadEvent = void (*)(const wchar_t*, const char*, LunaThreadParam);
+using LunaOutputCallback = void (*)(const wchar_t*, const char*,
+                                    LunaThreadParam, const wchar_t*);
+using LunaHostInfoHandler = void (*)(int, const wchar_t*);
+using LunaHookInsertHandler = void (*)(DWORD, uint64_t, const wchar_t*);
+using LunaEmbedCallback = void (*)(const wchar_t*, LunaThreadParam);
+using LunaI18nQueryCallback = wchar_t* (*)(const wchar_t*);
+using LunaEmuGameInfoCallback = void (*)(const wchar_t*, const wchar_t*,
+                                         const wchar_t*);
+using PFN_Luna_Start = void (*)(
+    LunaProcessEvent, LunaProcessEvent, LunaThreadEventMaybeEmbed,
+    LunaThreadEvent, LunaOutputCallback, LunaHostInfoHandler,
+    LunaHookInsertHandler, LunaEmbedCallback, LunaI18nQueryCallback,
+    LunaEmuGameInfoCallback);
+using PFN_Luna_ConnectProcess = void (*)(DWORD);
+using PFN_Luna_CheckIfNeedInject = bool (*)(DWORD);
+using PFN_Luna_DetachProcess = void (*)(DWORD);
 // Luna_Settings(flushDelay, filterRepetition, defaultCodepage, maxBufferSize,
-//               maxHistorySize)（vendored 版 5 参；ZUIcat 老版 4 参、HEAD 6 参，勿混）。
-using PFN_Luna_Settings = void (*)(int, bool, int, int, int);
+//               maxHistorySize, enablePCHooks)。PC hooks 仍由连接回调按目标决定，末参传 false。
+using PFN_Luna_Settings = void (*)(int, bool, int, int, int, bool);
 using PFN_Luna_InsertPCHooks = void (*)(DWORD, int);
 
 // host 侧 LunaHook 运行时上下文（单目标进程，injector 一对一）。
@@ -195,7 +204,7 @@ struct LunaCtx {
   HMODULE host_dll = nullptr;      // 加载进 injector 的 LunaHost<arch>.dll
   SharedHeader* header = nullptr;  // injector map 的共享内存头（写文本环用）
   DWORD pid = 0;                   // 目标游戏 pid（Detach 用）
-  PFN_Luna_Detach detach = nullptr;
+  PFN_Luna_DetachProcess detach = nullptr;
   PFN_Luna_InsertPCHooks insert_pc = nullptr;
   bool use_pc_hooks = false;       // 连接后是否补装通用 PC hooks（默认否，避免与 GDI 重复）
 };
@@ -475,10 +484,10 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
   return should_write;
 }
 
-// ── Luna_Start 的 8 个回调实现（__cdecl 默认约定）─────────────────────────────
-// Output：全引擎精确台词入口。过滤 + 写文本环。返回值在本 vendored 版恒 true（不作门控）。
-bool LunaOutput(const wchar_t* hookcode, const char* hookname, LunaThreadParam tp,
-                const wchar_t* text) {
+// ── Luna_Start 的回调实现（__cdecl 默认约定）─────────────────────────────────
+// Output：全引擎精确台词入口。过滤 + 写文本环。v10.16.1.2 ABI 返回 void。
+void LunaOutput(const wchar_t* hookcode, const char* hookname,
+                LunaThreadParam tp, const wchar_t* text) {
   if (g_luna.header != nullptr && text != nullptr) {
     const int len = static_cast<int>(wcslen(text));
     if (LunaPassesFilter(text, len)) {
@@ -496,7 +505,6 @@ bool LunaOutput(const wchar_t* hookcode, const char* hookname, LunaThreadParam t
       }
     }
   }
-  return true;
 }
 
 // Connect：LunaHook DLL 注入并连回 host 时触发。可选补装通用 PC hooks（默认关，避免与游戏内
@@ -512,7 +520,7 @@ void LunaConnect(DWORD pid) {
 void LunaDisconnect(DWORD pid) {
   fprintf(stderr, "[luna] disconnected pid=%lu\n", pid);
 }
-// 以下 stub 仅满足 Luna_Start 的参数个数/签名，不做业务。
+// 以下 stub 仅满足 Luna_Start 的前 8 个参数槽及签名，不做业务。
 void LunaThreadCreate(const wchar_t* hookcode, const char* hookname,
                       LunaThreadParam tp, bool embedable) {
   (void)hookcode;
@@ -556,13 +564,18 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   }
   auto start =
       reinterpret_cast<PFN_Luna_Start>(GetProcAddress(host, "Luna_Start"));
-  auto pipe = reinterpret_cast<PFN_Luna_CreatePipeAndCheck>(
-      GetProcAddress(host, "Luna_CreatePipeAndCheck"));
+  auto connect = reinterpret_cast<PFN_Luna_ConnectProcess>(
+      GetProcAddress(host, "Luna_ConnectProcess"));
+  auto need_inject = reinterpret_cast<PFN_Luna_CheckIfNeedInject>(
+      GetProcAddress(host, "Luna_CheckIfNeedInject"));
   auto detach =
-      reinterpret_cast<PFN_Luna_Detach>(GetProcAddress(host, "Luna_Detach"));
-  if (start == nullptr || pipe == nullptr || detach == nullptr) {
+      reinterpret_cast<PFN_Luna_DetachProcess>(
+          GetProcAddress(host, "Luna_DetachProcess"));
+  if (start == nullptr || connect == nullptr || need_inject == nullptr ||
+      detach == nullptr) {
     fprintf(stderr,
-            "[luna] LunaHost 缺关键导出(Start/CreatePipeAndCheck/Detach)；跳过\n");
+            "[luna] LunaHost 缺关键导出(Start/ConnectProcess/"
+            "CheckIfNeedInject/DetachProcess)；跳过\n");
     FreeLibrary(host);
     return false;
   }
@@ -581,7 +594,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   // flushDelay=200ms（一句停顿 flush 一行）、filterRepetition=true（LunaHook 侧先去重）、
   // codepage（日文 galgame 默认 932/SHIFT_JIS）、maxBufferSize/maxHistorySize 保守非零值。
   if (settings != nullptr) {
-    settings(200, true, codepage, 8192, 1000);
+    settings(200, true, codepage, 8192, 1000, false);
   }
 
   // 多 hook 自动选干净线程的计数锁：Output 回调可在 LunaHook 工作线程并发，
@@ -592,21 +605,18 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   }
 
   // 注册回调，顺序严格对齐 texthook.py：Connect, Disconnect, ThreadCreate, ThreadRemove,
-  // Output, HostInfo, HookInsert, Embed。
-  start(reinterpret_cast<void*>(&LunaConnect),
-        reinterpret_cast<void*>(&LunaDisconnect),
-        reinterpret_cast<void*>(&LunaThreadCreate),
-        reinterpret_cast<void*>(&LunaThreadRemove),
-        reinterpret_cast<void*>(&LunaOutput),
-        reinterpret_cast<void*>(&LunaHostInfo),
-        reinterpret_cast<void*>(&LunaHookInsert),
-        reinterpret_cast<void*>(&LunaEmbed));
+  // Output, HostInfo, HookInsert, Embed, I18NQuery, EmuGameInfo。后两项本组件不用，传空让
+  // LunaHost 采用默认行为。
+  start(&LunaConnect, &LunaDisconnect, &LunaThreadCreate, &LunaThreadRemove,
+        &LunaOutput, &LunaHostInfo, &LunaHookInsert, &LunaEmbed, nullptr,
+        nullptr);
 
-  // 触发 attach：CreatePipeAndCheck 建 host<->hook 管道并判断是否需要注入。需要则把
+  // 触发 attach：先建 host<->hook 管道，再判断目标是否需要注入。需要则把
   // LunaHook<arch>.dll 注入游戏（复用 CreateRemoteThread(LoadLibraryW) 纯 DLL 注入，等价
   // LunaTranslator 的 shareddllproxy dllinject；LunaHook.dll 自初始化、连回管道、自动识别引擎
   // 装台词 hook → Output 回调回传）。
-  if (pipe(pid)) {
+  connect(pid);
+  if (need_inject(pid)) {
     const std::wstring hook_path =
         InjectorDir() + L"LunaHook" + kLunaArch + L".dll";
     if (GetFileAttributesW(hook_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
@@ -621,20 +631,24 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
     }
   } else {
     fprintf(stderr,
-            "[luna] CreatePipeAndCheck=false(已 hook 或无需注入) pid=%lu\n", pid);
+            "[luna] CheckIfNeedInject=false(已 hook 或无需注入) pid=%lu\n", pid);
   }
   return true;
 }
 
-// 收尾：Detach 目标（停 LunaHook 侧 hook）+ 卸载 LunaHost.dll。幂等。
+// 收尾：DetachProcess 目标（停 LunaHook 侧 hook）。LunaHost 的管道工作线程是 detached thread，
+// API 没有 join/等待导出；发送 detach 后立刻 FreeLibrary 会卸载仍在跑的 host 代码。injector 此后
+// 立即退出，故成功启动过 Host 时故意保留模块到进程结束，由 OS 安全回收。幂等。
 void ShutdownLunaHook() {
   if (g_luna.host_dll != nullptr) {
     if (g_luna.detach != nullptr && g_luna.pid != 0) {
       g_luna.detach(g_luna.pid);
     }
-    FreeLibrary(g_luna.host_dll);
     g_luna.host_dll = nullptr;
     g_luna.header = nullptr;
+    g_luna.detach = nullptr;
+    g_luna.insert_pc = nullptr;
+    g_luna.pid = 0;
   }
 }
 
@@ -760,7 +774,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     }
   }
 
-  ShutdownLunaHook();  // Detach 目标 + 卸载 LunaHost.dll（幂等；未接入时 no-op）
+  ShutdownLunaHook();  // Detach 目标；Host 模块由进程退出回收（未接入时 no-op）
   CloseHandle(ready);
   UnmapViewOfFile(header);
   CloseHandle(mapping);
