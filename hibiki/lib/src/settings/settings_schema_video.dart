@@ -564,6 +564,32 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoSubtitleObscureMode(mode);
             },
           ),
+          // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）——不遮蔽 / 模糊 / 隐藏。
+          // 复用同一 [_videoSubtitleObscureModeLabel] 选项标签；快捷键 Shift+G 循环、
+          // Shift+H 隐藏。持久化同为 preferences lazy 投影（无新 Drift schema）。
+          SettingsSegmentedItem<VideoSubtitleObscureMode>(
+            id: 'video.secondary_subtitle.obscure',
+            title: t.video_setting_secondary_subtitle_obscure,
+            subtitle: t.video_setting_secondary_subtitle_obscure_hint,
+            icon: Icons.blur_on_outlined,
+            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
+              for (final VideoSubtitleObscureMode mode
+                  in VideoSubtitleObscureMode.values)
+                SettingsSegmentOption<VideoSubtitleObscureMode>(
+                  value: mode,
+                  label: _videoSubtitleObscureModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSecondarySubtitleObscureMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              VideoSubtitleObscureMode mode,
+            ) async {
+              await settingsContext.appModel
+                  .setVideoSecondarySubtitleObscureMode(mode);
+            },
+          ),
           // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref，
           // 下次开视频生效），与播放页内字幕设置同源。
           SettingsSwitchItem(
@@ -798,15 +824,50 @@ SettingsDestination buildVideoDestination() {
             visible: _embeddedBackendSelected,
             builder: _buildEmbeddedDownloadLimitField,
           ),
+          // 上传/做种总开关（内置引擎；默认关，尊重带宽/隐私）。关时下面的
+          // 上传限速/做种上限字段隐藏（无意义）。
+          SettingsSwitchItem(
+            id: 'video.anime_download.upload_enabled',
+            title: t.video_setting_torrent_upload_enabled,
+            subtitle: t.video_setting_torrent_upload_enabled_hint,
+            icon: Icons.upload_outlined,
+            visible: _embeddedBackendSelected,
+            value: (SettingsContext settingsContext) =>
+                (settingsContext.appModel.qbConnectionConfig ??
+                        const QbConnectionConfig())
+                    .uploadEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await _commitQbConfig(
+                settingsContext,
+                (QbConnectionConfig c) => c.copyWith(uploadEnabled: value),
+              );
+              settingsContext.refresh();
+            },
+          ),
           SettingsCustomItem(
             id: 'video.anime_download.embedded_upload_limit',
-            visible: _embeddedBackendSelected,
+            visible: _embeddedUploadEnabled,
             builder: _buildEmbeddedUploadLimitField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.seed_time_limit',
+            visible: _embeddedUploadEnabled,
+            builder: _buildSeedTimeLimitField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.seed_ratio_limit',
+            visible: _embeddedUploadEnabled,
+            builder: _buildSeedRatioLimitField,
           ),
           SettingsCustomItem(
             id: 'video.anime_download.embedded_max_connections',
             visible: _embeddedBackendSelected,
             builder: _buildEmbeddedMaxConnectionsField,
+          ),
+          SettingsCustomItem(
+            id: 'video.anime_download.embedded_memory_limit',
+            visible: _embeddedBackendSelected,
+            builder: _buildEmbeddedMemoryLimitField,
           ),
         ],
       ),
@@ -831,10 +892,25 @@ bool _embeddedBackendSelected(SettingsContext settingsContext) {
       QbConnectionConfig.backendEmbedded;
 }
 
+/// 当前是否内置引擎且已开启上传（决定上传限速/做种上限字段是否显示）。
+bool _embeddedUploadEnabled(SettingsContext settingsContext) {
+  final QbConnectionConfig config =
+      settingsContext.appModel.qbConnectionConfig ?? const QbConnectionConfig();
+  return config.resolveBackend(isDesktop: isDesktopPlatform) ==
+          QbConnectionConfig.backendEmbedded &&
+      config.uploadEnabled;
+}
+
 /// 把限制字段的文本输入解析为非负整数（空/非数/负数 → 0 = 不限）。
 int _parseNonNegLimit(String value) {
   final int n = int.tryParse(value.trim()) ?? 0;
   return n < 0 ? 0 : n;
+}
+
+/// 把分享率字段的文本输入解析为非负 double（空/非数/负数/非有限 → 0 = 不限）。
+double _parseNonNegDouble(String value) {
+  final double n = double.tryParse(value.trim()) ?? 0;
+  return (n.isFinite && n > 0) ? n : 0;
 }
 
 Widget _buildEmbeddedDownloadLimitField(SettingsContext settingsContext) {
@@ -872,6 +948,66 @@ Widget _buildEmbeddedUploadLimitField(SettingsContext settingsContext) {
         settingsContext,
         (QbConnectionConfig c) =>
             c.copyWith(uploadLimitKbps: _parseNonNegLimit(value)),
+      );
+    },
+  );
+}
+
+Widget _buildSeedTimeLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.seedTimeLimitMinutes ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_seed_time_limit,
+    icon: Icons.timer_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_seed_time_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(seedTimeLimitMinutes: _parseNonNegLimit(value)),
+      );
+    },
+  );
+}
+
+Widget _buildSeedRatioLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final double current = config?.seedRatioLimit ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_seed_ratio_limit,
+    icon: Icons.balance_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    hintText: t.video_setting_torrent_seed_ratio_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(seedRatioLimit: _parseNonNegDouble(value)),
+      );
+    },
+  );
+}
+
+Widget _buildEmbeddedMemoryLimitField(SettingsContext settingsContext) {
+  final QbConnectionConfig? config =
+      settingsContext.appModel.qbConnectionConfig;
+  final int current = config?.memoryLimitMb ?? 0;
+  return SettingsSecretField(
+    title: t.video_setting_torrent_memory_limit,
+    icon: Icons.memory_outlined,
+    initialValue: current == 0 ? '' : '$current',
+    keyboardType: TextInputType.number,
+    hintText: t.video_setting_torrent_memory_hint,
+    onChanged: (String value) async {
+      await _commitQbConfig(
+        settingsContext,
+        (QbConnectionConfig c) =>
+            c.copyWith(memoryLimitMb: _parseNonNegLimit(value)),
       );
     },
   );
@@ -1112,7 +1248,7 @@ String _videoImmersiveModeLabel(VideoImmersiveMode mode) {
   switch (mode) {
     case VideoImmersiveMode.full:
       return t.video_immersive_mode_full;
-    case VideoImmersiveMode.seekAndLookup:
+    case VideoImmersiveMode.shortcutAndLookup:
       return t.video_immersive_mode_seek_lookup;
     case VideoImmersiveMode.lookupOnly:
       return t.video_immersive_mode_lookup_only;

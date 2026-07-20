@@ -59,6 +59,25 @@ HT_EXPORT int ht_session_set_rate_limits(void* session, int download_bps,
 HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
                               int connections_limit);
 
+// 设置上传模式（做种/上传总开关，per-torrent 或全量）：
+// [info_hash] 为空串/NULL = 对 session 内所有种子生效；否则仅该种子。
+// [upload_enabled] 非 0 = 允许上传（清除 upload_mode）；0 = 停止上传但保持
+// 连接与下载（置 torrent_flags::upload_mode，libtorrent 正规「只下不上」）。
+// 注意：速率设 0 是「不限速」而非「禁传」，真正关上传必须走本函数。
+// 返回 1 成功、0 失败（session 无效 / 指定种子不存在）。
+HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
+                                 int upload_enabled);
+
+// 应用内存占用相关 session 设置（把 libtorrent 压进内存预算，避免「有多少内存
+// 吃多少」）：各字段 <=0 时保持 libtorrent 默认，>0 时设置。
+// [connections_limit] 全局最大连接数；[max_queued_disk_bytes] 磁盘写缓冲上限；
+// [send_buffer_watermark] 每连接发送缓冲高水位；[max_peerlist_size] 每种子 peer
+// 列表最大条目数。返回 1 成功 0 失败。
+HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
+                                       int max_queued_disk_bytes,
+                                       int send_buffer_watermark,
+                                       int max_peerlist_size);
+
 // 添加磁力链接，落盘到 [save_path]；[sequential] 非 0 开顺序下载。
 // 成功 {"ok":true,"id":"<infohash>"}；失败 {"ok":false,"error":"..."}。
 // 重复添加同一种子返回已有种子的 id（ok:true）。
@@ -83,8 +102,9 @@ HT_EXPORT int ht_connect_peer(void* session, const char* info_hash,
 // {"id","name","progress"(0~1),"state"("metadata"|"checking"|"downloading"|
 //  "finished"|"seeding"|"error"),"save_path","content_path"(单文件=文件路径、
 //  多文件=内容根目录、无元数据=""),"total","done","left"(无元数据=-1),
-//  "down_rate","up_rate","num_peers","has_metadata","is_finished",
-//  "is_seeding","sequential"}
+//  "down_rate","up_rate","uploaded"(累计上传字节，做种上限判定用),
+//  "downloaded"(累计下载字节，分享率分母),"num_peers","has_metadata",
+//  "is_finished","is_seeding","sequential"}
 HT_EXPORT char* ht_list_torrents(void* session);
 
 // 某种子的文件列表：{"ok":true,"files":[{"index","path","size","done"}]}；

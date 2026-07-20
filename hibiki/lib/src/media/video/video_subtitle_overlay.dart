@@ -161,6 +161,8 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.isCueFavorited,
     this.blurEnabled = false,
     this.subtitleHidden = false,
+    this.secondaryBlurEnabled = false,
+    this.secondaryHidden = false,
     this.fontSize = 36,
     this.textColor,
     this.fontWeight = VideoSubtitleStyle.defaultFontWeight,
@@ -223,6 +225,15 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 不隐藏，外观与历史一致。隐藏只针对底部主字幕 overlay，不影响查词 / 字幕列表 /
   /// cue 同步等其它文本通道。
   final bool subtitleHidden;
+
+  /// 副字幕「模糊」（TODO-1382，镜像 [blurEnabled]）：为 true 时**副字幕层**默认高斯模糊，
+  /// 悬停/点击显形。与主字幕 [blurEnabled] 相互独立（各有独立 reveal 态）。默认 false。
+  final bool secondaryBlurEnabled;
+
+  /// 副字幕「隐藏」（TODO-1382，镜像 [subtitleHidden]）：为 true 时副字幕层整条不渲染
+  /// （build 时清空 secondaryCues），与 [secondaryBlurEnabled] 正交且优先级更高。默认
+  /// false。隐藏只针对顶部副字幕 overlay，不影响查词 / 字幕列表 / cue 同步等其它通道。
+  final bool secondaryHidden;
 
   /// 字幕字号（外观设置）。
   final double fontSize;
@@ -314,11 +325,24 @@ class VideoSubtitleOverlay extends StatefulWidget {
 /// 单字（典型如假名「の」）字形与周围突兀不一致。
 ///
 /// 这里给出覆盖五个出包平台主流系统日文字体的有序列表。Flutter 引擎按顺序解析、
-/// 自动跳过当前平台不存在的字体名，故无需平台分支：
-/// - Windows：`Yu Gothic` / `Yu Gothic UI` / `Meiryo` / `MS Gothic`
+/// 自动跳过当前平台不存在的字体名：
+/// - Windows：先跟随 mpv/libass DirectWrite 的缺字回退 `Microsoft YaHei UI`，再走
+///   `Yu Gothic` / `Yu Gothic UI` / `Meiryo` / `MS Gothic`。同一列表还用于 ASS
+///   cell/em 字号换算，避免渲染字形与字号度量选到两套字体（BUG-929）。
 /// - macOS / iOS：`Hiragino Sans` / `Hiragino Kaku Gothic ProN`
 /// - Android / Linux：`Noto Sans CJK JP` / `Noto Sans JP`
-const List<String> _kSubtitleCjkFallback = <String>[
+const List<String> _kWindowsSubtitleCjkFallback = <String>[
+  'Microsoft YaHei UI',
+  'Microsoft YaHei',
+  'Yu Gothic',
+  'Yu Gothic UI',
+  'Meiryo',
+  'MS Gothic',
+  'Noto Sans CJK JP',
+  'Noto Sans JP',
+];
+
+const List<String> _kDefaultSubtitleCjkFallback = <String>[
   'Yu Gothic',
   'Yu Gothic UI',
   'Hiragino Sans',
@@ -329,9 +353,49 @@ const List<String> _kSubtitleCjkFallback = <String>[
   'MS Gothic',
 ];
 
+@visibleForTesting
+List<String> subtitleCjkFontFallbacks(TargetPlatform platform) =>
+    platform == TargetPlatform.windows
+        ? _kWindowsSubtitleCjkFallback
+        : _kDefaultSubtitleCjkFallback;
+
+List<String> get _subtitleCjkFallback =>
+    subtitleCjkFontFallbacks(defaultTargetPlatform);
+
+/// Windows 上作者字体缺失时，Flutter/Skia 以同一 YaHei UI face 渲染仍比
+/// mpv/libass FreeType REAL_DIM 的实像素偏窄、偏矮。BUG-929 用用户原片黑底帧校准：
+/// 字号补 1.09、仅纵轴再补 1.055，可把 `きれえ` 从 146×50 对齐到 158×56
+///（mpv 157×56）。仅缺失作者字体的 Windows ASS 路径使用；已安装字体和其他平台不变。
+
+const double _kWindowsMissingAssFontRasterScale = 1.09;
+const double _kWindowsMissingAssFontRasterYScale = 1.055;
+
+@visibleForTesting
+({double fontScale, double yScale}) assMissingFontRasterCompensation(
+  TargetPlatform platform, {
+  required bool hasRequestedFamily,
+  required bool requestedFamilyResolved,
+  required bool fallbackFamilyAvailable,
+}) {
+  if (platform == TargetPlatform.windows &&
+      hasRequestedFamily &&
+      !requestedFamilyResolved &&
+      fallbackFamilyAvailable) {
+    return (
+      fontScale: _kWindowsMissingAssFontRasterScale,
+      yScale: _kWindowsMissingAssFontRasterYScale,
+    );
+  }
+  return (fontScale: 1.0, yScale: 1.0);
+}
+
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     with SingleTickerProviderStateMixin {
   bool _revealed = false;
+
+  /// 副字幕模糊态的独立显形标志（TODO-1382）：主/副字幕各有自己的 reveal，悬停/点击
+  /// 副字幕层只显形副字幕、不误显形主字幕（两层可同时开模糊）。
+  bool _secondaryRevealed = false;
 
   /// `\fad`/`\fade` 淡入淡出逐帧刷新驱动（TODO-1373）：活动集里有带 fade 的 cue（且开
   /// respectAssStyle）时启动，每帧 setState 重读 [VideoPlayerController.effectivePositionMs]
@@ -547,13 +611,24 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   @override
   void didUpdateWidget(VideoSubtitleOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 关闭模糊时重置显形态，避免下次开启残留。
+    // 关闭模糊时重置显形态，避免下次开启残留（主/副各自独立）。
     if (!widget.blurEnabled && _revealed) _revealed = false;
+    if (!widget.secondaryBlurEnabled && _secondaryRevealed) {
+      _secondaryRevealed = false;
+    }
   }
 
-  void _setRevealed(bool v) {
-    if (_revealed == v) return;
-    setState(() => _revealed = v);
+  bool _revealedFor({required bool isSecondary}) =>
+      isSecondary ? _secondaryRevealed : _revealed;
+
+  void _setRevealed(bool v, {required bool isSecondary}) {
+    if (isSecondary) {
+      if (_secondaryRevealed == v) return;
+      setState(() => _secondaryRevealed = v);
+    } else {
+      if (_revealed == v) return;
+      setState(() => _revealed = v);
+    }
   }
 
   @override
@@ -571,9 +646,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         final List<AudioCue> mainCues = widget.subtitleHidden
             ? const <AudioCue>[]
             : widget.controller.activeCues;
-        // 副字幕活动集（TODO-1312：并入 Flutter overlay 多层渲染、可查词）。
-        final List<AudioCue> secondaryCues =
-            widget.controller.secondaryActiveCues;
+        // 副字幕活动集（TODO-1312：并入 Flutter overlay 多层渲染、可查词）。遮蔽模式
+        // 「隐藏」时副层不渲染（TODO-1382，镜像主字幕），不影响查词 / 字幕列表 / cue 同步。
+        final List<AudioCue> secondaryCues = widget.secondaryHidden
+            ? const <AudioCue>[]
+            : widget.controller.secondaryActiveCues;
 
         // TODO-1372/BUG-698：清扫「组内已无任何在屏 cue」的槽位状态——整组离场即重置，
         // 下一条从锚点侧基线重新开始；同一活动集重复 build 幂等。放在空集早退之前，
@@ -631,18 +708,22 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 不同锚点的 cue 各自独立定位（[Stack] 叠放），两条字幕**各就各位**、不再来回跳。每条
   /// cue 仍用**自己的** markup 逐字符描边 / 上色（双轨样式独立，各遵自带样式，TODO-1246）。
   ///
-  /// [isSecondary]：副字幕层——强制置顶（画面顶部）、不吃自带 pos/anchor、不模糊、不显
-  /// 收藏角标（副字幕=纯翻译参考），全部 cue 归一到一个顶部盒；但仍逐字符可查词（登记进
-  /// 同一 [_charEntries]）。单组 / 单 cue 时结构退化为单字幕盒，与历史几何等价。
+  /// [isSecondary]：副字幕层——强制置顶（画面顶部）、不吃自带 pos/anchor、不显收藏角标
+  /// （副字幕=纯翻译参考），全部 cue 归一到一个顶部盒；但仍逐字符可查词（登记进同一
+  /// [_charEntries]）。单组 / 单 cue 时结构退化为单字幕盒，与历史几何等价。TODO-1382：
+  /// 副字幕也可经 [secondaryBlurEnabled]（模糊，独立 reveal）/ [secondaryHidden]（隐藏，
+  /// build 时已清空 cue）遮蔽，与主字幕对称。
   Widget _buildSubtitleLayer(
     BuildContext context,
     List<AudioCue> cues, {
     required bool isSecondary,
   }) {
-    // 听力沉浸模糊只主层、只播放中生效（暂停 / 查词时清晰，BUG-199；副字幕不模糊）。
-    final bool blurred = !isSecondary &&
-        widget.blurEnabled &&
-        !_revealed &&
+    // 听力沉浸模糊只在播放中生效（暂停 / 查词时清晰，BUG-199）。TODO-1382：主/副字幕
+    // 各按自己的 obscure 开关与独立 reveal 态决定是否模糊（副字幕不再无条件清晰）。
+    final bool obscureBlurEnabled =
+        isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled;
+    final bool blurred = obscureBlurEnabled &&
+        !_revealedFor(isSecondary: isSecondary) &&
         widget.controller.isPlaying;
 
     return LayoutBuilder(
@@ -1171,29 +1252,32 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             child: GestureDetector(
               key: const Key('video-subtitle-reveal'),
               behavior: HitTestBehavior.translucent,
-              onTap: () => _setRevealed(true),
+              onTap: () => _setRevealed(true, isSecondary: isSecondary),
             ),
           ),
         ],
       );
     }
 
-    // 桌面悬停：①听力沉浸显形/复原（主层 blurEnabled）②向页面回报 hover（唤回光标 + 续命
-    // 控制条，BUG-283/284）③Shift-鼠标悬停查词（TODO-756a）。三者合一个 opaque:false 的
-    // MouseRegion（不阻断 hover 下探 media_kit，BUG-198）。仅确需 hover 时挂（外观零变化）。
-    final bool needHover = (!isSecondary && widget.blurEnabled) ||
+    // 桌面悬停：①听力沉浸显形/复原（主/副各按自己的模糊开关，TODO-1382）②向页面回报
+    // hover（唤回光标 + 续命控制条，BUG-283/284）③Shift-鼠标悬停查词（TODO-756a）。三者
+    // 合一个 opaque:false 的 MouseRegion（不阻断 hover 下探 media_kit，BUG-198）。仅确需
+    // hover 时挂（外观零变化）。
+    final bool layerBlurEnabled =
+        isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled;
+    final bool needHover = layerBlurEnabled ||
         widget.onHoverChanged != null ||
         widget.onCharHover != null;
     if (!needHover) return content;
     return MouseRegion(
       opaque: false,
       onEnter: (_) {
-        if (!isSecondary && widget.blurEnabled) _setRevealed(true);
+        if (layerBlurEnabled) _setRevealed(true, isSecondary: isSecondary);
         widget.onHoverChanged?.call(true);
       },
       onHover: _handleShiftHover,
       onExit: (_) {
-        if (!isSecondary && widget.blurEnabled) _setRevealed(false);
+        if (layerBlurEnabled) _setRevealed(false, isSecondary: isSecondary);
         widget.onHoverChanged?.call(false);
         _lastShiftHoverPos = Offset.zero;
         _lastShiftHoverEntry = -1;
@@ -1357,7 +1441,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 样式表 ScaleX/ScaleY（百分比）作为基线缩放；行内 \fscx\fscy（sc）按 ASS 语义
     // **覆盖**样式值而非叠乘。
     final double styleSx = (markup.cueStyle?.scaleXPct ?? 100) / 100.0;
-    final double styleSy = (markup.cueStyle?.scaleYPct ?? 100) / 100.0;
+    final String? cueFontName = markup.cueStyle?.fontName;
+    final bool cueFontResolved = cueFontName == null ||
+        cueFontName.isEmpty ||
+        _resolveAssFontFamily(cueFontName) != null;
+    final ({double fontScale, double yScale}) fallbackRasterCompensation =
+        _missingAssFontRasterCompensation(cueFontName, cueFontResolved);
+    final double styleSy = (markup.cueStyle?.scaleYPct ?? 100) /
+        100.0 *
+        fallbackRasterCompensation.yScale;
     final double? frx = markup.rotationXDeg;
     final double? fry = markup.rotationYDeg;
     final double? fax = markup.shearX;
@@ -1635,7 +1727,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 字号 / 颜色的基线恒为用户统一样式，与历史像素级一致。
   /// respectAssStyle 开：字体名 / 主色 / 字号 / 粗斜下删线优先取 .ass 值（行内 span >
   /// [SubtitleCueStyle] cue 默认 > 用户统一样式，TODO-1105）。字体缺字时仍挂
-  /// [_kSubtitleCjkFallback] 兜底。
+  /// [_subtitleCjkFallback] 兜底。
   TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup,
       {int? elapsedMs, int? durMs}) {
     final bool respect = widget.respectAssStyle && markup != null;
@@ -1648,6 +1740,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 解析不到（未装）沿用原名字符串进回退链（历史行为，CJK 链兜底）。
     final ({String family, FontWeight? weight})? resolvedBase =
         respect ? _resolveAssFontFamily(cue?.fontName) : null;
+    final ({
+      double fontScale,
+      double yScale
+    }) baseMissingFontRasterCompensation = _missingAssFontRasterCompensation(
+      respect ? cue?.fontName : null,
+      resolvedBase != null,
+    );
+
     final String? baseFontFamily = resolvedBase?.family ??
         (respect ? cue?.fontName : null) ??
         widget.fontFamily;
@@ -1677,7 +1777,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final double baseFontSize = cueFontPx != null
         ? _scaleAssFontSize(_assFontSizeToEm(cueFontPx * assFontScale,
                 baseFontFamily, baseWeight, baseItalic) *
-            widget.assUserFontScale)
+            widget.assUserFontScale *
+            baseMissingFontRasterCompensation.fontScale)
         : widget.fontSize;
 
     final TextStyle base = TextStyle(
@@ -1689,7 +1790,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // 时，引擎按本列表顺序找到第一个存在的系统日文字体，而非各字符独立走引擎默认
       // fallback（不同字符可能落到不同字体、字形割裂）。引擎自动忽略当前平台不存在的
       // 项，故一条列表覆盖全平台、无需平台分支（TODO-088）。
-      fontFamilyFallback: _kSubtitleCjkFallback,
+      fontFamilyFallback: _subtitleCjkFallback,
       fontWeight: baseWeight,
       // 样式表 Spacing 字间距（px，PlayRes 空间）与字号同源缩放；行内 \fsp 在 span
       // 分支覆盖。respect 关恒 null（历史像素级不变）。
@@ -1716,6 +1817,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 全名解析成真实家族（装了就用真字体）。
     final ({String family, FontWeight? weight})? resolvedSpan =
         respect ? _resolveAssFontFamily(span.fontName) : null;
+    final ({
+      double fontScale,
+      double yScale
+    }) spanMissingFontRasterCompensation = span.fontName != null &&
+            span.fontName!.isNotEmpty
+        ? _missingAssFontRasterCompensation(span.fontName, resolvedSpan != null)
+        : baseMissingFontRasterCompensation;
+
     final String? spanFontFamily =
         resolvedSpan?.family ?? (respect ? span.fontName : null);
     // \1a/\alpha 主填充透明度（respect 时）：施于最终生效的填充色（行内 \c 优先，否则
@@ -1744,7 +1853,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
                       spanFontFamily ?? baseFontFamily,
                       span.bold ? FontWeight.bold : baseWeight,
                       span.italic || baseItalic) *
-                  widget.assUserFontScale)
+                  widget.assUserFontScale *
+                  spanMissingFontRasterCompensation.fontScale)
               : span.fontSizePx!)
           : base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
@@ -1849,6 +1959,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 字体存在性探测缓存：key=family，value=是否解析到真实字体（而非引擎默认回退）。
   final Map<String, bool> _fontExistsCache = <String, bool>{};
 
+  ({double fontScale, double yScale}) _missingAssFontRasterCompensation(
+    String? requestedFamily,
+    bool requestedFamilyResolved,
+  ) {
+    final bool fallbackFamilyAvailable =
+        defaultTargetPlatform == TargetPlatform.windows &&
+            _subtitleCjkFallback.any(_fontFamilyExists);
+    return assMissingFontRasterCompensation(
+      defaultTargetPlatform,
+      hasRequestedFamily: requestedFamily != null && requestedFamily.isNotEmpty,
+      requestedFamilyResolved: requestedFamilyResolved,
+      fallbackFamilyAvailable: fallbackFamilyAvailable,
+    );
+  }
+
   /// [family] 是否真实存在（Skia 能解析出该家族，而非落到引擎默认字体）。
   ///
   /// Flutter 无系统字体枚举 API，用双测量近似：同一探针串分别以 [family] 与一个必不
@@ -1926,7 +2051,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   double _cellPerEmFor(String? family, FontWeight weight, bool italic) {
     for (final String candidate in <String>[
       if (family != null && family.isNotEmpty) family,
-      ..._kSubtitleCjkFallback,
+      ..._subtitleCjkFallback,
     ]) {
       if (!_fontFamilyExists(candidate)) continue;
       AssFontCellIndex.instance.ensureSystemScan();
@@ -1940,7 +2065,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         style: TextStyle(
           fontSize: 100,
           fontFamily: family,
-          fontFamilyFallback: _kSubtitleCjkFallback,
+          fontFamilyFallback: _subtitleCjkFallback,
           fontWeight: weight,
           fontStyle: italic ? FontStyle.italic : FontStyle.normal,
         ),

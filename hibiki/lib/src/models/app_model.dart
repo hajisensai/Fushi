@@ -39,6 +39,7 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/lookup/browser_extension_installer.dart';
 import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
+import 'package:hibiki/src/models/clipboard_history_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
@@ -49,6 +50,7 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/anime_download_importer.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
+import 'package:hibiki/src/media/torrent/torrent_memory.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -87,6 +89,7 @@ import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show extractVideoCover;
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/immersion_capture_channel.dart';
@@ -151,9 +154,8 @@ final appProvider = ChangeNotifierProvider<AppModel>((ref) {
 });
 
 /// Provides color for all quick actions.
-final quickActionColorProvider =
-    FutureProvider.family<Map<String, Color?>, DictionaryEntry>(
-        (ref, entry) async {
+final quickActionColorProvider = FutureProvider.autoDispose
+    .family<Map<String, Color?>, DictionaryEntry>((ref, entry) async {
   AppModel appModel = ref.watch(appProvider);
   // Key each color to its action's uniqueKey in a single pass; a positional
   // colors[i] join would silently mismap if iteration order ever diverged.
@@ -169,8 +171,8 @@ final quickActionColorProvider =
 });
 
 /// A global [Provider] for maintaining visible once state.
-final visibleOnceProvider =
-    StateProvider.family<bool, DictionaryEntry>((ref, entry) => false);
+final visibleOnceProvider = StateProvider.autoDispose
+    .family<bool, DictionaryEntry>((ref, entry) => false);
 
 /// A global [Provider] for listening to search term changes in PIP mode.
 final pipSearchTermProvider = StateProvider<String>((ref) => '');
@@ -261,26 +263,14 @@ typedef DictPathEntry = ({
   return (term: term, freq: freq, pitch: pitch, kanji: kanji);
 }
 
-/// [normalizeSearchTerm] 的返回：清洗后的查询串 + 三步替换各自的微秒耗时，供
-/// `[dict-perf]` 打点逐字段读取（耗时本身是可观测性数据，不影响查询结果）。
-typedef NormalizedSearchTerm = ({
-  String term,
-  int emojiMicros,
-  int punctMicros,
-  int surrogateMicros,
-});
-
 /// 词典查询前的查询串清洗单一真相：换行折空格 → emoji 去除 → 首尾标点/符号剥离 →
-/// 孤立代理项替换。此前 4 步 replaceAll 散在 [AppModel.searchDictionary] 内、与多个
-/// Stopwatch 打点交织，无法单测（依赖整页 AppModel + FFI）。纯逻辑（输入→输出确定）
-/// 凿到这里，原调用处仍用 `swPreprocess` 包住总计时、用返回的子计时拼出逐字不变的
-/// `[dict-perf] preprocess` 打点。换行折叠是无条件首步（无独立计时），emoji/punct/
-/// surrogate 三步各自计时随结果返回。
+/// 孤立代理项替换。此前 4 步 replaceAll 散在 [AppModel.searchDictionary] 内，无法单测
+/// （依赖整页 AppModel + FFI）。纯逻辑（输入→输出确定）凿到这里，返回清洗后的查询串。
 ///
 /// 替换契约逐字不变（变=查询语义/缓存键漂移）：`\n`→`' '`、[emojiRegex]→`' '`、
 /// [punctuationRegex]→`''`、[loneSurrogateRegex]→`' '`，顺序固定。
 @visibleForTesting
-NormalizedSearchTerm normalizeSearchTerm(
+String normalizeSearchTerm(
   String searchTerm, {
   required RegExp emojiRegex,
   required RegExp punctuationRegex,
@@ -293,25 +283,10 @@ NormalizedSearchTerm normalizeSearchTerm(
     searchTerm = searchTerm.characters.take(kMaxLookupInputChars).toString();
   }
   searchTerm = searchTerm.replaceAll('\n', ' ');
-
-  final swEmoji = Stopwatch()..start();
   searchTerm = searchTerm.replaceAll(emojiRegex, ' ');
-  swEmoji.stop();
-
-  final swPunct = Stopwatch()..start();
   searchTerm = searchTerm.replaceAll(punctuationRegex, '');
-  swPunct.stop();
-
-  final swSurrogate = Stopwatch()..start();
   searchTerm = searchTerm.replaceAll(loneSurrogateRegex, ' ');
-  swSurrogate.stop();
-
-  return (
-    term: searchTerm,
-    emojiMicros: swEmoji.elapsedMicroseconds,
-    punctMicros: swPunct.elapsedMicroseconds,
-    surrogateMicros: swSurrogate.elapsedMicroseconds,
-  );
+  return searchTerm;
 }
 
 /// [normalizeSearchTerm] 在查词前用 [punctuationRegex]（`^[\p{P}\p{S}]+|[\p{P}\p{S}]+$`）
@@ -582,6 +557,9 @@ class AppModel with ChangeNotifier {
 
   /// Dictionary metadata, history, and search caches.
   late DictionaryRepository dictRepo;
+  late ClipboardHistoryRepository clipboardHistoryRepo;
+  final ClipboardHistoryNotifier clipboardHistoryNotifier =
+      ClipboardHistoryNotifier();
 
   /// Extracted sub-managers.
   late final AudioController audioCtrl = AudioController();
@@ -1221,6 +1199,23 @@ class AppModel with ChangeNotifier {
   List<DictionarySearchResult> get dictionaryHistory =>
       dictRepo.dictionaryHistory;
 
+  /// Desktop clipboard-copy history (data source for the panel / transient
+  /// popup history button).
+  List<ClipboardHistoryEntry> get clipboardHistory =>
+      clipboardHistoryRepo.entries;
+
+  /// Record one clipboard-copied text (from DesktopLookupService, origin=clipboard).
+  void addClipboardHistoryEntry(String text) {
+    clipboardHistoryRepo.add(text, DateTime.now());
+    clipboardHistoryNotifier.bump();
+  }
+
+  /// Clear clipboard-copy history (the history panel clear button).
+  Future<void> clearClipboardHistory() async {
+    await clipboardHistoryRepo.clear();
+    clipboardHistoryNotifier.bump();
+  }
+
   // ── audio & media streams (delegated to AudioController) ────────────
 
   Stream<void> get currentMediaPauseStream => audioCtrl.currentMediaPauseStream;
@@ -1842,6 +1837,7 @@ class AppModel with ChangeNotifier {
       dictRepo = DictionaryRepository(_database,
           onCacheRebuild: _rebuildDictPathsCache);
       mediaHistoryRepo = MediaHistoryRepository(_database);
+      clipboardHistoryRepo = ClipboardHistoryRepository(_database);
 
       debugPrint('[Hibiki] init: repositories (parallel)');
       await Future.wait(<Future<void>>[
@@ -2049,8 +2045,17 @@ class AppModel with ChangeNotifier {
       }).catchError((Object e, StackTrace s) {
         ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
       }));
+      // 合集变更 → 防抖轻量同步（根修「合集经常没同步」：合集维度原本只搭载在
+      // 低频全量 sweep 上，增删合集后长时间不推送）。任何合集表写入都会在防抖
+      // 后跑一轮只含合集维度的双通道同步，见 installCollectionsSyncWatcher 文档。
+      installCollectionsSyncWatcher(db: database);
       if (yomitanApiServerEnabled) {
-        unawaited(startYomitanApiServer().catchError((Object _) {}));
+        // fail-open：自启动失败绝不阻塞 init、不改开关语义，但必须留痕（BUG-911），
+        // 与邻居 startSyncServer / refreshBrowserExtensionCopy 一致记日志，避免静默吞异常。
+        unawaited(startYomitanApiServer().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance
+              .log('AppModel.startYomitanApiServer.autostart', e, s);
+        }));
       }
       // BUG-726：桌面端启动时把 <appSupport> 下已解压的浏览器扩展副本刷新到当前内置版本
       // （只在用户装过扩展、指纹不一致时重解压；没装过不落盘）。此前该副本只在手动跑
@@ -2143,6 +2148,8 @@ class AppModel with ChangeNotifier {
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
+      clipboardHistoryRepo = ClipboardHistoryRepository(_database);
+      await clipboardHistoryRepo.loadFromDb();
 
       // The popup process always runs this full branch (separate :popup
       // process, _isInitialised starts false). PopupDictApp.build() reads
@@ -2616,6 +2623,17 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleObscureMode(VideoSubtitleObscureMode mode) =>
       prefsRepo.setVideoSubtitleObscureMode(mode);
 
+  /// 视频**副字幕**遮蔽模式三态（TODO-1382，独立于主字幕）：不遮蔽 / 模糊 / 隐藏。
+  /// 委托 prefsRepo 的 lazy 投影持久化（见
+  /// [PreferencesRepository.videoSecondarySubtitleObscureMode]）。
+  VideoSubtitleObscureMode get videoSecondarySubtitleObscureMode =>
+      prefsRepo.videoSecondarySubtitleObscureMode;
+
+  Future<void> setVideoSecondarySubtitleObscureMode(
+    VideoSubtitleObscureMode mode,
+  ) =>
+      prefsRepo.setVideoSecondarySubtitleObscureMode(mode);
+
   /// 视频字幕列表自动滚动开关（TODO-613，落 Drift preferences，默认开）。
   bool get videoSubtitleListAutoScroll => prefsRepo.videoSubtitleListAutoScroll;
 
@@ -2749,6 +2767,18 @@ class AppModel with ChangeNotifier {
       uploadKbps: config.uploadLimitKbps,
       maxConnections: config.maxConnections,
     );
+    // 内存占用上限（按物理内存或用户设定推导；避免 libtorrent 吃满内存）。
+    // 用户显式设了 maxConnections 就不用内存预算的连接数覆盖它（传 0）。
+    final TorrentMemorySettings mem = computeTorrentMemorySettings(
+      memoryLimitMb: config.memoryLimitMb,
+      totalRamMb: detectTotalMemoryMb() ?? 0,
+    );
+    host.applyMemorySettings(
+      mem,
+      connectionsLimit: config.maxConnections > 0 ? 0 : mem.connectionsLimit,
+    );
+    // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
+    host.setUploadPolicy(config);
   }
 
   /// 番剧下载：计划存储（选种对话框写计划/暂存字幕，与完成监听服务共用同一实例）。
@@ -2788,9 +2818,34 @@ class AppModel with ChangeNotifier {
       store: store,
       configProvider: () => prefsRepo.qbConnectionConfig,
       importer: buildAnimeDownloadImporter(database),
+      bookImporter: _importDownloadedBooks,
       backendFactory: _torrentBackendFor,
-      onTick: () => _embeddedTorrentHost?.sweepAntiLeech(),
+      onTick: () {
+        _embeddedTorrentHost?.sweepAntiLeech();
+        _embeddedTorrentHost?.sweepUploadPolicy();
+      },
     )..start();
+  }
+
+  /// 下载完成的书籍（epub）入库回调：逐个走 [EpubImporter] 进阅读库
+  /// （skipIfExists，重复导入不报错），返回成功入库的书本数。单本失败跳过。
+  Future<int?> _importDownloadedBooks(
+      AnimeDownloadPlan plan, List<String> bookAbsolutePaths) async {
+    int imported = 0;
+    for (final String filePath in bookAbsolutePaths) {
+      try {
+        await EpubImporter.importFromPath(
+          db: database,
+          filePath: filePath,
+          fileName: path.basename(filePath),
+          skipIfExists: true,
+        );
+        imported++;
+      } catch (_) {
+        // 单本导入失败跳过，不影响其它书与计划状态（有成功即算入库）。
+      }
+    }
+    return imported;
   }
 
   /// 内置引擎宿主是否就绪（桌面且 DLL 已加载）。下载对话框据此判断能否走
@@ -3168,23 +3223,12 @@ class AppModel with ChangeNotifier {
     bool useCache = true,
     bool allowRemoteLookup = true,
   }) async {
-    final swTotal = Stopwatch()..start();
-    final swPreprocess = Stopwatch()..start();
-
-    final NormalizedSearchTerm normalized = normalizeSearchTerm(
+    searchTerm = normalizeSearchTerm(
       searchTerm,
       emojiRegex: _emojiRegex,
       punctuationRegex: _punctuationRegex,
       loneSurrogateRegex: _loneSurrogateRegex,
     );
-    searchTerm = normalized.term;
-
-    swPreprocess.stop();
-    debugPrint('[dict-perf] preprocess: ${swPreprocess.elapsedMilliseconds}ms '
-        '(emoji=${normalized.emojiMicros}µs '
-        'punct=${normalized.punctMicros}µs '
-        'surrogate=${normalized.surrogateMicros}µs) '
-        '"$searchTerm"');
 
     if (searchTerm.trim().isEmpty) {
       return DictionarySearchResult(searchTerm: searchTerm);
@@ -3212,8 +3256,6 @@ class AppModel with ChangeNotifier {
 
     final cached = dictRepo.getCachedSearch(cacheKey);
     if (useCache && cached != null) {
-      swTotal.stop();
-      debugPrint('[dict-perf] cache HIT: ${swTotal.elapsedMilliseconds}ms');
       return cached;
     }
 
@@ -3233,7 +3275,6 @@ class AppModel with ChangeNotifier {
     DictionarySearchResult? result;
 
     if (ffiResults != null) {
-      final swBuild = Stopwatch()..start();
       result = buildResultFromLookup(
         searchTerm: searchTerm,
         results: ffiResults,
@@ -3249,11 +3290,7 @@ class AppModel with ChangeNotifier {
         maximumTerms: effectiveMaxTerms,
       );
       result = result.withKanjiResults(kanjiResults);
-      swBuild.stop();
-      debugPrint(
-          '[dict-perf] FFI cache HIT, buildResult+popupJson: ${swBuild.elapsedMilliseconds}ms entries=${result.entries.length}');
     } else {
-      final swLookup = Stopwatch()..start();
       ffiResults = HoshiDicts.instance.lookup(
         searchTerm,
         maxResults: maximumDictionarySearchResults,
@@ -3273,14 +3310,7 @@ class AppModel with ChangeNotifier {
         );
         result = result.withKanjiResults(kanjiResults);
       }
-      swLookup.stop();
-      debugPrint(
-          '[dict-perf] FFI lookup + build + popupJson: ${swLookup.elapsedMilliseconds}ms entries=${result?.entries.length ?? 0}');
     }
-
-    swTotal.stop();
-    debugPrint(
-        '[dict-perf] searchDictionary total: ${swTotal.elapsedMilliseconds}ms');
 
     if (result != null && result.entries.isNotEmpty) {
       dictRepo.cacheSearchResult(cacheKey, result);
@@ -4029,6 +4059,11 @@ class AppModel with ChangeNotifier {
   bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
   void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();
 
+  /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
+  bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;
+  Future<void> setTorrentUploadIntroShown() =>
+      prefsRepo.setTorrentUploadIntroShown();
+
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
 
@@ -4073,6 +4108,20 @@ class AppModel with ChangeNotifier {
 
   @override
   void dispose() {
+    // BUG-913：对称释放 initialise() 起的 4 个 app-wide 常驻子系统。dispose 是同步的、
+    // 这些 stop 多为 Future → fire-and-forget（unawaited）；先停常驻服务，再走现有
+    // notifier/repo dispose，最后 super.dispose()。
+    if (_isInitialised) {
+      // syncServerController 是 late final 带初始化器（读即构造）：仅在已 init（即已被
+      // startIfEnabled 构造）时读它，避免「从未 init 却只为销毁而构造」。它既是常驻
+      // 服务又是 ChangeNotifier，故 stop() 后还需 dispose()。
+      unawaited(syncServerController.stop());
+      syncServerController.dispose();
+    }
+    // 其余三个 stop 都 null 安全 / 单例安全，未启动也可调，无需 _isInitialised 守卫。
+    unawaited(TexthookerWsClientHost.instance.stop());
+    unawaited(stopYomitanApiServer());
+    _animeDownloadService?.stop();
     _prefsRepo?.removeListener(notifyListeners);
     if (_themeListenerAdded) {
       themeNotifier.removeListener(notifyListeners);
@@ -4080,6 +4129,7 @@ class AppModel with ChangeNotifier {
       _themeListenerAdded = false;
     }
     dictionaryEntriesNotifier.dispose();
+    clipboardHistoryNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
     dictionaryMenuNotifier.dispose();
     incognitoNotifier.dispose();
@@ -4230,6 +4280,12 @@ class AppModel with ChangeNotifier {
   Future<void> setTexthookerUrls(List<String> urls) =>
       prefsRepo.setTexthookerUrls(urls);
 
+  /// galgame 游戏库（首页「游戏」tab）：用户添加的游戏列表。读改写整列表后经
+  /// [setGalgames] 覆写持久化。
+  List<GalgameEntry> get galgames => prefsRepo.galgames;
+  Future<void> setGalgames(List<GalgameEntry> games) =>
+      prefsRepo.setGalgames(games);
+
   bool get desktopClipboardEnabled => prefsRepo.desktopClipboardEnabled;
   Future<void> setDesktopClipboardEnabled(bool v) async {
     await prefsRepo.setDesktopClipboardEnabled(v);
@@ -4251,6 +4307,9 @@ class AppModel with ChangeNotifier {
   /// [setDesktopClipboardEnabled] 幂等重入（service.start 对已运行是 no-op）。
   Future<void> applyDesktopClipboardLifecycle() async {
     if (!DesktopLookupService.isDesktop) return;
+    // 剪贴板复制历史采集：真实剪贴板变化（origin=clipboard、去重通过）落历史。
+    DesktopLookupService.instance.onClipboardCaptured =
+        addClipboardHistoryEntry;
     if (desktopClipboardEnabled) {
       await DesktopLookupService.instance.start(
         windowMode: desktopClipboardWindowMode,

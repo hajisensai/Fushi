@@ -13,6 +13,8 @@ import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
+import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
@@ -267,6 +269,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final String? executable =
         picked == null || picked.files.isEmpty ? null : picked.files.first.path;
     if (executable == null) return;
+    final bool is32Bit =
+        await EngineHookGalAudioSource.exeIs32Bit(executable) ?? false;
+    if (GalHookSessionController.defaultInjectorResolver(is32Bit: is32Bit) ==
+        null) {
+      if (!context.mounted) return;
+      final bool installed = await GalgameHelperInstaller().ensureInjector(
+        is32Bit: is32Bit,
+        context: context,
+      );
+      if (!installed || !mounted) return;
+    }
     HibikiToast.show(msg: t.game_capture_launching);
     final bool launched = await _session.launchGame(executable);
     if (!mounted) return;

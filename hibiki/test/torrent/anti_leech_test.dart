@@ -10,6 +10,8 @@ PeerSnapshot peer({
   String client = 'qBittorrent 4.6.5',
   double reportedProgress = 0,
   int totalUpload = 0,
+  int totalDownload = 0,
+  int port = 0,
 }) {
   return PeerSnapshot(
     ip: ip,
@@ -17,6 +19,8 @@ PeerSnapshot peer({
     client: client,
     reportedProgress: reportedProgress,
     totalUpload: totalUpload,
+    totalDownload: totalDownload,
+    port: port,
   );
 }
 
@@ -239,6 +243,127 @@ void main() {
       );
       expect(r['1.2.3.4']!.banned, isTrue);
       expect(r['1.2.3.4']!.reason, BanReason.progressCheat);
+    });
+  });
+
+  group('抄 ClientBlocker：新增规则', () {
+    const int t0 = 1000;
+    const int t1 = t0 + 60000;
+
+    test('ignoreEmptyPeer：peerId+client 全空 → allow（不误判）', () {
+      final AntiLeechEngine engine = AntiLeechEngine();
+      final PeerSnapshot p = peer(
+          peerId: '', client: '', totalUpload: 50 * kMiB, reportedProgress: 0);
+      engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
+      final Map<String, BanVerdict> r =
+          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      expect(r['1.2.3.4']!.banned, isFalse);
+    });
+
+    test('ignoreByDownloaded：从该 peer 下载超阈值 → 不自动封', () {
+      final AntiLeechEngine engine = AntiLeechEngine();
+      // 作弊数值（喂 50MiB 自报 5%）但它给了我们 200MiB → 豁免。
+      final PeerSnapshot p = peer(
+        totalUpload: 50 * kMiB,
+        reportedProgress: 0.05,
+        totalDownload: 200 * kMiB,
+      );
+      engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
+      final Map<String, BanVerdict> r =
+          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      expect(r['1.2.3.4']!.banned, isFalse);
+    });
+
+    test('banByProgressUploaded（opt-in）：喂 30MiB 自报 0% → ban', () {
+      final AntiLeechEngine engine = AntiLeechEngine(
+        config: const AntiLeechConfig(
+          banByProgressUploaded: true,
+          // 关掉 differenceTest 干扰：调大阈值让它不先命中。
+          maxProgressDifference: 2.0,
+        ),
+      );
+      final PeerSnapshot p = peer(totalUpload: 30 * kMiB, reportedProgress: 0);
+      engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
+      final Map<String, BanVerdict> r =
+          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      expect(r['1.2.3.4']!.reason, BanReason.progressUploadedCheat);
+    });
+
+    test('banByProgressUploaded：默认关 → 不因该规则封', () {
+      final AntiLeechEngine engine = AntiLeechEngine(
+        config: const AntiLeechConfig(maxProgressDifference: 2.0),
+      );
+      final PeerSnapshot p = peer(totalUpload: 30 * kMiB, reportedProgress: 0);
+      engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
+      final Map<String, BanVerdict> r =
+          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      expect(r['1.2.3.4']!.banned, isFalse);
+    });
+
+    test('banByRelativeProgressUploaded（opt-in）：进度不动却猛喂增量 → ban', () {
+      final AntiLeechEngine engine = AntiLeechEngine(
+        config: const AntiLeechConfig(
+          banByRelativeProgressUploaded: true,
+          maxProgressDifference: 2.0, // 让 differenceTest 不先命中
+        ),
+      );
+      // t0（宽限内）建基准 upload=10MiB progress=0.5。
+      engine.evaluate(
+        <PeerSnapshot>[peer(totalUpload: 10 * kMiB, reportedProgress: 0.5)],
+        ctx(),
+        nowMs: t0,
+      );
+      // t1：进度仍 0.5（增量 0），却又喂了 40MiB 增量 → 相对作弊。
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[peer(totalUpload: 50 * kMiB, reportedProgress: 0.5)],
+        ctx(),
+        nowMs: t1,
+      );
+      expect(r['1.2.3.4']!.reason, BanReason.relativeProgressUploadedCheat);
+    });
+
+    test('maxIpPortCount（opt-in）：同 IP 端口数超容忍 → ban(multiPort)', () {
+      final AntiLeechEngine engine =
+          AntiLeechEngine(config: const AntiLeechConfig(maxIpPortCount: 2));
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[
+          peer(ip: '5.5.5.5', port: 1001),
+          peer(ip: '5.5.5.5', port: 1002),
+          peer(ip: '5.5.5.5', port: 1003),
+        ],
+        ctx(),
+        nowMs: 0,
+      );
+      // 前两个端口在容忍内；第三个超 2 → multiPort。
+      expect(r['5.5.5.5']!.reason, BanReason.multiPort);
+    });
+
+    test('banTime：到期 pruneExpired 解封；永久(0)不解封', () {
+      final AntiLeechEngine engine = AntiLeechEngine(
+        config: const AntiLeechConfig(banTimeMs: 10000),
+      );
+      engine.evaluate(
+        <PeerSnapshot>[peer(peerId: '-SD0100-abcdefabcdef')],
+        ctx(),
+        nowMs: 1000,
+      );
+      expect(engine.bannedCidrs, contains('1.2.3.0/24'));
+      // 未到期（1000+10000=11000）→ 不解封。
+      expect(engine.pruneExpired(10999), isFalse);
+      expect(engine.bannedCidrs, contains('1.2.3.0/24'));
+      // 到期 → 解封。
+      expect(engine.pruneExpired(11000), isTrue);
+      expect(engine.bannedCidrs, isEmpty);
+
+      // banTimeMs=0（默认永久）：prune 永不解封。
+      final AntiLeechEngine perm = AntiLeechEngine();
+      perm.evaluate(
+        <PeerSnapshot>[peer(peerId: '-SD0100-abcdefabcdef')],
+        ctx(),
+        nowMs: 1000,
+      );
+      expect(perm.pruneExpired(999999999), isFalse);
+      expect(perm.bannedCidrs, contains('1.2.3.0/24'));
     });
   });
 

@@ -331,49 +331,25 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     VideoPlayerController controller, {
     VideoControlSlot? sourceSlot,
   }) async {
-    if (_isRemote) {
-      _rebuild(() {
-        _subtitleMenuSources = const <SubtitleSource>[];
-        _subtitleMenuLoading = false;
-      });
-      // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
-      _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
-      return;
+    // BUG-939：控制条「字幕轨」按钮不再自己枚举字幕源。枚举的单一真相源是
+    // [_ensureSubtitleMenuSourcesLoaded]——它由设置面板「字幕」分类被打开这一事件驱动
+    // （[VideoQuickSettingsSheet.onSubtitleCategoryShown]，initState / didUpdateWidget /
+    // 手动切分类三条路径都会触发），并按视频路径缓存。此前这里额外清空 `_subtitleMenuSources`
+    // 再重跑 ffprobe，导致每次点按钮已枚举的字幕轨先消失、且与面板回调重复枚举显加载条。
+    // 现在退化为纯粹打开面板即可；无本地路径时顺手清掉可能残留的旧枚举缓存。
+    if (_isRemote || _currentVideoPath == null) {
+      if (_subtitleMenuSources.isNotEmpty ||
+          _subtitleMenuLoading ||
+          _subtitleMenuSourcesPath != null) {
+        _rebuild(() {
+          _subtitleMenuSources = const <SubtitleSource>[];
+          _subtitleMenuLoading = false;
+          _subtitleMenuSourcesPath = null;
+        });
+      }
     }
-    final String? videoPath = _currentVideoPath;
-    if (videoPath == null) {
-      _rebuild(() {
-        _subtitleMenuSources = const <SubtitleSource>[];
-        _subtitleMenuLoading = false;
-      });
-      // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
-      _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
-      return;
-    }
-
-    _rebuild(() {
-      _subtitleMenuSources = const <SubtitleSource>[];
-      _subtitleMenuLoading = true;
-    });
     // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
     _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
-    final List<SubtitleSource> sources;
-    try {
-      sources = await _subtitleSourcesForMenu(
-        videoPath: videoPath,
-        currentSubtitleSource: _currentSubtitleSource,
-        currentCues: controller.cues,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      _rebuild(() => _subtitleMenuLoading = false);
-      return;
-    }
-    if (!mounted) return;
-    _rebuild(() {
-      _subtitleMenuSources = sources;
-      _subtitleMenuLoading = false;
-    });
   }
 
   /// TODO-1350（字幕轨即时加载）：进入设置面板「字幕」分类时（重新）枚举当前视频的字幕源
@@ -392,14 +368,22 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     if (controller == null) return;
     final String? videoPath = _currentVideoPath;
     if (_isRemote || videoPath == null) {
-      if (_subtitleMenuSources.isNotEmpty || _subtitleMenuLoading) {
+      if (_subtitleMenuSources.isNotEmpty ||
+          _subtitleMenuLoading ||
+          _subtitleMenuSourcesPath != null) {
         _rebuild(() {
           _subtitleMenuSources = const <SubtitleSource>[];
           _subtitleMenuLoading = false;
+          _subtitleMenuSourcesPath = null;
         });
       }
       return;
     }
+    // BUG-939：已为当前视频枚举过就直接用缓存，不再重跑 ffprobe、不再显加载条。
+    // 修「每次进字幕分类都要加载、明明没可加载的地方」——无内嵌轨/外挂的视频枚举结果
+    // 恒空，但只跑一次；有轨的视频重开时也不再把已枚举的字幕轨先清空重来。缓存在换视频
+    // （路径变）与导入新字幕档（[_invalidateSubtitleMenuSourcesCache]）时失效。
+    if (_subtitleMenuSourcesPath == videoPath) return;
     if (_subtitleMenuLoading) return;
     _rebuild(() => _subtitleMenuLoading = true);
     final List<SubtitleSource> sources;
@@ -410,6 +394,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         currentCues: controller.cues,
       );
     } catch (_) {
+      // 枚举失败不写缓存 key，下次打开重试（ffprobe 偶发失败不该被缓存成「已加载空」）。
       if (!mounted) return;
       _rebuild(() => _subtitleMenuLoading = false);
       return;
@@ -418,7 +403,15 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     _rebuild(() {
       _subtitleMenuSources = sources;
       _subtitleMenuLoading = false;
+      _subtitleMenuSourcesPath = videoPath;
     });
+  }
+
+  /// BUG-939：让字幕轨枚举缓存失效（下次打开「字幕」分类重新 ffprobe 枚举）。导入新字幕
+  /// 档（[_importExternalSubtitleInner] / Jimaku 下载）后调用——新档不在旧枚举结果里，
+  /// 靠这条让它下次出现在字幕轨列表。换视频不需调它（缓存 key 是视频路径，路径变自然失效）。
+  void _invalidateSubtitleMenuSourcesCache() {
+    _subtitleMenuSourcesPath = null;
   }
 
   /// 选中某副字幕源（TODO-857 / TODO-1312）：抽 cue → [VideoPlayerController.setSecondaryCues]
@@ -600,6 +593,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       label: p.basename(downloaded),
     );
     final bool applied = await _selectSubtitleSource(controller, source);
+    // BUG-939：Jimaku 下载的新字幕档不在旧枚举结果里 → 失效缓存，下次打开字幕分类重枚举。
+    if (applied) {
+      _invalidateSubtitleMenuSourcesCache();
+    }
     // 仅在字幕真被应用（解析出 cue）时报「已下载并应用」；cue 为空时
     // _selectSubtitleSource 已弹失败提示，不再叠加误导性的成功提示。
     if (applied && mounted) {
@@ -862,6 +859,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       label: p.basename(dest),
     );
     await _selectSubtitleSource(controller, source);
+    // BUG-939：导入了新外挂字幕档，它不在旧枚举结果里 → 失效缓存，下次打开「字幕」分类
+    // 重新枚举把它列进字幕轨列表。
+    _invalidateSubtitleMenuSourcesCache();
     debugPrint(
       '[hibiki-drop] [video-playback] externalSubtitle imported '
       'path=$dest',
@@ -1127,6 +1127,12 @@ extension _VideoSubtitle on _VideoHibikiPageState {
   }) {
     return MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
+      // BUG-930：进 / 出把手时翻 [_pointerOverSubtitleResizeHandle]，让侧栏
+      // [_forceRevealOsCursorForPanel] 的每帧原生「强设 basic」在把手上让位，
+      // 使框架声明的 resizeLeftRight 光标不被盖掉（enter 早于同帧 parent onHover 处理，
+      // 稳态下光标即为 resize；退出把手复位、面板其余区域仍走 basic 唤回缓解）。
+      onEnter: (PointerEnterEvent _) => _pointerOverSubtitleResizeHandle = true,
+      onExit: (PointerExitEvent _) => _pointerOverSubtitleResizeHandle = false,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onHorizontalDragUpdate: (DragUpdateDetails details) {
@@ -1160,6 +1166,27 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         ),
       ),
     );
+  }
+
+  /// asbplayer 式「字幕偏移对齐」快捷键胶水（用户请求，默认 Ctrl+Shift+←/→）：把
+  /// **上一句 / 下一句**字幕的起点整体平移到当前播放点，一键把整轨粗对齐到当前台词时刻
+  /// （再配合 z/x 微调）。与 z/x 的固定步进平移不同——这里按目标 cue 求**绝对**偏移。
+  ///
+  /// 决策全部集中在纯函数 [VideoPlayerController.snapSubtitleDelayMs]（选相邻 cue + 求
+  /// 新 delayMs，可单测）；本方法只做胶水：取 controller 实时 cues/positionMs 与当前
+  /// `_delayMs`，拿到新延迟后走既有权威写穿 [_setDelayMs]（clamp + 落盘 + OSD + 即时重算）。
+  /// 无 controller / 无 cue / 位置未就绪 / 已是首末句无相邻 cue 时 no-op（不弹窗、不改延迟）。
+  void _snapSubtitleDelayToCue({required bool next}) {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final int? newDelayMs = VideoPlayerController.snapSubtitleDelayMs(
+      cues: controller.cues,
+      positionMs: controller.positionMs,
+      currentDelayMs: _delayMs,
+      next: next,
+    );
+    if (newDelayMs == null) return;
+    unawaited(_setDelayMs(newDelayMs));
   }
 
   /// TODO-701 阶段1：一键字幕自动对轴。抽当前视频的逐帧音频能量包络（[extractAudioEnergyEnvelope]

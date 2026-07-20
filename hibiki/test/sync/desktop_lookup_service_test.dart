@@ -597,7 +597,9 @@ void main() {
       '(TODO-1355)', () {
     final String service =
         File('lib/src/sync/desktop_lookup_service.dart').readAsStringSync();
-    final int start = service.indexOf('void submitText(String raw)');
+    // 匹配签名前缀（galgame UX 统一后 submitText 增加了可选具名参数
+    // `{bool passiveStream}`，故不再匹配到闭合括号）。
+    final int start = service.indexOf('void submitText(String raw');
     expect(start, isNonNegative);
     final int end = service.indexOf('void _queueLookupRequest(', start);
     expect(end, greaterThan(start));

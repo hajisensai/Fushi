@@ -1,4 +1,4 @@
-## BUG-924 · Galgame 捕获文本缺少 Luna 风格线程选择
+## BUG-944 · Galgame 捕获文本缺少 Luna 风格线程选择
 - **报告**：2026-07-19（用户：）
 - **真实性**：✅ 真 bug。Luna 的 Output ABI 已提供 `hookcode / hookname / ThreadParam`，但 `native/galgame_voice_hook/injector/injector_main.cpp:278` 旧写入函数只把文本、序号和时间戳放进文本环；`hibiki/windows/runner/flutter_window.cpp:1629` 与 `hibiki/lib/src/mining/galgame_audio_source.dart:530` 也只传/解析 `seq / ts / text`，不同 Hook 线程因此不可区分，只能混进同一列表。
 - **[x] ① 已修复** — IPC 升到 v6，文本槽保存稳定线程 id、ThreadParam、Hook 名称和 Hook code；Windows runner 与 Dart 全链路透传。捕获页新增 Luna 风格文本线程选择器；选择结果通过共享 header 回传 injector，手动选择优先于自动赢家，同时仍强制过滤重复伪影。

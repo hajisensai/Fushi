@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/pages/implementations/game_diagnostics_page.dart';
+import 'package:hibiki/src/pages/implementations/games_library_page.dart';
 import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
 import 'package:hibiki/utils.dart';
 
 typedef GameMonitorBuilder = Widget Function(
   BuildContext context,
   VoidCallback onShowLibrary,
+);
+typedef GameLibraryBuilder = Widget Function(
+  BuildContext context,
+  GalHookSessionController controller,
+  VoidCallback onLaunched,
 );
 
 enum GameSection { library, monitor, diagnostics }
@@ -18,17 +24,19 @@ final ValueNotifier<GameSection> gameSectionNotifier =
 
 /// 首页一级「游戏」模块。
 ///
-/// M0 先提供真实的 Hook 状态入口和监控工作台；游戏配置/兼容性历史尚未落库时显示
-/// 明确空状态，不伪造游戏数据。内部使用 [IndexedStack]，从工作台返回游戏库不会销毁
+/// 集成持久化游戏库、Hook 监控工作台与兼容性诊断。内部使用 [IndexedStack]，
+/// 从工作台返回游戏库不会销毁
 /// [TexthookerPage] 所持有的文本、音频和窗口捕获会话。
 class HomeGamePage extends StatefulWidget {
   const HomeGamePage({
     super.key,
     this.monitorBuilder,
+    this.libraryBuilder,
     this.controller,
   });
 
   final GameMonitorBuilder? monitorBuilder;
+  final GameLibraryBuilder? libraryBuilder;
   final GalHookSessionController? controller;
 
   static const Key libraryKey = ValueKey<String>('game-library');
@@ -163,67 +171,56 @@ class _HomeGamePageState extends State<HomeGamePage> {
             ),
           ),
           Expanded(
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (BuildContext context, Widget? child) {
-                final GalHookSessionState state = _controller.state;
-                final lines = _controller.lines;
-                return LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final bool wide = constraints.maxWidth >= 980;
-                    return SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                      child: wide
-                          ? IntrinsicHeight(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: <Widget>[
-                                  Expanded(
-                                    child: _CaptureOverviewCard(
-                                      lineCount: lines.length,
-                                      latestLine: lines.isEmpty
-                                          ? null
-                                          : lines.last.text,
-                                      state: state,
-                                      onOpen: _showMonitor,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  const Expanded(
-                                      child: _GameLibraryEmptyCard()),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: _DiagnosticsOverviewCard(
-                                      controller: _controller,
-                                      onOpen: _showDiagnostics,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                _CaptureOverviewCard(
-                                  lineCount: lines.length,
-                                  latestLine:
-                                      lines.isEmpty ? null : lines.last.text,
-                                  state: state,
-                                  onOpen: _showMonitor,
-                                ),
-                                const SizedBox(height: 16),
-                                const _GameLibraryEmptyCard(),
-                                const SizedBox(height: 16),
-                                _DiagnosticsOverviewCard(
-                                  controller: _controller,
-                                  onOpen: _showDiagnostics,
-                                ),
-                              ],
+            child: Column(
+              children: <Widget>[
+                SizedBox(
+                  height: 400,
+                  child: AnimatedBuilder(
+                    animation: _controller,
+                    builder: (BuildContext context, Widget? child) {
+                      final GalHookSessionState state = _controller.state;
+                      final lines = _controller.lines;
+                      return ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        children: <Widget>[
+                          SizedBox(
+                            width: 360,
+                            child: _CaptureOverviewCard(
+                              lineCount: lines.length,
+                              latestLine:
+                                  lines.isEmpty ? null : lines.last.text,
+                              state: state,
+                              onOpen: _showMonitor,
                             ),
-                    );
-                  },
-                );
-              },
+                          ),
+                          const SizedBox(width: 16),
+                          SizedBox(
+                            width: 360,
+                            child: _DiagnosticsOverviewCard(
+                              controller: _controller,
+                              onOpen: _showDiagnostics,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: widget.libraryBuilder?.call(
+                        context,
+                        _controller,
+                        _showMonitor,
+                      ) ??
+                      GamesLibraryPage(
+                        embedded: true,
+                        sessionController: _controller,
+                        onLaunched: _showMonitor,
+                      ),
+                ),
+              ],
             ),
           ),
         ],
@@ -364,35 +361,3 @@ String _audioBackendLabel(GalHookAudioBackend backend) => switch (backend) {
       GalHookAudioBackend.enginePcm => t.game_audio_backend_engine,
       GalHookAudioBackend.systemLoopback => t.game_audio_backend_loopback,
     };
-
-class _GameLibraryEmptyCard extends StatelessWidget {
-  const _GameLibraryEmptyCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return HibikiCard(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Icon(
-            Icons.sports_esports_outlined,
-            size: 42,
-            color: Theme.of(context).colorScheme.outline,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            t.game_library_empty_title,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            t.game_library_empty_body,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
-      ),
-    );
-  }
-}

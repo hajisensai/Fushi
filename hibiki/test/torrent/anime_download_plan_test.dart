@@ -226,6 +226,21 @@ void main() {
       );
     });
 
+    test('contentKind 默认 video；round-trip 保留；老 JSON 无字段→video', () {
+      // 默认（番剧）= video。
+      expect(_fullPlan().contentKind, AnimeDownloadPlan.kindVideo);
+      // round-trip 保留 book。
+      final AnimeDownloadPlan book =
+          _fullPlan().copyWith(contentKind: AnimeDownloadPlan.kindBook);
+      final AnimeDownloadPlan decoded =
+          decodeAnimeDownloadPlan(encodeAnimeDownloadPlan(book))!;
+      expect(decoded.contentKind, AnimeDownloadPlan.kindBook);
+      // 老计划（JSON 无 contentKind 字段）→ video（向后兼容）。
+      final AnimeDownloadPlan legacy =
+          decodeAnimeDownloadPlan(<String, dynamic>{'id': 'x', 'magnet': 'm'})!;
+      expect(legacy.contentKind, AnimeDownloadPlan.kindVideo);
+    });
+
     test('delete 删计划 JSON 连同 subs 目录；不存在时幂等', () async {
       final AnimeDownloadPlan plan = _fullPlan();
       await store.save(plan);

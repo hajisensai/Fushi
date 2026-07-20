@@ -43,7 +43,17 @@ class AnimeDownloadPlan {
     this.status = statusDownloading,
     this.failReason,
     this.collectionId,
+    this.contentKind = kindVideo,
   });
+
+  /// 内容类型：视频（走视频库入库，番剧默认）。
+  static const String kindVideo = 'video';
+
+  /// 内容类型：书（epub → 阅读库）。
+  static const String kindBook = 'book';
+
+  /// 内容类型：自动（按文件扩展名分流：视频→视频库、epub→阅读库）。
+  static const String kindAuto = 'auto';
 
   /// 下载中（qBittorrent 未完成，等下轮 tick）。
   static const String statusDownloading = 'downloading';
@@ -90,6 +100,10 @@ class AnimeDownloadPlan {
   /// 入库后回填的合集 id；仅 [statusImported] 时有意义。
   final int? collectionId;
 
+  /// 内容类型（[kindVideo] / [kindBook] / [kindAuto]），决定完成后走视频库还是
+  /// 阅读库入库。默认 [kindVideo]（番剧 + 老计划向后兼容）。
+  final String contentKind;
+
   /// 注意：可空字段（[failReason] / [collectionId] 等）无法通过 copyWith
   /// 置回 null（标准模式局限）；状态机只前进赋值，不需要清空。
   AnimeDownloadPlan copyWith({
@@ -105,6 +119,7 @@ class AnimeDownloadPlan {
     String? status,
     String? failReason,
     int? collectionId,
+    String? contentKind,
   }) {
     return AnimeDownloadPlan(
       id: id ?? this.id,
@@ -119,6 +134,7 @@ class AnimeDownloadPlan {
       status: status ?? this.status,
       failReason: failReason ?? this.failReason,
       collectionId: collectionId ?? this.collectionId,
+      contentKind: contentKind ?? this.contentKind,
     );
   }
 }
@@ -146,6 +162,7 @@ Map<String, dynamic> encodeAnimeDownloadPlan(AnimeDownloadPlan plan) {
     'status': plan.status,
     'failReason': plan.failReason,
     'collectionId': plan.collectionId,
+    'contentKind': plan.contentKind,
   };
 }
 
@@ -191,6 +208,11 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
           raw['failReason'] is String ? raw['failReason'] as String : null,
       collectionId:
           raw['collectionId'] is int ? raw['collectionId'] as int : null,
+      // 缺字段（老计划）→ 视频（既有番剧计划行为不变）。
+      contentKind: raw['contentKind'] is String &&
+              (raw['contentKind'] as String).isNotEmpty
+          ? raw['contentKind'] as String
+          : AnimeDownloadPlan.kindVideo,
     );
   } catch (_) {
     return null;

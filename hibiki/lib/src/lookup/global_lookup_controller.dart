@@ -16,6 +16,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/lookup/clipboard_history_payload.dart';
 import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/lookup/global_lookup_channel.dart';
 import 'package:hibiki/src/lookup/global_lookup_layout.dart';
@@ -426,6 +428,44 @@ class GlobalLookupController {
     return true;
   }
 
+  /// 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入，覆盖窗进程只读）后注入
+  /// 覆盖层。best-effort：任何失败记日志吞掉，绝不打断覆盖窗。
+  Future<void> _showClipboardHistory() async {
+    final AppModel? model = _appModel;
+    if (model == null) return;
+    try {
+      await model.clipboardHistoryRepo.loadFromDb();
+      await _renderClipboardHistory(model);
+    } catch (e, st) {
+      glog('lookup: clipboard-history EXCEPTION $e\n$st');
+    }
+  }
+
+  /// 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
+  Future<void> _clearClipboardHistoryAndRefresh() async {
+    final AppModel? model = _appModel;
+    if (model == null) return;
+    try {
+      await model.clearClipboardHistory();
+      await _renderClipboardHistory(model);
+    } catch (e, st) {
+      glog('lookup: clipboard-history clear EXCEPTION $e\n$st');
+    }
+  }
+
+  /// 把当前 [AppModel.clipboardHistory] + 本地化标签转成 host payload 注入渲染。
+  Future<void> _renderClipboardHistory(AppModel model) async {
+    final String payload = buildClipboardHistoryPayloadJson(
+      entries: model.clipboardHistory,
+      title: t.clipboard_history_title,
+      clearLabel: t.clipboard_history_clear,
+      emptyLabel: t.clipboard_history_empty,
+      now: DateTime.now(),
+    );
+    await GlobalLookupChannel.render('window.__globalLookupHost && '
+        'window.__globalLookupHost.showClipboardHistory($payload);');
+  }
+
   /// TODO-872 — the shared app-external lookup chain for BOTH triggers (the
   /// global hotkey and the programmatic [lookupText] entry): unconditional
   /// hide → searchDictionary → reset reveal state → seed the stack root →
@@ -757,6 +797,27 @@ class GlobalLookupController {
     // 本实例（global_lookup channel）的去向只落 overlay 键。见 _onOverlayResized。
     if (handler == 'windowMoved') {
       _onOverlayResized(message);
+      return;
+    }
+    // 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入）并注入覆盖层。
+    if (handler == 'clipboardHistory') {
+      unawaited(_showClipboardHistory());
+      return;
+    }
+    // 历史某条被点：以该文本重查（复用共享 app-external 查词链 lookupText）。
+    if (handler == 'lookupClipboardHistoryEntry') {
+      final Object? args = message['args'];
+      if (args is List && args.isNotEmpty) {
+        final String text = args.first?.toString() ?? '';
+        if (text.isNotEmpty) {
+          unawaited(lookupText(text));
+        }
+      }
+      return;
+    }
+    // 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
+    if (handler == 'clearClipboardHistory') {
+      unawaited(_clearClipboardHistoryAndRefresh());
       return;
     }
     if (handler == 'tapOutside' || handler == 'dismiss') {

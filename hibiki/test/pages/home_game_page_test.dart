@@ -2,8 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/pages/implementations/home_game_page.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
+
+Widget _testLibrary(
+  BuildContext _,
+  GalHookSessionController __,
+  VoidCallback ___,
+) =>
+    const Center(child: Icon(Icons.sports_esports_outlined));
 
 void main() {
   setUp(() => TexthookerService.instance.clear());
@@ -16,6 +24,7 @@ void main() {
       MaterialApp(
         home: HomeGamePage(
           monitorBuilder: (_, __) => const SizedBox(),
+          libraryBuilder: _testLibrary,
         ),
       ),
     );
@@ -33,6 +42,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: HomeGamePage(
+          libraryBuilder: _testLibrary,
           monitorBuilder: (_, VoidCallback onShowLibrary) => _TestMonitor(
             onShowLibrary: onShowLibrary,
             onInit: () => initCount++,
@@ -66,6 +76,7 @@ void main() {
       MaterialApp(
         home: HomeGamePage(
           monitorBuilder: (_, __) => const SizedBox(),
+          libraryBuilder: _testLibrary,
         ),
       ),
     );
@@ -86,6 +97,7 @@ void main() {
       MaterialApp(
         home: HibikiFocusRoot(
           child: HomeGamePage(
+            libraryBuilder: _testLibrary,
             monitorBuilder: (_, __) => const Text('focused-monitor'),
           ),
         ),
@@ -118,6 +130,7 @@ void main() {
         MaterialApp(
           home: HomeGamePage(
             monitorBuilder: (_, __) => const SizedBox(),
+            libraryBuilder: _testLibrary,
           ),
         ),
       );

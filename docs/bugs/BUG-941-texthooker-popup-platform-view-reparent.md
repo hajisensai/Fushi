@@ -1,4 +1,4 @@
-## BUG-929 · 捕获工作台查词 WebView 重建后空白卡死
+## BUG-941 · 捕获工作台查词 WebView 重建后空白卡死
 - **报告**：2026-07-20（用户：）
 - **真实性**：✅ 真 bug。冷查词期间 `Stack` 同时包含加载占位和隐藏的弹窗层；结果就绪后占位被移除，未带 key 的两个顶层 `Positioned` 按槽位更新，导致旧槽位里的 Windows WebView 平台视图被销毁，只留下空白弹窗外壳（`hibiki/lib/src/pages/implementations/dictionary_page_mixin.dart:572`、`hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart:269`）。
 - **[x] ① 已修复** — `parkedPopupLayer` 接收并透传 key，调用处用 `ObjectKey(entry)` 固定整层身份；加载占位消失时 Flutter 搬移既有元素，不再拆建 WebView 原生表面。

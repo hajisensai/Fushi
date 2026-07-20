@@ -1,4 +1,4 @@
-## BUG-928 · Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡
+## BUG-948 · Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡
 - **报告**：2026-07-20（用户：Anemoi / Manosaba 文本与音频对不上，资源语音应优先于系统回环；随后要求适配 9-nine Episode 1）
 - **真实性**：✅ 真 bug。原会话把“文本 hook 已出现”和“音频探针已完成”混成一个启动结果，Siglus / KiriKiriZ 的资源 hook 晚到时会被过早判为 `engine_attach_failed`，随后只保留混有 BGM/SE 的系统回环；逐行配对只认 Siglus OGG，Unity WAV 无法成为制卡素材；文本侧又缺少 Siglus 的稳定直连 hook、9-nine 的已知 KiriKiriZ 文本 hook，以及按 Luna Translator 风格选择干净线程的完整路径。根因集中在 `hibiki/lib/src/mining/galgame_audio_source.dart` 的能力握手/资源选择、`hibiki/lib/src/mining/gal_hook_session_controller.dart` 的音频后端状态与逐行配对，以及 `native/galgame_voice_hook/` 的引擎 hook 与会话生命周期。
 - **[x] ① 已修复** — 将文本、PCM、资源音频和“首轮音频探针完成”拆为独立能力；原始游戏 OGG/WAV 始终作为逐句首选，系统 Loopback 只在该句无资源候选时兜底。控制器会轮询晚到的资源就绪位并回补已有台词；Siglus 增加直接文本 hook 与 OVK 资源导出，Unity 增加 AudioClip/TMP 提取，KiriKiriZ 增加资源就绪诊断和 9-nine Episode 1 的已知 `EXHVXN0@2198:nine_kokoiro.exe` 文本 hook。工作台可按线程筛选，逐行状态统一显示 `game_resource`，制卡时才转码为 Anki 可用 AAC。

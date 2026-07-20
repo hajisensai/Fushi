@@ -1,4 +1,4 @@
-## BUG-930 · Unity 资源音频提取队列阻塞后持续降级
+## BUG-949 · Unity 资源音频提取队列阻塞后持续降级
 - **报告**：2026-07-20（用户：Manosaba 游戏内有角色语音，但捕获工作台持续显示“已降级 / engine_utterance_unavailable”，句音取不到）
 - **真实性**：✅ 真 bug。真实游戏 PID 的 Unity 资源事件与台词时间戳一致，且手动运行资源提取器可以正确解码同一 bundle/clip；但 `%TEMP%\hibiki_gal_voice` 只生成最初两份 WAV。根因是 `hibiki/lib/src/mining/galgame_audio_source.dart:588-679` 原先解析到 launch PID 后便取消 stdout 订阅，并且从未消费 helper 的 stderr。常驻 injector 在 `native/galgame_voice_hook/injector/injector_main.cpp` 每次提取后持续写 stderr，匿名管道填满后会阻塞在日志输出处，进程仍存活但 Unity 事件队列不再消费。另有一个独立竞态：生产者先预留 `unity_voice_write_count`、最后才提交槽 `seq`，旧消费者遇到未提交槽仍推进游标，会永久丢掉该事件。
 - **[x] ① 已修复** — `EngineHookGalAudioSource` 在 helper 启动后立即为 stdout/stderr 建立贯穿整个捕获会话的排空订阅；launch PID 解析只完成等待器，不再取消 stdout，`stop()` 统一杀进程并取消全部订阅。原生 `ProcessUnityVoiceEvents` 只在读到两次一致的已提交 `seq` 后提取并推进游标，撞到生产者写入窗口时保留游标给下一轮重试。

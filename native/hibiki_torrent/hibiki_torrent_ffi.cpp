@@ -261,6 +261,64 @@ HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
   }
 }
 
+HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
+                                       int max_queued_disk_bytes,
+                                       int send_buffer_watermark,
+                                       int max_peerlist_size) {
+  if (session == nullptr) return 0;
+  try {
+    lt::settings_pack sp;
+    if (connections_limit > 0) {
+      sp.set_int(lt::settings_pack::connections_limit, connections_limit);
+    }
+    if (max_queued_disk_bytes > 0) {
+      sp.set_int(lt::settings_pack::max_queued_disk_bytes,
+                 max_queued_disk_bytes);
+    }
+    if (send_buffer_watermark > 0) {
+      sp.set_int(lt::settings_pack::send_buffer_watermark,
+                 send_buffer_watermark);
+    }
+    if (max_peerlist_size > 0) {
+      sp.set_int(lt::settings_pack::max_peerlist_size, max_peerlist_size);
+    }
+    as_session(session)->apply_settings(std::move(sp));
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
+                                 int upload_enabled) {
+  if (session == nullptr) return 0;
+  try {
+    const bool allow = upload_enabled != 0;
+    // upload_mode = 只下不上：allow 时清除、否则置位。
+    const auto apply = [allow](lt::torrent_handle h) {
+      if (!h.is_valid()) return;
+      if (allow) {
+        h.unset_flags(lt::torrent_flags::upload_mode);
+      } else {
+        h.set_flags(lt::torrent_flags::upload_mode);
+      }
+    };
+    const bool all = info_hash == nullptr || info_hash[0] == '\0';
+    if (all) {
+      for (lt::torrent_handle h : as_session(session)->get_torrents()) {
+        apply(h);
+      }
+      return 1;
+    }
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return 0;
+    apply(h);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
 HT_EXPORT char* ht_add_magnet(void* session, const char* magnet_uri,
                               const char* save_path, int sequential) {
   if (session == nullptr) return json_error("session is null");
@@ -380,6 +438,9 @@ HT_EXPORT char* ht_list_torrents(void* session) {
       out += ",\"left\":" + std::to_string(left);
       out += ",\"down_rate\":" + std::to_string(st.download_payload_rate);
       out += ",\"up_rate\":" + std::to_string(st.upload_payload_rate);
+      // 累计上传/下载字节（做种时长/分享率上限判定，见 Dart 侧 host tick）。
+      out += ",\"uploaded\":" + std::to_string(st.all_time_upload);
+      out += ",\"downloaded\":" + std::to_string(st.all_time_download);
       out += ",\"num_peers\":" + std::to_string(st.num_peers);
       out += std::string(",\"has_metadata\":") +
              (st.has_metadata ? "true" : "false");

@@ -54,8 +54,6 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
-import 'package:hibiki/src/pages/implementations/stat_shared.dart';
-import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
@@ -173,10 +171,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// NULL-uid 行按 title 回退。与 [_loadLibraryMaps] 同批预取。
   Map<String, DateTime> _watchAtByUid = const <String, DateTime>{};
   Map<String, DateTime> _legacyWatchAtByTitle = const <String, DateTime>{};
-
-  /// 每日观看时长（dateKey → 毫秒之和），驱动顶部概览的观看热力图（GitHub 式）。
-  /// 与 [_watchAtByUid] 同批从 watch-stats 全量行聚合（[_loadLibraryMaps]）。
-  Map<String, int> _watchMsByDay = const <String, int>{};
 
   @override
   void initState() {
@@ -302,12 +296,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           if (r.bookUid == null) (r.title, r.lastModified),
       ],
     );
-    // 每日观看时长聚合（dateKey → sum watchTimeMs），供顶部观看热力图。同一批
-    // watchRows 复用，不再单独查库。
-    final Map<String, int> watchMsByDay = <String, int>{};
-    for (final VideoWatchStatisticRow r in watchRows) {
-      watchMsByDay[r.dateKey] = (watchMsByDay[r.dateKey] ?? 0) + r.watchTimeMs;
-    }
     if (mounted) {
       setState(() {
         _sortMode = sortMode;
@@ -318,7 +306,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         _primaryCollectionByEntry = primaryMap;
         _watchAtByUid = watchByUid;
         _legacyWatchAtByTitle = legacyByTitle;
-        _watchMsByDay = watchMsByDay;
       });
     }
   }
@@ -1702,11 +1689,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         final List<VideoBookRow> all = loaded;
         final Set<String>? filter =
             ref.watch(filteredVideoBookUidsProvider).valueOrNull;
+        // BUG-940：合集标签维度。视频成员级过滤须并入——否则「合集打了标签但成员
+        // 没打」时成员被剥光、_groupVideos 折叠不出合集组，之后 collectionVisible 也
+        // 救不回（无组可留），合集永远筛不出来。
+        final Set<int>? collectionFilter =
+            ref.watch(filteredCollectionIdsProvider).valueOrNull;
         final List<VideoBookRow> books = filter == null
             ? all
-            : all
-                .where((VideoBookRow b) => filter.contains(b.bookUid))
-                .toList();
+            : all.where((VideoBookRow b) {
+                // 成员命中标签、或所属合集命中标签都保留（后者让打了标签的合集其成员
+                // 整组存活、折叠出合集组）。
+                return keepMemberUnderTagFilter(
+                  memberMatched: filter.contains(b.bookUid),
+                  primaryCollectionId:
+                      _primaryCollectionByEntry['video|${b.bookUid}'],
+                  collectionFilter: collectionFilter,
+                );
+              }).toList();
         // 排序交互重设计：卡片间序在 group 层按当前排序方式做（[_groupVideos]），
         // 这里不再预排散列表（旧 ShelfEntries.sortOrder 死权重已废弃，用户拍板）。
         final List<VideoBookRow> ordered = books;
@@ -1748,17 +1747,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                   return CustomScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: <Widget>[
-                      // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                      // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
-                      // [all] 描述整库，不随标签筛选变。
-                      // 本地库非空恒显示概览（活动热力图）；本地空时仅当存在远端
-                      // 续播候选（有断点未看完）才显示——否则「连了远端但没在看任何
-                      // 视频」不该凭空冒出一张空概览（也避免挤走远端卡的可点区域）。
-                      if (all.isNotEmpty ||
-                          _hasRemoteResumeCandidate(remoteVideos))
-                        SliverToBoxAdapter(
-                          child: _buildOverviewSection(all, remoteVideos),
-                        ),
                       ..._buildLocalVideoSlivers(
                           all, ordered, remoteVideos, cardLayout),
                     ],
@@ -1769,338 +1757,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           },
         );
       },
-    );
-  }
-
-  /// UI v2 Phase B：顶部概览条 =「继续观看 hero」+「观看活动热力图」。
-  ///
-  /// hero = 有痕迹未看完中最近看过的一条（[computeVideoLibraryOverview]，
-  /// watch-stats → importedAt 回退）。右侧不再是「总数/未完成/近7天导入」三格状态
-  /// 计数（用户反馈：那是状态非统计），改成 GitHub 式观看时长热力图（[_watchMsByDay]，
-  /// 整卡点开完整视频统计页）。宽 ≥720 并排、窄屏纵向堆叠；无 hero 候选时只渲染热力图。
-  /// 远端视频 → [RemoteContinueEntry] 投影（completed 由 positionMs/durationMs
-  /// 派生，远端无 completed 列）。概览 gate 与 hero 选取共用，单一真值不重复派生。
-  List<RemoteContinueEntry> _remoteContinueEntries(
-    List<RemoteVideoInfo> remoteVideos,
-  ) =>
-      <RemoteContinueEntry>[
-        for (final RemoteVideoInfo v in remoteVideos)
-          RemoteContinueEntry(
-            id: v.id,
-            positionMs: v.positionMs,
-            completed: v.durationMs != null &&
-                v.durationMs! > 0 &&
-                v.positionMs >= (v.durationMs! * 0.9),
-            updatedAtMs: v.positionUpdatedAtMs,
-          ),
-      ];
-
-  /// 是否存在远端续播候选（有断点未看完）。本地库空时用它 gate 概览显隐。
-  bool _hasRemoteResumeCandidate(List<RemoteVideoInfo> remoteVideos) =>
-      pickRemoteContinueEntry(_remoteContinueEntries(remoteVideos)) != null;
-
-  Widget _buildOverviewSection(
-    List<VideoBookRow> all,
-    List<RemoteVideoInfo> remoteVideos,
-  ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final VideoLibraryOverview overview = computeVideoLibraryOverview(
-      entries: <VideoOverviewEntry>[
-        for (final VideoBookRow r in all)
-          VideoOverviewEntry(
-            bookUid: r.bookUid,
-            title: r.title,
-            lastPositionMs: r.lastPositionMs,
-            completed: r.completedAt != null,
-            importedAt: r.importedAt,
-          ),
-      ],
-      // uid 优先、遗留行按 title 回退，合并成按 uid 键控的单一映射。
-      lastWatchedByUid: <String, DateTime>{
-        for (final VideoBookRow r in all)
-          if ((_watchAtByUid[r.bookUid] ?? _legacyWatchAtByTitle[r.title])
-              case final DateTime at)
-            r.bookUid: at,
-      },
-      // BUG-848：合集分组 + 组内序（去 'video|' 前缀投影成 uid 键控），驱动 hero 的
-      // Next-Up 选集（看完一集 → 前进下一集）。
-      collectionByUid: <String, int>{
-        for (final VideoBookRow r in all)
-          if (_primaryCollectionByEntry['video|${r.bookUid}']
-              case final int cid)
-            r.bookUid: cid,
-      },
-      sortIndexByUid: <String, int>{
-        for (final VideoBookRow r in all)
-          if (_memberSortIndex['video|${r.bookUid}'] case final int si)
-            r.bookUid: si,
-      },
-      now: DateTime.now(),
-    );
-    VideoBookRow? hero;
-    if (overview.heroUid != null) {
-      for (final VideoBookRow r in all) {
-        if (r.bookUid == overview.heroUid) {
-          hero = r;
-          break;
-        }
-      }
-    }
-    // #3：远端/互联视频也进「继续观看」。纯流播远端无本地进度行，独立挑候选
-    // （[pickRemoteContinueEntry]：有断点未看完、host 端断点时间戳最新），再与本地
-    // hero 按时间戳比较——远端更近（或本地无 hero）则 hero 换成远端卡（点击 _openRemote）。
-    final RemoteContinueEntry? remoteBest =
-        pickRemoteContinueEntry(_remoteContinueEntries(remoteVideos));
-    final int? localWatchedMs =
-        overview.heroLastWatched?.millisecondsSinceEpoch;
-    final bool remoteWins = remoteBest != null &&
-        (hero == null ||
-            localWatchedMs == null ||
-            remoteBest.updatedAtMs > localWatchedMs);
-    final Widget stats = _buildWatchHeatmapCard(tokens);
-    Widget? heroCard;
-    if (remoteWins) {
-      final RemoteVideoInfo rv =
-          remoteVideos.firstWhere((RemoteVideoInfo v) => v.id == remoteBest.id);
-      heroCard = _buildContinueHeroRemote(rv, tokens);
-    } else if (hero != null) {
-      heroCard = _buildContinueHero(hero, overview, tokens);
-    }
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.card,
-        tokens.spacing.gap,
-        tokens.spacing.card,
-        0,
-      ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          if (heroCard == null) return stats;
-          final bool wide = constraints.maxWidth >= 720;
-          if (wide) {
-            // IntrinsicHeight 必须有：本区在 SliverToBoxAdapter 下主轴（竖向）无界，
-            // 裸 Row(stretch) 会把无界高度强加给 Expanded 子项 → BoxConstraints
-            // forces an infinite height 首帧崩溃（对抗审查确认）。IntrinsicHeight
-            // 先按子项固有高度收界，再 stretch 等高。
-            return IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(flex: 3, child: heroCard),
-                  SizedBox(width: tokens.spacing.gap + 4),
-                  Expanded(flex: 2, child: stats),
-                ],
-              ),
-            );
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              heroCard,
-              SizedBox(height: tokens.spacing.gap),
-              stats,
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  /// 继续观看 hero 卡：封面缩略 + 标题 + 已看至/上次观看 + 播放示意。整卡点击
-  /// 续播（带其 primary 合集 → 播放器有剧集面板/上下集）；无独立按钮避免嵌套
-  /// 焦点目标（卡本身即手柄/键盘目标）。
-  Widget _buildContinueHero(
-    VideoBookRow hero,
-    VideoLibraryOverview overview,
-    HibikiDesignTokens tokens,
-  ) {
-    final int? collectionId =
-        _primaryCollectionByEntry['video|${hero.bookUid}'];
-    final DateTime? watched = overview.heroLastWatched;
-    final List<String> metadata = <String>[
-      t.video_watched_up_to(time: formatVideoPosition(hero.lastPositionMs)),
-      if (watched != null)
-        t.video_last_watched(date: _formatOverviewDate(watched)),
-    ];
-    return HibikiCard(
-      key: const ValueKey<String>('home_video_continue_hero'),
-      focusId: const HibikiFocusId('home-video-continue-hero'),
-      onTap: () => _open(hero, playlistCollectionId: collectionId),
-      child: Row(
-        children: <Widget>[
-          ClipRRect(
-            borderRadius: HibikiBorderRadius.card,
-            child: SizedBox(
-              width: 148,
-              height: 84,
-              child: _buildCover(hero),
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap + 4),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(t.video_continue_watching,
-                    style: tokens.type.sectionLabel),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  hero.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.listTitle,
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  metadata.join(' · '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.metadata,
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          Icon(
-            Icons.play_circle_filled,
-            size: 36,
-            color: tokens.surfaces.primary,
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 远端「继续观看」hero 卡（#3）：与本地 [_buildContinueHero] 同形态，但封面走
-  /// 远端封面 [_buildRemoteVideoCover]、进度取 host 端 [RemoteVideoInfo.positionMs] /
-  /// [RemoteVideoInfo.positionUpdatedAtMs]，整卡点击走远端流播 [_openRemote]。
-  Widget _buildContinueHeroRemote(
-    RemoteVideoInfo video,
-    HibikiDesignTokens tokens,
-  ) {
-    final DateTime? watched = video.positionUpdatedAtMs > 0
-        ? DateTime.fromMillisecondsSinceEpoch(video.positionUpdatedAtMs)
-        : null;
-    final List<String> metadata = <String>[
-      t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
-      if (watched != null)
-        t.video_last_watched(date: _formatOverviewDate(watched)),
-    ];
-    return HibikiCard(
-      key: ValueKey<String>('home_video_continue_hero_remote_${video.id}'),
-      focusId: const HibikiFocusId('home-video-continue-hero'),
-      onTap: () => _openRemote(video),
-      child: Row(
-        children: <Widget>[
-          ClipRRect(
-            borderRadius: HibikiBorderRadius.card,
-            child: SizedBox(
-              width: 148,
-              height: 84,
-              child: _buildRemoteVideoCover(video),
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap + 4),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(t.video_continue_watching,
-                    style: tokens.type.sectionLabel),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  video.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.listTitle,
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  metadata.join(' · '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.metadata,
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          Icon(
-            Icons.play_circle_filled,
-            size: 36,
-            color: tokens.surfaces.primary,
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 顶部观看活动热力图卡（GitHub 式贡献图）：按每日观看时长 [_watchMsByDay] 铺
-  /// 数周方格。可点**标题**打开完整视频统计页；点某天格子弹气泡看当日观看时长；
-  /// 数据超首屏时热力图右上出现翻页箭头看更早历史。取代旧的「总数/未完成/近7天
-  /// 导入」三格状态计数——那是状态而非统计（用户反馈），热力图直观展示观看活跃度。
-  Widget _buildWatchHeatmapCard(HibikiDesignTokens tokens) {
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        color: tokens.surfaces.group,
-        shape: const RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.card,
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.gap + 4),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            _buildStatHeatmapTitle(
-              tokens,
-              t.video_watch_activity,
-              _openStatistics,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            StatContributionHeatmap(
-              valueByDateKey: _watchMsByDay,
-              now: DateTime.now(),
-              baseColor: tokens.surfaces.primary,
-              emptyColor: tokens.surfaces.card,
-              valueLabel: (String dateKey, int ms) =>
-                  '${formatStatHeatmapDay(dateKey)} · ${formatStatTime(ms)}',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 热力图卡可点标题：文字 + 尾随小箭头，点击打开对应统计页（取代旧的整卡 onTap，
-  /// 好把格子点击让给「查看每日数值」）。
-  Widget _buildStatHeatmapTitle(
-    HibikiDesignTokens tokens,
-    String label,
-    VoidCallback onOpen,
-  ) {
-    return InkWell(
-      onTap: onOpen,
-      borderRadius: const BorderRadius.all(Radius.circular(8)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(label, style: tokens.type.sectionLabel),
-            const SizedBox(width: 2),
-            Icon(
-              Icons.chevron_right,
-              size: 16,
-              color: tokens.type.sectionLabel.color,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -2416,7 +2072,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Expanded(
+          // BUG-926：与本地卡同因——封面从 Expanded 改为固定 AspectRatio(16/9)，让
+          // 16:9 远端封面精确铺满、无上下空隙，标题浮动高度不再反灌封面区。
+          AspectRatio(
+            aspectRatio: 16 / 9,
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
@@ -2482,13 +2141,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Text(
-              video.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text(
+                    video.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -2872,7 +2539,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Expanded(
+          // BUG-926：封面此前用 Expanded 吃掉「cell 高 − 下方文字块实际高度」的剩余，
+          // 而文字块高度随标题行数 / 有无观看进度浮动（≤_kVideoCardTextBlock），文字不
+          // 足时多出的空间灌进封面区、使其高于 16:9，16:9 封面 contain 后上下留空隙
+          // （标题短或无进度时才现，故「时有时无」）。改为固定 AspectRatio(16/9)：封面
+          // 永远精确 16:9，与标题长短彻底解耦，标准 16:9 封面无空隙。
+          AspectRatio(
+            aspectRatio: 16 / 9,
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
@@ -2929,31 +2602,38 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-            child: Text(
-              book.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
+          // 文字块占封面下方剩余固定高度（cell 高 − 16:9 封面 = _kVideoCardTextBlock），
+          // 标题 / 进度用 ellipsis 内收，浮动高度不再反灌进封面区（BUG-926）。
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                  child: Text(
+                    book.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                // UI v2 Phase D：观看进度文字外显（mockup 卡片下的进度/上次观看行）。
+                // 只显示可靠数据：已看完 / 已看至 mm:ss（无总时长列，不显示百分比）+
+                // 上次观看日期（watch-stats 有该 title 时）；全无痕迹不渲染本行。
+                if (_buildCardWatchMeta(book) case final String meta
+                    when meta.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                    child: Text(
+                      meta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HibikiDesignTokens.of(context).type.metadata,
+                    ),
+                  ),
+              ],
             ),
           ),
-          // UI v2 Phase D：观看进度文字外显（mockup 卡片下的进度/上次观看行）。
-          // 只显示可靠数据：已看完 / 已看至 mm:ss（无总时长列，不显示百分比）+
-          // 上次观看日期（watch-stats 有该 title 时）；全无痕迹不渲染本行。
-          if (_buildCardWatchMeta(book) case final String meta
-              when meta.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-              child: Text(
-                meta,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: HibikiDesignTokens.of(context).type.metadata,
-              ),
-            )
-          else
-            const SizedBox(height: 4),
         ],
       ),
     );

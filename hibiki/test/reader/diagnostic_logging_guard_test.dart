@@ -12,11 +12,15 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 根因修复的证据来源，删掉就又会抓瞎：
 /// - `[xchapter]`：连续模式跨章三路径（滚轮/触摸/指针）+ Dart 汇合点，定位
 ///   「没到章首就跨章」到底走哪条输入、什么几何值触发。
-/// - `[sasayaki-hl]`：有声书逐句高亮在 Dart 端的 prepareCues 决策留痕。BUG-395
+/// - `[sasayaki-hl]`：有声书逐句高亮在 Dart 端的 prepareCues **决策点**留痕。BUG-395
 ///   前 SRT 书在 `_srtBookUid!=null` 时无条件 return null（绕开 sasayaki 系统），
 ///   正是这条日志暴露了「SRT 书被匹配进真 EPUB 后 cue 是 sasayaki:// 却建不了
-///   range」的真因；BUG-395 已把 SRT/Audiobook 两源判据归一，诊断保留（标明书源 +
-///   cachedSasayaki + payloadLen），仍是「完全没高亮」真机定位的证据来源。
+///   range」的真因；BUG-395 已把 SRT/Audiobook 两源判据归一，prepareCues 决策探针
+///   保留（标明书源 + cachedSasayaki + payloadLen），仍是「完全没高亮」真机定位的
+///   证据来源。
+///   BUG-914：audiobook_bridge 播放期**逐 cue 热路径**的 highlight raw= /
+///   applySasayakiCues section= 打点属发布版噪声已移除（不再在本守卫断言存在），其
+///   「已删且不回归」由 audiobook_probe_removal_guard_test.dart 单独锁定。
 void main() {
   group('TODO-656 跨章诊断埋点 [xchapter]', () {
     late String corpus;
@@ -53,12 +57,8 @@ void main() {
 
   group('TODO-630 有声书高亮诊断埋点 [sasayaki-hl]', () {
     late String corpus;
-    late String audiobookBridge;
     setUpAll(() {
       corpus = readReaderPageSource();
-      audiobookBridge = File('lib/src/media/audiobook/audiobook_bridge.dart')
-          .readAsStringSync()
-          .replaceAll('\r\n', '\n');
     });
 
     test('Dart 端 prepareCues 决策有日志（书源 + cachedSasayaki + payloadLen 留痕）', () {
@@ -71,12 +71,9 @@ void main() {
           reason: 'sasayaki 书建 payload 的分支必须留痕（含 payloadLen）');
     });
 
-    test('Dart 端 highlight/apply 路径分叉有日志', () {
-      expect(audiobookBridge, contains('[sasayaki-hl] highlight raw='),
-          reason: '播放期逐句高亮的 frag null/非 null 分叉必须留痕');
-      expect(
-          audiobookBridge, contains('[sasayaki-hl] applySasayakiCues section='),
-          reason: 'payload 空导致 JS 不被调用必须留痕');
-    });
+    // BUG-914：audiobook_bridge 播放期逐 cue 热路径的 [sasayaki-hl] highlight raw= /
+    // applySasayakiCues section= 打点属发布版噪声已移除；此处不再断言其存在（旧断言会
+    // 失败）。「已删且不回归」的守卫移交 audiobook_probe_removal_guard_test.dart，避免两
+    // 处守卫对同一事实各执一词。保留的 prepareCues 决策探针仍由上面的用例锁定。
   });
 }

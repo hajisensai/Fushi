@@ -212,6 +212,8 @@ class _Rig {
       toggleSubtitleBlur: _noop,
       cycleSubtitleObscure: _noop,
       toggleSubtitleHide: _noop,
+      cycleSecondarySubtitleObscure: _noop,
+      toggleSecondarySubtitleHide: _noop,
       toggleFavoriteSentence: _noop,
       replayCurrentSubtitle: _noop,
       replayPreviousSubtitle: _noop,
@@ -220,6 +222,8 @@ class _Rig {
       openSubtitleAlign: _noop,
       subtitleDelayIncrease: _noop,
       subtitleDelayDecrease: _noop,
+      alignSubtitleToPrev: _noop,
+      alignSubtitleToNext: _noop,
       escape: () {
         bump(ShortcutAction.videoEscape);
         if (state.fullscreenActive) {

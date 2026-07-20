@@ -726,6 +726,97 @@ void main() {
   // `_currentCueIndex ± 1`：下一句 = -1+1 = 0（恒跳首句起点 = 打回原点 / 进度条圆点
   // 闪开头）；上一句 = -1-1 = -2（恒越界 no-op = gap 里后退失灵）。新决策按真实
   // position 二分回退，永不返回负值/原点。
+  group('asbplayer 式字幕偏移对齐 snapSubtitleDelayMs', () {
+    // cue0 [0-1000], cue1 [2000-3000], cue2 [4000-5000]（起点 0 / 2000 / 4000）。
+    final cues = <AudioCue>[
+      _cue(0, 0, 1000),
+      _cue(1, 2000, 3000),
+      _cue(2, 4000, 5000),
+    ];
+
+    test('下一句：把下一句起点平移到当前点（字幕晚了 → 负延迟提前）', () {
+      // pos=1500 落在 cue0/cue1 gap，下一句=cue1(start 2000)；让它在 1500 出现 →
+      // newDelay = 1500 - 2000 = -500（整轨提前 500ms）。
+      expect(
+        VideoPlayerController.snapSubtitleDelayMs(
+          cues: cues,
+          positionMs: 1500,
+          currentDelayMs: 0,
+          next: true,
+        ),
+        -500,
+      );
+    });
+
+    test('上一句：把上一句起点平移到当前点（字幕早了 → 正延迟延后）', () {
+      // pos=1500 gap，上一句=cue0(start 0)；让它在 1500 出现 → newDelay = 1500-0 = 1500。
+      expect(
+        VideoPlayerController.snapSubtitleDelayMs(
+          cues: cues,
+          positionMs: 1500,
+          currentDelayMs: 0,
+          next: false,
+        ),
+        1500,
+      );
+    });
+
+    test('相邻 cue 判定用去掉当前延迟后的原始时间轴位置（effPos = pos - delay）', () {
+      // 同一 pos=2500，delay 不同 → effPos 落进不同 cue → 选到不同的下一句。
+      // delay=0：effPos=2500 命中 cue1，下一句=cue2(4000) → 2500-4000 = -1500。
+      expect(
+        VideoPlayerController.snapSubtitleDelayMs(
+          cues: cues,
+          positionMs: 2500,
+          currentDelayMs: 0,
+          next: true,
+        ),
+        -1500,
+      );
+      // delay=2000：effPos=500 命中 cue0，下一句=cue1(2000) → 2500-2000 = 500。
+      expect(
+        VideoPlayerController.snapSubtitleDelayMs(
+          cues: cues,
+          positionMs: 2500,
+          currentDelayMs: 2000,
+          next: true,
+        ),
+        500,
+      );
+    });
+
+    test('边界：已在末句无下一句 / 空列表 / 位置未就绪 → null（no-op）', () {
+      // effPos=4500 命中 cue2（末句），无下一句 → null。
+      expect(
+        VideoPlayerController.snapSubtitleDelayMs(
+          cues: cues,
+          positionMs: 4500,
+          currentDelayMs: 0,
+          next: true,
+        ),
+        isNull,
+      );
+      expect(
+        VideoPlayerController.snapSubtitleDelayMs(
+          cues: const <AudioCue>[],
+          positionMs: 1000,
+          currentDelayMs: 0,
+          next: true,
+        ),
+        isNull,
+      );
+      expect(
+        VideoPlayerController.snapSubtitleDelayMs(
+          cues: cues,
+          positionMs: null,
+          currentDelayMs: 0,
+          next: false,
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('BUG-176 句子跳转目标索引（gap 不打回原点）', () {
     final cues = <AudioCue>[
       _cue(0, 0, 1000),
@@ -1246,9 +1337,10 @@ void main() {
   //
   // 这是 TODO-073「下一句」方向的反方向。用户复现：动画转场片段没配音和字幕（落在两条
   // cue 之间的长 gap，或整段无字幕轨）时，按「字幕回退键」毫无反应：
-  //   - 有字幕但上一句太远（转场 gap）：旧的底栏「上一句」按钮走裸 skipToPrevCue →
-  //     prevCueIndexFor 会一脚跳到很远的上一句，或在已是首句时 no-op；而键盘已经走
-  //     skipToPrevCueOrSeekBack 退化回退 Xs（TODO-085）。本组钉死按钮也走同一退化决策。
+  //   - 有字幕但上一句太远（转场 gap）：**键盘 Ctrl+←** 走 skipToPrevCueOrSeekBack 退化
+  //     回退 Xs（TODO-085，degradeFarCueToTimeSeek:true）；**底栏 / 手柄 / 双击按钮**则恒
+  //     跳到相邻上一句、不退化（BUG-942，默认 degradeFarCueToTimeSeek:false）。本组钉死
+  //     键盘退化决策；按钮不退化决策见下方 BUG-942 用例。
   //   - 无字幕（空 cue 列表）：旧的 skipToPrevCue() 直接 no-op（按钮毫无反应，用户感知
   //     「卡住 / 回退不了」）。skipToPrevCueOrSeekBack 让无字幕时回退 seekSeconds 秒
   //     （与 skipToNextCueOrSeekForward 前进 Xs 对称），跨过没字幕的转场段往回走。
@@ -1283,6 +1375,21 @@ void main() {
       );
       expect(d, const PrevSeekDecision.cue(0),
           reason: '上一句够近（<= seekSeconds）时仍跳到该 cue，不退化成时间 seek');
+    });
+
+    test('BUG-942 按钮语义(degradeFarCueToTimeSeek:false)：上一句很远也跳句、不退化', () {
+      // 与上面「上一句很远 → 退化回退 3s」同场景（pos=70000，上一句 cue0 距当前
+      // ~31.5s > 3s），但**按钮路径**传 degradeFarCueToTimeSeek:false → 恒跳到相邻上一句
+      // cue0，绝不退化成回退 3 秒。moonbeam 报「上/下一句按钮只 ±3 秒 seek」的根治。
+      final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+        cues: transitionCues,
+        positionMs: 70000,
+        seekSeconds: 3,
+        degradeFarCueToTimeSeek: false,
+      );
+      expect(d, const PrevSeekDecision.cue(0),
+          reason: '按钮「上一句」恒跳句：上一句再远也跳到相邻上一句，不悄悄变成 3 秒 seek');
+      expect(d.timeSeekDeltaMs, isNull);
     });
 
     test('开头边界：回退目标 clamp 到 0（不越过视频开头到负位置）', () {

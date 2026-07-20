@@ -36,9 +36,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
   ) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final Stopwatch swLookup = Stopwatch()..start();
     final String term = subtitleLookupTerm(sentence, graphemeIndex);
-    debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
     // 仅当视频正在播放才暂停并标记，浮层全关后据此恢复（BUG-072）。查词前本就
@@ -73,9 +71,6 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
       reuseWarmSlot: true,
       autoRead: true,
     );
-    debugPrint(
-      '[video-lookup] popup ready in ${swLookup.elapsedMilliseconds}ms term="$term"',
-    );
     // 刷新查词浮层顶部收藏星标：判定当前字幕句是否已收藏（异步，不阻塞弹窗）。
     unawaited(_refreshVideoSentenceFavorite());
   }
@@ -109,7 +104,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
   Future<void> _toggleFavoriteSentenceForVideo() async {
     final String sentence = _lastLookupSentence;
     if (sentence.isEmpty) {
-      HibikiToast.show(msg: t.no_sentence_selected);
+      _showOsd(t.no_sentence_selected);
       return;
     }
     final AudioCue? cue = _lastLookupCue;
@@ -138,7 +133,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
           );
         });
       }
-      HibikiToast.show(msg: t.favorite_removed);
+      _showOsd(t.favorite_removed, icon: Icons.favorite_border);
       return;
     }
     await repo.add(
@@ -168,7 +163,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
         ));
       });
     }
-    HibikiToast.show(msg: t.favorite_added);
+    _showOsd(t.favorite_added, icon: Icons.favorite);
   }
 
   /// 从字幕跳转列表面板行内复制某句文本到剪贴板（TODO-152 子A）。不暂停 / 不查词。
@@ -176,7 +171,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
     final String text = cue.text.trim();
     if (text.isEmpty) return;
     Clipboard.setData(ClipboardData(text: text));
-    HibikiToast.show(msg: t.copied_to_clipboard);
+    _showOsd(t.copied_to_clipboard, icon: Icons.copy);
   }
 
   /// 字幕跳转列表面板某句是否已收藏（同步，读缓存 [_favoritedVideoSentences]）。
@@ -246,7 +241,10 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
         _currentVideoSentenceIsFavorited = !wasFavorited;
       }
     });
-    HibikiToast.show(msg: wasFavorited ? t.favorite_removed : t.favorite_added);
+    _showOsd(
+      wasFavorited ? t.favorite_removed : t.favorite_added,
+      icon: wasFavorited ? Icons.favorite_border : Icons.favorite,
+    );
   }
 
   /// 拉本视频已收藏句填充 [_favoritedVideoSentences]（打开字幕跳转列表前调一次）。

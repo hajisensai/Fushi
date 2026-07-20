@@ -27,18 +27,37 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 907 条。点号进各自文件。
+> 共 930 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-930](bugs/BUG-930-unity-resource-audio-extractor-stall.md) | ✅ | ✅ | Unity 资源音频提取队列阻塞后持续降级 |
-| [BUG-929](bugs/BUG-929-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
-| [BUG-928](bugs/BUG-928-dual-game-capture-acceptance.md) | ✅ | ✅ | Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡 |
-| [BUG-927](bugs/BUG-927-manosaba-text-loopback-hybrid.md) | ✅ | ✅ | Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留 |
-| [BUG-926](bugs/BUG-926-database-schema-v48-compat.md) | ✅ | ✅ | 游戏分支无法打开 schema v48 用户数据库 |
-| [BUG-925](bugs/BUG-925-texthooker-popup-ui-scale.md) | ✅ | ✅ | 捕获工作台非默认缩放下查词断言 |
-| [BUG-924](bugs/BUG-924-gal-text-thread-selector.md) | ✅ | ✅ | Galgame 捕获文本缺少 Luna 风格线程选择 |
-| [BUG-923](bugs/BUG-923-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
+| [BUG-949](bugs/BUG-949-unity-resource-audio-extractor-stall.md) | ✅ | ✅ | Unity 资源音频提取队列阻塞后持续降级 |
+| [BUG-948](bugs/BUG-948-dual-game-capture-acceptance.md) | ✅ | ✅ | Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡 |
+| [BUG-947](bugs/BUG-947-manosaba-text-loopback-hybrid.md) | ✅ | ✅ | Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留 |
+| [BUG-946](bugs/BUG-946-database-schema-v48-compat.md) | ✅ | ✅ | 游戏分支无法打开 schema v48 用户数据库 |
+| [BUG-945](bugs/BUG-945-texthooker-popup-ui-scale.md) | ✅ | ✅ | 捕获工作台非默认缩放下查词断言 |
+| [BUG-944](bugs/BUG-944-gal-text-thread-selector.md) | ✅ | ✅ | Galgame 捕获文本缺少 Luna 风格线程选择 |
+| [BUG-943](bugs/BUG-943-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
+| [BUG-942](bugs/BUG-942-prev-cue-button-always-jump.md) | ✅ | ✅ | 上/下一句字幕按钮太远时退化成 3 秒 seek |
+| [BUG-941](bugs/BUG-941-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
+| [BUG-940](bugs/BUG-940-tag-filter-collection-rescue.md) | ✅ | ✅ | 标签筛选:打了标签的合集筛不出来(成员级过滤先于折叠剥空合集组) |
+| [BUG-939](bugs/BUG-939-subtitle-menu-reenumerate.md) | ✅ | ✅ | 字幕轨菜单每次打开都重跑ffprobe显加载条+已有字幕先消失 |
+| [BUG-938](bugs/BUG-938-collections-sync-trigger-gap.md) | ✅ | ✅ | 合集经常没同步：合集维度只搭载低频全量 sweep，日常关书/切后台路径从不推送合集 |
+| [BUG-937](bugs/BUG-937-interconnect-video-cover-n2.md) | ✅ | ✅ | 互联视频浏览极慢：封面端点每张封面重跑整份 listVideos 清单（O(N²)） |
+| [BUG-936](bugs/BUG-936-video-ime-space-playpause.md) | ✅ | ✅ | 日文IME激活时视频页空格无法播放暂停（BUG-853 修复真机仍失效） |
+| [BUG-935](bugs/BUG-935-stats-chars-wan-unit.md) | ✅ | ✅ | 阅读统计字符数汇总缺万单位 |
+| [BUG-934](bugs/BUG-934-prev-sentence-dup.md) | ✅ | ✅ | 前加一句制卡把当前句重复采集两遍 |
+| [BUG-933](bugs/BUG-933-mining-ui-jank-isolate.md) | ✅ | ✅ | 制卡媒体处理阻塞UI线程未响应 |
+| [BUG-932](bugs/BUG-932-popup-mine-plus-size.md) | ✅ | ✅ | 查词弹窗制卡加号(+)比相邻图标小 |
+| [BUG-931](bugs/BUG-931-video-favorite-osd-topleft.md) | ✅ | ✅ | 视频收藏快捷键唤起进度条+底部提示统一左上角OSD |
+| [BUG-930](bugs/BUG-930-subtitle-list-resize-cursor.md) | ✅ | ✅ | 视频字幕列表左缘调宽把手 hover 不显 resizeLeftRight（左右箭头）光标 |
+| [BUG-929](bugs/BUG-929-ass-mpv-windows-font-fallback.md) | ✅ | ✅ | ASS 缺失字体在 Windows 上与 mpv 回退不一致 |
+| [BUG-928](bugs/BUG-928-video-card-16x9-gap.md) | ✅ | ✅ | 视频卡对标准 16:9 封面留空隙·封面比例随标题长短浮动 |
+| [BUG-927](bugs/BUG-927-reader-native-selection-blocks-lookup-and-rightclick-crash.md) | ✅ | ✅ | 阅读器原生选区残留卡住查词 + 右键闪退 |
+| [BUG-926](bugs/BUG-926-popup-touch-copy-disabled.md) | ✅ | ✅ | 词典弹窗触屏无法复制释义(撤回BUG-762全量禁选) |
+| [BUG-925](bugs/BUG-925-settings-all-sections-collapsible.md) | ✅ | ✅ | 设置所有带标题分区都应可折叠，默认展开/收起互不影响 |
+| [BUG-924](bugs/BUG-924-video-dict-dismiss-shortcut.md) | ✅ | ✅ | 视频词典浮层无法用快捷键关闭·浮层开着时快捷键穿透控制视频 |
+| [BUG-923](bugs/BUG-923-immersive-cursor-lock-button-no-idle-rehide.md) | ✅ | ✅ | 沉浸模式鼠标光标与沉浸退出按钮静止时不隐藏（缺「空闲重隐」路径，除非把鼠标移到别处） |
 | [BUG-922](bugs/BUG-922-scm-landscape-sentence-collapsed.md) | ✅ | ✅ | 制卡·选择句子上下文对话框横屏塌陷只剩选项看不见句子 |
 | [BUG-921](bugs/BUG-921-mining-collection-tag.md) | ✅ | ✅ | 制卡缺少所属合集名标签 |
 | [BUG-920](bugs/BUG-920-media-source-open-folder-forward-slash.md) | ✅ | ✅ | 管理来源打开文件夹按钮路径不对 |
@@ -47,6 +66,10 @@
 | [BUG-917](bugs/BUG-917-video-clip-mp4-muxer.md) | ✅ | ✅ | 视频片段导出 exit -22（捆绑 ffmpeg-min 无 matroska muxer，输出跟随源容器） |
 | [BUG-916](bugs/BUG-916-subtitle-list-shift-hover-offset.md) | ✅ | ✅ | 视频字幕列表Shift悬停查词偏左一格 |
 | [BUG-915](bugs/BUG-915-ass-user-scale-and-plain-off-mode.md) | ✅ | ✅ | 尊重字幕不能调字号；关闭尊重时 ASS 特效层叠印乱字 |
+| [BUG-914](bugs/BUG-914-remove-release-diagnostic-noise.md) | ✅ | ✅ | 发布版残留诊断日志/性能打点（查词·弹窗·按句同步热路径） |
+| [BUG-913](bugs/BUG-913-asymmetric-disposal-leak.md) | ✅ | ✅ | 常驻服务/Notifier/provider 未对称释放（泄漏） |
+| [BUG-912](bugs/BUG-912-state-not-reset-on-exception-path.md) | ✅ | ✅ | 异常/取消路径状态不复位（Windows 弹窗资产永久闩 + 长按缺 onLongPressCancel） |
+| [BUG-911](bugs/BUG-911-fail-open-swallow-add-logging.md) | ✅ | ✅ | fail-open 静默吞异常致线上不可诊断（补 ErrorLogService 日志） |
 | [BUG-910](bugs/BUG-910-video-subtitle-dismiss-halo-reloop.md) | ✅ | ✅ | 视频字幕查词点空白想关闭却重复查同一个词 |
 | [BUG-909](bugs/BUG-909-remove-vertical-forensic-probes.md) | ✅ | ✅ | 移除发布版残留的竖排取证探针（TODO-792/753 系列 + 753-DIAG） |
 | [BUG-908](bugs/BUG-908-lan-sync-server-hardening.md) | ✅ | ✅ | LAN 局域网同步服务器健壮性欠账（token 膨胀 / PROPFIND 同步阻塞 / 写无互斥） |

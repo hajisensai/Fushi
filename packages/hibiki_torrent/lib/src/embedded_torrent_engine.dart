@@ -168,6 +168,8 @@ class HtTorrentStatus {
     required this.left,
     required this.downRate,
     required this.upRate,
+    required this.uploaded,
+    required this.downloaded,
     required this.numPeers,
     required this.hasMetadata,
     required this.isFinished,
@@ -194,6 +196,12 @@ class HtTorrentStatus {
   final int left;
   final int downRate;
   final int upRate;
+
+  /// 累计上传字节（做种时长/分享率上限判定用）。
+  final int uploaded;
+
+  /// 累计下载字节（分享率分母；元数据未就绪时为 0）。
+  final int downloaded;
   final int numPeers;
   final bool hasMetadata;
   final bool isFinished;
@@ -213,6 +221,8 @@ class HtTorrentStatus {
       left: (json['left'] as num?)?.toInt() ?? -1,
       downRate: (json['down_rate'] as num?)?.toInt() ?? 0,
       upRate: (json['up_rate'] as num?)?.toInt() ?? 0,
+      uploaded: (json['uploaded'] as num?)?.toInt() ?? 0,
+      downloaded: (json['downloaded'] as num?)?.toInt() ?? 0,
       numPeers: (json['num_peers'] as num?)?.toInt() ?? 0,
       hasMetadata: json['has_metadata'] == true,
       isFinished: json['is_finished'] == true,
@@ -371,6 +381,38 @@ class EmbeddedTorrentSession {
     return _b.ht_apply_limits(
             _session, downloadBps, uploadBps, connectionsLimit) ==
         1;
+  }
+
+  /// 应用内存占用设置（把 libtorrent 压进内存预算；<=0 的字段保持默认）。
+  /// 1 成功 0 失败。
+  bool applyMemorySettings({
+    int connectionsLimit = 0,
+    int maxQueuedDiskBytes = 0,
+    int sendBufferWatermark = 0,
+    int maxPeerlistSize = 0,
+  }) {
+    if (isClosed) return false;
+    return _b.ht_apply_memory_settings(
+          _session,
+          connectionsLimit,
+          maxQueuedDiskBytes,
+          sendBufferWatermark,
+          maxPeerlistSize,
+        ) ==
+        1;
+  }
+
+  /// 上传模式开关（做种/上传总开关）。[infoHash] 空串 = 对所有种子生效；
+  /// [enabled] false = 停止上传但保持连接与下载（libtorrent upload_mode，
+  /// 「只下不上」的正规做法；限速设 0 是不限而非禁传）。1 成功 0 失败。
+  bool setUploadMode({String infoHash = '', required bool enabled}) {
+    if (isClosed) return false;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    try {
+      return _b.ht_set_upload_mode(_session, id, enabled ? 1 : 0) == 1;
+    } finally {
+      malloc.free(id);
+    }
   }
 
   /// 添加磁力链接。

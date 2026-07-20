@@ -47,6 +47,7 @@ class HibikiFocusTargetEntry {
     required this.context,
     required this.enabled,
     required this.owner,
+    this.autoHome = true,
   });
 
   final HibikiFocusId id;
@@ -54,6 +55,15 @@ class HibikiFocusTargetEntry {
   final BuildContext context;
   final bool enabled;
   final Object owner;
+
+  /// Whether PASSIVE focus auto-home (page entry / async reflow re-home) may
+  /// land the cursor on this target. Interactive chrome that sits above the
+  /// real content in reading order -- e.g. a collapsible settings section's
+  /// fold/unfold header -- sets this false so auto-home prefers the first actual
+  /// CONTENT row instead of stranding the cursor on a toggle. Such targets stay
+  /// fully reachable by explicit directional navigation; only the unprompted
+  /// initial landing skips them. Defaults true (ordinary rows/controls).
+  final bool autoHome;
 
   bool get canFocus => enabled && focusNode.canRequestFocus;
 }
@@ -297,9 +307,18 @@ class HibikiFocusController extends ChangeNotifier {
 
     final List<HibikiFocusTargetEntry> targets = _focusableEntriesInReadOrder();
     if (targets.isNotEmpty) {
-      targets.first.focusNode.requestFocus();
-      _activeId = targets.first.id;
-      _maybeRevealOnRepair(targets.first);
+      // Passive auto-home prefers real content over interactive chrome (e.g. a
+      // collapsible section's fold header): landing on a toggle above the first
+      // row and then not revealing anything is a regression. Chrome stays
+      // reachable by explicit navigation; fall back to it only when there is no
+      // content target (a page of pure headers).
+      final HibikiFocusTargetEntry landing = targets.firstWhere(
+        (HibikiFocusTargetEntry entry) => entry.autoHome,
+        orElse: () => targets.first,
+      );
+      landing.focusNode.requestFocus();
+      _activeId = landing.id;
+      _maybeRevealOnRepair(landing);
       notifyListeners();
       return;
     }

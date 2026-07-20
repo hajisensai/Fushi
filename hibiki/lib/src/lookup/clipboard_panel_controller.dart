@@ -20,6 +20,7 @@ import 'package:hibiki/src/lookup/global_lookup_controller.dart'
         GlobalLookupController,
         GlobalLookupMediaRequest,
         resolveGlobalLookupMedia;
+import 'package:hibiki/src/lookup/clipboard_history_payload.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/lookup/global_lookup_render.dart';
 import 'package:hibiki/src/lookup/global_lookup_stack.dart';
@@ -112,6 +113,13 @@ class ClipboardPanelController {
   /// 覆盖新句。每次 update 领取单调序号，任何 await 之后发现自己已过期就放弃。
   int _updateSeq = 0;
 
+  /// 当前 root 帧是否为**用户显式点词**的结果（`_lookupFromBanner`），而非被动来源自动查词。
+  /// 为 true 时，被动连续文本流（galgame 台词，`request.passiveStream`）不再抢占/重置 root：
+  /// 只把可点句子横幅换成最新台词，保留用户点出的释义（否则每 ~400ms 一条新台词会 `++_updateSeq`
+  /// 作废点词的在途 searchDictionary + `_seedRootFrame` 整帧重置冲掉释义，表现为「对话流动时
+  /// 点词没反应」）。用户显式动作（点新横幅词 / 真剪贴板复制 / 关面板）重置它。
+  bool _userOwnedRoot = false;
+
   /// 接线 channel 反向 handler；仅「剪贴板查词已开启 且 destination==panel」
   /// 时预热（审查修正的推广：默认去向改 panel 后，开关关着的用户同样不该为
   /// 面板常驻一整棵 WebView2 进程树——预热只给真会用到面板的人）。幂等；仅
@@ -168,6 +176,19 @@ class ClipboardPanelController {
   Future<void> update(DesktopLookupRequest request) async {
     final AppModel? model = _appModel;
     if (!_started || model == null) return;
+    // 用户已显式点词、正看释义时，被动连续台词流只刷新可点句子横幅、不抢占/不重置 root：
+    // 换 _currentSentence（新台词逐字可点）+ 原地重渲（不 _seedRootFrame、不 resetRootScroll、
+    // 不 ++_updateSeq），点词的在途查词与已出释义都不被冲掉。用户点新横幅词即正常换根。
+    // 仅对被动流（galgame 台词）生效；真剪贴板复制是显式意图，走下方正常重查。
+    if (request.passiveStream && _userOwnedRoot && _visible) {
+      _currentSentence = request.text;
+      _rootHitStart = 0; // 新句与旧词根无对应，撤销高亮基准避免错位高亮
+      await _renderPanel(model);
+      glog('panel: passive stream banner-only (user-owned root kept)');
+      return;
+    }
+    // 到这里 = 建立新 root（显式复制 / 点词前的被动流）：清除用户拥有标志。
+    _userOwnedRoot = false;
     // 「关自动查词」纯文字态：只显示复制到的句子文字（逐字可点），不自动 searchDictionary、
     // 不弹释义、不朗读、不记查词计数。用户点句中字才走 panelSentenceLookup 手动查
     // （那条路径重置 _sentenceOnly=false，释义正常出）。总开关 desktopClipboardEnabled
@@ -275,6 +296,9 @@ class ClipboardPanelController {
   /// 会经 [update] 的 `!_visible` 分支重开面板（关掉后第二个词照样弹）。
   Future<void> hidePanel() async {
     _visible = false;
+    // 关面板 = 放弃当前用户查词：下一条来源（被动台词流 / 剪贴板）重开时正常自动查、不被
+    // 上一轮的用户拥有标志锁成横幅-only。
+    _userOwnedRoot = false;
     await _channel.hide(notify: false);
   }
 
@@ -470,6 +494,24 @@ class ClipboardPanelController {
         unawaited(model?.setClipboardPanelBlockCapture(block));
       case 'panelClose':
         unawaited(hidePanel());
+      case 'clipboardHistory':
+        // 面板栏🕘：从 DB 重载复制历史（主进程写入，面板进程读），注入覆盖层。
+        if (model == null) return;
+        unawaited(_showClipboardHistory(model));
+      case 'lookupClipboardHistoryEntry':
+        // 历史某条被点：以该文本重查（换根，横幅显示整句），复用剪贴板查词管线。
+        final Object? args = message['args'];
+        if (args is! List || args.isEmpty) return;
+        final String text = args.first?.toString() ?? '';
+        if (text.isEmpty) return;
+        unawaited(update(DesktopLookupRequest(
+          text: text,
+          origin: DesktopLookupOrigin.explicit,
+        )));
+      case 'clearClipboardHistory':
+        // 历史面板「清空」：清库 + 内存，再重渲染（空态）。
+        if (model == null) return;
+        unawaited(_clearClipboardHistoryAndRefresh(model));
       case 'dismissPopupAt':
         final int? index = _firstIntArg(message);
         if (index == null) return;
@@ -531,6 +573,41 @@ class ClipboardPanelController {
     await _renderPanel(model);
   }
 
+  /// 面板栏🕘：从 DB 重载复制历史（主进程采集写入，面板进程只读）后注入覆盖层。
+  /// best-effort：任何失败记日志吞掉，绝不打断面板。
+  Future<void> _showClipboardHistory(AppModel model) async {
+    try {
+      await model.clipboardHistoryRepo.loadFromDb();
+      await _renderClipboardHistory(model);
+    } catch (e, st) {
+      glog('panel: clipboard-history EXCEPTION $e\n$st');
+    }
+  }
+
+  /// 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
+  Future<void> _clearClipboardHistoryAndRefresh(AppModel model) async {
+    try {
+      await model.clearClipboardHistory();
+      await _renderClipboardHistory(model);
+    } catch (e, st) {
+      glog('panel: clipboard-history clear EXCEPTION $e\n$st');
+    }
+  }
+
+  /// 把当前 [AppModel.clipboardHistory] + 本地化标签转成 host payload 注入渲染。
+  /// 单槽 pending_json_ 顾虑不适用：历史开/清是离散用户动作，不与栈渲染并发。
+  Future<void> _renderClipboardHistory(AppModel model) async {
+    final String payload = buildClipboardHistoryPayloadJson(
+      entries: model.clipboardHistory,
+      title: t.clipboard_history_title,
+      clearLabel: t.clipboard_history_clear,
+      emptyLabel: t.clipboard_history_empty,
+      now: DateTime.now(),
+    );
+    await _channel.render('window.__globalLookupHost && '
+        'window.__globalLookupHost.showClipboardHistory($payload);');
+  }
+
   /// 真机第 4 轮 — 选词区点字（panelSentenceLookup 桥）：以后缀重查并**换根**
   /// （底部原地更新），横幅继续显示整句（[_currentSentence] 不变），命中词由
   /// [_rootHitStart] + bestLength 高亮。与剪贴板流共用同一 latest-wins 序列：
@@ -538,6 +615,9 @@ class ClipboardPanelController {
   Future<void> _lookupFromBanner(String suffix, int hitStart) async {
     final AppModel? model = _appModel;
     if (!_started || model == null) return;
+    // 显式点词：即刻标记 root 为用户拥有（在 await 之前置位，使查词在途时到达的被动台词流
+    // 走横幅-only 分支、不 ++_updateSeq 作废本次查词），此后被动流不再冲掉这个结果。
+    _userOwnedRoot = true;
     final int seq = ++_updateSeq;
     try {
       _recordLookupCount(model);

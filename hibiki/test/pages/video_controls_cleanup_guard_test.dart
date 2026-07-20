@@ -52,10 +52,10 @@ void main() {
           src.contains('Future<void> _toggleShaderCompare() async {'), isTrue,
           reason: '_toggleShaderCompare 方法必须保留（右键菜单 + 快捷键引用）');
       final String callback = actionCallback('toggleShaderCompare', 'volumeUp');
-      final int gate = callback.indexOf('_runWhenImmersiveAllowsFullControls');
+      final int gate = callback.indexOf('_runWhenImmersiveAllowsShortcuts');
       final int toggle = callback.indexOf('_toggleShaderCompare()');
       expect(gate, greaterThanOrEqualTo(0),
-          reason: 'C 快捷键 action 必须先走沉浸模式 full-controls gate');
+          reason: 'C 快捷键 action 必须先走沉浸模式 shortcuts gate');
       expect(toggle, greaterThan(gate),
           reason: 'C 快捷键 action 通过 gate 后必须调用 _toggleShaderCompare');
     });

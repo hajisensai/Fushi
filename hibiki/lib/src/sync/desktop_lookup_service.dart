@@ -31,12 +31,19 @@ class DesktopLookupRequest {
     required this.origin,
     this.foregroundPolicy = DesktopLookupForegroundPolicy.bringToFront,
     this.showSourcePanel = true,
+    this.passiveStream = false,
   });
 
   final String text;
   final DesktopLookupOrigin origin;
   final DesktopLookupForegroundPolicy foregroundPolicy;
   final bool showSourcePanel;
+
+  /// 被动连续文本流（galgame 台词 hook 每 ~400ms 灌一条新台词）而非用户一次性显式意图
+  /// （剪贴板复制 / 热键）。悬浮面板据此决定：用户已点词查看释义时，被动流只刷新可点句子
+  /// 横幅、不抢占/不重置用户的查词结果（否则连续流会把点词的 searchDictionary 作废 + 整帧
+  /// 重置冲掉释义，表现为「对话流动时点词没反应」）。真剪贴板复制（false）仍正常重查。
+  final bool passiveStream;
 }
 
 /// 桌面剪贴板 + 全局热键查词触发器。单例 ChangeNotifier（仿 TexthookerService）。
@@ -87,6 +94,11 @@ class DesktopLookupService extends ChangeNotifier
   bool _focused = true;
   HotKey? _hotKey;
 
+  /// 剪贴板复制历史采集回调（AppModel 接上 `addClipboardHistoryEntry`）。仅在真实
+  /// 剪贴板变化（origin=clipboard、去重通过）时触发；热键 / 悬浮字幕点词不计入
+  /// 「复制历史」。桌面单例，主进程设一次。
+  void Function(String text)? onClipboardCaptured;
+
   bool get isRunning => _startRefCount > 0;
 
   /// TODO-1355：被动剪贴板变化（用户在**别的 app** 里复制）只把内容排进查词管线
@@ -97,11 +109,12 @@ class DesktopLookupService extends ChangeNotifier
   /// 仍可按全局热键（Ctrl+Shift+D，origin=hotkey）或在悬浮字幕上点词（origin=explicit）
   /// ——那些是显式意图，保留 bringToFront。窗口置顶策略（[DesktopClipboardWindowMode]）
   /// 不改变本约定：无论选哪种策略，被动剪贴板变化都不抢焦点。
-  void submitText(String raw) {
+  void submitText(String raw, {bool passiveStream = false}) {
     _queueLookupRequest(
       raw,
       origin: DesktopLookupOrigin.clipboard,
       foregroundPolicy: DesktopLookupForegroundPolicy.none,
+      passiveStream: passiveStream,
     );
   }
 
@@ -112,6 +125,7 @@ class DesktopLookupService extends ChangeNotifier
         DesktopLookupForegroundPolicy.bringToFront,
     bool showSourcePanel = true,
     bool dedupe = true,
+    bool passiveStream = false,
   }) {
     // BUG-442：剪贴板/热键/显式查词的统一入口。所有来源在排队前先按同一码点上限
     // 截断（用 characters 不切碎代理对 / 字素簇），避免超长串一路流到逐字渲染的
@@ -126,6 +140,7 @@ class DesktopLookupService extends ChangeNotifier
         origin: origin,
         foregroundPolicy: foregroundPolicy,
         showSourcePanel: showSourcePanel,
+        passiveStream: passiveStream,
       );
       notifyListeners();
       return;
@@ -138,6 +153,7 @@ class DesktopLookupService extends ChangeNotifier
       origin: origin,
       foregroundPolicy: foregroundPolicy,
       showSourcePanel: showSourcePanel,
+      passiveStream: passiveStream,
     );
     notifyListeners();
   }

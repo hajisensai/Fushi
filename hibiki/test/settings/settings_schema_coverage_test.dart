@@ -165,6 +165,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/video_window_aspect_lock_static_test.dart',
   'video/Obscure subtitles':
       'test/media/video/video_subtitle_obscure_mode_test.dart + test/media/video/video_subtitle_overlay_test.dart + test/shortcuts/video_shortcut_registry_test.dart',
+  'video/Obscure secondary subtitle':
+      'test/media/video/video_secondary_subtitle_obscure_test.dart + test/media/video/video_subtitle_overlay_test.dart',
   // TODO-286: pref-only video settings surfaced in home settings for parity with
   // the in-player sheet. Schema coverage here proves focus/change/persist/restore
   // through the DB; the runtime effect of each underlying config is guarded by the
@@ -231,6 +233,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // codec 测试覆盖；真实引擎切换是桌面 native 集成，widget 测不到。
   'video/Download backend':
       'test/media/torrent/anime_download_config_backend_test.dart',
+  // PR#267: 内置引擎「上传 / 做种」总开关（默认关）。写 QbConnectionConfig.uploadEnabled
+  // （changed=true），生效点在纯函数 torrent_upload_policy.shouldAllowUpload +
+  // EmbeddedTorrentHost.sweepUploadPolicy 每 tick 下发 native ht_set_upload_mode（非
+  // reader CSS / 主题树），无适用 widget 探针；由专项纯函数 + host sweep 测试覆盖，
+  // 真实做种回传是桌面/Android native 集成，widget 测不到。
+  'video/Enable upload / seeding':
+      'test/media/torrent/torrent_upload_policy_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread Direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
@@ -278,6 +287,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_host_test.dart)',
   'lookup/Desktop clipboard lookup':
       'DEVICE: clipboard watcher + hotkey lifecycle (test/sync/desktop_lookup_service_test.dart)',
+  // galgame UX 统一后 desktop_clipboard_enabled 默认开（剪贴板 / galgame 台词都走
+  // 悬浮查词面板），下列三项子设置随之在 coverage 中可达；其运行时效果由 desktop
+  // lookup service 行为守卫 / 设备验证覆盖，非 widget-tree 可断言。
+  'lookup/Auto-look-up on copy':
+      'DEVICE: clipboard auto-lookup on copy (test/sync/desktop_lookup_service_test.dart)',
+  'lookup/Lookup popup position':
+      'DEVICE: clipboard lookup destination routing main/panel/transient (test/sync/desktop_lookup_service_test.dart)',
+  'lookup/Panel opacity':
+      'DEVICE: floating clipboard panel opacity (native/WebView render)',
   'lookup/Auto read word on lookup': 'DEVICE: TTS auto-read',
   'lookup/Lookup audio volume':
       'test/reader/lookup_audio_volume_settings_test.dart + test/utils/misc/lookup_audio_volume_wiring_static_test.dart + test/settings/settings_renderer_test.dart',

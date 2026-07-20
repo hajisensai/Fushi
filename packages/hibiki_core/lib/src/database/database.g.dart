@@ -16531,6 +16531,728 @@ class RevealedImagesCompanion extends UpdateCompanion<RevealedImageRow> {
   }
 }
 
+class $ActivityEventsTable extends ActivityEvents
+    with TableInfo<$ActivityEventsTable, ActivityEventRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ActivityEventsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _eventTypeMeta =
+      const VerificationMeta('eventType');
+  @override
+  late final GeneratedColumn<String> eventType = GeneratedColumn<String>(
+      'event_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaTypeMeta =
+      const VerificationMeta('mediaType');
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+      'media_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaKeyMeta =
+      const VerificationMeta('mediaKey');
+  @override
+  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
+      'media_key', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _timestampMsMeta =
+      const VerificationMeta('timestampMs');
+  @override
+  late final GeneratedColumn<int> timestampMs = GeneratedColumn<int>(
+      'timestamp_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _durationMsMeta =
+      const VerificationMeta('durationMs');
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+      'duration_ms', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _charsDeltaMeta =
+      const VerificationMeta('charsDelta');
+  @override
+  late final GeneratedColumn<int> charsDelta = GeneratedColumn<int>(
+      'chars_delta', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        eventType,
+        mediaType,
+        title,
+        mediaKey,
+        dateKey,
+        timestampMs,
+        durationMs,
+        charsDelta
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'activity_events';
+  @override
+  VerificationContext validateIntegrity(Insertable<ActivityEventRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('event_type')) {
+      context.handle(_eventTypeMeta,
+          eventType.isAcceptableOrUnknown(data['event_type']!, _eventTypeMeta));
+    } else if (isInserting) {
+      context.missing(_eventTypeMeta);
+    }
+    if (data.containsKey('media_type')) {
+      context.handle(_mediaTypeMeta,
+          mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta));
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('media_key')) {
+      context.handle(_mediaKeyMeta,
+          mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta));
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('timestamp_ms')) {
+      context.handle(
+          _timestampMsMeta,
+          timestampMs.isAcceptableOrUnknown(
+              data['timestamp_ms']!, _timestampMsMeta));
+    } else if (isInserting) {
+      context.missing(_timestampMsMeta);
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+          _durationMsMeta,
+          durationMs.isAcceptableOrUnknown(
+              data['duration_ms']!, _durationMsMeta));
+    }
+    if (data.containsKey('chars_delta')) {
+      context.handle(
+          _charsDeltaMeta,
+          charsDelta.isAcceptableOrUnknown(
+              data['chars_delta']!, _charsDeltaMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ActivityEventRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ActivityEventRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      eventType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}event_type'])!,
+      mediaType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      mediaKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_key']),
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+      timestampMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}timestamp_ms'])!,
+      durationMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}duration_ms']),
+      charsDelta: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}chars_delta']),
+    );
+  }
+
+  @override
+  $ActivityEventsTable createAlias(String alias) {
+    return $ActivityEventsTable(attachedDatabase, alias);
+  }
+}
+
+class ActivityEventRow extends DataClass
+    implements Insertable<ActivityEventRow> {
+  final int id;
+
+  /// 事件语义：'read'（读完一段）/ 'watch'（看了一段视频）/ 'added'（导入了媒体）
+  /// / 'game'（游戏游玩，本轮仅预留槽位、无写入方）。
+  final String eventType;
+
+  /// 媒体种类：'book' / 'video' / 'game'。与 [eventType] 分开，未来可扩展
+  /// （如 'added' 的媒体既可能是 book 也可能是 video）。
+  final String mediaType;
+
+  /// 展示标题（书名 / 视频名）。
+  final String title;
+
+  /// 点击活动条打开媒体用的稳定身份：书=bookKey，视频=bookUid，导入不一定有。
+  final String? mediaKey;
+
+  /// 冗余的按天分组键（'YYYY-MM-DD'，本地时区），避免读取端为分组再从
+  /// [timestampMs] 反算。与统计表 dateKey 同源（[statDateKey]）。
+  final String dateKey;
+
+  /// 精确发生时刻（epoch 毫秒），Activity 相对时间与排序的真值。
+  final int timestampMs;
+
+  /// 本次 session 时长（毫秒），read/watch 有；added 为 null。
+  final int? durationMs;
+
+  /// 本次读/看的字符数（阅读=字数，视频=字幕字数），added 为 null。
+  final int? charsDelta;
+  const ActivityEventRow(
+      {required this.id,
+      required this.eventType,
+      required this.mediaType,
+      required this.title,
+      this.mediaKey,
+      required this.dateKey,
+      required this.timestampMs,
+      this.durationMs,
+      this.charsDelta});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['event_type'] = Variable<String>(eventType);
+    map['media_type'] = Variable<String>(mediaType);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || mediaKey != null) {
+      map['media_key'] = Variable<String>(mediaKey);
+    }
+    map['date_key'] = Variable<String>(dateKey);
+    map['timestamp_ms'] = Variable<int>(timestampMs);
+    if (!nullToAbsent || durationMs != null) {
+      map['duration_ms'] = Variable<int>(durationMs);
+    }
+    if (!nullToAbsent || charsDelta != null) {
+      map['chars_delta'] = Variable<int>(charsDelta);
+    }
+    return map;
+  }
+
+  ActivityEventsCompanion toCompanion(bool nullToAbsent) {
+    return ActivityEventsCompanion(
+      id: Value(id),
+      eventType: Value(eventType),
+      mediaType: Value(mediaType),
+      title: Value(title),
+      mediaKey: mediaKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mediaKey),
+      dateKey: Value(dateKey),
+      timestampMs: Value(timestampMs),
+      durationMs: durationMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(durationMs),
+      charsDelta: charsDelta == null && nullToAbsent
+          ? const Value.absent()
+          : Value(charsDelta),
+    );
+  }
+
+  factory ActivityEventRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ActivityEventRow(
+      id: serializer.fromJson<int>(json['id']),
+      eventType: serializer.fromJson<String>(json['eventType']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      title: serializer.fromJson<String>(json['title']),
+      mediaKey: serializer.fromJson<String?>(json['mediaKey']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      timestampMs: serializer.fromJson<int>(json['timestampMs']),
+      durationMs: serializer.fromJson<int?>(json['durationMs']),
+      charsDelta: serializer.fromJson<int?>(json['charsDelta']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'eventType': serializer.toJson<String>(eventType),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'title': serializer.toJson<String>(title),
+      'mediaKey': serializer.toJson<String?>(mediaKey),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'timestampMs': serializer.toJson<int>(timestampMs),
+      'durationMs': serializer.toJson<int?>(durationMs),
+      'charsDelta': serializer.toJson<int?>(charsDelta),
+    };
+  }
+
+  ActivityEventRow copyWith(
+          {int? id,
+          String? eventType,
+          String? mediaType,
+          String? title,
+          Value<String?> mediaKey = const Value.absent(),
+          String? dateKey,
+          int? timestampMs,
+          Value<int?> durationMs = const Value.absent(),
+          Value<int?> charsDelta = const Value.absent()}) =>
+      ActivityEventRow(
+        id: id ?? this.id,
+        eventType: eventType ?? this.eventType,
+        mediaType: mediaType ?? this.mediaType,
+        title: title ?? this.title,
+        mediaKey: mediaKey.present ? mediaKey.value : this.mediaKey,
+        dateKey: dateKey ?? this.dateKey,
+        timestampMs: timestampMs ?? this.timestampMs,
+        durationMs: durationMs.present ? durationMs.value : this.durationMs,
+        charsDelta: charsDelta.present ? charsDelta.value : this.charsDelta,
+      );
+  ActivityEventRow copyWithCompanion(ActivityEventsCompanion data) {
+    return ActivityEventRow(
+      id: data.id.present ? data.id.value : this.id,
+      eventType: data.eventType.present ? data.eventType.value : this.eventType,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      title: data.title.present ? data.title.value : this.title,
+      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      timestampMs:
+          data.timestampMs.present ? data.timestampMs.value : this.timestampMs,
+      durationMs:
+          data.durationMs.present ? data.durationMs.value : this.durationMs,
+      charsDelta:
+          data.charsDelta.present ? data.charsDelta.value : this.charsDelta,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ActivityEventRow(')
+          ..write('id: $id, ')
+          ..write('eventType: $eventType, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('title: $title, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('timestampMs: $timestampMs, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('charsDelta: $charsDelta')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, eventType, mediaType, title, mediaKey,
+      dateKey, timestampMs, durationMs, charsDelta);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ActivityEventRow &&
+          other.id == this.id &&
+          other.eventType == this.eventType &&
+          other.mediaType == this.mediaType &&
+          other.title == this.title &&
+          other.mediaKey == this.mediaKey &&
+          other.dateKey == this.dateKey &&
+          other.timestampMs == this.timestampMs &&
+          other.durationMs == this.durationMs &&
+          other.charsDelta == this.charsDelta);
+}
+
+class ActivityEventsCompanion extends UpdateCompanion<ActivityEventRow> {
+  final Value<int> id;
+  final Value<String> eventType;
+  final Value<String> mediaType;
+  final Value<String> title;
+  final Value<String?> mediaKey;
+  final Value<String> dateKey;
+  final Value<int> timestampMs;
+  final Value<int?> durationMs;
+  final Value<int?> charsDelta;
+  const ActivityEventsCompanion({
+    this.id = const Value.absent(),
+    this.eventType = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.title = const Value.absent(),
+    this.mediaKey = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.timestampMs = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.charsDelta = const Value.absent(),
+  });
+  ActivityEventsCompanion.insert({
+    this.id = const Value.absent(),
+    required String eventType,
+    required String mediaType,
+    required String title,
+    this.mediaKey = const Value.absent(),
+    required String dateKey,
+    required int timestampMs,
+    this.durationMs = const Value.absent(),
+    this.charsDelta = const Value.absent(),
+  })  : eventType = Value(eventType),
+        mediaType = Value(mediaType),
+        title = Value(title),
+        dateKey = Value(dateKey),
+        timestampMs = Value(timestampMs);
+  static Insertable<ActivityEventRow> custom({
+    Expression<int>? id,
+    Expression<String>? eventType,
+    Expression<String>? mediaType,
+    Expression<String>? title,
+    Expression<String>? mediaKey,
+    Expression<String>? dateKey,
+    Expression<int>? timestampMs,
+    Expression<int>? durationMs,
+    Expression<int>? charsDelta,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (eventType != null) 'event_type': eventType,
+      if (mediaType != null) 'media_type': mediaType,
+      if (title != null) 'title': title,
+      if (mediaKey != null) 'media_key': mediaKey,
+      if (dateKey != null) 'date_key': dateKey,
+      if (timestampMs != null) 'timestamp_ms': timestampMs,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (charsDelta != null) 'chars_delta': charsDelta,
+    });
+  }
+
+  ActivityEventsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? eventType,
+      Value<String>? mediaType,
+      Value<String>? title,
+      Value<String?>? mediaKey,
+      Value<String>? dateKey,
+      Value<int>? timestampMs,
+      Value<int?>? durationMs,
+      Value<int?>? charsDelta}) {
+    return ActivityEventsCompanion(
+      id: id ?? this.id,
+      eventType: eventType ?? this.eventType,
+      mediaType: mediaType ?? this.mediaType,
+      title: title ?? this.title,
+      mediaKey: mediaKey ?? this.mediaKey,
+      dateKey: dateKey ?? this.dateKey,
+      timestampMs: timestampMs ?? this.timestampMs,
+      durationMs: durationMs ?? this.durationMs,
+      charsDelta: charsDelta ?? this.charsDelta,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (eventType.present) {
+      map['event_type'] = Variable<String>(eventType.value);
+    }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (mediaKey.present) {
+      map['media_key'] = Variable<String>(mediaKey.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (timestampMs.present) {
+      map['timestamp_ms'] = Variable<int>(timestampMs.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (charsDelta.present) {
+      map['chars_delta'] = Variable<int>(charsDelta.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ActivityEventsCompanion(')
+          ..write('id: $id, ')
+          ..write('eventType: $eventType, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('title: $title, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('timestampMs: $timestampMs, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('charsDelta: $charsDelta')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ClipboardHistoryTable extends ClipboardHistory
+    with TableInfo<$ClipboardHistoryTable, ClipboardHistoryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ClipboardHistoryTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _positionMeta =
+      const VerificationMeta('position');
+  @override
+  late final GeneratedColumn<int> position = GeneratedColumn<int>(
+      'position', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _contentMeta =
+      const VerificationMeta('content');
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+      'content', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _copiedAtMeta =
+      const VerificationMeta('copiedAt');
+  @override
+  late final GeneratedColumn<int> copiedAt = GeneratedColumn<int>(
+      'copied_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [position, content, copiedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'clipboard_history';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<ClipboardHistoryRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('position')) {
+      context.handle(_positionMeta,
+          position.isAcceptableOrUnknown(data['position']!, _positionMeta));
+    } else if (isInserting) {
+      context.missing(_positionMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(_contentMeta,
+          content.isAcceptableOrUnknown(data['content']!, _contentMeta));
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('copied_at')) {
+      context.handle(_copiedAtMeta,
+          copiedAt.isAcceptableOrUnknown(data['copied_at']!, _copiedAtMeta));
+    } else if (isInserting) {
+      context.missing(_copiedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => const {};
+  @override
+  ClipboardHistoryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ClipboardHistoryRow(
+      position: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}position'])!,
+      content: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}content'])!,
+      copiedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}copied_at'])!,
+    );
+  }
+
+  @override
+  $ClipboardHistoryTable createAlias(String alias) {
+    return $ClipboardHistoryTable(attachedDatabase, alias);
+  }
+}
+
+class ClipboardHistoryRow extends DataClass
+    implements Insertable<ClipboardHistoryRow> {
+  final int position;
+  final String content;
+  final int copiedAt;
+  const ClipboardHistoryRow(
+      {required this.position, required this.content, required this.copiedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['position'] = Variable<int>(position);
+    map['content'] = Variable<String>(content);
+    map['copied_at'] = Variable<int>(copiedAt);
+    return map;
+  }
+
+  ClipboardHistoryCompanion toCompanion(bool nullToAbsent) {
+    return ClipboardHistoryCompanion(
+      position: Value(position),
+      content: Value(content),
+      copiedAt: Value(copiedAt),
+    );
+  }
+
+  factory ClipboardHistoryRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ClipboardHistoryRow(
+      position: serializer.fromJson<int>(json['position']),
+      content: serializer.fromJson<String>(json['content']),
+      copiedAt: serializer.fromJson<int>(json['copiedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'position': serializer.toJson<int>(position),
+      'content': serializer.toJson<String>(content),
+      'copiedAt': serializer.toJson<int>(copiedAt),
+    };
+  }
+
+  ClipboardHistoryRow copyWith(
+          {int? position, String? content, int? copiedAt}) =>
+      ClipboardHistoryRow(
+        position: position ?? this.position,
+        content: content ?? this.content,
+        copiedAt: copiedAt ?? this.copiedAt,
+      );
+  ClipboardHistoryRow copyWithCompanion(ClipboardHistoryCompanion data) {
+    return ClipboardHistoryRow(
+      position: data.position.present ? data.position.value : this.position,
+      content: data.content.present ? data.content.value : this.content,
+      copiedAt: data.copiedAt.present ? data.copiedAt.value : this.copiedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ClipboardHistoryRow(')
+          ..write('position: $position, ')
+          ..write('content: $content, ')
+          ..write('copiedAt: $copiedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(position, content, copiedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ClipboardHistoryRow &&
+          other.position == this.position &&
+          other.content == this.content &&
+          other.copiedAt == this.copiedAt);
+}
+
+class ClipboardHistoryCompanion extends UpdateCompanion<ClipboardHistoryRow> {
+  final Value<int> position;
+  final Value<String> content;
+  final Value<int> copiedAt;
+  final Value<int> rowid;
+  const ClipboardHistoryCompanion({
+    this.position = const Value.absent(),
+    this.content = const Value.absent(),
+    this.copiedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ClipboardHistoryCompanion.insert({
+    required int position,
+    required String content,
+    required int copiedAt,
+    this.rowid = const Value.absent(),
+  })  : position = Value(position),
+        content = Value(content),
+        copiedAt = Value(copiedAt);
+  static Insertable<ClipboardHistoryRow> custom({
+    Expression<int>? position,
+    Expression<String>? content,
+    Expression<int>? copiedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (position != null) 'position': position,
+      if (content != null) 'content': content,
+      if (copiedAt != null) 'copied_at': copiedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ClipboardHistoryCompanion copyWith(
+      {Value<int>? position,
+      Value<String>? content,
+      Value<int>? copiedAt,
+      Value<int>? rowid}) {
+    return ClipboardHistoryCompanion(
+      position: position ?? this.position,
+      content: content ?? this.content,
+      copiedAt: copiedAt ?? this.copiedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (position.present) {
+      map['position'] = Variable<int>(position.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (copiedAt.present) {
+      map['copied_at'] = Variable<int>(copiedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ClipboardHistoryCompanion(')
+          ..write('position: $position, ')
+          ..write('content: $content, ')
+          ..write('copiedAt: $copiedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -16601,6 +17323,9 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $SyncDeletionTombstonesTable syncDeletionTombstones =
       $SyncDeletionTombstonesTable(this);
   late final $RevealedImagesTable revealedImages = $RevealedImagesTable(this);
+  late final $ActivityEventsTable activityEvents = $ActivityEventsTable(this);
+  late final $ClipboardHistoryTable clipboardHistory =
+      $ClipboardHistoryTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -16649,7 +17374,9 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         bookCustomCss,
         collectionTagMappings,
         syncDeletionTombstones,
-        revealedImages
+        revealedImages,
+        activityEvents,
+        clipboardHistory
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -28281,6 +29008,380 @@ typedef $$RevealedImagesTableProcessedTableManager = ProcessedTableManager<
     (RevealedImageRow, $$RevealedImagesTableReferences),
     RevealedImageRow,
     PrefetchHooks Function({bool bookKey})>;
+typedef $$ActivityEventsTableCreateCompanionBuilder = ActivityEventsCompanion
+    Function({
+  Value<int> id,
+  required String eventType,
+  required String mediaType,
+  required String title,
+  Value<String?> mediaKey,
+  required String dateKey,
+  required int timestampMs,
+  Value<int?> durationMs,
+  Value<int?> charsDelta,
+});
+typedef $$ActivityEventsTableUpdateCompanionBuilder = ActivityEventsCompanion
+    Function({
+  Value<int> id,
+  Value<String> eventType,
+  Value<String> mediaType,
+  Value<String> title,
+  Value<String?> mediaKey,
+  Value<String> dateKey,
+  Value<int> timestampMs,
+  Value<int?> durationMs,
+  Value<int?> charsDelta,
+});
+
+class $$ActivityEventsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $ActivityEventsTable> {
+  $$ActivityEventsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get eventType => $composableBuilder(
+      column: $table.eventType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaKey => $composableBuilder(
+      column: $table.mediaKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get timestampMs => $composableBuilder(
+      column: $table.timestampMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+      column: $table.durationMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get charsDelta => $composableBuilder(
+      column: $table.charsDelta, builder: (column) => ColumnFilters(column));
+}
+
+class $$ActivityEventsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $ActivityEventsTable> {
+  $$ActivityEventsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get eventType => $composableBuilder(
+      column: $table.eventType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaKey => $composableBuilder(
+      column: $table.mediaKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get timestampMs => $composableBuilder(
+      column: $table.timestampMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+      column: $table.durationMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get charsDelta => $composableBuilder(
+      column: $table.charsDelta, builder: (column) => ColumnOrderings(column));
+}
+
+class $$ActivityEventsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $ActivityEventsTable> {
+  $$ActivityEventsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get eventType =>
+      $composableBuilder(column: $table.eventType, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKey =>
+      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get timestampMs => $composableBuilder(
+      column: $table.timestampMs, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+      column: $table.durationMs, builder: (column) => column);
+
+  GeneratedColumn<int> get charsDelta => $composableBuilder(
+      column: $table.charsDelta, builder: (column) => column);
+}
+
+class $$ActivityEventsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $ActivityEventsTable,
+    ActivityEventRow,
+    $$ActivityEventsTableFilterComposer,
+    $$ActivityEventsTableOrderingComposer,
+    $$ActivityEventsTableAnnotationComposer,
+    $$ActivityEventsTableCreateCompanionBuilder,
+    $$ActivityEventsTableUpdateCompanionBuilder,
+    (
+      ActivityEventRow,
+      BaseReferences<_$HibikiDatabase, $ActivityEventsTable, ActivityEventRow>
+    ),
+    ActivityEventRow,
+    PrefetchHooks Function()> {
+  $$ActivityEventsTableTableManager(
+      _$HibikiDatabase db, $ActivityEventsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ActivityEventsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ActivityEventsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ActivityEventsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> eventType = const Value.absent(),
+            Value<String> mediaType = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String?> mediaKey = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+            Value<int> timestampMs = const Value.absent(),
+            Value<int?> durationMs = const Value.absent(),
+            Value<int?> charsDelta = const Value.absent(),
+          }) =>
+              ActivityEventsCompanion(
+            id: id,
+            eventType: eventType,
+            mediaType: mediaType,
+            title: title,
+            mediaKey: mediaKey,
+            dateKey: dateKey,
+            timestampMs: timestampMs,
+            durationMs: durationMs,
+            charsDelta: charsDelta,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String eventType,
+            required String mediaType,
+            required String title,
+            Value<String?> mediaKey = const Value.absent(),
+            required String dateKey,
+            required int timestampMs,
+            Value<int?> durationMs = const Value.absent(),
+            Value<int?> charsDelta = const Value.absent(),
+          }) =>
+              ActivityEventsCompanion.insert(
+            id: id,
+            eventType: eventType,
+            mediaType: mediaType,
+            title: title,
+            mediaKey: mediaKey,
+            dateKey: dateKey,
+            timestampMs: timestampMs,
+            durationMs: durationMs,
+            charsDelta: charsDelta,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$ActivityEventsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $ActivityEventsTable,
+    ActivityEventRow,
+    $$ActivityEventsTableFilterComposer,
+    $$ActivityEventsTableOrderingComposer,
+    $$ActivityEventsTableAnnotationComposer,
+    $$ActivityEventsTableCreateCompanionBuilder,
+    $$ActivityEventsTableUpdateCompanionBuilder,
+    (
+      ActivityEventRow,
+      BaseReferences<_$HibikiDatabase, $ActivityEventsTable, ActivityEventRow>
+    ),
+    ActivityEventRow,
+    PrefetchHooks Function()>;
+typedef $$ClipboardHistoryTableCreateCompanionBuilder
+    = ClipboardHistoryCompanion Function({
+  required int position,
+  required String content,
+  required int copiedAt,
+  Value<int> rowid,
+});
+typedef $$ClipboardHistoryTableUpdateCompanionBuilder
+    = ClipboardHistoryCompanion Function({
+  Value<int> position,
+  Value<String> content,
+  Value<int> copiedAt,
+  Value<int> rowid,
+});
+
+class $$ClipboardHistoryTableFilterComposer
+    extends Composer<_$HibikiDatabase, $ClipboardHistoryTable> {
+  $$ClipboardHistoryTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get copiedAt => $composableBuilder(
+      column: $table.copiedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$ClipboardHistoryTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $ClipboardHistoryTable> {
+  $$ClipboardHistoryTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get copiedAt => $composableBuilder(
+      column: $table.copiedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$ClipboardHistoryTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $ClipboardHistoryTable> {
+  $$ClipboardHistoryTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get position =>
+      $composableBuilder(column: $table.position, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<int> get copiedAt =>
+      $composableBuilder(column: $table.copiedAt, builder: (column) => column);
+}
+
+class $$ClipboardHistoryTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $ClipboardHistoryTable,
+    ClipboardHistoryRow,
+    $$ClipboardHistoryTableFilterComposer,
+    $$ClipboardHistoryTableOrderingComposer,
+    $$ClipboardHistoryTableAnnotationComposer,
+    $$ClipboardHistoryTableCreateCompanionBuilder,
+    $$ClipboardHistoryTableUpdateCompanionBuilder,
+    (
+      ClipboardHistoryRow,
+      BaseReferences<_$HibikiDatabase, $ClipboardHistoryTable,
+          ClipboardHistoryRow>
+    ),
+    ClipboardHistoryRow,
+    PrefetchHooks Function()> {
+  $$ClipboardHistoryTableTableManager(
+      _$HibikiDatabase db, $ClipboardHistoryTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ClipboardHistoryTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ClipboardHistoryTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ClipboardHistoryTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> position = const Value.absent(),
+            Value<String> content = const Value.absent(),
+            Value<int> copiedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ClipboardHistoryCompanion(
+            position: position,
+            content: content,
+            copiedAt: copiedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required int position,
+            required String content,
+            required int copiedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ClipboardHistoryCompanion.insert(
+            position: position,
+            content: content,
+            copiedAt: copiedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$ClipboardHistoryTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $ClipboardHistoryTable,
+    ClipboardHistoryRow,
+    $$ClipboardHistoryTableFilterComposer,
+    $$ClipboardHistoryTableOrderingComposer,
+    $$ClipboardHistoryTableAnnotationComposer,
+    $$ClipboardHistoryTableCreateCompanionBuilder,
+    $$ClipboardHistoryTableUpdateCompanionBuilder,
+    (
+      ClipboardHistoryRow,
+      BaseReferences<_$HibikiDatabase, $ClipboardHistoryTable,
+          ClipboardHistoryRow>
+    ),
+    ClipboardHistoryRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -28378,4 +29479,8 @@ class $HibikiDatabaseManager {
           _db, _db.syncDeletionTombstones);
   $$RevealedImagesTableTableManager get revealedImages =>
       $$RevealedImagesTableTableManager(_db, _db.revealedImages);
+  $$ActivityEventsTableTableManager get activityEvents =>
+      $$ActivityEventsTableTableManager(_db, _db.activityEvents);
+  $$ClipboardHistoryTableTableManager get clipboardHistory =>
+      $$ClipboardHistoryTableTableManager(_db, _db.clipboardHistory);
 }

@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
 import 'package:hibiki/src/models/audio_source_config.dart';
@@ -394,10 +395,25 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── galgame 游戏库（首页「游戏」tab）─────────────────────────────────────
+
+  /// 用户添加的 galgame 列表（单一 JSON 数组落 KV 表，解析失败回退空，与其它 JSON
+  /// 偏好同款容错）。
+  List<GalgameEntry> get galgames => decodeGalgameLibrary(
+      getPref('galgame_library', defaultValue: '') as String);
+
+  /// 整表覆写游戏库列表（读改写整数组的增/删/改都由调用方组装后调此写入）。
+  Future<void> setGalgames(List<GalgameEntry> games) async {
+    await setPref('galgame_library', encodeGalgameLibrary(games));
+    notifyListeners();
+  }
+
   // ── desktop clipboard lookup ─────────────────────────────────────────
 
+  /// 桌面剪贴板查词是否开启。默认 true：galgame UX 统一后，剪贴板 / galgame 台词都走同一条
+  /// 查词去向路由（默认落悬浮查词面板），故桌面开箱即用无需先手动开开关。
   bool get desktopClipboardEnabled =>
-      getPref('desktop_clipboard_enabled', defaultValue: false) as bool;
+      getPref('desktop_clipboard_enabled', defaultValue: true) as bool;
 
   Future<void> setDesktopClipboardEnabled(bool value) async {
     await setPref('desktop_clipboard_enabled', value);
@@ -790,6 +806,28 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 视频**副字幕**「遮蔽模式」三态（TODO-1382，镜像主字幕 [videoSubtitleObscureMode]）：
+  /// 不遮蔽 / 模糊 / 隐藏，与主字幕相互独立。preferences 层 lazy 投影（非新 Drift
+  /// schema）：键 `video_secondary_subtitle_blur`（[VideoSubtitleObscureMode.blurFlag]）
+  /// + 判别键 `video_secondary_subtitle_obscure_hide`（[VideoSubtitleObscureMode.hideFlag]），
+  /// 还原走同一纯函数 [VideoSubtitleObscureMode.fromFlags]（读取与单测共享真相源）。
+  /// 默认 none：副字幕历史行为=正常显示、不遮蔽。
+  VideoSubtitleObscureMode get videoSecondarySubtitleObscureMode =>
+      VideoSubtitleObscureMode.fromFlags(
+        blurFlag: getPref('video_secondary_subtitle_blur', defaultValue: false)
+            as bool,
+        hideFlag: getPref('video_secondary_subtitle_obscure_hide',
+            defaultValue: false) as bool,
+      );
+
+  Future<void> setVideoSecondarySubtitleObscureMode(
+    VideoSubtitleObscureMode mode,
+  ) async {
+    await setPref('video_secondary_subtitle_blur', mode.blurFlag);
+    await setPref('video_secondary_subtitle_obscure_hide', mode.hideFlag);
+    notifyListeners();
+  }
+
   /// 视频字幕列表「自动滚动到当前播放句」开关（TODO-613）：默认开启，与
   /// [VideoSubtitleJumpPanel] 头部自动滚动按钮一一对应。旧版本这是面板的纯内存状态、
   /// 每次打开都重置成开；现在落 Drift `preferences`，用户关掉后跨开关 / 跨重启都记住。
@@ -911,6 +949,15 @@ class PreferencesRepository extends ChangeNotifier {
       config == null ? '' : encodeQbConnectionConfig(config),
     );
     notifyListeners();
+  }
+
+  /// 是否已展示过「上传/做种」首用提示（默认 false = 未展示）。首次下载时弹
+  /// 一次性对话框提醒上传默认关并询问是否开启（见下载对话框），之后置真不再弹。
+  bool get torrentUploadIntroShown =>
+      getPref('torrent_upload_intro_shown', defaultValue: false) as bool;
+
+  Future<void> setTorrentUploadIntroShown() async {
+    await setPref('torrent_upload_intro_shown', true);
   }
 
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。

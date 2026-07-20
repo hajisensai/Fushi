@@ -16,6 +16,7 @@ import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
     show jimakuLanguageLabel;
+import 'package:hibiki/src/pages/implementations/download_actions.dart';
 import 'package:hibiki/utils.dart';
 
 /// 「番剧下载」选种对话框：搜番（AniList）→ 选种（Nyaa）→ 确认字幕（Jimaku）→
@@ -36,6 +37,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   final TextEditingController _animeQueryCtrl = TextEditingController();
   final TextEditingController _nyaaQueryCtrl = TextEditingController();
   late final TextEditingController _jimakuKeyCtrl;
+
+  // ---- 通用下载（粘贴磁力：书/视频/任意）----
+  final TextEditingController _magnetCtrl = TextEditingController();
+  String _genericKind = AnimeDownloadPlan.kindAuto;
+  bool _pushingGeneric = false;
 
   /// Jimaku key 为空时显示输入行（`onChanged` 直接落偏好）。
   bool _showJimakuKeyField = false;
@@ -79,23 +85,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     _animeQueryCtrl.dispose();
     _nyaaQueryCtrl.dispose();
     _jimakuKeyCtrl.dispose();
+    _magnetCtrl.dispose();
     super.dispose();
   }
 
   /// 下载后端是否就绪（推送按钮禁用条件；浏览选种不禁）。默认（auto）在桌面
   /// 走内置引擎、开箱即用；只有显式外接 qb 且没填地址才算未就绪。
-  bool get _backendReady {
-    final AppModel appModel = ref.read(appProvider);
-    final QbConnectionConfig config =
-        appModel.qbConnectionConfig ?? const QbConnectionConfig();
-    // 内置引擎宿主就绪（桌面 + DLL）且未显式选外接 qb → 直接可下载。
-    if (appModel.isEmbeddedTorrentReady &&
-        config.backend != QbConnectionConfig.backendQbittorrent) {
-      return true;
-    }
-    // 否则走外接 qb，需要填了地址。
-    return config.baseUrl.trim().isNotEmpty;
-  }
+  bool get _backendReady => torrentBackendReady(ref.read(appProvider));
 
   /// 后端未就绪（推送禁用 + 提示横幅）。
   bool get _qbMissing => !_backendReady;
@@ -268,6 +264,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       _snack(t.anime_download_push_failed);
       return;
     }
+    // 首次下载：弹一次「上传/做种」提示（默认关上传、询问是否开启+配限速/时长/
+    // 分享率）。仅内置引擎相关（外接 qb 自管上传）；展示后置 flag 不再弹。
+    await maybeShowTorrentUploadConsent(context, appModel);
+    if (!mounted) return;
     setState(() => _pushing = true);
 
     // ① 逐条下载选中的字幕到计划暂存目录（单条失败跳过该条）。
@@ -461,6 +461,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        _buildGenericMagnetSection(theme),
+        const SizedBox(height: 8),
         Row(
           children: <Widget>[
             Expanded(
@@ -485,6 +487,97 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         Expanded(child: _buildAnimeResults(theme)),
       ],
     );
+  }
+
+  /// 通用下载区（折叠）：粘贴磁力链接 + 选内容类型（自动/视频/书）+ 直接下载，
+  /// 不经番剧搜索流程。可下书、视频等任意种子；完成后按类型自动入库
+  /// （视频→视频库、epub→阅读库）。
+  Widget _buildGenericMagnetSection(ThemeData theme) {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: ExpansionTile(
+        dense: true,
+        shape: const Border(),
+        collapsedShape: const Border(),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        leading: const Icon(Icons.link, size: 18),
+        title: Text(t.anime_download_generic_title),
+        children: <Widget>[
+          TextField(
+            controller: _magnetCtrl,
+            minLines: 1,
+            maxLines: 2,
+            decoration: InputDecoration(
+              labelText: t.anime_download_generic_hint,
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  segments: <ButtonSegment<String>>[
+                    ButtonSegment<String>(
+                      value: AnimeDownloadPlan.kindAuto,
+                      label: Text(t.anime_download_kind_auto),
+                    ),
+                    ButtonSegment<String>(
+                      value: AnimeDownloadPlan.kindVideo,
+                      label: Text(t.anime_download_kind_video),
+                    ),
+                    ButtonSegment<String>(
+                      value: AnimeDownloadPlan.kindBook,
+                      label: Text(t.anime_download_kind_book),
+                    ),
+                  ],
+                  selected: <String>{_genericKind},
+                  onSelectionChanged: _pushingGeneric
+                      ? null
+                      : (Set<String> s) =>
+                          setState(() => _genericKind = s.first),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed:
+                    (!_backendReady || _pushingGeneric) ? null : _pushGeneric,
+                icon: const Icon(Icons.download, size: 18),
+                label: Text(t.anime_download_generic_download),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 通用磁力推送：走共享 [pushGenericMagnet]（首用同意 → 解析 → 落计划 →
+  /// 推后端），与独立下载页同一逻辑。
+  Future<void> _pushGeneric() async {
+    if (_pushingGeneric) return;
+    final AppModel appModel = ref.read(appProvider);
+    setState(() => _pushingGeneric = true);
+    final GenericPushOutcome outcome = await pushGenericMagnet(
+      context: context,
+      appModel: appModel,
+      magnet: _magnetCtrl.text,
+      contentKind: _genericKind,
+    );
+    if (!mounted) return;
+    setState(() => _pushingGeneric = false);
+    _snack(genericPushMessage(outcome));
+    if (outcome == GenericPushOutcome.ok) {
+      _magnetCtrl.clear();
+      await _reloadPlans();
+    }
   }
 
   Widget _buildAnimeResults(ThemeData theme) {

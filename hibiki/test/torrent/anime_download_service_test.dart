@@ -250,8 +250,11 @@ void main() {
     late AnimeDownloadPlanStore store;
     late _FakeQb qb;
     late List<(AnimeDownloadPlan, List<String>)> importCalls;
+    late List<(AnimeDownloadPlan, List<String>)> bookImportCalls;
     Future<AnimeDownloadImportOutcome?> Function(
         AnimeDownloadPlan, List<String>)? importerOverride;
+    Future<int?> Function(AnimeDownloadPlan, List<String>)?
+        bookImporterOverride;
 
     AnimeDownloadService buildService(
         {QbConnectionConfig? Function()? config}) {
@@ -262,6 +265,13 @@ void main() {
           importCalls.add((plan, videos));
           if (importerOverride != null) return importerOverride!(plan, videos);
           return const AnimeDownloadImportOutcome(collectionId: 42);
+        },
+        bookImporter: (AnimeDownloadPlan plan, List<String> books) async {
+          bookImportCalls.add((plan, books));
+          if (bookImporterOverride != null) {
+            return bookImporterOverride!(plan, books);
+          }
+          return books.length;
         },
         backendFactory: qb.newBackend,
         interval: const Duration(hours: 1),
@@ -275,7 +285,9 @@ void main() {
       );
       qb = _FakeQb();
       importCalls = <(AnimeDownloadPlan, List<String>)>[];
+      bookImportCalls = <(AnimeDownloadPlan, List<String>)>[];
       importerOverride = null;
+      bookImporterOverride = null;
     });
 
     tearDown(() {
@@ -577,6 +589,102 @@ void main() {
         expect(await buildService().importNow(_kHash), isFalse);
         expect((await store.loadAll()).single.status,
             AnimeDownloadPlan.statusDownloading);
+      });
+    });
+
+    group('内容分流（书/视频/自动）', () {
+      AnimeDownloadPlan bookPlan({String id = _kHash, String? kind}) =>
+          AnimeDownloadPlan(
+            id: id,
+            createdAtMs: DateTime.now().millisecondsSinceEpoch,
+            seriesTitle: 'A Book',
+            torrentTitle: 'A Book.epub',
+            magnet: 'magnet:?xt=urn:btih:$id',
+            qbCategory: 'hibiki',
+            contentKind: kind ?? AnimeDownloadPlan.kindBook,
+          );
+
+      test('book 计划：epub 走书库回调、不碰视频入库、标 imported', () async {
+        await store.save(bookPlan());
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(savePath: '/dl', contentPath: '/dl/A Book.epub'),
+        ];
+        qb.files = <Map<String, dynamic>>[
+          <String, dynamic>{'name': 'A Book.epub', 'size': 9, 'progress': 1.0},
+        ];
+        await buildService().tick();
+        expect(importCalls, isEmpty); // 视频入库未触发
+        expect(bookImportCalls, hasLength(1));
+        expect(
+            bookImportCalls.single.$2, <String>[p.join('/dl', 'A Book.epub')]);
+        final AnimeDownloadPlan saved = (await store.loadAll()).single;
+        expect(saved.status, AnimeDownloadPlan.statusImported);
+        expect(saved.collectionId, isNull); // 书无合集
+      });
+
+      test('auto 计划：视频→视频库、epub→书库，两者都调', () async {
+        final String savePath = p.join(tempDir.path, 'dl');
+        Directory(savePath).createSync(recursive: true);
+        await store.save(bookPlan(kind: AnimeDownloadPlan.kindAuto));
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(savePath: savePath, contentPath: savePath),
+        ];
+        qb.files = <Map<String, dynamic>>[
+          <String, dynamic>{
+            'name': 'Show - 01.mkv',
+            'size': 9,
+            'progress': 1.0
+          },
+          <String, dynamic>{'name': 'Bonus.epub', 'size': 9, 'progress': 1.0},
+          <String, dynamic>{'name': 'readme.txt', 'size': 1, 'progress': 1.0},
+        ];
+        await buildService().tick();
+        expect(importCalls, hasLength(1));
+        expect(
+            importCalls.single.$2, <String>[p.join(savePath, 'Show - 01.mkv')]);
+        expect(bookImportCalls, hasLength(1));
+        expect(bookImportCalls.single.$2,
+            <String>[p.join(savePath, 'Bonus.epub')]);
+        expect((await store.loadAll()).single.status,
+            AnimeDownloadPlan.statusImported);
+      });
+
+      test('book 计划书库回调返回 0 → 标 failed', () async {
+        bookImporterOverride =
+            (AnimeDownloadPlan plan, List<String> books) async => 0;
+        await store.save(bookPlan());
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(savePath: '/dl', contentPath: '/dl/A Book.epub'),
+        ];
+        qb.files = <Map<String, dynamic>>[
+          <String, dynamic>{'name': 'A Book.epub', 'size': 9, 'progress': 1.0},
+        ];
+        await buildService().tick();
+        expect((await store.loadAll()).single.status,
+            AnimeDownloadPlan.statusFailed);
+      });
+    });
+
+    group('resolveBookAbsolutePaths', () {
+      test('过滤 epub；files 空退化 contentPath', () {
+        const TorrentSnapshot info = TorrentSnapshot(
+          hash: _kHash,
+          name: 't',
+          progress: 1,
+          state: 'stalledUP',
+          savePath: '/dl',
+          contentPath: '/dl/x.epub',
+          amountLeft: 0,
+        );
+        expect(
+          resolveBookAbsolutePaths(info, const <TorrentFileEntry>[
+            TorrentFileEntry(name: 'a.epub', size: 1, progress: 1, index: 0),
+            TorrentFileEntry(name: 'b.mkv', size: 1, progress: 1, index: 1),
+          ]),
+          <String>[p.join('/dl', 'a.epub')],
+        );
+        expect(resolveBookAbsolutePaths(info, const <TorrentFileEntry>[]),
+            <String>['/dl/x.epub']);
       });
     });
   });

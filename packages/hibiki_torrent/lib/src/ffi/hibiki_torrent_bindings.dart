@@ -108,6 +108,42 @@ class HibikiTorrentBindings {
   late final _ht_apply_limits = _ht_apply_limitsPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int)>();
 
+  /// 上传模式开关（做种总开关，per-torrent 或全量）。info_hash 空串=全量；
+  /// upload_enabled 非 0=允许上传、0=停止上传但保连接。1 成功 0 失败。
+  int ht_set_upload_mode(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int upload_enabled,
+  ) {
+    return _ht_set_upload_mode(session, info_hash, upload_enabled);
+  }
+
+  late final _ht_set_upload_modePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_set_upload_mode');
+  late final _ht_set_upload_mode = _ht_set_upload_modePtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 应用内存占用设置（<=0 保持默认）。1 成功 0 失败。
+  int ht_apply_memory_settings(
+    ffi.Pointer<ffi.Void> session,
+    int connections_limit,
+    int max_queued_disk_bytes,
+    int send_buffer_watermark,
+    int max_peerlist_size,
+  ) {
+    return _ht_apply_memory_settings(session, connections_limit,
+        max_queued_disk_bytes, send_buffer_watermark, max_peerlist_size);
+  }
+
+  late final _ht_apply_memory_settingsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int,
+              ffi.Int)>>('ht_apply_memory_settings');
+  late final _ht_apply_memory_settings = _ht_apply_memory_settingsPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int, int)>();
+
   /// 添加磁力；返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_add_magnet(
     ffi.Pointer<ffi.Void> session,

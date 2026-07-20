@@ -16,6 +16,10 @@ class QbConnectionConfig {
     this.downloadLimitKbps = 0,
     this.uploadLimitKbps = 0,
     this.maxConnections = 0,
+    this.uploadEnabled = false,
+    this.seedTimeLimitMinutes = 0,
+    this.seedRatioLimit = 0,
+    this.memoryLimitMb = 0,
   });
 
   /// 本应用管理的下载在 qBittorrent 里归入的默认分类名。
@@ -66,6 +70,24 @@ class QbConnectionConfig {
   /// 内置引擎全局最大连接数（0 = 引擎默认）。
   final int maxConnections;
 
+  /// 是否允许上传/做种（默认 [false]，开箱即关，尊重用户带宽/隐私）。首次下载
+  /// 时弹窗询问是否开启（见 preferences `torrent_upload_intro_shown`）。仅内置
+  /// 引擎生效；外接 qb 由 qb 自身管理上传。
+  final bool uploadEnabled;
+
+  /// 做种时长上限（分钟，0 = 不限）。开启上传后，单个种子做种超过该时长即停止
+  /// 上传（host tick 在 Dart 侧执行）。仅内置引擎生效。
+  final int seedTimeLimitMinutes;
+
+  /// 做种分享率上限（uploaded/downloaded，0 = 不限）。开启上传后，单个种子分享
+  /// 率达到该值即停止上传（host tick 在 Dart 侧执行）。仅内置引擎生效。
+  final double seedRatioLimit;
+
+  /// 内置引擎内存占用上限（MB，0 = 自动按物理内存推导）。libtorrent 不设限会
+  /// 「有多少内存吃多少」；据此推导连接数/磁盘缓冲/peer 列表等设置压住占用。
+  /// 仅内置引擎生效。
+  final int memoryLimitMb;
+
   /// 是否已配置：内置引擎/自动无需连接参数恒为真（桌面开箱即用）；外接 qb
   /// 要求 [baseUrl] 非空。未配置时下载入队与完成监听均不动作。
   bool get isConfigured =>
@@ -80,6 +102,10 @@ class QbConnectionConfig {
     int? downloadLimitKbps,
     int? uploadLimitKbps,
     int? maxConnections,
+    bool? uploadEnabled,
+    int? seedTimeLimitMinutes,
+    double? seedRatioLimit,
+    int? memoryLimitMb,
   }) {
     return QbConnectionConfig(
       backend: backend ?? this.backend,
@@ -90,6 +116,10 @@ class QbConnectionConfig {
       downloadLimitKbps: downloadLimitKbps ?? this.downloadLimitKbps,
       uploadLimitKbps: uploadLimitKbps ?? this.uploadLimitKbps,
       maxConnections: maxConnections ?? this.maxConnections,
+      uploadEnabled: uploadEnabled ?? this.uploadEnabled,
+      seedTimeLimitMinutes: seedTimeLimitMinutes ?? this.seedTimeLimitMinutes,
+      seedRatioLimit: seedRatioLimit ?? this.seedRatioLimit,
+      memoryLimitMb: memoryLimitMb ?? this.memoryLimitMb,
     );
   }
 }
@@ -119,6 +149,12 @@ int _nonNegInt(Object? value) {
   return n < 0 ? 0 : n;
 }
 
+/// JSON 数字字段容错解析为非负 double（null/非数/负数/非有限 → 0）。
+double _nonNegDouble(Object? value) {
+  final double n = value is num ? value.toDouble() : 0;
+  return (n.isFinite && n > 0) ? n : 0;
+}
+
 /// 解析偏好里存的 JSON 字符串为 [QbConnectionConfig]。纯函数，容错：
 /// 空串 / 坏 JSON / 非对象一律返回 null（= 未配置）；`category` 缺失或为空
 /// 回退默认分类 [QbConnectionConfig.defaultCategory]。
@@ -141,6 +177,11 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
       downloadLimitKbps: _nonNegInt(json['downloadLimitKbps']),
       uploadLimitKbps: _nonNegInt(json['uploadLimitKbps']),
       maxConnections: _nonNegInt(json['maxConnections']),
+      // 缺字段（老配置）→ false：开箱即关上传，首次下载弹窗再征询开启。
+      uploadEnabled: json['uploadEnabled'] == true,
+      seedTimeLimitMinutes: _nonNegInt(json['seedTimeLimitMinutes']),
+      seedRatioLimit: _nonNegDouble(json['seedRatioLimit']),
+      memoryLimitMb: _nonNegInt(json['memoryLimitMb']),
     );
   } catch (_) {
     return null;
@@ -159,5 +200,9 @@ String encodeQbConnectionConfig(QbConnectionConfig config) {
     'downloadLimitKbps': config.downloadLimitKbps,
     'uploadLimitKbps': config.uploadLimitKbps,
     'maxConnections': config.maxConnections,
+    'uploadEnabled': config.uploadEnabled,
+    'seedTimeLimitMinutes': config.seedTimeLimitMinutes,
+    'seedRatioLimit': config.seedRatioLimit,
+    'memoryLimitMb': config.memoryLimitMb,
   });
 }

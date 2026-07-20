@@ -125,10 +125,10 @@ void main() {
       expect(nextActionIdx, greaterThan(actionIdx),
           reason: 'toggleShaderCompare callback must end before volumeUp');
       final String callback = pageSrc.substring(actionIdx, nextActionIdx);
-      final int gate = callback.indexOf('_runWhenImmersiveAllowsFullControls');
+      final int gate = callback.indexOf('_runWhenImmersiveAllowsShortcuts');
       final int toggle = callback.indexOf('_toggleShaderCompare()');
       expect(gate, greaterThanOrEqualTo(0),
-          reason: 'C shortcut must respect the full-controls immersive gate');
+          reason: 'C shortcut must respect the shortcuts immersive gate');
       expect(toggle, greaterThan(gate),
           reason: 'C shortcut action runs _toggleShaderCompare after the gate');
       const InputBinding cKey = InputBinding(key: LogicalKeyboardKey.keyC);

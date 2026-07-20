@@ -32,17 +32,38 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
-/// 顶层 tab 的逻辑身份（取代写死的整数索引）。底栏、侧栏与 macOS 根侧栏都只在
-/// 渲染层把身份映射成位置，因此插入「游戏」不会打乱查词/设置的索引。
-enum HomeTab { books, video, games, dictionaries, settings }
+/// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
+/// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
+/// 的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊情况）。底栏/侧栏只在渲染层把身份映射
+/// 成位置。games（galgame 库）紧邻设置之前。texthooker tab 已删（galgame 台词统一进悬浮
+/// 查词面板，见 [GalgameSessionController]）。
+enum HomeTab {
+  home,
+  books,
+  video,
+  downloads,
+  dictionaries,
+  games,
+  settings,
+}
 
-/// 纯函数：返回可见顶层 tab 的**视觉顺序**。游戏是常驻一级模块，现有 texthooker
-/// 作为其内部「捕获工作台」，不再按实验开关占据一级导航位置。
-List<HomeTab> homeActiveTabs({required bool videoEnabled}) => <HomeTab>[
+/// 纯函数：给定视频开关与游戏库开关，返回可见顶层 tab 的**视觉顺序**——视频固定插在书架
+/// 与词典之间（用户要求「在书架和词典管理中间」），games（galgame 库）仅在开启时出现，
+/// 位置固定在词典与设置之间。提取成顶层函数便于单测条件插入与顺序，不必实例化整个
+/// [HomePage]。底栏/侧栏的位置索引由此列表导出。
+List<HomeTab> homeActiveTabs({
+  required bool videoEnabled,
+  bool gamesEnabled = false,
+}) =>
+    <HomeTab>[
+      HomeTab.home,
       HomeTab.books,
       if (videoEnabled) HomeTab.video,
-      HomeTab.games,
+      // 下载 tab 与视频子系统同门控（下载入口原本就在视频页头，把它单独拿出来
+      // 成独立底栏条目）；位置紧随视频。
+      if (videoEnabled) HomeTab.downloads,
       HomeTab.dictionaries,
+      if (gamesEnabled) HomeTab.games,
       HomeTab.settings,
     ];
 
@@ -76,17 +97,23 @@ HomeTab homeTabForVisualIndex({
 }
 
 /// 顶层 home-shell 选中 tab 的共享真值（[HomeTab] 身份，不用整数位置——插入 video /
-/// games tab 不再打乱索引）。macOS 根 [MacosWindow] 的原生侧栏在 main.dart
+/// games 条件 tab 不再打乱索引）。macOS 根 [MacosWindow] 的原生侧栏在 main.dart
 /// 的 builder 里（Approach B，让 MacosWindow 包住整个 navigator，pushed 路由也拿到
 /// MacosWindowScope）构建，与 HomePage 自绘的 rail / 底栏驱动**同一个**选中身份。
 /// 非 macOS 平台不读写它，纯 no-op。
 final ValueNotifier<HomeTab> homeShellTabNotifier =
-    ValueNotifier<HomeTab>(HomeTab.books);
+    ValueNotifier<HomeTab>(HomeTab.home);
 
 /// 单个 [HomeTab] 的导航项（图标 + 标签）。顶层函数，供 HomePage 的 rail/底栏与 macOS
 /// 根侧栏共用，保证三处标签/图标一致。
 AdaptiveNavItem homeNavItemFor(HomeTab tab) {
   switch (tab) {
+    case HomeTab.home:
+      return AdaptiveNavItem(
+        icon: Icons.home_outlined,
+        selectedIcon: Icons.home,
+        label: t.nav_home,
+      );
     case HomeTab.books:
       return AdaptiveNavItem(
         icon: Icons.menu_book_outlined,
@@ -99,17 +126,23 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         selectedIcon: Icons.movie,
         label: t.nav_video,
       );
-    case HomeTab.games:
+    case HomeTab.downloads:
       return AdaptiveNavItem(
-        icon: Icons.sports_esports_outlined,
-        selectedIcon: Icons.sports_esports,
-        label: t.nav_game,
+        icon: Icons.download_outlined,
+        selectedIcon: Icons.download,
+        label: t.nav_downloads,
       );
     case HomeTab.dictionaries:
       return AdaptiveNavItem(
         icon: Icons.search_outlined,
         selectedIcon: Icons.search,
         label: t.nav_lookup,
+      );
+    case HomeTab.games:
+      return AdaptiveNavItem(
+        icon: Icons.sports_esports_outlined,
+        selectedIcon: Icons.sports_esports,
+        label: t.nav_game,
       );
     case HomeTab.settings:
       return AdaptiveNavItem(
@@ -122,8 +155,8 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
 
 /// 为根 [MacosWindow] 构建 macOS 原生 [Sidebar]。住在根（不在 HomePage 内）才能让
 /// pushed 路由——阅读器、设置详情、对话框——继承 MacosWindowScope 用原生 ToolBar。
-/// 侧栏项由 [activeTabs] 动态生成（与底栏/rail 的 [homeActiveTabs] 同一真值），选中
-/// 身份走 [homeShellTabNotifier]。
+/// 侧栏项由 [activeTabs] 动态生成（与底栏/rail 的 [homeActiveTabs] 同一真值，video /
+/// games 开关变化时自动增删），选中身份走 [homeShellTabNotifier]。
 Sidebar buildHibikiMacosSidebar({required List<HomeTab> activeTabs}) {
   return Sidebar(
     minWidth: 220,
@@ -186,10 +219,10 @@ class _HomePageState extends BasePageState<HomePage>
     with WidgetsBindingObserver {
   String get appVersion => appModel.packageInfo.version;
 
-  HomeTab _currentTab = HomeTab.books;
+  HomeTab _currentTab = HomeTab.home;
 
   /// 进入「设置」标签前的来源 tab，供设置全屏左上返回箭头切回。
-  HomeTab _previousTab = HomeTab.books;
+  HomeTab _previousTab = HomeTab.home;
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
 
@@ -464,8 +497,14 @@ class _HomePageState extends BasePageState<HomePage>
     return KeyEventResult.ignored;
   }
 
-  /// 当前可见的顶层 tab，按视觉顺序：书架 → 视频 → 游戏 → 查词 → 设置。
-  List<HomeTab> _activeTabs() => homeActiveTabs(videoEnabled: true);
+  /// 当前可见的顶层 tab：首页 → 书架 → 视频 → 下载 → 词典 → 游戏 → 设置。视频 tab
+  /// 已毕业为常驻（位于书架与词典之间）；games（galgame 库）仅 Windows 桌面出现（galgame
+  /// 引擎-hook 注入本就 Windows-only，故以平台而非实验开关门控，默认可见），位于词典与设置
+  /// 之间。底栏/侧栏的位置索引由此列表导出。
+  List<HomeTab> _activeTabs() => homeActiveTabs(
+        videoEnabled: true,
+        gamesEnabled: Platform.isWindows,
+      );
 
   /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚关掉实验开关时仍停在
   /// 视频 tab），回落到书架，避免渲染一个不存在的 tab。`_currentTab` 自身保持不变，
@@ -675,7 +714,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// destination. Settings tab reuses the same full-screen two-pane content the
   /// desktop layout uses (the sidebar IS the destination switcher, so no extra
   /// back button). Tab identity is [HomeTab]-driven — the dynamic [_activeTabs]
-  /// list flows through the same enum, never int.
+  /// list (video/games toggles) flows through the same enum, never int.
   Widget _buildMacosLayout() {
     final AdaptiveNavItem currentItem = _navItemFor(_visibleTab);
     // TODO-1375（症状③）：macOS ToolBar 的 automaticallyImplyLeading 只在
@@ -904,14 +943,18 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildTabContent(HomeTab tab) {
     switch (tab) {
+      case HomeTab.home:
+        return HomeDashboardPage(videoRepo: _videoRepository);
       case HomeTab.video:
         return HomeVideoPage(repo: _videoRepository);
-      case HomeTab.games:
-        return const HomeGamePage();
+      case HomeTab.downloads:
+        return const DownloadsPage();
       case HomeTab.dictionaries:
         return HomeDictionaryPage(
           focusSignal: _dictFocusSignal,
         );
+      case HomeTab.games:
+        return const HomeGamePage();
       case HomeTab.settings:
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。

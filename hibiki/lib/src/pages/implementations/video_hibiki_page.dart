@@ -120,7 +120,6 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/render_backend_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
-import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -939,6 +938,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 回到读持久化值。避免每次 `onHorizontalDragUpdate` 都写 DB。
   double? _subtitleListWidthDrag;
 
+  /// BUG-930：鼠标是否正悬在字幕列表宽度拖拽把手（[_subtitleListResizeHandle]）上。
+  /// 把手要显 `resizeLeftRight`（左右箭头）光标，但侧栏 [_withSubtitleListCursorReveal]
+  /// 的 `onHover` 每帧经 [_forceRevealOsCursorForPanel] **原生强设** OS 光标为 `basic`
+  /// （箭头，BUG-391 缓解），会盖掉框架为把手下发的 resize 光标 → 调宽光标永远出不来。
+  /// 悬在把手上时置真，让 [_forceRevealOsCursorForPanel] 让位（不再强设 basic），把光标
+  /// 交给把手 MouseRegion 声明的 resize。只被 hover 回调读、不触发重建，故不走 setState。
+  bool _pointerOverSubtitleResizeHandle = false;
+
   /// 剧集列表 push-aside 侧栏可见性（TODO-638）。剧集列表此前是
   /// `showModalBottomSheet`（底部弹层），与其它侧栏（字幕列表 push-aside、设置 /
   /// 倍速等 overlay）显示风格不一致。改成与字幕列表同款的 push-aside 侧栏后，可见性
@@ -981,6 +988,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
+
+  /// BUG-939：`_subtitleMenuSources` 已成功枚举时对应的本地视频路径。字幕轨枚举
+  /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
+  /// 用缓存渲染，不再每次重跑 ffprobe 显加载条、也不再把已枚举出的字幕轨先清空重来
+  /// （用户报「字幕轨每次都要加载、明明没可加载的地方；之前有的字幕还会消失要等」）。
+  /// null=尚未为当前视频枚举 / 已失效（换视频、导入新字幕档）→ 下次打开重新枚举。
+  String? _subtitleMenuSourcesPath;
 
   /// 当前视频是否有内封章节（TODO-424）：控制条章节入口按钮的显隐门控。章节列表是
   /// [VideoPlayerController.refreshChapters] open 后**异步**填充的，故缓存这个布尔并由
@@ -2589,6 +2603,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _missingResource = false;
       _missingRow = null;
       _currentVideoPath = videoPath;
+      // BUG-939：换了视频源（含换集）→ 上一视频的字幕轨枚举缓存作废，清空并复位加载态
+      // + 缓存 key，避免面板停留在「字幕」分类时残留上一集的字幕轨行，下次打开按新路径重枚举。
+      if (clipExportSourceChanged) {
+        _subtitleMenuSources = const <SubtitleSource>[];
+        _subtitleMenuLoading = false;
+        _subtitleMenuSourcesPath = null;
+      }
       // externalSubtitlePath 即持久化值：外挂路径 / `embedded:<n>` / `off:`（显式关闭
       // 哨兵，TODO-818）都按原样写进 _currentSubtitleSource 供菜单高亮。内嵌自动加载
       // （externalSubtitlePath==null）时当前选中由 _currentSubtitleSource 保留（菜单
@@ -2680,6 +2701,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           dateKey: dateKey,
           hour: hour,
           deltaMs: deltaMs,
+        ),
+        // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
+        recordActivity: (String t, String uid, String dateKey, int timestampMs,
+                int durationMs, int chars) =>
+            db.addActivityEvent(
+          eventType: kActivityWatch,
+          mediaType: kActivityMediaVideo,
+          title: t,
+          mediaKey: uid,
+          dateKey: dateKey,
+          timestampMs: timestampMs,
+          durationMs: durationMs,
+          charsDelta: chars,
         ),
       )
         ..attach(controller)
@@ -2808,7 +2842,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _failed = false;
       _failReason = null;
     });
-    HibikiToast.show(msg: t.video_resource_relink_success);
+    _showOsd(t.video_resource_relink_success);
     await _loadSingle(updated);
   }
 
@@ -2947,22 +2981,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   VideoImmersiveMode get _videoImmersiveMode => appModel.videoImmersiveMode;
 
+  // 「指针控制」门控（控制条按钮 / 滚轮 / 右键菜单等触摸/鼠标发起的完整控制）：
+  // 沉浸锁定态仅 full 模式放行，防止误触。
   bool get _immersiveAllowsFullControls =>
       !_immersiveLocked.value || _videoImmersiveMode == VideoImmersiveMode.full;
 
-  bool get _immersiveAllowsDoubleTapSeek =>
+  // 「快捷键」门控（键盘 / 手柄 / 裸空格发起的播放动作）：full 或 shortcutAndLookup
+  // （快捷键+查词）放行。与 [_immersiveAllowsFullControls] 分离，使 shortcutAndLookup
+  // 能在挡住触摸误触的同时放行显式快捷键输入。
+  bool get _immersiveAllowsShortcuts =>
       !_immersiveLocked.value ||
       _videoImmersiveMode == VideoImmersiveMode.full ||
-      _videoImmersiveMode == VideoImmersiveMode.seekAndLookup;
+      _videoImmersiveMode == VideoImmersiveMode.shortcutAndLookup;
+
+  // 触摸双击左右区 seek：沉浸锁定态仅 full 模式放行。shortcutAndLookup 不放行触摸
+  // 跳转（跳转改由快捷键完成），故这里不含 shortcutAndLookup。
+  bool get _immersiveAllowsDoubleTapSeek =>
+      !_immersiveLocked.value || _videoImmersiveMode == VideoImmersiveMode.full;
 
   bool get _immersiveAllowsLookup =>
       !_immersiveLocked.value ||
       _videoImmersiveMode == VideoImmersiveMode.full ||
-      _videoImmersiveMode == VideoImmersiveMode.seekAndLookup ||
+      _videoImmersiveMode == VideoImmersiveMode.shortcutAndLookup ||
       _videoImmersiveMode == VideoImmersiveMode.lookupOnly;
 
-  void _runWhenImmersiveAllowsFullControls(VoidCallback action) {
-    if (!_immersiveAllowsFullControls) return;
+  // 键盘 / 手柄 / 裸空格快捷键统一门控：仅在 [_immersiveAllowsShortcuts] 时执行。
+  void _runWhenImmersiveAllowsShortcuts(VoidCallback action) {
+    if (!_immersiveAllowsShortcuts) return;
     action();
   }
 
@@ -3685,47 +3730,62 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
     VideoPlayerController controller,
   ) {
-    return buildVideoPlayerShortcutsFromRegistry(
-      appModel.shortcutRegistry,
-      _buildVideoShortcutActions(controller),
+    // BUG-924：词典浮层可见时，任一视频快捷键先关顶层浮层（对齐阅读器），否则穿透去控制
+    // 后台视频（用户报「视频里关不掉词典」「按 d 竟然快进」）。守卫是纯函数，逻辑集中在
+    // [guardVideoShortcutsWithPopupDismiss]，此处只提供页面态谓词与关浮层动作。
+    return guardVideoShortcutsWithPopupDismiss(
+      buildVideoPlayerShortcutsFromRegistry(
+        appModel.shortcutRegistry,
+        _buildVideoShortcutActions(controller),
+      ),
+      isPopupVisible: () => _hasVisiblePopup,
+      dismissPopup: _dismissTopVisiblePopup,
     );
   }
+
+  /// BUG-924：关掉当前顶层可见词典浮层（复用 [_handleBackOrExit] / [_onDismissBarrierTap]
+  /// 同款逐层关调用，index 0 保留隐藏热槽 BUG-092）。键盘 / 手柄 / 裸空格三条输入通道在
+  /// 浮层可见时统一调它先关浮层。
+  void _dismissTopVisiblePopup() => _popNestedPopupAt(_topVisiblePopupIndex);
 
   /// TODO-1342：视频播放器动作回调集合的单一构造点。键盘
   /// （[buildVideoPlayerShortcutsFromRegistry]）与手柄（[_handleVideoGamepadButton]
   /// 经 [videoActionCallbacks]）共用同一份 [VideoPlayerShortcutActions]，保证两条输入
-  /// 通道命中完全一致的执行体（含 [_runWhenImmersiveAllowsFullControls] 沉浸门控与控制
+  /// 通道命中完全一致的执行体（含 [_runWhenImmersiveAllowsShortcuts] 沉浸门控与控制
   /// 条唤醒），不产生两套语义、不引入手柄专属特例分支。
   VideoPlayerShortcutActions _buildVideoShortcutActions(
     VideoPlayerController controller,
   ) {
     return VideoPlayerShortcutActions(
-      togglePlayPause: () => _runWhenImmersiveAllowsFullControls(
+      togglePlayPause: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.playOrPause()),
       ),
-      play: () => _runWhenImmersiveAllowsFullControls(
+      play: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.play()),
       ),
-      pause: () => _runWhenImmersiveAllowsFullControls(
+      pause: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.pause()),
       ),
-      // Ctrl+←/→ = 上/下一句字幕（TODO-090）。上一句太远时 Ctrl+← 退化成回退
-      // seekSeconds 秒（TODO-085），决策集中在 [skipToPrevCueOrSeekBack]；无 cue
+      // Ctrl+←/→ = 上/下一句字幕（TODO-090）。**键盘方向键**语义：上一句太远时 Ctrl+←
+      // 退化成回退 seekSeconds 秒（TODO-085，故 degradeFarCueToTimeSeek: true）；无 cue
       // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
+      // 底栏 / 手柄 / 双击的「上一句」按钮走 skipToPrevCueOrSeekBack 的默认（不退化，
+      // 恒跳句，BUG-942）——按钮心智是「跳句」，不是方向键 seek。
       // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
       // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
       previousSubtitle: () {
-        _runWhenImmersiveAllowsFullControls(() {
+        _runWhenImmersiveAllowsShortcuts(() {
           _pokeControlsVisible();
           unawaited(
             controller.skipToPrevCueOrSeekBack(
               seekSeconds: _asbConfig.seekSeconds,
+              degradeFarCueToTimeSeek: true,
             ),
           );
         });
       },
       nextSubtitle: () {
-        _runWhenImmersiveAllowsFullControls(() {
+        _runWhenImmersiveAllowsShortcuts(() {
           _pokeControlsVisible();
           // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
           // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
@@ -3738,100 +3798,116 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         });
       },
       // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
-      seekBackward: () => _runWhenImmersiveAllowsFullControls(() {
+      seekBackward: () => _runWhenImmersiveAllowsShortcuts(() {
         _pokeControlsVisible();
         unawaited(controller.seekRelative(-_asbSeekMs));
       }),
-      seekForward: () => _runWhenImmersiveAllowsFullControls(() {
+      seekForward: () => _runWhenImmersiveAllowsShortcuts(() {
         _pokeControlsVisible();
         unawaited(controller.seekRelative(_asbSeekMs));
       }),
-      toggleShaderCompare: () => _runWhenImmersiveAllowsFullControls(
+      toggleShaderCompare: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_toggleShaderCompare()),
       ),
-      volumeUp: () => _runWhenImmersiveAllowsFullControls(
+      volumeUp: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_adjustVolume(_volumeStep)),
       ),
-      volumeDown: () => _runWhenImmersiveAllowsFullControls(
+      volumeDown: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_adjustVolume(-_volumeStep)),
       ),
-      toggleMute: () => _runWhenImmersiveAllowsFullControls(
+      toggleMute: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_toggleMute()),
       ),
-      speedUp: () => _runWhenImmersiveAllowsFullControls(
+      speedUp: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_adjustSpeed(_speedStep)),
       ),
-      speedDown: () => _runWhenImmersiveAllowsFullControls(
+      speedDown: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_adjustSpeed(-_speedStep)),
       ),
-      resetSpeed: () => _runWhenImmersiveAllowsFullControls(
+      resetSpeed: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_setSpeed(1.0)),
       ),
-      previousFrame: () => _runWhenImmersiveAllowsFullControls(
+      previousFrame: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.frameStep(forward: false)),
       ),
-      nextFrame: () => _runWhenImmersiveAllowsFullControls(
+      nextFrame: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.frameStep(forward: true)),
       ),
-      screenshot: () => _runWhenImmersiveAllowsFullControls(
+      screenshot: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_saveScreenshot()),
       ),
-      toggleFullscreen: () => _runWhenImmersiveAllowsFullControls(() {
+      toggleFullscreen: () => _runWhenImmersiveAllowsShortcuts(() {
         final BuildContext? ctx = _videoControlsContext;
         if (ctx != null && ctx.mounted) {
           unawaited(_toggleVideoFullscreen(ctx));
         }
       }),
       // 'L' = 开/关字幕跳转列表（TODO-069）。
-      toggleSubtitleList: () => _runWhenImmersiveAllowsFullControls(
+      toggleSubtitleList: () => _runWhenImmersiveAllowsShortcuts(
         _toggleSubtitleJumpList,
       ),
       // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
       toggleImmersiveLock: _toggleImmersiveLock,
       // 'B' = 翻转字幕模糊（TODO-134：从内层独立 CallbackShortcuts 并入注册表）。
-      toggleSubtitleBlur: () => _runWhenImmersiveAllowsFullControls(
+      toggleSubtitleBlur: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_toggleSubtitleBlur()),
       ),
       // TODO-840 Part B：Shift+B 循环遮蔽三态；H 开/关「隐藏主字幕」。
-      cycleSubtitleObscure: () => _runWhenImmersiveAllowsFullControls(
+      cycleSubtitleObscure: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_cycleSubtitleObscure()),
       ),
-      toggleSubtitleHide: () => _runWhenImmersiveAllowsFullControls(
+      toggleSubtitleHide: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_toggleSubtitleHide()),
       ),
-      toggleFavoriteSentence: () => _runWhenImmersiveAllowsFullControls(
+      // TODO-1382：Shift+G 循环副字幕遮蔽三态；Shift+H 开/关「隐藏副字幕」。
+      cycleSecondarySubtitleObscure: () => _runWhenImmersiveAllowsShortcuts(
+        () => unawaited(_cycleSecondarySubtitleObscure()),
+      ),
+      toggleSecondarySubtitleHide: () => _runWhenImmersiveAllowsShortcuts(
+        () => unawaited(_toggleSecondarySubtitleHide()),
+      ),
+      toggleFavoriteSentence: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_toggleFavoriteCurrentCue()),
       ),
-      replayCurrentSubtitle: () => _runWhenImmersiveAllowsFullControls(
+      replayCurrentSubtitle: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_replayCurrentCueAndPokeControls()),
       ),
       // 重播上一句（TODO-378，BUG-287，默认 Shift+R）：纯句子后退到上一条 cue 起点
       // 并播放（skipToPrevCue，不退化回退）。与「上一句字幕」(Ctrl+←) 区分——后者
       // gap 太远时按 BUG-185/TODO-085 退化时间 seek，是用户另一项有意设计，不动它。
-      replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
+      replayPreviousSubtitle: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_replayPreviousCueAndPokeControls()),
       ),
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。跳章后唤醒控制条（与跳句同范式，BUG-175）。
-      previousChapter: () => _runWhenImmersiveAllowsFullControls(() {
+      previousChapter: () => _runWhenImmersiveAllowsShortcuts(() {
         _pokeControlsVisible();
         unawaited(controller.previousChapter());
       }),
-      nextChapter: () => _runWhenImmersiveAllowsFullControls(() {
+      nextChapter: () => _runWhenImmersiveAllowsShortcuts(() {
         _pokeControlsVisible();
         unawaited(controller.nextChapter());
       }),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
       // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
       // 与顶部快速设置面板同源、零第二套状态。
-      openSubtitleAlign: () => _runWhenImmersiveAllowsFullControls(
+      openSubtitleAlign: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_openSubtitleWaveformAlign()),
       ),
-      subtitleDelayIncrease: () => _runWhenImmersiveAllowsFullControls(
+      subtitleDelayIncrease: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_setDelayMs(_delayMs + _kSubtitleDelayNudgeMs)),
       ),
-      subtitleDelayDecrease: () => _runWhenImmersiveAllowsFullControls(
+      subtitleDelayDecrease: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_setDelayMs(_delayMs - _kSubtitleDelayNudgeMs)),
+      ),
+      // asbplayer 式「字幕偏移对齐」（用户请求，默认 Ctrl+Shift+←/→）：把上一句 / 下一句
+      // 字幕的起点整体平移到当前播放点。决策集中在纯函数 snapSubtitleDelayMs，写穿仍走
+      // _setDelayMs（与 z/x 同一路径）。过沉浸门控，与 z/x 微调互补。
+      alignSubtitleToPrev: () => _runWhenImmersiveAllowsShortcuts(
+        () => _snapSubtitleDelayToCue(next: false),
+      ),
+      alignSubtitleToNext: () => _runWhenImmersiveAllowsShortcuts(
+        () => _snapSubtitleDelayToCue(next: true),
       ),
       escape: () {
         if (_videoControlEditMode.value) {
@@ -3883,6 +3959,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       scope: ShortcutScope.video,
     );
     if (action == null) return false;
+    // BUG-924：词典浮层可见时，任一已绑手柄键先关顶层浮层并消费（对齐阅读器 + 键盘通道），
+    // 而非穿透控制后台视频。放在解析出 action 之后——未绑定的键仍交回 GamepadService 兜底
+    // （焦点移动等），不误吞导航。
+    if (_hasVisiblePopup) {
+      _dismissTopVisiblePopup();
+      return true;
+    }
     final VoidCallback? callback =
         videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
     if (callback == null) return false;
@@ -3910,12 +3993,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 被内层消费、也不被页级兜底消费，最终上浮到本最外层 [Focus]（[_wrapVideoGamepadControls]
   /// 是 [_videoFocusNode] 及所有子焦点节点的祖先，冒泡最后到这里）。这里按**物理键**
   /// 还原 Space 语义，触发与 [_withPageSpaceOverride] 完全一致的 togglePlayPause（同样
-  /// 经 [_runWhenImmersiveAllowsFullControls] 尊重沉浸锁门控）。
+  /// 经 [_runWhenImmersiveAllowsShortcuts] 尊重沉浸锁门控）。
   ///
   /// 纯识别逻辑抽到可单测的 [isVideoImeSpacePlayPause]。文本框正在 composing 时
-  /// （[focusedEditableText] 非空）不接管，避免 IME 变换候选词按空格误触暂停。只识别
-  /// `process`（IME 专有逻辑键），裸 Space 仍走既有 SingleActivator 路径不变
-  /// （Never break userspace）。
+  /// （[focusedEditableText] 非空）不接管，避免 IME 变换候选词按空格误触暂停。BUG-936：
+  /// 按**物理键** [PhysicalKeyboardKey.space] 判定（唯一不受 IME 改写的稳定信号），只要
+  /// 逻辑键已被 IME 改写（非裸 `space`）即命中，覆盖 `process` 及任意其它 IME 改写值；
+  /// 裸 Space 仍走既有 SingleActivator 路径不变（Never break userspace）。
   bool _handleVideoImeSpacePlayPause(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     final VideoPlayerController? controller = _controller;
@@ -3931,7 +4015,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       hasEditableFocus: focusedEditableText() != null,
     );
     if (!hit) return false;
-    _runWhenImmersiveAllowsFullControls(
+    _runWhenImmersiveAllowsShortcuts(
       () => unawaited(controller.playOrPause()),
     );
     return true;
@@ -4552,12 +4636,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ));
         break;
       case VideoControlItem.fullscreen:
-        _runWhenImmersiveAllowsFullControls(() {
+        // 控制条按钮属指针控制，沉浸锁定态走 full-controls 门控（非快捷键门控）。
+        if (_immersiveAllowsFullControls) {
           final BuildContext? ctx = _videoControlsContext;
           if (ctx != null && ctx.mounted) {
             unawaited(_toggleVideoFullscreen(ctx));
           }
-        });
+        }
         break;
       case VideoControlItem.screenshot:
         unawaited(_saveScreenshot());
@@ -5155,6 +5240,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
+  /// 循环**副字幕**遮蔽三态（Shift+G，TODO-1382）：不遮蔽 → 模糊 → 隐藏 → …。
+  Future<void> _cycleSecondarySubtitleObscure() async {
+    await _setSecondarySubtitleObscureMode(
+        appModel.videoSecondarySubtitleObscureMode.next);
+  }
+
+  /// 开/关「隐藏副字幕」（Shift+H，TODO-1382）：隐藏态再按回到不遮蔽，否则置为隐藏。
+  Future<void> _toggleSecondarySubtitleHide() async {
+    final VideoSubtitleObscureMode next =
+        appModel.videoSecondarySubtitleObscureMode ==
+                VideoSubtitleObscureMode.hide
+            ? VideoSubtitleObscureMode.none
+            : VideoSubtitleObscureMode.hide;
+    await _setSecondarySubtitleObscureMode(next);
+  }
+
+  /// 落盘副字幕遮蔽模式并刷新页面 overlay（热键 + 快速设置面板共用，TODO-1382）。
+  Future<void> _setSecondarySubtitleObscureMode(
+      VideoSubtitleObscureMode mode) async {
+    await appModel.setVideoSecondarySubtitleObscureMode(mode);
+    if (mounted) setState(() {});
+  }
+
   /// **一键画质档位应用**（无/低/中/高/极高）：原子写两套正交状态——mpv 内置缩放开关
   /// （[highQuality] → videoMpvConfig）+ GLSL 启用集（[enabledNames] →
   /// videoShadersEnabled），再一次性 applyMpvConfig + applyShaders 实时生效。
@@ -5204,8 +5312,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _pokeControlsVisible();
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    // 无字幕/转场段：下一句前进 seekSeconds 秒(TODO-073)、上一句对称回退
-    // seekSeconds 秒(TODO-119，BUG-198)。两侧都不再在没字幕时 no-op 卡住。
+    // 按钮 / 双击语义：有字幕时恒跳到相邻上/下一句（**不**因上一句太远退化成 3 秒
+    // seek，BUG-942——skipToPrevCueOrSeekBack 默认 degradeFarCueToTimeSeek:false）。
+    // 无字幕/转场段：下一句前进 seekSeconds 秒(TODO-073)、上一句对称回退 seekSeconds
+    // 秒(TODO-119，BUG-198)，两侧都不再在没字幕时 no-op 卡住。
     await (forward
         ? controller.skipToNextCueOrSeekForward(
             seekSeconds: _asbConfig.seekSeconds,
@@ -5229,10 +5339,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _toggleFavoriteCurrentCue() async {
     final AudioCue? cue = _currentCueForAction();
     if (cue == null || cue.text.trim().isEmpty) {
-      HibikiToast.show(msg: t.no_sentence_selected);
+      _showOsd(t.no_sentence_selected);
       return;
     }
-    _pokeControlsVisible();
+    // BUG-931：收藏不再唤起 media_kit 控制条——原先那句 poke 会派发合成 hover 把底栏
+    // 进度条弹出来（用户报「碍眼」）。收藏结果走左上角 OSD 即可，无需显现控制条；
+    // seek / 重播仍保留 poke，因为那些操作本就需要看进度。
     await _toggleFavoriteCueForVideo(cue);
   }
 
@@ -5305,6 +5417,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialDelayMs: _delayMs,
       initialSpeed: _playbackSpeed,
       initialSubtitleObscureMode: appModel.videoSubtitleObscureMode,
+      initialSecondarySubtitleObscureMode:
+          appModel.videoSecondarySubtitleObscureMode,
       initialSubtitleStyle: _subtitleStyle,
       uiScale: _videoUiScale,
       initialAsbConfig: _asbConfig,
@@ -5361,6 +5475,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
       onSetSubtitleObscureMode: _setSubtitleObscureMode,
+      onSetSecondarySubtitleObscureMode: _setSecondarySubtitleObscureMode,
       onAsbConfigChanged: _setAsbConfig,
       onSubtitleStylePreview: (VideoSubtitleStyle s) {
         if (mounted) setState(() => _subtitleStyle = s);
@@ -5488,7 +5603,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await RenderBackendService.instance.setImpellerDisabled(true);
     if (!ok || !appModel.platformServices.lifecycle.supportsRestart) {
       // pref 未写成（非 Android）或平台不支持自动重启：降级提示手动重开。
-      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+      if (mounted) _showOsd(t.render_restart_required);
       return;
     }
     try {
@@ -5496,7 +5611,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     } catch (e) {
       // 起新进程失败（Process.start 抛错等）→ 降级提示手动重开。
       debugPrint('[render] switch to Skia restart failed: $e');
-      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+      if (mounted) _showOsd(t.render_restart_required);
     }
   }
 
@@ -5827,7 +5942,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 不破坏 TODO-112「空格不确认焦点」）。media_kit 的 `keyboardShortcuts` 在精确
   /// 持焦时是更近作用域、先消费，故两者不冲突；本层只是「焦点在视频页子树但不精确
   /// 在 [_videoFocusNode]」时的兜底。语义与注册表 [_videoKeyboardShortcuts] 的
-  /// `togglePlayPause` 完全一致（经 [_runWhenImmersiveAllowsFullControls] 尊重
+  /// `togglePlayPause` 完全一致（经 [_runWhenImmersiveAllowsShortcuts] 尊重
   /// 沉浸锁门控），不引入特例分支。
   Widget _withPageSpaceOverride(
     VideoPlayerController controller,
@@ -5835,10 +5950,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.space): () =>
-            _runWhenImmersiveAllowsFullControls(
-              () => unawaited(controller.playOrPause()),
-            ),
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          // BUG-924：词典浮层可见时，裸空格也先关浮层（与 [_videoKeyboardShortcuts] 守卫
+          // 同语义），而非在浮层后面 play/pause。浮层不可见时保持原「裸空格=播放/暂停」覆写。
+          if (_hasVisiblePopup) {
+            _dismissTopVisiblePopup();
+            return;
+          }
+          _runWhenImmersiveAllowsShortcuts(
+            () => unawaited(controller.playOrPause()),
+          );
+        },
       },
       child: child,
     );
@@ -5917,12 +6039,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final bool doubleTapHandled =
         _handleDoubleTapSeek(controlsContext, event.position);
     if (doubleTapHandled) return;
-    // seekAndLookup 锁定态只允许左右双击 seek + 查词；配置为 0、点中带或布局不可判定时
-    // 必须消费掉双击，不能漏到暂停 / 全屏 fallback。
-    if (_immersiveLocked.value &&
-        _videoImmersiveMode == VideoImmersiveMode.seekAndLookup) {
-      return;
-    }
+    // 走到这里若仍处沉浸锁定态，则必为 full 模式（其余模式已在上方
+    // [_immersiveAllowsDoubleTapSeek] 门控早返回：shortcutAndLookup 的跳转改由快捷键
+    // 完成，触摸双击不再 seek，也不落入暂停 / 全屏 fallback）。
     // BUG-221: 双击命中（中带）后按平台分流。
     // - 移动端：双击 = 播放/暂停。原先双击 → [_toggleVideoFullscreen] → media_kit 全屏路由，
     //   退出时弹回竖屏，用户感知为「双击 = 竖屏」。移动端横屏沉浸态即唯一形态、无「全屏」
@@ -5940,7 +6059,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ///
   /// 门控（诚实降级、不与既有语义冲突）：
   /// - 仅桌面（[_isDesktopVideoControls]）——移动端无滚轮；
-  /// - 沉浸锁非 full 模式不放行（[_immersiveAllowsFullControls]，与键盘音量键同门控）；
+  /// - 沉浸锁非 full 模式不放行（[_immersiveAllowsFullControls]，滚轮属指针控制，
+  ///   与控制条按钮 / 右键菜单同门控；键盘 / 手柄快捷键另走 [_immersiveAllowsShortcuts]）；
   /// - 落在控制条 chrome（底栏 / 顶栏 / 侧栏）上的滚轮不接管：底栏音量控件已有自己的
   ///   [_onVolumeWheel] Listener、进度条 / 列表各有滚动语义，画面级只处理**画面区**的
   ///   滚轮，避免双触发或抢走 chrome 滚动。侧栏打开时一律不接管。
@@ -6032,7 +6152,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 全屏路由的 Overlay，菜单在窗口与全屏两种场景都能正确浮出（与字幕跳转列表 /
   /// 锁定层同源的全屏安全范式，TODO-069/101）。移动端无次按钮、此回调不触发，且
   /// 这里再门控一次（[_isDesktopVideoControls]）双保险。右键菜单含完整播放控制，沉浸锁
-  /// 仅 full 模式允许打开；seekAndLookup / lookupOnly / unlockOnly 均不能绕过四段 gate。
+  /// 仅 full 模式允许打开；shortcutAndLookup / lookupOnly / unlockOnly 均不能绕过四段 gate。
   ///
   /// 界面缩放坐标对齐（BUG-260）：视频页整页被 [HibikiAppUiScaleNeutralizer] 中和回
   /// 净缩放=1 的**真实视口空间**（见 [VideoHibikiPage.neutralized]），故

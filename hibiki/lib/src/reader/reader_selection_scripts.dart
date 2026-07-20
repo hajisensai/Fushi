@@ -747,7 +747,11 @@ window.hoshiSelection = {
     for (var i = 0; i < prevCount; i++) {
       var before = this.charBefore(anchorNode, anchorOffset);
       if (!before) break;
-      var ctx = this.getSentenceContext(before.node, before.offset + 1);
+      // BUG-934：before.offset 已是「当前句首的前一个字符」（前一句末尾的分隔符 /
+      // trailing）。此处必须直接落在该字符上取前一句；若给该偏移再多加 1 会把起点推回当前
+      // 句首，getSentenceContext 立刻撞分隔符 → 往后取回当前句自身，导致「前加一句」把当前
+      // 句重复采集两遍（与「后加一句」用 after.offset 不加偏移对称）。
+      var ctx = this.getSentenceContext(before.node, before.offset);
       if (!ctx.sentence) {
         anchorNode = ctx.sStartNode;
         anchorOffset = ctx.sStartOffset;

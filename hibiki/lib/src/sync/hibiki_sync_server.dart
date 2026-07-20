@@ -293,6 +293,7 @@ class HibikiSyncServer {
     // half-bound socket to roll back.
     await Directory(syncDataDir).create(recursive: true);
     final handler = const shelf.Pipeline()
+        .addMiddleware(_gzipTextMiddleware())
         .addMiddleware(_authMiddleware())
         .addHandler(_handleRequest);
     try {
@@ -310,9 +311,51 @@ class HibikiSyncServer {
     }
   }
 
+  /// 导出包缓存（epub/词典/有声书/本地音频 GET 的 Range 续传字节稳定性基础）。
+  final ExportPackageCache _exportCache = ExportPackageCache();
+
   Future<void> stop() async {
     await _server?.close(force: true);
     _server = null;
+    _exportCache.dispose();
+  }
+
+  /// gzip 压缩 JSON/XML 文本响应（`Accept-Encoding: gzip` 内容协商）。
+  ///
+  /// 只压 `application/json` 与 XML（WebDAV PROPFIND 207）——文件流（epub/视频/
+  /// 封面/音频包，含 Range/206 与断点续传）一律不碰：`Content-Encoding` 与
+  /// `Content-Range`/`Content-Length` 字节账在下载器（ResumableDownloader）与
+  /// libmpv 侧语义交叉，且媒体本身已压缩、gzip 无收益。清单 JSON（books/videos/
+  /// aggregate/collections，大库数百 KB CJK 文本）压到约 1/5~1/6。不带该头的旧
+  /// client 收到原样明文——纯内容协商，零协议破坏（dart:io HttpClient 默认发
+  /// gzip accept 并透明解压，新旧 client 均无需改动）。
+  shelf.Middleware _gzipTextMiddleware() {
+    return (shelf.Handler innerHandler) {
+      return (shelf.Request request) async {
+        final shelf.Response response = await innerHandler(request);
+        final String accept =
+            (request.headers['accept-encoding'] ?? '').toLowerCase();
+        if (!accept.contains('gzip')) return response;
+        final String type =
+            (response.headers['content-type'] ?? '').toLowerCase();
+        final bool compressible =
+            type.contains('application/json') || type.contains('xml');
+        if (!compressible) return response;
+        if (response.headers['content-encoding'] != null) return response;
+        final List<int> body = <int>[
+          for (final List<int> chunk in await response.read().toList())
+            ...chunk,
+        ];
+        final List<int> gzipped = gzip.encode(body);
+        return response.change(
+          headers: <String, String>{
+            'Content-Encoding': 'gzip',
+            'Content-Length': '${gzipped.length}',
+          },
+          body: gzipped,
+        );
+      };
+    };
   }
 
   shelf.Middleware _authMiddleware() {
@@ -1110,36 +1153,17 @@ class HibikiSyncServer {
 
     switch (method) {
       case 'GET':
+        // 经导出缓存 + Range/If-Range（TTL 内续传钉在同一份字节上；旧 client
+        // 不发 Range 收到 200 全量，行为不变）。
         File file;
         try {
-          file = await svc.exportDictionary(name);
+          file = await _exportCache.obtain(
+              'dict', name, () => svc.exportDictionary(name));
         } on StateError {
           return shelf.Response.notFound('Dictionary not found');
         }
-        final int length = file.lengthSync();
-        final Stream<List<int>> body = file.openRead().transform(
-              StreamTransformer<List<int>, List<int>>.fromHandlers(
-                handleDone: (EventSink<List<int>> out) {
-                  out.close();
-                  try {
-                    file.parent.deleteSync(recursive: true);
-                  } catch (_) {
-                    // best-effort temp cleanup
-                  }
-                },
-                handleError:
-                    (Object e, StackTrace st, EventSink<List<int>> out) {
-                  out.addError(e, st);
-                  try {
-                    file.parent.deleteSync(recursive: true);
-                  } catch (_) {/* best-effort */}
-                },
-              ),
-            );
-        return shelf.Response.ok(body, headers: <String, String>{
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': '$length',
-        });
+        return serveFileWithRange(file, request,
+            etag: ExportPackageCache.etagFor(file));
 
       case 'PUT':
         final Directory tmpDir =
@@ -1270,36 +1294,17 @@ class HibikiSyncServer {
 
     switch (method) {
       case 'GET':
+        // 经导出缓存 + Range/If-Range（.epub 扩展名保留 → Content-Type 仍是
+        // application/epub+zip；见 _guessContentType）。
         File file;
         try {
-          file = await svc.exportBook(bookId);
+          file = await _exportCache.obtain(
+              'book', bookId, () => svc.exportBook(bookId));
         } on StateError {
           return shelf.Response.notFound('Book not found');
         }
-        final int length = file.lengthSync();
-        final Stream<List<int>> body = file.openRead().transform(
-              StreamTransformer<List<int>, List<int>>.fromHandlers(
-                handleDone: (EventSink<List<int>> out) {
-                  out.close();
-                  try {
-                    file.parent.deleteSync(recursive: true);
-                  } catch (_) {
-                    // best-effort temp cleanup
-                  }
-                },
-                handleError:
-                    (Object e, StackTrace st, EventSink<List<int>> out) {
-                  out.addError(e, st);
-                  try {
-                    file.parent.deleteSync(recursive: true);
-                  } catch (_) {/* best-effort */}
-                },
-              ),
-            );
-        return shelf.Response.ok(body, headers: <String, String>{
-          'Content-Type': 'application/epub+zip',
-          'Content-Length': '$length',
-        });
+        return serveFileWithRange(file, request,
+            etag: ExportPackageCache.etagFor(file));
 
       case 'PUT':
         final Directory tmpDir =
@@ -1362,13 +1367,9 @@ class HibikiSyncServer {
     HibikiLibraryHostService service,
     String bookId,
   ) async {
-    final List<RemoteBookInfo> books = await service.listBooks();
-    for (final RemoteBookInfo book in books) {
-      if (book.downloadId == bookId || book.title == bookId) {
-        return _coverFile(book.coverPath);
-      }
-    }
-    return null;
+    // 单行直查（bookCoverPath 按 bookKey 优先、title 兜底），不再每张封面重跑
+    // 整份 listBooks()（逐书标签/有声书/合集重活），与 [_resolveVideoCover] 对称。
+    return _coverFile(await service.bookCoverPath(bookId));
   }
 
   Future<shelf.Response> _handleLibraryLocalAudio(
@@ -1405,36 +1406,16 @@ class HibikiSyncServer {
 
     switch (method) {
       case 'GET':
+        // 经导出缓存 + Range/If-Range。
         File file;
         try {
-          file = await svc.exportLocalAudio(displayName);
+          file = await _exportCache.obtain('localaudio', displayName,
+              () => svc.exportLocalAudio(displayName));
         } on StateError {
           return shelf.Response.notFound('Local audio not found');
         }
-        final int length = file.lengthSync();
-        final Stream<List<int>> body = file.openRead().transform(
-              StreamTransformer<List<int>, List<int>>.fromHandlers(
-                handleDone: (EventSink<List<int>> out) {
-                  out.close();
-                  try {
-                    file.parent.deleteSync(recursive: true);
-                  } catch (_) {
-                    // best-effort temp cleanup
-                  }
-                },
-                handleError:
-                    (Object e, StackTrace st, EventSink<List<int>> out) {
-                  out.addError(e, st);
-                  try {
-                    file.parent.deleteSync(recursive: true);
-                  } catch (_) {/* best-effort */}
-                },
-              ),
-            );
-        return shelf.Response.ok(body, headers: <String, String>{
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': '$length',
-        });
+        return serveFileWithRange(file, request,
+            etag: ExportPackageCache.etagFor(file));
 
       case 'PUT':
         final Directory tmpDir =
@@ -1562,36 +1543,16 @@ class HibikiSyncServer {
 
     switch (method) {
       case 'GET':
+        // 经导出缓存 + Range/If-Range（大有声书包中断续传的最大受益者）。
         File file;
         try {
-          file = await svc.exportAudiobook(bookKey);
+          file = await _exportCache.obtain(
+              'audiobook', bookKey, () => svc.exportAudiobook(bookKey));
         } on StateError {
           return shelf.Response.notFound('Audiobook not found');
         }
-        final int length = file.lengthSync();
-        final Stream<List<int>> body = file.openRead().transform(
-              StreamTransformer<List<int>, List<int>>.fromHandlers(
-                handleDone: (EventSink<List<int>> out) {
-                  out.close();
-                  try {
-                    file.parent.deleteSync(recursive: true);
-                  } catch (_) {
-                    // best-effort temp cleanup
-                  }
-                },
-                handleError:
-                    (Object e, StackTrace st, EventSink<List<int>> out) {
-                  out.addError(e, st);
-                  try {
-                    file.parent.deleteSync(recursive: true);
-                  } catch (_) {/* best-effort */}
-                },
-              ),
-            );
-        return shelf.Response.ok(body, headers: <String, String>{
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': '$length',
-        });
+        return serveFileWithRange(file, request,
+            etag: ExportPackageCache.etagFor(file));
 
       case 'PUT':
         final Directory tmpDir =
@@ -1996,11 +1957,10 @@ class HibikiSyncServer {
     HibikiLibraryHostService service,
     String id,
   ) async {
-    final List<RemoteVideoInfo> videos = await service.listVideos();
-    for (final RemoteVideoInfo video in videos) {
-      if (video.id == id) return _coverFile(video.coverPath);
-    }
-    return null;
+    // 单行直查（videoCoverPath = 1 次 DB 查询 + stat）。旧实现每张封面请求重跑
+    // 整份 listVideos()（每行一次目录扫描 + 多次 DB 查询），N 张封面 = O(N²)，
+    // 500 视频的封面墙一次浏览拖成分钟级——这是「互联视频极慢」的主根因。
+    return _coverFile(await service.videoCoverPath(id));
   }
 
   static File? _coverFile(String? path) {
@@ -2528,18 +2488,36 @@ ByteRange? parseByteRange(String? rangeHeader, int fileLength) {
 /// Content-Type 由 [HibikiSyncServer._guessContentType] 按扩展名确定。
 /// 响应体全程流式（`file.openRead(start, end+1)`），不把文件读入内存。
 ///
+/// [etag] 非空时：所有响应带 `ETag` 头；且 Range 请求按 RFC 7233 §3.2 校验
+/// `If-Range`——验证器不匹配（服务端字节已换代，如导出缓存过期重导出）时**忽略
+/// Range 降级 200 全量**，绝不让 client 把两代字节拼成损坏文件。这是导出包
+/// （epub/词典/有声书/本地音频）断点续传的正确性前提：`export*` 重打包不保证
+/// 字节稳定，续传必须钉在同一份缓存文件上（见 [HibikiSyncServer._exportCache]）。
+///
 /// 函数名无下划线前缀（公开），便于测试文件直接导入使用。
 Future<shelf.Response> serveFileWithRange(
   File file,
-  shelf.Request request,
-) async {
+  shelf.Request request, {
+  String? etag,
+}) async {
   if (!file.existsSync()) {
     return shelf.Response.notFound('File not found');
   }
 
   final int fileLength = file.lengthSync();
   final String contentType = HibikiSyncServer._guessContentType(file.path);
-  final String? rangeHeader = request.headers['range'];
+  String? rangeHeader = request.headers['range'];
+  if (etag != null && rangeHeader != null) {
+    final String? ifRange = request.headers['if-range'];
+    if (ifRange != etag) {
+      // 验证器不匹配或缺失：client 手里的 .part 可能属于上一代字节（导出缓存
+      // 过期重打包），忽略 Range 整包 200 重发（client 侧 ResumableDownloader
+      // 收到 200 会丢弃旧 part 从 0 重写）。带 etag 的调用方声明「字节可能
+      // 换代」，故续传**必须**验证器精确匹配——缺 If-Range 的盲 Range 也拒绝，
+      // 正确性优先于续传收益（etag == null 的调用方如视频流不受影响）。
+      rangeHeader = null;
+    }
+  }
   final ByteRange? range = parseByteRange(rangeHeader, fileLength);
 
   // 无 Range 头：200 全量
@@ -2550,6 +2528,7 @@ Future<shelf.Response> serveFileWithRange(
         'Content-Type': contentType,
         'Content-Length': '$fileLength',
         'Accept-Ranges': 'bytes',
+        if (etag != null) 'ETag': etag,
       },
     );
   }
@@ -2561,6 +2540,7 @@ Future<shelf.Response> serveFileWithRange(
       headers: <String, String>{
         'Content-Range': 'bytes */$fileLength',
         'Accept-Ranges': 'bytes',
+        if (etag != null) 'ETag': etag,
       },
     );
   }
@@ -2575,8 +2555,117 @@ Future<shelf.Response> serveFileWithRange(
       'Content-Length': '$rangeLength',
       'Content-Range': 'bytes ${range.start}-${range.end}/$fileLength',
       'Accept-Ranges': 'bytes',
+      if (etag != null) 'ETag': etag,
     },
   );
+}
+
+/// 导出包进程级缓存：包端点（epub/词典/有声书/本地音频）Range 续传的字节稳定性
+/// 基础。
+///
+/// `export*` 每次调用重新打包，zip 条目时间戳等使两次导出的字节**不保证相同**——
+/// 若直接对每请求的临时导出文件做 Range，「第一次 200 的前半 + 第二次 206 的
+/// 后半」会拼出损坏包。因此导出结果搬进缓存目录保留 [ttl]：TTL 内同一 (kind,id)
+/// 的续传请求命中同一份字节；过期重导出后 ETag 变化，`If-Range` 不匹配自动降级
+/// 200 全量（见 [serveFileWithRange]）。
+///
+/// 并发：同 key 的 in-flight 导出去重（并发首下载只打包一次）；换代旧文件删除是
+/// best-effort（Windows 上被正在流式的请求占用则删不掉，留给 [dispose] 整目录
+/// 清理——缓存目录是 `createTempSync` 的进程私有目录，进程退出后 OS 临时目录
+/// 策略兜底）。
+class ExportPackageCache {
+  ExportPackageCache({this.ttl = const Duration(minutes: 15)});
+
+  final Duration ttl;
+  Directory? _root;
+  final Map<String, File> _latest = <String, File>{};
+  final Map<String, Future<File>> _inFlight = <String, Future<File>>{};
+  int _seq = 0;
+
+  Directory get _dir =>
+      _root ??= Directory.systemTemp.createTempSync('hibiki_export_cache');
+
+  /// 取 (kind,id) 的缓存导出文件；TTL 内直接命中，否则经 [export] 重新打包。
+  /// [export] 返回的临时文件（连同其父临时目录）所有权移交本缓存。
+  Future<File> obtain(
+    String kind,
+    String id,
+    Future<File> Function() export,
+  ) {
+    final String key = '$kind|$id';
+    final File? hit = _latest[key];
+    if (hit != null && hit.existsSync()) {
+      try {
+        if (DateTime.now().difference(hit.lastModifiedSync()) < ttl) {
+          return Future<File>.value(hit);
+        }
+      } catch (_) {
+        // stat 失败：当 miss 处理，走重导出。
+      }
+    }
+    // 注意回调必须用块体：`=> _inFlight.remove(key)` 会把被移除的 Future（即本
+    // whenComplete 链自身）作为回调返回值交还 whenComplete，而 whenComplete 对
+    // 返回的 Future 会等其完成——自己等自己，永久死锁。
+    return _inFlight[key] ??= _produce(key, export).whenComplete(() {
+      _inFlight.remove(key);
+    });
+  }
+
+  /// 缓存文件的强验证器（`"pkg-<代数>-<size>-<mtimeMs>"`）：字节换代 ⇒ 值必变。
+  /// 代数取自缓存文件名前缀 `e<seq>_`（进程内单调，快速换代时 size+mtime 粒度
+  /// 不够也不撞车）；mtime 兜底跨进程重启的唯一性。纯 ASCII（CJK 词典名不进
+  /// ETag——header 值必须 ASCII 安全）。
+  static String etagFor(File file) {
+    final String base = p.basename(file.path);
+    final int us = base.indexOf('_');
+    final String seq =
+        (base.startsWith('e') && us > 1) ? base.substring(1, us) : '0';
+    final int mtime = file.lastModifiedSync().millisecondsSinceEpoch;
+    return '"pkg-$seq-${file.lengthSync()}-$mtime"';
+  }
+
+  Future<File> _produce(String key, Future<File> Function() export) async {
+    final File exported = await export();
+    // 保留原始文件名（扩展名决定 Content-Type，如 .epub → application/epub+zip），
+    // 前缀序号防同名不同 key 撞车。
+    final File target =
+        File(p.join(_dir.path, 'e${_seq++}_${p.basename(exported.path)}'));
+    try {
+      exported.renameSync(target.path);
+    } on FileSystemException {
+      // 跨盘 rename 失败：复制兜底。
+      exported.copySync(target.path);
+    }
+    try {
+      exported.parent.deleteSync(recursive: true);
+    } catch (_) {
+      // best-effort：导出方的临时父目录
+    }
+    final File? old = _latest[key];
+    _latest[key] = target;
+    if (old != null) {
+      try {
+        old.deleteSync();
+      } catch (_) {
+        // Windows 占用中：留给 dispose 整目录清理。
+      }
+    }
+    return target;
+  }
+
+  /// 清空缓存目录（服务器 stop 时调用；best-effort）。
+  void dispose() {
+    _latest.clear();
+    _inFlight.clear();
+    final Directory? root = _root;
+    _root = null;
+    if (root == null) return;
+    try {
+      root.deleteSync(recursive: true);
+    } catch (_) {
+      // best-effort：仍被占用的文件随 OS 临时目录策略清理。
+    }
+  }
 }
 
 class _DavEntry {

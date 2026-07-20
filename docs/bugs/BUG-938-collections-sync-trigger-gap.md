@@ -1,0 +1,6 @@
+## BUG-938 · 合集经常没同步：合集维度只搭载低频全量 sweep，日常关书/切后台路径从不推送合集
+- **报告**：2026-07-20（用户：合集经常没同步）
+- **真实性**：✅ 真 bug。根因在触发层而非合集引擎：`hibiki/lib/src/sync/sync_auto_trigger.dart` 有两条互不相通的同步路径——高频的关书/切后台走 `_runAutoSync` → `SyncManager.syncBook` 单本路径（从不构造 SyncOrchestrator、从不同步合集）；合集维度只存在于 `_runAutoSyncAll` → `SyncOrchestrator.run()` 全量 sweep，而它仅由 app 冷启动（且受 5 分钟冷却压制）或手动「立即同步」触发。所有合集增删改页面（media_collection_detail_page / home_video_page / batch_combine 等）都不触发任何同步 ⇒ 用户整理完合集后长时间不推送，另一端看「没同步」。合集引擎本身（CollectionSyncEngine 墓碑因果/per-device 折叠/LWW）设计完备且已有测试，不是根因。
+- **[x] ① 已修复** — 触发层根修：`installCollectionsSyncWatcher`（AppModel.initialise 装载）用 drift `tableUpdates` 观察 mediaCollections/mediaCollectionItems/collectionMemberTombstones 三表，任何合集写入（无论来自哪个页面）防抖 8s 后跑 `SyncOrchestrator.runCollectionsOnly()` 轻量同步（只合集维度，云 + 互联双通道，复用 `_autoSyncMutex` 串行、不写全量 sweep 冷却戳）。同步自身 apply 的写入再触发一轮后因 canonicalJson 相等/目标态无 diff 收敛为纯读 no-op，不成环；全量 sweep 进行中则重排到下个防抖窗。提交：见本分支 worktree-interconnect-refactor。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/sync_collections_light_path_test.dart`：runCollectionsOnly 双端收敛（A 建合集 → B 收到）、不写 lastSyncMs 冷却戳、合集表写入触发防抖调度 + uninstall 后不再触发、AppModel 接线源码级守卫。
+- **备注**：次因（未在本轮修）：互联老 host 缺 `/api/library/collections` 端点时 `_syncCollectionsLive` 静默 return（`sync_orchestrator.dart` 合集段），以及 report.errors 只记日志不提示用户——升级双端 app 后即不受影响，可见性提升另立任务。

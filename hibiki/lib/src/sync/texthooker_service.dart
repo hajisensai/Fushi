@@ -107,10 +107,10 @@ class TexthookerLineEntry {
   }
 }
 
-/// 收到的 texthooker 结构化文本行 buffer。
-///
-/// [lines] 保留旧字符串接口；捕获工作台与句音配对使用 [entries] 的稳定 id、来源、序号
-/// 和时间戳，重复台词不会再因以 sentence 字符串作 key 而互相覆盖。
+/// 收到的 texthooker 结构化文本行 buffer。单例 + [ChangeNotifier]，
+/// 外部 texthooker 软件可经 WebSocket 接入，游戏 Hook 则追加带线程与时间戳的行。
+/// [lines] 保留旧字符串接口；捕获工作台与句音配对使用 [entries] 的稳定 id、
+/// 来源、序号和时间戳，重复台词不会再因以 sentence 字符串作 key 而相互覆盖。
 class TexthookerService extends ChangeNotifier {
   TexthookerService._();
   static final TexthookerService instance = TexthookerService._();

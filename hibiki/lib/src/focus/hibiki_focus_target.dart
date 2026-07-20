@@ -31,6 +31,7 @@ class HibikiFocusTarget extends StatefulWidget {
     this.focusNode,
     this.enabled = true,
     this.autofocus = false,
+    this.autoHome = true,
   });
 
   final HibikiFocusId id;
@@ -38,6 +39,12 @@ class HibikiFocusTarget extends StatefulWidget {
   final FocusNode? focusNode;
   final bool enabled;
   final bool autofocus;
+
+  /// Forwarded to [HibikiFocusTargetEntry.autoHome]: set false on interactive
+  /// chrome (e.g. a collapsible settings section header) so passive focus
+  /// auto-home skips it in favour of the first content row. Explicit
+  /// directional navigation still reaches it.
+  final bool autoHome;
 
   @override
   State<HibikiFocusTarget> createState() => _HibikiFocusTargetState();
@@ -216,6 +223,7 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
         context: targetContext,
         enabled: widget.enabled,
         owner: _owner,
+        autoHome: widget.autoHome,
       ),
       repairBeforeNextFrame: repairBeforeNextFrame,
     );

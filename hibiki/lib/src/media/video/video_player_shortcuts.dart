@@ -30,6 +30,8 @@ class VideoPlayerShortcutActions {
     required this.toggleSubtitleBlur,
     required this.cycleSubtitleObscure,
     required this.toggleSubtitleHide,
+    required this.cycleSecondarySubtitleObscure,
+    required this.toggleSecondarySubtitleHide,
     required this.toggleFavoriteSentence,
     required this.replayCurrentSubtitle,
     required this.replayPreviousSubtitle,
@@ -38,6 +40,8 @@ class VideoPlayerShortcutActions {
     required this.openSubtitleAlign,
     required this.subtitleDelayIncrease,
     required this.subtitleDelayDecrease,
+    required this.alignSubtitleToPrev,
+    required this.alignSubtitleToNext,
     required this.escape,
   });
 
@@ -77,6 +81,12 @@ class VideoPlayerShortcutActions {
   /// 开/关「隐藏主字幕」（TODO-840 Part B，默认 H）：在隐藏与不遮蔽之间切换。
   final VoidCallback toggleSubtitleHide;
 
+  /// 循环**副字幕**遮蔽模式（TODO-1382，默认 Shift+G）：不遮蔽 → 模糊 → 隐藏 → …。
+  final VoidCallback cycleSecondarySubtitleObscure;
+
+  /// 开/关「隐藏副字幕」（TODO-1382，默认 Shift+H）：在隐藏与不遮蔽之间切换。
+  final VoidCallback toggleSecondarySubtitleHide;
+
   final VoidCallback toggleFavoriteSentence;
   final VoidCallback replayCurrentSubtitle;
 
@@ -96,6 +106,12 @@ class VideoPlayerShortcutActions {
   /// 走现有 _setDelayMs 写穿 delayMs 落盘 + OSD 反馈。
   final VoidCallback subtitleDelayIncrease;
   final VoidCallback subtitleDelayDecrease;
+
+  /// asbplayer 式「字幕偏移对齐」（用户请求，默认 Ctrl+Shift+←/→）：把上一句 / 下一句
+  /// 字幕的起点整体平移到当前播放点（按目标 cue 求绝对偏移，一键粗对齐整轨）。决策走
+  /// 纯函数 VideoPlayerController.snapSubtitleDelayMs，写穿仍经 _setDelayMs（与 z/x 同源）。
+  final VoidCallback alignSubtitleToPrev;
+  final VoidCallback alignSubtitleToNext;
 
   final VoidCallback escape;
 }
@@ -131,6 +147,10 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
     ShortcutAction.videoCycleSubtitleObscure: actions.cycleSubtitleObscure,
     ShortcutAction.videoToggleSubtitleHide: actions.toggleSubtitleHide,
+    ShortcutAction.videoCycleSecondarySubtitleObscure:
+        actions.cycleSecondarySubtitleObscure,
+    ShortcutAction.videoToggleSecondarySubtitleHide:
+        actions.toggleSecondarySubtitleHide,
     ShortcutAction.videoToggleFavoriteSentence: actions.toggleFavoriteSentence,
     ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
     ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
@@ -139,6 +159,8 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoOpenSubtitleAlign: actions.openSubtitleAlign,
     ShortcutAction.videoSubtitleDelayIncrease: actions.subtitleDelayIncrease,
     ShortcutAction.videoSubtitleDelayDecrease: actions.subtitleDelayDecrease,
+    ShortcutAction.videoAlignSubtitleToPrev: actions.alignSubtitleToPrev,
+    ShortcutAction.videoAlignSubtitleToNext: actions.alignSubtitleToNext,
     ShortcutAction.videoEscape: actions.escape,
   };
 }
@@ -182,19 +204,53 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
   return result;
 }
 
-/// BUG-853 / TODO-847 对齐（视频版）：Windows 微软 IME 激活时裸 Space 的 [logicalKey]
-/// 会被引擎改写成 [LogicalKeyboardKey.process]，视频页两条空格「播放/暂停」路径
-/// （media_kit controls 的 `keyboardShortcuts` 与页级 `_withPageSpaceOverride`）都用
-/// `SingleActivator(LogicalKeyboardKey.space)` 匹配 [logicalKey]，故 IME 下按空格暂停
-/// 失效。本谓词在 KeyEvent 层按**物理键**还原 Space 语义：仅当无修饰键 +
-/// `logicalKey == process` + `physicalKey == space` + 无文本框 composing 时返回 true，
-/// 命中后由调用方触发 togglePlayPause。
+/// BUG-924：词典浮层开着时，让**任一**已映射的视频快捷键先关掉顶层浮层并消费掉这一次
+/// 按键，而不是穿透去控制后面的视频（对齐阅读器：浮层可见时导航/退出类键先关浮层，见
+/// `reader_hibiki/caret.part.dart` 的 `readerDismissDict` 及各键 `isDictionaryShown` 分支）。
 ///
-/// 与 [resolveReaderSpaceOverride] 同范式：纯谓词、无平台/时序副作用，可单测。只识别
-/// `process`（IME 专有逻辑键）不识别裸 `space`——裸 Space 走既有 SingleActivator 路径
-/// 不变（Never break userspace），本谓词仅补 IME 场景这条既有实现覆盖不到的死角。
-/// [hasEditableFocus] 为 true（文本框正在 composing）时返回 false，避免 IME 变换候选词
-/// 时按空格误触暂停。Space 物理键在所有常见键盘布局上物理位一致，回退稳定。
+/// 纯函数、无页面依赖，方便单测：把 [base] 里每个回调包一层守卫——[isPopupVisible] 为真时
+/// 调 [dismissPopup] 关一层浮层后 return（不跑原动作）；为假时原样执行 [base] 的回调。视频
+/// scope 没有任何「作用于浮层本身」的快捷键（制卡走浮层内按钮，非视频快捷键），故整表统一
+/// 守卫等价于阅读器的逐键 `isDictionaryShown` 判定，不误吞需要作用于浮层的键。
+Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithPopupDismiss(
+  Map<ShortcutActivator, VoidCallback> base, {
+  required bool Function() isPopupVisible,
+  required VoidCallback dismissPopup,
+}) {
+  return base.map(
+    (ShortcutActivator activator, VoidCallback callback) => MapEntry(
+      activator,
+      () {
+        if (isPopupVisible()) {
+          dismissPopup();
+          return;
+        }
+        callback();
+      },
+    ),
+  );
+}
+
+/// BUG-853 / BUG-936 / TODO-847 对齐（视频版）：Windows 微软 IME 激活时裸 Space 的
+/// [logicalKey] 会被引擎改写，视频页两条空格「播放/暂停」路径（media_kit controls 的
+/// `keyboardShortcuts` 与页级 `_withPageSpaceOverride`）都用
+/// `SingleActivator(LogicalKeyboardKey.space)` 匹配 [logicalKey]，故 IME 下按空格暂停
+/// 失效。本谓词在 KeyEvent 层按**物理键**还原 Space 语义，命中后由调用方触发
+/// togglePlayPause。
+///
+/// BUG-936 根因修正：旧实现只认 `logicalKey == process` 这一种 IME 改写值，但 Windows
+/// 日文 IME 在不同输入模式 / 引擎下把物理空格改写成的 [logicalKey] **未必是**
+/// [LogicalKeyboardKey.process]（可能是别的非 space 逻辑键），故 BUG-853 修复真机仍失效。
+/// 唯一稳定信号是**物理键** [PhysicalKeyboardKey.space]（USB HID 扫描码，IME 绝不改写）：
+/// 只要「物理键是 Space + 逻辑键**不是**裸 [LogicalKeyboardKey.space]（即被 IME 改写过）
+/// + 无修饰键 + 无文本框 composing」即命中，覆盖 `process` 及任意其它 IME 改写值。
+///
+/// 与 [resolveReaderSpaceOverride] 同范式：纯谓词、无平台/时序副作用，可单测。**不**识别
+/// 裸 `space`（`logicalKey == space` → 返回 false）——裸 Space 走既有 media_kit
+/// SingleActivator 路径、在冒泡到本回退前就被消费，故本谓词只处理它覆盖不到的 IME 死角，
+/// 绝不与裸空格双触发（Never break userspace）。[hasEditableFocus] 为 true（文本框正在
+/// composing）时返回 false，避免 IME 变换候选词时按空格误触暂停。Space 物理键在所有常见
+/// 键盘布局上物理位一致，回退稳定。
 bool isVideoImeSpacePlayPause({
   required LogicalKeyboardKey logicalKey,
   required PhysicalKeyboardKey physicalKey,
@@ -203,6 +259,8 @@ bool isVideoImeSpacePlayPause({
 }) {
   if (hasModifier) return false;
   if (hasEditableFocus) return false;
-  return logicalKey == LogicalKeyboardKey.process &&
-      physicalKey == PhysicalKeyboardKey.space;
+  // 物理空格 + 逻辑键被 IME 改写（非裸 space）= IME 场景的空格。裸空格（logicalKey==space）
+  // 走既有 SingleActivator 路径，不进本回退。
+  return physicalKey == PhysicalKeyboardKey.space &&
+      logicalKey != LogicalKeyboardKey.space;
 }

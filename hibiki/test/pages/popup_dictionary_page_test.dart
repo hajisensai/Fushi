@@ -368,7 +368,7 @@ void main() {
     expect(searchBar.controller.text, 'cdef');
   });
 
-  test('source guard: popup dictionary consumes layer visibility and logs perf',
+  test('source guard: popup dictionary consumes layer visibility',
       () {
     final String popup =
         File('lib/src/pages/implementations/popup_dictionary_page.dart')
@@ -395,9 +395,9 @@ void main() {
     expect(popup, contains('keepWebViewWarm: entry.isWarmSlot'),
         reason: 'external popup must keep the warm slot WebView pre-warmed to '
             'kill the per-lookup flash (TODO-951 symptom C).');
-    expect(popup, contains('[popup-perf]'),
-        reason: 'Windows popup first lookup needs startup/search/render timing '
-            'breadcrumbs.');
+    // BUG-914：popup 首查的 [popup-perf] 裸计时探针（Stopwatch + debugPrint）属发布版
+    // 噪声已移除，此处不再断言其存在；「已删且不回归」由 dict_perf_probe_removal_guard_test
+    // 的 popupPagePath -> [popup-perf] 用例接管。
     expect(model, contains('MediaSource.setDatabase(_database)'),
         reason: 'popup init must attach MediaSource prefs to the popup DB.');
     expect(model, contains('ReaderHibikiSource.instance.initialise()'),

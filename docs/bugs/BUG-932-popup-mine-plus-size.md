@@ -1,0 +1,6 @@
+## BUG-932 · 查词弹窗制卡加号(+)比相邻图标小
+- **报告**：2026-07-20（用户：截图反馈「加号和其他的 icon 大小不一样」）
+- **真实性**：✅ 真 bug。查词弹窗词条头动作栏（音量/收藏/在Anki打开/制卡/tune）里，音量·收藏·open-anki·tune 都是 `.inline-action-button > svg { width:1em; height:1em }` 的内联 SVG（`viewBox 0 0 24 24` 近乎铺满，18px 下可见 ≈14px）；唯独制卡按钮 `.mine-button` 静息态是**文本字形 `'+'`**（TODO-1325 应用户要求保留 `+ / ✓ / ✓↩` 文本标记，不走 SVG）。四者共用 `font-size:18px`（`hibiki/assets/popup/popup.css:256-267` 合并选择器），但一个文本 `'+'` 字形只占 em 盒约一半高（≈9px），SVG 却铺满 1em，故静息加号目测明显比其余图标小/不齐。根因：`hibiki/assets/popup/popup.css:256-267`（`.mine-button` 与 SVG 图标按钮共用 18px 字号，未补偿文本字形的空白）。
+- **[x] ① 已修复** — 仅给静息 `'+'` 态（未制卡 = 无 `.duplicate` 类）单独放大字号，使其与相邻 1em SVG 图标目测齐平；已制卡 `✓` / `✓↩`（带 `.duplicate` / `.latest`）是高字形本就接近、且 `.latest` 各有专属尺寸，保持不动。表头行高由词条大标题主导，放大按钮不改行高。改 `hibiki/assets/popup/popup.css` 新增 `.mine-button:not(.duplicate){ font-size:24px }`，同步两份 vendored 镜像（`hibiki/assets/browser_extension/vendor/popup.css` + `tools/browser-extension/vendor/popup.css`）并重生成两份 `content.css`（`node tools/browser-extension/scripts/generate-content-css.mjs`）。提交：<commit-pending>
+- **[x] ② 已加自动化测试** — `hibiki/test/dictionary/popup_cards_nav_icon_guard_test.dart` 新增 #8：三 CSS 镜像均须有 `.mine-button:not(.duplicate)` 且 `font-size > 18px`（补偿文本字形），防回退。提交：<commit-pending>
+- **备注**：TODO-1325 明确制卡按钮保留文本标记不走 SVG，故本修不改成 SVG，只在文本层放大静息 `'+'`。像素值 24px 需真机目视微调。

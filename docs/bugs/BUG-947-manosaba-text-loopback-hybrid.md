@@ -1,4 +1,4 @@
-## BUG-927 · Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留
+## BUG-947 · Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留
 - **报告**：2026-07-20（用户：Manosaba 捕获显示 `engine_attach_failed`，无台词）
 - **真实性**：✅ 真 bug。Release injector 实机附加 `manosaba.exe` 后共享内存显示 `hooked=1`、`text_hooked=1`、`luna_active=1`，且能读到日文台词，但该 Unity IL2CPP 游戏的引擎 PCM 始终为 `sr=0/ch=0/total_written=0`。`hibiki/lib/src/mining/galgame_audio_source.dart:524` 原流程把“没有 PCM 格式”与“整个 helper 不可用”合并处理，超时后关闭仍可用的文本 helper；`hibiki/lib/src/mining/gal_hook_session_controller.dart:367` 随后只启动 Loopback，造成有混音却没有正确台词。已运行窗口的 attach 路径还没有像 launch 路径一样自动启用 Luna PC hooks（`native/galgame_voice_hook/injector/injector_main.cpp:1042`）。
 - **[x] ① 已修复** — 将引擎文本与引擎 PCM 拆成独立能力：文本握手成功后立即保留 helper，由 `hibiki/lib/src/mining/gal_hook_session_controller.dart:808` 组合 Luna 文本轮询与系统 Loopback 音频；混合模式台词标为可从 Loopback 制卡的 fallback，并在停止时分别释放两个来源。injector attach 会读取目标映像路径并为 Manosaba/Unity 自动开启 PC hooks。

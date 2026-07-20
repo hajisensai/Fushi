@@ -1,0 +1,12 @@
+## BUG-930 · 视频字幕列表左缘调宽把手 hover 不显 resizeLeftRight（左右箭头）光标
+- **报告**：2026-07-19（用户：鼠标放上去没有变成调整样式，就是左右箭头的）
+- **真实性**：✅ 真 bug。字幕列表**已有**左边缘宽度拖拽把手（`_subtitleListResizeHandle`，BUG-877：`resizeLeftRight` 光标 + 拖拽调宽 + 双击复位 + 持久化 `videoSubtitleListWidth`），但桌面 hover 时光标始终是箭头、看不到调宽提示。
+  - 根因：字幕列表侧栏整列被 `_withSubtitleListCursorReveal` 包裹（`controls_visibility.part.dart:258`），其 `onHover` **每帧无条件**经 `_forceRevealOsCursorForPanel`（`controls_visibility.part.dart:231`）走 `SystemChannels.mouseCursor.invokeMethod('activateSystemCursor', {kind:'basic'})` **原生强设** OS 光标为 `basic`（箭头）。
+  - 这是 BUG-391 r5 对「从视频列（控制条淡出 `cursor:none`）跨进侧栏时残留隐藏光标」的推测性缓解——但它绕过框架 MouseTracker、**每帧**原生 SetCursor(箭头)。即便指针在把手上、框架已为把手 MouseRegion 解析出 `resizeLeftRight`，也会被每帧原生「强设 basic」立刻盖回箭头 → 整个面板（含左缘 8px 把手）光标恒为箭头，调宽光标永远出不来。
+  - 即 BUG-391 的光标唤回缓解**踩踏**了 BUG-877 的调宽把手光标。
+- **[x] ① 已修复** — 让 `_forceRevealOsCursorForPanel` 在指针悬于把手时**让位**（不再原生强设 basic），把光标交给框架为把手声明的 `resizeLeftRight`；BUG-391 在面板其余区域的缓解保持不变（blast radius 最小）。
+  - 主壳新增标志 `bool _pointerOverSubtitleResizeHandle`（`video_hibiki_page.dart`），把手 `_subtitleListResizeHandle` 的 `MouseRegion` 接 `onEnter`→置真 / `onExit`→复位（`subtitle.part.dart`）。
+  - `_forceRevealOsCursorForPanel` 开头加 `if (_pointerOverSubtitleResizeHandle) return;`（在原生 `activateSystemCursor` 之前），把手上不再原生强设箭头（`controls_visibility.part.dart`）。
+  - 根因层面：原生「残留光标唤回」缓解现在对「已明确要什么光标」的把手区域让位；enter 早于同帧 parent onHover 处理，稳态下把手光标即为 resize，退出把手复位、面板本体仍走 basic 唤回。提交哈希：78f5731cb
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_subtitle_resize_handle_cursor_guard_test.dart`：① 源码扫描守卫，断言 `_forceRevealOsCursorForPanel` 在原生 `activateSystemCursor` **之前**有 `if (_pointerOverSubtitleResizeHandle) return;` 让位门控、把手 `MouseRegion` 保留 `resizeLeftRight` 且 `onEnter/onExit` 翻标志；② headless 行为测试，用同构布局（外层声明式 opaque basic + 内层把手 MouseRegion 叠面板左缘）证框架层把手上光标解析为 `resizeLeftRight`、面板本体为 `basic`。提交哈希：78f5731cb
+- **备注**：#84039 原生 `SetCursor` 竞态 headless 永远复现不了，故「原生强设是否真被让位」的最终有效性需 **Windows 真机验证**（合入硬门槛）；源码守卫只锁「让位门控 + 把手 enter/exit 接线」结构，行为测试只证框架层结构前提。真机验收：把鼠标移到视频字幕列表左边缘，光标变左右箭头、可拖拽调宽；移开把手回箭头；面板本体光标仍可见（不粘 none）。
