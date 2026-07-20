@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "1.2.0-debug.8445",
-  "tag": "v1.2.0-debug.8445+f045b12",
+  "version": "1.2.0-debug.8446",
+  "tag": "v1.2.0-debug.8446+206ed11",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 8445,
-  "notes": "Automated release-signed debug-channel build from develop @ f045b12. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 8446,
+  "notes": "Automated desktop debug-channel build from develop @ 206ed11. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.2.0-debug.8131-ios.ipa",
@@ -29,11 +29,11 @@
       "version": "1.2.0-debug.8445"
     },
     {
-      "name": "hibiki-1.2.0-debug.8445-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8445-windows-setup.exe",
-      "releaseSequence": 8445,
-      "tag": "v1.2.0-debug.8445+f045b12",
-      "version": "1.2.0-debug.8445"
+      "name": "hibiki-1.2.0-debug.8446-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8446-windows-setup.exe",
+      "releaseSequence": 8446,
+      "tag": "v1.2.0-debug.8446+206ed11",
+      "version": "1.2.0-debug.8446"
     }
   ]
 }
