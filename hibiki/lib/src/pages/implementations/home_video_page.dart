@@ -2150,7 +2150,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text(
                     video.title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -2420,15 +2420,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 连续散视频段落的 [SliverGrid]（TODO-654：随主 [CustomScrollView] 滚动；
   /// 网格 delegate 与远端区一致）。UI v2 Phase C 后合集不再进网格（渲染成全宽
   /// 横排行），本网格只装散视频单卡。
-  /// 视频卡总高 = 16:9 封面高（[cardWidth] × 9/16）+ 文字块（标题 2 行 + 观看进度行
-  /// + 内边距）。文字块 [_kVideoCardTextBlock] = 83，在 cardWidth=240 时回到旧的固定
-  /// 218，向后兼容；卡变窄时封面等比缩，不再出现固定卡高下的封面上下留白。散卡网格
-  /// [mainAxisExtent] 与合集横排行 [CollectionShelfRow.rowHeight] 共用此高，保持逐像素同尺寸。
+  /// 视频卡总高 = 16:9 封面高（[cardWidth] × 9/16）+ 文字块 [_kVideoCardTextBlock]。
+  /// 卡变窄时封面等比缩，不出现固定卡高下的封面上下留白。散卡网格 [mainAxisExtent]
+  /// 与合集横排行 [CollectionShelfRow.rowHeight] 共用此高，保持逐像素同尺寸。
   static double _videoCardExtent(double cardWidth) =>
       cardWidth * 9 / 16 + _kVideoCardTextBlock;
 
-  /// 视频卡封面下方文字块的固定高度（标题 2 行 + 观看进度行 + 内边距）。
-  static const double _kVideoCardTextBlock = 83;
+  /// 视频卡封面下方文字块的固定高度：单行标题 + 单行观看进度 + 内边距（BUG-943：
+  /// 旧值 83 为「2 行标题 + 进度行」的最坏预留，但绝大多数卡是单行标题、无进度，
+  /// 底部常驻约 50px 空白。收敛为紧凑固定高：标题 `maxLines: 1`、进度行用 Flexible
+  /// 内收，无进度时仅剩约一行的常规内边距，不再是显眼空块）。
+  static const double _kVideoCardTextBlock = 52;
 
   Widget _buildLooseVideoGridSliver(
     List<_VideoLooseCard> loose,
@@ -2602,8 +2604,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ],
             ),
           ),
-          // 文字块占封面下方剩余固定高度（cell 高 − 16:9 封面 = _kVideoCardTextBlock），
-          // 标题 / 进度用 ellipsis 内收，浮动高度不再反灌进封面区（BUG-926）。
+          // 文字块占封面下方剩余固定高度（cell 高 − 16:9 封面 = _kVideoCardTextBlock）。
+          // 标题单行 ellipsis 内收；进度行用 Flexible 让位，浮动高度不反灌进封面区
+          // （BUG-926 血缘）、大字号倍率下也不溢出。无进度时仅剩常规内边距、无显眼空块
+          // （BUG-943：单行标题无进度卡曾常驻约 50px 空白）。
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2612,7 +2616,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                   child: Text(
                     book.title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -2622,13 +2626,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 // 上次观看日期（watch-stats 有该 title 时）；全无痕迹不渲染本行。
                 if (_buildCardWatchMeta(book) case final String meta
                     when meta.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-                    child: Text(
-                      meta,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: HibikiDesignTokens.of(context).type.metadata,
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                      child: Text(
+                        meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: HibikiDesignTokens.of(context).type.metadata,
+                      ),
                     ),
                   ),
               ],
