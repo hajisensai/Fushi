@@ -2064,5 +2064,7 @@
   "galgame_helper_download": "Download",
   "galgame_helper_downloading": "Downloading engine component…",
   "galgame_helper_download_failed": "Engine component download failed: $error",
-  "galgame_helper_install_incomplete": "Engine component install incomplete, please retry"
+  "galgame_helper_install_incomplete": "Engine component install incomplete, please retry",
+  "download_settings": "Download settings",
+  "download_backend_not_configured": "Configure the download backend below (expand Download settings)."
 }
