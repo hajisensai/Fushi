@@ -127,4 +127,61 @@ void main() {
       <String>['looseA', 'S', 'looseB'],
     );
   });
+
+  group('keepMemberUnderTagFilter (BUG-940 合集标签救回成员)', () {
+    test('成员自身命中标签 → 保留', () {
+      expect(
+        keepMemberUnderTagFilter(
+          memberMatched: true,
+          primaryCollectionId: null,
+          collectionFilter: null,
+        ),
+        isTrue,
+      );
+    });
+
+    test('根因场景：成员没命中、但所属合集命中标签 → 保留（旧逻辑会剥光成员→合集筛不出）', () {
+      expect(
+        keepMemberUnderTagFilter(
+          memberMatched: false,
+          primaryCollectionId: 7,
+          collectionFilter: <int>{7},
+        ),
+        isTrue,
+      );
+    });
+
+    test('成员没命中、所属合集也不在筛选集 → 剔除', () {
+      expect(
+        keepMemberUnderTagFilter(
+          memberMatched: false,
+          primaryCollectionId: 7,
+          collectionFilter: <int>{3, 5},
+        ),
+        isFalse,
+      );
+    });
+
+    test('散条目（无合集归属）没命中标签 → 剔除', () {
+      expect(
+        keepMemberUnderTagFilter(
+          memberMatched: false,
+          primaryCollectionId: null,
+          collectionFilter: <int>{1},
+        ),
+        isFalse,
+      );
+    });
+
+    test('collectionFilter 为 null（无合集标签维度）→ 仅按成员命中，与旧语义一致', () {
+      expect(
+        keepMemberUnderTagFilter(
+          memberMatched: false,
+          primaryCollectionId: 7,
+          collectionFilter: null,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

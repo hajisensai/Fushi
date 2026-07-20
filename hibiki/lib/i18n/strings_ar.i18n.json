@@ -402,7 +402,7 @@
   "stat_format_minutes": "$n د",
   "stat_format_hours_minutes": "$h س $m د",
   "stat_format_chars": "$n حرف",
-  "stat_format_chars_wan": "$n حرف",
+  "stat_format_chars_wan": "$n万 حرف",
   "error_log_share_subject": "سجل أخطاء hibiki",
   "update_never_remind": "عدم التذكير بالتحديثات",
   "update_auto_install": "تثبيت التحديثات تلقائياً",

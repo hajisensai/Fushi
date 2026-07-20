@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 34646 (2038 per locale)
 ///
-/// Built on 2026-07-19 at 16:35 UTC
+/// Built on 2026-07-20 at 04:47 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -676,7 +676,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String stat_format_hours_minutes({required Object h, required Object m}) =>
       '${h} hr ${m} min';
   String stat_format_chars({required Object n}) => '${n} characters';
-  String stat_format_chars_wan({required Object n}) => '${n} characters';
+  String stat_format_chars_wan({required Object n}) => '${n}万 characters';
   String get error_log_share_subject => 'hibiki Error Log';
   String get update_never_remind => 'Don\'t remind me about updates';
   String get update_auto_install => 'Auto-install updates';
@@ -3622,7 +3622,7 @@ class _StringsAr extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} حرف';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} حرف';
+  String stat_format_chars_wan({required Object n}) => '${n}万 حرف';
   @override
   String get error_log_share_subject => 'سجل أخطاء hibiki';
   @override
@@ -8256,7 +8256,7 @@ class _StringsDe extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} Zeichen';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} Zeichen';
+  String stat_format_chars_wan({required Object n}) => '${n}万 Zeichen';
   @override
   String get error_log_share_subject => 'hibiki Fehlerprotokoll';
   @override
@@ -12951,7 +12951,7 @@ class _StringsEs extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} caracteres';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} caracteres';
+  String stat_format_chars_wan({required Object n}) => '${n}万 caracteres';
   @override
   String get error_log_share_subject => 'Registro de errores de hibiki';
   @override
@@ -17660,7 +17660,7 @@ class _StringsFr extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} caractères';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} caractères';
+  String stat_format_chars_wan({required Object n}) => '${n}万 caractères';
   @override
   String get error_log_share_subject => 'Journal d\'erreurs hibiki';
   @override
@@ -22356,7 +22356,7 @@ class _StringsId extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} karakter';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} karakter';
+  String stat_format_chars_wan({required Object n}) => '${n}万 karakter';
   @override
   String get error_log_share_subject => 'Log Error hibiki';
   @override
@@ -27012,7 +27012,7 @@ class _StringsIt extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} caratteri';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} caratteri';
+  String stat_format_chars_wan({required Object n}) => '${n}万 caratteri';
   @override
   String get error_log_share_subject => 'Registro errori hibiki';
   @override
@@ -40691,7 +40691,7 @@ class _StringsNl extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} tekens';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} tekens';
+  String stat_format_chars_wan({required Object n}) => '${n}万 tekens';
   @override
   String get error_log_share_subject => 'hibiki foutenlogboek';
   @override
@@ -45368,7 +45368,7 @@ class _StringsPtBr extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} caracteres';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} caracteres';
+  String stat_format_chars_wan({required Object n}) => '${n}万 caracteres';
   @override
   String get error_log_share_subject => 'Log de Erros do hibiki';
   @override
@@ -50045,7 +50045,7 @@ class _StringsRu extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} символов';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} символов';
+  String stat_format_chars_wan({required Object n}) => '${n}万 символов';
   @override
   String get error_log_share_subject => 'Журнал ошибок hibiki';
   @override
@@ -54698,7 +54698,7 @@ class _StringsTh extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} ตัวอักษร';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} ตัวอักษร';
+  String stat_format_chars_wan({required Object n}) => '${n}万 ตัวอักษร';
   @override
   String get error_log_share_subject => 'บันทึกข้อผิดพลาด hibiki';
   @override
@@ -59319,7 +59319,7 @@ class _StringsTr extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} karakter';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} karakter';
+  String stat_format_chars_wan({required Object n}) => '${n}万 karakter';
   @override
   String get error_log_share_subject => 'hibiki Hata Günlüğü';
   @override
@@ -63957,7 +63957,7 @@ class _StringsVi extends _StringsEn {
   @override
   String stat_format_chars({required Object n}) => '${n} ký tự';
   @override
-  String stat_format_chars_wan({required Object n}) => '${n} ký tự';
+  String stat_format_chars_wan({required Object n}) => '${n}万 ký tự';
   @override
   String get error_log_share_subject => 'Nhật ký lỗi hibiki';
   @override
@@ -77303,7 +77303,7 @@ extension on _StringsEn {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} characters';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} characters';
+        return ({required Object n}) => '${n}万 characters';
       case 'error_log_share_subject':
         return 'hibiki Error Log';
       case 'update_never_remind':
@@ -81417,7 +81417,7 @@ extension on _StringsAr {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} حرف';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} حرف';
+        return ({required Object n}) => '${n}万 حرف';
       case 'error_log_share_subject':
         return 'سجل أخطاء hibiki';
       case 'update_never_remind':
@@ -85588,7 +85588,7 @@ extension on _StringsDe {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} Zeichen';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} Zeichen';
+        return ({required Object n}) => '${n}万 Zeichen';
       case 'error_log_share_subject':
         return 'hibiki Fehlerprotokoll';
       case 'update_never_remind':
@@ -89772,7 +89772,7 @@ extension on _StringsEs {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} caracteres';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} caracteres';
+        return ({required Object n}) => '${n}万 caracteres';
       case 'error_log_share_subject':
         return 'Registro de errores de hibiki';
       case 'update_never_remind':
@@ -93954,7 +93954,7 @@ extension on _StringsFr {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} caractères';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} caractères';
+        return ({required Object n}) => '${n}万 caractères';
       case 'error_log_share_subject':
         return 'Journal d\'erreurs hibiki';
       case 'update_never_remind':
@@ -98144,7 +98144,7 @@ extension on _StringsId {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} karakter';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} karakter';
+        return ({required Object n}) => '${n}万 karakter';
       case 'error_log_share_subject':
         return 'Log Error hibiki';
       case 'update_never_remind':
@@ -102317,7 +102317,7 @@ extension on _StringsIt {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} caratteri';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} caratteri';
+        return ({required Object n}) => '${n}万 caratteri';
       case 'error_log_share_subject':
         return 'Registro errori hibiki';
       case 'update_never_remind':
@@ -114807,7 +114807,7 @@ extension on _StringsNl {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} tekens';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} tekens';
+        return ({required Object n}) => '${n}万 tekens';
       case 'error_log_share_subject':
         return 'hibiki foutenlogboek';
       case 'update_never_remind':
@@ -118985,7 +118985,7 @@ extension on _StringsPtBr {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} caracteres';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} caracteres';
+        return ({required Object n}) => '${n}万 caracteres';
       case 'error_log_share_subject':
         return 'Log de Erros do hibiki';
       case 'update_never_remind':
@@ -123162,7 +123162,7 @@ extension on _StringsRu {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} символов';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} символов';
+        return ({required Object n}) => '${n}万 символов';
       case 'error_log_share_subject':
         return 'Журнал ошибок hibiki';
       case 'update_never_remind':
@@ -127343,7 +127343,7 @@ extension on _StringsTh {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} ตัวอักษร';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} ตัวอักษร';
+        return ({required Object n}) => '${n}万 ตัวอักษร';
       case 'error_log_share_subject':
         return 'บันทึกข้อผิดพลาด hibiki';
       case 'update_never_remind':
@@ -131510,7 +131510,7 @@ extension on _StringsTr {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} karakter';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} karakter';
+        return ({required Object n}) => '${n}万 karakter';
       case 'error_log_share_subject':
         return 'hibiki Hata Günlüğü';
       case 'update_never_remind':
@@ -135684,7 +135684,7 @@ extension on _StringsVi {
       case 'stat_format_chars':
         return ({required Object n}) => '${n} ký tự';
       case 'stat_format_chars_wan':
-        return ({required Object n}) => '${n} ký tự';
+        return ({required Object n}) => '${n}万 ký tự';
       case 'error_log_share_subject':
         return 'Nhật ký lỗi hibiki';
       case 'update_never_remind':

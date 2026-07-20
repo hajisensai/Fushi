@@ -1126,7 +1126,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   bool get tapEmptyToHideChrome =>
       readerSettings?.tapEmptyToHideChrome ??
-      getPreference<bool>(key: 'tap_empty_hide_chrome', defaultValue: false);
+      getPreference<bool>(key: 'tap_empty_hide_chrome', defaultValue: true);
 
   void toggleTapEmptyToHideChrome() async {
     await (readerSettings?.toggleTapEmptyToHideChrome() ??
@@ -1173,10 +1173,10 @@ class ReaderHibikiSource extends ReaderMediaSource {
   }
 
   // TODO-975 决策#2：顶部进度悬浮开关（per-reader，分层同 showTopProgressBar），
-  // 默认 false = 现状。底栏悬浮复用 tapEmptyToHideChrome（决策#3），不另设开关。
+  // 默认 true = 悬浮。底栏悬浮复用 tapEmptyToHideChrome（决策#3），不另设开关。
   bool get topProgressFloating =>
       readerSettings?.topProgressFloating ??
-      getPreference<bool>(key: 'top_progress_floating', defaultValue: false);
+      getPreference<bool>(key: 'top_progress_floating', defaultValue: true);
 
   void toggleTopProgressFloating() async {
     await (readerSettings?.toggleTopProgressFloating() ??

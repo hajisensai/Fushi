@@ -327,6 +327,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }());
     final AsyncValue<Set<String>?> filteredIds =
         ref.watch(filteredBookIdsProvider);
+    // BUG-940：合集标签维度（含全部选中标签的合集 id；null=无选中标签不过滤）。成员
+    // 级标签过滤须并入此维度，否则「合集打了标签但成员没打」时成员被剥光、折叠不出
+    // 合集组，合集永远筛不出来。
+    final Set<int>? tagCollectionFilter =
+        ref.watch(filteredCollectionIdsProvider).valueOrNull;
     final allTags = ref.watch(allTagsProvider);
 
     // BUG-250: 书架批量选择模式（[_selectionMode]）活在本 tab 内容里，不是独立
@@ -364,7 +369,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                         filtered = bookList.where((item) {
                           final String? key =
                               _parseBookKey(item.mediaIdentifier);
-                          return key != null && filterSet.contains(key);
+                          if (key == null) return false;
+                          // BUG-940：成员命中标签、或所属合集命中标签都保留（后者让
+                          // 打了标签的合集其成员整组存活，折叠出合集组）。
+                          return keepMemberUnderTagFilter(
+                            memberMatched: filterSet.contains(key),
+                            primaryCollectionId:
+                                _primaryCollectionByEntry['epub|$key'],
+                            collectionFilter: tagCollectionFilter,
+                          );
                         }).toList();
                       }
                       return FutureBuilder<Map<String, _AudiobookInfo>>(
@@ -785,10 +798,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final bool hasActiveFilter = ref.read(selectedTagIdsProvider).isNotEmpty;
     final Set<int>? srtFilterSet =
         ref.watch(filteredSrtBookIdsProvider).valueOrNull;
+    // BUG-940：合集标签维度（含全部选中标签的合集 id）。srt 成员级过滤与末尾的
+    // 合集组保留（[shelfGroups.removeWhere]）共用此集，避免「合集打了标签但成员没打」
+    // 时 srt 成员被剥光、折叠不出合集组。
+    final Set<int>? collectionFilter =
+        ref.watch(filteredCollectionIdsProvider).valueOrNull;
     final List<SrtBook> srtBooks;
     if (srtFilterSet != null) {
       srtBooks = allSrtBooks
-          .where((b) => b.id != null && srtFilterSet.contains(b.id))
+          .where((b) =>
+              b.id != null &&
+              keepMemberUnderTagFilter(
+                memberMatched: srtFilterSet.contains(b.id),
+                primaryCollectionId: _primaryCollectionByEntry['srt|${b.uid}'],
+                collectionFilter: collectionFilter,
+              ))
           .toList();
     } else if (hasActiveFilter) {
       srtBooks = const [];
@@ -918,8 +942,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。被标签
     // 过滤隐藏的合集连同成员从 shelfGroups 移除（成员随合集隐藏，符合按合集标签显隐
     // 语义）；散书由 filteredBookIdsProvider / filteredSrtBookIdsProvider 另行过滤。
-    final Set<int>? collectionFilter =
-        ref.watch(filteredCollectionIdsProvider).valueOrNull;
+    // collectionFilter 已在 srt 过滤前读取（BUG-940 成员救回共用同一集）。
     if (collectionFilter != null) {
       shelfGroups.removeWhere((CollectionGroup<_ShelfBookSlot> g) =>
           g.collection != null && !collectionFilter.contains(g.collection!.id));

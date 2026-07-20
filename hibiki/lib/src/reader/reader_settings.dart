@@ -479,15 +479,15 @@ class ReaderSettings {
 
   // TODO-975 决策#3：「点空白处隐藏控制栏」开启 ⟺ 底栏进入悬浮模式（点击唤出、
   // 计时自动收起、不占正文位置）。复用此既有 key 作为底栏悬浮开关，不新增独立偏好
-  // （单一真相源、消除并列开关的特例分支）。默认 false = 现状（挤压底栏，无自动隐藏）。
-  bool get tapEmptyToHideChrome => _get<bool>('tap_empty_hide_chrome', false);
+  // （单一真相源、消除并列开关的特例分支）。默认 true = 底栏悬浮（点击唤出、自动收起）。
+  bool get tapEmptyToHideChrome => _get<bool>('tap_empty_hide_chrome', true);
   Future<void> toggleTapEmptyToHideChrome() =>
       _set<bool>('tap_empty_hide_chrome', !tapEmptyToHideChrome);
 
   /// TODO-975 决策#2：顶部阅读进度悬浮开关（与底栏悬浮独立，时长共用）。开启时顶部
-  /// 进度变成「点击唤出、计时自动收起、不占正文位置」。默认 false = 现状（挤压，常驻
-  /// 显示，占 18px 预留）。与 [showTopProgressBar] 正交：进度关时本开关在 UI 隐藏。
-  bool get topProgressFloating => _get<bool>('top_progress_floating', false);
+  /// 进度变成「点击唤出、计时自动收起、不占正文位置」。默认 true = 悬浮（不占 18px
+  /// 预留）。与 [showTopProgressBar] 正交：进度关时本开关在 UI 隐藏。
+  bool get topProgressFloating => _get<bool>('top_progress_floating', true);
   Future<void> toggleTopProgressFloating() =>
       _set<bool>('top_progress_floating', !topProgressFloating);
 

@@ -402,7 +402,7 @@
   "stat_format_minutes": "$n mnt",
   "stat_format_hours_minutes": "$h jam $m mnt",
   "stat_format_chars": "$n karakter",
-  "stat_format_chars_wan": "$n karakter",
+  "stat_format_chars_wan": "$n万 karakter",
   "error_log_share_subject": "Log Error hibiki",
   "update_never_remind": "Jangan ingatkan lagi",
   "update_auto_install": "Pasang pembaruan otomatis",
