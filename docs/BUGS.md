@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 870 条。点号进各自文件。
+> 共 871 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-896](bugs/BUG-896-jimaku-download-anilist-only-no-query-fallback.md) | ✅ | ✅ | 下载页字幕搜索仅按AniList id无文本回退致误报无字幕 |
 | [BUG-895](bugs/BUG-895-anilist-macron-search.md) | ✅ | ✅ | 番剧下载AniList搜索:带macron长音的罗马字全无结果 |
 | [BUG-890](bugs/BUG-890-paused-audio-follow-image-snap.md) | ✅ | ✅ | 暂停/图片等待时有声书跟随把阅读器拽回音频位置 |
 | [BUG-887](bugs/BUG-887-top-progress-squeeze-frost.md) | ✅ | ✅ | 挤压模式顶部进度不应有毛玻璃且不应压住正文首行 |
