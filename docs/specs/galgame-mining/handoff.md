@@ -20,6 +20,35 @@
 
 **接缝提醒**：injector 可执行文件约定放在 app 同级 `voice_hook/<arch>/hibiki_voice_injector.exe`（`_resolveGalInjectorPath({is32Bit})`，按 `EngineHookGalAudioSource.targetIsWow64(pid)` 查目标进程位数选 x86/x64——**KiriKiri 多为 32 位必须 x86 注入器**），由独立仓 `hajisensai/hibiki-hook` 以 CMake（`-A x64` / `-A Win32`）构建后随包分发/按需下载；缺失/位数不符时 A6 自动回退 loopback。C.2 的**校准模式 callsite/音量精筛**是迁出前 TODO，当前应在独立仓 adapter/profile 中按真机证据实现，不应回填旧 `dll_main.cpp` 主干。
 
+## ✅ 真机验证（2026-07-21，ceshi 素材批量制卡流程 + 端到端 AnkiConnect 落卡）
+
+**素材清理（"删掉没句子音频的游戏"）**：逐个核对 `C:\Users\wrds\Downloads\Compressed\ceshi` 归档的逐句语音：
+
+| 游戏 / 归档 | 引擎 | 逐句语音归档 | 处置 |
+|---|---|---|---|
+| 完全時間停止 特典：オフィシャル | 自研 NEKOPACK | `voice.pak` **只 2 条 ogg**（`se.pak` 才 1777 条 SE） | **已删**（正文无逐句语音，是特典赠品） |
+| AngelBeats! trial | SiglusEngine | `koe/*.ovk`（29 个 OVK） | 保留（有语音；但非日文 locale 弹 "This Game is Japan Only" 挡门，进不去对白） |
+| 天使☆騒々 RE-BOOT!（`bgimage/tenshi_sz.exe`） | KiriKiriZ | `voice.xp3` 2.1GB | 保留（本轮真机测试对象） |
+| PRETTY×CATION2 バースデー vol.2（`pxc2_bc_vol2.exe`） | KiriKiri | `birthday_vol2.xp3` 322 条 `azu_*.ogg`（在バースデーアペンド） | 保留（有语音；主 exe 是壁纸/日历/时钟赠品菜单，默认不自动播语音→本轮抓到静音） |
+| Sakura Swim Club | Ren'Py | `voice/*.ogg` 1791 条 | 保留（有角色语音，英文文本） |
+| ChronoClock trial（`cmvs32.exe`） | CatSystem2 | `voice.cpz` 41MB | 保留（有语音；非日文 locale 弹 cp932 乱码框，进不去对白） |
+| カスタムメイド3D2 CHU-B LIP（`.mdf`） | KISS 自研 | `voice_cbl_a/b.arc` 2.2GB | 保留（有语音；3D 换装/舞蹈，非文本对白 galgame，未安装磁盘镜像） |
+| 姫様ＬＯＶＥライフ！（`HIMELOVE.ISO`） | AOS | `cv.aos` 675MB | 保留（有语音；未安装 ISO） |
+| 恋愛フェイズ（`RENAIPHASE.ISO`） | 戯画自研 | 4.3GB ISO（未展开核对，戯画系语音作） | 保留（未安装 ISO） |
+
+结论：**唯一真正"没句子音频"的是已删的完全時間停止特典**；其余都带逐句语音归档，不属删除范围（非日文 locale 或磁盘镜像未装只是"本机跑不进对白"，不是"无语音"）。
+
+**制卡流程端到端真机（`integration_test/galgame_card_mining_test.dart` + 新增 `galgame_loopback_voiced_test.dart`）**：
+- **管线机械链路全通**：native 音频捕获（loopback / voice_hook channel）→ WAV（44 字节头，Anki 直接播）→ WGC 窗口截图 → meta → 外层 `push_galcards.py` 经 AnkiConnect `storeMediaFile`+`addNote` → **6 张卡真进 `galgame_card_test` deck，`[sound:]`/`<img>` 媒体 `retrieveMediaFile` 可取回**（`notesInfo` 复核 6/6）。
+- **诚实的质量边界**（本轮暴露，非管线 bug）：
+  1. **"启动即抓" ≠ 有对白语音**。`galgame_card_mining_test` 只做"拉起→等 8s→抓 4s"，5 个游戏都停在标题/首启弹窗，抓到的是标题 BGM / 系统残留——SiglusEngine 与 tenshi 两张卡的 WAV **字节完全相同**（同一段 loopback 残留），pxc2 赠品菜单 **peak=0**（静音）。要真语音必须先把游戏驱动进对白行再抓。
+  2. **驱动进对白后可抓到真游戏音频**：新增 `galgame_loopback_voiced_test.dart`（只 loopback 轮询、保留峰值最大一段），外层 `tenshi_drive.ps1` 先答掉 KiriKiriZ 首启弹窗（`#32770` No/OK，已持久化：二次启动直进标题）、再对 `TVPMainWindow` 客户区中心连点 137 次推进对白。捕获 **peak=0.5898 / rms=0.1395**（明显高于标题残留 0.3457，且字节相异），证明抓到了推进对白时的真实游戏音频。
+  3. **KiriKiriZ 软件混音**：抓到的是"语音+BGM 混音"而非孤立干净语音（与 2026-07-18 otomeki 结论一致，KiriKiriZ 引擎-hook≈loopback）。干净逐句语音只对 per-voice buffer 引擎（Siglus OVK/DirectSound、XAudio2）成立。
+  4. **部分引擎 WGC 截图拿不到画面**：天使☆騒々 的 D3D 硬件表面 WGC/PrintWindow 只截到菜单栏+白色画布（`tenshi_voiced.png` 空白）；同批 pxc2 的 GDI 标题画面则被 WGC 完整截到。硬件表面截图是既有限制，非本轮回归。
+  5. **首启/locale 门**：AngelBeats(Siglus) 被 "Japan Only" 弹窗、ChronoClock(CatSystem2) 被 cp932 乱码框挡住，非日文 locale 机器上自动化进不到对白——engine-hook 干净语音路径在本机无法对这两个走查。
+
+**未真机验证/后续**：① 各游戏"驱动进对白"仍是引擎专属脚本（KiriKiriZ 中心连点可用；Siglus/CatSystem2 需日文 locale 才过门）；② Siglus 干净 OVK 逐句语音本机未复现（AngelBeats trial 被 Japan-only 挡；已验证基线仍是 2026-07-19 anemoi）；③ 天使☆騒々 D3D 画面 WGC 截图空白待查（可能需 window vs monitor 捕获或 DXGI 路径）。证据：`hibiki/.codex-test/windows-itest/win-itest-20260721-15*`、dump 目录 `galcard-out/*.{wav,png,json}`。
+
 ## ✅ 真机验证（2026-07-19，SiglusEngine 1.1.141.3 / anemoi 正式版）
 
 - 原始路径：`D:\anemoi\anemoi (正式版)\SiglusEngine.exe`，32 位 x86，SHA-256 `D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059`。
