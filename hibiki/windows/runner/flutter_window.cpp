@@ -1202,6 +1202,14 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         } else if (method == "isShowing") {
           result->Success(
               flutter::EncodableValue(global_lookup_window_->IsShowing()));
+        } else if (method == "setBlockCapture") {
+          // 防截屏 — 与剪贴板面板同口径（WDA_EXCLUDEFROMCAPTURE）：瞬态查词窗
+          // 对用户可见但不进截图 / 录屏 / 屏幕共享。GlobalLookupWindow 记住该值，
+          // 窗口重建后由 ApplyBlockCapture 自动重加（同一 pref
+          // clipboardPanelBlockCapture，默认 true）。
+          global_lookup_window_->SetBlockCapture(
+              BoolFromValue(args, "block", true));
+          result->Success();
         } else {
           result->NotImplemented();
         }

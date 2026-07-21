@@ -194,6 +194,26 @@ void main() {
     }
   });
 
+  test(
+      '审查 Finding 9: sheet categories are driven by VideoGroup.values '
+      '(no parallel hand-written list)', () {
+    // _categories() 必须由 VideoGroup 枚举驱动：新增第 8 个分组时 _groupIcon /
+    // _groupTitle 的 exhaustive switch 编译期报错，面板不可能静默漏掉分组。
+    // 本守卫防止回退成与枚举平行的手写分类列表（那会让新分组悄悄不出现在面板）。
+    final String sheetSrc =
+        File('lib/src/media/video/video_quick_settings_sheet.dart')
+            .readAsStringSync();
+    expect(
+        sheetSrc.contains('for (final VideoGroup group in VideoGroup.values)'),
+        isTrue,
+        reason: '_categories() 必须遍历 VideoGroup.values 生成，禁止手写平行列表');
+    // 每个分组在 icon/label 映射里都被显式处理（exhaustive switch 的源码影子）。
+    for (final VideoGroup group in VideoGroup.values) {
+      expect(sheetSrc.contains('case VideoGroup.${group.name}:'), isTrue,
+          reason: '分组 ${group.name} 必须有 icon/label 映射分支');
+    }
+  });
+
   test('TODO-286: home video settings stay pref-only (no live controller)', () {
     // schema 文件本身不得依赖活播放器类型；控制器交互只能经
     // video_settings_actions.dart 的 host 回调间接发生。

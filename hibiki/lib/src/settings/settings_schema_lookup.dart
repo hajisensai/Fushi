@@ -472,7 +472,8 @@ SettingsDestination buildLookupDestination() {
           // 排除。默认开（隐私优先）。仅 Windows——display affinity 是 Win32 能力。
           // 与面板栏 🛡 按钮同一 pref、同一 native 通道（ClipboardPanelController
           // .applyBlockCapture → OverlayWindowChannel.setBlockCapture），改设置即时
-          // 重应用到已打开的面板窗，不新起并行机制。
+          // 重应用，不新起并行机制。applyBlockCapture 是唯一扇出入口：面板窗 +
+          // 瞬态全局查词窗（GlobalLookupController.applyBlockCapture）一起保护。
           SettingsSwitchItem(
             id: 'lookup.block_capture',
             title: t.clipboard_panel_block_capture,

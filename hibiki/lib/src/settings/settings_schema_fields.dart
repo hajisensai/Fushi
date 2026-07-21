@@ -62,6 +62,12 @@ class SettingsSecretFieldState extends State<SettingsSecretField> {
 
   @override
   void dispose() {
+    // 防抖窗口内关页不丢输入：还有 pending 写入（timer 未触发）时同步冲刷最新
+    // 文本再销毁。[SettingsSecretField.onChanged] 是纯写穿闭包、不依赖本 widget
+    // 树，dispose 后触发安全。
+    if (_debounce?.isActive ?? false) {
+      unawaited(widget.onChanged(_controller.text));
+    }
     _debounce?.cancel();
     _controller.dispose();
     super.dispose();
@@ -149,6 +155,7 @@ class SettingsNumberField extends StatefulWidget {
     this.suffixText,
     this.subtitle,
     this.showIcon = false,
+    this.committedText,
   });
 
   final String title;
@@ -166,23 +173,42 @@ class SettingsNumberField extends StatefulWidget {
   final ValueChanged<String> onChanged;
   final VoidCallback? onReset;
 
+  /// 当前已提交（解析 + 夹取后）值的格式化文本。非 null 时失焦同步输入框——键入
+  /// 中不打扰（越界值在编辑途中很常见），编辑结束把「9999 实存 100」这类静默夹取
+  /// 显性化，输入框回显真实存储值。null = 保持旧行为（不回写）。
+  final String Function()? committedText;
+
   @override
   State<SettingsNumberField> createState() => SettingsNumberFieldState();
 }
 
 class SettingsNumberFieldState extends State<SettingsNumberField> {
   late final TextEditingController _controller;
+  late final FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialValue);
+    _focusNode = FocusNode();
+    _focusNode.addListener(_syncCommittedOnUnfocus);
   }
 
   @override
   void dispose() {
+    _focusNode.removeListener(_syncCommittedOnUnfocus);
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  /// 失焦把输入框文本对齐到已提交值（见 [SettingsNumberField.committedText]）。
+  void _syncCommittedOnUnfocus() {
+    if (_focusNode.hasFocus) return;
+    final String? committed = widget.committedText?.call();
+    if (committed != null && committed != _controller.text) {
+      _controller.text = committed;
+    }
   }
 
   @override
@@ -196,6 +222,7 @@ class SettingsNumberFieldState extends State<SettingsNumberField> {
       controlBelow: true,
       trailing: HibikiTextField(
         controller: _controller,
+        focusNode: _focusNode,
         keyboardType: TextInputType.number,
         suffixText: widget.suffixText,
         suffixIcon: resettable

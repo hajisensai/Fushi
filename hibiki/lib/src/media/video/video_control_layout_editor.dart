@@ -43,6 +43,9 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.layout != widget.layout) {
       _controlLayout = widget.layout;
+      // 外部重置/换布局后清掉上一轮的拖拽驳回提示（旧 sheet 行为）：提示描述的
+      // 是旧布局上被拒的那次拖拽，布局已换仍挂着会误导。
+      _controlMoveRejectionMessage = null;
     }
   }
 

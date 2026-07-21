@@ -5453,7 +5453,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 播放页能力槽：schema 投影的视频项经它读页面状态 / 走页面回调实时应用。
   VideoQuickSettingsHost _buildVideoQuickSettingsHost() {
     return VideoQuickSettingsHost(
-      controller: _controller,
       uiScale: _videoUiScale,
       isTouchControls: !_isDesktopVideoControls,
       delayMs: () => _delayMs,
