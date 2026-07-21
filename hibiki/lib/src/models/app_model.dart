@@ -96,7 +96,7 @@ import 'package:hibiki/src/mining/immersion_capture_channel.dart';
 import 'package:hibiki/src/mining/youtube_clip_miner.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
 import 'package:hibiki/src/sync/yomitan_api_server_manager.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
@@ -2067,7 +2067,7 @@ class AppModel with ChangeNotifier {
             .log('AppModel.refreshBrowserExtensionCopy', e, s);
       }));
       if (texthookerEnabled) {
-        TexthookerWsClientHost.instance.start(texthookerUrls);
+        TexthookerWsClientManager.instance.start(texthookerUrls);
       }
       // TODO-861③：启动 check-due 词典自动更新（前台、静默、不弹错）。fire-and-forget，
       // 失败自吞 + 记日志，绝不阻塞 / 中断 app init（守卫见 maybeAutoUpdateDictionaries）。
@@ -4119,7 +4119,7 @@ class AppModel with ChangeNotifier {
       syncServerController.dispose();
     }
     // 其余三个 stop 都 null 安全 / 单例安全，未启动也可调，无需 _isInitialised 守卫。
-    unawaited(TexthookerWsClientHost.instance.stop());
+    unawaited(TexthookerWsClientManager.instance.stop());
     unawaited(stopYomitanApiServer());
     _animeDownloadService?.stop();
     _prefsRepo?.removeListener(notifyListeners);

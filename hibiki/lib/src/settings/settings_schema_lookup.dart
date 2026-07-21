@@ -16,7 +16,7 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema_fields.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
 import 'package:hibiki/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
 import 'package:hibiki/utils.dart';
@@ -248,10 +248,10 @@ SettingsDestination buildLookupDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setTexthookerEnabled(value);
               if (value) {
-                TexthookerWsClientHost.instance
+                TexthookerWsClientManager.instance
                     .start(settingsContext.appModel.texthookerUrls);
               } else {
-                await TexthookerWsClientHost.instance.stop();
+                await TexthookerWsClientManager.instance.stop();
               }
               settingsContext.refresh();
             },

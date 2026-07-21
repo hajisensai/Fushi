@@ -4,10 +4,15 @@ import 'package:web_socket_channel/io.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 
-/// 全局持有 texthooker WS client，按设置开关启停。
-class TexthookerWsClientHost extends ChangeNotifier {
-  TexthookerWsClientHost._();
-  static final TexthookerWsClientHost instance = TexthookerWsClientHost._();
+/// app 级单例，持有并托管 texthooker WS **客户端**（[TexthookerWsClient]，连出去连
+/// Textractor/LunaTranslator/mpv 等外部 WS 服务端），按设置开关启停/重启。
+///
+/// 命名说明：这是「持有 client 的宿主/管理器」，**不是** WS 服务端；旧名 `...Host` 易被
+/// 误读成 server，故更名为 `...Manager`（无行为变化，纯消歧）。
+class TexthookerWsClientManager extends ChangeNotifier {
+  TexthookerWsClientManager._();
+  static final TexthookerWsClientManager instance =
+      TexthookerWsClientManager._();
 
   TexthookerWsClient? _client;
 

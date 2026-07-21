@@ -8,7 +8,7 @@ import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
 
 enum GalHookSessionPhase {
   idle,
@@ -201,9 +201,9 @@ class GalHookSessionController extends ChangeNotifier {
         _resourceAudioPollInterval = resourceAudioPollInterval,
         _windowPollAttempts = windowPollAttempts,
         _endpointListenable =
-            endpointListenable ?? TexthookerWsClientHost.instance,
+            endpointListenable ?? TexthookerWsClientManager.instance,
         _endpointStatusLoader = endpointStatusLoader ??
-            (() => TexthookerWsClientHost.instance.endpointStatuses) {
+            (() => TexthookerWsClientManager.instance.endpointStatuses) {
     final List<TexthookerLineEntry> initialEntries = _textService.entries;
     _lastObservedLineId =
         initialEntries.isEmpty ? null : initialEntries.last.id;

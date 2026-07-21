@@ -284,7 +284,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Yomitan API server':
       'INTEGRATION: yomitan-api server lifecycle (test/sync/yomitan_api_server_manager_test.dart)',
   'lookup/Texthooker (receive text)':
-      'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_host_test.dart)',
+      'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_manager_test.dart)',
   'lookup/Desktop clipboard lookup':
       'DEVICE: clipboard watcher + hotkey lifecycle (test/sync/desktop_lookup_service_test.dart)',
   // galgame UX 统一后 desktop_clipboard_enabled 默认开（剪贴板 / galgame 台词都走
