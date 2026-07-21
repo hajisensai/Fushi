@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 37570 (2210 per locale)
+/// Strings: 37604 (2212 per locale)
 ///
-/// Built on 2026-07-21 at 07:32 UTC
+/// Built on 2026-07-21 at 10:28 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2942,6 +2942,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
   String get browser_extension_server_on => 'Lookup server on';
   String get browser_extension_server_off => 'Lookup server off';
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -7940,6 +7943,11 @@ class _StringsAr extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -13011,6 +13019,11 @@ class _StringsDe extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -18098,6 +18111,11 @@ class _StringsEs extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -23196,6 +23214,11 @@ class _StringsFr extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -28221,6 +28244,11 @@ class _StringsId extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -33294,6 +33322,11 @@ class _StringsIt extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -38172,6 +38205,11 @@ class _StringsJa extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -43053,6 +43091,11 @@ class _StringsKo extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -48104,6 +48147,11 @@ class _StringsNl extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -53170,6 +53218,11 @@ class _StringsPtBr extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -58219,6 +58272,11 @@ class _StringsRu extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -63213,6 +63271,11 @@ class _StringsTh extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -68239,6 +68302,11 @@ class _StringsTr extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -73252,6 +73320,11 @@ class _StringsVi extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 // Path: <root>
@@ -77916,6 +77989,11 @@ class _StringsZhCn extends _StringsEn {
   String get browser_extension_server_on => '查词服务已开启';
   @override
   String get browser_extension_server_off => '查词服务未开启';
+  @override
+  String get sync_google_drive_hoshi_compat => '与 Hoshi / ッツ 共享进度';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      '通过共享的 Google Drive 文件夹（ttu-reader-data）同步阅读进度。需完整 Drive 权限并重新登录。';
 }
 
 // Path: <root>
@@ -82713,6 +82791,11 @@ class _StringsZhHk extends _StringsEn {
   String get browser_extension_server_on => 'Lookup server on';
   @override
   String get browser_extension_server_off => 'Lookup server off';
+  @override
+  String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
+  @override
+  String get sync_google_drive_hoshi_compat_desc =>
+      'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
 }
 
 /// Flat map(s) containing all translations.
@@ -87225,6 +87308,10 @@ extension on _StringsEn {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -91735,6 +91822,10 @@ extension on _StringsAr {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -96266,6 +96357,10 @@ extension on _StringsDe {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -100796,6 +100891,10 @@ extension on _StringsEs {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -105332,6 +105431,10 @@ extension on _StringsFr {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -109850,6 +109953,10 @@ extension on _StringsId {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -114383,6 +114490,10 @@ extension on _StringsIt {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -118878,6 +118989,10 @@ extension on _StringsJa {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -123377,6 +123492,10 @@ extension on _StringsKo {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -127903,6 +128022,10 @@ extension on _StringsNl {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -132426,6 +132549,10 @@ extension on _StringsPtBr {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -136954,6 +137081,10 @@ extension on _StringsRu {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -141466,6 +141597,10 @@ extension on _StringsTh {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -145987,6 +146122,10 @@ extension on _StringsTr {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -150503,6 +150642,10 @@ extension on _StringsVi {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }
@@ -154985,6 +155128,10 @@ extension on _StringsZhCn {
         return '查词服务已开启';
       case 'browser_extension_server_off':
         return '查词服务未开启';
+      case 'sync_google_drive_hoshi_compat':
+        return '与 Hoshi / ッツ 共享进度';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return '通过共享的 Google Drive 文件夹（ttu-reader-data）同步阅读进度。需完整 Drive 权限并重新登录。';
       default:
         return null;
     }
@@ -159475,6 +159622,10 @@ extension on _StringsZhHk {
         return 'Lookup server on';
       case 'browser_extension_server_off':
         return 'Lookup server off';
+      case 'sync_google_drive_hoshi_compat':
+        return 'Share progress with Hoshi / ッツ';
+      case 'sync_google_drive_hoshi_compat_desc':
+        return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
       default:
         return null;
     }

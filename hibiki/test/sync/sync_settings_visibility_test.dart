@@ -53,6 +53,7 @@ void main() {
       expect(idsOf(dest.sections[0]), <String>[
         'sync.mode',
         'sync.account_status',
+        'sync.google_drive_hoshi_compat',
         'sync.webdav_config',
         'sync.ftp_config',
         'sync.sftp_config',
@@ -65,6 +66,8 @@ void main() {
           method.items.firstWhere((SettingsItem i) => i.id == id);
       expect(byId('sync.mode').visible, isNull);
       expect(byId('sync.account_status').visible, isNotNull);
+      // Hoshi 兼容开关只在 Google Drive 后端可见（切换存储空间/scope）。
+      expect(byId('sync.google_drive_hoshi_compat').visible, isNotNull);
     });
 
     test('content / actions / backup groups remain global', () {
