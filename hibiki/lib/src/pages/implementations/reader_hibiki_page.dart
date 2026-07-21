@@ -2445,6 +2445,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       selectionColor: _colorToCssRgba(rc.selection),
       sasayakiColor: _colorToCssRgba(rc.sasayaki),
       linkColor: _colorToCssRgba(rc.link),
+      // 墨水屏模式：全局单开关叠加在阅读器主题之上（纯黑白+线式高亮+关过渡），
+      // 黑白方向跟 app 明暗模式，与全局 E-ink ColorScheme 一致。
+      einkMode: appModel.einkMode,
+      einkDark: appModel.isDarkMode,
     );
   }
 
