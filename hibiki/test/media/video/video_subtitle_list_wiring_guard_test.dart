@@ -30,16 +30,20 @@ void main() {
     test('_handleSubtitleListLookup routes through the _lookupAt chain', () {
       // TODO-340: signature now carries the hit graphemeIndex (precise lookup,
       // not always 0); still routes through the shared _lookupAt chain.
+      // BUG-966: 必须把被点的列表 cue 作为 overrideCue 透传，否则制卡音频锚到播放
+      // 位置那句而非被点条目（撤掉 overrideCue: cue 会让此断言转红 = 守卫成立）。
       expect(
         RegExp(
           r'void _handleSubtitleListLookup\(\s*AudioCue cue,\s*'
           r'int graphemeIndex,\s*Rect charRect,?\s*\)'
-          r'[\s\S]*?_lookupAt\(sentence, graphemeIndex, charRect\)',
+          r'[\s\S]*?_lookupAt\(\s*sentence,\s*graphemeIndex,\s*charRect,\s*'
+          r'overrideCue: cue,?\s*\)',
         ).hasMatch(src),
         isTrue,
         reason:
-            'list lookup must pass the hit graphemeIndex through the shared '
-            '_lookupAt chain (TODO-340: precise per-char lookup, not index 0)',
+            'list lookup must pass the hit graphemeIndex AND the clicked cue '
+            '(overrideCue) through the shared _lookupAt chain (TODO-340 precise '
+            'per-char lookup; BUG-966 mining audio anchors the clicked row)',
       );
     });
   });

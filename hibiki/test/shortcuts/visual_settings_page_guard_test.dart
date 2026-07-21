@@ -9,9 +9,17 @@ import 'package:flutter_test/flutter_test.dart';
 /// page source so the figure stays wired to the SAME write-through path and does
 /// not regress the channel-preservation / scope-coverage contracts.
 void main() {
-  final String src = File(
+  // Shortcut settings refactor: the page is now a library of the page shell +
+  // the action_tile / binding_edit_dialog parts, with the localized labels in
+  // the shared shortcut_labels extensions. The guarded contracts span all four
+  // files, so pin their concatenation.
+  final String src = <String>[
     'lib/src/pages/implementations/shortcut_settings_page.dart',
-  ).readAsStringSync();
+    'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart',
+    'lib/src/pages/implementations/shortcut_settings/'
+        'binding_edit_dialog.part.dart',
+    'lib/src/shortcuts/shortcut_labels.dart',
+  ].map((String path) => File(path).readAsStringSync()).join('\n');
 
   test('page still iterates ShortcutScope.values for the visual surface too',
       () {

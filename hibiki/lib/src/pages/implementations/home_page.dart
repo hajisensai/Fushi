@@ -16,6 +16,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart'
@@ -35,8 +36,8 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 /// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
 /// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
 /// 的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊情况）。底栏/侧栏只在渲染层把身份映射
-/// 成位置。games（galgame 库）紧邻设置之前。texthooker tab 已删（galgame 台词统一进悬浮
-/// 查词面板，见 [GalgameSessionController]）。
+/// 成位置。games（galgame 库）紧邻设置之前。顶层 texthooker tab 已删（galgame 捕获工作台
+/// 现内嵌于 games tab，会话见 [GalHookSessionController]）。
 enum HomeTab {
   home,
   books,
@@ -44,6 +45,7 @@ enum HomeTab {
   downloads,
   dictionaries,
   games,
+  browserExtension,
   settings,
 }
 
@@ -54,6 +56,7 @@ enum HomeTab {
 List<HomeTab> homeActiveTabs({
   required bool videoEnabled,
   bool gamesEnabled = false,
+  bool browserExtensionEnabled = false,
 }) =>
     <HomeTab>[
       HomeTab.home,
@@ -64,6 +67,9 @@ List<HomeTab> homeActiveTabs({
       if (videoEnabled) HomeTab.downloads,
       HomeTab.dictionaries,
       if (gamesEnabled) HomeTab.games,
+      // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
+      // 不支持加载未解压扩展，故按平台而非实验开关门控），位置紧邻设置之前。
+      if (browserExtensionEnabled) HomeTab.browserExtension,
       HomeTab.settings,
     ];
 
@@ -143,6 +149,12 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         icon: Icons.sports_esports_outlined,
         selectedIcon: Icons.sports_esports,
         label: t.nav_game,
+      );
+    case HomeTab.browserExtension:
+      return AdaptiveNavItem(
+        icon: Icons.extension_outlined,
+        selectedIcon: Icons.extension,
+        label: t.nav_browser_extension,
       );
     case HomeTab.settings:
       return AdaptiveNavItem(
@@ -504,6 +516,8 @@ class _HomePageState extends BasePageState<HomePage>
   List<HomeTab> _activeTabs() => homeActiveTabs(
         videoEnabled: true,
         gamesEnabled: Platform.isWindows,
+        // 「电脑才有」：浏览器扩展 tab 仅桌面（Windows/macOS/Linux）显示。
+        browserExtensionEnabled: DesktopLookupService.isDesktop,
       );
 
   /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚关掉实验开关时仍停在
@@ -955,6 +969,8 @@ class _HomePageState extends BasePageState<HomePage>
         );
       case HomeTab.games:
         return const HomeGamePage();
+      case HomeTab.browserExtension:
+        return const BrowserExtensionPage();
       case HomeTab.settings:
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。

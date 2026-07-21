@@ -305,8 +305,11 @@ void main() {
     final String defaults = read('lib/src/shortcuts/shortcut_defaults.dart');
     final String shortcuts =
         read('lib/src/media/video/video_player_shortcuts.dart');
-    final String settings =
-        read('lib/src/pages/implementations/shortcut_settings_page.dart');
+    // Action display labels moved from the settings page into the shared
+    // shortcut_labels extensions (shortcut settings refactor); the settings
+    // page renders every action via `action.label`, so labels-file coverage is
+    // what proves the tile can render these actions.
+    final String settings = read('lib/src/shortcuts/shortcut_labels.dart');
     final String page = readVideoHibikiSource();
 
     for (final String action in <String>[
@@ -404,7 +407,9 @@ void main() {
 
     expect(page, contains('void _handleSubtitleJumpTap(AudioCue cue)'));
     expect(page, contains('_controller?.skipToCue(cue)'));
-    expect(page, contains('_lastLookupCue = controller.currentCue ??'));
+    // BUG-966: 锚定 cue 解析收口到纯函数 resolveVideoLookupAnchorCue（currentCue 仍是默认）。
+    expect(page, contains('_lastLookupCue = resolveVideoLookupAnchorCue('));
+    expect(page, contains('currentCue: controller.currentCue'));
     expect(page, contains('buildSelectedSubtitleCueContext'));
     // TODO-1000: the raw-payload assembly moved out of the video shell into the
     // shared ImmersionMiningEngine (fields carried on the request), so the card

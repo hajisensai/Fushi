@@ -58,6 +58,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
+import 'package:hibiki/src/utils/cover_image.dart';
 
 part 'reader_history/card_widgets.part.dart';
 part 'reader_history/remote.part.dart';
@@ -529,14 +530,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         await appModel.database.getPrimaryCollectionIdByEntry();
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行，与 primaryMap
     // 同口径；详情页拖完 onChanged 重载本映射，库页行立即同序）。
+    // BUG-959: 一次 getAllCollectionItems 查全部成员内存分组，替代逐合集
+    // getCollectionItems 的 N+1（合集越多首屏合集行渲染越慢）。判据
+    // `primaryMap[key] == m.collectionId` 与旧逐合集 `== c.id` 等价。
     final Map<String, int> memberSortIndex = <String, int>{};
-    for (final MediaCollectionRow c in collections) {
-      final List<MediaCollectionItemRow> members =
-          await appModel.database.getCollectionItems(c.id);
-      for (final MediaCollectionItemRow m in members) {
-        final String key = '${m.mediaType}|${m.entryKey}';
-        if (primaryMap[key] == c.id) memberSortIndex[key] = m.sortIndex;
-      }
+    for (final MediaCollectionItemRow m
+        in await appModel.database.getAllCollectionItems()) {
+      final String key = '${m.mediaType}|${m.entryKey}';
+      if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
     }
     final List<EpubBookRow> epubRows =
         await appModel.database.getAllEpubBooks();
@@ -765,14 +766,23 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     AsyncSnapshot<_RemoteBookState?>? remoteSnapshot,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // BUG-963：这三张「从 EPUB 借用」的展示映射（封面 / 有 EPUB 背书门控 / 借用进度）
+    // 必须以**未筛选的全量 EpubBooks 行**为源，而不是筛选后的 `books`。标签筛选只裁剪
+    // 参与网格展示的列表；合集内只打了标签的有声书（SRT）成员会向其关联 EPUB 借封面 /
+    // 进度 / 「查看插画」门控，若以筛选子集构建，关联 EPUB 未命中同一标签即被筛掉 → 借不到
+    // → 合集成员丢封面（BUG-937 让被筛合集能带命中成员显示后暴露此缺陷）。此处已 watch
+    // 于上层 build（filteredBookIdsProvider 之上的 hibikiBooksProvider），read 全量安全。
+    final List<MediaItem> allEpubBooksForBorrow =
+        ref.read(hibikiBooksProvider(appModel.targetLanguage)).valueOrNull ??
+            books;
     final Map<String, String> epubCoverUrisByBookKey = {};
-    // TODO-1191：`books` 是 hibikiBooksProvider 的全部 EpubBooks 行；解析出的
-    // bookKey 全集即「有 EpubBooks 行」的真值，供 SRT 卡「查看插画」门控用。
+    // TODO-1191：`allEpubBooksForBorrow` 是 hibikiBooksProvider 的全部 EpubBooks 行；
+    // 解析出的 bookKey 全集即「有 EpubBooks 行」的真值，供 SRT 卡「查看插画」门控用。
     final Set<String> epubBackedBookKeys = {};
     // BUG-728：过滤前先收 EPUB 卡已算好的进度，供只以 SRT 卡出现的有声书复用。
     final Map<String, ({int position, int duration})> epubProgressByBookKey =
         {};
-    for (final MediaItem item in books) {
+    for (final MediaItem item in allEpubBooksForBorrow) {
       final String? key = _parseBookKey(item.mediaIdentifier);
       if (key != null) {
         epubBackedBookKeys.add(key);

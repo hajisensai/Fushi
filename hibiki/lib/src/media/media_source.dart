@@ -8,6 +8,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/utils/cover_image.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -378,7 +379,8 @@ abstract class MediaSource {
     if (item.imageUrl != null) {
       if (item.imageUrl!.startsWith('file://')) {
         final String filePath = Uri.parse(item.imageUrl!).toFilePath();
-        return FileImage(File(filePath));
+        // BUG-959: 按物理像素上限解码，避免 EPUB 原始封面(常 1600×2400)整帧撑爆 ImageCache。
+        return resizedFileImage(File(filePath));
       } else {
         return CachedNetworkImageProvider(
           fallbackUrl ?? item.imageUrl!,
@@ -474,7 +476,9 @@ abstract class MediaSource {
       return null;
     }
 
-    return FileImage(file);
+    // BUG-959: 降采样解码；existsSync 保留——它区分「有无 override 封面」（同步 API，
+    // 返回 null 表示无 override 由上层回落正常封面），改异步会牵动所有 build 调用点。
+    return resizedFileImage(file);
   }
 
   /// Given a [MediaItem], set its override display title. If the title is

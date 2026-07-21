@@ -37,6 +37,16 @@ const List<String> _apiKeyParameterNames = <String>[
 /// `Basic base64('hibiki:'+key)`）。端点：serverVersion/yomitanVersion/termEntries/tokenize
 /// （yomitan-api 兼容）+ `/api/lookup/dictionary` + `/api/mine`（BUG-530：浏览器扩展契约，
 /// 与 HibikiSyncServer 共享 [buildRemoteDictionaryLookupResponse]/[buildRemoteMineResponse]）。
+/// 浏览器扩展连接探活的 POST 端点集合：命中其一即视作「扩展（或 in-app 弹窗）活跃」。
+/// 只列扩展真正会主动打的端点——状态探测 + 查词/制卡/查重/音频，不含裸 GET 音频文件。
+const Set<String> _kExtensionSeenPaths = <String>{
+  '/api/extension/status',
+  '/api/lookup/dictionary',
+  '/api/lookup/audio',
+  '/api/mine',
+  '/api/duplicate',
+};
+
 class YomitanApiServer {
   YomitanApiServer({
     required int port,
@@ -49,6 +59,7 @@ class YomitanApiServer {
     List<String> Function()? audioSourcesProvider,
     String? Function()? extensionBuildProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
+    void Function()? onExtensionSeen,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
@@ -61,6 +72,7 @@ class YomitanApiServer {
         _audioSourcesProvider = audioSourcesProvider,
         _extensionBuildProvider = extensionBuildProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
+        _onExtensionSeen = onExtensionSeen,
         _apiKey = apiKey,
         _allowLan = allowLan;
 
@@ -80,6 +92,10 @@ class YomitanApiServer {
   // 最大宽高；这个 sink 收到（未 clamp 的原始逻辑像素）→ app 侧 clamp + 拖即解锁 + 写扩展键。
   // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写偏好副作用）。
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
+  // 浏览器扩展连接探活：任一扩展端点被命中即回调（app 侧记录 last-seen 时间戳，
+  // 供「安装 → 验证插件已正常启用」的连接检测显示）。扩展 background 在 SW 启动时
+  // 主动打 /api/extension/status，故装完扩展即刷新 last-seen，无需用户先划词。
+  final void Function()? _onExtensionSeen;
   final String? _apiKey;
   final bool _allowLan;
 
@@ -203,6 +219,11 @@ class YomitanApiServer {
     if (method != 'POST') {
       return shelf.Response(405, body: 'Method Not Allowed');
     }
+    // 浏览器扩展连接探活：这些 POST 端点只有已加载的扩展（或 in-app 弹窗）会命中，
+    // 命中即刷新 app 侧 last-seen（连接检测据此判断「插件已正常启用」）。
+    if (_kExtensionSeenPaths.contains(path)) {
+      _onExtensionSeen?.call();
+    }
     switch (path) {
       case '/serverVersion':
         return _json(<String, dynamic>{'version': 1});
@@ -223,11 +244,19 @@ class YomitanApiServer {
       case '/api/extension/popup-size':
         return _handleExtensionPopupSize(request);
       case '/api/extension/status':
-        return _json(<String, dynamic>{
-          'app': 'hibiki',
-          'ready': true,
-          'port': port,
-        });
+        // BUG-726/自更新：状态端点回带当前内置扩展指纹（extensionBuild），扩展
+        // background 在 SW 启动时打这里比对自身 build，不一致即 chrome.runtime.reload()
+        // 从磁盘拉新——把「只有查词才检查更新」升级为「启动即主动检查」。null（指纹
+        // 尚未算好 / 旧 app）时省略该字段，向后兼容。
+        {
+          final String? extensionBuild = _extensionBuildProvider?.call();
+          return _json(<String, dynamic>{
+            'app': 'hibiki',
+            'ready': true,
+            'port': port,
+            if (extensionBuild != null) 'extensionBuild': extensionBuild,
+          });
+        }
       case '/api/youtube/captions':
         return _handleYoutubeCaptions(request);
       case '/api/subtitle/parse':

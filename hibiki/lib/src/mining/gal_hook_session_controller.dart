@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/serial_job_queue.dart';
+import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
 
 enum GalHookSessionPhase {
   idle,
@@ -199,9 +201,9 @@ class GalHookSessionController extends ChangeNotifier {
         _resourceAudioPollInterval = resourceAudioPollInterval,
         _windowPollAttempts = windowPollAttempts,
         _endpointListenable =
-            endpointListenable ?? TexthookerWsClientHost.instance,
+            endpointListenable ?? TexthookerWsClientManager.instance,
         _endpointStatusLoader = endpointStatusLoader ??
-            (() => TexthookerWsClientHost.instance.endpointStatuses) {
+            (() => TexthookerWsClientManager.instance.endpointStatuses) {
     final List<TexthookerLineEntry> initialEntries = _textService.entries;
     _lastObservedLineId =
         initialEntries.isEmpty ? null : initialEntries.last.id;
@@ -282,7 +284,7 @@ class GalHookSessionController extends ChangeNotifier {
   String? _lastObservedLineId;
   String? _selectedTextThreadKey;
   int? _selectedNativeTextThreadId;
-  Future<void> _miningTail = Future<void>.value();
+  final SerialJobQueue _audioQueue = SerialJobQueue();
   final Set<String> _loopbackCacheInFlight = <String>{};
 
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
@@ -723,28 +725,22 @@ class GalHookSessionController extends ChangeNotifier {
       _markLineAudioMissing(lineId, 'line_context_unavailable');
       return Future<Uint8List?>.value(null);
     }
-    final Completer<Uint8List?> completer = Completer<Uint8List?>();
-    _miningTail = _miningTail.then((_) async {
-      try {
-        completer.complete(
-          await _captureAudioBytesNow(
-            lineId: lineId,
-            sentence: sentence,
-            outputExtension: outputExtension,
-          ),
-        );
-      } catch (error, stack) {
-        _record(
-          GalHookEventSeverity.error,
-          'card',
-          'card.audio_capture_exception',
-          'Audio capture job failed',
-          details: <String, Object?>{'error': '$error', 'stack': '$stack'},
-        );
-        completer.complete(null);
-      }
-    });
-    return completer.future;
+    // 串行化 + 永不毒化（BUG-956）：单次语音采集异常（含事件记录自身抛）不得让后续采集永久挂起。
+    return _audioQueue.enqueue<Uint8List?>(
+      () => _captureAudioBytesNow(
+        lineId: lineId,
+        sentence: sentence,
+        outputExtension: outputExtension,
+      ),
+      buildFailure: (Object error, StackTrace stack) => null,
+      onError: (Object error, StackTrace stack) => _record(
+        GalHookEventSeverity.error,
+        'card',
+        'card.audio_capture_exception',
+        'Audio capture job failed',
+        details: <String, Object?>{'error': '$error', 'stack': '$stack'},
+      ),
+    );
   }
 
   Future<Uint8List?> _captureAudioBytesNow({
@@ -873,7 +869,13 @@ class GalHookSessionController extends ChangeNotifier {
     final int pollUs = _resourceAudioPollInterval.inMicroseconds;
     while (true) {
       String? resourceId = _resourceIdForLine(lineId);
-      resourceId ??= engine.findPairedVoiceResourceId(timestamp);
+      // BUG-955：mine 阶段解析具体某行，绝不走「最新语音」兜底——历史行时间戳被淘汰后 timestamp=0，
+      // 借最新语音会把当前语音错配给旧台词。晚附着 live 行的资源已在捕获期固化到 _resourceIdForLine，
+      // 这里只按精确 resourceId / 正时间戳窗口取，取不到就交给下游 PCM/loopback 或明确 missing。
+      resourceId ??= engine.findPairedVoiceResourceId(
+        timestamp,
+        allowLatestSessionFallback: false,
+      );
       if (resourceId != null && _resourceIdForLine(lineId) == null) {
         _textService.updateLineAudio(
           lineId,
@@ -886,6 +888,7 @@ class GalHookSessionController extends ChangeNotifier {
         timestamp,
         outputExtension: outputExtension,
         resourceId: resourceId,
+        allowLatestSessionFallback: false,
       );
       if (bytes != null && bytes.isNotEmpty) return bytes;
       if (!engine.rawVoiceReady ||
@@ -1213,6 +1216,13 @@ class GalHookSessionController extends ChangeNotifier {
           cursor = line.seq;
           continue;
         }
+        // 系统 UI 文字（读/存档菜单确认句、存档槽号/时间戳）在 native hook 侧无法与台词区分，
+        // 会被 injector 的 hook 赢家选择放行——在喂进文本服务/查词面板前用实证启发式剔除。
+        // 推进 cursor 消费掉该 seq，但不置 receivedTextLine（菜单文字不算收到台词信号）。
+        if (isGalgameSystemUiLine(line.text)) {
+          cursor = line.seq;
+          continue;
+        }
         final TexthookerLineEntry? entry = _textService.appendLine(
           line.text,
           source: TexthookerLineSource.engineHook,
@@ -1297,6 +1307,12 @@ class GalHookSessionController extends ChangeNotifier {
             'No engine utterance matched the captured line',
             details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
           );
+        }
+        // BUG-950：上面 grabUtterance / grabClipNear / _cacheLoopbackForLine 的 await 可能
+        // 跨越一次 stop/重启。期间 engine 被换掉则当前迭代属于旧会话，立即收手——绝不再推进
+        // cursor（否则把新会话已重置的 _lastTextSeq 覆写成旧大值，新文本全被判 duplicate 丢弃）。
+        if (engine != _engineSource) {
+          return;
         }
         cursor = line.seq;
       }

@@ -547,6 +547,9 @@ class HibikiSyncServer {
     if (reqPath == '/api/library/aggregate') {
       return _handleLibraryAggregate(request, method, reqPath);
     }
+    if (reqPath == '/api/library/activity') {
+      return _handleLibraryActivity(request, method);
+    }
     if (reqPath == '/api/library/collections') {
       return _handleLibraryCollections(request, method, reqPath);
     }
@@ -1621,6 +1624,29 @@ class HibikiSyncServer {
     return id;
   }
 
+  /// GET /api/library/activity — host 最近活动事件（新首页 Activity 面板的互联
+  /// 数据源；display-only，client 不落库）。limit 参数钳制 1..500。老 client 不知
+  /// 道此端点、老 host 对此路径 404（client 侧优雅降级为空列表）。
+  Future<shelf.Response> _handleLibraryActivity(
+    shelf.Request request,
+    String method,
+  ) async {
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+    if (method != 'GET') return shelf.Response(405);
+    final int limit =
+        (int.tryParse(request.url.queryParameters['limit'] ?? '') ?? 100)
+            .clamp(1, 500);
+    final List<RemoteActivityEvent> events =
+        await svc.listActivityEvents(limit: limit);
+    return shelf.Response.ok(
+      jsonEncode(<Map<String, Object?>>[
+        for (final RemoteActivityEvent e in events) e.toJson(),
+      ]),
+      headers: <String, String>{'Content-Type': 'application/json'},
+    );
+  }
+
   Future<shelf.Response> _handleLibraryVideos(
     shelf.Request request,
     String method,
@@ -1734,8 +1760,43 @@ class HibikiSyncServer {
     }
 
     // GET /api/library/videos/<id>/subtitle — 字幕（需 Basic 鉴权，中间件已处理）
+    // PUT 同路径 — client→host 上传该视频的外挂字幕 sidecar（BUG-964，随
+    // syncVideoFiles live push）。后缀（`.srt` / `.ja.srt` …）经
+    // X-Hibiki-Subtitle-Suffix header 上报，服务端白名单校验；老 host 无此分支
+    // 对 PUT 回 405，client 据此优雅降级。
     final String? subtitleId = _extractVideoId(reqPath, 'subtitle');
     if (subtitleId != null) {
+      if (method == 'PUT') {
+        final String suffix =
+            _decodeHeaderValue(request, 'x-hibiki-subtitle-suffix') ?? '';
+        final Directory tmpDir =
+            Directory.systemTemp.createTempSync('hibiki_subtitle_in');
+        final File tmp = File(p.join(tmpDir.path, 'upload.bin'));
+        final IOSink sink = tmp.openWrite();
+        try {
+          await request.read().forEach(sink.add);
+          await sink.close();
+          await svc.importVideoSubtitle(tmp, id: subtitleId, suffix: suffix);
+          return shelf.Response(200);
+        } on ArgumentError catch (e) {
+          return shelf.Response(400, body: 'Invalid subtitle upload: $e');
+        } on StateError {
+          return shelf.Response.notFound('Video not found');
+        } catch (e) {
+          return shelf.Response(500, body: 'Subtitle import failed: $e');
+        } finally {
+          try {
+            await sink.close();
+          } catch (_) {
+            // best-effort
+          }
+          try {
+            tmpDir.deleteSync(recursive: true);
+          } catch (_) {
+            // best-effort
+          }
+        }
+      }
       if (method != 'GET') return shelf.Response(405);
       final int episodeIndex = _episodeIndexFromRequest(request);
       final String? embeddedIndexText =

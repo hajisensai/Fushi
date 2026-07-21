@@ -16,6 +16,7 @@ class YomitanApiServerManager {
     List<String> Function()? audioSourcesProvider,
     String? Function()? extensionBuildProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
+    void Function()? onExtensionSeen,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -24,7 +25,8 @@ class YomitanApiServerManager {
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
         _extensionBuildProvider = extensionBuildProvider,
-        _onExtensionPopupSize = onExtensionPopupSize;
+        _onExtensionPopupSize = onExtensionPopupSize,
+        _onExtensionSeen = onExtensionSeen;
 
   final HibikiRemoteLookupService _lookup;
   final HibikiRemoteMiningService? _mining;
@@ -39,6 +41,8 @@ class YomitanApiServerManager {
   final String? Function()? _extensionBuildProvider;
   // 弹窗尺寸精细化 Phase D：扩展弹窗拖角调整后回写尺寸的 sink，透传给 [YomitanApiServer]。
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
+  // 浏览器扩展连接探活回调，透传给 [YomitanApiServer]（app 侧记录 last-seen）。
+  final void Function()? _onExtensionSeen;
 
   YomitanApiServer? _server;
 
@@ -58,6 +62,7 @@ class YomitanApiServerManager {
       audioSourcesProvider: _audioSourcesProvider,
       extensionBuildProvider: _extensionBuildProvider,
       onExtensionPopupSize: _onExtensionPopupSize,
+      onExtensionSeen: _onExtensionSeen,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );

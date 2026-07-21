@@ -10,7 +10,7 @@
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— hibiki.exe **读侧** native。
 //
 // 隔离红线：注入进游戏、装 XAudio2/DirectSound hook 的代码全在独立组件
-// `native/galgame_voice_hook/`（injector + hook DLL），会被杀软报毒，**绝不进 hibiki.exe**。
+// 独立仓库 hibiki-voice-hook（injector + hook DLL），会被杀软报毒，**绝不进 hibiki.exe**。
 // 本 reader 只做一件被杀软视为无害的事：按名 [OpenFileMappingW] 打开那个组件建好的**共享内存**，
 // 读环形缓冲里 hook 抓到的干净语音 PCM。它是 A 阶段 [AudioLoopbackCapture] 的引擎-hook 版对偶：
 // 同样「开一路 → 需要时取最近 N 毫秒」，只是数据源从本进程 WASAPI 换成跨进程共享内存。
@@ -33,7 +33,7 @@ struct VoiceHookStatus {
   bool ok = false;           // 映射有效且格式已就绪（音频格式已填）
 };
 
-// 一条 hook 文本事件（台词行或 Luna 线程发现，v7 文本环）。
+// 一条 hook 文本事件（台词行或 Luna 线程发现，v10 文本环）。
 struct VoiceHookText {
   uint64_t seq = 0;           // 单调序号
   uint64_t timestamp_ms = 0;  // hook 写入时刻（GetTickCount64）
@@ -106,7 +106,7 @@ class VoiceHookReader {
   //   - [target_source] 为 0：按能量自动选语音源（说话前静音、文本时刻突然有能量者），并排除
   //     [exclude_sources] 里的源（用户标记的 BGM）。自动选源在真机上可能误选 BGM，故提供手动。
   // 找不到语音源 / 段全被环形覆盖 / 无数据则 [out] 空、返回 ok=false（调用方回退 GrabClipNear）。
-  // 算法真相源：`native/galgame_voice_hook/tools/ring_probe.cpp` 的 DumpUtterance（已真机验证）。
+  // 算法真相源：独立仓库 hibiki-voice-hook 的 `tools/ring_probe.cpp` 的 DumpUtterance（已真机验证）。
   VoiceHookStatus GrabUtterance(uint64_t ts_ms, uint64_t target_source,
                                 const std::vector<uint64_t>& exclude_sources,
                                 std::vector<uint8_t>& out);

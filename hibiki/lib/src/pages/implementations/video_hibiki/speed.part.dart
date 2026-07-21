@@ -28,13 +28,24 @@ part of '../video_hibiki_page.dart';
 /// this self-contained core block.
 extension _VideoSpeed on _VideoHibikiPageState {
   /// 设置播放倍速：先乐观刷新 UI，再下发 controller；只有持久化走 trailing debounce。
-  Future<void> _setSpeed(double speed, {bool persist = true}) async {
+  ///
+  /// [rebuild]（BUG-965）：是否为倍速变化触发全页 `setState`。默认 true（菜单/键盘步进
+  /// 需刷新倍速按钮标签 / 侧栏勾选）。长按临时加速的横拖热路径传 false——拖动全程由
+  /// 独立的跟随徽章（[_longPressSpeedBadge] + 其 `ValueListenableBuilder`）实时渲染当前
+  /// 倍速，页面无需重建；每 0.1x 步进都全页重建 ~7300 行视频页会掉帧、拖不流畅（松手
+  /// [_handleVideoLongPressEnd] 走默认 rebuild 一次性把标签对账回恢复速）。`_playbackSpeed`
+  /// 字段与 `_controller.setSpeed` 仍照常更新，只是省掉高频全页 `setState`。
+  Future<void> _setSpeed(
+    double speed, {
+    bool persist = true,
+    bool rebuild = true,
+  }) async {
     final double clamped = speed.clamp(0.25, 4.0).toDouble();
     final bool changed = (clamped - _playbackSpeed).abs() >= 0.001;
     if (!changed && !persist) return;
     if (changed) {
       _playbackSpeed = clamped;
-      if (mounted) _rebuild(() {});
+      if (rebuild && mounted) _rebuild(() {});
       await _controller?.setSpeed(clamped);
     }
     if (persist) {
@@ -65,7 +76,9 @@ extension _VideoSpeed on _VideoHibikiPageState {
     final double speed = _asbConfig.longPressSpeed;
     // 长按拖动以固定加速速为基准（TODO-338）：拖动位移在此基础上连续加减。
     _longPressDragBaseSpeed = speed;
-    unawaited(_setSpeed(speed, persist: false));
+    // BUG-965：临时加速不触发全页重建——徽章即将成为唯一实时倍速指示，页面标签保持
+    // 恒定的持久速（松手才对账），避免拖动期高频全页 setState 掉帧。
+    unawaited(_setSpeed(speed, persist: false, rebuild: false));
     // TODO-1154：在长按落点上方弹出跟随指针的倍速徽章（B 站/YouTube 观感），
     // 取代钉死左上角的 _showOsd。localPosition 与 Stack 同坐标系，可直接用作 Positioned 锚点。
     _longPressSpeedBadge.value =
@@ -88,7 +101,9 @@ extension _VideoSpeed on _VideoHibikiPageState {
     _longPressSpeedBadge.value =
         (position: details.localPosition, speed: snapped);
     if ((snapped - _playbackSpeed).abs() < 0.001) return;
-    unawaited(_setSpeed(snapped, persist: false));
+    // BUG-965：拖动热路径每 0.1x 步进都调这里；rebuild: false 省掉全页 setState，
+    // 让徽章（独立 ValueListenableBuilder）跟手渲染倍速，拖动才顺滑。
+    unawaited(_setSpeed(snapped, persist: false, rebuild: false));
   }
 
   void _handleVideoLongPressEnd(LongPressEndDetails details) {

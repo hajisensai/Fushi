@@ -35,6 +35,7 @@ class _OverlayTestEngine extends EngineHookGalAudioSource {
     int textTsMs, {
     required String outputExtension,
     String? resourceId,
+    bool allowLatestSessionFallback = true,
   }) async =>
       null;
 

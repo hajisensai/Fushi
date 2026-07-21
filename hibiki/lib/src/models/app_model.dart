@@ -96,7 +96,7 @@ import 'package:hibiki/src/mining/immersion_capture_channel.dart';
 import 'package:hibiki/src/mining/youtube_clip_miner.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
 import 'package:hibiki/src/sync/yomitan_api_server_manager.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
@@ -2067,7 +2067,7 @@ class AppModel with ChangeNotifier {
             .log('AppModel.refreshBrowserExtensionCopy', e, s);
       }));
       if (texthookerEnabled) {
-        TexthookerWsClientHost.instance.start(texthookerUrls);
+        TexthookerWsClientManager.instance.start(texthookerUrls);
       }
       // TODO-861③：启动 check-due 词典自动更新（前台、静默、不弹错）。fire-and-forget，
       // 失败自吞 + 记日志，绝不阻塞 / 中断 app init（守卫见 maybeAutoUpdateDictionaries）。
@@ -2777,6 +2777,10 @@ class AppModel with ChangeNotifier {
       mem,
       connectionsLimit: config.maxConnections > 0 ? 0 : mem.connectionsLimit,
     );
+    // 会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
+    host.applySessionSettings(config);
+    // 反吸血开关/阈值（用户可调）。
+    host.applyAntiLeechConfig(config);
     // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
     host.setUploadPolicy(config);
   }
@@ -4119,7 +4123,7 @@ class AppModel with ChangeNotifier {
       syncServerController.dispose();
     }
     // 其余三个 stop 都 null 安全 / 单例安全，未启动也可调，无需 _isInitialised 守卫。
-    unawaited(TexthookerWsClientHost.instance.stop());
+    unawaited(TexthookerWsClientManager.instance.stop());
     unawaited(stopYomitanApiServer());
     _animeDownloadService?.stop();
     _prefsRepo?.removeListener(notifyListeners);
@@ -4555,6 +4559,10 @@ class AppModel with ChangeNotifier {
       // 解锁 + 只写扩展键（下次查词 browserExtensionThemeColors 读新 extensionPopupEffectiveSize
       // 即以新尺寸下发，闭环）。
       onExtensionPopupSize: _applyExtensionPopupSize,
+      // 浏览器扩展连接探活：扩展任一端点命中即刷新 last-seen 时间戳，供扩展管理页
+      // 的「验证插件已正常启用」连接检测显示（扩展 SW 启动时主动打 /api/extension/status，
+      // 故装完扩展即刷新，无需用户先划词）。
+      onExtensionSeen: () => _browserExtensionLastSeenAt = DateTime.now(),
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';
@@ -4567,6 +4575,19 @@ class AppModel with ChangeNotifier {
 
   // BUG-726：内置扩展指纹缓存（refreshBrowserExtensionCopy 启动时填充）。
   String? _browserExtensionBuild;
+
+  /// BUG-726：当前 app 内置浏览器扩展的内容指纹（build）。扩展管理页显示版本、
+  /// 判断磁盘副本是否最新。启动时由 [refreshBrowserExtensionCopy] 异步算好，算好前为 null。
+  String? get browserExtensionBuild => _browserExtensionBuild;
+
+  // 浏览器扩展连接探活：last-seen 时间戳。yomitan-api server 收到任一扩展端点请求即
+  // 刷新（见 [_ensureYomitanManager] 的 onExtensionSeen）。扩展管理页据此判断「插件是否
+  // 已正常启用并连上本机」。null = 从未收到过扩展请求。
+  DateTime? _browserExtensionLastSeenAt;
+
+  /// 浏览器扩展最近一次访问本机 yomitan-api server 的时间（null = 从未连上）。
+  /// 扩展管理页「验证插件已正常启用」据此判断连接状态。
+  DateTime? get browserExtensionLastSeenAt => _browserExtensionLastSeenAt;
 
   /// BUG-726：把已解压的浏览器扩展副本刷新到当前 app 内置版本（详见
   /// [refreshBundledBrowserExtensionIfStale]），并缓存内置指纹供查词响应下发。

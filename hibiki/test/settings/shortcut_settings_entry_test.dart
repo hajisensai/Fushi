@@ -113,9 +113,9 @@ void main() {
     expect(item, isA<SettingsNavigationItem>());
     expect(item!.title, t.shortcut_settings_title);
 
-    // 2) 实验性标记：subtitle 用 settings_experimental_suffix（同既有范式）。
-    expect(item.subtitle, t.settings_experimental_suffix,
-        reason: '入口须标记为实验性（subtitle == settings_experimental_suffix）');
+    // 2) 「实验性」后缀已摘除（用户决策，快捷键页功能已齐备）：入口不再挂
+    //    settings_experimental_suffix 副标题。
+    expect(item.subtitle, isNull, reason: '快捷键入口不应再标记为实验性（用户已拍板摘除）');
 
     // 3) 不再加进书籍（阅读器）设置：快捷键是系统/全局输入配置。
     expect(item.reader, isNull, reason: '快捷键入口不应再出现在书内阅读设置');

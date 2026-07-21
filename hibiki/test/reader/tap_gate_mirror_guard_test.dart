@@ -71,11 +71,20 @@ void main() {
         contains('_syncTapGateJs();'),
         reason: '_toggleChrome 翻转 chrome 后必须同步 JS 门控镜像');
 
-    // highlightOnTap 经设置热更新链路同步。
+    // BUG-969：highlightOnTap 镜像同步随实时预览合并进 _liveSettingsRunner 动作体；
+    // onSettingsChangedLive 只负责 trigger 该 runner（拖 slider 风暴收敛为背靠背串行趟）。
+    // runner 定义在 hook 之前，故同步点必须落在 runner 动作内、且 hook 经 trigger 触发。
+    final int runnerDef = mainShell.indexOf('CoalescedAsyncRunner(() async {');
+    final int syncCall = mainShell.indexOf('_syncTapGateJs();', runnerDef);
+    expect(runnerDef, greaterThan(-1),
+        reason: '实时设置合并执行器 _liveSettingsRunner 必须存在');
+    expect(syncCall, greaterThan(runnerDef),
+        reason: 'highlightOnTap 镜像同步必须在合并执行器动作内（BUG-969）');
     final int liveHook = mainShell.indexOf('onSettingsChangedLive = ()');
-    final int syncCall = mainShell.indexOf('_syncTapGateJs();', liveHook);
     expect(liveHook, greaterThan(-1));
-    expect(syncCall, greaterThan(liveHook),
-        reason: 'onSettingsChangedLive 必须刷新 highlightOnTap 镜像');
+    expect(mainShell.indexOf('_liveSettingsRunner.trigger()', liveHook),
+        greaterThan(liveHook),
+        reason:
+            'onSettingsChangedLive 必须经 _liveSettingsRunner.trigger() 触发（合并后同步镜像）');
   });
 }

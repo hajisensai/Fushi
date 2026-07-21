@@ -241,6 +241,56 @@ void main() {
     });
   });
 
+  group('BUG-969: 120Hz 设置抽屉滚动/拖动帧率', () {
+    test('pill blur 真值表：抽屉遮挡时跳过 blur，其余不变', () {
+      expect(
+        topProgressPillShowsBlur(floating: true, obscured: false),
+        isTrue,
+        reason: '正常阅读时悬浮 pill 照常毛玻璃',
+      );
+      expect(
+        topProgressPillShowsBlur(floating: true, obscured: true),
+        isFalse,
+        reason: '设置抽屉开着时 pill 在 scrim 下，blur 不可见但每帧照付 '
+            'saveLayer+高斯回读 → 必须跳过',
+      );
+      expect(
+          topProgressPillShowsBlur(floating: false, obscured: false), isFalse);
+      expect(
+          topProgressPillShowsBlur(floating: false, obscured: true), isFalse);
+    });
+
+    test('source guard: pill 的 BackdropFilter 必须经 topProgressPillShowsBlur 门控',
+        () {
+      final String src = readReaderPageSource();
+      expect(
+        src.contains('topProgressPillShowsBlur('),
+        isTrue,
+        reason: 'pill 的 blur 分支必须走纯函数门控（真值表可测），不得裸挂 BackdropFilter',
+      );
+      expect(
+        src.contains('obscured: _appearanceSheetOpen'),
+        isTrue,
+        reason: '遮挡信号必须取自快速设置抽屉的重入守卫旗 _appearanceSheetOpen',
+      );
+    });
+
+    test('source guard: onSettingsChangedLive 必须经 CoalescedAsyncRunner 合并', () {
+      final String src = readReaderPageSource();
+      expect(
+        src.contains('_liveSettingsRunner.trigger()'),
+        isTrue,
+        reason: '拖 slider 每 tick 直跑「CSS 注入+重锚+整页 setState」会一次拖动上百趟 '
+            'WebView 往返（BUG-969 根因），必须经合并执行器收敛',
+      );
+      expect(
+        src.contains('CoalescedAsyncRunner(() async {'),
+        isTrue,
+        reason: '合并动作本体（错误处理/tap-gate/setState）必须收在 runner 内',
+      );
+    });
+  });
+
   group('first-load chrome inset re-apply (BUG-467 regression)', () {
     // 回归——TODO-975 把底栏预留 _bottomChromeReserve 门控进 `_hasEverLoaded &&
     // _showChrome`，但初始 WebView HTML 在 _hasEverLoaded=false 时求 chromeBottomInset

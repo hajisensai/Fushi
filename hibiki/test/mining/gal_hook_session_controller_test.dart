@@ -329,6 +329,67 @@ void main() {
     endpoints.dispose();
   });
 
+  test('系统 UI 文字行被 poll 剔除，只有真台词进入文本服务', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        // 读档确认句（系统 UI）——必须被剔除，不进查词面板。
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 111,
+          text: 'No.05のデータをロードします',
+          threadId: 9,
+          hookName: 'TextRender',
+        ),
+        // 真台词——必须放行。
+        GalHookedLine(
+          seq: 2,
+          timestampMs: 222,
+          text: 'やめろ化け物め！',
+          threadId: 9,
+          hookName: 'TextRender',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'Test Game'),
+    );
+    for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(service.entries.map((TexthookerLineEntry e) => e.text).toList(),
+        <String>['やめろ化け物め！'],
+        reason: '系统 UI 文字（读档确认句）应被剔除，只放行真台词');
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('text-only engine hook stays active with loopback audio fallback',
       () async {
     final TexthookerService service = TexthookerService.test();
@@ -620,6 +681,80 @@ void main() {
     await controller.close();
     endpoints.dispose();
   });
+
+  test('mine 阶段解析语音一律禁用「最新语音」兜底（BUG-955 ①）', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    final TexthookerLineEntry entry = service.appendLine('siglus line')!;
+    await controller.captureAudioBytes(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: 'aac',
+    );
+
+    expect(engine.grabFallbackFlags, isNotEmpty,
+        reason: 'mine 路径应真的调用了 grabPairedVoiceBytes');
+    expect(
+      engine.grabFallbackFlags.every((bool f) => f == false),
+      isTrue,
+      reason: 'BUG-955：mine 阶段绝不允许最新语音兜底（防历史行借当前语音）',
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  _bug950Guard();
+}
+
+void _bug950Guard() {
+  test('poll 循环 await 归来后有 engine generation 复检（BUG-950 回归守卫）', () {
+    // grabUtterance/_cacheLoopbackForLine 的 await 跨越 stop/重启时，恢复后必须复检
+    // engine == _engineSource 再推进 cursor，否则新会话的 _lastTextSeq 被旧 cursor 倒灌、
+    // 新文本全被判 duplicate 丢弃。此为跨异步 gap + 私有 seq 的时序 bug，行为断言留真机轮；
+    // 源码守卫确保复检不被后续改动悄悄删掉。
+    final File src = File('lib/src/mining/gal_hook_session_controller.dart');
+    expect(src.existsSync(), isTrue);
+    final String body = src.readAsStringSync();
+    final int pollAt = body.indexOf('Future<void> _pollHookedText()');
+    expect(pollAt, greaterThan(0), reason: '_pollHookedText 不存在，守卫需更新');
+    final int cursorWriteAt =
+        body.indexOf('cursor = line.seq;\n      }', pollAt);
+    expect(cursorWriteAt, greaterThan(pollAt), reason: '找不到循环末尾 cursor 推进点');
+    // 紧邻循环末尾 cursor 推进之前的窗口里，必须存在 engine != _engineSource 复检 + BUG-950 标记
+    // （前面别处也有 generation 检查，故只看贴着 cursor 写入的这一段，避免误过）。
+    final String window = body.substring(cursorWriteAt - 400, cursorWriteAt);
+    expect(
+      window.contains('if (engine != _engineSource)') &&
+          window.contains('BUG-950'),
+      isTrue,
+      reason: 'BUG-950：推进 cursor 前必须复检 engine generation（await 跨重启防倒灌）',
+    );
+  });
 }
 
 class _FakeEngineSource extends EngineHookGalAudioSource {
@@ -652,6 +787,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   final List<int> pairedTimestamps = <int>[];
   final List<int> utteranceTimestamps = <int>[];
   final List<String?> pairedResourceIds = <String?>[];
+  final List<bool> grabFallbackFlags = <bool>[];
   int stopCalls = 0;
   int readinessRefreshCalls = 0;
   int _pollCalls = 0;
@@ -683,18 +819,23 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     int textTsMs, {
     required String outputExtension,
     String? resourceId,
+    bool allowLatestSessionFallback = true,
   }) async {
     pairedTimestamps.add(textTsMs);
     pairedResourceIds.add(resourceId);
+    grabFallbackFlags.add(allowLatestSessionFallback);
     if (pairedTimestamps.length < pairedReadyAfterCalls) return null;
     return pairedBytes;
   }
 
   @override
-  bool hasPairedVoiceCandidate(int textTsMs) => pairedCandidate;
+  bool hasPairedVoiceCandidate(int textTsMs,
+          {bool allowLatestSessionFallback = true}) =>
+      pairedCandidate;
 
   @override
-  String? findPairedVoiceResourceId(int textTsMs) =>
+  String? findPairedVoiceResourceId(int textTsMs,
+          {bool allowLatestSessionFallback = true}) =>
       pairedCandidate ? 'fake-$textTsMs.ogg' : null;
 
   @override

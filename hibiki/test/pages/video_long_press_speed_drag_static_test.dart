@@ -103,8 +103,11 @@ void main() {
       );
       expect(move.contains('localOffsetFromOrigin.dx'), isTrue,
           reason: '用相对长按起点的横向位移驱动调速');
-      expect(move.contains('_setSpeed(snapped, persist: false)'), isTrue,
-          reason: '拖动调速不持久（松手要恢复原速）');
+      expect(
+          move.contains('_setSpeed(snapped, persist: false, rebuild: false)'),
+          isTrue,
+          reason: '拖动调速不持久且不触发全页重建（BUG-965：跟随徽章实时渲染，省掉高频全页 '
+              'setState，拖动才顺滑）');
 
       // end 恢复原速并清基准。
       final String end = _functionSource(

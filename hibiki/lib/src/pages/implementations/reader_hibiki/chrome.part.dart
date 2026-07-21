@@ -248,162 +248,176 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   // 复制/导出三项随界面大小缩放，而鼠标锚点与 WebView 命中测试不受影响。导出项仅在本书
   // 有音频 cue 时出现；其它两项恒在。
   Future<void> _showReaderTextContextMenu(Offset globalPosition) async {
-    if (!mounted || !isWindowsPlatform) return;
-    // 没有原生选区文本就不弹菜单（右键空白处不打扰）。
-    // 本方法从 onSecondaryTapDown fire-and-forget 调用，异常会逃出当前 zone 被记为
-    // fatal（main.dart runZonedGuarded）——WebView 半销毁 / 插件通道异常时右键
-    // evaluateJavascript 会抛 PlatformException / MissingPluginException，表现为闪退。
-    // 与孪生的 _fillLookupStateFromNativeSelection / _copyNativeSelectionToClipboard
-    // 同款：eval 必须 try/catch 吞掉。BUG-927。
-    Object? rawText;
-    try {
-      rawText = await _controller?.evaluateJavascript(
-        source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderHibiki.showReaderTextContextMenu', e, stack);
+    if (!mounted || !isWindowsPlatform || _readerTextContextMenuActive) {
       return;
     }
-    final String selectedText =
-        ReaderSelectionScripts.nativeSelectionTextFromResult(rawText);
-    if (selectedText.isEmpty) return;
-    if (!mounted) return;
+    // onSecondaryTapDown does not await this Future. Gate before the first JS
+    // await so repeated right-clicks cannot stack multiple PopupMenuRoutes.
+    _readerTextContextMenuActive = true;
+    try {
+      // 没有原生选区文本就不弹菜单（右键空白处不打扰）。
+      // 本方法从 onSecondaryTapDown fire-and-forget 调用，异常会逃出当前 zone 被记为
+      // fatal（main.dart runZonedGuarded）——WebView 半销毁 / 插件通道异常时右键
+      // evaluateJavascript 会抛 PlatformException / MissingPluginException，表现为闪退。
+      // 与孪生的 _fillLookupStateFromNativeSelection / _copyNativeSelectionToClipboard
+      // 同款：eval 必须 try/catch 吞掉。BUG-927。
+      Object? rawText;
+      try {
+        rawText = await _controller?.evaluateJavascript(
+          source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
+        );
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHibiki.showReaderTextContextMenu', e, stack);
+        return;
+      }
+      final String selectedText =
+          ReaderSelectionScripts.nativeSelectionTextFromResult(rawText);
+      if (selectedText.isEmpty) return;
+      if (!mounted) return;
 
-    final RenderBox overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final double menuScale = _readerImageMenuScale;
-    final Offset anchor = overlay.globalToLocal(globalPosition);
+      // A native WebView2 popup surface is above Flutter routes on Windows. Move
+      // it back to the warm slot before opening the Flutter context menu; pruning
+      // does not clear the reader's native text selection.
+      _webviewPrunePopupStack(0);
 
-    final bool hasAudio = _audiobookController != null &&
-        _audiobookController!.chapterCueCount > 0;
+      final RenderBox overlay =
+          Overlay.of(context).context.findRenderObject()! as RenderBox;
+      final double menuScale = _readerImageMenuScale;
+      final Offset anchor = overlay.globalToLocal(globalPosition);
 
-    final List<PopupMenuEntry<String>> items = <PopupMenuEntry<String>>[
-      PopupMenuItem<String>(
-        value: 'search',
-        height: kMinInteractiveDimension * menuScale,
-        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.search_outlined, size: 18.0 * menuScale),
-            SizedBox(width: 12.0 * menuScale),
-            Text(t.search, style: TextStyle(fontSize: 14.0 * menuScale)),
-          ],
-        ),
-      ),
-      PopupMenuItem<String>(
-        value: 'copy',
-        height: kMinInteractiveDimension * menuScale,
-        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.copy_outlined, size: 18.0 * menuScale),
-            SizedBox(width: 12.0 * menuScale),
-            Text(t.copy, style: TextStyle(fontSize: 14.0 * menuScale)),
-          ],
-        ),
-      ),
-      // BUG-854：选区菜单补「收藏」——与桌面底栏 / 查词弹窗顶栏的收藏句子
-      // （`_toggleFavoriteSentence`）同一后端，仅入口不同。触屏从不建原生选区
-      // （TODO-1279），旧菜单只有查词 / 复制 / 导出，无从收藏当前句；此项填平缺口。
-      PopupMenuItem<String>(
-        value: 'favorite',
-        height: kMinInteractiveDimension * menuScale,
-        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.star_border, size: 18.0 * menuScale),
-            SizedBox(width: 12.0 * menuScale),
-            Text(t.action_favorite,
-                style: TextStyle(fontSize: 14.0 * menuScale)),
-          ],
-        ),
-      ),
-      if (hasAudio)
+      final bool hasAudio = _audiobookController != null &&
+          _audiobookController!.chapterCueCount > 0;
+
+      final List<PopupMenuEntry<String>> items = <PopupMenuEntry<String>>[
         PopupMenuItem<String>(
-          value: 'export',
+          value: 'search',
           height: kMinInteractiveDimension * menuScale,
           padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.movie_creation_outlined, size: 18.0 * menuScale),
+              Icon(Icons.search_outlined, size: 18.0 * menuScale),
               SizedBox(width: 12.0 * menuScale),
-              Text(t.audiobook_export_clip,
+              Text(t.search, style: TextStyle(fontSize: 14.0 * menuScale)),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'copy',
+          height: kMinInteractiveDimension * menuScale,
+          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.copy_outlined, size: 18.0 * menuScale),
+              SizedBox(width: 12.0 * menuScale),
+              Text(t.copy, style: TextStyle(fontSize: 14.0 * menuScale)),
+            ],
+          ),
+        ),
+        // BUG-854：选区菜单补「收藏」——与桌面底栏 / 查词弹窗顶栏的收藏句子
+        // （`_toggleFavoriteSentence`）同一后端，仅入口不同。触屏从不建原生选区
+        // （TODO-1279），旧菜单只有查词 / 复制 / 导出，无从收藏当前句；此项填平缺口。
+        PopupMenuItem<String>(
+          value: 'favorite',
+          height: kMinInteractiveDimension * menuScale,
+          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.star_border, size: 18.0 * menuScale),
+              SizedBox(width: 12.0 * menuScale),
+              Text(t.action_favorite,
                   style: TextStyle(fontSize: 14.0 * menuScale)),
             ],
           ),
         ),
-    ];
+        if (hasAudio)
+          PopupMenuItem<String>(
+            value: 'export',
+            height: kMinInteractiveDimension * menuScale,
+            padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(Icons.movie_creation_outlined, size: 18.0 * menuScale),
+                SizedBox(width: 12.0 * menuScale),
+                Text(t.audiobook_export_clip,
+                    style: TextStyle(fontSize: 14.0 * menuScale)),
+              ],
+            ),
+          ),
+      ];
 
-    final String? action = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      constraints: BoxConstraints(
-        minWidth: 112.0 * menuScale,
-        maxWidth: 280.0 * menuScale,
-      ),
-      menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
-      items: items,
-    );
-    if (!mounted) return;
-    switch (action) {
-      case 'search':
-        final size = MediaQuery.of(context).size;
-        final Rect rect = Rect.fromCenter(
-          center: Offset(size.width / 2, size.height / 3),
-          width: 1,
-          height: 1,
-        );
-        _webviewPrunePopupStack(0);
-        // BUG-455：右键查词不经 tap（_handleTextSelected），必须显式把原生选区写进查词
-        // 状态，否则弹窗顶栏「收藏句子」读 currentSentence 为空 → 误报「未选择句子」。
-        // 句级解析失败（无 norm 区间）也要满足非空契约：退回选中文本本身。
-        final ReaderSelectionData? sel =
-            await _fillLookupStateFromNativeSelection();
-        if (!mounted) return;
-        if (sel == null) {
-          appModel.currentMediaSource?.setCurrentSentence(
-            selection: HibikiTextSelection(text: selectedText),
+      final String? action = await showMenu<String>(
+        context: context,
+        position: RelativeRect.fromRect(
+          Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+          Offset.zero & overlay.size,
+        ),
+        constraints: BoxConstraints(
+          minWidth: 112.0 * menuScale,
+          maxWidth: 280.0 * menuScale,
+        ),
+        menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
+        items: items,
+      );
+      if (!mounted) return;
+      switch (action) {
+        case 'search':
+          final size = MediaQuery.of(context).size;
+          final Rect rect = Rect.fromCenter(
+            center: Offset(size.width / 2, size.height / 3),
+            width: 1,
+            height: 1,
           );
-        }
-        await searchDictionaryResult(
-            searchTerm: selectedText, selectionRect: rect);
-        if (mounted) _checkFavoriteStatus();
-        return;
-      case 'copy':
-        await Clipboard.setData(ClipboardData(text: selectedText));
-        HibikiToast.show(msg: t.copied_to_clipboard);
-        // 复制是终结动作：清掉刻意保留的原生选区，和移动端拖选菜单的 'copy'
-        // （_clearReaderAppSelection）对齐。否则残留的原生蓝色选区会一直卡住后续
-        // 查词（见 webview.part.dart pointerup 里对 nativeMoved 的处理）。BUG-927。
-        await _clearReaderAppSelection();
-        return;
-      case 'favorite':
-        // BUG-854：右键收藏也走「原生选区 → 查词状态」补写（与 search 同源），确保
-        // _toggleFavoriteSentence 读到的 currentSentence / 句级区间非空；解析失败退回
-        // 选中文本本身满足非空契约。
-        final ReaderSelectionData? favSel =
-            await _fillLookupStateFromNativeSelection();
-        if (!mounted) return;
-        if (favSel == null) {
-          appModel.currentMediaSource?.setCurrentSentence(
-            selection: HibikiTextSelection(text: selectedText),
-          );
-        }
-        await _toggleFavoriteSentence();
-        return;
-      case 'export':
-        await _exportAudiobookClipFromSelection();
-        return;
-      default:
-        return;
+          _webviewPrunePopupStack(0);
+          // BUG-455：右键查词不经 tap（_handleTextSelected），必须显式把原生选区写进查词
+          // 状态，否则弹窗顶栏「收藏句子」读 currentSentence 为空 → 误报「未选择句子」。
+          // 句级解析失败（无 norm 区间）也要满足非空契约：退回选中文本本身。
+          final ReaderSelectionData? sel =
+              await _fillLookupStateFromNativeSelection();
+          if (!mounted) return;
+          if (sel == null) {
+            appModel.currentMediaSource?.setCurrentSentence(
+              selection: HibikiTextSelection(text: selectedText),
+            );
+          }
+          await searchDictionaryResult(
+              searchTerm: selectedText, selectionRect: rect);
+          if (mounted) _checkFavoriteStatus();
+          return;
+        case 'copy':
+          await Clipboard.setData(ClipboardData(text: selectedText));
+          HibikiToast.show(msg: t.copied_to_clipboard);
+          // 复制是终结动作：清掉刻意保留的原生选区，和移动端拖选菜单的 'copy'
+          // （_clearReaderAppSelection）对齐。否则残留的原生蓝色选区会一直卡住后续
+          // 查词（见 webview.part.dart pointerup 里对 nativeMoved 的处理）。BUG-927。
+          await _clearReaderAppSelection();
+          return;
+        case 'favorite':
+          // BUG-854：右键收藏也走「原生选区 → 查词状态」补写（与 search 同源），确保
+          // _toggleFavoriteSentence 读到的 currentSentence / 句级区间非空；解析失败退回
+          // 选中文本本身满足非空契约。
+          final ReaderSelectionData? favSel =
+              await _fillLookupStateFromNativeSelection();
+          if (!mounted) return;
+          if (favSel == null) {
+            appModel.currentMediaSource?.setCurrentSentence(
+              selection: HibikiTextSelection(text: selectedText),
+            );
+          }
+          await _toggleFavoriteSentence();
+          return;
+        case 'export':
+          await _exportAudiobookClipFromSelection();
+          return;
+        default:
+          return;
+      }
+    } finally {
+      _readerTextContextMenuActive = false;
     }
   }
 
@@ -1350,7 +1364,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // 重入守卫：快速连点时按钮按下到 show 之间的 DB 读 await 期间会二次进入、弹出
     // 两个面板。标志置位必须在第一个 await 之前，复位放 finally（异常也复位）。
     if (_appearanceSheetOpen) return;
-    _appearanceSheetOpen = true;
+    // BUG-969：_rebuild 让顶部进度 pill 在抽屉打开期间摘掉 BackdropFilter blur
+    // （见 _buildTopProgressBar / topProgressPillShowsBlur），关闭后再挂回。
+    _rebuild(() => _appearanceSheetOpen = true);
     try {
       // _settings 就是 ReaderHibikiSource.readerSettings 本体（见 initState 绑定），
       // 面板控件经 ReaderHibikiSource.instance.ttu* 实时读写同一对象，开面板前后都
@@ -1522,6 +1538,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       _syncDictionaryTheme();
     } finally {
       _appearanceSheetOpen = false;
+      // 复位后重建把 blur 挂回 pill（dispose 后不能 setState，纯赋值已够）。
+      if (mounted) _rebuild(() {});
     }
   }
 
@@ -1682,21 +1700,31 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     //  注释）。两态纵向内边距同源 [kTopProgressPillVerticalPadding]，pill 实高不超
     //  预留 [_infoStripHeight]（= [kTopProgressStripHeight]，BUG-547 已把预留同步含
     //  该内边距），保证挤压态 pill 落在预留区内、绝不压住正文首行。
+    // BUG-969：BackdropFilter 每个栅格化帧都重采背景+重跑高斯，与内容是否变化
+    //  无关。快速设置抽屉开着时 pill 压在 modal scrim 下，blur 与纯半透明底肉眼
+    //  无差，抽屉滚动的每一帧却仍付 saveLayer+回读 → 120Hz 直接掉帧。被遮挡期间
+    //  保留半透明底（形状/可读性不变）、只跳过 blur（topProgressPillShowsBlur）。
+    final Widget frostedInner = Container(
+      color: frostedFill,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: kTopProgressPillVerticalPadding,
+      ),
+      child: label,
+    );
     final Widget pill =
         topProgressUsesFrostedGlass(floating: _topProgressFloating)
             ? ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    color: frostedFill,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: kTopProgressPillVerticalPadding,
-                    ),
-                    child: label,
-                  ),
-                ),
+                child: topProgressPillShowsBlur(
+                  floating: _topProgressFloating,
+                  obscured: _appearanceSheetOpen,
+                )
+                    ? BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                        child: frostedInner,
+                      )
+                    : frostedInner,
               )
             : Padding(
                 padding: const EdgeInsets.symmetric(

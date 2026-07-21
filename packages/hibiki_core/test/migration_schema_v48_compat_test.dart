@@ -67,7 +67,9 @@ void main() {
     final HibikiDatabase db = _openExistingV48Seed();
     addTearDown(db.close);
 
-    expect(db.schemaVersion, 48);
+    // 代码目标版本随 develop 演进（写此测试时为 v48，现已更高）；这里只断言
+    // 不低于种子库版本，避免每次升 schema 都要改死值。
+    expect(db.schemaVersion, greaterThanOrEqualTo(48));
     expect(await db.getPref('sentinel'), 'kept',
         reason: 'opening an existing v48 DB must preserve and expose its data');
   });
@@ -79,7 +81,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 48);
+    // 迁移终点跟随当前代码的 schemaVersion（v48 时代写下，此后 develop 已继续升级）。
+    expect(version.read<int>('user_version'), db.schemaVersion);
     expect(await _columnNames(db, 'epub_books'), contains('completed_at'));
     expect(
       await _columnNames(db, 'revealed_images'),

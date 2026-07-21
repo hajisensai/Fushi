@@ -9,6 +9,11 @@ import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 /// Fake 库服务：本地音频 + 有声书方法真实记录调用；dict/books 方法存根。
 class _FakeLibraryService implements HibikiLibraryHostService {
   @override
+  Future<List<RemoteActivityEvent>> listActivityEvents(
+          {int limit = 100}) async =>
+      const <RemoteActivityEvent>[];
+
+  @override
   Future<String?> videoCoverPath(String id) async {
     for (final RemoteVideoInfo v in await listVideos()) {
       if (v.id == id) return v.coverPath;
@@ -196,6 +201,10 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<bool> videoExists(String id) async => false;
+
+  @override
+  Future<void> importVideoSubtitle(File subtitleFile,
+      {required String id, required String suffix}) async {}
 
   @override
   Future<void> importVideo(File videoFile,

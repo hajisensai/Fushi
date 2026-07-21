@@ -895,7 +895,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// `providedAudioBytes`。这是引擎级最干净的语音（混音前、无 BGM/SE），优先于共享内存里的
   /// [grabUtterance]/[grabClipNear]。非 Windows / 目录不存在 / 无匹配 / 转码失败返回 null
   /// （调用方回退 grabUtterance→grabClipNear→grabRecent 采集链，Never break）。
-  File? _findPairedVoiceFile(int textTsMs) {
+  File? _findPairedVoiceFile(int textTsMs,
+      {bool allowLatestSessionFallback = true}) {
     if (!Platform.isWindows) return null;
     final Directory dir = _galVoiceDumpDir();
     if (!dir.existsSync()) return null;
@@ -928,7 +929,15 @@ class EngineHookGalAudioSource implements GalAudioSource {
     // Siglus 的 Enigma-safe 晚附着可能没有文本 hook 时间戳。只有这种无时间戳路径才在本会话
     // 新文件里选修改时间最新的一条；有时间戳但窗口未命中必须返回 null，让上层明确降级，
     // 否则会把别句资源语音错配给当前文本。跨会话旧 dump 始终不参与。
-    if (picked == null && textTsMs <= 0 && _sessionStartedAt != null) {
+    //
+    // BUG-955：mine 阶段（解析某条具体行的语音）绝不允许「最新语音」兜底——历史行的时间戳
+    // 被 _lineTimestampCache 淘汰后也会以 textTsMs=0 落到这里，若借最新语音就把当前语音错配给
+    // 旧台词并谎报 game_resource。晚附着 live 行的最新语音兜底只发生在捕获期（poll，默认允许），
+    // 且已在捕获时固化到该行；mine 路径传 allowLatestSessionFallback=false 明确禁用。
+    if (allowLatestSessionFallback &&
+        picked == null &&
+        textTsMs <= 0 &&
+        _sessionStartedAt != null) {
       File? latest;
       DateTime? latestModified;
       final DateTime floor =
@@ -970,13 +979,18 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   /// 只检查资源文件是否已落盘，不提前做转码。捕获工作台的文本轮询用它把逐行状态从
   /// “等待音频”推进到 `game_resource`；真正制卡时仍由 [grabPairedVoiceBytes] 读取并转码。
-  bool hasPairedVoiceCandidate(int textTsMs) =>
-      _findPairedVoiceFile(textTsMs) != null;
+  bool hasPairedVoiceCandidate(int textTsMs,
+          {bool allowLatestSessionFallback = true}) =>
+      _findPairedVoiceFile(textTsMs,
+          allowLatestSessionFallback: allowLatestSessionFallback) !=
+      null;
 
   /// 返回与文本时间戳精确配对的资源 ID（dump 目录内的 basename）。控制器在台词刚到达时
   /// 把它固化到该行；之后即使用户从历史列表制卡，也不再按“当前最新资源”重新猜测。
-  String? findPairedVoiceResourceId(int textTsMs) {
-    final File? file = _findPairedVoiceFile(textTsMs);
+  String? findPairedVoiceResourceId(int textTsMs,
+      {bool allowLatestSessionFallback = true}) {
+    final File? file = _findPairedVoiceFile(textTsMs,
+        allowLatestSessionFallback: allowLatestSessionFallback);
     return file == null ? null : _fileBaseName(file.path);
   }
 
@@ -998,9 +1012,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
     int textTsMs, {
     required String outputExtension,
     String? resourceId,
+    bool allowLatestSessionFallback = true,
   }) async {
     final File? picked = resourceId == null
-        ? _findPairedVoiceFile(textTsMs)
+        ? _findPairedVoiceFile(textTsMs,
+            allowLatestSessionFallback: allowLatestSessionFallback)
         : _voiceFileForResourceId(resourceId);
     if (picked == null) return null;
     return transcodeVoiceOggToMiningAudio(

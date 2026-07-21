@@ -112,13 +112,15 @@ void main() {
   });
 
   group('settings page label exhaustiveness', () {
-    final String pageSrc = File(
-      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    // Labels moved into the shared shortcut_labels extensions (shortcut
+    // settings refactor); the page renders via `action.label`.
+    final String labelsSrc = File(
+      'lib/src/shortcuts/shortcut_labels.dart',
     ).readAsStringSync();
 
-    test('_actionLabel covers globalToggleFullscreen', () {
+    test('ShortcutActionLabel covers globalToggleFullscreen', () {
       expect(
-        pageSrc.contains('case ShortcutAction.globalToggleFullscreen:'),
+        labelsSrc.contains('case ShortcutAction.globalToggleFullscreen:'),
         isTrue,
       );
     });

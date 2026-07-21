@@ -9,6 +9,7 @@ import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_window_gif.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
+import 'package:hibiki/src/mining/serial_job_queue.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
@@ -33,6 +34,7 @@ class GalHookMiningResult {
     this.failureReason,
     this.sentenceAudioMissing = false,
     this.degradedToStill = false,
+    this.staleScene = false,
     this.audioFallbackDisabled = false,
     this.unmappedTokens = const <String>[],
   });
@@ -41,6 +43,11 @@ class GalHookMiningResult {
   final String? failureReason;
   final bool sentenceAudioMissing;
   final bool degradedToStill;
+
+  /// 制卡的是**历史行**（非当前最新行）时置真：画面截图只能抓 mine 时刻的当前窗口帧，
+  /// 无法重建历史行当时的画面，故显式标注「画面可能与该台词不对应」，供调用方提示用户
+  /// （BUG-955：禁止把当前画面冒充成历史台词的画面而不告知）。
+  final bool staleScene;
   final bool audioFallbackDisabled;
   final List<String> unmappedTokens;
 
@@ -95,7 +102,7 @@ class GalHookMiningCoordinator {
   late final GalHookSessionStateLoader _stateLoader;
   late final GalHookAudioCapture _captureAudio;
 
-  Future<void> _tail = Future<void>.value();
+  final SerialJobQueue _miningQueue = SerialJobQueue();
 
   static Future<Uint8List?> _defaultCaptureGif({required int hwnd}) =>
       captureWindowGifBytes(hwnd: hwnd);
@@ -110,31 +117,23 @@ class GalHookMiningCoordinator {
     required BaseAnkiRepository repo,
     int? updateNoteId,
   }) {
-    final Completer<GalHookMiningResult> completer =
-        Completer<GalHookMiningResult>();
-    _tail = _tail.then((_) async {
-      try {
-        completer.complete(
-          await _mineLineNow(
-            lineId: lineId,
-            fields: fields,
-            compression: compression,
-            repo: repo,
-            updateNoteId: updateNoteId,
-          ),
-        );
-      } catch (error, stack) {
-        ErrorLogService.instance.log(
-          'GalHookMiningCoordinator.mineLine',
-          error,
-          stack,
-        );
-        completer.complete(
+    // 串行化 + 永不毒化（BUG-956）：单次制卡异常（含错误日志自身抛）不得让后续制卡永久挂起。
+    return _miningQueue.enqueue<GalHookMiningResult>(
+      () => _mineLineNow(
+        lineId: lineId,
+        fields: fields,
+        compression: compression,
+        repo: repo,
+        updateNoteId: updateNoteId,
+      ),
+      buildFailure: (Object error, StackTrace stack) =>
           GalHookMiningResult(failureReason: error.toString()),
-        );
-      }
-    });
-    return completer.future;
+      onError: (Object error, StackTrace stack) => ErrorLogService.instance.log(
+        'GalHookMiningCoordinator.mineLine',
+        error,
+        stack,
+      ),
+    );
   }
 
   Future<GalHookMiningResult> _mineLineNow({
@@ -163,6 +162,20 @@ class GalHookMiningCoordinator {
     await writeDictionaryMediaCache(
       effectiveFields['dictionaryMedia'] ?? '',
     );
+
+    // BUG-955：截图只能抓 mine 时刻的当前窗口帧。若制卡的是历史行（非当前最新行），当前帧
+    // 无法代表该台词当时的画面——显式标注 staleScene，不静默把当前画面冒充成旧台词的画面。
+    final List<TexthookerLineEntry> liveEntries = _textService.entries;
+    final bool staleScene =
+        liveEntries.isEmpty || liveEntries.last.id != entry.id;
+    if (staleScene) {
+      ErrorLogService.instance.log(
+        'GalHookMiningCoordinator.mineLine',
+        'stale scene: mining historical line ${entry.id}; captured frame is '
+            'the current window, not the frame at that line',
+        StackTrace.current,
+      );
+    }
 
     Uint8List? coverBytes = await _captureGif(hwnd: window.hwnd);
     String coverName = 'external_window.gif';
@@ -219,12 +232,14 @@ class GalHookMiningCoordinator {
           failureReason: mined.abortReason ?? 'scene card mining aborted',
           sentenceAudioMissing: sentenceAudioMissing,
           degradedToStill: degradedToStill,
+          staleScene: staleScene,
         );
       }
       return GalHookMiningResult(
         outcome: mined.outcome! as MineOutcome,
         sentenceAudioMissing: sentenceAudioMissing,
         degradedToStill: degradedToStill,
+        staleScene: staleScene,
         unmappedTokens: await _unmappedTokens(
           repo,
           hasSentenceAudio: !sentenceAudioMissing,

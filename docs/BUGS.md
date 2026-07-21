@@ -27,18 +27,37 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 931 条。点号进各自文件。
+> 共 950 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-950](bugs/BUG-950-textrender-thread-catalog.md) | ✅ | ✅ | 9nine 的 Luna 线程列表缺少 TextRender |
+| [BUG-969](bugs/BUG-969-reader-settings-sheet-120fps.md) | ✅ | ✅ | 阅读设置抽屉滚动与拖动跑不满120fps |
+| [BUG-968](bugs/BUG-968-audiobook-export-text-audio.md) | ✅ | ✅ | 有声书片段导出文字与选区不符且移动端缺少音频 |
+| [BUG-967](bugs/BUG-967-reader-context-menu-stack.md) | ✅ | ✅ | Windows 查词弹窗后右键菜单位于底层且重复累加 |
+| [BUG-966](bugs/BUG-966-subtitle-list-mining-audio.md) | ✅ | ✅ | 字幕列表点词查词制卡音频截错句(锚到播放位置而非被点cue) |
+| [BUG-965](bugs/BUG-965-longpress-speed-drag-jank.md) | ✅ | ✅ | 长按倍速拖动卡顿：每步全页 setState 掉帧 |
+| [BUG-964](bugs/BUG-964-interconnect-video-subtitle-not-synced.md) | ✅ | ✅ | 互联视频live push不带外挂字幕 |
+| [BUG-963](bugs/BUG-963-shelf-filter-collection-cover.md) | ✅ | ✅ | 筛选时合集内有声书成员丢封面 |
+| [BUG-962](bugs/BUG-962-space-textfield-swallowed.md) | ✅ | ✅ | 文本框物理键盘空格被全局 DoNothingIntent 吞掉 |
+| [BUG-961](bugs/BUG-961-voice-hook-helper-release-missing.md) | ✅ | ✅ | galgame voice hook helper 引擎组件下载 404（release 从未产出） |
+| [BUG-960](bugs/BUG-960-textrender-thread-catalog.md) | ✅ | ✅ | 9nine 的 Luna 线程列表缺少 TextRender |
+| [BUG-959](bugs/BUG-959-local-media-shelf-perf.md) | ✅ | ✅ | 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat |
+| [BUG-958](bugs/BUG-958-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
+| [BUG-957](bugs/BUG-957-galgame-dead-session-controller-leftover.md) | ✅ | ✅ | 旧 GalgameSessionController 死代码残留致查词面板 galgame 制卡出口失效 |
+| [BUG-956](bugs/BUG-956-gal-mining-serial-queue-poisoning.md) | ✅ | ✅ | galgame 制卡串行队列异常毒化后所有后续制卡永久挂起 |
+| [BUG-955](bugs/BUG-955-gal-mining-historical-line-media-mismatch.md) | ✅ | ✅ | 历史行制卡错配当前语音与当前画面且无降级标记 |
+| [BUG-954](bugs/BUG-954-texthooker-mine-sentence-empty-non-windows.md) | ✅ | ✅ | 非外部窗口模式制卡 sentence 字段恒空 |
+| [BUG-953](bugs/BUG-953-texthooker-popup-overlay-cross-tab-residue.md) | ✅ | ✅ | games tab 保活时查词弹窗与 barrier 跨 tab 残留遮挡 |
+| [BUG-952](bugs/BUG-952-texthooker-thread-dropdown-value-mismatch.md) | ✅ | ✅ | texthooker 线程下拉 value 与动态 items 失配触发 debug 断言红屏 |
+| [BUG-951](bugs/BUG-951-gal-overlay-click-through-cross-process.md) | 🚧 | 🚧 | Hook 浮窗鼠标穿透 HTTRANSPARENT 跨进程不生效存疑须真机验证 |
+| [BUG-950](bugs/BUG-950-gal-hook-session-stale-line-bleed.md) | ✅ | ✅ | galgame hook 会话重启后旧行串入新会话且新文本被当重复静默丢弃 |
 | [BUG-949](bugs/BUG-949-unity-resource-audio-extractor-stall.md) | ✅ | ✅ | Unity 资源音频提取队列阻塞后持续降级 |
 | [BUG-948](bugs/BUG-948-dual-game-capture-acceptance.md) | ✅ | ✅ | Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡 |
 | [BUG-947](bugs/BUG-947-manosaba-text-loopback-hybrid.md) | ✅ | ✅ | Manosaba 正确文本 Hook 与 Loopback 音频不能同时保留 |
 | [BUG-946](bugs/BUG-946-database-schema-v48-compat.md) | ✅ | ✅ | 游戏分支无法打开 schema v48 用户数据库 |
 | [BUG-945](bugs/BUG-945-texthooker-popup-ui-scale.md) | ✅ | ✅ | 捕获工作台非默认缩放下查词断言 |
 | [BUG-944](bugs/BUG-944-gal-text-thread-selector.md) | ✅ | ✅ | Galgame 捕获文本缺少 Luna 风格线程选择 |
-| [BUG-943](bugs/BUG-943-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
+| [BUG-943](bugs/BUG-943-video-card-bottom-gap.md) | ✅ | ✅ | 视频卡底部常驻空白（续 BUG-926 16:9 封面修复） |
 | [BUG-942](bugs/BUG-942-prev-cue-button-always-jump.md) | ✅ | ✅ | 上/下一句字幕按钮太远时退化成 3 秒 seek |
 | [BUG-941](bugs/BUG-941-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
 | [BUG-940](bugs/BUG-940-tag-filter-collection-rescue.md) | ✅ | ✅ | 标签筛选:打了标签的合集筛不出来(成员级过滤先于折叠剥空合集组) |

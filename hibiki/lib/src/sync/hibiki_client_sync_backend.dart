@@ -1080,6 +1080,38 @@ class HibikiClientSyncBackend extends SyncBackend
   /// 404 时优雅降级返回空表（与 [getRemoteAggregate] / [getRemoteCollectionManifest]
   /// 的 404 降级同纪律——绝不因老 server 缺端点抛异常让整页占位卡消失/转圈）。请求
   /// 用 [listTimeout] 封顶，防止 host 接受连接后卡住响应导致视频页无限等待。
+  /// 拉取 host 最近活动事件（新首页 Activity 面板互联数据源；display-only）。
+  /// 老 host 无此端点（404）降级空列表；坏条目逐条跳过不拖垮整表。
+  Future<List<RemoteActivityEvent>> listRemoteActivity(
+      {int limit = 100}) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!
+        .buildRequest('GET', '$_apiBase/api/library/activity?limit=$limit');
+    final HttpClientResponse res = await req.close().timeout(listTimeout);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return const <RemoteActivityEvent>[]; // 老 host 无活动端点：降级空表。
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/activity');
+    final String body =
+        await res.transform(utf8.decoder).join().timeout(listTimeout);
+    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
+    final List<RemoteActivityEvent> events = <RemoteActivityEvent>[];
+    for (final dynamic e in arr) {
+      if (e is! Map) continue;
+      final RemoteActivityEvent event =
+          RemoteActivityEvent.fromJson(e.cast<String, Object?>());
+      // 坏条目（缺核心字段）跳过：混排展示要求类型/标题/时刻齐全。
+      if (event.eventType.isEmpty ||
+          event.title.isEmpty ||
+          event.timestampMs <= 0) {
+        continue;
+      }
+      events.add(event);
+    }
+    return events;
+  }
+
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async {
     await _ensureResolved();
@@ -1130,6 +1162,35 @@ class HibikiClientSyncBackend extends SyncBackend
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id');
+  }
+
+  /// 把视频 [id] 的一个外挂字幕 sidecar [file] 推给 host（BUG-964，随
+  /// [putRemoteVideo] 的 live push 一起走）。[suffix] 是相对视频 stem 的字幕后缀
+  /// （`.srt` / `.ja.srt` …，host 端按自己的视频文件名 stem + suffix 落盘）。
+  ///
+  /// 返回 true = host 已接收；false = 老 host 无此端点（404/405），调用方据此
+  /// 停止本轮后续字幕推送并提示升级 host（与合集端点缺失同纪律）。其余失败
+  /// 照常抛（[WebDavOps.checkStatus]）。
+  Future<bool> putRemoteVideoSubtitle(
+    String id,
+    File file, {
+    required String suffix,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
+    );
+    final int length = await file.length();
+    req.headers.set('Content-Type', 'application/octet-stream');
+    req.headers.set('Content-Length', '$length');
+    req.headers.set('X-Hibiki-Subtitle-Suffix', Uri.encodeComponent(suffix));
+    await req.addStream(file.openRead());
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    if (res.statusCode == 404 || res.statusCode == 405) return false;
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/subtitle');
+    return true;
   }
 
   /// 向 host 换取可直接播放的视频 stream URL。

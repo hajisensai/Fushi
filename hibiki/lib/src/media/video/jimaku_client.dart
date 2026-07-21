@@ -254,7 +254,8 @@ class JimakuClient {
           Uri.parse('$_base/entries/search').replace(queryParameters: params);
       final http.Response res = await _client.get(uri, headers: _headers);
       if (res.statusCode != 200) return const <JimakuEntry>[];
-      return parseJimakuEntries(res.body);
+      return parseJimakuEntries(
+          utf8.decode(res.bodyBytes, allowMalformed: true));
     } catch (e) {
       // fail-open：预期可失败的网络路径，返回空列表（同旧行为），补 diagnostic。
       ErrorLogService.instance.logDiagnostic('JimakuClient.searchEntries', e);
@@ -272,7 +273,7 @@ class JimakuClient {
       final Uri uri = buildListFilesUri(_base, entryId, episode: episode);
       final http.Response res = await _client.get(uri, headers: _headers);
       if (res.statusCode != 200) return const <JimakuFile>[];
-      return parseJimakuFiles(res.body);
+      return parseJimakuFiles(utf8.decode(res.bodyBytes, allowMalformed: true));
     } catch (e) {
       // fail-open：预期可失败的网络路径，返回空列表（同旧行为），补 diagnostic。
       ErrorLogService.instance.logDiagnostic('JimakuClient.listFiles', e);

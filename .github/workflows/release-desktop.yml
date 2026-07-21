@@ -302,6 +302,22 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # 内置 libtorrent 引擎 DLL：vcpkg 编 libtorrent + bridge，产物随发布包（下面
+      # flutter build 的 copy-if-present 拷到 hibiki.exe 旁）。发布版必须带上，故此步
+      # 失败即让发布失败（不静默出无内置引擎的包）。vcpkg 二进制缓存摊薄首编。
+      - name: Cache vcpkg binary archives (libtorrent)
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v1
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-
+      - name: Build embedded libtorrent DLL (vcpkg)
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
+          powershell -ExecutionPolicy Bypass -File native/hibiki_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
       - name: Build Windows release
         working-directory: hibiki
         run: >-

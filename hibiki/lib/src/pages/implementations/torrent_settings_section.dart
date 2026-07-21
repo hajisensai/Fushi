@@ -85,8 +85,32 @@ class _TorrentSettingsSectionState
     );
   }
 
+  Widget _switch({
+    required String label,
+    String? subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return AdaptiveSettingsSwitchRow(
+      title: label,
+      subtitle: subtitle,
+      value: value,
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _sectionLabel(ThemeData theme, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Text(text,
+          style: theme.textTheme.titleSmall
+              ?.copyWith(color: theme.colorScheme.primary)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
     final QbConnectionConfig c = _config;
     final String backend = c.resolveBackend(isDesktop: _isDesktop);
     final bool isQb = backend == QbConnectionConfig.backendQbittorrent;
@@ -205,6 +229,131 @@ class _TorrentSettingsSectionState
             onChanged: (String v) => _commit((QbConnectionConfig c) =>
                 c.copyWith(memoryLimitMb: _nonNegInt(v))),
           ),
+
+          // ---- 会话设置（抄 qB 关键项）----
+          _sectionLabel(theme, t.video_setting_torrent_section_session),
+          _numField(
+            label: t.video_setting_torrent_listen_port,
+            value: c.listenPort,
+            hint: t.video_setting_torrent_listen_port_hint,
+            onChanged: (String v) => _commit((QbConnectionConfig c) =>
+                c.copyWith(listenPort: _nonNegInt(v))),
+          ),
+          _switch(
+            label: t.video_setting_torrent_dht,
+            value: c.enableDht,
+            onChanged: (bool v) =>
+                _commit((QbConnectionConfig c) => c.copyWith(enableDht: v)),
+          ),
+          _switch(
+            label: t.video_setting_torrent_lsd,
+            value: c.enableLsd,
+            onChanged: (bool v) =>
+                _commit((QbConnectionConfig c) => c.copyWith(enableLsd: v)),
+          ),
+          _switch(
+            label: t.video_setting_torrent_upnp,
+            value: c.enableUpnp,
+            onChanged: (bool v) =>
+                _commit((QbConnectionConfig c) => c.copyWith(enableUpnp: v)),
+          ),
+          _switch(
+            label: t.video_setting_torrent_natpmp,
+            value: c.enableNatpmp,
+            onChanged: (bool v) =>
+                _commit((QbConnectionConfig c) => c.copyWith(enableNatpmp: v)),
+          ),
+          _switch(
+            label: t.video_setting_torrent_anonymous,
+            value: c.anonymousMode,
+            onChanged: (bool v) =>
+                _commit((QbConnectionConfig c) => c.copyWith(anonymousMode: v)),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<int>(
+                showSelectedIcon: false,
+                segments: <ButtonSegment<int>>[
+                  ButtonSegment<int>(
+                    value: QbConnectionConfig.encryptionPrefer,
+                    label: Text(t.video_setting_torrent_encryption_prefer),
+                  ),
+                  ButtonSegment<int>(
+                    value: QbConnectionConfig.encryptionForced,
+                    label: Text(t.video_setting_torrent_encryption_forced),
+                  ),
+                  ButtonSegment<int>(
+                    value: QbConnectionConfig.encryptionDisabled,
+                    label: Text(t.video_setting_torrent_encryption_disabled),
+                  ),
+                ],
+                selected: <int>{c.encryptionMode},
+                onSelectionChanged: (Set<int> s) => _commit(
+                    (QbConnectionConfig c) =>
+                        c.copyWith(encryptionMode: s.first)),
+              ),
+            ),
+          ),
+          _numField(
+            label: t.video_setting_torrent_active_downloads,
+            value: c.maxActiveDownloads,
+            hint: t.video_setting_torrent_zero_default,
+            onChanged: (String v) => _commit((QbConnectionConfig c) =>
+                c.copyWith(maxActiveDownloads: _nonNegInt(v))),
+          ),
+          _numField(
+            label: t.video_setting_torrent_active_seeds,
+            value: c.maxActiveSeeds,
+            hint: t.video_setting_torrent_zero_default,
+            onChanged: (String v) => _commit((QbConnectionConfig c) =>
+                c.copyWith(maxActiveSeeds: _nonNegInt(v))),
+          ),
+          _numField(
+            label: t.video_setting_torrent_upload_slots,
+            value: c.maxUploadSlots,
+            hint: t.video_setting_torrent_zero_default,
+            onChanged: (String v) => _commit((QbConnectionConfig c) =>
+                c.copyWith(maxUploadSlots: _nonNegInt(v))),
+          ),
+
+          // ---- 反吸血（抄 qBittorrent-ClientBlocker）----
+          _sectionLabel(theme, t.video_setting_torrent_section_antileech),
+          _switch(
+            label: t.video_setting_torrent_antileech,
+            value: c.antiLeechEnabled,
+            onChanged: (bool v) => _commit(
+                (QbConnectionConfig c) => c.copyWith(antiLeechEnabled: v)),
+          ),
+          if (c.antiLeechEnabled) ...<Widget>[
+            _switch(
+              label: t.video_setting_torrent_ban_progress_cheat,
+              value: c.banProgressCheat,
+              onChanged: (bool v) => _commit(
+                  (QbConnectionConfig c) => c.copyWith(banProgressCheat: v)),
+            ),
+            _switch(
+              label: t.video_setting_torrent_ban_relative_cheat,
+              value: c.banRelativeProgressCheat,
+              onChanged: (bool v) => _commit((QbConnectionConfig c) =>
+                  c.copyWith(banRelativeProgressCheat: v)),
+            ),
+            _numField(
+              label: t.video_setting_torrent_max_ip_ports,
+              value: c.maxIpPortCount,
+              hint: t.video_setting_torrent_zero_off,
+              onChanged: (String v) => _commit((QbConnectionConfig c) =>
+                  c.copyWith(maxIpPortCount: _nonNegInt(v))),
+            ),
+            _numField(
+              label: t.video_setting_torrent_ban_time,
+              value: c.banTimeMinutes,
+              hint: t.video_setting_torrent_ban_time_hint,
+              onChanged: (String v) => _commit((QbConnectionConfig c) =>
+                  c.copyWith(banTimeMinutes: _nonNegInt(v))),
+            ),
+          ],
         ],
       ],
     );

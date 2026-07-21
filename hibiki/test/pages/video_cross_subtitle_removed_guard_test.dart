@@ -45,7 +45,11 @@ void main() {
       'lib/src/media/video/video_player_shortcuts.dart',
       'lib/src/shortcuts/shortcut_action.dart',
       'lib/src/shortcuts/shortcut_defaults.dart',
+      'lib/src/shortcuts/shortcut_labels.dart',
       'lib/src/pages/implementations/shortcut_settings_page.dart',
+      'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart',
+      'lib/src/pages/implementations/shortcut_settings/'
+          'binding_edit_dialog.part.dart',
     ];
     for (final String path in sources) {
       final String src = File(path).readAsStringSync();

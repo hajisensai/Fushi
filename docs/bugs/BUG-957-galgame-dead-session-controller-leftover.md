@@ -1,0 +1,6 @@
+## BUG-957 · 旧 GalgameSessionController 死代码残留致查词面板 galgame 制卡出口失效
+- **报告**：2026-07-21（PR#295 落地审查 M7，fable5）
+- **真实性**：✅ 真 bug（代码路径核验）。根因 `hibiki/lib/src/pages/implementations/home_dictionary_page.dart:82`：启动路径全量切到 `GalHookSessionController` 后，旧 `GalgameSessionController` 全仓无调用点，但该处仍按其永远 inactive 的会话状态分支——查词面板 galgame 制卡出口静默失效、双控制器残留，违反「删减合并不留死代码」纪律。
+- **[x] ① 已修复** — 用户决策后**删除**旧 `GalgameSessionController`（整文件 `hibiki/lib/src/mining/galgame_session_controller.dart`）+ `home_dictionary_page.dart` 里那段永不可达的 `onMineEntry` override（连带清掉只服务它的 6 个 import：external_window_mining / immersion_mining_engine / immersion_mining_request / hibiki_anki / anki_view_model / dart:io / dart:typed_data，由 analyze 逐个确认无别处引用）。**非改接而是删除**：PR#295 架构下 galgame 制卡富化（句音+游戏窗口封面）已移到 `GalHookMiningCoordinator._mineLineNow`（浮窗/工作台制卡路径），hook 文本不再走 `DesktopLookupService.submitText`，故查词面板那段分支是纯冗余，删后零功能损失。删前先做全仓引用普查（lib+test 仅词典页死分支引用该类，其余全是注释），删后全量 `flutter analyze` 0 issue、词典页/游戏页/过滤器/协调器相关测试全过。
+- **[x] ② 已加自动化测试** — ①活代码 hook 会话制卡路径由既有 `test/mining/gal_hook_mining_coordinator_test.dart`（mineLine 绑定句音+封面）守卫；②本轮附带 `test/mining/galgame_system_ui_filter_test.dart` 的源码扫描守卫（poll 路径必须调用过滤器）+ `gal_hook_session_controller_test.dart` 行为测试（系统 UI 文字被 poll 剔除）。旧类已删，「无引用即删」自然成立，不再需要单独守卫其不存在。
+- **备注**：与本删除同批的还有「系统 UI 过滤器从死代码抽为共享文件并接进活 poll 路径」（commit b1e573f0e，修 PR#295 新路径漏接过滤器的潜在回归）。

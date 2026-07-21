@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/cover_image.dart';
 import 'package:hibiki/src/utils/misc/floating_lyric_hint.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
@@ -180,6 +181,11 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
         width: 36,
         height: 36,
         fit: BoxFit.cover,
+        // BUG-959: 迷你条封面按物理像素上限解码（36 逻辑像素，144 物理已足够），
+        // 大幅省解码内存。保留 existsSync 短路（缺失走 _coverFallback），避免对
+        // 不存在文件发起无谓异步解码。
+        cacheWidth: kMiniCoverDecodePixelWidth,
+        cacheHeight: kMiniCoverDecodePixelWidth,
         errorBuilder: (_, __, ___) => _coverFallback(scheme),
       );
     } else {

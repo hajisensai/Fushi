@@ -116,3 +116,18 @@ bool topProgressVisible({
 /// (worst on glyphs with a stroke at the very top, e.g. 「一」「ー」). So squeeze
 /// mode renders plain text with no blur and no fill.
 bool topProgressUsesFrostedGlass({required bool floating}) => floating;
+
+/// Whether the frosted pill actually runs its [BackdropFilter] blur this frame.
+///
+/// BUG-969: [BackdropFilter] re-samples the backdrop and re-runs the gaussian
+/// blur on EVERY rasterized frame — even when nothing in the pill changed. With
+/// the reader quick-settings sheet open ([obscured]), the pill sits dimmed
+/// under the modal scrim where the blur is visually indistinguishable from the
+/// plain translucent fill, yet every scroll frame of the sheet still pays the
+/// saveLayer + blur readback — measurable at 120Hz. So while obscured the pill
+/// keeps its translucent fill (shape/legibility unchanged) but skips the blur.
+bool topProgressPillShowsBlur({
+  required bool floating,
+  required bool obscured,
+}) =>
+    topProgressUsesFrostedGlass(floating: floating) && !obscured;

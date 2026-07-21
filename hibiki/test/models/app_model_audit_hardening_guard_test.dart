@@ -42,7 +42,7 @@ void main() {
 
     test('texthooker 在 dispose 内被 stop', () {
       expect(disposeBody(source),
-          contains('TexthookerWsClientHost.instance.stop()'),
+          contains('TexthookerWsClientManager.instance.stop()'),
           reason: 'initialise 起的 texthooker host 必须在 dispose 关停');
     });
 

@@ -235,7 +235,18 @@ class RemoteBookInfo {
     this.tagsAddedAt = const <String, int>{},
     this.tagTombstones = const <String, int>{},
     this.collection,
+    this.progressPercent = 0,
+    this.progressUpdatedAtMs = 0,
   });
+
+  /// host 端阅读进度百分比（0..100，来自 host `MediaItems.position/duration`，
+  /// 与本地首页「继续」条目同源同算）；0 = 未读/旧 host 未带。additive 字段：
+  /// 旧 client 忽略、旧 host 不发——供新首页仪表盘把 host 在读书并进「继续」。
+  final int progressPercent;
+
+  /// host 端该书最近阅读时刻（epoch 毫秒，来自 host `reader_positions.updatedAt`）；
+  /// 0 = 无记录/旧 host。仪表盘「继续」混排排序用。
+  final int progressUpdatedAtMs;
 
   final String title;
   final bool hasContent;
@@ -279,6 +290,8 @@ class RemoteBookInfo {
         if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
         if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
         if (collection != null) 'collection': collection!.toJson(),
+        if (progressPercent > 0) 'progressPercent': progressPercent,
+        if (progressUpdatedAtMs > 0) 'progressUpdatedAtMs': progressUpdatedAtMs,
       };
 
   RemoteBookInfo copyWith({
@@ -291,6 +304,8 @@ class RemoteBookInfo {
     Map<String, int>? tagsAddedAt,
     Map<String, int>? tagTombstones,
     RemoteCollectionMembership? collection,
+    int? progressPercent,
+    int? progressUpdatedAtMs,
   }) =>
       RemoteBookInfo(
         title: title,
@@ -304,6 +319,8 @@ class RemoteBookInfo {
         tagsAddedAt: tagsAddedAt ?? this.tagsAddedAt,
         tagTombstones: tagTombstones ?? this.tagTombstones,
         collection: collection ?? this.collection,
+        progressPercent: progressPercent ?? this.progressPercent,
+        progressUpdatedAtMs: progressUpdatedAtMs ?? this.progressUpdatedAtMs,
       );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -323,8 +340,76 @@ class RemoteBookInfo {
       tagsAddedAt: _jsonNameIntMap(json['tagsAddedAt']),
       tagTombstones: _jsonNameIntMap(json['tagTombstones']),
       collection: RemoteCollectionMembership.fromJson(json['collection']),
+      progressPercent:
+          _jsonNonNegativeInt(json['progressPercent']).clamp(0, 100),
+      progressUpdatedAtMs: _jsonNonNegativeInt(json['progressUpdatedAtMs']),
     );
   }
+}
+
+/// 互联 host 活动事件（新首页 Activity 面板的远端数据源；host `activity_events`
+/// 表最近 N 条的 wire DTO）。display-only：client 只用于与本地事件混排展示，
+/// **不落库**（追加式本地表无跨端去重键，落库会在每次浏览时重复导入）。
+class RemoteActivityEvent {
+  const RemoteActivityEvent({
+    required this.eventType,
+    required this.mediaType,
+    required this.title,
+    required this.dateKey,
+    required this.timestampMs,
+    this.mediaKey,
+    this.durationMs,
+    this.charsDelta,
+  });
+
+  /// 'read' / 'watch' / 'added' / 'game'（同 ActivityEvents.eventType 值域）。
+  final String eventType;
+
+  /// 'book' / 'video' / 'game'。
+  final String mediaType;
+
+  final String title;
+
+  /// 'YYYY-MM-DD'（host 本地时区的按天分组键）。
+  final String dateKey;
+
+  /// 精确发生时刻（epoch 毫秒）。
+  final int timestampMs;
+
+  final String? mediaKey;
+  final int? durationMs;
+  final int? charsDelta;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'eventType': eventType,
+        'mediaType': mediaType,
+        'title': title,
+        'dateKey': dateKey,
+        'timestampMs': timestampMs,
+        if (mediaKey != null) 'mediaKey': mediaKey,
+        if (durationMs != null) 'durationMs': durationMs,
+        if (charsDelta != null) 'charsDelta': charsDelta,
+      };
+
+  /// 宽容解码：字段缺失/类型错给安全默认（坏一条不拖垮整个列表由调用方 skip）。
+  static RemoteActivityEvent fromJson(Map<String, Object?> json) {
+    return RemoteActivityEvent(
+      eventType: json['eventType']?.toString() ?? '',
+      mediaType: json['mediaType']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      dateKey: json['dateKey']?.toString() ?? '',
+      timestampMs: _jsonNonNegativeInt(json['timestampMs']),
+      mediaKey: _jsonString(json['mediaKey']),
+      durationMs: json['durationMs'] is int ? json['durationMs'] as int : null,
+      charsDelta: json['charsDelta'] is int ? json['charsDelta'] as int : null,
+    );
+  }
+}
+
+/// 解析非负 int（非 int / 负值 → 0）。additive 数值字段的宽容解码。
+int _jsonNonNegativeInt(Object? raw) {
+  if (raw is int && raw >= 0) return raw;
+  return 0;
 }
 
 /// 按 `sanitizeTtuFilename(title)` union 的书籍同步 diff 结果。
@@ -1152,6 +1237,22 @@ abstract class HibikiLibraryHostService {
     String? originalFileName,
   });
 
+  /// 接收 client 上传的视频外挂字幕（sidecar，BUG-964）。
+  ///
+  /// [subtitleFile] 是已落到临时位置的上传字节；实现把它搬到 [id] 视频文件的
+  /// **同目录**，命名为 `<视频文件 stem><suffix>`（[suffix] 形如 `.srt` / `.ja.srt`，
+  /// 由 client 从其本地 sidecar 名裁出、实现须用 [isSidecarSubtitleSuffix] 白名单
+  /// 校验），使 [resolveVideoSubtitle] 的同 stem 匹配天然可见。落盘后按 host 学习
+  /// 语言重解析首选 sidecar，镜像 client 下载路径的行语义（`subtitleSource` /
+  /// `subtitleFormat`、`embeddedSubtitleTrack=null`、解析 cue 落库）。
+  /// [id] 未知视频抛 [StateError]（端点映射 404）；非法 [suffix] 抛 [ArgumentError]
+  /// （端点映射 400）。
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  });
+
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
   ///
   /// 实现**只查 DB** 得到 videoPath，然后验证文件存在后返回；文件不存在或 id 未知
@@ -1161,6 +1262,10 @@ abstract class HibikiLibraryHostService {
   /// [episodeIndex]>0（远端播放列表，TODO-885）时反查 `playlistJson[episodeIndex].path`
   /// 那一集的文件（仍 DB-only，不接受外部 path）；0 = 当前选中集（`videoPath`）。
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0});
+
+  /// host 最近 [limit] 条活动事件（`activity_events` 表，按精确时刻倒序），供
+  /// client 新首页 Activity 面板与本地事件混排展示（display-only，不落库）。
+  Future<List<RemoteActivityEvent>> listActivityEvents({int limit = 100});
 
   /// 按 [id]（即 `VideoBooks.bookUid`）单查该视频封面的磁盘绝对路径；无封面 /
   /// 文件不存在 / id 未知时返回 null。

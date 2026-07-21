@@ -4,6 +4,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/epub/book_css_repository.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/media/video/video_sidecar.dart'
+    show listSidecarSubtitles;
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/collection_sync_engine.dart';
@@ -1798,21 +1800,24 @@ class SyncOrchestrator {
     SyncRunReport report,
     HibikiClientSyncBackend backend,
   ) async {
-    // host 既有视频（uid → sizeBytes，null=host 无法 stat）。
-    final Map<String, int?> hostSizeByUid = <String, int?>{
+    // host 既有视频（uid → 清单条目；sizeBytes null=host 无法 stat）。
+    final Map<String, RemoteVideoInfo> hostByUid = <String, RemoteVideoInfo>{
       for (final RemoteVideoInfo info in await backend.listRemoteVideos())
-        info.id: info.sizeBytes,
+        info.id: info,
     };
 
     // 稳定顺序（uid 升序）遍历本地可上传视频，先算出真正要传的（host 无 / 尺寸不同），
-    // 让进度分母只计实际上传数。
+    // 让进度分母只计实际上传数。字幕（BUG-964）：视频本轮上传 ⇒ 其全部 sidecar 一并
+    // 推；host 已有视频但清单报无外挂字幕 ⇒ 只补推字幕（不重传视频）。
     final List<VideoBookRow> localVideos = <VideoBookRow>[
       for (final VideoBookRow v in await _db.allVideoBooks())
         if (_isUploadableLocalVideo(v)) v,
     ]..sort((VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid));
 
-    final List<({VideoBookRow row, File file})> toPush =
-        <({VideoBookRow row, File file})>[];
+    final Map<String, List<String>?> sidecarDirCache =
+        <String, List<String>?>{};
+    final List<({VideoBookRow row, File file, bool pushVideo})> toPush =
+        <({VideoBookRow row, File file, bool pushVideo})>[];
     for (final VideoBookRow v in localVideos) {
       final File file = File(v.videoPath);
       if (!file.existsSync()) {
@@ -1820,38 +1825,118 @@ class SyncOrchestrator {
             'live push video "${v.title}": local file missing: ${v.videoPath}');
         continue;
       }
-      final bool hostHas = hostSizeByUid.containsKey(v.bookUid);
-      final int? hostSize = hostSizeByUid[v.bookUid];
+      final RemoteVideoInfo? host = hostByUid[v.bookUid];
+      final int? hostSize = host?.sizeBytes;
       final int localSize = await file.length();
       // host 已有：尺寸可比且相等 ⇒ 跳过（幂等）；host 尺寸不可知（null）也跳过（无从
       // 判差异，避免每轮全量重传大视频，下轮 host stat 成功即自愈）。host 无 ⇒ 上传。
-      if (hostHas && (hostSize == null || hostSize == localSize)) continue;
-      toPush.add((row: v, file: file));
+      final bool pushVideo =
+          !(host != null && (hostSize == null || hostSize == localSize));
+      // 字幕补推判据与视频同粒度：host 已有任一 sidecar 即跳过（改字幕内容/后加语言
+      // 不重推，与视频同尺寸跳过一致）。
+      // pushVideo==false 蕴含 host!=null（流程分析已提升，无需判空）。
+      final bool pushSubtitles = (pushVideo || !host.hasSubtitle) &&
+          _localSidecarSubtitles(v.videoPath, sidecarDirCache).isNotEmpty;
+      if (!pushVideo && !pushSubtitles) continue;
+      toPush.add((row: v, file: file, pushVideo: pushVideo));
     }
 
     final int total = toPush.length;
     int index = 0;
-    for (final ({VideoBookRow row, File file}) item in toPush) {
+    // 老 host 无字幕端点（首个 404/405）后停止本轮后续字幕推送，只记一条可见提示
+    // （与合集端点缺失的可见性纪律一致），不把每条视频都刷成一条错误。
+    bool subtitleEndpointMissing = false;
+    for (final ({VideoBookRow row, File file, bool pushVideo}) item in toPush) {
       final VideoBookRow v = item.row;
       _emit(SyncPhase.videos,
           itemIndex: index, itemTotal: total, title: v.title);
-      try {
-        await backend.putRemoteVideo(
-          v.bookUid,
-          item.file,
-          title: v.title,
-          onProgress: (double f) => _emit(SyncPhase.videos,
-              itemIndex: index,
-              itemTotal: total,
-              title: v.title,
-              fileFraction: f),
+      bool videoOk = !item.pushVideo;
+      if (item.pushVideo) {
+        try {
+          await backend.putRemoteVideo(
+            v.bookUid,
+            item.file,
+            title: v.title,
+            onProgress: (double f) => _emit(SyncPhase.videos,
+                itemIndex: index,
+                itemTotal: total,
+                title: v.title,
+                fileFraction: f),
+          );
+          report.videosExported++;
+          videoOk = true;
+        } catch (e) {
+          report.errors.add('live push video "${v.title}": $e');
+        }
+      }
+      // 字幕跟着视频走：视频本轮失败就不推字幕（host 侧无行可挂）。
+      if (videoOk && !subtitleEndpointMissing) {
+        subtitleEndpointMissing = !await _pushVideoSubtitlesLive(
+          report: report,
+          backend: backend,
+          row: v,
+          sidecarDirCache: sidecarDirCache,
         );
-        report.videosExported++;
-      } catch (e) {
-        report.errors.add('live push video "${v.title}": $e');
+        if (subtitleEndpointMissing) {
+          report.errors.add(
+              'live push subtitles: host has no subtitle endpoint (older app '
+              'version) — update the host app to sync video subtitles');
+        }
       }
       index++;
     }
+  }
+
+  /// 把 [row] 视频的全部本地 sidecar 字幕推给 host（BUG-964）。
+  ///
+  /// 返回 false 表示 host 无字幕端点（老版本，404/405），调用方停止本轮后续字幕
+  /// 推送；单条字幕的其它失败进 [report.errors] 不中断。
+  Future<bool> _pushVideoSubtitlesLive({
+    required SyncRunReport report,
+    required HibikiClientSyncBackend backend,
+    required VideoBookRow row,
+    required Map<String, List<String>?> sidecarDirCache,
+  }) async {
+    final String stem = p.basenameWithoutExtension(row.videoPath);
+    for (final File sub
+        in _localSidecarSubtitles(row.videoPath, sidecarDirCache)) {
+      final String suffix = p.basename(sub.path).substring(stem.length);
+      try {
+        final bool supported = await backend
+            .putRemoteVideoSubtitle(row.bookUid, sub, suffix: suffix);
+        if (!supported) return false;
+      } catch (e) {
+        report.errors.add('live push subtitle "${p.basename(sub.path)}": $e');
+      }
+    }
+    return true;
+  }
+
+  /// 列出 [videoPath] 同目录属于它的全部 sidecar 字幕文件（[listSidecarSubtitles]
+  /// 匹配规则）。[sidecarDirCache] 按目录缓存一次 listSync（同目录多视频的 sweep
+  /// 不重复扫盘）；目录不可读缓存 null → 返回空。
+  List<File> _localSidecarSubtitles(
+    String videoPath,
+    Map<String, List<String>?> sidecarDirCache,
+  ) {
+    final String dir = p.dirname(videoPath);
+    final List<String>? names = sidecarDirCache.putIfAbsent(dir, () {
+      try {
+        return Directory(dir)
+            .listSync(followLinks: false)
+            .whereType<File>()
+            .map((FileSystemEntity f) => p.basename(f.path))
+            .toList();
+      } on FileSystemException {
+        return null;
+      }
+    });
+    if (names == null) return const <File>[];
+    return <File>[
+      for (final String name
+          in listSidecarSubtitles(p.basenameWithoutExtension(videoPath), names))
+        File(p.join(dir, name)),
+    ];
   }
 
   /// Union-syncs local audio source DBs in the `__local_audio__` namespace.

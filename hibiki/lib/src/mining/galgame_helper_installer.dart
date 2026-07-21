@@ -7,14 +7,21 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
-// kGitHubRepo（仓库 slug）+ applyUpdateProxy（走系统代理）经 utils.dart 复用自更新子系统。
-// 镜像回退候选 URL 用本地纯函数 galgameHelperCandidateUrls（updateCheckUrls 是
-// @visibleForTesting 不可生产用；raw release 资产的镜像前缀照 video_shader_downloader 先例本地列）。
+// applyUpdateProxy（走系统代理）经 utils.dart 复用自更新子系统。helper 仓库 slug 用本地
+// [kGalgameHelperRepo]（独立仓库，非主 app 仓库）。镜像回退候选 URL 用本地纯函数
+// galgameHelperCandidateUrls（updateCheckUrls 是 @visibleForTesting 不可生产用；raw release
+// 资产的镜像前缀照 video_shader_downloader 先例本地列）。
 import 'package:hibiki/utils.dart';
 
 /// galgame 引擎-hook 注入器 helper 的固定发布 tag（CI workflow `voice-hook-helper.yml`
 /// 反复 upsert 同一 prerelease，asset 名 voice_hook_<arch>.zip + 同名 .sha256 侧车）。
 const String kGalgameHelperReleaseTag = 'voice-hook-helper';
+
+/// helper 所在的**独立仓库** slug（不是主 app 仓库 [kGitHubRepo]）。injector + hook DLL 含
+/// 进程注入代码会被杀软报毒，故物理隔离到独立仓库单独构建/分发（见该仓库 README）；且独立仓库
+/// 默认分支上的 `voice-hook-helper.yml` 可正常 workflow_dispatch 刷新 release（主仓库那份因不在
+/// 默认分支无法 dispatch，是迁出独立仓库的根因）。
+const String kGalgameHelperRepo = 'hajisensai/hibiki-voice-hook';
 
 /// gh 加速代理前缀（GFW 兜底；raw release 资产可走镜像，与 update_checker 的
 /// updateCheckProxyPrefixes / video_shader_downloader 的 _kGhProxyPrefixes 同范式、同名单）。
@@ -43,7 +50,7 @@ String galgameHelperZipName(String arch) => 'voice_hook_$arch.zip';
 /// 套镜像前缀做回退）。
 String galgameHelperDownloadUrl(
   String arch, {
-  String repo = kGitHubRepo,
+  String repo = kGalgameHelperRepo,
   String tag = kGalgameHelperReleaseTag,
 }) =>
     'https://github.com/$repo/releases/download/$tag/${galgameHelperZipName(arch)}';
@@ -51,7 +58,7 @@ String galgameHelperDownloadUrl(
 /// 某架构 zip 的 sha256 侧车 URL（下载后校验完整性用）。
 String galgameHelperSha256Url(
   String arch, {
-  String repo = kGitHubRepo,
+  String repo = kGalgameHelperRepo,
   String tag = kGalgameHelperReleaseTag,
 }) =>
     '${galgameHelperDownloadUrl(arch, repo: repo, tag: tag)}.sha256';
@@ -103,8 +110,8 @@ class GalgameHelperInstaller {
   bool _canceled = false;
   HttpClient? _client;
 
-  /// exe 同级的 `voice_hook/<arch>` 目录（安装器写入落点，与
-  /// GalgameSessionController._resolveGalInjectorPath 的读取落点一致）。安装包 Inno Setup
+  /// exe 同级的 `voice_hook/<arch>` 目录（安装器写入落点，与 defaultInjectorResolver /
+  /// GalHookSessionController 注入器解析的读取落点一致）。安装包 Inno Setup
   /// 默认装到 {localappdata}\Hibiki（PrivilegesRequired=lowest），此目录用户可写、无需提权。
   Directory _archDir(String arch) {
     final String exeDir = File(Platform.resolvedExecutable).parent.path;

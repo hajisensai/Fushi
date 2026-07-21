@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/google_drive_handler.dart';
+import 'package:hibiki/src/sync/google_drive_sync_space.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -55,6 +56,19 @@ class GoogleDriveSyncBackend extends SyncBackend {
 
   // ── Auth ──────────────────────────────────────────────────────────
 
+  /// 依「Hoshi 兼容模式」偏好把 Drive 存储空间 + scope 推给 auth/handler 两个
+  /// singleton。在每个拿得到 [repo] 的入口（authenticate / restoreAuth）先调用，
+  /// 确保任何 auth 或 Drive API 调用前 space 已正确——scope（google_sign_in 客户端
+  /// 构造时固定）与 spaces/根目录名都随之切换。[GoogleDriveSyncSpace.setSyncSpace]
+  /// 变更时会各自清缓存/丢弃旧客户端。
+  Future<void> _applySyncSpace(SyncRepository repo) async {
+    final space = GoogleDriveSyncSpace.fromHoshiCompat(
+      await repo.isGoogleDriveHoshiCompat(),
+    );
+    _auth.setSyncSpace(space);
+    _drive.setSyncSpace(space);
+  }
+
   @override
   Future<bool> get isAuthenticated => _auth.isAuthenticated;
 
@@ -63,7 +77,10 @@ class GoogleDriveSyncBackend extends SyncBackend {
 
   @override
   Future<void> authenticate({required SyncRepository repo}) =>
-      _wrapVoidErrors(() => _auth.authenticate(repo: repo));
+      _wrapVoidErrors(() async {
+        await _applySyncSpace(repo);
+        await _auth.authenticate(repo: repo);
+      });
 
   @override
   Future<void> signOut({required SyncRepository repo}) =>
@@ -71,6 +88,9 @@ class GoogleDriveSyncBackend extends SyncBackend {
 
   @override
   Future<bool> restoreAuth(SyncRepository repo) async {
+    // 恢复会话前先对齐存储空间/scope，否则移动端会用旧 space 的 scope 重建
+    // google_sign_in 客户端（BUG-047 修复路径依赖正确 scope）。
+    await _applySyncSpace(repo);
     // Mobile: rehydrate the google_sign_in session via signInSilently() instead
     // of the old no-op `return false`, which left the account row showing
     // "未登录"/no email and blocked auto-sync's isAuthenticated gate after a

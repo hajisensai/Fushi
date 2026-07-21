@@ -708,6 +708,23 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # 内置 libtorrent 引擎的 Windows DLL：vcpkg 编 libtorrent + bridge，产物落
+      # native/hibiki_torrent/prebuilt/windows-x64/，供下面 flutter build windows
+      # 的 copy-if-present 随包（缺则跳，运行期回退 qb）。vcpkg 二进制缓存摊薄首编
+      # ~40min（boost+openssl+libtorrent）到后续秒级。
+      - name: Cache vcpkg binary archives (libtorrent)
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v1
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-
+      - name: Build embedded libtorrent DLL (vcpkg)
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
+          powershell -ExecutionPolicy Bypass -File native/hibiki_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
       # Windows is the ONLY platform that renders EPUB via the forked
       # flutter_inappwebview_windows C++ plugin; an MSVC/native break here was
       # previously invisible to CI (the audit: Windows never built anywhere).

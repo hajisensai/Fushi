@@ -12,7 +12,12 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
 import 'package:hibiki/src/pages/implementations/home_page.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart';
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_cover_image.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:hibiki/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
@@ -37,7 +42,7 @@ class HomeDashboardPage extends ConsumerStatefulWidget {
 }
 
 /// 「继续」统一列表的单条：书与视频归一到同一结构，按 [recentMs] 倒序混排。
-/// [book]/[video] 恰有一个非空（由 [isVideo] 区分）。
+/// [book]/[video]/[remote] 恰有一个非空（本地书 / 本地视频 / 互联 host 条目）。
 class _ContinueEntry {
   const _ContinueEntry({
     required this.isVideo,
@@ -46,6 +51,7 @@ class _ContinueEntry {
     this.percent = 0,
     this.book,
     this.video,
+    this.remote,
   });
 
   final bool isVideo;
@@ -58,6 +64,9 @@ class _ContinueEntry {
   final int percent;
   final MediaItem? book;
   final VideoBookRow? video;
+
+  /// 互联 host 上的在读书/在看视频（本地无此条目时的远端补位，「继续也走互联」）。
+  final RemoteContinueCandidate? remote;
 }
 
 class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
@@ -74,8 +83,26 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// [initState] 异步载入的视频库（继续观看 + 视频计数）。
   List<VideoBookRow> _videos = const <VideoBookRow>[];
 
-  /// [initState] 异步载入的活动事件流（时间轴原始数据）。
+  /// [initState] 异步载入的活动事件流（时间轴原始数据，本地 + 远端混排后）。
   List<ActivityEventRow> _activityEvents = const <ActivityEventRow>[];
+
+  /// 本地活动事件（远端到达后与之重混排的基底）。
+  List<ActivityEventRow> _localActivityEvents = const <ActivityEventRow>[];
+
+  /// 互联 host 上的「继续」远端补位候选（本地无同 key/uid 的在读书/在看视频）。
+  List<RemoteContinueCandidate> _remoteContinue =
+      const <RemoteContinueCandidate>[];
+
+  /// 远端封面取图器（互联 client 可用时非空；喂 [RemoteCoverImage]）。
+  RemoteCoverFetcher? _remoteCoverFetcher;
+
+  /// 互联 host 设备显示名（配对时存进 [HibikiClientUrl.deviceName]；取不到时
+  /// 渲染层回退通用「远端」文案）。「标明设备来源」的数据源。
+  String? _remoteDeviceName;
+
+  /// 远端活动事件行的 identity 集（这些行 id=0 哨兵且可能与本地行值相等，必须按
+  /// 实例识别），供聚合按设备分组 + 打设备标签。
+  Set<ActivityEventRow> _remoteActivityRows = Set<ActivityEventRow>.identity();
 
   /// 每日阅读字数（dateKey → 字数），喂阅读热力图。
   Map<String, int> _readingCharsByDay = const <String, int>{};
@@ -185,11 +212,79 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     if (!mounted) return;
     setState(() {
       _videos = videos;
+      _localActivityEvents = events;
       _activityEvents = events;
       _readingCharsByDay = charsByDay;
       _videoWatchAtByUid = watchAt;
       _timeStats = stats;
     });
+    // 本地渲染先行，互联数据到达后再增量补位（不阻塞首屏）。
+    unawaited(_loadRemoteDashboardData());
+  }
+
+  /// 「继续/活动也走 hibiki 互联」：互联启用且已配对时，从 host 拉取
+  /// 书清单（内联阅读进度）/ 视频清单（内联播放断点）/ 最近活动事件，
+  /// 把本地没有的在读书、在看视频补进「继续」，活动事件与本地混排进时间轴
+  /// （display-only 不落库）。任何失败静默保持纯本地视图（离线/老 host 不致崩）。
+  Future<void> _loadRemoteDashboardData() async {
+    final AppModel appModel = ref.read(appProvider);
+    final SyncRepository syncRepo = SyncRepository(appModel.database);
+    // 互联是独立开关（已与云备份后端解耦），未启用/未配对直接跳过。
+    if (!await syncRepo.isInterconnectEnabled()) return;
+    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+    if (!await backend.restoreAuth(syncRepo)) return;
+    try {
+      final List<RemoteBookInfo> remoteBooks = await backend.listRemoteBooks();
+      final List<RemoteVideoInfo> remoteVideos =
+          await backend.listRemoteVideos();
+      final List<RemoteActivityEvent> remoteActivity =
+          await backend.listRemoteActivity(limit: 200);
+      if (!mounted) return;
+      final List<MediaItem> books =
+          ref.read(hibikiBooksProvider(appModel.targetLanguage)).valueOrNull ??
+              const <MediaItem>[];
+      final Set<String> localBookKeys = <String>{
+        for (final MediaItem item in books)
+          ReaderHibikiSource.parseBookKey(item.mediaIdentifier) ??
+              item.mediaIdentifier,
+      };
+      final Set<String> localVideoUids = <String>{
+        for (final VideoBookRow v in _videos) v.bookUid,
+      };
+      final List<RemoteContinueCandidate> continueCandidates =
+          remoteContinueCandidates(
+        localBookKeys: localBookKeys,
+        localVideoUids: localVideoUids,
+        remoteBooks: remoteBooks,
+        remoteVideos: remoteVideos,
+      );
+      // 设备来源标注：配对时存下的 host 设备名（多地址时取第一个启用且有名的）。
+      final List<HibikiClientUrl> urls = await syncRepo.getHibikiClientUrls();
+      String? deviceName;
+      for (final HibikiClientUrl u in urls) {
+        final String? name = u.deviceName;
+        if (u.enabled && name != null && name.isNotEmpty) {
+          deviceName = name;
+          break;
+        }
+      }
+      final List<ActivityEventRow> remoteRows =
+          remoteActivityAsRows(remoteActivity);
+      if (!mounted) return;
+      setState(() {
+        _remoteContinue = continueCandidates;
+        _remoteCoverFetcher = remoteCoverFetcherFor(backend);
+        _remoteDeviceName = deviceName;
+        _remoteActivityRows = Set<ActivityEventRow>.identity()
+          ..addAll(remoteRows);
+        _activityEvents = mergeActivityEvents(
+          _localActivityEvents,
+          remoteRows,
+        );
+      });
+    } catch (_) {
+      // 互联瞬断/超时：保持纯本地视图；下次进入首页自然重试。
+    }
   }
 
   @override
@@ -413,6 +508,17 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         ));
       }
     }
+    // 互联 host 的远端补位（本地无同 key/uid 的在读书/在看视频），与本地条目
+    // 按最近活动时刻统一混排（「继续也走互联」）。
+    for (final RemoteContinueCandidate c in _remoteContinue) {
+      entries.add(_ContinueEntry(
+        isVideo: c.isVideo,
+        title: c.title,
+        recentMs: c.recentMs,
+        percent: c.percent,
+        remote: c,
+      ));
+    }
     entries.sort((_ContinueEntry a, _ContinueEntry b) =>
         b.recentMs.compareTo(a.recentMs));
     final List<_ContinueEntry> filtered = entries
@@ -460,9 +566,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     AppModel appModel,
     _ContinueEntry entry,
   ) {
-    final String subtitle = entry.isVideo
+    String subtitle = entry.isVideo
         ? t.home_filter_watch
         : '${t.home_filter_read} · ${entry.percent}%';
+    if (entry.remote != null) {
+      // 标明设备来源：优先 host 设备名（配对时存下），取不到回退通用「远端」。
+      subtitle = '$subtitle · ${_remoteDeviceName ?? t.home_remote_source}';
+    }
     return InkWell(
       onTap: () => _openContinueEntry(appModel, entry),
       borderRadius: HibikiBorderRadius.card,
@@ -475,19 +585,22 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
               child: SizedBox(
                 width: 48,
                 height: 68,
-                child: entry.isVideo
-                    ? _videoCover(tokens, entry.video!)
-                    : FadeInImage(
-                        placeholder: MemoryImage(kTransparentImage),
-                        image: ReaderHibikiSource.instance
-                            .getDisplayThumbnailFromMediaItem(
-                          appModel: appModel,
-                          item: entry.book!,
-                        ),
-                        fit: BoxFit.cover,
-                        imageErrorBuilder: (_, __, ___) =>
-                            _coverPlaceholder(tokens, Icons.menu_book_outlined),
-                      ),
+                child: entry.remote != null
+                    ? _remoteCover(tokens, entry)
+                    : entry.isVideo
+                        ? _videoCover(tokens, entry.video!)
+                        : FadeInImage(
+                            placeholder: MemoryImage(kTransparentImage),
+                            image: ReaderHibikiSource.instance
+                                .getDisplayThumbnailFromMediaItem(
+                              appModel: appModel,
+                              item: entry.book!,
+                            ),
+                            fit: BoxFit.cover,
+                            imageErrorBuilder: (_, __, ___) =>
+                                _coverPlaceholder(
+                                    tokens, Icons.menu_book_outlined),
+                          ),
               ),
             ),
             SizedBox(width: tokens.spacing.gap + 4),
@@ -518,6 +631,24 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     );
   }
 
+  /// 远端条目封面：互联 coverUrl + 取图器可用则 [RemoteCoverImage]（按稳定 id
+  /// 磁盘缓存），否则占位图标。
+  Widget _remoteCover(HibikiDesignTokens tokens, _ContinueEntry entry) {
+    final RemoteContinueCandidate remote = entry.remote!;
+    final String? coverUrl = remote.coverUrl;
+    final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
+    final IconData icon =
+        entry.isVideo ? Icons.movie_outlined : Icons.menu_book_outlined;
+    if (coverUrl == null || coverUrl.isEmpty || fetcher == null) {
+      return _coverPlaceholder(tokens, icon);
+    }
+    return Image(
+      image: RemoteCoverImage(coverUrl, fetcher, cacheKey: remote.id),
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _coverPlaceholder(tokens, icon),
+    );
+  }
+
   /// 视频封面：coverPath 存在则 [Image.file]，否则占位图标。
   Widget _videoCover(HibikiDesignTokens tokens, VideoBookRow video) {
     final String? path = video.coverPath;
@@ -540,11 +671,17 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     );
   }
 
-  /// 打开「继续」条目：书走 openMedia，视频切到视频 tab。
+  /// 打开「继续」条目：本地书走 openMedia，视频切到视频 tab；远端条目切到对应
+  /// tab（远端占位卡在那里承接播放/下载，行为与本地视频条目的 tab 跳转一致）。
   Future<void> _openContinueEntry(
     AppModel appModel,
     _ContinueEntry entry,
   ) async {
+    if (entry.remote != null) {
+      homeShellTabNotifier.value =
+          entry.isVideo ? HomeTab.video : HomeTab.books;
+      return;
+    }
     if (entry.isVideo) {
       homeShellTabNotifier.value = HomeTab.video;
       return;
@@ -581,7 +718,14 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         : _activityEvents
             .where((ActivityEventRow e) => e.eventType == _activityFilter)
             .toList();
-    final List<ActivityDateGroup> groups = aggregateActivityEvents(filtered);
+    // 设备来源进聚合：互联对端事件带 host 设备名（identity 识别——远端行 id=0
+    // 哨兵且可能与本地行值相等），与本机事件分条展示（「标明设备来源」）。
+    final List<ActivityDateGroup> groups = aggregateActivityEvents(
+      filtered,
+      sourceDeviceOf: (ActivityEventRow e) => _remoteActivityRows.contains(e)
+          ? (_remoteDeviceName ?? t.home_remote_source)
+          : null,
+    );
     final String todayKey = HibikiTimeFormat.dayKey(now);
     final String yesterdayKey =
         HibikiTimeFormat.dayKey(now.subtract(const Duration(days: 1)));
@@ -657,6 +801,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       _relativeTimeLabel(entry.latestTimestampMs, now),
       if (entry.totalDurationMs > 0) formatStatTime(entry.totalDurationMs),
       if (entry.sessionCount > 1) t.home_session_count(n: entry.sessionCount),
+      // 设备来源（互联对端事件带 host 设备名；本机事件不标）。
+      if (entry.sourceDevice case final String device) device,
     ];
     return InkWell(
       onTap: () => _openActivityEntry(entry),

@@ -26,6 +26,23 @@ import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 
+/// fallback 制卡（非外部窗口/非 Windows，走普通 in-app popup 制卡）也要带上当前活跃
+/// hook 台词作 sentence，否则挖出的卡 `{sentence}` 恒空（BUG-954）。仅在 [fields] 未自带
+/// 非空 sentence 且存在 [activeSentence] 时注入，不覆盖调用方已提供的句子。
+@visibleForTesting
+Map<String, String> injectActiveSentence(
+  Map<String, String> fields,
+  String? activeSentence,
+) {
+  if (activeSentence == null || activeSentence.isEmpty) {
+    return fields;
+  }
+  if ((fields['sentence'] ?? '').isNotEmpty) {
+    return fields;
+  }
+  return Map<String, String>.from(fields)..['sentence'] = activeSentence;
+}
+
 /// texthooker 捕获工作台：实时展示 WebSocket 收到的文本行，逐词查词 + 挖词。
 ///
 /// 订阅单例 [TexthookerService]（ChangeNotifier）实时刷新文本行；每行经日语分词
@@ -115,12 +132,30 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // BUG-953：games 是保活 tab，切走时用 Offstage 隐藏（**不触发 deactivate**），但 home_page
+    // 同步把 TickerMode 关掉。用 TickerMode 作可见性信号：tab 不可见时把插在 root Overlay 的
+    // 查词浮层置 inert 并重建（收起为 SizedBox），防止弹窗/barrier 跨 tab 残留遮挡新 tab；
+    // 重新可见时恢复，保留用户查词浮层状态。仅 Offstage 隐藏这一路 deactivate 覆盖不到。
+    final bool nextInert = !TickerMode.of(context);
+    if (nextInert != _overlayInert) {
+      _overlayInert = nextInert;
+      _popupOverlayEntry?.markNeedsBuild();
+    }
+  }
+
+  /// 测试可见：查词浮层当前是否被置为 inert（隐藏 tab / 失活时收起）。BUG-953 守卫用。
+  @visibleForTesting
+  bool get debugOverlayInert => _overlayInert;
+
+  @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final GalHookSessionState sessionState = _session.state;
     if (!sessionState.externalWindowMode ||
         sessionState.boundWindow == null ||
         !Platform.isWindows) {
-      return super.onMineEntry(fields);
+      return super.onMineEntry(injectActiveSentence(fields, _activeSentence));
     }
     return _mineActiveLine(fields: fields);
   }
@@ -134,7 +169,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!sessionState.externalWindowMode ||
         sessionState.boundWindow == null ||
         !Platform.isWindows) {
-      return super.onUpdateEntry(noteId, fields);
+      return super
+          .onUpdateEntry(noteId, injectActiveSentence(fields, _activeSentence));
     }
     return _mineActiveLine(fields: fields, updateNoteId: noteId);
   }
@@ -783,7 +819,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   key: const ValueKey<String>('game-text-thread-selector'),
-                  value: selectedTextThreadKey ?? '',
+                  // 选中线程可能被行 buffer 上限淘汰/清空后不再在 items 里；value 必须恒在
+                  // items 内否则 DropdownButton 断言红屏（BUG-952）——不在则回退「全部」占位。
+                  value: textThreads.any((TexthookerTextThread thread) =>
+                          thread.key == selectedTextThreadKey)
+                      ? selectedTextThreadKey
+                      : '',
                   isExpanded: true,
                   isDense: true,
                   items: <DropdownMenuItem<String>>[

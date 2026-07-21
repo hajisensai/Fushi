@@ -32,8 +32,9 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
   Future<void> _lookupAt(
     String sentence,
     int graphemeIndex,
-    Rect charRect,
-  ) async {
+    Rect charRect, {
+    AudioCue? overrideCue,
+  }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final String term = subtitleLookupTerm(sentence, graphemeIndex);
@@ -53,16 +54,19 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
     // 「上 N 句 / 下 N 句」上下文选择。热槽 WebView 复用使弹窗 DOM 不重载，草稿若不
     // 在此清空，上一个词攒的上下文会带到下一个词的卡（用户报「弹窗会缓存」）。
     _miningDraft.clear();
-    // 制卡要裁「用户正在学的那句」的真实声轨音频。currentCue 在字幕 gap / 末句后被
-    // 清成 null（BUG-074 字幕条该消失），而查词往往就发生在字幕刚消失那一瞬——若直接
-    // 取 currentCue，制卡时句子音频字段会空（TODO-104b / BUG-188）。故 null 时按当前
-    // 播放位置独立解析最近一条 cue（只读 controller，不复用被 gap 清空的 UI 状态）。
-    _lastLookupCue = controller.currentCue ??
-        resolveMiningCueForPosition(
-          cues: controller.cues,
-          positionMs: controller.positionMs ?? 0,
-          delayMs: controller.delayMs,
-        );
+    // 制卡要裁「用户正在学的那句」的真实声轨音频。锚定 cue 的来源按查词入口分（BUG-966）：
+    // 字幕跳转列表点词查词传 [overrideCue]=被点条目（可能远离播放头，点列表只暂停不 seek），
+    // 必须优先用它，否则制卡音频锚到播放位置那句、截出别的句子的声音。主画面字幕 overlay
+    // 查词不传，回落 currentCue——它在字幕 gap / 末句后被清成 null（BUG-074 字幕条该消失），
+    // 而查词往往就发生在字幕刚消失那一瞬，故 null 时按播放位置独立解析（TODO-104b / BUG-188，
+    // 只读 controller，不复用被 gap 清空的 UI 状态）。
+    _lastLookupCue = resolveVideoLookupAnchorCue(
+      overrideCue: overrideCue,
+      currentCue: controller.currentCue,
+      cues: controller.cues,
+      positionMs: controller.positionMs ?? 0,
+      delayMs: controller.delayMs,
+    );
     await pushNestedPopup(
       query: term,
       selectionRect: charRect,

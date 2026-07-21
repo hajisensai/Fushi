@@ -54,6 +54,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
+import 'package:hibiki/src/utils/cover_image.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
@@ -270,15 +271,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final Map<String, int> primaryMap =
         await db.getPrimaryCollectionIdByEntry();
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
-    // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。
+    // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。一次 [getAllCollectionItems]
+    // 查全部成员内存分组，替代逐合集 [getCollectionItems] 的 N+1（合集越多越慢，
+    // 首屏合集行渲染被它 gate）。判据 `primaryMap[key] == m.collectionId` 与旧
+    // 逐合集 `== c.id` 等价（旧循环里 members 的 collectionId 恒为 c.id）。
     final Map<String, int> memberSortIndex = <String, int>{};
-    for (final MediaCollectionRow c in collections) {
-      final List<MediaCollectionItemRow> members =
-          await db.getCollectionItems(c.id);
-      for (final MediaCollectionItemRow m in members) {
-        final String key = '${m.mediaType}|${m.entryKey}';
-        if (primaryMap[key] == c.id) memberSortIndex[key] = m.sortIndex;
-      }
+    for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
+      final String key = '${m.mediaType}|${m.entryKey}';
+      if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
     }
     // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
@@ -2150,7 +2150,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text(
                     video.title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -2420,15 +2420,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 连续散视频段落的 [SliverGrid]（TODO-654：随主 [CustomScrollView] 滚动；
   /// 网格 delegate 与远端区一致）。UI v2 Phase C 后合集不再进网格（渲染成全宽
   /// 横排行），本网格只装散视频单卡。
-  /// 视频卡总高 = 16:9 封面高（[cardWidth] × 9/16）+ 文字块（标题 2 行 + 观看进度行
-  /// + 内边距）。文字块 [_kVideoCardTextBlock] = 83，在 cardWidth=240 时回到旧的固定
-  /// 218，向后兼容；卡变窄时封面等比缩，不再出现固定卡高下的封面上下留白。散卡网格
-  /// [mainAxisExtent] 与合集横排行 [CollectionShelfRow.rowHeight] 共用此高，保持逐像素同尺寸。
+  /// 视频卡总高 = 16:9 封面高（[cardWidth] × 9/16）+ 文字块 [_kVideoCardTextBlock]。
+  /// 卡变窄时封面等比缩，不出现固定卡高下的封面上下留白。散卡网格 [mainAxisExtent]
+  /// 与合集横排行 [CollectionShelfRow.rowHeight] 共用此高，保持逐像素同尺寸。
   static double _videoCardExtent(double cardWidth) =>
       cardWidth * 9 / 16 + _kVideoCardTextBlock;
 
-  /// 视频卡封面下方文字块的固定高度（标题 2 行 + 观看进度行 + 内边距）。
-  static const double _kVideoCardTextBlock = 83;
+  /// 视频卡封面下方文字块的固定高度：单行标题 + 单行观看进度 + 内边距（BUG-943：
+  /// 旧值 83 为「2 行标题 + 进度行」的最坏预留，但绝大多数卡是单行标题、无进度，
+  /// 底部常驻约 50px 空白。收敛为紧凑固定高：标题 `maxLines: 1`、进度行用 Flexible
+  /// 内收，无进度时仅剩约一行的常规内边距，不再是显眼空块）。
+  static const double _kVideoCardTextBlock = 52;
 
   Widget _buildLooseVideoGridSliver(
     List<_VideoLooseCard> loose,
@@ -2602,8 +2604,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ],
             ),
           ),
-          // 文字块占封面下方剩余固定高度（cell 高 − 16:9 封面 = _kVideoCardTextBlock），
-          // 标题 / 进度用 ellipsis 内收，浮动高度不再反灌进封面区（BUG-926）。
+          // 文字块占封面下方剩余固定高度（cell 高 − 16:9 封面 = _kVideoCardTextBlock）。
+          // 标题单行 ellipsis 内收；进度行用 Flexible 让位，浮动高度不反灌进封面区
+          // （BUG-926 血缘）、大字号倍率下也不溢出。无进度时仅剩常规内边距、无显眼空块
+          // （BUG-943：单行标题无进度卡曾常驻约 50px 空白）。
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2612,7 +2616,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                   child: Text(
                     book.title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -2622,13 +2626,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 // 上次观看日期（watch-stats 有该 title 时）；全无痕迹不渲染本行。
                 if (_buildCardWatchMeta(book) case final String meta
                     when meta.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-                    child: Text(
-                      meta,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: HibikiDesignTokens.of(context).type.metadata,
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                      child: Text(
+                        meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: HibikiDesignTokens.of(context).type.metadata,
+                      ),
                     ),
                   ),
               ],
@@ -2821,16 +2827,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   Widget _buildCover(VideoBookRow book) {
     final String? cover = book.coverPath;
-    if (cover != null && File(cover).existsSync()) {
-      return Image.file(
-        File(cover),
-        // TODO-616 phase C: 本地视频封面同样用 contain（封面卡槽比 16:9 源更窄，
-        // cover 会裁左右），完整显示不裁切。
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _coverPlaceholder(),
-      );
+    // 保留同步 existsSync 短路：对已知不存在的封面直接占位，避免对缺失文件发起
+    // 无谓的异步解码（真机少一次失败 IO；widget 测试里也不会因缺失文件挂在解码上）。
+    // 单卡一次 stat 成本极小；首屏真正的开销是解码尺寸（下方 cacheWidth 降采样）
+    // 与 _repairMovedCoverPaths 的全库 stat（已改异步）。
+    if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
+      return _coverPlaceholder();
     }
-    return _coverPlaceholder();
+    return Image.file(
+      File(cover),
+      // TODO-616 phase C: 本地视频封面同样用 contain（封面卡槽比 16:9 源更窄，
+      // cover 会裁左右），完整显示不裁切。
+      fit: BoxFit.contain,
+      // BUG-959: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
+      cacheWidth: kLocalCoverDecodePixelWidth,
+      errorBuilder: (_, __, ___) => _coverPlaceholder(),
+    );
   }
 
   Widget _coverPlaceholder() {
