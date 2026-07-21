@@ -24,7 +24,6 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 /// 捕获 controller），settings/ 与 schema 依赖图保持无播放器类型。
 class VideoQuickSettingsHost extends VideoSettingsHost {
   const VideoQuickSettingsHost({
-    super.controller,
     required this.uiScale,
     required this.isTouchControls,
     required this.delayMs,

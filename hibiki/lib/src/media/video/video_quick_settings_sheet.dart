@@ -200,44 +200,55 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     );
   }
 
-  /// 分类项（宽窗顶部 chip 行 + 窄窗导航行共用；id 与 [VideoGroup] 枚举名一一对应，
-  /// 亦是 [_subPageContent] 的投影入参）。
+  /// 分类项（宽窗顶部 chip 行 + 窄窗导航行共用；id == [VideoGroup] 枚举名，亦是
+  /// [_subPageContent] 的投影入参）。直接由 [VideoGroup.values] 驱动而非手写平行
+  /// 列表：新增分组时 [_groupIcon] / [_groupTitle] 的 exhaustive switch 编译期
+  /// 报错，面板不可能静默漏掉分组。顺序 = 枚举声明序。
+  /// TODO-1351：顶栏前三项即参考「检查器」的 视频 / 音频 / 字幕 tab——轨切换收进对应
+  /// 分类（音频轨在「音频」、字幕轨在「字幕」顶部），删掉外面浮的轨切换器。
   List<({String id, IconData icon, String label})> _categories() {
     return <({String id, IconData icon, String label})>[
-      // TODO-1351：顶栏前三项即参考「检查器」的 视频 / 音频 / 字幕 tab——轨切换收进对应
-      // 分类（音频轨在「音频」、字幕轨在「字幕」顶部），删掉外面浮的轨切换器。
-      (
-        id: 'playback',
-        icon: Icons.play_circle_outline,
-        label: t.video_settings_cat_playback,
-      ),
-      (
-        id: 'audio',
-        icon: Icons.audiotrack_outlined,
-        label: t.video_settings_cat_audio,
-      ),
-      (
-        id: 'subtitle',
-        icon: Icons.subtitles_outlined,
-        label: t.video_settings_cat_subtitle,
-      ),
-      (
-        id: 'shaders',
-        icon: Icons.auto_fix_high_outlined,
-        label: t.video_settings_cat_shaders,
-      ),
-      (id: 'mpv', icon: Icons.tune, label: t.video_settings_cat_mpv),
-      (
-        id: 'danmaku',
-        icon: Icons.forum_outlined,
-        label: t.video_settings_cat_danmaku,
-      ),
-      (
-        id: 'controls',
-        icon: Icons.dashboard_customize_outlined,
-        label: t.video_settings_cat_controls,
-      ),
+      for (final VideoGroup group in VideoGroup.values)
+        (id: group.name, icon: _groupIcon(group), label: _groupTitle(group)),
     ];
+  }
+
+  IconData _groupIcon(VideoGroup group) {
+    switch (group) {
+      case VideoGroup.playback:
+        return Icons.play_circle_outline;
+      case VideoGroup.audio:
+        return Icons.audiotrack_outlined;
+      case VideoGroup.subtitle:
+        return Icons.subtitles_outlined;
+      case VideoGroup.shaders:
+        return Icons.auto_fix_high_outlined;
+      case VideoGroup.mpv:
+        return Icons.tune;
+      case VideoGroup.danmaku:
+        return Icons.forum_outlined;
+      case VideoGroup.controls:
+        return Icons.dashboard_customize_outlined;
+    }
+  }
+
+  String _groupTitle(VideoGroup group) {
+    switch (group) {
+      case VideoGroup.playback:
+        return t.video_settings_cat_playback;
+      case VideoGroup.audio:
+        return t.video_settings_cat_audio;
+      case VideoGroup.subtitle:
+        return t.video_settings_cat_subtitle;
+      case VideoGroup.shaders:
+        return t.video_settings_cat_shaders;
+      case VideoGroup.mpv:
+        return t.video_settings_cat_mpv;
+      case VideoGroup.danmaku:
+        return t.video_settings_cat_danmaku;
+      case VideoGroup.controls:
+        return t.video_settings_cat_controls;
+    }
   }
 
   /// 宽窗顶部分类条（TODO-556 / TODO-1351 / BUG：末位分类被裁）：大分类用 chip 行，固定
@@ -375,23 +386,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   }
 
   String _subPageTitle(String page) {
-    switch (page) {
-      case 'playback':
-        return t.video_settings_cat_playback;
-      case 'audio':
-        return t.video_settings_cat_audio;
-      case 'shaders':
-        return t.video_settings_cat_shaders;
-      case 'mpv':
-        return t.video_settings_cat_mpv;
-      case 'subtitle':
-        return t.video_settings_cat_subtitle;
-      case 'danmaku':
-        return t.video_settings_cat_danmaku;
-      case 'controls':
-        return t.video_settings_cat_controls;
-      default:
-        return '';
-    }
+    final VideoGroup? group = _groupFor(page);
+    return group == null ? '' : _groupTitle(group);
   }
 }

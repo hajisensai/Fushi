@@ -172,17 +172,23 @@ void main() {
     // 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));
     expect(source, contains("_subPage ?? 'playback'"));
-    // 七个分类齐全（chip 行 + 窄窗导航行共用 _categories；TODO-1351 增「音频」）。
+    // 分类齐全（chip 行 + 窄窗导航行共用 _categories）：审查 Finding 9 后由
+    // VideoGroup 枚举驱动（id == 枚举名），每个分组必有 exhaustive switch 的
+    // icon/label 映射分支——新增分组漏接面板会在编译期报错。
+    expect(
+        source, contains('for (final VideoGroup group in VideoGroup.values)'),
+        reason: '_categories 必须由 VideoGroup.values 驱动，禁止手写平行列表');
     for (final String id in <String>[
-      "id: 'playback'",
-      "id: 'audio'",
-      "id: 'shaders'",
-      "id: 'mpv'",
-      "id: 'subtitle'",
-      "id: 'danmaku'",
-      "id: 'controls'",
+      'playback',
+      'audio',
+      'shaders',
+      'mpv',
+      'subtitle',
+      'danmaku',
+      'controls',
     ]) {
-      expect(source, contains(id), reason: 'missing category $id');
+      expect(source, contains('case VideoGroup.$id:'),
+          reason: 'missing category mapping for $id');
     }
 
     // 阶段B：配置行不再手写在 sheet 里，sheet 只按分类投影 schema 渲染。

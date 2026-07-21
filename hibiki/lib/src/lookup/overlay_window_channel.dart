@@ -207,8 +207,9 @@ class OverlayWindowChannel {
         'pinned': pinned,
       });
 
-  /// 防截屏 — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：面板对用户可见
-  /// 但从截图 / 录屏 / 屏幕共享里排除。Only wired on the clipboard-panel channel.
+  /// 防截屏 — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：窗口对用户可见
+  /// 但从截图 / 录屏 / 屏幕共享里排除。Wired on BOTH channels（剪贴板面板 +
+  /// 瞬态全局查词窗——同一 pref clipboardPanelBlockCapture 保护两块表面）。
   Future<void> setBlockCapture(bool block) =>
       _channel.invokeMethod<void>('setBlockCapture', <String, Object?>{
         'block': block,

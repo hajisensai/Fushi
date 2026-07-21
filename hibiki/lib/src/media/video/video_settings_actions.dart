@@ -529,6 +529,9 @@ class _VideoMpvRawConfFieldState extends State<_VideoMpvRawConfField> {
     super.didUpdateWidget(oldWidget);
     // 外部重置（「恢复 mpv 默认」action 清空 rawConf）后回填输入框；正常键入路径
     // pref 值与输入框文本一致，不会误触发回写打断光标。
+    // 契约依赖：页面 onMpvConfigChanged 在其第一个 await 前同步落 pref 缓存
+    // （currentVideoMpvConfig 立即读到刚键入的值）——否则键入后的 rebuild 会在
+    // 这里读到旧值并回写输入框、打断光标。改动持久化时序前先看这里。
     final String external =
         currentVideoMpvConfig(widget.settingsContext).rawConf;
     if (external != _controller.text) _controller.text = external;

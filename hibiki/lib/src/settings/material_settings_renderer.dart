@@ -230,7 +230,10 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     final SettingsSection visible = section.visibleCopy(settingsContext);
     return visible.items
         .map(
+          // 行级稳定 key：visibleCopy 按运行时谓词过滤，行增删时以 item.id 锚定
+          // State 归属（否则同类型相邻行按位置错配旧 State）。
           (SettingsItem item) => SettingsSchemaItem(
+            key: ValueKey<String>(item.id),
             item: item,
             settingsContext: settingsContext,
             showIcons: showIcons,

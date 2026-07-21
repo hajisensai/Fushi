@@ -45,7 +45,11 @@ class SettingsSchemaSection extends StatelessWidget {
     if (section.items.isEmpty) return const SizedBox.shrink();
     final List<Widget> rows = section.items
         .map(
+          // 行级稳定 key：visible 谓词可在运行时增删行（如 qualityOptionCount
+          // 变化），无 key 时同类型相邻行会按位置错配旧 State（陈旧文本 / 在途
+          // 防抖写错项）；以 item.id 锚定 State 归属。
           (SettingsItem item) => SettingsSchemaItem(
+            key: ValueKey<String>(item.id),
             item: item,
             settingsContext: settingsContext,
             showIcons: showIcons,
@@ -306,6 +310,9 @@ class SettingsSchemaItem extends StatelessWidget {
       showIcon: showIcons,
       suffixText: number.suffixText,
       initialValue: format(number.value(settingsContext)),
+      // 失焦回显真实存储值：写穿时越界被夹取（如 max 100 键入 9999 实存 100），
+      // 输入框不再停留在未夹取的陈旧文本。
+      committedText: () => format(number.value(settingsContext)),
       resetValue: reset == null ? null : format(reset),
       onReset: reset == null
           ? null
@@ -359,6 +366,11 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
   /// 拖动进行中的临时值；非拖动时为 null，显示已提交的 item.value。
   double? _dragValue;
 
+  /// 拖动活动序号：每次 onChanged 递增。onChangeEnd 的异步提交 await 期间用户
+  /// 可能已开始新一轮拖动；提交回来只有序号未变（无新动作）才清 [_dragValue]，
+  /// 否则会把进行中的新拖动瞬间弹回旧值。
+  int _dragSession = 0;
+
   @override
   Widget build(BuildContext context) {
     final SettingsSliderItem item = widget.item;
@@ -376,10 +388,16 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
       label: item.label?.call(value),
       step: item.step,
       readout: item.titleReadout ? item.label?.call(value) : null,
-      onChanged: (double next) => setState(() => _dragValue = next),
+      onChanged: (double next) {
+        _dragSession++;
+        setState(() => _dragValue = next);
+      },
       onChangeEnd: (double next) async {
+        final int session = _dragSession;
         await item.onChanged(widget.settingsContext, next);
-        if (mounted) setState(() => _dragValue = null);
+        if (mounted && _dragSession == session) {
+          setState(() => _dragValue = null);
+        }
         widget.settingsContext.refresh();
       },
     );

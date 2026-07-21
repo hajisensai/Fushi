@@ -2476,8 +2476,10 @@ void main() {
       final String actions =
           File('lib/src/media/video/video_settings_actions.dart')
               .readAsStringSync();
-      // 视频/音频/字幕 tab：音频分类 id（sheet 外壳）+ 轨切换区 schema 条目。
-      expect(sheet, contains("id: 'audio'"), reason: '顶栏须含「音频」分类（收音频轨切换）');
+      // 视频/音频/字幕 tab：音频分类（sheet 外壳，审查 Finding 9 后分类由
+      // VideoGroup 枚举驱动，源码影子是 exhaustive switch 分支）+ 轨切换区 schema 条目。
+      expect(sheet, contains('case VideoGroup.audio:'),
+          reason: '顶栏须含「音频」分类（收音频轨切换）');
       expect(schema, contains("id: 'video.player.audio_track'"),
           reason: '音频轨切换区须以 schema 条目声明在「音频」分类');
       expect(schema, contains("id: 'video.player.subtitle_track'"),

@@ -183,6 +183,47 @@ void main() {
     expect(textValue, 'http://10.0.0.2');
   });
 
+  testWidgets('text item flushes a pending debounced write on dispose',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(harness(cupertino: false));
+
+    await tester.enterText(rowField('Server address'), 'http://10.0.0.9');
+    // 仍在防抖窗口内（500ms 未到）——尚未写穿。
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(textValue, 'initial-text');
+
+    // 关页（dispose）：pending 输入必须同步冲刷落盘，而不是随 timer 一起丢失。
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(textValue, 'http://10.0.0.9',
+        reason: '防抖窗口内关页不得丢失已键入的值（审查 Finding 2）');
+  });
+
+  testWidgets(
+      'number item re-syncs the field text to the clamped value '
+      'on unfocus', (WidgetTester tester) async {
+    await tester.pumpWidget(harness(cupertino: false));
+
+    final Finder delayField = rowField('Delay');
+    await tester.enterText(delayField, '250');
+    await tester.pump();
+    expect(intValue, 100, reason: '越上界写穿时夹到 max');
+
+    EditableText editable() => tester.widget<EditableText>(
+          find.descendant(
+            of: find.widgetWithText(AdaptiveSettingsRow, 'Delay'),
+            matching: find.byType(EditableText),
+          ),
+        );
+    // 编辑中不打扰：文本保持用户键入的原样。
+    expect(editable().controller.text, '250');
+
+    // 失焦（编辑结束）：输入框回显真实存储值，静默夹取不再被陈旧文本掩盖。
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    expect(editable().controller.text, '100',
+        reason: '失焦后必须回显已提交（夹取后）的值（审查 Finding 6）');
+  });
+
   testWidgets('secret item obscures and the eye toggle reveals',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness(cupertino: false));
