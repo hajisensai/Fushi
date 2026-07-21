@@ -1,0 +1,8 @@
+# CMake 构建产物（injector exe / hook dll 各 arch），不入库——按需本地/CI 构建分发。
+build/
+dist/
+out/
+# .NET (unity_audio_extract)
+bin/
+obj/
+
