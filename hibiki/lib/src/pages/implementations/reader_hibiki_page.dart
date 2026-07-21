@@ -1087,6 +1087,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   int _currentChapter = 0;
   bool _readerContentReady = false;
   bool _hasEverLoaded = false;
+  bool _readerTextContextMenuActive = false;
   bool _restoreInFlight = false;
   bool _isNavigatingToChapter = false;
   // TODO-1037：跨章推进经过的「纯图片章逐个停留」序列在途时为真，防重入跨章导航。

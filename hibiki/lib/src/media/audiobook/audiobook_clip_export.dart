@@ -133,6 +133,22 @@ List<AudiobookClipCueSpan> clipCueSpansWithDelay({
   }).toList(growable: false);
 }
 
+/// Dynamic cards render cue text segment by segment. Only use that path when
+/// the aligned cue text and the actual EPUB selection match after whitespace
+/// normalization; otherwise the caller must render the exact selection.
+bool audiobookClipCueTextMatchesSelection({
+  required String selectedText,
+  required List<AudiobookClipCueSpan> cueSpans,
+}) {
+  String normalize(String value) => value.replaceAll(RegExp(r'\s+'), '');
+  final String actual = normalize(selectedText);
+  if (actual.isEmpty || cueSpans.isEmpty) return false;
+  final String cueText = normalize(
+    cueSpans.map((AudiobookClipCueSpan span) => span.text).join(),
+  );
+  return actual == cueText;
+}
+
 /// 多句片段导出的分类结果（纯数据）。
 ///
 /// [kind] 复用 [AudiobookClipBoundaryKind]：emptySelection / noAudio /
@@ -351,6 +367,10 @@ List<String> buildFfmpegImageAudioToVideoArgs({
     imagePath,
     '-i',
     audioPath,
+    '-map',
+    '0:v:0',
+    '-map',
+    '1:a:0',
     ..._clipVideoCodecArgs(h264: h264, pixFmt: pixFmt),
     '-r',
     '$fps',
@@ -498,6 +518,10 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
     inputPattern,
     '-i',
     audioPath,
+    '-map',
+    '0:v:0',
+    '-map',
+    '1:a:0',
     // BUG-809：桌面 h264（带帧间压缩，逐句高亮的大量重复帧压到近零）/ 移动 mjpeg。
     ..._clipVideoCodecArgs(h264: h264, pixFmt: pixFmt),
     '-vf',

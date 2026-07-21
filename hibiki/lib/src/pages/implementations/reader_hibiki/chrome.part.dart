@@ -248,7 +248,15 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   // 复制/导出三项随界面大小缩放，而鼠标锚点与 WebView 命中测试不受影响。导出项仅在本书
   // 有音频 cue 时出现；其它两项恒在。
   Future<void> _showReaderTextContextMenu(Offset globalPosition) async {
-    if (!mounted || !isWindowsPlatform) return;
+    if (!mounted ||
+        !isWindowsPlatform ||
+        _readerTextContextMenuActive) {
+      return;
+    }
+    // onSecondaryTapDown does not await this Future. Gate before the first JS
+    // await so repeated right-clicks cannot stack multiple PopupMenuRoutes.
+    _readerTextContextMenuActive = true;
+    try {
     // 没有原生选区文本就不弹菜单（右键空白处不打扰）。
     // 本方法从 onSecondaryTapDown fire-and-forget 调用，异常会逃出当前 zone 被记为
     // fatal（main.dart runZonedGuarded）——WebView 半销毁 / 插件通道异常时右键
@@ -269,6 +277,11 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         ReaderSelectionScripts.nativeSelectionTextFromResult(rawText);
     if (selectedText.isEmpty) return;
     if (!mounted) return;
+
+    // A native WebView2 popup surface is above Flutter routes on Windows. Move
+    // it back to the warm slot before opening the Flutter context menu; pruning
+    // does not clear the reader's native text selection.
+    _webviewPrunePopupStack(0);
 
     final RenderBox overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
@@ -404,6 +417,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         return;
       default:
         return;
+    }
+    } finally {
+      _readerTextContextMenuActive = false;
     }
   }
 

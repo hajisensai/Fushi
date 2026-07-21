@@ -1176,6 +1176,16 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       maxDurationMs: _kAudiobookClipMaxDurationMs,
     );
     if (!result.isExportable) return null;
+
+    // Aligned cues are subtitle data, not necessarily the exact EPUB text the
+    // user selected. Mismatches must use the static exact-selection card.
+    if (!audiobookClipCueTextMatchesSelection(
+      selectedText: classifyText,
+      cueSpans: result.cueSpans,
+    )) {
+      return null;
+    }
+
     // TODO-1127：把选区里抽取到的插图按归一化文档位置分配到各 cue 段之后。cue 的
     // normCharStart 从 sasayaki 编码的 textFragmentId 解出（解不出的 cue 传 null，不作
     // 归属锚点）；`span` 与 result.cueSpans 同序等长（classify 只包一层不可变拷贝），故
@@ -1229,6 +1239,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     File? audioClip;
     File? imageFile;
     File? videoFile;
+    bool retainAudioClipForShare = false;
     Directory? framesDir;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
@@ -1422,16 +1433,20 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
         }
       } else {
-        await HibikiShare.shareFiles(
-          <XFile>[
-            XFile(
-              outPath,
-              // BUG-809：容器与编码器一致（桌面 mp4/h264 / 移动 mov/mjpeg）。
-              mimeType: useH264 ? 'video/mp4' : 'video/quicktime',
-            ),
-          ],
-          subject: text,
-        );
+        final List<XFile> sharedFiles = <XFile>[
+          XFile(
+            outPath,
+            // BUG-809：容器与编码器一致（桌面 mp4/h264 / 移动 mov/mjpeg）。
+            mimeType: useH264 ? 'video/mp4' : 'video/quicktime',
+          ),
+        ];
+        if (!useH264) {
+          // Some mobile receivers ignore AAC embedded in MJPEG/MOV. Share the
+          // exact clipped AAC beside the video so the export never loses audio.
+          sharedFiles.add(XFile(audioClip.path, mimeType: 'audio/aac'));
+          retainAudioClipForShare = true;
+        }
+        await HibikiShare.shareFiles(sharedFiles, subject: text);
         if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
       }
     } catch (e, stack) {
@@ -1443,7 +1458,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       _audiobookClipExporting = false;
       // 清理临时中间文件。桌面端最终视频已 copy 到用户选定路径，可一并清理；移动端
       // 系统 Share 异步读取 outPath，保留视频文件供其读取，仅清理音频/图中间产物。
-      await _deleteClipTempFile(audioClip);
+      if (!retainAudioClipForShare) {
+        await _deleteClipTempFile(audioClip);
+      }
       await _deleteClipTempFile(imageFile);
       // TODO-1115：动态路径的 N 帧 JPEG 序列帧目录一并清理（无论成功/回退/桌面/移动）。
       await _deleteClipFramesDir(framesDir);
