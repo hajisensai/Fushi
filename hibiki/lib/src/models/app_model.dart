@@ -537,6 +537,12 @@ class AppModel with ChangeNotifier {
   /// (the late fields are reassigned, so the old DB would otherwise leak).
   bool _databaseOpened = false;
 
+  /// Whether [database] is safe to read. False before any init path has opened
+  /// the DB (and while a test seam deliberately leaves [_database] unset), so
+  /// callers outside the init flow must gate [database] access on this instead
+  /// of risking a LateInitializationError.
+  bool get isDatabaseReady => _databaseOpened;
+
   /// Theme management, extracted from AppModel for testability.
   late ThemeNotifier themeNotifier;
   bool _themeListenerAdded = false;

@@ -121,8 +121,15 @@ String dictionaryFontStyleJs(AppModel appModel) {
   // font. The dictionary font list is persisted in the DB (`dict_fonts`), so
   // read it through a DB-backed ReaderSettings when no reader is live — the
   // overlay then applies the SAME font whether or not a book is open.
-  final ReaderSettings settings =
-      ReaderHibikiSource.readerSettings ?? ReaderSettings(appModel.database);
+  // Prefer the live reader's settings; otherwise a DB-backed ReaderSettings so
+  // the persisted dictionary font list still applies with no book open. Only
+  // touch `appModel.database` when it is actually open — early / test seams leave
+  // it uninitialised and reading it would throw LateInitializationError. When
+  // unavailable, fall back to no injected font (pre-fix behaviour); in the real
+  // app-external lookup flow the DB is always open by then, so the font applies.
+  final ReaderSettings? settings = ReaderHibikiSource.readerSettings ??
+      (appModel.isDatabaseReady ? ReaderSettings(appModel.database) : null);
+  if (settings == null) return '';
   final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
     settings.dictionaryFonts,
     allowedDirectories: <String>[
