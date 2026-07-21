@@ -27,12 +27,12 @@ void main() {
       expect(kGalgameHelperReleaseTag, 'voice-hook-helper');
     });
 
-    test('helper 默认走独立仓库 hibiki-voice-hook（非主 app 仓库）', () {
-      expect(kGalgameHelperRepo, 'hajisensai/hibiki-voice-hook');
+    test('helper 默认走独立仓库 hibiki-hook（非主 app 仓库）', () {
+      expect(kGalgameHelperRepo, 'hajisensai/hibiki-hook');
       expect(galgameHelperDownloadUrl('x64'),
-          startsWith('https://github.com/hajisensai/hibiki-voice-hook/'));
+          startsWith('https://github.com/hajisensai/hibiki-hook/'));
       expect(galgameHelperSha256Url('x86'),
-          startsWith('https://github.com/hajisensai/hibiki-voice-hook/'));
+          startsWith('https://github.com/hajisensai/hibiki-hook/'));
     });
 
     test('sha256 侧车 URL = zip URL + .sha256', () {
