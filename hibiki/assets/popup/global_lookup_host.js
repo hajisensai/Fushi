@@ -408,9 +408,9 @@
         // 深色窗:grip 提示文字改回浅色(默认的深灰在深色窗上会消失)。
         '#global-lookup-panel-bar[data-theme="dark"] .panel-grip{' +
         'color:rgba(235,235,245,0.66);}' +
-        '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.45;}' +
+        '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.62;}' +
         // 防截屏按钮关闭态（允许截图）时同样调暗，与 pin-off 一致。
-        '#global-lookup-panel-bar .panel-btn.panel-block-off{opacity:0.45;}' +
+        '#global-lookup-panel-bar .panel-btn.panel-block-off{opacity:0.62;}' +
         // Bottom-right resize grip (posts beginWindowResize).
         '#global-lookup-panel-resize{' +
         'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
