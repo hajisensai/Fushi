@@ -40,7 +40,7 @@ void main() {
     final String orchestration = _functionSource(
       src,
       'Future<void> _checkUpdateNow(',
-      'Widget _buildUpdateCustomProxyField(',
+      'UpdateChannel _channelFromSettings(',
     );
     expect(orchestration, contains('neverRemind: false'), reason: '手动检查无视免提醒');
     expect(orchestration, contains('autoInstall: false'),

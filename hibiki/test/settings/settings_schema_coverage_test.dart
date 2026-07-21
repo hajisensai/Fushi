@@ -305,6 +305,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'DEVICE: clipboard lookup destination routing main/panel/transient (test/sync/desktop_lookup_service_test.dart)',
   'lookup/Panel opacity':
       'DEVICE: floating clipboard panel opacity (native/WebView render)',
+  // 阶段 E：防截屏开关。效果是 native SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)
+  // （Windows-only，widget 树测不到）；写穿 + 即时重应用由专项测试咬住，
+  // 面板栏 🛡 按钮同路径由 clipboard_panel_controller_test 覆盖。
+  'lookup/Block screen capture':
+      'test/settings/settings_block_capture_test.dart + test/lookup/clipboard_panel_controller_test.dart (native display affinity)',
   'lookup/Auto read word on lookup': 'DEVICE: TTS auto-read',
   'lookup/Lookup audio volume':
       'test/reader/lookup_audio_volume_settings_test.dart + test/utils/misc/lookup_audio_volume_wiring_static_test.dart + test/settings/settings_renderer_test.dart',

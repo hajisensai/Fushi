@@ -10,7 +10,6 @@ import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_fields.dart';
 import 'package:hibiki/utils.dart';
 
 /// 视频设置唯一真相源（阶段 B）：每个条目声明一次，同时服务两个宿主——
@@ -888,9 +887,19 @@ SettingsDestination buildVideoDestination() {
           // 见 DandanplayConfig.embeddedAppId），请求自动 v2 签名，用户**无需手动输入
           // API**——故原 AppId/AppSecret 两个输入框已删除。写入 videoDanmakuConfig
           // （纯 pref），同步推进程级 DandanplayConfig.current，下次匹配弹幕即生效。
-          SettingsCustomItem(
+          SettingsTextItem(
             id: 'video.danmaku.server_url',
-            builder: _buildDanmakuServerField,
+            title: t.video_setting_danmaku_server_url,
+            icon: Icons.dns_outlined,
+            keyboardType: TextInputType.url,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDanmakuConfig.baseUrl,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await _commitVideoDanmakuConfig(
+                settingsContext,
+                (DandanplayConfig c) => c.copyWith(baseUrl: value.trim()),
+              );
+            },
           ),
         ],
       ),
@@ -1188,21 +1197,6 @@ Future<void> _commitVideoDanmakuConfig(
   final DandanplayConfig current = settingsContext.appModel.videoDanmakuConfig;
   await settingsContext.appModel.setVideoDanmakuConfig(mutate(current));
   settingsContext.refresh();
-}
-
-Widget _buildDanmakuServerField(SettingsContext settingsContext) {
-  return SettingsSecretField(
-    title: t.video_setting_danmaku_server_url,
-    icon: Icons.dns_outlined,
-    initialValue: settingsContext.appModel.videoDanmakuConfig.baseUrl,
-    keyboardType: TextInputType.url,
-    onChanged: (String value) async {
-      await _commitVideoDanmakuConfig(
-        settingsContext,
-        (DandanplayConfig c) => c.copyWith(baseUrl: value.trim()),
-      );
-    },
-  );
 }
 
 /// mpv 布尔开关的声明模板：读写同一 [AppModel.videoMpvConfig]，无 host 落 pref

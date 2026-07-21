@@ -292,6 +292,20 @@ class ClipboardPanelController {
     await _channel.setWindowAlpha((model.clipboardPanelOpacity * 100).round());
   }
 
+  /// 设置页「防截屏」开关即时生效：与面板栏 🛡 按钮同一条 native 通道
+  /// （[OverlayWindowChannel.setBlockCapture] → SetWindowDisplayAffinity），切当前
+  /// 面板窗的 display affinity；面板已显示时同步面板内 🛡 图标视觉态。pref 落库由
+  /// 调用方经 [AppModel.setClipboardPanelBlockCapture] 负责，本方法只管即时重应用
+  /// （不新起并行机制，与 [_onJsMessage] 的 `panelBlockCapture` 分支同路径）。
+  Future<void> applyBlockCapture(bool block) async {
+    if (!isSupported) return;
+    await _channel.setBlockCapture(block);
+    if (_visible) {
+      await _channel.render('window.__globalLookupHost && '
+          'window.__globalLookupHost.setPanelBlockCaptureVisual($block);');
+    }
+  }
+
   /// 面板栏 × / root 卡 ×：藏窗即可。BUG-717：不再暂停路由——下一条剪贴板复制
   /// 会经 [update] 的 `!_visible` 分支重开面板（关掉后第二个词照样弹）。
   Future<void> hidePanel() async {

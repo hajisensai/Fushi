@@ -2213,5 +2213,7 @@
   "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
   "settings_secret_show": "Show value",
   "settings_secret_hide": "Hide value",
-  "video_setting_speed_step": "Speed step"
+  "video_setting_speed_step": "Speed step",
+  "clipboard_panel_block_capture": "Block screen capture",
+  "clipboard_panel_block_capture_hint": "Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup."
 }

@@ -17,19 +17,24 @@ SettingsDestination buildAppearanceDestination() {
       SettingsSection(
         title: t.section_interface,
         items: <SettingsItem>[
+          // searchTitle 复用各自绘制行的既有标题（无新 key），让这些自定义选择器
+          // 进入设置搜索（主题/语言/明暗等此前搜不到）。
           SettingsCustomItem(
             id: 'appearance.design_system',
             icon: Icons.devices_outlined,
+            searchTitle: t.design_system_label,
             builder: buildDesignSystemSelector,
           ),
           SettingsCustomItem(
             id: 'appearance.theme',
             icon: Icons.color_lens_outlined,
+            searchTitle: t.ttu_theme,
             builder: buildThemeSelector,
           ),
           SettingsCustomItem(
             id: 'appearance.brightness',
             icon: Icons.contrast_outlined,
+            searchTitle: t.dark_mode,
             builder: buildBrightnessSelector,
           ),
           // 「界面大小」滑条用自定义有状态行：拖动中只更新局部值跟手，松手才提交
@@ -38,6 +43,7 @@ SettingsDestination buildAppearanceDestination() {
           SettingsCustomItem(
             id: 'appearance.app_ui_scale',
             icon: Icons.format_size_outlined,
+            searchTitle: t.app_ui_scale,
             builder: buildAppUiScaleSelector,
           ),
           // 「界面语言」从系统分类归位到这里：它改的是界面呈现语言，与主题/明暗/
@@ -45,6 +51,7 @@ SettingsDestination buildAppearanceDestination() {
           SettingsCustomItem(
             id: 'appearance.language',
             icon: Icons.translate_outlined,
+            searchTitle: t.options_language,
             builder: buildLanguageSelector,
           ),
         ],

@@ -7,6 +7,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_appearance.dart';
 import 'package:hibiki/src/settings/settings_search.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -237,6 +238,37 @@ void main() {
       'lookup.debounce',
       'lookup.theme_picker',
     ]);
+  });
+
+  test('appearance theme and language selectors are now searchable (阶段C)', () {
+    // 主题/语言等是 SettingsCustomItem（自绘行），阶段 C 给它们补 searchTitle
+    // （复用各自既有标题），此前空标题=不可搜，现在应能被搜索命中。
+    final SettingsDestination appearance = buildAppearanceDestination();
+    final Map<String, SettingsItem> byId = <String, SettingsItem>{
+      for (final SettingsSection s in appearance.sections)
+        for (final SettingsItem i in s.items) i.id: i,
+    };
+    final SettingsItem theme = byId['appearance.theme']!;
+    final SettingsItem language = byId['appearance.language']!;
+    // 声明了 searchTitle → 可搜（非空）。
+    expect(settingsItemSearchTitle(theme), isNotEmpty);
+    expect(settingsItemSearchTitle(language), isNotEmpty);
+
+    final List<SettingsSearchEntry> entries = <SettingsSearchEntry>[
+      SettingsSearchEntry(destination: appearance, item: theme),
+      SettingsSearchEntry(destination: appearance, item: language),
+    ];
+    // 用各自的 searchTitle 精确检索都能命中（与本机 locale 无关）。
+    expect(
+      filterSettingsEntries(entries, settingsItemSearchTitle(theme))
+          .map((SettingsSearchEntry e) => e.item.id),
+      contains('appearance.theme'),
+    );
+    expect(
+      filterSettingsEntries(entries, settingsItemSearchTitle(language))
+          .map((SettingsSearchEntry e) => e.item.id),
+      contains('appearance.language'),
+    );
   });
 
   test('home page wires search field, results and reveal hook', () {
