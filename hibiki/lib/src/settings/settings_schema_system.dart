@@ -129,7 +129,11 @@ SettingsDestination buildSystemDestination() {
         ],
       ),
       SettingsSection(
-        title: t.settings_destination_system,
+        // 文案统一（阶段 F/G）：本 section 原标题与 destination 标题同为「系统」，
+        // 搜索面包屑显示「系统 › 系统」语义重复。改为「通用」——本区聚的是版本 /
+        // 内存 / 手柄导航 / 快捷键 / GitHub 这类通用应用项。框架层另有面包屑去重
+        // （settingsSearchBreadcrumb），双保险消灭整类重复。
+        title: t.settings_section_general,
         items: <SettingsItem>[
           // 「界面语言」（id 'appearance.language'）已归位到「外观 · 界面」分区
           //（与主题/明暗/缩放并列）；id 前缀本就是 appearance，此前放系统分类

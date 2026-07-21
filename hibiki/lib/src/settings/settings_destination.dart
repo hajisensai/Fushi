@@ -11,6 +11,9 @@ enum SettingsDestinationId {
   cardCreation,
   video,
   listening,
+  // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页
+  // （可达 + 可搜）。位置紧随视频/听，在同步备份之前。
+  downloads,
   syncBackup,
   system,
   // Hibiki P2P 互联（设备直连 + 本机作为服务器）；从 syncBackup 拆出的

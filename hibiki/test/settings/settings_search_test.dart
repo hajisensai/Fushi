@@ -300,6 +300,64 @@ void main() {
     expect(search, contains('HibikiFocusScroll.ensureVisible('));
     expect(search, contains('addPostFrameCallback'));
   });
+
+  test('阶段F：搜索「快捷键」同时命中快捷键设置导航项与剪贴板查词行（标题命中优先于摘要命中）', () {
+    // 术语统一（热键→快捷键）后：快捷键设置导航项标题含「快捷键」（标题命中，
+    // 排前）；剪贴板查词行标题不含、但摘要「…全局快捷键…」含（摘要命中，排后）。
+    // 摘要参与打分本就在 filterSettingsEntries 的元数据层（e.item.subtitle），
+    // 故根因是术语不一致而非打分缺失——本测试锁住修好后两行都能被搜到。
+    final List<SettingsSearchEntry> entries = <SettingsSearchEntry>[
+      entry(
+        destTitle: '系统',
+        sectionTitle: '通用',
+        id: 'system.keyboard_shortcuts',
+        title: '快捷键设置',
+      ),
+      entry(
+        destTitle: '查词',
+        sectionTitle: '剪贴板与全局查词',
+        id: 'lookup.desktop_clipboard',
+        title: '监听剪贴板弹出查词窗',
+        subtitle: '监听剪贴板 + 全局快捷键弹出查词窗（桌面·实验性）',
+      ),
+    ];
+    final List<String> ids = filterSettingsEntries(entries, '快捷键')
+        .map((SettingsSearchEntry e) => e.item.id)
+        .toList();
+    expect(
+        ids, <String>['system.keyboard_shortcuts', 'lookup.desktop_clipboard']);
+  });
+
+  test('阶段F：zh-CN 设置文案已把「热键」统一为「快捷键」', () {
+    final String zh =
+        File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync();
+    // 剪贴板查词 hint 现含「全局快捷键」，可被搜索命中。
+    expect(zh, contains('全局快捷键弹出查词窗'));
+    // 三处旧「热键」全部改掉，zh-CN 不得残留。
+    expect(zh, isNot(contains('热键')));
+  });
+
+  test('阶段F/G：搜索面包屑在分区与分类同名时去重', () {
+    SettingsSearchEntry make(String dest, String? section) {
+      return SettingsSearchEntry(
+        destination: SettingsDestination(
+          id: SettingsDestinationId.system,
+          title: dest,
+          icon: Icons.settings,
+          sections: const <SettingsSection>[],
+        ),
+        sectionTitle: section,
+        item: SettingsActionItem(id: 'x', title: 'x', onTap: (_) {}),
+      );
+    }
+
+    // 分区名为空 / 与分类同名 → 只显示分类（消灭「系统 › 系统」整类重复）。
+    expect(settingsSearchBreadcrumb(make('系统', '系统')), '系统');
+    expect(settingsSearchBreadcrumb(make('系统', null)), '系统');
+    expect(settingsSearchBreadcrumb(make('系统', '')), '系统');
+    // 分区名有独立含义 → 拼成「分类 › 分区」。
+    expect(settingsSearchBreadcrumb(make('系统', '更新')), '系统 › 更新');
+  });
 }
 
 /// flatten 只求值 visibility 谓词（本测试全为 null），appModel 永不被触碰；

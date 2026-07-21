@@ -3,6 +3,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema_appearance.dart';
 import 'package:hibiki/src/settings/settings_schema_card_creation.dart';
+import 'package:hibiki/src/settings/settings_schema_downloads.dart';
 import 'package:hibiki/src/settings/settings_schema_listening.dart';
 import 'package:hibiki/src/settings/settings_schema_lookup.dart';
 import 'package:hibiki/src/settings/settings_schema_profiles.dart';
@@ -21,6 +22,8 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
     buildCardCreationDestination(),
     buildVideoDestination(),
     buildListeningDestination(),
+    // 「下载」大类：内联既有 torrent 设置组件（详见 buildDownloadsDestination）。
+    buildDownloadsDestination(),
     buildSyncBackupDestination(),
     // Hibiki 互联从同步分类拆出的独立一级分类（构建函数在 sync_settings_schema
     // 同库，与同步共享私有状态）。
