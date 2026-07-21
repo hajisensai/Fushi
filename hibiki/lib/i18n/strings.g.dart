@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 37604 (2212 per locale)
+/// Strings: 37774 (2222 per locale)
 ///
-/// Built on 2026-07-21 at 10:28 UTC
+/// Built on 2026-07-21 at 14:46 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2945,6 +2945,21 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get sync_google_drive_hoshi_compat => 'Share progress with Hoshi / ッツ';
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  String get interconnect_upload_content => 'Upload book files';
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  String get interconnect_upload_video_files => 'Upload video files';
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -7948,6 +7963,31 @@ class _StringsAr extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -13024,6 +13064,31 @@ class _StringsDe extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -18116,6 +18181,31 @@ class _StringsEs extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -23219,6 +23309,31 @@ class _StringsFr extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -28249,6 +28364,31 @@ class _StringsId extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -33327,6 +33467,31 @@ class _StringsIt extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -38210,6 +38375,31 @@ class _StringsJa extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -43096,6 +43286,31 @@ class _StringsKo extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -48152,6 +48367,31 @@ class _StringsNl extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -53223,6 +53463,31 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -58277,6 +58542,31 @@ class _StringsRu extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -63276,6 +63566,31 @@ class _StringsTh extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -68307,6 +68622,31 @@ class _StringsTr extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -73325,6 +73665,31 @@ class _StringsVi extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 // Path: <root>
@@ -77994,6 +78359,29 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       '通过共享的 Google Drive 文件夹（ttu-reader-data）同步阅读进度。需完整 Drive 权限并重新登录。';
+  @override
+  String get interconnect_upload_section => '上传到互联对端';
+  @override
+  String get interconnect_upload_section_footer =>
+      '选择本设备要把哪些内容上传到已连接的互联对端。与云备份、以及「启用互联」连接开关互不影响；默认全部关闭。';
+  @override
+  String get interconnect_upload_content => '上传书籍文件';
+  @override
+  String get interconnect_upload_content_hint => '把本设备的书籍/阅读内容上传同步到互联对端。';
+  @override
+  String get interconnect_upload_dictionary => '上传词典';
+  @override
+  String get interconnect_upload_dictionary_hint => '把本设备的词典上传同步到互联对端。';
+  @override
+  String get interconnect_upload_audiobook_files => '上传有声书文件';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      '把本设备的有声书音频+字幕包上传同步到互联对端（体积较大）。';
+  @override
+  String get interconnect_upload_video_files => '上传视频文件';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      '把本设备的本地视频文件上传同步到互联对端（体积较大）。';
 }
 
 // Path: <root>
@@ -82796,6 +83184,31 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get sync_google_drive_hoshi_compat_desc =>
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+  @override
+  String get interconnect_upload_section => 'Upload to interconnect peer';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+  @override
+  String get interconnect_upload_content => 'Upload book files';
+  @override
+  String get interconnect_upload_content_hint =>
+      'Sync this device\'s books and reading content up to the interconnect peer.';
+  @override
+  String get interconnect_upload_dictionary => 'Upload dictionaries';
+  @override
+  String get interconnect_upload_dictionary_hint =>
+      'Sync this device\'s dictionaries up to the interconnect peer.';
+  @override
+  String get interconnect_upload_audiobook_files => 'Upload audiobook files';
+  @override
+  String get interconnect_upload_audiobook_files_hint =>
+      'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+  @override
+  String get interconnect_upload_video_files => 'Upload video files';
+  @override
+  String get interconnect_upload_video_files_hint =>
+      'Sync this device\'s local video files up to the interconnect peer (large).';
 }
 
 /// Flat map(s) containing all translations.
@@ -87312,6 +87725,26 @@ extension on _StringsEn {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -91826,6 +92259,26 @@ extension on _StringsAr {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -96361,6 +96814,26 @@ extension on _StringsDe {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -100895,6 +101368,26 @@ extension on _StringsEs {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -105435,6 +105928,26 @@ extension on _StringsFr {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -109957,6 +110470,26 @@ extension on _StringsId {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -114494,6 +115027,26 @@ extension on _StringsIt {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -118993,6 +119546,26 @@ extension on _StringsJa {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -123496,6 +124069,26 @@ extension on _StringsKo {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -128026,6 +128619,26 @@ extension on _StringsNl {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -132553,6 +133166,26 @@ extension on _StringsPtBr {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -137085,6 +137718,26 @@ extension on _StringsRu {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -141601,6 +142254,26 @@ extension on _StringsTh {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -146126,6 +146799,26 @@ extension on _StringsTr {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -150646,6 +151339,26 @@ extension on _StringsVi {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
@@ -155132,6 +155845,26 @@ extension on _StringsZhCn {
         return '与 Hoshi / ッツ 共享进度';
       case 'sync_google_drive_hoshi_compat_desc':
         return '通过共享的 Google Drive 文件夹（ttu-reader-data）同步阅读进度。需完整 Drive 权限并重新登录。';
+      case 'interconnect_upload_section':
+        return '上传到互联对端';
+      case 'interconnect_upload_section_footer':
+        return '选择本设备要把哪些内容上传到已连接的互联对端。与云备份、以及「启用互联」连接开关互不影响；默认全部关闭。';
+      case 'interconnect_upload_content':
+        return '上传书籍文件';
+      case 'interconnect_upload_content_hint':
+        return '把本设备的书籍/阅读内容上传同步到互联对端。';
+      case 'interconnect_upload_dictionary':
+        return '上传词典';
+      case 'interconnect_upload_dictionary_hint':
+        return '把本设备的词典上传同步到互联对端。';
+      case 'interconnect_upload_audiobook_files':
+        return '上传有声书文件';
+      case 'interconnect_upload_audiobook_files_hint':
+        return '把本设备的有声书音频+字幕包上传同步到互联对端（体积较大）。';
+      case 'interconnect_upload_video_files':
+        return '上传视频文件';
+      case 'interconnect_upload_video_files_hint':
+        return '把本设备的本地视频文件上传同步到互联对端（体积较大）。';
       default:
         return null;
     }
@@ -159626,6 +160359,26 @@ extension on _StringsZhHk {
         return 'Share progress with Hoshi / ッツ';
       case 'sync_google_drive_hoshi_compat_desc':
         return 'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
+      case 'interconnect_upload_section':
+        return 'Upload to interconnect peer';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      case 'interconnect_upload_content':
+        return 'Upload book files';
+      case 'interconnect_upload_content_hint':
+        return 'Sync this device\'s books and reading content up to the interconnect peer.';
+      case 'interconnect_upload_dictionary':
+        return 'Upload dictionaries';
+      case 'interconnect_upload_dictionary_hint':
+        return 'Sync this device\'s dictionaries up to the interconnect peer.';
+      case 'interconnect_upload_audiobook_files':
+        return 'Upload audiobook files';
+      case 'interconnect_upload_audiobook_files_hint':
+        return 'Sync this device\'s audiobook audio and subtitle packages up to the interconnect peer (large).';
+      case 'interconnect_upload_video_files':
+        return 'Upload video files';
+      case 'interconnect_upload_video_files_hint':
+        return 'Sync this device\'s local video files up to the interconnect peer (large).';
       default:
         return null;
     }
