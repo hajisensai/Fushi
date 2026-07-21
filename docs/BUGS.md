@@ -27,10 +27,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 957 条。点号进各自文件。
+> 共 963 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-996](bugs/BUG-996-remote-video-resume-and-subtitle-delay-sync.md) | ✅ | ✅ | 互联远端视频不续播(从头)+ 字幕调轴(delay)不同步 |
+| [BUG-995](bugs/BUG-995-video-overview-hero-excludes-remote.md) | ✅ | ✅ | 视频页「继续观看」+「媒体库概览」在只有远端视频时不显示且不计入远端 |
+| [BUG-994](bugs/BUG-994-video-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回视频 tab 不自动拉远端视频(远端视频要手动下拉刷新才出来) |
+| [BUG-992](bugs/BUG-992-shelf-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回书架 tab 不自动拉远端书(远端书+书库概览总数要手动下拉刷新才补齐) |
+| [BUG-991](bugs/BUG-991-shelf-overview-total-excludes-remote.md) | ✅ | ✅ | 书架「书库概览」总数漏算远端书(只数本地卡,不数书架上可见的互联远端占位卡) |
+| [BUG-990](bugs/BUG-990-interconnect-audiobook-download-loading-gap.md) | ✅ | ✅ | 互联下载有声书两阶段之间露出「无转圈的普通书」(空窗期本地卡缺加载指示) |
 | [BUG-989](bugs/BUG-989-interconnect-book-collection-count-remote.md) | ✅ | ✅ | 互联书籍合集行计数未计入远端占位书 |
 | [BUG-988](bugs/BUG-988-interconnect-upload-toggles.md) | ✅ | ✅ | 互联解耦后失去「独立控制上不上传到互联对端」的能力 |
 | [BUG-987](bugs/BUG-987-interconnect-pair-dialog-latch.md) | ✅ | ✅ | 互联首次配对失败后刷新不再弹申请框、只提示失败 |

@@ -94,8 +94,8 @@ void main() {
         File('lib/src/pages/implementations/home_video_page.dart')
             .readAsStringSync();
     // 概览门控必须含 remoteVideos（否则无本地视频时整块消失）。
-    expect(videoSrc.contains('all.isNotEmpty || remoteVideos.isNotEmpty'),
-        isTrue,
+    expect(
+        videoSrc.contains('all.isNotEmpty || remoteVideos.isNotEmpty'), isTrue,
         reason: 'BUG-995：概览门控必须并入 remoteVideos');
     // _buildOverviewSection 必须接收 remoteVideos 并把它们并进概览 entries。
     expect(
