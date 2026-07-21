@@ -163,8 +163,9 @@ void main() {
     );
   });
 
-  test('floating lyric window remains toolwindow/noactivate/shownoactivate',
-      () {
+  test(
+      'floating lyric window stays noactivate/shownoactivate; only the '
+      'clipboard text window opts into the taskbar', () {
     final String cpp = read('windows/runner/floating_lyric_window.cpp');
     final int createWindow = cpp.indexOf('CreateWindowExW(');
     final int showWindow = cpp.indexOf('ShowWindow(hwnd_,', createWindow);
@@ -172,9 +173,27 @@ void main() {
     expect(showWindow, isNonNegative);
     final String createBlock = cpp.substring(createWindow, showWindow);
 
-    expect(createBlock.contains('WS_EX_TOOLWINDOW'), isTrue);
+    // Foreground-safety invariant (the real point of this guard): the window
+    // must never steal activation, whether or not it shows in the taskbar.
     expect(createBlock.contains('WS_EX_NOACTIVATE'), isTrue);
     expect(cpp.contains('ShowWindow(hwnd_, SW_SHOWNOACTIVATE)'), isTrue);
+
+    // Taskbar contract: only the transparent clipboard text window
+    // (`text_only_ && !hook_text_mode_`) enters the taskbar / Alt-Tab via
+    // WS_EX_APPWINDOW so the user can find/raise the otherwise-invisible overlay;
+    // the audiobook lyric strip and the galgame hook window keep
+    // WS_EX_TOOLWINDOW (off the taskbar). The branch lives in `taskbar_ex`, and
+    // CreateWindowExW must consume it rather than hard-coding an ex-style.
+    expect(
+      cpp.contains('(text_only_ && !hook_text_mode_) '
+          '? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW'),
+      isTrue,
+      reason: 'lyric strip / hook window keep TOOLWINDOW; only the clipboard '
+          'text window uses APPWINDOW.',
+    );
+    expect(createBlock.contains('taskbar_ex'), isTrue,
+        reason: 'CreateWindowExW must use the taskbar_ex branch, not a '
+            'hard-coded ex-style.');
   });
 
   // TODO-615 方案A：原生 runner 必须提供主动熄灭任务栏高亮的能力
