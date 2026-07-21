@@ -9,7 +9,7 @@
   - 新增 helper `hibiki/lib/src/platform/desktop/macos_traffic_lights.dart`：`setMacOSTrafficLightsHidden(bool)`，`Platform.isMacOS` 门控，调 `WindowManipulator.hide/showClose|Miniaturize|ZoomButton`（底层 `NSWindow.standardWindowButton.isHidden`）；非 macOS no-op，channel 失败以 debug 日志吞掉。
   - `video_hibiki_page.dart` initState 隐藏（`setMacOSTrafficLightsHidden(true)`）、dispose 恢复（`false`）。
   - `video_hibiki/fullscreen.part.dart` `_exitVideoNativeFullscreen` 桌面分支：`await defaultExitNativeFullscreen()` 后**重新断言隐藏**——AppKit 退全屏重建标题栏视图可能把 `isHidden` 复位，不 re-hide 则退全屏回窗口态交通灯复现遮挡。
-  - 提交哈希：（提交后回填）
+  - 提交哈希：`7f005a4d1`（fix(video): BUG-971 hide macOS traffic lights while in video page）
 - **[x] ② 已加自动化测试** — `hibiki/test/video/macos_video_trafficlight_hide_guard_test.dart`（源码扫描守卫）：
   - helper 必须 `Platform.isMacOS` 门控 + 隐藏/恢复全部三个按钮（部分隐藏仍遮挡）。
   - 视频页 initState 隐藏、dispose 恢复。
