@@ -175,7 +175,6 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.fontFamily,
     this.respectAssStyle = false,
-    this.assUserFontScale = 1.0,
     super.key,
   });
 
@@ -288,16 +287,6 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 外观像素级一致（仅行内 \i \b \u \s \c \fs 这些旧就支持的 span 样式照旧生效——那是本开关
   /// 出现前既有行为、不受影响）。
   final bool respectAssStyle;
-
-  /// 尊重 .ass 模式下的**用户字号倍率**（mpv `sub-scale` 同语义，BUG-915）。
-  ///
-  /// 此前 [respectAssStyle] 开时 ASS 绝对字号完全接管、[fontSize] 滑块失效——用户要调
-  /// 大小只能关掉尊重开关（又会失去自带样式，特效字幕塌成叠印乱字）。本倍率乘在 ASS
-  /// 字号换算出的 em 上：页面传「用户字号基准 / 默认 36」，默认基准时 =1.0（完全按作者
-  /// 字号，mpv 平价基线不变），滑块±即整体缩放。只乘字号，不乘描边/阴影/字间距/边距
-  /// （对齐 mpv `sub-scale` 只缩文字的语义）；不含屏幕自适应因子（ASS 路径已按显示区
-  /// 几何缩放，再叠屏幕因子会双重放大）。respectAssStyle 关时不参与（[fontSize] 直用）。
-  final double assUserFontScale;
 
   /// 听力沉浸「模糊态」的高斯模糊 sigma（逻辑像素）。以前是硬编码 8——一个只对默认字号
   /// 36 勉强够用的绝对值（8/36≈0.22×字宽），用户把字幕字号调大后同样的 8px 相对字形就
@@ -1772,12 +1761,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             : _fontWeight(widget.fontWeight));
     final bool baseItalic = respect && (cue?.italic ?? false);
     // ASS 字号 → em：先按 PlayRes 占比缩放，再按字体 cell/em 系数校准
-    // （libass REAL_DIM 语义，见 [_assFontSizeToEm]），再乘用户字号倍率
-    // （[VideoSubtitleOverlay.assUserFontScale]，mpv sub-scale 语义，BUG-915），最后夹上限。
+    // （libass REAL_DIM 语义，见 [_assFontSizeToEm]），再乘缺字体栅格补偿，最后夹
+    // 上限。尊重模式完全按作者字号（mpv 平价）：曾有 assUserFontScale 用户倍率通道
+    // （mpv sub-scale），BUG-915 后按用户决策取消——尊重即尊重字号，滑块不参与。
     final double baseFontSize = cueFontPx != null
         ? _scaleAssFontSize(_assFontSizeToEm(cueFontPx * assFontScale,
                 baseFontFamily, baseWeight, baseItalic) *
-            widget.assUserFontScale *
             baseMissingFontRasterCompensation.fontScale)
         : widget.fontSize;
 
@@ -1853,7 +1842,6 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
                       spanFontFamily ?? baseFontFamily,
                       span.bold ? FontWeight.bold : baseWeight,
                       span.italic || baseItalic) *
-                  widget.assUserFontScale *
                   spanMissingFontRasterCompensation.fontScale)
               : span.fontSizePx!)
           : base.fontSize,
