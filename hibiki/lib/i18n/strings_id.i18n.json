@@ -2227,5 +2227,6 @@
   "shortcut_action_reader_exit_book": "Exit book",
   "clipboard_text_window_title": "Clipboard text",
   "settings_secret_show": "Show value",
-  "settings_secret_hide": "Hide value"
+  "settings_secret_hide": "Hide value",
+  "video_setting_speed_step": "Speed step"
 }

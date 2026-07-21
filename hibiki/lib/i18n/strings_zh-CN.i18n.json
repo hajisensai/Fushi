@@ -2227,5 +2227,6 @@
   "shortcut_action_reader_exit_book": "退出书籍",
   "clipboard_text_window_title": "剪贴板文字",
   "settings_secret_show": "显示内容",
-  "settings_secret_hide": "隐藏内容"
+  "settings_secret_hide": "隐藏内容",
+  "video_setting_speed_step": "倍速步进"
 }

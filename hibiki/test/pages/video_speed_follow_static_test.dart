@@ -18,43 +18,53 @@ import 'video_hibiki_page_source_corpus.dart';
 /// call @protected State.setState) — behaviour-identical, so the assertion
 /// tracks the new form.
 void main() {
-  final File sheet =
-      File('lib/src/media/video/video_quick_settings_sheet.dart');
+  // 阶段B：倍速行声明移入 settings_schema_video.dart（'video.player.speed'），
+  // onPreviewSpeed/onSetSpeed 回调声明移入类型化 VideoQuickSettingsHost；
+  // 第一个测试改锁这两个新位置（保护不变：拖动实时预览、松手才落盘）。
+  final File schema = File('lib/src/settings/settings_schema_video.dart');
+  final File host = File('lib/src/media/video/video_quick_settings_host.dart');
 
   late String pageSrc;
-  late String sheetSrc;
+  late String schemaSrc;
+  late String hostSrc;
 
   setUpAll(() {
-    expect(sheet.existsSync(), isTrue);
+    expect(schema.existsSync(), isTrue);
+    expect(host.existsSync(), isTrue);
     pageSrc = readVideoHibikiSource();
-    sheetSrc = sheet.readAsStringSync();
+    schemaSrc = schema.readAsStringSync();
+    hostSrc = host.readAsStringSync();
   });
 
   String pageRegion(String startSig, String endSig) =>
       _region(pageSrc, startSig, endSig);
 
-  String sheetRegion(String startSig, String endSig) =>
-      _region(sheetSrc, startSig, endSig);
-
   test('settings speed slider has a live preview callback before commit', () {
-    expect(sheetSrc.contains('required this.onPreviewSpeed'), isTrue);
+    expect(hostSrc.contains('required this.onPreviewSpeed'), isTrue);
     expect(
-      sheetSrc.contains(
+      hostSrc.contains(
         'final Future<void> Function(double speed) onPreviewSpeed',
       ),
       isTrue,
     );
 
-    final String speedRow = sheetRegion(
-      'Widget _buildSpeedRow() {',
-      'double _snapSpeed(double v)',
+    // schema 里的倍速行：onChanged 走 onPreviewSpeed（吸附后即时下发、不落盘），
+    // onChangeEnd 走 onSetSpeed（最终提交 + 持久化）。
+    final String speedRow = _region(
+      schemaSrc,
+      "id: 'video.player.speed'",
+      "id: 'video.playback.speed_step'",
     );
-    expect(
-        speedRow.contains('unawaited(widget.onPreviewSpeed(snapped))'), isTrue,
+    expect(speedRow.contains('onPreviewSpeed(snapVideoSpeed(v))'), isTrue,
         reason:
             'onChanged must preview snapped speed without waiting for DB commit');
-    expect(speedRow.contains('await widget.onSetSpeed(snapped)'), isTrue,
+    expect(speedRow.contains('onSetSpeed(snapVideoSpeed(v))'), isTrue,
         reason: 'onChangeEnd remains the final commit path');
+    final int previewIdx = speedRow.indexOf('onChanged:');
+    final int commitIdx = speedRow.indexOf('onChangeEnd:');
+    expect(previewIdx, greaterThanOrEqualTo(0));
+    expect(commitIdx, greaterThan(previewIdx),
+        reason: 'preview (onChanged) precedes commit (onChangeEnd)');
   });
 
   test('video page wires speed preview as non-persistent and commit as durable',

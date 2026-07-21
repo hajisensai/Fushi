@@ -27,31 +27,49 @@ void main() {
     expect(prefs, contains('setVideoControlLayout'));
   });
 
-  test('quick settings owns the staged control drag editor', () {
-    final String settings =
-        read('lib/src/media/video/video_quick_settings_sheet.dart');
+  // 阶段B：_buildControlDragEditor 系列从 sheet 原样抽为独立控件
+  // VideoControlLayoutEditor（video_control_layout_editor.dart），以 schema 的
+  // 'video.player.controls_editor' 自定义项接入面板；守卫改锁新位置。
+  // initialControlLayout 参数已删——布局改经 `layout` + didUpdateWidget 同步，
+  // host 侧是 controlLayout() getter。
+  test('the staged control drag editor lives in its own schema-wired widget',
+      () {
+    final String editor =
+        read('lib/src/media/video/video_control_layout_editor.dart');
 
-    expect(settings, contains('initialControlLayout'));
-    expect(settings, contains('onControlLayoutChanged'));
+    expect(editor, contains('class VideoControlLayoutEditor'));
+    expect(editor, contains('final VideoControlLayout layout;'));
+    expect(editor, contains('onLayoutChanged'));
+    expect(editor, isNot(contains('initialControlLayout')),
+        reason: '外部布局改经 layout + didUpdateWidget 同步（重置行是并列 schema action）');
+    expect(editor, contains('didUpdateWidget'));
 
-    expect(settings, contains('_buildControlDragEditor'));
-    expect(settings, contains('_buildControlStagePreview'));
-    expect(settings, contains('DragTarget<VideoControlDragData>'));
-    expect(settings, contains('Draggable<VideoControlDragData>'));
-    expect(settings, contains('VideoControlSlot.hidden'));
-    expect(settings, contains('Tooltip('));
-    expect(settings, contains('Semantics('));
-    expect(settings, isNot(contains('Icons.drag_indicator')));
+    expect(editor, contains('_buildControlStagePreview'));
+    expect(editor, contains('DragTarget<VideoControlDragData>'));
+    expect(editor, contains('Draggable<VideoControlDragData>'));
+    expect(editor, contains('VideoControlSlot.hidden'));
+    expect(editor, contains('Tooltip('));
+    expect(editor, contains('Semantics('));
+    expect(editor, isNot(contains('Icons.drag_indicator')));
+
+    // schema 声明编辑器行，actions builder 把 host 权威布局 + 回调接进编辑器。
+    final String schema = read('lib/src/settings/settings_schema_video.dart');
+    expect(schema, contains("id: 'video.player.controls_editor'"));
+    expect(schema, contains('buildVideoControlLayoutEditor'));
+    final String actions =
+        read('lib/src/media/video/video_settings_actions.dart');
+    expect(actions, contains('layout: host.controlLayout()'));
+    expect(actions, contains('onLayoutChanged: host.onControlLayoutChanged'));
   });
 
-  test('quick settings editor does not depend on the onscreen overlay file',
+  test('control layout editor does not depend on the onscreen overlay file',
       () {
-    final String settings =
-        read('lib/src/media/video/video_quick_settings_sheet.dart');
+    final String editor =
+        read('lib/src/media/video/video_control_layout_editor.dart');
 
-    expect(settings, isNot(contains('video_control_layout_edit_overlay.dart')));
-    expect(settings, isNot(contains('VideoControlLayoutEditOverlay')));
-    expect(settings, isNot(contains('t.video_control_edit_on_video')));
+    expect(editor, isNot(contains('video_control_layout_edit_overlay.dart')));
+    expect(editor, isNot(contains('VideoControlLayoutEditOverlay')));
+    expect(editor, isNot(contains('t.video_control_edit_on_video')));
   });
 
   test('saved on-video layout notifies the active controls builder immediately',
@@ -59,8 +77,10 @@ void main() {
     final String page = readVideoHibikiSource();
     final int setStart = page.indexOf('Future<void> _setVideoControlLayout');
     expect(setStart, greaterThanOrEqualTo(0));
+    // 阶段B：死代码 _showVideoControlEditOverlay 已删（旧面板从未渲染其入口），
+    // _setVideoControlLayout 的紧邻后继改为仍在用的 _hideVideoControlEditOverlay。
     final int setEnd =
-        page.indexOf('void _showVideoControlEditOverlay', setStart);
+        page.indexOf('void _hideVideoControlEditOverlay', setStart);
     expect(setEnd, greaterThan(setStart));
     final String setBody = page.substring(setStart, setEnd);
 
@@ -100,7 +120,8 @@ void main() {
     expect(
       page,
       contains('layout: layout,'),
-      reason: '画面上编辑 overlay 也应消费 notifier 的最新 layout',
+      reason: 'controls 主题/布局消费方也应消费 notifier 的最新 layout'
+          '（阶段B：画面上编辑 overlay 已删，消费点在 controls_theme/layout part）',
     );
   });
 

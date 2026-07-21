@@ -159,12 +159,15 @@ void main() {
     expect(clearHoverBody.contains('_railHovered.value = true'), isFalse,
         reason: '清 hover helper 不能恢复旧 hover');
 
+    // 阶段B：`_showVideoControlEditOverlay()`（画面内拖拽编辑入口）已删——旧面板只
+    // 声明了 onEditControlsOnscreen 参数从未渲染入口，该 show 路径本就不可达；控件
+    // 编辑改在设置面板「控制」分类内嵌（VideoControlLayoutEditor）。清 hover 守卫
+    // 只剩三个真实的强压制态入口；关闭路径（_hideVideoControlEditOverlay）仍在，
+    // 下方「退出不恢复旧 hover」断言继续咬住。
     final Map<String, String> enterHooks = <String, String>{
       'void _toggleSubtitleJumpList()': '_subtitleListVisible.value = true',
       'void _showVideoSidePanel(':
           '_videoSidePanel.value = _VideoSidePanelState',
-      'void _showVideoControlEditOverlay()':
-          '_videoControlEditMode.value = true',
       'void _toggleImmersiveLock()': 'if (next)',
     };
 

@@ -24,17 +24,27 @@ void main() {
   });
 
   test('设置面板 → 视频页把 mpv 目录初值/回调接到 appModel 持久化', () {
-    final String sheet =
-        read('lib/src/media/video/video_quick_settings_sheet.dart');
-    expect(sheet.contains('initialMpvShaderDir'), isTrue);
-    expect(sheet.contains('onMpvShaderDirChanged'), isTrue);
+    // 阶段B：着色器管理视图的 builder 移入 video_settings_actions.dart——初值
+    // 直接读 pref（context.appModel.videoMpvShaderDir），回调经 host
+    // （onMpvShaderDirChanged）回视频页持久化；守卫改锁 actions + host + 页面。
+    final String actions =
+        read('lib/src/media/video/video_settings_actions.dart');
+    expect(
+        actions.contains('initialMpvDir: context.appModel.videoMpvShaderDir'),
+        isTrue,
+        reason: '初值取自持久化的 mpv 目录（actions builder 直接读 pref）');
+    expect(actions.contains('onMpvShaderDirChanged'), isTrue,
+        reason: '选定目录经 host 回调上报');
+
+    final String host =
+        read('lib/src/media/video/video_quick_settings_host.dart');
+    expect(host.contains('onMpvShaderDirChanged'), isTrue,
+        reason: 'host 能力槽声明 mpv 目录回调');
 
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
-    expect(page.contains('appModel.videoMpvShaderDir'), isTrue,
-        reason: '初值取自持久化的 mpv 目录');
     expect(page.contains('appModel.setVideoMpvShaderDir('), isTrue,
-        reason: '选定目录落库持久化');
+        reason: '选定目录落库持久化（页面回调）');
   });
 
   test('着色器视图有「粘贴链接下载」流程（不必装 mpv）', () {

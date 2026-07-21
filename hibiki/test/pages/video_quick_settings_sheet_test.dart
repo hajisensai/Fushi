@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,21 +7,30 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
-import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
-import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_side_panel.dart';
+import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_video.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
-VideoQuickSettingsSheet _sheet({
+import '../helpers/video_quick_settings_harness.dart';
+
+// 阶段 B：VideoQuickSettingsSheet 改消费 settings schema 投影（唯一真相源
+// settings_schema_video.dart + VideoQuickSettingsHost 能力槽），旧 ~60 个构造参数
+// 全部收敛进 host / prefs。本文件的行为断言（分类外壳、行控件类型、回调写穿、
+// 键位/几何）保持不变；构造改走共享 harness（内存 DB AppModel + 可变状态 host，
+// 见 video_quick_settings_harness.dart）。旧 `initial*` 参数按数据归属拆两路：
+// pref 背书的行先写 appModel（面板从 prefs 读初值），页面权威值（延迟/字幕样式/
+// 控件布局）进 TestVideoHostState。
+Future<VideoSheetHarness> _pumpSheet(
+  WidgetTester tester, {
   void Function(int)? onSetDelay,
   void Function(double)? onPreviewSpeed,
   void Function(double)? onSetSpeed,
@@ -29,11 +39,12 @@ VideoQuickSettingsSheet _sheet({
   void Function(VideoFitMode mode)? onVideoFitModeChanged,
   void Function(VideoImmersiveMode mode)? onImmersiveModeChanged,
   void Function(VideoControlLayout layout)? onControlLayoutChanged,
-  VoidCallback? onEditControlsOnscreen,
   VideoControlLayout? initialControlLayout,
   bool isTouchControls = false,
   VideoFitMode initialVideoFitMode = VideoFitMode.cover,
+  VideoImmersiveMode initialImmersiveMode = VideoImmersiveMode.lookupOnly,
   double uiScale = 1.0,
+  double? wrapScale,
   int initialDelayMs = 0,
   VideoSubtitleStyle? initialSubtitleStyle,
   void Function(VideoSubtitleStyle)? onSubtitleStylePreview,
@@ -46,79 +57,57 @@ VideoQuickSettingsSheet _sheet({
   Widget? subtitleTrackSection,
   VoidCallback? onSubtitleCategoryShown,
   VoidCallback? onSwitchToSkiaRenderer,
-}) {
-  return VideoQuickSettingsSheet(
+  Widget Function(Widget sheet)? wrap,
+}) async {
+  final VideoSheetHarness harness = await VideoSheetHarness.create();
+  addTearDown(harness.dispose);
+  // 旧 _sheet 默认 initialVideoFitMode=cover / initialImmersiveMode=lookupOnly；
+  // schema 行现在从 prefs 读初值（prefs 默认 contain / fallback=shortcutAndLookup），
+  // 先写穿 appModel 复现旧初值。
+  await harness.appModel.setVideoFitMode(initialVideoFitMode);
+  await harness.appModel.setVideoImmersiveMode(initialImmersiveMode);
+  final Widget sheet = buildVideoSheetUnderTest(
+    harness: harness,
+    host: buildTestVideoHost(
+      state: TestVideoHostState(
+        delayMs: initialDelayMs,
+        subtitleStyle: initialSubtitleStyle,
+        controlLayout: initialControlLayout,
+      ),
+      uiScale: uiScale,
+      isTouchControls: isTouchControls,
+      onSetDelay: onSetDelay,
+      onAutoAlign: onAutoAlign,
+      subtitleWaveformCues: subtitleWaveformCues,
+      loadSubtitleWaveform: loadSubtitleWaveform,
+      onPreviewSpeed: onPreviewSpeed,
+      onSetSpeed: onSetSpeed,
+      onSubtitleStylePreview: onSubtitleStylePreview,
+      onSubtitleStyleCommit: onSubtitleStyleCommit,
+      onMpvConfigChanged: onMpvConfigChanged,
+      onSelectShaderTier: onSelectShaderTier,
+      onVideoFitModeChanged: onVideoFitModeChanged,
+      onImmersiveModeChanged: onImmersiveModeChanged,
+      onControlLayoutChanged: onControlLayoutChanged,
+      onSwitchToSkiaRenderer: onSwitchToSkiaRenderer,
+      audioTrackSection: audioTrackSection,
+      subtitleTrackSection: subtitleTrackSection,
+      onSubtitleCategoryShown: onSubtitleCategoryShown,
+    ),
     initialCategory: initialCategory,
-    audioTrackSection: audioTrackSection,
-    subtitleTrackSection: subtitleTrackSection,
-    onSubtitleCategoryShown: onSubtitleCategoryShown,
-    onSwitchToSkiaRenderer: onSwitchToSkiaRenderer,
-    initialDelayMs: initialDelayMs,
-    initialSpeed: 1.0,
-    initialSubtitleObscureMode: VideoSubtitleObscureMode.none,
-    initialSecondarySubtitleObscureMode: VideoSubtitleObscureMode.none,
-    initialSubtitleStyle: initialSubtitleStyle ?? VideoSubtitleStyle.defaults,
-    onSetDelay: (int v) async => onSetDelay?.call(v),
-    onAutoAlign: onAutoAlign,
-    subtitleWaveformCues: subtitleWaveformCues,
-    videoDurationMs: 60000,
-    loadSubtitleWaveform: loadSubtitleWaveform,
-    onPreviewSpeed: (double v) async => onPreviewSpeed?.call(v),
-    onSetSpeed: (double v) async => onSetSpeed?.call(v),
-    onSetSubtitleObscureMode: (_) async {},
-    onSetSecondarySubtitleObscureMode: (_) async {},
-    onSubtitleStylePreview: (VideoSubtitleStyle style) =>
-        onSubtitleStylePreview?.call(style),
-    onSubtitleStyleCommit: (VideoSubtitleStyle style) async =>
-        onSubtitleStyleCommit?.call(style),
-    initialAsbConfig: VideoAsbplayerConfig.defaults,
-    onAsbConfigChanged: (_) async {},
-    initialShadersEnabled: const <String>[],
-    onApplyShaders: (_) async {},
-    onSelectShaderTier: (VideoShaderTier tier, bool hq, List<String> _) async {
-      onSelectShaderTier?.call(tier, hq);
-    },
-    initialMpvConfig: VideoMpvConfig.defaults,
-    onMpvConfigChanged: (VideoMpvConfig c) async => onMpvConfigChanged?.call(c),
-    initialLockWindowAspectRatio: true,
-    onLockWindowAspectRatioChanged: (_) async {},
-    initialVideoFitMode: initialVideoFitMode,
-    onVideoFitModeChanged: (VideoFitMode mode) async =>
-        onVideoFitModeChanged?.call(mode),
-    initialImmersiveMode: VideoImmersiveMode.lookupOnly,
-    onImmersiveModeChanged: (VideoImmersiveMode mode) async =>
-        onImmersiveModeChanged?.call(mode),
-    initialControlLayout: initialControlLayout,
-    onControlLayoutChanged: (VideoControlLayout layout) async =>
-        onControlLayoutChanged?.call(layout),
-    onEditControlsOnscreen: onEditControlsOnscreen,
-    isTouchControls: isTouchControls,
-    uiScale: uiScale,
   );
-}
-
-Future<void> _pump(WidgetTester tester, Widget child) async {
+  Widget body = wrap != null ? wrap(sheet) : sheet;
+  if (wrapScale != null) {
+    body = HibikiAppUiScale(scale: wrapScale, child: body);
+  }
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData(useMaterial3: true),
-      home: Scaffold(body: child),
+      home: Scaffold(body: body),
     ),
   );
   await tester.pump();
-}
-
-Future<void> _pumpScaled(
-  WidgetTester tester,
-  Widget child, {
-  required double scale,
-}) {
-  return _pump(
-    tester,
-    HibikiAppUiScale(
-      scale: scale,
-      child: child,
-    ),
-  );
+  return harness;
 }
 
 void _expectNoFlutterErrors(WidgetTester tester) {
@@ -148,6 +137,32 @@ Future<void> _tapCategory(
   await tester.pumpAndSettle();
   await tester.tap(target);
   await tester.pumpAndSettle();
+}
+
+/// 阶段 B：schema dropdown 行经 SettingsSchemaItem 的 `_segmented<Object>` 派发，
+/// 运行时泛型是 `AdaptiveSettingsPickerRow<Object>`（不再是旧手写面板的具体枚举
+/// 泛型实参），故按 title 谓词定位、以 Object 泛型读字段——值本身仍是真实枚举，
+/// selected / options / onChanged 的行为断言不变。
+Finder _pickerRowFinder(String title) => find.byWidgetPredicate(
+      (Widget w) => w is AdaptiveSettingsPickerRow && w.title == title,
+    );
+
+AdaptiveSettingsPickerRow<Object> _pickerRow(
+  WidgetTester tester,
+  String title,
+) {
+  return tester.widget(_pickerRowFinder(title))
+      as AdaptiveSettingsPickerRow<Object>;
+}
+
+/// 数据模型守卫用：从视频 schema 唯一真相源里按 id 取条目声明。
+SettingsItem _findSchemaItem(String id) {
+  for (final SettingsSection section in buildVideoDestination().sections) {
+    for (final SettingsItem item in section.items) {
+      if (item.id == id) return item;
+    }
+  }
+  fail('settings_schema_video.dart 里找不到 id 为 $id 的条目');
 }
 
 void main() {
@@ -219,7 +234,7 @@ void main() {
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     await _tapCategory(tester, 'shaders', t.video_settings_cat_shaders);
 
@@ -288,12 +303,21 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     VideoShaderTier? selectedTier;
     bool? selectedHq;
-    await _pump(
+    // 阶段 B 适配：着色器视图的当前档位高亮改由 pref（videoMpvConfig.highQuality +
+    // 启用集）派生，切档回调后面板 refresh 重建即重读 pref。真实视频页在
+    // onSelectShaderTier 里持久化 highQuality；测试探针须同样写穿（prefsRepo 的
+    // 内存缓存同步更新），否则第一次切档后高亮弹回、第二次点击成 no-op。
+    late final VideoSheetHarness h;
+    h = await _pumpSheet(
       tester,
-      _sheet(onSelectShaderTier: (VideoShaderTier tier, bool hq) {
+      onSelectShaderTier: (VideoShaderTier tier, bool hq) {
         selectedTier = tier;
         selectedHq = hq;
-      }),
+        final VideoMpvConfig next =
+            VideoMpvConfig.decode(h.appModel.videoMpvConfig)
+                .copyWith(highQuality: hq);
+        unawaited(h.appModel.setVideoMpvConfig(VideoMpvConfig.encode(next)));
+      },
     );
 
     await _tapCategory(tester, 'shaders', t.video_settings_cat_shaders);
@@ -321,7 +345,7 @@ void main() {
       '(TODO-556)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     // 顶栏 chip 按 id key 命中（TODO-1351 起「图标 + 完整文字」）；默认选中
     // playback → 下方详情顶部用大标题标出当前分类 + 显示倍速（字幕调轴已按语义
@@ -386,13 +410,11 @@ void main() {
       'at UI scale 2.0 (TODO-1351)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1320, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pumpScaled(
+    await _pumpSheet(
       tester,
-      _sheet(
-        uiScale: 2.0,
-        initialVideoFitMode: VideoFitMode.contain,
-      ),
-      scale: 2.0,
+      uiScale: 2.0,
+      wrapScale: 2.0,
+      initialVideoFitMode: VideoFitMode.contain,
     );
 
     // TODO-1351（用户复诉）：分类 tab 必须「图标 + 完整文字」显示（参考「检查器」式
@@ -482,13 +504,11 @@ void main() {
         '${sizeCase.width.round()}px scale ${sizeCase.scale}', (tester) async {
       await tester.binding.setSurfaceSize(Size(sizeCase.width, 1200));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pumpScaled(
+      await _pumpSheet(
         tester,
-        _sheet(
-          uiScale: sizeCase.scale,
-          initialVideoFitMode: VideoFitMode.contain,
-        ),
-        scale: sizeCase.scale,
+        uiScale: sizeCase.scale,
+        wrapScale: sizeCase.scale,
+        initialVideoFitMode: VideoFitMode.contain,
       );
 
       // 分类入口可达：窄窗是带文字的导航行，宽窗是顶栏 chip（按 id key）。
@@ -517,7 +537,7 @@ void main() {
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet(uiScale: 2.0));
+    await _pumpSheet(tester, uiScale: 2.0);
 
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
@@ -550,13 +570,11 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int shown = 0;
-    await _pump(
+    await _pumpSheet(
       tester,
-      _sheet(
-        initialCategory: 'subtitle',
-        subtitleTrackSection: const Text('SUBTITLE-TRACK-SECTION'),
-        onSubtitleCategoryShown: () => shown++,
-      ),
+      initialCategory: 'subtitle',
+      subtitleTrackSection: const Text('SUBTITLE-TRACK-SECTION'),
+      onSubtitleCategoryShown: () => shown++,
     );
     // onSubtitleCategoryShown 延后到帧后触发（避免 initState 内同步 setState 父页）。
     await tester.pump();
@@ -571,7 +589,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int shown = 0;
-    await _pump(tester, _sheet(onSubtitleCategoryShown: () => shown++));
+    await _pumpSheet(tester, onSubtitleCategoryShown: () => shown++);
     // 默认在 playback，尚未进入字幕分类 → 回调未触发。
     expect(shown, 0);
     // 点「字幕」分类 chip → 进入字幕分类 → 触发一次加载回调。
@@ -584,7 +602,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(420, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int shown = 0;
-    await _pump(tester, _sheet(onSubtitleCategoryShown: () => shown++));
+    await _pumpSheet(tester, onSubtitleCategoryShown: () => shown++);
     expect(shown, 0);
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
     expect(shown, greaterThanOrEqualTo(1),
@@ -598,15 +616,13 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final List<VideoSubtitleStyle> previews = <VideoSubtitleStyle>[];
     final List<VideoSubtitleStyle> commits = <VideoSubtitleStyle>[];
-    await _pump(
+    await _pumpSheet(
       tester,
-      _sheet(
-        initialSubtitleStyle: VideoSubtitleStyle.defaults.copyWith(
-          backgroundOpacity: 0.75,
-        ),
-        onSubtitleStylePreview: previews.add,
-        onSubtitleStyleCommit: commits.add,
+      initialSubtitleStyle: VideoSubtitleStyle.defaults.copyWith(
+        backgroundOpacity: 0.75,
       ),
+      onSubtitleStylePreview: previews.add,
+      onSubtitleStyleCommit: commits.add,
     );
 
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
@@ -634,7 +650,7 @@ void main() {
     expect(
       tester.widget<AdaptiveSettingsSliderRow>(backgroundOpacityRow).value,
       0,
-      reason: '快捷项必须同步本地 _style，避免背景不透明度滑条显示滞后',
+      reason: '快捷项必须同步页面权威样式，避免背景不透明度滑条显示滞后',
     );
   });
 
@@ -644,7 +660,7 @@ void main() {
     // 高度取 500（>= kHibikiSettingsWideMinHeight=440 → 进宽窗），下方详情行多仍可滚。
     await tester.binding.setSurfaceSize(const Size(1000, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     // 字幕详情行多（开关 + 三滑条 + 重置）→ 必然超过详情高、可独立滚动。
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
@@ -671,7 +687,7 @@ void main() {
     // 设置同条件，不出滚动条）。
     await tester.binding.setSurfaceSize(const Size(1000, 150));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
     await tester.pumpAndSettle();
 
     // 回退 push 主页：默认 playback 详情（倍速）不再随分栏展开。
@@ -689,7 +705,7 @@ void main() {
   testWidgets('narrow video settings pushes detail sub-pages', (tester) async {
     await tester.binding.setSurfaceSize(const Size(420, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     // 窄窗主页：只列分类导航行，详情未展开（倍速未显示）。
     expect(find.text(t.video_settings_cat_playback), findsOneWidget);
@@ -710,15 +726,14 @@ void main() {
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(720, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(
+    await _pumpSheet(
       tester,
-      HibikiAppUiScale(
-        scale: 2.0,
-        child: VideoTranslucentSidePanel(
-          title: t.video_settings_title,
-          width: 560,
-          child: _sheet(uiScale: 2.0),
-        ),
+      uiScale: 2.0,
+      wrapScale: 2.0,
+      wrap: (Widget sheet) => VideoTranslucentSidePanel(
+        title: t.video_settings_title,
+        width: 560,
+        child: sheet,
       ),
     );
     expect(tester.takeException(), isNull);
@@ -737,8 +752,8 @@ void main() {
   // 完整显示的 Text；输入框不再走单行浮动 label。
   Future<void> openMpvAdvanced(WidgetTester tester) async {
     await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
-    // mpv 详情右 pane 是 SingleChildScrollView，会一次性 build 全部分组（含底部
-    // 「高级」段），离屏 widget 仍完成 layout，故无需滚动即可命中并测量标题。
+    // mpv 详情是 shrinkWrap 的投影列表，会一次性 build 全部分组（含底部「高级」段），
+    // 离屏 widget 仍完成 layout，故无需滚动即可命中并测量标题。
   }
 
   testWidgets(
@@ -746,7 +761,7 @@ void main() {
       'floating label', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
     await openMpvAdvanced(tester);
 
     final Finder title = find.text(t.video_setting_mpv_raw);
@@ -780,10 +795,10 @@ void main() {
         '${sizeCase.width.round()}px scale ${sizeCase.scale}', (tester) async {
       await tester.binding.setSurfaceSize(Size(sizeCase.width, 1600));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pumpScaled(
+      await _pumpSheet(
         tester,
-        _sheet(uiScale: sizeCase.scale),
-        scale: sizeCase.scale,
+        uiScale: sizeCase.scale,
+        wrapScale: sizeCase.scale,
       );
       await openMpvAdvanced(tester);
 
@@ -798,9 +813,10 @@ void main() {
   }
 
   test('源码守卫：mpv 高级标题不挂 labelText 浮动单行 label（TODO-561 防回潮）', () {
-    final String src =
-        File('lib/src/media/video/video_quick_settings_sheet.dart')
-            .readAsStringSync();
+    // 阶段 B：mpv 原始 conf 输入框移入 video_settings_actions.dart
+    // （_VideoMpvRawConfField），守卫改扫该文件。
+    final String src = File('lib/src/media/video/video_settings_actions.dart')
+        .readAsStringSync();
     expect(src, isNot(contains('labelText: t.video_setting_mpv_raw')),
         reason: '「额外 mpv 选项」标题不能再走 InputDecoration.labelText（浮动 label 恒单行 '
             '+ ellipsis，窄 pane 截断）；须是输入框上方独立可换行 Text');
@@ -810,17 +826,17 @@ void main() {
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
 
-    // 解码/画质/色彩/重置都内嵌在右 pane（不是导航行 → pop → 二级对话框）。
-    // hwdec 是 picker 行：DropdownButton 会为测宽离屏复刻一份标题，故 findsWidgets。
+    // 解码/画质/色彩/重置都内嵌在详情 pane（不是导航行 → pop → 二级对话框）。
+    // hwdec 是 picker 行：下拉可能为测宽离屏复刻一份标题，故 findsWidgets。
     expect(find.text(t.video_setting_mpv_hwdec), findsWidgets);
     expect(find.text(t.video_setting_mpv_deband), findsOneWidget);
     expect(find.text(t.video_setting_mpv_brightness), findsOneWidget);
     expect(find.text(t.video_setting_mpv_reset), findsOneWidget);
-    // master-detail 内嵌：无返回箭头（不走 push 子页）。
+    // 上下分栏内嵌：无返回箭头（不走 push 子页）。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
@@ -829,11 +845,12 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     VideoMpvConfig? committed;
-    await _pump(tester, _sheet(onMpvConfigChanged: (c) => committed = c));
+    await _pumpSheet(tester, onMpvConfigChanged: (c) => committed = c);
 
     await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
 
-    // 切「去色带」开关 → 即改即生效回调（无保存按钮）。
+    // 切「去色带」开关 → 即改即生效回调（无保存按钮）。mpv 分类按 order 排序后
+    // 首个 Switch 仍是 deband（hwdec 是 picker 不是 Switch）。
     await tester.tap(find.byType(Switch).first);
     await tester.pump();
     expect(committed, isNotNull);
@@ -845,7 +862,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int? delay;
-    await _pump(tester, _sheet(onSetDelay: (int v) => delay = v));
+    await _pumpSheet(tester, onSetDelay: (int v) => delay = v);
     // 字幕调轴已归到「字幕」分类。
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
@@ -870,7 +887,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int switched = 0;
-    await _pump(tester, _sheet(onSwitchToSkiaRenderer: () => switched++));
+    await _pumpSheet(tester, onSwitchToSkiaRenderer: () => switched++);
 
     // 宽窗默认选中 playback 分类，降级行随之渲染。
     final Finder row = find.widgetWithText(
@@ -890,7 +907,7 @@ void main() {
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     // 默认 playback 详情里倍速行在（证明确在 playback 分类），但降级行不渲染。
     expect(find.text(t.video_setting_speed), findsOneWidget);
@@ -910,7 +927,7 @@ void main() {
   testWidgets('字幕调轴提供可拉滑条 + 数值输入框（字幕分类）', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet(initialDelayMs: 1200));
+    await _pumpSheet(tester, initialDelayMs: 1200);
     // 字幕调轴已归到「字幕」分类。
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
@@ -943,7 +960,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int? delay;
-    await _pump(tester, _sheet(onSetDelay: (int v) => delay = v));
+    await _pumpSheet(tester, onSetDelay: (int v) => delay = v);
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     final Finder delayRow = find.widgetWithText(
@@ -964,7 +981,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int? delay;
-    await _pump(tester, _sheet(onSetDelay: (int v) => delay = v));
+    await _pumpSheet(tester, onSetDelay: (int v) => delay = v);
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     final Finder delayRow = find.widgetWithText(
@@ -990,12 +1007,12 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       bool autoAlignCalled = false;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(onAutoAlign: () async {
+        onAutoAlign: () async {
           autoAlignCalled = true;
           return null;
-        }),
+        },
       );
       await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
@@ -1049,14 +1066,12 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       int? committedDelay;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(
-          initialDelayMs: 0,
-          onSetDelay: (int v) => committedDelay = v,
-          // 回调返回算出的整体平移（如互相关求得 +750ms）。
-          onAutoAlign: () async => 750,
-        ),
+        initialDelayMs: 0,
+        onSetDelay: (int v) => committedDelay = v,
+        // 回调返回算出的整体平移（如互相关求得 +750ms）。
+        onAutoAlign: () async => 750,
       );
       await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
@@ -1099,13 +1114,11 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       int? committedDelay;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(
-          initialDelayMs: 0,
-          onSetDelay: (int v) => committedDelay = v,
-          onAutoAlign: () async => null,
-        ),
+        initialDelayMs: 0,
+        onSetDelay: (int v) => committedDelay = v,
+        onAutoAlign: () async => null,
       );
       await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
@@ -1136,7 +1149,7 @@ void main() {
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      await _pumpSheet(tester);
       await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
       expect(find.text(t.video_setting_av_delay), findsOneWidget);
@@ -1168,22 +1181,20 @@ void main() {
   // 必须可达——有字幕 cue + 可抽波形（本地视频路径 => loadSubtitleWaveform 非空）时，进
   // 「字幕」分类详情就能看到并点到入口按钮。历史上入口曾因挂载时预探测、探测为空即收起
   // 而「进不去」（用户报「字幕调轴入口也没了」）；这里锁死「入口在字幕详情常驻可达」，
-  // 且**挂载不预探测**（懒抽保留）。此前 _sheet 从不传波形参数，本入口在 sheet 层无守卫。
+  // 且**挂载不预探测**（懒抽保留）。
   testWidgets(
     'TODO-1315 guard: 波形对轴入口在字幕详情可达且挂载不预探测',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       int probes = 0;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(
-          subtitleWaveformCues: waveCues,
-          loadSubtitleWaveform: () async {
-            probes++;
-            return <double>[-60, -20, -40, -10, -30, -5];
-          },
-        ),
+        subtitleWaveformCues: waveCues,
+        loadSubtitleWaveform: () async {
+          probes++;
+          return <double>[-60, -20, -40, -10, -30, -5];
+        },
       );
 
       // 切到「字幕」分类：字幕调轴行 + 波形对轴入口都在，且入口可命中。
@@ -1198,20 +1209,17 @@ void main() {
     },
   );
 
-  // TODO-1315 回归守卫：窄窗（移动端）导航路径同样可达——主页点「播放」分类 push 详情，
+  // TODO-1315 回归守卫：窄窗（移动端）导航路径同样可达——主页点「字幕」分类 push 详情，
   // 详情里能滚到并点到波形对轴入口（移动端正是「进不去」的报障平台）。
   testWidgets(
     'TODO-1315 guard: 窄窗导航到字幕分类后波形对轴入口可达',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(400, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(
-          subtitleWaveformCues: waveCues,
-          loadSubtitleWaveform: () async =>
-              <double>[-60, -20, -40, -10, -30, -5],
-        ),
+        subtitleWaveformCues: waveCues,
+        loadSubtitleWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
       );
 
       // 主页分类导航行 → push 字幕详情。
@@ -1233,22 +1241,30 @@ void main() {
       // MediaQuery.size 比较，两空间差 s²，算出巨大负 shift，把数字气泡甩到拇指**左侧**
       // （用户报「往右调、气泡往左走」方向相反）。[adaptiveSlider] 把 Slider 看到的
       // screenSize 还原回 GLOBAL/view 空间，钳制归零、气泡跟随拇指——其根因修复的运行时
-      // 契约由 slider_value_indicator_scale_test.dart 直测。这里守住「字幕调轴滑条必须走
-      // adaptiveSlider、不得回退裸 Slider」，防回潮。
-      final String src =
-          File('lib/src/media/video/video_quick_settings_sheet.dart')
+      // 契约由 slider_value_indicator_scale_test.dart 直测。阶段 B：字幕调轴行移入
+      // video_subtitle_sync_row.dart，守卫改扫该文件 + 面板相关源文件，防回潮。
+      final String syncRow =
+          File('lib/src/media/video/video_subtitle_sync_row.dart')
               .readAsStringSync();
       expect(
-        src,
+        syncRow,
         contains('adaptiveSlider('),
         reason: '字幕调轴滑条必须走 adaptiveSlider（UI scale 下值指示器气泡钳制才正确）',
       );
-      expect(
-        RegExp(r'(?<!adaptive)Slider\(').hasMatch(src),
-        isFalse,
-        reason: '面板内不得出现裸 Slider(——会让 UI scale 下值指示器气泡甩飞方向相反；'
-            '所有滑条须走 adaptiveSlider 或 AdaptiveSettings*Row',
-      );
+      for (final String path in <String>[
+        'lib/src/media/video/video_subtitle_sync_row.dart',
+        'lib/src/media/video/video_settings_actions.dart',
+        'lib/src/media/video/video_control_layout_editor.dart',
+        'lib/src/media/video/video_quick_settings_sheet.dart',
+      ]) {
+        final String src = File(path).readAsStringSync();
+        expect(
+          RegExp(r'(?<!adaptive)Slider\(').hasMatch(src),
+          isFalse,
+          reason: '$path 不得出现裸 Slider(——会让 UI scale 下值指示器气泡甩飞方向相反；'
+              '所有滑条须走 adaptiveSlider 或 AdaptiveSettings*Row',
+        );
+      }
     },
   );
 
@@ -1257,13 +1273,11 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(320, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int? delay;
-    await _pumpScaled(
+    await _pumpSheet(
       tester,
-      _sheet(
-        uiScale: 2.0,
-        onSetDelay: (int v) => delay = v,
-      ),
-      scale: 2.0,
+      uiScale: 2.0,
+      wrapScale: 2.0,
+      onSetDelay: (int v) => delay = v,
     );
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
@@ -1298,7 +1312,7 @@ void main() {
   testWidgets('mpv 音频区不再有「音频延迟」滑条入口', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
 
@@ -1316,18 +1330,28 @@ void main() {
   });
 
   test('源码守卫：mpv 详情不再调音频延迟、字幕调轴提供输入框（TODO-060 防回潮）', () {
-    final String src =
-        File('lib/src/media/video/video_quick_settings_sheet.dart')
+    // 阶段 B：mpv 行声明在 settings_schema_video.dart、写穿在
+    // video_settings_actions.dart，字幕调轴行在 video_subtitle_sync_row.dart，
+    // 守卫按新归属分别扫描。
+    final String schema =
+        File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
+    final String actions =
+        File('lib/src/media/video/video_settings_actions.dart')
+            .readAsStringSync();
+    final String syncRow =
+        File('lib/src/media/video/video_subtitle_sync_row.dart')
             .readAsStringSync();
     // mpv 不再有音频延迟入口。
-    expect(src, isNot(contains('video_setting_mpv_audio_delay')),
-        reason: 'mpv「音频延迟」入口必须删除（与字幕调轴对用户重复混淆）');
-    expect(src, isNot(contains('copyWith(audioDelayMs:')),
-        reason: 'mpv 配置不应再有 audioDelayMs 的 UI 提交路径');
+    for (final String src in <String>[schema, actions]) {
+      expect(src, isNot(contains('video_setting_mpv_audio_delay')),
+          reason: 'mpv「音频延迟」入口必须删除（与字幕调轴对用户重复混淆）');
+      expect(src, isNot(contains('copyWith(audioDelayMs:')),
+          reason: 'mpv 配置不应再有 audioDelayMs 的 UI 提交路径');
+    }
     // 字幕调轴提供滑条 + 数值输入框。
-    expect(src, contains('video_setting_subtitle_sync_input'),
+    expect(syncRow, contains('video_setting_subtitle_sync_input'),
         reason: '字幕调轴须有数值输入框');
-    expect(src, contains('_commitDelay'), reason: '滑条/按钮/输入框须经统一权威提交');
+    expect(syncRow, contains('_commitDelay'), reason: '滑条/按钮/输入框须经统一权威提交');
   });
 
   // ── TODO-039：倍速改为 MD3 全长滑条（与其它设置滑条同源） ────────────────
@@ -1336,7 +1360,7 @@ void main() {
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     // 倍速行用与其它 MD3 滑条同源的 AdaptiveSettingsSliderRow，范围/步长与旧
     // 分段档位一致（0.5–2.0，0.1 步 = 15 档）。
@@ -1348,7 +1372,7 @@ void main() {
     expect(speedRow.max, 2.0);
     expect(speedRow.divisions, 15);
 
-    // playback 详情现有两条滑条（字幕调轴 + 倍速）；定位倍速行内的滑条量宽。
+    // playback 详情有多条滑条（倍速 + 长按倍速）；定位倍速行内的滑条量宽。
     final Finder speedSlider = find.descendant(
       of: find.widgetWithText(AdaptiveSettingsSliderRow, t.video_setting_speed),
       matching: find.byType(Slider),
@@ -1376,10 +1400,9 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     double? committed;
-    await _pump(tester, _sheet(onSetSpeed: (double v) => committed = v));
+    await _pumpSheet(tester, onSetSpeed: (double v) => committed = v);
 
     // 从中心拖倍速滑条到最右 → 松手提交 2.0（onChangeEnd 路径，0.1 档吸附后无浮点尾差）。
-    // playback 现有两条滑条（字幕调轴 + 倍速），按倍速行定位避免歧义。
     final Finder speedSlider = find.descendant(
       of: find.widgetWithText(AdaptiveSettingsSliderRow, t.video_setting_speed),
       matching: find.byType(Slider),
@@ -1399,12 +1422,10 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final List<double> previewed = <double>[];
     double? committed;
-    await _pump(
+    await _pumpSheet(
       tester,
-      _sheet(
-        onPreviewSpeed: previewed.add,
-        onSetSpeed: (double v) => committed = v,
-      ),
+      onPreviewSpeed: previewed.add,
+      onSetSpeed: (double v) => committed = v,
     );
 
     final Finder speedSlider = find.descendant(
@@ -1432,13 +1453,18 @@ void main() {
   });
 
   test('speed row no longer uses the segmented strip (TODO-039 防回潮)', () {
+    // 阶段 B：倍速行声明移入 settings_schema_video.dart（SettingsSliderItem），
+    // 守卫改扫 schema 源 + 直接断言数据模型（0.5–2.0、15 档与旧 0.1 步等价）。
     final String src =
-        File('lib/src/media/video/video_quick_settings_sheet.dart')
-            .readAsStringSync();
+        File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
     expect(src, isNot(contains('AdaptiveSettingsSegmentedRow<double>')),
         reason: '倍速不得回退到 16 段 segmented 条');
     expect(src, isNot(contains('_speedPresets')));
-    expect(src, contains('_speedDivisions = 15'), reason: '滑条档位须与旧 0.1 步档位等价');
+    final SettingsSliderItem speed =
+        _findSchemaItem('video.player.speed') as SettingsSliderItem;
+    expect(speed.min, 0.5);
+    expect(speed.max, 2.0);
+    expect(speed.divisions, 15, reason: '滑条档位须与旧 0.1 步档位等价');
   });
 
   // ── TODO-152 子B：画面缩放/比例设置（窗口 + 全屏 Video fit 同源偏好） ──────
@@ -1447,15 +1473,13 @@ void main() {
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     // 默认进 playback 详情：画面缩放行常驻（三选：占满/适应/拉伸）。
-    // picker 行（与 hwdec 同款）会为测宽离屏复刻一份标题文本 → findsWidgets。
+    // picker 行可能为测宽离屏复刻一份标题文本 → findsWidgets。
     expect(find.text(t.video_setting_picture_fit), findsWidgets);
-    final AdaptiveSettingsPickerRow<VideoFitMode> row =
-        tester.widget<AdaptiveSettingsPickerRow<VideoFitMode>>(
-      find.byType(AdaptiveSettingsPickerRow<VideoFitMode>),
-    );
+    final AdaptiveSettingsPickerRow<Object> row =
+        _pickerRow(tester, t.video_setting_picture_fit);
     expect(row.selected, VideoFitMode.cover);
     expect(row.options.map((o) => o.value).toList(), <VideoFitMode>[
       VideoFitMode.cover,
@@ -1469,16 +1493,14 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     VideoFitMode? picked;
-    await _pump(
+    await _pumpSheet(
       tester,
-      _sheet(onVideoFitModeChanged: (VideoFitMode mode) => picked = mode),
+      onVideoFitModeChanged: (VideoFitMode mode) => picked = mode,
     );
 
     // 选「适应（加黑边）」= contain → 即时落回调（无保存按钮）。
-    final AdaptiveSettingsPickerRow<VideoFitMode> row =
-        tester.widget<AdaptiveSettingsPickerRow<VideoFitMode>>(
-      find.byType(AdaptiveSettingsPickerRow<VideoFitMode>),
-    );
+    final AdaptiveSettingsPickerRow<Object> row =
+        _pickerRow(tester, t.video_setting_picture_fit);
     row.onChanged(VideoFitMode.contain);
     await tester.pump();
     expect(picked, VideoFitMode.contain);
@@ -1491,22 +1513,22 @@ void main() {
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     // 默认进 playback 详情：沉浸模式行常驻，且是下拉单选 picker（与画面缩放同款），
     // 不再是等宽不换行的 4 段 SegmentedButton（窄面板会裁掉尾段，TODO-209）。
     expect(find.text(t.video_setting_immersive_mode), findsWidgets);
-    final AdaptiveSettingsPickerRow<VideoImmersiveMode> row =
-        tester.widget<AdaptiveSettingsPickerRow<VideoImmersiveMode>>(
-      find.byType(AdaptiveSettingsPickerRow<VideoImmersiveMode>),
-    );
-    // 默认选中「仅查词」（与 _sheet 初值一致 = VideoImmersiveMode.fallback）。
+    final AdaptiveSettingsPickerRow<Object> row =
+        _pickerRow(tester, t.video_setting_immersive_mode);
+    // 默认选中「仅查词」（与旧 _sheet 初值一致，经 _pumpSheet 写穿 pref）。
     expect(row.selected, VideoImmersiveMode.lookupOnly);
     // 4 个模式按 enum 顺序全量呈现，一个不少（窄面板曾裁掉尾段的根因已消除）。
     expect(row.options.map((o) => o.value).toList(), VideoImmersiveMode.values);
     // 沉浸模式行不再走 segmented 条（防回潮）。
     expect(
-      find.byType(AdaptiveSettingsSegmentedRow<VideoImmersiveMode>),
+      find.byWidgetPredicate((Widget w) =>
+          w is AdaptiveSettingsSegmentedRow &&
+          w.title == t.video_setting_immersive_mode),
       findsNothing,
       reason: '沉浸模式不得用会裁长标签的 4 段 SegmentedButton',
     );
@@ -1517,33 +1539,30 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     VideoImmersiveMode? picked;
-    await _pump(
+    await _pumpSheet(
       tester,
-      _sheet(
-          onImmersiveModeChanged: (VideoImmersiveMode mode) => picked = mode),
+      onImmersiveModeChanged: (VideoImmersiveMode mode) => picked = mode,
     );
 
     // 选「全部功能」= full → 即时落回调（无保存按钮）。
-    final AdaptiveSettingsPickerRow<VideoImmersiveMode> row =
-        tester.widget<AdaptiveSettingsPickerRow<VideoImmersiveMode>>(
-      find.byType(AdaptiveSettingsPickerRow<VideoImmersiveMode>),
-    );
+    final AdaptiveSettingsPickerRow<Object> row =
+        _pickerRow(tester, t.video_setting_immersive_mode);
     row.onChanged(VideoImmersiveMode.full);
     await tester.pump();
     expect(picked, VideoImmersiveMode.full);
   });
 
   // ── TODO-423：右详情（子设置）pane 不得再叠加不透明背景（用户嫌丑，已删除）──
-  // 父/子层级区分改靠左侧分隔线 + 左侧分类选中高亮，右 pane 不包 ColoredBox 叠加层。
+  // 父/子层级区分改靠分隔线 + 分类选中高亮，详情 pane 不包 ColoredBox 叠加层。
 
   testWidgets(
       'wide video settings detail pane has no opaque tint overlay '
       '(TODO-423)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
-    // 右 primary pane 的 KeyedSubtree 不再被任何 0<alpha<1 的半透明 ColoredBox 包裹
+    // 详情 pane 的 KeyedSubtree 不再被任何 0<alpha<1 的半透明 ColoredBox 包裹
     // （TODO-342 的叠加层已移除）——遍历其全部 ColoredBox 祖先，断言无半透明叠加色。
     final Finder primaryColoredBoxes = find.ancestor(
       of: find.byType(KeyedSubtree).last,
@@ -1555,7 +1574,7 @@ void main() {
       final double alpha = box.color.a;
       // 不得存在半透明叠加层（既不是完全透明也不是完全不透明的那种 tint）。
       expect(alpha == 0.0 || alpha == 1.0, isTrue,
-          reason: '右详情 pane 不应被半透明叠加色 ColoredBox 包裹（TODO-423）');
+          reason: '详情 pane 不应被半透明叠加色 ColoredBox 包裹（TODO-423）');
     }
   });
 
@@ -1566,7 +1585,7 @@ void main() {
       '(TODO-344 / TODO-556)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     // 顶部分类 chip 条外层 Padding：水平 inset = page+gap=28，顶部 card=20（不再贴死），
     // 底部留 gap/2=4 与下方分隔线呼吸。chip 条本身是横向 scroll（无 padding 属性），
@@ -1609,7 +1628,7 @@ void main() {
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(420, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(tester, _sheet());
+    await _pumpSheet(tester);
 
     // 窄窗主页同样用放宽后的 padding（顶部 >= 20，不再贴死）。窄窗 body 的最外层
     // SingleChildScrollView 承载本功能的 padding（内部组件可能另有自己的 scroll，故取 first）。
@@ -1731,7 +1750,7 @@ void main() {
 
       await tester.binding.setSurfaceSize(const Size(1000, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      await _pumpSheet(tester);
       await openControls(tester);
 
       // TODO-631: removing favoriteSentences from screenRight shifts settings
@@ -1760,7 +1779,7 @@ void main() {
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      await _pumpSheet(tester);
       await openControls(tester);
 
       final Rect preview = tester.getRect(find.byKey(
@@ -1799,7 +1818,7 @@ void main() {
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      await _pumpSheet(tester);
       await openControls(tester);
 
       final List<VideoControlSlot> compactSlots = <VideoControlSlot>[
@@ -1853,10 +1872,10 @@ void main() {
           'and UI scale ${sizeCase.scale}', (tester) async {
         await tester.binding.setSurfaceSize(Size(sizeCase.width, 1200));
         addTearDown(() => tester.binding.setSurfaceSize(null));
-        await _pumpScaled(
+        await _pumpSheet(
           tester,
-          _sheet(uiScale: sizeCase.scale),
-          scale: sizeCase.scale,
+          uiScale: sizeCase.scale,
+          wrapScale: sizeCase.scale,
         );
         await openControls(tester);
 
@@ -1878,15 +1897,13 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(360, 2400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? latest;
-      await _pumpScaled(
+      await _pumpSheet(
         tester,
-        _sheet(
-          uiScale: 2.0,
-          onControlLayoutChanged: (VideoControlLayout layout) {
-            latest = layout;
-          },
-        ),
-        scale: 2.0,
+        uiScale: 2.0,
+        wrapScale: 2.0,
+        onControlLayoutChanged: (VideoControlLayout layout) {
+          latest = layout;
+        },
       );
       await openControls(tester);
 
@@ -1928,11 +1945,11 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? latest;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+        onControlLayoutChanged: (VideoControlLayout layout) {
           latest = layout;
-        }),
+        },
       );
       await openControls(tester);
 
@@ -1964,11 +1981,11 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? latest;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+        onControlLayoutChanged: (VideoControlLayout layout) {
           latest = layout;
-        }),
+        },
       );
       await openControls(tester);
 
@@ -1991,14 +2008,12 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? latest;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(
-          isTouchControls: true,
-          onControlLayoutChanged: (VideoControlLayout layout) {
-            latest = layout;
-          },
-        ),
+        isTouchControls: true,
+        onControlLayoutChanged: (VideoControlLayout layout) {
+          latest = layout;
+        },
       );
       await openControls(tester);
 
@@ -2020,11 +2035,11 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? latest;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+        onControlLayoutChanged: (VideoControlLayout layout) {
           latest = layout;
-        }),
+        },
       );
       await openControls(tester);
 
@@ -2047,11 +2062,11 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? latest;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+        onControlLayoutChanged: (VideoControlLayout layout) {
           latest = layout;
-        }),
+        },
       );
       await openControls(tester);
 
@@ -2082,11 +2097,11 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       VideoControlLayout? latest;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+        onControlLayoutChanged: (VideoControlLayout layout) {
           latest = layout;
-        }),
+        },
       );
       await openControls(tester);
 
@@ -2119,11 +2134,11 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       VideoControlLayout? latest;
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+        onControlLayoutChanged: (VideoControlLayout layout) {
           latest = layout;
-        }),
+        },
       );
       await openControls(tester);
 
@@ -2166,8 +2181,10 @@ void main() {
     });
 
     test('source guard: crowded slot chips can scroll instead of clipping', () {
+      // 阶段 B：控制编辑器移入 video_control_layout_editor.dart
+      // （VideoControlLayoutEditor），守卫改扫该文件。
       final String src =
-          File('lib/src/media/video/video_quick_settings_sheet.dart')
+          File('lib/src/media/video/video_control_layout_editor.dart')
               .readAsStringSync();
       expect(src, isNot(contains('math.max(560')),
           reason: 'control editor must size from current constraints');
@@ -2199,7 +2216,7 @@ void main() {
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      await _pumpSheet(tester);
 
       // 大分类一律渲染成顶栏 chip（无左右 master-detail、无左栏列表项），按 id
       // key 命中（不依赖标签文案）。
@@ -2273,7 +2290,7 @@ void main() {
       // 装不下。旧横向滚动实现会把末位「弹幕 / 控制」推到视口右侧外裁掉；Wrap 换行后全可见。
       await tester.binding.setSurfaceSize(const Size(620, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      await _pumpSheet(tester);
 
       const List<String> ids = <String>[
         'playback',
@@ -2306,13 +2323,13 @@ void main() {
   });
 
   // ── TODO-1350 / TODO-1351：检查器式整合（视频/音频/字幕 tab + 轨切换收进面板 +
-  //    视频主题按钮 + 字幕颜色/背景可调） ─────────────────────────────────────
+  //    字幕颜色/背景可调；视频主题行已按用户诉求移除） ─────────────────────────
   group('TODO-1350/1351 inspector consolidation', () {
     testWidgets('TODO-1351：顶栏含 视频/音频/字幕（playback/audio/subtitle）tab chips',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      await _pumpSheet(tester);
       // 参考「检查器」的 视频 / 音频 / 字幕 tab 都在顶栏（按 id key 命中 chip）。
       expect(_categoryChip('playback'), findsOneWidget);
       expect(_categoryChip('audio'), findsOneWidget, reason: '音频 tab 必须存在');
@@ -2322,11 +2339,9 @@ void main() {
     testWidgets('TODO-1351：音频分类展示传入的音轨切换区（取代外面浮的音轨侧栏）', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(
-          audioTrackSection: const Text('AUDIO_TRACK_SECTION_MARKER'),
-        ),
+        audioTrackSection: const Text('AUDIO_TRACK_SECTION_MARKER'),
       );
       await _tapCategory(tester, 'audio', t.video_settings_cat_audio);
       expect(find.text('AUDIO_TRACK_SECTION_MARKER'), findsOneWidget,
@@ -2336,7 +2351,7 @@ void main() {
     testWidgets('TODO-1351：无音轨切换区时音频分类显示占位', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      await _pumpSheet(tester);
       await _tapCategory(tester, 'audio', t.video_settings_cat_audio);
       expect(find.text(t.video_audio_track_empty), findsOneWidget);
     });
@@ -2344,11 +2359,9 @@ void main() {
     testWidgets('TODO-1351：字幕分类顶部展示字幕轨切换区，位于外观设置之上（外挂字幕→打开字幕）', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(
+      await _pumpSheet(
         tester,
-        _sheet(
-          subtitleTrackSection: const Text('SUBTITLE_TRACK_SECTION_MARKER'),
-        ),
+        subtitleTrackSection: const Text('SUBTITLE_TRACK_SECTION_MARKER'),
       );
       await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
       final Finder marker = find.text('SUBTITLE_TRACK_SECTION_MARKER');
@@ -2364,7 +2377,7 @@ void main() {
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(420, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet(initialCategory: 'audio'));
+      await _pumpSheet(tester, initialCategory: 'audio');
       // 窄窗直接 push 到「音频」子页：子页标题 + 返回箭头 + 占位（无 section 时）。
       expect(find.text(t.video_settings_cat_audio), findsWidgets);
       expect(find.byIcon(Icons.arrow_back), findsOneWidget);
@@ -2376,7 +2389,7 @@ void main() {
     testWidgets('视频设置不再单列主题切换行（主题归全局「外观」）', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      await _pumpSheet(tester);
       // 播放分类默认选中；遍历所有分类都不应出现「视频主题」行。
       for (final ({String id, String label}) cat
           in <({String id, String label})>[
@@ -2393,14 +2406,9 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final List<VideoSubtitleStyle> commits = <VideoSubtitleStyle>[];
-      await _pump(
-        tester,
-        _sheet(onSubtitleStyleCommit: commits.add),
-      );
+      await _pumpSheet(tester, onSubtitleStyleCommit: commits.add);
       await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
       // 字幕文字颜色（TODO-1326）+ 背景颜色（TODO-1059）选择行都在字幕外观里。
-      // 二者是 AdaptiveSettingsPickerRow：DropdownButton 为测宽离屏复刻一份标题，故
-      // findsWidgets（与 mpv hwdec 行同理）。
       expect(find.text(t.video_setting_subtitle_text_color), findsWidgets,
           reason: '字幕文字颜色须可调');
       expect(find.text(t.video_setting_subtitle_bg_color), findsWidgets,
@@ -2408,54 +2416,62 @@ void main() {
     });
 
     test('源码守卫：设置面板含音频分类 + 轨接线 + 主题行已移除（TODO-1351）', () {
-      final String src =
+      // 阶段 B retarget：分类外壳在 sheet，轨切换区声明在 schema（item id）+
+      // 写穿/builder 在 actions；主题行既不得回潮进 schema 也不得回潮进 sheet。
+      final String sheet =
           File('lib/src/media/video/video_quick_settings_sheet.dart')
               .readAsStringSync();
-      // 视频/音频/字幕 tab：音频分类 id + 详情构建器。
-      expect(src, contains("id: 'audio'"), reason: '顶栏须含「音频」分类（收音频轨切换）');
-      expect(src, contains('_buildAudioDetail('), reason: '音频分类须有详情构建器');
-      // 轨切换区接线。
-      expect(src, contains('widget.audioTrackSection'),
+      final String schema = File('lib/src/settings/settings_schema_video.dart')
+          .readAsStringSync();
+      final String actions =
+          File('lib/src/media/video/video_settings_actions.dart')
+              .readAsStringSync();
+      // 视频/音频/字幕 tab：音频分类 id（sheet 外壳）+ 轨切换区 schema 条目。
+      expect(sheet, contains("id: 'audio'"), reason: '顶栏须含「音频」分类（收音频轨切换）');
+      expect(schema, contains("id: 'video.player.audio_track'"),
+          reason: '音频轨切换区须以 schema 条目声明在「音频」分类');
+      expect(schema, contains("id: 'video.player.subtitle_track'"),
+          reason: '字幕轨切换区须以 schema 条目声明在「字幕」分类');
+      // 轨切换区接线（builder 经 host 读页面构建的 section）。
+      expect(actions, contains('host.audioTrackSection'),
           reason: '音频分类须渲染页面传入的音轨切换区');
-      expect(src, contains('widget.subtitleTrackSection'),
+      expect(actions, contains('subtitleTrackSection'),
           reason: '字幕分类须渲染页面传入的字幕轨切换区');
       // 主题切换行已移除：主题归全局「外观」设置，视频画面继承 app 主题，不在此重复暴露。
-      expect(src, isNot(contains('_buildThemeRow(')),
-          reason: '视频设置不应再有独立主题切换行（主题归全局外观）');
-      expect(src, isNot(contains('onSelectThemeKey')),
-          reason: '主题切换回调应随主题行一并移除');
-      expect(src, isNot(contains('VideoThemeOption')),
-          reason: '视频主题选项模型应随主题行一并移除');
-      // 字幕颜色/背景（TODO-1350）可调。
-      expect(src, contains('video_setting_subtitle_text_color'),
+      for (final String src in <String>[sheet, schema, actions]) {
+        expect(src, isNot(contains('video_setting_theme')),
+            reason: '视频设置不应再有独立主题切换行（主题归全局外观）');
+        expect(src, isNot(contains('onSelectThemeKey')),
+            reason: '主题切换回调应随主题行一并移除');
+        expect(src, isNot(contains('VideoThemeOption')),
+            reason: '视频主题选项模型应随主题行一并移除');
+      }
+      // 字幕颜色/背景（TODO-1350）可调（builder 在 actions）。
+      expect(actions, contains('video_setting_subtitle_text_color'),
           reason: '字幕文字颜色须可调');
-      expect(src, contains('video_setting_subtitle_bg_color'),
+      expect(actions, contains('video_setting_subtitle_bg_color'),
           reason: '字幕背景颜色须可调');
     });
 
     // 字幕调轴 + 句尾自动暂停已按语义归到「字幕」分类（用户诉求）：两者都是字幕驱动的
-    // 行为，之前误挂在「播放」。守住归位不回潮：_buildSubtitleDetail 里调这两行，
-    // _buildPlaybackDetail 里不再调。
-    test('源码守卫：字幕调轴 + 句尾自动暂停在字幕分类，不在播放分类', () {
-      final String src =
-          File('lib/src/media/video/video_quick_settings_sheet.dart')
-              .readAsStringSync();
-      final int subtitleIdx = src.indexOf('Widget _buildSubtitleDetail()');
-      final int playbackIdx = src.indexOf('Widget _buildPlaybackDetail()');
-      final int audioIdx = src.indexOf('Widget _buildAudioDetail()');
-      expect(subtitleIdx, greaterThan(0));
-      expect(playbackIdx, greaterThan(0));
-      expect(audioIdx, greaterThan(playbackIdx),
-          reason: '_buildAudioDetail 紧随 _buildPlaybackDetail（用于界定播放段落）');
-      final String playbackBody = src.substring(playbackIdx, audioIdx);
-      expect(playbackBody, isNot(contains('_buildDelayRow(')),
-          reason: '字幕调轴不应再在播放分类');
-      expect(playbackBody, isNot(contains('_buildPauseAtSubtitleEndRow(')),
-          reason: '句尾自动暂停不应再在播放分类');
-      final String subtitleBody = src.substring(subtitleIdx);
-      expect(subtitleBody, contains('_buildDelayRow('), reason: '字幕调轴须归到字幕分类');
-      expect(subtitleBody, contains('_buildPauseAtSubtitleEndRow('),
-          reason: '句尾自动暂停须归到字幕分类');
+    // 行为，之前误挂在「播放」。阶段 B：分组不再是手写 _build*Detail 方法，而是 schema
+    // 声明的 VideoPlacement.group——直接在数据模型上守住归位不回潮。
+    test('数据模型守卫：字幕调轴 + 句尾自动暂停在字幕分类，倍速在播放分类', () {
+      expect(
+        _findSchemaItem('video.player.subtitle_sync').video!.group,
+        VideoGroup.subtitle,
+        reason: '字幕调轴须归到字幕分类',
+      );
+      expect(
+        _findSchemaItem('video.playback.pause_at_subtitle_end').video!.group,
+        VideoGroup.subtitle,
+        reason: '句尾自动暂停须归到字幕分类',
+      );
+      expect(
+        _findSchemaItem('video.player.speed').video!.group,
+        VideoGroup.playback,
+        reason: '倍速仍属播放分类',
+      );
     });
 
     test('源码守卫：外面浮的音轨/字幕轨侧栏已删，按钮改开设置面板对应 tab（TODO-1351）', () {
@@ -2528,6 +2544,11 @@ void main() {
       final String sheet = File(
         'lib/src/media/video/video_quick_settings_sheet.dart',
       ).readAsStringSync();
+      // 阶段 B：onSubtitleCategoryShown 回调声明移入类型化能力槽
+      // VideoQuickSettingsHost（video_quick_settings_host.dart）。
+      final String host = File(
+        'lib/src/media/video/video_quick_settings_host.dart',
+      ).readAsStringSync();
       // 视频页把「进入字幕分类」回调接到字幕源枚举 helper。
       expect(page,
           contains('onSubtitleCategoryShown: _ensureSubtitleMenuSourcesLoaded'),
@@ -2539,8 +2560,8 @@ void main() {
       expect(subtitle, contains('_subtitleSourcesForMenu('),
           reason: '字幕源枚举 helper 须走 _subtitleSourcesForMenu 枚举内嵌轨 + 外挂');
       // 面板进入字幕分类（chip / 导航行 / initialCategory）统一触发回调。
-      expect(sheet, contains('final VoidCallback? onSubtitleCategoryShown;'),
-          reason: '设置面板须暴露 onSubtitleCategoryShown 回调');
+      expect(host, contains('final VoidCallback? onSubtitleCategoryShown;'),
+          reason: '能力槽须暴露 onSubtitleCategoryShown 回调');
       expect(sheet, contains('void _selectSubPage(String id)'),
           reason: '分类切换须集中到 _selectSubPage，进入字幕分类时触发回调');
       expect(sheet, contains('_notifySubtitleCategoryShownAfterFrame()'),
