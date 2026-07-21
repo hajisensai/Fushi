@@ -33,6 +33,34 @@ class HibikiDesignSystemTheme extends ThemeExtension<HibikiDesignSystemTheme> {
   }
 }
 
+/// 墨水屏模式标志的 ThemeExtension 载体。挂在 ThemeNotifier._buildThemeData 的
+/// extensions 里，使任意 widget 可经 `Theme.of(context)` 感知 eink（用于把入场
+/// 淡入/滑出等 Flutter 侧动画时长归零），零新增数据流、随主题重建自动更新。
+@immutable
+class HibikiEinkTheme extends ThemeExtension<HibikiEinkTheme> {
+  const HibikiEinkTheme(this.einkMode);
+
+  final bool einkMode;
+
+  @override
+  HibikiEinkTheme copyWith({bool? einkMode}) {
+    return HibikiEinkTheme(einkMode ?? this.einkMode);
+  }
+
+  @override
+  HibikiEinkTheme lerp(
+    covariant ThemeExtension<HibikiEinkTheme>? other,
+    double t,
+  ) {
+    return this;
+  }
+}
+
+/// True 当墨水屏模式开启（读不到扩展时为 false，测试裸 ThemeData 零破坏）。
+bool isEinkTheme(BuildContext context) {
+  return Theme.of(context).extension<HibikiEinkTheme>()?.einkMode ?? false;
+}
+
 bool isCupertinoPlatform(BuildContext context) {
   final HibikiDesignSystem designSystem =
       Theme.of(context).extension<HibikiDesignSystemTheme>()?.designSystem ??

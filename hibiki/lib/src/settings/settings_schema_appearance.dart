@@ -32,6 +32,20 @@ SettingsDestination buildAppearanceDestination() {
             icon: Icons.contrast_outlined,
             builder: buildBrightnessSelector,
           ),
+          // 墨水屏模式：全局单开关（设备属性，不随 Profile 快照），叠加在主题/
+          // 明暗机制之上——开=纯黑白+无动画+线式高亮，关=还原原主题。
+          SettingsSwitchItem(
+            id: 'appearance.eink_mode',
+            title: t.eink_mode,
+            subtitle: t.eink_mode_hint,
+            icon: Icons.filter_b_and_w_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.einkMode,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setEinkMode(value);
+              settingsContext.refresh();
+            },
+          ),
           // 「界面大小」滑条用自定义有状态行：拖动中只更新局部值跟手，松手才提交
           // 真实缩放（见 buildAppUiScaleSelector）。这样拖动期间不触发全局
           // HibikiAppUiScale 的 Transform 重排，滑条不会在手指下被缩放位移、可连续拖。
