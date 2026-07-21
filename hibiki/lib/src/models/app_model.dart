@@ -4559,6 +4559,10 @@ class AppModel with ChangeNotifier {
       // 解锁 + 只写扩展键（下次查词 browserExtensionThemeColors 读新 extensionPopupEffectiveSize
       // 即以新尺寸下发，闭环）。
       onExtensionPopupSize: _applyExtensionPopupSize,
+      // 浏览器扩展连接探活：扩展任一端点命中即刷新 last-seen 时间戳，供扩展管理页
+      // 的「验证插件已正常启用」连接检测显示（扩展 SW 启动时主动打 /api/extension/status，
+      // 故装完扩展即刷新，无需用户先划词）。
+      onExtensionSeen: () => _browserExtensionLastSeenAt = DateTime.now(),
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';
@@ -4571,6 +4575,19 @@ class AppModel with ChangeNotifier {
 
   // BUG-726：内置扩展指纹缓存（refreshBrowserExtensionCopy 启动时填充）。
   String? _browserExtensionBuild;
+
+  /// BUG-726：当前 app 内置浏览器扩展的内容指纹（build）。扩展管理页显示版本、
+  /// 判断磁盘副本是否最新。启动时由 [refreshBrowserExtensionCopy] 异步算好，算好前为 null。
+  String? get browserExtensionBuild => _browserExtensionBuild;
+
+  // 浏览器扩展连接探活：last-seen 时间戳。yomitan-api server 收到任一扩展端点请求即
+  // 刷新（见 [_ensureYomitanManager] 的 onExtensionSeen）。扩展管理页据此判断「插件是否
+  // 已正常启用并连上本机」。null = 从未收到过扩展请求。
+  DateTime? _browserExtensionLastSeenAt;
+
+  /// 浏览器扩展最近一次访问本机 yomitan-api server 的时间（null = 从未连上）。
+  /// 扩展管理页「验证插件已正常启用」据此判断连接状态。
+  DateTime? get browserExtensionLastSeenAt => _browserExtensionLastSeenAt;
 
   /// BUG-726：把已解压的浏览器扩展副本刷新到当前 app 内置版本（详见
   /// [refreshBundledBrowserExtensionIfStale]），并缓存内置指纹供查词响应下发。

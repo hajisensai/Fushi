@@ -14,6 +14,7 @@ export 'src/pages/implementations/home_reader_page.dart';
 export 'src/pages/implementations/home_video_page.dart';
 export 'src/pages/implementations/home_game_page.dart';
 export 'src/pages/implementations/downloads_page.dart';
+export 'src/pages/implementations/browser_extension_page.dart';
 export 'src/pages/implementations/home_page.dart';
 export 'src/pages/implementations/text_segmentation_dialog_page.dart';
 export 'src/pages/implementations/reader_hibiki_page.dart';

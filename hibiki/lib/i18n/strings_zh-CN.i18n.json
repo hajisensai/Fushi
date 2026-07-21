@@ -2193,5 +2193,20 @@
   "anime_download_retry": "重试",
   "anime_download_search_failed": "搜索失败或超时，请点重试",
   "anime_download_subs_need_key": "在上方填写 Jimaku API key 后可搜字幕",
-  "anime_download_subs_failed": "字幕搜索失败，请点重试"
+  "anime_download_subs_failed": "字幕搜索失败，请点重试",
+  "nav_browser_extension": "浏览器扩展",
+  "browser_extension_page_intro": "在电脑的 Chrome / Edge 里直接划词查词、解析字幕、一键制卡。先在下面准备扩展文件，再按步骤加载到浏览器。",
+  "browser_extension_prepare_button": "准备扩展文件",
+  "browser_extension_prepare_hint": "会自动开启查词服务并把扩展解压到本机，扩展文件夹路径已复制到剪贴板。",
+  "browser_extension_step_verify": "验证插件已加载并连上本机",
+  "browser_extension_verify_button": "检测连接",
+  "browser_extension_verify_checking": "检测中…",
+  "browser_extension_verify_connected": "已检测到插件已连接，一切正常。",
+  "browser_extension_verify_not_detected": "还没检测到插件。请确认已在浏览器里加载并启用扩展后再检测。",
+  "browser_extension_status_connected": "插件已连接",
+  "browser_extension_status_never": "尚未检测到插件",
+  "browser_extension_version_label": "扩展版本",
+  "browser_extension_reinstall_button": "重新准备 / 刷新文件",
+  "browser_extension_server_on": "查词服务已开启",
+  "browser_extension_server_off": "查词服务未开启"
 }

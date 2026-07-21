@@ -2193,5 +2193,20 @@
   "anime_download_retry": "Retry",
   "anime_download_search_failed": "Search failed or timed out. Tap retry.",
   "anime_download_subs_need_key": "Enter a Jimaku API key above to search subtitles.",
-  "anime_download_subs_failed": "Subtitle search failed. Tap retry."
+  "anime_download_subs_failed": "Subtitle search failed. Tap retry.",
+  "nav_browser_extension": "Extension",
+  "browser_extension_page_intro": "On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.",
+  "browser_extension_prepare_button": "Prepare extension files",
+  "browser_extension_prepare_hint": "Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.",
+  "browser_extension_step_verify": "Verify the extension is loaded and connected",
+  "browser_extension_verify_button": "Check connection",
+  "browser_extension_verify_checking": "Checking…",
+  "browser_extension_verify_connected": "Extension detected and connected.",
+  "browser_extension_verify_not_detected": "No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.",
+  "browser_extension_status_connected": "Extension connected",
+  "browser_extension_status_never": "Extension not detected yet",
+  "browser_extension_version_label": "Extension version",
+  "browser_extension_reinstall_button": "Re-prepare / refresh files",
+  "browser_extension_server_on": "Lookup server on",
+  "browser_extension_server_off": "Lookup server off"
 }
