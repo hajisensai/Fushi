@@ -31,6 +31,10 @@ class ProfileKeys {
     'app_ui_scale',
     'app_ui_scale_mode',
     'app_locale',
+    // E-ink mode describes the physical display the app is running on (same
+    // family as app_ui_scale), never a per-profile reading preference —
+    // snapshotting it would flip the whole app's colors on profile switch.
+    'eink_mode',
     'last_selected_deck',
     'last_selected_dictionary_format',
     'last_selected_model',

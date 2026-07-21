@@ -2208,5 +2208,7 @@
   "browser_extension_version_label": "Extension version",
   "browser_extension_reinstall_button": "Re-prepare / refresh files",
   "browser_extension_server_on": "Lookup server on",
-  "browser_extension_server_off": "Lookup server off"
+  "browser_extension_server_off": "Lookup server off",
+  "eink_mode": "E-ink mode",
+  "eink_mode_hint": "Pure black-and-white theme with no animations and line-style highlights, for e-ink displays"
 }
