@@ -1237,6 +1237,22 @@ abstract class HibikiLibraryHostService {
     String? originalFileName,
   });
 
+  /// 接收 client 上传的视频外挂字幕（sidecar，BUG-964）。
+  ///
+  /// [subtitleFile] 是已落到临时位置的上传字节；实现把它搬到 [id] 视频文件的
+  /// **同目录**，命名为 `<视频文件 stem><suffix>`（[suffix] 形如 `.srt` / `.ja.srt`，
+  /// 由 client 从其本地 sidecar 名裁出、实现须用 [isSidecarSubtitleSuffix] 白名单
+  /// 校验），使 [resolveVideoSubtitle] 的同 stem 匹配天然可见。落盘后按 host 学习
+  /// 语言重解析首选 sidecar，镜像 client 下载路径的行语义（`subtitleSource` /
+  /// `subtitleFormat`、`embeddedSubtitleTrack=null`、解析 cue 落库）。
+  /// [id] 未知视频抛 [StateError]（端点映射 404）；非法 [suffix] 抛 [ArgumentError]
+  /// （端点映射 400）。
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  });
+
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
   ///
   /// 实现**只查 DB** 得到 videoPath，然后验证文件存在后返回；文件不存在或 id 未知

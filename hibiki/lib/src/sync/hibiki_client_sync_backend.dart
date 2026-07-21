@@ -1164,6 +1164,35 @@ class HibikiClientSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id');
   }
 
+  /// 把视频 [id] 的一个外挂字幕 sidecar [file] 推给 host（BUG-964，随
+  /// [putRemoteVideo] 的 live push 一起走）。[suffix] 是相对视频 stem 的字幕后缀
+  /// （`.srt` / `.ja.srt` …，host 端按自己的视频文件名 stem + suffix 落盘）。
+  ///
+  /// 返回 true = host 已接收；false = 老 host 无此端点（404/405），调用方据此
+  /// 停止本轮后续字幕推送并提示升级 host（与合集端点缺失同纪律）。其余失败
+  /// 照常抛（[WebDavOps.checkStatus]）。
+  Future<bool> putRemoteVideoSubtitle(
+    String id,
+    File file, {
+    required String suffix,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
+    );
+    final int length = await file.length();
+    req.headers.set('Content-Type', 'application/octet-stream');
+    req.headers.set('Content-Length', '$length');
+    req.headers.set('X-Hibiki-Subtitle-Suffix', Uri.encodeComponent(suffix));
+    await req.addStream(file.openRead());
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    if (res.statusCode == 404 || res.statusCode == 405) return false;
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/subtitle');
+    return true;
+  }
+
   /// 向 host 换取可直接播放的视频 stream URL。
   ///
   /// 返回的 [RemoteVideoStreamUrls.streamUrl] 已携带短时 token；播放器不需要

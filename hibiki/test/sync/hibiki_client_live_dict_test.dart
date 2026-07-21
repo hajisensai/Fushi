@@ -150,6 +150,10 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   Future<bool> videoExists(String id) async => false;
 
   @override
+  Future<void> importVideoSubtitle(File subtitleFile,
+      {required String id, required String suffix}) async {}
+
+  @override
   Future<void> importVideo(File videoFile,
       {required String id,
       required String title,

@@ -4,8 +4,12 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
+import 'package:hibiki/src/media/video/video_import_dialog.dart'
+    show parseSubtitleCues;
 import 'package:hibiki/src/media/video/video_sidecar.dart'
-    show findSidecarSubtitle, pickSidecar;
+    show findSidecarSubtitle, isSidecarSubtitleSuffix, pickSidecar;
+import 'package:hibiki_audio/hibiki_audio.dart'
+    show AudioCue, readTextWithEncoding;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
@@ -1248,6 +1252,68 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         }
       }
     }
+  }
+
+  /// 接收 client 上传的视频外挂字幕并落到视频同目录（BUG-964，client→host live push）。
+  ///
+  /// 落盘名 = `<host 视频文件 stem><suffix>`，与 [resolveVideoSubtitle] 的同 stem
+  /// 匹配规则天然一致；[suffix] 经 [isSidecarSubtitleSuffix] 白名单校验（拒路径
+  /// 分隔符/穿越）。落位后按 host 学习语言重解析首选 sidecar（多字幕推送顺序无关、
+  /// 结果收敛），镜像 client 下载路径（home_video_page `_registerDownloadedVideo`）
+  /// 的行语义：`subtitleSource`/`subtitleFormat` 指向首选 sidecar、
+  /// `embeddedSubtitleTrack=null`（播放走外挂）、解析 cue 落库（坏字幕 best-effort
+  /// 跳过，不挡文件落位——host 仍能把字节原样转发给其它 client）。
+  @override
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {
+    _assertSafeVideoId(id);
+    if (!isSidecarSubtitleSuffix(suffix)) {
+      throw ArgumentError.value(suffix, 'suffix', 'unsafe subtitle suffix');
+    }
+    await _runExclusive(() async {
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+      if (row == null) throw StateError('unknown video: $id');
+      final String videoPath = row.videoPath;
+      final String lower = videoPath.toLowerCase();
+      if (videoPath.isEmpty ||
+          lower.startsWith('http://') ||
+          lower.startsWith('https://')) {
+        throw StateError('video has no local file: $id');
+      }
+      final File dest = File(p.join(p.dirname(videoPath),
+          '${p.basenameWithoutExtension(videoPath)}$suffix'));
+      await _moveFileInto(subtitleFile, dest);
+      final String? preferred =
+          findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
+      if (preferred == null) return; // 防御：刚落位的 dest 本身就是候选。
+      final String ext =
+          p.extension(preferred).replaceFirst('.', '').toLowerCase();
+      List<AudioCue> cues = const <AudioCue>[];
+      try {
+        cues = parseSubtitleCues(
+          content: await readTextWithEncoding(File(preferred)),
+          format: ext,
+          bookUid: id,
+        );
+      } catch (_) {
+        // best-effort：解析失败不挡字幕文件落位。
+      }
+      await _db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value(id),
+        title: Value(row.title),
+        videoPath: Value(row.videoPath),
+        subtitleSource: Value<String?>(preferred),
+        subtitleFormat: Value<String?>(ext),
+        embeddedSubtitleTrack: const Value<int?>(null),
+      ));
+      if (cues.isNotEmpty) {
+        await _db.replaceCuesForBook(
+            id, cues.map(AudioCue.toCompanion).toList());
+      }
+    });
   }
 
   /// 校验视频 id 不含路径穿越字符（`..` / `\`）。id 允许 `/`（bookUid 形如

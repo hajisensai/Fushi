@@ -59,6 +59,35 @@ String? pickSidecar(
   return null;
 }
 
+/// 纯函数：列出 [dirFiles] 中**所有**属于 `<videoBaseNameNoExt>` 的 sidecar 字幕
+/// 文件名（不区分大小写匹配，返回原始文件名，保持 [dirFiles] 顺序）。
+///
+/// 匹配规则：`<stem><suffix>`，suffix 为可选语言标记 + 字幕扩展名
+/// （`.srt` / `.ja.srt` / `.zh-Hans.ass` …），与 [pickSidecar] 的按语言挑选互补——
+/// 互联 live push 用它把视频的全部外挂字幕推给 host（BUG-964），host 端再按自己的
+/// 学习语言用 [pickSidecar] 解析首选，不在传输层替对端做语言决策。
+List<String> listSidecarSubtitles(
+  String videoBaseNameNoExt,
+  List<String> dirFiles,
+) {
+  final String baseLower = videoBaseNameNoExt.toLowerCase();
+  return <String>[
+    for (final String name in dirFiles)
+      if (name.length > baseLower.length &&
+          name.toLowerCase().startsWith(baseLower) &&
+          isSidecarSubtitleSuffix(name.substring(baseLower.length)))
+        name,
+  ];
+}
+
+/// 纯函数：[suffix] 是否是合法的 sidecar 字幕后缀（`.<ext>` 或 `.<langTag>.<ext>`，
+/// ext ∈ srt/ass/ssa/vtt，langTag 只允许 `[A-Za-z0-9_-]`）。互联字幕上传端点用它做
+/// 服务端白名单校验（后缀由 client 报，绝不放行路径分隔符/穿越）。
+bool isSidecarSubtitleSuffix(String suffix) => RegExp(
+      r'^(\.[A-Za-z0-9_-]{1,32})?\.(srt|ass|ssa|vtt)$',
+      caseSensitive: false,
+    ).hasMatch(suffix);
+
 /// 在 [videoPath] 同目录查找同名 sidecar 字幕（IO 版，包装 [pickSidecar]）。
 ///
 /// [langCode] 是 app 目标学习语言代码（如 `'ja'`/`'ko'`），优先选带该语言标记的
