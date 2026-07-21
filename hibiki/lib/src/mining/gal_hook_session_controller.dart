@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/serial_job_queue.dart';
 import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
@@ -283,7 +284,7 @@ class GalHookSessionController extends ChangeNotifier {
   String? _lastObservedLineId;
   String? _selectedTextThreadKey;
   int? _selectedNativeTextThreadId;
-  Future<void> _miningTail = Future<void>.value();
+  final SerialJobQueue _audioQueue = SerialJobQueue();
   final Set<String> _loopbackCacheInFlight = <String>{};
 
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
@@ -724,28 +725,22 @@ class GalHookSessionController extends ChangeNotifier {
       _markLineAudioMissing(lineId, 'line_context_unavailable');
       return Future<Uint8List?>.value(null);
     }
-    final Completer<Uint8List?> completer = Completer<Uint8List?>();
-    _miningTail = _miningTail.then((_) async {
-      try {
-        completer.complete(
-          await _captureAudioBytesNow(
-            lineId: lineId,
-            sentence: sentence,
-            outputExtension: outputExtension,
-          ),
-        );
-      } catch (error, stack) {
-        _record(
-          GalHookEventSeverity.error,
-          'card',
-          'card.audio_capture_exception',
-          'Audio capture job failed',
-          details: <String, Object?>{'error': '$error', 'stack': '$stack'},
-        );
-        completer.complete(null);
-      }
-    });
-    return completer.future;
+    // 串行化 + 永不毒化（BUG-956）：单次语音采集异常（含事件记录自身抛）不得让后续采集永久挂起。
+    return _audioQueue.enqueue<Uint8List?>(
+      () => _captureAudioBytesNow(
+        lineId: lineId,
+        sentence: sentence,
+        outputExtension: outputExtension,
+      ),
+      buildFailure: (Object error, StackTrace stack) => null,
+      onError: (Object error, StackTrace stack) => _record(
+        GalHookEventSeverity.error,
+        'card',
+        'card.audio_capture_exception',
+        'Audio capture job failed',
+        details: <String, Object?>{'error': '$error', 'stack': '$stack'},
+      ),
+    );
   }
 
   Future<Uint8List?> _captureAudioBytesNow({

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 
@@ -153,4 +154,58 @@ void main() {
       }
     });
   }
+
+  testWidgets('选中线程被行上限淘汰后重建下拉不触发断言（BUG-952）', (WidgetTester tester) async {
+    // 把 session 选到一个 service 里并不存在的线程 key —— 等价于该线程被 500 行上限
+    // 淘汰/清空后 value 落在 items 之外。修复前 DropdownButton 会断言红屏。
+    await GalHookSessionController.instance
+        .selectTextThread(0x1, threadKey: 'luna:evicted');
+    addTearDown(
+      () => GalHookSessionController.instance
+          .selectTextThread(null, threadKey: null),
+    );
+    TexthookerService.instance.appendLine(
+      '别的线程行',
+      textThreadKey: 'luna:other',
+      textThreadLabel: 'Other 0x2',
+      textHookCode: 'HS932@2',
+    );
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: TexthookerPage())),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull,
+        reason: '选中线程被淘汰后 value 应回退占位「全部」，不得触发 DropdownButton 断言');
+    expect(
+      find.byKey(const ValueKey<String>('game-text-thread-selector')),
+      findsOneWidget,
+    );
+  });
+
+  group('injectActiveSentence（BUG-954：fallback 制卡带上活跃台词）', () {
+    test('fields 无 sentence + 有活跃台词 → 注入活跃台词，其它字段不变', () {
+      final Map<String, String> r = injectActiveSentence(
+        <String, String>{'expression': '語'},
+        'これは台詞です。',
+      );
+      expect(r['sentence'], 'これは台詞です。');
+      expect(r['expression'], '語');
+    });
+
+    test('fields 已有非空 sentence → 不覆盖调用方句子', () {
+      final Map<String, String> r = injectActiveSentence(
+        <String, String>{'sentence': '既存の文'},
+        '活跃台詞',
+      );
+      expect(r['sentence'], '既存の文');
+    });
+
+    test('无活跃台词 / 空串 → 原样返回', () {
+      expect(injectActiveSentence(<String, String>{'a': 'b'}, null),
+          <String, String>{'a': 'b'});
+      expect(injectActiveSentence(<String, String>{'a': 'b'}, ''),
+          <String, String>{'a': 'b'});
+    });
+  });
 }
