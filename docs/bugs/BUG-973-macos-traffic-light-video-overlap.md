@@ -1,0 +1,18 @@
+## BUG-973 · macOS 交通灯遮挡视频退出按钮/左上角OSD
+- **报告**：2026-07-21（用户：mac 左上角的三个点经常挡住东西，比如视频退出、快捷键退出等）
+- **真实性**：✅ 真 bug。根因非单点，是 macOS 壳配置 + 视频页左上角控件叠加：
+  - `hibiki/lib/main.dart:201-205`：macOS 启动即 `makeTitlebarTransparent()` + `enableFullSizeContentView()`（macos_ui ToolBar 所需），Flutter 内容延伸到窗口左上角，系统交通灯（红黄绿三圆点）浮在其上，且 macOS **不**把它们计入 `MediaQuery.padding`。
+  - 视频页把交互控件画在同一区域：顶栏「返回/退出」按钮 `controls_theme.part.dart` 的 `topLeft` slot（贴 x≈0）、左上角 OSD 提示卡 `volume_osd.part.dart`（`top:52, left:16` 仍压交通灯右缘，沉浸锁/解锁提示走它 = 用户说的「快捷键退出提示」）、侧锁按钮顶部。
+  - home 壳的 BUG-869 已用 `kMacTitleBarHeight` + `SafeArea.minimum` 预留交通灯高度，但**视频页是独立全屏路由、不走那个 SafeArea**，故仍被挡。
+  - 仅窗口化/沉浸播放态暴露；进原生全屏（media_kit `toggleFullScreen`）时 macOS 自动隐藏交通灯，问题消失。
+- **[x] ① 已修复** — 视频页全程隐藏 macOS 交通灯、退出恢复（用户仍可 Esc / 顶栏返回按钮 / Cmd+Q / 进全屏退出，不损失退出口）。
+  - 新增 helper `hibiki/lib/src/platform/desktop/macos_traffic_lights.dart`：`setMacOSTrafficLightsHidden(bool)`，`Platform.isMacOS` 门控，调 `WindowManipulator.hide/showClose|Miniaturize|ZoomButton`（底层 `NSWindow.standardWindowButton.isHidden`）；非 macOS no-op，channel 失败以 debug 日志吞掉。
+  - `video_hibiki_page.dart` initState 隐藏（`setMacOSTrafficLightsHidden(true)`）、dispose 恢复（`false`）。
+  - `video_hibiki/fullscreen.part.dart` `_exitVideoNativeFullscreen` 桌面分支：`await defaultExitNativeFullscreen()` 后**重新断言隐藏**——AppKit 退全屏重建标题栏视图可能把 `isHidden` 复位，不 re-hide 则退全屏回窗口态交通灯复现遮挡。
+  - 提交哈希：`b5ef3d287`（fix(video): BUG-973 hide macOS traffic lights while in video page）
+- **[x] ② 已加自动化测试** — `hibiki/test/video/macos_video_trafficlight_hide_guard_test.dart`（源码扫描守卫）：
+  - helper 必须 `Platform.isMacOS` 门控 + 隐藏/恢复全部三个按钮（部分隐藏仍遮挡）。
+  - 视频页 initState 隐藏、dispose 恢复。
+  - `_exitVideoNativeFullscreen` 桌面分支在 `defaultExitNativeFullscreen()` 之后 re-hide。
+  - 用源码守卫的理由：行为经 `dart:io` `Platform.isMacOS` 门控（不可被 `debugDefaultTargetPlatformOverride` 伪造）+ 原生窗口按钮 method channel，`flutter test` 无法驱动真 macOS 窗口，源码扫描是最强可落地层。
+- **备注**：与 home 壳 BUG-869 的「预留空间」互补不冲突——视频外靠预留、视频内靠隐藏、退出恢复交由 home 壳的 SafeArea 预留接管。真机验证（远程 Mac）：进视频后交通灯消失、顶栏返回/OSD 不再被挡；进→退原生全屏后交通灯仍隐藏；退视频回 home 交通灯恢复且不压导航栏。

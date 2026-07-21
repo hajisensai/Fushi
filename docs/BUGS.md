@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 954 条。点号进各自文件。
+> 共 955 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-987](bugs/BUG-987-interconnect-pair-dialog-latch.md) | ✅ | ✅ | 互联首次配对失败后刷新不再弹申请框、只提示失败 |
+| [BUG-973](bugs/BUG-973-macos-traffic-light-video-overlap.md) | ✅ | ✅ | macOS 交通灯遮挡视频退出按钮/左上角OSD |
 | [BUG-972](bugs/BUG-972-popup-css-ctx-adjust-unclosed-brace.md) | ✅ | ✅ | popup.css .ctx-adjust-button 缺闭合括号吞掉 .global-lookup-ext-hit 高亮规则 |
 | [BUG-971](bugs/BUG-971-ankiconnect-host-scheme.md) | ✅ | ✅ | AnkiConnect 主机字段吞掉 http:// 变成 http: |
 | [BUG-970](bugs/BUG-970-reading-goal-first-set-no-entry.md) | ✅ | ✅ | 统计页每日/每周目标从未设置时无任何设置入口 |
