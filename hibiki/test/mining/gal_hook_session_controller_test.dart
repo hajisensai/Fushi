@@ -682,6 +682,52 @@ void main() {
     endpoints.dispose();
   });
 
+  test('mine 阶段解析语音一律禁用「最新语音」兜底（BUG-955 ①）', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    final TexthookerLineEntry entry = service.appendLine('siglus line')!;
+    await controller.captureAudioBytes(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: 'aac',
+    );
+
+    expect(engine.grabFallbackFlags, isNotEmpty,
+        reason: 'mine 路径应真的调用了 grabPairedVoiceBytes');
+    expect(
+      engine.grabFallbackFlags.every((bool f) => f == false),
+      isTrue,
+      reason: 'BUG-955：mine 阶段绝不允许最新语音兜底（防历史行借当前语音）',
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   _bug950Guard();
 }
 
@@ -741,6 +787,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   final List<int> pairedTimestamps = <int>[];
   final List<int> utteranceTimestamps = <int>[];
   final List<String?> pairedResourceIds = <String?>[];
+  final List<bool> grabFallbackFlags = <bool>[];
   int stopCalls = 0;
   int readinessRefreshCalls = 0;
   int _pollCalls = 0;
@@ -772,18 +819,23 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     int textTsMs, {
     required String outputExtension,
     String? resourceId,
+    bool allowLatestSessionFallback = true,
   }) async {
     pairedTimestamps.add(textTsMs);
     pairedResourceIds.add(resourceId);
+    grabFallbackFlags.add(allowLatestSessionFallback);
     if (pairedTimestamps.length < pairedReadyAfterCalls) return null;
     return pairedBytes;
   }
 
   @override
-  bool hasPairedVoiceCandidate(int textTsMs) => pairedCandidate;
+  bool hasPairedVoiceCandidate(int textTsMs,
+          {bool allowLatestSessionFallback = true}) =>
+      pairedCandidate;
 
   @override
-  String? findPairedVoiceResourceId(int textTsMs) =>
+  String? findPairedVoiceResourceId(int textTsMs,
+          {bool allowLatestSessionFallback = true}) =>
       pairedCandidate ? 'fake-$textTsMs.ogg' : null;
 
   @override

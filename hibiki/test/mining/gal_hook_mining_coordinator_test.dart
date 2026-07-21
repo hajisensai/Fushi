@@ -282,6 +282,29 @@ void main() {
         reason: 'there is no sentence-audio media to map for this card');
   });
 
+  test('制卡历史行标注 staleScene，制卡当前最新行不标（BUG-955 ②）', () async {
+    final TexthookerLineEntry older = service.appendLine('古い台詞')!;
+    final TexthookerLineEntry newer = service.appendLine('最新の台詞')!;
+    final GalHookMiningCoordinator subject =
+        coordinator(validator: (_) => true);
+
+    final GalHookMiningResult historical = await subject.mineLine(
+      lineId: older.id,
+      fields: const <String, String>{'expression': '古い'},
+      compression: MiningMediaCompression.compressed,
+      repo: _RecordingRepo(),
+    );
+    expect(historical.staleScene, isTrue, reason: '历史行的画面无法重建，当前帧只能标注为可能不对应');
+
+    final GalHookMiningResult live = await subject.mineLine(
+      lineId: newer.id,
+      fields: const <String, String>{'expression': '最新'},
+      compression: MiningMediaCompression.compressed,
+      repo: _RecordingRepo(),
+    );
+    expect(live.staleScene, isFalse, reason: '制卡当前最新行时，当前帧就是该台词的画面');
+  });
+
   test('resource-only mode rejects a card when sentence audio is missing',
       () async {
     activeState = activeState.copyWith(allowAudioFallback: false);

@@ -869,7 +869,13 @@ class GalHookSessionController extends ChangeNotifier {
     final int pollUs = _resourceAudioPollInterval.inMicroseconds;
     while (true) {
       String? resourceId = _resourceIdForLine(lineId);
-      resourceId ??= engine.findPairedVoiceResourceId(timestamp);
+      // BUG-955：mine 阶段解析具体某行，绝不走「最新语音」兜底——历史行时间戳被淘汰后 timestamp=0，
+      // 借最新语音会把当前语音错配给旧台词。晚附着 live 行的资源已在捕获期固化到 _resourceIdForLine，
+      // 这里只按精确 resourceId / 正时间戳窗口取，取不到就交给下游 PCM/loopback 或明确 missing。
+      resourceId ??= engine.findPairedVoiceResourceId(
+        timestamp,
+        allowLatestSessionFallback: false,
+      );
       if (resourceId != null && _resourceIdForLine(lineId) == null) {
         _textService.updateLineAudio(
           lineId,
@@ -882,6 +888,7 @@ class GalHookSessionController extends ChangeNotifier {
         timestamp,
         outputExtension: outputExtension,
         resourceId: resourceId,
+        allowLatestSessionFallback: false,
       );
       if (bytes != null && bytes.isNotEmpty) return bytes;
       if (!engine.rawVoiceReady ||

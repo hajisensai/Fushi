@@ -34,6 +34,7 @@ class GalHookMiningResult {
     this.failureReason,
     this.sentenceAudioMissing = false,
     this.degradedToStill = false,
+    this.staleScene = false,
     this.audioFallbackDisabled = false,
     this.unmappedTokens = const <String>[],
   });
@@ -42,6 +43,11 @@ class GalHookMiningResult {
   final String? failureReason;
   final bool sentenceAudioMissing;
   final bool degradedToStill;
+
+  /// 制卡的是**历史行**（非当前最新行）时置真：画面截图只能抓 mine 时刻的当前窗口帧，
+  /// 无法重建历史行当时的画面，故显式标注「画面可能与该台词不对应」，供调用方提示用户
+  /// （BUG-955：禁止把当前画面冒充成历史台词的画面而不告知）。
+  final bool staleScene;
   final bool audioFallbackDisabled;
   final List<String> unmappedTokens;
 
@@ -157,6 +163,20 @@ class GalHookMiningCoordinator {
       effectiveFields['dictionaryMedia'] ?? '',
     );
 
+    // BUG-955：截图只能抓 mine 时刻的当前窗口帧。若制卡的是历史行（非当前最新行），当前帧
+    // 无法代表该台词当时的画面——显式标注 staleScene，不静默把当前画面冒充成旧台词的画面。
+    final List<TexthookerLineEntry> liveEntries = _textService.entries;
+    final bool staleScene =
+        liveEntries.isEmpty || liveEntries.last.id != entry.id;
+    if (staleScene) {
+      ErrorLogService.instance.log(
+        'GalHookMiningCoordinator.mineLine',
+        'stale scene: mining historical line ${entry.id}; captured frame is '
+            'the current window, not the frame at that line',
+        StackTrace.current,
+      );
+    }
+
     Uint8List? coverBytes = await _captureGif(hwnd: window.hwnd);
     String coverName = 'external_window.gif';
     bool degradedToStill = false;
@@ -212,12 +232,14 @@ class GalHookMiningCoordinator {
           failureReason: mined.abortReason ?? 'scene card mining aborted',
           sentenceAudioMissing: sentenceAudioMissing,
           degradedToStill: degradedToStill,
+          staleScene: staleScene,
         );
       }
       return GalHookMiningResult(
         outcome: mined.outcome! as MineOutcome,
         sentenceAudioMissing: sentenceAudioMissing,
         degradedToStill: degradedToStill,
+        staleScene: staleScene,
         unmappedTokens: await _unmappedTokens(
           repo,
           hasSentenceAudio: !sentenceAudioMissing,
