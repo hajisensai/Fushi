@@ -1,9 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/models.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_search.dart';
+
+import '../helpers/test_platform_services.dart';
 
 /// 设置搜索（T4）：纯过滤函数的行为契约 + 主页/行渲染接线的源码守卫。
 /// 过滤不求值任何 visibility/value 谓词，故可用手工构造的 schema 片段直接测。
@@ -105,6 +111,134 @@ void main() {
     expect(filterSettingsEntries(many, 'same title'), hasLength(50));
   });
 
+  test('text/number items are searchable by their titles', () {
+    final List<SettingsSearchEntry> entries = <SettingsSearchEntry>[
+      SettingsSearchEntry(
+        destination: dest('查词'),
+        sectionTitle: '词典服务',
+        item: SettingsTextItem(
+          id: 'lookup.proxy',
+          title: '更新代理地址',
+          value: (_) => '',
+          onChanged: (_, __) {},
+        ),
+      ),
+      SettingsSearchEntry(
+        destination: dest('查词'),
+        sectionTitle: '词典服务',
+        item: SettingsNumberItem(
+          id: 'lookup.debounce',
+          title: '搜索防抖延迟',
+          value: (_) => 0,
+          onChanged: (_, __) {},
+        ),
+      ),
+    ];
+    expect(
+      filterSettingsEntries(entries, '代理')
+          .map((SettingsSearchEntry e) => e.item.id),
+      <String>['lookup.proxy'],
+    );
+    expect(
+      filterSettingsEntries(entries, '防抖')
+          .map((SettingsSearchEntry e) => e.item.id),
+      <String>['lookup.debounce'],
+    );
+  });
+
+  test('custom item opts into search via searchTitle', () {
+    final SettingsCustomItem optedIn = SettingsCustomItem(
+      id: 'appearance.theme_picker',
+      searchTitle: '主题',
+      builder: (_) => const SizedBox.shrink(),
+    );
+    final SettingsCustomItem optedOut = SettingsCustomItem(
+      id: 'appearance.mystery',
+      builder: (_) => const SizedBox.shrink(),
+    );
+    // 可搜索标题：opt-in 用 searchTitle，未声明保持空（= 不可搜）。
+    expect(settingsItemSearchTitle(optedIn), '主题');
+    expect(settingsItemSearchTitle(optedOut), '');
+
+    final List<SettingsSearchEntry> entries = <SettingsSearchEntry>[
+      SettingsSearchEntry(destination: dest('外观'), item: optedIn),
+    ];
+    final List<SettingsSearchEntry> hits = filterSettingsEntries(entries, '主题');
+    expect(hits.map((SettingsSearchEntry e) => e.item.id),
+        <String>['appearance.theme_picker']);
+    // 打分/展示用的 entry.title 与 searchTitle 同源（结果行不显示空标题）。
+    expect(hits.single.title, '主题');
+  });
+
+  testWidgets(
+      'flattenVisibleSettings indexes titled new kinds and opted-in custom '
+      'rows, skips untitled custom rows', (WidgetTester tester) async {
+    late SettingsContext sctx;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Consumer(
+            builder: (BuildContext context, WidgetRef ref, _) {
+              sctx = SettingsContext(
+                context: context,
+                appModel: _SearchTestAppModel(),
+                ref: ref,
+                readerSource: ReaderHibikiSource.instance,
+                refresh: () {},
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    final List<SettingsDestination> destinations = <SettingsDestination>[
+      SettingsDestination(
+        id: SettingsDestinationId.lookup,
+        title: '查词',
+        icon: Icons.search,
+        sections: <SettingsSection>[
+          SettingsSection(
+            title: '服务',
+            items: <SettingsItem>[
+              SettingsTextItem(
+                id: 'lookup.proxy',
+                title: '更新代理地址',
+                value: (_) => '',
+                onChanged: (_, __) {},
+              ),
+              SettingsNumberItem(
+                id: 'lookup.debounce',
+                title: '搜索防抖延迟',
+                value: (_) => 0,
+                onChanged: (_, __) {},
+              ),
+              SettingsCustomItem(
+                id: 'lookup.theme_picker',
+                searchTitle: '主题',
+                builder: (_) => const SizedBox.shrink(),
+              ),
+              SettingsCustomItem(
+                id: 'lookup.untitled_custom',
+                builder: (_) => const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ];
+
+    final List<String> ids = flattenVisibleSettings(destinations, sctx)
+        .map((SettingsSearchEntry e) => e.item.id)
+        .toList();
+    expect(ids, <String>[
+      'lookup.proxy',
+      'lookup.debounce',
+      'lookup.theme_picker',
+    ]);
+  });
+
   test('home page wires search field, results and reveal hook', () {
     final String home =
         File('lib/src/settings/settings_home_page.dart').readAsStringSync();
@@ -134,4 +268,10 @@ void main() {
     expect(search, contains('HibikiFocusScroll.ensureVisible('));
     expect(search, contains('addPostFrameCallback'));
   });
+}
+
+/// flatten 只求值 visibility 谓词（本测试全为 null），appModel 永不被触碰；
+/// 轻量构造即可。
+class _SearchTestAppModel extends AppModel {
+  _SearchTestAppModel() : super(testPlatformServices());
 }

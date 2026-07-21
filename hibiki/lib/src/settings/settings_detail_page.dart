@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
@@ -46,7 +45,8 @@ class SettingsDetailPage extends BasePage {
   BasePageState<SettingsDetailPage> createState() => _SettingsDetailPageState();
 }
 
-class _SettingsDetailPageState extends BasePageState<SettingsDetailPage> {
+class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
+    with SettingsContextHost<SettingsDetailPage> {
   @override
   void initState() {
     super.initState();
@@ -67,15 +67,8 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final SettingsContext settingsContext = SettingsContext(
-      context: context,
-      appModel: appModel,
-      ref: ref,
-      readerSource: ReaderHibikiSource.instance,
-      refresh: () {
-        if (mounted) setState(() {});
-      },
-    );
+    final SettingsContext settingsContext =
+        createSettingsContext(appModel: appModel, ref: ref);
     final SettingsDestination destination = _freshDestination(settingsContext);
     if (isCupertinoPlatform(context)) {
       return const CupertinoSettingsRenderer().buildDetailPage(

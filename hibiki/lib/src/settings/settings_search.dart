@@ -4,6 +4,17 @@ import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 
+/// item 的可搜索标题：普通项就是 [SettingsItem.title]；[SettingsCustomItem]
+/// 的 title 通常为空（正文由 builder 自绘），可用
+/// [SettingsCustomItem.searchTitle] 显式 opt-in。空串 = 不可搜。
+String settingsItemSearchTitle(SettingsItem item) {
+  if (item is SettingsCustomItem) {
+    final String? custom = item.searchTitle;
+    if (custom != null && custom.isNotEmpty) return custom;
+  }
+  return item.title;
+}
+
 /// 设置搜索的一条可命中条目（已展平：分类 → 分区 → 配置项）。
 class SettingsSearchEntry {
   const SettingsSearchEntry({
@@ -15,12 +26,16 @@ class SettingsSearchEntry {
   final SettingsDestination destination;
   final String? sectionTitle;
   final SettingsItem item;
+
+  /// 打分与结果展示用的标题（custom 项取 searchTitle，见
+  /// [settingsItemSearchTitle]）。
+  String get title => settingsItemSearchTitle(item);
 }
 
 /// 把当前可见的 schema 展平成搜索条目列表。
 ///
-/// 只收带标题的项（[SettingsCustomItem] 通常 title 为空，无文本可匹配，跳过——
-/// 自定义 selector 行的可发现性仍靠其所在分类）。可见性用与渲染完全相同的
+/// 只收有可搜索标题的项（见 [settingsItemSearchTitle]：custom 项默认 title 为空
+/// 跳过，声明 searchTitle 后进入索引）。可见性用与渲染完全相同的
 /// [SettingsDestination.visibleSections] 谓词求值，搜索结果绝不会指向一个
 /// 当前平台/状态下根本不显示的行。
 List<SettingsSearchEntry> flattenVisibleSettings(
@@ -33,7 +48,7 @@ List<SettingsSearchEntry> flattenVisibleSettings(
     for (final SettingsSection section
         in destination.visibleSections(context)) {
       for (final SettingsItem item in section.items) {
-        if (item.title.isEmpty) continue;
+        if (settingsItemSearchTitle(item).isEmpty) continue;
         entries.add(SettingsSearchEntry(
           destination: destination,
           sectionTitle: section.title,
@@ -56,7 +71,7 @@ List<SettingsSearchEntry> filterSettingsEntries(
   if (q.isEmpty) return const <SettingsSearchEntry>[];
 
   int scoreOf(SettingsSearchEntry e) {
-    final String title = e.item.title.toLowerCase();
+    final String title = e.title.toLowerCase();
     if (title.startsWith(q)) return 0;
     if (title.contains(q)) return 1;
     final String haystack = <String?>[

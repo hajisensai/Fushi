@@ -137,7 +137,8 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
       _ReaderQuickSettingsSheetState();
 }
 
-class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
+class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
+    with SettingsContextHost<ReaderQuickSettingsSheet> {
   ReaderHibikiSource get _src => ReaderHibikiSource.instance;
 
   final TextEditingController _searchController = TextEditingController();
@@ -570,16 +571,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 投影项实时从 `ReaderHibikiSource.instance` 读写，本 refresh 回调只需
   /// setState 重读 live 值即可。
   SettingsContext _settingsContext() {
-    return SettingsContext(
-      context: context,
-      appModel: widget.appModel,
-      ref: widget.ref,
-      readerSource: ReaderHibikiSource.instance,
-      refresh: () {
-        if (!mounted) return;
-        setState(() {});
-      },
-    );
+    return createSettingsContext(appModel: widget.appModel, ref: widget.ref);
   }
 
   Widget _buildReaderGroupContent(ReaderGroup group, String title) {
@@ -613,16 +605,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// （把 appThemeKey 落 reader 设置 + 触发 `onThemeChanged` 的词典/歌词联动）。
   /// 与 appearance 其它行的普通 `_settingsContext()` 区分，故单列一个工厂。
   SettingsContext _themeSettingsContext() {
-    return SettingsContext(
-      context: context,
+    return createSettingsContext(
       appModel: widget.appModel,
       ref: widget.ref,
-      readerSource: ReaderHibikiSource.instance,
-      refresh: () {
-        if (!mounted) return;
-        unawaited(_syncThemeSelection());
-        setState(() {});
-      },
+      beforeRefresh: () => unawaited(_syncThemeSelection()),
     );
   }
 

@@ -67,6 +67,45 @@ SettingsDestination buildReaderGroupDestination(
   );
 }
 
+/// 遍历完整 schema，收集所有带 [VideoPlacement] 的 item，按 group + order 升序
+/// 分组（与 [collectReaderItems] 同款；阶段 B 视频面板据此投影渲染）。
+Map<VideoGroup, List<SettingsItem>> collectVideoItems(
+  SettingsContext context,
+) {
+  final Map<VideoGroup, List<SettingsItem>> grouped =
+      <VideoGroup, List<SettingsItem>>{};
+  for (final SettingsDestination destination in buildSettingsSchema(context)) {
+    for (final SettingsSection section in destination.sections) {
+      for (final SettingsItem item in section.items) {
+        final VideoPlacement? placement = item.video;
+        if (placement == null) continue;
+        grouped.putIfAbsent(placement.group, () => <SettingsItem>[]).add(item);
+      }
+    }
+  }
+  for (final List<SettingsItem> items in grouped.values) {
+    items.sort((SettingsItem a, SettingsItem b) =>
+        a.video!.order.compareTo(b.video!.order));
+  }
+  return grouped;
+}
+
+/// 把某个 [VideoGroup] 的 item 包装成一个可被 SettingsRenderer 渲染的 destination。
+SettingsDestination buildVideoGroupDestination(
+  SettingsContext context,
+  VideoGroup group,
+  String title,
+) {
+  final List<SettingsItem> items =
+      collectVideoItems(context)[group] ?? <SettingsItem>[];
+  return SettingsDestination(
+    id: SettingsDestinationId.videoQuickSettings,
+    title: title,
+    icon: Icons.tune_outlined,
+    sections: <SettingsSection>[SettingsSection(items: items)],
+  );
+}
+
 SettingsDestination buildReaderQuickSettingsDestination(
   SettingsContext context,
 ) {
