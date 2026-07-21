@@ -21,7 +21,7 @@ const String kGalgameHelperReleaseTag = 'voice-hook-helper';
 /// 进程注入代码会被杀软报毒，故物理隔离到独立仓库单独构建/分发（见该仓库 README）；且独立仓库
 /// 默认分支上的 `voice-hook-helper.yml` 可正常 workflow_dispatch 刷新 release（主仓库那份因不在
 /// 默认分支无法 dispatch，是迁出独立仓库的根因）。
-const String kGalgameHelperRepo = 'hajisensai/hibiki-voice-hook';
+const String kGalgameHelperRepo = 'hajisensai/hibiki-hook';
 
 /// gh 加速代理前缀（GFW 兜底；raw release 资产可走镜像，与 update_checker 的
 /// updateCheckProxyPrefixes / video_shader_downloader 的 _kGhProxyPrefixes 同范式、同名单）。

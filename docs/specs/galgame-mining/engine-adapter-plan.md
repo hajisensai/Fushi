@@ -6,7 +6,7 @@
 > 等成熟的沉浸学习工具同类，属正常语言学习用途。本文只讨论如何把"新增一个游戏引擎的适配成本"降下来。
 >
 > 面向接手的 AI/开发者，**自包含**。总设计见 [design.md](design.md)，已完成进度与真机证据见 [handoff.md](handoff.md)。
-> 一句话目标：在 **hibiki-voice-hook**（native 采集组件）与 **hibiki**（Dart 消费端）两仓之间，建立
+> 一句话目标：在 **hibiki-hook**（native 采集组件）与 **hibiki**（Dart 消费端）两仓之间，建立
 > 数据驱动 + 模块化 + 可诊断 + 可离线验证的引擎适配体系，把"新增一个引擎"从"改 2666 行巨型
 > `dll_main.cpp` / 从零调查"降到"加 profile + 独立 adapter + fixture"，并完成至少一批高复用适配
 > （RealLive / VisualArt's）作为验证。**核心不是承诺"支持所有引擎"，而是显著降低新增成本并落一批验证。**
@@ -42,7 +42,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 
 ## 0. 开工前必读 & 纪律（指针，不重复）
 - hibiki 侧：读根 `CLAUDE.md` + `hibiki/CLAUDE.md` + 本目录 `design.md` / `handoff.md` + `docs/agent/build.md`。
-  native 侧：读 hibiki-voice-hook 仓的 README + CMake。
+  native 侧：读 hibiki-hook 仓的 README + CMake。
 - 两仓都用**独立 worktree/分支**；hibiki 侧新建 worktree 后先跑 `tool/setup_worktree.ps1`，并在
   `.worktrees/coordination/claims/` 登记 ownership。不覆盖用户或其它 agent 的未提交改动。
 - **根因修复**，不做延迟/重试/吞异常/硬编码/特例分支式绕过；只有外部/平台限制才允许临时兼容层并说明清理条件。
@@ -55,15 +55,15 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 ## 1. 当前真相（已核实 @ 2026-07-21，origin/develop；接手前提，先信这些再动手）
 
 ### 【两仓架构 —— 最重要】
-- native 采集组件已在 commit `d53e1238d`「voice hook helper 完全迁移到独立仓库 hibiki-voice-hook」
-  **从 hibiki 单仓整体迁出到独立仓 `hajisensai/hibiki-voice-hook`**，理由有二：
+- native 采集组件已在 commit `d53e1238d`「voice hook helper 完全迁移到独立仓库 hibiki-hook」
+  **从 hibiki 单仓整体迁出到独立仓 `hajisensai/hibiki-hook`**，理由有二：
   1. 该组件随游戏进程加载做文本/音频采集，部分杀软对这类"随进程加载的采集模块"存在误报，物理隔离到独立仓
      可与主 app 分开构建/分发、降低对主 app 的误报牵连；
   2. 独立仓默认分支上的 `voice-hook-helper.yml` 才能正常 `workflow_dispatch` 刷新 release（主仓那份不在
      默认分支无法 dispatch）。
 - **因此：原始设想里要拆的"巨型主流程" `native/galgame_voice_hook/hook/dll_main.cpp`（~2666 行）现在在
-  hibiki-voice-hook，不在 hibiki。** hibiki 已无此目录（迁出前最后快照见 `origin/worktree-galgame-mining`）。
-- hibiki-voice-hook 现有结构（要重构的对象）：
+  hibiki-hook，不在 hibiki。** hibiki 已无此目录（迁出前最后快照见 `origin/worktree-galgame-mining`）。
+- hibiki-hook 现有结构（要重构的对象）：
   - `CMakeLists.txt`（`-A x64` / `-A Win32` 双架构）
   - `hook/dll_main.cpp`（**2666 行**，Unity/Siglus/KiriKiri/Ren'Py/XAudio2/DirectSound/文本渲染逻辑全堆在此）
   - `injector/injector_main.cpp`（`--launch <exe>` 随启动加载 / `--pid` 运行中附着 两种模式）
@@ -82,7 +82,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   `LoopbackGalAudioSource`）、`galgame_audio_encode.dart`、`galgame_library.dart`、
   `galgame_system_ui_filter.dart`、`galgame_waveform*.dart`。
 - helper 安装/下载：`hibiki/lib/src/mining/galgame_helper_installer.dart`
-  （`kGalgameHelperRepo = 'hajisensai/hibiki-voice-hook'`、tag `voice-hook-helper`、镜像回退纯函数
+  （`kGalgameHelperRepo = 'hajisensai/hibiki-hook'`、tag `voice-hook-helper`、镜像回退纯函数
   `galgameHelperCandidateUrls`、`exeIs32Bit` 读 PE COFF Machine 选 x86/x64 组件）。
 - 文本覆盖：`hibiki/lib/src/platform/gal_hook_text_overlay_channel.dart`。
 - 现成可复用件（design.md 已核实 file:line）：制卡入口 `ImmersionMiningEngine.mine`
@@ -114,17 +114,17 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 
 ### 【原始设想里的幽灵引用（写了但仓库没有 → 新建或改指）】
 - `tool/galhook.ps1`（无，待建）、`engine-support.yaml`（无，待建）、`docs/agent/galgame-hooking.md`（无，待建）。
-- `native/galgame_voice_hook/hook/dll_main.cpp` 的正确归属是 **hibiki-voice-hook**，非 hibiki。
+- `native/galgame_voice_hook/hook/dll_main.cpp` 的正确归属是 **hibiki-hook**，非 hibiki。
 
 ---
 
 ## 2. 仓库边界（推荐方案，可由用户推翻）
-- **hibiki-voice-hook（native 采集相关全归这里，延续隔离）**：
+- **hibiki-hook（native 采集相关全归这里，延续隔离）**：
   engine-support.yaml 真相源 + 文档生成器、adapter registry、各引擎 adapter、LunaHost 桥接层 + ABI 守卫
   （扩 `tools/luna_symcheck.cpp`）、probe/new/replay 三条 native 流水线（`tool/galhook.ps1` 落这里）、
   CTest + fixture。
 - **hibiki（消费端）**：IPC 契约版本/导出守卫、helper installer / 版本匹配（按 exe/module 哈希）、
-  Hook Code 用户导入/导出/保存、Dart 侧文本-音频配对/回放测试、以及从 hibiki-voice-hook 同步/生成的
+  Hook Code 用户导入/导出/保存、Dart 侧文本-音频配对/回放测试、以及从 hibiki-hook 同步/生成的
   **支持矩阵文档副本** + `docs/agent/galgame-hooking.md`（SOP，从 `hibiki/CLAUDE.md` 操作流程索引链接）。
 - 若真相源或矩阵文档想主放在 hibiki，请在开工前指明；否则按上表。
 
@@ -142,7 +142,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 - 用 §1 真机基线填 Siglus/KiriKiriZ/XAudio2/Unity 真实状态，消除 handoff 与旧设想口径不一致。
 - **完成定义**：yaml 单一真相源存在且能自动生成矩阵 md；Siglus/KiriKiriZ/XAudio2/Unity 状态与 §1 基线逐条一致；本阶段零代码行为变化。
 
-### Phase 1 — 无行为变化拆分 `dll_main.cpp`（在 hibiki-voice-hook）
+### Phase 1 — 无行为变化拆分 `dll_main.cpp`（在 hibiki-hook）
 - 统一 adapter 契约：`probe`（是否适用）/ `install` / `capabilities`（text, resourceAudio, pcmAudio）/
   `onModuleLoaded`（延迟加载 DLL）/ `shutdown`（安全停止释放）/ `diagnostics`（结构化诊断）。
 - 建中心 registry；主 worker 只负责生命周期 + 注册调度。把现有 Unity/Siglus/KiriKiri/Ren'Py/XAudio2/
@@ -150,7 +150,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 - 用模块加载通知 / 统一 LoadLibrary 观察机制替代硬编码重复轮询。
 - **完成定义**：adapter 契约 + registry 落地，各引擎逻辑全部搬进独立 adapter，主 worker 只剩生命周期/注册调度；CTest 全绿且行为与拆分前逐项一致（零行为变化，不与 P3+ 能力扩展同提交）。
 
-### Phase 2 — 收敛 LunaHook 集成（在 hibiki-voice-hook，向 hibiki 输出稳定 IPC）
+### Phase 2 — 收敛 LunaHook 集成（在 hibiki-hook，向 hibiki 输出稳定 IPC）
 - LunaHook 仍是主文本来源（复用这一开源文本提取工具，不重造上游引擎文本能力）。把对特定 LunaHost ABI 的
   依赖收进独立桥接层，向 hibiki 输出**版本化、稳定的 IPC**。新增：LunaHost/LunaHook 版本 + 导出检查
   （扩 `luna_symcheck`）；上游版本同步 + 差异检查工具；ABI 契约测试；Hook Code 数据驱动配置；用户导入/
@@ -203,7 +203,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 - [ ] **[P5]** 至少完成 RealLive/VisualArt's 首批适配 + fixture + native 测试 + 上层配对测试。
 - [ ] **[P4]** FFmpeg 版本识别与子进程跟随不再只针对单一旧版 Ren'Py。
 - [ ] **[P1+P3]** 新增一个普通引擎的主要工作可限于 profile + 独立 adapter + fixture，不需改主 worker 主干。
-- [ ] **[全阶段]** hibiki-voice-hook x86/x64 native 构建 + CTest 通过；hibiki 侧 `dart format` + `flutter analyze`
+- [ ] **[全阶段]** hibiki-hook x86/x64 native 构建 + CTest 通过；hibiki 侧 `dart format` + `flutter analyze`
       + `flutter test` 通过。
 - [ ] **[全阶段]** 所有宣称"支持/修好"的真实引擎按仓库规则走原始路径真机验证并留证据；缺样本能力显式标未真机验证。
 - [ ] **[全阶段]** 每阶段独立提交；最终报告含各提交哈希、验证命令、真机证据、未验证项、后续候选
