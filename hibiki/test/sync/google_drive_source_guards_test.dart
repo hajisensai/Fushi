@@ -2,21 +2,25 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-836 Google Drive source-scan guards（合并自
-/// google_drive_appdata_guard_test.dart + google_drive_scope_guard_test.dart；
-/// 断言逐字搬运，每条保持独立 test()）。
+/// Google Drive 存储空间 source-scan 守卫。
+///
+/// 历史（TODO-836）：同步根从可见 Drive 搬进隐藏 appDataFolder，每个 `files.list`
+/// 必须显式带 `spaces`，否则子查询默认落回可见 Drive、静默返回空。
+///
+/// 现状（Hoshi 兼容）：Drive 同步支持两种存储空间 [GoogleDriveSyncSpace]——默认隐藏
+/// appDataFolder（`drive.appdata`），开「与 Hoshi/ッツ 共享」后走可见 My Drive /
+/// `ttu-reader-data`（完整 `drive`）。空间/scope/根目录名不再硬编码字面量，而是统一从
+/// `_space` 字段取。这些守卫因此从「必须硬编码 appDataFolder」改为「必须始终把空间
+/// 显式接到 `_space`，绝不遗漏、绝不写死单一空间」——原来的安全意图（`spaces` 绝不能
+/// 缺省）完整保留，只是值变成动态的。
 void main() {
-  /// TODO-836 HARD GUARD: after the sync root moved to the hidden appDataFolder
-  /// space, EVERY `api.files.list(...)` call MUST pass `spaces: 'appDataFolder'`.
-  /// Drive's files.list defaults to `spaces=drive` (the visible Drive); a subquery
-  /// with `'<folderId>' in parents` does NOT auto-follow the parent into the
-  /// appdata space — without an explicit spaces it returns an EMPTY result with NO
-  /// error (a silent data-loss regression worse than the original 403). Missing it
-  /// on even one call breaks that data link, so we assert per-block.
-  group('appDataFolder space pins (google_drive_handler.dart)', () {
+  /// HARD GUARD: 每个 `api.files.list(...)` 仍必须显式传 `spaces`，且值必须是
+  /// `_space.spaces`（不是写死的 'appDataFolder'/'drive'）。缺省 → appData 模式静默
+  /// 返回空；写死单一空间 → Hoshi 兼容模式打错空间。
+  group('space-field pins (google_drive_handler.dart)', () {
     final File handler = File('lib/src/sync/google_drive_handler.dart');
 
-    test('every api.files.list( call passes spaces: \'appDataFolder\'', () {
+    test('every api.files.list( call passes spaces: _space.spaces', () {
       expect(handler.existsSync(), isTrue,
           reason: 'run from the hibiki/ package root');
       final String src = handler.readAsStringSync();
@@ -44,34 +48,82 @@ void main() {
 
       expect(blocks.length, 7,
           reason: 'expected exactly 7 files.list calls in the handler; if this '
-              'changed, audit each new call for spaces: appDataFolder');
+              'changed, audit each new call for spaces: _space.spaces');
 
       final List<int> missing = <int>[];
       for (int b = 0; b < blocks.length; b++) {
-        if (!blocks[b].contains("spaces: 'appDataFolder'")) missing.add(b);
+        if (!blocks[b].contains('spaces: _space.spaces')) missing.add(b);
       }
       expect(missing, isEmpty,
           reason: 'files.list block(s) at index $missing lack '
-              "spaces: 'appDataFolder' → would silently query the visible "
-              'Drive and return empty in the appdata space (TODO-836)');
+              'spaces: _space.spaces → would either silently query the visible '
+              'Drive in appData mode or hit the wrong space in Hoshi-compat mode '
+              '(TODO-836 / GoogleDriveSyncSpace)');
     });
 
-    test('the sync root is created under the appDataFolder space alias', () {
+    test('no files.list hardcodes a single space literal', () {
       final String src = handler.readAsStringSync();
-      expect(src.contains("..parents = ['appDataFolder']"), isTrue,
-          reason: 'findOrCreateRootFolder must anchor the root in the App Data '
-              'space (parents=[appDataFolder]) (TODO-836)');
+      // The migration to a dynamic space is only complete when NO call still
+      // pins a literal space — a leftover literal would ignore the toggle.
+      expect(src.contains("spaces: 'appDataFolder'"), isFalse,
+          reason: 'hardcoded appDataFolder ignores the Hoshi-compat toggle; '
+              'use _space.spaces (GoogleDriveSyncSpace)');
+      expect(src.contains("spaces: 'drive'"), isFalse,
+          reason: 'hardcoded drive space ignores appData mode; '
+              'use _space.spaces (GoogleDriveSyncSpace)');
+    });
+
+    test('the sync root is created under the space parent alias', () {
+      final String src = handler.readAsStringSync();
+      expect(src.contains('..parents = [_space.rootParent]'), isTrue,
+          reason: 'findOrCreateRootFolder must anchor the root in the current '
+              'space (parents=[_space.rootParent]), not a hardcoded alias');
+      expect(src.contains("..parents = ['appDataFolder']"), isFalse,
+          reason: 'hardcoded appDataFolder parent ignores the Hoshi-compat '
+              'toggle (GoogleDriveSyncSpace)');
+      expect(src.contains('name = _space.rootFolderName'), isTrue,
+          reason: 'the root folder name must come from the space '
+              '(hibiki-data vs ttu-reader-data), not a hardcoded literal');
     });
   });
 
-  /// TODO-836: sync data moved from the user-visible Drive (drive.file) into the
-  /// hidden, app-private appDataFolder space (drive.appdata), so the root-folder
-  /// name lookup is no longer a cross-app query that Google rejects with 403
-  /// insufficient_scope. These source-scan guards pin the migration:
-  ///   - the app requests drive.appdata,
-  ///   - it no longer requests the visible-Drive scope (no `auth/drive.file`),
-  ///   - mobile and desktop request the SAME Drive scope (else云数据落不同空间).
-  group('drive.appdata scope pins (google_drive_auth.dart)', () {
+  /// 两种空间的 scope / 空间别名 / 根目录名的真值源，逐字段守死。
+  ///   - appData：drive.appdata / appDataFolder / hibiki-data（老用户数据原地）。
+  ///   - ttuShared：完整 drive / drive / ttu-reader-data（与 Hoshi/ッツ 共享）。
+  group('sync space definitions (google_drive_sync_space.dart)', () {
+    final File spaceFile = File('lib/src/sync/google_drive_sync_space.dart');
+
+    String source() {
+      expect(spaceFile.existsSync(), isTrue,
+          reason: 'run from the hibiki/ package root');
+      return spaceFile.readAsStringSync();
+    }
+
+    test('declares both the appdata and full-drive scopes', () {
+      final String s = source();
+      expect(
+          s.contains('https://www.googleapis.com/auth/drive.appdata'), isTrue,
+          reason: 'appData space must keep the hidden drive.appdata scope');
+      expect(s.contains("'https://www.googleapis.com/auth/drive'"), isTrue,
+          reason: 'ttuShared must request full drive to read Hoshi-created '
+              'files (drive.file only sees files this app created)');
+    });
+
+    test('never falls back to the visible drive.file scope', () {
+      expect(source().contains('auth/drive.file'), isFalse,
+          reason: 'drive.file cannot see files another OAuth client (Hoshi) '
+              'created, so it can never interop — full drive is required');
+    });
+
+    test('pins the shared root folder name ttu-reader-data', () {
+      expect(source().contains("'ttu-reader-data'"), isTrue,
+          reason: 'the shared visible-Drive root MUST byte-match Hoshi/ッツ');
+    });
+  });
+
+  /// auth 侧接线：scope 不再硬编码，统一取自 `_space.scope`；移动端与桌面端因此天然
+  /// 用同一个 scope（云数据落同一空间）。可见-Drive 的 drive.file 仍必须缺席。
+  group('auth scope wiring (google_drive_auth.dart)', () {
     final File authFile = File('lib/src/sync/google_drive_auth.dart');
 
     String source() {
@@ -80,35 +132,25 @@ void main() {
       return authFile.readAsStringSync();
     }
 
-    test('requests the drive.appdata scope', () {
-      expect(source().contains('https://www.googleapis.com/auth/drive.appdata'),
-          isTrue,
-          reason: 'sync root must live in the appDataFolder space (TODO-836)');
-    });
-
     test('no longer requests the visible-Drive drive.file scope', () {
       expect(source().contains('auth/drive.file'), isFalse,
-          reason:
-              'drive.file forced the whole-Drive root lookup → 403 insufficient_scope; '
-              'it must be fully removed, not left dangling (TODO-836)');
+          reason: 'drive.file forced the whole-Drive root lookup → 403; and it '
+              'cannot read Hoshi files. Must stay removed (TODO-836)');
     });
 
-    test(
-        'mobile (scopes:) and desktop (auth URL scope:) request the same '
-        'Drive scope — both drive.appdata', () {
+    test('mobile and desktop both derive the Drive scope from _space.scope',
+        () {
       final String s = source();
-      // Mobile: GoogleSignIn(scopes: [_driveAppdataScope])
-      expect(RegExp(r'scopes:\s*\[_driveAppdataScope\]').hasMatch(s), isTrue,
-          reason: 'mobile sign-in must request drive.appdata');
-      // Desktop PKCE auth URL: scope: [_driveAppdataScope, _emailScope]
-      expect(
-          RegExp(r"'scope':\s*\[_driveAppdataScope,\s*_emailScope\]")
-              .hasMatch(s),
-          isTrue,
-          reason: 'desktop auth URL must request drive.appdata (+ email)');
-      // The old visible-Drive scope symbol must be gone entirely.
-      expect(s.contains('_driveFileScope'), isFalse,
-          reason: 'the drive.file scope constant must be removed (TODO-836)');
+      // Mobile: GoogleSignIn(scopes: [_space.scope])
+      expect(RegExp(r'scopes:\s*\[_space\.scope\]').hasMatch(s), isTrue,
+          reason: 'mobile sign-in must request the current space scope');
+      // Desktop PKCE auth URL passes scope: _space.scope down into the builder.
+      expect(s.contains('scope: _space.scope'), isTrue,
+          reason: 'desktop auth URL must request the current space scope');
+      // The old single-mode hardcoded scope constant must be gone.
+      expect(s.contains('_driveAppdataScope'), isFalse,
+          reason: 'scope is now sourced from GoogleDriveSyncSpace, not a '
+              'hardcoded _driveAppdataScope constant');
     });
   });
 }

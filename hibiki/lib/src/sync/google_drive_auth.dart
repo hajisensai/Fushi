@@ -12,6 +12,7 @@ import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:http/http.dart' as http;
 
 import 'package:hibiki/src/sync/desktop_oauth.dart';
+import 'package:hibiki/src/sync/google_drive_sync_space.dart';
 import 'package:hibiki/src/sync/google_oauth_secret.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 
@@ -29,16 +30,29 @@ class GoogleDriveAuth {
 
   static bool get useMobileAuth => Platform.isAndroid || Platform.isIOS;
 
-  // TODO-836: sync data now lives in the hidden, app-private appDataFolder
-  // space (drive.appdata) instead of the user-visible Drive. The old
-  // visible-Drive scope forced findOrCreateRootFolder's whole-Drive name
-  // lookup to be a cross-app query → 403 insufficient_scope; drive.appdata
-  // grants full access to the app's own hidden space so the appDataFolder
-  // root lookup is in-scope. We REPLACE (not add) the old scope to keep the
-  // grant minimal — no visible-Drive write access残留.
-  static const _driveAppdataScope =
-      'https://www.googleapis.com/auth/drive.appdata';
+  // Drive 同步有两种存储空间（[GoogleDriveSyncSpace]），OAuth scope 随之切换：
+  // - 默认 appData：`drive.appdata`——app 私有的隐藏空间，别的 app 看不到，历史
+  //   默认（TODO-836：曾从可见 Drive scope 换来，避免全盘按名查触发跨 app 403）。
+  // - Hoshi 兼容 ttuShared：完整 `drive`——才能读到 Hoshi 在可见 My Drive 建的
+  //   文件（`drive.file` 只覆盖本 app 自己建的文件）。这是「与 Hoshi 共享」的必然
+  //   代价，切换开关时强制重新授权（scope 在 consent 时固定，refresh 不能加 scope）。
+  // scope 的真值源是 [GoogleDriveSyncSpace.scope]；此处仅保留 email scope 常量。
   static const _emailScope = 'https://www.googleapis.com/auth/userinfo.email';
+
+  /// 当前 Drive 存储空间 + scope。默认隐藏 appDataFolder；开启「Hoshi 兼容模式」后
+  /// 由 [GoogleDriveSyncBackend] 依偏好切到 [GoogleDriveSyncSpace.ttuShared]。
+  GoogleDriveSyncSpace _space = GoogleDriveSyncSpace.appData;
+
+  GoogleDriveSyncSpace get syncSpace => _space;
+
+  /// 切换存储空间。scope 在 google_sign_in 客户端构造时固定，换 space 必须丢弃缓存的
+  /// `_googleSignIn` 让下次 signIn 用新 scope。移动端已登录账号 [_mobileUser] 由调用方
+  /// signOut 清理（scope 变更本就需要重新授权）。
+  void setSyncSpace(GoogleDriveSyncSpace space) {
+    if (space.id == _space.id) return;
+    _space = space;
+    _googleSignIn = null;
+  }
 
   // 安装型应用（installed-app / PKCE）的 OAuth 凭据按 Google 设计属于非机密
   // 信息，会编译进二进制（见 HBK-AUDIT-072）。client_id 是公开标识，硬编码可接受
@@ -101,7 +115,7 @@ class GoogleDriveAuth {
   GoogleSignIn? _googleSignIn;
   GoogleSignIn get _signIn => _googleSignIn ??= GoogleSignIn(
         clientId: Platform.isIOS ? _iosClientId : null,
-        scopes: [_driveAppdataScope],
+        scopes: [_space.scope],
       );
 
   // The signed-in mobile account, populated by authenticate() or by
@@ -193,6 +207,7 @@ class GoogleDriveAuth {
         buildAuthUrl: (redirectUri) => _buildDesktopAuthUrl(
           redirectUri: redirectUri,
           challenge: challenge,
+          scope: _space.scope,
         ),
       );
       final credentials = await auth_io.obtainAccessCredentialsViaCodeExchange(
@@ -244,12 +259,13 @@ class GoogleDriveAuth {
   static Uri _buildDesktopAuthUrl({
     required String redirectUri,
     required String challenge,
+    required String scope,
   }) =>
       Uri.https('accounts.google.com', 'o/oauth2/v2/auth', {
         'client_id': _oauthClientId,
         'response_type': 'code',
         'redirect_uri': redirectUri,
-        'scope': [_driveAppdataScope, _emailScope].join(' '),
+        'scope': [scope, _emailScope].join(' '),
         'code_challenge': challenge,
         'code_challenge_method': 'S256',
         // Required for Google to issue a refresh token; without it the desktop
@@ -285,10 +301,14 @@ class GoogleDriveAuth {
   }
 
   @visibleForTesting
-  static Uri debugBuildDesktopAuthUrl(String redirectUri) =>
+  static Uri debugBuildDesktopAuthUrl(
+    String redirectUri, {
+    String scope = 'https://www.googleapis.com/auth/drive.appdata',
+  }) =>
       _buildDesktopAuthUrl(
         redirectUri: redirectUri,
         challenge: 'test-challenge',
+        scope: scope,
       );
 
   @visibleForTesting
@@ -450,7 +470,8 @@ class GoogleDriveAuth {
         DateTime.parse(map['expiry'] as String),
       ),
       map['refreshToken'] as String?,
-      (map['scopes'] as List?)?.cast<String>() ?? [_driveAppdataScope],
+      (map['scopes'] as List?)?.cast<String>() ??
+          <String>[GoogleDriveSyncSpace.appData.scope],
     );
   }
 }

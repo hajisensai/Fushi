@@ -46,6 +46,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （关=占位全隐藏、开=混排+云角标）。
   'syncBackup/Show remote entries':
       'test/pages/home_video_remote_mixed_grid_test.dart + test/pages/reader_remote_mixed_grid_test.dart',
+  // Hoshi/ッツ 共享进度同步（PR#311）：Google Drive 后端的「与 Hoshi/ッツ 共享」开关。
+  // 写 SyncRepository google_drive_hoshi_compat（changed=true），生效点在 Drive 存储
+  // 空间 + OAuth scope 切换（GoogleDriveSyncSpace：隐藏 appDataFolder ↔ 可见 My Drive /
+  // ttu-reader-data + 完整 drive scope）与切换后强制登出重授权，非 reader CSS / 主题树，
+  // 无适用探针；由专项测试咬住（space/scope 值对象映射 + 后端 scope 源码守卫 + 仅
+  // Google Drive 可见性门控 + Hoshi/ッツ 文件名逐字节互通契约）。
+  'syncBackup/Share progress with Hoshi / ッツ':
+      'test/sync/google_drive_sync_space_test.dart + test/sync/google_drive_source_guards_test.dart + '
+          'test/sync/sync_settings_visibility_test.dart + test/sync/ttu_hoshi_interop_parity_test.dart',
   // 互联解耦（用户诉求「互联和同步后端不冲突」）：互联总开关，独立于 backendType
   // 云备份后端。写 SyncRepository（changed=true），生效点在同步触发的双通道门控 +
   // 互联各 section 可见性 + 远端内容来源选择（非 reader CSS / 主题树），无适用探针；

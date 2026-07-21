@@ -2208,5 +2208,7 @@
   "browser_extension_version_label": "Extension version",
   "browser_extension_reinstall_button": "Re-prepare / refresh files",
   "browser_extension_server_on": "Lookup server on",
-  "browser_extension_server_off": "Lookup server off"
+  "browser_extension_server_off": "Lookup server off",
+  "sync_google_drive_hoshi_compat": "Share progress with Hoshi / ッツ",
+  "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in."
 }

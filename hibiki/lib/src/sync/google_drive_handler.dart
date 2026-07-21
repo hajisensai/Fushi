@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
+import 'package:hibiki/src/sync/google_drive_sync_space.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
@@ -81,6 +82,22 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   static final GoogleDriveHandler instance = GoogleDriveHandler._();
 
   drive.DriveApi? _cachedApi;
+
+  /// 当前 Drive 存储空间 + scope。默认隐藏 appDataFolder；「Hoshi 兼容模式」开启时
+  /// 切到可见 My Drive / `ttu-reader-data`（见 [GoogleDriveSyncSpace]）。所有
+  /// `files.list` 的 `spaces`、根文件夹的 parent/名字都从这里取，消除散落分支。
+  GoogleDriveSyncSpace _space = GoogleDriveSyncSpace.appData;
+
+  GoogleDriveSyncSpace get syncSpace => _space;
+
+  /// 切换存储空间。变更时清缓存：根/书文件夹 id 与 DriveApi 句柄都归属旧空间，换空间后
+  /// 若复用会拿旧空间的 folderId 打新空间的请求，必须重建（[clearCache] 覆写会连
+  /// `_cachedApi` 一起清）。
+  void setSyncSpace(GoogleDriveSyncSpace space) {
+    if (space.id == _space.id) return;
+    _space = space;
+    clearCache();
+  }
 
   // 缓存字段（rootFolderIdCache / folderIdCache）+ restoreCache /
   // cachedRootFolderId / cachedFolderIds / cacheBookFolderIds / evictFolderId
@@ -183,10 +200,11 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
     return _call((api) async {
       final list = await api.files.list(
-        // TODO-836: query the hidden App Data space, not the visible Drive.
-        spaces: 'appDataFolder',
+        // 隐藏 appDataFolder 空间下必须显式带 spaces；可见 My Drive 模式用 'drive'
+        // （[GoogleDriveSyncSpace]，TODO-836）。
+        spaces: _space.spaces,
         q: "trashed=false and mimeType='application/vnd.google-apps.folder' "
-            "and name='$kSyncRootFolderName'",
+            "and name='${_space.rootFolderName}'",
         $fields: 'files(id,name)',
       );
 
@@ -197,11 +215,11 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
       final created = await api.files.create(
         drive.File()
-          ..name = kSyncRootFolderName
+          ..name = _space.rootFolderName
           ..mimeType = 'application/vnd.google-apps.folder'
-          // TODO-836: 'appDataFolder' is the reserved alias for the App Data
-          // space root; this anchors the sync root inside the hidden space.
-          ..parents = ['appDataFolder'],
+          // parent 别名：appDataFolder（隐藏空间根）或 root（My Drive 根），把同步
+          // 根锚进当前空间（[GoogleDriveSyncSpace.rootParent]）。
+          ..parents = [_space.rootParent],
       );
       rootFolderIdCache = created.id!;
       return rootFolderIdCache!;
@@ -216,9 +234,9 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
       do {
         final list = await api.files.list(
-          // TODO-836: subqueries with `in parents` still default to the visible
-          // Drive space and return EMPTY in appDataFolder unless spaces is set.
-          spaces: 'appDataFolder',
+          // `in parents` 子查询默认落可见 Drive 空间，在 appDataFolder 里必须显式
+          // 带 spaces 否则返回空（[GoogleDriveSyncSpace]，TODO-836）。
+          spaces: _space.spaces,
           q: "trashed=false and '$q' in parents "
               "and mimeType='application/vnd.google-apps.folder'",
           $fields: 'nextPageToken,files(id,name)',
@@ -258,7 +276,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
     return _call((api) async {
       final list = await api.files.list(
-        spaces: 'appDataFolder', // TODO-836: search the App Data space.
+        spaces: _space.spaces, // [GoogleDriveSyncSpace]: 当前空间（appdata/drive）。
         q: "trashed=false and '$qRoot' in parents "
             "and mimeType='application/vnd.google-apps.folder' "
             "and name='$qName'",
@@ -306,7 +324,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
     return _call((api) async {
       final list = await api.files.list(
-        spaces: 'appDataFolder', // TODO-836: search the App Data space.
+        spaces: _space.spaces, // [GoogleDriveSyncSpace]: 当前空间（appdata/drive）。
         q: "trashed=false and '$qParent' in parents "
             "and mimeType='$_folderMimeType' "
             "and name='$qName'",
@@ -339,7 +357,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
       do {
         final list = await api.files.list(
-          spaces: 'appDataFolder', // TODO-836: search the App Data space.
+          spaces: _space.spaces, // [GoogleDriveSyncSpace]: 当前空间（appdata/drive）。
           q: "'$qParent' in parents and trashed=false",
           $fields: 'nextPageToken,files(id,name,mimeType,size)',
           pageSize: 1000,
@@ -388,7 +406,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     final q = _escapeQuery(folderId);
     return _call((api) async {
       final list = await api.files.list(
-        spaces: 'appDataFolder', // TODO-836: search the App Data space.
+        spaces: _space.spaces, // [GoogleDriveSyncSpace]: 当前空间（appdata/drive）。
         q: "trashed=false and '$q' in parents "
             "and mimeType!='application/vnd.google-apps.folder'",
         $fields: 'files(id,name)',
@@ -651,7 +669,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     final qName = _escapeQuery(fileName);
     return _call((api) async {
       final list = await api.files.list(
-        spaces: 'appDataFolder', // TODO-836: search the App Data space.
+        spaces: _space.spaces, // [GoogleDriveSyncSpace]: 当前空间（appdata/drive）。
         q: "trashed=false and '$qFolder' in parents and name='$qName'",
         $fields: 'files(id,name)',
       );
