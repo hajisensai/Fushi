@@ -17,6 +17,8 @@ SettingsDestination buildProfilesDestination() {
           SettingsCustomItem(
             id: 'profiles.current',
             icon: Icons.person_outline,
+            // searchTitle 复用选择器行的既有标题（无新 key），让配置选择进入搜索。
+            searchTitle: t.profile_label,
             builder: buildProfilePickerRow,
           ),
         ],
