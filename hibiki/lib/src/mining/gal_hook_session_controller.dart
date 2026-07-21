@@ -1301,6 +1301,12 @@ class GalHookSessionController extends ChangeNotifier {
             details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
           );
         }
+        // BUG-950：上面 grabUtterance / grabClipNear / _cacheLoopbackForLine 的 await 可能
+        // 跨越一次 stop/重启。期间 engine 被换掉则当前迭代属于旧会话，立即收手——绝不再推进
+        // cursor（否则把新会话已重置的 _lastTextSeq 覆写成旧大值，新文本全被判 duplicate 丢弃）。
+        if (engine != _engineSource) {
+          return;
+        }
         cursor = line.seq;
       }
       _refreshPendingResourceMatches(engine);

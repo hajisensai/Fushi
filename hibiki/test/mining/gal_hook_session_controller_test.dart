@@ -681,6 +681,34 @@ void main() {
     await controller.close();
     endpoints.dispose();
   });
+
+  _bug950Guard();
+}
+
+void _bug950Guard() {
+  test('poll 循环 await 归来后有 engine generation 复检（BUG-950 回归守卫）', () {
+    // grabUtterance/_cacheLoopbackForLine 的 await 跨越 stop/重启时，恢复后必须复检
+    // engine == _engineSource 再推进 cursor，否则新会话的 _lastTextSeq 被旧 cursor 倒灌、
+    // 新文本全被判 duplicate 丢弃。此为跨异步 gap + 私有 seq 的时序 bug，行为断言留真机轮；
+    // 源码守卫确保复检不被后续改动悄悄删掉。
+    final File src = File('lib/src/mining/gal_hook_session_controller.dart');
+    expect(src.existsSync(), isTrue);
+    final String body = src.readAsStringSync();
+    final int pollAt = body.indexOf('Future<void> _pollHookedText()');
+    expect(pollAt, greaterThan(0), reason: '_pollHookedText 不存在，守卫需更新');
+    final int cursorWriteAt =
+        body.indexOf('cursor = line.seq;\n      }', pollAt);
+    expect(cursorWriteAt, greaterThan(pollAt), reason: '找不到循环末尾 cursor 推进点');
+    // 紧邻循环末尾 cursor 推进之前的窗口里，必须存在 engine != _engineSource 复检 + BUG-950 标记
+    // （前面别处也有 generation 检查，故只看贴着 cursor 写入的这一段，避免误过）。
+    final String window = body.substring(cursorWriteAt - 400, cursorWriteAt);
+    expect(
+      window.contains('if (engine != _engineSource)') &&
+          window.contains('BUG-950'),
+      isTrue,
+      reason: 'BUG-950：推进 cursor 前必须复检 engine generation（await 跨重启防倒灌）',
+    );
+  });
 }
 
 class _FakeEngineSource extends EngineHookGalAudioSource {
