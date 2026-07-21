@@ -47,10 +47,16 @@ void main() {
       );
     }
 
-    // hook 必须经 unawaited 注册，不能同步丢弃 Future（旧写法 `_applyStylesLive();`
-    // 会让 await 边界后的异常无主逃逸）。
-    expect(src, contains('unawaited(_applyStylesLive()'),
-        reason: 'onSettingsChangedLive 必须 unawaited()+catchError，不能裸调');
+    // BUG-969：拖 slider 风暴收敛——onSettingsChangedLive 经 _liveSettingsRunner
+    // 合并触发（unawaited trigger），_applyStylesLive() 在 runner 动作内 await 且被
+    // try/catch 归集到 'ReaderHibiki.onSettingsChangedLive' 日志 tag（上面 guardTags
+    // 已断言 tag 在位）。两处都不能退回裸 fire-and-forget（await 边界后异常无主逃逸）。
+    expect(src, contains('unawaited(_liveSettingsRunner.trigger()'),
+        reason:
+            'onSettingsChangedLive 必须经 _liveSettingsRunner.trigger() 合并注册，不能裸调');
+    expect(src, contains('await _applyStylesLive();'),
+        reason: '_applyStylesLive() 必须在 runner 动作内 await 且被 try/catch 归集，'
+            '不能裸 fire-and-forget');
   });
 
   // BUG-023 / TODO-736 B-1：字体大小/行间/余白 live 变更经 _applyStylesLive 注入新 CSS 后
