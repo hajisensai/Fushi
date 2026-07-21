@@ -124,7 +124,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
       // 视频窄窗外层滚动视图不带 key（与阅读器不同：阅读器带 _subPage key）。
       narrowKey: () => null,
       // TODO-344：四边按 MD3 spacing 放宽，消除「上下左右贴死」。水平用
-      // page + gap（24），垂直顶部用 card（16）让内容离 sheet header / 分栏
+      // page + gap（28），垂直顶部用 card（20）让内容离 sheet header / 分栏
       // divider 留出呼吸位，底部叠 card + gap + 键盘 inset（共享公式
       // [HibikiMasterDetailSettingsSheet.paneInsets]）。全部走 token，无裸值。
       narrowPadding: (BuildContext context, BoxConstraints constraints) {

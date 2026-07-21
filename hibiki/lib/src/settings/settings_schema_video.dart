@@ -156,16 +156,11 @@ SettingsDestination buildVideoDestination() {
             label: (double v) => '${v.toStringAsFixed(1)}x',
             value: (SettingsContext settingsContext) =>
                 currentVideoAsbConfig(settingsContext).longPressSpeed,
-            // 播放中拖动逐档即时写穿（旧面板即改即生效）；全局设置页维持松手才落盘。
+            // 拖动只本地预览、松手一次性落盘（旧面板语义）。该值仅在下次长按手势
+            // 时消费，拖动中写穿毫无实时收益，反而每 0.1x 档触发播放页全页
+            // rebuild 掉帧（BUG-963 同款抖动）。
+            commitOnRelease: true,
             onChanged: (SettingsContext settingsContext, double v) async {
-              if (!videoHostVisible(settingsContext)) return;
-              await commitVideoAsbConfig(
-                settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(longPressSpeed: snapVideoLongPressSpeed(v)),
-              );
-            },
-            onChangeEnd: (SettingsContext settingsContext, double v) async {
               await commitVideoAsbConfig(
                 settingsContext,
                 (VideoAsbplayerConfig c) =>

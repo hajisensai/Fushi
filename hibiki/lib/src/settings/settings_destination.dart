@@ -285,10 +285,8 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
   /// 解码/几何/声道等）；数据模型不变，仅换行控件。
   final bool dropdown;
 
-  /// 类型安全地派发一次值变更。渲染器统一把本项当 `SettingsSegmentedItem<Object>`
-  /// 持有派发；若在渲染层静态读 [onChanged]（其实际签名是 `(ctx, T)`），会因函数参数
-  /// 逆变（`(Object)` 不是 `(String)` 的子类型）抛 `_TypeError`。这里在实例的真实 [T]
-  /// 上下文里把 [value] 转回 [T] 再调用，让类型校验落在编译期、渲染层不必 `as dynamic`。
+  /// 渲染器持有的是 `SettingsSegmentedItem<Object>`，静态读 [onChanged]（实际签名
+  /// `(ctx, T)`）会因函数参数逆变抛 `_TypeError`——故在真实 [T] 上下文里转回再调。
   FutureOr<void> dispatchChange(SettingsContext context, Object value) =>
       onChanged(context, value as T);
 }
@@ -311,7 +309,11 @@ class SettingsSliderItem extends SettingsItem {
     this.onChangeEnd,
     this.step,
     this.titleReadout = false,
-  });
+    this.commitOnRelease = false,
+  }) : assert(
+          !commitOnRelease || onChangeEnd == null,
+          'commitOnRelease 滑条松手统一走 onChanged 提交，不得再声明 onChangeEnd',
+        );
 
   final double Function(SettingsContext context) value;
   final double min;
@@ -328,6 +330,12 @@ class SettingsSliderItem extends SettingsItem {
   /// 为 true 时渲染器在标题后追加实时读数 `(label(value))`，如「音量 (95%)」。
   /// [title] 本身保持裸标题不变（焦点遍历 / 覆盖测试以裸标题为身份 key）。
   final bool titleReadout;
+
+  /// 为 true 时拖动只更新渲染层本地预览值（跟手 + 读数实时），松手才把最终值经
+  /// [onChanged] 提交一次。用于写穿成本高（BUG-963：播放页逐 tick 写穿触发全页
+  /// rebuild 掉帧）且拖动过程无实时预览意义的滑条；键盘/手柄步进仍每按即提交。
+  /// 与 [onChangeEnd] 互斥（松手提交统一走 [onChanged]）。
+  final bool commitOnRelease;
 }
 
 class SettingsStepperItem extends SettingsItem {

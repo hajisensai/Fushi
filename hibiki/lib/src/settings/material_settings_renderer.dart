@@ -132,7 +132,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         destination.visibleSections(settingsContext);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
     // Left side hugs the pane divider; give it MD3 expanded breathing room
-    // (page + gap = 24) so detail content isn't glued to the nav pane. Horizontal
+    // (page + gap = 28) so detail content isn't glued to the nav pane. Horizontal
     // insets come from the shared [detailHorizontalInsets] so sibling cards that
     // must match this width (reader quick-settings 主题选择器) can reuse the same
     // source instead of hardcoding their own left/right padding.
