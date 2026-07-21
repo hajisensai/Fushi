@@ -54,24 +54,48 @@ void main() {
   }
 
   group('TODO-825 跟随滚动恢复平滑动画（不得退化 instant）', () {
-    test('scrollToTarget 三条滚动分支均为 behavior:smooth', () {
+    // 墨水屏模式（eink）更新：三条 scrollBy 的 behavior 收敛为一个共享变量——
+    // 默认仍是 'smooth'（TODO-825 契约不变），仅当 CSS 变量
+    // --hoshi-reader-eink-mode === '1'（用户显式开墨水屏模式）才取 'auto' 瞬时。
+    // 守卫从「三处 smooth 字面量」改为锁这个变量化后的等价不变式：
+    //   ① behavior 变量的 smooth 默认 + eink 门控必须存在；
+    //   ② 三条 scrollBy 都必须走该变量（不得偷偷写死 instant/auto）。
+    test('scrollToTarget：behavior 默认 smooth、仅 eink 降 auto', () {
       final String body = scrollToTargetBody();
-      final int hits = RegExp(r"behavior:\s*'smooth'").allMatches(body).length;
+      expect(
+        RegExp(r'--hoshi-reader-eink-mode').hasMatch(body),
+        isTrue,
+        reason: 'behavior 的瞬时分支必须由墨水屏模式 CSS 变量门控（用户显式 opt-in），'
+            '不得无条件砍动画',
+      );
+      expect(
+        RegExp(r"\?\s*'auto'\s*:\s*'smooth'").hasMatch(body),
+        isTrue,
+        reason: 'behavior 三元的默认分支必须是 smooth（用户要求恢复平滑动画，'
+            'TODO-803 砍成 instant 已被驳回；eink 才允许 auto）',
+      );
+      final int hits = RegExp(r'behavior:\s*behavior').allMatches(body).length;
       expect(
         hits,
         greaterThanOrEqualTo(3),
-        reason: 'scrollToTarget 竖排 rl / 竖排 lr / 横排三条 scrollBy 都必须 smooth'
-            '（用户要求恢复平滑动画，TODO-803 砍成 instant 已被驳回）',
+        reason: 'scrollToTarget 竖排 rl / 竖排 lr / 横排三条 scrollBy 都必须走共享的 '
+            'behavior 变量（默认 smooth）',
       );
     });
 
-    test('scrollToTarget 不得用 behavior:instant（砍动画回归）', () {
+    test('scrollToTarget 不得写死 behavior:instant/smooth 之外的字面量（砍动画回归）', () {
       final String body = scrollToTargetBody();
       expect(
         RegExp(r"behavior:\s*'instant'").hasMatch(body),
         isFalse,
         reason: '跟随滚动退化成 instant = 砍掉动画 = 回归 TODO-803 被驳回的修法；'
             '闪烁必须靠 settle 窗治住，不靠砍动画',
+      );
+      expect(
+        RegExp(r"behavior:\s*'auto'").hasMatch(body),
+        isFalse,
+        reason: "写死 behavior:'auto' 同样是无条件砍动画；瞬时只能经 eink 门控的 "
+            'behavior 变量',
       );
     });
   });
