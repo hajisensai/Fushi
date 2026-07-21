@@ -5,8 +5,8 @@ import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// BUG-915 守卫：
-/// ① 尊重 .ass 模式下用户字号滑块 = ASS 字号的整体倍率（mpv `sub-scale` 语义，
-///   [VideoSubtitleOverlay.assUserFontScale]）；默认 1.0 完全按作者字号（mpv 平价基线）。
+/// ① 尊重 .ass 模式**完全按作者字号**（mpv 平价基线；用户决策：尊重即尊重字号，
+///   用户字号滑块不参与 ASS 字号——曾试做 sub-scale 倍率，按用户要求取消）。
 /// ② respectAssStyle 关 = 纯字幕模式（asbplayer 语义）：\pos/\an/层/边距全不参与——主
 ///   字幕恒底部居中、同文本多层拷贝（KFX 特效层）去重只渲染一条、文本互异的竖排堆叠。
 ///   旧行为「样式不尊重、位置却尊重」把特效层渲染成同位叠印乱字（用户截图）。
@@ -30,7 +30,7 @@ Future<VideoPlayerController> _pump(
   WidgetTester tester,
   List<AudioCue> cues, {
   required bool respect,
-  double assUserFontScale = 1.0,
+  double fontSize = 36,
 }) async {
   final VideoPlayerController c = VideoPlayerController();
   addTearDown(c.dispose);
@@ -46,7 +46,7 @@ Future<VideoPlayerController> _pump(
       body: VideoSubtitleOverlay(
         controller: c,
         respectAssStyle: respect,
-        assUserFontScale: assUserFontScale,
+        fontSize: fontSize,
       ),
     ),
   ));
@@ -59,9 +59,8 @@ Text _fill(WidgetTester tester, String ch) => tester
     .firstWhere((Text t) => t.style?.foreground == null);
 
 void main() {
-  group('① assUserFontScale（mpv sub-scale 语义）', () {
-    testWidgets('默认 1.0：ASS 字号按显示几何缩放，完全按作者字号（基线不变）',
-        (WidgetTester tester) async {
+  group('① 尊重 .ass = 尊重字号（完全按作者字号，滑块不参与）', () {
+    testWidgets('ASS 字号按显示几何缩放，完全按作者字号（mpv 平价基线）', (WidgetTester tester) async {
       await _pump(
           tester, _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,あ'),
           respect: true);
@@ -70,13 +69,14 @@ void main() {
       expect(_fill(tester, 'あ').style?.fontSize, closeTo(30, 0.01));
     });
 
-    testWidgets('1.5 倍：ASS 字号整体放大 1.5×；描边不随之缩放（sub-scale 只缩文字）',
+    testWidgets('用户字号滑块（fontSize）不影响 ASS 字号（尊重即尊重字号）',
         (WidgetTester tester) async {
       await _pump(
           tester, _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,あ'),
-          respect: true, assUserFontScale: 1.5);
-      expect(_fill(tester, 'あ').style?.fontSize, closeTo(45, 0.01));
-      // 描边宽不乘用户倍率：Outline=2 → 半径 2×450/720=1.25 → strokeWidth ×2 = 2.5。
+          respect: true, fontSize: 60);
+      // fontSize 60（滑块调大）不得放大 ASS 字幕：仍是作者字号换算的 30。
+      expect(_fill(tester, 'あ').style?.fontSize, closeTo(30, 0.01));
+      // 描边同理不受滑块影响：Outline=2 → 半径 2×450/720=1.25 → strokeWidth ×2 = 2.5。
       final Text stroke = tester
           .widgetList<Text>(find.text('あ'))
           .firstWhere((Text t) => t.style?.foreground != null);
