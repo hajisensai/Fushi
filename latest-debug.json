@@ -22,11 +22,11 @@
       "version": "1.2.0-debug.8131"
     },
     {
-      "name": "hibiki-1.2.0-debug.8530-a04cf7e-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8530-a04cf7e-debug.apk",
-      "releaseSequence": 8530,
-      "tag": "v1.2.0-debug.8530+a04cf7e",
-      "version": "1.2.0-debug.8530"
+      "name": "hibiki-1.2.0-debug.8535-2d47930-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8535-2d47930-debug.apk",
+      "releaseSequence": 8535,
+      "tag": "v1.2.0-debug.8535+2d47930",
+      "version": "1.2.0-debug.8535"
     },
     {
       "name": "hibiki-1.2.0-debug.8536-windows-setup.exe",
