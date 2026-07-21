@@ -138,8 +138,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   文本能力（Luna 自动识别 / PC Hooks / 专用 Hook Code / codepage / 线程选择提示）；音频能力 + 优先级；
   已验证游戏/版本/哈希/证据/当前状态/已知限制；对应 adapter/fixture/测试路径。
 - 生成器：yaml → 可读支持矩阵 md。**禁止再手工维护多份互相矛盾的状态表。**
-- 引擎名录/家族/别名可参考 Galgame-Engine-Collect 的 `table.md`/`unpack.md` 离线播种（见 §4）；识别签名
-  （exe/PE imports/资源扩展名）必须来自真实样本。
+- 识别签名（exe 名/PE imports/资源扩展名/资源哈希）必须来自真实样本实测，不照抄外部资料库。
 - 用 §1 真机基线填 Siglus/KiriKiriZ/XAudio2/Unity 真实状态，消除 handoff 与旧设想口径不一致。
 - **完成定义**：yaml 单一真相源存在且能自动生成矩阵 md；Siglus/KiriKiriZ/XAudio2/Unity 状态与 §1 基线逐条一致；本阶段零代码行为变化。
 
@@ -192,10 +191,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 ## 4. 许可（硬约束）
 - 资源格式实现优先参考 **GARbro（MIT）**，保留必要署名和许可证；文本实现优先复用 **LunaHook（GPLv3）**，
   遵守 Hibiki 现有隔离分发和许可证要求。
-- **Galgame-Engine-Collect（`github.com/2439905184/Galgame-Engine-Collect`，CC BY-NC-SA 4.0）** 只当**离线研究线索**：
-  从 `table.md`/`unpack.md` 取引擎名录/家族/「引擎→解包器」提示播种 `engine-support.yaml`，README 指向的开源提取器
-  （Inori/`FuckGalEngine` 等）是更直接的代码线索。**其二进制/表格/PDF 不 vendoring、不随 Hibiki 分发**（许可与 GPLv3
-  分发不兼容）；实际资源格式代码仍以 **GARbro（MIT）/ FuckGalEngine** 为准。
+- 通用红线（见 §6）：不 vendoring 任何 NonCommercial/受限许可的二进制或数据，不随 Hibiki 分发。
 
 ---
 
