@@ -2223,5 +2223,6 @@
   "interconnect_upload_audiobook_files": "Upload audiobook files",
   "interconnect_upload_audiobook_files_hint": "Sync this device's audiobook audio and subtitle packages up to the interconnect peer (large).",
   "interconnect_upload_video_files": "Upload video files",
-  "interconnect_upload_video_files_hint": "Sync this device's local video files up to the interconnect peer (large)."
+  "interconnect_upload_video_files_hint": "Sync this device's local video files up to the interconnect peer (large).",
+  "shortcut_action_reader_exit_book": "Exit book"
 }

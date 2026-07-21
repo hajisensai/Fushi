@@ -92,13 +92,19 @@ class ShortcutDefaults {
     ShortcutAction.readerOpenNavigation: _kb([
       _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
     ]),
-    // 阅读器内的「关词典 / 返回」键：有词典弹窗就关弹窗，否则退出书籍（执行体见
-    // reader_hibiki_page 的 _executeShortcutAction）。键盘 Esc。**TODO-700 T1/T2：
-    // 手柄 B 已从这里挪走** —— 阅读器内 B 现绑 audiobookPrevSentence（上一句），
-    // 不再退书（约束2/4：X=下一句 / B=上一句全程可用，B 不被全局返回夺舍）。退书走
-    // Esc / 返回手势 / 底栏，或非阅读器页的全局 B(globalBack)。
+    // 「关闭词典」键（用户拍板：与退书拆成两个独立动作）：只在词典弹窗可见时关弹窗，
+    // 无弹窗时不消费、不退书（执行体见 caret.part.dart 的 _executeShortcutAction）。
+    // 键盘 Esc。**TODO-700 T1/T2：手柄 B 已从这里挪走** —— 阅读器内 B 现绑
+    // audiobookPrevSentence（上一句），不再退书（约束2/4：X=下一句 / B=上一句全程
+    // 可用，B 不被全局返回夺舍）。
     ShortcutAction.readerDismissDict: _kb([
       _key(LogicalKeyboardKey.escape),
+    ]),
+    // 「退出书籍」键（schema v6 拆出）：直接退书，走 maybePop → PopScope onWillPop
+    // 闸门（flush 阅读位置 / closeMedia / 关书自动同步，BUG-782 同径）。默认 Ctrl+W
+    // （reader+audiobook co-active 组内未被占用）；手柄留空，退书也可走返回手势/底栏。
+    ShortcutAction.readerExitBook: _kb([
+      _key(LogicalKeyboardKey.keyW, {ModifierKey.ctrl}),
     ]),
 
     // R3 toggles furigana (gamepad-only; keyboard furigana stays in settings).

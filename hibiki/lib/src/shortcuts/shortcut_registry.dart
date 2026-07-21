@@ -16,7 +16,7 @@ import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 5;
+const int kShortcutSchemaVersion = 6;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -148,6 +148,12 @@ class HibikiShortcutRegistry extends ChangeNotifier {
         _restoreGamepadDefaultIfKeyboardUntouched(action, defaults);
       }
     }
+    // v5 -> v6（用户拍板：关词典与退书拆分）：新增 readerExitBook（reader scope，
+    // 默认 Ctrl+W）。全新 action，老快照没有它的 key —— [loadDefaults] 已播种默认，
+    // [_loadFromJson] 保留缺席 key 的默认，天然拿到 Ctrl+W，无需逐个 restore，只
+    // bump 版本保持不变式诚实。⚠️ 行为面：readerDismissDict（Esc）不再在无弹窗时
+    // 退书（执行体侧拆分，见 caret.part.dart），退书统一走 readerExitBook /
+    // 返回手势 / 底栏。
   }
 
   /// 当 [action] 在快照里的键盘绑定**恰等于** [oldDefaultKeyboard]（无序集合相等，

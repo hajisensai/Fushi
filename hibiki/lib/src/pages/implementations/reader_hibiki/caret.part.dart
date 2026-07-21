@@ -520,14 +520,17 @@ extension _ReaderCaret on _ReaderHibikiPageState {
         _paginate(ReaderNavigationDirection.backward);
         return KeyEventResult.handled;
       case ShortcutAction.readerDismissDict:
+        // 用户拍板（schema v6）：关词典与退书拆成两个独立动作。本键只关词典弹窗；
+        // 无弹窗时不消费（ignored 让事件继续冒泡），**绝不退书**——退书是
+        // readerExitBook 的职责。
         if (isDictionaryShown) {
           clearDictionaryResult();
           return KeyEventResult.handled;
         }
-        // No dictionary popup: this is the reader's "back" key (keyboard Esc /
-        // gamepad B). Leave the book — never toggle the bottom bar. Bar
-        // visibility is owned by M / Y / tap. Mirrors the chrome-scope and
-        // popup-scope B/Esc branches that already maybePop().
+        return KeyEventResult.ignored;
+      case ShortcutAction.readerExitBook:
+        // 退出书籍：必须走 maybePop 触发 PopScope→onWillPop 闸门（flush 阅读位置 /
+        // closeMedia / 关书自动同步，BUG-782 同径），与底栏退出按钮同一条路。
         unawaited(Navigator.of(context).maybePop());
         return KeyEventResult.handled;
       case ShortcutAction.readerToggleChrome:

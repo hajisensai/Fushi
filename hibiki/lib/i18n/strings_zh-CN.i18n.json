@@ -1149,7 +1149,7 @@
   "shortcut_action_video_toggle_subtitle_list": "切换字幕列表",
   "shortcut_action_video_toggle_immersive_lock": "切换沉浸锁定",
   "shortcut_action_video_toggle_subtitle_blur": "切换字幕模糊",
-  "shortcut_action_video_escape": "退出/返回",
+  "shortcut_action_video_escape": "关闭视频/返回",
   "book_edit_author": "作者",
   "floating_lyric_toggle_action": "悬浮字幕",
   "video_setting_picture_fit_cover": "填充",
@@ -2223,5 +2223,6 @@
   "interconnect_upload_audiobook_files": "上传有声书文件",
   "interconnect_upload_audiobook_files_hint": "把本设备的有声书音频+字幕包上传同步到互联对端（体积较大）。",
   "interconnect_upload_video_files": "上传视频文件",
-  "interconnect_upload_video_files_hint": "把本设备的本地视频文件上传同步到互联对端（体积较大）。"
+  "interconnect_upload_video_files_hint": "把本设备的本地视频文件上传同步到互联对端（体积较大）。",
+  "shortcut_action_reader_exit_book": "退出书籍"
 }
