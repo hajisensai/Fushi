@@ -2230,5 +2230,6 @@
   "settings_secret_hide": "Hide value",
   "video_setting_speed_step": "Speed step",
   "clipboard_panel_block_capture": "Block screen capture",
-  "clipboard_panel_block_capture_hint": "Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup."
+  "clipboard_panel_block_capture_hint": "Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.",
+  "settings_section_general": "General"
 }

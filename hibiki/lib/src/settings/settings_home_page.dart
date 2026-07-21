@@ -194,11 +194,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                 // entry.title（同打分口径）。
                 title: Text(entry.title),
                 titleMaxLines: 2,
-                subtitle: Text(
-                  entry.sectionTitle == null
-                      ? entry.destination.title
-                      : '${entry.destination.title} › ${entry.sectionTitle}',
-                ),
+                // 面包屑「分类 › 分区」——框架级去重：分区名为空或与分类同名时
+                // 只显示分类（消灭「系统 › 系统」，见 settingsSearchBreadcrumb）。
+                subtitle: Text(settingsSearchBreadcrumb(entry)),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _openSearchResult(entry, wide: wide),
               ),

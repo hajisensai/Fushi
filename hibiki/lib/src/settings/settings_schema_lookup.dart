@@ -240,8 +240,10 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.desktop_clipboard',
             title: t.desktop_clipboard_enabled,
-            subtitle: t.desktop_clipboard_enabled_hint +
-                t.settings_experimental_suffix,
+            // 文案统一（阶段 F）：平台标记 + 实验性合并为单个括注
+            // （桌面·实验性）已并入 desktop_clipboard_enabled_hint 值本身，
+            // 不再叠加共享的 settings_experimental_suffix（否则出现双重括注）。
+            subtitle: t.desktop_clipboard_enabled_hint,
             icon: Icons.content_paste_search,
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop,

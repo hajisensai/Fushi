@@ -32,6 +32,20 @@ class SettingsSearchEntry {
   String get title => settingsItemSearchTitle(item);
 }
 
+/// 搜索结果副标题的「分类 › 分区」面包屑（框架级去重）。
+///
+/// 当分区标题为空、或与所属 destination 标题相同（如「系统」destination 里一个
+/// 同名「系统」section），只显示 destination 标题，消灭「系统 › 系统」这一整类
+/// 语义重复——而不是逐个改命名。分区名有独立含义时才拼成「分类 › 分区」。
+String settingsSearchBreadcrumb(SettingsSearchEntry entry) {
+  final String destination = entry.destination.title;
+  final String? section = entry.sectionTitle;
+  if (section == null || section.isEmpty || section == destination) {
+    return destination;
+  }
+  return '$destination › $section';
+}
+
 /// 把当前可见的 schema 展平成搜索条目列表。
 ///
 /// 只收有可搜索标题的项（见 [settingsItemSearchTitle]：custom 项默认 title 为空
