@@ -53,6 +53,24 @@ ColorScheme buildSystemThemeColorScheme({
   );
 }
 
+/// [buildHibikiColorScheme] 的纯函数 memo：`ColorScheme.fromSeed` 走 HCT 色调板
+/// 生成、单次非平凡；阅读设置抽屉的主题选择器每次 rebuild 会对每张色卡各调一次
+/// （系统 + 预设 7 + 自定义 N），拖字号 slider 时每个 tick 全表 setState 就是
+/// 每 tick 一场 HCT 风暴（BUG-969）。入参→结果是纯映射，按参数键缓存即可整体
+/// 消除。有界防自定义主题编辑时无限膨胀（编辑逐色微调会产生大量一次性键）。
+typedef _HibikiSchemeKey = (
+  int seed,
+  Brightness brightness,
+  DynamicSchemeVariant variant,
+  int? primary,
+  int? secondary,
+  int? tertiary,
+  int? primaryContainer,
+);
+final Map<_HibikiSchemeKey, ColorScheme> _hibikiSchemeCache =
+    <_HibikiSchemeKey, ColorScheme>{};
+const int _hibikiSchemeCacheLimit = 64;
+
 ColorScheme buildHibikiColorScheme({
   required Color seedColor,
   required Brightness brightness,
@@ -62,6 +80,17 @@ ColorScheme buildHibikiColorScheme({
   Color? tertiary,
   Color? primaryContainer,
 }) {
+  final _HibikiSchemeKey key = (
+    seedColor.toARGB32(),
+    brightness,
+    variant,
+    primary?.toARGB32(),
+    secondary?.toARGB32(),
+    tertiary?.toARGB32(),
+    primaryContainer?.toARGB32(),
+  );
+  final ColorScheme? cached = _hibikiSchemeCache[key];
+  if (cached != null) return cached;
   final ColorScheme base = ColorScheme.fromSeed(
     seedColor: seedColor,
     brightness: brightness,
@@ -71,7 +100,10 @@ ColorScheme buildHibikiColorScheme({
       secondary != null ? _deriveContainer(secondary, brightness) : null;
   final Color? terContainer =
       tertiary != null ? _deriveContainer(tertiary, brightness) : null;
-  return base.copyWith(
+  if (_hibikiSchemeCache.length >= _hibikiSchemeCacheLimit) {
+    _hibikiSchemeCache.remove(_hibikiSchemeCache.keys.first);
+  }
+  return _hibikiSchemeCache[key] = base.copyWith(
     primary: primary ?? base.primary,
     onPrimary: primary != null ? _readableOnColor(primary) : base.onPrimary,
     secondary: secondary ?? base.secondary,

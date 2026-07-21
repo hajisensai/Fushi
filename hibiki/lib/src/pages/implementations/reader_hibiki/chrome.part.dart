@@ -1364,7 +1364,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // 重入守卫：快速连点时按钮按下到 show 之间的 DB 读 await 期间会二次进入、弹出
     // 两个面板。标志置位必须在第一个 await 之前，复位放 finally（异常也复位）。
     if (_appearanceSheetOpen) return;
-    _appearanceSheetOpen = true;
+    // BUG-969：_rebuild 让顶部进度 pill 在抽屉打开期间摘掉 BackdropFilter blur
+    // （见 _buildTopProgressBar / topProgressPillShowsBlur），关闭后再挂回。
+    _rebuild(() => _appearanceSheetOpen = true);
     try {
       // _settings 就是 ReaderHibikiSource.readerSettings 本体（见 initState 绑定），
       // 面板控件经 ReaderHibikiSource.instance.ttu* 实时读写同一对象，开面板前后都
@@ -1536,6 +1538,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       _syncDictionaryTheme();
     } finally {
       _appearanceSheetOpen = false;
+      // 复位后重建把 blur 挂回 pill（dispose 后不能 setState，纯赋值已够）。
+      if (mounted) _rebuild(() {});
     }
   }
 
@@ -1696,21 +1700,31 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     //  注释）。两态纵向内边距同源 [kTopProgressPillVerticalPadding]，pill 实高不超
     //  预留 [_infoStripHeight]（= [kTopProgressStripHeight]，BUG-547 已把预留同步含
     //  该内边距），保证挤压态 pill 落在预留区内、绝不压住正文首行。
+    // BUG-969：BackdropFilter 每个栅格化帧都重采背景+重跑高斯，与内容是否变化
+    //  无关。快速设置抽屉开着时 pill 压在 modal scrim 下，blur 与纯半透明底肉眼
+    //  无差，抽屉滚动的每一帧却仍付 saveLayer+回读 → 120Hz 直接掉帧。被遮挡期间
+    //  保留半透明底（形状/可读性不变）、只跳过 blur（topProgressPillShowsBlur）。
+    final Widget frostedInner = Container(
+      color: frostedFill,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: kTopProgressPillVerticalPadding,
+      ),
+      child: label,
+    );
     final Widget pill =
         topProgressUsesFrostedGlass(floating: _topProgressFloating)
             ? ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    color: frostedFill,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: kTopProgressPillVerticalPadding,
-                    ),
-                    child: label,
-                  ),
-                ),
+                child: topProgressPillShowsBlur(
+                  floating: _topProgressFloating,
+                  obscured: _appearanceSheetOpen,
+                )
+                    ? BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                        child: frostedInner,
+                      )
+                    : frostedInner,
               )
             : Padding(
                 padding: const EdgeInsets.symmetric(

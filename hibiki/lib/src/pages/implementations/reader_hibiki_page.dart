@@ -67,6 +67,7 @@ import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/utils/misc/coalesced_async_runner.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/floating_lyric_hint.dart';
 import 'package:hibiki/src/utils/misc/debug_log_service.dart';
@@ -1280,6 +1281,29 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 弹出两个面板（BUG-026）。打开期间置 true、关闭后于 finally 复位。
   bool _appearanceSheetOpen = false;
 
+  // BUG-969：设置实时预览的合并执行器。拖 slider 时 onSettingsChangedLive 每个
+  // tick 触发一次，旧实现每次直接跑「CSS 注入 + 样式重锚 + tap-gate 同步 + 整页
+  // setState」→ 一次拖动上百趟 WebView 往返叠加、本页 build 每 tick 全量重建。
+  // 合并语义：在飞期间的触发只置脏标记、收尾补跑一趟；动作跑时读最新设置，
+  // last-write-wins 最终状态不丢；单次设置变更仍立即执行。
+  late final CoalescedAsyncRunner _liveSettingsRunner =
+      CoalescedAsyncRunner(() async {
+    if (!mounted) return;
+    // 必须就地 catch：await 边界之后的异步异常（如 WebView 半销毁时
+    // evaluateJavascript 抛 PlatformException）会逃进当前 zone，绕过
+    // FlutterError.onError/takeException/platformDispatcher，生产里成未捕获
+    // 异步错误、测试里让 binding 断言。
+    try {
+      await _applyStylesLive();
+    } catch (e, s) {
+      ErrorLogService.instance.log('ReaderHibiki.onSettingsChangedLive', e, s);
+    }
+    if (!mounted) return;
+    // BUG-712 ①：highlightOnTap 是 JS 侧点词门控镜像的另一半，设置热更新时同步。
+    _syncTapGateJs();
+    setState(() {});
+  });
+
   bool _lyricsPageReady = false;
   // 首次进入歌词模式的提示对话框的一次性待弹旗：_toggleLyricsMode 进入分支置 true，
   // 歌词文档真正就绪（_onChapterLoadComplete 歌词分支，_lyricsPageReady 置位点）消费。
@@ -1478,17 +1502,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
     ReaderHibikiSource.onSettingsChangedLive = () {
       if (!mounted) return;
-      // fire-and-forget 必须 catchError：否则 await 边界之后的异步异常（如
-      // WebView 半销毁时 evaluateJavascript 抛 PlatformException）会逃进当前
-      // zone，绕过 FlutterError.onError/takeException/platformDispatcher，
-      // 生产里成未捕获异步错误、测试里让 binding 断言。
-      unawaited(_applyStylesLive().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance
-            .log('ReaderHibiki.onSettingsChangedLive', e, s);
-      }));
-      // BUG-712 ①：highlightOnTap 是 JS 侧点词门控镜像的另一半，设置热更新时同步。
-      _syncTapGateJs();
-      setState(() {});
+      // BUG-969：经 _liveSettingsRunner 合并（错误处理/tap-gate 同步/setState
+      // 都在 runner 动作内），拖动风暴收敛为背靠背串行趟。
+      unawaited(_liveSettingsRunner.trigger());
     };
     ReaderHibikiSource.onLayoutReloadLive = () {
       if (!mounted) return;
