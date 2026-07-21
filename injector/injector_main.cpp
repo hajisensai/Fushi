@@ -13,6 +13,7 @@
 
 #include "voice_hook_ipc.h"
 #include "voice_hook_session.h"
+#include "siglus_launch.h"
 #include "steam_launch.h"
 #include "luna_hook_config.h"
 
@@ -1192,13 +1193,27 @@ bool LooksLikeUnityRuntime(const std::wstring& exe) {
   return il2cpp || mono;
 }
 
+// Siglus 游戏（含改名 exe）：exe 名严格匹配，或 exe 同目录具备 Siglus 文件夹签名。用于把 launch
+// 的早注入改为延迟附着，绕过 Enigma 保护壳拒绝挂起态注入导致的 launch_or_inject_failed。
+bool LooksLikeSiglusRuntime(const std::wstring& exe) {
+  const std::wstring dir = ExecutableDirectory(exe);
+  return hibiki_voice_hook::DirectoryLooksLikeSiglus(
+      dir, [](const std::wstring& d, const wchar_t* name) {
+        return FileExists(JoinPath(d, name));
+      });
+}
+
+bool IsSiglusGame(const std::wstring& exe) {
+  return IsSiglusExecutable(exe) || LooksLikeSiglusRuntime(exe);
+}
+
 bool ShouldAutoUseLunaPcHooks(const std::wstring& exe) {
   const std::wstring base = ExecutableBaseName(exe);
   if (_wcsicmp(base.c_str(), L"manosaba.exe") == 0 ||
       _wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
     return true;
   }
-  return LooksLikeUnityRuntime(exe);
+  return LooksLikeUnityRuntime(exe) || LooksLikeSiglusRuntime(exe);
 }
 
 struct ReadyWindowSearch {
@@ -1365,7 +1380,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   STARTUPINFOW si = {0};
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi = {0};
-  const bool delayed_siglus = IsSiglusExecutable(exe);
+  const bool delayed_siglus = IsSiglusGame(exe);
   // Steam 游戏被直接 CreateProcess 时常会立即退出，再由 Steam 拉起一个未注入子进程。
   // 从 exe 所在库的 appmanifest 自动发现 AppID，并只在本次 CreateProcess 的继承窗口内设置
   // 官方环境变量，避免 Steam 二次拉起导致“看似启动成功、实际 hook 的是已退出进程”。

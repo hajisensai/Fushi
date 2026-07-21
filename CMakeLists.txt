@@ -95,6 +95,13 @@ add_executable(hibiki_steam_launch_test
 target_include_directories(hibiki_steam_launch_test PRIVATE "include")
 add_test(NAME hibiki_steam_launch_test COMMAND hibiki_steam_launch_test)
 
+# Siglus 文件夹签名识别（根因回归：改名 Siglus exe 被早注入弹掉）。纯逻辑，注入假文件表。
+add_executable(hibiki_siglus_launch_test
+  "tests/siglus_launch_test.cpp"
+)
+target_include_directories(hibiki_siglus_launch_test PRIVATE "include")
+add_test(NAME hibiki_siglus_launch_test COMMAND hibiki_siglus_launch_test)
+
 add_executable(hibiki_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(hibiki_luna_hook_config_test PRIVATE include)
 add_test(NAME hibiki_luna_hook_config_test COMMAND hibiki_luna_hook_config_test)
