@@ -24,22 +24,27 @@
 ## 仓库地图
 
 - 仓库根：`D:\APP\vs_claude_code\hibiki`（Melos workspace，名 `hibiki_workspace`）。Flutter app：`hibiki/`；Android 工程：`hibiki/android/`。
-- 阅读器页面：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`（`ReaderHibikiPage`，~3200 行主体 + `reader_hibiki/` 下 8 个域 part 文件：WebView 拦截 + JS 分页 + 有声书同步）。
-- 书架页面：`hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart`。
+- 阅读器页面：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`（`ReaderHibikiPage`，3242 行主体 + `reader_hibiki/` 下 8 个域 part 共 9583 行：WebView 拦截 + JS 分页 + 有声书同步）。
+- 视频页面：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart`（6358 行主体 + `video_hibiki/` 下 18 个 part 共 6966 行）；视频首页 `home_video_page.dart`（3080 行）。
+- 书架页面：`hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart`；首页 dashboard：`pages/implementations/home_dashboard_page.dart`。
 - reader source：`hibiki/lib/src/media/sources/reader_hibiki_source.dart`（`ReaderHibikiSource`）。
-- 阅读器 JS/CSS：`hibiki/lib/src/reader/`（`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.hoshiReader`（历史命名，是真实符号，勿改）。
-- 全局状态：`hibiki/lib/src/models/app_model.dart`（`AppModel`，~3600 行，初始化流程 + 子系统委托核心，改前先理解）。
-- Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v24，28 张表，WAL）。
-- 词典 FFI：`packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart`。
+- 阅读器 JS/CSS：`hibiki/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.hoshiReader`（历史命名，是真实符号，勿改）。
+- 全局状态：`hibiki/lib/src/models/app_model.dart`（`AppModel`，~5150 行，初始化流程 + 子系统委托核心，改前先理解）。
+- Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v50，46 张表，WAL）。
+- 词典：Dart 封装 `packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart` + FFI 绑定 `lib/src/ffi/hoshidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/hoshidicts/`（包内已无 C++），`hoshidicts_external/` 是 vendored 第三方，上游同步基线见 `native/hoshidicts/UPSTREAM.md`。
 - 有声书：`packages/hibiki_audio/` + `hibiki/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。
-- i18n 同步脚本：`hibiki/tool/i18n_sync.dart`。
+- 互联/同步：`hibiki/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
+- galgame 制卡：Flutter 侧 `hibiki/lib/src/lookup/`（overlay 浮窗）+ `hibiki/lib/src/mining/galgame_*`（9 文件）；C++ hook 在 `native/galgame_voice_hook/`。
+- 浏览器扩展：`tools/browser-extension/`（注意是根级 `tools/`，与 `tool/` 不同目录）。
+- 工具脚本归属：根 `tool/` = `setup_worktree.ps1` / `bootstrap.ps1` / `bug.dart` / `check_release_policy.ps1` / `run_mac_itest.ps1`；`hibiki/tool/` = `i18n_sync.dart` / `run_windows_itest.ps1` / `comprehensive_test_runner.dart`。
 - 审查报告：`docs/reviews/YYYY-MM-DD-project-review.md`；已复现回归：`docs/REGRESSION_BUGS.md`（本地，不入库）；测试证据：`.codex-test/`（不入库）。
 
 ## 当前技术事实
 
-- Flutter `3.44.0` / Dart `3.12.0`（stable），Dart SDK 约束 `>=3.5.0 <4.0.0`；最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
-- 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.x。
-- 主存储是 Drift SQLite（`HibikiDatabase`，schema v24），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
+- Flutter 版本分两处：本地钉 `.fvmrc` = `3.41.6`（pubspec `flutter: "^3.41.6"`），CI workflows 用 `3.44.0`；Dart SDK 约束 `>=3.5.0 <4.0.0`。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
+- 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.0.0；视频播放走 **media_kit**（third_party vendored 全套）+ youtube_explode_dart。
+- torrent 走内部包 `packages/hibiki_torrent`（libtorrent 2.x C ABI FFI，native 在 `native/hibiki_torrent/`；Windows 预编译 DLL 随包，缺失时回退外接 qBittorrent）。
+- 主存储是 Drift SQLite（`HibikiDatabase`，schema v50），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
 - EPUB 阅读器走 reader_hibiki 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttuBookId` 列、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。
 - 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_hibiki 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
@@ -54,10 +59,10 @@
 ## 验证
 
 - 文档改动：至少 `git diff --cached --check`，不必跑 Flutter 测试。
-- Dart/Flutter 改动（在 `hibiki/` 下）：`dart format .` + `flutter test`（用项目的 Flutter 3.44.0 工具链；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`）。
+- Dart/Flutter 改动（在 `hibiki/` 下）：`dart format .` + `flutter test`（用项目钉定的工具链：本地 `.fvmrc` 3.41.6，CI 3.44.0；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`）。
 - Android 资源/manifest/Gradle/权限/通知/前台服务/打包改动：再加 `gradlew :app:assembleRelease`（在 `hibiki/android/`；Windows 用 `.\gradlew.bat`）。
 - 阅读器/导入/播放/布局问题，声明「修好了」前必须用真实模拟器或用户指定设备复测原始失败路径并留证据（见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md)）。
-- 集成测试操作真 app **一律焦点驱动（`FocusDriver` / `tester.sendKeyEvent`，禁止 `tester.tap` 或坐标点击）**：`Tab` 遍历→检测控件类型→Switch/按钮确认用 `Enter`（**不要用空格**——App 已把裸空格中和为 `DoNothingIntent`，焦点确认统一走 Enter / 手柄 A，见 `hibiki/lib/src/shortcuts/global_navigation.dart`）、Slider/Stepper/Segmented 用方向键→断言真写穿 DB/真生效→还原。同一份测试三端可跑（模拟器 `-d emulator-<port>` / Windows 离屏 `tool/run_windows_itest.ps1` / Mac 跨机 `tool/run_mac_itest.ps1`），完整流程见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md) 的「焦点驱动操作」。
+- 集成测试操作真 app **一律焦点驱动（`FocusDriver` / `tester.sendKeyEvent`，禁止 `tester.tap` 或坐标点击）**：`Tab` 遍历→检测控件类型→Switch/按钮确认用 `Enter`（**不要用空格**——App 已把裸空格中和为 `DoNothingIntent`，焦点确认统一走 Enter / 手柄 A，见 `hibiki/lib/src/shortcuts/global_navigation.dart`）、Slider/Stepper/Segmented 用方向键→断言真写穿 DB/真生效→还原。同一份测试三端可跑（模拟器 `-d emulator-<port>` / Windows 离屏 `hibiki/tool/run_windows_itest.ps1` / Mac 跨机 `tool/run_mac_itest.ps1`），完整流程见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md) 的「焦点驱动操作」。
 
 ## 提交
 
@@ -73,24 +78,36 @@
 
 | 要做的事 | 看这里 |
 |---|---|
-| 跑集成测试 / 设备验证 / ADB 降级 / AnkiDroid / DB 查询 / 测试素材 | [docs/agent/integration-testing.md](docs/agent/integration-testing.md) |
-| 构建 5 平台 / melos / 依赖补丁机制 | [docs/agent/build.md](docs/agent/build.md) |
-| 持续审查模式 / 报告格式 / 回归记录 | [docs/agent/review-process.md](docs/agent/review-process.md) |
-| 阅读器调试（WebView / 恢复 / 分页 / 有声书遮挡 / 平台特例） | [docs/agent/reader-debugging.md](docs/agent/reader-debugging.md) |
+| 5 平台构建 / Melos / bootstrap + 依赖补丁机制 / 发布通道与版本号规则 / galgame hook 注入器独立分发 | [docs/agent/build.md](docs/agent/build.md) |
+| 模拟器集成测试三层架构 / 焦点驱动（禁坐标点击）/ AnkiDroid provisioning / ADB 降级 / DB 查询 / 测试素材 | [docs/agent/integration-testing.md](docs/agent/integration-testing.md) |
+| 持续审查模式 / docs/reviews 报告格式 / 回归记录 | [docs/agent/review-process.md](docs/agent/review-process.md) |
+| reader_hibiki 构成 / TTU 残留辨析 / WebView / 恢复 / 分页 / 有声书遮挡调试 | [docs/agent/reader-debugging.md](docs/agent/reader-debugging.md) |
+| Computer Use 可见巡检 / 离屏、非焦点抓真实像素 / 确定性开页 debug 钩子 / 证据留存 | [docs/agent/computer-use-testing.md](docs/agent/computer-use-testing.md) |
+| Windows app 外打开视频（文件关联 / argv / 拖拽）数据流 / single-instance WM_COPYDATA 转发 | [docs/agent/external-video-open.md](docs/agent/external-video-open.md) |
+| 全量快捷键 / 手柄 / 鼠标绑定盘点快照（2026-06-11） | [docs/agent/shortcuts-inventory.md](docs/agent/shortcuts-inventory.md) |
 
 ## 模块索引
 
-| 模块 | 语言 | 职责 | 模块文档 |
+| 模块 | 语言 | 职责 / 接入方式 | 文档 |
 |---|---|---|---|
-| `hibiki/` | Dart | Flutter 主应用：UI/阅读器/导入/设置 | [hibiki/CLAUDE.md](hibiki/CLAUDE.md) |
-| `packages/hibiki_core/` | Dart | DB schema（28 表）/偏好/语言配置 | [CLAUDE.md](packages/hibiki_core/CLAUDE.md) |
-| `packages/hibiki_dictionary/` | Dart+C++ | 词典引擎/FFI/多格式导入 | [CLAUDE.md](packages/hibiki_dictionary/CLAUDE.md) |
+| `hibiki/` | Dart | Flutter 主应用：UI/阅读器/视频/导入/设置 | [hibiki/CLAUDE.md](hibiki/CLAUDE.md) |
+| `packages/hibiki_core/` | Dart | DB schema（46 表）/偏好/语言配置 | [CLAUDE.md](packages/hibiki_core/CLAUDE.md) |
+| `packages/hibiki_dictionary/` | Dart | 词典引擎 Dart 侧/FFI 绑定/多格式导入（C++ 在 `native/hoshidicts/`） | [CLAUDE.md](packages/hibiki_dictionary/CLAUDE.md) |
 | `packages/hibiki_anki/` | Dart | Anki 集成（AnkiDroid + AnkiConnect） | [CLAUDE.md](packages/hibiki_anki/CLAUDE.md) |
 | `packages/hibiki_audio/` | Dart | 字幕解析/有声书播放/音频匹配 | [CLAUDE.md](packages/hibiki_audio/CLAUDE.md) |
 | `packages/hibiki_platform/` | Dart | TTS/平台集成/存储路径抽象 | [CLAUDE.md](packages/hibiki_platform/CLAUDE.md) |
 | `packages/flutter_inappwebview_windows/` | Dart+C++ | inappwebview Windows fork | [CLAUDE.md](packages/flutter_inappwebview_windows/CLAUDE.md) |
-| `packages/gamepads_android_stub/` | Dart | `gamepads_android` 的 no-op stub override | — |
-| `third_party/` | — | vendored 补丁包：carousel_slider / fading_edge_scrollview / flutter_inappwebview_android / network_to_file_image | — |
+| `packages/hibiki_torrent/` | Dart | 内置 torrent 引擎 FFI 绑定 + `EmbeddedTorrentEngine`（path 依赖） | — |
+| `packages/gamepads_windows/` | Dart+C++ | gamepads Windows vendored fork（BUG-116 崩溃修复，path override） | — |
+| `packages/gamepads_android_stub/` | Dart | `gamepads_android` no-op stub（防启动 ClassCastException，path override） | — |
+| `native/hoshidicts/` | C++ | 词典查询/导入引擎（上游深度 fork；`hoshidicts_external/` 为 vendored 第三方）；FFI/JNI 编入 app | [UPSTREAM.md](native/hoshidicts/UPSTREAM.md) |
+| `native/hibiki_torrent/` | C++ | libtorrent 2.x C ABI bridge；FFI，Windows 预编译 DLL 随包 | [README.md](native/hibiki_torrent/README.md) |
+| `native/galgame_voice_hook/` | C++ | galgame 引擎级 voice hook（混音前截语音）；独立子进程 + 共享内存，必报毒故物理隔离、**绝不编进 hibiki.exe**，独立分发 | [README.md](native/galgame_voice_hook/README.md) |
+| `server/log-collector/` | Go | 报错日志接收端（自有服务器 + EdgeOne 版）；独立部署 | [README.md](server/log-collector/README.md) |
+| `server/cf-worker/` | JS | 报错日志接收端（Cloudflare Worker + D1 版，与 Go 版择一）；独立部署 | [README.md](server/cf-worker/README.md) |
+| `tools/browser-extension/` | JS | 浏览器查词扩展（根级 `tools/`，非 `tool/`） | — |
+| `third_party/` | — | 11 个 path-override vendored 补丁包 + 1 个 CI 自编二进制（ffmpeg-min，Windows 最小化 ffmpeg.exe）：carousel_slider、desktop_drop、fading_edge_scrollview、ffmpeg_kit_flutter、flutter_inappwebview_android、media_kit_libs_{android,ios,macos,windows}_video、media_kit_video、network_to_file_image；vendor 原因见 `hibiki/pubspec.yaml` dependency_overrides 逐包注释 | — |
+| `references/ReinaManager` | — | git submodule：galgame 库信息架构参考（AGPL-3.0，不参与构建） | — |
 
 > 完整架构、技术栈、构建命令、致谢见 [README.md](README.md)。`file_picker` 用 pub.dev 版（**不是** fork）。依赖补丁机制（vendored vs apply-patches）见 [docs/agent/build.md](docs/agent/build.md)。
 
