@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -34,6 +35,7 @@ Future<VideoSheetHarness> _pumpSheet(
   void Function(int)? onSetDelay,
   void Function(double)? onPreviewSpeed,
   void Function(double)? onSetSpeed,
+  void Function(VideoAsbplayerConfig)? onAsbConfigChanged,
   void Function(VideoMpvConfig)? onMpvConfigChanged,
   void Function(VideoShaderTier tier, bool highQuality)? onSelectShaderTier,
   void Function(VideoFitMode mode)? onVideoFitModeChanged,
@@ -84,6 +86,7 @@ Future<VideoSheetHarness> _pumpSheet(
       onSetSpeed: onSetSpeed,
       onSubtitleStylePreview: onSubtitleStylePreview,
       onSubtitleStyleCommit: onSubtitleStyleCommit,
+      onAsbConfigChanged: onAsbConfigChanged,
       onMpvConfigChanged: onMpvConfigChanged,
       onSelectShaderTier: onSelectShaderTier,
       onVideoFitModeChanged: onVideoFitModeChanged,
@@ -1465,6 +1468,53 @@ void main() {
     expect(speed.min, 0.5);
     expect(speed.max, 2.0);
     expect(speed.divisions, 15, reason: '滑条档位须与旧 0.1 步档位等价');
+  });
+
+  test('BUG-963 防回潮：长按倍速滑条声明松手落盘（commitOnRelease）', () {
+    // 该值仅在下次长按手势时消费，拖动中写穿无实时收益，反而逐 0.1x 档触发
+    // 播放页全页 rebuild 掉帧——数据模型上锁死松手提交语义。
+    final SettingsSliderItem item =
+        _findSchemaItem('video.playback.long_press_speed')
+            as SettingsSliderItem;
+    expect(item.commitOnRelease, isTrue, reason: '长按倍速滑条必须拖动本地预览、松手一次性提交');
+    expect(item.onChangeEnd, isNull,
+        reason: 'commitOnRelease 滑条松手统一走 onChanged，不得另挂 onChangeEnd');
+  });
+
+  testWidgets('BUG-963 回归：拖长按倍速滑条不逐 tick 写穿，松手才提交一次', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final List<VideoAsbplayerConfig> commits = <VideoAsbplayerConfig>[];
+    await _pumpSheet(tester, onAsbConfigChanged: commits.add);
+
+    final Finder row = find.widgetWithText(
+      AdaptiveSettingsSliderRow,
+      t.video_setting_long_press_speed,
+    );
+    final Finder slider =
+        find.descendant(of: row, matching: find.byType(Slider));
+    await tester.ensureVisible(slider);
+    await tester.pumpAndSettle();
+
+    final double before = tester.widget<Slider>(slider).value;
+    final TestGesture gesture =
+        await tester.startGesture(tester.getCenter(slider));
+    // 分多段移动模拟真实拖动的多个 tick。
+    for (int i = 0; i < 5; i++) {
+      await gesture.moveBy(const Offset(100, 0));
+      await tester.pump();
+    }
+
+    expect(commits, isEmpty,
+        reason: '拖动 tick 不得写穿 asb 配置（BUG-963：逐档写穿致全页 rebuild）');
+    expect(tester.widget<Slider>(slider).value, greaterThan(before),
+        reason: '拖动中滑块须本地跟手（临时值在渲染层 State，而非落盘回读）');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(commits, hasLength(1), reason: '松手恰好提交一次');
+    expect(commits.single.longPressSpeed, 4.0, reason: '拖到最右并 0.1 档吸附后提交 4.0');
   });
 
   // ── TODO-152 子B：画面缩放/比例设置（窗口 + 全屏 Video fit 同源偏好） ──────

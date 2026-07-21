@@ -209,6 +209,13 @@ class SettingsSchemaItem extends StatelessWidget {
   }
 
   Widget _slider(SettingsSliderItem slider) {
+    if (slider.commitOnRelease) {
+      return _CommitOnReleaseSlider(
+        item: slider,
+        settingsContext: settingsContext,
+        showIcons: showIcons,
+      );
+    }
     final double value = slider.value(settingsContext);
     return AdaptiveSettingsSliderRow(
       title: slider.title,
@@ -323,6 +330,58 @@ class SettingsSchemaItem extends StatelessWidget {
       label: Text(option.label),
       icon: option.icon != null ? Icon(option.icon, size: 16) : null,
       tooltip: option.tooltip ?? option.label,
+    );
+  }
+}
+
+/// [SettingsSliderItem.commitOnRelease] 滑条的渲染载体：拖动中的临时值放在与
+/// 拖动 UI 同生命周期的本 State（滑块跟手、label/读数实时），不调 item.onChanged、
+/// 不 refresh；松手（onChangeEnd）才把最终值经 item.onChanged 一次性提交。与
+/// 界面大小滑条（settings_actions.dart 的 _AppUiScaleSliderRow）同款拖动解耦——
+/// 逐 tick 写穿在重页面（如 ~6400 行视频页）会触发全页 rebuild 掉帧（BUG-963）。
+/// 键盘/手柄步进经 _KeyboardSlider 同时回调 onChanged+onChangeEnd，每按即提交。
+class _CommitOnReleaseSlider extends StatefulWidget {
+  const _CommitOnReleaseSlider({
+    required this.item,
+    required this.settingsContext,
+    required this.showIcons,
+  });
+
+  final SettingsSliderItem item;
+  final SettingsContext settingsContext;
+  final bool showIcons;
+
+  @override
+  State<_CommitOnReleaseSlider> createState() => _CommitOnReleaseSliderState();
+}
+
+class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
+  /// 拖动进行中的临时值；非拖动时为 null，显示已提交的 item.value。
+  double? _dragValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final SettingsSliderItem item = widget.item;
+    final double value = (_dragValue ?? item.value(widget.settingsContext))
+        .clamp(item.min, item.max)
+        .toDouble();
+    return AdaptiveSettingsSliderRow(
+      title: item.title,
+      subtitle: item.subtitle,
+      icon: widget.showIcons ? item.icon : null,
+      value: value,
+      min: item.min,
+      max: item.max,
+      divisions: item.divisions,
+      label: item.label?.call(value),
+      step: item.step,
+      readout: item.titleReadout ? item.label?.call(value) : null,
+      onChanged: (double next) => setState(() => _dragValue = next),
+      onChangeEnd: (double next) async {
+        await item.onChanged(widget.settingsContext, next);
+        if (mounted) setState(() => _dragValue = null);
+        widget.settingsContext.refresh();
+      },
     );
   }
 }
