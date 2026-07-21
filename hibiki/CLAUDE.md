@@ -68,7 +68,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ### 5. 应用模型 (`lib/src/models/`)
 
-- `AppModel` -- 全局应用状态（Riverpod `appProvider`，~3600 行），管理初始化、主题、语言、词典、导航。
+- `AppModel` -- 全局应用状态（Riverpod `appProvider`，5149 行），管理初始化、主题、语言、词典、导航。
   - **初始化流程** (`initialise()`): PackageInfo → 目录创建 → Drift DB 打开 → 偏好加载 → Profile 确保 → 词典缓存 → 媒体历史 → 主题调色板 → 语言/格式/增强/快捷操作注册 → 搜索预热
   - **词典搜索** (`searchDictionary()`): emoji/标点/孤立代理项清洗 → 缓存查找 → HoshiDicts FFI lookup → 结果构建
   - **词典导入** (`importDictionary()` / `importDictionaryFromDirectory()`): 格式自动检测(zip/dsl/mdx) → hoshidicts FFI 导入 → 资源目录写入 → 词典类型检测(term/freq/pitch/kanji)
@@ -96,8 +96,8 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ### 8. 页面 (`lib/src/pages/implementations/`)
 
-64 个页面实现，主要包括：
-- `home_page.dart` / `home_reader_page.dart` / `home_dictionary_page.dart` -- 首页。
+85 个页面实现，主要包括：
+- `home_page.dart` -- 首页外壳；`home_dashboard_page.dart` -- 首页 dashboard；同级 tab 页 `home_reader_page.dart` / `home_video_page.dart` / `home_game_page.dart` / `home_dictionary_page.dart`。
 - `reader_hibiki_page.dart` (~3200 行主体 + `reader_hibiki/` 下 8 个域 part 文件) -- 核心阅读器页面：
   - **WebView 架构**: `InAppWebView` + `hoshi.local` 虚拟域名拦截（`shouldInterceptRequest`），EPUB HTML/CSS/字体/图片全部经过安全校验后在拦截器中提供。
   - **分页系统**: JS 端 `hoshiReader` 分页引擎 + Dart 端 `ReaderPaginationScripts`，支持分页/连续两种模式。
@@ -116,10 +116,40 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `collections_page.dart` / `tag_*` 系列 -- 集合与标签。
 - `reading_statistics_page.dart` -- 阅读统计。
 
+### 9. 视频播放 (`video_hibiki_page.dart` + `lib/src/media/video/`)
+
+- `lib/src/pages/implementations/video_hibiki_page.dart`（6358 行主体）+ `video_hibiki/` 下 18 个 part（共 6966 行，最大 `subtitle.part.dart` 1375 行）-- 视频播放页：字幕查词/制卡、倍速、沉浸模式。
+- `home_video_page.dart`（3080 行）-- 视频首页（书架/合集/继续观看）。
+- `lib/src/media/video/` -- 视频导入与管理（含 `video_import_dialog.dart`）。
+- 播放栈 media_kit（`third_party/` vendored，Windows 构建需下载 mpv/ANGLE，见 `CLAUDE.local.md` 代理说明）。
+
+### 10. 互联/同步 (`lib/src/sync/`)
+
+- `interconnect_*.dart` -- 局域网互联（设备配对、远程书库/视频、远程查词）。
+- `aggregate_sync_service.dart` / `backup_merge_engine.dart` -- 聚合同步与备份合并引擎。
+- `cloud_remote_book_client.dart` -- 云端远程书籍客户端；另有 Google Drive / WebDAV / Dropbox / FTP 等 backend。
+- DB 侧配对设备表 `HibikiPairedPeers`（定义在 `hibiki_core`）。
+
+### 11. torrent 下载 (`lib/src/media/torrent/`)
+
+- `embedded_torrent_backend.dart` -- 内置引擎的 `TorrentBackend` 实现；同目录含番剧下载/nyaa/qBittorrent 客户端。
+- 引擎在 `packages/hibiki_torrent`（Dart FFI）+ `native/hibiki_torrent`（libtorrent C ABI）；DLL 缺失时回退外接 qBittorrent（`qb_torrent_backend.dart`）。
+
+### 12. galgame 制卡 (`lib/src/lookup/` + `lib/src/mining/`)
+
+- `lib/src/lookup/gal_hook_text_overlay_controller.dart` / `overlay_window_channel.dart` -- Hook 文本浮窗通道。
+- `lib/src/mining/galgame_*`（9 文件，含 `galgame_helper_installer.dart`）-- 场景制卡/语音捕获/波形选段。
+- C++ hook 在 `native/galgame_voice_hook/`（Helper 独立分发，不编进 app）。
+
+### 13. 浏览器扩展 (仓库根 `tools/browser-extension/`)
+
+- `content.js` / `background.js` 等 -- 浏览器内查词扩展，与 app 经本地 HTTP 通信。
+- 弹窗样式须与 app 内弹窗三镜像同步（popup / 扩展 content.css）。
+
 ## 关键依赖与配置
 
 - **状态管理**：`flutter_riverpod: ^2.3.6`
-- **数据库**：`drift: ^2.23.0` + `sqlite3_flutter_libs`（通过 `hibiki_core`）
+- **数据库**：`drift: ">=2.33.0 <2.34.0"` + `sqlite3_flutter_libs`（通过 `hibiki_core`）
 - **WebView**：`flutter_inappwebview: ^6.1.5`
 - **音频**：`just_audio: ^0.9.31`（通过 `hibiki_audio`）
 - **国际化**：`slang: ^3.13.0` / `slang_flutter`，17 种语言
@@ -128,7 +158,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ## 数据模型
 
-数据模型全部定义在 `hibiki_core`（28 张 Drift 表），本模块仅消费。
+数据模型全部定义在 `hibiki_core`（46 张 Drift 表，schema v50），本模块仅消费。互联配对设备表 `HibikiPairedPeers` 也在其中。
 
 ## 测试与质量
 
@@ -152,7 +182,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ## Android 原生代码 (`android/`)
 
-18 个 Java 文件，包括：
+20 个 Java 文件，包括：
 - `MainActivity.java` -- 主 Activity。
 - `PopupDictActivity.java` -- 弹窗词典 Activity。
 - `FloatingDictService.java` / `FloatingLyricService.java` / `BaseFloatingService.java` -- 悬浮窗服务。
@@ -171,21 +201,29 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ## 相关文件清单
 
+`lib/src/` 一级目录 19 个：anki / creator / dictionary / epub / focus / lookup / media / mining / models / pages / platform / profile / reader / settings / shortcuts / startup / storage / sync / utils。
+
 - `lib/main.dart` -- 主入口
 - `lib/popup_main.dart` -- 弹窗词典入口
 - `lib/floating_dict_main.dart` -- 悬浮词典入口
 - `lib/creator.dart` / `lib/media.dart` / `lib/models.dart` / `lib/pages.dart` / `lib/utils.dart` -- barrel files
-- `lib/src/epub/` -- EPUB 处理（10 文件）
-- `lib/src/reader/` -- 阅读器渲染（6 文件）
-- `lib/src/media/audiobook/` -- 有声书桥接（10 文件）
-- `lib/src/creator/` -- 卡片创建器（~50 文件）
-- `lib/src/models/` -- 应用模型（6 文件）
-- `lib/src/pages/` -- 页面（~62 文件）
-- `lib/src/utils/` -- 工具（~45 文件）
+- `lib/src/epub/` -- EPUB 处理（9 文件）
+- `lib/src/reader/` -- 阅读器 JS/CSS 注入封装（17 文件）
+- `lib/src/media/` -- 媒体子系统，下分 `audiobook/`（24 文件）/ `video/`（72 文件）/ `torrent/`（15 文件）/ `sources/` / `collections/` / `drag_drop/` 等
+- `lib/src/sync/` -- 互联/同步/备份（94 文件）
+- `lib/src/lookup/` -- 查词浮窗/galgame Hook 浮窗通道（18 文件）
+- `lib/src/mining/` -- galgame/沉浸制卡（18 文件）
+- `lib/src/creator/` -- 卡片创建器（47 文件）
+- `lib/src/models/` -- 应用模型（18 文件）
+- `lib/src/pages/implementations/` -- 页面实现（85 文件）
+- `lib/src/shortcuts/` -- 全局快捷键与手柄绑定（18 文件，含 `global_navigation.dart`）
+- `lib/src/utils/` -- 工具（87 文件）
 - `lib/src/profile/` -- Profile 系统（4 文件）
-- `lib/src/anki/` -- Anki ViewModel（1 文件）
+- `lib/src/anki/` -- Anki ViewModel（3 文件）
 - `lib/i18n/` -- 国际化（17 语言 + 生成文件）
+- 仓库根 `tools/browser-extension/` -- 浏览器扩展（content.js / background.js）
 
 ## 变更记录 (Changelog)
 
 - 2026-05-23: 初始文档生成。
+- 2026-07-21: 校准数字（表数 46/schema v50、AppModel 5149 行、页面 85、Java 20、drift 版本等），补视频/互联/torrent/galgame/浏览器扩展五大子系统入口与目录总览。
