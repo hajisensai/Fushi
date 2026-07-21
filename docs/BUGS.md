@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-969](bugs/BUG-969-popup-css-ctx-adjust-unclosed-brace.md) | ✅ | ✅ | popup.css .ctx-adjust-button 缺闭合括号吞掉 .global-lookup-ext-hit 高亮规则 |
+| [BUG-970](bugs/BUG-970-popup-css-ctx-adjust-unclosed-brace.md) | ✅ | ✅ | popup.css .ctx-adjust-button 缺闭合括号吞掉 .global-lookup-ext-hit 高亮规则 |
 | [BUG-968](bugs/BUG-968-audiobook-export-text-audio.md) | ✅ | ✅ | 有声书片段导出文字与选区不符且移动端缺少音频 |
 | [BUG-967](bugs/BUG-967-reader-context-menu-stack.md) | ✅ | ✅ | Windows 查词弹窗后右键菜单位于底层且重复累加 |
 | [BUG-966](bugs/BUG-966-subtitle-list-mining-audio.md) | ✅ | ✅ | 字幕列表点词查词制卡音频截错句(锚到播放位置而非被点cue) |
