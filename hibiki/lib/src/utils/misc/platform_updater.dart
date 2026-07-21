@@ -5,6 +5,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 
 import 'package:hibiki/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/mac_update_handoff.dart';
 import 'package:hibiki/src/utils/misc/update_handoff.dart';
 import 'package:hibiki/utils.dart'; // ErrorLogService
 
@@ -117,8 +118,11 @@ abstract class PlatformUpdater {
   Future<void> apply(File file, String version);
 }
 
-/// 本期支持「应用内安装」的平台集合（单一真相源；macOS/Linux 在各自阶段加入）。
-bool platformSupportsInAppInstall() => Platform.isAndroid || Platform.isWindows;
+/// 本期支持「应用内安装」的平台集合（单一真相源；Linux 在其阶段加入）。macOS 走
+/// 去沙盒后的 zip 替换（[MacUpdater] / [MacInstaller]，Phase 3）。iOS 平台禁止应用内
+/// 安装可执行文件，永远只「检查→打开发布页」（[IosUpdater]），不在此集合。
+bool platformSupportsInAppInstall() =>
+    Platform.isAndroid || Platform.isWindows || Platform.isMacOS;
 
 /// Flutter `--split-per-abi` 产出的 Android ABI 标签（CI 的 `app-<abi>-release.apk`
 /// 即据此重命名为 `hibiki-<version>-<abi>.apk`，见 `.github/workflows/release.yml`）。
@@ -149,6 +153,7 @@ const List<String> kAndroidReleaseAbis = <String>[
 List<String> synthesizeStableAssetNames(String version) {
   final List<String> names = <String>[
     'hibiki-$version-windows-setup.exe',
+    'hibiki-$version-macos.zip',
     for (final String abi in kAndroidReleaseAbis) 'hibiki-$version-$abi.apk',
   ];
   return List<String>.unmodifiable(names);
@@ -160,6 +165,8 @@ bool platformSupportsUpdateCheck() => true;
 PlatformUpdater updaterForCurrentPlatform() {
   if (Platform.isAndroid) return AndroidUpdater();
   if (Platform.isWindows) return WindowsUpdater();
+  if (Platform.isMacOS) return MacUpdater();
+  if (Platform.isIOS) return IosUpdater();
   return UnsupportedUpdater();
 }
 
@@ -193,6 +200,20 @@ bool _windowsAssetMatchesChannel(String name, UpdateChannel channel) {
     UpdateChannel.stable ||
     UpdateChannel.beta =>
       !_isDebugWindowsSetupAsset(name),
+  };
+}
+
+/// macOS 更新产物由 CI `release-desktop.yml` 的 apple job 以
+/// `ditto -c -k --keepParent hibiki.app` 打成 `hibiki-<version>-macos.zip`。debug
+/// 通道的版本串内嵌 `-debug.<seq>`，故 debug 包名恒含 `-debug.`（与 Windows 同规则）。
+bool _isDebugMacosAsset(String name) =>
+    name.endsWith('-macos.zip') && name.contains('-debug.');
+
+bool _macosAssetMatchesChannel(String name, UpdateChannel channel) {
+  if (!name.endsWith('-macos.zip')) return false;
+  return switch (channel) {
+    UpdateChannel.debug => _isDebugMacosAsset(name),
+    UpdateChannel.stable || UpdateChannel.beta => !_isDebugMacosAsset(name),
   };
 }
 
@@ -270,7 +291,58 @@ class WindowsUpdater extends PlatformUpdater {
   }
 }
 
-/// iOS + 本期未实现的 macOS/Linux：可检查但不能自装。
+/// macOS：去沙盒后的应用内自替换（Phase 3）。选 `-macos.zip` 包；apply 交给
+/// [MacInstaller.runAndExit]——解压→写握手标记→分离脚本等本进程退出后替换
+/// `/Applications/hibiki.app` 并重启→`exit(0)`。替换失败由脚本回滚旧版本、下次
+/// 启动经 [MacUpdateHandoff.reconcile] 提示，绝不留坏档。
+class MacUpdater extends PlatformUpdater {
+  @override
+  bool get supportsUpdateCheck => true;
+
+  @override
+  bool get supportsInAppInstall => true;
+
+  @override
+  Future<UpdateAsset?> selectAsset(
+    List<Map<String, dynamic>> assets, {
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
+    for (final UpdateAsset asset in _downloadable(assets)) {
+      if (_macosAssetMatchesChannel(asset.name, channel)) return asset;
+    }
+    return null;
+  }
+
+  @override
+  Future<void> apply(File file, String version) async {
+    await MacInstaller.runAndExit(file.path, targetVersion: version);
+  }
+}
+
+/// iOS：Apple 平台禁止应用内下载/执行外部可执行文件（即便当前不在 App Store，也守住
+/// 合规边界便于将来上架）。永远只「检查版本→打开发布页」，[selectAsset] 恒 null 使
+/// 上层走 `_showFallbackDialog`。CI 产出的 `hibiki-<v>-ios.ipa` 供用户手动侧载。
+class IosUpdater extends PlatformUpdater {
+  @override
+  bool get supportsUpdateCheck => true;
+
+  @override
+  bool get supportsInAppInstall => false;
+
+  @override
+  Future<UpdateAsset?> selectAsset(
+    List<Map<String, dynamic>> assets, {
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async =>
+      null;
+
+  @override
+  Future<void> apply(File file, String version) async {
+    throw StateError('IosUpdater.apply must not be called');
+  }
+}
+
+/// Linux（本期未实现应用内安装）：可检查但不能自装，回退打开发布页。
 class UnsupportedUpdater extends PlatformUpdater {
   @override
   bool get supportsUpdateCheck => true;
@@ -1084,5 +1156,273 @@ Future<void> ensureWindowsInstallTargetWritable(Directory installDir) async {
     } catch (_) {
       // Best-effort cleanup; a failed cleanup should not hide the real result.
     }
+  }
+}
+
+// ── macOS 安装器（Phase 3：去沙盒后应用内自替换）───────────────────────────────
+
+class MacSwapStartedProcess {
+  const MacSwapStartedProcess({required this.pid});
+
+  final int? pid;
+}
+
+/// **纯函数**：从运行中可执行文件路径反解出所属 `.app` 包路径。
+///
+/// macOS 下 `Platform.resolvedExecutable` 形如
+/// `/Applications/hibiki.app/Contents/MacOS/hibiki`，取从右起第一个以 `.app` 结尾的
+/// 路径段，返回到该段为止的前缀（即 bundle 根）。没有 `.app` 段（如以裸二进制运行、
+/// 命令行测试）→ null，调用方据此拒绝应用内替换、回退打开发布页。
+String? macAppBundlePathForExecutable(String executablePath) {
+  final List<String> parts = executablePath.split('/');
+  for (int i = parts.length - 1; i >= 0; i--) {
+    if (parts[i].endsWith('.app')) {
+      return parts.sublist(0, i + 1).join('/');
+    }
+  }
+  return null;
+}
+
+/// POSIX 单引号转义：把字符串包进单引号，内部单引号用 `'\''` 拆开重接。
+String _shSingleQuote(String value) => "'${value.replaceAll("'", r"'\''")}'";
+
+/// **纯函数**：生成 macOS 更新替换脚本。等父进程（[parentPid]）退出→把旧
+/// [targetAppPath] 移到 [backupPath]（可逆，不先删）→`ditto` 把新 [newAppPath] 拷入
+/// 原位→去 quarantine→`open` 重启；任何一步失败即回滚旧包并 `open` 之，**绝不留坏档**。
+/// 结果写进 [resultPath]（`{"status":"installed"|"failed","message":"..."}`），供下次
+/// 启动 [MacUpdateHandoff.reconcile] 判定。抽成纯函数便于单测断言脚本结构。
+String buildMacSwapScript({
+  required int parentPid,
+  required String newAppPath,
+  required String targetAppPath,
+  required String backupPath,
+  required String extractDir,
+  required String resultPath,
+  required String logPath,
+}) {
+  final StringBuffer b = StringBuffer();
+  b.writeln('#!/bin/sh');
+  b.writeln(
+      '# Hibiki macOS in-app update swap (Phase 3). Waits for the running');
+  b.writeln(
+      '# app to exit, then swaps the .app bundle and relaunches. Restores');
+  b.writeln(
+      '# the previous bundle on any failure so a botched swap never leaves');
+  b.writeln('# the user without a working app.');
+  b.writeln('set -u');
+  b.writeln('PARENT_PID=$parentPid');
+  b.writeln('NEW_APP=${_shSingleQuote(newAppPath)}');
+  b.writeln('TARGET_APP=${_shSingleQuote(targetAppPath)}');
+  b.writeln('BACKUP=${_shSingleQuote(backupPath)}');
+  b.writeln('EXTRACT_DIR=${_shSingleQuote(extractDir)}');
+  b.writeln('RESULT=${_shSingleQuote(resultPath)}');
+  b.writeln('LOG=${_shSingleQuote(logPath)}');
+  b.writeln(
+      r'''log() { echo "$(date '+%Y-%m-%dT%H:%M:%S') $1" >> "$LOG" 2>/dev/null || true; }''');
+  b.writeln(
+      r'''write_result() { printf '{"status":"%s","message":"%s"}' "$1" "$2" > "$RESULT" 2>/dev/null || true; }''');
+  b.writeln(
+      '# Wait (bounded ~60s) for the parent process to exit. Uses a `ps`');
+  b.writeln(
+      '# liveness probe (never terminates anything) so the swap only starts');
+  b.writeln('# once Hibiki has quit on its own and released the bundle.');
+  b.writeln('i=0');
+  b.writeln(r'while ps -p "$PARENT_PID" > /dev/null 2>&1; do');
+  b.writeln(r'  i=$((i + 1))');
+  b.writeln(r'  [ "$i" -gt 300 ] && break');
+  b.writeln('  sleep 0.2');
+  b.writeln('done');
+  b.writeln('sleep 0.5');
+  b.writeln('fail() {');
+  b.writeln(r'  log "FAIL: $1"');
+  b.writeln(r'  write_result failed "$1"');
+  b.writeln(
+      r'  open "$TARGET_APP" 2>/dev/null || open "$BACKUP" 2>/dev/null || true');
+  b.writeln(r'  rm -rf "$EXTRACT_DIR" 2>/dev/null || true');
+  b.writeln('  exit 1');
+  b.writeln('}');
+  b.writeln(r'[ -d "$NEW_APP" ] || fail "extracted app bundle missing"');
+  b.writeln(
+      '# Move the old bundle aside (reversible) rather than deleting first.');
+  b.writeln(r'rm -rf "$BACKUP" 2>/dev/null || true');
+  b.writeln(r'if [ -d "$TARGET_APP" ]; then');
+  b.writeln(
+      r'  mv "$TARGET_APP" "$BACKUP" || fail "cannot move current app aside"');
+  b.writeln('fi');
+  b.writeln(r'if /usr/bin/ditto "$NEW_APP" "$TARGET_APP"; then');
+  b.writeln(
+      r'  /usr/bin/xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true');
+  b.writeln(r'  rm -rf "$BACKUP" 2>/dev/null || true');
+  b.writeln(r'  rm -rf "$EXTRACT_DIR" 2>/dev/null || true');
+  b.writeln(r'  log "OK swapped -> $TARGET_APP"');
+  b.writeln('  write_result installed ""');
+  b.writeln(r'  open "$TARGET_APP" || fail "installed but relaunch failed"');
+  b.writeln('  exit 0');
+  b.writeln('else');
+  b.writeln('  # Restore the previous bundle.');
+  b.writeln(r'  rm -rf "$TARGET_APP" 2>/dev/null || true');
+  b.writeln(r'  [ -d "$BACKUP" ] && mv "$BACKUP" "$TARGET_APP"');
+  b.writeln(
+      r'  fail "failed to copy new app into place; restored previous version"');
+  b.writeln('fi');
+  return b.toString();
+}
+
+/// PK zip 魔数（0x50 0x4B）。GFW 代理镜像可能 HTTP 200 回 HTML 限流页被原样写进
+/// `.zip`，解压/替换前先拦掉（对齐 Windows 的 MZ 校验）。
+bool isZipHeader(List<int> header) =>
+    header.length >= 2 && header[0] == 0x50 && header[1] == 0x4B;
+
+class MacInstaller {
+  /// 解压下载好的 `-macos.zip`→写握手标记与替换脚本→分离启动脚本→退出本进程，
+  /// 让脚本在本进程退出后替换 `/Applications/hibiki.app` 并重启。
+  ///
+  /// 根因防护（对齐 Windows 的崩溃防护）：
+  /// 1. 先校验产物确实是 zip（PK 魔数），拦掉代理 HTML/截断文件。
+  /// 2. 解压产物无 `.app` / 找不到运行中 bundle → 抛 [UpdateInstallerException]
+  ///    （上层 catch → SnackBar），绝不在没有接班脚本时静默退出。
+  /// 3. 仅当分离脚本**确实启动成功**后才 `exit(0)`。
+  static Future<void> runAndExit(
+    String zipPath, {
+    required String targetVersion,
+    String? currentExecutablePath,
+    int? currentPid,
+    Future<MacSwapStartedProcess> Function(String scriptPath)? startProcess,
+    void Function(int code)? exitProcess,
+    DateTime Function()? now,
+  }) async {
+    final DateTime Function() clock = now ?? DateTime.now;
+    final File zip = File(zipPath);
+
+    // 1. 校验是真 zip。
+    List<int> head;
+    final RandomAccessFile raf = await zip.open();
+    try {
+      head = await raf.read(4);
+    } finally {
+      await raf.close();
+    }
+    if (!isZipHeader(head)) {
+      throw UpdateInstallerException(
+        'Downloaded macOS update is not a valid zip archive '
+        '(${head.length} bytes read); refusing to install.',
+      );
+    }
+
+    // 2. 反解运行中 app bundle 路径。
+    final String execPath =
+        currentExecutablePath ?? Platform.resolvedExecutable;
+    final String? appBundle = macAppBundlePathForExecutable(execPath);
+    if (appBundle == null) {
+      throw UpdateInstallerException(
+        'Cannot locate the running .app bundle from "$execPath"; in-app '
+        'update requires Hibiki launched as an .app.',
+      );
+    }
+
+    // 3. 解压到 updates 目录下的暂存目录。
+    final Directory updatesDir = zip.parent;
+    final Directory extractDir = Directory(
+      '${updatesDir.path}${Platform.pathSeparator}'
+      'mac-update-$targetVersion.extracted',
+    );
+    if (await extractDir.exists()) {
+      await extractDir.delete(recursive: true);
+    }
+    await extractDir.create(recursive: true);
+    final ProcessResult unzip = await Process.run(
+      '/usr/bin/ditto',
+      <String>['-x', '-k', zipPath, extractDir.path],
+    );
+    if (unzip.exitCode != 0) {
+      throw UpdateInstallerException(
+        'Failed to extract macOS update zip (ditto exit ${unzip.exitCode}): '
+        '${unzip.stderr}',
+      );
+    }
+
+    // 4. 在解压目录里找唯一 `.app`。
+    final String? newApp = _findAppBundleIn(extractDir);
+    if (newApp == null) {
+      throw UpdateInstallerException(
+        'Extracted macOS update contains no .app bundle under '
+        '${extractDir.path}.',
+      );
+    }
+
+    // 5. 写握手标记 + 替换脚本。
+    final File markerFile = MacUpdateHandoff.markerFile(updatesDir);
+    final File resultFile = MacUpdateHandoff.resultFile(updatesDir);
+    await MacUpdateHandoff.writePending(
+      markerFile: markerFile,
+      targetVersion: targetVersion,
+      targetAppPath: appBundle,
+      startedAt: clock(),
+    );
+    final int parentPid = currentPid ?? pid;
+    final String backupPath = '${updatesDir.path}${Platform.pathSeparator}'
+        'mac-update-$targetVersion.backup';
+    final String logPath = '${updatesDir.path}${Platform.pathSeparator}'
+        'mac-update-$targetVersion.log';
+    final String script = buildMacSwapScript(
+      parentPid: parentPid,
+      newAppPath: newApp,
+      targetAppPath: appBundle,
+      backupPath: backupPath,
+      extractDir: extractDir.path,
+      resultPath: resultFile.path,
+      logPath: logPath,
+    );
+    final File scriptFile = File(
+      '${updatesDir.path}${Platform.pathSeparator}'
+      'mac-update-$targetVersion.sh',
+    );
+    await scriptFile.writeAsString(script, flush: true);
+
+    // 6. 分离启动脚本（脚本自己等本进程退出后再替换）。
+    final MacSwapStartedProcess started =
+        await (startProcess ?? _startDetachedScript)(scriptFile.path);
+    if (started.pid == null) {
+      // 脚本没起来 = 不会有替换发生，本轮失败此刻已由上层 catch → SnackBar 告知。
+      // 删掉刚写的握手标记，避免下次启动 reconcile 误报「更新未完成」重复打扰。
+      try {
+        if (await markerFile.exists()) await markerFile.delete();
+      } catch (_) {
+        // best-effort：删失败也无大碍，reconcile 幂等只提示一次。
+      }
+      throw UpdateInstallerException(
+        'Failed to start the macOS update swap script; keeping the current '
+        'version.',
+      );
+    }
+
+    // 7. 退出本进程，让脚本接管替换。
+    (exitProcess ?? _defaultExit)(0);
+  }
+
+  static Future<MacSwapStartedProcess> _startDetachedScript(
+    String scriptPath,
+  ) async {
+    final Process process = await Process.start(
+      '/bin/sh',
+      <String>[scriptPath],
+      mode: ProcessStartMode.detached,
+    );
+    return MacSwapStartedProcess(pid: process.pid);
+  }
+
+  static void _defaultExit(int code) => exit(code);
+
+  static String? _findAppBundleIn(Directory dir) {
+    try {
+      for (final FileSystemEntity entity in dir.listSync()) {
+        if (entity is Directory && entity.path.endsWith('.app')) {
+          return entity.path;
+        }
+      }
+    } catch (_) {
+      // 目录读取失败 → 返回 null，调用方抛「无 .app」错误。
+    }
+    return null;
   }
 }

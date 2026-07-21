@@ -344,10 +344,15 @@ class UpdateChecker {
       // 退避（见 WindowsUpdateHandoff.shouldBackOffAutoInstall）。读标记出错则 fail-open
       // 照常自动装，绝不「一次失败就永久不更新」。TODO-1205：candidateVersion 用
       // selection.version（与 marker 的 targetVersion = WindowsUpdater.apply 写入的版本同源，不错位）。
+      // TODO-1197/1198 泛化到 macOS（Phase 3）：Windows 靠 Inno DeleteFile code5
+      // 死循环，macOS 靠 zip 替换失败死循环，两者同策——同一目标版本上一轮握手没
+      // 落地就退回手动确认，不再静默重下重启。各平台读各自的握手标记。
       final bool autoInstallBackoff = canInstall &&
           autoInstall &&
-          Platform.isWindows &&
-          await _shouldBackOffWindowsAutoInstall(version);
+          ((Platform.isWindows &&
+                  await _shouldBackOffWindowsAutoInstall(version)) ||
+              (Platform.isMacOS &&
+                  await _shouldBackOffMacAutoInstall(version)));
       if (!context.mounted) return;
       if (canInstall && autoInstall && !autoInstallBackoff) {
         _downloadAndInstall(context, asset!, version, updater,
@@ -1208,6 +1213,149 @@ class UpdateChecker {
         stack,
       );
       debugPrint('[Hibiki] windows update handoff reconcile failed: $e');
+    }
+  }
+
+  /// macOS 自动安装跨重启失败退避（对齐 Windows）：读握手标记判断 [candidateVersion]
+  /// 这个确切版本上一轮替换是否没落地（标记仍在 = 失败，reconcile 成功会删标记）；是
+  /// 则返 true，调用方退回手动确认对话框，打断「装不成→重启→又自动装」死循环。读标记
+  /// 出错 → false（fail-open）。仅 macOS 有意义（调用点已 `Platform.isMacOS` 门控）。
+  static Future<bool> _shouldBackOffMacAutoInstall(
+    String candidateVersion,
+  ) async {
+    try {
+      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+      return await MacUpdateHandoff.shouldBackOffAutoInstall(
+        markerFile: MacUpdateHandoff.markerFile(updatesDir),
+        candidateVersion: candidateVersion,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('UpdateChecker.macAutoInstallBackoff', e, stack);
+      debugPrint('[Hibiki] mac auto-install backoff check failed: $e');
+      return false;
+    }
+  }
+
+  /// macOS 更新握手对账（Phase 3）：启动时读握手标记，据「当前版本是否已到目标」+
+  /// 脚本写的 result 判定替换结果并提示，然后清理本轮 scratch。成功 → 删标记；未完成
+  /// → 保留标记供退避、弹「更新未完成」并给「前往下载」入口。与 Windows 的
+  /// [reconcilePendingWindowsInstallerHandoff] 平级，在 main.dart 启动流程并列调用。
+  static Future<void> reconcilePendingMacInstallerHandoff(
+    BuildContext context,
+    String currentVersion,
+  ) async {
+    if (!Platform.isMacOS) return;
+    if (!canShowDialogFromContext(context)) {
+      const String message =
+          'dialog navigator unavailable before mac handoff reconcile';
+      ErrorLogService.instance.log('UpdateChecker.macHandoff', message);
+      debugPrint('[Hibiki] mac update handoff reconcile deferred: $message');
+      return;
+    }
+    try {
+      // 与 Windows 同：把兜底 GC 挂到启动 reconcile，不依赖用户动作确定性回收旧包。
+      await _cleanupOldApks(currentVersion);
+
+      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+      final MacUpdateHandoffResult? result = await MacUpdateHandoff.reconcile(
+        markerFile: MacUpdateHandoff.markerFile(updatesDir),
+        resultFile: MacUpdateHandoff.resultFile(updatesDir),
+        currentVersion: currentVersion,
+      );
+      if (result == null) return;
+
+      final bool installed = result.status == MacUpdateHandoffStatus.installed;
+      // 清理本轮替换 scratch（脚本/日志/暂存/备份）；标记本身仅在成功时已被 reconcile
+      // 删除，未完成时保留供退避，故清理排除标记与 result 文件。
+      await _cleanupMacUpdateScratch(updatesDir);
+
+      ErrorLogService.instance.log(
+        'UpdateChecker.macHandoff',
+        'status=${result.status.name}, target=${result.record.targetVersion}, '
+            'current=$currentVersion, '
+            'message=${result.message ?? ''}',
+      );
+
+      if (!context.mounted) return;
+      await showAppDialog<void>(
+        context: context,
+        barrierDismissible: installed,
+        builder: (BuildContext ctx) {
+          if (installed) {
+            return AlertDialog(
+              title: Text(t.update_install_success_title),
+              content: Text(
+                t.update_install_success_message(
+                  version: result.record.targetVersion,
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(t.update_hide),
+                ),
+              ],
+            );
+          }
+          final String detail = (result.message ?? '').trim();
+          return AlertDialog(
+            title: Text(t.update_install_incomplete_title),
+            content: Text(
+              detail.isEmpty
+                  ? t.update_mac_install_incomplete_message
+                  : '${t.update_mac_install_incomplete_message}\n\n$detail',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  launchUrl(
+                    Uri.parse(
+                        'https://github.com/$kGitHubRepo/releases/latest'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                child: Text(t.update_download),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(t.update_hide),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('UpdateChecker.macHandoff', e, stack);
+      debugPrint('[Hibiki] mac update handoff reconcile failed: $e');
+    }
+  }
+
+  /// best-effort 清理 macOS 替换 scratch（`mac-update-*.sh` / `.log` / `.backup` /
+  /// `.extracted` 等），排除握手标记与 result 文件（未完成时它们需保留供退避）。避免这些
+  /// 非临时后缀的普通文件被 [selectStaleUpdateArtifacts] 当「安装包」占用 keep-newest 名额。
+  static Future<void> _cleanupMacUpdateScratch(Directory updatesDir) async {
+    try {
+      if (!updatesDir.existsSync()) return;
+      const String keepMarker = MacUpdateHandoff.markerFileName;
+      const String keepResult = MacUpdateHandoff.resultFileName;
+      for (final FileSystemEntity entity in updatesDir.listSync()) {
+        final String name = _leafName(entity.path);
+        if (!name.startsWith('mac-update-')) continue;
+        if (name == keepMarker || name == keepResult) continue;
+        try {
+          if (entity is Directory) {
+            entity.deleteSync(recursive: true);
+          } else {
+            entity.deleteSync();
+          }
+        } catch (e) {
+          debugPrint('[UpdateChecker] mac scratch cleanup delete failed: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[UpdateChecker] mac scratch cleanup scan failed: $e');
     }
   }
 
