@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -20,12 +18,6 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/mining/external_window_mining.dart';
-import 'package:hibiki/src/mining/galgame_session_controller.dart';
-import 'package:hibiki/src/mining/immersion_mining_engine.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/utils.dart';
 
 /// 测试可见的查词状态探针：让 widget 行为测试直接断言「查词后 _isSearching 已复位」
@@ -67,78 +59,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   @override
   MediaType get mediaType => DictionaryMediaType.instance;
-
-  /// galgame 制卡富化（UX 统一后的接入点）：存在活跃 galgame 会话（用户从游戏库拉起了游戏、
-  /// 已绑定游戏窗口）时，制卡额外带**该句配对语音** + **游戏窗口封面（GIF/PNG）**，走
-  /// [ImmersionMiningEngine]（与外部窗口挖矿同形状）。这条富化此前在被删的 TexthookerPage 里，
-  /// 现随台词统一进悬浮查词面板而挪到查词制卡出口（[GalgameSessionController] 提供会话状态 +
-  /// 封面 / 语音）。
-  ///
-  /// **Never break**：无活跃会话 / 非 Windows / 未绑定游戏窗口 / 封面截取失败时一律回落
-  /// [DictionaryPageMixin.onMineEntry] 的普通制卡——剪贴板查词、阅读器查词、有声书查词、全局
-  /// 查词等既有制卡行为完全不变。
-  @override
-  Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
-    final GalgameSessionController gal = GalgameSessionController.instance;
-    final bound = gal.boundWindow;
-    if (!gal.canCaptureWindowCover || bound == null) {
-      return super.onMineEntry(fields);
-    }
-    HibikiToast.showMine(
-      msg: t.card_mining_pending,
-      status: MineToastStatus.pending,
-    );
-    // 画面默认出 GIF 短动图（抓角色口型/眨眼）；不成回退单帧 PNG；单帧也失败 → 回落普通制卡
-    // （不产出空壳卡；super 会重弹 pending，showMine 幂等替换）。
-    final GalgameWindowCover? cover = await gal.captureWindowCover();
-    if (cover == null) {
-      return super.onMineEntry(fields);
-    }
-    // 该句配对语音（引擎-hook 纯人声优先，回退采集链）；无音频退化为纯截图卡（Never break）。
-    final Uint8List? audioBytes =
-        await gal.captureVoiceBytes(fields['sentence'] ?? '');
-    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
-    final MiningMediaCompression compression = MiningMediaCompression.resolve(
-      imageTier: appModel.miningImageQuality,
-      audioTier: appModel.miningAudioQuality,
-    );
-    final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
-      buildExternalWindowRequest(
-        fields: fields,
-        sentence: fields['sentence'] ?? '',
-        screenshotBytes: cover.bytes,
-        coverName: cover.name,
-        audioBytes: audioBytes,
-        documentTitle: bound.title.isEmpty ? 'External window' : bound.title,
-      ),
-      compression: compression,
-      tempDir: Directory.systemTemp.path,
-      repo: repo,
-    );
-    if (res.aborted) {
-      HibikiToast.showMine(
-        msg: res.abortReason != null
-            ? '${t.external_window_capture_failed}：${res.abortReason}'
-            : t.external_window_capture_failed,
-        status: MineToastStatus.failed,
-      );
-      return const MinePopupResult();
-    }
-    final MineOutcome outcome = res.outcome! as MineOutcome;
-    final String deckName = outcome.result == MineResult.success
-        ? (await repo.loadSettings()).selectedDeckName ?? ''
-        : '';
-    final described = describeMineOutcome(outcome, deckName: deckName);
-    if (described.record) {
-      unawaited(recordMined());
-      unawaited(recordMinedSentence(fields, outcome.noteId));
-    }
-    HibikiToast.showMine(msg: described.message, status: described.status);
-    if (described.success) {
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
-    }
-    return const MinePopupResult();
-  }
 
   final TextEditingController _controller = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();

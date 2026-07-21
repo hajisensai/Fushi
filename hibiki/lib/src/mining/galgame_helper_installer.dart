@@ -103,8 +103,8 @@ class GalgameHelperInstaller {
   bool _canceled = false;
   HttpClient? _client;
 
-  /// exe 同级的 `voice_hook/<arch>` 目录（安装器写入落点，与
-  /// GalgameSessionController._resolveGalInjectorPath 的读取落点一致）。安装包 Inno Setup
+  /// exe 同级的 `voice_hook/<arch>` 目录（安装器写入落点，与 defaultInjectorResolver /
+  /// GalHookSessionController 注入器解析的读取落点一致）。安装包 Inno Setup
   /// 默认装到 {localappdata}\Hibiki（PrivilegesRequired=lowest），此目录用户可写、无需提权。
   Directory _archDir(String arch) {
     final String exeDir = File(Platform.resolvedExecutable).parent.path;

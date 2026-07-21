@@ -35,7 +35,7 @@
 | [BUG-960](bugs/BUG-960-textrender-thread-catalog.md) | ✅ | ✅ | 9nine 的 Luna 线程列表缺少 TextRender |
 | [BUG-959](bugs/BUG-959-local-media-shelf-perf.md) | ✅ | ✅ | 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat |
 | [BUG-958](bugs/BUG-958-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
-| [BUG-957](bugs/BUG-957-galgame-dead-session-controller-leftover.md) | 🚧 | 🚧 | 旧 GalgameSessionController 死代码残留致查词面板 galgame 制卡出口失效 |
+| [BUG-957](bugs/BUG-957-galgame-dead-session-controller-leftover.md) | ✅ | ✅ | 旧 GalgameSessionController 死代码残留致查词面板 galgame 制卡出口失效 |
 | [BUG-956](bugs/BUG-956-gal-mining-serial-queue-poisoning.md) | 🚧 | 🚧 | galgame 制卡串行队列异常毒化后所有后续制卡永久挂起 |
 | [BUG-955](bugs/BUG-955-gal-mining-historical-line-media-mismatch.md) | 🚧 | 🚧 | 历史行制卡错配当前语音与当前画面且无降级标记 |
 | [BUG-954](bugs/BUG-954-texthooker-mine-sentence-empty-non-windows.md) | 🚧 | 🚧 | 非外部窗口模式制卡 sentence 字段恒空 |

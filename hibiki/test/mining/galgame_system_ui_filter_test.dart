@@ -61,8 +61,8 @@ void main() {
   });
 
   // 回归守卫：活代码的文本 poll 路径（GalHookSessionController）必须真的接了这个过滤器。
-  // PR#295 曾把过滤器留在死代码 GalgameSessionController 里、新路径漏接，导致系统 UI 文字
-  // 漏进查词面板——源码扫描确保 appendLine 之前调用了 isGalgameSystemUiLine，防同类回归。
+  // PR#295 曾把过滤器留在（现已删除的）死代码 GalgameSessionController 里、新路径漏接，
+  // 导致系统 UI 文字漏进查词面板——源码扫描确保 appendLine 之前调用了 isGalgameSystemUiLine，防回归。
   test('GalHookSessionController 的 poll 路径接了 isGalgameSystemUiLine 过滤', () {
     final File controller = File(
       'lib/src/mining/gal_hook_session_controller.dart',

@@ -1,7 +1,7 @@
 /// galgame 文本 hook 的「系统 UI 文字 vs 真台词」启发式过滤器。
 ///
-/// 原先内嵌在 [GalgameSessionController]（旧的单页会话实现）里，但真正落地的
-/// 文本 poll 路径已迁到 [GalHookSessionController]。抽成共享独立文件，使活代码的
+/// 原先内嵌在旧的单页会话实现 GalgameSessionController（已删除）里，但真正落地的
+/// 文本 poll 路径在 [GalHookSessionController]。抽成共享独立文件，使活代码的
 /// poll 路径能接上同一份真机实证过的过滤逻辑（否则读/存档菜单文字会漏进查词面板）。
 library;
 
