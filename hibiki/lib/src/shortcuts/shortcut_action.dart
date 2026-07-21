@@ -49,9 +49,40 @@ enum ShortcutScope {
 }
 
 enum ShortcutAction {
+  // 声明顺序 = 设置页各组的展示顺序（actionsForScope 按 values 声明序过滤），各组
+  // 按 关闭/返回 → 高频操作 → 界面/杂项 分簇排列，重要动作靠前。持久化走字符串
+  // key，与声明序无关。⚠️ 唯一的顺序敏感点：resolveKeyboard / resolveGamepad 按
+  // 声明序取首个命中——同 scope 内故意共享绑定的别名对（readerLookupAtCursor 与
+  // readerEnterCaret 同绑 A/Enter），先声明者在 resolve 路径胜出；重排时必须保持
+  // readerLookupAtCursor 在 readerEnterCaret 之前。
+
   // Reader
+  // 关闭/返回（用户拍板拆分：关词典与退书是两个独立动作、各自键位，不再共用一键
+  // 的阶梯语义）：readerDismissDict 只关词典弹窗（无弹窗时不消费、不退书）；
+  // readerExitBook 直接退出书籍（走 maybePop → PopScope onWillPop 闸门，BUG-782）。
+  readerDismissDict(ShortcutScope.reader, 'reader_dismiss_dict'),
+  readerExitBook(ShortcutScope.reader, 'reader_exit_book'),
+
+  // 翻页
   readerPageForward(ShortcutScope.reader, 'reader_page_forward'),
   readerPageBackward(ShortcutScope.reader, 'reader_page_backward'),
+
+  // 查词/制卡
+  readerLookupAtCursor(ShortcutScope.reader, 'reader_lookup_at_cursor'),
+  readerShiftLookup(ShortcutScope.reader, 'reader_shift_lookup'),
+  readerCreateCardFromPopup(
+      ShortcutScope.reader, 'reader_create_card_from_popup'),
+  // TODO-700 T7：「进入选字查词光标」可改键（默认手柄 A + 键盘 Enter）。这是
+  // enter-trigger 的绑定真相源：reader 写死判 A/Enter 进光标的分支改读它的绑定
+  // （见 reader_caret_router.isEnterTrigger*）。默认与旧硬编码一致，行为不变，只
+  // 是变成可改键。注意它与 readerLookupAtCursor 默认同绑 A/Enter——这是有意的并行
+  // 别名（一个管「进光标」、一个管「进光标后查词/激活」），enter-trigger 不经
+  // resolveKeyboard 故无枚举顺序歧义，no-shadow 守卫显式排除它；resolve 路径按
+  // 声明序先命中 readerLookupAtCursor（见枚举头部排序契约，勿排到它前面）。
+  readerEnterCaret(ShortcutScope.reader, 'reader_enter_caret'),
+
+  // 界面
+  readerToggleFurigana(ShortcutScope.reader, 'reader_toggle_furigana'),
   readerToggleChrome(ShortcutScope.reader, 'reader_toggle_chrome'),
   // TODO-728：直接打开阅读器设置菜单（外观/进度/目录的快速设置面板，执行体
   // = _showAppearanceSheet）。与 readerToggleChrome 正交——后者只 show/hide 底栏，
@@ -64,19 +95,6 @@ enum ShortcutAction {
   // 不同 co-active 组、绝不同时激活，不构成冲突（no-shadow 守卫只扫同组）。执行体
   // = _showAppearanceSheet(initialSubPage: 'location')。
   readerOpenNavigation(ShortcutScope.reader, 'reader_open_navigation'),
-  readerDismissDict(ShortcutScope.reader, 'reader_dismiss_dict'),
-  readerToggleFurigana(ShortcutScope.reader, 'reader_toggle_furigana'),
-  readerLookupAtCursor(ShortcutScope.reader, 'reader_lookup_at_cursor'),
-  readerShiftLookup(ShortcutScope.reader, 'reader_shift_lookup'),
-  readerCreateCardFromPopup(
-      ShortcutScope.reader, 'reader_create_card_from_popup'),
-  // TODO-700 T7：「进入选字查词光标」可改键（默认手柄 A + 键盘 Enter）。这是
-  // enter-trigger 的绑定真相源：reader 写死判 A/Enter 进光标的分支改读它的绑定
-  // （见 reader_caret_router.isEnterTrigger*）。默认与旧硬编码一致，行为不变，只
-  // 是变成可改键。注意它与 readerLookupAtCursor 默认同绑 A/Enter——这是有意的并行
-  // 别名（一个管「进光标」、一个管「进光标后查词/激活」），enter-trigger 不经
-  // resolveKeyboard 故无枚举顺序歧义，no-shadow 守卫显式排除它。
-  readerEnterCaret(ShortcutScope.reader, 'reader_enter_caret'),
 
   // Home
   homeTabBooks(ShortcutScope.home, 'home_tab_books'),
@@ -97,10 +115,10 @@ enum ShortcutAction {
   // Linux）生效、移动端 no-op（window_manager 无桌面窗）。默认键盘 F11。
   globalToggleFullscreen(ShortcutScope.global, 'global_toggle_fullscreen'),
 
-  // Audiobook
+  // Audiobook（上一句在前，与视频组「上/下一句字幕」顺序一致）
   audiobookPlayPause(ShortcutScope.audiobook, 'audiobook_play_pause'),
-  audiobookNextSentence(ShortcutScope.audiobook, 'audiobook_next_sentence'),
   audiobookPrevSentence(ShortcutScope.audiobook, 'audiobook_prev_sentence'),
+  audiobookNextSentence(ShortcutScope.audiobook, 'audiobook_next_sentence'),
   // 鼠标中键点句 → 跳到该句并播放。位置型动作，运行时不走
   // _executeShortcutAction，而是 onPointerSeek 经 resolveMouse 判定后定位执行。
   audiobookSeekToClickedSentence(
@@ -111,29 +129,29 @@ enum ShortcutAction {
   // show up in the shortcut settings page alongside the other scopes. The
   // executed behaviour is unchanged; only the key lookup now goes through the
   // registry. Defaults match the previous asbplayer/mpv-style bindings.
+  //
+  // 声明顺序 = 设置页展示顺序（actionsForScope 按 values 声明序过滤）。视频组按
+  // 关闭/返回 → 播放控制 → 字幕/章节跳转 → 字幕显示 → 字幕对轴 → 音量 → 画面/杂项
+  // 分簇排列，重要动作靠前；重排只影响展示，持久化走字符串 key、与声明序无关。
+
+  // 关闭/返回：逐级退出（控件编辑态→字幕列表→剧集列表→侧栏→沉浸锁→全屏→退出视频页）。
+  videoEscape(ShortcutScope.video, 'video_escape'),
+
+  // 播放控制
   videoTogglePlayPause(ShortcutScope.video, 'video_toggle_play_pause'),
   videoPlay(ShortcutScope.video, 'video_play'),
   videoPause(ShortcutScope.video, 'video_pause'),
-  videoPreviousSubtitle(ShortcutScope.video, 'video_previous_subtitle'),
-  videoNextSubtitle(ShortcutScope.video, 'video_next_subtitle'),
   videoSeekBackward(ShortcutScope.video, 'video_seek_backward'),
   videoSeekForward(ShortcutScope.video, 'video_seek_forward'),
-  videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
-  videoVolumeUp(ShortcutScope.video, 'video_volume_up'),
-  videoVolumeDown(ShortcutScope.video, 'video_volume_down'),
-  videoToggleMute(ShortcutScope.video, 'video_toggle_mute'),
+  videoPreviousFrame(ShortcutScope.video, 'video_previous_frame'),
+  videoNextFrame(ShortcutScope.video, 'video_next_frame'),
   videoSpeedUp(ShortcutScope.video, 'video_speed_up'),
   videoSpeedDown(ShortcutScope.video, 'video_speed_down'),
   videoResetSpeed(ShortcutScope.video, 'video_reset_speed'),
-  videoPreviousFrame(ShortcutScope.video, 'video_previous_frame'),
-  videoNextFrame(ShortcutScope.video, 'video_next_frame'),
-  videoScreenshot(ShortcutScope.video, 'video_screenshot'),
-  videoToggleFullscreen(ShortcutScope.video, 'video_toggle_fullscreen'),
-  videoToggleSubtitleList(ShortcutScope.video, 'video_toggle_subtitle_list'),
-  videoToggleImmersiveLock(ShortcutScope.video, 'video_toggle_immersive_lock'),
-  videoToggleSubtitleBlur(ShortcutScope.video, 'video_toggle_subtitle_blur'),
-  videoToggleFavoriteSentence(
-      ShortcutScope.video, 'video_toggle_favorite_sentence'),
+
+  // 字幕/章节跳转
+  videoPreviousSubtitle(ShortcutScope.video, 'video_previous_subtitle'),
+  videoNextSubtitle(ShortcutScope.video, 'video_next_subtitle'),
   videoReplayCurrentSubtitle(
       ShortcutScope.video, 'video_replay_current_subtitle'),
   // 重播上一句（TODO-378，BUG-287）：纯句子跳转到上一条 cue 起点并播放，**不**退化成
@@ -145,7 +163,10 @@ enum ShortcutAction {
   // 时 no-op。与「上/下一句字幕」(Ctrl+←/→) 正交——后者按字幕 cue，这里按容器章节。
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),
   videoNextChapter(ShortcutScope.video, 'video_next_chapter'),
-  videoEscape(ShortcutScope.video, 'video_escape'),
+
+  // 字幕显示
+  videoToggleSubtitleList(ShortcutScope.video, 'video_toggle_subtitle_list'),
+  videoToggleSubtitleBlur(ShortcutScope.video, 'video_toggle_subtitle_blur'),
   // TODO-840 Part B：字幕遮蔽模式（不遮蔽/模糊/隐藏，见 VideoSubtitleObscureMode）。
   // videoCycleSubtitleObscure 在三态间循环；videoToggleSubtitleHide 直接开/关「隐藏
   // 主字幕」。与历史的 videoToggleSubtitleBlur（B，开/关模糊）正交并存——后者保留
@@ -160,6 +181,7 @@ enum ShortcutAction {
       ShortcutScope.video, 'video_cycle_secondary_subtitle_obscure'),
   videoToggleSecondarySubtitleHide(
       ShortcutScope.video, 'video_toggle_secondary_subtitle_hide'),
+
   // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
   // 键盘。videoOpenSubtitleAlign 一键弹波形对轴放大视图（复用 SubtitleWaveformZoomView，
   // 与面板入口同一逻辑、零第二套状态）；videoSubtitleDelayIncrease/Decrease 像 mpv 的
@@ -177,6 +199,19 @@ enum ShortcutAction {
   // Ctrl+Shift+箭头未被占用（裸箭头=time seek、Ctrl+箭头=跳句，均不冲突）。
   videoAlignSubtitleToPrev(ShortcutScope.video, 'video_align_subtitle_to_prev'),
   videoAlignSubtitleToNext(ShortcutScope.video, 'video_align_subtitle_to_next'),
+
+  // 音量
+  videoVolumeUp(ShortcutScope.video, 'video_volume_up'),
+  videoVolumeDown(ShortcutScope.video, 'video_volume_down'),
+  videoToggleMute(ShortcutScope.video, 'video_toggle_mute'),
+
+  // 画面/杂项
+  videoToggleFullscreen(ShortcutScope.video, 'video_toggle_fullscreen'),
+  videoToggleImmersiveLock(ShortcutScope.video, 'video_toggle_immersive_lock'),
+  videoScreenshot(ShortcutScope.video, 'video_screenshot'),
+  videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
+  videoToggleFavoriteSentence(
+      ShortcutScope.video, 'video_toggle_favorite_sentence'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，

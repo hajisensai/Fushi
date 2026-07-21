@@ -1149,7 +1149,7 @@
   "shortcut_action_video_toggle_subtitle_list": "字幕リストの切り替え",
   "shortcut_action_video_toggle_immersive_lock": "イマーシブロックの切り替え",
   "shortcut_action_video_toggle_subtitle_blur": "字幕ぼかしの切り替え",
-  "shortcut_action_video_escape": "終了／戻る",
+  "shortcut_action_video_escape": "動画を閉じる／戻る",
   "book_edit_author": "著者",
   "floating_lyric_toggle_action": "フローティング字幕",
   "video_setting_picture_fit_cover": "全体を埋める",
@@ -2067,5 +2067,6 @@
   "download_settings": "Download settings",
   "download_backend_not_configured": "Configure the download backend below (expand Download settings).",
   "shortcut_press_gamepad": "Press a gamepad button...",
-  "shortcut_gamepad_pick_list": "Choose from list"
+  "shortcut_gamepad_pick_list": "Choose from list",
+  "shortcut_action_reader_exit_book": "本を閉じる"
 }

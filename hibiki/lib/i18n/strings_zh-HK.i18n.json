@@ -1149,7 +1149,7 @@
   "shortcut_action_video_toggle_subtitle_list": "切換字幕清單",
   "shortcut_action_video_toggle_immersive_lock": "切換沉浸鎖定",
   "shortcut_action_video_toggle_subtitle_blur": "切換字幕模糊",
-  "shortcut_action_video_escape": "退出／返回",
+  "shortcut_action_video_escape": "關閉影片／返回",
   "book_edit_author": "作者",
   "floating_lyric_toggle_action": "懸浮字幕",
   "video_setting_picture_fit_cover": "填滿",
@@ -2067,5 +2067,6 @@
   "download_settings": "Download settings",
   "download_backend_not_configured": "Configure the download backend below (expand Download settings).",
   "shortcut_press_gamepad": "Press a gamepad button...",
-  "shortcut_gamepad_pick_list": "Choose from list"
+  "shortcut_gamepad_pick_list": "Choose from list",
+  "shortcut_action_reader_exit_book": "退出書籍"
 }

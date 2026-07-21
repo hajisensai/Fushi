@@ -1149,7 +1149,7 @@
   "shortcut_action_video_toggle_subtitle_list": "切换字幕列表",
   "shortcut_action_video_toggle_immersive_lock": "切换沉浸锁定",
   "shortcut_action_video_toggle_subtitle_blur": "切换字幕模糊",
-  "shortcut_action_video_escape": "退出/返回",
+  "shortcut_action_video_escape": "关闭视频/返回",
   "book_edit_author": "作者",
   "floating_lyric_toggle_action": "悬浮字幕",
   "video_setting_picture_fit_cover": "填充",
@@ -2067,5 +2067,6 @@
   "download_settings": "下载设置",
   "download_backend_not_configured": "请在下方「下载设置」里配置下载后端",
   "shortcut_press_gamepad": "按下手柄按钮…",
-  "shortcut_gamepad_pick_list": "从列表选择"
+  "shortcut_gamepad_pick_list": "从列表选择",
+  "shortcut_action_reader_exit_book": "退出书籍"
 }

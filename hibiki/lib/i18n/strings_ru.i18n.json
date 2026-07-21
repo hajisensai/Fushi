@@ -2067,5 +2067,6 @@
   "download_settings": "Download settings",
   "download_backend_not_configured": "Configure the download backend below (expand Download settings).",
   "shortcut_press_gamepad": "Press a gamepad button...",
-  "shortcut_gamepad_pick_list": "Choose from list"
+  "shortcut_gamepad_pick_list": "Choose from list",
+  "shortcut_action_reader_exit_book": "Exit book"
 }
