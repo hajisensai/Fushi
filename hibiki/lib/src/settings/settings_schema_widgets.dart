@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_fields.dart';
 import 'package:hibiki/src/settings/settings_search.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
@@ -109,6 +110,8 @@ class SettingsSchemaItem extends StatelessWidget {
         ),
       SettingsSliderItem slider => _slider(slider),
       SettingsStepperItem stepper => _stepper(stepper),
+      SettingsTextItem text => _text(text),
+      SettingsNumberItem number => _number(number),
       SettingsCustomItem custom => custom.builder(settingsContext),
     };
     // 设置搜索跳转落点：本项是待定位目标时消费一次性挂点，包上滚动定位 +
@@ -222,6 +225,71 @@ class SettingsSchemaItem extends StatelessWidget {
       format: stepper.format,
       onChanged: (double next) async {
         await stepper.onChanged(settingsContext, next);
+        settingsContext.refresh();
+      },
+    );
+  }
+
+  /// 文本项渲染复用 [SettingsSecretField] 内部（防抖/提交/遮蔽语义单一实现）。
+  /// 写穿后不强制 refresh：输入框自持编辑态，重建反而无意义；需要联动的项在
+  /// onChanged 里自行 refresh。
+  Widget _text(SettingsTextItem text) {
+    final String? reset = text.resetValue?.call(settingsContext);
+    return SettingsSecretField(
+      title: text.title,
+      subtitle: text.subtitle,
+      icon: showIcons ? text.icon : null,
+      showIcon: showIcons,
+      initialValue: text.value(settingsContext),
+      obscureText: text.secret,
+      revealToggle: text.secret,
+      keyboardType: text.keyboardType ??
+          (text.secret ? TextInputType.visiblePassword : TextInputType.text),
+      hintText: text.placeholder,
+      debounce: text.debounce,
+      resetValue: reset,
+      onReset: reset == null
+          ? null
+          : () async => text.onChanged(settingsContext, reset),
+      onChanged: (String value) async => text.onChanged(settingsContext, value),
+    );
+  }
+
+  /// 数字项渲染复用 [SettingsNumberField]；解析/夹取收在此处（widget 保持哑）：
+  /// int/double 按 [SettingsNumberItem.integer] 解析，失败不写，越界夹到 min/max。
+  Widget _number(SettingsNumberItem number) {
+    final num? reset = number.resetValue?.call(settingsContext);
+    String format(num value) =>
+        number.integer ? value.toInt().toString() : value.toString();
+    num clamp(num value) {
+      num result = value;
+      final num? min = number.min;
+      final num? max = number.max;
+      if (min != null && result < min) result = min;
+      if (max != null && result > max) result = max;
+      return result;
+    }
+
+    return SettingsNumberField(
+      title: number.title,
+      subtitle: number.subtitle,
+      icon: showIcons ? number.icon : null,
+      showIcon: showIcons,
+      suffixText: number.suffixText,
+      initialValue: format(number.value(settingsContext)),
+      resetValue: reset == null ? null : format(reset),
+      onReset: reset == null
+          ? null
+          : () async {
+              await number.onChanged(settingsContext, clamp(reset));
+              settingsContext.refresh();
+            },
+      onChanged: (String value) async {
+        final num? parsed = number.integer
+            ? int.tryParse(value.trim())
+            : double.tryParse(value.trim());
+        if (parsed == null) return;
+        await number.onChanged(settingsContext, clamp(parsed));
         settingsContext.refresh();
       },
     );

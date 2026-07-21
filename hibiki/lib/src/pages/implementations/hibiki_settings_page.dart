@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
@@ -19,7 +18,8 @@ class HibikiSettingsDialogPage extends BasePage {
   BasePageState createState() => _HibikiSettingsDialogPageState();
 }
 
-class _HibikiSettingsDialogPageState extends BasePageState {
+class _HibikiSettingsDialogPageState extends BasePageState
+    with SettingsContextHost {
   final ScrollController _contentScrollController = ScrollController();
 
   @override
@@ -64,15 +64,8 @@ class _HibikiSettingsDialogPageState extends BasePageState {
   }
 
   Widget _buildContent() {
-    final SettingsContext settingsContext = SettingsContext(
-      context: context,
-      appModel: appModel,
-      ref: ref,
-      readerSource: ReaderHibikiSource.instance,
-      refresh: () {
-        if (mounted) setState(() {});
-      },
-    );
+    final SettingsContext settingsContext =
+        createSettingsContext(appModel: appModel, ref: ref);
     final SettingsDestination destination = buildReaderQuickSettingsDestination(
       settingsContext,
     );

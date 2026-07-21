@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
@@ -28,7 +27,8 @@ class SettingsHomePage extends BasePage {
   BasePageState<SettingsHomePage> createState() => _SettingsHomePageState();
 }
 
-class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
+class _SettingsHomePageState extends BasePageState<SettingsHomePage>
+    with SettingsContextHost<SettingsHomePage> {
   // 默认选中 schema 首个分类（外观），与宽屏导航列表的视觉首项一致；
   // 若首项被平台门控隐藏，build 里的兜底会自动落到第一个可见分类。
   SettingsDestinationId _selectedDestinationId =
@@ -60,15 +60,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final SettingsContext settingsContext = SettingsContext(
-      context: context,
-      appModel: appModel,
-      ref: ref,
-      readerSource: ReaderHibikiSource.instance,
-      refresh: () {
-        if (mounted) setState(() {});
-      },
-    );
+    final SettingsContext settingsContext =
+        createSettingsContext(appModel: appModel, ref: ref);
     final List<SettingsDestination> destinations = buildSettingsSchema(
       settingsContext,
     )
@@ -197,7 +190,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
             for (final SettingsSearchEntry entry in results)
               HibikiListItem(
                 leading: Icon(entry.item.icon ?? entry.destination.icon),
-                title: Text(entry.item.title),
+                // custom 项经 searchTitle 入索引时 item.title 为空，展示用
+                // entry.title（同打分口径）。
+                title: Text(entry.title),
                 titleMaxLines: 2,
                 subtitle: Text(
                   entry.sectionTitle == null
