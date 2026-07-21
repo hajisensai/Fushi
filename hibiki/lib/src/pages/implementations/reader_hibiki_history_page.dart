@@ -766,14 +766,23 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     AsyncSnapshot<_RemoteBookState?>? remoteSnapshot,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // BUG-963：这三张「从 EPUB 借用」的展示映射（封面 / 有 EPUB 背书门控 / 借用进度）
+    // 必须以**未筛选的全量 EpubBooks 行**为源，而不是筛选后的 `books`。标签筛选只裁剪
+    // 参与网格展示的列表；合集内只打了标签的有声书（SRT）成员会向其关联 EPUB 借封面 /
+    // 进度 / 「查看插画」门控，若以筛选子集构建，关联 EPUB 未命中同一标签即被筛掉 → 借不到
+    // → 合集成员丢封面（BUG-937 让被筛合集能带命中成员显示后暴露此缺陷）。此处已 watch
+    // 于上层 build（filteredBookIdsProvider 之上的 hibikiBooksProvider），read 全量安全。
+    final List<MediaItem> allEpubBooksForBorrow =
+        ref.read(hibikiBooksProvider(appModel.targetLanguage)).valueOrNull ??
+            books;
     final Map<String, String> epubCoverUrisByBookKey = {};
-    // TODO-1191：`books` 是 hibikiBooksProvider 的全部 EpubBooks 行；解析出的
-    // bookKey 全集即「有 EpubBooks 行」的真值，供 SRT 卡「查看插画」门控用。
+    // TODO-1191：`allEpubBooksForBorrow` 是 hibikiBooksProvider 的全部 EpubBooks 行；
+    // 解析出的 bookKey 全集即「有 EpubBooks 行」的真值，供 SRT 卡「查看插画」门控用。
     final Set<String> epubBackedBookKeys = {};
     // BUG-728：过滤前先收 EPUB 卡已算好的进度，供只以 SRT 卡出现的有声书复用。
     final Map<String, ({int position, int duration})> epubProgressByBookKey =
         {};
-    for (final MediaItem item in books) {
+    for (final MediaItem item in allEpubBooksForBorrow) {
       final String? key = _parseBookKey(item.mediaIdentifier);
       if (key != null) {
         epubBackedBookKeys.add(key);
