@@ -131,12 +131,14 @@ void main() {
   });
 
   test('生产接线守卫：安装入口在注入扩展前自动开启 server，且只在 token 为空时播种', () async {
-    final File schema = File('lib/src/settings/settings_schema_lookup.dart');
-    expect(schema.existsSync(), isTrue, reason: '设置 schema 文件应存在');
-    final String schemaSrc = schema.readAsStringSync();
+    // TODO-1266 复核：安装入口已从查词设置迁到桌面专属页 BrowserExtensionPage，接线契约不变。
+    final File page =
+        File('lib/src/pages/implementations/browser_extension_page.dart');
+    expect(page.existsSync(), isTrue, reason: '浏览器扩展页文件应存在');
+    final String pageSrc = page.readAsStringSync();
     final int callIdx =
-        schemaSrc.indexOf('ensureYomitanApiServerForBrowserExtension(');
-    final int prepareIdx = schemaSrc.indexOf('prepareBundledBrowserExtension(');
+        pageSrc.indexOf('ensureYomitanApiServerForBrowserExtension(');
+    final int prepareIdx = pageSrc.indexOf('prepareBundledBrowserExtension(');
     expect(callIdx, greaterThanOrEqualTo(0),
         reason: '安装入口必须调用 ensureYomitanApiServerForBrowserExtension');
     expect(prepareIdx, greaterThanOrEqualTo(0));

@@ -86,6 +86,27 @@ async function maybeSelfReload(data) {
   } catch (_) { /* 自更新失败不影响查词本身 */ }
 }
 
+// 自更新升级点：启动即主动检查版本（此前只有用户实际查词后才比对 → app 升级当天不查词
+// 就一直停在旧弹窗）。SW 每次唤醒（顶层）+ 浏览器启动（onStartup）+ 安装/更新（onInstalled）
+// 都打一次 /api/extension/status 拿当前内置指纹，走同一个 maybeSelfReload：不一致即从磁盘
+// 拉新。附带效果：这次请求也刷新 app 侧扩展 last-seen（连接检测据此判断「插件已正常启用」）。
+async function checkVersionOnStartup() {
+  try {
+    const { base, token } = await cfg();
+    const r = await fetch(base + '/api/extension/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+      body: '{}',
+    });
+    if (!r.ok) return;
+    const status = await responseJson(r);
+    if (status) await maybeSelfReload(status);
+  } catch (_) { /* server 未开 / 离线：启动检查静默失败，下次查词仍会兜底比对 */ }
+}
+checkVersionOnStartup(); // SW 每次启动都主动检查一次版本 + 刷新 last-seen。
+chrome.runtime.onStartup.addListener(() => { checkVersionOnStartup(); });
+chrome.runtime.onInstalled.addListener(() => { checkVersionOnStartup(); });
+
 // TODO-1000 Netflix：offscreen 文档承载 tabCapture MediaRecorder。批量生成时按字幕逐句「回放
 // 录制」——每句 seek 到句首、播到句尾录成一段自包含 webm（beginClip/endClip），随 mineClip 发给
 // Hibiki 转 GIF+句子音频。点扩展图标启动（需 activeTab 手势 + 关硬件加速才非黑），跨集自动切换。
