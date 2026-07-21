@@ -95,8 +95,15 @@ void main() {
     // / _sameChannelTrack / releaseEligibleForChannel / _compareReleaseRecency 等跨切判据，须与
     // 既有版本比较共享同一 library 私有作用域。release 净增 ~120 行到 1830，故把 release 天花板
     // 从 1720 上调到 1900（留 ~70 行合理余量，与既有余量风格一致）。
+    // 全平台自动更新 Phase 3（macOS 去沙盒自替换）：再加入「macOS 更新握手对账 + 自动安装
+    // 失败退避 + 替换 scratch 清理」的真实跨切功能——reconcilePendingMacInstallerHandoff /
+    // _shouldBackOffMacAutoInstall / _cleanupMacUpdateScratch，均须与 UpdateChecker 门面的
+    // 私有作用域（_cleanupOldApks / _updatesDirectoryForCurrentPlatform / _leafName /
+    // canShowDialogFromContext）共享，part 契约禁止 part 内 import 无法拆库，与 Windows 的
+    // reconcilePendingWindowsInstallerHandoff 平级。release 净增 ~156 行到 1986，故把 release
+    // 天花板从 1900 上调到 2050（留 ~64 行合理余量，与既有余量风格一致）。
     const int kDownloadCeiling = 1780;
-    const int kReleaseCeiling = 1900;
+    const int kReleaseCeiling = 2050;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
       final int ceiling = path == download
