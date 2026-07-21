@@ -110,9 +110,14 @@ void main() {
         isTrue,
         reason: '进全屏桌面分支必须转调 defaultEnterNativeFullscreen (保留桌面真全屏)',
       );
+      // BUG-973: 桌面退全屏分支在 `defaultExitNativeFullscreen()` 之后追加
+      // `setMacOSTrafficLightsHidden(true)` re-hide（AppKit 退全屏重建标题栏会复位
+      // 交通灯 isHidden）。分支不再是单行 return，但仍须在 !isMobilePlatform 下先转调
+      // 默认退出回调（对称还原 OS 窗口），故守卫改为要求「桌面分支存在且调
+      // defaultExitNativeFullscreen()」，而非钉死单行写法。
       expect(
-        exitBody.contains(
-            'if (!isMobilePlatform) return defaultExitNativeFullscreen();'),
+        exitBody.contains('!isMobilePlatform') &&
+            exitBody.contains('defaultExitNativeFullscreen()'),
         isTrue,
         reason: '退全屏桌面分支必须转调 defaultExitNativeFullscreen (对称还原OS窗口)',
       );

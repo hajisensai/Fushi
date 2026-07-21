@@ -118,6 +118,7 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/render_backend_service.dart';
+import 'package:hibiki/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
@@ -1618,6 +1619,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_ensureEnterBrightness());
     // TODO-099: 进入视频页强制横屏（移动端），退出 [dispose] 还原；桌面 no-op。
     unawaited(_lockLandscapeForVideo());
+    // BUG-973: 进入视频页隐藏 macOS 系统交通灯（左上角三个圆点），退出 [dispose] 恢复。
+    // 交通灯浮在透明标题栏 + 全尺寸内容视图之上，会遮住视频顶栏返回按钮 / 左上角 OSD
+    // 提示（用户报告）。仅 macOS 有交通灯；Windows / Linux / 移动端恒 no-op。用户仍可
+    // Esc / 顶栏返回按钮 / Cmd+Q / 进原生全屏退出，不损失退出口。
+    unawaited(setMacOSTrafficLightsHidden(true));
     // TODO-158/BUG-219: 进入视频页显式持有「沉浸隐藏系统栏」所有权（移动端）。原先
     // 只靠 [AppModel.openMedia] 在打开媒体时一次性设 immersiveSticky（书 / 视频共用
     // 入口），从不重申 → 后台返回 / 通知栏交互 / 全屏路由后系统栏残留。退出由
@@ -3080,6 +3086,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_brightness.restore(previous: _enterBrightness));
     // TODO-099: 退出视频页还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
     unawaited(_restoreOrientationOnExit());
+    // BUG-973: 退出视频页恢复 macOS 系统交通灯（与 initState 的隐藏对称）；桌面非
+    // macOS / 移动端 no-op。
+    unawaited(setMacOSTrafficLightsHidden(false));
     _clearClipExportState();
     // TODO-669：销毁缩略图预览（作废在途取帧 + 销毁离屏 Player + 释放末帧）。
     _disposeThumbnailPreview();

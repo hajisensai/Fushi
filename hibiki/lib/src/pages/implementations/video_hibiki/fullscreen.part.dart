@@ -320,7 +320,15 @@ extension _VideoFullscreen on _VideoHibikiPageState {
   /// `Utils.ExitNativeFullscreen` 把 OS 窗口还原回非全屏），与进入回调对称。桌面分支不碰
   /// 设备方向，无竖屏问题。
   Future<void> _exitVideoNativeFullscreen() async {
-    if (!isMobilePlatform) return defaultExitNativeFullscreen();
+    if (!isMobilePlatform) {
+      await defaultExitNativeFullscreen();
+      // BUG-973: AppKit 的 `toggleFullScreen` 退出原生全屏会重建标题栏视图、可能把
+      // `standardWindowButton.isHidden` 复位 → 交通灯在窗口化播放态重新遮住左上角控件。
+      // 退全屏后重新断言隐藏（与 initState 的隐藏一致）。仅 macOS 有交通灯；
+      // Windows / Linux 桌面 no-op。
+      await setMacOSTrafficLightsHidden(true);
+      return;
+    }
     await SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.immersiveSticky,
       overlays: <SystemUiOverlay>[],
