@@ -23,6 +23,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -1478,6 +1479,10 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                                         // （galgame 库）仅 Windows；macOS 根侧栏此处
                                         // 恒 false（gamesEnabled 缺省），不显示。
                                         videoEnabled: true,
+                                        // 浏览器扩展 tab「电脑才有」：此处为 macOS 根
+                                        // 侧栏，macOS 即桌面 → 与底栏/rail 同一门控。
+                                        browserExtensionEnabled:
+                                            DesktopLookupService.isDesktop,
                                       ),
                                     ),
                               child: child!,

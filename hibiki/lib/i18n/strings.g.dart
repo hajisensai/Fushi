@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 36856 (2168 per locale)
+/// Strings: 37111 (2183 per locale)
 ///
-/// Built on 2026-07-20 at 20:55 UTC
+/// Built on 2026-07-21 at 02:17 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2892,6 +2892,26 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get home_remote_source => 'Remote';
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  String get nav_browser_extension => 'Extension';
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  String get browser_extension_verify_button => 'Check connection';
+  String get browser_extension_verify_checking => 'Checking…';
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  String get browser_extension_status_connected => 'Extension connected';
+  String get browser_extension_status_never => 'Extension not detected yet';
+  String get browser_extension_version_label => 'Extension version';
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  String get browser_extension_server_on => 'Lookup server on';
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -7798,6 +7818,41 @@ class _StringsAr extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -12777,6 +12832,41 @@ class _StringsDe extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -17772,6 +17862,41 @@ class _StringsEs extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -22778,6 +22903,41 @@ class _StringsFr extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -27711,6 +27871,41 @@ class _StringsId extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -32692,6 +32887,41 @@ class _StringsIt extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -37478,6 +37708,41 @@ class _StringsJa extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -42267,6 +42532,41 @@ class _StringsKo extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -47226,6 +47526,41 @@ class _StringsNl extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -52200,6 +52535,41 @@ class _StringsPtBr extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -57157,6 +57527,41 @@ class _StringsRu extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -62059,6 +62464,41 @@ class _StringsTh extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -66993,6 +67433,41 @@ class _StringsTr extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -71914,6 +72389,41 @@ class _StringsVi extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 // Path: <root>
@@ -76491,6 +77001,39 @@ class _StringsZhCn extends _StringsEn {
   String get shortcut_press_gamepad => '按下手柄按钮…';
   @override
   String get shortcut_gamepad_pick_list => '从列表选择';
+  @override
+  String get nav_browser_extension => '浏览器扩展';
+  @override
+  String get browser_extension_page_intro =>
+      '在电脑的 Chrome / Edge 里直接划词查词、解析字幕、一键制卡。先在下面准备扩展文件，再按步骤加载到浏览器。';
+  @override
+  String get browser_extension_prepare_button => '准备扩展文件';
+  @override
+  String get browser_extension_prepare_hint =>
+      '会自动开启查词服务并把扩展解压到本机，扩展文件夹路径已复制到剪贴板。';
+  @override
+  String get browser_extension_step_verify => '验证插件已加载并连上本机';
+  @override
+  String get browser_extension_verify_button => '检测连接';
+  @override
+  String get browser_extension_verify_checking => '检测中…';
+  @override
+  String get browser_extension_verify_connected => '已检测到插件已连接，一切正常。';
+  @override
+  String get browser_extension_verify_not_detected =>
+      '还没检测到插件。请确认已在浏览器里加载并启用扩展后再检测。';
+  @override
+  String get browser_extension_status_connected => '插件已连接';
+  @override
+  String get browser_extension_status_never => '尚未检测到插件';
+  @override
+  String get browser_extension_version_label => '扩展版本';
+  @override
+  String get browser_extension_reinstall_button => '重新准备 / 刷新文件';
+  @override
+  String get browser_extension_server_on => '查词服务已开启';
+  @override
+  String get browser_extension_server_off => '查词服务未开启';
 }
 
 // Path: <root>
@@ -81196,6 +81739,41 @@ class _StringsZhHk extends _StringsEn {
   String get shortcut_press_gamepad => 'Press a gamepad button...';
   @override
   String get shortcut_gamepad_pick_list => 'Choose from list';
+  @override
+  String get nav_browser_extension => 'Extension';
+  @override
+  String get browser_extension_page_intro =>
+      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+  @override
+  String get browser_extension_prepare_button => 'Prepare extension files';
+  @override
+  String get browser_extension_prepare_hint =>
+      'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+  @override
+  String get browser_extension_step_verify =>
+      'Verify the extension is loaded and connected';
+  @override
+  String get browser_extension_verify_button => 'Check connection';
+  @override
+  String get browser_extension_verify_checking => 'Checking…';
+  @override
+  String get browser_extension_verify_connected =>
+      'Extension detected and connected.';
+  @override
+  String get browser_extension_verify_not_detected =>
+      'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+  @override
+  String get browser_extension_status_connected => 'Extension connected';
+  @override
+  String get browser_extension_status_never => 'Extension not detected yet';
+  @override
+  String get browser_extension_version_label => 'Extension version';
+  @override
+  String get browser_extension_reinstall_button => 'Re-prepare / refresh files';
+  @override
+  String get browser_extension_server_on => 'Lookup server on';
+  @override
+  String get browser_extension_server_off => 'Lookup server off';
 }
 
 /// Flat map(s) containing all translations.
@@ -85624,6 +86202,36 @@ extension on _StringsEn {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -90050,6 +90658,36 @@ extension on _StringsAr {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -94497,6 +95135,36 @@ extension on _StringsDe {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -98943,6 +99611,36 @@ extension on _StringsEs {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -103395,6 +104093,36 @@ extension on _StringsFr {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -107829,6 +108557,36 @@ extension on _StringsId {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -112278,6 +113036,36 @@ extension on _StringsIt {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -116689,6 +117477,36 @@ extension on _StringsJa {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -121104,6 +121922,36 @@ extension on _StringsKo {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -125546,6 +126394,36 @@ extension on _StringsNl {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -129985,6 +130863,36 @@ extension on _StringsPtBr {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -134429,6 +135337,36 @@ extension on _StringsRu {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -138857,6 +139795,36 @@ extension on _StringsTh {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -143294,6 +144262,36 @@ extension on _StringsTr {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -147726,6 +148724,36 @@ extension on _StringsVi {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
@@ -152124,6 +153152,36 @@ extension on _StringsZhCn {
         return '按下手柄按钮…';
       case 'shortcut_gamepad_pick_list':
         return '从列表选择';
+      case 'nav_browser_extension':
+        return '浏览器扩展';
+      case 'browser_extension_page_intro':
+        return '在电脑的 Chrome / Edge 里直接划词查词、解析字幕、一键制卡。先在下面准备扩展文件，再按步骤加载到浏览器。';
+      case 'browser_extension_prepare_button':
+        return '准备扩展文件';
+      case 'browser_extension_prepare_hint':
+        return '会自动开启查词服务并把扩展解压到本机，扩展文件夹路径已复制到剪贴板。';
+      case 'browser_extension_step_verify':
+        return '验证插件已加载并连上本机';
+      case 'browser_extension_verify_button':
+        return '检测连接';
+      case 'browser_extension_verify_checking':
+        return '检测中…';
+      case 'browser_extension_verify_connected':
+        return '已检测到插件已连接，一切正常。';
+      case 'browser_extension_verify_not_detected':
+        return '还没检测到插件。请确认已在浏览器里加载并启用扩展后再检测。';
+      case 'browser_extension_status_connected':
+        return '插件已连接';
+      case 'browser_extension_status_never':
+        return '尚未检测到插件';
+      case 'browser_extension_version_label':
+        return '扩展版本';
+      case 'browser_extension_reinstall_button':
+        return '重新准备 / 刷新文件';
+      case 'browser_extension_server_on':
+        return '查词服务已开启';
+      case 'browser_extension_server_off':
+        return '查词服务未开启';
       default:
         return null;
     }
@@ -156530,6 +157588,36 @@ extension on _StringsZhHk {
         return 'Press a gamepad button...';
       case 'shortcut_gamepad_pick_list':
         return 'Choose from list';
+      case 'nav_browser_extension':
+        return 'Extension';
+      case 'browser_extension_page_intro':
+        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
+      case 'browser_extension_prepare_button':
+        return 'Prepare extension files';
+      case 'browser_extension_prepare_hint':
+        return 'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
+      case 'browser_extension_step_verify':
+        return 'Verify the extension is loaded and connected';
+      case 'browser_extension_verify_button':
+        return 'Check connection';
+      case 'browser_extension_verify_checking':
+        return 'Checking…';
+      case 'browser_extension_verify_connected':
+        return 'Extension detected and connected.';
+      case 'browser_extension_verify_not_detected':
+        return 'No extension detected yet. Make sure it is loaded and enabled in your browser, then check again.';
+      case 'browser_extension_status_connected':
+        return 'Extension connected';
+      case 'browser_extension_status_never':
+        return 'Extension not detected yet';
+      case 'browser_extension_version_label':
+        return 'Extension version';
+      case 'browser_extension_reinstall_button':
+        return 'Re-prepare / refresh files';
+      case 'browser_extension_server_on':
+        return 'Lookup server on';
+      case 'browser_extension_server_off':
+        return 'Lookup server off';
       default:
         return null;
     }
