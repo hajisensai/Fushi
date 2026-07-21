@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 945 条。点号进各自文件。
+> 共 946 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-965](bugs/BUG-965-longpress-speed-drag-jank.md) | ✅ | ✅ | 长按倍速拖动卡顿：每步全页 setState 掉帧 |
 | [BUG-964](bugs/BUG-964-interconnect-video-subtitle-not-synced.md) | ✅ | ✅ | 互联视频live push不带外挂字幕 |
 | [BUG-963](bugs/BUG-963-shelf-filter-collection-cover.md) | ✅ | ✅ | 筛选时合集内有声书成员丢封面 |
 | [BUG-962](bugs/BUG-962-space-textfield-swallowed.md) | ✅ | ✅ | 文本框物理键盘空格被全局 DoNothingIntent 吞掉 |

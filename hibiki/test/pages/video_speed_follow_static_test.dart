@@ -84,7 +84,7 @@ void main() {
             '_setSpeed needs to distinguish same-value durable commit from no-op preview');
     expect(body.contains('if (!changed && !persist) return;'), isTrue);
     expect(body.contains('_playbackSpeed = clamped;'), isTrue);
-    // BUG-963：全页重建受 rebuild 门控（默认 true）；长按拖动热路径传 false，
+    // BUG-965：全页重建受 rebuild 门控（默认 true）；长按拖动热路径传 false，
     // 省掉每 0.1x 步进的全页 setState，避免掉帧、拖不流畅。
     expect(body.contains('bool rebuild = true'), isTrue,
         reason: '_setSpeed 需暴露 rebuild 开关，供长按拖动热路径关闭全页重建');
@@ -95,7 +95,8 @@ void main() {
         isFalse,
         reason: '_setSpeed must not synchronously wait for DB persistence');
 
-    final int stateIndex = body.indexOf('if (rebuild && mounted) _rebuild(() {});');
+    final int stateIndex =
+        body.indexOf('if (rebuild && mounted) _rebuild(() {});');
     final int controllerIndex =
         body.indexOf('await _controller?.setSpeed(clamped);');
     final int queueIndex = body.indexOf('_queuePersistVideoSpeed(clamped);');
@@ -140,7 +141,7 @@ void main() {
       'void _handleVideoLongPressStart(',
       'Future<void> _adjustSpeed(',
     );
-    // BUG-963：start/move 传 rebuild: false（跟随徽章实时渲染倍速，页面免高频全页
+    // BUG-965：start/move 传 rebuild: false（跟随徽章实时渲染倍速，页面免高频全页
     // setState），拖动才顺滑。
     expect(
         longPress.contains('_setSpeed(speed, persist: false, rebuild: false)'),
