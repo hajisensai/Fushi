@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 956 条。点号进各自文件。
+> 共 957 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-989](bugs/BUG-989-interconnect-book-collection-count-remote.md) | ✅ | ✅ | 互联书籍合集行计数未计入远端占位书 |
 | [BUG-988](bugs/BUG-988-interconnect-upload-toggles.md) | ✅ | ✅ | 互联解耦后失去「独立控制上不上传到互联对端」的能力 |
 | [BUG-987](bugs/BUG-987-interconnect-pair-dialog-latch.md) | ✅ | ✅ | 互联首次配对失败后刷新不再弹申请框、只提示失败 |
 | [BUG-973](bugs/BUG-973-macos-traffic-light-video-overlap.md) | ✅ | ✅ | macOS 交通灯遮挡视频退出按钮/左上角OSD |

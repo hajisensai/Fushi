@@ -1121,13 +1121,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // （kShelfBookCardAspectRatio=160/260）→ 行高按同比换算，行内卡与网格卡同形。
     final double itemWidth = cardLayout.cardWidth;
     final double rowHeight = itemWidth / kShelfBookCardAspectRatio;
-    // #5：行头计数只数**本地成员**（远端占位不入 n），与合集详情页口径一致（详情页只显示
-    // 本地成员）。当前书侧合集成员本就全是本地（远端占位卡不进合集，见 _buildShelfMemberCard），
-    // 此过滤是防御性对齐口径；行体（itemCount）仍渲染 group.items 全部。
-    final int localCount = group.items
-        .where(
-            (it) => it.payload.remote == null && it.payload.remoteSrt == null)
-        .length;
+    // 行头计数 = 行体实际渲染的成员数（本地 + 远端占位），与 itemCount 同源（BUG-790
+    // 书籍侧对齐；视频合集 home_video_page 已修，书架合集此前漏跟）。旧口径只数本地成员，
+    // 导致「远端书已折进本地合集」时行头数字比眼前卡片少（甚至全为未下载远端书时显示
+    // 「0 本」），与所见割裂（用户实报）。行头数字必须诚实反映该行看得见的卡片数。
+    final int memberCount = group.items.length;
     return Padding(
       // 水平不加 padding：书卡自带 12px 内边距，与网格散卡左缘逐像素对齐。
       padding: EdgeInsets.symmetric(
@@ -1136,7 +1134,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       child: CollectionShelfRow(
         key: ValueKey<String>('reader_shelf_collection_row_${collection.id}'),
         title: collection.name,
-        countLabel: t.series_item_count(n: localCount),
+        countLabel: t.series_item_count(n: memberCount),
         itemCount: group.items.length,
         itemWidth: itemWidth,
         rowHeight: rowHeight,
