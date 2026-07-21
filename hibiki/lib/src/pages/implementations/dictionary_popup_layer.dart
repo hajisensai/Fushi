@@ -345,8 +345,10 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
   @override
   Widget build(BuildContext context) {
     return AnimatedOpacity(
+      // 墨水屏模式：淡入归零为瞬时显示——慢刷新屏上 0→1 补间是一段灰阶残影，
+      // 且弹窗「先出壳后出内容」的观感在 e-ink 上尤其糟。
       opacity: widget.visible && _revealed ? 1.0 : 0.0,
-      duration: _kSlideDuration,
+      duration: isEinkTheme(context) ? Duration.zero : _kSlideDuration,
       curve: Curves.easeOut,
       child: widget.child,
     );
@@ -971,6 +973,15 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
     _controller = AnimationController(vsync: this, duration: _kSlideDuration)
       ..addListener(_onTick)
       ..addStatusListener(_onStatus);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 墨水屏模式：滑出/弹回补间归零（Duration.zero 的 forward 立即 complete，
+    // onDismiss 时序不变，只是不再画补间帧）。跟随主题切换双向生效。
+    _controller.duration =
+        isEinkTheme(context) ? Duration.zero : _kSlideDuration;
   }
 
   @override

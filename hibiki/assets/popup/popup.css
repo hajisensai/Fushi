@@ -1489,9 +1489,163 @@ html.global-lookup[data-theme="dark"] body {
 
 .ctx-adjust-button {
     opacity: 0.85;
+}
+
 /* 真机第 5 轮 — 面板释义区被点击、正在外部瞬态窗里查的那段文字的高亮
-   （markGlobalLookupExtHit；下次点击替换、重渲清除）。 */
+   （markGlobalLookupExtHit；下次点击替换、重渲清除）。
+   BUG：上面 .ctx-adjust-button 规则原缺闭合 }，CSS 错误恢复把本条整规则当无效
+   声明吞掉（ext-hit 高亮从未生效）；补上闭合后本条恢复。 */
 .global-lookup-ext-hit {
     background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
+}
+
+/* =====================================================================
+ * E-ink 墨水屏模式（html.eink）。
+ *
+ * class 由 popup_settings_injection.dart 的 _themeVariablesJs 注入（toggle，
+ * 热复用 WebView 关掉开关也能摘除）；三镜像纪律：改这里必须同步两个 vendor
+ * popup.css 并重新跑 generate-content-css.mjs（生成器把 html.eink 重挂为
+ * :where(#entries-container).eink，扩展侧同样生效）。
+ *
+ * 设计对齐 Hoshi-Reader-Android 的 E-ink 弹窗：纯黑白、方角、实线边框、
+ * 关 transition/animation/阴影；半透明色块高亮改为反色或下划线（大面积
+ * 灰阶在墨水屏上是抖动噪点，且每次变化都是一整块刷新）。
+ * ===================================================================== */
+
+/* 方角 + 去阴影 + 关动效：一条规则压平全部圆角/阴影/补间（逐选择器覆盖 20+
+   处 border-radius 是维护负担，e-ink 下它们统一归零，无一例外）。 */
+html.eink *,
+html.eink *::before,
+html.eink *::after {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    transition: none !important;
+    animation: none !important;
+}
+
+html.eink {
+    --hibiki-radius-card: 0;
+    /* 杀掉亚克力/半透明卡片底（Win11 backdrop 在 e-ink 上只是脏灰）。 */
+    --hibiki-card-bg-alpha: 1;
+    /* 查词命中不再用半透明色块（消费端见下方 underline 覆盖）。 */
+    --hoshi-primary-highlight: transparent;
+    /* tags：色块 → 透明底 + 描边（描边规则见下）。 */
+    --expr-tag-color: transparent;
+}
+
+/* 纯黑白变量：比 html[data-theme] 特异性高（0,2,1 > 0,1,1），连 Dart 注入的
+   --md-* 一并压掉（消费端读的是这些二级变量）。浅色=白底黑字，深色=黑底白字。 */
+html.eink[data-theme="light"] {
+    --background-color: #fff;
+    --background-color-light: #fff;
+    --background-color-dark1: #fff;
+    --text-color: #000;
+    --text-color-light1: #000;
+    --text-color-light2: #000;
+    --text-color-light3: #000;
+    --text-color-light4: #000;
+    --surface-container: #fff;
+    --surface-container-high: #fff;
+    --outline-variant: #000;
+    --primary-color: #000;
+    --on-surface-variant: #000;
+    --freq-tag-color: #000;
+    --hibiki-card-bg-rgb: 255, 255, 255;
+}
+
+html.eink[data-theme="dark"] {
+    --background-color: #000;
+    --background-color-light: #000;
+    --background-color-dark1: #000;
+    --text-color: #fff;
+    --text-color-light1: #fff;
+    --text-color-light2: #fff;
+    --text-color-light3: #fff;
+    --text-color-light4: #fff;
+    --surface-container: #000;
+    --surface-container-high: #000;
+    --outline-variant: #fff;
+    --primary-color: #fff;
+    --on-surface-variant: #fff;
+    --freq-tag-color: #fff;
+    --hibiki-card-bg-rgb: 0, 0, 0;
+}
+
+/* tags / 词频：色块改「透明底 + 1px 实线描边」；词频来源药丸反色（黑底白字 /
+   白底黑字），比灰阶底更清晰。 */
+html.eink .expr-tag,
+html.eink .deinflection-tag,
+html.eink .kanji-tag,
+html.eink .glossary-tag,
+html.eink .pitch-transcription-tag {
+    background-color: transparent;
+    border: 1px solid currentColor;
+}
+
+html.eink .frequency-dict-label {
+    color: var(--background-color);
+}
+
+/* 顶部动作按钮静息态 0.5 opacity 在墨水屏上是抖动灰，压到全不透明；交互反馈
+   由按下反色承担（active 态浏览器自带 :active opacity 覆盖被上面的关动效保留，
+   数值本身仍生效）。 */
+html.eink .audio-button,
+html.eink .favorite-button,
+html.eink .open-anki-button,
+html.eink .mine-button {
+    opacity: 1;
+}
+
+/* 特例态的彩色（收藏金 / 最新可改绿）在灰阶屏上失义，回归前景色。 */
+html.eink .favorite-button.favorited,
+html.eink .mine-button.latest {
+    color: var(--text-color);
+}
+
+/* 查词/嵌套查词命中：半透明色块 → 下划线（贴文字的一条线，刷新面积最小）。 */
+html.eink ::highlight(hoshi-selection) {
+    background-color: transparent;
+    text-decoration-line: underline;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 0.14em;
+    text-underline-offset: 0.15em;
+}
+
+html.eink .hoshi-dict-highlight {
+    background-color: transparent !important;
+    text-decoration-line: underline;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 0.14em;
+    text-underline-offset: 0.15em;
+}
+
+/* 原生拖选选区：反色块（纯黑白互换）——e-ink 上最清晰的选中态，无灰阶。 */
+html.eink ::selection {
+    background-color: var(--text-color);
+    color: var(--background-color);
+}
+
+/* 句子横幅的命中/外部查词高亮与逐字 hover：色块 → 下划线 / 描边。 */
+html.eink .global-lookup-sentence-hit,
+html.eink .global-lookup-ext-hit {
+    background: transparent;
+    text-decoration-line: underline;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 0.14em;
+    text-underline-offset: 0.15em;
+}
+
+html.eink .global-lookup-sentence:not(.global-lookup-sentence-panel)
+    .global-lookup-sentence-char:hover {
+    background: transparent;
+    outline: 1px solid currentColor;
+    outline-offset: -1px;
+}
+
+/* app 外全局查词卡壳：半透明灰描边 → 实线前景色描边，方角，不透明底。 */
+html.eink.global-lookup body {
+    border: 1px solid var(--text-color);
+    background: var(--background-color);
 }
