@@ -111,16 +111,25 @@ void main() {
       );
     });
 
-    test('未回退裸空格中和：全局导航仍把 SingleActivator(space) 中和', () {
+    test('未回退裸空格中和：全局导航仍中和裸空格，且仅在非文本输入时（BUG-962 门控）', () {
       final String nav = File(
         'lib/src/shortcuts/global_navigation.dart',
       ).readAsStringSync();
+      // 裸空格中和（c152fcd91 用户裁定的正确全局行为）不得回退。实现已从无条件
+      // SingleActivator→DoNothingIntent 重构为 _neutralizeBareSpace（BUG-962）：既守
+      // 中和仍在，也守它按 focusedEditableText 门控——文本框聚焦时放行，否则重命名等
+      // 输入框打不出空格。两条不变量任一被回退即视为回归。
       expect(
         nav,
-        contains(
-            'const SingleActivator(LogicalKeyboardKey.space): const DoNothingIntent()'),
-        reason: '裸空格中和（c152fcd91 用户裁定的正确全局行为）不得回退；'
+        contains('KeyEventResult _neutralizeBareSpace('),
+        reason: '裸空格中和不得回退：必须保留 _neutralizeBareSpace 中和裸空格按下沿，'
             'BUG-204 的暂停行为靠正文路径的 resolveReaderSpaceOverride，不靠回退中和。',
+      );
+      expect(
+        nav,
+        contains('focusedEditableText() != null'),
+        reason: 'BUG-962 门控不得回退：裸空格中和必须放行文本框（focusedEditableText '
+            '非空时不消费），否则重命名等输入框打不出空格（只有屏幕键盘 IME 能绕过）。',
       );
     });
   });
