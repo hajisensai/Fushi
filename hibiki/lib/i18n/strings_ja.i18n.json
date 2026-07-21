@@ -2213,5 +2213,15 @@
   "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
   "eink_mode": "E-ink mode",
   "eink_mode_hint": "Pure black-and-white theme with no animations and line-style highlights, for e-ink displays",
-  "update_mac_install_incomplete_message": "The update could not be applied, so Hibiki is still on the previous version. You can retry the update, or download the latest release manually."
+  "update_mac_install_incomplete_message": "The update could not be applied, so Hibiki is still on the previous version. You can retry the update, or download the latest release manually.",
+  "interconnect_upload_section": "Upload to interconnect peer",
+  "interconnect_upload_section_footer": "Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.",
+  "interconnect_upload_content": "Upload book files",
+  "interconnect_upload_content_hint": "Sync this device's books and reading content up to the interconnect peer.",
+  "interconnect_upload_dictionary": "Upload dictionaries",
+  "interconnect_upload_dictionary_hint": "Sync this device's dictionaries up to the interconnect peer.",
+  "interconnect_upload_audiobook_files": "Upload audiobook files",
+  "interconnect_upload_audiobook_files_hint": "Sync this device's audiobook audio and subtitle packages up to the interconnect peer (large).",
+  "interconnect_upload_video_files": "Upload video files",
+  "interconnect_upload_video_files_hint": "Sync this device's local video files up to the interconnect peer (large)."
 }

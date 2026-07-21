@@ -614,7 +614,11 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         final repo = SyncRepository(widget.db);
         final syncStats = await repo.isSyncStatsEnabled();
         final syncAudioBook = await repo.isSyncAudioBookEnabled();
-        final syncContent = await repo.isSyncContentEnabled();
+        // BUG-988：手动解决冲突并应用时，互联通道读互联专属上传开关、云通道读共享开关，
+        // 与自动同步一致——否则「互联内容开、云内容关」时互联冲突的内容传输会被误跳过。
+        final syncContent = widget.backend is HibikiClientSyncBackend
+            ? await repo.isInterconnectSyncContentEnabled()
+            : await repo.isSyncContentEnabled();
 
         var done = 0;
         // Blend per-file transfer fraction into the overall book progress so the

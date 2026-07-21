@@ -91,17 +91,78 @@ void logSyncReportErrors(SyncRunReport report) {
 /// 去重：互联后端 [HibikiClientSyncBackend] 是单例；若云通道解析出的恰是同一单例
 /// （历史遗留 backendType=='hibikiServer'，迁移后不再出现，仅防御测试直接构造），
 /// 只保留一条，避免同一通道跑两遍。
-Future<List<SyncBackend>> _enabledSyncChannelBackends(
+/// 一条待跑的同步通道：后端实例 + 它是不是互联通道。isInterconnect 决定分资产开关
+/// 读云备份共享值还是互联专属上传开关（[resolveChannelSyncFlags]，BUG-988）。
+class _SyncChannel {
+  const _SyncChannel(this.backend, {required this.isInterconnect});
+  final SyncBackend backend;
+  final bool isInterconnect;
+}
+
+Future<List<_SyncChannel>> _enabledSyncChannelBackends(
   SyncRepository repo,
 ) async {
   final SyncBackend cloud = resolveSyncBackend(await repo.getBackendType());
-  final List<SyncBackend> backends = <SyncBackend>[cloud];
+  final List<_SyncChannel> channels = <_SyncChannel>[
+    _SyncChannel(cloud, isInterconnect: false),
+  ];
   if (await repo.isInterconnectEnabled()) {
     final SyncBackend interconnect =
         resolveSyncBackend(SyncBackendType.hibikiServer);
-    if (!identical(interconnect, cloud)) backends.add(interconnect);
+    // 去重：仅防御历史 backendType=='hibikiServer'（迁移后不再出现）把同一单例跑两遍。
+    if (!identical(interconnect, cloud)) {
+      channels.add(_SyncChannel(interconnect, isInterconnect: true));
+    }
   }
-  return backends;
+  return channels;
+}
+
+/// 一条同步通道要用的分资产开关集（喂给 [SyncOrchestrator]）。
+class ChannelSyncFlags {
+  const ChannelSyncFlags({
+    required this.syncStats,
+    required this.syncAudioBookPosition,
+    required this.syncContent,
+    required this.syncAudioBookFiles,
+    required this.syncVideoFiles,
+    required this.syncDictionary,
+    required this.syncLocalAudio,
+  });
+  final bool syncStats;
+  final bool syncAudioBookPosition;
+  final bool syncContent;
+  final bool syncAudioBookFiles;
+  final bool syncVideoFiles;
+  final bool syncDictionary;
+  final bool syncLocalAudio;
+}
+
+/// 按通道解析分资产同步开关（BUG-988）。[isInterconnect]==true（互联通道）时「重内容」
+/// 四类——书籍/内容、词典、有声书文件、视频文件——读互联专属上传开关（默认 false，让
+/// 用户独立控制是否上传给互联对端，不被「启用互联连接」裹挟）；false（云备份通道）读
+/// 原共享 sync_*_enabled。位置/统计/本地音频不区分通道（轻量进度，跨设备续读是互联本意）。
+@visibleForTesting
+Future<ChannelSyncFlags> resolveChannelSyncFlags(
+  SyncRepository repo, {
+  required bool isInterconnect,
+}) async {
+  return ChannelSyncFlags(
+    syncStats: await repo.isSyncStatsEnabled(),
+    syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
+    syncContent: isInterconnect
+        ? await repo.isInterconnectSyncContentEnabled()
+        : await repo.isSyncContentEnabled(),
+    syncAudioBookFiles: isInterconnect
+        ? await repo.isInterconnectSyncAudioBookFilesEnabled()
+        : await repo.isSyncAudioBookFilesEnabled(),
+    syncVideoFiles: isInterconnect
+        ? await repo.isInterconnectSyncVideoFilesEnabled()
+        : await repo.isSyncVideoFilesEnabled(),
+    syncDictionary: isInterconnect
+        ? await repo.isInterconnectSyncDictionaryEnabled()
+        : await repo.isSyncDictionaryEnabled(),
+    syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
+  );
 }
 
 /// 为单个 [backend] 通道构建并运行一轮完整同步编排。认证失败（未配置该通道）返回
@@ -111,6 +172,7 @@ Future<SyncRunReport?> _runSyncChannel({
   required HibikiDatabase db,
   required SyncRepository repo,
   required SyncBackend backend,
+  required bool isInterconnect,
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
@@ -121,6 +183,9 @@ Future<SyncRunReport?> _runSyncChannel({
 }) async {
   await backend.restoreAuth(repo);
   if (!await backend.isAuthenticated) return null;
+  // BUG-988：互联通道读互联专属上传开关，云备份通道读原共享开关（两通道互不牵连）。
+  final ChannelSyncFlags flags =
+      await resolveChannelSyncFlags(repo, isInterconnect: isInterconnect);
   final SyncOrchestrator orchestrator = SyncOrchestrator(
     db: db,
     backend: backend,
@@ -128,13 +193,13 @@ Future<SyncRunReport?> _runSyncChannel({
     audioDatabaseRoot: audioDatabaseRoot,
     tempDir: tempDir,
     deviceId: await repo.getOrCreateDeviceId(),
-    syncStats: await repo.isSyncStatsEnabled(),
-    syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
-    syncContent: await repo.isSyncContentEnabled(),
-    syncAudioBookFiles: await repo.isSyncAudioBookFilesEnabled(),
-    syncVideoFiles: await repo.isSyncVideoFilesEnabled(),
-    syncDictionary: await repo.isSyncDictionaryEnabled(),
-    syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
+    syncStats: flags.syncStats,
+    syncAudioBookPosition: flags.syncAudioBookPosition,
+    syncContent: flags.syncContent,
+    syncAudioBookFiles: flags.syncAudioBookFiles,
+    syncVideoFiles: flags.syncVideoFiles,
+    syncDictionary: flags.syncDictionary,
+    syncLocalAudio: flags.syncLocalAudio,
     localAudioEntries: localAudioEntries,
     onLocalAudioImported: onLocalAudioImported,
     onProgress: onProgress,
@@ -231,12 +296,13 @@ Future<void> _runAutoSyncAll({
 
       // option B 双通道：依次跑云备份通道 + 互联通道（若启用），互不排斥。每条通道
       // 各自认证成功才实际跑；未配置的通道 no-op（_runSyncChannel 返回 null）。
-      for (final SyncBackend backend
+      for (final _SyncChannel channel
           in await _enabledSyncChannelBackends(repo)) {
         final SyncRunReport? report = await _runSyncChannel(
           db: db,
           repo: repo,
-          backend: backend,
+          backend: channel.backend,
+          isInterconnect: channel.isInterconnect,
           dictionaryResourceRoot: dictionaryResourceRoot,
           audioDatabaseRoot: audioDatabaseRoot,
           tempDir: tempDir,
@@ -249,7 +315,7 @@ Future<void> _runAutoSyncAll({
         if (report == null) continue;
         logSyncReportErrors(report);
         await onPostRun?.call(report);
-        onReport?.call(report, backend);
+        onReport?.call(report, channel.backend);
       }
     });
   } catch (e) {
@@ -321,12 +387,13 @@ Future<ManualSyncResult> runManualFullSync({
       final SyncRunReport merged = SyncRunReport();
       final List<ManualSyncChannelReport> channelReports =
           <ManualSyncChannelReport>[];
-      for (final SyncBackend backend
+      for (final _SyncChannel channel
           in await _enabledSyncChannelBackends(repo)) {
         final SyncRunReport? report = await _runSyncChannel(
           db: db,
           repo: repo,
-          backend: backend,
+          backend: channel.backend,
+          isInterconnect: channel.isInterconnect,
           dictionaryResourceRoot: dictionaryResourceRoot,
           audioDatabaseRoot: audioDatabaseRoot,
           tempDir: tempDir,
@@ -343,7 +410,7 @@ Future<ManualSyncResult> runManualFullSync({
         logSyncReportErrors(report);
         await onPostRun?.call(report);
         merged.mergeFrom(report);
-        channelReports.add(ManualSyncChannelReport(backend, report));
+        channelReports.add(ManualSyncChannelReport(channel.backend, report));
       }
       if (channelReports.isEmpty) {
         return const ManualSyncResult(ManualSyncOutcome.notConfigured);
@@ -433,8 +500,9 @@ Future<void> _runCollectionsSync({required HibikiDatabase db}) async {
     await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
       if (!await repo.isAutoSyncEnabled()) return;
-      for (final SyncBackend backend
+      for (final _SyncChannel channel
           in await _enabledSyncChannelBackends(repo)) {
+        final SyncBackend backend = channel.backend;
         await backend.restoreAuth(repo);
         if (!await backend.isAuthenticated) continue;
         final SyncOrchestrator orchestrator = SyncOrchestrator(
@@ -501,11 +569,16 @@ Future<void> _runAutoSync({
       final syncStats = await repo.isSyncStatsEnabled();
       final syncAudioBook = await repo.isSyncAudioBookEnabled();
       final syncContent = await repo.isSyncContentEnabled();
+      // BUG-988：互联通道的书内容上传读互联专属开关（默认关），云通道读共享开关——
+      // 否则退出书时书内容仍会无视互联上传开关自动推给对端。
+      final interconnectSyncContent =
+          await repo.isInterconnectSyncContentEnabled();
 
       // option B 双通道：退出书时对每条启用的通道（云备份 + 互联）各跑一次 per-book
       // 同步，互不排斥。每条通道各自认证成功才跑；未配置的通道 continue 跳过。
-      for (final SyncBackend backend
+      for (final _SyncChannel channel
           in await _enabledSyncChannelBackends(repo)) {
+        final SyncBackend backend = channel.backend;
         await backend.restoreAuth(repo);
         if (!await backend.isAuthenticated) continue;
 
@@ -515,7 +588,8 @@ Future<void> _runAutoSync({
           syncStats: syncStats,
           statsSyncMode: StatisticsSyncMode.merge,
           syncAudioBook: syncAudioBook,
-          syncContent: syncContent,
+          syncContent:
+              channel.isInterconnect ? interconnectSyncContent : syncContent,
         );
 
         // TODO-132 诉求B：退出书同步静默——不再弹 imported/exported「同步成功」

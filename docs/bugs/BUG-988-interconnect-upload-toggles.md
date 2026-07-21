@@ -1,0 +1,15 @@
+## BUG-988 · 互联解耦后失去「独立控制上不上传到互联对端」的能力
+- **报告**：2026-07-21（用户：没办法给 hibiki 互联上传书/词典了，后端里没了 hibiki 互联；「客户端开了有什么用？我要控制上不上传啊」）
+- **真实性**：✅ 真 bug（发现性 + 控制耦合）。互联解耦（PR#223 `6802606d5`，已进 develop）把「hibikiServer」从「同步方式」后端下拉里 gate 掉（`backend_config.part.dart` `case hibikiServer: return false`），改成独立「启用互联」开关；同时把「上传内容」的分项开关（`sync_content`/`sync_dictionary`/`sync_audiobook_files`/`sync_video_files`）留在**云备份**设置区，且**云备份与互联通道共用同一套开关**：
+  - `hibiki/lib/src/sync/sync_auto_trigger.dart` `_enabledSyncChannelBackends` + `_runSyncChannel` 对两条通道都读同一 `repo.isSyncXxxEnabled()`。
+  - `_runAutoSync`（退出书 per-book 同步）与合集同步也一样。
+  - 后果：解耦前「选 hibikiServer 后端 = 掌握上不上传到对端」的控制没了——用户一开「启用互联」连接（为远端看/读），书/词典就被同一套共享开关裹挟着自动上传给对端，无法只对互联单独控制。
+- **[x] ① 已修复** — 根因修（给互联通道一套自己的上传开关，与云备份/连接开关解耦）：
+  - `sync_repository.dart`：新增 4 个互联专属键 `interconnect_sync_content` / `interconnect_sync_dictionary` / `interconnect_sync_audiobook_files` / `interconnect_sync_video_files` + getter/setter，默认 **false**。
+  - `sync_auto_trigger.dart`：`_enabledSyncChannelBackends` 返回带 `isInterconnect` 标记的 `_SyncChannel`；抽纯函数 `resolveChannelSyncFlags(repo, {isInterconnect})`——互联通道「重内容」四类读互联专属开关、云通道读原共享开关（位置/统计/本地音频仍共享，跨设备续读是互联本意）。四个同步入口（app-open 全量、手动全量、合集、退出书 per-book）全部按通道路由。
+  - `sync_compare_dialog.dart`：手动解决冲突 apply 时，`widget.backend is HibikiClientSyncBackend` 判定读互联/云对应的内容开关（否则「互联内容开、云内容关」时互联冲突内容传输会被误跳过）。
+  - `sync_settings_schema.dart`：「设置 → Hibiki 互联」加 section「上传到互联对端」的 4 个开关（`visible: interconnectActive && !_isHostingInterconnect`，host 无 outbound 时隐藏）；`_SyncSettingsState` 加状态字段 + load。
+  - i18n：10 个 key（section/footer + 4 title + 4 hint）经 `tool/i18n_sync.dart --add`（17 语言）+ `dart run slang` 重生成。
+  - 提交哈希：（见本轮提交）
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/interconnect_upload_toggles_test.dart`：互联开关默认全关时云开着也不上传给互联；开互联开关只影响互联通道不动云；位置/统计/本地音频两通道共享。i18n 完整性/ mojibake 守卫通过。
+- **备注**：默认全关是有意（用户明确要「自己控制、别自动传」）；云备份 sync_* 开关默认本就全关，故绝大多数用户无行为突变。真机复测：两台设备互联，开/关互联上传开关后各触发一次同步，验证书/词典是否按开关上传到对端。属设备验证范畴待勾验。「同步方式」下拉不再列 hibiki 互联是 PR#223 有意设计，不回退。

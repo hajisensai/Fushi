@@ -2213,5 +2213,15 @@
   "sync_google_drive_hoshi_compat_desc": "通过共享的 Google Drive 文件夹（ttu-reader-data）同步阅读进度。需完整 Drive 权限并重新登录。",
   "eink_mode": "墨水屏模式",
   "eink_mode_hint": "纯黑白主题、无动画、线式高亮，适合墨水屏设备",
-  "update_mac_install_incomplete_message": "更新未能应用，Hibiki 仍是旧版本。你可以重试更新，或手动下载最新版本。"
+  "update_mac_install_incomplete_message": "更新未能应用，Hibiki 仍是旧版本。你可以重试更新，或手动下载最新版本。",
+  "interconnect_upload_section": "上传到互联对端",
+  "interconnect_upload_section_footer": "选择本设备要把哪些内容上传到已连接的互联对端。与云备份、以及「启用互联」连接开关互不影响；默认全部关闭。",
+  "interconnect_upload_content": "上传书籍文件",
+  "interconnect_upload_content_hint": "把本设备的书籍/阅读内容上传同步到互联对端。",
+  "interconnect_upload_dictionary": "上传词典",
+  "interconnect_upload_dictionary_hint": "把本设备的词典上传同步到互联对端。",
+  "interconnect_upload_audiobook_files": "上传有声书文件",
+  "interconnect_upload_audiobook_files_hint": "把本设备的有声书音频+字幕包上传同步到互联对端（体积较大）。",
+  "interconnect_upload_video_files": "上传视频文件",
+  "interconnect_upload_video_files_hint": "把本设备的本地视频文件上传同步到互联对端（体积较大）。"
 }
