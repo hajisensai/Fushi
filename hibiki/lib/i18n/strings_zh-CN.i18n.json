@@ -2208,5 +2208,7 @@
   "browser_extension_version_label": "扩展版本",
   "browser_extension_reinstall_button": "重新准备 / 刷新文件",
   "browser_extension_server_on": "查词服务已开启",
-  "browser_extension_server_off": "查词服务未开启"
+  "browser_extension_server_off": "查词服务未开启",
+  "eink_mode": "墨水屏模式",
+  "eink_mode_hint": "纯黑白主题、无动画、线式高亮，适合墨水屏设备"
 }
