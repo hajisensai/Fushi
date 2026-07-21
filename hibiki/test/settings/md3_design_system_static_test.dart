@@ -806,10 +806,25 @@ void main() {
               'measured against appUiScale and video overlay contrast needs, '
               'same reviewed exception class as video subtitle/jump/chapter/'
               'quick-settings overlays.',
-      'lib/src/media/video/video_quick_settings_sheet.dart':
-          'Video quick settings sheet (media-page chrome like reader/audiobook) '
-              'drives the user-configurable subtitle caption font size '
-              '(_style.copyWith(fontSize:)), which is content, not page chrome.',
+      // 阶段B：video_quick_settings_sheet.dart 重写为纯 schema 投影外壳后已无
+      // 违禁 token，其原豁免（字幕字号 content / 播放中专属 ListTile 行 /
+      // monospace 逃生口）随行声明与内嵌 builder 迁移到下面两个新文件。
+      'lib/src/media/video/video_settings_actions.dart':
+          'Stage-B dual-write layer for the video settings schema: the '
+              'in-player ListTile rows (HLS quality entry / Skia fallback / '
+              'audio-track placeholder) and the monospace fontSize: 13 escape '
+              'hatches of the raw mpv.conf + danmaku block-rules multiline '
+              'fields moved verbatim from video_quick_settings_sheet.dart — '
+              'same reviewed media-page exception class as the sheet entry '
+              'they came from (the sheet itself is now a token-clean schema '
+              'projection shell).',
+      'lib/src/media/video/video_control_layout_editor.dart':
+          'Video control 9-slot drag editor extracted verbatim from '
+              'video_quick_settings_sheet.dart (stage B): the stage preview '
+              'canvas paints a surfaceContainerHigh/Highest gradient as a mock '
+              'video frame behind the drop slots (visualization content, not '
+              'ordinary page chrome) — same reviewed media-page exception '
+              'class as the sheet entry it came from.',
       'lib/src/settings/settings_schema_video.dart':
           'Home video settings expose the same user-configurable subtitle '
               'caption font size (VideoSubtitleStyle.copyWith(fontSize:)) for '

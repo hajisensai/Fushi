@@ -42,10 +42,18 @@ void main() {
       source,
       'void _showPlayerSettings(',
     );
+    // 阶段B：~60 个 initial*/on* 构造参数收敛为单个 VideoQuickSettingsHost 能力槽；
+    // 页面接线断言从 _buildVideoQuickSettingsSheet 移到紧随其后的
+    // _buildVideoQuickSettingsHost（回调/getter 都在 host 构造里）。
     final String buildMethod = _between(
       source,
       'Widget _buildVideoQuickSettingsSheet() {',
-      'void _showPlayerSettings(',
+      'VideoQuickSettingsHost _buildVideoQuickSettingsHost() {',
+    );
+    final String hostMethod = _between(
+      source,
+      'VideoQuickSettingsHost _buildVideoQuickSettingsHost() {',
+      'Future<void> _switchToSkiaAndRestart()',
     );
     final String panelChildMethod = _between(
       source,
@@ -61,27 +69,29 @@ void main() {
     expect(
         panelChildMethod, contains('return _buildVideoQuickSettingsSheet()'));
     expect(buildMethod, contains('VideoQuickSettingsSheet('));
+    expect(buildMethod, contains('host: _buildVideoQuickSettingsHost()'),
+        reason: '面板经类型化 host 能力槽拿页面回调（阶段B）');
+    expect(buildMethod, contains('initialCategory: _settingsInitialCategory'));
 
-    // 着色器/mpv 配置改为面板内嵌：构造面板时直接喂初值 + 内嵌回调，不再弹独立对话框。
-    expect(buildMethod, contains('initialShadersEnabled:'));
-    expect(buildMethod, contains('onApplyShaders:'));
-    expect(buildMethod, contains('initialMpvConfig:'));
-    expect(buildMethod, contains('onMpvConfigChanged:'));
-    expect(buildMethod, contains('initialLockWindowAspectRatio:'));
-    expect(buildMethod, contains('onLockWindowAspectRatioChanged:'));
-    expect(buildMethod, contains('initialAsbConfig:'));
-    expect(buildMethod, contains('onAsbConfigChanged:'));
+    // 着色器/mpv 配置仍面板内嵌（不弹独立对话框）：页面回调经 host 接线，
+    // 初值改由 schema/actions 层直接读 pref（initial* 参数已删）。
+    expect(hostMethod, contains('onApplyShaders:'));
+    expect(hostMethod, contains('onMpvConfigChanged:'));
+    expect(hostMethod, contains('onLockWindowAspectRatioChanged:'));
+    expect(hostMethod, contains('onAsbConfigChanged:'));
     // TODO-060：字幕调轴经 onSetDelay 绝对提交（滑条/±/输入框三处共享）；
-    // 旧的增量 onSubtitleOffsetChanged 已删。
-    expect(buildMethod, contains('onSetDelay:'));
-    expect(buildMethod, contains('initialDelayMs:'));
+    // 旧的增量 onSubtitleOffsetChanged 已删。权威延迟值经 getter 闭包进 host。
+    expect(hostMethod, contains('onSetDelay:'));
+    expect(hostMethod, contains('delayMs: () => _delayMs'));
 
     // 旧 bespoke 深色单列面板已移除（防回归）。
     expect(showMethod, isNot(contains('showModalBottomSheet')),
         reason: '播放设置不再走 bespoke bottom sheet');
-    expect(buildMethod, isNot(contains('Colors.black87')));
-    expect(buildMethod, isNot(contains('StatefulBuilder')));
-    expect(buildMethod, isNot(contains('ChoiceChip')));
+    for (final String region in <String>[buildMethod, hostMethod]) {
+      expect(region, isNot(contains('Colors.black87')));
+      expect(region, isNot(contains('StatefulBuilder')));
+      expect(region, isNot(contains('ChoiceChip')));
+    }
 
     // 着色器/mpv 不再弹独立对话框（防回归到旧的 pop 面板 + 二级对话框）。
     expect(source, isNot(contains('_openShaderDialog')),
@@ -175,22 +185,42 @@ void main() {
       expect(source, contains(id), reason: 'missing category $id');
     }
 
-    // 着色器/mpv 详情改为面板内嵌（不再用 NavigationRow pop 面板再弹对话框）。
-    expect(source, contains('VideoShaderManagerView('),
-        reason: '着色器详情内嵌 VideoShaderManagerView');
-    expect(source, contains('AdaptiveSettingsPickerRow<String>('),
-        reason: 'mpv 配置内嵌成 AdaptiveSettings 行（hwdec/aspect/channels 用 picker）');
-    expect(source, contains('VideoMpvConfig.defaults'),
-        reason: 'mpv 内嵌详情含「重置默认」');
-    expect(source, contains('initialLockWindowAspectRatio'));
-    expect(source, contains('onLockWindowAspectRatioChanged'));
-    expect(source, contains('isDesktopPlatform'));
-    expect(source, contains('t.video_setting_mpv_aspect'));
-    expect(source, contains('initialAsbConfig'));
-    expect(source, contains('onAsbConfigChanged'));
-    expect(source, contains('onSetDelay'));
-    expect(source, contains('pauseAtSubtitleEnd'));
-    expect(source, contains('AdaptiveSettingsStepperRow'));
+    // 阶段B：配置行不再手写在 sheet 里，sheet 只按分类投影 schema 渲染。
+    expect(source, contains('buildVideoGroupDestination('),
+        reason: '面板详情必须经 schema 投影（阶段B）');
+    expect(source, contains('renderer.buildDetailContent('),
+        reason: '面板详情必须经共享渲染器渲染（阶段B）');
+
+    // 阶段B：行声明移入 settings_schema_video.dart / 内嵌 builder 移入
+    // video_settings_actions.dart，守卫改锁新位置（保护不变：着色器/mpv 详情
+    // 内嵌、锁窗口比/双击等行仍存在且双路写穿）。
+    final String schemaSrc =
+        File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
+    final String actionsSrc =
+        File('lib/src/media/video/video_settings_actions.dart')
+            .readAsStringSync();
+    final String widgetsSrc =
+        File('lib/src/settings/settings_schema_widgets.dart')
+            .readAsStringSync();
+    final String hostSrc =
+        File('lib/src/media/video/video_quick_settings_host.dart')
+            .readAsStringSync();
+    expect(actionsSrc, contains('VideoShaderManagerView('),
+        reason: '着色器详情内嵌 VideoShaderManagerView（builder 在 actions 层）');
+    expect(schemaSrc, contains('dropdown: true'),
+        reason: 'hwdec/aspect/channels 等长标签行声明 dropdown 渲染');
+    expect(widgetsSrc, contains('AdaptiveSettingsPickerRow<T>('),
+        reason: 'dropdown 声明经渲染层落成 AdaptiveSettingsPickerRow');
+    expect(widgetsSrc, contains('AdaptiveSettingsStepperRow'),
+        reason: 'stepper 行仍经共享渲染层渲染');
+    expect(schemaSrc, contains('VideoMpvConfig.defaults'),
+        reason: 'mpv 详情含「重置默认」action');
+    expect(schemaSrc, contains('isDesktopPlatform'), reason: '锁窗口比行仍按桌面平台门控');
+    expect(schemaSrc, contains('t.video_setting_mpv_aspect'));
+    expect(schemaSrc, contains('pauseAtSubtitleEnd'));
+    expect(hostSrc, contains('onLockWindowAspectRatioChanged'));
+    expect(hostSrc, contains('onAsbConfigChanged'));
+    expect(hostSrc, contains('onSetDelay'));
     expect(source, isNot(contains('widget.onOpenShaders')));
     expect(source, isNot(contains('widget.onOpenMpvConfig')));
   });
@@ -215,13 +245,15 @@ void main() {
   });
 
   test('embedded shader detail keeps section titles inside video surfaces', () {
-    final String quickSettingsSource =
-        File('lib/src/media/video/video_quick_settings_sheet.dart')
+    // 阶段B：_buildShadersDetail 移出 sheet，改为 video_settings_actions.dart 的
+    // buildVideoShaderManager（SettingsCustomItem builder）；守卫改锁新位置。
+    final String actionsSource =
+        File('lib/src/media/video/video_settings_actions.dart')
             .readAsStringSync();
     final String shaderDetail = _between(
-      quickSettingsSource,
-      '  Widget _buildShadersDetail() {',
-      '  Widget _buildMpvDetail() {',
+      actionsSource,
+      'Widget buildVideoShaderManager(',
+      'Widget buildVideoMpvRawConfField(',
     );
 
     expect(shaderDetail, contains('VideoShaderManagerView('),

@@ -91,6 +91,8 @@ Map<VideoGroup, List<SettingsItem>> collectVideoItems(
 }
 
 /// 把某个 [VideoGroup] 的 item 包装成一个可被 SettingsRenderer 渲染的 destination。
+/// 与 reader 版不同：按 [VideoPlacement.section] 把相邻同名条目并入同一个带标题小节
+/// （mpv 组的「画质 / 画面几何 / 色彩均衡」等），复刻旧手写面板的组内分区结构。
 SettingsDestination buildVideoGroupDestination(
   SettingsContext context,
   VideoGroup group,
@@ -98,11 +100,29 @@ SettingsDestination buildVideoGroupDestination(
 ) {
   final List<SettingsItem> items =
       collectVideoItems(context)[group] ?? <SettingsItem>[];
+  final List<SettingsSection> sections = <SettingsSection>[];
+  String? sectionTitle;
+  List<SettingsItem> pending = <SettingsItem>[];
+  void flush() {
+    if (pending.isEmpty) return;
+    sections.add(SettingsSection(title: sectionTitle, items: pending));
+    pending = <SettingsItem>[];
+  }
+
+  for (final SettingsItem item in items) {
+    final String? next = item.video!.section;
+    if (pending.isNotEmpty && next != sectionTitle) flush();
+    sectionTitle = next;
+    pending.add(item);
+  }
+  flush();
   return SettingsDestination(
     id: SettingsDestinationId.videoQuickSettings,
     title: title,
     icon: Icons.tune_outlined,
-    sections: <SettingsSection>[SettingsSection(items: items)],
+    sections: sections.isEmpty
+        ? <SettingsSection>[const SettingsSection(items: <SettingsItem>[])]
+        : sections,
   );
 }
 

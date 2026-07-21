@@ -147,18 +147,20 @@ void main() {
           reason: 'topCenter（标题固定 chrome）不应纳入可编辑槽');
     });
 
-    test('quick settings 编辑器呈现顶部两槽放置区', () {
-      final String settings =
-          read('lib/src/media/video/video_quick_settings_sheet.dart');
-      expect(settings.contains('_buildSlotRegion(VideoControlSlot.topLeft)'),
-          isTrue,
+    test('控件拖拽编辑器呈现顶部两槽放置区', () {
+      // 阶段B：拖拽编辑器从 video_quick_settings_sheet 原样抽为独立控件
+      // video_control_layout_editor.dart（经 schema 投影接入面板），守卫改锁新位置。
+      final String editor =
+          read('lib/src/media/video/video_control_layout_editor.dart');
+      expect(
+          editor.contains('_buildSlotRegion(VideoControlSlot.topLeft)'), isTrue,
           reason: '编辑器应有 topLeft 放置区（TODO-388）');
-      expect(settings.contains('_buildSlotRegion(VideoControlSlot.topRight)'),
+      expect(editor.contains('_buildSlotRegion(VideoControlSlot.topRight)'),
           isTrue,
           reason: '编辑器应有 topRight 放置区（TODO-388）');
       // 顶部两槽有面向用户的标签（i18n）。
-      expect(settings.contains('t.video_control_slot_top_left'), isTrue);
-      expect(settings.contains('t.video_control_slot_top_right'), isTrue);
+      expect(editor.contains('t.video_control_slot_top_left'), isTrue);
+      expect(editor.contains('t.video_control_slot_top_right'), isTrue);
     });
 
     test('播放器把顶部两槽注入固定顶栏行本身（TODO-421 phase 1）', () {

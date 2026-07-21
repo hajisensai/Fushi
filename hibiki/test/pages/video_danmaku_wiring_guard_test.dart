@@ -2,18 +2,15 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/media/video/video_immersive_mode.dart';
-import 'package:hibiki/src/media/video/video_mpv_config.dart';
-import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
-import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/utils.dart';
+import '../helpers/video_quick_settings_harness.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
-VideoQuickSettingsSheet _sheet({
+// 阶段 B：面板消费 schema 投影，widget 用例经共享 harness（内存 DB AppModel +
+// 可变状态 host）构造；行为断言（回调写穿）保持不变。
+Future<VideoSheetHarness> _pumpSheet(
+  WidgetTester tester, {
   void Function(bool)? onDanmakuEnabledChanged,
   void Function(bool)? onDanmakuOnlineEnabledChanged,
   void Function(int)? onDanmakuMaxActiveChanged,
@@ -21,65 +18,31 @@ VideoQuickSettingsSheet _sheet({
   void Function(VideoDanmakuStyle)? onDanmakuStyleCommit,
   void Function(String)? onDanmakuBlockRulesChanged,
   VoidCallback? onManualDanmakuMatch,
-  String initialDanmakuBlockRules = '',
-}) {
-  return VideoQuickSettingsSheet(
-    initialDelayMs: 0,
-    initialSpeed: 1.0,
-    initialSubtitleObscureMode: VideoSubtitleObscureMode.none,
-    initialSecondarySubtitleObscureMode: VideoSubtitleObscureMode.none,
-    initialSubtitleStyle: VideoSubtitleStyle.defaults,
-    onSetDelay: (_) async {},
-    onPreviewSpeed: (_) async {},
-    onSetSpeed: (_) async {},
-    onSetSubtitleObscureMode: (_) async {},
-    onSetSecondarySubtitleObscureMode: (_) async {},
-    onSubtitleStylePreview: (_) {},
-    onSubtitleStyleCommit: (_) async {},
-    initialAsbConfig: VideoAsbplayerConfig.defaults,
-    onAsbConfigChanged: (_) async {},
-    initialShadersEnabled: const <String>[],
-    onApplyShaders: (_) async {},
-    onSelectShaderTier: (_, __, ___) async {},
-    initialMpvConfig: VideoMpvConfig.defaults,
-    onMpvConfigChanged: (_) async {},
-    initialLockWindowAspectRatio: true,
-    onLockWindowAspectRatioChanged: (_) async {},
-    initialVideoFitMode: VideoFitMode.cover,
-    onVideoFitModeChanged: (_) async {},
-    initialImmersiveMode: VideoImmersiveMode.lookupOnly,
-    onImmersiveModeChanged: (_) async {},
-    initialDanmakuEnabled: true,
-    initialDanmakuMaxActive: kDefaultVideoDanmakuMaxActive,
-    onDanmakuEnabledChanged: (bool value) async {
-      onDanmakuEnabledChanged?.call(value);
-    },
-    onDanmakuOnlineEnabledChanged: (bool value) async {
-      onDanmakuOnlineEnabledChanged?.call(value);
-    },
-    onDanmakuMaxActiveChanged: (int value) async {
-      onDanmakuMaxActiveChanged?.call(value);
-    },
-    onDanmakuStylePreview: onDanmakuStylePreview,
-    onDanmakuStyleCommit: (VideoDanmakuStyle style) async {
-      onDanmakuStyleCommit?.call(style);
-    },
-    initialDanmakuBlockRules: initialDanmakuBlockRules,
-    onDanmakuBlockRulesChanged: (String value) async {
-      onDanmakuBlockRulesChanged?.call(value);
-    },
-    onManualDanmakuMatch: onManualDanmakuMatch,
-  );
-}
-
-Future<void> _pump(WidgetTester tester, Widget child) async {
+}) async {
+  final VideoSheetHarness harness = await VideoSheetHarness.create();
+  addTearDown(harness.dispose);
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData(useMaterial3: true),
-      home: Scaffold(body: child),
+      home: Scaffold(
+        body: buildVideoSheetUnderTest(
+          harness: harness,
+          host: buildTestVideoHost(
+            onDanmakuEnabledChanged: onDanmakuEnabledChanged ?? (_) {},
+            onDanmakuOnlineEnabledChanged:
+                onDanmakuOnlineEnabledChanged ?? (_) {},
+            onDanmakuMaxActiveChanged: onDanmakuMaxActiveChanged ?? (_) {},
+            onDanmakuStylePreview: onDanmakuStylePreview,
+            onDanmakuStyleCommit: onDanmakuStyleCommit,
+            onDanmakuBlockRulesChanged: onDanmakuBlockRulesChanged,
+            onManualDanmakuMatch: onManualDanmakuMatch,
+          ),
+        ),
+      ),
     ),
   );
   await tester.pump();
+  return harness;
 }
 
 void main() {
@@ -90,13 +53,11 @@ void main() {
     bool? enabled;
     bool? onlineEnabled;
     int? maxActive;
-    await _pump(
+    await _pumpSheet(
       tester,
-      _sheet(
-        onDanmakuEnabledChanged: (bool value) => enabled = value,
-        onDanmakuOnlineEnabledChanged: (bool value) => onlineEnabled = value,
-        onDanmakuMaxActiveChanged: (int value) => maxActive = value,
-      ),
+      onDanmakuEnabledChanged: (bool value) => enabled = value,
+      onDanmakuOnlineEnabledChanged: (bool value) => onlineEnabled = value,
+      onDanmakuMaxActiveChanged: (int value) => maxActive = value,
     );
 
     // 按稳定 id key 命中弹幕分类 chip（不依赖标签文案）。TODO-1351 全文标签把顶栏
@@ -156,14 +117,12 @@ void main() {
     VideoDanmakuStyle? committed;
     String? rules;
     bool manualOpened = false;
-    await _pump(
+    await _pumpSheet(
       tester,
-      _sheet(
-        onDanmakuStylePreview: (VideoDanmakuStyle s) => preview = s,
-        onDanmakuStyleCommit: (VideoDanmakuStyle s) => committed = s,
-        onDanmakuBlockRulesChanged: (String v) => rules = v,
-        onManualDanmakuMatch: () => manualOpened = true,
-      ),
+      onDanmakuStylePreview: (VideoDanmakuStyle s) => preview = s,
+      onDanmakuStyleCommit: (VideoDanmakuStyle s) => committed = s,
+      onDanmakuBlockRulesChanged: (String v) => rules = v,
+      onManualDanmakuMatch: () => manualOpened = true,
     );
 
     await tester.ensureVisible(

@@ -169,6 +169,28 @@ class SettingsSchemaItem extends StatelessWidget {
   }
 
   Widget _segmented<T extends Object>(SettingsSegmentedItem<T> segmented) {
+    // dropdown 渲染分支（TODO-209）：同一数据模型换下拉单选控件——标签长/选项多的
+    // 行在窄 pane 里分段条只能横向滚动裁断，下拉行内只显示当前选中标签、永不被裁。
+    if (segmented.dropdown) {
+      return AdaptiveSettingsPickerRow<T>(
+        title: segmented.title,
+        subtitle: segmented.subtitle,
+        icon: showIcons ? segmented.icon : null,
+        controlBelow: segmented.controlBelow,
+        selected: segmented.selected(settingsContext),
+        options: <AdaptiveSettingsPickerOption<T>>[
+          for (final SettingsSegmentOption<T> option in segmented.options)
+            AdaptiveSettingsPickerOption<T>(
+              value: option.value,
+              label: option.label,
+            ),
+        ],
+        onChanged: (T value) async {
+          await segmented.dispatchChange(settingsContext, value);
+          settingsContext.refresh();
+        },
+      );
+    }
     return AdaptiveSettingsSegmentedRow<T>(
       title: segmented.title,
       subtitle: segmented.subtitle,

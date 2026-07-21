@@ -22,14 +22,16 @@ void main() {
   // 的断言改读「合并语料」（主壳 + 全部 part）；仍在主壳的 _handleVideoPointerUp /
   // _handleDoubleTapSeek / 静态常量断言继续读单文件 pageSrc。
   late String pageCorpus;
-  late String sheetSrc;
+  // 阶段B：「双击快进步长」行声明移入 settings_schema_video.dart
+  // （'video.playback.double_tap'），sheet 只投影 schema，故守卫改读 schema 源。
+  late String schemaSrc;
 
   setUpAll(() {
     pageSrc = File('lib/src/pages/implementations/video_hibiki_page.dart')
         .readAsStringSync();
     pageCorpus = readVideoHibikiSource();
-    sheetSrc = File('lib/src/media/video/video_quick_settings_sheet.dart')
-        .readAsStringSync();
+    schemaSrc =
+        File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
   });
 
   String bodyFromBrace(String source, int start, int braceStart, String label) {
@@ -171,16 +173,22 @@ void main() {
           reason: '字幕哨兵必须用具名常量 kDoubleTapSubtitle');
     });
 
-    test('设置面板有「双击快进步长」行（_buildDoubleTapRow）并接入 playback 详情', () {
-      expect(sheetSrc.contains('Widget _buildDoubleTapRow() {'), isTrue,
-          reason: '缺双击快进步长设置行 _buildDoubleTapRow');
-      expect(sheetSrc.contains('_buildDoubleTapRow(),'), isTrue,
-          reason: '_buildDoubleTapRow 必须接入 _buildPlaybackDetail 行列表');
-      final String body = methodBody(sheetSrc, 'Widget _buildDoubleTapRow() {');
+    test('schema 有「双击快进步长」行（video.playback.double_tap）并投影进 playback 分类', () {
+      // 阶段B：行声明移入 settings_schema_video.dart，面板按 VideoPlacement 投影
+      // 渲染；守卫改锁 schema 声明（保护不变：有该行、写 doubleTapSeekSeconds、
+      // 字幕哨兵用具名常量、经双路写穿即时回调 + 落盘）。
+      final int start = schemaSrc.indexOf("id: 'video.playback.double_tap'");
+      expect(start, greaterThanOrEqualTo(0),
+          reason: '缺双击快进步长行声明 video.playback.double_tap');
+      final int end = schemaSrc.indexOf("id: '", start + 1);
+      expect(end, greaterThan(start));
+      final String body = schemaSrc.substring(start, end);
+      expect(body.contains('VideoPlacement(group: VideoGroup.playback'), isTrue,
+          reason: '双击快进步长行必须投影进播放页面板 playback 分类');
       expect(body.contains('doubleTapSeekSeconds:'), isTrue,
           reason: 'onChanged 必须 copyWith(doubleTapSeekSeconds:) 落盘');
-      expect(body.contains('_commitAsb('), isTrue,
-          reason: '必须经 _commitAsb 即时回调 + 落盘');
+      expect(body.contains('commitVideoAsbConfig('), isTrue,
+          reason: '必须经 commitVideoAsbConfig 双路写穿（host 即时回调 / 无 host 落 pref）');
       expect(body.contains('VideoAsbplayerConfig.kDoubleTapSubtitle'), isTrue,
           reason: '字幕选项必须用具名哨兵常量');
     });

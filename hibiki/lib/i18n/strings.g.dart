@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 37638 (2214 per locale)
+/// Strings: 37655 (2215 per locale)
 ///
-/// Built on 2026-07-21 at 12:58 UTC
+/// Built on 2026-07-21 at 13:27 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2947,6 +2947,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.';
   String get settings_secret_show => 'Show value';
   String get settings_secret_hide => 'Hide value';
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -7954,6 +7955,8 @@ class _StringsAr extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -13034,6 +13037,8 @@ class _StringsDe extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -18130,6 +18135,8 @@ class _StringsEs extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -23237,6 +23244,8 @@ class _StringsFr extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -28271,6 +28280,8 @@ class _StringsId extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -33353,6 +33364,8 @@ class _StringsIt extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -38240,6 +38253,8 @@ class _StringsJa extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -43130,6 +43145,8 @@ class _StringsKo extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -48190,6 +48207,8 @@ class _StringsNl extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -53265,6 +53284,8 @@ class _StringsPtBr extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -58323,6 +58344,8 @@ class _StringsRu extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -63326,6 +63349,8 @@ class _StringsTh extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -68361,6 +68386,8 @@ class _StringsTr extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -73383,6 +73410,8 @@ class _StringsVi extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 // Path: <root>
@@ -78056,6 +78085,8 @@ class _StringsZhCn extends _StringsEn {
   String get settings_secret_show => '显示内容';
   @override
   String get settings_secret_hide => '隐藏内容';
+  @override
+  String get video_setting_speed_step => '倍速步进';
 }
 
 // Path: <root>
@@ -82862,6 +82893,8 @@ class _StringsZhHk extends _StringsEn {
   String get settings_secret_show => 'Show value';
   @override
   String get settings_secret_hide => 'Hide value';
+  @override
+  String get video_setting_speed_step => 'Speed step';
 }
 
 /// Flat map(s) containing all translations.
@@ -87382,6 +87415,8 @@ extension on _StringsEn {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -91900,6 +91935,8 @@ extension on _StringsAr {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -96439,6 +96476,8 @@ extension on _StringsDe {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -100977,6 +101016,8 @@ extension on _StringsEs {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -105521,6 +105562,8 @@ extension on _StringsFr {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -110047,6 +110090,8 @@ extension on _StringsId {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -114588,6 +114633,8 @@ extension on _StringsIt {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -119091,6 +119138,8 @@ extension on _StringsJa {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -123598,6 +123647,8 @@ extension on _StringsKo {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -128132,6 +128183,8 @@ extension on _StringsNl {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -132663,6 +132716,8 @@ extension on _StringsPtBr {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -137199,6 +137254,8 @@ extension on _StringsRu {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -141719,6 +141776,8 @@ extension on _StringsTh {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -146248,6 +146307,8 @@ extension on _StringsTr {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -150772,6 +150833,8 @@ extension on _StringsVi {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }
@@ -155262,6 +155325,8 @@ extension on _StringsZhCn {
         return '显示内容';
       case 'settings_secret_hide':
         return '隐藏内容';
+      case 'video_setting_speed_step':
+        return '倍速步进';
       default:
         return null;
     }
@@ -159760,6 +159825,8 @@ extension on _StringsZhHk {
         return 'Show value';
       case 'settings_secret_hide':
         return 'Hide value';
+      case 'video_setting_speed_step':
+        return 'Speed step';
       default:
         return null;
     }

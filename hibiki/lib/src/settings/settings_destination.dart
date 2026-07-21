@@ -57,12 +57,17 @@ enum VideoGroup { playback, audio, subtitle, shaders, mpv, danmaku, controls }
 /// 描述某个 [SettingsItem] 在视频快捷面板里的放置位置。
 /// 为 null 表示该项不出现在视频面板（仅全局可见）。
 class VideoPlacement {
-  const VideoPlacement({required this.group, required this.order});
+  const VideoPlacement(
+      {required this.group, required this.order, this.section});
 
   final VideoGroup group;
 
   /// 在所属 [group] 内的升序排序键（仅组内有效，可有间隔）。
   final int order;
+
+  /// 组内小节标题（如 mpv 组的「画质 / 画面几何 / 色彩均衡」）。投影时相邻同名
+  /// 条目并入同一个带标题 [SettingsSection]；null = 无题小节（相邻 null 合并）。
+  final String? section;
 }
 
 typedef SettingsVisibility = bool Function(SettingsContext context);
@@ -264,12 +269,18 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     super.reader,
     super.video,
     this.controlBelow = true,
+    this.dropdown = false,
   });
 
   final List<SettingsSegmentOption<T>> options;
   final SettingsValueGetter<T> selected;
   final SettingsValueChanged<T> onChanged;
   final bool controlBelow;
+
+  /// true = 渲染成下拉单选（AdaptiveSettingsPickerRow）而非分段条。用于标签长 /
+  /// 选项多、分段条在窄 pane 只能横向滚动裁断的行（TODO-209 沉浸模式四态、mpv
+  /// 解码/几何/声道等）；数据模型不变，仅换行控件。
+  final bool dropdown;
 
   /// 类型安全地派发一次值变更。渲染器统一把本项当 `SettingsSegmentedItem<Object>`
   /// 持有派发；若在渲染层静态读 [onChanged]（其实际签名是 `(ctx, T)`），会因函数参数
