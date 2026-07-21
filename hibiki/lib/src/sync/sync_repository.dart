@@ -97,6 +97,10 @@ class SyncRepository {
   static const _keyCollectionsBaselineMs = 'sync_collections_baseline_ms';
   static const _keyDesktopCredentials = 'sync_desktop_credentials';
   static const _keyBackendType = 'sync_backend_type';
+  // 「与 Hoshi/ッツ 共享」开关：开启后 Google Drive 后端改用可见 My Drive /
+  // ttu-reader-data + 完整 drive scope（[GoogleDriveSyncSpace]）。属设备本地（改的是
+  // 本机 Drive 存储空间/scope），不随备份导入覆盖。
+  static const _keyGoogleDriveHoshiCompat = 'google_drive_hoshi_compat';
   static const _keySyncContent = 'sync_content_enabled';
   static const _keyWebDavUrl = 'sync_webdav_url';
   static const _keyWebDavUsername = 'sync_webdav_username';
@@ -189,6 +193,13 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keyAutoSync, false);
   Future<void> setAutoSyncEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyAutoSync, v);
+
+  /// 「与 Hoshi/ッツ 共享 Google Drive」开关。默认关（老用户云端数据留在隐藏
+  /// appDataFolder 原地不动）。
+  Future<bool> isGoogleDriveHoshiCompat() =>
+      _db.getPrefTyped<bool>(_keyGoogleDriveHoshiCompat, false);
+  Future<void> setGoogleDriveHoshiCompat(bool v) =>
+      _db.setPrefTyped<bool>(_keyGoogleDriveHoshiCompat, v);
 
   Future<int?> getLastSyncMs() async {
     final s = await _getStringOrNull(_keyLastSyncMs);
@@ -715,6 +726,7 @@ class SyncRepository {
   /// 这是"哪些 key 属于设备本地"的唯一真相源；备份导入只引用本清单，杜绝两处漂移。
   static const List<String> deviceLocalPrefKeys = <String>[
     _keyBackendType,
+    _keyGoogleDriveHoshiCompat,
     _keyDesktopCredentials,
     _keyOneDriveToken,
     _keyDropboxToken,

@@ -2208,5 +2208,7 @@
   "browser_extension_version_label": "扩展版本",
   "browser_extension_reinstall_button": "重新准备 / 刷新文件",
   "browser_extension_server_on": "查词服务已开启",
-  "browser_extension_server_off": "查词服务未开启"
+  "browser_extension_server_off": "查词服务未开启",
+  "sync_google_drive_hoshi_compat": "与 Hoshi / ッツ 共享进度",
+  "sync_google_drive_hoshi_compat_desc": "通过共享的 Google Drive 文件夹（ttu-reader-data）同步阅读进度。需完整 Drive 权限并重新登录。"
 }
