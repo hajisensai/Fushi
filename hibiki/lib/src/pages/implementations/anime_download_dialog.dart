@@ -237,8 +237,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     }
     final JimakuClient jimaku = JimakuClient(apiKey: apiKey);
     try {
+      // AniList id 挂靠命中最准，但 Jimaku 大量条目未挂 id（冷门/YouTube 转录番等）——
+      // 空结果必须回退按标题文本搜（日文名→罗马字→英文），否则「其实有字幕」会被误报
+      // 成「无字幕」。回退逻辑收敛在 JimakuClient.searchEntries（与字幕对话框同源）。
       final List<JimakuEntry> entries = await jimaku
-          .searchByAnilistId(media.id)
+          .searchEntries(
+            anilistId: media.id,
+            queryFallbacks: _jimakuFallbackQueries(media),
+          )
           .timeout(const Duration(seconds: 20));
       final List<JimakuFile> files = entries.isEmpty
           ? const <JimakuFile>[]
@@ -261,6 +267,22 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         setState(() => _jimakuLoading = false);
       }
     }
+  }
+
+  /// AniList id 搜不到字幕条目时，按标题文本重搜 Jimaku 的回退查询串。
+  /// 顺序：日文原名（Jimaku 条目多以日文命名，命中率最高）→ 罗马字 → 英文；
+  /// 去空、去重，保序。
+  List<String> _jimakuFallbackQueries(AniListMedia media) {
+    final List<String> out = <String>[];
+    for (final String? title in <String?>[
+      media.native,
+      media.romaji,
+      media.english,
+    ]) {
+      final String q = title?.trim() ?? '';
+      if (q.isNotEmpty && !out.contains(q)) out.add(q);
+    }
+    return out;
   }
 
   /// 手动重搜 Jimaku 字幕（用户填了 key / 出错后重试）。
