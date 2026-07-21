@@ -22,15 +22,14 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
 ///
-/// - 区块 1：顶部 4 格统计卡（媒体库 / 总时长 / 今日 / 本周或本月，可 2×2 换行）。
+/// - 区块 1：阅读活动热力图（复用 [StatContributionHeatmap]），置顶。
 /// - 区块 2：「继续」——把在读的书与在看的视频合并成统一列表，分段切换全部/阅读/观看。
-/// - 区块 3：阅读活动热力图（复用 [StatContributionHeatmap]）。
-/// - 区块 4：Activity 时间轴——把 [ActivityEventRow] 事件流经纯函数
+/// - 区块 3：Activity 时间轴——把 [ActivityEventRow] 事件流经纯函数
 ///   [aggregateActivityEvents] 聚合成「按日期分组」的时间线，顶部按类别筛选。
 ///
-/// 分栏：宽屏（`constraints.maxWidth >= 900`）左列（继续 + 热力图）+ 右列（Activity）；
-/// 窄屏堆叠。书与阅读位置走 Riverpod provider（响应式）；视频与统计行在 [initState]
-/// 一次性异步载入到本地状态（视频列表天然是 Future）。
+/// 分栏：宽屏（`constraints.maxWidth >= 900`）热力图置顶通栏 + 下方左列（继续）右列
+/// （Activity）；窄屏堆叠。书与阅读位置走 Riverpod provider（响应式）；视频与活动事件在
+/// [initState] 一次性异步载入到本地状态（视频列表天然是 Future）。
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key, required this.videoRepo});
 
@@ -70,9 +69,6 @@ class _ContinueEntry {
 }
 
 class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
-  /// 统计卡右上角「本周/本月」切换：false=本周，true=本月。
-  bool _monthRange = false;
-
   /// 「继续」分段筛选：0=全部，1=阅读，2=观看。
   int _continueFilter = 0;
 
@@ -109,14 +105,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
 
   /// 每个视频 bookUid 的最近观看时刻（epoch 毫秒），继续观看排序用。
   Map<String, int> _videoWatchAtByUid = const <String, int>{};
-
-  /// 顶部统计卡的时长窗口聚合（今日/本周/本月/全部，毫秒）。
-  DashboardTimeStats _timeStats = const DashboardTimeStats(
-    today: 0,
-    week: 0,
-    month: 0,
-    all: 0,
-  );
 
   /// 订阅「数据变了」信号（阅读/观看/导入落库）以自动刷新，及其防抖定时器。
   /// 首页不保活、且阅读器是 pushed 路由（读完回来首页不重建 initState），故必须靠
@@ -175,7 +163,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         await db.getAllReadingStatistics();
     final List<VideoWatchStatisticRow> watch =
         await db.getAllVideoWatchStatistics();
-    final DateTime now = DateTime.now();
 
     // 每日「读到的字数」聚合（活动热力图数据源）：书内阅读字数 + 视频字幕字数
     // 一起计入——看带字幕的视频也是在读字，故热力图同时反映阅读与观看活动，不再
@@ -187,17 +174,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     for (final VideoWatchStatisticRow w in watch) {
       charsByDay[w.dateKey] = (charsByDay[w.dateKey] ?? 0) + w.subtitleChars;
     }
-
-    // 时长窗口：阅读时长 + 视频观看时长一起喂进纯函数聚合。
-    final DashboardTimeStats stats = sumTimeWindowsByDateKey(
-      <(String, int)>[
-        for (final ReadingStatisticRow r in reading)
-          (r.dateKey, r.readingTimeMs),
-        for (final VideoWatchStatisticRow w in watch)
-          (w.dateKey, w.watchTimeMs),
-      ],
-      now,
-    );
 
     // 每个视频的最近观看时刻（按 bookUid 取 lastModified 最大值）。
     final Map<String, int> watchAt = <String, int>{};
@@ -216,7 +192,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       _activityEvents = events;
       _readingCharsByDay = charsByDay;
       _videoWatchAtByUid = watchAt;
-      _timeStats = stats;
     });
     // 本地渲染先行，互联数据到达后再增量补位（不阻塞首屏）。
     unawaited(_loadRemoteDashboardData());
@@ -298,7 +273,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
     final DateTime now = DateTime.now();
 
-    final Widget statsCard = _buildStatsSection(tokens, books);
     final Widget continueCard =
         _buildContinueSection(tokens, appModel, books, lastReadByKey);
     final Widget heatmapCard = _buildHeatmapCard(tokens);
@@ -309,24 +283,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         final bool wide = constraints.maxWidth >= 900;
         final Widget bodyBelow;
         if (wide) {
-          // 两列并排（左：继续+热力图；右：Activity）。整页在纵向滚动的 ListView 里，
-          // Row 收到的高度约束是无界（h=Infinity）；左列 Column 必须 mainAxisSize.min
-          // 让其高度收敛到内容，否则默认 MainAxisSize.max 会「被迫无限高」而在 layout
-          // 阶段抛 BoxConstraints forces an infinite height，导致宽屏首页整块空白。
+          // 热力图置顶通栏后，下方两列并排（左：继续；右：Activity）。整页在纵向滚动的
+          // ListView 里，Row 收到的高度约束是无界（h=Infinity）；用 CrossAxisAlignment
+          // .start 让两列各自收敛到内容高度，避免 stretch 被迫无限高在 layout 阶段崩溃。
           bodyBelow = Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    continueCard,
-                    SizedBox(height: tokens.spacing.card),
-                    heatmapCard,
-                  ],
-                ),
-              ),
+              Expanded(child: continueCard),
               SizedBox(width: tokens.spacing.card),
               Expanded(child: activityCard),
             ],
@@ -337,8 +300,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
             children: <Widget>[
               continueCard,
               SizedBox(height: tokens.spacing.card),
-              heatmapCard,
-              SizedBox(height: tokens.spacing.card),
               activityCard,
             ],
           );
@@ -346,124 +307,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         return ListView(
           padding: EdgeInsets.all(tokens.spacing.card),
           children: <Widget>[
-            statsCard,
+            // 区块 1：阅读活动热力图，置顶（原顶部统计卡已移除）。
+            heatmapCard,
             SizedBox(height: tokens.spacing.card),
             bodyBelow,
           ],
         );
       },
-    );
-  }
-
-  // ── 区块 1：顶部统计卡 ───────────────────────────────────────────────────
-
-  /// 顶部 4 格统计卡 + 右上角本周/本月切换。
-  Widget _buildStatsSection(HibikiDesignTokens tokens, List<MediaItem> books) {
-    final int libraryTotal = books.length + _videos.length;
-    final Widget rangeTile = _statTile(
-      tokens,
-      formatStatTime(_monthRange ? _timeStats.month : _timeStats.week),
-      _monthRange ? t.home_stat_this_month : t.home_stat_this_week,
-    );
-    final List<Widget> tiles = <Widget>[
-      _statTile(tokens, '$libraryTotal', t.home_stat_library),
-      _statTile(tokens, formatStatTime(_timeStats.all), t.home_stat_total_time),
-      _statTile(tokens, formatStatTime(_timeStats.today), t.home_stat_today),
-      rangeTile,
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Align(
-          alignment: Alignment.centerRight,
-          child: _filterChips<bool>(
-            tokens: tokens,
-            selected: _monthRange,
-            onSelected: (bool v) => setState(() => _monthRange = v),
-            options: <(bool, String)>[
-              (false, t.home_range_week),
-              (true, t.home_range_month),
-            ],
-          ),
-        ),
-        SizedBox(height: tokens.spacing.gap),
-        LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints c) {
-            // 宽度足够 4 格横排，否则 2×2 换行。IntrinsicHeight 收界：整页在纵向
-            // ListView 里高度无界，裸 Row(stretch) 会被迫无限高而 layout 崩溃（宽屏
-            // 首页整块空白的同款根因）；IntrinsicHeight 让 Row 高度 = 最高格的自然高。
-            if (c.maxWidth >= 560) {
-              return IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    for (int i = 0; i < tiles.length; i++) ...<Widget>[
-                      if (i > 0) SizedBox(width: tokens.spacing.gap),
-                      Expanded(child: tiles[i]),
-                    ],
-                  ],
-                ),
-              );
-            }
-            return Column(
-              children: <Widget>[
-                _statRow(tokens, tiles[0], tiles[1]),
-                SizedBox(height: tokens.spacing.gap),
-                _statRow(tokens, tiles[2], tiles[3]),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  /// 2×2 布局的一行两格。IntrinsicHeight 收界（同 4 格横排：纵向 ListView 下裸
-  /// Row(stretch) 会被迫无限高崩溃）。
-  Widget _statRow(HibikiDesignTokens tokens, Widget left, Widget right) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(child: left),
-          SizedBox(width: tokens.spacing.gap),
-          Expanded(child: right),
-        ],
-      ),
-    );
-  }
-
-  /// 单个统计格：大号数值 + 小号标签。
-  Widget _statTile(HibikiDesignTokens tokens, String value, String label) {
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        color: tokens.surfaces.card,
-        shape: const RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.card,
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.gap + 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: tokens.type.listTitle,
-            ),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: tokens.type.metadata,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
