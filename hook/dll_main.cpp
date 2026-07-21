@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 
+#include "il2cpp_thread_scope.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"
 #include "voice_hook_ipc.h"
@@ -425,6 +426,9 @@ using Il2CppObjectUnbox = void* (*)(void*);
 using Il2CppGetCorlib = const void* (*)();
 using Il2CppStringChars = const wchar_t* (*)(void*);
 using Il2CppStringLength = int (*)(void*);
+using Il2CppThreadCurrent = void* (*)();
+using Il2CppThreadAttach = void* (*)(void*);
+using Il2CppThreadDetach = void (*)(void*);
 
 Il2CppRuntimeInvoke g_il2cpp_runtime_invoke = nullptr;
 Il2CppArrayNew g_il2cpp_array_new = nullptr;
@@ -437,6 +441,13 @@ Il2CppMethodGetParamCount g_il2cpp_method_get_param_count = nullptr;
 Il2CppMethodGetParam g_il2cpp_method_get_param = nullptr;
 Il2CppTypeGetName g_il2cpp_type_get_name = nullptr;
 Il2CppFree g_il2cpp_free = nullptr;
+// IL2CPP 线程注册入口。Unity 的 audio/mixer 线程执行 scheduled/delayed play 的内部 Helper
+// 时并未注册到 GC，若在其上分配托管内存（array_new / 装箱 / GetData / get_name）Boehm GC 会
+// 以 "Collecting from unknown thread" 直接 abort 杀掉游戏。捕获前用它们把当前线程临时 attach。
+Il2CppDomainGet g_il2cpp_domain_get = nullptr;
+Il2CppThreadCurrent g_il2cpp_thread_current = nullptr;
+Il2CppThreadAttach g_il2cpp_thread_attach = nullptr;
+Il2CppThreadDetach g_il2cpp_thread_detach = nullptr;
 const void* g_unity_clip_get_samples = nullptr;
 const void* g_unity_clip_get_channels = nullptr;
 const void* g_unity_clip_get_frequency = nullptr;
@@ -636,6 +647,20 @@ void CaptureUnityAudioClip(void* source, void* clip) {
   if (clip == g_last_unity_clip && now - g_last_unity_clip_tick < 100) return;
   if (InterlockedCompareExchange(&g_unity_capture_busy, 1, 0) != 0) return;
   g_header->hook_diagnostics |= kDiagUnityIl2CppPlaybackObserved;
+  // 本函数随后的每一个托管调用（RecordUnityVoiceResourceEvent 的 get_name、InvokeUnityInt
+  // 的装箱、array_new、AudioClip.GetData）都在托管堆分配。scheduled/delayed 播放会把内部
+  // Helper 派到 Unity 原生 audio 线程执行——那条线程未注册到 IL2CPP 域，直接分配会命中
+  // Boehm GC 的 "Collecting from unknown thread" 崩溃。进入托管区前确保当前线程已注册。
+  const hibiki_voice_hook::Il2CppThreadFns il2cpp_thread_fns{
+      g_il2cpp_thread_current, g_il2cpp_thread_attach, g_il2cpp_thread_detach,
+      g_il2cpp_domain_get};
+  hibiki_voice_hook::Il2CppManagedThreadScope managed_thread(il2cpp_thread_fns);
+  if (!managed_thread.safe()) {
+    // 未注册且无法 attach：宁可放弃这次资源事件与 PCM，也不冒崩溃风险。
+    g_header->hook_diagnostics |= kDiagUnityIl2CppGetDataRejected;
+    InterlockedExchange(&g_unity_capture_busy, 0);
+    return;
+  }
   RecordUnityVoiceResourceEvent(clip, now);
   // Streaming AudioClip 的 GetData 会拒绝读取，但资源事件仍然有效。去重状态必须在这里
   // 更新，否则 Unity 6 的 public 包装与内部 Helper 会为同一次播放各触发一次解析/转码。
@@ -900,6 +925,15 @@ bool TryHookUnityIl2CppAudio() {
       GetProcAddress(game, "il2cpp_type_get_name"));
   g_il2cpp_free = reinterpret_cast<Il2CppFree>(
       GetProcAddress(game, "il2cpp_free"));
+  // 托管线程 attach 守卫用的 API。缺失不致命（文本钩子仍可装），但 CaptureUnityAudioClip
+  // 无法保证线程安全时会自行放弃本次托管提取，避免在未注册线程上分配触发 GC 崩溃。
+  g_il2cpp_domain_get = domain_get;
+  g_il2cpp_thread_current = reinterpret_cast<Il2CppThreadCurrent>(
+      GetProcAddress(game, "il2cpp_thread_current"));
+  g_il2cpp_thread_attach = reinterpret_cast<Il2CppThreadAttach>(
+      GetProcAddress(game, "il2cpp_thread_attach"));
+  g_il2cpp_thread_detach = reinterpret_cast<Il2CppThreadDetach>(
+      GetProcAddress(game, "il2cpp_thread_detach"));
   if (domain_get == nullptr || domain_get_assemblies == nullptr ||
       assembly_get_image == nullptr || class_from_name == nullptr ||
       class_get_method == nullptr || get_corlib == nullptr ||

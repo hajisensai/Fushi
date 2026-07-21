@@ -81,6 +81,14 @@ add_executable(hibiki_unity_event_cursor_test
 target_include_directories(hibiki_unity_event_cursor_test PRIVATE "include")
 add_test(NAME hibiki_unity_event_cursor_test COMMAND hibiki_unity_event_cursor_test)
 
+# IL2CPP 托管线程 attach 守卫（根因回归：未注册线程分配触发 Boehm GC 崩溃）。纯逻辑，按
+# 函数指针注入假 IL2CPP 线程 API，不需真实 GameAssembly.dll。
+add_executable(hibiki_il2cpp_thread_scope_test
+  "tests/il2cpp_thread_scope_test.cpp"
+)
+target_include_directories(hibiki_il2cpp_thread_scope_test PRIVATE "hook")
+add_test(NAME hibiki_il2cpp_thread_scope_test COMMAND hibiki_il2cpp_thread_scope_test)
+
 add_executable(hibiki_steam_launch_test
   "tests/steam_launch_test.cpp"
 )
