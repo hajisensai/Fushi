@@ -192,7 +192,11 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
       return;
     }
 
-    bool added = false;
+    // BUG-987：add 模式（index==null）一律触发配对，与「是否新增列表条目」解耦。旧实现
+    // 只在 added==true 时配对，导致「重加一个列表里已存在的地址」被去重守卫吞成 added=false
+    // → 不再发起配对 → 点「添加」毫无反应。去重只应防列表出现重复条目，不该拦住重新配对
+    // （尤其首次配对失败后用户想靠再点「添加」重试）。
+    bool shouldPair = false;
     setState(() {
       final List<HibikiClientUrl> copy = <HibikiClientUrl>[..._urls];
       if (index != null) {
@@ -203,19 +207,22 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
           // 编辑保留已有指纹/展示名（copyWith），只换 URL 文本。
           copy[index] = copy[index].copyWith(url: normalizedResult);
         }
-      } else if (!copy.any((HibikiClientUrl u) => u.url == normalizedResult)) {
-        copy.add(HibikiClientUrl(url: normalizedResult));
-        added = true;
+      } else {
+        // 新地址才加进列表（去重防重复条目）；已存在则不重复加，但仍会在下方发起配对。
+        if (!copy.any((HibikiClientUrl u) => u.url == normalizedResult)) {
+          copy.add(HibikiClientUrl(url: normalizedResult));
+        }
+        shouldPair = true;
       }
       _urls = copy;
     });
     await _persistUrls();
 
-    // TODO-963 M2: 新增地址后走「探测 → 配对」。手动输入 IP 也能发起配对（不再只挂
+    // TODO-963 M2: 新增/重加地址后走「探测 → 配对」。手动输入 IP 也能发起配对（不再只挂
     // mDNS 发现设备）：ping 探测可达 + 取指纹做 TOFU → 双确认 → pair/v2 → 自动落
     // token + 指纹（免手粘 token）。探测失败 / 非 hibiki 时静默保留地址（向后兼容：
     // 用户仍可手填 token）。
-    if (added) {
+    if (shouldPair) {
       await _attemptManualPair(normalizedResult);
     }
   }

@@ -1,0 +1,14 @@
+## BUG-987 · 互联首次配对失败后刷新不再弹申请框、只提示失败
+- **报告**：2026-07-21（用户：hibiki 互联刚开始没添加成功，后面重新刷新不再出现申请框，只会说失败）
+- **真实性**：✅ 真 bug。根因在 host（被添加设备）侧审批弹窗的串行锁未在「未决滞留」态被取代。
+  - `hibiki/lib/src/sync/hibiki_server_controller.dart:423` `_showPairApprovalDialog`：`if (_pairDialogOpen) return Future<bool>.value(false)` —— 已有申请框打开时，新配对请求直接判 `declined`、**不弹新框**。
+  - `_pairDialogOpen`（`:104` 声明，`:426` 置位，仅在弹窗 `whenComplete` `:590` 复位）串行化申请框。
+  - `_promptPairApproval`（`:401`）原「先收起旧框再开新框」的取代逻辑只覆盖 `_pairDialogLingering`（已允许、常驻显示 PIN）这一态（BUG-708），**遗漏了「审批未决但对端会话已死」这一态**。
+  - 失败链路：第一次配对 host 弹申请框等用户点 → client 端先超时/断网/取消（`hibiki_pair_v2_client.dart:40` 默认 65s）→ 那个未决框驻留至 60s autoDeny（`:483`）→ 期间同一 client「重新刷新」重发 `pair/v2·confirm` 全被 `:423` 挡成 `declined` → 只见「失败」、host 不再弹框。若 `popDialog`（`:441`）因 navigator 状态 `canPop()` 为 false 而 no-op，则卡到重启 app。
+  - 次要：`hibiki/lib/src/sync/sync_settings_schema/interconnect.part.dart:206` 去重守卫使「重加一个列表里已存在的地址」`added=false` → `:218 if(added)` 不再发起配对 → 点「添加」毫无反应（无法靠再点添加重试）。
+- **[x] ① 已修复** — 根因修：
+  - `hibiki_server_controller.dart`：新增 `_pairDialogRemoteAddress` 记录当前打开申请框的来源；`_promptPairApproval` 把取代条件扩为 `_pairDialogLingering || _isSamePairSource(request.remoteAddress)`——**同源(remoteAddress)重试即取代滞留的未决框、重开新框**，不同来源仍保留防叠弹拒绝（防恶意 peer 顶掉别人正在审批的框）。
+  - `interconnect.part.dart`：add 模式（`index==null`）一律触发配对，与「是否新增列表条目」解耦（去重只防列表重复，不拦重新配对）。
+  - 提交哈希：（见本轮提交）
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/interconnect_pending_pair_supersede_test.dart`：同源重试取代未决框弹新框（原会被 `_pairDialogOpen` 挡成拒绝）；不同来源仍被防叠弹拒绝、旧框保留。
+- **备注**：真机复测项——两台设备局域网互联，第一次配对故意让发起端超时/取消，随后在发起端「刷新/重新添加」，被添加端应重新弹出申请框（而非静默失败）。属 [docs/agent/integration-testing.md] 设备验证范畴，待真机勾验。
