@@ -2711,20 +2711,25 @@ $_sharedJs
     var rect = this.getRect(target);
     var margin = 0.15;
     var wm = window.getComputedStyle(document.body).writingMode;
+    // 墨水屏模式（--hoshi-reader-eink-mode: 1，由 ReaderContentStyles 的 eink 覆盖块
+    // 注入）：跟随滚动退化为瞬时跳——慢刷新屏上 smooth 补间是一整段残影。普通模式
+    // 保持 TODO-825 的 smooth（用户点名要动画，settle 窗治闪屏），零行为变化。
+    var behavior = (window.getComputedStyle(document.documentElement)
+      .getPropertyValue('--hoshi-reader-eink-mode').trim() === '1') ? 'auto' : 'smooth';
     if (wm.startsWith('vertical')) {
       var vw = window.innerWidth;
       var safe = vw * margin;
       if (rect.left >= safe && rect.right <= vw - safe) return false;
       if (wm === 'vertical-rl') {
-        window.scrollBy({left: rect.right - (vw - safe), behavior: 'smooth'});
+        window.scrollBy({left: rect.right - (vw - safe), behavior: behavior});
       } else {
-        window.scrollBy({left: rect.left - safe, behavior: 'smooth'});
+        window.scrollBy({left: rect.left - safe, behavior: behavior});
       }
     } else {
       var vh = window.innerHeight;
       var safe = vh * margin;
       if (rect.top >= safe && rect.bottom <= vh - safe) return false;
-      window.scrollBy({top: rect.top - safe, behavior: 'smooth'});
+      window.scrollBy({top: rect.top - safe, behavior: behavior});
     }
     return true;
   },
