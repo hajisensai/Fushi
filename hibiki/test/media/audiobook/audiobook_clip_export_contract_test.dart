@@ -1,0 +1,112 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
+
+void main() {
+  group('exported card text follows the actual reader selection', () {
+    test('accepts cue text only when it exactly represents the selection', () {
+      const List<AudiobookClipCueSpan> cues = <AudiobookClipCueSpan>[
+        AudiobookClipCueSpan(text: 'first', startMs: 0, endMs: 1000),
+        AudiobookClipCueSpan(text: 'second', startMs: 1000, endMs: 2000),
+      ];
+      expect(
+        audiobookClipCueTextMatchesSelection(
+          selectedText: 'first\nsecond',
+          cueSpans: cues,
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects subtitle wording or a wider cue than the selected text', () {
+      const List<AudiobookClipCueSpan> cues = <AudiobookClipCueSpan>[
+        AudiobookClipCueSpan(text: 'subtitle wording', startMs: 0, endMs: 1000),
+      ];
+      expect(
+        audiobookClipCueTextMatchesSelection(
+          selectedText: 'epub wording',
+          cueSpans: cues,
+        ),
+        isFalse,
+      );
+      expect(
+        audiobookClipCueTextMatchesSelection(
+          selectedText: 'sub',
+          cueSpans: cues,
+        ),
+        isFalse,
+      );
+    });
+
+    test('reader plan falls back before rendering differing cue text', () {
+      final String source = File(
+        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+      ).readAsStringSync();
+      final int exportable = source.indexOf(
+        'if (!result.isExportable) return null;',
+      );
+      final int equalityGate = source.indexOf(
+        'audiobookClipCueTextMatchesSelection(',
+        exportable,
+      );
+      final int renderCueText = source.indexOf(
+        'text: plan.cueSpans[i].text',
+        equalityGate,
+      );
+      expect(exportable, greaterThanOrEqualTo(0));
+      expect(equalityGate, greaterThan(exportable));
+      expect(renderCueText, greaterThan(equalityGate));
+    });
+  });
+
+  group('every synthesized clip explicitly carries the audio input', () {
+    void expectExplicitMaps(List<String> args) {
+      expect(
+        args,
+        containsAllInOrder(<String>['-map', '0:v:0', '-map', '1:a:0']),
+      );
+      expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
+    }
+
+    test('static card maps video input 0 and audio input 1', () {
+      expectExplicitMaps(
+        buildFfmpegImageAudioToVideoArgs(
+          imagePath: '/card.jpg',
+          audioPath: '/clip.aac',
+          outputPath: '/clip.mp4',
+          h264: true,
+        ),
+      );
+    });
+
+    test('dynamic frame sequence maps video input 0 and audio input 1', () {
+      expectExplicitMaps(
+        buildFfmpegImageSeqAudioToVideoArgs(
+          framesDir: '/frames',
+          audioPath: '/clip.aac',
+          outputPath: '/clip.mp4',
+          h264: true,
+        ),
+      );
+    });
+
+    test('MOV compatibility fallback shares the AAC companion', () {
+      final String source = File(
+        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+      ).readAsStringSync();
+      expect(source, contains('sharedFiles.add('));
+      expect(
+        source,
+        contains("XFile(audioClip.path, mimeType: 'audio/aac')"),
+      );
+      expect(source, contains('retainAudioClipForShare = true;'));
+      expect(
+        source,
+        contains(
+          'if (!retainAudioClipForShare) {',
+        ),
+      );
+    });
+  });
+}
