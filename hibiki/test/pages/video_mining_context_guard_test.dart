@@ -41,14 +41,27 @@ void main() {
       'Future<void> _lookupAt(',
       'Future<void> _refreshVideoSentenceFavorite(',
     );
-    // 点字幕字符时仍快照当前 cue……
-    expect(lookup.contains('_lastLookupCue = controller.currentCue'), isTrue,
-        reason: 'Tapping a subtitle character must snapshot the current cue.');
-    // ……但 currentCue 在字幕 gap / 末句后被清成 null（BUG-074）。TODO-104b / BUG-188：
-    // 用户常在字幕刚消失那一瞬制卡，故 null 时必须按位置独立解析最近一条 cue，
-    // 否则制卡缺真实句子音频（绝无 TTS）。
+    // BUG-966: 查词那一刻快照锚定 cue，解析收口到顶层纯函数 resolveVideoLookupAnchorCue
+    // （overrideCue > currentCue > 按位置解析），不再在 _lookupAt 体里内联三元。
+    expect(lookup.contains('_lastLookupCue = resolveVideoLookupAnchorCue('),
+        isTrue,
+        reason: 'Tapping a subtitle character must snapshot the anchor cue at '
+            'lookup time (via resolveVideoLookupAnchorCue).');
+    // currentCue 仍被透传作为默认锚点（gap / 末句后被清成 null，BUG-074）。
+    expect(lookup.contains('currentCue: controller.currentCue'), isTrue,
+        reason: 'lookup 仍以 currentCue 作为默认锚点。');
+    // BUG-966: 字幕列表点词把被点条目作为 overrideCue 透传，优先于播放位置那句。
+    expect(lookup.contains('overrideCue: overrideCue'), isTrue,
+        reason: 'BUG-966：字幕列表点词的被点 cue 须作为 overrideCue 透传给纯函数。');
+
+    // 纯函数在 override / currentCue 皆 null（字幕 gap / 末句后）时按播放位置独立解析
+    // 最近一条 cue（TODO-104b / BUG-188），否则制卡缺真实句子音频（绝无 TTS）。
+    final String anchorFn = region(
+      'AudioCue? resolveVideoLookupAnchorCue(',
+      'int resolveMiningCueIndexForPosition(',
+    );
     expect(
-      lookup.contains('resolveMiningCueForPosition('),
+      anchorFn.contains('resolveMiningCueForPosition('),
       isTrue,
       reason: 'gap 时（currentCue==null）须按播放位置解析最近 cue，保证句子音频非空。',
     );

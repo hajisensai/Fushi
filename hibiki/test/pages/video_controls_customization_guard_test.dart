@@ -407,7 +407,9 @@ void main() {
 
     expect(page, contains('void _handleSubtitleJumpTap(AudioCue cue)'));
     expect(page, contains('_controller?.skipToCue(cue)'));
-    expect(page, contains('_lastLookupCue = controller.currentCue ??'));
+    // BUG-966: 锚定 cue 解析收口到纯函数 resolveVideoLookupAnchorCue（currentCue 仍是默认）。
+    expect(page, contains('_lastLookupCue = resolveVideoLookupAnchorCue('));
+    expect(page, contains('currentCue: controller.currentCue'));
     expect(page, contains('buildSelectedSubtitleCueContext'));
     // TODO-1000: the raw-payload assembly moved out of the video shell into the
     // shared ImmersionMiningEngine (fields carried on the request), so the card

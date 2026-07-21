@@ -203,6 +203,33 @@ AudioCue? resolveMiningCueForPosition({
   return idx >= 0 ? cues[idx] : null;
 }
 
+/// 解析查词浮层（及其制卡）应锚定的字幕 cue（BUG-966）。
+///
+/// 两条查词入口共用 [_VideoLookupFavorite._lookupAt]，但被查词句的 cue 来源不同：
+/// - **主画面字幕 overlay 点字符查词**：点的就是当前正在显示的字幕，[overrideCue] 传 null，
+///   回落到 [currentCue]（句间 gap / 末句后为 null）→ 再按播放位置解析（TODO-104b / BUG-188）。
+/// - **字幕跳转列表点词查词**：用户点的是列表里**任意一条**字幕，可能远离播放头（点列表只
+///   暂停、不 seek），此时必须用被点的 [overrideCue]；否则制卡区间会锚到播放位置那句，
+///   卡片句子文本是被点条目、句子音频却截自播放位置那句，声音对不上（BUG-966）。
+///
+/// 优先级：[overrideCue]（列表明确指定的句） > [currentCue]（overlay 正显示的句） >
+/// 按播放位置解析（gap / 末句后兜底）。三者皆无 → null，制卡诚实留空。
+AudioCue? resolveVideoLookupAnchorCue({
+  AudioCue? overrideCue,
+  AudioCue? currentCue,
+  required List<AudioCue> cues,
+  required int positionMs,
+  required int delayMs,
+}) {
+  return overrideCue ??
+      currentCue ??
+      resolveMiningCueForPosition(
+        cues: cues,
+        positionMs: positionMs,
+        delayMs: delayMs,
+      );
+}
+
 /// 同 [resolveMiningCueForPosition]，但返回**下标**而非 cue 对象（一句都没起播过 / 空 cue
 /// 返回 -1）。跨字幕制卡（TODO-102）按下「开始/结束」时要记录 cue 的**下标**来界定区间，
 /// 而单句制卡只要 cue 对象——两者共用同一套「精确命中 → floor 兜底」解析，避免漂移。

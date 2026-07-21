@@ -102,7 +102,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     if (!_immersiveAllowsLookup) return;
     final String sentence = cue.text;
     if (sentence.trim().isEmpty) return;
-    unawaited(_lookupAt(sentence, graphemeIndex, charRect));
+    // BUG-966：把被点的列表 cue 透传给查词，作为制卡音频锚点——列表里的句可能远离播放头
+    // （点列表只暂停不 seek），不透传会回落到播放位置那句、截出别的句子的声音。
+    unawaited(_lookupAt(sentence, graphemeIndex, charRect, overrideCue: cue));
   }
 
   /// TODO-1351：字幕轨/字幕源切换区，收进设置面板「字幕」分类顶部（取代原来外面浮的
