@@ -289,6 +289,46 @@ HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
   }
 }
 
+HT_EXPORT int ht_apply_session_settings(
+    void* session, int listen_port, int enable_dht, int enable_lsd,
+    int enable_upnp, int enable_natpmp, int enc_policy, int anonymous_mode,
+    int active_downloads, int active_seeds, int max_upload_slots) {
+  if (session == nullptr) return 0;
+  try {
+    lt::settings_pack sp;
+    if (listen_port > 0) {
+      const std::string port = std::to_string(listen_port);
+      sp.set_str(lt::settings_pack::listen_interfaces,
+                 "0.0.0.0:" + port + ",[::]:" + port);
+    }
+    sp.set_bool(lt::settings_pack::enable_dht, enable_dht != 0);
+    sp.set_bool(lt::settings_pack::enable_lsd, enable_lsd != 0);
+    sp.set_bool(lt::settings_pack::enable_upnp, enable_upnp != 0);
+    sp.set_bool(lt::settings_pack::enable_natpmp, enable_natpmp != 0);
+    // config 0=首选/1=强制/2=禁用 → libtorrent enc_policy 枚举。
+    const int policy = enc_policy == 1
+        ? lt::settings_pack::pe_forced
+        : (enc_policy == 2 ? lt::settings_pack::pe_disabled
+                           : lt::settings_pack::pe_enabled);
+    sp.set_int(lt::settings_pack::out_enc_policy, policy);
+    sp.set_int(lt::settings_pack::in_enc_policy, policy);
+    sp.set_bool(lt::settings_pack::anonymous_mode, anonymous_mode != 0);
+    if (active_downloads > 0) {
+      sp.set_int(lt::settings_pack::active_downloads, active_downloads);
+    }
+    if (active_seeds > 0) {
+      sp.set_int(lt::settings_pack::active_seeds, active_seeds);
+    }
+    if (max_upload_slots > 0) {
+      sp.set_int(lt::settings_pack::unchoke_slots_limit, max_upload_slots);
+    }
+    as_session(session)->apply_settings(std::move(sp));
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
 HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
                                  int upload_enabled) {
   if (session == nullptr) return 0;

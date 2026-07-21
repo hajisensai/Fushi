@@ -20,7 +20,31 @@ class QbConnectionConfig {
     this.seedTimeLimitMinutes = 0,
     this.seedRatioLimit = 0,
     this.memoryLimitMb = 0,
+    this.listenPort = 0,
+    this.enableDht = true,
+    this.enableLsd = true,
+    this.enableUpnp = true,
+    this.enableNatpmp = true,
+    this.encryptionMode = encryptionPrefer,
+    this.anonymousMode = false,
+    this.maxActiveDownloads = 0,
+    this.maxActiveSeeds = 0,
+    this.maxUploadSlots = 0,
+    this.antiLeechEnabled = true,
+    this.banProgressCheat = false,
+    this.banRelativeProgressCheat = false,
+    this.maxIpPortCount = 0,
+    this.banTimeMinutes = 0,
   });
+
+  /// 加密策略：首选（尝试加密，允许明文回退）。
+  static const int encryptionPrefer = 0;
+
+  /// 加密策略：强制（只连加密 peer）。
+  static const int encryptionForced = 1;
+
+  /// 加密策略：禁用（只明文）。
+  static const int encryptionDisabled = 2;
 
   /// 本应用管理的下载在 qBittorrent 里归入的默认分类名。
   static const String defaultCategory = 'hibiki';
@@ -88,6 +112,53 @@ class QbConnectionConfig {
   /// 仅内置引擎生效。
   final int memoryLimitMb;
 
+  // ---- 内置引擎会话设置（抄 qBittorrent 关键项；均仅内置引擎生效）----
+
+  /// 监听端口（0 = 默认 6881）。
+  final int listenPort;
+
+  /// 启用 DHT（公网磁力找 peer 必需）。
+  final bool enableDht;
+
+  /// 启用本地服务发现 LSD（局域网找 peer）。
+  final bool enableLsd;
+
+  /// 启用 UPnP 端口映射。
+  final bool enableUpnp;
+
+  /// 启用 NAT-PMP 端口映射。
+  final bool enableNatpmp;
+
+  /// 传输加密策略（[encryptionPrefer] / [encryptionForced] / [encryptionDisabled]）。
+  final int encryptionMode;
+
+  /// 匿名模式（不在握手/tracker 暴露客户端指纹与本机 IP；会牺牲部分连通性）。
+  final bool anonymousMode;
+
+  /// 最大活跃下载数（0 = 引擎默认）。
+  final int maxActiveDownloads;
+
+  /// 最大活跃做种数（0 = 引擎默认）。
+  final int maxActiveSeeds;
+
+  /// 最大上传槽位（同时上传的 peer 数，0 = 引擎默认）。
+  final int maxUploadSlots;
+
+  /// 启用反吸血（默认开；关掉则不做任何 peer 封禁）。
+  final bool antiLeechEnabled;
+
+  /// 反吸血：进度作弊封禁（实喂字节远超自报进度应得量即封，opt-in）。
+  final bool banProgressCheat;
+
+  /// 反吸血：相对进度作弊封禁（采样间上传增量远超进度增量即封，opt-in）。
+  final bool banRelativeProgressCheat;
+
+  /// 反吸血：同 IP 多端口封禁阈值（超此端口数即封，0 = 关闭该检测）。
+  final int maxIpPortCount;
+
+  /// 反吸血：封禁时长（分钟，0 = 永久）。
+  final int banTimeMinutes;
+
   /// 是否已配置：内置引擎/自动无需连接参数恒为真（桌面开箱即用）；外接 qb
   /// 要求 [baseUrl] 非空。未配置时下载入队与完成监听均不动作。
   bool get isConfigured =>
@@ -106,6 +177,21 @@ class QbConnectionConfig {
     int? seedTimeLimitMinutes,
     double? seedRatioLimit,
     int? memoryLimitMb,
+    int? listenPort,
+    bool? enableDht,
+    bool? enableLsd,
+    bool? enableUpnp,
+    bool? enableNatpmp,
+    int? encryptionMode,
+    bool? anonymousMode,
+    int? maxActiveDownloads,
+    int? maxActiveSeeds,
+    int? maxUploadSlots,
+    bool? antiLeechEnabled,
+    bool? banProgressCheat,
+    bool? banRelativeProgressCheat,
+    int? maxIpPortCount,
+    int? banTimeMinutes,
   }) {
     return QbConnectionConfig(
       backend: backend ?? this.backend,
@@ -120,6 +206,22 @@ class QbConnectionConfig {
       seedTimeLimitMinutes: seedTimeLimitMinutes ?? this.seedTimeLimitMinutes,
       seedRatioLimit: seedRatioLimit ?? this.seedRatioLimit,
       memoryLimitMb: memoryLimitMb ?? this.memoryLimitMb,
+      listenPort: listenPort ?? this.listenPort,
+      enableDht: enableDht ?? this.enableDht,
+      enableLsd: enableLsd ?? this.enableLsd,
+      enableUpnp: enableUpnp ?? this.enableUpnp,
+      enableNatpmp: enableNatpmp ?? this.enableNatpmp,
+      encryptionMode: encryptionMode ?? this.encryptionMode,
+      anonymousMode: anonymousMode ?? this.anonymousMode,
+      maxActiveDownloads: maxActiveDownloads ?? this.maxActiveDownloads,
+      maxActiveSeeds: maxActiveSeeds ?? this.maxActiveSeeds,
+      maxUploadSlots: maxUploadSlots ?? this.maxUploadSlots,
+      antiLeechEnabled: antiLeechEnabled ?? this.antiLeechEnabled,
+      banProgressCheat: banProgressCheat ?? this.banProgressCheat,
+      banRelativeProgressCheat:
+          banRelativeProgressCheat ?? this.banRelativeProgressCheat,
+      maxIpPortCount: maxIpPortCount ?? this.maxIpPortCount,
+      banTimeMinutes: banTimeMinutes ?? this.banTimeMinutes,
     );
   }
 }
@@ -155,6 +257,15 @@ double _nonNegDouble(Object? value) {
   return (n.isFinite && n > 0) ? n : 0;
 }
 
+/// 布尔字段容错：是 bool 用之，否则（缺字段/老配置）回落 [fallback]。
+bool _boolOr(Object? value, bool fallback) => value is bool ? value : fallback;
+
+/// 加密模式容错：0..2 之间用之，否则回落首选（0）。
+int _encMode(Object? value) {
+  final int n = value is num ? value.toInt() : 0;
+  return (n >= 0 && n <= 2) ? n : 0;
+}
+
 /// 解析偏好里存的 JSON 字符串为 [QbConnectionConfig]。纯函数，容错：
 /// 空串 / 坏 JSON / 非对象一律返回 null（= 未配置）；`category` 缺失或为空
 /// 回退默认分类 [QbConnectionConfig.defaultCategory]。
@@ -182,6 +293,22 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
       seedTimeLimitMinutes: _nonNegInt(json['seedTimeLimitMinutes']),
       seedRatioLimit: _nonNegDouble(json['seedRatioLimit']),
       memoryLimitMb: _nonNegInt(json['memoryLimitMb']),
+      listenPort: _nonNegInt(json['listenPort']),
+      // 网络发现开关缺字段（老配置）→ true（保持既有默认行为）。
+      enableDht: _boolOr(json['enableDht'], true),
+      enableLsd: _boolOr(json['enableLsd'], true),
+      enableUpnp: _boolOr(json['enableUpnp'], true),
+      enableNatpmp: _boolOr(json['enableNatpmp'], true),
+      encryptionMode: _encMode(json['encryptionMode']),
+      anonymousMode: json['anonymousMode'] == true,
+      maxActiveDownloads: _nonNegInt(json['maxActiveDownloads']),
+      maxActiveSeeds: _nonNegInt(json['maxActiveSeeds']),
+      maxUploadSlots: _nonNegInt(json['maxUploadSlots']),
+      antiLeechEnabled: _boolOr(json['antiLeechEnabled'], true),
+      banProgressCheat: json['banProgressCheat'] == true,
+      banRelativeProgressCheat: json['banRelativeProgressCheat'] == true,
+      maxIpPortCount: _nonNegInt(json['maxIpPortCount']),
+      banTimeMinutes: _nonNegInt(json['banTimeMinutes']),
     );
   } catch (_) {
     return null;
@@ -204,5 +331,20 @@ String encodeQbConnectionConfig(QbConnectionConfig config) {
     'seedTimeLimitMinutes': config.seedTimeLimitMinutes,
     'seedRatioLimit': config.seedRatioLimit,
     'memoryLimitMb': config.memoryLimitMb,
+    'listenPort': config.listenPort,
+    'enableDht': config.enableDht,
+    'enableLsd': config.enableLsd,
+    'enableUpnp': config.enableUpnp,
+    'enableNatpmp': config.enableNatpmp,
+    'encryptionMode': config.encryptionMode,
+    'anonymousMode': config.anonymousMode,
+    'maxActiveDownloads': config.maxActiveDownloads,
+    'maxActiveSeeds': config.maxActiveSeeds,
+    'maxUploadSlots': config.maxUploadSlots,
+    'antiLeechEnabled': config.antiLeechEnabled,
+    'banProgressCheat': config.banProgressCheat,
+    'banRelativeProgressCheat': config.banRelativeProgressCheat,
+    'maxIpPortCount': config.maxIpPortCount,
+    'banTimeMinutes': config.banTimeMinutes,
   });
 }

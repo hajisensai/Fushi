@@ -26,7 +26,11 @@ import 'package:hibiki/utils.dart';
 /// 种子列表 / 确认推送），底部常驻「下载任务」折叠区列出既有计划。所有网络操作
 /// 容错降级为空结果 + 节内提示，不崩对话框。
 class AnimeDownloadDialog extends ConsumerStatefulWidget {
-  const AnimeDownloadDialog({super.key});
+  const AnimeDownloadDialog({super.key, this.embedded = false});
+
+  /// 内联模式：直接铺在「下载」页里（无对话框外框、无标题栏、无取消按钮），
+  /// 用户要求番剧下载直接摊在页面上而非弹窗按钮。默认 false = 独立对话框。
+  final bool embedded;
 
   @override
   ConsumerState<AnimeDownloadDialog> createState() =>
@@ -49,18 +53,30 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   // ---- 阶段 1：搜番（AniList）----
   bool _searchingAnime = false;
   bool _searchedAnime = false;
+
+  /// 搜番失败/超时（区分「搜索出错」与「真没结果」，避免超时也显示「无结果」）。
+  bool _animeSearchError = false;
   List<AniListMedia> _animeMatches = const <AniListMedia>[];
   AniListMedia? _selectedMedia;
 
   // ---- 阶段 2：选种（Nyaa）+ 字幕索引（Jimaku）----
   bool _loadingTorrents = false;
   bool _torrentsLoaded = false;
+
+  /// 选种搜索失败/超时（区分出错与真无种子）。
+  bool _torrentsError = false;
   List<NyaaTorrent> _torrents = const <NyaaTorrent>[];
   String _category = '1_0';
   bool _trustedOnly = false;
   JimakuEpisodeIndex _jimakuIndex =
       JimakuEpisodeIndex.fromFiles(const <JimakuFile>[]);
   bool _jimakuLoaded = false;
+
+  /// Jimaku 字幕搜索状态（区分：搜索中 / 缺 API key / 出错 / 已搜到/无），
+  /// 避免「没搜就说无字幕」。
+  bool _jimakuLoading = false;
+  bool _jimakuNoKey = false;
+  bool _jimakuError = false;
 
   // ---- 阶段 3：确认推送 ----
   NyaaTorrent? _selectedTorrent;
@@ -110,16 +126,21 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     setState(() {
       _searchingAnime = true;
       _searchedAnime = false;
+      _animeSearchError = false;
       _animeMatches = const <AniListMedia>[];
     });
     final AniListClient anilist = AniListClient();
     try {
-      final List<AniListMedia> media = await anilist.searchAnime(query);
+      final List<AniListMedia> media =
+          await anilist.searchAnime(query).timeout(const Duration(seconds: 20));
       if (!mounted) return;
       setState(() {
         _animeMatches = media;
         _searchedAnime = true;
       });
+    } catch (_) {
+      // 超时/网络错误：标记失败态（区分「无结果」），UI 给重试。
+      if (mounted) setState(() => _animeSearchError = true);
     } finally {
       anilist.close();
       if (mounted) setState(() => _searchingAnime = false);
@@ -167,14 +188,17 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     setState(() {
       _loadingTorrents = true;
       _torrentsLoaded = false;
+      _torrentsError = false;
     });
     final NyaaClient nyaa = NyaaClient();
     try {
-      final List<NyaaTorrent> results = await nyaa.search(
-        query,
-        category: _category,
-        filter: _trustedOnly ? '2' : '0',
-      );
+      final List<NyaaTorrent> results = await nyaa
+          .search(
+            query,
+            category: _category,
+            filter: _trustedOnly ? '2' : '0',
+          )
+          .timeout(const Duration(seconds: 20));
       final List<NyaaTorrent> sorted = List<NyaaTorrent>.of(results)
         ..sort(
             (NyaaTorrent a, NyaaTorrent b) => b.seeders.compareTo(a.seeders));
@@ -183,6 +207,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         _torrents = sorted;
         _torrentsLoaded = true;
       });
+    } catch (_) {
+      if (mounted) setState(() => _torrentsError = true);
     } finally {
       nyaa.close();
       if (mounted) setState(() => _loadingTorrents = false);
@@ -193,26 +219,54 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   /// 无 key / 无条目 / 网络失败 → 空索引（徽标显示无字幕），不阻塞选种。
   Future<void> _fetchJimaku(AniListMedia media) async {
     final String apiKey = ref.read(appProvider).jimakuApiKey.trim();
+    setState(() {
+      _jimakuLoading = true;
+      _jimakuLoaded = false;
+      _jimakuError = false;
+      _jimakuNoKey = apiKey.isEmpty;
+    });
+    // 无 key：不搜（无从搜），提示填 key，不当「无字幕」。
     if (apiKey.isEmpty) {
-      if (mounted) setState(() => _jimakuLoaded = true);
+      if (mounted) {
+        setState(() {
+          _jimakuLoading = false;
+          _jimakuLoaded = true;
+        });
+      }
       return;
     }
     final JimakuClient jimaku = JimakuClient(apiKey: apiKey);
     try {
-      final List<JimakuEntry> entries =
-          await jimaku.searchByAnilistId(media.id);
+      final List<JimakuEntry> entries = await jimaku
+          .searchByAnilistId(media.id)
+          .timeout(const Duration(seconds: 20));
       final List<JimakuFile> files = entries.isEmpty
           ? const <JimakuFile>[]
-          : await jimaku.listFiles(entries.first.id);
+          : await jimaku
+              .listFiles(entries.first.id)
+              .timeout(const Duration(seconds: 20));
       // 用户可能已换番：结果只落到仍选中的那个番上。
       if (!mounted || _selectedMedia?.id != media.id) return;
       setState(() {
         _jimakuIndex = JimakuEpisodeIndex.fromFiles(files);
         _jimakuLoaded = true;
       });
+    } catch (_) {
+      if (mounted && _selectedMedia?.id == media.id) {
+        setState(() => _jimakuError = true);
+      }
     } finally {
       jimaku.close();
+      if (mounted && _selectedMedia?.id == media.id) {
+        setState(() => _jimakuLoading = false);
+      }
     }
+  }
+
+  /// 手动重搜 Jimaku 字幕（用户填了 key / 出错后重试）。
+  Future<void> _retryJimaku() async {
+    final AniListMedia? media = _selectedMedia;
+    if (media != null) await _fetchJimaku(media);
   }
 
   void _selectCategory(String category) {
@@ -580,9 +634,35 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     }
   }
 
+  /// 出错态：一句提示 + 重试按钮（区分「出错/超时」与「真无结果」）。
+  Widget _buildErrorRetry(
+      ThemeData theme, String message, VoidCallback onRetry) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.cloud_off_outlined,
+              size: 40, color: theme.colorScheme.error),
+          const SizedBox(height: 8),
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh, size: 18),
+            label: Text(t.anime_download_retry),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAnimeResults(ThemeData theme) {
     if (_searchingAnime) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_animeSearchError) {
+      return _buildErrorRetry(
+          theme, t.anime_download_search_failed, _searchAnime);
     }
     if (_searchedAnime && _animeMatches.isEmpty) {
       return Center(child: Text(t.anime_download_no_results));
@@ -693,6 +773,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   Widget _buildTorrentResults(ThemeData theme) {
     if (_loadingTorrents) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_torrentsError) {
+      return _buildErrorRetry(
+          theme, t.anime_download_search_failed, _fetchTorrents);
     }
     if (_torrentsLoaded && _torrents.isEmpty) {
       return Center(child: Text(t.anime_download_no_results));
@@ -824,12 +908,41 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   }
 
   Widget _buildChosenSubsList(ThemeData theme) {
-    if (_chosenSubs.isEmpty) {
+    // 字幕状态区分（不再「没搜就说无字幕」）：搜索中 / 缺 key / 出错 / 空。
+    if (_jimakuLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_jimakuNoKey) {
       return Center(
         child: Text(
-          t.anime_download_no_subs,
+          t.anime_download_subs_need_key,
+          textAlign: TextAlign.center,
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.outline),
+        ),
+      );
+    }
+    if (_jimakuError) {
+      return _buildErrorRetry(
+          theme, t.anime_download_subs_failed, _retryJimaku);
+    }
+    if (_chosenSubs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              t.anime_download_no_subs,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _retryJimaku,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: Text(t.anime_download_retry),
+            ),
+          ],
         ),
       );
     }
@@ -973,6 +1086,25 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     } else {
       stage = _buildConfirmStage(theme);
     }
+
+    // 内联模式：直接铺进「下载」页（Scaffold body 给有界高度，Expanded 分配空间、
+    // 各阶段内部 ListView 正常滚动）。无外框、无标题（页头已有）、无取消。
+    if (widget.embedded) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (_qbMissing) _buildQbHintBanner(theme),
+            if (_showJimakuKeyField) _buildJimakuKeyField(),
+            Expanded(child: stage),
+            const SizedBox(height: 4),
+            _buildTasksSection(theme),
+          ],
+        ),
+      );
+    }
+
     // scrollable:false：maxHeight 给整个对话框有界高度，Flexible 正常分配空间、
     // 各阶段内部 ListView 正常滚动（同 JimakuSubtitleDialog 的 BUG-279 不变量）。
     return HibikiDialogFrame(

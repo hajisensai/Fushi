@@ -144,6 +144,53 @@ class HibikiTorrentBindings {
   late final _ht_apply_memory_settings = _ht_apply_memory_settingsPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int, int)>();
 
+  /// 应用会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
+  int ht_apply_session_settings(
+    ffi.Pointer<ffi.Void> session,
+    int listen_port,
+    int enable_dht,
+    int enable_lsd,
+    int enable_upnp,
+    int enable_natpmp,
+    int enc_policy,
+    int anonymous_mode,
+    int active_downloads,
+    int active_seeds,
+    int max_upload_slots,
+  ) {
+    return _ht_apply_session_settings(
+        session,
+        listen_port,
+        enable_dht,
+        enable_lsd,
+        enable_upnp,
+        enable_natpmp,
+        enc_policy,
+        anonymous_mode,
+        active_downloads,
+        active_seeds,
+        max_upload_slots);
+  }
+
+  late final _ht_apply_session_settingsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(
+              ffi.Pointer<ffi.Void>,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int)>>('ht_apply_session_settings');
+  late final _ht_apply_session_settings =
+      _ht_apply_session_settingsPtr.asFunction<
+          int Function(ffi.Pointer<ffi.Void>, int, int, int, int, int, int, int,
+              int, int, int)>();
+
   /// 添加磁力；返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_add_magnet(
     ffi.Pointer<ffi.Void> session,

@@ -402,6 +402,38 @@ class EmbeddedTorrentSession {
         1;
   }
 
+  /// 应用会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
+  /// [encPolicy] 0=首选 1=强制 2=禁用；[listenPort]/[activeDownloads]/
+  /// [activeSeeds]/[maxUploadSlots] <=0 保持默认。1 成功 0 失败。
+  bool applySessionSettings({
+    int listenPort = 0,
+    bool enableDht = true,
+    bool enableLsd = true,
+    bool enableUpnp = true,
+    bool enableNatpmp = true,
+    int encPolicy = 0,
+    bool anonymousMode = false,
+    int activeDownloads = 0,
+    int activeSeeds = 0,
+    int maxUploadSlots = 0,
+  }) {
+    if (isClosed) return false;
+    return _b.ht_apply_session_settings(
+          _session,
+          listenPort,
+          enableDht ? 1 : 0,
+          enableLsd ? 1 : 0,
+          enableUpnp ? 1 : 0,
+          enableNatpmp ? 1 : 0,
+          encPolicy,
+          anonymousMode ? 1 : 0,
+          activeDownloads,
+          activeSeeds,
+          maxUploadSlots,
+        ) ==
+        1;
+  }
+
   /// 上传模式开关（做种/上传总开关）。[infoHash] 空串 = 对所有种子生效；
   /// [enabled] false = 停止上传但保持连接与下载（libtorrent upload_mode，
   /// 「只下不上」的正规做法；限速设 0 是不限而非禁传）。1 成功 0 失败。

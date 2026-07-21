@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:http/http.dart' as http;
@@ -266,7 +267,9 @@ class NyaaClient {
       );
       final http.Response res = await _client.get(uri);
       if (res.statusCode != 200) return const <NyaaTorrent>[];
-      return parseNyaaRss(res.body);
+      // Nyaa RSS 是 UTF-8 但常不声明 charset，http 的 res.body 会按 latin1 解码 →
+      // 日文标题变乱码（如「ソ・ラ・ノ・ヲ・ト」→「Soã»Ra...」）。显式按 UTF-8 解码。
+      return parseNyaaRss(utf8.decode(res.bodyBytes, allowMalformed: true));
     } catch (_) {
       return const <NyaaTorrent>[];
     }

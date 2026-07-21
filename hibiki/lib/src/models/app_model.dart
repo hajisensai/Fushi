@@ -2777,6 +2777,10 @@ class AppModel with ChangeNotifier {
       mem,
       connectionsLimit: config.maxConnections > 0 ? 0 : mem.connectionsLimit,
     );
+    // 会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
+    host.applySessionSettings(config);
+    // 反吸血开关/阈值（用户可调）。
+    host.applyAntiLeechConfig(config);
     // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
     host.setUploadPolicy(config);
   }

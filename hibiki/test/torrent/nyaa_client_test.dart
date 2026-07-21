@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -258,6 +260,34 @@ void main() {
       expect(await client.search('frieren'), isEmpty);
       expect(captured!.queryParameters['c'], '1_0');
       expect(captured!.queryParameters['f'], '0');
+      client.close();
+    });
+
+    test('UTF-8 无 charset 响应按 UTF-8 解码（日文标题不乱码）', () async {
+      // Nyaa 实际返回 UTF-8 字节但常不声明 charset；用 Response.bytes 模拟。
+      // 旧实现走 res.body(latin1) 会把「ソ・ラ・ノ・ヲ・ト」变成「Soã»...」。
+      const String jpTitle =
+          '[ReinForce] ソ・ラ・ノ・ヲ・ト (BDRip 1920x1080 x264 FLAC)';
+      const String rss = '''
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa">
+  <channel><item>
+    <title>$jpTitle</title>
+    <link>https://nyaa.si/download/9.torrent</link>
+    <guid>https://nyaa.si/view/9</guid>
+    <nyaa:infoHash>abcdef0123456789abcdef0123456789abcdef01</nyaa:infoHash>
+    <nyaa:seeders>1</nyaa:seeders>
+  </item></channel>
+</rss>''';
+      final MockClient mock = MockClient((http.Request req) async {
+        // bytes 构造 = UTF-8 字节 + 无 charset 头（正是踩坑场景）。
+        return http.Response.bytes(utf8.encode(rss), 200);
+      });
+      final NyaaClient client = NyaaClient(client: mock);
+      final List<NyaaTorrent> items = await client.search('sora');
+      expect(items, hasLength(1));
+      expect(items.single.title, jpTitle);
+      expect(items.single.title.contains('ソ・ラ・ノ・ヲ・ト'), isTrue);
       client.close();
     });
   });
