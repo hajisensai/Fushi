@@ -2212,5 +2212,6 @@
   "sync_google_drive_hoshi_compat": "Share progress with Hoshi / ッツ",
   "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
   "eink_mode": "E-ink mode",
-  "eink_mode_hint": "Pure black-and-white theme with no animations and line-style highlights, for e-ink displays"
+  "eink_mode_hint": "Pure black-and-white theme with no animations and line-style highlights, for e-ink displays",
+  "update_mac_install_incomplete_message": "The update could not be applied, so Hibiki is still on the previous version. You can retry the update, or download the latest release manually."
 }
