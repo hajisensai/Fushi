@@ -132,6 +132,24 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // BUG-953：games 是保活 tab，切走时用 Offstage 隐藏（**不触发 deactivate**），但 home_page
+    // 同步把 TickerMode 关掉。用 TickerMode 作可见性信号：tab 不可见时把插在 root Overlay 的
+    // 查词浮层置 inert 并重建（收起为 SizedBox），防止弹窗/barrier 跨 tab 残留遮挡新 tab；
+    // 重新可见时恢复，保留用户查词浮层状态。仅 Offstage 隐藏这一路 deactivate 覆盖不到。
+    final bool nextInert = !TickerMode.of(context);
+    if (nextInert != _overlayInert) {
+      _overlayInert = nextInert;
+      _popupOverlayEntry?.markNeedsBuild();
+    }
+  }
+
+  /// 测试可见：查词浮层当前是否被置为 inert（隐藏 tab / 失活时收起）。BUG-953 守卫用。
+  @visibleForTesting
+  bool get debugOverlayInert => _overlayInert;
+
+  @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final GalHookSessionState sessionState = _session.state;
     if (!sessionState.externalWindowMode ||

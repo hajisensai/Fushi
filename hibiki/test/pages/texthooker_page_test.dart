@@ -183,6 +183,42 @@ void main() {
     );
   });
 
+  testWidgets('保活 tab 被 TickerMode 隐藏时查词浮层置 inert，恢复可见时复原（BUG-953）',
+      (WidgetTester tester) async {
+    final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+    addTearDown(visible.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ValueListenableBuilder<bool>(
+              valueListenable: visible,
+              builder: (BuildContext context, bool v, _) =>
+                  TickerMode(enabled: v, child: const TexthookerPage()),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    bool inert() =>
+        (tester.state(find.byType(TexthookerPage)) as dynamic).debugOverlayInert
+            as bool;
+
+    expect(inert(), isFalse, reason: '可见时查词浮层不应 inert');
+
+    visible.value =
+        false; // 等价于切到别的 home tab（games 被 Offstage 隐藏 + TickerMode off）
+    await tester.pump();
+    expect(inert(), isTrue,
+        reason: 'tab 隐藏时必须把 root Overlay 里的查词浮层收起，防跨 tab 残留遮挡');
+
+    visible.value = true;
+    await tester.pump();
+    expect(inert(), isFalse, reason: '重新可见时恢复浮层');
+  });
+
   group('injectActiveSentence（BUG-954：fallback 制卡带上活跃台词）', () {
     test('fields 无 sentence + 有活跃台词 → 注入活跃台词，其它字段不变', () {
       final Map<String, String> r = injectActiveSentence(

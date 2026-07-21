@@ -40,7 +40,7 @@
 | [BUG-956](bugs/BUG-956-gal-mining-serial-queue-poisoning.md) | ✅ | ✅ | galgame 制卡串行队列异常毒化后所有后续制卡永久挂起 |
 | [BUG-955](bugs/BUG-955-gal-mining-historical-line-media-mismatch.md) | ✅ | ✅ | 历史行制卡错配当前语音与当前画面且无降级标记 |
 | [BUG-954](bugs/BUG-954-texthooker-mine-sentence-empty-non-windows.md) | ✅ | ✅ | 非外部窗口模式制卡 sentence 字段恒空 |
-| [BUG-953](bugs/BUG-953-texthooker-popup-overlay-cross-tab-residue.md) | 🚧 | 🚧 | games tab 保活时查词弹窗与 barrier 跨 tab 残留遮挡 |
+| [BUG-953](bugs/BUG-953-texthooker-popup-overlay-cross-tab-residue.md) | ✅ | ✅ | games tab 保活时查词弹窗与 barrier 跨 tab 残留遮挡 |
 | [BUG-952](bugs/BUG-952-texthooker-thread-dropdown-value-mismatch.md) | ✅ | ✅ | texthooker 线程下拉 value 与动态 items 失配触发 debug 断言红屏 |
 | [BUG-951](bugs/BUG-951-gal-overlay-click-through-cross-process.md) | 🚧 | 🚧 | Hook 浮窗鼠标穿透 HTTRANSPARENT 跨进程不生效存疑须真机验证 |
 | [BUG-950](bugs/BUG-950-gal-hook-session-stale-line-bleed.md) | ✅ | ✅ | galgame hook 会话重启后旧行串入新会话且新文本被当重复静默丢弃 |
