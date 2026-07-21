@@ -13,6 +13,33 @@
 
 ---
 
+## 阶段一览（先扫这张表 + 依赖图，再读细节）
+
+| 阶段 | 一句话目标 | 主要产出 | 落在哪个仓 | 验证门 |
+|---|---|---|---|---|
+| **P0** | 建机器可读真相源 | `engine-support.yaml` + yaml→md 生成器 | voice-hook | 生成器可跑、矩阵与 §1 基线一致 |
+| **P1** | 无行为变化拆 `dll_main.cpp` | adapter 契约 + registry，各引擎逻辑搬进 adapter | voice-hook | CTest 全绿、零行为变化 |
+| **P2** | 收敛 LunaHook 集成 | 版本化稳定 IPC + ABI 桥接层/守卫 + Hook Code 数据驱动 | voice-hook→hibiki | ABI 契约测试、导出守卫、回放测试 |
+| **P3** | probe/new/replay 流水线 | 统一 `tool/galhook.ps1` + `docs/agent/galgame-hooking.md` | voice-hook + hibiki | 三条命令可跑 + 自动化测试 |
+| **P4** | 按共享层优先扩音频 | 泛化 FFmpeg / 子进程跟随 / 通用资源事件 | voice-hook | 真实样本验证、回调零阻塞 |
+| **P5** | 首批引擎验证 | RealLive/VisualArt's 等 profile+adapter+fixture | 两仓 | fixture + 真实游戏真机验证留证据 |
+
+**铁律**：每阶段独立可审查提交；**先无行为变化重构（P1），再扩能力（P3+），两者绝不混进同一提交**。
+
+**依赖顺序**（横向可并行，纵向有依赖）：
+
+```
+P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay 流水线) ──► P5 (首批引擎验证)
+                                  └─► P4 (共享层音频扩展) ──────────────┘
+              P2 (LunaHook 收敛) ──► P3   （P2 与 P1 可并行，都为 P3 提供稳定接缝）
+```
+
+- P0 是所有阶段的事实底座，**必须最先落**。
+- P1 与 P2 可并行（一个管音频 adapter 拆分，一个管文本 IPC），都在为 P3 铺稳定接缝。
+- P3 是「降低新增成本」的核心交付；P4/P5 依赖 P1+P3 的 adapter 骨架。
+
+---
+
 ## 0. 开工前必读 & 纪律（指针，不重复）
 - hibiki 侧：读根 `CLAUDE.md` + `hibiki/CLAUDE.md` + 本目录 `design.md` / `handoff.md` + `docs/agent/build.md`。
   native 侧：读 hibiki-voice-hook 仓的 README + CMake。
@@ -111,7 +138,10 @@
   文本能力（Luna 自动识别 / PC Hooks / 专用 Hook Code / codepage / 线程选择提示）；音频能力 + 优先级；
   已验证游戏/版本/哈希/证据/当前状态/已知限制；对应 adapter/fixture/测试路径。
 - 生成器：yaml → 可读支持矩阵 md。**禁止再手工维护多份互相矛盾的状态表。**
+- 引擎名录/家族/别名可参考 Galgame-Engine-Collect 的 `table.md`/`unpack.md` 离线播种（见 §4）；识别签名
+  （exe/PE imports/资源扩展名）必须来自真实样本。
 - 用 §1 真机基线填 Siglus/KiriKiriZ/XAudio2/Unity 真实状态，消除 handoff 与旧设想口径不一致。
+- **完成定义**：yaml 单一真相源存在且能自动生成矩阵 md；Siglus/KiriKiriZ/XAudio2/Unity 状态与 §1 基线逐条一致；本阶段零代码行为变化。
 
 ### Phase 1 — 无行为变化拆分 `dll_main.cpp`（在 hibiki-voice-hook）
 - 统一 adapter 契约：`probe`（是否适用）/ `install` / `capabilities`（text, resourceAudio, pcmAudio）/
@@ -119,6 +149,7 @@
 - 建中心 registry；主 worker 只负责生命周期 + 注册调度。把现有 Unity/Siglus/KiriKiri/Ren'Py/XAudio2/
   DirectSound/文本渲染逻辑逐个搬进 adapter，**先做到零行为变化并过 CTest**，再进 Phase 3+。
 - 用模块加载通知 / 统一 LoadLibrary 观察机制替代硬编码重复轮询。
+- **完成定义**：adapter 契约 + registry 落地，各引擎逻辑全部搬进独立 adapter，主 worker 只剩生命周期/注册调度；CTest 全绿且行为与拆分前逐项一致（零行为变化，不与 P3+ 能力扩展同提交）。
 
 ### Phase 2 — 收敛 LunaHook 集成（在 hibiki-voice-hook，向 hibiki 输出稳定 IPC）
 - LunaHook 仍是主文本来源（复用这一开源文本提取工具，不重造上游引擎文本能力）。把对特定 LunaHost ABI 的
@@ -126,6 +157,7 @@
   （扩 `luna_symcheck`）；上游版本同步 + 差异检查工具；ABI 契约测试；Hook Code 数据驱动配置；用户导入/
   导出/保存 Hook Code；配置**按 exe/module 哈希匹配（禁止仅依赖安装路径）**；文本线程目录/过滤/手动 +
   自动选择的回放测试。
+- **完成定义**：LunaHost ABI 收进独立可升级桥接层并有版本 + 导出守卫；Hook Code 数据驱动、按 exe/module 哈希匹配（非安装路径）；ABI 契约测试 + 文本线程选择回放测试通过；向 hibiki 输出的 IPC 已版本化。
 
 ### Phase 3 — probe/new/replay 流水线（统一命令 `tool/galhook.ps1`）
 - `probe <exe>`：采集脱敏特征（目录/PE imports/进程树/加载模块/Luna 线程目录/Hook Code/资源读取事件/
@@ -136,6 +168,7 @@
   资源晚到/降级顺序/会话清理。
 - 写 `docs/agent/galgame-hooking.md`（用户报告 → probe → 定位 → 实现 → 离线测试 → 真机验收 → 更新矩阵
   全流程），从 CLAUDE.md 操作索引链接。
+- **完成定义**：probe/new/replay 三条命令经 `tool/galhook.ps1` 可实际执行且各有自动化测试；probe 默认不带受版权内容；new 不绕过编译/测试守卫；`docs/agent/galgame-hooking.md` 写好并从 CLAUDE.md 索引链接。
 
 ### Phase 4 — 按共享层优先扩音频（优先实现覆盖多引擎的公共适配，不优先堆游戏专属 RVA）
 - 优先级：原始逐句资源 → 解码器/音频中间件 → 引擎托管 API → XAudio2/DirectSound source → 进程 Loopback。
@@ -143,6 +176,7 @@
   Unity Mono 支持对齐现有 IL2CPP AudioClip/TMP/配对；通用 OGG/WAV/Opus/FLAC 资源事件识别 + 安全重组；
   按真实样本评估 FMOD/BASS/SDL_mixer/CRI；所有回调保持零阻塞（固定大小事件或有上限拷贝，IO/解析/转码
   全进工作线程）。
+- **完成定义**：FFmpeg 识别与子进程跟随不再只针对单一旧版 Ren'Py；通用资源事件识别按优先级生效；所有音频回调保持零阻塞（固定/上限拷贝，IO/解析/转码全进工作线程），并有真实样本证据。
 
 ### Phase 5 — 首批引擎验证（按复用率，不逐个硬写）
 1. **RealLive / 旧 VisualArt's**：复用 Siglus OVK 经验；支持并测试 OVK，评估 NWK/KOE/NWA；资源格式参考
@@ -151,28 +185,32 @@
 3. **Unity Mono**：文本/AudioClip/资源路径/配对，与 IL2CPP 共用上层事件协议。
 4. **Artemis / CatSystem / YU-RIS**：先 profile + 通用资源层探测，按真实证据再决定是否加 PFS/INT/YPF 专用 adapter。
 
+**完成定义**：至少 RealLive/VisualArt's 一批完成 profile + adapter + fixture + native 测试 + 上层配对测试，并按原始路径真机验证留证据；缺样本的引擎显式标「未真机验证」，不因格式相似宣称兼容。
+
 ---
 
 ## 4. 许可（硬约束）
 - 资源格式实现优先参考 **GARbro（MIT）**，保留必要署名和许可证；文本实现优先复用 **LunaHook（GPLv3）**，
   遵守 Hibiki 现有隔离分发和许可证要求。
-- **Galgame-Engine-Collect 仅作引擎分类/研究线索；不得把其 CC BY-NC-SA 的 crass `.cui` 二进制或受限数据
-  直接 vendoring、改编或随 Hibiki 分发。**
+- **Galgame-Engine-Collect（`github.com/2439905184/Galgame-Engine-Collect`，CC BY-NC-SA 4.0）** 只当**离线研究线索**：
+  从 `table.md`/`unpack.md` 取引擎名录/家族/「引擎→解包器」提示播种 `engine-support.yaml`，README 指向的开源提取器
+  （Inori/`FuckGalEngine` 等）是更直接的代码线索。**其二进制/表格/PDF 不 vendoring、不随 Hibiki 分发**（许可与 GPLv3
+  分发不兼容）；实际资源格式代码仍以 **GARbro（MIT）/ FuckGalEngine** 为准。
 
 ---
 
 ## 5. 完成标准（逐条可验，全满足才可标记完成）
-- [ ] 引擎支持矩阵有唯一机器可读真相源（engine-support.yaml）并可自动生成文档。
-- [ ] 现有采集能力已迁入 adapter registry，主 worker 不再直接堆各引擎实现。
-- [ ] probe/new/replay 三条工作流可实际执行并有自动化测试。
-- [ ] LunaHost ABI 收进可升级桥接边界，有版本 + 导出守卫。
-- [ ] 至少完成 RealLive/VisualArt's 首批适配 + fixture + native 测试 + 上层配对测试。
-- [ ] FFmpeg 版本识别与子进程跟随不再只针对单一旧版 Ren'Py。
-- [ ] 新增一个普通引擎的主要工作可限于 profile + 独立 adapter + fixture，不需改主 worker 主干。
-- [ ] hibiki-voice-hook x86/x64 native 构建 + CTest 通过；hibiki 侧 `dart format` + `flutter analyze`
+- [ ] **[P0]** 引擎支持矩阵有唯一机器可读真相源（engine-support.yaml）并可自动生成文档。
+- [ ] **[P1]** 现有采集能力已迁入 adapter registry，主 worker 不再直接堆各引擎实现。
+- [ ] **[P3]** probe/new/replay 三条工作流可实际执行并有自动化测试。
+- [ ] **[P2]** LunaHost ABI 收进可升级桥接边界，有版本 + 导出守卫。
+- [ ] **[P5]** 至少完成 RealLive/VisualArt's 首批适配 + fixture + native 测试 + 上层配对测试。
+- [ ] **[P4]** FFmpeg 版本识别与子进程跟随不再只针对单一旧版 Ren'Py。
+- [ ] **[P1+P3]** 新增一个普通引擎的主要工作可限于 profile + 独立 adapter + fixture，不需改主 worker 主干。
+- [ ] **[全阶段]** hibiki-voice-hook x86/x64 native 构建 + CTest 通过；hibiki 侧 `dart format` + `flutter analyze`
       + `flutter test` 通过。
-- [ ] 所有宣称"支持/修好"的真实引擎按仓库规则走原始路径真机验证并留证据；缺样本能力显式标未真机验证。
-- [ ] 每阶段独立提交；最终报告含各提交哈希、验证命令、真机证据、未验证项、后续候选
+- [ ] **[全阶段]** 所有宣称"支持/修好"的真实引擎按仓库规则走原始路径真机验证并留证据；缺样本能力显式标未真机验证。
+- [ ] **[全阶段]** 每阶段独立提交；最终报告含各提交哈希、验证命令、真机证据、未验证项、后续候选
       （含 BUG-961 复发根源：把 `voice-hook-helper.yml` 放默认分支或改触发方式）。
 
 ---
