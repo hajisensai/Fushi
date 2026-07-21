@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 952 条。点号进各自文件。
+> 共 953 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-988](bugs/BUG-988-interconnect-upload-toggles.md) | ✅ | ✅ | 互联解耦后失去「独立控制上不上传到互联对端」的能力 |
 | [BUG-971](bugs/BUG-971-ankiconnect-host-scheme.md) | ✅ | ✅ | AnkiConnect 主机字段吞掉 http:// 变成 http: |
 | [BUG-970](bugs/BUG-970-reading-goal-first-set-no-entry.md) | ✅ | ✅ | 统计页每日/每周目标从未设置时无任何设置入口 |
 | [BUG-969](bugs/BUG-969-reader-settings-sheet-120fps.md) | ✅ | ✅ | 阅读设置抽屉滚动与拖动跑不满120fps |

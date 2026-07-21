@@ -2210,5 +2210,15 @@
   "browser_extension_server_on": "Lookup server on",
   "browser_extension_server_off": "Lookup server off",
   "sync_google_drive_hoshi_compat": "Share progress with Hoshi / ッツ",
-  "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in."
+  "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
+  "interconnect_upload_section": "Upload to interconnect peer",
+  "interconnect_upload_section_footer": "Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.",
+  "interconnect_upload_content": "Upload book files",
+  "interconnect_upload_content_hint": "Sync this device's books and reading content up to the interconnect peer.",
+  "interconnect_upload_dictionary": "Upload dictionaries",
+  "interconnect_upload_dictionary_hint": "Sync this device's dictionaries up to the interconnect peer.",
+  "interconnect_upload_audiobook_files": "Upload audiobook files",
+  "interconnect_upload_audiobook_files_hint": "Sync this device's audiobook audio and subtitle packages up to the interconnect peer (large).",
+  "interconnect_upload_video_files": "Upload video files",
+  "interconnect_upload_video_files_hint": "Sync this device's local video files up to the interconnect peer (large)."
 }
