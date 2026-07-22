@@ -194,6 +194,9 @@ extension _VideoDanmaku on _VideoHibikiPageState {
       );
     } catch (e) {
       debugPrint('[VideoDanmaku] manual bind failed: $e');
+      // UI 巡检 PR-4：失败给可见反馈（此前只 debugPrint，用户选完集面板不关、
+      // 弹幕不出现、零提示）。原始异常只留日志，不进 UI。
+      _showOsd(t.video_danmaku_manual_bind_failed, icon: Icons.error_outline);
     } finally {
       client.close();
     }

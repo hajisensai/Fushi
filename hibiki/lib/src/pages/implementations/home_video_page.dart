@@ -2122,12 +2122,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 概览用短日期（`M-dd`；跨年补年份）。无 intl 依赖的确定性格式。
+  /// 概览用短日期（跨年补年份）。UI 巡检 PR-4：走 [MaterialLocalizations] 随
+  /// locale 本地化（此前手拼 `M-dd`，任何 locale 都是同一种破折号格式）。
   String _formatOverviewDate(DateTime at) {
-    final DateTime now = DateTime.now();
-    final String dd = at.day.toString().padLeft(2, '0');
-    if (at.year == now.year) return '${at.month}-$dd';
-    return '${at.year}-${at.month}-$dd';
+    final MaterialLocalizations localizations =
+        MaterialLocalizations.of(context);
+    if (at.year == DateTime.now().year) {
+      return localizations.formatShortMonthDay(at);
+    }
+    return localizations.formatShortDate(at);
   }
 
   /// 本地视频区的 sliver 列表：空库 / 筛选无结果时是占满剩余空间的提示；否则
@@ -2460,49 +2463,32 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               fit: StackFit.expand,
               children: <Widget>[
                 _buildRemoteVideoCover(video),
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: ref
-                          .watch(interconnectDownloadManagerProvider)
-                          .isRunning(video.id)
-                      ? RemoteDownloadProgressBadge(
-                          key: ValueKey<String>(
-                              'remote_video_downloading_$safeKey'),
-                          progress: ref
-                              .watch(interconnectDownloadManagerProvider)
-                              .progressFor(video.id),
-                          tooltip: t.remote_video_downloading,
-                        )
-                      : IconButton.filledTonal(
-                          key: ValueKey<String>(
-                              'remote_video_download_$safeKey'),
-                          tooltip: t.remote_video_download,
-                          iconSize: 18,
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.download_outlined),
-                          onPressed: () => _downloadRemote(video),
-                        ),
-                ),
-                if (video.hasSubtitle)
+                // UI 巡检 PR-4：撤掉封面内嵌下载 IconButton——它是卡内嵌套焦点目标
+                // （违反 hero 卡「无独立按钮」纪律，见 [_buildContinueHero]），且热区
+                // <48dp。下载动作收敛到长按 / 右键面板（[_showRemoteVideoDialog] 的
+                // 「下载」快捷动作，云视频短按卡片本体即下载）。下载进行中仍在原位
+                // 显示纯展示的进度徽章（非交互，无焦点问题）。
+                if (ref
+                    .watch(interconnectDownloadManagerProvider)
+                    .isRunning(video.id))
                   Positioned(
                     top: 6,
-                    left: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.62),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.subtitles_outlined,
-                        size: 14,
-                        color: Colors.white,
-                      ),
+                    right: 6,
+                    child: RemoteDownloadProgressBadge(
+                      key:
+                          ValueKey<String>('remote_video_downloading_$safeKey'),
+                      progress: ref
+                          .watch(interconnectDownloadManagerProvider)
+                          .progressFor(video.id),
+                      tooltip: t.remote_video_downloading,
                     ),
+                  ),
+                // 字幕角标收敛到共享 [CoverBadge]（UI 巡检 PR-4，PR-0 组件）。
+                if (video.hasSubtitle)
+                  const Positioned(
+                    top: 6,
+                    left: 6,
+                    child: CoverBadge(icon: Icons.subtitles_outlined),
                   ),
                 // TODO-885: 远端播放列表集数角标（与本地卡同款，左下避开右上字幕/下载）。
                 if (video.isPlaylist)
@@ -2547,14 +2533,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final String safeKey = _safeRemoteKey(video.id);
     final String? coverPath = video.coverPath;
     if (coverPath != null && File(coverPath).existsSync()) {
-      return Image.file(
-        File(coverPath),
-        key: ValueKey<String>('remote_video_cover_$safeKey'),
-        // TODO-616 phase C: 视频封面是 16:9（1.78）源，封面卡槽比它更窄
-        // （约 1.3-1.55），BoxFit.cover 会裁掉左右。改用 contain 让整帧完整
-        // 显示，上下留少量空带 = 用户要的「完整显示」。
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _coverPlaceholder(),
+      // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：封面槽位现在是精确
+      // 16:9（AspectRatio），标准 16:9 封面 contain 即铺满；保留 contain 是为非
+      // 16:9 源（竖版海报等）完整显示不裁切，露出的空带由 [_coverBacking] 垫
+      // surfaceContainer 衬底（不再透出卡片底色的突兀白/黑边）。
+      return _coverBacking(
+        Image.file(
+          File(coverPath),
+          key: ValueKey<String>('remote_video_cover_$safeKey'),
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _coverPlaceholder(),
+        ),
       );
     }
     final String? coverUrl = video.coverUrl;
@@ -2563,32 +2552,40 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final RemoteCoverFetcher? fetcher =
         remoteCoverFetcherFor(_remoteVideoClient);
     if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
-      return Image(
-        // BUG-847：按稳定 video.id 磁盘缓存（非易变 coverUrl），冷启动/滚动不重下。
-        image: RemoteCoverImage(coverUrl, fetcher, cacheKey: video.id),
-        key: ValueKey<String>('remote_video_cover_$safeKey'),
-        // TODO-616 phase C: 同上，远端云视频封面也用 contain 完整显示不裁切。
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _coverPlaceholder(),
+      return _coverBacking(
+        Image(
+          // BUG-847：按稳定 video.id 磁盘缓存（非易变 coverUrl），冷启动/滚动不重下。
+          image: RemoteCoverImage(coverUrl, fetcher, cacheKey: video.id),
+          key: ValueKey<String>('remote_video_cover_$safeKey'),
+          // 非 16:9 源 contain 完整显示，同上衬底。
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _coverPlaceholder(),
+        ),
       );
     }
     return _coverPlaceholder();
   }
 
+  /// 封面衬底（UI 巡检 PR-4）：contain 的非 16:9 封面在 16:9 槽位里露出的空带
+  /// 垫 surfaceContainer（与 [_coverPlaceholder] 同色），本地 / 远端卡共用。
+  Widget _coverBacking(Widget cover) {
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      child: cover,
+    );
+  }
+
   String _safeRemoteKey(String id) =>
       id.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
-  /// 云角标 ☁ 视觉：半透明黑底胶囊 + 白色云图标（与字幕/集数徽章同款）。多端库
-  /// 联合视图占位卡的「远端 / 未下载」标识（spec §2.1）。带稳定 key 供 widget 测试定位。
+  /// 云角标 ☁：共享 [CoverBadge]（UI 巡检 PR-4 收敛，与字幕/集数徽章同款视觉）。
+  /// 多端库联合视图占位卡的「远端 / 未下载」标识（spec §2.1）。带稳定 key 供
+  /// widget 测试定位。
   Widget _remoteVideoCloudBadge(String safeKey) {
-    return Container(
+    return CoverBadge(
       key: ValueKey<String>('remote_video_cloud_badge_$safeKey'),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Icon(Icons.cloud_outlined, size: 13, color: Colors.white),
+      icon: Icons.cloud_outlined,
+      iconSize: 13,
     );
   }
 
@@ -2639,6 +2636,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           icon: Icons.bar_chart_outlined,
           onTap: _openStatistics,
         ),
+        // UI 巡检 PR-4：桌面无触屏下拉手势，给「强制刷新远端清单」一个鼠标可达
+        // 的显式入口（与下拉刷新同一汇聚点 [_pullToRefresh]，失败提示一致）。
+        HibikiIconButton(
+          key: const ValueKey<String>('home_video_refresh'),
+          tooltip: t.refresh,
+          label: t.refresh,
+          icon: Icons.refresh,
+          onTap: () => unawaited(_pullToRefresh()),
+        ),
       ],
     );
   }
@@ -2682,8 +2688,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 展示远端视频的基本元数据（标题 + 是否含字幕）。纯信息弹窗。
+  /// 展示远端视频的基本元数据（标题 + 大小 + 字幕有无）。纯信息弹窗。
+  ///
+  /// UI 巡检 PR-4：此前只有「含字幕」一条且无字幕时正文整块为空（弹窗只剩标题，
+  /// 像坏了）。补文件大小行（host 清单带 sizeBytes 时），字幕改为显式两态。
   void _showRemoteVideoInfo(RemoteVideoInfo video) {
+    final int? sizeBytes = video.sizeBytes;
     showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
@@ -2692,7 +2702,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            if (video.hasSubtitle) Text(t.remote_video_info_has_subtitle),
+            if (sizeBytes != null && sizeBytes > 0)
+              Text(
+                t.remote_video_info_size(
+                  size: formatRemoteVideoSize(sizeBytes),
+                ),
+              ),
+            Text(
+              video.hasSubtitle
+                  ? t.remote_video_info_has_subtitle
+                  : t.remote_video_info_no_subtitle,
+            ),
           ],
         ),
         actions: <Widget>[
@@ -2757,22 +2777,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     ref.invalidate(allTagsProvider);
   }
 
+  /// 空库占位（UI 巡检 PR-4）：收敛到共享 [HibikiPlaceholderMessage] 骨架并补
+  /// 「导入视频」CTA——此前只有图标 + 一句话，新用户没有下一步动作入口。
   Widget _buildEmpty() {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.movie_outlined, size: 56, color: colors.onSurfaceVariant),
-          const SizedBox(height: 12),
-          Text(
-            t.video_library_empty,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: colors.onSurfaceVariant),
-          ),
-        ],
+    return HibikiPlaceholderMessage(
+      icon: Icons.movie_outlined,
+      message: t.video_library_empty,
+      action: FilledButton.tonalIcon(
+        key: const ValueKey<String>('home_video_empty_import'),
+        onPressed: () => unawaited(_openImport()),
+        icon: const Icon(Icons.add),
+        label: Text(t.video_import_action),
       ),
     );
   }
@@ -2932,7 +2947,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               fit: StackFit.expand,
               children: <Widget>[
                 _buildCover(book),
-                if (tags.isNotEmpty)
+                // UI 巡检 PR-4：多选态勾选框占左上角（同为 top:6,left:6），标签层
+                // 让位隐藏——此前两层同角重叠，勾选框压在标签 chip 上两者都花。
+                if (tags.isNotEmpty && !showSelection)
                   Positioned(
                     top: 6,
                     left: 6,
@@ -3160,29 +3177,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 播放列表角标：右上角半透明胶囊「▶ N集」，与单视频卡一眼区分（C 需求②）。
+  /// 播放列表角标：半透明胶囊「▶ N集」，与单视频卡一眼区分（C 需求②）。
+  /// UI 巡检 PR-4：收敛到共享 [CoverBadge]（PR-0 组件，黑@0.6 圆角10 白图标）。
   Widget _buildPlaylistBadge(int episodeCount) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.62),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          const Icon(Icons.playlist_play, size: 14, color: Colors.white),
-          const SizedBox(width: 3),
-          Text(
-            t.video_playlist_episodes(count: episodeCount),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+    return CoverBadge(
+      icon: Icons.playlist_play,
+      label: t.video_playlist_episodes(count: episodeCount),
     );
   }
 
@@ -3214,14 +3214,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
       return _coverPlaceholder();
     }
-    return Image.file(
-      File(cover),
-      // TODO-616 phase C: 本地视频封面同样用 contain（封面卡槽比 16:9 源更窄，
-      // cover 会裁左右），完整显示不裁切。
-      fit: BoxFit.contain,
-      // BUG-959: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
-      cacheWidth: kLocalCoverDecodePixelWidth,
-      errorBuilder: (_, __, ___) => _coverPlaceholder(),
+    // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：槽位现在是精确 16:9，
+    // 标准封面 contain 即铺满；保留 contain 为非 16:9 源完整显示，空带走
+    // [_coverBacking] 的 surfaceContainer 衬底。
+    return _coverBacking(
+      Image.file(
+        File(cover),
+        fit: BoxFit.contain,
+        // BUG-959: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
+        cacheWidth: kLocalCoverDecodePixelWidth,
+        errorBuilder: (_, __, ___) => _coverPlaceholder(),
+      ),
     );
   }
 
@@ -3235,6 +3238,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       ),
     );
   }
+}
+
+/// 远端视频信息弹窗的文件大小格式化（UI 巡检 PR-4）：1024 进制 B/KB/MB/GB，
+/// 保留 1 位小数（B 档不带小数）。纯函数，测试同源。
+String formatRemoteVideoSize(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  const List<String> units = <String>['KB', 'MB', 'GB'];
+  double value = bytes / 1024;
+  int unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return '${value.toStringAsFixed(1)} ${units[unitIndex]}';
 }
 
 /// 视频批量打标签的三态意图：保持不变 / 添加该标签 / 移除该标签。

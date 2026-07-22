@@ -1027,7 +1027,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         (_subtitleListWidthDrag ?? (storedWidth > 0 ? storedWidth : autoWidth))
             .clamp(minPanelWidth, maxPanelWidth);
     return AnimatedSize(
-      duration: const Duration(milliseconds: 200),
+      // eink 下归零（墨水屏残影，UI 巡检 PR-4），与剧集侧栏同款。
+      duration: einkSafeDuration(context, const Duration(milliseconds: 200)),
       curve: Curves.easeOut,
       alignment: Alignment.centerLeft,
       child: SizedBox(

@@ -2260,5 +2260,9 @@
   "game_track_energy": "能量",
   "game_audio_duration": "音频时长",
   "games_rename_label": "游戏名称",
-  "collection_loading_hint": "正在加载收藏并匹配音频文件…"
+  "collection_loading_hint": "正在加载收藏并匹配音频文件…",
+  "video_quality_empty": "本视频没有可切换的画质",
+  "video_danmaku_manual_bind_failed": "弹幕加载失败，请稍后重试",
+  "remote_video_info_size": "大小：$size",
+  "remote_video_info_no_subtitle": "不含字幕"
 }

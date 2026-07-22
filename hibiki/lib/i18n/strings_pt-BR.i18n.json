@@ -2260,5 +2260,9 @@
   "game_track_energy": "Energy",
   "game_audio_duration": "Audio duration",
   "games_rename_label": "Game name",
-  "collection_loading_hint": "Loading collections and matching audio files…"
+  "collection_loading_hint": "Loading collections and matching audio files…",
+  "video_quality_empty": "No switchable quality for this video",
+  "video_danmaku_manual_bind_failed": "Couldn't load danmaku for this episode. Try again later.",
+  "remote_video_info_size": "Size: $size",
+  "remote_video_info_no_subtitle": "No subtitles"
 }

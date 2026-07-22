@@ -4,9 +4,9 @@ part of '../video_hibiki_page.dart';
 /// episode (剧集 push-aside 侧栏 + 自动连播倒计时) domain methods extracted via
 /// part-of (TODO-590 batch4); shared private scope. Behaviour-preserving: bodies
 /// are verbatim copies — this domain references no `setState(` (so no `_rebuild(`
-/// forwarding) and no `_VideoHibikiPageState` `static` member (so no
-/// full-qualification), unlike batch1/batch2 (setState→`_rebuild`) and batch3
-/// (static→`_VideoHibikiPageState.`). `kAutoPlayNextCountdownSeconds` is a
+/// forwarding). UI 巡检 PR-4 后 [_buildAutoAdvanceOverlay] 引用了一个 host
+/// `static`（`_VideoHibikiPageState._videoBottomChromeBaseline`，倒计时卡几何
+/// 推导），按 batch3 惯例全限定。`kAutoPlayNextCountdownSeconds` is a
 /// top-level const in `video_episode_start_policy.dart` (already imported by the
 /// main shell), not a host-class static, so it stays a bare reference. The
 /// `_episodeListVisible` / `_autoAdvanceCountdownNotifier` notifiers, their
@@ -223,7 +223,8 @@ extension _VideoEpisode on _VideoHibikiPageState {
     final double screenWidth = MediaQuery.sizeOf(context).width;
     final double panelWidth = (screenWidth * 0.28).clamp(240.0, 420.0);
     return AnimatedSize(
-      duration: const Duration(milliseconds: 200),
+      // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
+      duration: einkSafeDuration(context, const Duration(milliseconds: 200)),
       curve: Curves.easeOut,
       alignment: Alignment.centerLeft,
       child: SizedBox(
@@ -273,12 +274,28 @@ extension _VideoEpisode on _VideoHibikiPageState {
   /// Stack，与 OSD 同源）。
   Widget _buildAutoAdvanceOverlay() {
     final ColorScheme cs = _videoChromeColorScheme(context);
+    // 倒计时卡底部避让从进度条真实几何推导（UI 巡检 PR-4）：与章节刻度层同源的
+    // [videoSeekBarTrackBand]（tickHeight 取轨道高 → band 顶缘 = 轨道上缘），卡片
+    // 底缘 = 轨道上缘 + 16×缩放 呼吸间距——此前固定 88 不吃 [_videoUiScale] 也不
+    // 吃系统 inset，缩放 >1 或手势导航高 inset 时压进进度条 / 按钮条。
+    final ({double bottom, double height}) band = videoSeekBarTrackBand(
+      isDesktop: _isDesktopVideoControls,
+      buttonBarHeight: _videoButtonBarHeight,
+      seekBarButtonGap: _videoSeekBarButtonGap,
+      seekBarContainerHeight: _videoSeekBarContainerHeight,
+      seekBarTrackHeight: _videoSeekBarTrackHeight,
+      bottomChromeBaseline: _VideoHibikiPageState._videoBottomChromeBaseline,
+      bottomSystemInset: _videoBottomSystemInset(),
+      tickHeight: _videoSeekBarTrackHeight,
+    );
+    final double countdownBottom =
+        band.bottom + band.height + 16 * _videoUiScale;
     return Positioned(
       right: 0,
       bottom: 0,
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.only(right: 16, bottom: 88),
+          padding: EdgeInsets.only(right: 16, bottom: countdownBottom),
           child: ValueListenableBuilder<int?>(
             valueListenable: _autoAdvanceCountdownNotifier,
             builder: (BuildContext _, int? seconds, __) {

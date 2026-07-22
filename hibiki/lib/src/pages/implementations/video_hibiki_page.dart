@@ -52,6 +52,7 @@ import 'package:hibiki/src/media/video/video_long_press_speed_badge.dart';
 import 'package:hibiki/src/media/video/video_seek_indicator_label.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_chrome_colors.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_control_layout_edit_overlay.dart';
 import 'package:hibiki/src/media/video/video_control_popover_placement.dart';
@@ -115,6 +116,8 @@ import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart'
+    show einkSafeDuration;
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -796,12 +799,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ColorScheme _videoChromeColorScheme(BuildContext context) =>
       Theme.of(context).colorScheme;
 
+  // 播放器 chrome 前景固定亮色体系（UI 巡检 PR-4 P1）：控制条 / 顶栏 / 底栏时间 /
+  // 侧浮条 / 章节刻度压在 media_kit fork 的**固定深色 scrim** 上（播放器表面固定
+  // 深色 OSD 体系，不随 colorScheme），前景必须固定亮色——此前跟随 cs.primary /
+  // cs.onSurface，浅色 / eink 主题下黑压黑。深色主题下取值与旧实现一致（视觉不变）。
+  // 单一真相源在 [video_chrome_colors.dart]（纯函数，测试同源）。
+
+  /// chrome 中性前景（标题 / 时间 / 章节刻度）：固定近白，见
+  /// [videoChromeNeutralForeground]。
+  static const Color _videoChromeNeutralFg = videoChromeNeutralForeground;
+
+  /// chrome 强调色（按钮 / 进度条 / 滑块）：恒亮 tone 的 primary，见
+  /// [videoChromeAccentColor]。
+  Color _videoChromeAccent(ColorScheme cs) => videoChromeAccentColor(cs);
+
   /// 顶栏标题字号，随界面大小缩放（TODO-067），与图标按钮同口径。
   double get _videoControlTitleFontSize =>
       _videoControlTitleFontSizeBase * _videoUiScale;
 
-  TextStyle _videoControlTitleStyle(ColorScheme cs) =>
-      TextStyle(color: cs.onSurface, fontSize: _videoControlTitleFontSize);
+  /// 顶栏标题样式：中性前景固定近白（chrome 固定亮色体系，不随 colorScheme）。
+  TextStyle _videoControlTitleStyle() => TextStyle(
+        color: _videoChromeNeutralFg,
+        fontSize: _videoControlTitleFontSize,
+      );
 
   Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
   Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
@@ -3286,9 +3306,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 与 media_kit 的 `controlsTransitionDuration` 默认对齐：桌面 150ms、移动 300ms。
   /// [_desktopControlsTheme] / [_mobileControlsTheme] / [_buildSideLockButton] /
   /// [_buildVideoSideActionRail] 都读它，将来调一处全部跟随，不再各写各的 200ms。
-  Duration get _videoControlsTransitionDuration => _isDesktopVideoControls
-      ? const Duration(milliseconds: 150)
-      : const Duration(milliseconds: 300);
+  /// eink 主题下经 [einkSafeDuration] 归零（墨水屏连续重绘=残影），控制条与全部
+  /// 跟随者一次改单点全部生效（UI 巡检 PR-4）。
+  Duration get _videoControlsTransitionDuration => einkSafeDuration(
+        context,
+        _isDesktopVideoControls
+            ? const Duration(milliseconds: 150)
+            : const Duration(milliseconds: 300),
+      );
 
   /// 当前是否有承载光标操作的 overlay 打开（设置 / 音轨等浮层 [_videoSidePanel]，或
   /// 字幕跳转列表 [_subtitleListVisible]，TODO-329）。有 overlay 时光标不该被沉浸 /
@@ -4277,7 +4302,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           textAlign: alignment == AlignmentDirectional.centerEnd
               ? TextAlign.end
               : TextAlign.start,
-          style: _videoControlTitleStyle(_videoChromeColorScheme(context)),
+          style: _videoControlTitleStyle(),
         ),
       ),
     );
@@ -4349,7 +4374,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             icon: Icons.fast_rewind_rounded,
             label: t.video_bottom_seek_back_label,
             tooltip: t.video_bottom_seek_back,
-            color: Theme.of(context).colorScheme.primary,
+            color: _videoChromeAccent(Theme.of(context).colorScheme),
             onPressed: () => _seekRelative(-10000),
           );
         }
@@ -4360,7 +4385,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             icon: Icons.fast_forward_rounded,
             label: t.video_bottom_seek_forward_label,
             tooltip: t.video_bottom_seek_forward,
-            color: Theme.of(context).colorScheme.primary,
+            color: _videoChromeAccent(Theme.of(context).colorScheme),
             onPressed: () => _seekRelative(10000),
           );
         }
@@ -4833,21 +4858,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller, {
     required bool desktop,
   }) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    // 底栏时间前景走 chrome 固定亮色强调色（压固定深色 scrim，不随 colorScheme）。
+    final Color chromeAccent =
+        _videoChromeAccent(Theme.of(context).colorScheme);
     final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     final Widget positionIndicator = desktop
         ? MaterialDesktopPositionIndicator(
             style: TextStyle(
               height: 1.0,
               fontSize: 12.0 * _videoUiScale,
-              color: cs.primary,
+              color: chromeAccent,
             ),
           )
         : MaterialPositionIndicator(
             style: TextStyle(
               height: 1.0,
               fontSize: 12.0 * _videoUiScale,
-              color: cs.primary,
+              color: chromeAccent,
             ),
           );
     final List<Widget> rightCluster = <Widget>[
@@ -5004,7 +5031,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             child: Icon(
               icon,
               size: _videoControlIconSize * 0.9,
-              color: Theme.of(context).colorScheme.primary,
+              color: _videoChromeAccent(Theme.of(context).colorScheme),
             ),
           ),
         ),

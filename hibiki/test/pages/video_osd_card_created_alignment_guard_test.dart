@@ -52,10 +52,12 @@ void main() {
       reason: 'OSD 卡片不得居中（TODO-1254 回归：居中会遮挡画面）',
     );
     // 突出变体不得再用 all(24) 的居中式外边距，改与被动 OSD 同款左上外边距。
+    // UI 巡检 PR-4：top 从固定 52 改为顶栏几何推导（_videoButtonBarHeight +
+    // 8×_videoUiScale），吃界面缩放；守卫断言推导式而非字面值。
     expect(
-      body.contains('EdgeInsets.only(left: 16, top: 52)'),
+      body.contains('top: _videoButtonBarHeight + 8 * _videoUiScale'),
       isTrue,
-      reason: 'OSD 卡片外边距应锚左上（left:16, top:52，避开顶栏）',
+      reason: 'OSD 卡片外边距应锚左上且 top 由顶栏高推导（避开顶栏、吃界面缩放）',
     );
   });
 }

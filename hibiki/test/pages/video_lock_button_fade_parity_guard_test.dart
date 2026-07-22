@@ -30,11 +30,18 @@ void main() {
   });
 
   test('存在派生 getter _videoControlsTransitionDuration（桌面 150ms / 移动 300ms）', () {
+    // UI 巡检 PR-4：getter 外层套 einkSafeDuration（eink 下动画时长归零防残影），
+    // 桌面 / 移动派生仍在其内、仍是单一真相源。
     expect(
       src.contains(
-          'Duration get _videoControlsTransitionDuration => _isDesktopVideoControls'),
+          'Duration get _videoControlsTransitionDuration => einkSafeDuration('),
       isTrue,
-      reason: '应有按桌面 / 移动派生的 _videoControlsTransitionDuration 单一真相源',
+      reason: '应有按桌面 / 移动派生（外层 einkSafeDuration）的单一真相源 getter',
+    );
+    expect(
+      src.contains('_isDesktopVideoControls'),
+      isTrue,
+      reason: '仍按桌面 / 移动派生时长',
     );
     expect(
       src.contains('? const Duration(milliseconds: 150)'),
