@@ -6,10 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
+// 书架卡片规格单一真相源（kShelfBookCardAspectRatio / kShelfTitleFooterHeight）。
+import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart'
+    show kShelfBookCardAspectRatio, kShelfTitleFooterHeight;
 import 'package:hibiki/utils.dart';
 
 /// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
@@ -89,34 +93,15 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 弹一个单行输入对话框返回用户输入的名称（取消返回 null）。
-  Future<String?> _promptName({required String initial}) async {
-    final TextEditingController controller =
-        TextEditingController(text: initial);
-    final String? result = await showDialog<String>(
+  ///
+  /// controller 由对话框内容自己的 State 持有并在其 dispose 里释放——旧实现
+  /// 在 `showDialog` 返回后立即 `controller.dispose()`，此时退出动画尚未结束、
+  /// TextField 还挂在树上，属于过早释放。
+  Future<String?> _promptName({required String initial}) {
+    return showDialog<String>(
       context: context,
-      builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: Text(t.games_rename),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            onSubmitted: (String v) => Navigator.of(ctx).pop(v.trim()),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(t.dialog_cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-              child: Text(t.dialog_ok),
-            ),
-          ],
-        );
-      },
+      builder: (BuildContext ctx) => _RenameGameDialog(initial: initial),
     );
-    controller.dispose();
-    return result;
   }
 
   /// 启动一个游戏 → 台词进查词弹窗：非 Windows 优雅提示不支持；Windows 上交给
@@ -213,28 +198,90 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 游戏网格（无「继续游戏」/热力图，纯列表）。
+  ///
+  /// 卡槽规格对齐书架（巡检 C4：旧硬编码 180/0.72 自成一派）：extent 走书架的
+  /// 响应式断点 [readerShelfGridExtentForLayout]，槽比用 [kShelfBookCardAspectRatio]，
+  /// 标题在固定 40px footer（[kShelfTitleFooterHeight]）里，同一封面在书架与游戏库
+  /// 同形同宽。
   Widget _buildGrid(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 180,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.72,
-      ),
-      itemCount: _games.length,
-      itemBuilder: (BuildContext context, int i) => _GameCard(
-        game: _games[i],
-        onTap: () => unawaited(_launchGame(_games[i])),
-        onRename: () => unawaited(_renameGame(_games[i])),
-        onRemove: () => unawaited(_removeGame(_games[i])),
-      ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: readerShelfGridExtentForLayout(
+              mediaWidth: MediaQuery.sizeOf(context).width,
+              contentWidth: constraints.maxWidth,
+            ),
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: kShelfBookCardAspectRatio,
+          ),
+          itemCount: _games.length,
+          itemBuilder: (BuildContext context, int i) => _GameCard(
+            game: _games[i],
+            onTap: () => unawaited(_launchGame(_games[i])),
+            onRename: () => unawaited(_renameGame(_games[i])),
+            onRemove: () => unawaited(_removeGame(_games[i])),
+          ),
+        );
+      },
     );
   }
 }
 
-/// 单个游戏卡：封面（有 coverPath 用图，否则默认手柄图标）+ 名称 + 溢出菜单
-/// （重命名 / 移除）。点击卡片启动游戏进入制卡。
+/// 重命名输入对话框：内容自身持有 [TextEditingController] 并在 State.dispose
+/// 释放（路由完全退出后由框架回收，修过早 dispose）。确认返回 trimmed 名称。
+class _RenameGameDialog extends StatefulWidget {
+  const _RenameGameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_RenameGameDialog> createState() => _RenameGameDialogState();
+}
+
+class _RenameGameDialogState extends State<_RenameGameDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(t.games_rename),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: InputDecoration(labelText: t.games_rename_label),
+        onSubmitted: (String v) => Navigator.of(context).pop(v.trim()),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.dialog_cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: Text(t.dialog_ok),
+        ),
+      ],
+    );
+  }
+}
+
+/// 单个游戏卡：封面（有 coverPath 用图，否则默认手柄图标）+ 固定 footer 名称 +
+/// 溢出菜单（重命名 / 移除）。点击卡片启动游戏进入制卡。
+///
+/// 走 [HibikiCard]（巡检 G1 根因修复）：注册 `game-card-<id>` 焦点站点，手柄/
+/// 方向键可选中、A/Enter 启动；长按（手柄 hold A 之外的触摸长按）与鼠标右键弹
+/// 出与封面溢出菜单相同的重命名/移除菜单，封面上的 [PopupMenuButton] 保留供
+/// 鼠标点按。
 class _GameCard extends StatelessWidget {
   const _GameCard({
     required this.game,
@@ -248,66 +295,124 @@ class _GameCard extends StatelessWidget {
   final VoidCallback onRename;
   final VoidCallback onRemove;
 
+  /// 长按 / 右键的上下文菜单：与封面溢出菜单同两项（重命名 / 移除）。
+  Future<void> _showContextMenu(BuildContext context) async {
+    final String? action = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => SimpleDialog(
+        title: Text(
+          game.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        children: <Widget>[
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop('rename'),
+            child: Text(t.games_rename),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop('remove'),
+            child: Text(t.games_remove),
+          ),
+        ],
+      ),
+    );
+    if (action == 'rename') {
+      onRename();
+    } else if (action == 'remove') {
+      onRemove();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  _buildCover(colors),
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: PopupMenuButton<String>(
-                      icon: Icon(
-                        Icons.more_vert,
-                        color: colors.onSurface,
-                        shadows: const <Shadow>[
-                          Shadow(blurRadius: 4, color: Colors.black54),
-                        ],
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiCard(
+      padding: EdgeInsets.zero,
+      focusId: HibikiFocusId('game-card-${game.id}'),
+      onTap: onTap,
+      onLongPress: () => unawaited(_showContextMenu(context)),
+      onSecondaryTap: () => unawaited(_showContextMenu(context)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                _buildCover(colors),
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: PopupMenuButton<String>(
+                    // 半透明 scrim 圆底承托图标（书架选择勾同款调性），替代
+                    // Colors.black54 阴影——浅色封面上阴影对比不足且 eink 下发灰。
+                    icon: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: tokens.surfaces.page.withValues(
+                          alpha: isEinkTheme(context) ? 1 : 0.7,
+                        ),
+                        border: Border.all(color: tokens.surfaces.outline),
                       ),
-                      onSelected: (String value) {
-                        if (value == 'rename') {
-                          onRename();
-                        } else if (value == 'remove') {
-                          onRemove();
-                        }
-                      },
-                      itemBuilder: (BuildContext context) =>
-                          <PopupMenuEntry<String>>[
-                        PopupMenuItem<String>(
-                          value: 'rename',
-                          child: Text(t.games_rename),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'remove',
-                          child: Text(t.games_remove),
-                        ),
-                      ],
+                      child: Icon(
+                        Icons.more_vert,
+                        size: 18,
+                        color: colors.onSurface,
+                      ),
                     ),
+                    onSelected: (String value) {
+                      if (value == 'rename') {
+                        onRename();
+                      } else if (value == 'remove') {
+                        onRemove();
+                      }
+                    },
+                    itemBuilder: (BuildContext context) =>
+                        <PopupMenuEntry<String>>[
+                      PopupMenuItem<String>(
+                        value: 'rename',
+                        child: Text(t.games_rename),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'remove',
+                        child: Text(t.games_remove),
+                      ),
+                    ],
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          // 与书架书卡同款固定标题 footer（40px，长名不推挤网格）。
+          SizedBox(
+            height: kShelfTitleFooterHeight,
+            child: Padding(
+              padding: EdgeInsetsDirectional.fromSTEB(
+                tokens.spacing.gap * 0.75,
+                tokens.spacing.gap / 2,
+                tokens.spacing.gap * 0.75,
+                0,
+              ),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Text(
+                  game.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  softWrap: true,
+                  style: tokens.type.metadata.copyWith(
+                    color: tokens.surfaces.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Text(
-                game.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

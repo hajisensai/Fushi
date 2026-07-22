@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/pages/implementations/game_diagnostics_page.dart';
+import 'package:hibiki/src/pages/implementations/game_shared.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart';
 import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 import 'package:hibiki/utils.dart';
+
+// GameSection / gameSectionNotifier 已迁到 game_shared.dart（三页共享），
+// 这里 re-export 保持既有 import 站点（如原生浮窗控制器）零改动。
+export 'package:hibiki/src/pages/implementations/game_shared.dart'
+    show GameSection, gameSectionNotifier;
 
 typedef GameMonitorBuilder = Widget Function(
   BuildContext context,
@@ -15,12 +21,6 @@ typedef GameLibraryBuilder = Widget Function(
   GalHookSessionController controller,
   VoidCallback onLaunched,
 );
-
-enum GameSection { library, monitor, diagnostics }
-
-/// App 级游戏页子区导航。原生 Hook 浮窗可在主窗最小化时请求回到捕获工作台。
-final ValueNotifier<GameSection> gameSectionNotifier =
-    ValueNotifier<GameSection>(GameSection.library);
 
 /// 首页一级「游戏」模块。
 ///
@@ -138,74 +138,61 @@ class _HomeGamePageState extends State<HomeGamePage> {
                 onTap: _showMonitor,
               ),
             ],
-            bottom: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: <Widget>[
-                  HibikiSelectableChip(
-                    label: t.game_library,
-                    leadingIcon: Icons.sports_esports_outlined,
-                    selected: true,
-                    focusId: const HibikiFocusId('game-library-tab-library'),
-                    onSelected: (_) => _showLibrary(),
-                  ),
-                  const SizedBox(width: 8),
-                  HibikiSelectableChip(
-                    label: t.game_capture_workbench,
-                    leadingIcon: Icons.sensors_outlined,
-                    selected: false,
-                    focusId: const HibikiFocusId('game-library-tab-capture'),
-                    onSelected: (_) => _showMonitor(),
-                  ),
-                  const SizedBox(width: 8),
-                  HibikiSelectableChip(
-                    label: t.game_diagnostics,
-                    leadingIcon: Icons.monitor_heart_outlined,
-                    selected: false,
-                    focusId:
-                        const HibikiFocusId('game-library-tab-diagnostics'),
-                    onSelected: (_) => _showDiagnostics(),
-                  ),
-                ],
-              ),
+            bottom: GameSectionTabs(
+              selected: GameSection.library,
+              focusIdPrefix: 'game-library-tab',
+              onSelectLibrary: _showLibrary,
+              onSelectMonitor: _showMonitor,
+              onSelectDiagnostics: _showDiagnostics,
             ),
           ),
           Expanded(
             child: Column(
               children: <Widget>[
-                SizedBox(
-                  height: 400,
-                  child: AnimatedBuilder(
-                    animation: _controller,
-                    builder: (BuildContext context, Widget? child) {
-                      final GalHookSessionState state = _controller.state;
-                      final lines = _controller.lines;
-                      return ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                        children: <Widget>[
-                          SizedBox(
-                            width: 360,
-                            child: _CaptureOverviewCard(
-                              lineCount: lines.length,
-                              latestLine:
-                                  lines.isEmpty ? null : lines.last.text,
-                              state: state,
-                              onOpen: _showMonitor,
+                // 概览带内容自适应高度（不再硬编码 height:400——矮窗挤压、大字体
+                // 溢出），卡宽按可用宽度分档：宽窗保持 360，窄窗收到可用宽以内。
+                AnimatedBuilder(
+                  animation: _controller,
+                  builder: (BuildContext context, Widget? child) {
+                    final GalHookSessionState state = _controller.state;
+                    final lines = _controller.lines;
+                    return LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints box) {
+                        final double cardWidth = box.maxWidth >= 800
+                            ? 360
+                            : (box.maxWidth - 48).clamp(240.0, 360.0);
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                          child: IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                SizedBox(
+                                  width: cardWidth,
+                                  child: _CaptureOverviewCard(
+                                    lineCount: lines.length,
+                                    latestLine:
+                                        lines.isEmpty ? null : lines.last.text,
+                                    state: state,
+                                    onOpen: _showMonitor,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                SizedBox(
+                                  width: cardWidth,
+                                  child: _DiagnosticsOverviewCard(
+                                    controller: _controller,
+                                    onOpen: _showDiagnostics,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          SizedBox(
-                            width: 360,
-                            child: _DiagnosticsOverviewCard(
-                              controller: _controller,
-                              onOpen: _showDiagnostics,
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    );
+                  },
                 ),
                 const Divider(height: 1),
                 Expanded(
@@ -273,7 +260,8 @@ class _CaptureOverviewCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${t.game_health_audio}  ${_audioBackendLabel(state.audioBackend)}',
+            '${t.game_health_audio}  '
+            '${galHookAudioBackendLabel(state.audioBackend)}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
@@ -309,7 +297,10 @@ class _DiagnosticsOverviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final GalHookSessionState state = controller.state;
     final int connected = controller.endpointStatuses
-        .where((endpoint) => endpoint.phase.name == 'connected')
+        .where(
+          (TexthookerEndpointStatus endpoint) =>
+              endpoint.phase == TexthookerEndpointPhase.connected,
+        )
         .length;
     return HibikiCard(
       onTap: onOpen,
@@ -335,7 +326,9 @@ class _DiagnosticsOverviewCard extends StatelessWidget {
           const SizedBox(height: 14),
           Text(t.game_diagnostics_subtitle),
           const SizedBox(height: 20),
-          Text('${t.game_health_helper}  ${state.phase.name}'),
+          Text(
+            '${t.game_health_helper}  ${galHookSessionPhaseLabel(state.phase)}',
+          ),
           const SizedBox(height: 8),
           Text(
             '${t.game_text_endpoints}  $connected/${controller.endpointStatuses.length}',
@@ -354,10 +347,3 @@ class _DiagnosticsOverviewCard extends StatelessWidget {
     );
   }
 }
-
-String _audioBackendLabel(GalHookAudioBackend backend) => switch (backend) {
-      GalHookAudioBackend.none => t.game_audio_backend_none,
-      GalHookAudioBackend.gameResource => t.game_audio_backend_resource,
-      GalHookAudioBackend.enginePcm => t.game_audio_backend_engine,
-      GalHookAudioBackend.systemLoopback => t.game_audio_backend_loopback,
-    };
