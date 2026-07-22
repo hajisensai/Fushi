@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 977 条。点号进各自文件。
+> 共 978 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1011](bugs/BUG-1011-interconnect-video-collection-playlist-autoplay.md) | ✅ | ✅ | 互联视频合集列表缺失+无自动连播·客户端合集播放 |
 | [BUG-1010](bugs/BUG-1010-video-controls-autohide-focus-loss.md) | 🚧 | 🚧 | 视频控制条自动隐藏后键盘焦点疑似丢失 |
 | [BUG-1009](bugs/BUG-1009-collection-detail-focus-id-clash.md) | 🚧 | 🚧 | 合集详情页返回后书架同名卡手柄焦点不可达 |
 | [BUG-1008](bugs/BUG-1008-shelf-tag-filter-contradictory-empty.md) | 🚧 | 🚧 | 标签筛选下 SRT 命中仍显示无匹配空态且丢失下拉刷新 |

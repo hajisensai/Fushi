@@ -365,7 +365,8 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     this.initialFullscreen = false,
     super.key,
   })  : remoteInfo = null,
-        remoteClient = null;
+        remoteClient = null,
+        remoteCollectionMembers = null;
 
   VideoHibikiPage.remote({
     required RemoteVideoInfo info,
@@ -374,6 +375,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     this.initialCueStartMs,
     this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
+    this.remoteCollectionMembers,
     super.key,
   })  : bookUid = info.id,
         remoteInfo = info,
@@ -385,6 +387,12 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   final VideoBookRepository repo;
   final RemoteVideoInfo? remoteInfo;
   final RemoteVideoClient? remoteClient;
+
+  /// 客户端互联视频合集播放：本远端视频所属合集的**有序成员**（含自己）。非空且 >1 = 作为
+  /// 合集某一集打开，播放器据此建剧集列表 + 跨成员自动连播（成员各自独立 video id，换集换
+  /// 的是成员 id 而非同 id 的 episodeIndex）。null/单元素 = 独立单视频打开。远端专用；本地走
+  /// [playlistCollectionId]，host-playlist 走 host 下发的 [RemoteVideoInfo.episodes]。
+  final List<RemoteVideoInfo>? remoteCollectionMembers;
 
   /// 统一合集 Phase 3：本集所属 playlist 合集 id（非空 = 作为播放列表某一集打开，
   /// player 据此建兄弟集列表 + 剧集面板 + 上下集 + 自动连播；null = 独立单视频打开）。
@@ -435,6 +443,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     int? initialCueStartMs,
     int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
+    List<RemoteVideoInfo>? remoteCollectionMembers,
   }) =>
       HibikiAppUiScaleNeutralizer(
         child: VideoHibikiPage.remote(
@@ -444,6 +453,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
           initialCueStartMs: initialCueStartMs,
           initialEpisodeIndex: initialEpisodeIndex,
           initialSubtitleListVisible: initialSubtitleListVisible,
+          remoteCollectionMembers: remoteCollectionMembers,
         ),
       );
 
@@ -1573,14 +1583,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   RemoteVideoInfo? _resolvedStreamInfo;
   UrlStreamVideoClient? _resolvedStreamClient;
 
-  /// 有效远端 info/client：LAN 远端书用构造器传入的 widget.remote*，书架流媒体书用
-  /// [_init] 重建的 _resolvedStream*。二者互斥、至多一个非空。
+  /// 客户端互联视频合集播放：有序远端合集成员（来自 widget.remoteCollectionMembers）。
+  /// `length > 1` = 合集连播模式；单视频 / host-playlist 恒空。
+  List<RemoteVideoInfo> _remoteMembers = const <RemoteVideoInfo>[];
+
+  /// 合集连播模式下的「当前成员」（可变）：换成员时更新，使 [_effectiveRemoteInfo] /
+  /// 断点键 / 字幕键 / host 上报天然跟到新成员 id。非合集模式为 null（回落 widget.remoteInfo）。
+  RemoteVideoInfo? _activeRemoteMember;
+
+  /// 是否处于客户端合集连播模式（成员是各自独立 video id）。
+  bool get _isRemoteCollection => _remoteMembers.length > 1;
+
+  /// 有效远端 info/client：合集连播优先返回当前成员 [_activeRemoteMember]（换成员即跟随）；
+  /// 否则 LAN 远端书用构造器传入的 widget.remote*，书架流媒体书用 [_init] 重建的
+  /// _resolvedStream*。二者互斥、至多一个非空。
   RemoteVideoInfo? get _effectiveRemoteInfo =>
-      widget.remoteInfo ?? _resolvedStreamInfo;
+      _activeRemoteMember ?? widget.remoteInfo ?? _resolvedStreamInfo;
   RemoteVideoClient? get _effectiveRemoteClient =>
       widget.remoteClient ?? _resolvedStreamClient;
 
   bool get _isRemote => _effectiveRemoteInfo != null;
+
+  /// 远端断点 / 字幕 prefs 键 `(uid, episodeIndex)`。**合集连播模式**：每个成员是独立视频
+  /// id，键 = `(成员 id, 0)`，天然按成员隔离，且与 host 按成员带回的 positionMs 对齐；
+  /// **host-playlist / 单视频模式**：`(widget.bookUid, index)`（旧行为，index==0 时兼容旧单
+  /// 视频 prefs）。[index] 是目标集下标（读某集断点时传目标；写当前集传 [_currentEpisode]）。
+  (String uid, int episodeIndex) _remotePositionKeyForIndex(int index) {
+    if (_isRemoteCollection) {
+      final int i = index.clamp(0, _remoteMembers.length - 1);
+      return (_remoteMembers[i].id, 0);
+    }
+    return (widget.bookUid, index);
+  }
 
   /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
   String get _targetLangCode => appModel.targetLanguage.locale.languageCode;
@@ -1855,6 +1889,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   Future<void> _initRemote() async {
+    // 客户端合集连播：有序成员列表（>1 才成合集）。起播成员 = 首页点的那个（widget.remoteInfo，
+    // 其下标 = initialEpisodeIndex）。
+    _remoteMembers =
+        widget.remoteCollectionMembers ?? const <RemoteVideoInfo>[];
+    _activeRemoteMember = null;
     final RemoteVideoInfo info = _effectiveRemoteInfo!;
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
@@ -1868,8 +1907,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
 
-    // TODO-885: 远端播放列表——把 host 下发的 episodes 映射成 _episodes（path 留空，
-    // 切集靠 episodeIndex 向 host 重新建流），复用既有 _isPlaylist / 剧集面板 / 上下集。
+    // 客户端合集连播（Phase 3 合集 = N 个独立 VideoBooks 行）：host 不把兄弟集填进
+    // RemoteVideoInfo.episodes（那是旧单行 playlistJson 模型），故由 client 用合集成员列表
+    // 建 _episodes，绕开 info.isPlaylist 门控。换集换的是成员 id（见 _loadRemoteEpisode）。
+    if (_isRemoteCollection) {
+      final int startIndex =
+          (widget.initialEpisodeIndex ?? 0).clamp(0, _remoteMembers.length - 1);
+      _episodes = <_PlaylistEpisodeRef>[
+        for (final RemoteVideoInfo m in _remoteMembers)
+          _PlaylistEpisodeRef(title: m.title),
+      ];
+      _activeRemoteMember = _remoteMembers[startIndex];
+      _delayMs = _remoteMembers[startIndex].delayMs;
+      await _loadRemoteEpisode(
+        startIndex,
+        startIntent: EpisodeStartIntent.initialOpen,
+        initialPositionMsOverride: _resolveRemoteInitialPositionMs(
+            _remoteMembers[startIndex], startIndex),
+      );
+      return;
+    }
+
+    // TODO-885: 远端播放列表（旧单行多集 playlistJson 模型）——把 host 下发的 episodes 映射成
+    // _episodes（path 留空，切集靠 episodeIndex 向 host 重新建流），复用既有 _isPlaylist / 剧集
+    // 面板 / 上下集。
     final int startIndex = info.isPlaylist
         ? (widget.initialEpisodeIndex ?? info.currentEpisode)
             .clamp(0, info.episodes.length - 1)
@@ -1896,7 +1957,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required EpisodeStartIntent startIntent,
     int? initialPositionMsOverride,
   }) async {
-    final RemoteVideoInfo info = _effectiveRemoteInfo!;
+    // 合集连播模式：换集换的是**兄弟成员 id**（各自独立单视频，episodeIndex 恒 0），并把
+    // 当前成员指针切到目标成员，使 _effectiveRemoteInfo / 断点键 / 字幕键 / host 上报跟随。
+    // host-playlist / 单视频模式：同一 info.id 换 episodeIndex（旧行为，零变化）。
+    final RemoteVideoInfo info;
+    final int streamEpisodeIndex;
+    if (_isRemoteCollection) {
+      info = _remoteMembers[index.clamp(0, _remoteMembers.length - 1)];
+      streamEpisodeIndex = 0;
+      _activeRemoteMember = info;
+      _delayMs = info.delayMs;
+    } else {
+      info = _effectiveRemoteInfo!;
+      streamEpisodeIndex = index;
+    }
     final RemoteVideoClient client = _effectiveRemoteClient!;
     final int seq = ++_episodeLoadSeq;
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
@@ -1916,7 +1990,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     try {
       final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
         info.id,
-        episodeIndex: index,
+        episodeIndex: streamEpisodeIndex,
       );
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
       String? externalSub;
@@ -1924,8 +1998,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 优先恢复用户上次为该远端集手选的字幕：远端视频无本地 DB 行，字幕只进内存、退出即丢
       // （用户报「下载字幕没持久化退出影片就没了」的根因）。选择按 <bookUid>#ep 记忆在 prefs
       // （见 PreferencesRepository.remoteSubtitleSources），这里在落回 host 默认字幕之前重放。
+      // 合集连播下按成员 id 记忆字幕选择（键 = (成员 id, 0)）；单视频/host-playlist 沿用
+      // (widget.bookUid, index)。
+      final (String subUid, int subEp) = _remotePositionKeyForIndex(index);
       final String? persistedSub =
-          appModel.remoteSubtitleSource(widget.bookUid, episodeIndex: index);
+          appModel.remoteSubtitleSource(subUid, episodeIndex: subEp);
       bool subtitleResolved = false;
       if (persistedSub != null) {
         if (SubtitleSource.isOff(persistedSub)) {
@@ -2109,9 +2186,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [episodeIndex]>0 用按集 key（`#ep<index>` 后缀），0 回退整书 key（向后兼容单视频 /
   /// 旧 TODO-559 prefs）。
   int _readPersistedRemotePositionForEpisode(int episodeIndex) {
-    final Object? raw = appModel.prefsRepo.getPref(
-        videoRemotePositionEpisodePrefKey(widget.bookUid, episodeIndex),
-        defaultValue: 0);
+    final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
+    final Object? raw = appModel.prefsRepo
+        .getPref(videoRemotePositionEpisodePrefKey(uid, ep), defaultValue: 0);
     final int v =
         raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
     return v < 0 ? 0 : v;
@@ -2119,9 +2196,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 读 per-book/per-episode 远端断点的本地「最后更新时间」（无则 0）。TODO-653 冲突解决用。
   int _readPersistedRemotePositionAtForEpisode(int episodeIndex) {
-    final Object? raw = appModel.prefsRepo.getPref(
-        videoRemotePositionEpisodeAtPrefKey(widget.bookUid, episodeIndex),
-        defaultValue: 0);
+    final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
+    final Object? raw = appModel.prefsRepo
+        .getPref(videoRemotePositionEpisodeAtPrefKey(uid, ep), defaultValue: 0);
     final int v =
         raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
     return v < 0 ? 0 : v;
@@ -2162,18 +2239,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // → 下次打开从头播放。近起点不算有效进度，跳过不写即可。
     const int kMeaningfulRemoteWatchMs = 5000;
     if (clamped < kMeaningfulRemoteWatchMs) return;
-    // TODO-885: 按当前集 key 落库 + 上报（_currentEpisode 是状态真相；单视频恒 0 回退
-    // 整书 key，与旧 prefs 兼容）。
-    final int episodeIndex = _currentEpisode;
-    await appModel.prefsRepo
-        .setPref(videoRemotePositionEpisodePrefKey(uid, episodeIndex), clamped);
-    await appModel.prefsRepo
-        .setPref(videoRemotePositionEpisodeAtPrefKey(uid, episodeIndex), nowMs);
+    // TODO-885 / 合集连播：按当前集 key 落库 + 上报。合集模式键 = (当前成员 id, 0)（成员天然
+    // 隔离，与 host 按成员带回的 positionMs 对齐）；单视频/host-playlist = (widget.bookUid,
+    // _currentEpisode)（此时 keyUid==uid，行为零变化）。传入的 [uid] 恒是 widget.bookUid。
+    final (String keyUid, int episodeIndex) =
+        _remotePositionKeyForIndex(_currentEpisode);
+    await appModel.prefsRepo.setPref(
+        videoRemotePositionEpisodePrefKey(keyUid, episodeIndex), clamped);
+    await appModel.prefsRepo.setPref(
+        videoRemotePositionEpisodeAtPrefKey(keyUid, episodeIndex), nowMs);
     final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client == null) return;
     try {
       await client.putRemoteVideoPosition(
-        uid,
+        keyUid,
         clamped,
         nowMs,
         episodeIndex: episodeIndex,
