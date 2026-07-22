@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -542,6 +543,72 @@ void main() {
     await controller.close();
     expect(engine.stopCalls, 1);
     expect(loopback.stopCalls, 1);
+    endpoints.dispose();
+  });
+
+  test(
+      'RealLive replay fixture selects resource audio through production pairing',
+      () async {
+    final Map<String, dynamic> fixture = jsonDecode(
+      await File(
+        'test/fixtures/galhook/reallive_replay.json',
+      ).readAsString(),
+    ) as Map<String, dynamic>;
+    final Map<String, dynamic> expected =
+        fixture['expected'] as Map<String, dynamic>;
+    final Map<String, dynamic> card =
+        (expected['cards'] as List<dynamic>).single as Map<String, dynamic>;
+
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[11, 12, 13]),
+      rawReady: true,
+      pairedCandidate: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 2000,
+          text: 'synthetic reallive line',
+          threadId: 19,
+          hookName: 'RealLive fixture',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 21, pid: 2200, title: 'RealLive fixture'),
+    );
+    for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(card['audio_backend'], 'resource_audio');
+    expect(service.entries.single.audioBackend, 'game_resource');
+    expect(
+        service.entries.single.audioStatus, TexthookerLineAudioStatus.matched);
+    expect(loopback.startCalls, 1,
+        reason: 'loopback stays available as fallback');
+
+    await controller.close();
     endpoints.dispose();
   });
 
