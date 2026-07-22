@@ -14,6 +14,7 @@ int main() {
   assert(!HasReadyGameResourceAudio(0, 0));
   assert(HasReadyGameResourceAudio(kDiagKirikiriVoiceStreamHookReady, 0));
   assert(HasReadyGameResourceAudio(0, kDiagFfmpegResourceHooksReady));
+  assert(HasReadyGameResourceAudio(0, kDiagVisualArtsOvkHooksReady));
   assert(HasReadyGameResourceAudio(kDiagSiglusOvkHooksReady, 0));
 
   assert(!HasReadyGameResourceAudio(0, kDiagUnityIl2CppHooksReady));

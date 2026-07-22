@@ -54,6 +54,7 @@ class AdapterStructureTest(unittest.TestCase):
     def test_generated_adapters_have_compile_and_lifecycle_registration_seams(self) -> None:
         main = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         registry = (ROOT / "hook" / "adapter_registry.inc").read_text(encoding="utf-8")
+        self.assertIn('#include "generated/profile_includes.inc"', main)
         self.assertIn('#include "generated/adapter_includes.inc"', main)
         for name in ("startup", "module", "shutdown", "fields"):
             path = ROOT / "hook" / "generated" / f"adapter_{name}.inc"
@@ -99,6 +100,21 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("LooksLikeRenpyRuntime", injector)
         self.assertIn("WaitForGameChildProcess", injector)
         self.assertIn('a == L"--follow-child-processes"', injector)
+
+    def test_reallive_shared_ovk_path_does_not_claim_engine_identity(self) -> None:
+        adapter = (ROOT / "hook" / "adapters" / "reallive_adapter.inc").read_text(
+            encoding="utf-8"
+        )
+        siglus = (ROOT / "hook" / "adapters" / "siglus_adapter.inc").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("MatchesRealliveProfile", adapter)
+        self.assertNotIn("VisualArtsOvkObserved", adapter)
+        install = siglus.split("bool TryHookSiglusOvk()", 1)[1]
+        self.assertNotIn("kDiagVisualArtsOvkHooksReady", install)
+        remember = siglus.split("void RememberSiglusOvk", 1)[1]
+        remember = remember.split("void ForgetSiglusOvk", 1)[0]
+        self.assertIn("kDiagVisualArtsOvkHooksReady", remember)
 
 
 if __name__ == "__main__":

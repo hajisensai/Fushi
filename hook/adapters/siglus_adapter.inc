@@ -26,6 +26,7 @@ struct SiglusVoiceTask {
 
 SiglusOvkHandle g_siglus_handles[kSiglusHandleSlots];
 SiglusVoiceTask g_siglus_tasks[kSiglusTaskSlots];
+volatile LONG g_visual_arts_ovk_seen = 0;
 
 decltype(&CreateFileW) g_orig_CreateFileW = nullptr;
 decltype(&CreateFileA) g_orig_CreateFileA = nullptr;
@@ -81,8 +82,13 @@ void RememberSiglusOvk(HANDLE handle, const wchar_t* path) {
     }
   }
   LeaveCriticalSection(&g_cs);
-  if (remembered && g_header != nullptr) {
-    g_header->reserved_luna |= kDiagSiglusOvkOpened;
+  if (remembered) {
+    InterlockedExchange(&g_visual_arts_ovk_seen, 1);
+    if (g_header != nullptr) {
+      g_header->reserved_luna |= kDiagSiglusOvkOpened;
+      g_header->hook_diagnostics |=
+          hibiki_voice_hook::kDiagVisualArtsOvkHooksReady;
+    }
   }
 }
 
@@ -179,6 +185,7 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
       g_orig_ReadFile(file, buffer, requested, bytes_read, overlapped);
   const DWORD done = bytes_read != nullptr ? *bytes_read : 0;
   if (!ok || done < 4 || buffer == nullptr || !g_capture_enabled) return ok;
+  if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) == 0) return ok;
 
   wchar_t path[kSiglusPathChars] = {0};
   if (!CopySiglusOvkPath(file, path, kSiglusPathChars)) return ok;
@@ -206,7 +213,9 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
 }
 
 BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
-  ForgetSiglusOvk(handle);
+  if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) != 0) {
+    ForgetSiglusOvk(handle);
+  }
   return g_orig_CloseHandle(handle);
 }
 
@@ -277,7 +286,11 @@ void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
     wchar_t storage[260] = {0};
     swprintf_s(storage, L"%s_%u.ogg", base, entry.id);
     WriteVoiceOggAt(ogg, entry.byte_len, storage, task->tick_ms);
-    if (g_header != nullptr) g_header->reserved_luna |= kDiagSiglusVoiceDumped;
+    if (g_header != nullptr) {
+      g_header->reserved_luna |= kDiagSiglusVoiceDumped;
+      g_header->hook_diagnostics |=
+          hibiki_voice_hook::kDiagVisualArtsOvkCaptured;
+    }
   }
   free(ogg);
   free(index);
@@ -316,11 +329,11 @@ bool TryHookSiglusOvk() {
       reinterpret_cast<void*>(GetProcAddress(kernel, "CreateFileA")),
       reinterpret_cast<void*>(&Detour_CreateFileA),
       reinterpret_cast<void**>(&g_orig_CreateFileA));
-  const bool read = !siglus || HookFn(
+  const bool read = HookFn(
       reinterpret_cast<void*>(GetProcAddress(kernel, "ReadFile")),
       reinterpret_cast<void*>(&Detour_ReadFile),
       reinterpret_cast<void**>(&g_orig_ReadFile));
-  const bool close = !siglus || HookFn(
+  const bool close = HookFn(
       reinterpret_cast<void*>(GetProcAddress(kernel, "CloseHandle")),
       reinterpret_cast<void*>(&Detour_CloseHandle),
       reinterpret_cast<void**>(&g_orig_CloseHandle));

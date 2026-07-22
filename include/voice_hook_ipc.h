@@ -78,6 +78,8 @@ constexpr uint32_t kDiagSiglusExactTextHookReady = 0x00004000u;
 constexpr uint32_t kDiagSiglusExactTextObserved = 0x00008000u;
 constexpr uint32_t kDiagFfmpegResourceHooksReady = 0x00010000u;
 constexpr uint32_t kDiagFfmpegResourceCaptured = 0x00020000u;
+constexpr uint32_t kDiagVisualArtsOvkHooksReady = 0x00040000u;
+constexpr uint32_t kDiagVisualArtsOvkCaptured = 0x00080000u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -94,7 +96,8 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
       (hook_diagnostics & unity_required) == unity_required;
   return (reserved_luna & kDiagKirikiriVoiceStreamHookReady) != 0 ||
          (reserved_luna & kDiagSiglusOvkHooksReady) != 0 ||
-         (hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0 || unity_ready;
+         (hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0 ||
+         (hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0 || unity_ready;
 }
 
 // Unity Streaming AudioClip 不能用 AudioClip.GetData 读取。DLL 在 Play/set_clip 时只写一个

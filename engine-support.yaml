@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "verified_at": "2026-07-21",
+  "verified_at": "2026-07-22",
   "source_baseline": {
     "repository": "hajisensai/hibiki",
     "document": "docs/specs/galgame-mining/engine-adapter-plan.md",
@@ -144,6 +144,82 @@
         "tests/siglus_launch_test.cpp",
         "tests/siglus_text_test.cpp"
       ]
+    },
+    {
+      "id": "reallive",
+      "display_name": "RealLive / old VisualArt's",
+      "aliases": ["RealLive", "VisualArt's RealLive"],
+      "family": {
+        "id": "visualarts",
+        "relation": "older sibling of the verified Siglus OVK path"
+      },
+      "detection": {
+        "executable_names": {"values": [], "evidence": null},
+        "pe_architectures": {"values": [], "evidence": null},
+        "directory_files_all": {"values": [], "evidence": null},
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {"values": [], "evidence": null},
+        "resource_extensions": {
+          "values": [".ovk"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "anemoi VisualArt's/Siglus koe/*.ovk proves the shared container path only; it is not RealLive compatibility evidence"
+          }
+        },
+        "hashes": {"values": [], "evidence": null}
+      },
+      "process_strategy": {
+        "launch": "profile_pending_real_sample",
+        "attach": "generic_attach_available",
+        "follow_child_processes": false,
+        "notes": [
+          "No executable or directory signature is enabled until measured from a real RealLive sample.",
+          "The generic OVK file hook can observe a strictly validated container without turning that observation into an engine identity claim."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_hook",
+            "status": "implemented_unverified",
+            "verification": "A RealLive dialogue-thread fixture and real sample are still required."
+          }
+        ],
+        "codepage": "game-specific",
+        "thread_selection_hint": "Select a stable RealLive/Luna dialogue thread after real-sample probing."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "visual_arts_ovk_resource",
+            "format": "strict u32 count + 16-byte entries + complete Ogg/EOS",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "xaudio2_or_directsound_pcm",
+            "format": "generic source PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Format sharing with verified Siglus OVK is not evidence that a RealLive title is compatible.",
+        "NWK/KOE/NWA remain unevaluated because no real old VisualArt's sample is available; no parser or support claim is added for them.",
+        "A real original-path run must add executable/module hashes, text-thread evidence and byte-identity proof before promotion."
+      ],
+      "adapter_path": "hook/adapters/reallive_adapter.inc",
+      "fixture_paths": ["tests/fixtures/reallive_replay.json"],
+      "test_paths": ["tests/reallive_adapter_test.cpp"]
     },
     {
       "id": "kirikiri_z",

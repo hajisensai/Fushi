@@ -43,6 +43,7 @@ add_library(hibiki_voice_hook SHARED
   "hook/dll_main.cpp"
   "hook/adapter.h"
   "hook/ffmpeg_runtime.h"
+  "hook/visual_arts_ovk.h"
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/windows_audio_adapter.inc"
@@ -221,3 +222,6 @@ foreach(_luna_dll "LunaHost${_LUNA_ARCH}.dll" "LunaHook${_LUNA_ARCH}.dll")
     VERBATIM)
 endforeach()
 add_dependencies(hibiki_luna_symcheck hibiki_voice_injector)
+add_executable(hibiki_reallive_adapter_test "tests/reallive_adapter_test.cpp")
+target_include_directories(hibiki_reallive_adapter_test PRIVATE "hook")
+add_test(NAME hibiki_reallive_adapter_test COMMAND hibiki_reallive_adapter_test)

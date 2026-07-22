@@ -1,7 +1,7 @@
 # Galgame 引擎支持矩阵
 
 > 此文件由 `engine-support.yaml` 通过 `tools/generate_engine_support.py` 自动生成，禁止手工编辑。
-> 状态基线：2026-07-21；来源：`hajisensai/hibiki/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
+> 状态基线：2026-07-22；来源：`hajisensai/hibiki/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
 > “已验证”只代表下方明确列出的真实样本、版本和能力，不外推到同家族的其它游戏。
 
 ## 总览
@@ -9,6 +9,7 @@
 | ID | 引擎 / 后端 | 状态 | 文本 | 音频优先级 | 已验证样本 |
 |---|---|---|---|---|---|
 | `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
+| `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kirikiri_z` | KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified) | 1 |
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
@@ -59,6 +60,43 @@
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/siglus_text_test.cpp`
+
+### RealLive / old VisualArt's (`reallive`)
+
+- 状态：`implemented_unverified`
+- 别名：RealLive、VisualArt's RealLive
+- 家族：`visualarts`（older sibling of the verified Siglus OVK path）
+- 当前 adapter：`hook/adapters/reallive_adapter.inc`
+- 进程策略：launch=`profile_pending_real_sample`，attach=`generic_attach_available`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `resource_extensions`：.ovk；证据：real_sample — anemoi VisualArt's/Siglus koe/*.ovk proves the shared container path only; it is not RealLive compatibility evidence
+
+文本能力：
+
+- `luna_hook`：`implemented_unverified` — A RealLive dialogue-thread fixture and real sample are still required.
+- codepage：game-specific
+- 线程提示：Select a stable RealLive/Luna dialogue thread after real-sample probing.
+
+音频优先级：
+
+1. `visual_arts_ovk_resource` — `implemented_unverified`；格式：strict u32 count + 16-byte entries + complete Ogg/EOS；clean voice：not_verified
+2. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：generic source PCM fallback；clean voice：engine_dependent
+3. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Format sharing with verified Siglus OVK is not evidence that a RealLive title is compatible.
+- NWK/KOE/NWA remain unevaluated because no real old VisualArt's sample is available; no parser or support claim is added for them.
+- A real original-path run must add executable/module hashes, text-thread evidence and byte-identity proof before promotion.
+
+Fixtures：`tests/fixtures/reallive_replay.json`
+
+Tests：`tests/reallive_adapter_test.cpp`
 
 ### KiriKiriZ (`kirikiri_z`)
 

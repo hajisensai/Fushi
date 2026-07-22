@@ -40,6 +40,7 @@ class EngineSupportManifestTest(unittest.TestCase):
         self.assertEqual(
             {
                 "siglus",
+                "reallive",
                 "kirikiri_z",
                 "xaudio2_directsound",
                 "renpy_ffmpeg",
@@ -73,6 +74,14 @@ class EngineSupportManifestTest(unittest.TestCase):
         self.assertIn(
             "xaudio2_9.dll",
             generic["detection"]["runtime_modules"]["values"],
+        )
+
+        reallive = self.engines["reallive"]
+        self.assertEqual("implemented_unverified", reallive["current_status"])
+        self.assertEqual([], reallive["verified_games"])
+        self.assertEqual([], reallive["detection"]["hashes"]["values"])
+        self.assertTrue(
+            any("not evidence" in item for item in reallive["known_limitations"])
         )
 
         renpy = self.engines["renpy_ffmpeg"]

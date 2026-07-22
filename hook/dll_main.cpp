@@ -35,7 +35,9 @@
 #include "ffmpeg_runtime.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"
+#include "visual_arts_ovk.h"
 #include "voice_hook_ipc.h"
+#include "generated/profile_includes.inc"
 
 // C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
 // GetFileVersionInfo* 在 version.dll，用 #pragma 就地声明依赖，避免改 CMake（改动集中在本文件）。

@@ -292,6 +292,7 @@ int main() {{ return hibiki_voice_hook::Matches{class_name}Profile(nullptr) ? 1 
         encoding="utf-8",
     )
     generated = root / "hook" / "generated"
+    _append_unique(generated / "profile_includes.inc", f'#include "../adapters/{engine_id}_profile.h"')
     _append_unique(generated / "adapter_includes.inc", f'#include "../adapters/{engine_id}_adapter.inc"')
     _append_unique(generated / "adapter_startup.inc", f"    {engine_id}_.install();")
     _append_unique(generated / "adapter_module.inc", f"        {engine_id}_.onModuleLoaded(entry.szModule);")
