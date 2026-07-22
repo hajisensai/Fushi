@@ -2264,5 +2264,6 @@
   "video_quality_empty": "No switchable quality for this video",
   "video_danmaku_manual_bind_failed": "Couldn't load danmaku for this episode. Try again later.",
   "remote_video_info_size": "Size: $size",
-  "remote_video_info_no_subtitle": "No subtitles"
+  "remote_video_info_no_subtitle": "No subtitles",
+  "app_icon_presets": "Presets"
 }

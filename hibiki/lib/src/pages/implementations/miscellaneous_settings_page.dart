@@ -8,6 +8,7 @@ import 'package:hibiki/src/pages/base_page.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_detail_page.dart';
+import 'package:hibiki/src/settings/settings_schema_widgets.dart';
 import 'package:hibiki/src/utils/misc/app_icon_preferences.dart';
 import 'package:hibiki/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
@@ -168,15 +169,17 @@ class _MiscellaneousSettingsBodyState
               spacing: tokens.spacing.gap,
               runSpacing: tokens.spacing.gap,
               children: [
+                // 统一走 slang t.*（MaterialLocalizations 跟系统 locale，与
+                // 应用内语言切换脱节）。
                 adaptiveDialogAction(
                   context: ctx,
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(MaterialLocalizations.of(ctx).cancelButtonLabel),
+                  child: Text(t.dialog_cancel),
                 ),
                 adaptiveDialogAction(
                   context: ctx,
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
+                  child: Text(t.dialog_ok),
                 ),
               ],
             ),
@@ -228,34 +231,39 @@ class _MiscellaneousSettingsBodyState
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 静态提示不再伪装成设置行（行标题会被 titleMaxLines 截断、还带行高/分隔线
+    // 语义），改用与 schema section footer 同款的说明文字样式。
+    TextStyle? footerStyle(BuildContext context) =>
+        Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: HibikiDesignTokens.of(context).surfaces.onVariant,
+            );
+    if (!Platform.isAndroid && !Platform.isWindows) {
+      // 本平台不支持换图标：占位说明，不渲染空设置卡。
+      return HibikiPlaceholderMessage(
+        icon: Icons.widgets_outlined,
+        message: t.icon_shortcut_unsupported,
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (Platform.isAndroid || Platform.isWindows)
-          AdaptiveSettingsSection(
-            title: t.app_icon_label,
-            children: [
-              AdaptiveSettingsRow(
-                title: t.app_icon_label,
-                controlBelow: true,
-                trailing: _buildIconGrid(),
+        // section 标题用「预设」语义；页头已经是「应用图标」，行级不再第三次
+        // 重复同一文案（图标网格直接作为卡片内容，不套多余的行标题）。
+        AdaptiveSettingsSection(
+          title: t.app_icon_presets,
+          children: [
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: tokens.spacing.rowHorizontal,
+                vertical: tokens.spacing.rowVertical,
               ),
-              if (_customSupported) ...[
-                AdaptiveSettingsRow(
-                  title: t.icon_custom_hint,
-                ),
-              ],
-            ],
-          )
-        else
-          AdaptiveSettingsSection(
-            title: t.app_icon_label,
-            children: [
-              AdaptiveSettingsRow(
-                title: t.icon_shortcut_unsupported,
-              ),
-            ],
-          ),
+              child: _buildIconGrid(),
+            ),
+          ],
+        ),
+        if (_customSupported)
+          SettingsSectionFooter(t.icon_custom_hint, style: footerStyle),
       ],
     );
   }

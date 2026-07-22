@@ -2264,5 +2264,6 @@
   "video_quality_empty": "本视频没有可切换的画质",
   "video_danmaku_manual_bind_failed": "弹幕加载失败，请稍后重试",
   "remote_video_info_size": "大小：$size",
-  "remote_video_info_no_subtitle": "不含字幕"
+  "remote_video_info_no_subtitle": "不含字幕",
+  "app_icon_presets": "预设"
 }

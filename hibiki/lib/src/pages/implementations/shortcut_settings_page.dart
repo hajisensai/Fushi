@@ -273,6 +273,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// 动作行，其后是各 action 行。返回裸内容（无脚手架），由统一详情壳承载滚动与
   /// 内边距，使从统一设置详情面板点进来不再有风格跳变。
   Widget _buildScopeSections(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -282,7 +283,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
         // it never interrupts a user who does not touch controller settings.
         if (_gameInputUnavailable) _buildGameInputHint(context),
         Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
           child: Align(
             alignment: Alignment.centerLeft,
             // Wrap the list/keyboard segmented toggle in a
@@ -377,17 +378,19 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// Wrapped in HibikiAdjustableSegmented so it is a single directional focus
   /// stop reachable by pure-gamepad users (same pattern as the view toggle).
   Widget _buildGamepadBrandSelector() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.only(bottom: 4),
+            padding: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
             child: Text(
               t.shortcut_gamepad_brand_label,
-              style: Theme.of(context).textTheme.labelMedium,
+              // 小节标题统一走 sectionLabel token（不再裸用 labelMedium）。
+              style: tokens.type.sectionLabel,
             ),
           ),
           Align(
@@ -433,6 +436,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// remap row. On desktop the same scope is a real, editable Ctrl+Alt+D binding
   /// and renders like every other scope.
   Widget _buildScopeSection(ShortcutScope scope) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final bool isMobilePlatform =
         defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS;
@@ -460,9 +464,9 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
         ),
         if (_visualMode)
           Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.rowHorizontal,
+              vertical: tokens.spacing.gap,
             ),
             // TODO-942 P1: keyboard / gamepad are two separately titled
             // blocks — the gamepad is a full real-layout figure, no longer
@@ -472,10 +476,11 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
+                  padding: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
                   child: Text(
                     t.shortcut_keyboard,
-                    style: Theme.of(context).textTheme.labelMedium,
+                    // 小节标题统一走 sectionLabel token（不再裸用 labelMedium）。
+                    style: tokens.type.sectionLabel,
                   ),
                 ),
                 KeyboardLayoutView(
@@ -485,12 +490,12 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
                   onEmptyKeyTap: (LogicalKeyboardKey key) =>
                       _onEmptyKeyboardKeyTap(scope, key),
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: tokens.spacing.rowVertical),
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
+                  padding: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
                   child: Text(
                     t.shortcut_gamepad,
-                    style: Theme.of(context).textTheme.labelMedium,
+                    style: tokens.type.sectionLabel,
                   ),
                 ),
                 GamepadLayoutView(
@@ -535,7 +540,9 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     // (TODO-317). The content is custom/stateful, so it rides the `body` escape
     // hatch instead of schema items.
     final SettingsDestination destination = SettingsDestination(
-      id: SettingsDestinationId.system,
+      // Synthetic own id（对照 appIcon/videoQuickSettings 先例）：不再借
+      // `system`——壳的身份不该冒充真正的系统分类。
+      id: SettingsDestinationId.shortcuts,
       title: t.shortcut_settings_title,
       icon: Icons.keyboard_outlined,
       sections: const <SettingsSection>[],

@@ -111,7 +111,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
   - **自定义字体**: 白名单校验 + 文件头魔数验证（TrueType/OpenType/WOFF/WOFF2/TTC）。
 - `reader_hibiki_history_page.dart` -- 阅读器与书架。
 - `dictionary_*` 系列 -- 词典相关页面。
-- `hibiki_settings_page.dart` / `display_settings_page.dart` / `switch_settings_page.dart` -- 设置。
+- 设置：schema 化体系在 `lib/src/settings/`（`settings_home_page.dart` 主从入口 + `settings_schema_*.dart` 各分类 schema）；`hibiki_settings_page.dart` 是应用内入口壳，`anki_settings_page.dart` / `shortcut_settings_page.dart` / `miscellaneous_settings_page.dart` 走 `SettingsDestination.body` 逃生口（旧 `display_settings_page.dart` / `switch_settings_page.dart` 已删除）。
 - `profile_management_page.dart` -- Profile 管理。
 - `collections_page.dart` / `tag_*` 系列 -- 集合与标签。
 - `reading_statistics_page.dart` -- 阅读统计。

@@ -163,7 +163,8 @@ class SettingsSchemaItem extends StatelessWidget {
     return AdaptiveSettingsSwitchRow(
       title: toggle.title,
       subtitle: toggle.subtitle,
-      icon: showIcons ? toggle.icon : null,
+      icon: toggle.icon,
+      showIcon: showIcons,
       value: value,
       onChanged: (bool next) async {
         await toggle.onChanged(settingsContext, next);
@@ -179,7 +180,8 @@ class SettingsSchemaItem extends StatelessWidget {
       return AdaptiveSettingsPickerRow<T>(
         title: segmented.title,
         subtitle: segmented.subtitle,
-        icon: showIcons ? segmented.icon : null,
+        icon: segmented.icon,
+        showIcon: showIcons,
         controlBelow: segmented.controlBelow,
         selected: segmented.selected(settingsContext),
         options: <AdaptiveSettingsPickerOption<T>>[
@@ -198,7 +200,8 @@ class SettingsSchemaItem extends StatelessWidget {
     return AdaptiveSettingsSegmentedRow<T>(
       title: segmented.title,
       subtitle: segmented.subtitle,
-      icon: showIcons ? segmented.icon : null,
+      icon: segmented.icon,
+      showIcon: showIcons,
       segments: segmented.options.map(_segment).toList(growable: false),
       selected: segmented.selected(settingsContext),
       controlBelow: segmented.controlBelow,
@@ -224,7 +227,8 @@ class SettingsSchemaItem extends StatelessWidget {
     return AdaptiveSettingsSliderRow(
       title: slider.title,
       subtitle: slider.subtitle,
-      icon: showIcons ? slider.icon : null,
+      icon: slider.icon,
+      showIcon: showIcons,
       value: value.clamp(slider.min, slider.max).toDouble(),
       min: slider.min,
       max: slider.max,
@@ -250,7 +254,8 @@ class SettingsSchemaItem extends StatelessWidget {
     return AdaptiveSettingsStepperRow(
       title: stepper.title,
       subtitle: stepper.subtitle,
-      icon: showIcons ? stepper.icon : null,
+      icon: stepper.icon,
+      showIcon: showIcons,
       value: value,
       step: stepper.step,
       min: stepper.min,
@@ -271,7 +276,7 @@ class SettingsSchemaItem extends StatelessWidget {
     return SettingsSecretField(
       title: text.title,
       subtitle: text.subtitle,
-      icon: showIcons ? text.icon : null,
+      icon: text.icon,
       showIcon: showIcons,
       initialValue: text.value(settingsContext),
       obscureText: text.secret,
@@ -306,7 +311,7 @@ class SettingsSchemaItem extends StatelessWidget {
     return SettingsNumberField(
       title: number.title,
       subtitle: number.subtitle,
-      icon: showIcons ? number.icon : null,
+      icon: number.icon,
       showIcon: showIcons,
       suffixText: number.suffixText,
       initialValue: format(number.value(settingsContext)),
@@ -380,7 +385,8 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
     return AdaptiveSettingsSliderRow(
       title: item.title,
       subtitle: item.subtitle,
-      icon: widget.showIcons ? item.icon : null,
+      icon: item.icon,
+      showIcon: widget.showIcons,
       value: value,
       min: item.min,
       max: item.max,
