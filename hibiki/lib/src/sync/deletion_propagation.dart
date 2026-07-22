@@ -6,6 +6,16 @@
 /// （与 union-only 的安全取舍一致）。纯 Dart：零 IO、零 Flutter 依赖，便于单测。
 library;
 
+/// 用户在删除某资产时选择的传播范围（源设备弹窗采集）。
+///
+/// - [keepLocalOnly]：只删本机，不写传播墓碑——其他设备保留（仍走本机原有防复活语义）。
+/// - [syncEverywhere]：写 `sync_deletion_tombstones` 墓碑并在同步时发布到远端标记，
+///   其他设备同步时读到标记 → 逐条确认 → 也删（见 [computeDeletionPropagation]）。
+enum DeleteScope {
+  keepLocalOnly,
+  syncEverywhere,
+}
+
 /// 删除传播的方向：远端也删 / 本地也删。
 enum DeletionPropagationDirection {
   /// 本地已删（有墓碑）而远端仍在库 → 提示用户「远端也删除？」。

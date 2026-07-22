@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/video/video_sidecar.dart'
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/collection_sync_engine.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
@@ -91,7 +92,8 @@ bool isReservedSyncFolderName(String name) =>
     name == kSyncLocalAudioNamespace ||
     name == kSyncAggregateNamespace ||
     name == kSyncCollectionsNamespace ||
-    name == kSyncVideosNamespace;
+    name == kSyncVideosNamespace ||
+    name == kSyncTombstonesNamespace;
 
 /// Delete a dictionary's package from the remote `__dictionaries__` staging
 /// namespace, so deleting a dictionary locally also removes its remote copy
@@ -180,6 +182,18 @@ class SyncRunReport {
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
 
+  /// 本轮消费远端删除标记算出的 deleteLocal 候选（远端已删 ∧ 本地仍在库，且
+  /// deletedAt > 本设备删除墓碑消费基线）。orchestrator 无 BuildContext 不直接删，
+  /// 塞进本列表经 onReport 回调（[AppModel.presentDeletionCandidates]）弹逐条确认框，
+  /// 用户勾选后才删本地。与 [conflicts] 同律：既非导入也非失败，不进任何计数。
+  final List<DeletionPropagationCandidate> deletionCandidates =
+      <DeletionPropagationCandidate>[];
+
+  /// 本轮呈现的删除候选里最大的远端 deletedAt。UI 层在用户处理完确认框后据此推进
+  /// [SyncRepository.setDeletionTombstonesBaselineMs]（=已复核到此时刻的删除标记），
+  /// 恰好压制已复核的、放行更新的删除。0 = 本轮无候选。
+  int deletionTombstonesHighWaterMs = 0;
+
   /// True when the run imported data into this device's local library caches or
   /// visible shelves. Export-only runs mutate the remote side and do not need a
   /// local refresh.
@@ -207,6 +221,7 @@ class SyncRunReport {
     collectionsUpdated += other.collectionsUpdated;
     errors.addAll(other.errors);
     conflicts.addAll(other.conflicts);
+    deletionCandidates.addAll(other.deletionCandidates);
   }
 }
 
@@ -446,6 +461,15 @@ class SyncOrchestrator {
       await _syncCollectionsLive(report, b);
     } else {
       await syncCollections(report);
+    }
+
+    // 删除传播墓碑（显式确认式）：发布本机未发布删除标记 + 消费远端标记算 deleteLocal
+    // 候选（塞 report，UI 弹逐条确认）。放合集之后、冷却戳之前：本地在库键此刻最稳定，
+    // 且中断则下轮重跑。基线不在此推进（见 syncDeletionTombstones 文档）。
+    if (isInterconnect) {
+      await _syncDeletionTombstonesLive(report, b);
+    } else {
+      await syncDeletionTombstones(report);
     }
 
     // TODO-1332: 只有整轮 sweep 完整跑到这里（书 / 词典 / 本地音频 / 有声书 / live 进度
@@ -721,6 +745,175 @@ class SyncOrchestrator {
     HibikiClientSyncBackend backend,
   ) =>
       _syncCollectionsLive(report, backend);
+
+  /// 收集本设备当前在库的资产键（按 mediaType 分组），供删除墓碑消费端算 deleteLocal
+  /// 候选（远端有删除标记 ∧ 本地仍在库）。itemKey 与写墓碑点严格一致：book/audiobook =
+  /// bookKey（[writeSyncDeletionTombstone] 调用点 reader_hibiki_source / audiobook），
+  /// video = bookUid（video_book_repository），localaudio = displayName。
+  Future<Map<String, Set<String>>> _collectPresentDeletionKeys() async {
+    return <String, Set<String>>{
+      'book': <String>{
+        for (final EpubBookRow r in await _db.getAllEpubBooks()) r.bookKey,
+      },
+      'audiobook': <String>{
+        for (final AudiobookRow r in await _db.getAllAudiobooks()) r.bookKey,
+      },
+      'video': <String>{
+        for (final VideoBookRow r in await _db.allVideoBooks()) r.bookUid,
+      },
+      'localaudio': <String>{
+        for (final LocalAudioDbEntry e in localAudioEntries) e.displayName,
+      },
+    };
+  }
+
+  /// 删除墓碑同步（云后端通道，显式确认式删除传播 Phase C/D）。
+  ///
+  /// **发布**：把本机未发布墓碑（remotePublishedAt==0）写成远端 `__tombstones__/`
+  /// 标记文件（[deletionTombstoneAssetName] / [deletionTombstoneJson]），并
+  /// [markSyncDeletionPublished] 防每轮重发。
+  ///
+  /// **消费**：读命名空间下全部远端标记 → 与本地在库键求交（[computeDeletionPropagation]
+  /// 的 deleteLocal 方向）→ 过因果基线守卫（marker.deletedAt > 本设备
+  /// [getDeletionTombstonesBaselineMs]）→ 塞进 [SyncRunReport.deletionCandidates]，由
+  /// UI 层弹逐条确认框（orchestrator 无 context，绝不在此直接删）。基线**不在此推进**——
+  /// 否则 app 在弹框前被杀，用户永远看不到该删除；改由 UI 确认后推进
+  /// （[setDeletionTombstonesBaselineMs]，见 [deletionTombstonesHighWaterMs]）。
+  ///
+  /// 不自动 GC 远端标记：本设备仍持有该资产且 deletedAt <= 基线时，无法区分「保留」与
+  /// 「删后重加」，误删标记会破坏其它设备的删除传播——书/视频不自动重导入，标记长存只是
+  /// 极小的存储/新设备重弹成本，GC 留待 Phase F。整段 try/catch，错误进 report.errors。
+  Future<void> syncDeletionTombstones(SyncRunReport report) async {
+    try {
+      final String ns = await _backend.ensureNamespace(kSyncTombstonesNamespace);
+      final SyncRepository repo = SyncRepository(_db);
+      final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
+
+      // ── 发布：本机未发布墓碑 → 远端标记 ──
+      final List<SyncDeletionTombstoneRow> localRows =
+          await _db.getSyncDeletionTombstones();
+      for (final SyncDeletionTombstoneRow row in localRows) {
+        if (row.remotePublishedAt != 0) continue;
+        await _backend.putJsonAsset(
+          ns,
+          deletionTombstoneAssetName(row.mediaType, row.itemKey),
+          deletionTombstoneJson(row.mediaType, row.itemKey, row.deletedAt),
+        );
+        await _db.markSyncDeletionPublished(
+            row.mediaType, row.itemKey, nextBaseline);
+      }
+
+      // ── 消费：读远端标记 → deleteLocal 候选（过基线守卫）──
+      final Map<String, Set<String>> remoteTombstones = <String, Set<String>>{};
+      final Map<String, int> remoteDeletedAt = <String, int>{};
+      final List<AssetEntry> children = await _backend.listChildren(ns);
+      for (final AssetEntry e in children) {
+        if (e.isFolder) continue;
+        Object? json;
+        try {
+          json = await _backend.getJsonAsset(e.id);
+        } catch (err) {
+          report.errors.add('deletion tombstone "${e.name}" unreadable: $err');
+          continue;
+        }
+        final parsed = parseDeletionTombstoneJson(json);
+        if (parsed == null) continue;
+        remoteTombstones
+            .putIfAbsent(parsed.mediaType, () => <String>{})
+            .add(parsed.itemKey);
+        final String k = '${parsed.mediaType} ${parsed.itemKey}';
+        // 同资产多标记取较新 deletedAt（理论上主键唯一，防御性取 max）。
+        final int? prev = remoteDeletedAt[k];
+        if (prev == null || parsed.deletedAt > prev) {
+          remoteDeletedAt[k] = parsed.deletedAt;
+        }
+      }
+
+      final Map<String, Set<String>> present =
+          await _collectPresentDeletionKeys();
+      int baseline = await repo.getDeletionTombstonesBaselineMs();
+      if (baseline > nextBaseline) baseline = nextBaseline; // 时钟回拨钳制。
+
+      // deleteLocal 方向：远端有标记 ∧ 本地在库。localTombstones/remotePresent 传空
+      // ⇒ 只产 deleteLocal，不产 deleteRemote（本设备的删除靠发布标记让对端各自消费）。
+      final List<DeletionPropagationCandidate> raw = computeDeletionPropagation(
+        localTombstones: const <String, Set<String>>{},
+        remoteTombstones: remoteTombstones,
+        localPresent: present,
+        remotePresent: const <String, Set<String>>{},
+      );
+      for (final DeletionPropagationCandidate c in raw) {
+        if (c.direction != DeletionPropagationDirection.deleteLocal) continue;
+        final int? at = remoteDeletedAt['${c.mediaType} ${c.itemKey}'];
+        if (at == null || at <= baseline) continue; // 旧闻 / 已处理，不再弹。
+        report.deletionCandidates.add(c);
+        if (at > report.deletionTombstonesHighWaterMs) {
+          report.deletionTombstonesHighWaterMs = at;
+        }
+      }
+    } catch (e) {
+      report.errors.add('deletion tombstones sync: $e');
+    }
+  }
+
+  /// 删除墓碑同步（互联 host API 通道）。GET host 墓碑（老 host 404 → null 优雅跳过）→
+  /// 与本地在库键求交 deleteLocal 候选 → 过基线守卫 → 塞 report。与云
+  /// [syncDeletionTombstones] 同消费语义；互联为 GET-only（host→client 方向），client
+  /// 自身删除不经此推给 host（各端自行确认删除，见蓝图）。
+  Future<void> _syncDeletionTombstonesLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    try {
+      final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
+      final List<({String mediaType, String itemKey, int deletedAt})>? remote =
+          await backend.getRemoteDeletionTombstones();
+      if (remote == null) return; // 老 host 无 /api/tombstones 端点，优雅跳过。
+
+      final Map<String, Set<String>> remoteTombstones = <String, Set<String>>{};
+      final Map<String, int> remoteDeletedAt = <String, int>{};
+      for (final r in remote) {
+        remoteTombstones
+            .putIfAbsent(r.mediaType, () => <String>{})
+            .add(r.itemKey);
+        final String k = '${r.mediaType} ${r.itemKey}';
+        final int? prev = remoteDeletedAt[k];
+        if (prev == null || r.deletedAt > prev) remoteDeletedAt[k] = r.deletedAt;
+      }
+
+      final SyncRepository repo = SyncRepository(_db);
+      final Map<String, Set<String>> present =
+          await _collectPresentDeletionKeys();
+      int baseline = await repo.getDeletionTombstonesBaselineMs();
+      if (baseline > nextBaseline) baseline = nextBaseline;
+
+      final List<DeletionPropagationCandidate> raw = computeDeletionPropagation(
+        localTombstones: const <String, Set<String>>{},
+        remoteTombstones: remoteTombstones,
+        localPresent: present,
+        remotePresent: const <String, Set<String>>{},
+      );
+      for (final DeletionPropagationCandidate c in raw) {
+        if (c.direction != DeletionPropagationDirection.deleteLocal) continue;
+        final int? at = remoteDeletedAt['${c.mediaType} ${c.itemKey}'];
+        if (at == null || at <= baseline) continue;
+        report.deletionCandidates.add(c);
+        if (at > report.deletionTombstonesHighWaterMs) {
+          report.deletionTombstonesHighWaterMs = at;
+        }
+      }
+    } catch (e) {
+      report.errors.add('deletion tombstones live sync: $e');
+    }
+  }
+
+  /// 测试入口：直接调用 [_syncDeletionTombstonesLive]（private 对测试不可见）。
+  @visibleForTesting
+  Future<void> syncDeletionTombstonesLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncDeletionTombstonesLive(report, backend);
 
   /// 云视频资产同步（多端库联合视图 §2.6 / 任务12，云后端通道）。
   ///
