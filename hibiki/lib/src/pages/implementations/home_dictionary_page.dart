@@ -95,6 +95,15 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   bool _historyWritten = false;
 
+  /// BUG-1020：本页是否真正对 [DesktopLookupService] 做过一次 start（refcount +1）。
+  /// dispose 的 stop 必须与它配对，**不能**改读可变 pref `desktopClipboardEnabled`——
+  /// 该 pref 会在 initState 与 dispose 之间被用户翻转（页内打开/关闭剪贴板监听开关），
+  /// 令 start 门控与 stop 门控读到不同值 → 页级 stop 吞掉 app 级 hold 的 +1 → 计数归 0
+  /// → OS watcher 被真正拆掉、pref 却仍显示「已开启」→ 剪贴板监听永久哑火直到重启。
+  /// 用实例 bool 记录「本页确实 start 过」，把 stop 与外部可变量彻底解耦，页级 owner
+  /// 恒为严格配对的 +1/-1。
+  bool _desktopLookupStarted = false;
+
   /// 仅测试可见：最近一次派发的查词 future（[debugSearch] 返回它以便
   /// await 失败路径）。生产路径仍 fire-and-forget，不改变行为。
   Future<void>? _lastDispatchedSearch;
@@ -163,11 +172,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   /// desktopClipboardEnabled 门控），离开时 stop（见 dispose）。与 AppModel 的 app 级
   /// hold 经 [DesktopLookupService] 的 _startRefCount 安全并存（0→1 才真正挂 watcher，
   /// 1→0 才真正拆）。
+  ///
+  /// BUG-1020：置 [_desktopLookupStarted] 记录本页确实 start 过——同步在 start() 之前
+  /// 置位，与 start() 内部同步完成的 `_startRefCount++`（首个 await 之前）天然配对；
+  /// dispose 只据此 bool 决定是否 stop，不再改读可变 pref。
   Future<void> _startDesktopLookupIfEnabled() async {
     final AppModel model = appModelNoUpdate;
     if (!DesktopLookupService.isDesktop || !model.desktopClipboardEnabled) {
       return;
     }
+    _desktopLookupStarted = true;
     await DesktopLookupService.instance.start(
       windowMode: model.desktopClipboardWindowMode,
     );
@@ -249,10 +263,13 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     final HomeDictionaryPage w = widget as HomeDictionaryPage;
     w.focusSignal?.removeListener(_onFocusSignal);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
-    // TODO-1394 方案B：恢复 1385 页级 stop（受 enabled 门控，refcount -1）。app 级
-    // hold 仍保 watcher 在 tab 卸载后为剪贴板独立面板/瞬态去向运行（见 initState）。
-    if (DesktopLookupService.isDesktop &&
-        appModelNoUpdate.desktopClipboardEnabled) {
+    // TODO-1394 方案B：恢复 1385 页级 stop（refcount -1）。app 级 hold 仍保 watcher 在
+    // tab 卸载后为剪贴板独立面板/瞬态去向运行（见 initState）。BUG-1020：stop 与本页自己
+    // 的 start 严格配对——只据 [_desktopLookupStarted] 判定，**不**改读可变 pref
+    // desktopClipboardEnabled（该 pref 会在 start 与 dispose 之间被翻转，导致页级 stop
+    // 吞掉 app 级 hold 的计数、把 OS watcher 拆死而 pref 仍显示开启 → 永久哑火）。
+    if (_desktopLookupStarted) {
+      _desktopLookupStarted = false;
       unawaited(DesktopLookupService.instance.stop());
     }
     _searchFocusNode.removeListener(_onFocusChanged);
