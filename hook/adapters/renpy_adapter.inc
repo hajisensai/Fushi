@@ -152,8 +152,9 @@ bool SampleFormatLayout(int format, uint32_t* bytes_per_sample,
   }
 }
 
-// url（char*，UTF-8/本地编码）是否语音：小写后先排 BGM/SE/music/sound，再命中 "voice"/"vo_" 或音频
-// 后缀。粗过滤即可——host 侧再按文本时间戳精配（与 KiriKiri OGG 同款「就近配对」）。
+// url（char*，UTF-8/本地编码）是否语音：TyranoScript 把语音和音效都放在 data/sound，
+// 但其语音惯例是 sound/v_*/...，必须先识别这个更具体的目录，再排除通用 sound/SE。
+// 粗过滤即可——host 侧再按文本时间戳精配（与 KiriKiri OGG 同款「就近配对」）。
 bool IsVoiceUrl(const char* url) {
   if (url == nullptr) return false;
   char low[520];
@@ -165,6 +166,12 @@ bool IsVoiceUrl(const char* url) {
   }
   low[n] = 0;
   if (n == 0) return false;
+  if (strstr(low, "/sound/v_") != nullptr ||
+      strstr(low, "\\sound\\v_") != nullptr ||
+      strstr(low, "data/sound/v_") != nullptr ||
+      strstr(low, "data\\sound\\v_") != nullptr) {
+    return true;
+  }
   if (strstr(low, "bgm") != nullptr || strstr(low, "music") != nullptr ||
       strstr(low, "sound") != nullptr || strstr(low, "/se/") != nullptr ||
       strstr(low, "\\se\\") != nullptr || strstr(low, "se_") != nullptr) {
@@ -743,7 +750,11 @@ void StopRenpyWorker() {
 int __cdecl Detour_avformat_open_input(void** ps, const char* url, void* fmt,
                                        void** options) {
   const int ret = g_orig_avformat_open_input(ps, url, fmt, options);
-  if (ret == 0 && g_capture_enabled) EnqueueRenpyResource(url);
+  if (ret == 0 && g_capture_enabled && EnqueueRenpyResource(url) &&
+      g_header != nullptr) {
+    g_header->hook_diagnostics |=
+        hibiki_voice_hook::kDiagFfmpegVoiceResourceObserved;
+  }
   if (ret == 0 && ps != nullptr && *ps != nullptr && g_capture_enabled &&
       g_renpy_cs_ready && g_renpy_avformat_major == 54 && IsVoiceUrl(url)) {
     void* ctx = *ps;
@@ -818,7 +829,7 @@ void __cdecl Detour_av_close_input_file(void* ctx) {
   g_orig_av_close_input_file(ctx);
 }
 
-// 所有带 major 的 avformat DLL 都挂稳定的 open_input ABI，发布通用 OGG/WAV/Opus/FLAC 资源事件。
+// 所有带 major 的 avformat DLL 都挂稳定的 open_input ABI，发布通用 OGG/WAV/Opus/FLAC/M4A 资源事件。
 // 只有 major 54 继续解释内部结构并挂 decode_audio4，作为旧 Ren'Py 的 PCM 兼容降级；现代 major
 // 不读取私有结构偏移。所有资源 IO、PCM 转换和 WAV 落盘均由 RenpyWorker 完成。
 bool TryHookRenpyAudio() {
@@ -875,6 +886,7 @@ bool TryHookRenpyAudio() {
 HMODULE FindLoadedFfmpegModule(hibiki_voice_hook::FfmpegModuleKind kind,
                                uint32_t* major) {
   HMODULE result = nullptr;
+  HMODULE monolithic_fallback = nullptr;
   uint32_t result_major = 0;
   HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
                                          GetCurrentProcessId());
@@ -888,9 +900,20 @@ HMODULE FindLoadedFfmpegModule(hibiki_voice_hook::FfmpegModuleKind kind,
         result = me.hModule;
         result_major = parsed.major;
       }
+      if (monolithic_fallback == nullptr &&
+          hibiki_voice_hook::IsMonolithicFfmpegModuleName(me.szModule)) {
+        const char* required_export =
+            kind == hibiki_voice_hook::FfmpegModuleKind::kAvformat
+                ? "avformat_open_input"
+                : "avcodec_send_packet";
+        if (GetProcAddress(me.hModule, required_export) != nullptr) {
+          monolithic_fallback = me.hModule;
+        }
+      }
     } while (Module32NextW(snap, &me));
   }
   CloseHandle(snap);
+  if (result == nullptr) result = monolithic_fallback;
   if (major != nullptr) *major = result_major;
   return result;
 }

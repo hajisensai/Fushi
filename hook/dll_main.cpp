@@ -32,6 +32,7 @@
 
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
+#include "asar_runtime.h"
 #include "ffmpeg_runtime.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"
@@ -421,6 +422,7 @@ bool SignalReady(DWORD pid) {
 #include "adapters/unity_adapter.inc"
 #include "adapters/windows_audio_adapter.inc"
 #include "adapters/siglus_adapter.inc"
+#include "adapters/tyrano_adapter.inc"
 #include "adapters/kirikiri_adapter.inc"
 #include "adapters/renpy_adapter.inc"
 #include "adapters/text_render_adapter.inc"

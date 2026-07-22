@@ -1158,6 +1158,10 @@ void InspectFfmpegModules(DWORD pid,
       candidate->has_avformat =
           candidate->has_avformat ||
           parsed.kind == hibiki_voice_hook::FfmpegModuleKind::kAvformat;
+      if (hibiki_voice_hook::IsMonolithicFfmpegModuleName(module.szModule)) {
+        candidate->has_avcodec = true;
+        candidate->has_avformat = true;
+      }
     } while (Module32NextW(snapshot, &module));
   }
   CloseHandle(snapshot);

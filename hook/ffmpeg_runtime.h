@@ -34,6 +34,30 @@ inline bool StartsWithAsciiInsensitive(const wchar_t* value,
   return true;
 }
 
+inline bool FfmpegEqualsAsciiInsensitive(const wchar_t* value,
+                                         const wchar_t* expected) {
+  if (value == nullptr || expected == nullptr) return false;
+  while (*value != 0 && *expected != 0) {
+    if (AsciiLower(*value) != AsciiLower(*expected)) return false;
+    ++value;
+    ++expected;
+  }
+  return *value == 0 && *expected == 0;
+}
+
+// Chromium/NW.js ship one ffmpeg.dll containing both libavformat and
+// libavcodec instead of the versioned avformat-XX/avcodec-XX split used by
+// Ren'Py. Its ABI major cannot be inferred from the filename, so callers must
+// capability-probe exports and treat the major as unknown (0).
+inline bool IsMonolithicFfmpegModuleName(const wchar_t* module_name) {
+  if (module_name == nullptr) return false;
+  const wchar_t* base = module_name;
+  for (const wchar_t* cursor = module_name; *cursor != 0; ++cursor) {
+    if (*cursor == L'/' || *cursor == L'\\') base = cursor + 1;
+  }
+  return FfmpegEqualsAsciiInsensitive(base, L"ffmpeg.dll");
+}
+
 inline FfmpegModule ParseFfmpegModuleName(const wchar_t* module_name) {
   if (module_name == nullptr) return {};
   const wchar_t* base = module_name;
@@ -70,6 +94,7 @@ enum class AudioResourceFormat : uint8_t {
   kWave = 2,
   kOpus = 3,
   kFlac = 4,
+  kM4a = 5,
 };
 
 inline bool BytesEqual(const uint8_t* bytes, size_t size, size_t offset,
@@ -97,6 +122,9 @@ inline AudioResourceFormat DetectAudioResourceFormat(const uint8_t* bytes,
   if (BytesEqual(bytes, size, 0, "fLaC", 4)) {
     return AudioResourceFormat::kFlac;
   }
+  if (BytesEqual(bytes, size, 4, "ftyp", 4)) {
+    return AudioResourceFormat::kM4a;
+  }
   return {};
 }
 
@@ -110,6 +138,8 @@ inline const wchar_t* AudioResourceExtension(AudioResourceFormat format) {
       return L".opus";
     case AudioResourceFormat::kFlac:
       return L".flac";
+    case AudioResourceFormat::kM4a:
+      return L".m4a";
     default:
       return L"";
   }

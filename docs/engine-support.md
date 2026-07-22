@@ -1,7 +1,7 @@
 # Galgame 引擎支持矩阵
 
 > 此文件由 `engine-support.yaml` 通过 `tools/generate_engine_support.py` 自动生成，禁止手工编辑。
-> 状态基线：2026-07-22；来源：`hajisensai/hibiki/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
+> 状态基线：2026-07-23；来源：`hajisensai/hibiki/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
 > “已验证”只代表下方明确列出的真实样本、版本和能力，不外推到同家族的其它游戏。
 
 ## 总览
@@ -13,6 +13,7 @@
 | `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified) | 1 |
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
+| `tyrano_nwjs` | TyranoScript / NW.js | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | tyrano_asar_voice_resource (verified)；ffmpeg_resource_event (implemented_unverified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
 
 ## 识别与能力明细
@@ -202,7 +203,7 @@ Tests：`tests/session_reuse_test.cpp`
 
 音频优先级：
 
-1. `ffmpeg_resource_event` — `implemented_unverified`；格式：signature-checked OGG/WAV/Opus/FLAC from any versioned avformat module；clean voice：not_verified
+1. `ffmpeg_resource_event` — `implemented_unverified`；格式：signature-checked OGG/WAV/Opus/FLAC/M4A from any versioned avformat module；clean voice：not_verified
 2. `ffmpeg54_decoder_pcm` — `implemented_unverified`；格式：libavcodec/libavformat major 54 decoded PCM；clean voice：not_verified
 3. `process_loopback` — `verified`；格式：host PCM fallback；clean voice：否
 
@@ -212,7 +213,7 @@ Tests：`tests/session_reuse_test.cpp`
 
 已知限制：
 
-- Generic avformat resource capture only accepts local, standalone OGG/WAV/Opus/FLAC files; archive/custom AVIO URLs fall through to PCM or loopback.
+- Generic avformat resource capture only accepts local, standalone OGG/WAV/Opus/FLAC/M4A files; archive/custom AVIO URLs fall through to PCM or loopback.
 - Only the optional decoded-PCM compatibility path interprets libavcodec/libavformat major 54 hand-maintained layouts; modern majors never use those offsets.
 - The selected injector/DLL architecture must match the followed game child; a launcher that crosses x86/x64 still requires selecting the child's architecture upstream.
 - The real sample fell back to loopback; no clean decoder-level voice claim is made.
@@ -220,6 +221,49 @@ Tests：`tests/session_reuse_test.cpp`
 Fixtures：`tests/fixtures/workflow_replay.json`
 
 Tests：`tests/ffmpeg_runtime_test.cpp`、`tests/child_process_policy_test.cpp`、`tests/resource_audio_ready_test.cpp`
+
+### TyranoScript / NW.js (`tyrano_nwjs`)
+
+- 状态：`partial`
+- 别名：TyranoScript 5、TyranoBuilder、NW.js
+- 家族：`tyrano`（NW.js packaged TyranoScript runtime）
+- 当前 adapter：`hook/adapters/tyrano_adapter.inc`
+- 进程策略：launch=`inject_visible_nwjs_process_before_resume`，attach=`requires_attach_before_app_asar_open`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：kaerimichi.exe；证据：real_sample — かえりみち official free Windows release from novelgame.jp, verified 2026-07-23
+- `pe_architectures`：x64；证据：real_sample — kaerimichi.exe PE/COFF x86-64 runtime observation
+- `directory_files_all`：resources/app.asar、ffmpeg.dll；证据：real_sample — Official sample package layout and live module inventory
+- `runtime_modules`：ffmpeg.dll；证据：runtime_observation — Monolithic Chromium FFmpeg exports avformat_open_input and is loaded in the visible NW.js process
+- `resource_extensions`：.ogg、.m4a；证据：real_sample — app.asar contains paired OGG/M4A voice members under data/sound/v_*
+- `hashes`：kaerimichi.exe sha256:B12A54AA1F76C7EE7308B40885ACE4534679798F79ED81909524260FB667F80D、app.asar sha256:46867519C7896B7DFB753BB3381C040970B1F0FFA226E3511751414D8E1FCED7；证据：real_sample — Local SHA-256 of the official かえりみち Windows release, 2026-07-23
+
+文本能力：
+
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — The live run exposed Tyrano text in process diagnostics, but no stable production thread-selection replay was recorded.
+- codepage：UTF-8/Unicode
+- 线程提示：Prefer a stable complete-line renderer thread; ignore CSS, resource-path and per-character noise.
+
+音频优先级：
+
+1. `tyrano_asar_voice_resource` — `verified`；格式：exact signature-checked OGG/M4A member from data/sound/v_*；clean voice：是
+2. `ffmpeg_resource_event` — `implemented_unverified`；格式：monolithic Chromium ffmpeg.dll avformat boundary；clean voice：not_verified
+3. `process_loopback` — `verified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+- **かえりみち**（x64，TyranoScript 5 / NW.js; package product version 1.0.1，2026-07-23）：Official free full-voice sample. The first voiced line exported d_a_1.ogg (58,597 bytes); SHA-256 9C94CE6BE59B788E35F299379001C50E82D55CAF02B54EB0A63B9FB4C079AAF9 exactly matched the corresponding app.asar member. SHA-256：B12A54AA1F76C7EE7308B40885ACE4534679798F79ED81909524260FB667F80D。
+
+已知限制：
+
+- Clean resource capture currently recognizes the Tyrano convention data/sound/v_* and OGG/M4A members; projects using custom voice directories or encrypted archives need another profile.
+- The verified build captures from the visible root process. NW.js builds that perform archive reads only in a child process still require explicit child targeting until injector-wide descendant propagation is implemented.
+- Audio is verified, but stable automatic Tyrano text-thread selection remains unverified.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：—
 
 ### Unity IL2CPP (`unity_il2cpp`)
 

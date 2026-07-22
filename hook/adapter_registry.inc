@@ -229,12 +229,45 @@ class RenPyAdapter final : public hibiki_voice_hook::EngineAdapter {
   void onModuleLoaded(const wchar_t* module_name) override {
     const auto ffmpeg = hibiki_voice_hook::ParseFfmpegModuleName(module_name);
     if (module_name == nullptr ||
-        ffmpeg.kind != hibiki_voice_hook::FfmpegModuleKind::kNone) {
+        ffmpeg.kind != hibiki_voice_hook::FfmpegModuleKind::kNone ||
+        hibiki_voice_hook::IsMonolithicFfmpegModuleName(module_name)) {
       install();
     }
   }
   void shutdown() override {
     StopRenpyWorker();
+    installed_ = false;
+    ready_ = false;
+  }
+  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+    return {id(), probe(), installed_,
+            g_header == nullptr ? 0u : g_header->hook_diagnostics};
+  }
+
+ private:
+  bool installed_ = false;
+  bool ready_ = false;
+};
+
+class TyranoAdapter final : public hibiki_voice_hook::EngineAdapter {
+ public:
+  const char* id() const override { return "tyrano_nwjs"; }
+  bool probe() const override {
+    return InterlockedCompareExchange(&g_tyrano_asar_ready, 0, 0) != 0;
+  }
+  bool install() override {
+    ready_ = TryHookTyranoAsarAudio();
+    installed_ = installed_ || ready_;
+    return ready_;
+  }
+  bool ready() const { return ready_; }
+  void ProcessPendingEvents() { ProcessTyranoAsarTasks(); }
+  hibiki_voice_hook::AdapterCapability capabilities() const override {
+    return hibiki_voice_hook::AdapterCapability::kResourceAudio;
+  }
+  void onModuleLoaded(const wchar_t*) override {}
+  void shutdown() override {
+    StopTyranoAsarAudio();
     installed_ = false;
     ready_ = false;
   }
@@ -290,6 +323,7 @@ class AdapterRegistry {
     // the injector observes kDiagStartupAudioHooksReady and resumes a suspended game.
     generic_audio_.install();
     siglus_.InstallResourceAudio();
+    tyrano_.install();
     if (g_header != nullptr) {
       g_header->hook_diagnostics |= kDiagStartupAudioHooksReady;
     }
@@ -307,6 +341,7 @@ class AdapterRegistry {
   void Poll() {
     DispatchNewModules();
     siglus_.ProcessPendingEvents();
+    tyrano_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.
@@ -334,6 +369,10 @@ class AdapterRegistry {
       renpy_.onModuleLoaded(nullptr);
       ++renpy_retry_;
     }
+    if (!tyrano_.ready() && g_capture_enabled && tyrano_retry_ < kRetryLimit) {
+      tyrano_.install();
+      ++tyrano_retry_;
+    }
   }
 
   DWORD PollDelayMs() const {
@@ -343,6 +382,7 @@ class AdapterRegistry {
   void Shutdown() {
     loopback_.shutdown();
     renpy_.shutdown();
+    tyrano_.shutdown();
     kirikiri_.shutdown();
     siglus_.shutdown();
     text_render_.shutdown();
@@ -398,6 +438,7 @@ class AdapterRegistry {
   TextRenderAdapter text_render_;
   KiriKiriAdapter kirikiri_;
   RenPyAdapter renpy_;
+  TyranoAdapter tyrano_;
   LoopbackAdapter loopback_;
 #include "generated/adapter_fields.inc"
   int generic_retry_ = 0;
@@ -405,6 +446,7 @@ class AdapterRegistry {
   int decoder_retry_ = 0;
   int voice_retry_ = 0;
   int renpy_retry_ = 0;
+  int tyrano_retry_ = 0;
   ULONGLONG next_module_scan_ms_ = 0;
   bool modules_seeded_ = false;
   std::vector<std::wstring> known_modules_;

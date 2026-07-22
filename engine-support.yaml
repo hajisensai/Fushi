@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "verified_at": "2026-07-22",
+  "verified_at": "2026-07-23",
   "source_baseline": {
     "repository": "hajisensai/hibiki",
     "document": "docs/specs/galgame-mining/engine-adapter-plan.md",
@@ -472,7 +472,7 @@
         "priority": [
           {
             "kind": "ffmpeg_resource_event",
-            "format": "signature-checked OGG/WAV/Opus/FLAC from any versioned avformat module",
+            "format": "signature-checked OGG/WAV/Opus/FLAC/M4A from any versioned avformat module",
             "status": "implemented_unverified",
             "clean_voice": "not_verified"
           },
@@ -502,7 +502,7 @@
       ],
       "current_status": "implemented_unverified",
       "known_limitations": [
-        "Generic avformat resource capture only accepts local, standalone OGG/WAV/Opus/FLAC files; archive/custom AVIO URLs fall through to PCM or loopback.",
+        "Generic avformat resource capture only accepts local, standalone OGG/WAV/Opus/FLAC/M4A files; archive/custom AVIO URLs fall through to PCM or loopback.",
         "Only the optional decoded-PCM compatibility path interprets libavcodec/libavformat major 54 hand-maintained layouts; modern majors never use those offsets.",
         "The selected injector/DLL architecture must match the followed game child; a launcher that crosses x86/x64 still requires selecting the child's architecture upstream.",
         "The real sample fell back to loopback; no clean decoder-level voice claim is made."
@@ -514,6 +514,121 @@
         "tests/child_process_policy_test.cpp",
         "tests/resource_audio_ready_test.cpp"
       ]
+    },
+    {
+      "id": "tyrano_nwjs",
+      "display_name": "TyranoScript / NW.js",
+      "aliases": ["TyranoScript 5", "TyranoBuilder", "NW.js"],
+      "family": {"id": "tyrano", "relation": "NW.js packaged TyranoScript runtime"},
+      "detection": {
+        "executable_names": {
+          "values": ["kaerimichi.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "かえりみち official free Windows release from novelgame.jp, verified 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x64"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "kaerimichi.exe PE/COFF x86-64 runtime observation"
+          }
+        },
+        "directory_files_all": {
+          "values": ["resources/app.asar", "ffmpeg.dll"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official sample package layout and live module inventory"
+          }
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["ffmpeg.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Monolithic Chromium FFmpeg exports avformat_open_input and is loaded in the visible NW.js process"
+          }
+        },
+        "resource_extensions": {
+          "values": [".ogg", ".m4a"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "app.asar contains paired OGG/M4A voice members under data/sound/v_*"
+          }
+        },
+        "hashes": {
+          "values": [
+            "kaerimichi.exe sha256:B12A54AA1F76C7EE7308B40885ACE4534679798F79ED81909524260FB667F80D",
+            "app.asar sha256:46867519C7896B7DFB753BB3381C040970B1F0FFA226E3511751414D8E1FCED7"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the official かえりみち Windows release, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "inject_visible_nwjs_process_before_resume",
+        "attach": "requires_attach_before_app_asar_open",
+        "follow_child_processes": false,
+        "notes": [
+          "The verified build creates renderer, GPU, network and audio-service children, but the exact ASAR voice read and clean resource export were observed in the visible root process.",
+          "Launch mode injects before resume and is the supported path; late attach cannot recover an app.asar handle that was already opened."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "The live run exposed Tyrano text in process diagnostics, but no stable production thread-selection replay was recorded."
+          }
+        ],
+        "codepage": "UTF-8/Unicode",
+        "thread_selection_hint": "Prefer a stable complete-line renderer thread; ignore CSS, resource-path and per-character noise."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "tyrano_asar_voice_resource",
+            "format": "exact signature-checked OGG/M4A member from data/sound/v_*",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "ffmpeg_resource_event",
+            "format": "monolithic Chromium ffmpeg.dll avformat boundary",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "かえりみち",
+          "engine_version": "TyranoScript 5 / NW.js; package product version 1.0.1",
+          "architecture": "x64",
+          "executable_sha256": "B12A54AA1F76C7EE7308B40885ACE4534679798F79ED81909524260FB667F80D",
+          "verified_on": "2026-07-23",
+          "evidence": "Official free full-voice sample. The first voiced line exported d_a_1.ogg (58,597 bytes); SHA-256 9C94CE6BE59B788E35F299379001C50E82D55CAF02B54EB0A63B9FB4C079AAF9 exactly matched the corresponding app.asar member."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "Clean resource capture currently recognizes the Tyrano convention data/sound/v_* and OGG/M4A members; projects using custom voice directories or encrypted archives need another profile.",
+        "The verified build captures from the visible root process. NW.js builds that perform archive reads only in a child process still require explicit child targeting until injector-wide descendant propagation is implemented.",
+        "Audio is verified, but stable automatic Tyrano text-thread selection remains unverified."
+      ],
+      "adapter_path": "hook/adapters/tyrano_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
     },
     {
       "id": "unity_il2cpp",

@@ -33,6 +33,16 @@ decltype(&CreateFileA) g_orig_CreateFileA = nullptr;
 decltype(&ReadFile) g_orig_ReadFile = nullptr;
 decltype(&CloseHandle) g_orig_CloseHandle = nullptr;
 
+// TyranoScript/NW.js uses the same kernel file boundary for app.asar. The
+// implementation is included after this adapter so it can reuse these four
+// original trampolines without stacking a second MinHook detour.
+void RememberTyranoAsar(HANDLE handle, const wchar_t* path);
+void ObserveTyranoAsarReadRequest(HANDLE file, DWORD requested,
+                                  LPOVERLAPPED overlapped);
+void ObserveTyranoAsarRead(HANDLE file, const void* buffer, DWORD done,
+                           LPOVERLAPPED overlapped);
+void ForgetTyranoAsar(HANDLE handle);
+
 bool HasOvkSuffix(const wchar_t* path) {
   if (path == nullptr) return false;
   const size_t len = wcslen(path);
@@ -135,6 +145,7 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   if (result != INVALID_HANDLE_VALUE && HasOvkSuffix(file_name)) {
     RememberSiglusOvk(result, file_name);
   }
+  if (result != INVALID_HANDLE_VALUE) RememberTyranoAsar(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
@@ -158,7 +169,10 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
     wchar_t wide[kUnityBundlePathChars] = {0};
     const int converted = MultiByteToWideChar(
         CP_ACP, 0, file_name, -1, wide, kUnityBundlePathChars);
-    if (converted > 0) RememberUnityVoiceBundle(wide);
+    if (converted > 0) {
+      RememberTyranoAsar(result, wide);
+      RememberUnityVoiceBundle(wide);
+    }
   }
   return result;
 }
@@ -181,10 +195,14 @@ void QueueSiglusVoice(const wchar_t* path, uint64_t offset) {
 
 BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
                             LPDWORD bytes_read, LPOVERLAPPED overlapped) {
+  if (g_capture_enabled && overlapped != nullptr && requested > 0) {
+    ObserveTyranoAsarReadRequest(file, requested, overlapped);
+  }
   const BOOL ok =
       g_orig_ReadFile(file, buffer, requested, bytes_read, overlapped);
   const DWORD done = bytes_read != nullptr ? *bytes_read : 0;
   if (!ok || done < 4 || buffer == nullptr || !g_capture_enabled) return ok;
+  ObserveTyranoAsarRead(file, buffer, done, overlapped);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) == 0) return ok;
 
   wchar_t path[kSiglusPathChars] = {0};
@@ -213,6 +231,7 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
 }
 
 BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
+  ForgetTyranoAsar(handle);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) != 0) {
     ForgetSiglusOvk(handle);
   }
