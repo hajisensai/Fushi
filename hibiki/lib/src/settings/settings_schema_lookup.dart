@@ -154,79 +154,388 @@ SettingsDestination buildLookupDestination() {
           ),
         ],
       ),
-      // 外部集成：远程查词 / Yomitan API / texthooker——都是「让别的程序或设备
-      // 参与查词」的接线项，与本机查词触发行为分开。
+      // 原「查词显示」17 项拆两组：词条内容（词典结果怎么渲染）/ 弹窗窗口
+      //（弹窗容器的尺寸与交互，含从行为区移来的滑动关闭手势对——它们改的是
+      // 弹窗窗口的关闭手势，与尺寸/停靠为伍）。
       SettingsSection(
-        title: t.settings_section_lookup_integrations,
+        title: t.settings_section_lookup_content,
+        collapsedByDefault: true,
         items: <SettingsItem>[
-          // 远端词典查询抽成共享 builder：查词分类与 Hibiki 互联分类都引用（它直连
-          // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
-          buildRemoteDictionaryLookupItem(),
           SettingsSwitchItem(
-            id: 'lookup.yomitan_api_server',
-            title: t.yomitan_api_server,
-            subtitle:
-                t.yomitan_api_server_hint + t.settings_experimental_suffix,
-            icon: Icons.api_outlined,
+            id: 'lookup.collapse_dictionaries',
+            title: t.collapse_dictionaries,
+            icon: Icons.unfold_less_outlined,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.yomitanApiServerEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setYomitanApiServerEnabled(value);
-              if (value) {
-                try {
-                  await settingsContext.appModel.startYomitanApiServer();
-                } on SyncServerPortInUseException {
-                  // startYomitanApiServer 已在抛出前把开关复位为 false。
-                  final BuildContext ctx = settingsContext.context;
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          _yomitanApiPortInUseMessage(
-                            settingsContext.appModel.yomitanApiPort,
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                }
-              } else {
-                await settingsContext.appModel.stopYomitanApiServer();
-              }
+                settingsContext.appModel.collapseDictionaries,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleCollapseDictionaries();
               settingsContext.refresh();
             },
           ),
-          // 一等文本项（secret）：行尾自动获得眼睛显隐切换。写穿后重启 Yomitan
-          // API 服务（若已开启）。
-          SettingsTextItem(
-            id: 'lookup.yomitan_api_key',
-            title: t.yomitan_api_key,
-            icon: Icons.key_outlined,
-            secret: true,
+          // TODO-845: how many leading dictionary blocks the popup auto-expands
+          // even when "collapse dictionaries" is on. int preference surfaced
+          // through a double slider; min/max (0..6) match the repository clamp.
+          // 仅当「折叠词典显示」开启时才有意义（折叠关闭时所有词典本就展开，「自动展开
+          // 前 N 本」无从谈起）；据此对齐用户预期，仅折叠开启时才显示本项。
+          SettingsSliderItem(
+            id: 'lookup.popup_auto_expand_dictionaries',
+            title: t.popup_auto_expand_dictionaries,
+            subtitle: t.popup_auto_expand_dictionaries_hint,
+            icon: Icons.unfold_more_outlined,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.collapseDictionaries,
+            min: 0,
+            max: 6,
+            divisions: 6,
+            titleReadout: true,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.yomitanApiKey,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.setYomitanApiKey(value);
-              await _restartYomitanApiServerIfEnabled(settingsContext);
+                settingsContext.appModel.popupAutoExpandDictionaries.toDouble(),
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel
+                  .setPopupAutoExpandDictionaries(value.round());
+              settingsContext.refresh();
+            },
+          ),
+          // TODO-776: dictionaries-per-row grid (experimental). int preference
+          // surfaced through a double slider, so value/onChanged bridge int↔double.
+          SettingsSliderItem(
+            id: 'lookup.popup_dictionary_columns',
+            // 语义收敛：列数一直是「自动填充、封顶用户值」（effective = min(用户值,
+            // 视口可容)），文案随之改为「词典最多列数（自动填充）」，不改底层算法。
+            title: t.popup_dictionary_max_columns,
+            subtitle: t.popup_dictionary_max_columns_hint +
+                t.settings_experimental_suffix,
+            icon: Icons.view_column_outlined,
+            min: 1,
+            max: 4,
+            divisions: 3,
+            titleReadout: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupDictionaryColumns.toDouble(),
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupDictionaryColumns(value.round());
+              settingsContext.refresh();
             },
           ),
           SettingsSwitchItem(
-            id: 'lookup.texthooker',
-            title: t.texthooker_enabled,
-            subtitle:
-                t.texthooker_enabled_hint + t.settings_experimental_suffix,
-            icon: Icons.sensors_outlined,
+            id: 'lookup.show_expression_tags',
+            title: t.show_expression_tags,
+            icon: Icons.sell_outlined,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.texthookerEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setTexthookerEnabled(value);
-              if (value) {
-                TexthookerWsClientManager.instance
-                    .start(settingsContext.appModel.texthookerUrls);
-              } else {
-                await TexthookerWsClientManager.instance.stop();
-              }
+                settingsContext.appModel.showExpressionTags,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleShowExpressionTags();
               settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.deduplicate_pitch_accents',
+            title: t.deduplicate_pitch_accents,
+            icon: Icons.filter_alt_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.deduplicatePitchAccents,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleDeduplicatePitchAccents();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.harmonic_frequency',
+            title: t.harmonic_frequency,
+            icon: Icons.bar_chart_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.harmonicFrequency,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleHarmonicFrequency();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsNumberItem(
+            id: 'lookup.dictionary_font_size',
+            title: t.dictionary_font_size,
+            // TODO-1353: 提示 Ctrl+滚轮可在查词弹窗内直接缩放（改的就是这个词典
+            // 字号，持久化）。
+            subtitle: t.dictionary_font_size_zoom_hint,
+            icon: Icons.format_size,
+            min: 0,
+            suffixText: t.unit_pixels,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.dictionaryFontSize,
+            resetValue: (SettingsContext settingsContext) =>
+                settingsContext.appModel.defaultDictionaryFontSize,
+            onChanged: (SettingsContext settingsContext, num value) {
+              settingsContext.appModel.setDictionaryFontSize(value.toDouble());
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
+      SettingsSection(
+        title: t.settings_section_lookup_audio,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'lookup.auto_read_on_lookup',
+            title: t.auto_read_on_lookup,
+            icon: Icons.record_voice_over_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 0,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.autoReadOnLookup,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleAutoReadOnLookup();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.audio_volume',
+            title: t.lookup_audio_volume,
+            icon: Icons.volume_up_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 1,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.lookupAudioVolume.toDouble(),
+            min: 0,
+            max: 100,
+            // 与有声书音量行（AudiobookVolumeRow）同款粒度契约：拖动 1% 一档
+            // （0–100% 共 100 档），键盘 / 手柄左右键 5% 一步（step 与档位解
+            // 耦——按键也走 1% 的话 0–100% 要按 100 下），标题带实时百分比读数。
+            divisions: 100,
+            step: 5,
+            titleReadout: true,
+            label: (double value) => '${value.round()}%',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.readerSource.setLookupAudioVolume(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.pause_on_lookup',
+            title: t.pause_on_lookup,
+            icon: Icons.pause_circle_outline,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 2,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.pauseOnLookup,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setPauseOnLookup(value: value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.settings_section_lookup_popup_window,
+        collapsedByDefault: true,
+        items: <SettingsItem>[
+          SettingsSliderItem(
+            id: 'lookup.popup_max_width',
+            // TODO-1352: 放宽查词弹窗最大宽度的强制上限（1000→2000），让宽屏 / 4K 下
+            // 弹窗能拉到接近占满（实际宽度仍由 resolvePopupRect 按当前屏宽 clamp，
+            // 绝不会超出屏幕）。divisions 保持 10px 步进（1750/175）。
+            title: t.popup_max_width,
+            icon: Icons.open_in_full_outlined,
+            min: 250,
+            max: 2000,
+            divisions: 175,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupMaxWidth,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupMaxWidth(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.popup_max_height',
+            // TODO-1352 后续：放宽最大高度上限（800→1600），配合高分屏 / 精细调整；
+            // 实际高度仍由 resolvePopupRect 按当前屏高 clamp，绝不会超出屏幕。
+            // 步进保持 10px（1400/140）。
+            title: t.popup_max_height,
+            icon: Icons.height_outlined,
+            min: 200,
+            max: 1600,
+            divisions: 140,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupMaxHeight(value);
+              settingsContext.refresh();
+            },
+          ),
+          // 弹窗尺寸精细化：app 外覆盖查词窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
+          // 关闭时跟随上面的 app 内最大宽高（overlayLookupEffectiveSize 解析）。
+          SettingsSwitchItem(
+            id: 'lookup.overlay_lookup_independent_size',
+            title: t.overlay_lookup_independent_size,
+            subtitle: t.overlay_lookup_independent_size_hint,
+            icon: Icons.open_in_new_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupIndependentSize,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setOverlayLookupIndependentSize(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.overlay_lookup_max_width',
+            title: t.overlay_lookup_max_width,
+            icon: Icons.open_in_full_outlined,
+            min: 250,
+            max: 2000,
+            divisions: 175,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupMaxWidth,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setOverlayLookupMaxWidth(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.overlay_lookup_max_height',
+            title: t.overlay_lookup_max_height,
+            icon: Icons.height_outlined,
+            min: 200,
+            max: 1600,
+            divisions: 140,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setOverlayLookupMaxHeight(value);
+              settingsContext.refresh();
+            },
+          ),
+          // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
+          // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
+          SettingsSwitchItem(
+            id: 'lookup.extension_popup_independent_size',
+            title: t.extension_popup_independent_size,
+            subtitle: t.extension_popup_independent_size_hint,
+            icon: Icons.extension_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupIndependentSize,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setExtensionPopupIndependentSize(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.extension_popup_max_width',
+            title: t.extension_popup_max_width,
+            icon: Icons.open_in_full_outlined,
+            min: 250,
+            max: 2000,
+            divisions: 175,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupMaxWidth,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setExtensionPopupMaxWidth(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.extension_popup_max_height',
+            title: t.extension_popup_max_height,
+            icon: Icons.height_outlined,
+            min: 200,
+            max: 1600,
+            divisions: 140,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setExtensionPopupMaxHeight(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.popup_instant_scroll',
+            title: t.popup_instant_scroll,
+            subtitle: t.popup_instant_scroll_hint,
+            icon: Icons.animation_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScroll,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setPopupInstantScroll(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.popup_bottom_docked',
+            title: t.popup_bottom_docked,
+            subtitle: t.popup_bottom_docked_hint,
+            icon: Icons.vertical_align_bottom_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupBottomDocked,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setPopupBottomDocked(value);
+              settingsContext.refresh();
+            },
+          ),
+          // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗窗口的
+          // 关闭手势，与弹窗尺寸/停靠同组；同时经 ReaderPlacement 出现在阅读器快捷
+          // 设置的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让
+          // 桌面在弹窗正文区（全屏 barrier）水平拖过阈关一层（TODO-716，对齐手机手势）。
+          // Windows/Linux 默认关闭（鼠标框选正文与滑动手势同形易误触），其余平台默认
+          // 开启；任何平台均可用弹窗顶栏的 X 关闭。
+          SettingsSwitchItem(
+            id: 'reading_controls.enable_swipe_to_close',
+            title: t.enable_swipe_to_close,
+            icon: Icons.swipe_left_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 3,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.enableSwipeToClose,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setEnableSwipeToClose(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // TODO-625：滑动关闭的灵敏度阈值，与上面的"允许水平滑动关闭查词弹窗"开关
+          // 配套，同属查词弹窗手势行为（ReaderGroup.lookup，紧邻开关），与开关相邻摆放。
+          // id/偏好 key 沿用 'reading_controls.' 前缀作向后兼容（持久化无关展示分类）。
+          SettingsSliderItem(
+            id: 'reading_controls.dismiss_swipe_sensitivity',
+            title: t.dismiss_swipe_sensitivity,
+            icon: Icons.swipe_down_outlined,
+            min: 0.1,
+            max: 1,
+            divisions: 9,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 4,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.dismissSwipeSensitivity,
+            label: (double value) => value.toStringAsFixed(1),
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.readerSource
+                  .setDismissSwipeSensitivity(value);
+              notifyReaderSettingsChanged(settingsContext);
             },
           ),
         ],
@@ -496,388 +805,79 @@ SettingsDestination buildLookupDestination() {
           ),
         ],
       ),
-      // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
+      // 外部集成：远程查词 / Yomitan API / texthooker——都是「让别的程序或设备
+      // 参与查词」的接线项，与本机查词触发行为分开。
       SettingsSection(
-        title: t.settings_section_lookup_audio,
+        title: t.settings_section_lookup_integrations,
         items: <SettingsItem>[
+          // 远端词典查询抽成共享 builder：查词分类与 Hibiki 互联分类都引用（它直连
+          // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
+          buildRemoteDictionaryLookupItem(),
           SettingsSwitchItem(
-            id: 'lookup.auto_read_on_lookup',
-            title: t.auto_read_on_lookup,
-            icon: Icons.record_voice_over_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 0,
-            ),
+            id: 'lookup.yomitan_api_server',
+            title: t.yomitan_api_server,
+            subtitle:
+                t.yomitan_api_server_hint + t.settings_experimental_suffix,
+            icon: Icons.api_outlined,
             value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.autoReadOnLookup,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.readerSource.toggleAutoReadOnLookup();
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          SettingsSliderItem(
-            id: 'lookup.audio_volume',
-            title: t.lookup_audio_volume,
-            icon: Icons.volume_up_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 1,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.lookupAudioVolume.toDouble(),
-            min: 0,
-            max: 100,
-            // 与有声书音量行（AudiobookVolumeRow）同款粒度契约：拖动 1% 一档
-            // （0–100% 共 100 档），键盘 / 手柄左右键 5% 一步（step 与档位解
-            // 耦——按键也走 1% 的话 0–100% 要按 100 下），标题带实时百分比读数。
-            divisions: 100,
-            step: 5,
-            titleReadout: true,
-            label: (double value) => '${value.round()}%',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.readerSource.setLookupAudioVolume(value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'lookup.pause_on_lookup',
-            title: t.pause_on_lookup,
-            icon: Icons.pause_circle_outline,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 2,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.pauseOnLookup,
+                settingsContext.appModel.yomitanApiServerEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setPauseOnLookup(value: value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-        ],
-      ),
-      // 原「查词显示」17 项拆两组：词条内容（词典结果怎么渲染）/ 弹窗窗口
-      //（弹窗容器的尺寸与交互，含从行为区移来的滑动关闭手势对——它们改的是
-      // 弹窗窗口的关闭手势，与尺寸/停靠为伍）。
-      SettingsSection(
-        title: t.settings_section_lookup_content,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'lookup.collapse_dictionaries',
-            title: t.collapse_dictionaries,
-            icon: Icons.unfold_less_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.collapseDictionaries,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleCollapseDictionaries();
+              await settingsContext.appModel.setYomitanApiServerEnabled(value);
+              if (value) {
+                try {
+                  await settingsContext.appModel.startYomitanApiServer();
+                } on SyncServerPortInUseException {
+                  // startYomitanApiServer 已在抛出前把开关复位为 false。
+                  final BuildContext ctx = settingsContext.context;
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          _yomitanApiPortInUseMessage(
+                            settingsContext.appModel.yomitanApiPort,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                }
+              } else {
+                await settingsContext.appModel.stopYomitanApiServer();
+              }
               settingsContext.refresh();
             },
           ),
-          // TODO-845: how many leading dictionary blocks the popup auto-expands
-          // even when "collapse dictionaries" is on. int preference surfaced
-          // through a double slider; min/max (0..6) match the repository clamp.
-          // 仅当「折叠词典显示」开启时才有意义（折叠关闭时所有词典本就展开，「自动展开
-          // 前 N 本」无从谈起）；据此对齐用户预期，仅折叠开启时才显示本项。
-          SettingsSliderItem(
-            id: 'lookup.popup_auto_expand_dictionaries',
-            title: t.popup_auto_expand_dictionaries,
-            subtitle: t.popup_auto_expand_dictionaries_hint,
-            icon: Icons.unfold_more_outlined,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.collapseDictionaries,
-            min: 0,
-            max: 6,
-            divisions: 6,
-            titleReadout: true,
+          // 一等文本项（secret）：行尾自动获得眼睛显隐切换。写穿后重启 Yomitan
+          // API 服务（若已开启）。
+          SettingsTextItem(
+            id: 'lookup.yomitan_api_key',
+            title: t.yomitan_api_key,
+            icon: Icons.key_outlined,
+            secret: true,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupAutoExpandDictionaries.toDouble(),
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel
-                  .setPopupAutoExpandDictionaries(value.round());
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-776: dictionaries-per-row grid (experimental). int preference
-          // surfaced through a double slider, so value/onChanged bridge int↔double.
-          SettingsSliderItem(
-            id: 'lookup.popup_dictionary_columns',
-            // 语义收敛：列数一直是「自动填充、封顶用户值」（effective = min(用户值,
-            // 视口可容)），文案随之改为「词典最多列数（自动填充）」，不改底层算法。
-            title: t.popup_dictionary_max_columns,
-            subtitle: t.popup_dictionary_max_columns_hint +
-                t.settings_experimental_suffix,
-            icon: Icons.view_column_outlined,
-            min: 1,
-            max: 4,
-            divisions: 3,
-            titleReadout: true,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupDictionaryColumns.toDouble(),
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setPopupDictionaryColumns(value.round());
-              settingsContext.refresh();
+                settingsContext.appModel.yomitanApiKey,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.setYomitanApiKey(value);
+              await _restartYomitanApiServerIfEnabled(settingsContext);
             },
           ),
           SettingsSwitchItem(
-            id: 'lookup.show_expression_tags',
-            title: t.show_expression_tags,
-            icon: Icons.sell_outlined,
+            id: 'lookup.texthooker',
+            title: t.texthooker_enabled,
+            subtitle:
+                t.texthooker_enabled_hint + t.settings_experimental_suffix,
+            icon: Icons.sensors_outlined,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.showExpressionTags,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleShowExpressionTags();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'lookup.deduplicate_pitch_accents',
-            title: t.deduplicate_pitch_accents,
-            icon: Icons.filter_alt_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.deduplicatePitchAccents,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleDeduplicatePitchAccents();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'lookup.harmonic_frequency',
-            title: t.harmonic_frequency,
-            icon: Icons.bar_chart_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.harmonicFrequency,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleHarmonicFrequency();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsNumberItem(
-            id: 'lookup.dictionary_font_size',
-            title: t.dictionary_font_size,
-            // TODO-1353: 提示 Ctrl+滚轮可在查词弹窗内直接缩放（改的就是这个词典
-            // 字号，持久化）。
-            subtitle: t.dictionary_font_size_zoom_hint,
-            icon: Icons.format_size,
-            min: 0,
-            suffixText: t.unit_pixels,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.dictionaryFontSize,
-            resetValue: (SettingsContext settingsContext) =>
-                settingsContext.appModel.defaultDictionaryFontSize,
-            onChanged: (SettingsContext settingsContext, num value) {
-              settingsContext.appModel.setDictionaryFontSize(value.toDouble());
-              settingsContext.refresh();
-            },
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.settings_section_lookup_popup_window,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          SettingsSliderItem(
-            id: 'lookup.popup_max_width',
-            // TODO-1352: 放宽查词弹窗最大宽度的强制上限（1000→2000），让宽屏 / 4K 下
-            // 弹窗能拉到接近占满（实际宽度仍由 resolvePopupRect 按当前屏宽 clamp，
-            // 绝不会超出屏幕）。divisions 保持 10px 步进（1750/175）。
-            title: t.popup_max_width,
-            icon: Icons.open_in_full_outlined,
-            min: 250,
-            max: 2000,
-            divisions: 175,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupMaxWidth,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setPopupMaxWidth(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSliderItem(
-            id: 'lookup.popup_max_height',
-            // TODO-1352 后续：放宽最大高度上限（800→1600），配合高分屏 / 精细调整；
-            // 实际高度仍由 resolvePopupRect 按当前屏高 clamp，绝不会超出屏幕。
-            // 步进保持 10px（1400/140）。
-            title: t.popup_max_height,
-            icon: Icons.height_outlined,
-            min: 200,
-            max: 1600,
-            divisions: 140,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupMaxHeight,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setPopupMaxHeight(value);
-              settingsContext.refresh();
-            },
-          ),
-          // 弹窗尺寸精细化：app 外覆盖查词窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
-          // 关闭时跟随上面的 app 内最大宽高（overlayLookupEffectiveSize 解析）。
-          SettingsSwitchItem(
-            id: 'lookup.overlay_lookup_independent_size',
-            title: t.overlay_lookup_independent_size,
-            subtitle: t.overlay_lookup_independent_size_hint,
-            icon: Icons.open_in_new_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.overlayLookupIndependentSize,
+                settingsContext.appModel.texthookerEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setOverlayLookupIndependentSize(value);
+              await settingsContext.appModel.setTexthookerEnabled(value);
+              if (value) {
+                TexthookerWsClientManager.instance
+                    .start(settingsContext.appModel.texthookerUrls);
+              } else {
+                await TexthookerWsClientManager.instance.stop();
+              }
               settingsContext.refresh();
-            },
-          ),
-          SettingsSliderItem(
-            id: 'lookup.overlay_lookup_max_width',
-            title: t.overlay_lookup_max_width,
-            icon: Icons.open_in_full_outlined,
-            min: 250,
-            max: 2000,
-            divisions: 175,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.overlayLookupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.overlayLookupMaxWidth,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setOverlayLookupMaxWidth(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSliderItem(
-            id: 'lookup.overlay_lookup_max_height',
-            title: t.overlay_lookup_max_height,
-            icon: Icons.height_outlined,
-            min: 200,
-            max: 1600,
-            divisions: 140,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.overlayLookupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.overlayLookupMaxHeight,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setOverlayLookupMaxHeight(value);
-              settingsContext.refresh();
-            },
-          ),
-          // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
-          // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
-          SettingsSwitchItem(
-            id: 'lookup.extension_popup_independent_size',
-            title: t.extension_popup_independent_size,
-            subtitle: t.extension_popup_independent_size_hint,
-            icon: Icons.extension_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupIndependentSize,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setExtensionPopupIndependentSize(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSliderItem(
-            id: 'lookup.extension_popup_max_width',
-            title: t.extension_popup_max_width,
-            icon: Icons.open_in_full_outlined,
-            min: 250,
-            max: 2000,
-            divisions: 175,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupMaxWidth,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setExtensionPopupMaxWidth(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSliderItem(
-            id: 'lookup.extension_popup_max_height',
-            title: t.extension_popup_max_height,
-            icon: Icons.height_outlined,
-            min: 200,
-            max: 1600,
-            divisions: 140,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupMaxHeight,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setExtensionPopupMaxHeight(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'lookup.popup_instant_scroll',
-            title: t.popup_instant_scroll,
-            subtitle: t.popup_instant_scroll_hint,
-            icon: Icons.animation_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupInstantScroll,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setPopupInstantScroll(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'lookup.popup_bottom_docked',
-            title: t.popup_bottom_docked,
-            subtitle: t.popup_bottom_docked_hint,
-            icon: Icons.vertical_align_bottom_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupBottomDocked,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setPopupBottomDocked(value);
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗窗口的
-          // 关闭手势，与弹窗尺寸/停靠同组；同时经 ReaderPlacement 出现在阅读器快捷
-          // 设置的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让
-          // 桌面在弹窗正文区（全屏 barrier）水平拖过阈关一层（TODO-716，对齐手机手势）。
-          // Windows/Linux 默认关闭（鼠标框选正文与滑动手势同形易误触），其余平台默认
-          // 开启；任何平台均可用弹窗顶栏的 X 关闭。
-          SettingsSwitchItem(
-            id: 'reading_controls.enable_swipe_to_close',
-            title: t.enable_swipe_to_close,
-            icon: Icons.swipe_left_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 3,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.enableSwipeToClose,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setEnableSwipeToClose(value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          // TODO-625：滑动关闭的灵敏度阈值，与上面的"允许水平滑动关闭查词弹窗"开关
-          // 配套，同属查词弹窗手势行为（ReaderGroup.lookup，紧邻开关），与开关相邻摆放。
-          // id/偏好 key 沿用 'reading_controls.' 前缀作向后兼容（持久化无关展示分类）。
-          SettingsSliderItem(
-            id: 'reading_controls.dismiss_swipe_sensitivity',
-            title: t.dismiss_swipe_sensitivity,
-            icon: Icons.swipe_down_outlined,
-            min: 0.1,
-            max: 1,
-            divisions: 9,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 4,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.dismissSwipeSensitivity,
-            label: (double value) => value.toStringAsFixed(1),
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.readerSource
-                  .setDismissSwipeSensitivity(value);
-              notifyReaderSettingsChanged(settingsContext);
             },
           ),
         ],

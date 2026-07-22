@@ -14,9 +14,9 @@ import 'package:hibiki/src/sync/sync_settings_schema.dart';
 import 'package:hibiki/utils.dart';
 
 List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
+  // 大类任务优先排序（阶段 G）：把用户最常改的「阅读 / 查词 / 制卡 / 视频 / 听书 /
+  // 下载」内容类放最前，「外观 / Profile / 同步备份 / 互联 / 系统」这类配置/系统类殿后。
   return <SettingsDestination>[
-    buildAppearanceDestination(),
-    buildProfilesDestination(),
     buildReadingDestination(),
     buildLookupDestination(),
     buildCardCreationDestination(),
@@ -24,6 +24,8 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
     buildListeningDestination(),
     // 「下载」大类：内联既有 torrent 设置组件（详见 buildDownloadsDestination）。
     buildDownloadsDestination(),
+    buildAppearanceDestination(),
+    buildProfilesDestination(),
     buildSyncBackupDestination(),
     // Hibiki 互联从同步分类拆出的独立一级分类（构建函数在 sync_settings_schema
     // 同库，与同步共享私有状态）。

@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
+import 'package:hibiki/src/media/torrent/anime_download_service.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
@@ -17,6 +18,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
     show jimakuLanguageLabel;
 import 'package:hibiki/src/pages/implementations/download_actions.dart';
+import 'package:hibiki/src/pages/implementations/downloads_page.dart';
 import 'package:hibiki/utils.dart';
 
 /// 「番剧下载」选种对话框：搜番（AniList）→ 选种（Nyaa）→ 确认字幕（Jimaku）→
@@ -26,11 +28,27 @@ import 'package:hibiki/utils.dart';
 /// 种子列表 / 确认推送），底部常驻「下载任务」折叠区列出既有计划。所有网络操作
 /// 容错降级为空结果 + 节内提示，不崩对话框。
 class AnimeDownloadDialog extends ConsumerStatefulWidget {
-  const AnimeDownloadDialog({super.key, this.embedded = false});
+  const AnimeDownloadDialog({
+    super.key,
+    this.embedded = false,
+    this.onOpenSettings,
+    @visibleForTesting this.debugInitialMedia,
+    @visibleForTesting this.debugInitialTorrent,
+  });
 
   /// 内联模式：直接铺在「下载」页里（无对话框外框、无标题栏、无取消按钮），
   /// 用户要求番剧下载直接摊在页面上而非弹窗按钮。默认 false = 独立对话框。
   final bool embedded;
+
+  /// 「后端未配置」横幅上「去设置」的落点：embedded 下由下载页传入
+  /// （切到页内设置面板）；null（独立对话框，如视频页入口）则 push 下载设置页。
+  final VoidCallback? onOpenSettings;
+
+  /// 仅测试：初始即选中的番（跳过 AniList 网络搜索直达选种/确认阶段）。
+  final AniListMedia? debugInitialMedia;
+
+  /// 仅测试：初始即选中的种子（与 [debugInitialMedia] 联用直达确认推送阶段）。
+  final NyaaTorrent? debugInitialTorrent;
 
   @override
   ConsumerState<AnimeDownloadDialog> createState() =>
@@ -98,6 +116,16 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     final AppModel appModel = ref.read(appProvider);
     _jimakuKeyCtrl = TextEditingController(text: appModel.jimakuApiKey);
     _showJimakuKeyField = appModel.jimakuApiKey.trim().isEmpty;
+    // 仅测试：直达指定阶段（绕开 AniList/Nyaa 网络搜索）。
+    final AniListMedia? debugMedia = widget.debugInitialMedia;
+    if (debugMedia != null) {
+      _selectedMedia = debugMedia;
+      final NyaaTorrent? debugTorrent = widget.debugInitialTorrent;
+      if (debugTorrent != null) {
+        _selectedTorrent = debugTorrent;
+        _chosenSubs = chooseSubtitlesFor(debugTorrent, _jimakuIndex);
+      }
+    }
     unawaited(_reloadPlans());
   }
 
@@ -466,7 +494,22 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     unawaited(appModel.animeDownloadService?.tick());
     if (!mounted) return;
     _snack(t.anime_download_pushed);
-    Navigator.pop(context);
+    // BUG-1006：embedded（下载页内联）没有对话框可关——无条件 pop 会把宿主
+    // 路由（下载 tab 页/整个页面栈）弹掉。独立对话框才 pop；内联模式复位回
+    // 搜番初始阶段并刷新任务区（对照 [_pushGeneric] 成功后的节奏）。
+    if (!widget.embedded) {
+      Navigator.pop(context);
+      return;
+    }
+    setState(() {
+      _pushing = false;
+      _selectedTorrent = null;
+      _chosenSubs = const <(int?, JimakuFile)>[];
+      _selectedMedia = null;
+      _torrents = const <NyaaTorrent>[];
+      _torrentsLoaded = false;
+    });
+    await _reloadPlans();
   }
 
   // ------------------------------------------------------------ 下载任务区
@@ -506,14 +549,31 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
 
   // ---------------------------------------------------------------- 渲染
 
-  /// qb 未配置提示条（推送按钮禁用，浏览选种不禁）。
+  /// 「去设置」：embedded 由下载页回调切页内设置面板；独立对话框（视频页入口）
+  /// push 下载页并直落设置面板——两个入口都能一键走到配置，不再让新用户死路。
+  void _openBackendSettings() {
+    final VoidCallback? onOpenSettings = widget.onOpenSettings;
+    if (onOpenSettings != null) {
+      onOpenSettings();
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (BuildContext context) =>
+          const DownloadsPage(initialShowSettings: true),
+    ));
+  }
+
+  /// qb 未配置提示条（推送按钮禁用，浏览选种不禁）+「去设置」直达按钮。
   Widget _buildQbHintBanner(ThemeData theme) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
+        border: isEinkTheme(context)
+            ? Border.all(color: theme.colorScheme.outline)
+            : null,
       ),
       child: Row(
         children: <Widget>[
@@ -526,6 +586,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _openBackendSettings,
+            child: Text(t.download_open_settings),
           ),
         ],
       ),
@@ -567,6 +632,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       decoration: BoxDecoration(
         color: background ?? theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
+        // eink：底色随 surface 塌缩成背景色，无边即隐形——补 1px 描边。
+        border: isEinkTheme(context)
+            ? Border.all(color: theme.colorScheme.outline)
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -575,7 +644,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
             Icon(icon, size: 12, color: fg),
             const SizedBox(width: 2),
           ],
-          Text(label, style: TextStyle(fontSize: 11, color: fg)),
+          Text(label, style: theme.textTheme.labelSmall?.copyWith(color: fg)),
         ],
       ),
     );
@@ -741,10 +810,22 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     }
     if (_animeMatches.isEmpty) {
       return Center(
-        child: Icon(
-          Icons.travel_explore,
-          size: 48,
-          color: theme.colorScheme.outlineVariant,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.travel_explore,
+              size: 48,
+              color: theme.colorScheme.outlineVariant,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              t.anime_download_search_start_hint,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
         ),
       );
     }
@@ -754,7 +835,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         final AniListMedia media = _animeMatches[i];
         final List<String> parts = <String>[
           if (media.seasonYear != null) '${media.seasonYear}',
-          if (media.episodes != null) 'EP ${media.episodes}',
+          if (media.episodes != null)
+            t.anime_download_episode_count(count: media.episodes!),
         ];
         return ListTile(
           dense: true,
@@ -894,7 +976,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         background: scheme.secondaryContainer,
         foreground: scheme.onSecondaryContainer));
     if (torrent.trusted) {
-      chips.add(_miniChip(theme, 'Trusted',
+      chips.add(_miniChip(theme, t.anime_download_trusted,
           icon: Icons.verified_outlined,
           background: scheme.tertiaryContainer,
           foreground: scheme.onTertiaryContainer));
@@ -1135,53 +1217,162 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     );
   }
 
+  /// 重试失败的计划：重推同一 magnet 走现有推送路径（prepareCategory +
+  /// addTorrent 顺序/首尾块优先），成功后计划复位 downloading（重置计时，
+  /// torrent-missing 超时从头算）。addTorrent 报失败但种子已在后端列表
+  /// （入库失败类重试的常态——重复添加被后端拒绝）也算在下，交回轮询重走完成流程。
+  Future<void> _retryPlan(AnimeDownloadPlan plan) async {
+    final AppModel appModel = ref.read(appProvider);
+    if (!torrentBackendReady(appModel)) {
+      _snack(t.download_backend_not_configured);
+      return;
+    }
+    final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
+    if (store == null) {
+      _snack(t.anime_download_store_unavailable);
+      return;
+    }
+    final QbConnectionConfig config =
+        appModel.qbConnectionConfig ?? const QbConnectionConfig();
+    final TorrentBackend backend = appModel.createTorrentBackend(config);
+    bool pushed = false;
+    try {
+      await backend.prepareCategory(config.category);
+      pushed = await backend.addTorrent(
+        plan.magnet,
+        category: config.category,
+        sequential: true,
+        firstLastPiecePrio: true,
+      );
+      if (!pushed) {
+        final List<TorrentSnapshot> torrents = await backend.listTorrents(
+          category: config.category.isEmpty ? null : config.category,
+        );
+        pushed = torrents.any((TorrentSnapshot t) =>
+            t.hash.toLowerCase() == plan.id.toLowerCase());
+      }
+    } finally {
+      backend.close();
+    }
+    if (!pushed) {
+      _snack(t.anime_download_push_failed);
+      return;
+    }
+    await store.save(plan.copyWith(
+      status: AnimeDownloadPlan.statusDownloading,
+      createdAtMs: DateTime.now().millisecondsSinceEpoch,
+    ));
+    unawaited(appModel.animeDownloadService?.tick());
+    _snack(t.anime_download_pushed);
+    await _reloadPlans();
+  }
+
+  /// 单条任务行（[HibikiListItem] compact，自动接焦点系统）。
+  ///
+  /// - 下载中：轮询服务透传的真实进度（[AnimeDownloadService.downloadProgress]）
+  ///   渲染确定进度环 + 行内百分比；进度未知（服务未接/后端未上列表）回退
+  ///   不定进度环。eink 一律静态图标（转圈=墨水屏残影）。
+  /// - 失败：failReason 直接显示为 subtitle 第二行（error 色，触屏/键盘/手柄
+  ///   可读，不再只藏 hover Tooltip）+ trailing 重试按钮。
   Widget _buildPlanRow(ThemeData theme, AnimeDownloadPlan plan) {
+    if (plan.status == AnimeDownloadPlan.statusDownloading) {
+      final AnimeDownloadService? service =
+          ref.read(appProvider).animeDownloadService;
+      if (service != null) {
+        return ValueListenableBuilder<Map<String, double>>(
+          valueListenable: service.downloadProgress,
+          builder: (BuildContext context, Map<String, double> progress, _) =>
+              _buildPlanRowInner(theme, plan, progress[plan.id]),
+        );
+      }
+    }
+    return _buildPlanRowInner(theme, plan, null);
+  }
+
+  Widget _buildPlanRowInner(
+      ThemeData theme, AnimeDownloadPlan plan, double? progress) {
     final ColorScheme scheme = theme.colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool downloading = plan.status == AnimeDownloadPlan.statusDownloading;
+    final bool failed = plan.status == AnimeDownloadPlan.statusFailed;
     final Widget statusIcon = switch (plan.status) {
       AnimeDownloadPlan.statusImported =>
         Icon(Icons.check_circle_outline, size: 20, color: scheme.primary),
-      AnimeDownloadPlan.statusFailed => Tooltip(
-          message: plan.failReason ?? '',
-          child: Icon(Icons.error_outline, size: 20, color: scheme.error),
-        ),
-      _ => const SizedBox(
-          width: 20,
-          height: 20,
-          child: Padding(
-            padding: EdgeInsets.all(2),
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
+      AnimeDownloadPlan.statusFailed =>
+        Icon(Icons.error_outline, size: 20, color: scheme.error),
+      _ => eink
+          ? const Icon(Icons.downloading_outlined, size: 20)
+          : SizedBox(
+              width: 20,
+              height: 20,
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  value: progress,
+                ),
+              ),
+            ),
     };
-    return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+    final String? progressText = (downloading && progress != null)
+        ? '${(progress * 100).toStringAsFixed(0)}%'
+        : null;
+    final String? failReason =
+        (failed && (plan.failReason?.isNotEmpty ?? false))
+            ? plan.failReason
+            : null;
+    return HibikiListItem(
+      density: HibikiListDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      subtitleMaxLines: 3,
       leading: statusIcon,
-      title: Text(
-        plan.seriesTitle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        plan.torrentTitle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall,
+      title: Text(plan.seriesTitle),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            plan.torrentTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+          if (progressText != null)
+            Text(
+              progressText,
+              maxLines: 1,
+              style: theme.textTheme.bodySmall,
+            ),
+          if (failReason != null)
+            Text(
+              failReason,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+            ),
+        ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (plan.status == AnimeDownloadPlan.statusDownloading)
-            IconButton(
+          if (downloading)
+            HibikiIconButton(
               tooltip: t.anime_download_play_now,
-              icon: const Icon(Icons.play_circle_outline, size: 20),
-              onPressed: () => _playNow(plan),
+              icon: Icons.play_circle_outline,
+              size: 20,
+              onTap: () => _playNow(plan),
             ),
-          IconButton(
+          if (failed)
+            HibikiIconButton(
+              tooltip: t.anime_download_retry,
+              icon: Icons.refresh,
+              size: 20,
+              onTap: () => _retryPlan(plan),
+            ),
+          HibikiIconButton(
             tooltip: t.anime_download_delete,
-            icon: const Icon(Icons.delete_outline, size: 20),
-            onPressed: () => _deletePlan(plan),
+            icon: Icons.delete_outline,
+            size: 20,
+            onTap: () => _deletePlan(plan),
           ),
         ],
       ),

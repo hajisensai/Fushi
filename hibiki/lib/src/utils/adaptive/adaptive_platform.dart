@@ -61,6 +61,12 @@ bool isEinkTheme(BuildContext context) {
   return Theme.of(context).extension<HibikiEinkTheme>()?.einkMode ?? false;
 }
 
+/// eink 下把动画时长归零（墨水屏连续重绘=残影），否则原样返回。
+/// 共享组件与页面级 Animated* 统一走这里，别再手写三元。
+Duration einkSafeDuration(BuildContext context, Duration duration) {
+  return isEinkTheme(context) ? Duration.zero : duration;
+}
+
 bool isCupertinoPlatform(BuildContext context) {
   final HibikiDesignSystem designSystem =
       Theme.of(context).extension<HibikiDesignSystemTheme>()?.designSystem ??

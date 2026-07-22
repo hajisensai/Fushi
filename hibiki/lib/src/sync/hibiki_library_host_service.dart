@@ -970,6 +970,10 @@ class RemoteVideoInfo {
       tags: _jsonStringList(json['tags']),
       tagsAddedAt: _jsonNameIntMap(json['tagsAddedAt']),
       tagTombstones: _jsonNameIntMap(json['tagTombstones']),
+      // BUG：toJson 写了 'collection'（合集归属）但 fromJson 从不解析 → LAN 远端视频
+      // video.collection 恒 null → 首页收不到合集分组（全成散卡）、播放器也无从重建合集连播。
+      // 对齐 RemoteBookInfo.fromJson。旧 host 无该字段 → fromJson 返 null（向后兼容）。
+      collection: RemoteCollectionMembership.fromJson(json['collection']),
     );
   }
 }

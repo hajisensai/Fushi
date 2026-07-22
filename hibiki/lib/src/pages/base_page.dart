@@ -65,6 +65,10 @@ abstract class BasePageState<T extends BasePage> extends ConsumerState<T> {
 
   /// Standard error message for use across the application.
   /// General widget for showing an error or a retry screen.
+  ///
+  /// 主文案是通用错误提示（i18n），原始异常串降级为折叠 detail（此前直接
+  /// `'$error'` 上屏，用户看到的是 SqliteException(...) 原文）；调用方传了
+  /// [refresh] 就渲染重试按钮（此前该参数被静默丢弃，页面没有任何恢复入口）。
   Widget buildError({
     Object? error,
     StackTrace? stack,
@@ -73,7 +77,15 @@ abstract class BasePageState<T extends BasePage> extends ConsumerState<T> {
     return Center(
       child: HibikiPlaceholderMessage(
         icon: Icons.error_outline,
-        message: '$error',
+        message: t.error_load_failed,
+        detail: error != null ? '$error' : null,
+        action: refresh != null
+            ? FilledButton.tonalIcon(
+                onPressed: () => refresh(),
+                icon: const Icon(Icons.refresh),
+                label: Text(t.retry),
+              )
+            : null,
       ),
     );
   }

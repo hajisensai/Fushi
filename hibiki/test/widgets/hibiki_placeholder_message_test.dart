@@ -58,5 +58,39 @@ void main() {
       final Icon icon = tester.widget<Icon>(find.byIcon(Icons.search));
       expect(icon.size, 18);
     });
+
+    testWidgets('renders detail below the message, ellipsised to 3 lines',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp(
+        const HibikiPlaceholderMessage(
+          icon: Icons.error_outline,
+          message: 'Something went wrong',
+          detail: 'SqliteException(14): unable to open database file',
+        ),
+      ));
+
+      final Text detail = tester.widget<Text>(
+        find.text('SqliteException(14): unable to open database file'),
+      );
+      expect(detail.maxLines, 3);
+      expect(detail.overflow, TextOverflow.ellipsis);
+    });
+
+    testWidgets('renders action widget and keeps it tappable', (tester) async {
+      int taps = 0;
+      await tester.pumpWidget(buildTestApp(
+        HibikiPlaceholderMessage(
+          icon: Icons.error_outline,
+          message: 'Something went wrong',
+          action: FilledButton(
+            onPressed: () => taps += 1,
+            child: const Text('Retry'),
+          ),
+        ),
+      ));
+
+      await tester.tap(find.text('Retry'));
+      expect(taps, 1);
+    });
   });
 }

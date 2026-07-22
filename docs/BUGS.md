@@ -27,11 +27,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 973 条。点号进各自文件。
+> 共 979 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1006](bugs/BUG-1006-steam-launch-duplicate-instance.md) | ✅ | ✅ | Steam 游戏启动并捕获触发重复实例且晚附着漏音频 |
+| [BUG-1012](bugs/BUG-1012-steam-launch-duplicate-instance.md) | ✅ | ✅ | Steam 游戏启动并捕获触发重复实例且晚附着漏音频 |
+| [BUG-1011](bugs/BUG-1011-interconnect-video-collection-playlist-autoplay.md) | ✅ | ✅ | 互联视频合集列表缺失+无自动连播·客户端合集播放 |
+| [BUG-1010](bugs/BUG-1010-video-controls-autohide-focus-loss.md) | 🚧 | 🚧 | 视频控制条自动隐藏后键盘焦点疑似丢失 |
+| [BUG-1009](bugs/BUG-1009-collection-detail-focus-id-clash.md) | 🚧 | 🚧 | 合集详情页返回后书架同名卡手柄焦点不可达 |
+| [BUG-1008](bugs/BUG-1008-shelf-tag-filter-contradictory-empty.md) | 🚧 | 🚧 | 标签筛选下 SRT 命中仍显示无匹配空态且丢失下拉刷新 |
+| [BUG-1007](bugs/BUG-1007-texthooker-anki-health-hardcoded.md) | ✅ | ✅ | 游戏工作台健康卡 Anki 行恒显未配置 |
+| [BUG-1006](bugs/BUG-1006-anime-download-embedded-pop.md) | 🚧 | 🚧 | 下载页内嵌推送成功后误 pop 宿主路由 |
 | [BUG-1005](bugs/BUG-1005-mining-word-audio-remote-source.md) | ✅ | ✅ | 制卡缺单词音频·扩展needsAudio门+制卡器忽略远程发音源 |
 | [BUG-1004](bugs/BUG-1004-interconnect-mining-audio-host-clip.md) | ✅ | ✅ | 互联视频制卡句子音频改 host 端裁绕开 client ffmpeg 抓远端流 |
 | [BUG-1003](bugs/BUG-1003-download-kb-inset.md) | ✅ | ✅ | 下载页输入apikey时软键盘顶掉贴底下载任务区 |

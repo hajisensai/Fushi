@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show ValueNotifier, mapEquals;
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
@@ -179,6 +180,19 @@ class AnimeDownloadService {
   Timer? _timer;
   bool _ticking = false;
 
+  /// 下载中计划的实时进度（planId → 0.0~1.0），每轮 tick 从后端快照
+  /// [TorrentSnapshot.progress] 透传（服务本就轮询 listTorrents，UI 不再另建
+  /// 连接）。只含「后端在列且未完成」的计划；完成/失败/消失自动移出。
+  /// UI（任务行）用 ValueListenableBuilder 订阅换成确定进度环 + 百分比。
+  final ValueNotifier<Map<String, double>> downloadProgress =
+      ValueNotifier<Map<String, double>>(const <String, double>{});
+
+  /// 发布新一轮进度快照；内容没变不通知（避免每 20s 无谓重建任务行）。
+  void _publishProgress(Map<String, double> next) {
+    if (mapEquals(downloadProgress.value, next)) return;
+    downloadProgress.value = Map<String, double>.unmodifiable(next);
+  }
+
   /// 启动周期轮询（先立即 tick 一次，再每 [interval] 一次）。
   void start() {
     if (_timer != null) return;
@@ -263,7 +277,10 @@ class AnimeDownloadService {
     _onTick?.call();
 
     final QbConnectionConfig? config = _configProvider();
-    if (config == null || !config.isConfigured) return;
+    if (config == null || !config.isConfigured) {
+      _publishProgress(const <String, double>{});
+      return;
+    }
 
     final List<AnimeDownloadPlan> plans = await store.loadAll();
     final List<AnimeDownloadPlan> pending = <AnimeDownloadPlan>[
@@ -271,7 +288,10 @@ class AnimeDownloadService {
         if (plan.status == AnimeDownloadPlan.statusDownloading) plan,
     ];
     // 没有等待中的计划就不建连接。
-    if (pending.isEmpty) return;
+    if (pending.isEmpty) {
+      _publishProgress(const <String, double>{});
+      return;
+    }
 
     final TorrentBackend client = _backendFactory(config);
     try {
@@ -282,6 +302,13 @@ class AnimeDownloadService {
         for (final TorrentSnapshot t in torrents) t.hash.toLowerCase(): t,
       };
       final int nowMs = DateTime.now().millisecondsSinceEpoch;
+      final Map<String, double> progressNext = <String, double>{
+        for (final AnimeDownloadPlan plan in pending)
+          if (byHash[plan.id.toLowerCase()] case final TorrentSnapshot info
+              when !info.isComplete)
+            plan.id: info.progress.clamp(0.0, 1.0).toDouble(),
+      };
+      _publishProgress(progressNext);
 
       for (final AnimeDownloadPlan plan in pending) {
         final TorrentSnapshot? info = byHash[plan.id.toLowerCase()];

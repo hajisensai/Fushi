@@ -3,15 +3,34 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../helpers/test_platform_services.dart';
+
+/// 健康卡 Anki 行接真实配置状态（BUG-1007）后，页面 watch AnkiViewModel →
+/// ankiRepositoryProvider → platformServicesProvider，测试需注入 fake 平台服务。
+Widget _wrapPage(Widget home) {
+  return ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(testPlatformServices()),
+    ],
+    child: MaterialApp(home: home),
+  );
+}
 
 void main() {
-  setUp(() => TexthookerService.instance.clear());
+  setUp(() {
+    // AnkiViewModel.loadSettings 走 SharedPreferences——测试环境需 mock 初始值。
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    TexthookerService.instance.clear();
+  });
   tearDown(() => TexthookerService.instance.clear());
 
   testWidgets('renders incoming lines reactively', (WidgetTester tester) async {
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: TexthookerPage())),
+      _wrapPage(const TexthookerPage()),
     );
     await tester.pump();
 
@@ -30,7 +49,7 @@ void main() {
   testWidgets('clear button empties the list', (WidgetTester tester) async {
     TexthookerService.instance.appendLine('行X');
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: TexthookerPage())),
+      _wrapPage(const TexthookerPage()),
     );
     await tester.pump();
     expect(find.textContaining('行'), findsWidgets);
@@ -55,7 +74,7 @@ void main() {
       textHookCode: 'HS932@2000',
     );
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: TexthookerPage())),
+      _wrapPage(const TexthookerPage()),
     );
     await tester.pump();
 
@@ -70,7 +89,12 @@ void main() {
       find.byKey(const ValueKey<String>('game-text-thread-selector')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('SiglusEngine 0x2000').last);
+    // 菜单项标签是「线程名 · 行数」精确串（行卡片元数据不含行数后缀），
+    // 用精确匹配避免命中列表行；取可命中的一份（DropdownMenu 有隐藏测宽副本）。
+    await tester.tap(
+      find.text('SiglusEngine 0x2000 · 1').last,
+      warnIfMissed: false,
+    );
     await tester.pumpAndSettle();
 
     expect(find.textContaining('干'), findsWidgets);
@@ -86,7 +110,7 @@ void main() {
       nativeThreadId: 0x9,
     );
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: TexthookerPage())),
+      _wrapPage(const TexthookerPage()),
     );
     await tester.pump();
 
@@ -103,13 +127,11 @@ void main() {
     bool returned = false;
     TexthookerService.instance.appendLine('嵌入行');
     await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          home: Scaffold(
-            body: TexthookerPage(
-              embedded: true,
-              onShowLibrary: () => returned = true,
-            ),
+      _wrapPage(
+        Scaffold(
+          body: TexthookerPage(
+            embedded: true,
+            onShowLibrary: () => returned = true,
           ),
         ),
       ),
@@ -139,7 +161,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       TexthookerService.instance.appendLine('レスポンシブ確認');
       await tester.pumpWidget(
-        const ProviderScope(child: MaterialApp(home: TexthookerPage())),
+        _wrapPage(const TexthookerPage()),
       );
       await tester.pump();
 
@@ -148,9 +170,12 @@ void main() {
       if (size.width >= 840) {
         expect(find.text('Latest line'), findsOneWidget);
         expect(find.text('Health status'), findsOneWidget);
+        expect(find.byType(ExpansionTile), findsNothing);
       } else {
-        expect(find.text('Latest line'), findsNothing);
-        expect(find.text('Health status'), findsNothing);
+        // 窄屏不再丢弃两面板：折叠为可展开区（默认收起，仅标题可见）。
+        expect(find.byType(ExpansionTile), findsNWidgets(2));
+        expect(find.text('Latest line'), findsOneWidget);
+        expect(find.text('Health status'), findsOneWidget);
       }
     });
   }
@@ -171,7 +196,7 @@ void main() {
       textHookCode: 'HS932@2',
     );
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: TexthookerPage())),
+      _wrapPage(const TexthookerPage()),
     );
     await tester.pump();
 
@@ -188,14 +213,12 @@ void main() {
     final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
     addTearDown(visible.dispose);
     await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          home: Scaffold(
-            body: ValueListenableBuilder<bool>(
-              valueListenable: visible,
-              builder: (BuildContext context, bool v, _) =>
-                  TickerMode(enabled: v, child: const TexthookerPage()),
-            ),
+      _wrapPage(
+        Scaffold(
+          body: ValueListenableBuilder<bool>(
+            valueListenable: visible,
+            builder: (BuildContext context, bool v, _) =>
+                TickerMode(enabled: v, child: const TexthookerPage()),
           ),
         ),
       ),

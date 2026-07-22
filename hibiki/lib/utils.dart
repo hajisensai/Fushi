@@ -12,6 +12,8 @@ export 'src/utils/components/hibiki_dropdown.dart';
 export 'src/utils/components/hibiki_option_selection_page.dart';
 export 'src/utils/components/hibiki_marquee.dart';
 export 'src/utils/components/hibiki_tag.dart';
+export 'src/utils/components/cover_badge.dart';
+export 'src/utils/components/hibiki_destructive_confirm_dialog.dart';
 export 'src/utils/components/hibiki_placeholder_message.dart';
 export 'src/utils/components/hibiki_text_selection_controls.dart';
 export 'src/utils/components/hibiki_list_tile.dart';

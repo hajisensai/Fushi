@@ -61,9 +61,22 @@ class _HibikiCardState extends State<HibikiCard> {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final bool eink = isEinkTheme(context);
     final Color effectiveColor = widget.color ??
         (widget.selected ? tokens.surfaces.selected : tokens.surfaces.card);
     final BorderRadius radius = widget.borderRadius ?? tokens.radii.cardRadius;
+    // eink 把所有 surface container 塌缩为背景色（theme_notifier eink scheme），
+    // 卡片没有边就与页面融为一体；主题层只给裸 Card 补了描边（CardThemeData），
+    // HibikiCard 在这里自己补。选中态加粗到 2px——eink 下 selected 填充色同样
+    // 塌缩，边宽是唯一可辨的选中信号。
+    final BorderSide side = widget.borderColor != null
+        ? BorderSide(color: widget.borderColor!)
+        : (eink
+            ? BorderSide(
+                color: tokens.surfaces.outline,
+                width: widget.selected ? 2 : 1,
+              )
+            : BorderSide.none);
     final Widget content = Padding(
       padding: widget.padding ?? EdgeInsets.all(tokens.spacing.card),
       child: widget.child,
@@ -71,15 +84,13 @@ class _HibikiCardState extends State<HibikiCard> {
     final Widget card = Padding(
       padding: widget.margin ?? EdgeInsets.zero,
       child: AnimatedContainer(
-        duration: hibikiMd3StateDuration,
+        duration: einkSafeDuration(context, hibikiMd3StateDuration),
         curve: hibikiMd3StateCurve,
         decoration: ShapeDecoration(
           color: effectiveColor,
           shape: RoundedRectangleBorder(
             borderRadius: radius,
-            side: widget.borderColor != null
-                ? BorderSide(color: widget.borderColor!)
-                : BorderSide.none,
+            side: side,
           ),
         ),
         child: Material(
@@ -1453,40 +1464,40 @@ class HibikiSchemeSwatch extends StatelessWidget {
         // RepaintBoundary，让每张色卡各自栅格化进缓存层，滚动只合成、不重绘。
         child: RepaintBoundary(
           child: CustomPaint(
-          // TODO-1320: pin the painting surface to the card size. A childless
-          // CustomPaint with the default `size: Size.zero` collapses to zero
-          // under the LOOSE constraints the parent AnimatedContainer hands down
-          // (its `alignment: Alignment.center` loosens child constraints). So an
-          // unselected preset swatch — which has no badge child (badge is only
-          // the selection check or the system/custom overlay) — painted onto a
-          // 0x0 canvas and rendered as a blank rounded card. Selected / system /
-          // custom swatches escaped this only because their badge/overlay gave
-          // CustomPaint a non-null child that sized it. Sizing the canvas
-          // explicitly makes EVERY swatch paint the full diagonal preview,
-          // selected or not (the earlier `showGlyph: true` was a no-op on a
-          // zero-size canvas).
-          size: Size.square(size),
-          painter: SchemeDiagonalPainter(
-            textColor: textRole,
-            backgroundColor: backgroundRole,
-            buttonColor: colors[2],
-            menuColor: menuRole,
-            // TODO-138: always paint the full preview — the 「文」 glyph and the
-            // accent dot — for EVERY swatch. The badge (if any) sits in the corner
-            // and no longer replaces the glyph, so system/custom show a complete
-            // preview, not just a base colour behind a centred badge.
-            showGlyph: true,
-            textDirection: Directionality.of(context),
-          ),
-          child: badge == null
-              ? null
-              : Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.all(2),
-                    child: badge,
+            // TODO-1320: pin the painting surface to the card size. A childless
+            // CustomPaint with the default `size: Size.zero` collapses to zero
+            // under the LOOSE constraints the parent AnimatedContainer hands down
+            // (its `alignment: Alignment.center` loosens child constraints). So an
+            // unselected preset swatch — which has no badge child (badge is only
+            // the selection check or the system/custom overlay) — painted onto a
+            // 0x0 canvas and rendered as a blank rounded card. Selected / system /
+            // custom swatches escaped this only because their badge/overlay gave
+            // CustomPaint a non-null child that sized it. Sizing the canvas
+            // explicitly makes EVERY swatch paint the full diagonal preview,
+            // selected or not (the earlier `showGlyph: true` was a no-op on a
+            // zero-size canvas).
+            size: Size.square(size),
+            painter: SchemeDiagonalPainter(
+              textColor: textRole,
+              backgroundColor: backgroundRole,
+              buttonColor: colors[2],
+              menuColor: menuRole,
+              // TODO-138: always paint the full preview — the 「文」 glyph and the
+              // accent dot — for EVERY swatch. The badge (if any) sits in the corner
+              // and no longer replaces the glyph, so system/custom show a complete
+              // preview, not just a base colour behind a centred badge.
+              showGlyph: true,
+              textDirection: Directionality.of(context),
+            ),
+            child: badge == null
+                ? null
+                : Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: badge,
+                    ),
                   ),
-                ),
           ),
         ),
       ),

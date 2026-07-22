@@ -21,6 +21,204 @@ SettingsDestination buildReadingDestination() {
     summary: t.section_layout,
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
+      // 「模式与排版方向」：阅读呈现的模式与方向选择（翻页/滚动、竖排、跨页展开、
+      // 竖排取向、振假名）。原「布局与显示」组重命名并把翻页/滚动模式提到首位；纯
+      // 展示重组：item id、持久化 key、ReaderPlacement 全部不变。
+      SettingsSection(
+        title: t.reading_section_mode,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.view_mode',
+            title: t.ttu_view_mode_label,
+            icon: Icons.chrome_reader_mode_outlined,
+            controlBelow: true,
+            // TODO-725：翻页/滚动从「外观」迁到「布局与显示」组（用户最直指的
+            // 「滚动/翻页应放进布局与显示」）。仅改展示分类/排序，onChanged 不变。
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 0,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'paginated',
+                label: t.ttu_paginated,
+                tooltip: t.ttu_paginated,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'continuous',
+                label: t.ttu_scroll,
+                tooltip: t.ttu_scroll,
+              ),
+              // TODO-909: third book view-mode. M0 exposes it so the device
+              // Gate can select VN; the 6 VN-specific sub-settings are M1.
+              SettingsSegmentOption<String>(
+                value: 'vn',
+                label: t.ttu_vn,
+                tooltip: t.ttu_vn,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuViewMode,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuViewMode(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.writing_mode',
+            title: t.ttu_writing_direction,
+            icon: Icons.text_rotate_vertical,
+            controlBelow: true,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 4,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'horizontal-tb',
+                label: t.ttu_horizontal,
+                tooltip: t.ttu_horizontal,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'vertical-rl',
+                label: t.ttu_vertical,
+                tooltip: t.ttu_vertical,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuWritingMode,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuWritingMode(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.spread_mode',
+            title: t.spread_mode,
+            icon: Icons.menu_book_outlined,
+            controlBelow: true,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 5,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'off',
+                label: t.spread_off,
+                tooltip: t.spread_off,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'on',
+                label: t.spread_on,
+                tooltip: t.spread_on,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.spread_auto,
+                tooltip: t.spread_auto,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuSpreadMode,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuSpreadMode(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.spread_direction',
+            title: t.spread_direction,
+            icon: Icons.swap_horiz_outlined,
+            controlBelow: true,
+            visible: (SettingsContext c) =>
+                c.readerSource.ttuSpreadMode != 'off',
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 6,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'rtl',
+                label: 'RTL',
+                tooltip: t.spread_direction_rtl,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'ltr',
+                label: 'LTR',
+                tooltip: t.spread_direction_ltr,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuSpreadDirection,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuSpreadDirection(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.vert_text_orient',
+            title: t.ttu_vert_text_orient,
+            icon: Icons.text_rotation_none,
+            controlBelow: true,
+            visible: isVertical,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 13,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'mixed',
+                label: t.ttu_orient_mixed,
+                tooltip: t.ttu_orient_mixed,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'upright',
+                label: t.ttu_orient_upright,
+                tooltip: t.ttu_orient_upright,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.ttuVerticalTextOrientation,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuVerticalTextOrientation(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.furigana_mode',
+            title: t.ttu_furigana_mode,
+            icon: Icons.translate_outlined,
+            controlBelow: true,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 12,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'show',
+                label: t.ttu_furigana_show,
+                tooltip: t.ttu_furigana_show,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'hide',
+                label: t.ttu_furigana_hide,
+                tooltip: t.ttu_furigana_hide,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'partial',
+                label: t.ttu_furigana_partial,
+                tooltip: t.ttu_furigana_partial,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'toggle',
+                label: t.ttu_furigana_toggle,
+                tooltip: t.ttu_furigana_toggle,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuFuriganaMode,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuFuriganaMode(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+        ],
+      ),
       SettingsSection(
         title: t.section_typography,
         items: <SettingsItem>[
@@ -104,6 +302,29 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(c);
             },
           ),
+          // 「每页列数」移到边距之前（先定列、再定边距）：仅翻页模式生效（isPaginated
+          // 门控）。id / 持久化 key / ReaderPlacement 不变，只调组内相对位置。
+          SettingsStepperItem(
+            id: 'reading_display.page_columns',
+            title: t.columns_per_page,
+            icon: Icons.view_column_outlined,
+            visible: isPaginated,
+            min: 0,
+            max: 4,
+            step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 7,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.ttuPageColumns.toDouble(),
+            format: (double v) =>
+                v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setTtuPageColumns(v.round());
+              notifyReaderLayoutChanged(c);
+            },
+          ),
           // TODO-362（PR#3 响应式页边距）：四个边距都是百分比（左右 = vw / 上下 = vh），
           // 默认左右各 2%、上下 0%。范围 0~50%，禁止负值（负值与百分比语义冲突，且
           // CSS padding 不接受负值）。格式带 `%` 提示用户这是百分比。
@@ -179,328 +400,12 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(c);
             },
           ),
-          SettingsStepperItem(
-            id: 'reading_display.page_columns',
-            title: t.columns_per_page,
-            icon: Icons.view_column_outlined,
-            visible: isPaginated,
-            min: 0,
-            max: 4,
-            step: 1,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 7,
-            ),
-            value: (SettingsContext c) =>
-                c.readerSource.ttuPageColumns.toDouble(),
-            format: (double v) =>
-                v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-            onChanged: (SettingsContext c, double v) {
-              c.readerSource.setTtuPageColumns(v.round());
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.section_layout,
-        items: <SettingsItem>[
-          SettingsSegmentedItem<String>(
-            id: 'reading_display.spread_mode',
-            title: t.spread_mode,
-            icon: Icons.menu_book_outlined,
-            controlBelow: true,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 5,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'off',
-                label: t.spread_off,
-                tooltip: t.spread_off,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'on',
-                label: t.spread_on,
-                tooltip: t.spread_on,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'auto',
-                label: t.spread_auto,
-                tooltip: t.spread_auto,
-              ),
-            ],
-            selected: (SettingsContext c) => c.readerSource.ttuSpreadMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setTtuSpreadMode(v);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'reading_display.spread_direction',
-            title: t.spread_direction,
-            icon: Icons.swap_horiz_outlined,
-            controlBelow: true,
-            visible: (SettingsContext c) =>
-                c.readerSource.ttuSpreadMode != 'off',
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 6,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'rtl',
-                label: 'RTL',
-                tooltip: t.spread_direction_rtl,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'ltr',
-                label: 'LTR',
-                tooltip: t.spread_direction_ltr,
-              ),
-            ],
-            selected: (SettingsContext c) => c.readerSource.ttuSpreadDirection,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setTtuSpreadDirection(v);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'reading_display.writing_mode',
-            title: t.ttu_writing_direction,
-            icon: Icons.text_rotate_vertical,
-            controlBelow: true,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 4,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'horizontal-tb',
-                label: t.ttu_horizontal,
-                tooltip: t.ttu_horizontal,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'vertical-rl',
-                label: t.ttu_vertical,
-                tooltip: t.ttu_vertical,
-              ),
-            ],
-            selected: (SettingsContext c) => c.readerSource.ttuWritingMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setTtuWritingMode(v);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'reading_display.view_mode',
-            title: t.ttu_view_mode_label,
-            icon: Icons.chrome_reader_mode_outlined,
-            controlBelow: true,
-            // TODO-725：翻页/滚动从「外观」迁到「布局与显示」组（用户最直指的
-            // 「滚动/翻页应放进布局与显示」）。仅改展示分类/排序，onChanged 不变。
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 0,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'paginated',
-                label: t.ttu_paginated,
-                tooltip: t.ttu_paginated,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'continuous',
-                label: t.ttu_scroll,
-                tooltip: t.ttu_scroll,
-              ),
-              // TODO-909: third book view-mode. M0 exposes it so the device
-              // Gate can select VN; the 6 VN-specific sub-settings are M1.
-              SettingsSegmentOption<String>(
-                value: 'vn',
-                label: t.ttu_vn,
-                tooltip: t.ttu_vn,
-              ),
-            ],
-            selected: (SettingsContext c) => c.readerSource.ttuViewMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setTtuViewMode(v);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'reading_display.vert_text_orient',
-            title: t.ttu_vert_text_orient,
-            icon: Icons.text_rotation_none,
-            controlBelow: true,
-            visible: isVertical,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 13,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'mixed',
-                label: t.ttu_orient_mixed,
-                tooltip: t.ttu_orient_mixed,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'upright',
-                label: t.ttu_orient_upright,
-                tooltip: t.ttu_orient_upright,
-              ),
-            ],
-            selected: (SettingsContext c) =>
-                c.readerSource.ttuVerticalTextOrientation,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setTtuVerticalTextOrientation(v);
-              notifyReaderSettingsChanged(c);
-            },
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'reading_display.furigana_mode',
-            title: t.ttu_furigana_mode,
-            icon: Icons.translate_outlined,
-            controlBelow: true,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 12,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'show',
-                label: t.ttu_furigana_show,
-                tooltip: t.ttu_furigana_show,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'hide',
-                label: t.ttu_furigana_hide,
-                tooltip: t.ttu_furigana_hide,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'partial',
-                label: t.ttu_furigana_partial,
-                tooltip: t.ttu_furigana_partial,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'toggle',
-                label: t.ttu_furigana_toggle,
-                tooltip: t.ttu_furigana_toggle,
-              ),
-            ],
-            selected: (SettingsContext c) => c.readerSource.ttuFuriganaMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setTtuFuriganaMode(v);
-              notifyReaderSettingsChanged(c);
-            },
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.section_advanced_typography,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'reading_display.text_justify',
-            title: t.ttu_text_justify,
-            icon: Icons.format_align_justify,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 14,
-            ),
-            value: (SettingsContext c) =>
-                c.readerSource.ttuEnableTextJustification,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setTtuEnableTextJustification(value);
-              notifyReaderSettingsChanged(c);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'reading_display.vert_kerning',
-            title: t.ttu_vert_kerning,
-            icon: Icons.space_bar,
-            visible: isVertical,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 15,
-            ),
-            value: (SettingsContext c) =>
-                c.readerSource.ttuEnableVerticalFontKerning,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setTtuEnableVerticalFontKerning(value);
-              notifyReaderSettingsChanged(c);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'reading_display.font_vpal',
-            title: t.ttu_font_vpal,
-            icon: Icons.format_shapes,
-            visible: isVertical,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 16,
-            ),
-            value: (SettingsContext c) => c.readerSource.ttuEnableFontVPAL,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setTtuEnableFontVPAL(value);
-              notifyReaderSettingsChanged(c);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'reading_display.prioritize_reader_styles',
-            title: t.ttu_reader_styles,
-            icon: Icons.style_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 17,
-            ),
-            value: (SettingsContext c) =>
-                c.readerSource.ttuPrioritizeReaderStyles,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setTtuPrioritizeReaderStyles(value);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-          // TODO-861④（移植 Hoshi `f286108`）：图片防剧透模糊。加 `blurred` 类需重跑
-          // 分页脚本（非纯 CSS），故走结构 reload（notifyReaderLayoutChanged）。
-          SettingsSwitchItem(
-            id: 'reading_display.blur_images',
-            title: t.ttu_blur_images,
-            icon: Icons.blur_on_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 19,
-            ),
-            value: (SettingsContext c) => c.readerSource.ttuBlurImages,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setTtuBlurImages(value);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-          // TODO-1128（受限方案 A）：把 0 字符单图 spine 章并入相邻正文章连续显示，
-          // 不再各占一页/一条目录。结构性布局键（改虚拟页映射 + 注入章 DOM），故走
-          // notifyReaderLayoutChanged（重建 spread map + 重排），默认关。
-          SettingsSwitchItem(
-            id: 'reading_display.merge_image_pages',
-            title: t.ttu_merge_image_pages,
-            subtitle: t.ttu_merge_image_pages_subtitle,
-            icon: Icons.collections_bookmark_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 20,
-            ),
-            value: (SettingsContext c) => c.readerSource.ttuMergeImagePages,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setTtuMergeImagePages(value);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
         ],
       ),
       // 原「导航」13 项混杂平铺，拆两组：阅读界面（进度条/悬浮 chrome/底栏提示/
-      // 常亮）与翻页与交互（点击高亮/音量翻页/滚轮/滑动灵敏度）。纯展示重组：
-      // item id、持久化 key、ReaderPlacement 全部不变（快捷面板分组不动）。
+      // 常亮 + 从「底栏布局」并入的「反转阅读器底栏」）与翻页与交互（点击高亮/音量
+      // 翻页/滚轮/滑动灵敏度）。纯展示重组：item id、持久化 key、ReaderPlacement
+      // 全部不变（快捷面板分组不动）。
       SettingsSection(
         title: t.settings_section_reader_chrome,
         items: <SettingsItem>[
@@ -651,6 +556,25 @@ SettingsDestination buildReadingDestination() {
                 settingsContext.readerSource.keepScreenAwake,
             onChanged: setKeepScreenAwake,
           ),
+          // TODO-830：「反转阅读器底栏」（纯位置镜像，仅左右调换底栏控件位置，左右手
+          // 布局偏好，与翻页方向无关）。原独占一个「底栏布局」单项分组（欠填充结构），
+          // 并入「阅读界面」尾部。id/持久化 key/ReaderPlacement 全不变，仅换 UI 分组。
+          SettingsSwitchItem(
+            id: 'reading_display.reverse_reader_bottom_bar',
+            title: t.reverse_reader_bottom_bar,
+            icon: Icons.swap_horiz_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              // order 13：behavior 组内已用 0-9/11/12（10 在 listening），取末位
+              // 空号，避免与 volume_page_turning_speed(6)/keep_screen_awake(7) 撞号。
+              order: 13,
+            ),
+            value: (SettingsContext c) => c.appModel.reverseReaderBottomBar,
+            onChanged: (SettingsContext c, bool value) {
+              c.appModel.toggleReverseReaderBottomBar();
+              notifyReaderChromeChanged(c);
+            },
+          ),
         ],
       ),
       SettingsSection(
@@ -736,7 +660,7 @@ SettingsDestination buildReadingDestination() {
       // TODO-745 / TODO-830：「翻页方向」分组只收**真正反转翻页/句子方向**的
       // 开关（音量键 / 滑动 / 键盘方向键 + 反转底栏前进后退按钮）。原 TODO-745 误把
       // 「反转阅读器底栏」（纯左右镜像底栏控件位置、与翻页方向无关）塞进来，
-      // 现移到下方独立的「底栏布局」分组（id/持久化 key 不变，仅换 UI 分组）。
+      // 现移到上方「阅读界面」分组（id/持久化 key 不变，仅换 UI 分组）。
       // 纯展示重组：各开关的 id/title/value/onChanged 与持久化 key、默认值、
       // 消费点全不变；面板分组（ReaderGroup.behavior）也不动。
       SettingsSection(
@@ -807,26 +731,106 @@ SettingsDestination buildReadingDestination() {
           ),
         ],
       ),
-      // TODO-830：「底栏布局」分组——只放纯位置镜像的「反转阅读器底栏」（与
-      // 翻页方向无关，仅左右调换底栏控件位置，左右手布局偏好）。
+      // 「高级选项」现移到最后（低频排版微调）：文字两端对齐、竖排字距/VPAL、
+      // 优先阅读器样式、图片防剧透模糊、合并插图页。collapsedByDefault 与各项
+      // id/持久化 key/ReaderPlacement 全不变，仅调 section 相对位置。
       SettingsSection(
-        title: t.section_bottom_bar_layout,
+        title: t.section_advanced_typography,
         collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
-            id: 'reading_display.reverse_reader_bottom_bar',
-            title: t.reverse_reader_bottom_bar,
-            icon: Icons.swap_horiz_outlined,
+            id: 'reading_display.text_justify',
+            title: t.ttu_text_justify,
+            icon: Icons.format_align_justify,
             reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              // order 13：behavior 组内已用 0-9/11/12（10 在 listening），取末位
-              // 空号，避免与 volume_page_turning_speed(6)/keep_screen_awake(7) 撞号。
-              order: 13,
+              group: ReaderGroup.layout,
+              order: 14,
             ),
-            value: (SettingsContext c) => c.appModel.reverseReaderBottomBar,
+            value: (SettingsContext c) =>
+                c.readerSource.ttuEnableTextJustification,
             onChanged: (SettingsContext c, bool value) {
-              c.appModel.toggleReverseReaderBottomBar();
-              notifyReaderChromeChanged(c);
+              c.readerSource.setTtuEnableTextJustification(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.vert_kerning',
+            title: t.ttu_vert_kerning,
+            icon: Icons.space_bar,
+            visible: isVertical,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 15,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.ttuEnableVerticalFontKerning,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuEnableVerticalFontKerning(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.font_vpal',
+            title: t.ttu_font_vpal,
+            icon: Icons.format_shapes,
+            visible: isVertical,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 16,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuEnableFontVPAL,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuEnableFontVPAL(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.prioritize_reader_styles',
+            title: t.ttu_reader_styles,
+            icon: Icons.style_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 17,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.ttuPrioritizeReaderStyles,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuPrioritizeReaderStyles(value);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          // TODO-861④（移植 Hoshi `f286108`）：图片防剧透模糊。加 `blurred` 类需重跑
+          // 分页脚本（非纯 CSS），故走结构 reload（notifyReaderLayoutChanged）。
+          SettingsSwitchItem(
+            id: 'reading_display.blur_images',
+            title: t.ttu_blur_images,
+            icon: Icons.blur_on_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 19,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuBlurImages,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuBlurImages(value);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          // TODO-1128（受限方案 A）：把 0 字符单图 spine 章并入相邻正文章连续显示，
+          // 不再各占一页/一条目录。结构性布局键（改虚拟页映射 + 注入章 DOM），故走
+          // notifyReaderLayoutChanged（重建 spread map + 重排），默认关。
+          SettingsSwitchItem(
+            id: 'reading_display.merge_image_pages',
+            title: t.ttu_merge_image_pages,
+            subtitle: t.ttu_merge_image_pages_subtitle,
+            icon: Icons.collections_bookmark_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 20,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuMergeImagePages,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuMergeImagePages(value);
+              notifyReaderLayoutChanged(c);
             },
           ),
         ],
