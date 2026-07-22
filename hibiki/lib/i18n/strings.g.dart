@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 38012 (2236 per locale)
+/// Strings: 38080 (2240 per locale)
 ///
-/// Built on 2026-07-22 at 05:54 UTC
+/// Built on 2026-07-22 at 08:06 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2978,6 +2978,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get settings_destination_system_summary =>
       'General, updates & diagnostics';
   String get error_load_failed => 'Something went wrong while loading';
+  String get video_quality_empty => 'No switchable quality for this video';
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -8038,6 +8043,15 @@ class _StringsAr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -13171,6 +13185,15 @@ class _StringsDe extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -18320,6 +18343,15 @@ class _StringsEs extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -23480,6 +23512,15 @@ class _StringsFr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -28567,6 +28608,15 @@ class _StringsId extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -33702,6 +33752,15 @@ class _StringsIt extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -38642,6 +38701,15 @@ class _StringsJa extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -43585,6 +43653,15 @@ class _StringsKo extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -48698,6 +48775,15 @@ class _StringsNl extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -53826,6 +53912,15 @@ class _StringsPtBr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -58937,6 +59032,15 @@ class _StringsRu extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -63993,6 +64097,15 @@ class _StringsTh extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -69081,6 +69194,15 @@ class _StringsTr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -74156,6 +74278,15 @@ class _StringsVi extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 // Path: <root>
@@ -78878,6 +79009,14 @@ class _StringsZhCn extends _StringsEn {
   String get settings_destination_system_summary => '通用、更新与诊断';
   @override
   String get error_load_failed => '加载出错';
+  @override
+  String get video_quality_empty => '本视频没有可切换的画质';
+  @override
+  String get video_danmaku_manual_bind_failed => '弹幕加载失败，请稍后重试';
+  @override
+  String remote_video_info_size({required Object size}) => '大小：${size}';
+  @override
+  String get remote_video_info_no_subtitle => '不含字幕';
 }
 
 // Path: <root>
@@ -83736,6 +83875,15 @@ class _StringsZhHk extends _StringsEn {
   String get settings_destination_system_summary => '通用、更新與診斷';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get video_quality_empty => 'No switchable quality for this video';
+  @override
+  String get video_danmaku_manual_bind_failed =>
+      'Couldn\'t load danmaku for this episode. Try again later.';
+  @override
+  String remote_video_info_size({required Object size}) => 'Size: ${size}';
+  @override
+  String get remote_video_info_no_subtitle => 'No subtitles';
 }
 
 /// Flat map(s) containing all translations.
@@ -88300,6 +88448,14 @@ extension on _StringsEn {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -92862,6 +93018,14 @@ extension on _StringsAr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -97445,6 +97609,14 @@ extension on _StringsDe {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -102027,6 +102199,14 @@ extension on _StringsEs {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -106615,6 +106795,14 @@ extension on _StringsFr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -111185,6 +111373,14 @@ extension on _StringsId {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -115770,6 +115966,14 @@ extension on _StringsIt {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -120317,6 +120521,14 @@ extension on _StringsJa {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -124868,6 +125080,14 @@ extension on _StringsKo {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -129446,6 +129666,14 @@ extension on _StringsNl {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -134021,6 +134249,14 @@ extension on _StringsPtBr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -138601,6 +138837,14 @@ extension on _StringsRu {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -143165,6 +143409,14 @@ extension on _StringsTh {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -147738,6 +147990,14 @@ extension on _StringsTr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -152306,6 +152566,14 @@ extension on _StringsVi {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }
@@ -156840,6 +157108,14 @@ extension on _StringsZhCn {
         return '通用、更新与诊断';
       case 'error_load_failed':
         return '加载出错';
+      case 'video_quality_empty':
+        return '本视频没有可切换的画质';
+      case 'video_danmaku_manual_bind_failed':
+        return '弹幕加载失败，请稍后重试';
+      case 'remote_video_info_size':
+        return ({required Object size}) => '大小：${size}';
+      case 'remote_video_info_no_subtitle':
+        return '不含字幕';
       default:
         return null;
     }
@@ -161382,6 +161658,14 @@ extension on _StringsZhHk {
         return '通用、更新與診斷';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'video_quality_empty':
+        return 'No switchable quality for this video';
+      case 'video_danmaku_manual_bind_failed':
+        return 'Couldn\'t load danmaku for this episode. Try again later.';
+      case 'remote_video_info_size':
+        return ({required Object size}) => 'Size: ${size}';
+      case 'remote_video_info_no_subtitle':
+        return 'No subtitles';
       default:
         return null;
     }

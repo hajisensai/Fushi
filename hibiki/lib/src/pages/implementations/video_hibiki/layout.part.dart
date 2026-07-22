@@ -651,10 +651,10 @@ extension _VideoLayout on _VideoHibikiPageState {
         tooltip: _videoControlItemTooltip(item),
         iconSize: _videoControlIconSize,
         icon: Icon(_videoControlItemIcon(item)),
-        // TODO-604：图标用主题强调色 cs.primary，与底栏 / 顶栏按钮的
-        // buttonBarButtonColor 同源；此前用 cs.onSurface（中性前景）导致左 / 右侧
-        // 浮条按钮看上去「没吃到主题配色」、与底 / 顶栏不一致。
-        color: cs.primary,
+        // TODO-604：与底栏 / 顶栏按钮的 buttonBarButtonColor 同源。UI 巡检 PR-4：
+        // 同源改为 chrome 固定亮色强调色 [_videoChromeAccent]（裸图标浮在画面 /
+        // 固定深色 scrim 上，跟随 cs.primary 在浅色 / eink 主题下黑压黑）。
+        color: _videoChromeAccent(cs),
         onPressed: () => _activateVideoControlItem(
           item,
           controller,
@@ -830,7 +830,11 @@ extension _VideoLayout on _VideoHibikiPageState {
                         // 右侧按钮一样」）。
                         child: _lockButtonHoverKeepAlive(
                           child: Material(
-                            color: cs.surface.withValues(alpha: 0.55),
+                            // 锁按钮带自有 surface 圆底（非裸压 scrim），底色 / 图标
+                            // 仍按主题自配对；alpha 收敛进两档制的半透明档
+                            // （UI 巡检 PR-4，此前 0.55 独立一档）。
+                            color: cs.surface.withValues(
+                                alpha: kVideoOverlayTranslucentAlpha),
                             shape: const CircleBorder(),
                             clipBehavior: Clip.antiAlias,
                             child: IconButton(

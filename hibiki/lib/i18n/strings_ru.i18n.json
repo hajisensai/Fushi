@@ -2234,5 +2234,9 @@
   "settings_section_general": "General",
   "reading_section_mode": "Mode & orientation",
   "settings_destination_system_summary": "General, updates & diagnostics",
-  "error_load_failed": "Something went wrong while loading"
+  "error_load_failed": "Something went wrong while loading",
+  "video_quality_empty": "No switchable quality for this video",
+  "video_danmaku_manual_bind_failed": "Couldn't load danmaku for this episode. Try again later.",
+  "remote_video_info_size": "Size: $size",
+  "remote_video_info_no_subtitle": "No subtitles"
 }

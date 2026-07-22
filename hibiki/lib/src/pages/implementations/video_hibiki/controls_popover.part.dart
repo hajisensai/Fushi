@@ -467,7 +467,9 @@ extension _VideoControlsPopover on _VideoHibikiPageState {
       color: Colors.transparent,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest.withValues(alpha: 0.94),
+          // 浮层 alpha 两档制的实底档（UI 巡检 PR-4）。
+          color: cs.surfaceContainerHighest
+              .withValues(alpha: kVideoOverlaySolidAlpha),
           borderRadius: HibikiBorderRadius.menu,
           border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.7)),
           boxShadow: <BoxShadow>[

@@ -273,11 +273,14 @@ extension _VideoQuality on _VideoHibikiPageState {
           ],
         );
       }
+      // UI 巡检 PR-4：空态用专属说明文案（此前复用面板标题「画质」当空态，
+      // 看起来像面板坏了没加载出来）。
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            t.video_quality,
+            t.video_quality_empty,
+            textAlign: TextAlign.center,
             style: TextStyle(color: cs.onSurfaceVariant),
           ),
         ),
@@ -289,7 +292,8 @@ extension _VideoQuality on _VideoHibikiPageState {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            t.video_quality,
+            t.video_quality_empty,
+            textAlign: TextAlign.center,
             style: TextStyle(color: cs.onSurfaceVariant),
           ),
         ),

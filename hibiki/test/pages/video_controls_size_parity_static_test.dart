@@ -30,7 +30,8 @@ void main() {
         contains('static const double _videoPlayPauseIconSizeBase = 36'));
     expect(source,
         contains('static const double _videoControlTitleFontSizeBase = 16'));
-    expect(source, contains('TextStyle _videoControlTitleStyle(ColorScheme'));
+    // UI 巡检 PR-4：标题样式不再吃 ColorScheme（chrome 固定亮色），字号仍随缩放。
+    expect(source, contains('TextStyle _videoControlTitleStyle()'));
 
     // TODO-067:控制条尺寸 getter 必须乘以 _videoUiScale,让顶/底栏图标、按钮条高度、
     // 播放键、标题字号都随「界面大小」缩放(视频页被 HibikiAppUiScaleNeutralizer 中和,

@@ -27,7 +27,8 @@ void main() {
 
     expect(source, contains('_subtitleTextColor(ColorScheme'));
     expect(source, contains('_videoChromeColorScheme'));
-    expect(source, contains('_videoControlTitleStyle(ColorScheme'));
+    // UI 巡检 PR-4：标题前景改 chrome 固定近白（不随 colorScheme），签名去 cs 参。
+    expect(source, contains('TextStyle _videoControlTitleStyle()'));
     expect(source, contains('_osdSurfaceColor(ColorScheme'));
     expect(source, contains('_osdTextColor(ColorScheme'));
     expect(source, contains('_subtitleStyle.resolveTextColor('));
