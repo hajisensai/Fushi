@@ -355,6 +355,8 @@ List<String> buildEngineHookInjectorArguments({
   required String? launchExe,
   bool lunaPcHooks = false,
   int? lunaCodepage,
+  String? lunaHookProfilePath,
+  List<String> lunaHookCodes = const <String>[],
 }) {
   final String? exe = launchExe;
   final bool launchMode = exe != null && exe.isNotEmpty;
@@ -366,6 +368,14 @@ List<String> buildEngineHookInjectorArguments({
   }
   if (lunaCodepage != null && lunaCodepage > 0) {
     args.addAll(<String>['--luna-codepage', '$lunaCodepage']);
+  }
+  if (lunaHookProfilePath != null && lunaHookProfilePath.isNotEmpty) {
+    args.addAll(<String>['--luna-hook-profile', lunaHookProfilePath]);
+  }
+  for (final String hookCode in lunaHookCodes) {
+    if (hookCode.trim().isNotEmpty) {
+      args.addAll(<String>['--luna-hook-code', hookCode]);
+    }
   }
   return args;
 }
@@ -418,6 +428,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     required this.injectorPath,
     this.lunaPcHooks = false,
     this.lunaCodepage,
+    this.lunaHookProfilePath,
+    this.lunaHookCodes = const <String>[],
     MethodChannel? channel,
     GalHookProcessStarter? processStarter,
     GalHookProcessOutputSink? processOutputSink,
@@ -448,6 +460,14 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   /// LunaHook 默认文本代码页。null 时沿用 injector 默认值（日文 Shift-JIS/932）。
   final int? lunaCodepage;
+
+  /// UTF-8 TSV profile file. The injector matches entries by executable/module
+  /// SHA-256, so moving a game directory does not change the selected code.
+  String? lunaHookProfilePath;
+
+  /// Explicit one-shot codes, mainly for diagnostics. Persisted user codes use
+  /// [lunaHookProfilePath] so they retain their SHA-256 identity guard.
+  final List<String> lunaHookCodes;
 
   final MethodChannel _channel;
   final GalHookProcessStarter _processStarter;
@@ -580,6 +600,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
           launchExe: exe,
           lunaPcHooks: lunaPcHooks,
           lunaCodepage: lunaCodepage,
+          lunaHookProfilePath: lunaHookProfilePath,
+          lunaHookCodes: lunaHookCodes,
         ),
       );
     } on ProcessException {

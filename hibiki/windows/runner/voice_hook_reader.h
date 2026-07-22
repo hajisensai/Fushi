@@ -21,6 +21,9 @@ namespace hibiki {
 
 // 从共享内存 header 读出的语音格式 + 状态。[ok] 仅当映射有效、契约匹配、hook 已填格式时为 true。
 struct VoiceHookStatus {
+  int ipc_protocol_version = 0;
+  int luna_bridge_abi_version = 0;
+  int luna_vendored_version = 0;
   int sample_rate = 0;
   int channels = 0;
   int bits_per_sample = 0;

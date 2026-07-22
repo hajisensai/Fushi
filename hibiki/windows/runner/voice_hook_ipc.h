@@ -15,7 +15,10 @@
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 10;
+constexpr uint32_t kSharedVersion = 11;
+constexpr uint32_t kStableIpcVersion = 1;
+constexpr uint32_t kLunaBridgeAbiVersion = 1;
+constexpr uint32_t kLunaVendoredVersion = 0x0A100102;  // 10.16.1.2
 
 constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 2048;
@@ -117,6 +120,10 @@ struct LoopbackMarker {
 struct SharedHeader {
   uint32_t magic;
   uint32_t version;
+  uint32_t ipc_protocol_version;
+  uint32_t luna_bridge_abi_version;
+  uint32_t luna_vendored_version;
+  uint32_t protocol_reserved;
   uint32_t sample_rate;
   uint32_t channels;
   uint32_t bits_per_sample;

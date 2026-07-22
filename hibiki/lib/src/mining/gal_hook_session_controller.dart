@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
 import 'package:hibiki/src/mining/serial_job_queue.dart';
 import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
@@ -247,6 +248,15 @@ class GalHookSessionController extends ChangeNotifier {
   }
 
   int? get selectedNativeTextThreadId => _selectedNativeTextThreadId;
+  String? get currentLaunchExecutable => _state.launchExe;
+  TexthookerTextThread? get selectedTextThread {
+    final String? key = selectedTextThreadKey;
+    if (key == null) return null;
+    for (final TexthookerTextThread thread in textThreads) {
+      if (thread.key == key) return thread;
+    }
+    return null;
+  }
 
   /// 当前捕获会话、当前线程的有效行。历史缓冲仍保留在 [lines]，但浮窗和场景
   /// 制卡只允许消费这里的行，防止跨会话或跨线程借用上下文。
@@ -317,6 +327,19 @@ class GalHookSessionController extends ChangeNotifier {
       return File(path).existsSync() ? path : null;
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> _attachPersistedHookProfiles(
+    EngineHookGalAudioSource engine,
+  ) async {
+    try {
+      final LunaHookCodeProfileStore store =
+          await LunaHookCodeProfileStore.openDefault();
+      engine.lunaHookProfilePath = store.file.path;
+    } catch (_) {
+      // Profile persistence must never prevent capture; injector built-ins and
+      // automatic Luna engine detection remain available.
     }
   }
 
@@ -403,6 +426,7 @@ class GalHookSessionController extends ChangeNotifier {
         injectorPath: injector,
         lunaPcHooks: false,
       );
+      await _attachPersistedHookProfiles(engine);
       final PcmFormat? format = await engine.start();
       if (generation != _operationGeneration) {
         await engine.stop();
@@ -499,6 +523,7 @@ class GalHookSessionController extends ChangeNotifier {
       injectorPath: injector,
       lunaPcHooks: lunaPcHooks,
     );
+    await _attachPersistedHookProfiles(engine);
     _setState(_state.copyWith(phase: GalHookSessionPhase.injecting));
     final PcmFormat? format = await engine.start();
     if (generation != _operationGeneration) {
