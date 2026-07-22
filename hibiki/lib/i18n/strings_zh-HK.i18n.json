@@ -2233,5 +2233,6 @@
   "clipboard_panel_block_capture_hint": "Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.",
   "settings_section_general": "通用",
   "reading_section_mode": "模式與排版方向",
-  "settings_destination_system_summary": "通用、更新與診斷"
+  "settings_destination_system_summary": "通用、更新與診斷",
+  "error_load_failed": "Something went wrong while loading"
 }

@@ -12,6 +12,8 @@ class HibikiPlaceholderMessage extends StatelessWidget {
     this.color,
     this.iconSize,
     this.messageStyle,
+    this.detail,
+    this.action,
     super.key,
   });
 
@@ -32,6 +34,13 @@ class HibikiPlaceholderMessage extends StatelessWidget {
 
   /// The text style to be used to display the message below the icon.
   final TextStyle? messageStyle;
+
+  /// 次级说明（如折叠后的原始错误串）。bodySmall + onVariant，最多 3 行省略，
+  /// 不抢 [message] 的主文案层级。
+  final String? detail;
+
+  /// 可选行动按钮（如空态的「导入」、错误态的「重试」），渲染在文案下方。
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +74,22 @@ class HibikiPlaceholderMessage extends StatelessWidget {
                             color: foreground,
                           ),
                 ),
+                if (detail != null) ...[
+                  SizedBox(height: tokens.spacing.gap / 2),
+                  Text(
+                    detail!,
+                    textAlign: TextAlign.center,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: foreground,
+                        ),
+                  ),
+                ],
+                if (action != null) ...[
+                  SizedBox(height: tokens.spacing.gap * 1.5),
+                  action!,
+                ],
               ],
             ),
           ),

@@ -515,9 +515,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
             onTap: onTap,
             child: content,
           );
+    // 单焦点站点契约（对齐滑条/步进行的 ExcludeFocus 做法）：焦点根存在时，
+    // 行的键盘/手柄停靠点只有 _SettingsRowFocusTarget 一个——InkWell 与
+    // trailing 里的 Switch 等内部可聚焦控件全部退出 Tab 遍历，否则一行
+    // 最多 3 个站点且激活语义相同，长设置页遍历冗长。
     return _SettingsRowFocusTarget(
       onTap: onTap!,
-      child: tappable,
+      child: ExcludeFocus(child: tappable),
     );
   }
 

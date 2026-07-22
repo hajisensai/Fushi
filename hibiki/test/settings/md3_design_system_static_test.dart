@@ -652,6 +652,17 @@ void main() {
               'Surfaces still flow through HibikiDialogFrame + HibikiDesignTokens.',
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':
           'Book-cover overlays and drag affordances are reader-shelf content.',
+      // CoverBadge 是压在封面图上的角标胶囊（字幕/云端/播放列表等），把书架/
+      // 视频卡上至少三份手抄的同款胶囊收口成一个组件。胶囊几何（radius 10）
+      // 与固定深色 scrim 沿用被收口的既有角标像素规格——封面叠层内容，
+      // 非普通页面 chrome，同书架封面叠层豁免类。
+      'lib/src/utils/components/cover_badge.dart':
+          'CoverBadge is the shared cover-art overlay pill (subtitle/cloud/'
+              'playlist badges) consolidating at least three hand-copied '
+              'badge implementations; its fixed dark scrim and pill radius '
+              'preserve the existing badge pixel spec — cover overlay '
+              'content, not ordinary page chrome, same reviewed exception '
+              'class as the reader-shelf book-cover overlays.',
       // TODO-947 系列/合集折叠卡的马赛克封面（2x2 成员封面网格）是书架内容/封面美术，
       // 不是页面 chrome：letterbox 底 surfaceContainerHighest 与格子圆角
       // BorderRadius.circular(cellRadius) 是封面拼图单元，同「书架封面/拖放」豁免类。
@@ -1807,7 +1818,17 @@ void main() {
     ]) {
       final String section = _sectionSource(components, start, end);
       expect(section, contains('AnimatedContainer('));
-      expect(section, contains('duration: hibikiMd3StateDuration'));
+      // MD3 状态动画时长必须来自 hibikiMd3StateDuration；HibikiCard 经
+      // einkSafeDuration 包装（eink 下归零，非 eink 恒等于 MD3 token）也算
+      // 合规——守卫的意图是「用 MD3 token」，不是「禁止 eink 例外」。
+      expect(
+        section.contains('duration: hibikiMd3StateDuration') ||
+            section.contains(
+                'duration: einkSafeDuration(context, hibikiMd3StateDuration)'),
+        isTrue,
+        reason: '$start section must animate with hibikiMd3StateDuration '
+            '(optionally eink-gated via einkSafeDuration)',
+      );
       expect(section, contains('curve: hibikiMd3StateCurve'));
     }
   });
