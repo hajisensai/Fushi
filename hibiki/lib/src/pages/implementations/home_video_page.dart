@@ -1811,12 +1811,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// UI v2 Phase B：顶部概览条 =「继续观看 hero」+「媒体库概览」统计。
+  /// 顶部概览条 =「继续观看 hero」。
   ///
-  /// 数据全部内存推导（[computeVideoLibraryOverview]）：hero = 有痕迹未看完中
-  /// 最近看过的一条（watch-stats → importedAt 回退）；统计 = 总数 / 未完成 /
-  /// 近 7 天导入。**不显示百分比**（VideoBooks 无总时长列，不造假）。宽 ≥720
-  /// 并排、窄屏纵向堆叠；无 hero 候选时只渲染统计。
+  /// 数据内存推导（[computeVideoLibraryOverview]）：hero = 有痕迹未看完中
+  /// 最近看过的一条（watch-stats → importedAt 回退）。**不显示百分比**
+  /// （VideoBooks 无总时长列，不造假）。无 hero 候选时整条隐藏。
+  /// 原并排的「统计」三格（总数/未完成/近 7 天导入，BUG-995 的远端计入随之
+  /// 退役）已按用户反馈移除——与右上角「视频统计」入口重复。
   Widget _buildOverviewSection(
     List<VideoBookRow> all,
     List<RemoteVideoInfo> remoteVideos,
@@ -1874,12 +1875,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         }
       }
     }
-    final Widget stats = _buildOverviewStats(overview, tokens);
     final Widget? heroCard = hero != null
         ? _buildContinueHero(hero, overview, tokens)
         : (remoteHero != null
             ? _buildContinueHeroRemote(remoteHero, overview, tokens)
             : null);
+    if (heroCard == null) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
@@ -1887,36 +1888,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         tokens.spacing.card,
         0,
       ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          if (heroCard == null) return stats;
-          final bool wide = constraints.maxWidth >= 720;
-          if (wide) {
-            // IntrinsicHeight 必须有：本区在 SliverToBoxAdapter 下主轴（竖向）无界，
-            // 裸 Row(stretch) 会把无界高度强加给 Expanded 子项 → BoxConstraints
-            // forces an infinite height 首帧崩溃（对抗审查确认）。IntrinsicHeight
-            // 先按子项固有高度收界，再 stretch 等高。
-            return IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(flex: 3, child: heroCard),
-                  SizedBox(width: tokens.spacing.gap + 4),
-                  Expanded(flex: 2, child: stats),
-                ],
-              ),
-            );
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              heroCard,
-              SizedBox(height: tokens.spacing.gap),
-              stats,
-            ],
-          );
-        },
-      ),
+      child: heroCard,
     );
   }
 
@@ -2047,78 +2019,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           ),
         ],
       ),
-    );
-  }
-
-  /// 媒体库概览统计：总数 / 未完成 / 近 7 天导入 三格。
-  Widget _buildOverviewStats(
-    VideoLibraryOverview overview,
-    HibikiDesignTokens tokens,
-  ) {
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        color: tokens.surfaces.group,
-        shape: const RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.card,
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.gap + 4),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(t.video_library_overview, style: tokens.type.sectionLabel),
-            SizedBox(height: tokens.spacing.gap),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: _buildOverviewStatCell(
-                    t.video_stat_total_videos,
-                    overview.total,
-                    tokens,
-                  ),
-                ),
-                Expanded(
-                  child: _buildOverviewStatCell(
-                    t.video_stat_unfinished,
-                    overview.unfinished,
-                    tokens,
-                  ),
-                ),
-                Expanded(
-                  child: _buildOverviewStatCell(
-                    t.video_stat_recent_imports,
-                    overview.recentImports,
-                    tokens,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOverviewStatCell(
-    String label,
-    int value,
-    HibikiDesignTokens tokens,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text('$value', style: tokens.type.pageTitle),
-        SizedBox(height: tokens.spacing.gap / 2),
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: tokens.type.metadata,
-        ),
-      ],
     );
   }
 

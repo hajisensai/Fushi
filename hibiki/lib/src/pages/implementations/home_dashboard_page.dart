@@ -103,6 +103,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// 每日阅读字数（dateKey → 字数），喂阅读热力图。
   Map<String, int> _readingCharsByDay = const <String, int>{};
 
+  /// 每日学习时长（dateKey → 毫秒，阅读 + 视频观看），热力图气泡的第二维度
+  /// （用户反馈「点击只显示字数」——字数和时长本就都按日落库，一起外显）。
+  Map<String, int> _readingTimeMsByDay = const <String, int>{};
+
   /// 每个视频 bookUid 的最近观看时刻（epoch 毫秒），继续观看排序用。
   Map<String, int> _videoWatchAtByUid = const <String, int>{};
 
@@ -168,11 +172,14 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     // 一起计入——看带字幕的视频也是在读字，故热力图同时反映阅读与观看活动，不再
     // 只有书籍点亮（用户反馈「阅读活动只有书籍，其他的呢」）。
     final Map<String, int> charsByDay = <String, int>{};
+    final Map<String, int> timeMsByDay = <String, int>{};
     for (final ReadingStatisticRow r in reading) {
       charsByDay[r.dateKey] = (charsByDay[r.dateKey] ?? 0) + r.charactersRead;
+      timeMsByDay[r.dateKey] = (timeMsByDay[r.dateKey] ?? 0) + r.readingTimeMs;
     }
     for (final VideoWatchStatisticRow w in watch) {
       charsByDay[w.dateKey] = (charsByDay[w.dateKey] ?? 0) + w.subtitleChars;
+      timeMsByDay[w.dateKey] = (timeMsByDay[w.dateKey] ?? 0) + w.watchTimeMs;
     }
 
     // 每个视频的最近观看时刻（按 bookUid 取 lastModified 最大值）。
@@ -191,6 +198,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       _localActivityEvents = events;
       _activityEvents = events;
       _readingCharsByDay = charsByDay;
+      _readingTimeMsByDay = timeMsByDay;
       _videoWatchAtByUid = watchAt;
     });
     // 本地渲染先行，互联数据到达后再增量补位（不阻塞首屏）。
@@ -553,8 +561,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         now: DateTime.now(),
         baseColor: tokens.surfaces.primary,
         emptyColor: tokens.surfaces.card,
-        valueLabel: (String dateKey, int chars) =>
-            '${formatStatHeatmapDay(dateKey)} · ${formatStatChars(chars)}',
+        // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示时长段）。
+        valueLabel: (String dateKey, int chars) {
+          final int timeMs = _readingTimeMsByDay[dateKey] ?? 0;
+          final String base =
+              '${formatStatHeatmapDay(dateKey)} · ${formatStatChars(chars)}';
+          return timeMs > 0 ? '$base · ${formatStatTime(timeMs)}' : base;
+        },
       ),
     );
   }

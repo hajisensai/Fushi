@@ -188,7 +188,10 @@ class StatContributionHeatmap extends StatefulWidget {
   /// 选中某天时气泡文案的格式化器：入参为 (dateKey, 当日值)，返回完整气泡文本。
   final String Function(String dateKey, int value) valueLabel;
 
-  /// 每屏列数（周数），也是翻页步长。
+  /// 每屏**最少**列数（周数），也是窄屏下的翻页步长。宽屏下实际列数按可用宽度
+  /// 自适应加宽（见 build 的 LayoutBuilder）——此前固定 17 周 + FittedBox 只缩
+  /// 不放，桌面宽窗下卡片右侧大片空白（用户反馈「好空」）；多出来的宽度用来
+  /// 显示更长的历史，而不是把格子放大。
   final int weeks;
 
   /// 单格边长（逻辑像素，自然尺寸）。实际渲染由外层 [FittedBox] 按可用宽度等比
@@ -210,11 +213,11 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
 
   static const double _headerHeight = 22;
 
-  /// 翻页：[dir] > 0 看更早、< 0 回更近；步长 = weeks 周，clamp 到 [0, maxOffset]。
-  /// 翻页后清除选中（原选中日已不在视野）。
-  void _page(int dir, int maxOffset) {
+  /// 翻页：[dir] > 0 看更早、< 0 回更近；步长 = 当前屏列数（周），clamp 到
+  /// [0, maxOffset]。翻页后清除选中（原选中日已不在视野）。
+  void _page(int dir, int maxOffset, int stepWeeks) {
     final int next =
-        (_pageOffset + dir * widget.weeks).clamp(0, maxOffset).toInt();
+        (_pageOffset + dir * stepWeeks).clamp(0, maxOffset).toInt();
     if (next == _pageOffset) return;
     setState(() {
       _pageOffset = next;
@@ -280,7 +283,12 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
     );
   }
 
-  Widget _buildHeader(ThemeData theme, int offset, int maxOffset) {
+  Widget _buildHeader(
+    ThemeData theme,
+    int offset,
+    int maxOffset,
+    int stepWeeks,
+  ) {
     final bool showArrows = maxOffset > 0;
     final String? sel = _selectedDateKey;
     final String? bubble = sel == null
@@ -302,14 +310,14 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
             _arrow(
               Icons.chevron_left,
               offset < maxOffset,
-              () => _page(1, maxOffset),
+              () => _page(1, maxOffset, stepWeeks),
               theme.colorScheme.onSurfaceVariant,
               theme.disabledColor,
             ),
             _arrow(
               Icons.chevron_right,
               offset > 0,
-              () => _page(-1, maxOffset),
+              () => _page(-1, maxOffset, stepWeeks),
               theme.colorScheme.onSurfaceVariant,
               theme.disabledColor,
             ),
@@ -322,63 +330,75 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final int maxOffset = maxHeatmapPageOffset(
-      valueByDateKey: widget.valueByDateKey,
-      now: widget.now,
-      weeks: widget.weeks,
-    );
-    // 数据缩水（如切换来源/删除）后把越界的偏移收回合法范围。
-    final int offset = _pageOffset.clamp(0, maxOffset).toInt();
-    if (offset != _pageOffset) _pageOffset = offset;
+    // 列数按可用宽度自适应（至少 widget.weeks）：宽屏把多出来的宽度用于显示更长
+    // 的历史，消掉「固定 17 周 + 只缩不放」在桌面宽窗下的大片空白。旧注释担心的
+    // IntrinsicHeight 宿主已不存在（当前唯一消费者是首页 dashboard 的 ListView
+    // 区块卡）；若未来要塞回 intrinsic 容器，给上限宽度即可。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double unit = widget.cell + widget.spacing;
+        final int fitWeeks = constraints.maxWidth.isFinite
+            ? ((constraints.maxWidth + widget.spacing) / unit).floor()
+            : widget.weeks;
+        final int effWeeks = fitWeeks < widget.weeks ? widget.weeks : fitWeeks;
 
-    final StatHeatmapModel model = buildStatHeatmap(
-      valueByDateKey: widget.valueByDateKey,
-      now: widget.now,
-      weeks: widget.weeks,
-      weekOffset: offset,
-    );
-    final int cols = model.weeks.length;
-    if (cols == 0) return const SizedBox.shrink();
+        final int maxOffset = maxHeatmapPageOffset(
+          valueByDateKey: widget.valueByDateKey,
+          now: widget.now,
+          weeks: effWeeks,
+        );
+        // 数据缩水（如切换来源/删除）后把越界的偏移收回合法范围。
+        final int offset = _pageOffset.clamp(0, maxOffset).toInt();
+        if (offset != _pageOffset) _pageOffset = offset;
 
-    // 固定自然尺寸（不依赖 LayoutBuilder——本组件会被放进 IntrinsicHeight 的概览条
-    // 里，而 LayoutBuilder 不支持 intrinsic 测量会抛异常）。宽度不足时由 FittedBox
-    // 等比缩小，宽屏保持自然尺寸左对齐。
-    final double natW = cols * widget.cell + (cols - 1) * widget.spacing;
-    final double natH = 7 * widget.cell + 6 * widget.spacing;
-    final Widget grid = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapUp: (TapUpDetails d) => _onTapGrid(d.localPosition, model),
-      child: SizedBox(
-        width: natW,
-        height: natH,
-        child: RepaintBoundary(
-          child: CustomPaint(
-            painter: _HeatmapPainter(
-              model: model,
-              baseColor: widget.baseColor,
-              emptyColor: widget.emptyColor,
-              cell: widget.cell,
-              spacing: widget.spacing,
-              selectedDateKey: _selectedDateKey,
-              selectedBorderColor: theme.colorScheme.onSurface,
+        final StatHeatmapModel model = buildStatHeatmap(
+          valueByDateKey: widget.valueByDateKey,
+          now: widget.now,
+          weeks: effWeeks,
+          weekOffset: offset,
+        );
+        final int cols = model.weeks.length;
+        if (cols == 0) return const SizedBox.shrink();
+
+        final double natW = cols * widget.cell + (cols - 1) * widget.spacing;
+        final double natH = 7 * widget.cell + 6 * widget.spacing;
+        final Widget grid = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (TapUpDetails d) => _onTapGrid(d.localPosition, model),
+          child: SizedBox(
+            width: natW,
+            height: natH,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _HeatmapPainter(
+                  model: model,
+                  baseColor: widget.baseColor,
+                  emptyColor: widget.emptyColor,
+                  cell: widget.cell,
+                  spacing: widget.spacing,
+                  selectedDateKey: _selectedDateKey,
+                  selectedBorderColor: theme.colorScheme.onSurface,
+                ),
+              ),
             ),
           ),
-        ),
-      ),
-    );
+        );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        _buildHeader(theme, offset, maxOffset),
-        SizedBox(height: widget.spacing * 2),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: grid,
-        ),
-      ],
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            _buildHeader(theme, offset, maxOffset, effWeeks),
+            SizedBox(height: widget.spacing * 2),
+            // 窄到连最少列数都放不下时仍等比缩小兜底。
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: grid,
+            ),
+          ],
+        );
+      },
     );
   }
 }
