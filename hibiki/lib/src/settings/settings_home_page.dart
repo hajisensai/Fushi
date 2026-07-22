@@ -329,26 +329,14 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       // 切换目标时整棵子树作废重建，避免 Flutter 复用上一目标同位置的 Switch
       // Element 触发 didUpdateWidget(value 变化)→ 圆点滑动（以及分段滑动、滚动
       // 位置串页等同类复用副作用）。
-      // 详情正文限宽：与窄屏 DesktopContentLayout 的 settings 档共用同一上限
-      // （desktopContentMaxWidth，当前 960），超宽窗口不再把设置行拉成整屏长条；
-      // 左对齐贴导航 pane（不居中，避免详情和导航之间出现空腹）。
+      // 详情正文填满 pane 整宽：UI 巡检 PR-5 曾按 MD3 list-detail 惯例加过
+      // 960 限宽 + 左对齐，用户实机反馈「右边空了一大堆」（2026-07-22 截图，
+      // 4K 窗口下右侧 2400px 空白）——用户拍板回滚到填满整宽的原始形态。
       primary: KeyedSubtree(
         key: ValueKey<SettingsDestinationId>(selected.id),
-        child: Align(
-          alignment: AlignmentDirectional.topStart,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: desktopContentMaxWidth(
-                    WindowSizeClass.expanded,
-                    DesktopContentKind.settings,
-                  ) ??
-                  double.infinity,
-            ),
-            child: renderer.buildDetailContent(
-              settingsContext: settingsContext,
-              destination: selected,
-            ),
-          ),
+        child: renderer.buildDetailContent(
+          settingsContext: settingsContext,
+          destination: selected,
         ),
       ),
     );
