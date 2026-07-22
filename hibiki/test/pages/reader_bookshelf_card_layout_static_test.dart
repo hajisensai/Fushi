@@ -13,10 +13,13 @@ void main() {
       isNot(contains('Widget _titleOverlay(String title)')),
       reason: 'book titles must no longer draw inside the cover artwork',
     );
+    // 巡检 PR-3：footer 实现提取到共享组件 ShelfCardFooter（书卡与
+    // SeriesShelfCard 共用，消除逐行手抄），书架侧守卫改锁「layout 消费共享
+    // footer」；footer 本体的排版守卫移到下方对共享文件的断言。
     expect(
       source,
-      contains('Widget _bookCardFooter(String title)'),
-      reason: 'the title must live in a stable below-cover footer',
+      contains('ShelfCardFooter(title: title)'),
+      reason: 'the title must live in the shared below-cover footer component',
     );
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
     expect(
@@ -31,7 +34,7 @@ void main() {
     );
     expect(
       layout,
-      contains('_bookCardFooter(title)'),
+      contains('ShelfCardFooter(title: title)'),
       reason: 'the title footer must render below the cover stack',
     );
     expect(
@@ -69,7 +72,7 @@ void main() {
     expect(layout, isNot(contains('_titleOverlay(title)')));
     expect(layout, contains('_bookCardTagArea(tagLabels)'));
     final int coverStack = layout.indexOf('Stack(');
-    final int titleFooter = layout.indexOf('_bookCardFooter(title)');
+    final int titleFooter = layout.indexOf('ShelfCardFooter(title: title)');
     expect(titleFooter, greaterThan(coverStack),
         reason: 'the title footer must be after the cover stack');
 
@@ -167,7 +170,7 @@ void main() {
 
     final int coverStack = layout.indexOf('Stack(');
     final int coverFrame = layout.indexOf('_bookCardCoverFrame(');
-    final int footer = layout.indexOf('_bookCardFooter(title)');
+    final int footer = layout.indexOf('ShelfCardFooter(title: title)');
     expect(coverStack, greaterThan(coverFrame),
         reason: 'the visual frame should wrap the cover stack');
     expect(coverFrame, lessThan(footer),
@@ -176,7 +179,15 @@ void main() {
 
   test('book card footer clamps long titles without resizing the grid', () {
     final String source = readReaderHistorySource();
-    final String footer = _functionSource(source, 'Widget _bookCardFooter(');
+    // 巡检 PR-3：footer 实现活在共享组件文件（ShelfCardFooter），排版守卫跟随。
+    final String shared = File(
+      'lib/src/utils/components/shelf_card_widgets.dart',
+    ).readAsStringSync();
+    final String footer = _sectionSource(
+      shared,
+      'class ShelfCardFooter extends StatelessWidget',
+      'class ShelfSelectionCheck',
+    );
 
     expect(source, contains('const double kShelfTitleFooterHeight ='));
     expect(footer, contains('HibikiDesignTokens.of(context)'));
@@ -318,6 +329,15 @@ void main() {
     expect(tagArea, contains('maxHeight: tokens.spacing.gap * 3.5'));
     expect(tagArea, contains('ClipRect(child: tagLabels)'));
   });
+}
+
+/// 从 [source] 里切 [startToken]（含）到 [endToken]（不含）的片段。
+String _sectionSource(String source, String startToken, String endToken) {
+  final int start = source.indexOf(startToken);
+  expect(start, isNonNegative, reason: 'missing $startToken');
+  final int end = source.indexOf(endToken, start);
+  expect(end, greaterThan(start), reason: 'missing $endToken');
+  return source.substring(start, end);
 }
 
 String _functionSource(String source, String startToken) {

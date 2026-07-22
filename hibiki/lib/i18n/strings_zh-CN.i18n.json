@@ -2259,5 +2259,6 @@
   "game_track_clips": "音频段",
   "game_track_energy": "能量",
   "game_audio_duration": "音频时长",
-  "games_rename_label": "游戏名称"
+  "games_rename_label": "游戏名称",
+  "collection_loading_hint": "正在加载收藏并匹配音频文件…"
 }

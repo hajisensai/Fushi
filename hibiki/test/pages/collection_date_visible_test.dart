@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:intl/intl.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -60,7 +62,10 @@ void main() {
   });
 
   // 收藏句不带 bookKey → _load 不会触发 SrtBook/Audiobook/Video 音频解析路径，
-  // 只驱动列表渲染逻辑。createdAt 固定到一个可预测的日期，便于断言日期文本。
+  // 只驱动列表渲染逻辑。createdAt 固定到「当年 6/30 14:05」（当年条目走省年份
+  // 分支且不随真实年份漂移），便于断言日期文本。
+  final DateTime createdAt = DateTime(DateTime.now().year, 6, 30, 14, 5);
+
   Future<void> seedLongMetadataFavorite() async {
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(db);
     await repo.add(
@@ -72,7 +77,7 @@ void main() {
         chapterLabel: '第一章 これもまた非常に長い章のタイトルであり日付を画面外へ押し出すための'
             'もの',
         source: kFavoriteSentenceSourceBook,
-        createdAt: DateTime(2026, 6, 30, 14, 5),
+        createdAt: createdAt,
       ),
     );
   }
@@ -86,8 +91,12 @@ void main() {
         ),
       );
 
-  // 期望的日期文本，与 CollectionsPage 内部 DateFormat('MM/dd HH:mm') 一致。
-  const String expectedDate = '06/30 14:05';
+  // 期望的日期文本：与 CollectionsPage 的本地化格式（当年条目 Md + Hm，随 app
+  // 语言 en）一致（巡检 PR-3 起不再是硬编码 'MM/dd HH:mm'）。
+  Future<String> expectedDateText() async {
+    await initializeDateFormatting();
+    return DateFormat.Md('en').add_Hm().format(createdAt);
+  }
 
   testWidgets(
       'collection date stays visible on a narrow screen with long book/chapter',
@@ -105,7 +114,7 @@ void main() {
     expect(find.text('これはテスト用の収集された文章です。'), findsOneWidget);
 
     // 关键断言：收藏日期是独立、未被截断的文本，窄屏下仍然可见且有正的渲染宽度。
-    final Finder dateFinder = find.text(expectedDate);
+    final Finder dateFinder = find.text(await expectedDateText());
     expect(dateFinder, findsOneWidget);
     final Size dateSize = tester.getSize(dateFinder);
     expect(dateSize.width, greaterThan(0));
@@ -121,6 +130,6 @@ void main() {
     await tester.pumpWidget(buildPage());
     await tester.pumpAndSettle();
 
-    expect(find.text(expectedDate), findsOneWidget);
+    expect(find.text(await expectedDateText()), findsOneWidget);
   });
 }

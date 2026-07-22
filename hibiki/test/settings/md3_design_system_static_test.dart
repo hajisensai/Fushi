@@ -1109,7 +1109,8 @@ void main() {
 
     expect(cardLayout, contains('HibikiDesignTokens.of(context)'));
     expect(cardLayout, contains('tokens.spacing'));
-    expect(cardLayout, contains('_bookCardFooter(title)'));
+    // 巡检 PR-3：footer 提取到共享 ShelfCardFooter（与 SeriesShelfCard 共用）。
+    expect(cardLayout, contains('ShelfCardFooter(title: title)'));
     expect(cardLayout, contains('height: kShelfTitleFooterHeight'));
     expect(cardLayout, contains('PositionedDirectional('));
     expect(cardLayout, contains('tokens.spacing.gap * 0.75'));
@@ -1192,7 +1193,11 @@ void main() {
 
     expect(cardShell, contains('HibikiDesignTokens.of(context)'));
     expect(cardShell, contains('tokens.spacing'));
-    expect(cardShell, contains('tokens.surfaces'));
+    // 巡检 PR-3：勾选圈 / 选中罩视觉提取到共享 ShelfSelectionCheck /
+    // ShelfSelectedOverlay（与 SeriesShelfCard 共用，eink 实底统一处理），
+    // shell 消费共享组件，token 守卫跟随到共享文件。
+    expect(cardShell, contains('ShelfSelectionCheck(selected: selected)'));
+    expect(cardShell, contains('ShelfSelectedOverlay()'));
     expect(cardShell, isNot(contains('Spacing.of(context)')));
     expect(cardShell, isNot(contains('top: 4,')));
     expect(cardShell, isNot(contains('left: 4,')));
@@ -1201,6 +1206,13 @@ void main() {
     expect(cardShell, isNot(contains('theme.colorScheme.surface.withValues')));
     expect(cardShell, isNot(contains('theme.colorScheme.outline')));
     expect(cardShell, isNot(contains('theme.colorScheme.primary.withValues')));
+
+    final String sharedSelection = File(
+      'lib/src/utils/components/shelf_card_widgets.dart',
+    ).readAsStringSync();
+    expect(sharedSelection, contains('HibikiDesignTokens.of(context)'));
+    expect(sharedSelection, contains('tokens.surfaces'));
+    expect(sharedSelection, isNot(contains('theme.colorScheme.outline')));
   });
 
   test('reader history batch actions use shared MD3 spacing tokens', () {
@@ -1247,10 +1259,15 @@ void main() {
 
   test('reader history title footer and drag target use shared MD3 tokens', () {
     final String source = readReaderHistorySource();
-    final String titleFooter = _functionSource(
-      source,
-      'Widget _bookCardFooter(String title)',
-      'Widget _bookCardTagArea(',
+    // 巡检 PR-3：footer 实现提取到共享 ShelfCardFooter（书卡 / SeriesShelfCard
+    // 共用），MD3 token 守卫跟随到共享文件。
+    final String sharedShelfCard = File(
+      'lib/src/utils/components/shelf_card_widgets.dart',
+    ).readAsStringSync();
+    final String titleFooter = _sectionSource(
+      sharedShelfCard,
+      'class ShelfCardFooter extends StatelessWidget',
+      sharedShelfCard.indexOf('class ShelfSelectionCheck'),
     );
     // BookDragTarget 已提取到独立文件 book_drag_target.dart，守卫跟随。
     final String dragSource = File(

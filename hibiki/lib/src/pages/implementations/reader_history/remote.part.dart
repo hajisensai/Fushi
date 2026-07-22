@@ -163,14 +163,17 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
               _downloadRemoteBook(book);
             },
           ),
-          DialogQuickAction(
-            label: t.remote_book_info,
-            icon: Icons.info_outline,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _showRemoteBookInfo(book);
-            },
-          ),
+          // 「信息」弹窗目前只有一条附加元数据（是否含有声书）；无附加信息时弹出
+          // 即空壳，隐藏入口（巡检 PR-3 最小改法——待远端元数据丰富后再放开）。
+          if (book.hasAudiobook)
+            DialogQuickAction(
+              label: t.remote_book_info,
+              icon: Icons.info_outline,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _showRemoteBookInfo(book);
+              },
+            ),
         ],
         dangerActions: <DialogDangerAction>[
           if (canDelete)
@@ -629,9 +632,9 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       cardKey: ValueKey<String>('remote_srt_card_$safeKey'),
       focusId: HibikiFocusId('reader-shelf-remote-srt-$safeKey'),
       onTap: () => _downloadRemoteSrtAudiobook(book),
-      // 长按 / 右键：与短按同为下载入口（远端占位卡无本地副本，唯一动作是下载；
-      // 内部已对同 identity 重复下载去重）。
-      onLongPress: () => _downloadRemoteSrtAudiobook(book),
+      // 长按 / 右键：弹动作面板，与远端 EPUB 卡（[_showRemoteBookDialog]）一致
+      // （巡检 PR-3——旧行为长按直接开始下载，重手势与轻点击等价且不可预览动作）。
+      onLongPress: () => _showRemoteSrtDialog(book),
       child: _bookCardLayout(
         title: title,
         cover: Stack(
@@ -669,6 +672,31 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
                 icon: const Icon(Icons.download_outlined),
                 onPressed: () => _downloadRemoteSrtAudiobook(book),
               ),
+      ),
+    );
+  }
+
+  /// 长按 / 桌面右键纯 SRT 远端占位卡：弹与远端 EPUB 卡一致的动作面板
+  /// （[MediaItemDialogFrame] 复用）。唯一动作是「下载」（远端占位无本地副本；
+  /// 互联删除 API 面向 EPUB 关联包，standalone SRT 不接删除，真实能力边界）。
+  void _showRemoteSrtDialog(RemoteAudiobookInfo book) {
+    final String title = book.title ?? book.identity;
+    showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => MediaItemDialogFrame(
+        cover: _coverPlaceholderIcon(Icons.headphones_outlined),
+        title: title,
+        showLaunchAction: false,
+        quickActions: <DialogQuickAction>[
+          DialogQuickAction(
+            label: t.remote_book_download,
+            icon: Icons.download_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _downloadRemoteSrtAudiobook(book);
+            },
+          ),
+        ],
       ),
     );
   }
@@ -792,18 +820,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   String _safeRemoteBookKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
-  /// 云角标 ☁ 的视觉：半透明黑底胶囊 + 白色云图标（与视频卡字幕/集数徽章同款风格）。
-  /// 多端库联合视图占位卡的「远端 / 未下载」标识（spec §2.1）。
+  /// 云角标 ☁：共享 [CoverBadge]（PR-0 收口的封面角标胶囊，统一各处手抄的
+  /// alpha/圆角/eink 实底）。多端库联合视图占位卡的「远端 / 未下载」标识（spec §2.1）。
   Widget _remoteCloudBadge({Key? key}) {
-    return Container(
-      key: key,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Icon(Icons.cloud_outlined, size: 13, color: Colors.white),
-    );
+    return CoverBadge(key: key, icon: Icons.cloud_outlined, iconSize: 13);
   }
 }
 

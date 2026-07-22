@@ -1206,7 +1206,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
     _epubProgressByBookKey = epubProgressByBookKey;
-    if (epubBooks.isEmpty && srtBooks.isEmpty && remoteBooks.isEmpty) {
+    // BUG-1008：空态判定看**全部**会渲染成卡的列表（含纯 SRT 远端占位）。标签筛选
+    // 激活时才可能落到 tag_no_books_for_filter；旧实现另有一个
+    // `hasActiveFilter && epubBooks.isEmpty` 特殊分支——SRT 命中已渲染网格却仍
+    // 无条件叠「无匹配」空态文案，且丢 RefreshIndicator / 合集横排行 / 书库概览。
+    // 筛选态与常态统一走下方主分支组装（shelfGroups 已能承载纯 SRT 命中结果），
+    // 特殊分支消灭。
+    if (epubBooks.isEmpty &&
+        srtBooks.isEmpty &&
+        remoteBooks.isEmpty &&
+        remoteSrtBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
               child: HibikiPlaceholderMessage(
@@ -1215,49 +1224,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               ),
             )
           : buildPlaceholder();
-    }
-    if (hasActiveFilter && epubBooks.isEmpty) {
-      return RawScrollbar(
-        thumbVisibility: true,
-        thickness: 3,
-        controller: mediaType.scrollController,
-        child: LayoutBuilder(
-          builder: (context, constraints) => CustomScrollView(
-            controller: mediaType.scrollController,
-            physics: desktopAwareScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-              // 标签筛选激活时不混排远端占位（远端书无本地标签，不参与筛选）。
-              // TODO-902: 不再渲染 srt_books_section 分区头，SRT 卡直接进网格。
-              if (srtBooks.isNotEmpty)
-                SliverGrid.builder(
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: _gridExtent(context, constraints),
-                    childAspectRatio: kShelfBookCardAspectRatio,
-                  ),
-                  itemCount: srtBooks.length,
-                  itemBuilder: (_, i) => _buildSrtCard(
-                    srtBooks[i],
-                    epubCoverUri: epubCoverUrisByBookKey[srtBooks[i].bookKey],
-                  ),
-                ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding:
-                      EdgeInsets.all(tokens.spacing.card + tokens.spacing.gap),
-                  child: Text(
-                    t.tag_no_books_for_filter,
-                    textAlign: TextAlign.center,
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
     }
     return RawScrollbar(
       thumbVisibility: true,
@@ -1608,6 +1574,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 不注入就没有移出项）。
   Widget? _buildCollectionMemberCard(String mediaType, String entryKey,
       {VoidCallback? onRemoveFromCollection}) {
+    // BUG-1009：详情页与书架是两条同时存活的路由（详情页 push 在书架之上），成员卡
+    // 若复用书架同名 focusId，两个 HibikiFocusTarget 撞号——焦点注册表按 id 覆盖，
+    // 后注册者赢、pop 后书架卡失焦。详情页渲染路径统一加 route 前缀隔离命名空间。
+    const String prefix = 'collection-detail-';
     if (mediaType == 'srt') {
       for (final SrtBook book in _visibleSrtBooks) {
         if (book.uid == entryKey) {
@@ -1615,6 +1585,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             book,
             epubCoverUri: _epubCoverUrisByBookKey[book.bookKey],
             removeFromCollection: onRemoveFromCollection,
+            focusIdPrefix: prefix,
           );
         }
       }
@@ -1626,6 +1597,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           return _buildEpubBookCard(
             item,
             removeFromCollection: onRemoveFromCollection,
+            focusIdPrefix: prefix,
           );
         }
       }
@@ -1759,13 +1731,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 块2：合集行成员卡传 false（selectionKey 置空 → 不画勾、不可单独勾）。
   /// [removeFromCollection] 非空（合集详情页成员卡）时给长按 / 右键对话框补一条
   /// 「移出合集」动作，让键盘/手柄用户（聚焦长按 A 弹此对话框，不经网格指针菜单）也能移出。
+  /// [focusIdPrefix]：详情页渲染路径传 'collection-detail-' 隔离焦点 id 命名空间
+  /// （BUG-1009，见 [_buildCollectionMemberCard]）；书架路径恒空串（id 不变）。
   Widget _buildEpubBookCard(MediaItem item,
-      {bool selectable = true, VoidCallback? removeFromCollection}) {
+      {bool selectable = true,
+      VoidCallback? removeFromCollection,
+      String focusIdPrefix = ''}) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     final Widget card = _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
-      focusId: HibikiFocusId('reader-shelf-book-${item.mediaIdentifier}'),
+      focusId: HibikiFocusId(
+          '${focusIdPrefix}reader-shelf-book-${item.mediaIdentifier}'),
       selectionKey: selectable ? item.mediaIdentifier : null,
       dragBookId: bookKey,
       onTagDropped:

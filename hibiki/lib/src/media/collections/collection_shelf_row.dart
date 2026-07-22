@@ -310,6 +310,9 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
     void Function(BookTagRow tag) onTagDropped,
   ) {
     final Color hoverColor = tokens.surfaces.primary;
+    // eink：半透明高亮罩在墨水屏合成抖动灰，且 primary 已塌缩——去掉填充色，
+    // 只留实心描边 + 图标作拖放悬停反馈。
+    final bool eink = isEinkTheme(context);
     return DragTarget<BookTagRow>(
       onWillAcceptWithDetails: (_) => true,
       onAcceptWithDetails: (DragTargetDetails<BookTagRow> details) {
@@ -335,7 +338,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
                 child: IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: hoverColor.withValues(alpha: 0.18),
+                      color: eink ? null : hoverColor.withValues(alpha: 0.18),
                       borderRadius: tokens.radii.controlRadius,
                       border: Border.all(
                         color: hoverColor,
