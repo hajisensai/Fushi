@@ -353,6 +353,7 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
 List<String> buildEngineHookInjectorArguments({
   required int targetPid,
   required String? launchExe,
+  bool japaneseLocale = false,
   bool lunaPcHooks = false,
   int? lunaCodepage,
   String? lunaHookProfilePath,
@@ -363,6 +364,9 @@ List<String> buildEngineHookInjectorArguments({
   final List<String> args = launchMode
       ? <String>['--launch', exe, '--hold']
       : <String>['--pid', '$targetPid', '--hold'];
+  if (launchMode && japaneseLocale) {
+    args.add('--japanese-locale');
+  }
   if (lunaPcHooks) {
     args.add('--luna-pchooks');
   }
@@ -426,6 +430,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     this.targetPid = 0,
     this.launchExe,
     required this.injectorPath,
+    this.automaticJapaneseLocale = true,
     this.lunaPcHooks = false,
     this.lunaCodepage,
     this.lunaHookProfilePath,
@@ -453,6 +458,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// injector 可执行文件绝对路径（随 app 分发 / 按需下载）；null 或文件不存在 -> 源不可用
   /// （降级回 loopback，绝不假装注入成功）。**位数必须匹配目标游戏**（KiriKiriZ 多 32 位 -> x86）。
   final String? injectorPath;
+
+  /// 32 位 launch 目标默认以 helper 随包提供的 Locale Emulator 建立日语 CP932
+  /// 环境。它只影响 injector 创建的游戏进程，不修改 Windows 全局区域设置；64 位与
+  /// attach 模式不启用。运行库缺失时 native helper 会记录诊断并安全回退普通启动。
+  final bool automaticJapaneseLocale;
 
   /// 是否让 LunaHook 连接后额外插入通用 PC hooks。Unity/Mono/IL2CPP 这类自绘文本路径需要它，
   /// 经典 GDI/KiriKiri/Siglus 默认关闭以减少重复线程。
@@ -589,6 +599,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
       return null; // 既无 launchExe 又无有效 targetPid -> 无目标
     }
     _sessionStartedAt = DateTime.now();
+    final bool japaneseLocale =
+        launchMode && automaticJapaneseLocale && await exeIs32Bit(exe!) == true;
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。
@@ -598,6 +610,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
         buildEngineHookInjectorArguments(
           targetPid: targetPid,
           launchExe: exe,
+          japaneseLocale: japaneseLocale,
           lunaPcHooks: lunaPcHooks,
           lunaCodepage: lunaCodepage,
           lunaHookProfilePath: lunaHookProfilePath,
