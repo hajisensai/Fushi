@@ -17,6 +17,7 @@ import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:hibiki/src/pages/implementations/game_shared.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
@@ -236,8 +237,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       HibikiToast.show(msg: t.game_card_sentence_audio_missing);
     }
     if (result.unmappedTokens.isNotEmpty) {
+      // 冒号统一全角（与上方 external_window_capture_failed toast 一致）。
       HibikiToast.show(
-        msg: '${t.game_card_mapping_missing}: '
+        msg: '${t.game_card_mapping_missing}：'
             '${result.unmappedTokens.join(', ')}',
       );
     }
@@ -362,15 +364,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 ),
               ),
               if (bound != null)
-                IconButton(
+                HibikiIconButton(
+                  icon: Icons.link_off,
+                  size: 18,
                   tooltip: t.external_window_unbind,
-                  icon: const Icon(Icons.link_off, size: 18),
-                  onPressed: () => unawaited(_session.bindWindow(null)),
+                  onTap: () => unawaited(_session.bindWindow(null)),
                 ),
-              IconButton(
+              HibikiIconButton(
+                icon: Icons.refresh,
+                size: 18,
                 tooltip: t.external_window_refresh,
-                icon: const Icon(Icons.refresh, size: 18),
-                onPressed: _pickExternalWindow,
+                onTap: _pickExternalWindow,
               ),
             ],
           ),
@@ -449,6 +453,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     });
   }
 
+  /// 未读胶囊点击：滚到最新一行并清零未读计数。
+  void _jumpToLatestAndClearUnread() {
+    setState(() => _unreadLines = 0);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final TexthookerService texthooker = TexthookerService.instance;
@@ -465,10 +479,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             subtitle: t.game_capture_description,
             leading: widget.onShowLibrary == null
                 ? null
-                : IconButton(
+                : HibikiIconButton(
+                    icon: Icons.arrow_back,
                     tooltip: t.game_back_to_library,
-                    onPressed: widget.onShowLibrary,
-                    icon: const Icon(Icons.arrow_back),
+                    onTap: widget.onShowLibrary,
                   ),
             actions: _buildEmbeddedActions(context),
             bottom: _buildSectionTabs(),
@@ -616,35 +630,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (widget.onShowLibrary == null || widget.onShowDiagnostics == null) {
       return null;
     }
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: <Widget>[
-          HibikiSelectableChip(
-            label: t.game_library,
-            leadingIcon: Icons.sports_esports_outlined,
-            selected: false,
-            focusId: const HibikiFocusId('game-capture-tab-library'),
-            onSelected: (_) => widget.onShowLibrary!(),
-          ),
-          const SizedBox(width: 8),
-          HibikiSelectableChip(
-            label: t.game_capture_workbench,
-            leadingIcon: Icons.sensors_outlined,
-            selected: true,
-            focusId: const HibikiFocusId('game-capture-tab-capture'),
-            onSelected: (_) {},
-          ),
-          const SizedBox(width: 8),
-          HibikiSelectableChip(
-            label: t.game_diagnostics,
-            leadingIcon: Icons.monitor_heart_outlined,
-            selected: false,
-            focusId: const HibikiFocusId('game-capture-tab-diagnostics'),
-            onSelected: (_) => widget.onShowDiagnostics!(),
-          ),
-        ],
-      ),
+    return GameSectionTabs(
+      selected: GameSection.monitor,
+      focusIdPrefix: 'game-capture-tab',
+      onSelectLibrary: widget.onShowLibrary!,
+      onSelectMonitor: () {},
+      onSelectDiagnostics: widget.onShowDiagnostics!,
     );
   }
 
@@ -655,6 +646,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     String? selectedTextThreadKey,
   ) {
     final GalHookSessionState state = _session.state;
+    // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实配置。
+    // 接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选中）。
+    final bool ankiConfigured = ref.watch(
+      ankiViewModelProvider
+          .select((AnkiUiState uiState) => uiState.isConfigured),
+    );
     return Column(
       children: <Widget>[
         _buildExperimentalBanner(context),
@@ -676,6 +673,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 final Widget health = _CaptureHealthCard(
                   state: state,
                   endpoints: _session.endpointStatuses,
+                  ankiConfigured: ankiConfigured,
                 );
                 if (box.maxWidth >= 1280) {
                   return Column(
@@ -724,12 +722,36 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     ],
                   );
                 }
+                // 窄屏不再整块丢弃 latest/health 两面板（巡检 G7），折叠成
+                // 可展开区放在实时行下方，默认收起不抢纵向空间。
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     _SessionOverviewCard(state: state, compact: true),
                     const SizedBox(height: 12),
                     Expanded(child: live),
+                    ExpansionTile(
+                      title: Text(t.game_latest_line),
+                      tilePadding: EdgeInsets.zero,
+                      children: <Widget>[
+                        // 上限高度：卡片内自带 SingleChildScrollView，超长台词
+                        // 在卡内滚动而不是把实时行区挤到 0。
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 280),
+                          child: latest,
+                        ),
+                      ],
+                    ),
+                    ExpansionTile(
+                      title: Text(t.game_health),
+                      tilePadding: EdgeInsets.zero,
+                      children: <Widget>[
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 280),
+                          child: health,
+                        ),
+                      ],
+                    ),
                   ],
                 );
               },
@@ -776,14 +798,29 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   ),
                 ),
                 if (_unreadLines > 0)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.tertiaryContainer,
+                  // 补 onTertiaryContainer 前景（此前继承默认前景，深色主题下
+                  // 对比不足）；点击 = 跳到最新一行并清零未读。
+                  Material(
+                    color: Theme.of(context).colorScheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(999),
+                      onTap: _jumpToLatestAndClearUnread,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          '${t.game_unread_lines} $_unreadLines',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onTertiaryContainer,
+                          ),
+                        ),
+                      ),
                     ),
-                    child: Text('${t.game_unread_lines} $_unreadLines'),
                   ),
                 const SizedBox(width: 8),
                 Text(t.game_follow_live),
@@ -808,77 +845,73 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-            child: InputDecorator(
-              decoration: InputDecoration(
-                labelText: t.game_text_thread,
-                helperText: t.game_text_thread_hint,
-                prefixIcon: const Icon(Icons.account_tree_outlined, size: 20),
-                border: const OutlineInputBorder(),
-                isDense: true,
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // 共享手柄可进下拉（巡检 G3：全仓唯一裸 DropdownButton）。受控组件：
+                // selected 每帧由真实会话状态推导——选中线程可能被行 buffer 上限
+                // 淘汰/清空后不再在 items 里，不在则回退「全部」空串哨兵（BUG-952
+                // 语义保持）。
+                GamepadMenuDropdown<String>(
                   key: const ValueKey<String>('game-text-thread-selector'),
-                  // 选中线程可能被行 buffer 上限淘汰/清空后不再在 items 里；value 必须恒在
-                  // items 内否则 DropdownButton 断言红屏（BUG-952）——不在则回退「全部」占位。
-                  value: textThreads.any((TexthookerTextThread thread) =>
-                          thread.key == selectedTextThreadKey)
+                  focusId: const HibikiFocusId('game-text-thread-selector'),
+                  label: t.game_text_thread,
+                  enabled: textThreads.isNotEmpty,
+                  selected: textThreads.any(
+                    (TexthookerTextThread thread) =>
+                        thread.key == selectedTextThreadKey,
+                  )
                       ? selectedTextThreadKey
                       : '',
-                  isExpanded: true,
-                  isDense: true,
-                  items: <DropdownMenuItem<String>>[
-                    DropdownMenuItem<String>(
-                      value: '',
-                      child: Text(t.game_text_thread_all),
-                    ),
+                  entries: <GamepadDropdownEntry<String>>[
+                    (value: '', label: t.game_text_thread_all),
                     for (final TexthookerTextThread thread in textThreads)
-                      DropdownMenuItem<String>(
+                      (
                         value: thread.key,
-                        child: Tooltip(
-                          message: thread.hookCode ?? thread.label,
-                          child: Text(
-                            '${thread.label} · ${thread.lineCount}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
+                        label: '${thread.label} · ${thread.lineCount}',
                       ),
                   ],
-                  onChanged: textThreads.isEmpty
-                      ? null
-                      : (String? value) {
-                          TexthookerTextThread? selectedThread;
-                          if (value != null && value.isNotEmpty) {
-                            for (final TexthookerTextThread thread
-                                in textThreads) {
-                              if (thread.key == value) {
-                                selectedThread = thread;
-                                break;
-                              }
-                            }
-                          }
-                          setState(() {
-                            _activeLineId = null;
-                            _activeSentence = null;
-                            _unreadLines = 0;
-                          });
-                          unawaited(
-                            _session.selectTextThread(
-                              selectedThread?.nativeThreadId,
-                              threadKey: selectedThread?.key,
-                            ),
-                          );
-                        },
+                  onChanged: (String value) {
+                    TexthookerTextThread? selectedThread;
+                    if (value.isNotEmpty) {
+                      for (final TexthookerTextThread thread in textThreads) {
+                        if (thread.key == value) {
+                          selectedThread = thread;
+                          break;
+                        }
+                      }
+                    }
+                    setState(() {
+                      _activeLineId = null;
+                      _activeSentence = null;
+                      _unreadLines = 0;
+                    });
+                    unawaited(
+                      _session.selectTextThread(
+                        selectedThread?.nativeThreadId,
+                        threadKey: selectedThread?.key,
+                      ),
+                    );
+                  },
                 ),
-              ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    t.game_text_thread_hint,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+              ],
             ),
           ),
           const Divider(height: 1),
           Expanded(
             child: lines.isEmpty
                 ? Center(
-                    child: Padding(
+                    // 可滚动：窄高（折叠面板占位后）空态不再溢出。
+                    child: SingleChildScrollView(
                       padding: const EdgeInsets.all(24),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -1048,7 +1081,8 @@ class _SessionOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String audio = _audioBackendLabel(state.audioBackend);
+    final String audio = galHookAudioBackendLabel(state.audioBackend);
+    final String phase = galHookSessionPhaseLabel(state.phase);
     final String? format = state.audioFormat == null
         ? null
         : '${state.audioFormat!.sampleRate} Hz · '
@@ -1078,8 +1112,8 @@ class _SessionOverviewCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   compact
-                      ? '${state.phase.name} · $audio'
-                      : '${state.phase.name} · $audio'
+                      ? '$phase · $audio'
+                      : '$phase · $audio'
                           '${format == null ? '' : ' · $format'}',
                   maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
@@ -1149,11 +1183,15 @@ class _LatestLineCard extends StatelessWidget {
               const SizedBox(height: 14),
               _MetadataRow(
                 label: t.game_health_text,
-                value: value.sourceLabel ?? value.source.name,
+                value: value.sourceLabel ??
+                    texthookerLineSourceLabel(
+                      value.source,
+                    ),
               ),
               _MetadataRow(
                 label: t.game_health_audio,
-                value: value.audioBackend ?? value.audioStatus.name,
+                value: value.audioBackend ??
+                    texthookerLineAudioStatusLabel(value.audioStatus),
               ),
               if (value.audioResourceId != null)
                 _MetadataRow(
@@ -1161,8 +1199,9 @@ class _LatestLineCard extends StatelessWidget {
                   value: value.audioResourceId!,
                 ),
               if (value.audioDurationMs != null)
+                // 值是时长不是格式，标签用 game_audio_duration（巡检 G7）。
                 _MetadataRow(
-                  label: t.game_audio_format,
+                  label: t.game_audio_duration,
                   value:
                       '${(value.audioDurationMs! / 1000).toStringAsFixed(2)}s',
                 ),
@@ -1180,10 +1219,17 @@ class _LatestLineCard extends StatelessWidget {
 }
 
 class _CaptureHealthCard extends StatelessWidget {
-  const _CaptureHealthCard({required this.state, required this.endpoints});
+  const _CaptureHealthCard({
+    required this.state,
+    required this.endpoints,
+    required this.ankiConfigured,
+  });
 
   final GalHookSessionState state;
   final List<TexthookerEndpointStatus> endpoints;
+
+  /// Anki 输出是否已配置（牌组 + 笔记类型均已选，BUG-1007）。
+  final bool ankiConfigured;
 
   @override
   Widget build(BuildContext context) {
@@ -1228,18 +1274,21 @@ class _CaptureHealthCard extends StatelessWidget {
             ),
             _HealthRow(
               label: t.game_health_audio,
-              value: _audioBackendLabel(state.audioBackend),
+              value: galHookAudioBackendLabel(state.audioBackend),
               ready: state.hasAudio,
             ),
             _HealthRow(
               label: t.game_health_helper,
-              value: state.phase.name,
+              value: galHookSessionPhaseLabel(state.phase),
               ready: state.isActive && state.phase != GalHookSessionPhase.error,
             ),
+            // BUG-1007：接真实 Anki 配置状态，不再写死「未配置」。
             _HealthRow(
               label: t.game_health_anki,
-              value: t.game_status_not_configured,
-              ready: false,
+              value: ankiConfigured
+                  ? t.game_status_ready
+                  : t.game_status_not_configured,
+              ready: ankiConfigured,
             ),
           ],
         ),
@@ -1346,13 +1395,6 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-String _audioBackendLabel(GalHookAudioBackend backend) => switch (backend) {
-      GalHookAudioBackend.none => t.game_audio_backend_none,
-      GalHookAudioBackend.gameResource => t.game_audio_backend_resource,
-      GalHookAudioBackend.enginePcm => t.game_audio_backend_engine,
-      GalHookAudioBackend.systemLoopback => t.game_audio_backend_loopback,
-    };
-
 /// 一行文本：日语分词成可点 span（引擎未初始化时按字符降级，widget 测试不崩）。
 class _TexthookerLine extends StatelessWidget {
   const _TexthookerLine({
@@ -1375,12 +1417,8 @@ class _TexthookerLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<String> words = JapaneseLanguage.instance.textToWords(line.text);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final String source = line.sourceLabel ??
-        switch (line.source) {
-          TexthookerLineSource.engineHook => t.game_text_source_engine,
-          TexthookerLineSource.websocket => t.game_text_source_websocket,
-          TexthookerLineSource.unknown => t.game_text_source_unknown,
-        };
+    final String source =
+        line.sourceLabel ?? texthookerLineSourceLabel(line.source);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: HibikiCard(
@@ -1396,7 +1434,7 @@ class _TexthookerLine extends StatelessWidget {
               children: <Widget>[
                 Expanded(
                   child: Text(
-                    '${_formatTime(line.receivedAt)} · $source'
+                    '${formatGameClockTime(line.receivedAt)} · $source'
                     '${line.textThreadLabel == null ? '' : ' · ${line.textThreadLabel}'}'
                     '${line.sourceSequence == null ? '' : ' · #${line.sourceSequence}'}',
                     maxLines: 1,
@@ -1442,11 +1480,6 @@ class _TexthookerLine extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static String _formatTime(DateTime value) {
-    String two(int number) => number.toString().padLeft(2, '0');
-    return '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
   }
 }
 
@@ -1515,8 +1548,13 @@ class _WordSpan extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapUp: (TapUpDetails details) {
+    // 巡检 G2（鼠标部分）：手型光标 + hover 底色让「可点查词」在桌面可发现。
+    // InkWell 不抢焦点（canRequestFocus:false）——行内逐词键盘导航不在本轮范围，
+    // 行级焦点站点仍由外层 HibikiCard 提供。
+    return InkWell(
+      canRequestFocus: false,
+      hoverColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+      onTap: () {
         final RenderBox box = context.findRenderObject()! as RenderBox;
         final Offset topLeft = box.localToGlobal(Offset.zero);
         onTap(word, topLeft & box.size);
