@@ -544,6 +544,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
     return '''
 (function() {
+  // BUG-1017: guarantee the `#hoshi-cloak` FOUC guard is always removed, even if
+  // any synchronous statement in this setup IIFE throws before the tail reaches
+  // its removal (below). Without this a single unhandled sync error anywhere in
+  // setup (init / caret / furigana) left `body{visibility:hidden}` stranded =
+  // permanent blank book. The microtask runs after this task unwinds whether it
+  // completed or threw; the tail removal stays as the fast synchronous path, and
+  // this reveal is idempotent (a second remove() on an absent node is a no-op).
+  Promise.resolve().then(function() {
+    try { var c = document.getElementById('hoshi-cloak'); if (c) c.remove(); } catch (_ignored) {}
+  });
   window.scanNonJapaneseText = ${appModel.scanNonJapaneseText};
   $selectionJs
   $paginationJs

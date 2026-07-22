@@ -1,0 +1,28 @@
+## BUG-1017 · 固定版式SVG竖排EPUB打开白屏·cloak被init同步异常卡住
+
+- **报告**：2026-07-23（用户：这两本书打不开——`風紀委員の破廉恥遊戯.epub` / `[西 条陽] わたし、二番目の彼女でいいから。1.epub`）
+- **真实性**：✅ 真 bug。「上了书架但打开后一片空白」。
+  - **先验伪**：把两本真实文件喂当前 `EpubParser` 真跑（`flutter test`）——解析（34/28 章）、导入、全章 `chapterCharacterCount` 全成功。故 Dart 侧解析/导入管线**没坏**，白屏在打开后的 WebView 渲染层。
+  - **共同特征**：两书 spine 都混了固定版式页 `rendition:layout-pre-paginated`，首个 spine 项是 SVG 整页图封面（`<svg viewBox="0 0 1360 1920"><image xlink:href=.../></svg>` + `<meta name="viewport" content="width=... height=...">`），竖排 `vertical-rl`、零文本节点。纯 reflowable 同类竖排书打开正常。
+  - **根因** `hibiki/lib/src/reader/reader_pagination_scripts.dart:1793-1800`（`_sharedInitBoot`）+ `hibiki/lib/src/pages/implementations/reader_hibiki/webview.part.dart:1331-1332`（cloak 摘除）：
+    - 每章 HTML 的 `<head>` 注入 `#hoshi-cloak` = `body{visibility:hidden!important}`（防 FOUC，webview.part.dart:309-318）。它**唯一的摘除点**在 reader-setup IIFE（webview.part.dart:546-1333）**尾部** 1331 行。
+    - 分页/连续外壳共享的 boot `_sharedInitBoot` 在 `onLoadStop`（`document.readyState==='complete'` 恒真）下**同步**跑 `window.hoshiReader.initialize()`，且**无 try/catch**。`initialize()`（或紧随其后同步执行的 `$caretInit`/`$furiganaJs`）在固定版式 SVG 竖排零文本页上抛同步异常 → 冲出 IIFE、到不了 1331 → cloak 永留 → 整本书 `visibility:hidden` = **永久白屏**。
+    - Dart 侧加载遮罩（`_readerContentReady`）与 BUG-868 兜底超时**只摘 Dart 遮罩，管不到 WebView 内的 CSS cloak**，故白屏永不消失。
+    - **同类先例**：VN 外壳早已为完全相同的类修好（`reader_visual_novel_scripts.dart:3021-3043` 注释直述「同步 TypeError 中止 IIFE，cloak 没摘，页面 visibility:hidden 白屏」），用 try/catch 包 boot；但分页/连续外壳漏了，用裸 `$_sharedInitBoot`。这两本走分页/连续外壳 → 无保护 → 白屏。
+- **[~] ① 加固已落（对齐 VN 先例），但白屏未在离屏复现、根因待设备确认**（见文末备注）— 两层，消除「cloak 摘除依赖整段 IIFE 不抛」这个脆弱契约：
+  - 主修：`_sharedInitBoot` 经受保护的 `_hoshiBootInitialize()` 用 `try{ initialize() }catch{ console.error }` 包两处触发点（`load` 事件 + `readyState==='complete'`）。异常被就地含住 → IIFE 继续跑到尾部摘 cloak（且 caret/furigana/手势照常安装），并把真错打到 console 供进一步定位。分页/连续外壳共享此 boot，一改两覆盖，与 VN 先例对齐。
+  - 兜底：reader-setup IIFE 顶部排一个幂等 microtask（`Promise.resolve().then(() => getElementById('hoshi-cloak')?.remove())`）无条件摘 cloak——无论同步抛点在 boot 还是 caret/furigana 还是别处，microtask 在本 task 展开后仍执行，保证可见；尾部同步摘除保留为快路径（幂等）。
+  - 提交见本轮 commit。
+- **[x] ② 已加自动化测试** —
+  - 源码守卫 `hibiki/test/pages/reader_fixed_layout_blank_cloak_guard_static_test.dart`：断言 ① `_sharedInitBoot` 经 `_hoshiBootInitialize` 用 try/catch+console.error 包 `initialize()`、两处触发都走受保护 boot；② webview IIFE 顶部有幂等 microtask 兜底摘 `hoshi-cloak` + 尾部快路径两处。删掉任一保护即红。（ReaderHibikiPage 过重无法在 widget test 拉起跑该 boot，落最强可落地的源码语料层，与 BUG-868 守卫同纪律。）
+  - 运行时验证 `hibiki/integration_test/bug1017_fixed_layout_blank_verify_itest.dart`：Windows 离屏 runner 导入两本真实固定版式书 → 打开 → CDP 抓 WebView 正文断言 `nonBlank`（白屏检测），并把 `[HoshiReader] boot initialize failed` console 落 runner stdout。
+- **备注 / 验证现状（如实，⚠️ 修复未被证明打中用户实况）**：
+  - 离屏 Windows runner（`.codex-test/windows-itest/`）导入真书、切书架、`debugOpenBook` 打开、同时抓 WebView 正文（CDP）+ Flutter 帧（=用户所见）：
+    - 两本「打不开」书 + 一本 reflowable **对照书**（`負けヒロインが多すぎる！1.epub`，用户报打开**正常**）——**三本全 `WEBVIEW nonBlank=true` 且 `FLUTTER nonBlank=true`**，`[HoshiInit]` 有、无 `[HoshiReader] boot initialize failed`、console 无 error。**还原 fix 的基线运行结果完全相同。**
+    - 三本（含正常对照书）**都** `openMedia timed out`（20s）→ 该超时是**离屏通用假象**（openMedia await 的东西在 headless 下不回传），**不是固定版式书特有**，排除为红鲱鱼。
+  - **结论**：**用户的白屏在「离屏 Windows + 全新打开」下完全不复现**——两本「打不开」的书在此环境与正常对照书**行为一致**（都正常渲染，WebView 与 Flutter 帧皆非白）。故「零文本 SVG 封面页 initialize() 同步抛异常 → cloak 卡住白屏」的初始假设在离屏 Windows **被证伪**。
+  - ① 的两层修复是**对齐 VN 先例的正确加固**（消除「cloak 摘除依赖整段 IIFE 不抛」的脆弱契约，幂等无副作用、`flutter analyze` 干净、守卫测试绿），保留有价值；**但尚未被证明修掉用户的白屏**。
+  - **必须向用户确认才能定位的下一步**：看到白屏的**设备**——
+    - **Android**（最可疑）：WebView 内核不同 + 文件系统**大小写敏感**。`二番目` 封面 xhtml 引用 `../Images/embed0022_HD.jpg`（大写 Images/HD），但 `EpubParser._itemRelHref` 经 `p.canonicalize` 在 Windows 会小写化、Android 保留原样——若某处 case 失配则整页资源 404 → 白屏。这条只有在 Android 真机（adb 可跑）才复现。
+    - **Windows app**（用户实机 WebView2 版本/GPU 与离屏 runner 不同）。
+    - 以及**时机**：首次打开 / 读过一段有保存进度后（VN 那条同类 bug 正是 restore-by-charOffset；本次离屏测试是 saved=null 全新打开，未走 restore）。
