@@ -67,6 +67,14 @@ class TtsChannel {
     }
   }
 
+  /// 桌面查词播放器冷启动预热（BUG-1015）。just_audio_media_kit 首次平台激活会吞掉
+  /// 第一段播放输出，导致本次 app 启动后「第一次查词自动发音没声音、点第二次才响」。
+  /// 启动时静音预热一次消除该空窗。Android 走原生 MediaPlayer 无此冷启动，直接 no-op。
+  Future<void> warmUpLookupAudioPlayer() async {
+    if (_isSupported) return;
+    await DesktopAudioPlayback.warmUp();
+  }
+
   Future<bool> playUrl(String url, {double volume = 1.0}) async {
     if (!_isSupported) return DesktopAudioPlayback.playUrl(url, volume: volume);
     try {

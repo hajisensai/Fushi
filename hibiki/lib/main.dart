@@ -192,6 +192,12 @@ void main([List<String> args = const <String>[]]) {
     JustAudioMediaKit.ensureInitialized();
     MediaKit.ensureInitialized();
 
+    // BUG-1015：just_audio_media_kit 首次平台激活会吞掉第一段播放输出，导致本次启动后
+    // 「第一次查词自动发音没声音、点第二次才响」。这里静音预热查词播放器一次，把冷启动
+    // 首帧空窗在无声中消耗掉，使首个真实自动发音即出声。fire-and-forget，不阻塞启动；
+    // 失败内部吞掉。仅桌面走 media_kit 需要（本块已 Windows/Linux/macOS 门控）。
+    unawaited(TtsChannel.instance.warmUpLookupAudioPlayer());
+
     // macOS native shell: initialise the macos_window_utils channel (paired with
     // MainFlutterWindowManipulator.start in MainFlutterWindow.swift) so the
     // MacosWindow transparent titlebar / sidebar vibrancy work. enableWindow
