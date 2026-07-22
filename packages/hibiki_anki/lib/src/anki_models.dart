@@ -665,7 +665,7 @@ String ankiDictionaryMediaCacheFilename(String dictionary, String path) {
 
 /// Kind of audio reference resolved by [WordAudioResolver] and handed to the
 /// repo media-store paths.
-enum AnkiAudioRefKind { empty, remoteUrl, localFile }
+enum AnkiAudioRefKind { empty, remoteUrl, localFile, dataUri }
 
 /// Classifies a word-audio reference for Anki media storage, decided purely
 /// from its string form so the repo audio paths are unit-testable.
@@ -682,6 +682,11 @@ class AnkiAudioRef {
 
   static AnkiAudioRefKind classify(String ref) {
     if (ref.isEmpty) return AnkiAudioRefKind.empty;
+    // BUG-1004 断点A：本地音频源经 resolveWordAudio 转成的 `data:<mime>;base64,…` URL
+    // （给 WebView `<audio>` 播放）落卡时必须**解码成真实媒体字节**，不能当本地文件路径
+    // （`File('data:...')` 不存在而静默丢——播放能试听、卡里为空的不对称根因）。必须先于
+    // http 判定，data: 不以 http 开头本会误落 localFile。
+    if (ref.startsWith('data:')) return AnkiAudioRefKind.dataUri;
     if (ref.startsWith('http')) return AnkiAudioRefKind.remoteUrl;
     return AnkiAudioRefKind.localFile;
   }
@@ -690,6 +695,45 @@ class AnkiAudioRef {
   /// decoding `file://` URIs and returning bare paths unchanged.
   static String localPath(String ref) =>
       ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+
+  /// BUG-1004 断点A：解码 `data:<mime>;base64,<data>` 单词音频 ref 成字节 + 文件扩展名
+  /// （由 MIME 推断）。畸形 / 非 data: / 空体返回 null。纯函数，可单测。
+  static ({List<int> bytes, String ext})? decodeDataUri(String ref) {
+    try {
+      final UriData data = UriData.parse(ref);
+      final List<int> bytes = data.contentAsBytes();
+      if (bytes.isEmpty) return null;
+      return (bytes: bytes, ext: audioExtForMime(data.mimeType));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// MIME → 音频文件扩展名（`data:` 落卡与远端下载共用）。未知回退 `mp3`（单词音频主流）。
+  static String audioExtForMime(String mime) {
+    switch (mime.toLowerCase()) {
+      case 'audio/mpeg':
+      case 'audio/mp3':
+        return 'mp3';
+      case 'audio/ogg':
+      case 'audio/opus':
+        return 'ogg';
+      case 'audio/mp4':
+      case 'audio/aac':
+      case 'audio/x-m4a':
+      case 'audio/m4a':
+        return 'm4a';
+      case 'audio/wav':
+      case 'audio/x-wav':
+        return 'wav';
+      case 'audio/flac':
+        return 'flac';
+      case 'audio/webm':
+        return 'webm';
+      default:
+        return 'mp3';
+    }
+  }
 }
 
 String ankiInlineMediaReference(String addMediaResult) {

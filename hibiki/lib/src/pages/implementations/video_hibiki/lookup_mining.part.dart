@@ -342,13 +342,38 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         return null;
       };
     }
+    // BUG-1004 断点B：单词音频（popup 解析出的 fields['audio']）若指向互联 host（自签 https
+    // `…/api/lookup/audio/file?id=…`），落卡的 Anki `_addRemoteAudio` 用裸 HttpClient 拉会 TLS
+    // 握手失败 → 单词音频静默丢（与句子音频 BUG-1003 同源）。先经已钉扎/鉴权的 downloadContentFile
+    // 拉到本地文件、把 fields['audio'] 换成本地路径，Anki 即走本地文件分支。非 host URL（公网
+    // forvo 等有效证书）不动，best-effort 失败保留原值。
+    Map<String, String> effectiveFields = fields;
+    final String? wordAudioUrl = fields['audio'];
+    if (wordAudioUrl != null &&
+        wordAudioUrl.isNotEmpty &&
+        remoteClient is HibikiClientSyncBackend &&
+        remoteClient.ownsUrl(wordAudioUrl)) {
+      try {
+        final Directory wa = Directory('${tmp.path}/mine_word_audio')
+          ..createSync(recursive: true);
+        final File dest = File('${wa.path}/word_audio.mp3');
+        await remoteClient.downloadContentFile(
+            fileId: wordAudioUrl, destination: dest);
+        if (dest.existsSync() && dest.lengthSync() > 0) {
+          effectiveFields = Map<String, String>.from(fields)
+            ..['audio'] = dest.path;
+        }
+      } catch (e, st) {
+        ErrorLogService.instance.log('mineVideoCard.wordAudioPinned', e, st);
+      }
+    }
     // TODO-1000：委托统一沉浸制卡引擎。媒体降级阶梯 / 无音频中止 / 组 context / 落卡都在
     // 引擎内；本壳只管 OSD + 视频统计。onFailure 捕获 GIF(首)/音频(末)失败摘要供 OSD。
     String? gifFailure;
     String? lastFailure;
     final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
       ImmersionMiningRequest(
-        fields: fields,
+        fields: effectiveFields,
         mediaSource: controller.miningSource,
         audioSource: controller.miningAudioSource,
         mediaSourceTlsPinSha256: mediaSourceTlsPin,

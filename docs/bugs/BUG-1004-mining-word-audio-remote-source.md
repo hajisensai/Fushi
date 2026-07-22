@@ -1,16 +1,20 @@
-## BUG-1004 · 制卡缺单词音频·扩展needsAudio门+制卡器忽略远程发音源
-- **报告**：2026-07-22（用户：互联视频制卡「缺少单词音频」，与 [[BUG-1003]] 同轮报告）
-- **真实性**：✅ 真 bug，两条独立根因（均 file:line 核实）：
-  - **场景 A（浏览器扩展 / 沉浸制卡）**：`hibiki/assets/browser_extension/content.js`（及镜像 `tools/browser-extension/content.js`）注入查词结果时只写 `window.audioSources`，**从不写 `window.needsAudio`**；而 `hibiki/assets/popup/popup.js:1282` 的「制卡时重新解析单词音频」分支门是 `window.audioSources?.length && window.needsAudio` → `needsAudio===undefined` → 恒 false → 制卡 payload `audio` 字段恒空（只吃缓存，缓存 token 5 分钟过期后还 404）。对照：App 内 popup 由 `hibiki/lib/src/pages/implementations/popup_settings_injection.dart` 同时注入 `window.audioSources` + `window.needsAudio = true`。
-  - **场景 B（App 内制卡自动填充）**：`hibiki/lib/src/creator/enhancements/local_audio_enhancement.dart` `_generateAudio` 只查本地 Yomitan 音频库（`TtsChannel.queryLocalAudio`）+ TTS，**完全忽略用户配置的远程发音源**（forvo/jpod101/hibikiRemote）。而**播放**路径 `lookup_audio_playback.dart` `resolveLookupAudioUrl` → `WordAudioResolver.resolveConfigured` 走全源。二者分叉——只配了远程发音源（多数日语学习者）、没建本地库、TTS 不可用时制卡恒无单词音频。是 [[BUG-631]]（只修了播放侧的 local-only 退化）在**制卡器侧的孪生 bug**。
+## BUG-1004 · 制卡缺单词音频（互联视频落卡丢 data:/自签https + 扩展needsAudio门 + 制卡器忽略远程发音源）
+- **报告**：2026-07-22（用户：互联视频制卡「缺少单词音频」，与 [[BUG-1003]] 同轮报告；第一轮修了扩展/创建器两条路后**真机仍缺**，二追定位到互联视频落卡链）
+- **真实性**：✅ 真 bug。**用户实际场景（互联视频页字幕查词制卡）走的既不是扩展、也不是 CreatorModel 自动填充**，而是 `popup.js buildMinePayload → mineEntry 桥 → 视频 _onMineEntryImpl → ImmersionMiningEngine → repo.mineEntry`，`payload.audio` 直达 `AnkiAudioRef.classify`。断点在**最末端落卡下载**——`classify` 只认 `http` 前缀（`anki_models.dart:683`），互联下两种真实返回值都被静默丢（均 file:line 核实）：
+  - **断点 A（本地音频库源）**：`resolveWordAudio`→`audioRefToWebViewUrl` 把本地文件转成 `data:<mime>;base64,…` URL（供 WebView `<audio>` 播放，`lookup_audio_playback.dart:132-140`）。落卡 `classify` 里 `data:` 不以 `http` 开头 → 误归 `localFile` → `File('data:...')` 不存在 → `AudioFetchOutcome.none()`（`ankidroid/anki_repository.dart:635-643`、`ankiconnect_repository.dart:944-947`、`ankimobile_repository.dart:414-418`）。全仓无 `data:` 分支——**播放能试听（WebView 认 data:）、落卡为空（dart:io File 放不了 data:）的不对称**。
+  - **断点 B（hibiki host 发音源）**：单词音频来自互联 host → host `/api/lookup/audio` 返回 `https://<host>/api/lookup/audio/file?id=<token>`（scheme 取 `request.requestedUri`，互联 host 是**自签 https**，`hibiki_sync_server.dart:971-977`）→ `classify=remoteUrl` → `_addRemoteAudio`/`_storeRemoteAudio` 用**裸 `HttpClient()`（无指纹钉扎/`badCertificateCallback`）**（`ankidroid/anki_repository.dart:653`、`ankiconnect_repository.dart:962`）→ 自签证书 `HandshakeException` → `AudioFetchOutcome.failed` → 卡片音频空。**这是句子音频 [[BUG-1003]] 的孪生漏洞：单词音频下载没拿到同等的钉扎/鉴权通道待遇。**
+  - **（第一轮已修的另两条路，非用户此场景但同为真 bug 保留）** 场景 A′：扩展 `content.js` 从不注入 `window.needsAudio`，`popup.js:1282` 门恒 false（扩展制卡 payload.audio 空）。场景 B′：`LocalAudioEnhancement._generateAudio` 只查本地库+TTS、忽略远程发音源，与播放路径 `resolveConfigured` 分叉（App 内 CreatorModel 自动填充路径，[[BUG-631]] 制卡器孪生）。
 - **[x] ① 已修复** —
-  - **场景 A**：两份 `content.js` 镜像在每处 `window.audioSources = ...` 之后补 `window.needsAudio = true;`（字节级插入，保留文件内 3 个 NUL 字节），与 App 内 popup 注入对齐。
-  - **场景 B**：`local_audio_enhancement.dart` `_generateAudio` 在本地库(step 1)落空后、TTS(step 3)前，插入 step 2 走全源 `resolveLookupAudioUrl(appModel, term, reading)`（尊重用户源顺序/开关，与播放路径统一真相），解析出 ref（远端 URL / 本地路径）后由新增 `materializeWordAudioRef` 物化成本地文件供 Anki 落媒体；失败落 TTS 兜底。本地库优先的现状不变（Never break userspace），仅补远程发音源这一缺口。
+  - **断点 A**：`AnkiAudioRef` 增 `dataUri` 类型 + `data:` 优先分类 + `decodeDataUri`（`UriData` 解 base64 → 字节 + 按 MIME 推断扩展名）+ `audioExtForMime`（`packages/hibiki_anki/lib/src/anki_models.dart`）；三个落卡实现各加 `case dataUri:` 解码字节落媒体——`ankidroid/anki_repository.dart` / `ankiconnect/ankiconnect_repository.dart` / `hibiki/lib/src/anki/ankimobile_repository.dart`。通用修复，惠及阅读器/视频/沉浸所有制卡的本地音频源。
+  - **断点 B**：`HibikiClientSyncBackend.hostOwnsUrl`（静态纯函数，同源判定）+ `ownsUrl`（`hibiki_client_sync_backend.dart`）；视频落卡链 `lookup_mining.part.dart` `_mineVideoCard` 里，`fields['audio']` 若 `ownsUrl` 命中互联 host，先经已钉扎/鉴权的 `downloadContentFile` 拉到本地文件、把 `fields['audio']` 换成本地路径（Anki 走本地文件分支），非 host URL（公网 forvo 有效证书）不动，best-effort 失败保留原值。与句子音频 BUG-1003 同源治理。
+  - **场景 A′/B′**：两份 `content.js` 镜像每处 `window.audioSources = ...` 后补 `window.needsAudio = true;`（字节级插入保 NUL）；`local_audio_enhancement.dart` `_generateAudio` 本地库落空后走全源 `resolveLookupAudioUrl` + `materializeWordAudioRef` 物化到文件，TTS 前兜底。
   - 提交：<待填>。
 - **[x] ② 已加自动化测试** —
-  - `hibiki/test/creator/word_audio_materialize_test.dart`：`materializeWordAudioRef`（远端 200 下载写盘按后缀命名 / 404 不落半成品 / 空体 null / 本地路径命中 / `file://` / 空 ref）+ `wordAudioExtFor`（URL 后缀 > Content-Type > 回退 mp3），注入 `MockClient`。
-  - `hibiki/test/pages/extension_content_needs_audio_guard_test.dart`：两份 `content.js` 镜像每处 audioSources 注入都伴随 `window.needsAudio = true`（源码扫描守卫，防镜像回退）。
-  - `flutter analyze` 0 issue；上述测试全绿。
+  - `hibiki/test/anki/anki_audio_data_uri_test.dart`（断点A）：`classify` data:→dataUri、http/本地/空不变；`decodeDataUri` 解字节+扩展名、空体/畸形/非data:→null；`audioExtForMime` 映射。
+  - `hibiki/test/sync/host_owns_url_test.dart`（断点B）：`hostOwnsUrl` 同源→true、异 host/port/scheme→false、公网 forvo→false、null/空/无scheme→false。
+  - `hibiki/test/creator/word_audio_materialize_test.dart`（场景B′）+ `hibiki/test/pages/extension_content_needs_audio_guard_test.dart`（场景A′）。
+  - `flutter analyze` hibiki 主包 0 issue、hibiki_anki 仅一条无关既有 warning；上述测试全绿。
 - **备注**：
-  - 真机（只配远程发音源时 App 内制卡 + 扩展制卡都出单词音频）验证待办。
-  - 关联 [[BUG-631]]（播放侧同类修复，本 bug 复用其 `resolveConfigured` 全源真相）、[[BUG-1003]]（同轮报告的句子音频/制卡失败，独立根因）。
+  - 断点 B 下 host 单词音频临时文件按 `.mp3` 命名（单词音频主流格式；host 若供其它容器 Anki 一般仍能播），后续可让 host 回传 Content-Type 精确定扩展名。
+  - 真机（互联视频 + 本地库源 走断点A / hibiki host 源 走断点B，都出单词音频）验证待办；句子音频（BUG-1003）真机已过。
+  - 关联 [[BUG-1003]]（句子音频 host 自签 https 同源孪生）、[[BUG-631]]（播放侧 local-only 同类修复）。

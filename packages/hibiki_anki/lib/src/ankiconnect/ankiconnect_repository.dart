@@ -994,6 +994,21 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           } finally {
             client.close();
           }
+        case AnkiAudioRefKind.dataUri:
+          // BUG-1004 断点A：本地音频源的 `data:base64` URL（供 WebView 播放）解码成真实
+          // 字节落媒体，否则被当本地文件路径打不开而静默丢（能试听、卡里空）。
+          final decoded = AnkiAudioRef.decodeDataUri(url);
+          if (decoded == null) return const AudioFetchOutcome.none();
+          final cacheDir = Directory('${Directory.systemTemp.path}/anki-media');
+          if (!cacheDir.existsSync()) cacheDir.createSync(recursive: true);
+          final filename = await hibikiAnkiMediaFilenameForBytesAsync(
+            prefix: 'hibiki_audio_',
+            bytes: decoded.bytes,
+            sourceName: 'word_audio.${decoded.ext}',
+            fallbackExtension: decoded.ext,
+          );
+          audioFile = File('${cacheDir.path}/$filename');
+          await audioFile.writeAsBytes(decoded.bytes);
       }
       // Every switch branch above either returns or assigns audioFile, so it is
       // non-null here; only existence can still fail (missing local file or a

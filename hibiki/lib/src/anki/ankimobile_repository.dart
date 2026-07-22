@@ -416,6 +416,17 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         final url = await localMediaRef(path);
         if (url != null) return _AnkiMobileAudioField(url);
         return const _AnkiMobileAudioField('');
+      case AnkiAudioRefKind.dataUri:
+        // BUG-1004 断点A：本地音频源的 `data:base64` URL（供 WebView 播放）解码成真实
+        // 字节写临时文件再经本地媒体服务器提供，否则当本地文件路径打不开而静默丢。
+        final decoded = AnkiAudioRef.decodeDataUri(audio);
+        if (decoded == null) return const _AnkiMobileAudioField('');
+        final dir = Directory.systemTemp.createTempSync('hibiki_word_audio');
+        final f = File('${dir.path}/word_audio.${decoded.ext}');
+        await f.writeAsBytes(decoded.bytes);
+        final url = await localMediaRef(f.path);
+        if (url != null) return _AnkiMobileAudioField(url);
+        return const _AnkiMobileAudioField('');
     }
   }
 

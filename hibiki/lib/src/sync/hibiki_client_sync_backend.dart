@@ -160,6 +160,21 @@ class HibikiClientSyncBackend extends SyncBackend
   /// 下发给 ffmpeg 的 `-tls_pin_sha256` 以按指纹接受自签流。http 主机 / 未解析 = null。
   String? get activeFingerprintSha256 => _activeFingerprint;
 
+  /// BUG-1004 断点B：纯函数（静态，便于单测）——[url] 是否与 [baseUrl] **同源**
+  /// （scheme+host+port 一致）。互联 host 的自签 https 单词音频 URL
+  /// （`…/api/lookup/audio/file?id=…`）据此识别，落卡时改经已钉扎/鉴权通道下载，而非裸
+  /// `HttpClient()`（后者对自签证书握手失败 → 单词音频静默丢）。null/畸形/无 scheme → false。
+  static bool hostOwnsUrl(String? baseUrl, String url) {
+    if (baseUrl == null || baseUrl.isEmpty) return false;
+    final Uri? b = Uri.tryParse(baseUrl);
+    final Uri? u = Uri.tryParse(url);
+    if (b == null || u == null || !u.hasScheme) return false;
+    return u.scheme == b.scheme && u.host == b.host && u.port == b.port;
+  }
+
+  /// True if [url] targets this session's connected host origin（见 [hostOwnsUrl]）。
+  bool ownsUrl(String url) => hostOwnsUrl(_ops?.baseUrl, url);
+
   // ── Auth ──────────────────────────────────────────────────────────
 
   @override
