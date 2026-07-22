@@ -55,6 +55,39 @@
 - 位置重排：快捷键设置所在 section 命名修正（消除「系统 › 系统」语义重复）；逐项审查放错位置的项并归位（记录清单）。
 - 降低重排摩擦：guard 测试只锁「用户决策过的位置」与写穿行为，不再锁死无关项的相对顺序；确保 destination 增删只需改 `SettingsDestinationId` + `buildSettingsSchema` 两处 + i18n。
 
+#### G 落地：分类与排序（旧→新 映射）
+
+所有 item id / pref key / ReaderPlacement / VideoPlacement 均**不变**，只挪声明所属 section/位置。
+
+**顶层大类顺序**（`buildSettingsSchema`）：
+- 旧：外观 → Profile → 阅读 → 查词 → 制卡 → 视频 → 听书 → 下载 → 同步备份 → 互联 → 系统
+- 新：**阅读 → 查词 → 制卡 → 视频 → 听书 → 下载 → 外观 → Profile → 同步备份 → 互联 → 系统**（内容类在前、外观/系统类殿后）。守卫 `test/settings/settings_destination_order_guard_test.dart`。
+
+**阅读 destination**（`settings_schema_reading.dart`）分区重构：
+- 旧分区序：排版 → 布局与显示 → 高级选项(collapsed) → 阅读界面 → 翻页与交互 → 翻页方向(collapsed) → 底栏布局(collapsed)
+- 新分区序：**模式与排版方向**（新 key `reading_section_mode`；由旧「布局与显示」重命名，内含 view_mode → writing_mode → spread_mode → spread_direction → vert_text_orient → furigana_mode，翻页/滚动提到首位）→ **排版**（page_columns 移到 margins 之前）→ **阅读界面**（追加 `reverse_reader_bottom_bar`）→ 翻页与交互 → 翻页方向(collapsed) → **高级选项(collapsed，移到最后)**
+- 「底栏布局」单项分区删除（i18n key `section_bottom_bar_layout` 保留但闲置）。
+
+**查词 destination**（`settings_schema_lookup.dart`）分区重排 + 重命名：
+- 「管理器」→ **「词典与来源」**（原地改 i18n key `manager` 的 en/zh-CN/zh-HK 值，该 key 仅此处用）。
+- 旧序：词典与来源 → 查词触发 → 外部集成 → 剪贴板与全局查词 → 朗读与反馈 → 词条内容 → 弹窗窗口
+- 新序：**词典与来源 → 查词触发 → 词条内容 → 朗读与反馈 → 弹窗窗口 → 剪贴板与全局查词 → 外部集成**（外部集成从第 3 移到末尾；各 collapsed 标志不变）。
+
+**视频 destination**（`settings_schema_video.dart`）两个 item 换区（placement 不变）：
+- `video.quality.loop`「单文件循环」：画质区 → **播放区**（紧随 `auto_play_next`）；VideoPlacement `mpv#200` 不变。
+- `video.playback.pause_at_subtitle_end`「字幕暂停播放模式」：播放区 → **字幕区**（`obscure` 之前）；VideoPlacement `subtitle#30` 不变。
+- `video.controls.reset_layout` 仍在播放区末尾。
+
+**外观 → 系统 item 换区**：
+- `appearance.startup_default_dictionary_tab`「启动时打开查词」：外观「应用」区 → **系统「通用」区**（`focus_navigation` 之后）；item id **保持 `appearance.` 前缀不变**。
+
+**系统 destination**（`settings_schema_system.dart`）：
+- 分区序：**通用 → 更新设置 → 诊断(collapsed)**（原为 更新 → 通用 → 诊断）。
+- 通用区内序：**keyboard_shortcuts → focus_navigation → startup_default_dictionary_tab → low_memory_mode → app_version → github**。
+- destination summary：`section_update`（更新设置，共享给更新区标题）→ 新 key `settings_destination_system_summary`「通用、更新与诊断」。
+
+**新增 i18n key**：`reading_section_mode`、`settings_destination_system_summary`。**闲置 key**：`section_bottom_bar_layout`（停止引用，未删）。
+
 ### D. 收尾（中·Opus）
 - 渲染器复制注释归一、`dispatchChange` 注释澄清、文档更新。
 - 全量 `dart format` + `flutter analyze`（0 告警）+ `flutter test --no-pub` 全绿。

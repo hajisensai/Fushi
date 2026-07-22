@@ -15,9 +15,92 @@ SettingsDestination buildSystemDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.system,
     title: t.settings_destination_system,
-    summary: t.section_update,
+    summary: t.settings_destination_system_summary,
     icon: Icons.settings_suggest_outlined,
     sections: <SettingsSection>[
+      SettingsSection(
+        // 文案统一（阶段 F/G）：本 section 原标题与 destination 标题同为「系统」，
+        // 搜索面包屑显示「系统 › 系统」语义重复。改为「通用」——本区聚的是版本 /
+        // 内存 / 手柄导航 / 快捷键 / GitHub 这类通用应用项。框架层另有面包屑去重
+        // （settingsSearchBreadcrumb），双保险消灭整类重复。
+        title: t.settings_section_general,
+        items: <SettingsItem>[
+          // 「界面语言」（id 'appearance.language'）已归位到「外观 · 界面」分区
+          //（与主题/明暗/缩放并列）；id 前缀本就是 appearance，此前放系统分类
+          // 是历史错配。
+          SettingsNavigationItem(
+            id: 'system.keyboard_shortcuts',
+            title: t.shortcut_settings_title,
+            // 「实验性」后缀已摘除（用户决策）：改键/冲突重分配/可视化键盘与
+            // 手柄图/三通道实时录键均已齐备，页面不再是实验功能。
+            icon: Icons.keyboard_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const ShortcutSettingsPage(),
+              );
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'system.focus_navigation',
+            title: t.focus_navigation_enabled,
+            subtitle: t.focus_navigation_enabled_hint +
+                t.settings_experimental_suffix,
+            icon: Icons.gamepad_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.experimentalFocusNavigationEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setExperimentalFocusNavigationEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          // 「启动时打开查词」从「外观 · 应用」分区归位到此处（启动落地页/导航行为，
+          // 与键盘/手柄焦点导航同属通用应用项）。item id 保持 'appearance.
+          // startup_default_dictionary_tab' 不变（历史命名，非持久化 key），仅换分区。
+          SettingsSwitchItem(
+            id: 'appearance.startup_default_dictionary_tab',
+            title: t.startup_default_dictionary_tab,
+            subtitle: t.startup_default_dictionary_tab_hint,
+            icon: Icons.manage_search_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.startupDefaultDictionaryTab,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setStartupDefaultDictionaryTab(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'system.low_memory_mode',
+            title: t.low_memory_mode,
+            subtitle: t.low_memory_mode_hint,
+            icon: Icons.memory_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lowMemoryMode,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setLowMemoryMode(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsCustomItem(
+            id: 'system.app_version',
+            icon: Icons.info_outline,
+            builder: _buildRuntimeAppVersionRow,
+          ),
+          SettingsActionItem(
+            id: 'system.github',
+            title: t.options_github,
+            icon: Icons.public_outlined,
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse('https://github.com/hajisensai/hibiki'),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
+        ],
+      ),
       SettingsSection(
         title: t.section_update,
         // 更新分区在所有平台可见（至少能「检查→打开发布页」）；自动安装开关
@@ -124,73 +207,6 @@ SettingsDestination buildSystemDestination() {
                   SnackBar(content: Text(t.update_custom_proxy_invalid)),
                 );
               }
-            },
-          ),
-        ],
-      ),
-      SettingsSection(
-        // 文案统一（阶段 F/G）：本 section 原标题与 destination 标题同为「系统」，
-        // 搜索面包屑显示「系统 › 系统」语义重复。改为「通用」——本区聚的是版本 /
-        // 内存 / 手柄导航 / 快捷键 / GitHub 这类通用应用项。框架层另有面包屑去重
-        // （settingsSearchBreadcrumb），双保险消灭整类重复。
-        title: t.settings_section_general,
-        items: <SettingsItem>[
-          // 「界面语言」（id 'appearance.language'）已归位到「外观 · 界面」分区
-          //（与主题/明暗/缩放并列）；id 前缀本就是 appearance，此前放系统分类
-          // 是历史错配。
-          SettingsCustomItem(
-            id: 'system.app_version',
-            icon: Icons.info_outline,
-            builder: _buildRuntimeAppVersionRow,
-          ),
-          SettingsSwitchItem(
-            id: 'system.low_memory_mode',
-            title: t.low_memory_mode,
-            subtitle: t.low_memory_mode_hint,
-            icon: Icons.memory_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.lowMemoryMode,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setLowMemoryMode(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.focus_navigation',
-            title: t.focus_navigation_enabled,
-            subtitle: t.focus_navigation_enabled_hint +
-                t.settings_experimental_suffix,
-            icon: Icons.gamepad_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.experimentalFocusNavigationEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setExperimentalFocusNavigationEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsNavigationItem(
-            id: 'system.keyboard_shortcuts',
-            title: t.shortcut_settings_title,
-            // 「实验性」后缀已摘除（用户决策）：改键/冲突重分配/可视化键盘与
-            // 手柄图/三通道实时录键均已齐备，页面不再是实验功能。
-            icon: Icons.keyboard_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const ShortcutSettingsPage(),
-              );
-            },
-          ),
-          SettingsActionItem(
-            id: 'system.github',
-            title: t.options_github,
-            icon: Icons.public_outlined,
-            onTap: (_) async {
-              await launchUrl(
-                Uri.parse('https://github.com/hajisensai/hibiki'),
-                mode: LaunchMode.externalApplication,
-              );
             },
           ),
         ],

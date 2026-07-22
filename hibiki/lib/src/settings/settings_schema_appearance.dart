@@ -112,19 +112,9 @@ SettingsDestination buildAppearanceDestination() {
               settingsContext.refresh();
             },
           ),
-          SettingsSwitchItem(
-            id: 'appearance.startup_default_dictionary_tab',
-            title: t.startup_default_dictionary_tab,
-            subtitle: t.startup_default_dictionary_tab_hint,
-            icon: Icons.manage_search_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.startupDefaultDictionaryTab,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setStartupDefaultDictionaryTab(value);
-              settingsContext.refresh();
-            },
-          ),
+          // 「启动时打开查词」(id 'appearance.startup_default_dictionary_tab') 已归位到
+          // 「系统 · 通用」分区（它管的是启动落地页/导航行为，与主题/明暗等外观无关）；
+          // id / 持久化 key 保持不变（历史命名 appearance 前缀，仅换展示分类）。
         ],
       ),
     ],

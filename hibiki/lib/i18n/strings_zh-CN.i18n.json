@@ -136,7 +136,7 @@
   "server_address": "服务器地址",
   "text_segmentation": "文本分词",
   "settings": "设置",
-  "manager": "管理器",
+  "manager": "词典与来源",
   "volume_button_page_turning": "音量键翻页",
   "invert_volume_buttons": "反转音量键方向",
   "invert_swipe_direction": "反转滑动翻页方向",
@@ -2231,5 +2231,7 @@
   "video_setting_speed_step": "倍速步进",
   "clipboard_panel_block_capture": "防截屏 / 防录屏",
   "clipboard_panel_block_capture_hint": "把查词和剪贴板悬浮窗从截图、录屏、直播串流中排除（Windows）。关闭后，截图、录屏和串流即可拍到查词悬浮窗。",
-  "settings_section_general": "通用"
+  "settings_section_general": "通用",
+  "reading_section_mode": "模式与排版方向",
+  "settings_destination_system_summary": "通用、更新与诊断"
 }
