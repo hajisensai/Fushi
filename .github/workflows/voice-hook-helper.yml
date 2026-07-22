@@ -38,6 +38,8 @@ jobs:
       - name: Verify engine support manifest
         run: |
           python tools/generate_engine_support.py --check
+          python tools/generate_luna_profiles.py --check
+          ./tools/sync_lunahook.ps1
           python tests/engine_support_manifest_test.py
           python tests/adapter_structure_test.py
 

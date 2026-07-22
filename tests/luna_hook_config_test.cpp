@@ -3,25 +3,42 @@
 #include "luna_hook_config.h"
 
 int main() {
-  using hibiki_voice_hook::KnownLunaHookCodesForExecutable;
-  const auto nine = KnownLunaHookCodesForExecutable(
-      LR"(D:\9-nine\9-nine-Episode 1\nine_kokoiro.exe)");
-  if (nine.size() != 1 ||
-      nine.front() != L"EXHVXN0@2198:nine_kokoiro.exe") {
-    std::fprintf(stderr, "9-nine hook config mismatch\n");
+  hibiki_voice_hook::LunaTargetIdentity nine;
+  nine.executable_sha256 =
+      "36448822f1a8bc3840b304d3993c07de912db6c803dddd8db1202ed676ba7019";
+  const auto built_in = hibiki_voice_hook::MatchLunaHookProfiles(
+      hibiki_voice_hook::BuiltInLunaHookProfiles(), nine);
+  if (built_in.codepage != 932 || built_in.hook_codes.size() != 1 ||
+      built_in.hook_codes.front() != L"EXHVXN0@2198:nine_kokoiro.exe") {
+    std::fprintf(stderr, "verified executable hash did not match\n");
     return 1;
   }
-  if (!KnownLunaHookCodesForExecutable(
-           LR"(D:\other\nine_kokoiro.exe)")
-           .empty()) {
-    std::fprintf(stderr, "unrelated KiriKiri target must not get 9-nine offset\n");
+
+  hibiki_voice_hook::LunaTargetIdentity moved = nine;
+  if (hibiki_voice_hook::MatchLunaHookProfiles(
+          hibiki_voice_hook::BuiltInLunaHookProfiles(), moved)
+          .hook_codes.empty()) {
+    std::fprintf(stderr, "profile must not depend on install path\n");
     return 2;
   }
-  if (!KnownLunaHookCodesForExecutable(
-           LR"(D:\anemoi\anemoi (正式版)\SiglusEngine.exe)")
-           .empty()) {
-    std::fprintf(stderr, "anemoi uses the direct Siglus hook, not a fixed Luna offset\n");
+
+  hibiki_voice_hook::LunaTargetIdentity other;
+  other.executable_sha256 = std::string(64, '0');
+  if (!hibiki_voice_hook::MatchLunaHookProfiles(
+           hibiki_voice_hook::BuiltInLunaHookProfiles(), other)
+           .hook_codes.empty()) {
     return 3;
+  }
+
+  const std::string module_profile =
+      "exe_sha256\tmodule_name\tmodule_sha256\tcodepage\thook_code\tlabel\n"
+      "\tkirikiri.dll\t" + std::string(64, 'a') +
+      "\t932\tHQ@1234\tmodule-only\n";
+  other.module_sha256["kirikiri.dll"] = std::string(64, 'a');
+  if (hibiki_voice_hook::MatchLunaHookProfiles(module_profile, other)
+          .hook_codes.size() != 1) {
+    std::fprintf(stderr, "module hash profile did not match\n");
+    return 4;
   }
   return 0;
 }

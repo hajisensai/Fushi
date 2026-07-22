@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <string>
 
+#include "luna_version.h"
+
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— 引擎级 voice hook 的**进程间契约**。
 //
 // 部署红线：这套 injector + hook DLL 是**独立可选 helper 组件**，和 `hibiki.exe` 物理隔离、
@@ -29,7 +31,9 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     最终混音（voice+BGM），按文本时刻抽窗口做卡。与引擎级纯人声路径并存，互不干扰。
 // v9：合并 v8 的引擎诊断/Unity 资源事件与 v6 的 loopback 环。
 // v10：文本槽追加事件类型，透传 Luna ThreadCreate，使尚无台词的候选线程也可被选择。
-constexpr uint32_t kSharedVersion = 10;
+// v11：显式声明稳定 IPC、Luna bridge ABI 与 vendored Luna 版本，host 可在读数据前拒绝错配。
+constexpr uint32_t kSharedVersion = 11;
+constexpr uint32_t kStableIpcVersion = 1;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
@@ -171,6 +175,10 @@ struct LoopbackMarker {
 struct SharedHeader {
   uint32_t magic;           // = kSharedMagic
   uint32_t version;         // = kSharedVersion
+  uint32_t ipc_protocol_version;     // = kStableIpcVersion
+  uint32_t luna_bridge_abi_version;  // = kLunaBridgeAbiVersion
+  uint32_t luna_vendored_version;    // packed 10.16.1.2
+  uint32_t protocol_reserved;
   uint32_t sample_rate;     // hook 首次拿到语音格式后填
   uint32_t channels;        //
   uint32_t bits_per_sample;  //

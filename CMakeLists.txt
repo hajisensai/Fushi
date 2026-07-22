@@ -115,6 +115,16 @@ add_executable(hibiki_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(hibiki_luna_hook_config_test PRIVATE include)
 add_test(NAME hibiki_luna_hook_config_test COMMAND hibiki_luna_hook_config_test)
 
+add_executable(hibiki_luna_bridge_abi_test tests/luna_bridge_abi_test.cpp)
+target_include_directories(hibiki_luna_bridge_abi_test PRIVATE include)
+target_compile_definitions(hibiki_luna_bridge_abi_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_luna_bridge_abi_test COMMAND hibiki_luna_bridge_abi_test)
+
+add_executable(hibiki_luna_text_replay_test tests/luna_text_replay_test.cpp)
+target_include_directories(hibiki_luna_text_replay_test PRIVATE include)
+add_test(NAME hibiki_luna_text_replay_test COMMAND hibiki_luna_text_replay_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/luna_thread_selection.tsv")
+
 add_executable(hibiki_adapter_contract_test tests/adapter_contract_test.cpp)
 target_include_directories(hibiki_adapter_contract_test PRIVATE hook)
 add_test(NAME hibiki_adapter_contract_test COMMAND hibiki_adapter_contract_test)
@@ -126,7 +136,7 @@ add_executable(hibiki_voice_injector
 )
 target_include_directories(hibiki_voice_injector PRIVATE "include")
 target_compile_definitions(hibiki_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(hibiki_voice_injector PRIVATE shell32)
+target_link_libraries(hibiki_voice_injector PRIVATE shell32 bcrypt)
 
 # Unity IL2CPP Streaming AudioClip 资源提取器（仅 x64 Unity 游戏需要）。它在 injector
 # 宿主进程解析 AssetBundle，并调用开源 vgmstream 解码 FSB5；游戏内 DLL 只写资源事件。
@@ -177,6 +187,7 @@ add_executable(hibiki_luna_symcheck
 )
 target_include_directories(hibiki_luna_symcheck PRIVATE "include")
 target_compile_definitions(hibiki_luna_symcheck PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_luna_symcheck COMMAND hibiki_luna_symcheck)
 
 # LunaHook 的 vendored 二进制（GPLv3，third_party/lunahook/，动态加载不链 .lib）。构建后把与本
 # 编译位数匹配的 LunaHost<arch>.dll（injector 加载）+ LunaHook<arch>.dll（注入进游戏）拷到
@@ -195,3 +206,4 @@ foreach(_luna_dll "LunaHost${_LUNA_ARCH}.dll" "LunaHook${_LUNA_ARCH}.dll")
     COMMENT "部署 vendored LunaHook 二进制 ${_luna_dll} 到 injector 目录"
     VERBATIM)
 endforeach()
+add_dependencies(hibiki_luna_symcheck hibiki_voice_injector)
