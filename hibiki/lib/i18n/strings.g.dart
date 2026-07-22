@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 38012 (2236 per locale)
+/// Strings: 38131 (2243 per locale)
 ///
-/// Built on 2026-07-22 at 05:54 UTC
+/// Built on 2026-07-22 at 06:42 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2770,8 +2770,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get galgame_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   String get download_settings => 'Download settings';
-  String get download_backend_not_configured =>
-      'Configure the download backend first (settings, top-right).';
   String get floating_lyric_text_opacity_hint =>
       'Lower this to make the floating subtitle text more transparent';
   String get floating_lyric_button_bg_opacity_hint =>
@@ -2978,6 +2976,18 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get settings_destination_system_summary =>
       'General, updates & diagnostics';
   String get error_load_failed => 'Something went wrong while loading';
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  String get download_open_settings => 'Open settings';
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  String get download_test_connection => 'Test connection';
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  String get anime_download_trusted => 'Trusted';
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -7661,9 +7671,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'اخفض هذا لجعل نص الترجمة العائمة أكثر شفافية';
   @override
@@ -8038,6 +8045,26 @@ class _StringsAr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -12794,9 +12821,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Verringern, um den schwebenden Untertiteltext transparenter zu machen';
   @override
@@ -13171,6 +13195,26 @@ class _StringsDe extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -17943,9 +17987,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Bájala para que el texto del subtítulo flotante sea más transparente';
   @override
@@ -18320,6 +18361,26 @@ class _StringsEs extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -23103,9 +23164,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Baissez cette valeur pour rendre le texte du sous-titre flottant plus transparent';
   @override
@@ -23480,6 +23538,26 @@ class _StringsFr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -28190,9 +28268,6 @@ class _StringsId extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Turunkan untuk membuat teks subtitle melayang lebih transparan';
   @override
@@ -28567,6 +28642,26 @@ class _StringsId extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -33325,9 +33420,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Abbassa questo valore per rendere più trasparente il testo del sottotitolo fluttuante';
   @override
@@ -33702,6 +33794,26 @@ class _StringsIt extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -38266,9 +38378,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint => '下げるとフローティング字幕の文字がより透明になります';
   @override
   String get floating_lyric_button_bg_opacity_hint =>
@@ -38642,6 +38751,26 @@ class _StringsJa extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -43209,9 +43338,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint => '낮추면 플로팅 자막 텍스트가 더 투명해집니다';
   @override
   String get floating_lyric_button_bg_opacity_hint =>
@@ -43585,6 +43711,26 @@ class _StringsKo extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -48321,9 +48467,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Verlaag dit om de tekst van de zwevende ondertitel transparanter te maken';
   @override
@@ -48698,6 +48841,26 @@ class _StringsNl extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -53449,9 +53612,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Reduza para deixar o texto da legenda flutuante mais transparente';
   @override
@@ -53826,6 +53986,26 @@ class _StringsPtBr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -58560,9 +58740,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Уменьшите, чтобы текст плавающих субтитров стал прозрачнее';
   @override
@@ -58937,6 +59114,26 @@ class _StringsRu extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -63616,9 +63813,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'ลดค่านี้เพื่อให้ตัวอักษรคำบรรยายลอยโปร่งใสขึ้น';
   @override
@@ -63993,6 +64187,26 @@ class _StringsTh extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -68704,9 +68918,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Kayan altyazı metnini daha saydam yapmak için bunu azaltın';
   @override
@@ -69081,6 +69292,26 @@ class _StringsTr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -73779,9 +74010,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint =>
       'Giảm xuống để chữ phụ đề nổi trong suốt hơn';
   @override
@@ -74156,6 +74384,26 @@ class _StringsVi extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 // Path: <root>
@@ -78528,8 +78776,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get download_settings => '下载设置';
   @override
-  String get download_backend_not_configured => '请先配置下载后端（右上角设置）';
-  @override
   String get floating_lyric_text_opacity_hint => '调低让悬浮字幕文字更透明';
   @override
   String get floating_lyric_button_bg_opacity_hint => '调整悬浮字幕控制按钮底色的透明度';
@@ -78878,6 +79124,23 @@ class _StringsZhCn extends _StringsEn {
   String get settings_destination_system_summary => '通用、更新与诊断';
   @override
   String get error_load_failed => '加载出错';
+  @override
+  String get download_backend_not_configured => '请先配置下载后端。';
+  @override
+  String get download_open_settings => '去设置';
+  @override
+  String get anime_download_search_start_hint => '在上方搜索番剧名，自动匹配种子与字幕。';
+  @override
+  String get download_test_connection => '测试连接';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      '连接成功（版本：${version}）';
+  @override
+  String get download_test_connection_failed => '连接失败，请检查地址与账号密码。';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => '${count} 集';
 }
 
 // Path: <root>
@@ -83364,9 +83627,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get download_settings => 'Download settings';
   @override
-  String get download_backend_not_configured =>
-      'Configure the download backend below (expand Download settings).';
-  @override
   String get floating_lyric_text_opacity_hint => '調低可讓懸浮字幕文字更透明';
   @override
   String get floating_lyric_button_bg_opacity_hint => '調整懸浮字幕控制按鈕底色的透明度';
@@ -83736,6 +83996,26 @@ class _StringsZhHk extends _StringsEn {
   String get settings_destination_system_summary => '通用、更新與診斷';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get download_backend_not_configured =>
+      'Download backend is not configured yet.';
+  @override
+  String get download_open_settings => 'Open settings';
+  @override
+  String get anime_download_search_start_hint =>
+      'Search an anime title above — torrents and subtitles are matched automatically.';
+  @override
+  String get download_test_connection => 'Test connection';
+  @override
+  String download_test_connection_ok({required Object version}) =>
+      'Connected (version: ${version})';
+  @override
+  String get download_test_connection_failed =>
+      'Connection failed. Check the address and credentials.';
+  @override
+  String get anime_download_trusted => 'Trusted';
+  @override
+  String anime_download_episode_count({required Object count}) => 'EP ${count}';
 }
 
 /// Flat map(s) containing all translations.
@@ -87960,8 +88240,6 @@ extension on _StringsEn {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend first (settings, top-right).';
       case 'floating_lyric_text_opacity_hint':
         return 'Lower this to make the floating subtitle text more transparent';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -88300,6 +88578,22 @@ extension on _StringsEn {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -92522,8 +92816,6 @@ extension on _StringsAr {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'اخفض هذا لجعل نص الترجمة العائمة أكثر شفافية';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -92862,6 +93154,22 @@ extension on _StringsAr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -97105,8 +97413,6 @@ extension on _StringsDe {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Verringern, um den schwebenden Untertiteltext transparenter zu machen';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -97445,6 +97751,22 @@ extension on _StringsDe {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -101687,8 +102009,6 @@ extension on _StringsEs {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Bájala para que el texto del subtítulo flotante sea más transparente';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -102027,6 +102347,22 @@ extension on _StringsEs {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -106275,8 +106611,6 @@ extension on _StringsFr {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Baissez cette valeur pour rendre le texte du sous-titre flottant plus transparent';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -106615,6 +106949,22 @@ extension on _StringsFr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -110845,8 +111195,6 @@ extension on _StringsId {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Turunkan untuk membuat teks subtitle melayang lebih transparan';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -111185,6 +111533,22 @@ extension on _StringsId {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -115430,8 +115794,6 @@ extension on _StringsIt {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Abbassa questo valore per rendere più trasparente il testo del sottotitolo fluttuante';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -115770,6 +116132,22 @@ extension on _StringsIt {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -119977,8 +120355,6 @@ extension on _StringsJa {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return '下げるとフローティング字幕の文字がより透明になります';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -120317,6 +120693,22 @@ extension on _StringsJa {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -124528,8 +124920,6 @@ extension on _StringsKo {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return '낮추면 플로팅 자막 텍스트가 더 투명해집니다';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -124868,6 +125258,22 @@ extension on _StringsKo {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -129106,8 +129512,6 @@ extension on _StringsNl {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Verlaag dit om de tekst van de zwevende ondertitel transparanter te maken';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -129446,6 +129850,22 @@ extension on _StringsNl {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -133681,8 +134101,6 @@ extension on _StringsPtBr {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Reduza para deixar o texto da legenda flutuante mais transparente';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -134021,6 +134439,22 @@ extension on _StringsPtBr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -138261,8 +138695,6 @@ extension on _StringsRu {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Уменьшите, чтобы текст плавающих субтитров стал прозрачнее';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -138601,6 +139033,22 @@ extension on _StringsRu {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -142825,8 +143273,6 @@ extension on _StringsTh {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'ลดค่านี้เพื่อให้ตัวอักษรคำบรรยายลอยโปร่งใสขึ้น';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -143165,6 +143611,22 @@ extension on _StringsTh {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -147398,8 +147860,6 @@ extension on _StringsTr {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Kayan altyazı metnini daha saydam yapmak için bunu azaltın';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -147738,6 +148198,22 @@ extension on _StringsTr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -151966,8 +152442,6 @@ extension on _StringsVi {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return 'Giảm xuống để chữ phụ đề nổi trong suốt hơn';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -152306,6 +152780,22 @@ extension on _StringsVi {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }
@@ -156500,8 +156990,6 @@ extension on _StringsZhCn {
         return '引擎组件安装不完整，请重试';
       case 'download_settings':
         return '下载设置';
-      case 'download_backend_not_configured':
-        return '请先配置下载后端（右上角设置）';
       case 'floating_lyric_text_opacity_hint':
         return '调低让悬浮字幕文字更透明';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -156840,6 +157328,22 @@ extension on _StringsZhCn {
         return '通用、更新与诊断';
       case 'error_load_failed':
         return '加载出错';
+      case 'download_backend_not_configured':
+        return '请先配置下载后端。';
+      case 'download_open_settings':
+        return '去设置';
+      case 'anime_download_search_start_hint':
+        return '在上方搜索番剧名，自动匹配种子与字幕。';
+      case 'download_test_connection':
+        return '测试连接';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => '连接成功（版本：${version}）';
+      case 'download_test_connection_failed':
+        return '连接失败，请检查地址与账号密码。';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => '${count} 集';
       default:
         return null;
     }
@@ -161042,8 +161546,6 @@ extension on _StringsZhHk {
         return 'Engine component install incomplete, please retry';
       case 'download_settings':
         return 'Download settings';
-      case 'download_backend_not_configured':
-        return 'Configure the download backend below (expand Download settings).';
       case 'floating_lyric_text_opacity_hint':
         return '調低可讓懸浮字幕文字更透明';
       case 'floating_lyric_button_bg_opacity_hint':
@@ -161382,6 +161884,22 @@ extension on _StringsZhHk {
         return '通用、更新與診斷';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'download_backend_not_configured':
+        return 'Download backend is not configured yet.';
+      case 'download_open_settings':
+        return 'Open settings';
+      case 'anime_download_search_start_hint':
+        return 'Search an anime title above — torrents and subtitles are matched automatically.';
+      case 'download_test_connection':
+        return 'Test connection';
+      case 'download_test_connection_ok':
+        return ({required Object version}) => 'Connected (version: ${version})';
+      case 'download_test_connection_failed':
+        return 'Connection failed. Check the address and credentials.';
+      case 'anime_download_trusted':
+        return 'Trusted';
+      case 'anime_download_episode_count':
+        return ({required Object count}) => 'EP ${count}';
       default:
         return null;
     }

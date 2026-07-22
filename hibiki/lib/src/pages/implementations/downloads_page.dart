@@ -9,14 +9,18 @@ import 'package:hibiki/utils.dart';
 /// 切到「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型自动入库
 /// （视频→视频库、epub→阅读库，见 AnimeDownloadService）。
 class DownloadsPage extends StatefulWidget {
-  const DownloadsPage({super.key});
+  const DownloadsPage({super.key, this.initialShowSettings = false});
+
+  /// 初始即显示设置面板（「后端未配置」横幅的「去设置」从对话框入口 push
+  /// 本页直落配置用）。默认 false = 正常下载流程。
+  final bool initialShowSettings;
 
   @override
   State<DownloadsPage> createState() => _DownloadsPageState();
 }
 
 class _DownloadsPageState extends State<DownloadsPage> {
-  bool _showSettings = false;
+  late bool _showSettings = widget.initialShowSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +35,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
         title: Text(_showSettings ? t.download_settings : t.nav_downloads),
         actions: <Widget>[
           IconButton(
-            tooltip: t.download_settings,
+            // 齿轮已变 ✕ 时语义是「关闭设置」，tooltip 跟着换，不再答非所问。
+            tooltip: _showSettings ? t.dialog_close : t.download_settings,
             icon: Icon(_showSettings ? Icons.close : Icons.settings_outlined),
             onPressed: () => setState(() => _showSettings = !_showSettings),
           ),
@@ -41,9 +46,20 @@ class _DownloadsPageState extends State<DownloadsPage> {
       body: _showSettings
           ? ListView(
               padding: const EdgeInsets.all(16),
-              children: const <Widget>[TorrentSettingsSection()],
+              children: <Widget>[
+                // 桌面宽屏限宽 560 居中（对齐全 app 设置面板口径），不再全宽铺开。
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: const TorrentSettingsSection(),
+                  ),
+                ),
+              ],
             )
-          : const AnimeDownloadDialog(embedded: true),
+          : AnimeDownloadDialog(
+              embedded: true,
+              onOpenSettings: () => setState(() => _showSettings = true),
+            ),
     );
   }
 }
