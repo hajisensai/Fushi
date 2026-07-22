@@ -374,15 +374,21 @@
         // even though the layer beneath is pointer-events:none. Only created in
         // panel mode (ensurePanelBar), so the transient overlay never carries
         // this DOM/CSS.
+        // 浅色模式对比修复：bar 底 + grip 文字 + 按钮字形都是浅色主题下的默认样式，
+        // 原来 bar 底仅 10% 灰、字形 0.75 半透深灰，压在亮游戏上的半透明浅窗被冲淡
+        // 「看不清」。加深到接近全实心深灰，并给 bar 一条底边界定轮廓（dark 变体在下面
+        // 覆盖，深色窗不受影响）。
         '#global-lookup-panel-bar{' +
         'position:fixed;left:0;top:0;right:0;height:28px;' +
         'display:flex;align-items:center;z-index:2147483001;' +
         'pointer-events:auto;user-select:none;-webkit-user-select:none;' +
-        'background:rgba(120,120,128,0.10);border-radius:10px 10px 0 0;}' +
+        'background:rgba(120,120,128,0.18);' +
+        'border-bottom:1px solid rgba(120,120,128,0.20);' +
+        'border-radius:10px 10px 0 0;}' +
         '#global-lookup-panel-bar .panel-grip{' +
         'flex:1;height:100%;cursor:move;display:flex;align-items:center;' +
         'padding-left:10px;font-family:"Segoe UI",sans-serif;font-size:11px;' +
-        'color:rgba(120,120,128,0.8);letter-spacing:2px;}' +
+        'color:rgba(70,70,78,0.92);letter-spacing:2px;}' +
         // BUG-768 — persistent chip background so the pin/close read as tappable
         // affordances on ANY window surface (light or dark); glyph color is made
         // theme-aware below so it stays legible against that chip.
@@ -390,18 +396,21 @@
         'width:24px;height:24px;line-height:24px;text-align:center;' +
         'margin-right:4px;font-family:"Segoe UI Symbol","Segoe UI",sans-serif;' +
         'font-size:14px;cursor:pointer;border-radius:12px;' +
-        'background:rgba(120,120,128,0.16);color:rgba(60,60,67,0.75);}' +
+        'background:rgba(120,120,128,0.24);color:rgba(30,30,35,0.95);}' +
         '#global-lookup-panel-bar .panel-btn:hover{' +
-        'background:rgba(120,120,128,0.28);color:rgba(60,60,67,0.95);}' +
+        'background:rgba(120,120,128,0.36);color:rgba(20,20,24,1);}' +
         // BUG-768 — dark-window variant (stamped via data-theme in renderStack):
         // light glyph + light chip so the buttons don't vanish on a dark surface.
         '#global-lookup-panel-bar[data-theme="dark"] .panel-btn{' +
         'background:rgba(235,235,245,0.14);color:rgba(235,235,245,0.72);}' +
         '#global-lookup-panel-bar[data-theme="dark"] .panel-btn:hover{' +
         'background:rgba(235,235,245,0.24);color:rgba(235,235,245,0.95);}' +
-        '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.45;}' +
+        // 深色窗:grip 提示文字改回浅色(默认的深灰在深色窗上会消失)。
+        '#global-lookup-panel-bar[data-theme="dark"] .panel-grip{' +
+        'color:rgba(235,235,245,0.66);}' +
+        '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.62;}' +
         // 防截屏按钮关闭态（允许截图）时同样调暗，与 pin-off 一致。
-        '#global-lookup-panel-bar .panel-btn.panel-block-off{opacity:0.45;}' +
+        '#global-lookup-panel-bar .panel-btn.panel-block-off{opacity:0.62;}' +
         // Bottom-right resize grip (posts beginWindowResize).
         '#global-lookup-panel-resize{' +
         'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
@@ -1538,6 +1547,22 @@
     if (record.shell && typeof record.shell.setAttribute === 'function') {
       record.shell.setAttribute(ATTR_CONTENT_READY, 'false');
     }
+    // BUG-745 — strip the TODO-890 slide-out class off the REUSED root shell.
+    // dismissRootWithSlide adds .global-lookup-dismissing (translateX(120%) +
+    // opacity 0) and NOTHING ever removed it, while the root shell survives
+    // across lookups (stable root id, TODO-1095). After the first slide
+    // dismissal every later card therefore rendered ALREADY slid off-window and
+    // fully transparent: native revealed the window, popupRendered/overlaySize
+    // all fired, but the user saw NOTHING ("第一次正常，之后的弹窗根本不出
+    // 现"). The TODO-1345 floor window made every click-outside take the JS
+    // slide path (clicks always land inside the near-fullscreen window), so a
+    // session was poisoned on its very first dismissal.
+    if (record.shell && record.shell.classList &&
+        typeof record.shell.classList.remove === 'function') {
+      record.shell.classList.remove('global-lookup-dismissing');
+    }
+    // A slide interrupted by this new lookup must not leave the latch stuck.
+    dismissingRoot = false;
     // TODO-1231 (BUG-583) -- tear down the PREVIOUS lookup's content observer +
     // safety timer, but DO NOT re-arm an observer off the stale card here. The
     // reused iframe still holds the previous lookup's `.glossary-content`, so

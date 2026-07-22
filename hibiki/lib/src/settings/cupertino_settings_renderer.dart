@@ -149,11 +149,10 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
       );
     }
 
-    // 自滚动（宽屏 master-detail 详情面板）。镜像 MaterialSettingsRenderer：懒加载
-    // ListView.builder 按已布局子项平均高估算视口外 section 的 extent，section 高度
-    // 悬殊时 maxScrollExtent 随滚动漂移、弹道落点被重新 clamp → 视口跳跃（BUG-037）。
-    // 全 section 布局（SingleChildScrollView + Column）让 extent 精确恒定；它本身可
-    // 滚动，也不会像裸 Column 那样在有界 Expanded 里 RenderFlex 溢出（BUG-009 R1）。
+    // 自滚动（宽屏 master-detail 详情面板）。刻意非懒（SingleChildScrollView +
+    // Column），完整 BUG-037 根因见 MaterialSettingsRenderer.buildDetailContent
+    // 同位置注释；也不能换裸 Column——有界 Expanded 里会 RenderFlex 溢出
+    // （BUG-009 R1）。
     return SingleChildScrollView(
       controller: scrollController,
       padding: padding,
@@ -176,7 +175,10 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
     final SettingsSection visible = section.visibleCopy(settingsContext);
     return visible.items
         .map(
+          // 行级稳定 key：visibleCopy 按运行时谓词过滤，行增删时以 item.id 锚定
+          // State 归属（否则同类型相邻行按位置错配旧 State）。
           (SettingsItem item) => SettingsSchemaItem(
+            key: ValueKey<String>(item.id),
             item: item,
             settingsContext: settingsContext,
             showIcons: showIcons,

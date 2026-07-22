@@ -1,6 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/video_immersive_mode.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_video.dart';
 
 import 'video_hibiki_page_source_corpus.dart';
 
@@ -9,7 +12,17 @@ void main() {
   late String prefsSrc;
   late String appModelSrc;
   late String pageSrc;
-  late String sheetSrc;
+
+  // 阶段B：沉浸模式行声明移入 settings_schema_video.dart（唯一真相源），
+  // 面板只投影 schema；选择器守卫从 sheet 源码扫描改为 schema 数据模型断言。
+  SettingsSegmentedItem<VideoImmersiveMode> immersiveItem() {
+    final SettingsItem item = buildVideoDestination()
+        .sections
+        .expand((SettingsSection section) => section.items)
+        .firstWhere(
+            (SettingsItem i) => i.id == 'video.playback.immersive_mode');
+    return item as SettingsSegmentedItem<VideoImmersiveMode>;
+  }
 
   setUpAll(() {
     String readOrEmpty(String path) {
@@ -25,8 +38,6 @@ void main() {
     // pageSrc 断言（_videoImmersiveMode 等 getter、_handleVideoPointerUp / _handleSecondaryTap
     // 方法体）都还在主壳、在合并语料里照旧连续，methodBody 大括号匹配不受影响。
     pageSrc = readVideoHibikiSource();
-    sheetSrc = File('lib/src/media/video/video_quick_settings_sheet.dart')
-        .readAsStringSync();
   });
 
   String bodyFromBrace(String source, int start, int braceStart, String label) {
@@ -179,42 +190,63 @@ void main() {
             'full-control gate must run before building/showing the context menu');
   });
 
-  test('TODO-174: video settings sheet exposes the four-mode selector', () {
-    expect(sheetSrc.contains('initialImmersiveMode'), isTrue);
-    expect(sheetSrc.contains('onImmersiveModeChanged'), isTrue);
-    expect(sheetSrc.contains('Widget _buildImmersiveModeRow()'), isTrue);
-    expect(sheetSrc.contains('VideoImmersiveMode.values'), isTrue);
-    expect(sheetSrc.contains('_buildImmersiveModeRow(),'), isTrue,
+  test('TODO-174: video settings schema exposes the four-mode selector', () {
+    // 阶段B：行声明移入 settings_schema_video.dart，守卫改锁 schema 数据模型 +
+    // 双路写穿接线（保护不变：四态选择器仍在播放页面板 playback 分类可达、
+    // 播放中即时生效并持久化）。
+    final SettingsSegmentedItem<VideoImmersiveMode> item = immersiveItem();
+    expect(item.options.length, VideoImmersiveMode.values.length,
+        reason: 'all four immersive modes must be offered as options');
+    expect(item.video, isNotNull,
+        reason: 'the selector must project into the in-player panel');
+    expect(item.video!.group, VideoGroup.playback,
         reason:
             'immersive selector must live in the playback video settings group');
+
+    final String schemaSrc =
+        File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
+    expect(schemaSrc.contains('setVideoImmersiveModeDual('), isTrue,
+        reason: '沉浸模式必须双路写穿（host 在场经页面回调，无 host 落 pref）');
+    final String hostSrc =
+        File('lib/src/media/video/video_quick_settings_host.dart')
+            .readAsStringSync();
+    expect(hostSrc.contains('onImmersiveModeChanged'), isTrue,
+        reason: 'host 能力槽必须声明沉浸模式回调');
+    expect(
+        pageSrc
+            .contains('onImmersiveModeChanged: appModel.setVideoImmersiveMode'),
+        isTrue,
+        reason: '播放页必须把沉浸模式回调接到持久化');
   });
 
   test(
       'TODO-209: immersive selector is a dropdown picker, not a 4-segment strip '
       '(long labels must never be clipped on a narrow panel)', () {
-    // 找到 _buildImmersiveModeRow 方法体（到下一个方法定义为止），只在它内部断言，
-    // 不被同文件别处的 segmented 行（如档位选择器）干扰。
-    final String body =
-        methodBody(sheetSrc, 'Widget _buildImmersiveModeRow() {');
     // 根因修复 TODO-209：4 个较长中文标签用等宽不换行的 SegmentedButton 会被裁，
     // 必须改用下拉单选 picker（行内只显示当前项、展开为竖排单选列表）。
-    expect(
-      body.contains('AdaptiveSettingsPickerRow<VideoImmersiveMode>'),
-      isTrue,
-      reason:
-          'immersive mode must use a dropdown picker so long labels are not clipped',
-    );
-    expect(
-      body.contains('AdaptiveSettingsSegmentedRow'),
-      isFalse,
-      reason:
-          'immersive mode must NOT use a fixed-width segmented strip (clips the 4 long labels)',
-    );
-    // 4 个模式仍由 VideoImmersiveMode.values 全量映射成选项，一个不少。
-    expect(body.contains('VideoImmersiveMode.values'), isTrue,
+    // 阶段B：数据模型断言——item 声明 dropdown: true，渲染层 dropdown 分支统一
+    // 落成 AdaptiveSettingsPickerRow（settings_schema_widgets.dart）。
+    final SettingsSegmentedItem<VideoImmersiveMode> item = immersiveItem();
+    expect(item.dropdown, isTrue,
+        reason:
+            'immersive mode must use a dropdown picker so long labels are not clipped');
+    // 4 个模式仍全量映射成选项，一个不少。
+    expect(item.options.length, VideoImmersiveMode.values.length,
         reason: 'all four immersive modes must be offered as picker options');
-    expect(body.contains('AdaptiveSettingsPickerOption<VideoImmersiveMode>'),
-        isTrue,
-        reason: 'each immersive mode must map to one picker option');
+
+    // 渲染层：dropdown 分支必须先于分段条早返回 AdaptiveSettingsPickerRow，
+    // 保证 dropdown 声明的行永不被渲染成等宽分段条。
+    final String widgetsSrc =
+        File('lib/src/settings/settings_schema_widgets.dart')
+            .readAsStringSync();
+    final int branch = widgetsSrc.indexOf('if (segmented.dropdown) {');
+    expect(branch, greaterThanOrEqualTo(0),
+        reason: 'renderer must special-case dropdown segmented items');
+    final int picker =
+        widgetsSrc.indexOf('return AdaptiveSettingsPickerRow<T>(', branch);
+    expect(picker, greaterThan(branch),
+        reason: 'the dropdown branch must render AdaptiveSettingsPickerRow');
+    expect(widgetsSrc.contains('AdaptiveSettingsPickerOption<T>'), isTrue,
+        reason: 'each option must map to one picker option');
   });
 }

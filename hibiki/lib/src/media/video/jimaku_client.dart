@@ -248,6 +248,27 @@ class JimakuClient {
     return _searchEntries(<String, String>{'query': query});
   }
 
+  /// 「先按 AniList id 搜、搜不到再按文本搜」的收敛入口——Jimaku 条目只有被人工挂上
+  /// AniList id 时 [searchByAnilistId] 才命中，冷门/非标准来源（如 YouTube 转录番）常
+  /// 只有文本条目，故 [anilistId] 空结果必须回退 [queryFallbacks]（依次尝试，首个命中即
+  /// 停）。下载对话框与字幕对话框共用此单一真相源，避免某一处漏写回退分支再退化成
+  /// 「其实有字幕却报无字幕」。纯委托，便于用 fake [http.Client] 单测。
+  Future<List<JimakuEntry>> searchEntries({
+    int? anilistId,
+    List<String> queryFallbacks = const <String>[],
+  }) async {
+    if (anilistId != null) {
+      final List<JimakuEntry> byId = await searchByAnilistId(anilistId);
+      if (byId.isNotEmpty) return byId;
+    }
+    for (final String query in queryFallbacks) {
+      if (query.trim().isEmpty) continue;
+      final List<JimakuEntry> byQuery = await searchByQuery(query);
+      if (byQuery.isNotEmpty) return byQuery;
+    }
+    return const <JimakuEntry>[];
+  }
+
   Future<List<JimakuEntry>> _searchEntries(Map<String, String> params) async {
     try {
       final Uri uri =

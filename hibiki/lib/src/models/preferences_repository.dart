@@ -503,12 +503,13 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 真透明剪切板文字窗的**背景**不透明度（0.0 = 完全透明只露文字，用户默认诉求；
-  /// 拉高则给文字垫一层暗底，亮色游戏上白字看不清时用）。与 [clipboardPanelOpacity]
-  /// （整窗 LWA_ALPHA）不同：这里只影响窗口背景 alpha，文字始终实心。默认 0.0。
+  /// 真透明剪切板文字窗的**背景**不透明度。与 [clipboardPanelOpacity]（整窗
+  /// LWA_ALPHA）不同：这里只影响窗口背景 alpha，文字始终实心。**默认 1.0 = 黑底**
+  /// （用户实测拍板「先一律默认黑底白字」——纯透明+跟随主题的深色字在黑底上看不清）；
+  /// 想要真透明把滑杆拉到 0（或点顶栏一键透明 ◐），文字始终白色实心。
   double get clipboardTextWindowBgOpacity => getPref(
         'clipboard_text_window_bg_opacity',
-        defaultValue: 0.0,
+        defaultValue: 1.0,
       ) as double;
 
   Future<void> setClipboardTextWindowBgOpacity(double value) async {

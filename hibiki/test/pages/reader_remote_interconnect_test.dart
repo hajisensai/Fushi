@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,6 +11,8 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/pages/implementations/home_page.dart'
+    show homeShellTabNotifier, HomeTab;
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
@@ -55,6 +58,10 @@ void main() {
   // 有声书接线观测：fetcher 收到的远端 bookKey + importer 收到的 (file, override)。
   late List<String> fetchedAudiobookKeys;
   late List<({File package, String? bookKeyOverride})> importedAudiobooks;
+  // BUG-990：本地 SRT 卡受控列表（默认空）+ 有声书下载闸门（非空时 fetcher 卡住，
+  // 用来观测两阶段下载空窗期本地卡的加载覆盖层）。
+  late List<SrtBook> shelfSrtBooks;
+  Completer<void>? audiobookDownloadGate;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
@@ -74,9 +81,13 @@ void main() {
     importedBookKey = 'local-book-key';
     fetchedAudiobookKeys = <String>[];
     importedAudiobooks = <({File package, String? bookKeyOverride})>[];
+    shelfSrtBooks = <SrtBook>[];
+    audiobookDownloadGate = null;
   });
 
   tearDown(() async {
+    // BUG-992：全局 tab notifier 跨测试持久，复位避免污染其它用例。
+    homeShellTabNotifier.value = HomeTab.books;
     await db.close();
   });
 
@@ -89,7 +100,7 @@ void main() {
             ),
           ),
           srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
+            (ref) => Future<List<SrtBook>>.value(shelfSrtBooks),
           ),
         ],
         child: TranslationProvider(
@@ -109,6 +120,11 @@ void main() {
                 },
                 remoteAudiobookFetcher: (String remoteBookKey) async {
                   fetchedAudiobookKeys.add(remoteBookKey);
+                  // BUG-990：闸门非空时卡在有声书下载阶段（模拟空窗期），供断言本地卡
+                  // 加载覆盖层；测试 complete 后放行。
+                  if (audiobookDownloadGate != null) {
+                    await audiobookDownloadGate!.future;
+                  }
                   final File pkg = File(
                     '${pathProviderDir.path}/$remoteBookKey.hibikiaudio',
                   );
@@ -422,6 +438,106 @@ void main() {
     expect(row.updatedAt, 1700000000000);
   });
 
+  testWidgets('BUG-990: 有声书两阶段下载空窗期，本地卡持续显示加载覆盖层', (WidgetTester tester) async {
+    // 本地已有一张 SRT 卡（bookKey = importer 将返回的 localBookKey），模拟 EPUB 落库
+    // 后 provider 自动刷新把远端占位卡顶替成本地卡的空窗态。
+    shelfSrtBooks = <SrtBook>[
+      SrtBook()
+        ..uid = 'srtbook_epub_local-book-key'
+        ..title = 'Local Audiobook'
+        ..srtPath = '${pathProviderDir.path}/local.srt'
+        ..importedAt = 0
+        ..bookKey = 'local-book-key',
+    ];
+    audiobookDownloadGate = Completer<void>();
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      hasAudiobook: true,
+    );
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    const ValueKey<String> overlayKey =
+        ValueKey<String>('audiobook_downloading_local-book-key');
+    // 下载前：本地 SRT 卡在，无加载覆盖层。
+    expect(find.byKey(overlayKey), findsNothing);
+
+    // 点远端占位卡下载 → EPUB 导入(importer 返回 local-book-key) → 标记有声书下载中 →
+    // 有声书 fetch 卡在闸门。
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey<String>(
+        'remote_book_download_Remote_Book',
+      )));
+      for (int i = 0; i < 60; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        if (fetchedAudiobookKeys.isNotEmpty) break;
+      }
+    });
+    await tester.pump();
+
+    expect(find.byKey(overlayKey), findsOneWidget,
+        reason: 'BUG-990：有声书下载中本地卡必须显示加载覆盖层');
+
+    // 放行有声书下载 → 完成 → 覆盖层清除。
+    await tester.runAsync(() async {
+      audiobookDownloadGate!.complete();
+      for (int i = 0; i < 60; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        if (importedAudiobooks.isNotEmpty) break;
+      }
+    });
+    await tester.pump();
+
+    expect(find.byKey(overlayKey), findsNothing,
+        reason: 'BUG-990：有声书下载完成后覆盖层必须清除');
+  });
+
+  testWidgets('BUG-991: 书库概览总数含书架上可见的远端占位书', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 1 本本地 SRT 书 + remoteClient 默认 1 本远端书 → 总数应为 2（本地 1 + 远端 1），
+    // 而非旧实现只数本地的 1。
+    shelfSrtBooks = <SrtBook>[
+      SrtBook()
+        ..uid = 'local-srt-uid'
+        ..title = 'Local Book'
+        ..srtPath = '${pathProviderDir.path}/local.srt'
+        ..importedAt = 0
+        ..bookKey = '',
+    ];
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Finder totalFinder =
+        find.byKey(const ValueKey<String>('shelf_overview_total'));
+    expect(totalFinder, findsOneWidget);
+    expect(tester.widget<Text>(totalFinder).data, '2',
+        reason: 'BUG-991：总数 = 本地 1 + 远端占位 1（此前只报本地 1）');
+  });
+
+  testWidgets('BUG-992: 切回书架 tab 自动重拉远端书（不必手动下拉刷新）',
+      (WidgetTester tester) async {
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    // 首帧懒加载已拉一次。
+    expect(remoteClient.listRemoteBooksCalls, greaterThanOrEqualTo(1));
+    final int before = remoteClient.listRemoteBooksCalls;
+
+    // 切到别的 tab（不重拉）再切回书架（自动重拉）。
+    homeShellTabNotifier.value = HomeTab.video;
+    await tester.pump();
+    expect(remoteClient.listRemoteBooksCalls, before, reason: '切到非书架 tab 不应重拉');
+
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpAndSettle();
+    expect(remoteClient.listRemoteBooksCalls, greaterThan(before),
+        reason: 'BUG-992：切回书架 tab 应自动重拉远端书');
+  });
+
   testWidgets(
       'remote book without audiobook never touches the audiobook wiring '
       '(BUG-406)', (WidgetTester tester) async {
@@ -465,16 +581,22 @@ class _FakeRemoteBookClient implements RemoteBookClient {
   @override
   RemoteBookSourceKind get remoteSourceKind => sourceKind;
 
+  // BUG-992：listRemoteBooks 调用次数（观测「切回书架 tab 自动重拉远端」）。
+  int listRemoteBooksCalls = 0;
+
   @override
-  Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
-        RemoteBookInfo.fromJson(<String, Object?>{
-          'title': title,
-          if (bookKey != null) 'bookKey': bookKey,
-          'hasContent': true,
-          'coverPath': coverPath,
-          if (hasAudiobook) 'hasAudiobook': true,
-        }),
-      ];
+  Future<List<RemoteBookInfo>> listRemoteBooks() async {
+    listRemoteBooksCalls++;
+    return <RemoteBookInfo>[
+      RemoteBookInfo.fromJson(<String, Object?>{
+        'title': title,
+        if (bookKey != null) 'bookKey': bookKey,
+        'hasContent': true,
+        'coverPath': coverPath,
+        if (hasAudiobook) 'hasAudiobook': true,
+      }),
+    ];
+  }
 
   @override
   Future<void> getRemoteBook(

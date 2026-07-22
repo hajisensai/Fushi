@@ -11,7 +11,6 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_fields.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
@@ -119,15 +118,39 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
-          SettingsCustomItem(
+          // 一等数字项：负值经 min:0 夹取（旧散装字段把负值回退成默认值——语义
+          // 收敛为「非负」，正常正值写穿完全一致）。解析失败不写（新数字项契约）。
+          SettingsNumberItem(
             id: 'lookup.auto_search_debounce_delay',
+            title: t.auto_search_debounce_delay,
             icon: Icons.timer_outlined,
-            builder: _buildSearchDebounceField,
+            integer: true,
+            min: 0,
+            suffixText: t.unit_milliseconds,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.searchDebounceDelay,
+            resetValue: (SettingsContext settingsContext) =>
+                settingsContext.appModel.defaultSearchDebounceDelay,
+            onChanged: (SettingsContext settingsContext, num value) {
+              settingsContext.appModel.setSearchDebounceDelay(value.toInt());
+              settingsContext.refresh();
+            },
           ),
-          SettingsCustomItem(
+          SettingsNumberItem(
             id: 'lookup.maximum_terms',
+            title: t.maximum_terms,
             icon: Icons.format_list_numbered_outlined,
-            builder: _buildMaximumTermsField,
+            integer: true,
+            min: 0,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.maximumTerms,
+            resetValue: (SettingsContext settingsContext) =>
+                settingsContext.appModel.defaultMaximumDictionaryTermsInResult,
+            onChanged: (SettingsContext settingsContext, num value) {
+              settingsContext.appModel.setMaximumTerms(value.toInt());
+              settingsContext.appModel.clearDictionaryResultsCache();
+              settingsContext.refresh();
+            },
           ),
         ],
       ),
@@ -173,10 +196,19 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
-          SettingsCustomItem(
+          // 一等文本项（secret）：行尾自动获得眼睛显隐切换。写穿后重启 Yomitan
+          // API 服务（若已开启）。
+          SettingsTextItem(
             id: 'lookup.yomitan_api_key',
+            title: t.yomitan_api_key,
             icon: Icons.key_outlined,
-            builder: _buildYomitanApiKeyField,
+            secret: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.yomitanApiKey,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.setYomitanApiKey(value);
+              await _restartYomitanApiServerIfEnabled(settingsContext);
+            },
           ),
           SettingsSwitchItem(
             id: 'lookup.texthooker',
@@ -208,8 +240,10 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.desktop_clipboard',
             title: t.desktop_clipboard_enabled,
-            subtitle: t.desktop_clipboard_enabled_hint +
-                t.settings_experimental_suffix,
+            // 文案统一（阶段 F）：平台标记 + 实验性合并为单个括注
+            // （桌面·实验性）已并入 desktop_clipboard_enabled_hint 值本身，
+            // 不再叠加共享的 settings_experimental_suffix（否则出现双重括注）。
+            subtitle: t.desktop_clipboard_enabled_hint,
             icon: Icons.content_paste_search,
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop,
@@ -433,6 +467,33 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 防截屏（用户诉求）：桌面查词/剪贴板悬浮窗经 native
+          // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
+          // 排除。默认开（隐私优先）。仅 Windows——display affinity 是 Win32 能力。
+          // 与面板栏 🛡 按钮同一 pref、同一 native 通道（ClipboardPanelController
+          // .applyBlockCapture → OverlayWindowChannel.setBlockCapture），改设置即时
+          // 重应用，不新起并行机制。applyBlockCapture 是唯一扇出入口：面板窗 +
+          // 瞬态全局查词窗（GlobalLookupController.applyBlockCapture）一起保护。
+          SettingsSwitchItem(
+            id: 'lookup.block_capture',
+            title: t.clipboard_panel_block_capture,
+            subtitle: t.clipboard_panel_block_capture_hint,
+            icon: Icons.shield_outlined,
+            visible: (SettingsContext settingsContext) =>
+                ClipboardPanelController.isSupported,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.clipboardPanelBlockCapture,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setClipboardPanelBlockCapture(value);
+              // 即时重应用到已打开的面板窗（同 🛡 按钮路径）。
+              if (ClipboardPanelController.isSupported) {
+                await ClipboardPanelController.instance
+                    .applyBlockCapture(value);
+              }
+              settingsContext.refresh();
+            },
+          ),
         ],
       ),
       // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
@@ -593,10 +654,23 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
-          SettingsCustomItem(
+          SettingsNumberItem(
             id: 'lookup.dictionary_font_size',
+            title: t.dictionary_font_size,
+            // TODO-1353: 提示 Ctrl+滚轮可在查词弹窗内直接缩放（改的就是这个词典
+            // 字号，持久化）。
+            subtitle: t.dictionary_font_size_zoom_hint,
             icon: Icons.format_size,
-            builder: _buildDictionaryFontSizeField,
+            min: 0,
+            suffixText: t.unit_pixels,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.dictionaryFontSize,
+            resetValue: (SettingsContext settingsContext) =>
+                settingsContext.appModel.defaultDictionaryFontSize,
+            onChanged: (SettingsContext settingsContext, num value) {
+              settingsContext.appModel.setDictionaryFontSize(value.toDouble());
+              settingsContext.refresh();
+            },
           ),
         ],
       ),
@@ -902,20 +976,6 @@ SettingsItem buildRemoteDictionaryLookupItem() {
   );
 }
 
-Widget _buildYomitanApiKeyField(SettingsContext settingsContext) {
-  return SettingsSecretField(
-    title: t.yomitan_api_key,
-    icon: Icons.key_outlined,
-    initialValue: settingsContext.appModel.yomitanApiKey,
-    obscureText: true,
-    keyboardType: TextInputType.visiblePassword,
-    onChanged: (String value) async {
-      await settingsContext.appModel.setYomitanApiKey(value);
-      await _restartYomitanApiServerIfEnabled(settingsContext);
-    },
-  );
-}
-
 Future<void> _restartYomitanApiServerIfEnabled(
   SettingsContext settingsContext,
 ) async {
@@ -936,74 +996,4 @@ Future<void> _restartYomitanApiServerIfEnabled(
       ),
     );
   }
-}
-
-Widget _buildSearchDebounceField(SettingsContext settingsContext) {
-  final AppModel appModel = settingsContext.appModel;
-  return SettingsNumberField(
-    title: t.auto_search_debounce_delay,
-    icon: Icons.timer_outlined,
-    suffixText: t.unit_milliseconds,
-    initialValue: appModel.searchDebounceDelay.toString(),
-    resetValue: appModel.defaultSearchDebounceDelay.toString(),
-    onChanged: (String value) {
-      int newDelay = int.tryParse(value) ?? appModel.defaultSearchDebounceDelay;
-      if (newDelay.isNegative) newDelay = appModel.defaultSearchDebounceDelay;
-      appModel.setSearchDebounceDelay(newDelay);
-      settingsContext.refresh();
-    },
-    onReset: () {
-      appModel.setSearchDebounceDelay(appModel.defaultSearchDebounceDelay);
-      settingsContext.refresh();
-    },
-  );
-}
-
-Widget _buildDictionaryFontSizeField(SettingsContext settingsContext) {
-  final AppModel appModel = settingsContext.appModel;
-  return SettingsNumberField(
-    title: t.dictionary_font_size,
-    // TODO-1353: 提示 Ctrl+滚轮可在查词弹窗内直接缩放（改的就是这个词典字号，持久化）。
-    subtitle: t.dictionary_font_size_zoom_hint,
-    icon: Icons.format_size,
-    suffixText: t.unit_pixels,
-    initialValue: appModel.dictionaryFontSize.toString(),
-    resetValue: appModel.defaultDictionaryFontSize.toString(),
-    onChanged: (String value) {
-      double newSize =
-          double.tryParse(value) ?? appModel.defaultDictionaryFontSize;
-      if (newSize.isNegative) newSize = appModel.defaultDictionaryFontSize;
-      appModel.setDictionaryFontSize(newSize);
-      settingsContext.refresh();
-    },
-    onReset: () {
-      appModel.setDictionaryFontSize(appModel.defaultDictionaryFontSize);
-      settingsContext.refresh();
-    },
-  );
-}
-
-Widget _buildMaximumTermsField(SettingsContext settingsContext) {
-  final AppModel appModel = settingsContext.appModel;
-  return SettingsNumberField(
-    title: t.maximum_terms,
-    icon: Icons.format_list_numbered_outlined,
-    initialValue: appModel.maximumTerms.toString(),
-    resetValue: appModel.defaultMaximumDictionaryTermsInResult.toString(),
-    onChanged: (String value) {
-      int newAmount =
-          int.tryParse(value) ?? appModel.defaultMaximumDictionaryTermsInResult;
-      if (newAmount.isNegative) {
-        newAmount = appModel.defaultMaximumDictionaryTermsInResult;
-      }
-      appModel.setMaximumTerms(newAmount);
-      appModel.clearDictionaryResultsCache();
-      settingsContext.refresh();
-    },
-    onReset: () {
-      appModel.setMaximumTerms(appModel.defaultMaximumDictionaryTermsInResult);
-      appModel.clearDictionaryResultsCache();
-      settingsContext.refresh();
-    },
-  );
 }

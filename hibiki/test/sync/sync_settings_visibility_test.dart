@@ -229,24 +229,33 @@ void main() {
 
     test('is its own top-level destination (not inside syncBackup)', () {
       expect(dest.id, SettingsDestinationId.interconnect);
-      // 启用开关 + 连接设备 + 本机服务器 + 互联相关配置镜像（远端词典/音频来源/远端
-      // 占位卡）。
-      expect(dest.sections, hasLength(4));
+      // 启用开关 + 连接设备 + 上传到互联对端（BUG-988）+ 本机服务器 + 互联相关配置
+      // 镜像（远端词典/音频来源/远端占位卡）。
+      expect(dest.sections, hasLength(5));
     });
 
     test('enable toggle is unconditional; config sections gated on the toggle',
         () {
-      // 互联总开关（独立于 backendType 云备份后端）常显、无门控；连接设备 / 本机服务器
-      // 两个配置区仅在互联启用（interconnectEnabled）时可见——取代解耦前的
-      // backendType == hibikiServer 门控。
+      // 互联总开关（独立于 backendType 云备份后端）常显、无门控；连接设备 / 上传到
+      // 互联对端 / 本机服务器 三个配置区仅在互联启用（interconnectEnabled）时可见——
+      // 取代解耦前的 backendType == hibikiServer 门控。
       expect(idsOf(dest.sections[0]), <String>['interconnect.enabled']);
       expect(dest.sections[0].visible, isNull,
           reason: 'the enable toggle must always be visible');
       expect(idsOf(dest.sections[1]),
           <String>['sync.hibiki_server_config', 'sync.lan_devices']);
       expect(dest.sections[1].visible, isNotNull);
-      expect(idsOf(dest.sections[2]), <String>['sync.server_mode']);
+      // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
+      // 可见（host 无 outbound 时进一步隐藏）。
+      expect(idsOf(dest.sections[2]), <String>[
+        'interconnect.upload_content',
+        'interconnect.upload_dictionary',
+        'interconnect.upload_audiobook_files',
+        'interconnect.upload_video_files',
+      ]);
       expect(dest.sections[2].visible, isNotNull);
+      expect(idsOf(dest.sections[3]), <String>['sync.server_mode']);
+      expect(dest.sections[3].visible, isNotNull);
     });
 
     test('mirrors interconnect-related settings from lookup/sync categories',
@@ -255,18 +264,18 @@ void main() {
       // 作用于互联对端；在互联分类镜像同一入口（共享 builder，非复制），仅互联被选为
       // 同步方式时可见（与其它互联配置区一致）。
       expect(
-        idsOf(dest.sections[3]),
+        idsOf(dest.sections[4]),
         <String>[
           'lookup.remote_lookup',
           'lookup.audio_sources',
           'sync.show_remote_entries',
         ],
       );
-      expect(dest.sections[3].visible, isNotNull);
+      expect(dest.sections[4].visible, isNotNull);
     });
 
     test('host-server group keeps its explanatory footer', () {
-      expect(dest.sections[2].footer, isNotNull);
+      expect(dest.sections[3].footer, isNotNull);
     });
   });
 }

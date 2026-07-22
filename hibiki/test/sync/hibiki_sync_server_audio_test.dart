@@ -8,6 +8,18 @@ import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 
 /// Fake 库服务：本地音频 + 有声书方法真实记录调用；dict/books 方法存根。
 class _FakeLibraryService implements HibikiLibraryHostService {
+  // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
+  @override
+  Future<File?> clipVideoAudio(String id,
+          {required int startMs,
+          required int endMs,
+          int episodeIndex = 0,
+          int? audioStreamIndex,
+          int? audioStreamCount,
+          int audioChannels = 1,
+          String audioBitrate = '64k'}) async =>
+      null;
+
   @override
   Future<List<RemoteActivityEvent>> listActivityEvents(
           {int limit = 100}) async =>

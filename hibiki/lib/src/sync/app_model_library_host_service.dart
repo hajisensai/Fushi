@@ -20,6 +20,8 @@ import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_manager.dart'
     show repackageExtractedEpub, resolveExtractedEpubRoot;
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+    show extractAudioSegmentViaFfmpeg;
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_audio/hibiki_audio.dart' show AudiobookStorage;
 import 'package:path/path.dart' as p;
@@ -1036,6 +1038,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       coverPath: coverPath,
       positionMs: progress.positionMs,
       positionUpdatedAtMs: progress.updatedAtMs,
+      // BUG-996：把 host 的字幕时序偏移下发，供远端播放跟随（设备无关的纯时序）。
+      delayMs: row.delayMs,
       episodes: episodes,
       currentEpisode: currentEpisode,
       tags: tags,
@@ -1129,6 +1133,48 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     return f.existsSync() ? f : null;
   }
 
+  /// BUG-1004：host 端本地裁 mining 句子音频（见抽象声明）。用 [resolveVideoFile] 反查真实
+  /// 本地文件后调 [extractAudioSegmentViaFfmpeg]（本地路径、不经网络/TLS——绕开 client
+  /// ffmpeg 抓 host 自签 https/token 流的整类失败）。裁到独立临时目录，产物返回给调用方，
+  /// 调用方读完删该目录；失败清理临时目录并返回 null。
+  @override
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async {
+    if (endMs <= startMs) return null;
+    final File? file = await resolveVideoFile(id, episodeIndex: episodeIndex);
+    if (file == null) return null;
+    final Directory tmp =
+        Directory.systemTemp.createTempSync('hibiki_clip_audio');
+    final String out = p.join(tmp.path, 'clip.aac');
+    final String? result = await extractAudioSegmentViaFfmpeg(
+      inputPath: file.path,
+      startMs: startMs,
+      endMs: endMs,
+      outputPath: out,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+    if (result == null) {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {
+        // best-effort：临时目录清理失败不影响返回 null（裁切已失败）。
+      }
+      return null;
+    }
+    return File(result);
+  }
+
   /// 读 host 端 [id] 视频的播放断点（TODO-653 / TODO-816 断点②）。
   ///
   /// 真相源是 `video_remote_position_<bookUid>` + `video_remote_position_at_<bookUid>`
@@ -1150,14 +1196,20 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         videoRemotePositionEpisodeAtPrefKey(id, episodeIndex), 0);
     // 旧 host 本机播放只写 VideoBooks.lastPositionMs（整书一个值，无按集语义）；只在
     // episodeIndex<=0（当前集 / 单视频）回退它，避免给某集错配整书的旧进度。
-    final int rowPos = episodeIndex <= 0
-        ? ((await _db.getVideoBookByBookUid(id))?.lastPositionMs ?? 0)
-        : 0;
+    final VideoBookRow? row =
+        episodeIndex <= 0 ? await _db.getVideoBookByBookUid(id) : null;
+    final int rowPos = row?.lastPositionMs ?? 0;
+    // BUG-996：lastPositionMs 列无时间戳，此前硬编码 remoteUpdatedAtMs:0，使 host 的真
+    // 进度在跨设备 LWW 里恒输给任何带 now 戳的本地断点（client 一旦碰过就再也拉不回
+    // host 的桌面新进度）。用 importedAt 作「进度至少和导入一样旧」的可辩护下界戳——
+    // client 真更近才看过仍会赢（语义可接受），但 client 无有效断点时 host 能续上。
+    final int rowAt =
+        rowPos > 0 ? (row?.importedAt?.millisecondsSinceEpoch ?? 0) : 0;
     return resolveVideoPositionSync(
       localPositionMs: prefsPos,
       localUpdatedAtMs: prefsAt,
       remotePositionMs: rowPos,
-      remoteUpdatedAtMs: 0,
+      remoteUpdatedAtMs: rowAt,
     );
   }
 

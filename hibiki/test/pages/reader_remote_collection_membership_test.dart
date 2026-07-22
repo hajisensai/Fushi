@@ -131,6 +131,37 @@ void main() {
     );
   });
 
+  testWidgets('合集行计数计入折进来的远端占位卡（旧口径只数本地成员显示 0）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 本地合集为空（0 本地成员），只有一本 host 下发、折进该合集的远端占位书。
+    await db.createMediaCollection('MyShow', collectionType: 'collection');
+
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(
+          title: 'Remote Vol1',
+          hasContent: true,
+          collection: RemoteCollectionMembership(
+            collectionName: 'MyShow',
+            collectionType: 'collection',
+            sortIndex: 0,
+          ),
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+
+    // 行头计数须诚实反映行体渲染的卡片数（含远端占位）：1 本，不是本地 0 本。
+    // 旧 localCount 口径会显示 '0 items'，与眼前 1 张远端卡割裂（BUG-790 书籍侧同款）。
+    expect(find.text('1 items'), findsOneWidget, reason: '合集行计数须计入折进来的远端占位卡');
+    expect(find.text('0 items'), findsNothing,
+        reason: '只数本地成员会显示 0，与所见 1 张远端卡割裂');
+  });
+
   testWidgets('远端书归属解析不到本地合集 → 散卡降级（进散卡网格）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;

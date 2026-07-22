@@ -1041,6 +1041,86 @@ void main() {
     });
   });
 
+  group('extractEmbeddedSubtitlesViaFfmpeg per-track fallback (BUG-863)', () {
+    late Directory dir;
+    late String video;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('hibiki_bug818');
+      video = '${dir.path}/in.mkv';
+      File(video).writeAsStringSync('fake container');
+    });
+
+    tearDown(() {
+      ffmpeg.setFfmpegBackendForTesting(null);
+      dir.deleteSync(recursive: true);
+    });
+
+    test(
+        'one undecodable track no longer sinks the good tracks '
+        '(batch EINVAL → per-track fallback)', () async {
+      // idx 0/2 decodable (subrip/ass); idx 1 undecodable by the bundled
+      // min-ffmpeg (ttml / eia_608 / teletext …). The single batch command
+      // aborts with EINVAL and writes nothing; the fallback must still land 0/2.
+      ffmpeg.setFfmpegBackendForTesting(
+        _MinBuildFakeFfmpegBackend(decodableIndices: <int>{0, 2}),
+      );
+      final String out0 = '${dir.path}/sub_0.srt';
+      final String out1 = '${dir.path}/sub_1.srt';
+      final String out2 = '${dir.path}/sub_2.ass';
+
+      final Map<int, String> written = await extractEmbeddedSubtitlesViaFfmpeg(
+        inputPath: video,
+        outputs: <int, String>{0: out0, 1: out1, 2: out2},
+      );
+
+      // Good tracks survive; only the undecodable one is dropped.
+      expect(written.keys.toSet(), <int>{0, 2});
+      expect(File(out0).existsSync(), isTrue);
+      expect(File(out0).lengthSync(), greaterThan(0));
+      expect(File(out2).existsSync(), isTrue);
+      expect(File(out2).lengthSync(), greaterThan(0));
+      // The undecodable track leaves no (empty stub) file behind.
+      expect(File(out1).existsSync(), isFalse);
+    });
+
+    test('all-good batch succeeds in a single pass (no per-track fallback)',
+        () async {
+      final _MinBuildFakeFfmpegBackend backend =
+          _MinBuildFakeFfmpegBackend(decodableIndices: <int>{0, 1});
+      ffmpeg.setFfmpegBackendForTesting(backend);
+      final String out0 = '${dir.path}/sub_0.srt';
+      final String out1 = '${dir.path}/sub_1.srt';
+
+      final Map<int, String> written = await extractEmbeddedSubtitlesViaFfmpeg(
+        inputPath: video,
+        outputs: <int, String>{0: out0, 1: out1},
+      );
+
+      expect(written.keys.toSet(), <int>{0, 1});
+      // Exactly one ffmpeg invocation (the batch); fallback must not fire.
+      expect(backend.runCount, 1);
+    });
+
+    test('every track undecodable → empty result and no output files',
+        () async {
+      ffmpeg.setFfmpegBackendForTesting(
+        _MinBuildFakeFfmpegBackend(decodableIndices: const <int>{}),
+      );
+      final String out0 = '${dir.path}/sub_0.srt';
+      final String out1 = '${dir.path}/sub_1.srt';
+
+      final Map<int, String> written = await extractEmbeddedSubtitlesViaFfmpeg(
+        inputPath: video,
+        outputs: <int, String>{0: out0, 1: out1},
+      );
+
+      expect(written, isEmpty);
+      expect(File(out0).existsSync(), isFalse);
+      expect(File(out1).existsSync(), isFalse);
+    });
+  });
+
   group('extractEmbeddedCoverViaFfmpeg', () {
     test('returns null when the audio file does not exist', () async {
       expect(
@@ -1266,6 +1346,54 @@ class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
     Duration timeout,
   ) async =>
       result;
+}
+
+/// Simulates Hibiki's bundled `--disable-everything` min-ffmpeg for BUG-863.
+///
+/// Any `-map 0:s:N out` whose subtitle index N is not in [decodableIndices]
+/// makes the WHOLE command abort with AVERROR(EINVAL) and write NOTHING —
+/// mirroring real ffmpeg, which binds every output before decoding a packet, so
+/// one undecodable track ("no decoder found" → "Error opening output files:
+/// Invalid argument", exit -22) sinks the entire batch. A command whose every
+/// mapped index is decodable writes each output file and exits 0.
+class _MinBuildFakeFfmpegBackend implements ffmpeg.FfmpegBackend {
+  _MinBuildFakeFfmpegBackend({required this.decodableIndices});
+
+  final Set<int> decodableIndices;
+  int runCount = 0;
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> run(
+    List<String> args,
+    Duration timeout,
+  ) async {
+    runCount++;
+    final Map<int, String> maps = <int, String>{};
+    for (int i = 0; i + 2 < args.length; i++) {
+      if (args[i] != '-map') continue;
+      final RegExpMatch? m = RegExp(r'^0:s:(\d+)$').firstMatch(args[i + 1]);
+      if (m != null) maps[int.parse(m.group(1)!)] = args[i + 2];
+    }
+    final bool allDecodable = maps.keys.every(decodableIndices.contains);
+    if (maps.isEmpty || !allDecodable) {
+      return const ffmpeg.FfmpegRunResult(
+        returnCode: -22,
+        output: 'Error opening output files: Invalid argument',
+      );
+    }
+    maps.forEach((int idx, String out) {
+      File(out)
+          .writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\ncue $idx\n');
+    });
+    return const ffmpeg.FfmpegRunResult(returnCode: 0, output: '');
+  }
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runProbe(
+    List<String> args,
+    Duration timeout,
+  ) async =>
+      const ffmpeg.FfmpegRunResult(returnCode: 0, output: '');
 }
 
 class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {

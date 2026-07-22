@@ -537,6 +537,12 @@ class AppModel with ChangeNotifier {
   /// (the late fields are reassigned, so the old DB would otherwise leak).
   bool _databaseOpened = false;
 
+  /// Whether [database] is safe to read. False before any init path has opened
+  /// the DB (and while a test seam deliberately leaves [_database] unset), so
+  /// callers outside the init flow must gate [database] access on this instead
+  /// of risking a LateInitializationError.
+  bool get isDatabaseReady => _databaseOpened;
+
   /// Theme management, extracted from AppModel for testability.
   late ThemeNotifier themeNotifier;
   bool _themeListenerAdded = false;
@@ -2320,6 +2326,10 @@ class AppModel with ChangeNotifier {
   String get brightnessMode => themeNotifier.brightnessMode;
   Future<void> setBrightnessMode(String mode) =>
       themeNotifier.setBrightnessMode(mode);
+
+  /// 墨水屏模式（E-ink）：全局纯黑白主题 + 关动画 + 阅读器/弹窗高对比。
+  bool get einkMode => themeNotifier.einkMode;
+  Future<void> setEinkMode(bool value) => themeNotifier.setEinkMode(value);
 
   /// BUG-530：当前 app 主题（MD3 ColorScheme）的关键色 + 查词弹窗尺寸/列数/字号配置，作为
   /// CSS 变量喂给浏览器扩展的查词弹窗（经查词响应的 `theme` 字段下发，改主题/配置即生效，无需

@@ -2,6 +2,9 @@ import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
+// BUG-994：监听全局 tab 信号，切回视频 tab 自动重拉远端。
+import 'package:hibiki/src/pages/implementations/home_page.dart'
+    show homeShellTabNotifier, HomeTab;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -147,6 +150,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 全页 spinner，用户报「一直在刷新」）。仅首载（缓存空）才显示加载圈。
   List<VideoBookRow>? _videosCache;
 
+  /// BUG-994：上次成功的远端视频态。自动刷新/重拉（_remoteFuture 换新→waiting、data
+  /// 暂为 null）期间沿用，避免远端占位卡整批闪一下（对称本地 [_videosCache]、书架
+  /// `_lastRemoteState`）。失败态不覆盖缓存。
+  _RemoteVideoState? _lastRemoteState;
+
   /// 统一合集：本会话已尝试后台抽封面的 bookUid（避免每次刷新对同一行重试 ffmpeg）。
   final Set<String> _coverBackfillAttempted = <String>{};
 
@@ -186,14 +194,29 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub =
         widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
+    // BUG-994：顶层 tab IndexedStack 保活后，切回视频 tab 不再隐式重拉远端 → 远端视频
+    // 要手动下拉刷新才出来（与书架 BUG-816 同病）。监听全局 tab 信号，切回视频 tab 时
+    // 自动重拉一次远端视频（_lastRemoteState 缓存顶住 waiting、不闪屏）。
+    homeShellTabNotifier.addListener(_onShellTabActivated);
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
     }());
   }
 
+  /// 切回视频 tab 时自动重拉远端视频（BUG-994）。非视频 tab 的切换忽略。
+  void _onShellTabActivated() {
+    if (!mounted) return;
+    if (homeShellTabNotifier.value == HomeTab.video) {
+      setState(() {
+        _remoteFuture = _loadRemoteVideos();
+      });
+    }
+  }
+
   @override
   void dispose() {
+    homeShellTabNotifier.removeListener(_onShellTabActivated);
     _videoUidsSub?.cancel();
     assert(() {
       HomeVideoPage.debugRefreshVideos = null;
@@ -1722,8 +1745,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             // 后端返回 client，故 remoteSnap 天然只含互联视频，不为云视频造假入口。
             // 离线/未配对/拉取失败（state==null 或 failed）→ 占位卡不出现（只剩本地）；
             // 「显示远端条目」开关关闭 / 标签筛选激活时同样不混排（远端视频无本地标签）。
+            // BUG-994：自动刷新/重拉期间（future→waiting、data 暂 null）沿用上次成功态，
+            // 避免远端占位卡整批闪一下（对称本地 _videosCache）。失败态不覆盖缓存。
+            final _RemoteVideoState? snapState = remoteSnap.data;
+            if (snapState != null && !snapState.failed) {
+              _lastRemoteState = snapState;
+            }
             final List<RemoteVideoInfo> remoteVideos =
-                _visibleRemoteVideos(remoteSnap.data, filter);
+                _visibleRemoteVideos(snapState ?? _lastRemoteState, filter);
             // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
             // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
             // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
@@ -1747,6 +1776,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                   return CustomScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: <Widget>[
+                      // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                      // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
+                      // [all] 描述整库，不随标签筛选变。
+                      // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
+                      // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
+                      if (all.isNotEmpty || remoteVideos.isNotEmpty)
+                        SliverToBoxAdapter(
+                            child: _buildOverviewSection(all, remoteVideos)),
                       ..._buildLocalVideoSlivers(
                           all, ordered, remoteVideos, cardLayout),
                     ],
@@ -1757,6 +1794,317 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           },
         );
       },
+    );
+  }
+
+  /// UI v2 Phase B：顶部概览条 =「继续观看 hero」+「媒体库概览」统计。
+  ///
+  /// 数据全部内存推导（[computeVideoLibraryOverview]）：hero = 有痕迹未看完中
+  /// 最近看过的一条（watch-stats → importedAt 回退）；统计 = 总数 / 未完成 /
+  /// 近 7 天导入。**不显示百分比**（VideoBooks 无总时长列，不造假）。宽 ≥720
+  /// 并排、窄屏纵向堆叠；无 hero 候选时只渲染统计。
+  Widget _buildOverviewSection(
+    List<VideoBookRow> all,
+    List<RemoteVideoInfo> remoteVideos,
+  ) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final VideoLibraryOverview overview = computeVideoLibraryOverview(
+      entries: <VideoOverviewEntry>[
+        for (final VideoBookRow r in all)
+          VideoOverviewEntry(
+            bookUid: r.bookUid,
+            title: r.title,
+            lastPositionMs: r.lastPositionMs,
+            completed: r.completedAt != null,
+            importedAt: r.importedAt,
+          ),
+        // BUG-995：远端占位视频计入概览（总数/未完成/继续观看候选）。远端无完成标记
+        // → 计未完成；无本地导入时间 → 不计近 7 天导入（importedAt=null）。
+        for (final RemoteVideoInfo v in remoteVideos)
+          VideoOverviewEntry(
+            bookUid: v.id,
+            title: v.title,
+            lastPositionMs: v.positionMs,
+            completed: false,
+          ),
+      ],
+      // uid 优先、遗留行按 title 回退，合并成按 uid 键控的单一映射；远端用其
+      // positionUpdatedAtMs 作「上次观看」参与 hero 择新。
+      lastWatchedByUid: <String, DateTime>{
+        for (final VideoBookRow r in all)
+          if ((_watchAtByUid[r.bookUid] ?? _legacyWatchAtByTitle[r.title])
+              case final DateTime at)
+            r.bookUid: at,
+        for (final RemoteVideoInfo v in remoteVideos)
+          if (v.positionUpdatedAtMs > 0)
+            v.id: DateTime.fromMillisecondsSinceEpoch(v.positionUpdatedAtMs),
+      },
+      now: DateTime.now(),
+    );
+    // hero 先在本地找；本地无则在远端占位找（远端 hero 点击走 _openRemote 流播）。
+    VideoBookRow? hero;
+    RemoteVideoInfo? remoteHero;
+    if (overview.heroUid != null) {
+      for (final VideoBookRow r in all) {
+        if (r.bookUid == overview.heroUid) {
+          hero = r;
+          break;
+        }
+      }
+      if (hero == null) {
+        for (final RemoteVideoInfo v in remoteVideos) {
+          if (v.id == overview.heroUid) {
+            remoteHero = v;
+            break;
+          }
+        }
+      }
+    }
+    final Widget stats = _buildOverviewStats(overview, tokens);
+    final Widget? heroCard = hero != null
+        ? _buildContinueHero(hero, overview, tokens)
+        : (remoteHero != null
+            ? _buildContinueHeroRemote(remoteHero, overview, tokens)
+            : null);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.card,
+        0,
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (heroCard == null) return stats;
+          final bool wide = constraints.maxWidth >= 720;
+          if (wide) {
+            // IntrinsicHeight 必须有：本区在 SliverToBoxAdapter 下主轴（竖向）无界，
+            // 裸 Row(stretch) 会把无界高度强加给 Expanded 子项 → BoxConstraints
+            // forces an infinite height 首帧崩溃（对抗审查确认）。IntrinsicHeight
+            // 先按子项固有高度收界，再 stretch 等高。
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(flex: 3, child: heroCard),
+                  SizedBox(width: tokens.spacing.gap + 4),
+                  Expanded(flex: 2, child: stats),
+                ],
+              ),
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              heroCard,
+              SizedBox(height: tokens.spacing.gap),
+              stats,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// 继续观看 hero 卡：封面缩略 + 标题 + 已看至/上次观看 + 播放示意。整卡点击
+  /// 续播（带其 primary 合集 → 播放器有剧集面板/上下集）；无独立按钮避免嵌套
+  /// 焦点目标（卡本身即手柄/键盘目标）。
+  Widget _buildContinueHero(
+    VideoBookRow hero,
+    VideoLibraryOverview overview,
+    HibikiDesignTokens tokens,
+  ) {
+    final int? collectionId =
+        _primaryCollectionByEntry['video|${hero.bookUid}'];
+    final DateTime? watched = overview.heroLastWatched;
+    final List<String> metadata = <String>[
+      t.video_watched_up_to(time: formatVideoPosition(hero.lastPositionMs)),
+      if (watched != null)
+        t.video_last_watched(date: _formatOverviewDate(watched)),
+    ];
+    return HibikiCard(
+      key: const ValueKey<String>('home_video_continue_hero'),
+      focusId: const HibikiFocusId('home-video-continue-hero'),
+      onTap: () => _open(hero, playlistCollectionId: collectionId),
+      child: Row(
+        children: <Widget>[
+          ClipRRect(
+            borderRadius: HibikiBorderRadius.card,
+            child: SizedBox(
+              width: 148,
+              height: 84,
+              child: _buildCover(hero),
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap + 4),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(t.video_continue_watching,
+                    style: tokens.type.sectionLabel),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  hero.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  metadata.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Icon(
+            Icons.play_circle_filled,
+            size: 36,
+            color: tokens.surfaces.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 继续观看 hero 的**远端占位变体**（BUG-995）：只看互联远端视频时的续播入口。
+  /// 与 [_buildContinueHero] 同布局，但封面走 [_buildRemoteVideoCover]、点击走
+  /// [_openRemote]（流播），不落本地 VideoBookRow。
+  Widget _buildContinueHeroRemote(
+    RemoteVideoInfo video,
+    VideoLibraryOverview overview,
+    HibikiDesignTokens tokens,
+  ) {
+    final DateTime? watched = overview.heroLastWatched;
+    final List<String> metadata = <String>[
+      t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
+      if (watched != null)
+        t.video_last_watched(date: _formatOverviewDate(watched)),
+    ];
+    return HibikiCard(
+      key: const ValueKey<String>('home_video_continue_hero'),
+      focusId: const HibikiFocusId('home-video-continue-hero'),
+      onTap: () => _openRemote(video),
+      child: Row(
+        children: <Widget>[
+          ClipRRect(
+            borderRadius: HibikiBorderRadius.card,
+            child: SizedBox(
+              width: 148,
+              height: 84,
+              child: _buildRemoteVideoCover(video),
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap + 4),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(t.video_continue_watching,
+                    style: tokens.type.sectionLabel),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  video.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  metadata.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Icon(
+            Icons.play_circle_filled,
+            size: 36,
+            color: tokens.surfaces.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 媒体库概览统计：总数 / 未完成 / 近 7 天导入 三格。
+  Widget _buildOverviewStats(
+    VideoLibraryOverview overview,
+    HibikiDesignTokens tokens,
+  ) {
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: tokens.surfaces.group,
+        shape: const RoundedRectangleBorder(
+          borderRadius: HibikiBorderRadius.card,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.gap + 4),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.video_library_overview, style: tokens.type.sectionLabel),
+            SizedBox(height: tokens.spacing.gap),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _buildOverviewStatCell(
+                    t.video_stat_total_videos,
+                    overview.total,
+                    tokens,
+                  ),
+                ),
+                Expanded(
+                  child: _buildOverviewStatCell(
+                    t.video_stat_unfinished,
+                    overview.unfinished,
+                    tokens,
+                  ),
+                ),
+                Expanded(
+                  child: _buildOverviewStatCell(
+                    t.video_stat_recent_imports,
+                    overview.recentImports,
+                    tokens,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOverviewStatCell(
+    String label,
+    int value,
+    HibikiDesignTokens tokens,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text('$value', style: tokens.type.pageTitle),
+        SizedBox(height: tokens.spacing.gap / 2),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: tokens.type.metadata,
+        ),
+      ],
     );
   }
 

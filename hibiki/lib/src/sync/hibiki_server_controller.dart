@@ -122,6 +122,14 @@ class HibikiSyncServerController extends ChangeNotifier {
   // _pendingPairPin / _pendingPairPinDismiss 单值字段。仅在等待收起旧常驻弹窗期间非 null。
   Completer<void>? _pairDialogClosed;
 
+  // BUG-987：当前打开的审批弹窗对应的来源地址（remoteAddress）。用于「同源重试
+  // supersede 未决弹窗」——第一次配对被 client 放弃（超时/断网/取消）后，host 那个仍
+  // 处于「审批未决」的申请框会驻留至 60s autoDeny，期间同一 client「重新刷新」重发的
+  // 配对请求都被 _pairDialogOpen 挡成 declined、看不到新申请框。此字段让 _promptPairApproval
+  // 识别「新请求与滞留弹窗同源」并先收起旧框再开新框；不同来源仍保留防叠弹拒绝（防恶意
+  // peer 顶掉别人正在审批的框）。null=当前无打开的弹窗。
+  String? _pairDialogRemoteAddress;
+
   bool get isRunning => _server?.isRunning ?? false;
   int? get boundPort => _server?.port;
 
@@ -391,11 +399,18 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// client 提交 confirm（[onPairSessionResolved] → [_dismissPendingPairPinDialog]）、
   /// 用户手动关、或会话 TTL 超时。免 PIN 会话行为不变（无 PIN 可显示，点选即关）。
   Future<bool> _promptPairApproval(HibikiPairRequest request) async {
-    // TODO-1330 / BUG-708：若当前弹窗只是「已允许、常驻显示 PIN 等对方输入」（approvedPhase），
-    // 它已不再占用审批槽——先收起它，让本次新配对（如取消后「重新配对」）不被误判为 stacked
-    // 请求而拒绝。等旧弹窗彻底 teardown（whenComplete 清单值态）再继续，并把本会话刚生成的
-    // PIN（可能被旧 teardown 清空）恢复回来，杜绝新旧弹窗争用共享单值字段。
-    if (_pairDialogOpen && _pairDialogLingering) {
+    // 先收起一个应被本次新请求取代的旧弹窗，等它彻底 teardown（whenComplete 清共享单值
+    // 态）再开新框，并把本会话刚生成的 PIN（可能被旧 teardown 清空）恢复回来。两种取代：
+    //   (a) TODO-1330 / BUG-708：旧弹窗是「已允许、常驻显示 PIN 等对方输入」（lingering）——
+    //       它已不占审批槽，收起它让「取消后重新配对」不被误判为 stacked 而拒绝。
+    //   (b) BUG-987：旧弹窗仍「审批未决」但与本次新请求同源（同 remoteAddress）——第一次
+    //       配对被 client 放弃（超时/断网/取消）后那个未决框会驻留至 60s autoDeny，期间同一
+    //       client「重新刷新」重发的配对都被 _pairDialogOpen 挡成 declined、看不到新申请框。
+    //       同源取代它即可让重试重新弹框；不同来源的未决框保留（防恶意 peer 顶掉别人正在
+    //       审批的框），仍由 _showPairApprovalDialog 的 _pairDialogOpen 拒绝。
+    final bool supersedeStale = _pairDialogOpen &&
+        (_pairDialogLingering || _isSamePairSource(request.remoteAddress));
+    if (supersedeStale) {
       final String? incomingPin = _pendingPairPin;
       final Completer<void> closed = Completer<void>();
       _pairDialogClosed = closed;
@@ -404,6 +419,16 @@ class HibikiSyncServerController extends ChangeNotifier {
       _pendingPairPin = incomingPin;
     }
     return _showPairApprovalDialog(request);
+  }
+
+  /// BUG-987：新配对请求的来源是否与当前打开的审批弹窗同源（同 remoteAddress）。用于
+  /// 「同源重试取代未决弹窗」。任一来源为空（无法解析来源 IP）时保守判为不同源——不取代，
+  /// 避免把两个匿名来源误当同源互相顶掉别人的审批框。
+  bool _isSamePairSource(String? incoming) {
+    final String? current = _pairDialogRemoteAddress;
+    if (current == null || current.isEmpty) return false;
+    if (incoming == null || incoming.isEmpty) return false;
+    return current == incoming;
   }
 
   /// 实际展示 host 审批 / 常驻 PIN 弹窗并返回审批结果（[_promptPairApproval] 处理完
@@ -417,6 +442,8 @@ class HibikiSyncServerController extends ChangeNotifier {
     if (ctx == null) return Future<bool>.value(false);
     _pairDialogOpen = true;
     _pairDialogLingering = false;
+    // BUG-987：记录本框来源，供同源新请求识别并取代滞留的未决框（见 _promptPairApproval）。
+    _pairDialogRemoteAddress = request.remoteAddress;
 
     final Completer<bool> approval = Completer<bool>();
     // 只有「真的要显示 PIN」的 pinRequired 会话才走常驻分支；免 PIN / 无 PIN 走旧的
@@ -575,6 +602,7 @@ class HibikiSyncServerController extends ChangeNotifier {
       lingerTimeout?.cancel();
       _pairDialogOpen = false;
       _pairDialogLingering = false;
+      _pairDialogRemoteAddress = null;
       _pendingPairPin = null;
       _pendingPairPinDismiss = null;
       // 若有新配对正等本（常驻）弹窗收起，放行它继续（BUG-708）。

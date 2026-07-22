@@ -276,6 +276,29 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
     }
   }
 
+  /// 「标签在上、chip 在下」分区（与单集对话框 _chipSection 同款清爽排版）：标签弱化，
+  /// chip 8/8 均匀间距，长番名 chip 由调用方夹 maxWidth。
+  Widget _chipSection(String label, List<Widget> chips) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 2),
+            child: Text(
+              label,
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+          Wrap(spacing: 8, runSpacing: 8, children: chips),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -330,51 +353,45 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
                       ),
                     ],
                   ),
-                  if (_seriesMatches.length >= 2) ...<Widget>[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: <Widget>[
-                        for (final AniListMedia media in _seriesMatches)
-                          ChoiceChip(
-                            label: Text(media.displayTitle),
+                  if (_seriesMatches.length >= 2)
+                    _chipSection(t.video_jimaku_series, <Widget>[
+                      for (final AniListMedia media in _seriesMatches)
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 260),
+                          child: ChoiceChip(
+                            label: Text(
+                              media.displayTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            tooltip: media.displayTitle,
                             selected: _selectedSeriesId == media.id,
                             onSelected: _resolving || _running
                                 ? null
                                 : (_) => _selectSeries(media),
                           ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: <Widget>[
-                      Text(t.video_jimaku_language,
-                          style: theme.textTheme.labelMedium),
-                      ChoiceChip(
-                        label: Text(t.video_jimaku_language_all),
-                        selected: _preferredLanguage == null,
-                        onSelected:
-                            _running ? null : (_) => _selectLanguage(null),
-                      ),
-                      for (final String lang in const <String>[
-                        'ja',
-                        'zh',
-                        'en',
-                        'ko'
-                      ])
-                        ChoiceChip(
-                          label: Text(jimakuLanguageLabel(lang)),
-                          selected: _preferredLanguage == lang,
-                          onSelected:
-                              _running ? null : (_) => _selectLanguage(lang),
                         ),
-                    ],
-                  ),
+                    ]),
+                  _chipSection(t.video_jimaku_language, <Widget>[
+                    ChoiceChip(
+                      label: Text(t.video_jimaku_language_all),
+                      selected: _preferredLanguage == null,
+                      onSelected:
+                          _running ? null : (_) => _selectLanguage(null),
+                    ),
+                    for (final String lang in const <String>[
+                      'ja',
+                      'zh',
+                      'en',
+                      'ko'
+                    ])
+                      ChoiceChip(
+                        label: Text(jimakuLanguageLabel(lang)),
+                        selected: _preferredLanguage == lang,
+                        onSelected:
+                            _running ? null : (_) => _selectLanguage(lang),
+                      ),
+                  ]),
                 ],
               ),
             ),

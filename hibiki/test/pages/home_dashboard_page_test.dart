@@ -131,7 +131,7 @@ void main() {
     ));
   }
 
-  testWidgets('宽屏（1280）有数据：渲染不抛无限高度，四区块结构可见', (WidgetTester tester) async {
+  testWidgets('宽屏（1280）有数据：渲染不抛无限高度，三区块结构可见', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -142,7 +142,8 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 四区块标题结构可见（不依赖异步数据回填即渲染）。
+    // 三区块标题结构可见（不依赖异步数据回填即渲染）：阅读活动热力图（置顶）/ 继续 /
+    // Activity。原顶部统计卡已移除。
     expect(find.text(t.home_continue), findsOneWidget);
     expect(find.text(t.reading_activity), findsOneWidget);
     expect(find.text(t.home_activity), findsOneWidget);
@@ -213,8 +214,9 @@ void main() {
     expect(find.byType(StatContributionHeatmap), findsOneWidget);
   });
 
-  testWidgets('宽屏 560~900 临界（4 格横排统计卡）不抛无限高度', (WidgetTester tester) async {
-    // 700px：走「统计卡 4 格横排」但「主体单列堆叠」——曾是 stretch Row 崩溃点。
+  testWidgets('中等宽度（700，<900 窄分支）单列堆叠不抛无限高度', (WidgetTester tester) async {
+    // 700px < 900：走窄屏单列堆叠分支（热力图置顶 + 继续 + Activity）。曾因把
+    // stretch/Expanded 的 Row 直接放进纵向 ListView 而在此宽度崩溃，锁死不再复发。
     tester.view.physicalSize = const Size(700, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);

@@ -11,6 +11,9 @@ enum SettingsDestinationId {
   cardCreation,
   video,
   listening,
+  // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页
+  // （可达 + 可搜）。位置紧随视频/听，在同步备份之前。
+  downloads,
   syncBackup,
   system,
   // Hibiki P2P 互联（设备直连 + 本机作为服务器）；从 syncBackup 拆出的
@@ -23,6 +26,10 @@ enum SettingsDestinationId {
   // (MiscellaneousSettingsPage)；own id so the shell no longer borrows
   // `appearance` for content that isn't the appearance destination.
   appIcon,
+  // Synthetic destination for the in-video quick-settings sheet; its own id so
+  // it never collides with the real video destination（与 readerQuickSettings
+  // 同款约定）。
+  videoQuickSettings,
 }
 
 /// 书内快捷面板的分组维度，与全局 [SettingsDestinationId] 正交。
@@ -42,6 +49,28 @@ class ReaderPlacement {
 
   /// 在所属 [group] 内的升序排序键（仅组内有效，可有间隔）。
   final int order;
+}
+
+/// 视频快捷设置面板的分组维度，与全局 [SettingsDestinationId] 正交；与
+/// [ReaderGroup] 同款设计。取值对齐 video_quick_settings_sheet 的现有大分类
+/// （playback/audio/subtitle/shaders/mpv/danmaku/controls），阶段 B 重写该
+/// 面板时按此投影 schema。
+enum VideoGroup { playback, audio, subtitle, shaders, mpv, danmaku, controls }
+
+/// 描述某个 [SettingsItem] 在视频快捷面板里的放置位置。
+/// 为 null 表示该项不出现在视频面板（仅全局可见）。
+class VideoPlacement {
+  const VideoPlacement(
+      {required this.group, required this.order, this.section});
+
+  final VideoGroup group;
+
+  /// 在所属 [group] 内的升序排序键（仅组内有效，可有间隔）。
+  final int order;
+
+  /// 组内小节标题（如 mpv 组的「画质 / 画面几何 / 色彩均衡」）。投影时相邻同名
+  /// 条目并入同一个带标题 [SettingsSection]；null = 无题小节（相邻 null 合并）。
+  final String? section;
 }
 
 typedef SettingsVisibility = bool Function(SettingsContext context);
@@ -147,6 +176,7 @@ sealed class SettingsItem {
     this.icon,
     this.visible,
     this.reader,
+    this.video,
   });
 
   final String id;
@@ -157,6 +187,9 @@ sealed class SettingsItem {
 
   /// 书内快捷面板放置；null = 仅全局可见。
   final ReaderPlacement? reader;
+
+  /// 视频快捷面板放置；null = 不出现在视频面板。
+  final VideoPlacement? video;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 }
@@ -172,6 +205,7 @@ class SettingsNavigationItem extends SettingsItem {
     super.icon,
     super.visible,
     super.reader,
+    super.video,
   }) : assert(builder != null || onTap != null);
 
   final WidgetBuilder? builder;
@@ -188,6 +222,7 @@ class SettingsActionItem extends SettingsItem {
     super.icon,
     super.visible,
     super.reader,
+    super.video,
   });
 
   final SettingsItemAction onTap;
@@ -203,6 +238,7 @@ class SettingsSwitchItem extends SettingsItem {
     super.icon,
     super.visible,
     super.reader,
+    super.video,
   });
 
   final SettingsSwitchGetter value;
@@ -234,7 +270,9 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     super.icon,
     super.visible,
     super.reader,
+    super.video,
     this.controlBelow = true,
+    this.dropdown = false,
   });
 
   final List<SettingsSegmentOption<T>> options;
@@ -242,10 +280,13 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
   final SettingsValueChanged<T> onChanged;
   final bool controlBelow;
 
-  /// 类型安全地派发一次值变更。渲染器统一把本项当 `SettingsSegmentedItem<Object>`
-  /// 持有派发；若在渲染层静态读 [onChanged]（其实际签名是 `(ctx, T)`），会因函数参数
-  /// 逆变（`(Object)` 不是 `(String)` 的子类型）抛 `_TypeError`。这里在实例的真实 [T]
-  /// 上下文里把 [value] 转回 [T] 再调用，让类型校验落在编译期、渲染层不必 `as dynamic`。
+  /// true = 渲染成下拉单选（AdaptiveSettingsPickerRow）而非分段条。用于标签长 /
+  /// 选项多、分段条在窄 pane 只能横向滚动裁断的行（TODO-209 沉浸模式四态、mpv
+  /// 解码/几何/声道等）；数据模型不变，仅换行控件。
+  final bool dropdown;
+
+  /// 渲染器持有的是 `SettingsSegmentedItem<Object>`，静态读 [onChanged]（实际签名
+  /// `(ctx, T)`）会因函数参数逆变抛 `_TypeError`——故在真实 [T] 上下文里转回再调。
   FutureOr<void> dispatchChange(SettingsContext context, Object value) =>
       onChanged(context, value as T);
 }
@@ -260,6 +301,7 @@ class SettingsSliderItem extends SettingsItem {
     super.icon,
     super.visible,
     super.reader,
+    super.video,
     this.min = 0,
     this.max = 1,
     this.divisions,
@@ -267,7 +309,11 @@ class SettingsSliderItem extends SettingsItem {
     this.onChangeEnd,
     this.step,
     this.titleReadout = false,
-  });
+    this.commitOnRelease = false,
+  }) : assert(
+          !commitOnRelease || onChangeEnd == null,
+          'commitOnRelease 滑条松手统一走 onChanged 提交，不得再声明 onChangeEnd',
+        );
 
   final double Function(SettingsContext context) value;
   final double min;
@@ -284,6 +330,12 @@ class SettingsSliderItem extends SettingsItem {
   /// 为 true 时渲染器在标题后追加实时读数 `(label(value))`，如「音量 (95%)」。
   /// [title] 本身保持裸标题不变（焦点遍历 / 覆盖测试以裸标题为身份 key）。
   final bool titleReadout;
+
+  /// 为 true 时拖动只更新渲染层本地预览值（跟手 + 读数实时），松手才把最终值经
+  /// [onChanged] 提交一次。用于写穿成本高（BUG-963：播放页逐 tick 写穿触发全页
+  /// rebuild 掉帧）且拖动过程无实时预览意义的滑条；键盘/手柄步进仍每按即提交。
+  /// 与 [onChangeEnd] 互斥（松手提交统一走 [onChanged]）。
+  final bool commitOnRelease;
 }
 
 class SettingsStepperItem extends SettingsItem {
@@ -300,6 +352,7 @@ class SettingsStepperItem extends SettingsItem {
     super.icon,
     super.visible,
     super.reader,
+    super.video,
   });
 
   final double Function(SettingsContext context) value;
@@ -310,16 +363,100 @@ class SettingsStepperItem extends SettingsItem {
   final SettingsValueChanged<double> onChanged;
 }
 
+/// 一等文本输入项：字符串值经 getter/setter 闭包同步读写。渲染复用
+/// settings_schema_fields 的 [SettingsSecretField] 内部（防抖/提交语义一致），
+/// 由共享 SettingsSchemaItem 分发，Material/Cupertino 同路径。
+class SettingsTextItem extends SettingsItem {
+  const SettingsTextItem({
+    required super.id,
+    required super.title,
+    required this.value,
+    required this.onChanged,
+    this.secret = false,
+    this.debounce = const Duration(milliseconds: 500),
+    this.resetValue,
+    this.placeholder,
+    this.keyboardType,
+    super.subtitle,
+    super.icon,
+    super.visible,
+    super.reader,
+    super.video,
+  });
+
+  final SettingsValueGetter<String> value;
+  final SettingsValueChanged<String> onChanged;
+
+  /// true = 敏感值：明文遮蔽渲染 + 行尾眼睛按钮切换显隐（API key 等）。
+  final bool secret;
+
+  /// 击键到写穿的防抖间隔；[Duration.zero] = 每次击键立即写。提交（回车）恒立即写。
+  final Duration debounce;
+
+  /// 非 null 时行尾提供重置按钮，点击把该值写回并回填输入框。
+  final SettingsValueGetter<String>? resetValue;
+
+  /// 输入框占位提示；null = 不显示。
+  final String? placeholder;
+
+  /// null 时按 [secret] 取 visiblePassword / text。
+  final TextInputType? keyboardType;
+}
+
+/// 一等数字输入项：文本框输入 int/double，镜像 [SettingsNumberField] 行为
+/// （逐击键解析写穿 + 重置按钮），另支持可选 min/max 夹取；解析失败不写。
+class SettingsNumberItem extends SettingsItem {
+  const SettingsNumberItem({
+    required super.id,
+    required super.title,
+    required this.value,
+    required this.onChanged,
+    this.resetValue,
+    this.integer = false,
+    this.min,
+    this.max,
+    this.suffixText,
+    super.subtitle,
+    super.icon,
+    super.visible,
+    super.reader,
+    super.video,
+  });
+
+  final num Function(SettingsContext context) value;
+  final SettingsValueChanged<num> onChanged;
+
+  /// 非 null 时行尾提供重置按钮，点击把该值写回并回填输入框。
+  final num Function(SettingsContext context)? resetValue;
+
+  /// true = 整数输入（int 解析），false = 小数（double 解析）。
+  final bool integer;
+
+  /// 写穿前的夹取边界；null = 不限。
+  final num? min;
+  final num? max;
+
+  /// 输入框尾缀单位文字（如 ms / px）。
+  final String? suffixText;
+}
+
 class SettingsCustomItem extends SettingsItem {
   const SettingsCustomItem({
     required super.id,
     required this.builder,
     super.title = '',
+    this.searchTitle,
     super.subtitle,
     super.icon,
     super.visible,
     super.reader,
+    super.video,
   });
 
   final SettingsItemBuilder builder;
+
+  /// 搜索元数据 opt-in：custom 行的 [title] 通常为空（正文由 [builder] 自绘），
+  /// 默认不可搜。声明本字段后该行以此标题进入设置搜索（展平/打分/结果展示均用它，
+  /// 见 settingsItemSearchTitle）；不影响渲染。
+  final String? searchTitle;
 }

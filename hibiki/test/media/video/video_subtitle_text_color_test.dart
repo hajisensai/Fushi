@@ -97,31 +97,34 @@ void main() {
   });
 
   test(
-      'quick settings sheet has a text-color COLOR PICKER row wired to VideoSubtitleStyle.textColor (TODO-1326 调色盘)',
+      'video settings actions layer has a text-color COLOR PICKER row wired to VideoSubtitleStyle.textColor (TODO-1326 调色盘)',
       () {
     // 用户报「字幕颜色应该支持调色盘」：文字色已从固定预设下拉换成 flutter_colorpicker
     // 的 ColorPicker（点行开对话框取任意色）。本守卫锁定新实现——退回预设下拉即红。
-    final String sheetSrc =
-        File('lib/src/media/video/video_quick_settings_sheet.dart')
+    // 阶段B：取色行 builder 从 video_quick_settings_sheet 移入
+    // video_settings_actions.dart（buildVideoSubtitleTextColorRow，经 schema 的
+    // 'video.player.subtitle_text_color' 自定义项接入面板），守卫改锁 actions 源。
+    final String actionsSrc =
+        File('lib/src/media/video/video_settings_actions.dart')
             .readAsStringSync()
             .replaceAll('\r\n', '\n');
-    expect(sheetSrc.contains('video_setting_subtitle_text_color'), isTrue,
+    expect(actionsSrc.contains('video_setting_subtitle_text_color'), isTrue,
         reason: '必须用文字颜色 i18n 标题 key');
     expect(
-        sheetSrc.contains(
+        actionsSrc.contains(
             "import 'package:flutter_colorpicker/flutter_colorpicker.dart';"),
         isTrue,
         reason: '必须引入 flutter_colorpicker 调色盘');
-    expect(sheetSrc.contains('ColorPicker('), isTrue,
+    expect(actionsSrc.contains('ColorPicker('), isTrue,
         reason: '必须用 ColorPicker 组件（调色盘取任意色，非固定预设）');
-    expect(sheetSrc.contains('_buildSubtitleColorRow('), isTrue,
+    expect(actionsSrc.contains('_buildSubtitleColorRow('), isTrue,
         reason: '文字/背景色统一走取色行构建器');
-    expect(sheetSrc.contains('_style.copyWith(textColor: c)'), isTrue,
+    expect(actionsSrc.contains('s.copyWith(textColor: c)'), isTrue,
         reason: '取色必须落 VideoSubtitleStyle.textColor');
     // 固定预设的旧实现必须彻底移除（否则等于没换成调色盘）。
-    expect(sheetSrc.contains('_textColorPresets'), isFalse,
+    expect(actionsSrc.contains('_textColorPresets'), isFalse,
         reason: '固定文字色预设应已移除，改为调色盘');
-    expect(sheetSrc.contains('_textColorOptionIndex'), isFalse,
+    expect(actionsSrc.contains('_textColorOptionIndex'), isFalse,
         reason: '固定预设反查下标应随预设一并移除');
   });
 

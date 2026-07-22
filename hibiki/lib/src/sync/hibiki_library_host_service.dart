@@ -814,6 +814,7 @@ class RemoteVideoInfo {
     this.coverPath,
     this.positionMs = 0,
     this.positionUpdatedAtMs = 0,
+    this.delayMs = 0,
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
     this.tags = const <String>[],
@@ -870,6 +871,10 @@ class RemoteVideoInfo {
   /// 同范式。0 表示无记录。
   final int positionUpdatedAtMs;
 
+  /// host 端该视频的字幕时序偏移（`VideoBooks.delayMs`，毫秒，可负；BUG-996）。设备
+  /// 无关的纯时序设置，跨端语义一致 → 远端播放时应用，使桌面设的字幕调轴在手机跟随。
+  final int delayMs;
+
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
@@ -890,6 +895,7 @@ class RemoteVideoInfo {
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
         if (positionMs > 0) 'positionMs': positionMs,
         if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
+        if (delayMs != 0) 'delayMs': delayMs,
         // 单视频（episodes <=1）向后兼容：不写 episodes/currentEpisode 键。
         if (episodes.length > 1) ...<String, Object?>{
           'episodes': <Map<String, Object?>>[
@@ -911,6 +917,7 @@ class RemoteVideoInfo {
     List<RemoteVideoEmbeddedSubtitleTrack>? embeddedSubtitleTracks,
     int? positionMs,
     int? positionUpdatedAtMs,
+    int? delayMs,
     RemoteCollectionMembership? collection,
   }) =>
       RemoteVideoInfo(
@@ -927,6 +934,7 @@ class RemoteVideoInfo {
         coverPath: coverPath ?? this.coverPath,
         positionMs: positionMs ?? this.positionMs,
         positionUpdatedAtMs: positionUpdatedAtMs ?? this.positionUpdatedAtMs,
+        delayMs: delayMs ?? this.delayMs,
         episodes: episodes,
         currentEpisode: currentEpisode,
         tags: tags,
@@ -956,6 +964,7 @@ class RemoteVideoInfo {
       coverPath: coverPath,
       positionMs: _jsonInt(json['positionMs']) ?? 0,
       positionUpdatedAtMs: _jsonInt(json['positionUpdatedAtMs']) ?? 0,
+      delayMs: _jsonInt(json['delayMs']) ?? 0,
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
       tags: _jsonStringList(json['tags']),
@@ -1289,6 +1298,23 @@ abstract class HibikiLibraryHostService {
     String id, {
     String langCode = '',
     int episodeIndex = 0,
+  });
+
+  /// BUG-1004：在 host **本地**对视频 [id] 的 `[startMs,endMs)` 段裁出 mining 句子音频，
+  /// 返回临时 aac(adts) 文件（调用方读完负责删其所在临时目录）；无该视频 / 区间非法 /
+  /// ffmpeg 失败时返回 null。host 用本地文件裁、不经网络/TLS，是「client ffmpeg 打不开 host
+  /// 自签 https / token 流」（BUG-891 残余缺口）的根治路径——client 全程不用 ffmpeg 抓远端流。
+  /// [audioStreamIndex]/[audioStreamCount] 选多音轨视频里用户当前听的轨（越界回退默认轨）；
+  /// [audioChannels]/[audioBitrate] 对齐制卡压缩档，使 host 裁出的片段与本地路径同规格。
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
   });
 
   /// 读 host 端记录的视频 [id] 播放断点（TODO-653）。返回 (位置毫秒, 更新时间毫秒)；

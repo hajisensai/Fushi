@@ -2083,4 +2083,43 @@ function historyOverlayIn(shell) {
     'scrollRootToTop 空栈安全');
 }
 
+// R4. BUG-745: the TODO-890 slide-out class must be stripped from the REUSED
+//     root shell when a new lookup begins. dismissRootWithSlide adds
+//     .global-lookup-dismissing (translateX(120%) + opacity 0) and nothing ever
+//     removed it while the root shell survives across lookups (stable root id)
+//     — so after the first slide dismissal EVERY later card rendered already
+//     slid off-window and fully transparent (native reveal fine, screen empty:
+//     「第一次正常，之后的弹窗根本不出现」).
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  const shell = shellsOf(document)[0];
+  const classes = new Set(['global-lookup-frame-shell']);
+  shell.classList = {
+    add: (c) => classes.add(c),
+    remove: (c) => classes.delete(c),
+    contains: (c) => classes.has(c),
+  };
+  let endHandler = null;
+  shell.addEventListener = (type, fn) => {
+    if (type === 'transitionend') endHandler = fn;
+  };
+  shell.removeEventListener = () => {};
+  host.dismissRootWithSlide();
+  assert.ok(classes.has('global-lookup-dismissing'),
+    'slide dismissal poisons the reused root shell (precondition)');
+  endHandler({ propertyName: 'transform' });
+  assert.ok(classes.has('global-lookup-dismissing'),
+    'nothing removes the class at post time (the leak this test pins)');
+  // A NEW lookup begins: beginLookup must strip the class so the fresh card
+  // does not render slid-out + transparent (invisible).
+  host.beginLookup('frame-0');
+  assert.ok(!classes.has('global-lookup-dismissing'),
+    'BUG-745: beginLookup strips the slide-out class off the reused root shell');
+  // And the fresh renderStack must not re-add it.
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  assert.ok(!classes.has('global-lookup-dismissing'),
+    'BUG-745: the fresh render stays un-poisoned');
+}
+
 console.log('global_lookup_host_test: PASS');

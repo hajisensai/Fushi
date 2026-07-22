@@ -7,6 +7,7 @@
 
 import 'dart:io' show Platform;
 
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/platform/clipboard_text_overlay_channel.dart';
@@ -72,6 +73,7 @@ class ClipboardTextOverlayController {
     await ClipboardTextOverlayChannel.show(
       bgColor: _bgColor(),
       textColor: _textColor(),
+      windowTitle: t.clipboard_text_window_title,
     );
     await ClipboardTextOverlayChannel.updateText(text);
     _visible = true;
@@ -114,8 +116,11 @@ class ClipboardTextOverlayController {
   int _bgColor() => clipboardTextWindowBgColor(
       _appModel?.clipboardTextWindowBgOpacity ?? 0.0);
 
-  /// 文字颜色跟随 app 主题（onSurface）；无 appModel 时回退实心白。
-  int _textColor() => _appModel?.clipboardTextWindowTextColor() ?? 0xFFFFFFFF;
+  /// 文字颜色：用户实测拍板「先一律默认黑底白字」，恒实心白。曾跟随主题
+  /// onSurface，但浅/深色主题下 onSurface 可能是深色，压在黑底上看不清——故改回
+  /// 固定白色（配黑底=最稳的可读基线）。主题跟随留 [AppModel.clipboardTextWindowTextColor]
+  /// 备用，暂不接。
+  int _textColor() => 0xFFFFFFFF;
 
   Future<void> _onLookup(String text, int index) async {
     final AppModel? model = _appModel;

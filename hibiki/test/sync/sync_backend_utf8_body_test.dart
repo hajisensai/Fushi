@@ -29,6 +29,18 @@ import 'package:drift/native.dart';
 /// Fake library service: captures the aggregate snapshot and book progress the
 /// client PUTs, so the test can assert the UTF-8 round-trip.
 class _CapturingLibraryService implements HibikiLibraryHostService {
+  // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
+  @override
+  Future<File?> clipVideoAudio(String id,
+          {required int startMs,
+          required int endMs,
+          int episodeIndex = 0,
+          int? audioStreamIndex,
+          int? audioStreamCount,
+          int audioChannels = 1,
+          String audioBitrate = '64k'}) async =>
+      null;
+
   @override
   Future<List<RemoteActivityEvent>> listActivityEvents(
           {int limit = 100}) async =>

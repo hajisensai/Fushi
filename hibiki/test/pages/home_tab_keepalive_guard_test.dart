@@ -62,4 +62,49 @@ void main() {
     expect(src.contains('if (!_keepAliveTabs.contains(visible))'), isTrue,
         reason: '非保活 tab 只在可见时构建，保持每次切入重新 initState');
   });
+
+  test('BUG-992/818: 保活的书架/视频页必须监听 tab 信号，切回时自动重拉远端', () {
+    // 保活 → initState 只跑一次 → 远端列表不会因切回而重拉（本文件顶注释所述）。
+    // 补偿：两页各监听全局 homeShellTabNotifier，切回自己的 tab 时重拉远端一次，
+    // 否则别的设备新增/首载失败的远端条目要用户手动下拉才出来（BUG-992 书架 / BUG-994 视频）。
+    final String videoSrc =
+        File('lib/src/pages/implementations/home_video_page.dart')
+            .readAsStringSync();
+    final String bookSrc =
+        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+            .readAsStringSync();
+
+    expect(videoSrc.contains('homeShellTabNotifier.addListener'), isTrue,
+        reason: 'BUG-994：视频页必须监听 tab 信号');
+    expect(videoSrc.contains('homeShellTabNotifier.removeListener'), isTrue,
+        reason: 'BUG-994：视频页 dispose 必须移除监听（防泄漏）');
+    expect(RegExp(r'HomeTab\.video').hasMatch(videoSrc), isTrue,
+        reason: 'BUG-994：切回视频 tab（HomeTab.video）才重拉');
+
+    expect(bookSrc.contains('homeShellTabNotifier.addListener'), isTrue,
+        reason: 'BUG-992：书架页必须监听 tab 信号');
+    expect(bookSrc.contains('homeShellTabNotifier.removeListener'), isTrue,
+        reason: 'BUG-992：书架页 dispose 必须移除监听（防泄漏）');
+    expect(RegExp(r'HomeTab\.books').hasMatch(bookSrc), isTrue,
+        reason: 'BUG-992：切回书架 tab（HomeTab.books）才重拉');
+  });
+
+  test('BUG-995: 视频页概览+继续观看在只有远端视频时也显示并计入远端', () {
+    final String videoSrc =
+        File('lib/src/pages/implementations/home_video_page.dart')
+            .readAsStringSync();
+    // 概览门控必须含 remoteVideos（否则无本地视频时整块消失）。
+    expect(
+        videoSrc.contains('all.isNotEmpty || remoteVideos.isNotEmpty'), isTrue,
+        reason: 'BUG-995：概览门控必须并入 remoteVideos');
+    // _buildOverviewSection 必须接收 remoteVideos 并把它们并进概览 entries。
+    expect(
+        RegExp(r'_buildOverviewSection\(\s*[\s\S]*?List<RemoteVideoInfo>')
+            .hasMatch(videoSrc),
+        isTrue,
+        reason: 'BUG-995：_buildOverviewSection 必须接收 remoteVideos 计入总数/继续观看');
+    // 远端 hero 变体必须存在（远端续播走 _openRemote）。
+    expect(videoSrc.contains('_buildContinueHeroRemote'), isTrue,
+        reason: 'BUG-995：只看远端视频时继续观看 hero 走远端变体');
+  });
 }

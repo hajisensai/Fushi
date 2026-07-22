@@ -153,15 +153,21 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   }
 
   Future<void> updateAnkiConnectHost(String host) async {
-    final trimmed = host.trim();
-    if (trimmed.isEmpty ||
-        trimmed.contains('/') ||
-        trimmed.contains('?') ||
-        trimmed.contains('#')) {
-      return;
-    }
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(ankiConnectHost: trimmed));
+    // 不能对含 '/'、'?'、'#' 的输入静默 return（BUG-970）：那样用户逐字符敲
+    // "http://" 时，敲到第一个 '/'（"http:/"）起就全被拒，失焦回退到最后被接受的
+    // "http:"，看起来像 App 把地址吃成了 "http:"。AnkiConnect 恒在 http://host:port
+    // 的根路径，故把 URL 形态输入规范化成裸主机：剥 scheme / path / query / fragment /
+    // userinfo，并把尾部数字 ":port" 拆到独立端口字段（保留在主机里会让
+    // Uri.parse('http://$host:$port') 变成 host:port:port 破坏请求）。
+    final endpoint = normalizeAnkiConnectHostInput(host);
+    if (endpoint.host.isEmpty) return;
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(
+        ankiConnectHost: endpoint.host,
+        // 仅当输入里带了合法端口才覆盖，否则保留用户在端口字段里的既有值。
+        ankiConnectPort: endpoint.port ?? s.ankiConnectPort,
+      ),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -216,6 +222,48 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       return LapisSetupResult(LapisSetupOutcome.failed, e.toString());
     }
   }
+}
+
+/// 把用户敲/粘进 AnkiConnect **主机**字段的自由文本规范化成裸主机 + 可选端口。
+///
+/// AnkiConnect 恒在 `http://host:port` 的根路径，所以 `http://192.168.1.5:48765/`
+/// 之类的完整 URL（或手敲的 `http://host`）不能被拒绝——剥掉 scheme、path/query/
+/// fragment 与 userinfo，并把尾部的数字 `:port` 拆出来交给独立端口字段（留在主机里
+/// 会让 `Uri.parse('http://$host:$port')` 变成 `host:port:port` 破坏请求）。主机原样
+/// 保留（不小写化、不做 IDNA punycode），用户看到的就是自己敲的值。返回的 [port] 仅在
+/// 输入携带 1..65535 合法端口时非 null；非数字尾部（如错误的 IPv6/笔误）原样保留，
+/// 尽力而为不擅自篡改。
+@visibleForTesting
+({String host, int? port}) normalizeAnkiConnectHostInput(String raw) {
+  var s = raw.trim();
+  // 剥掉开头的 "scheme://"。
+  final schemeSep = s.indexOf('://');
+  if (schemeSep >= 0) s = s.substring(schemeSep + 3);
+  // 在第一个 path / query / fragment 分隔符处截断。
+  for (final sep in const ['/', '?', '#']) {
+    final cut = s.indexOf(sep);
+    if (cut >= 0) s = s.substring(0, cut);
+  }
+  // 丢弃 userinfo（"user:pass@host" / "user@host"）。
+  final at = s.lastIndexOf('@');
+  if (at >= 0) s = s.substring(at + 1);
+  // 拆分尾部 ":<数字>" 作为端口；顺带清掉打字途中残留的孤立尾冒号。
+  int? port;
+  final colon = s.lastIndexOf(':');
+  if (colon >= 0) {
+    final tail = s.substring(colon + 1);
+    if (tail.isEmpty) {
+      s = s.substring(0, colon);
+    } else {
+      final parsed = int.tryParse(tail);
+      if (parsed != null) {
+        if (parsed > 0 && parsed <= 65535) port = parsed;
+        // 数字尾部一律剥离（越界也剥），保证主机不残留冒号破坏 Uri。
+        s = s.substring(0, colon);
+      }
+    }
+  }
+  return (host: s.trim(), port: port);
 }
 
 enum LapisSetupOutcome { created, alreadyExisted, failed }

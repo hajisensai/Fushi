@@ -27,10 +27,32 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 950 条。点号进各自文件。
+> 共 972 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1005](bugs/BUG-1005-mining-word-audio-remote-source.md) | ✅ | ✅ | 制卡缺单词音频·扩展needsAudio门+制卡器忽略远程发音源 |
+| [BUG-1004](bugs/BUG-1004-interconnect-mining-audio-host-clip.md) | ✅ | ✅ | 互联视频制卡句子音频改 host 端裁绕开 client ffmpeg 抓远端流 |
+| [BUG-1003](bugs/BUG-1003-download-kb-inset.md) | ✅ | ✅ | 下载页输入apikey时软键盘顶掉贴底下载任务区 |
+| [BUG-1002](bugs/BUG-1002-jimaku-download-anilist-only-no-query-fallback.md) | ✅ | ✅ | 下载页字幕搜索仅按AniList id无文本回退致误报无字幕 |
+| [BUG-1001](bugs/BUG-1001-lookup-panel-pin-block-off-faint-light.md) | ✅ | ✅ | 桌面查词浮窗顶栏图钉/防截屏关闭态浅色下太淡 |
+| [BUG-1000](bugs/BUG-1000-floating-lyric-tap-dropped-stale-reader-handler.md) | ✅ | ✅ | 桌面悬浮字幕点词后台听书时静默丢弃(reader卸载后channel残留!mounted handler) |
+| [BUG-999](bugs/BUG-999-lookup-slide-class-leak-invisible-cards.md) | ✅ | ✅ | app外查词第二张卡永远不可见——滑出class泄漏在复用根壳上 |
+| [BUG-998](bugs/BUG-998-backup-audiobooks-untick-not-stripped.md) | ✅ | ✅ | 覆盖导入取消勾选有声书仍恢复幽灵有声书 |
+| [BUG-997](bugs/BUG-997-video-import-uninvited-unskippable.md) | ✅ | ✅ | 覆盖导入视频强行进且无法取消勾选 |
+| [BUG-996](bugs/BUG-996-remote-video-resume-and-subtitle-delay-sync.md) | ✅ | ✅ | 互联远端视频不续播(从头)+ 字幕调轴(delay)不同步 |
+| [BUG-995](bugs/BUG-995-video-overview-hero-excludes-remote.md) | ✅ | ✅ | 视频页「继续观看」+「媒体库概览」在只有远端视频时不显示且不计入远端 |
+| [BUG-994](bugs/BUG-994-video-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回视频 tab 不自动拉远端视频(远端视频要手动下拉刷新才出来) |
+| [BUG-992](bugs/BUG-992-shelf-auto-refresh-remote-on-tab-return.md) | ✅ | ✅ | 切回书架 tab 不自动拉远端书(远端书+书库概览总数要手动下拉刷新才补齐) |
+| [BUG-991](bugs/BUG-991-shelf-overview-total-excludes-remote.md) | ✅ | ✅ | 书架「书库概览」总数漏算远端书(只数本地卡,不数书架上可见的互联远端占位卡) |
+| [BUG-990](bugs/BUG-990-interconnect-audiobook-download-loading-gap.md) | ✅ | ✅ | 互联下载有声书两阶段之间露出「无转圈的普通书」(空窗期本地卡缺加载指示) |
+| [BUG-989](bugs/BUG-989-interconnect-book-collection-count-remote.md) | ✅ | ✅ | 互联书籍合集行计数未计入远端占位书 |
+| [BUG-988](bugs/BUG-988-interconnect-upload-toggles.md) | ✅ | ✅ | 互联解耦后失去「独立控制上不上传到互联对端」的能力 |
+| [BUG-987](bugs/BUG-987-interconnect-pair-dialog-latch.md) | ✅ | ✅ | 互联首次配对失败后刷新不再弹申请框、只提示失败 |
+| [BUG-973](bugs/BUG-973-macos-traffic-light-video-overlap.md) | ✅ | ✅ | macOS 交通灯遮挡视频退出按钮/左上角OSD |
+| [BUG-972](bugs/BUG-972-popup-css-ctx-adjust-unclosed-brace.md) | ✅ | ✅ | popup.css .ctx-adjust-button 缺闭合括号吞掉 .global-lookup-ext-hit 高亮规则 |
+| [BUG-971](bugs/BUG-971-ankiconnect-host-scheme.md) | ✅ | ✅ | AnkiConnect 主机字段吞掉 http:// 变成 http: |
+| [BUG-970](bugs/BUG-970-reading-goal-first-set-no-entry.md) | ✅ | ✅ | 统计页每日/每周目标从未设置时无任何设置入口 |
 | [BUG-969](bugs/BUG-969-reader-settings-sheet-120fps.md) | ✅ | ✅ | 阅读设置抽屉滚动与拖动跑不满120fps |
 | [BUG-968](bugs/BUG-968-audiobook-export-text-audio.md) | ✅ | ✅ | 有声书片段导出文字与选区不符且移动端缺少音频 |
 | [BUG-967](bugs/BUG-967-reader-context-menu-stack.md) | ✅ | ✅ | Windows 查词弹窗后右键菜单位于底层且重复累加 |

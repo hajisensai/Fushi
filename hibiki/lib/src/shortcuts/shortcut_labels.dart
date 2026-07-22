@@ -29,6 +29,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_reader_open_navigation;
       case ShortcutAction.readerDismissDict:
         return t.shortcut_action_reader_dismiss_dict;
+      case ShortcutAction.readerExitBook:
+        return t.shortcut_action_reader_exit_book;
       case ShortcutAction.readerToggleFurigana:
         return t.shortcut_action_reader_toggle_furigana;
       case ShortcutAction.readerLookupAtCursor:

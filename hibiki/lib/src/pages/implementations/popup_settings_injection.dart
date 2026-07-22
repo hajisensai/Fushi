@@ -15,6 +15,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/popup_theme_css.dart';
 import 'package:hibiki/src/reader/dictionary_font_css.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
@@ -81,8 +82,17 @@ String _themeVariablesJs({
       : (mobileExternal
           ? "document.documentElement.classList.add('mobile-external');\n"
           : '');
+  // 墨水屏模式：给 <html> 挂 eink class（popup.css 末尾的 html.eink 覆盖块吃它，
+  // 纯黑白/方角/实线边框/关过渡）。用 toggle 而非 add——in-app 热槽 WebView 跨渲染
+  // 持久，开关关掉后重注入必须能把 class 摘掉。标志从传入的 ThemeData 扩展读
+  // （HibikiEinkTheme，_buildThemeData 挂上），不走 appModel.themeNotifier——
+  // 本函数在弹窗 widget 测试里会被未 initialise 的裸 AppModel 调到（late
+  // themeNotifier 未初始化），theme 才是这里已有的真相源。
+  final bool eink = theme.extension<HibikiEinkTheme>()?.einkMode ?? false;
+  final String einkLine =
+      "document.documentElement.classList.toggle('eink', $eink);\n";
   return '''
-      $classLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
+      $classLine      $einkLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '${vars['--hoshi-primary-highlight']}');
       document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
       document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');
@@ -104,7 +114,21 @@ String _themeVariablesJs({
 /// dictionary font is configured. Shared so the app-outside window applies the
 /// SAME font the in-app popup does.
 String dictionaryFontStyleJs(AppModel appModel) {
-  final ReaderSettings? settings = ReaderHibikiSource.readerSettings;
+  // BUG: `ReaderHibikiSource.readerSettings` is only populated while a book /
+  // reader is open. In the app-external clipboard-lookup flow (VN / game, no
+  // book), it is null, so the user's configured dictionary font was never
+  // injected and popup.css's hard-coded "Hiragino Sans" fell back to the system
+  // font. The dictionary font list is persisted in the DB (`dict_fonts`), so
+  // read it through a DB-backed ReaderSettings when no reader is live — the
+  // overlay then applies the SAME font whether or not a book is open.
+  // Prefer the live reader's settings; otherwise a DB-backed ReaderSettings so
+  // the persisted dictionary font list still applies with no book open. Only
+  // touch `appModel.database` when it is actually open — early / test seams leave
+  // it uninitialised and reading it would throw LateInitializationError. When
+  // unavailable, fall back to no injected font (pre-fix behaviour); in the real
+  // app-external lookup flow the DB is always open by then, so the font applies.
+  final ReaderSettings? settings = ReaderHibikiSource.readerSettings ??
+      (appModel.isDatabaseReady ? ReaderSettings(appModel.database) : null);
   if (settings == null) return '';
   final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
     settings.dictionaryFonts,

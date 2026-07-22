@@ -12,6 +12,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 /// Optional file-tree categories a backup export can include. The database
 /// (`hibiki.db`) is NOT a category - it carries every table's metadata
@@ -265,6 +266,8 @@ class BackupMeta {
     this.localAudioRoot,
     this.videoFiles = const <String, String>{},
     this.excludedCategories = const <String>{},
+    this.videoBookCount,
+    this.audiobookCount,
   });
 
   final String appVersion;
@@ -272,6 +275,22 @@ class BackupMeta {
   final DateTime createdAt;
   final int bookCount;
   final int statsCount;
+
+  /// Number of `video_books` rows carried in this backup's DB blob (0 when the
+  /// video category was unticked → every row was stripped on export). Lets the
+  /// import dialog offer the video toggle even for a backup that packed NO video
+  /// FILES (streaming/http videos, or a video whose file could not be packed) —
+  /// videos live in the overwrite DB blob regardless of files, so a files-only
+  /// count would hide them and import them uninvited (BUG-779). Null for older
+  /// backups that predate this field; import falls back to a DB-blob peek.
+  final int? videoBookCount;
+
+  /// Number of `audiobooks` rows carried in this backup's DB blob (0 when the
+  /// audiobooks category was unticked → every row stripped on export). Same role
+  /// as [videoBookCount]: lets the import dialog offer the audiobooks toggle even
+  /// when no audiobook FILES were packed. Null for older backups → import falls
+  /// back to a DB-blob peek (BUG-781).
+  final int? audiobookCount;
 
   /// Absolute root of the extracted-books tree on the SOURCE device
   /// (`<appDoc>/hoshi_books`), captured so import can rebase stored book paths
@@ -324,6 +343,8 @@ class BackupMeta {
         if (videoFiles.isNotEmpty) 'videoFiles': videoFiles,
         if (excludedCategories.isNotEmpty)
           'excludedCategories': excludedCategories.toList(),
+        if (videoBookCount != null) 'videoBookCount': videoBookCount,
+        if (audiobookCount != null) 'audiobookCount': audiobookCount,
       };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
@@ -344,6 +365,8 @@ class BackupMeta {
                 ?.map((dynamic e) => e as String)
                 .toSet() ??
             const <String>{},
+        videoBookCount: json['videoBookCount'] as int?,
+        audiobookCount: json['audiobookCount'] as int?,
       );
 
   static BackupMeta? tryParse(String source) {
@@ -607,8 +630,10 @@ class BackupService {
   /// are not separate databases).
   static BackupContentSummary summarizeBackupArchive(
     Iterable<String> archiveFileNames,
-    BackupMeta? meta,
-  ) {
+    BackupMeta? meta, {
+    int? dbVideoBookCount,
+    int? dbAudiobookCount,
+  }) {
     final Set<String> dictDirs = <String>{};
     final Set<String> bookDirs = <String>{};
     final Set<String> audioDirs = <String>{};
@@ -646,15 +671,26 @@ class BackupService {
         if (_localAudioDbOnly.hasMatch(base)) localAudioDbs++;
       }
     }
-    // Packed video files ([meta.videoFiles]) are authoritative when present (a
-    // per-episode playlist packs multiple files under one book directory).
-    final int videoCount = (meta != null && meta.videoFiles.isNotEmpty)
-        ? meta.videoFiles.length
-        : videoFiles;
+    // Video presence is decided by DB rows, NOT packed files: videos live in the
+    // overwrite DB blob and restore wholesale, so a files-only count would hide a
+    // streaming-video (no file) or old-backup video and import it uninvited
+    // (BUG-779). Priority: meta.videoBookCount (authoritative row count, new
+    // backups) → dbVideoBookCount (a DB-blob peek for old backups lacking the
+    // field) → packed-file fallback (legacy).
+    final int videoCount = meta?.videoBookCount ??
+        dbVideoBookCount ??
+        (meta != null && meta.videoFiles.isNotEmpty
+            ? meta.videoFiles.length
+            : videoFiles);
+    // Audiobooks decided by DB rows too (BUG-781), same priority chain: the
+    // audiobooks table rides the overwrite blob, so a files-only count would hide
+    // a row-only / old backup and import ghost audiobooks un-skippably.
+    final int audiobookCount =
+        meta?.audiobookCount ?? dbAudiobookCount ?? audioDirs.length;
     final Map<BackupCategory, int> counts = <BackupCategory, int>{
       if (dictDirs.isNotEmpty) BackupCategory.dictionary: dictDirs.length,
       if (bookDirs.isNotEmpty) BackupCategory.books: bookDirs.length,
-      if (audioDirs.isNotEmpty) BackupCategory.audiobooks: audioDirs.length,
+      if (audiobookCount > 0) BackupCategory.audiobooks: audiobookCount,
       if (fontFiles > 0) BackupCategory.fonts: fontFiles,
       if (videoCount > 0) BackupCategory.videos: videoCount,
       if (localAudioDbs > 0) BackupCategory.localAudio: localAudioDbs,
@@ -686,7 +722,26 @@ class BackupService {
           .where((ArchiveFile f) => f.isFile)
           .map((ArchiveFile f) => f.name)
           .toList();
-      return summarizeBackupArchive(names, meta);
+      // Old backups (no video/audiobook row count in meta) that packed NO video
+      // or audiobook FILES would otherwise hide those categories even though the
+      // DB blob carries their rows → they import uninvited & un-skippable
+      // (BUG-779 video / BUG-781 audiobooks). Peek the DB blob for the row counts
+      // so the dialog can still offer the toggles. New backups carry the counts
+      // in meta, so the (one-time) peek is skipped for them.
+      int? dbVideoBookCount;
+      int? dbAudiobookCount;
+      final bool needPeek =
+          (meta?.videoBookCount == null || meta?.audiobookCount == null) &&
+              archive.findFile(_dbName) != null;
+      if (needPeek) {
+        final ({int videos, int audiobooks})? peek =
+            await _peekContentRowCounts(zipPath);
+        dbVideoBookCount = peek?.videos;
+        dbAudiobookCount = peek?.audiobooks;
+      }
+      return summarizeBackupArchive(names, meta,
+          dbVideoBookCount: dbVideoBookCount,
+          dbAudiobookCount: dbAudiobookCount);
     } catch (e, st) {
       debugPrint(
           'BackupService.summarizeBackupZip failed for $zipPath: $e\n$st');
@@ -694,6 +749,59 @@ class BackupService {
     } finally {
       await input?.close();
     }
+  }
+
+  /// Streams the backup's `hibiki.db` blob (the small metadata DB — media lives
+  /// in separate zip entries) to a temp file and returns its `video_books` and
+  /// `audiobooks` row counts, or null on any failure. Used by [summarizeBackupZip]
+  /// to offer the video / audiobooks import toggles for OLD backups that predate
+  /// [BackupMeta.videoBookCount] / [BackupMeta.audiobookCount] (BUG-779 / BUG-781).
+  /// Reuses the isolate-backed [_extractEntriesStreaming] so a large metadata DB
+  /// never materializes on the UI isolate.
+  static Future<({int videos, int audiobooks})?> _peekContentRowCounts(
+    String zipPath,
+  ) async {
+    final Directory tmp =
+        await Directory.systemTemp.createTemp('hibiki_content_peek_');
+    final String dbTmp = p.join(tmp.path, _dbName);
+    try {
+      await _extractEntriesStreaming(
+        zipPath: zipPath,
+        entries: <MapEntry<String, String>>[
+          MapEntry<String, String>(_dbName, dbTmp),
+        ],
+      );
+      final sqlite.Database db =
+          sqlite.sqlite3.open(dbTmp, mode: sqlite.OpenMode.readOnly);
+      try {
+        return (
+          videos: _countTableIfPresent(db, 'video_books'),
+          audiobooks: _countTableIfPresent(db, 'audiobooks'),
+        );
+      } finally {
+        db.dispose();
+      }
+    } catch (e, st) {
+      debugPrint('BackupService._peekContentRowCounts failed: $e\n$st');
+      return null;
+    } finally {
+      try {
+        await tmp.delete(recursive: true);
+      } catch (_) {
+        // Best-effort temp cleanup; a leftover temp dir is harmless.
+      }
+    }
+  }
+
+  /// `SELECT COUNT(*)` of [table] on an open read-only sqlite [db], or 0 when the
+  /// table is absent (older-schema backup blob).
+  static int _countTableIfPresent(sqlite.Database db, String table) {
+    final sqlite.ResultSet has = db.select(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      <Object?>[table],
+    );
+    if (has.isEmpty) return 0;
+    return db.select('SELECT COUNT(*) AS c FROM $table').first['c'] as int;
   }
 
   /// Builds the export "what's inside" summary from the live DB + this device's
@@ -921,6 +1029,14 @@ class BackupService {
       if (retainVideoKeys != null) {
         await _retainVideos(tmpDir.path, retainVideoKeys);
       }
+      // Audiobooks mirror books/videos (BUG-781): unticking the category strips
+      // every `audiobooks` row from the DB COPY so a restore never resurrects a
+      // ghost audiobook whose audio never travelled. (No per-audiobook selection
+      // yet, so it is all-or-nothing.)
+      final bool includeAudiobooks = wants(BackupCategory.audiobooks);
+      if (!includeAudiobooks) {
+        await _retainAudiobooks(tmpDir.path, const <String>{});
+      }
 
       // TODO-1193: the four data categories (progress / statistics / settings /
       // profiles) live only in the DB blob, so when the user unticks any of
@@ -1013,6 +1129,22 @@ class BackupService {
 
       final List<VideoBookRow> allVideos = await _db.allVideoBooks();
       final int usableVideoCount = allVideos.where(videoTravels).length;
+      // Rows that actually REMAIN in the exported DB blob after [_retainVideos]:
+      // 0 when video was unticked (all stripped), all rows when video is on with
+      // no per-video filter, else the selected subset. Recorded in meta so the
+      // import dialog can offer the video toggle even when NO video files were
+      // packed (streaming videos), independent of [usableVideoCount] which counts
+      // only videos whose media travels (BUG-779).
+      final int blobVideoBookCount = retainVideoKeys == null
+          ? allVideos.length
+          : allVideos
+              .where((VideoBookRow v) => retainVideoKeys.contains(v.bookUid))
+              .length;
+      // Audiobook rows remaining in the exported DB blob after [_retainAudiobooks]
+      // (0 when unticked → all stripped). Recorded so import can offer the
+      // audiobooks toggle even with no packed audiobook files (BUG-781).
+      final int blobAudiobookCount =
+          includeAudiobooks ? (await _db.getAllAudiobooks()).length : 0;
 
       // "Statistics records" spans reading + video + mining buckets, not reading
       // alone, so a video-watcher's backup no longer reports "0 statistics".
@@ -1043,6 +1175,8 @@ class BackupService {
         fontsRoot: wants(BackupCategory.fonts) ? _fontsRootDirectory : null,
         localAudioRoot: wants(BackupCategory.localAudio) ? _dbDirectory : null,
         videoFiles: videoFiles,
+        videoBookCount: blobVideoBookCount,
+        audiobookCount: blobAudiobookCount,
         // Record every unticked category by enum name so import knows a layer is
         // empty BY CHOICE (vs a genuinely empty DB). Only settings/profiles are
         // acted on at import; the rest is diagnostic / future-proofing.
@@ -2002,6 +2136,23 @@ class BackupService {
         // travels; the hoshi_books tree restore was skipped above too.
         await _retainBooks(dbDirectory, const <String>{});
       }
+      if (!wants(BackupCategory.videos)) {
+        // Videos live in the overwrite DB blob (video_books + cascade), so
+        // unticking the video category must strip those rows too — skipping the
+        // FILE restore (effVideosRoot=null) alone left every video_books row in
+        // the swapped-in DB, so the videos imported uninvited & un-skippable even
+        // when the dialog did offer the toggle (BUG-779). Mirrors the books strip
+        // and the export-side [_retainVideos].
+        await _retainVideos(dbDirectory, const <String>{});
+      }
+      if (!wants(BackupCategory.audiobooks)) {
+        // Same class as videos (BUG-781): audiobook rows (audiobooks + audio_cues
+        // + srt shelf entry) ride the overwrite DB blob, so unticking the
+        // audiobooks category must strip them — the skipped FILE restore
+        // (effAudiobooksRoot=null) alone left ghost audiobooks (shelf + alignment
+        // rows pointing at audio that never travelled).
+        await _retainAudiobooks(dbDirectory, const <String>{});
+      }
       if (!wants(BackupCategory.statistics) ||
           !wants(BackupCategory.progress)) {
         await _stripExcludedDataCategories(
@@ -2651,6 +2802,33 @@ class BackupService {
       for (final VideoBookRow v in await db.allVideoBooks()) {
         if (keep.contains(v.bookUid)) continue;
         await db.deleteVideoBook(v.bookUid);
+      }
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Audiobook analogue of [_retainVideos] (BUG-781): DELETEs every `audiobooks`
+  /// row whose `bookKey` is NOT in [keep], via the canonical
+  /// [HibikiDatabase.deleteAudiobookByBookKey] cascade (its `audio_cues` rows +
+  /// the `srt` shelf entry). [keep] empty strips every audiobook (the audiobooks
+  /// category was unticked). Same root fix as books/videos: an audiobook whose
+  /// audio never travelled must not survive as a "ghost audiobook" (a shelf entry
+  /// + alignment rows pointing at audio files that are not on this device). Does
+  /// NOT touch standalone `srt_books` rows — those are their own shelf items, not
+  /// counted in the audiobooks category (which is `getAllAudiobooks()` = the
+  /// epub-attached `Audiobooks` table).
+  static Future<void> _retainAudiobooks(
+    String dbDirectory,
+    Set<String> keep,
+  ) async {
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      for (final AudiobookRow a in await db.getAllAudiobooks()) {
+        if (keep.contains(a.bookKey)) continue;
+        await db.deleteAudiobookByBookKey(a.bookKey);
       }
       await db.customStatement('VACUUM');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');

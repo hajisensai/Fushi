@@ -484,4 +484,176 @@ void main() {
       expect(source, isNot(contains('TerminateProcess')));
     });
   });
+
+  group('MacUpdater.selectAsset', () {
+    test('picks the -macos.zip asset (stable)', () async {
+      final MacUpdater u = MacUpdater();
+      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
+        'hibiki-0.4.2-arm64-v8a.apk',
+        'hibiki-0.4.2-windows-setup.exe',
+        'hibiki-0.4.2-macos.zip',
+        'hibiki-0.4.2-ios.ipa',
+      ])));
+      expect(url, 'https://example.com/hibiki-0.4.2-macos.zip');
+    });
+
+    test('returns null when no macOS asset present', () async {
+      final MacUpdater u = MacUpdater();
+      final UpdateAsset? asset = await u.selectAsset(_assets(<String>[
+        'hibiki-0.4.2-arm64-v8a.apk',
+        'hibiki-0.4.2-windows-setup.exe',
+      ]));
+      expect(asset, isNull);
+    });
+
+    test('debug channel selects the debug macOS zip', () async {
+      final MacUpdater u = MacUpdater();
+      final String? url = await _urlOf(u.selectAsset(
+        _assets(<String>[
+          'hibiki-0.5.1-macos.zip',
+          'hibiki-0.5.1-debug.412-macos.zip',
+        ]),
+        channel: UpdateChannel.debug,
+      ));
+      expect(url, 'https://example.com/hibiki-0.5.1-debug.412-macos.zip');
+    });
+
+    test('stable channel ignores the debug macOS zip', () async {
+      final MacUpdater u = MacUpdater();
+      final String? url = await _urlOf(u.selectAsset(
+        _assets(<String>[
+          'hibiki-0.5.1-debug.412-macos.zip',
+          'hibiki-0.5.1-macos.zip',
+        ]),
+      ));
+      expect(url, 'https://example.com/hibiki-0.5.1-macos.zip');
+    });
+
+    test('macOS updater advertises in-app install support', () {
+      final MacUpdater u = MacUpdater();
+      expect(u.supportsUpdateCheck, isTrue);
+      expect(u.supportsInAppInstall, isTrue);
+    });
+  });
+
+  group('IosUpdater', () {
+    test('never selects an asset (info-only, opens release page)', () async {
+      final IosUpdater u = IosUpdater();
+      final UpdateAsset? asset = await u.selectAsset(_assets(<String>[
+        'hibiki-0.4.2-ios.ipa',
+        'hibiki-0.4.2-macos.zip',
+      ]));
+      expect(asset, isNull);
+    });
+
+    test('checks updates but cannot install in-app', () {
+      final IosUpdater u = IosUpdater();
+      expect(u.supportsUpdateCheck, isTrue);
+      expect(u.supportsInAppInstall, isFalse);
+    });
+
+    test('apply must not be called on iOS', () {
+      final IosUpdater u = IosUpdater();
+      expect(u.apply(File('x'), '1.0.0'), throwsA(isA<StateError>()));
+    });
+  });
+
+  group('platform capability helpers include macOS in-app install', () {
+    test('synthesizeStableAssetNames lists the macOS zip', () {
+      final List<String> names = synthesizeStableAssetNames('0.4.2');
+      expect(names, contains('hibiki-0.4.2-macos.zip'));
+      expect(names, contains('hibiki-0.4.2-windows-setup.exe'));
+    });
+  });
+
+  group('macAppBundlePathForExecutable', () {
+    test('resolves the .app bundle from a Contents/MacOS executable', () {
+      expect(
+        macAppBundlePathForExecutable(
+          '/Applications/hibiki.app/Contents/MacOS/hibiki',
+        ),
+        '/Applications/hibiki.app',
+      );
+    });
+
+    test('handles a nested user path', () {
+      expect(
+        macAppBundlePathForExecutable(
+          '/Users/me/Applications/hibiki.app/Contents/MacOS/hibiki',
+        ),
+        '/Users/me/Applications/hibiki.app',
+      );
+    });
+
+    test('returns null when no .app segment is present', () {
+      expect(macAppBundlePathForExecutable('/usr/local/bin/hibiki'), isNull);
+    });
+  });
+
+  group('isZipHeader', () {
+    test('accepts the PK zip magic', () {
+      expect(isZipHeader(<int>[0x50, 0x4B, 0x03, 0x04]), isTrue);
+    });
+
+    test('rejects HTML/other bytes (proxy limit pages)', () {
+      expect(isZipHeader(<int>[0x3C, 0x21, 0x44, 0x4F]), isFalse); // <!DO
+      expect(isZipHeader(<int>[0x50]), isFalse);
+      expect(isZipHeader(<int>[]), isFalse);
+    });
+  });
+
+  group('buildMacSwapScript', () {
+    String script() => buildMacSwapScript(
+          parentPid: 4321,
+          newAppPath: '/tmp/updates/mac-update-1.2.0.extracted/hibiki.app',
+          targetAppPath: '/Applications/hibiki.app',
+          backupPath: '/tmp/updates/mac-update-1.2.0.backup',
+          extractDir: '/tmp/updates/mac-update-1.2.0.extracted',
+          resultPath: '/tmp/updates/mac-update-result.json',
+          logPath: '/tmp/updates/mac-update-1.2.0.log',
+        );
+
+    test('waits for the parent pid via a non-terminating ps probe', () {
+      final String s = script();
+      expect(s, contains('PARENT_PID=4321'));
+      expect(s, contains(r'ps -p "$PARENT_PID"'));
+      // Never terminates any process (mirrors the Windows HBK-AUDIT invariant).
+      expect(s, isNot(contains('kill')));
+    });
+
+    test('moves the old bundle aside before copying (reversible swap)', () {
+      final String s = script();
+      final int moveAside = s.indexOf(r'mv "$TARGET_APP" "$BACKUP"');
+      final int ditto = s.indexOf(r'/usr/bin/ditto "$NEW_APP" "$TARGET_APP"');
+      expect(moveAside, isNonNegative);
+      expect(ditto, isNonNegative);
+      expect(moveAside, lessThan(ditto), reason: '必须先把旧包移到备份再拷新包，失败可回滚，绝不留坏档');
+    });
+
+    test('restores the previous bundle when the copy fails', () {
+      final String s = script();
+      expect(s, contains(r'mv "$BACKUP" "$TARGET_APP"'));
+      expect(s, contains('restored previous version'));
+    });
+
+    test('clears quarantine and relaunches on success', () {
+      final String s = script();
+      expect(s, contains('xattr -dr com.apple.quarantine'));
+      expect(s, contains(r'open "$TARGET_APP"'));
+      expect(s, contains('write_result installed'));
+    });
+
+    test('single-quotes paths so spaces do not split arguments', () {
+      final String withSpace = buildMacSwapScript(
+        parentPid: 1,
+        newAppPath: '/tmp/a b/new.app',
+        targetAppPath: '/Applications/My App.app',
+        backupPath: '/tmp/a b/bak',
+        extractDir: '/tmp/a b',
+        resultPath: '/tmp/a b/r.json',
+        logPath: '/tmp/a b/l.log',
+      );
+      expect(withSpace, contains("TARGET_APP='/Applications/My App.app'"));
+    });
+  });
 }

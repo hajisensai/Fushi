@@ -3,10 +3,83 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart'
+    show resolveLookupAudioUrl;
 import 'package:hibiki/utils.dart';
+
+/// BUG-1005：把 [resolveLookupAudioUrl] 解析出的单词音频 ref 物化成本地 [File] 供 Anki 落
+/// 媒体。ref 可能是远端 `http(s)://` URL（forvo/jpod101/hibikiRemote 等远程发音源）或本地
+/// 文件路径（本地音频库命中）：前者下载到 [dir] 临时文件（扩展名按 URL/Content-Type 推断，
+/// 默认 mp3——单词音频主流格式），后者存在即直接包 [File]。失败 / 非 2xx / 空体返回 null。
+/// [client] 仅供测试注入（默认自建、用完关闭）。纯逻辑无全局依赖，可单测。
+@visibleForTesting
+Future<File?> materializeWordAudioRef(
+  String ref, {
+  required Directory dir,
+  http.Client? client,
+}) async {
+  if (ref.isEmpty) return null;
+  if (!ref.startsWith('http')) {
+    final String path =
+        ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+    final File f = File(path);
+    return f.existsSync() ? f : null;
+  }
+  final http.Client c = client ?? http.Client();
+  try {
+    final Uri uri = Uri.parse(ref);
+    final http.Response res = await c.get(uri);
+    if (res.statusCode < 200 || res.statusCode >= 300) return null;
+    if (res.bodyBytes.isEmpty) return null;
+    final String ext = wordAudioExtFor(uri, res.headers['content-type']);
+    await dir.create(recursive: true);
+    final File out = File('${dir.path}/word_audio_remote.$ext');
+    await out.writeAsBytes(res.bodyBytes, flush: true);
+    return out;
+  } catch (_) {
+    return null;
+  } finally {
+    if (client == null) c.close();
+  }
+}
+
+/// 单词音频物化文件的扩展名：优先按 [uri] 路径末段的已知音频后缀，其次按 [contentType]，
+/// 都不认时回退 `mp3`（单词音频主流格式）。纯函数，便于单测。
+@visibleForTesting
+String wordAudioExtFor(Uri uri, String? contentType) {
+  const Set<String> known = <String>{
+    'mp3',
+    'opus',
+    'ogg',
+    'oga',
+    'm4a',
+    'aac',
+    'wav',
+    'flac',
+    'webm',
+  };
+  final String last = uri.pathSegments.isEmpty ? '' : uri.pathSegments.last;
+  final int dot = last.lastIndexOf('.');
+  if (dot >= 0 && dot < last.length - 1) {
+    final String ext = last.substring(dot + 1).toLowerCase();
+    if (known.contains(ext)) return ext;
+  }
+  final String ct = (contentType ?? '').toLowerCase();
+  if (ct.contains('mpeg') || ct.contains('mp3')) return 'mp3';
+  if (ct.contains('opus')) return 'opus';
+  if (ct.contains('ogg')) return 'ogg';
+  if (ct.contains('mp4') || ct.contains('m4a') || ct.contains('aac')) {
+    return 'm4a';
+  }
+  if (ct.contains('wav')) return 'wav';
+  if (ct.contains('flac')) return 'flac';
+  if (ct.contains('webm')) return 'webm';
+  return 'mp3';
+}
 
 /// Fetches term audio from local Yomitan audio DB, online sources, or TTS.
 class LocalAudioEnhancement extends AudioEnhancement {
@@ -79,7 +152,25 @@ class LocalAudioEnhancement extends AudioEnhancement {
       // Fall through
     }
 
-    // 2. TTS to file
+    // 2. BUG-1005：配置的音频源（含**远程发音源** forvo/jpod101/hibikiRemote）——与查词
+    //    **播放**路径统一走 resolveLookupAudioUrl（尊重用户源顺序/开关，单一真相）。这是
+    //    BUG-631「播放侧已修、制卡器侧仍 local-only」的孪生修复：制卡自动填充此前只查本地
+    //    库(step 1)+TTS(step 3)、**完全忽略远程发音源**，只配了远程源的用户（多数日语学习者）
+    //    制卡恒无单词音频。解析出 ref（远端 URL 或本地路径）后物化成本地文件供 Anki 落媒体；
+    //    失败落到 TTS 兜底。
+    try {
+      final String? ref = await resolveLookupAudioUrl(appModel, term, reading);
+      if (ref != null && ref.isNotEmpty) {
+        final Directory remoteDir = await getApplicationSupportDirectory();
+        final File? materialized =
+            await materializeWordAudioRef(ref, dir: remoteDir);
+        if (materialized != null) return materialized;
+      }
+    } catch (_) {
+      // best-effort：解析/下载失败不阻断，落到 TTS 兜底。
+    }
+
+    // 3. TTS to file
     final dir = await getApplicationSupportDirectory();
     final outPath = '${dir.path}/tts_term_audio.wav';
     final word = reading.isNotEmpty ? reading : term;

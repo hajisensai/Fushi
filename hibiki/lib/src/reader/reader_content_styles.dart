@@ -141,6 +141,8 @@ class ReaderContentStyles {
     String? sasayakiColor,
     String? linkColor,
     String? themeOverride,
+    bool einkMode = false,
+    bool einkDark = false,
   }) {
     return '<style>\n${css(
       settings: settings,
@@ -152,6 +154,8 @@ class ReaderContentStyles {
       sasayakiColor: sasayakiColor,
       linkColor: linkColor,
       themeOverride: themeOverride,
+      einkMode: einkMode,
+      einkDark: einkDark,
     )}\n</style>';
   }
 
@@ -165,9 +169,28 @@ class ReaderContentStyles {
     String? sasayakiColor,
     String? linkColor,
     String? themeOverride,
+    // 墨水屏模式：强制纯黑白正文 + 线式高亮 + 关过渡（叠加在任意主题之上，见
+    // 文件末尾 _einkOverrideCss）。einkDark 决定黑底白字还是白底黑字，取自 app
+    // 明暗模式（与全局 E-ink 主题一致），不读阅读器自己的 theme key。
+    bool einkMode = false,
+    bool einkDark = false,
   }) {
-    final _ThemeColors colors = _themeColors(themeOverride ?? settings.theme,
-        customBg: customBg, customFg: customFg);
+    final _ThemeColors themedColors = _themeColors(
+        themeOverride ?? settings.theme,
+        customBg: customBg,
+        customFg: customFg);
+    // E-ink 覆盖发生在配色解析之后：正文/滚动条/UA color-scheme 全部吃纯黑白，
+    // 高亮的「线式化」由末尾的 _einkOverrideCss 用级联覆盖（同选择器后出现者胜）。
+    final _ThemeColors colors = einkMode
+        ? _ThemeColors(
+            textColor: einkDark ? '#fff' : '#000',
+            backgroundColor: einkDark ? '#000' : '#fff',
+            selectionColor: einkDark ? '#fff' : '#000',
+            sasayakiColor: 'transparent',
+            linkColor: einkDark ? '#fff' : '#000',
+            colorScheme: einkDark ? 'dark' : 'light',
+          )
+        : themedColors;
 
     // 查词高亮用「预合成到背景色的不透明色」：在无重叠区与原半透明色像素一致，
     // 但在与音频(sasayaki)高亮重叠区会覆盖其下的灰层 → 单层、查词优先、无双重高亮
@@ -666,6 +689,107 @@ ruby.hoshi-selection-ruby-active.hoshi-sasayaki-ruby-active {
 }
 a {
   color: ${linkColor ?? colors.linkColor}$readerStylePriority;
+}
+${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
+''';
+  }
+
+  /// 墨水屏模式覆盖块（追加在正文 CSS 最末尾，级联优先级最高）。
+  ///
+  /// 设计对齐 Hoshi-Reader-Android 的 E-ink 适配：
+  /// - 高亮全部从「半透明色块背景」改为**线式标记**——色块在墨水屏上是一大片
+  ///   抖动灰阶，且每次高亮移动都触发大面积刷新；下划线只刷新贴近文字的一条线。
+  ///   查词选区=粗实线、有声书跟随=虚线、搜索命中=双线、收藏句=保留原下划线但
+  ///   去掉色块（五色在灰阶屏上不可分，线本身就是收藏语义）。
+  /// - `--hoshi-reader-eink-mode: 1` 点亮 JS 侧既有的 isEInkMode() 分支
+  ///   （reader_visual_novel_scripts / 连续模式滚动缓动短路）。
+  /// - 关掉书籍自带的 transition/animation，慢刷新屏上任何补间都是残影。
+  static String _einkOverrideCss({required bool einkDark}) {
+    final String fg = einkDark ? '#fff' : '#000';
+    return '''
+/* ── E-ink 墨水屏模式覆盖（必须保持在生成 CSS 的最末尾） ── */
+:root {
+  --hoshi-reader-eink-mode: 1;
+  --hoshi-sel-handle: $fg;
+  --hoshi-sasayaki-text-color: inherit;
+  --hoshi-sasayaki-background-color: transparent;
+}
+* {
+  transition: none !important;
+  animation: none !important;
+}
+::highlight(hoshi-selection) {
+  background-color: transparent;
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: $fg;
+  text-decoration-thickness: 0.14em;
+  text-underline-offset: 0.18em;
+}
+ruby.hoshi-selection-ruby-active {
+  background-color: transparent !important;
+  color: inherit !important;
+  text-decoration-line: underline !important;
+  text-decoration-color: $fg !important;
+  text-decoration-thickness: 0.14em !important;
+  text-underline-offset: 0.18em !important;
+}
+.hoshi-dict-highlight {
+  background-color: transparent !important;
+  color: inherit !important;
+  text-decoration-line: underline !important;
+  text-decoration-color: $fg !important;
+  text-decoration-thickness: 0.14em !important;
+  text-underline-offset: 0.18em !important;
+}
+::highlight(hoshi-sasayaki) {
+  background-color: transparent;
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: $fg;
+  text-decoration-thickness: 0.10em;
+  text-underline-offset: 0.18em;
+}
+ruby.hoshi-sasayaki-ruby-active {
+  background-color: transparent !important;
+  color: inherit !important;
+  text-decoration-line: underline !important;
+  text-decoration-style: dashed !important;
+  text-decoration-color: $fg !important;
+  text-decoration-thickness: 0.10em !important;
+  text-underline-offset: 0.18em !important;
+}
+.hoshi-sasayaki-cue.hoshi-sasayaki-active {
+  background-color: transparent !important;
+  color: inherit !important;
+  text-decoration-line: underline !important;
+  text-decoration-style: dashed !important;
+  text-decoration-color: $fg !important;
+  text-decoration-thickness: 0.10em !important;
+  text-underline-offset: 0.18em !important;
+}
+/* 查词+有声书重叠：查词的粗实线优先（双类特异性高于单类，语义同 BUG-125）。 */
+ruby.hoshi-selection-ruby-active.hoshi-sasayaki-ruby-active {
+  text-decoration-style: solid !important;
+  text-decoration-thickness: 0.14em !important;
+}
+::highlight(hoshi-search) {
+  background-color: transparent;
+  text-decoration-line: underline;
+  text-decoration-style: double;
+  text-decoration-color: $fg;
+}
+::highlight(hoshi-hl-yellow), .hoshi-hl-yellow, ruby.hoshi-hl-yellow-ruby-active,
+::highlight(hoshi-hl-green), .hoshi-hl-green, ruby.hoshi-hl-green-ruby-active,
+::highlight(hoshi-hl-blue), .hoshi-hl-blue, ruby.hoshi-hl-blue-ruby-active,
+::highlight(hoshi-hl-pink), .hoshi-hl-pink, ruby.hoshi-hl-pink-ruby-active,
+::highlight(hoshi-hl-purple), .hoshi-hl-purple, ruby.hoshi-hl-purple-ruby-active {
+  background-color: transparent;
+  text-decoration-color: $fg;
+}
+a {
+  color: $fg !important;
 }
 ''';
   }

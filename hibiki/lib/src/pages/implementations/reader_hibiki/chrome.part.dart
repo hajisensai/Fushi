@@ -1394,8 +1394,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         // appModel.closeMedia 里对 hibikiBooksProvider/bookLastReadAtProvider 的
         // invalidate（BUG-777 依赖它刷新书架「继续阅读」hero 与进度）、以及
         // triggerAutoSyncAfterClose 关书自动同步都不会触发。maybePop() 触发
-        // PopScope 回调 → onWillPop() → nav.pop()，与键盘 ESC / 手柄 B 分支
-        // （caret.part.dart 的 readerDismissDict）走的是同一条退出路径。
+        // PopScope 回调 → onWillPop() → nav.pop()，与「退出书籍」快捷键分支
+        // （caret.part.dart 的 readerExitBook，schema v6 从 readerDismissDict
+        // 拆出）走的是同一条退出路径。
         onExitReader: () {
           unawaited(Navigator.of(context).maybePop());
         },

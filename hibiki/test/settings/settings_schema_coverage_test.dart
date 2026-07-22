@@ -249,6 +249,29 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 真实做种回传是桌面/Android native 集成，widget 测不到。
   'video/Enable upload / seeding':
       'test/media/torrent/torrent_upload_policy_test.dart',
+  // 阶段 G：「下载」destination 经 body 逃生口内联既有 TorrentSettingsSection
+  // 组件（PR#300 在改其内部，不改写）。该组件的 AdaptiveSettingsSwitchRow 开关全部
+  // 写 QbConnectionConfig（changed=true），焦点覆盖 harness 能切到并翻转它们，但
+  // 生效点在内置 libtorrent 引擎的 session/anti-leech/上传策略下发（native，widget
+  // 测不到）；由专项纯函数/编解码测试覆盖。桌面默认后端=embedded，故这些开关在
+  // harness 里可达——全部登记（含反吸血二级开关，超集登记无害）。
+  'downloads/Enable upload / seeding':
+      'test/media/torrent/torrent_upload_policy_test.dart',
+  'downloads/DHT': 'test/media/torrent/anime_download_config_backend_test.dart',
+  'downloads/Local peer discovery (LSD)':
+      'test/media/torrent/anime_download_config_backend_test.dart',
+  'downloads/UPnP port mapping':
+      'test/media/torrent/anime_download_config_backend_test.dart',
+  'downloads/NAT-PMP port mapping':
+      'test/media/torrent/anime_download_config_backend_test.dart',
+  'downloads/Anonymous mode':
+      'test/media/torrent/anime_download_config_backend_test.dart',
+  'downloads/Enable anti-leech':
+      'test/media/torrent/anime_download_config_backend_test.dart',
+  'downloads/Ban progress cheat':
+      'test/media/torrent/anime_download_config_backend_test.dart',
+  'downloads/Ban relative progress cheat':
+      'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread Direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
@@ -305,6 +328,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'DEVICE: clipboard lookup destination routing main/panel/transient (test/sync/desktop_lookup_service_test.dart)',
   'lookup/Panel opacity':
       'DEVICE: floating clipboard panel opacity (native/WebView render)',
+  // 阶段 E：防截屏开关。效果是 native SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)
+  // （Windows-only，widget 树测不到）；写穿 + 即时重应用由专项测试咬住，
+  // 面板栏 🛡 按钮同路径由 clipboard_panel_controller_test 覆盖。
+  'lookup/Block screen capture':
+      'test/settings/settings_block_capture_test.dart + test/lookup/clipboard_panel_controller_test.dart (native display affinity)',
   'lookup/Auto read word on lookup': 'DEVICE: TTS auto-read',
   'lookup/Lookup audio volume':
       'test/reader/lookup_audio_volume_settings_test.dart + test/utils/misc/lookup_audio_volume_wiring_static_test.dart + test/settings/settings_renderer_test.dart',

@@ -291,6 +291,57 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     final String? mediaSourceTlsPin = remoteClient is HibikiClientSyncBackend
         ? remoteClient.activeFingerprintSha256
         : null;
+    // BUG-1004：互联 host（LAN Hibiki 库）远端流——注入「host 端裁音频段」裁切器：host 用
+    // 本地文件裁好句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，
+    // 从根上绕开 client ffmpeg 打不开 host 自签 https/token 流的整类失败（BUG-891 pin 路径
+    // 的残余缺口：移动端指纹缺失/URL 编码/网络脆弱仍 I/O error）。老 host 无 clipaudio 端点
+    // → 404 → 裁切器返 null → 引擎回退现有 ffmpeg-over-URL 抽取。非 Hibiki host（本地/
+    // YouTube/直链）不注入。
+    final RemoteVideoInfo? remoteInfo = _effectiveRemoteInfo;
+    Future<String?> Function({
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+    })? remoteAudioClipper;
+    if (remoteClient is HibikiClientSyncBackend && remoteInfo != null) {
+      final HibikiClientSyncBackend backend = remoteClient;
+      final String remoteId = remoteInfo.id;
+      final int episode = _currentEpisode;
+      final int? audioIdx = controller.currentAudioStreamIndex;
+      final int audioCount = controller.realAudioStreamCount;
+      final int ac = mediaCompression.audioChannels;
+      final String bitrate = mediaCompression.audioBitrate;
+      remoteAudioClipper = ({
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+      }) async {
+        final File dest = File(outputPath);
+        try {
+          await backend.getRemoteVideoAudioClip(
+            remoteId,
+            dest,
+            startMs: startMs,
+            endMs: endMs,
+            episodeIndex: episode,
+            audioStreamIndex: audioIdx,
+            audioStreamCount: audioCount,
+            audioChannels: ac,
+            audioBitrate: bitrate,
+          );
+          if (dest.existsSync() && dest.lengthSync() > 0) return dest.path;
+        } catch (e, st) {
+          // 老 host 无端点(404)/网络失败：记录并回 null，让引擎回退直连 ffmpeg 抽取。
+          ErrorLogService.instance.log('mineVideoCard.remoteAudioClip', e, st);
+        }
+        if (dest.existsSync()) {
+          try {
+            dest.deleteSync();
+          } catch (_) {}
+        }
+        return null;
+      };
+    }
     // TODO-1000：委托统一沉浸制卡引擎。媒体降级阶梯 / 无音频中止 / 组 context / 落卡都在
     // 引擎内；本壳只管 OSD + 视频统计。onFailure 捕获 GIF(首)/音频(末)失败摘要供 OSD。
     String? gifFailure;
@@ -301,6 +352,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         mediaSource: controller.miningSource,
         audioSource: controller.miningAudioSource,
         mediaSourceTlsPinSha256: mediaSourceTlsPin,
+        // BUG-1004：互联 host 远端流句子音频优先走 host 端裁（绕开 client ffmpeg 抓远端流）。
+        remoteAudioClipper: remoteAudioClipper,
         clipStartMs: clipStartMs,
         clipEndMs: clipEndMs,
         sentence: sentence,

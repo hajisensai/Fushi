@@ -133,6 +133,102 @@ void main() {
     expect(repo.minedContext!.source, AnkiMiningSource.video);
   });
 
+  test('BUG-1004 remoteAudioClipper 命中远端流 → 用 host 端裁产物、不调 ffmpeg 音频抽取',
+      () async {
+    final repo = _FakeRepo();
+    bool audioCalled = false;
+    bool clipperCalled = false;
+    Future<String?> trackingAudio(
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int? audioStreamIndex,
+        int? audioStreamCount,
+        FfmpegFailureReporter? onFailure,
+        int audioChannels = 1,
+        String audioBitrate = '64k',
+        String? tlsPinSha256}) async {
+      audioCalled = true;
+      return outputPath;
+    }
+
+    final res =
+        await build(gif: okGif, audio: trackingAudio, frame: okFrame).mine(
+            ImmersionMiningRequest(
+              fields: const {'expression': '走る'},
+              // 互联 host 自签 https 流：client ffmpeg 打不开，改走 host 端裁。
+              mediaSource:
+                  'https://host.example:38765/api/library/videos/v/stream?token=x',
+              clipStartMs: 1000,
+              clipEndMs: 3000,
+              sentence: '走り出した。',
+              remoteAudioClipper: ({
+                required int startMs,
+                required int endMs,
+                required String outputPath,
+              }) async {
+                clipperCalled = true;
+                expect(startMs, 1000);
+                expect(endMs, 3000);
+                return outputPath;
+              },
+            ),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(res.aborted, false);
+    expect(clipperCalled, true, reason: 'host 端裁切器应被调用');
+    expect(audioCalled, false, reason: 'host 端裁命中后不得再对远端 URL 跑 ffmpeg 抽取');
+    expect(repo.minedContext!.sasayakiAudioPath,
+        endsWith('immersion_audio_host.aac'));
+  });
+
+  test('BUG-1004 remoteAudioClipper 返回 null → 回退 ffmpeg-over-URL 抽取', () async {
+    final repo = _FakeRepo();
+    bool audioCalled = false;
+    Future<String?> trackingAudio(
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int? audioStreamIndex,
+        int? audioStreamCount,
+        FfmpegFailureReporter? onFailure,
+        int audioChannels = 1,
+        String audioBitrate = '64k',
+        String? tlsPinSha256}) async {
+      audioCalled = true;
+      return outputPath;
+    }
+
+    final res =
+        await build(gif: okGif, audio: trackingAudio, frame: okFrame).mine(
+            ImmersionMiningRequest(
+              fields: const {'expression': '走る'},
+              mediaSource:
+                  'https://host.example:38765/api/library/videos/v/stream?token=x',
+              clipStartMs: 1000,
+              clipEndMs: 3000,
+              sentence: '走り出した。',
+              // 老 host 无 clipaudio 端点 / 网络失败：裁切器返 null。
+              remoteAudioClipper: ({
+                required int startMs,
+                required int endMs,
+                required String outputPath,
+              }) async =>
+                  null,
+            ),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(res.aborted, false);
+    expect(audioCalled, true,
+        reason: 'host 端裁返 null 后必须回退直连 ffmpeg 抽取（Never break userspace）');
+    expect(repo.minedContext!.sasayakiAudioPath,
+        endsWith('immersion_audio.${immersionMiningAudioExtension()}'));
+  });
+
   test('provided audio bytes use the platform-aware immersion audio filename',
       () async {
     final repo = _FakeRepo();

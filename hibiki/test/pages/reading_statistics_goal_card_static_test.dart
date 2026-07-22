@@ -77,4 +77,32 @@ void main() {
     expect(text.contains('setState(() {})'), isTrue,
         reason: '写 pref 后 setState 即时刷新卡片');
   });
+
+  test('BUG-970: goal-set entry lives in the page top bar, always reachable',
+      () {
+    final String text = src.readAsStringSync();
+    // 目标卡在两目标皆 0 时整块隐藏（上一个测试的 never-break 红线），因此设置
+    // 入口必须常驻页面顶栏 actions，否则从未设过目标的用户无法首次设置。守卫：
+    //   1) 顶栏有 flag 图标按钮，onTap 直接调 _editGoals；
+    //   2) 该按钮位于 scaffold actions（在 body: 之前）；
+    //   3) 顶栏入口不被任何 dailyGoal/weeklyGoal 条件包裹（恒可见）。
+    final int actionsIdx = text.indexOf('actions: <Widget>[');
+    expect(actionsIdx, greaterThanOrEqualTo(0),
+        reason: '页面应有 scaffold actions');
+    final int bodyIdx = text.indexOf('body: _loading', actionsIdx);
+    expect(bodyIdx, greaterThan(actionsIdx), reason: '应能定位 actions 与 body 边界');
+
+    final String actionsRegion = text.substring(actionsIdx, bodyIdx);
+    expect(actionsRegion.contains('icon: Icons.flag_outlined'), isTrue,
+        reason: '顶栏应有 flag 目标设置图标按钮');
+    expect(actionsRegion.contains('onTap: _editGoals'), isTrue,
+        reason: '顶栏目标按钮应直接调 _editGoals');
+    expect(actionsRegion.contains('tooltip: t.stat_goal_set'), isTrue,
+        reason: '顶栏目标按钮复用 stat_goal_set 文案');
+    // 恒可见：顶栏 actions 区域内不得出现目标数值的门控条件。
+    expect(actionsRegion.contains('dailyGoal'), isFalse,
+        reason: '顶栏目标入口不得被 dailyGoal 条件门控');
+    expect(actionsRegion.contains('weeklyGoal'), isFalse,
+        reason: '顶栏目标入口不得被 weeklyGoal 条件门控');
+  });
 }

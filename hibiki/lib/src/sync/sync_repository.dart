@@ -102,6 +102,15 @@ class SyncRepository {
   // 本机 Drive 存储空间/scope），不随备份导入覆盖。
   static const _keyGoogleDriveHoshiCompat = 'google_drive_hoshi_compat';
   static const _keySyncContent = 'sync_content_enabled';
+  // BUG-988：互联通道专属的「上传内容到互联对端」开关，独立于云备份的
+  // sync_*_enabled（那套只管云通道）。互联解耦(PR#223)后互联通道曾复用云备份的
+  // 共享开关，用户失去「只对互联单独控制上不上传」的能力；这四个键把互联通道的内容
+  // 上传拆出来单独控制。默认 false（用户显式 opt-in，不被「启用互联连接」裹挟着自动传）。
+  static const _keyInterconnectSyncContent = 'interconnect_sync_content';
+  static const _keyInterconnectSyncDictionary = 'interconnect_sync_dictionary';
+  static const _keyInterconnectSyncAudioBookFiles =
+      'interconnect_sync_audiobook_files';
+  static const _keyInterconnectSyncVideoFiles = 'interconnect_sync_video_files';
   static const _keyWebDavUrl = 'sync_webdav_url';
   static const _keyWebDavUsername = 'sync_webdav_username';
   static const _keyWebDavPassword = 'sync_webdav_password';
@@ -325,6 +334,32 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keySyncContent, false);
   Future<void> setSyncContentEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncContent, v);
+
+  // ── 互联通道专属上传开关（BUG-988） ────────────────────────────────
+  // 只作用于互联通道（[_runSyncChannel] 的 isInterconnect==true），与上面的云备份
+  // sync_*_enabled 完全解耦；默认 false，让用户独立控制「要不要把本设备内容上传到
+  // 互联对端」，不被「启用互联连接」自动裹挟。位置/统计等轻量进度仍走共享开关（跨设备
+  // 续读是互联本意），此处仅拆「重内容」四类：书籍/内容、词典、有声书文件、视频文件。
+
+  Future<bool> isInterconnectSyncContentEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSyncContent, false);
+  Future<void> setInterconnectSyncContentEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSyncContent, v);
+
+  Future<bool> isInterconnectSyncDictionaryEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSyncDictionary, false);
+  Future<void> setInterconnectSyncDictionaryEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSyncDictionary, v);
+
+  Future<bool> isInterconnectSyncAudioBookFilesEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSyncAudioBookFiles, false);
+  Future<void> setInterconnectSyncAudioBookFilesEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSyncAudioBookFiles, v);
+
+  Future<bool> isInterconnectSyncVideoFilesEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSyncVideoFiles, false);
+  Future<void> setInterconnectSyncVideoFilesEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSyncVideoFiles, v);
 
   // ── Per-book audiobook position (synced) ──────────────────────────
 

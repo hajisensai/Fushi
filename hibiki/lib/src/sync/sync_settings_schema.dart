@@ -204,11 +204,12 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncLocalAudioEnabled(value);
             },
           ),
-          // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给已解析的后端。互联
-          // host（本机在做服务端）没有任何 outbound sync——client 从它拉取/往它推，
-          // 它自己不上传（auto_sync 同理已隐藏）。故 host 模式下这三个上传开关纯空转，
-          // 一律随 auto_sync 的 `!_isHostingInterconnect` 门控隐藏（client 模式仍可见，
-          // client 确实能往 host 推）。
+          // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
+          // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
+          // 单独控制（见 buildInterconnectDestination），二者互不牵连。互联 host（本机在
+          // 做服务端）没有任何 outbound sync——client 从它拉取/往它推，它自己不上传
+          // （auto_sync 同理已隐藏）。故 host 模式下这三个上传开关纯空转，一律随 auto_sync
+          // 的 `!_isHostingInterconnect` 门控隐藏（client 模式仍可见）。
           SettingsSwitchItem(
             id: 'sync.content',
             title: t.sync_content,
@@ -392,6 +393,70 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
+      // BUG-988：上传到互联对端——互联通道专属的「本设备内容要不要上传给对端」分项开关，
+      // 独立于云备份的同名开关（那套只管云通道），也独立于上面的「启用互联」连接开关。
+      // 默认全关：用户开互联只为远端看/读时不会被自动上传裹挟，想传哪类自己勾。与云备份
+      // 上传开关同为 OUTBOUND，host 模式（本机做服务端，client 往它推）无 outbound → 隐藏。
+      SettingsSection(
+        title: t.interconnect_upload_section,
+        footer: t.interconnect_upload_section_footer,
+        visible: (SettingsContext ctx) =>
+            interconnectActive(ctx) && !_isHostingInterconnect(ctx),
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'interconnect.upload_content',
+            title: t.interconnect_upload_content,
+            subtitle: t.interconnect_upload_content_hint,
+            icon: Icons.book_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncContent,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncContent = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectSyncContentEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.upload_dictionary',
+            title: t.interconnect_upload_dictionary,
+            subtitle: t.interconnect_upload_dictionary_hint,
+            icon: Icons.menu_book_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncDictionary,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncDictionary = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectSyncDictionaryEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.upload_audiobook_files',
+            title: t.interconnect_upload_audiobook_files,
+            subtitle: t.interconnect_upload_audiobook_files_hint,
+            icon: Icons.audio_file_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncAudioBookFiles,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncAudioBookFiles = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectSyncAudioBookFilesEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.upload_video_files',
+            title: t.interconnect_upload_video_files,
+            subtitle: t.interconnect_upload_video_files_hint,
+            icon: Icons.video_file_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncVideoFiles,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncVideoFiles = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectSyncVideoFilesEnabled(value);
+            },
+          ),
+        ],
+      ),
       // 本机作为服务器：host 模式开关（与 client 角色互斥，见 _SyncSettingsState
       // 的 roleRevision 互斥锁）。
       SettingsSection(
@@ -498,6 +563,11 @@ class _SyncSettingsState {
   bool syncContent = false;
   bool syncAudioBookFiles = false;
   bool syncVideoFiles = false;
+  // BUG-988：互联通道专属的「上传内容到对端」开关，独立于上面的云备份 sync* 开关。
+  bool interconnectSyncContent = false;
+  bool interconnectSyncDictionary = false;
+  bool interconnectSyncAudioBookFiles = false;
+  bool interconnectSyncVideoFiles = false;
   bool _loaded = false;
   bool _loading = false;
 
@@ -557,6 +627,13 @@ class _SyncSettingsState {
       syncContent = await _repo.isSyncContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       syncVideoFiles = await _repo.isSyncVideoFilesEnabled();
+      interconnectSyncContent = await _repo.isInterconnectSyncContentEnabled();
+      interconnectSyncDictionary =
+          await _repo.isInterconnectSyncDictionaryEnabled();
+      interconnectSyncAudioBookFiles =
+          await _repo.isInterconnectSyncAudioBookFilesEnabled();
+      interconnectSyncVideoFiles =
+          await _repo.isInterconnectSyncVideoFilesEnabled();
       serverEnabled = await _repo.isServerEnabled();
       hasClientConnection = (await _repo.getHibikiClientUrls()).isNotEmpty;
       _loaded = true;

@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   group('parseAniListSearchResponse', () {
@@ -143,6 +147,83 @@ void main() {
       const JimakuFile f =
           JimakuFile(name: 'Bocchi - 07.ja.srt', url: 'https://x/7');
       expect(f.episode, 7);
+    });
+  });
+
+  group('JimakuClient.searchEntries（AniList id → 文本回退，BUG-1002）', () {
+    test('anilist_id 命中 → 直接返回，不再走文本搜', () async {
+      final List<String> calls = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        if (p.containsKey('anilist_id')) {
+          calls.add('id:${p['anilist_id']}');
+          // 用 utf8 字节构造（贴合线上：body 是服务器 utf8 原始字节，
+          // 而 http.Response 的 String 构造无 charset 时按 latin1 编码会毁日文）。
+          return http.Response.bytes(
+              utf8.encode('[{"id":10,"name":"命中"}]'), 200);
+        }
+        calls.add('query:${p['query']}');
+        return http.Response('[]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries = await jc.searchEntries(
+        anilistId: 21,
+        queryFallbacks: <String>['とむとじぇりーごっこ'],
+      );
+      expect(entries, hasLength(1));
+      expect(entries.first.name, '命中');
+      expect(calls, <String>['id:21']); // 未回退文本搜
+    });
+
+    test('anilist_id 空 → 按序回退文本搜、跳过空串、首个命中即停（复现本 bug）', () async {
+      final List<String> calls = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        if (p.containsKey('anilist_id')) {
+          calls.add('id');
+          return http.Response('[]', 200); // 条目未挂 AniList id
+        }
+        calls.add('query:${p['query']}');
+        if (p['query'] == 'とむとじぇりーごっこ') {
+          return http.Response.bytes(
+              utf8.encode('[{"id":7,"name":"字幕在此"}]'), 200);
+        }
+        return http.Response('[]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries = await jc.searchEntries(
+        anilistId: 999,
+        queryFallbacks: <String>['', 'Tom Jerry romaji', 'とむとじぇりーごっこ'],
+      );
+      expect(entries, hasLength(1));
+      expect(entries.first.name, '字幕在此');
+      // 空串被跳过；命中后不再尝试后续（此处第 3 个即命中，无第 4 个）。
+      expect(
+          calls, <String>['id', 'query:Tom Jerry romaji', 'query:とむとじぇりーごっこ']);
+    });
+
+    test('anilist_id 与全部文本都空 → 空', () async {
+      final MockClient client =
+          MockClient((http.Request req) async => http.Response('[]', 200));
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      expect(
+        await jc
+            .searchEntries(anilistId: 1, queryFallbacks: <String>['a', 'b']),
+        isEmpty,
+      );
+    });
+
+    test('无 anilistId → 仅按文本回退', () async {
+      final MockClient client = MockClient((http.Request req) async {
+        if (req.url.queryParameters.containsKey('query')) {
+          return http.Response('[{"id":3,"name":"q"}]', 200);
+        }
+        return http.Response('[]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries =
+          await jc.searchEntries(queryFallbacks: <String>['x']);
+      expect(entries.single.name, 'q');
     });
   });
 }

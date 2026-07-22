@@ -2,8 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.app-sandbox</key>
-	<true/>
+	<!--
+		全平台自动更新 Phase 3（去沙盒决策）：移除 com.apple.security.app-sandbox。
+		应用内更新需要 Process 替换 /Applications/hibiki.app 并重启（见 MacInstaller），
+		沙盒容器禁止写 /Applications，故去沙盒是真自动更新的前提。代价：放弃 Mac App
+		Store 上架（商店强制沙盒）——已与用户确认接受（docs/specs/2026-06-04-all-
+		platform-auto-update-design.md §5）。
+
+		其余 entitlement **保留不删**（never break userspace）：去沙盒后它们对 OS 是
+		no-op（沙盒外本就全盘访问），但保留可让数据根 security-scoped bookmark 代码路径
+		（AppDelegate.swift / app_paths.dart / data_root.part.dart）零改动，老用户自定义
+		数据根照旧工作；file picker 与录音同理不受影响。
+	-->
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
 	<key>com.apple.security.files.bookmarks.app-scope</key>

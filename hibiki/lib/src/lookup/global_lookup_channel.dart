@@ -77,6 +77,10 @@ abstract final class GlobalLookupChannel {
         top: top,
       );
 
+  /// 防截屏（与剪贴板面板同一 pref）：把 display affinity 应用到瞬态覆盖窗。
+  static Future<void> setBlockCapture(bool block) =>
+      _impl.setBlockCapture(block);
+
   static Future<void> hide({bool notify = true}) => _impl.hide(notify: notify);
 
   static Future<bool> isShowing() => _impl.isShowing();

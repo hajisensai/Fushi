@@ -334,6 +334,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     Widget? coverBadge,
     Widget? leadingBadge,
     Widget? metadata,
+    Widget? loadingOverlay,
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double overlayInset = tokens.spacing.gap * 0.75;
@@ -394,6 +395,11 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
                     top: overlayInset,
                     child: _bookCardTagArea(tagLabels),
                   ),
+                // 有声书两阶段下载空窗期的加载指示（BUG-990）：EPUB 已落库、有声书还在
+                // 下，占位卡已被本地卡顶替，靠这个居中全幅覆盖层继续显示「还在下」——
+                // 不抢占已被占用的 coverBadge/leadingBadge/tagLabels 槽，叠在最上层。
+                if (loadingOverlay != null)
+                  Positioned.fill(child: Center(child: loadingOverlay)),
               ],
             ),
           ),

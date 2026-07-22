@@ -1,0 +1,16 @@
+## BUG-1005 · 制卡缺单词音频·扩展needsAudio门+制卡器忽略远程发音源
+- **报告**：2026-07-22（用户：互联视频制卡「缺少单词音频」，与 [[BUG-1004]] 同轮报告）
+- **真实性**：✅ 真 bug，两条独立根因（均 file:line 核实）：
+  - **场景 A（浏览器扩展 / 沉浸制卡）**：`hibiki/assets/browser_extension/content.js`（及镜像 `tools/browser-extension/content.js`）注入查词结果时只写 `window.audioSources`，**从不写 `window.needsAudio`**；而 `hibiki/assets/popup/popup.js:1282` 的「制卡时重新解析单词音频」分支门是 `window.audioSources?.length && window.needsAudio` → `needsAudio===undefined` → 恒 false → 制卡 payload `audio` 字段恒空（只吃缓存，缓存 token 5 分钟过期后还 404）。对照：App 内 popup 由 `hibiki/lib/src/pages/implementations/popup_settings_injection.dart` 同时注入 `window.audioSources` + `window.needsAudio = true`。
+  - **场景 B（App 内制卡自动填充）**：`hibiki/lib/src/creator/enhancements/local_audio_enhancement.dart` `_generateAudio` 只查本地 Yomitan 音频库（`TtsChannel.queryLocalAudio`）+ TTS，**完全忽略用户配置的远程发音源**（forvo/jpod101/hibikiRemote）。而**播放**路径 `lookup_audio_playback.dart` `resolveLookupAudioUrl` → `WordAudioResolver.resolveConfigured` 走全源。二者分叉——只配了远程发音源（多数日语学习者）、没建本地库、TTS 不可用时制卡恒无单词音频。是 [[BUG-631]]（只修了播放侧的 local-only 退化）在**制卡器侧的孪生 bug**。
+- **[x] ① 已修复** —
+  - **场景 A**：两份 `content.js` 镜像在每处 `window.audioSources = ...` 之后补 `window.needsAudio = true;`（字节级插入，保留文件内 3 个 NUL 字节），与 App 内 popup 注入对齐。
+  - **场景 B**：`local_audio_enhancement.dart` `_generateAudio` 在本地库(step 1)落空后、TTS(step 3)前，插入 step 2 走全源 `resolveLookupAudioUrl(appModel, term, reading)`（尊重用户源顺序/开关，与播放路径统一真相），解析出 ref（远端 URL / 本地路径）后由新增 `materializeWordAudioRef` 物化成本地文件供 Anki 落媒体；失败落 TTS 兜底。本地库优先的现状不变（Never break userspace），仅补远程发音源这一缺口。
+  - 提交：<待填>。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/creator/word_audio_materialize_test.dart`：`materializeWordAudioRef`（远端 200 下载写盘按后缀命名 / 404 不落半成品 / 空体 null / 本地路径命中 / `file://` / 空 ref）+ `wordAudioExtFor`（URL 后缀 > Content-Type > 回退 mp3），注入 `MockClient`。
+  - `hibiki/test/pages/extension_content_needs_audio_guard_test.dart`：两份 `content.js` 镜像每处 audioSources 注入都伴随 `window.needsAudio = true`（源码扫描守卫，防镜像回退）。
+  - `flutter analyze` 0 issue；上述测试全绿。
+- **备注**：
+  - 真机（只配远程发音源时 App 内制卡 + 扩展制卡都出单词音频）验证待办。
+  - 关联 [[BUG-631]]（播放侧同类修复，本 bug 复用其 `resolveConfigured` 全源真相）、[[BUG-1004]]（同轮报告的句子音频/制卡失败，独立根因）。

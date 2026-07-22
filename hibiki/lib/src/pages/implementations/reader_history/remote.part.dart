@@ -334,6 +334,9 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     if (_downloadingBooks.containsKey(book.title)) return;
     // #3: 标记下载中（先置不确定进度），卡片立刻显示进行中反馈。
     _rebuild(() => _downloadingBooks[book.title] = null);
+    // BUG-990：在 try 外持有「已标记有声书下载中的本地 bookKey」，供 finally 清理
+    // （localBookKey 在 try 内声明、finally 不可见）。
+    String? markedAudiobookKey;
     try {
       final File dest = await _remoteBookDestination(book);
       await client.getRemoteBook(
@@ -387,6 +390,13 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       // 远端书时不再丢「阅读记录」（放在有声书下载之前、独立吞错，保证进度回填不被
       // 有声书失败连带跳过）。
       await _downloadRemoteBookProgress(book, client, localBookKey);
+      // BUG-990：EPUB 已落库、有声书未落库的空窗起点——标记本地 bookKey「有声书下载中」，
+      // 让被 provider 自动刷新顶替出来的本地卡（EPUB / SRT）继续显示加载覆盖层，不露出
+      // 「无转圈的普通书」。清理统一在下方 finally（覆盖成功 / 两类失败全部出口）。
+      if (localBookKey != null && book.hasAudiobook) {
+        markedAudiobookKey = localBookKey;
+        _rebuild(() => _downloadingAudiobookKeys.add(localBookKey));
+      }
       // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。
       await _downloadRemoteAudiobook(book, client, localBookKey);
     } on _RemoteAudiobookException catch (e, stack) {
@@ -411,10 +421,19 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       );
       return;
     } finally {
-      if (mounted) {
-        _rebuild(() => _downloadingBooks.remove(book.title));
-      } else {
+      // 单点清理（覆盖成功 + _RemoteAudiobookException + 通用 catch 的所有 return 出口）：
+      // Dart 的 finally 在 catch 内 return 之后仍执行，故 audiobook 键只在此清一次即可。
+      void clear() {
         _downloadingBooks.remove(book.title);
+        if (markedAudiobookKey != null) {
+          _downloadingAudiobookKeys.remove(markedAudiobookKey);
+        }
+      }
+
+      if (mounted) {
+        _rebuild(clear);
+      } else {
+        clear();
       }
     }
     if (!mounted) return;

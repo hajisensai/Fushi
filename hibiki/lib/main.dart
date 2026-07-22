@@ -1001,7 +1001,13 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         return;
       }
       _windowsUpdateHandoffChecked = true;
+      // Windows 与 macOS 运行时互斥；两个 reconcile 各自按平台自守（非本平台即早退），
+      // 故并列调用只会有一个真正执行。共用同一 checked 旗标做一次性去重。
       unawaited(UpdateChecker.reconcilePendingWindowsInstallerHandoff(
+        navigatorContext,
+        currentVersion,
+      ));
+      unawaited(UpdateChecker.reconcilePendingMacInstallerHandoff(
         navigatorContext,
         currentVersion,
       ));

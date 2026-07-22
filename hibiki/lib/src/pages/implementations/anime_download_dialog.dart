@@ -42,6 +42,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   final TextEditingController _nyaaQueryCtrl = TextEditingController();
   late final TextEditingController _jimakuKeyCtrl;
 
+  /// 字幕手动搜索：搜索词（选番后预填自动推导标题，可编辑）+ 可选集号，
+  /// 供自动搜不到时手改重搜 Jimaku（BUG-896 后续：加手动入口）。
+  final TextEditingController _jimakuQueryCtrl = TextEditingController();
+  final TextEditingController _jimakuEpisodeCtrl = TextEditingController();
+
   // ---- 通用下载（粘贴磁力：书/视频/任意）----
   final TextEditingController _magnetCtrl = TextEditingController();
   String _genericKind = AnimeDownloadPlan.kindAuto;
@@ -101,6 +106,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     _animeQueryCtrl.dispose();
     _nyaaQueryCtrl.dispose();
     _jimakuKeyCtrl.dispose();
+    _jimakuQueryCtrl.dispose();
+    _jimakuEpisodeCtrl.dispose();
     _magnetCtrl.dispose();
     super.dispose();
   }
@@ -154,6 +161,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         ? media.romaji!.trim()
         : media.displayTitle;
     _nyaaQueryCtrl.text = query;
+    // 手动字幕搜索框预填自动推导标题（日文名优先），集号清空；用户可改词/填集号重搜。
+    final List<String> jimakuQueries = _jimakuFallbackQueries(media);
+    _jimakuQueryCtrl.text =
+        jimakuQueries.isNotEmpty ? jimakuQueries.first : media.displayTitle;
+    _jimakuEpisodeCtrl.clear();
     setState(() {
       _selectedMedia = media;
       _selectedTorrent = null;
@@ -215,9 +227,38 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     }
   }
 
-  /// 拉 Jimaku 字幕索引：searchByAnilistId → 首条目 → listFiles 全量 → 按集索引。
-  /// 无 key / 无条目 / 网络失败 → 空索引（徽标显示无字幕），不阻塞选种。
+  /// 自动拉 Jimaku 字幕索引（选番时）：先按 AniList id 搜、空则回退标题文本搜。
   Future<void> _fetchJimaku(AniListMedia media) async {
+    await _runJimakuSearch(
+      anilistId: media.id,
+      queries: _jimakuFallbackQueries(media),
+    );
+  }
+
+  /// 手动重搜 Jimaku 字幕：用输入框里的搜索词 + 可选集号，**纯文本搜**（不挂 AniList id，
+  /// 绕开「条目未挂 id」限制，让用户改词直达）。搜完若已选种子则同步刷新其字幕命中。
+  Future<void> _searchJimakuManual() async {
+    final String query = _jimakuQueryCtrl.text.trim();
+    if (query.isEmpty || _jimakuLoading) return;
+    await _runJimakuSearch(
+      anilistId: null,
+      queries: <String>[query],
+      episode: _parseEpisodeInput(_jimakuEpisodeCtrl.text),
+    );
+  }
+
+  /// Jimaku 搜索核心（自动/手动共用）：searchEntries（先 id 后文本回退）→ 首条目 →
+  /// listFiles（可按集号过滤）→ 按集索引落 [_jimakuIndex]；已选种子则重算 [_chosenSubs]。
+  /// 无 key / 无条目 / 网络失败 → 空索引（徽标显示无字幕），不阻塞选种。用选番 id 做竞态
+  /// 守卫：用户换番后旧结果不落到新番上。
+  Future<void> _runJimakuSearch({
+    required int? anilistId,
+    required List<String> queries,
+    int? episode,
+  }) async {
+    final AniListMedia? media = _selectedMedia;
+    if (media == null) return;
+    final int guardId = media.id;
     final String apiKey = ref.read(appProvider).jimakuApiKey.trim();
     setState(() {
       _jimakuLoading = true;
@@ -237,30 +278,61 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     }
     final JimakuClient jimaku = JimakuClient(apiKey: apiKey);
     try {
+      // AniList id 挂靠命中最准，但 Jimaku 大量条目未挂 id（冷门/YouTube 转录番等）——
+      // 空结果必须回退按文本搜，否则「其实有字幕」会被误报成「无字幕」（BUG-896）。
+      // 回退逻辑收敛在 JimakuClient.searchEntries（与字幕对话框同源）。
       final List<JimakuEntry> entries = await jimaku
-          .searchByAnilistId(media.id)
+          .searchEntries(anilistId: anilistId, queryFallbacks: queries)
           .timeout(const Duration(seconds: 20));
       final List<JimakuFile> files = entries.isEmpty
           ? const <JimakuFile>[]
           : await jimaku
-              .listFiles(entries.first.id)
+              .listFiles(entries.first.id, episode: episode)
               .timeout(const Duration(seconds: 20));
       // 用户可能已换番：结果只落到仍选中的那个番上。
-      if (!mounted || _selectedMedia?.id != media.id) return;
+      if (!mounted || _selectedMedia?.id != guardId) return;
       setState(() {
         _jimakuIndex = JimakuEpisodeIndex.fromFiles(files);
         _jimakuLoaded = true;
+        // 已选种子则同步刷新其字幕命中（手动重搜后确认阶段的字幕列表实时更新）。
+        final NyaaTorrent? torrent = _selectedTorrent;
+        if (torrent != null) {
+          _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+        }
       });
     } catch (_) {
-      if (mounted && _selectedMedia?.id == media.id) {
+      if (mounted && _selectedMedia?.id == guardId) {
         setState(() => _jimakuError = true);
       }
     } finally {
       jimaku.close();
-      if (mounted && _selectedMedia?.id == media.id) {
+      if (mounted && _selectedMedia?.id == guardId) {
         setState(() => _jimakuLoading = false);
       }
     }
+  }
+
+  /// 解析集号输入框：空/非法 → null（= 不按集过滤，列全部）。
+  int? _parseEpisodeInput(String raw) {
+    final String s = raw.trim();
+    if (s.isEmpty) return null;
+    return int.tryParse(s);
+  }
+
+  /// AniList id 搜不到字幕条目时，按标题文本重搜 Jimaku 的回退查询串。
+  /// 顺序：日文原名（Jimaku 条目多以日文命名，命中率最高）→ 罗马字 → 英文；
+  /// 去空、去重，保序。
+  List<String> _jimakuFallbackQueries(AniListMedia media) {
+    final List<String> out = <String>[];
+    for (final String? title in <String?>[
+      media.native,
+      media.romaji,
+      media.english,
+    ]) {
+      final String q = title?.trim() ?? '';
+      if (q.isNotEmpty && !out.contains(q)) out.add(q);
+    }
+    return out;
   }
 
   /// 手动重搜 Jimaku 字幕（用户填了 key / 出错后重试）。
@@ -880,6 +952,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
           ],
         ),
         const SizedBox(height: 4),
+        _buildJimakuManualSearch(theme),
+        const SizedBox(height: 4),
         if (_chosenSubs.isNotEmpty)
           SwitchListTile(
             dense: true,
@@ -902,6 +976,45 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
                 )
               : const Icon(Icons.download),
           label: Text(t.anime_download_push),
+        ),
+      ],
+    );
+  }
+
+  /// 字幕手动搜索行：可编辑搜索词（预填自动推导标题）+ 集号 + 搜索按钮。自动搜不到
+  /// 或命中错版时，用户改词/填集号重搜 Jimaku（i18n 复用视频字幕对话框同款 key）。
+  Widget _buildJimakuManualSearch(ThemeData theme) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Expanded(
+          child: TextField(
+            controller: _jimakuQueryCtrl,
+            decoration: InputDecoration(
+              labelText: t.video_jimaku_query,
+              isDense: true,
+            ),
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => _searchJimakuManual(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 72,
+          child: TextField(
+            controller: _jimakuEpisodeCtrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: t.video_jimaku_episode,
+              isDense: true,
+            ),
+            onSubmitted: (_) => _searchJimakuManual(),
+          ),
+        ),
+        IconButton(
+          tooltip: t.anime_download_search,
+          icon: const Icon(Icons.search, size: 20),
+          onPressed: _jimakuLoading ? null : _searchJimakuManual,
         ),
       ],
     );

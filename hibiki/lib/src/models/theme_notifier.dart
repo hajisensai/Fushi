@@ -126,6 +126,73 @@ ColorScheme buildHibikiColorScheme({
   );
 }
 
+/// E-ink mode (墨水屏模式): a pure black-and-white [ColorScheme] built by hand
+/// instead of `fromSeed` (any seed would leak hue into the neutral palette).
+/// Light = black text on white; dark = white text on black. Every surface
+/// container collapses to the background and every accent role collapses to
+/// the foreground, so nothing renders as a mid-gray that an e-ink panel would
+/// dither. Contrast between surfaces is re-introduced with explicit outlines
+/// in `_buildThemeData` (cards/switch tracks get 1px borders when eink is on).
+ColorScheme buildEinkColorScheme(Brightness brightness) {
+  final Color bg = brightness == Brightness.light ? Colors.white : Colors.black;
+  final Color fg = brightness == Brightness.light ? Colors.black : Colors.white;
+  return ColorScheme(
+    brightness: brightness,
+    primary: fg,
+    onPrimary: bg,
+    primaryContainer: bg,
+    onPrimaryContainer: fg,
+    secondary: fg,
+    onSecondary: bg,
+    secondaryContainer: bg,
+    onSecondaryContainer: fg,
+    tertiary: fg,
+    onTertiary: bg,
+    tertiaryContainer: bg,
+    onTertiaryContainer: fg,
+    error: fg,
+    onError: bg,
+    errorContainer: bg,
+    onErrorContainer: fg,
+    surface: bg,
+    onSurface: fg,
+    onSurfaceVariant: fg,
+    surfaceDim: bg,
+    surfaceBright: bg,
+    surfaceContainerLowest: bg,
+    surfaceContainerLow: bg,
+    surfaceContainer: bg,
+    surfaceContainerHigh: bg,
+    surfaceContainerHighest: bg,
+    outline: fg,
+    outlineVariant: fg,
+    shadow: Colors.transparent,
+    scrim: Colors.black,
+    inverseSurface: fg,
+    onInverseSurface: bg,
+    inversePrimary: bg,
+    surfaceTint: Colors.transparent,
+  );
+}
+
+/// Zero-motion route transition for e-ink displays: pushing/popping a page
+/// swaps content in a single frame instead of animating, so the panel does a
+/// single refresh rather than smearing through a fade/slide.
+class EinkNoPageTransitionsBuilder extends PageTransitionsBuilder {
+  const EinkNoPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return child;
+  }
+}
+
 /// Default seed for a brand-new / unconfigured custom theme. Matches the legacy
 /// `custom_theme_seed` default (the Hibiki brand teal); used by migration to
 /// decide whether a legacy custom theme was ever actually configured.
@@ -650,6 +717,20 @@ class ThemeNotifier extends ChangeNotifier {
     return list.first;
   }
 
+  /// E-ink mode (墨水屏模式). A single app-global switch (excluded from the
+  /// per-profile snapshot in ProfileKeys — it describes the physical display,
+  /// not a reading preference) that overlays the active theme with a pure
+  /// black-and-white scheme and disables page-transition animations. The
+  /// user's chosen theme key / brightness mode are left untouched, so turning
+  /// the switch off restores the previous colors exactly. Default OFF; getPref
+  /// returns the default only when the key was never written.
+  bool get einkMode => _get('eink_mode', defaultValue: false) as bool;
+
+  Future<void> setEinkMode(bool value) async {
+    await _set('eink_mode', value);
+    notifyListeners();
+  }
+
   String get brightnessMode {
     final String mode = _get('brightness_mode', defaultValue: '');
     if (mode.isNotEmpty) return mode;
@@ -839,6 +920,12 @@ class ThemeNotifier extends ChangeNotifier {
   ThemeData get darkTheme => _buildThemeData(Brightness.dark);
 
   ColorScheme buildColorScheme(Brightness brightness) {
+    // E-ink overlays every theme path (system / preset / custom) with pure
+    // black-and-white; the stored theme key is untouched so switching the
+    // toggle off restores the previous colors without any migration.
+    if (einkMode) {
+      return buildEinkColorScheme(brightness);
+    }
     if (appThemeKey == 'system-theme') {
       return buildSystemThemeColorScheme(
         brightness: brightness,
@@ -873,12 +960,30 @@ class ThemeNotifier extends ChangeNotifier {
   ThemeData _buildThemeData(Brightness brightness) {
     final cs = buildColorScheme(brightness);
     final TextTheme tt = _textThemeBuilder();
+    final bool eink = einkMode;
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
       textTheme: tt,
+      // E-ink: swap pages in one frame (single panel refresh, no smearing) and
+      // drop ink ripples — a spreading translucent overlay is exactly the kind
+      // of repeated partial refresh slow panels render worst.
+      pageTransitionsTheme: eink
+          ? const PageTransitionsTheme(
+              builders: <TargetPlatform, PageTransitionsBuilder>{
+                TargetPlatform.android: EinkNoPageTransitionsBuilder(),
+                TargetPlatform.iOS: EinkNoPageTransitionsBuilder(),
+                TargetPlatform.macOS: EinkNoPageTransitionsBuilder(),
+                TargetPlatform.windows: EinkNoPageTransitionsBuilder(),
+                TargetPlatform.linux: EinkNoPageTransitionsBuilder(),
+                TargetPlatform.fuchsia: EinkNoPageTransitionsBuilder(),
+              },
+            )
+          : null,
+      splashFactory: eink ? NoSplash.splashFactory : null,
       extensions: <ThemeExtension<dynamic>>[
         HibikiDesignSystemTheme(designSystemTheme),
+        HibikiEinkTheme(eink),
       ],
       appBarTheme: const AppBarTheme(
         elevation: 0,
@@ -902,6 +1007,9 @@ class ThemeNotifier extends ChangeNotifier {
               : cs.surfaceContainerHighest;
         }),
         trackOutlineColor: WidgetStateColor.resolveWith((states) {
+          // E-ink: the selected track is primaryContainer == the background, so
+          // without an outline the switch body vanishes into the page.
+          if (eink) return cs.outline;
           return states.contains(WidgetState.selected)
               ? Colors.transparent
               : cs.outline;
@@ -960,6 +1068,9 @@ class ThemeNotifier extends ChangeNotifier {
         color: cs.surfaceContainerLow,
         shape: RoundedRectangleBorder(
           borderRadius: HibikiBorderRadius.card,
+          // E-ink: surfaceContainerLow == the page background, so cards need a
+          // solid outline to keep their boundary readable in pure black/white.
+          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
         ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
@@ -1004,7 +1115,9 @@ class ThemeNotifier extends ChangeNotifier {
       ),
       dividerTheme: DividerThemeData(
         color: cs.outlineVariant,
-        thickness: 0.5,
+        // E-ink panels can't render a crisp half-pixel hairline; use a full
+        // pixel so dividers stay solid black/white lines.
+        thickness: eink ? 1 : 0.5,
       ),
     );
   }

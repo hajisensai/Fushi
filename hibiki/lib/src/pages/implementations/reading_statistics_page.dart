@@ -328,6 +328,15 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return HibikiPageScaffold(
       title: t.reading_statistics,
       actions: <Widget>[
+        // BUG-970：目标设置入口恒驻顶栏——目标卡在两目标皆 0 时整块隐藏
+        // (_buildGoalPanel -> SizedBox.shrink)，卡内 edit 图标随之消失，
+        // 否则从未设过目标的用户没有任何 UI 能首次设置目标。
+        HibikiIconButton(
+          icon: Icons.flag_outlined,
+          tooltip: t.stat_goal_set,
+          enabled: !_loading,
+          onTap: _editGoals,
+        ),
         HibikiIconButton(
           icon: Icons.refresh,
           tooltip: t.stat_refresh,

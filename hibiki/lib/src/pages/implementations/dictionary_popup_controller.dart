@@ -295,6 +295,20 @@ class DictionaryPopupController extends ChangeNotifier {
     _notifyLookupStackDepth();
   }
 
+  /// BUG-717 ②：把已显示的 [e] 重锚到 [rect] 并触发重定位（弹窗位置在 build 时由
+  /// [DictionaryPopupEntry.selectionRect] 算出，改它 + [notifyListeners] 即重放）。
+  ///
+  /// 用于阅读器查词把「显示弹窗」与「正文高亮 eval」解耦后：弹窗先用原始选区 rect
+  /// 立即显示（不再 await 打在繁忙大 reader WebView 上的高亮 eval），高亮 eval 回来
+  /// 拿到精修后的词 bbox（多字去屈折时比选区宽）再用它重锚，保证弹窗不覆盖被查词
+  /// （BUG-767）。[e] 已被新查词替换/关闭、或 rect 未变 → no-op（不重建、不抖动）。
+  void reanchorEntry(DictionaryPopupEntry e, Rect rect) {
+    if (!e.visible || !_entries.contains(e)) return;
+    if (e.selectionRect == rect) return;
+    e.selectionRect = rect;
+    notifyListeners();
+  }
+
   /// TODO-058：结果已就绪但**先不显示**——挂起到该层 WebView 渲染完成。
   /// 用于冷启动（新建 WebView）的嵌套/非热槽层：让其 WebView 在屏外预渲染，
   /// 待 [revealRendered] 命中（`onRendered` 信号）再翻可见，杜绝白屏一瞬。

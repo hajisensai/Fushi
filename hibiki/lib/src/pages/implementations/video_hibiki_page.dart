@@ -90,6 +90,7 @@ import 'package:hibiki/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:hibiki/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import 'package:hibiki/src/media/video/video_quick_settings_host.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
@@ -118,10 +119,10 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/render_backend_service.dart';
+import 'package:hibiki/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
@@ -1618,6 +1619,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_ensureEnterBrightness());
     // TODO-099: 进入视频页强制横屏（移动端），退出 [dispose] 还原；桌面 no-op。
     unawaited(_lockLandscapeForVideo());
+    // BUG-973: 进入视频页隐藏 macOS 系统交通灯（左上角三个圆点），退出 [dispose] 恢复。
+    // 交通灯浮在透明标题栏 + 全尺寸内容视图之上，会遮住视频顶栏返回按钮 / 左上角 OSD
+    // 提示（用户报告）。仅 macOS 有交通灯；Windows / Linux / 移动端恒 no-op。用户仍可
+    // Esc / 顶栏返回按钮 / Cmd+Q / 进原生全屏退出，不损失退出口。
+    unawaited(setMacOSTrafficLightsHidden(true));
     // TODO-158/BUG-219: 进入视频页显式持有「沉浸隐藏系统栏」所有权（移动端）。原先
     // 只靠 [AppModel.openMedia] 在打开媒体时一次性设 immersiveSticky（书 / 视频共用
     // 入口），从不重申 → 后台返回 / 通知栏交互 / 全屏路由后系统栏残留。退出由
@@ -1853,7 +1859,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
     _currentAudioTrackId = null;
-    _delayMs = 0;
+    // BUG-996：远端播放跟随 host 下发的字幕时序偏移（此前恒 0，字幕调轴不同步）。
+    // 通道已就绪——_applyLoad 里 controller.setDelayMs(_delayMs) 会应用它。
+    _delayMs = info.delayMs;
     _playbackSpeed = _readPersistedSpeed();
     _playbackVolume = _readPersistedVolume();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
@@ -2148,6 +2156,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _persistRemotePosition(String uid, int posMs) async {
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     final int clamped = posMs < 0 ? 0 : posMs;
+    // BUG-996：位置低于「真观看」阈值（近视频起点）时不落本地带戳断点、也不上报 host。
+    // 否则慢远端流 resume 未落地（BUG-179 恢复守护耗尽兜底到 ~0）时写入的 ~0 断点带
+    // now 戳，会在 LWW 里完胜 host 的真进度（host `lastPositionMs` 派生进度 updatedAtMs=0）
+    // → 下次打开从头播放。近起点不算有效进度，跳过不写即可。
+    const int kMeaningfulRemoteWatchMs = 5000;
+    if (clamped < kMeaningfulRemoteWatchMs) return;
     // TODO-885: 按当前集 key 落库 + 上报（_currentEpisode 是状态真相；单视频恒 0 回退
     // 整书 key，与旧 prefs 兼容）。
     final int episodeIndex = _currentEpisode;
@@ -3080,6 +3094,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_brightness.restore(previous: _enterBrightness));
     // TODO-099: 退出视频页还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
     unawaited(_restoreOrientationOnExit());
+    // BUG-973: 退出视频页恢复 macOS 系统交通灯（与 initState 的隐藏对称）；桌面非
+    // macOS / 移动端 no-op。
+    unawaited(setMacOSTrafficLightsHidden(false));
     _clearClipExportState();
     // TODO-669：销毁缩略图预览（作废在途取帧 + 销毁离屏 Player + 释放末帧）。
     _disposeThumbnailPreview();
@@ -5157,24 +5174,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
-  void _showVideoControlEditOverlay() {
-    _clearRailHover();
-    if (_subtitleListVisible.value) {
-      _clearSelectedMiningCues();
-      _subtitleListVisible.value = false;
-    }
-    // TODO-638：开任何浮层都关掉 push-aside 剧集列表（与字幕列表同处右栏，互斥）。
-    if (_episodeListVisible.value) {
-      _episodeListVisible.value = false;
-    }
-    if (_videoSidePanel.value != null) {
-      _videoSidePanel.value = null;
-    }
-    _videoControlEditMode.value = true;
-    _markControlsVisible(false);
-    _refocusVideo();
-  }
-
+  // 原 `_showVideoControlEditOverlay`（TODO-440 画面内拖拽编辑入口）已删：旧面板只
+  // 声明了 onEditControlsOnscreen 参数从未渲染入口，方法早已不可达；schema 投影版
+  // 不再保留死参数。关闭路径（_hideVideoControlEditOverlay）仍被浮层互斥逻辑使用。
   void _hideVideoControlEditOverlay({bool revealControls = true}) {
     if (!_videoControlEditMode.value) return;
     _videoControlEditMode.value = false;
@@ -5434,21 +5436,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 弹视频播放设置面板：与阅读器同款 master-detail（宽窗左分类固定 + 右详情独立
-  /// 滚动，窄窗降级单列 push）。桌面经 [HibikiDialogFrame]（maxWidth 900）进入分栏，
-  /// 移动端走 bottom sheet。所有项都不是 schema 项，经回调即时生效 + 持久化 + 实时
-  /// 预览（见 [_setDelayMs] / [_setSpeed] / [_persistSubtitleStyle]）。关闭后把键盘
-  /// 焦点还给 Video（覆盖层夺焦后不会自动归还），恢复空格等快捷键。
+  /// 弹视频播放设置面板（阶段 B：schema 投影版）：面板行全部来自
+  /// settings_schema_video.dart 的单一声明，本方法只构造 [VideoQuickSettingsHost]
+  /// 能力槽——把页面权威值 getter 与既有回调（[_setDelayMs] / [_setSpeed] /
+  /// [_persistSubtitleStyle] 等，均即时生效 + 持久化 + 实时预览）接进去。关闭后把
+  /// 键盘焦点还给 Video（覆盖层夺焦后不会自动归还），恢复空格等快捷键。
   Widget _buildVideoQuickSettingsSheet() {
     return VideoQuickSettingsSheet(
-      initialDelayMs: _delayMs,
-      initialSpeed: _playbackSpeed,
-      initialSubtitleObscureMode: appModel.videoSubtitleObscureMode,
-      initialSecondarySubtitleObscureMode:
-          appModel.videoSecondarySubtitleObscureMode,
-      initialSubtitleStyle: _subtitleStyle,
+      appModel: appModel,
+      ref: ref,
+      initialCategory: _settingsInitialCategory,
+      host: _buildVideoQuickSettingsHost(),
+    );
+  }
+
+  /// 播放页能力槽：schema 投影的视频项经它读页面状态 / 走页面回调实时应用。
+  VideoQuickSettingsHost _buildVideoQuickSettingsHost() {
+    return VideoQuickSettingsHost(
       uiScale: _videoUiScale,
-      initialAsbConfig: _asbConfig,
+      isTouchControls: !_isDesktopVideoControls,
+      delayMs: () => _delayMs,
+      speed: () => _playbackSpeed,
+      subtitleStyle: () => _subtitleStyle,
+      danmakuStyle: () => _danmakuStyle,
+      controlLayout: () => _controlLayout,
       onSetDelay: _setDelayMs,
       // TODO-701 阶段1：仅当当前有字幕 cue + 视频本地路径时给自动对轴按钮（否则
       // 无可对齐对象/无音频源），否则置 null 让面板不显示该按钮。
@@ -5508,12 +5519,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         if (mounted) setState(() => _subtitleStyle = s);
       },
       onSubtitleStyleCommit: _persistSubtitleStyle,
-      // TODO-1105：尊重 .ass 自带样式开关初值 + 切换回调（持久化 + 重建让 overlay 即时生效）。
-      initialRespectAssStyle: appModel.videoRespectAssStyle,
+      // TODO-1105：尊重 .ass 自带样式切换回调（持久化 + 重建让 overlay 即时生效）。
       onRespectAssStyleChanged: _setVideoRespectAssStyle,
-      // 着色器/mpv 配置改为面板内嵌（不再弹独立对话框，见 VideoQuickSettingsSheet）：
-      // 着色器勾选 → 持久化启用集 + 解析绝对路径 + 实时应用；mpv 配置即改即生效。
-      initialShadersEnabled: decodeEnabledShaders(appModel.videoShadersEnabled),
+      // 着色器/mpv 配置面板内嵌（不弹独立对话框）：着色器勾选 → 持久化启用集 +
+      // 解析绝对路径 + 实时应用；mpv 配置即改即生效。
       onApplyShaders: (List<String> enabledNames) async {
         await appModel.setVideoShadersEnabled(
           encodeEnabledShaders(enabledNames),
@@ -5526,7 +5535,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             : const <String>[];
         await _controller?.applyShaders(paths);
       },
-      initialMpvConfig: VideoMpvConfig.decode(appModel.videoMpvConfig),
       onMpvConfigChanged: (VideoMpvConfig cfg) async {
         await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
         await _controller?.applyMpvConfig(cfg);
@@ -5537,36 +5545,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             : const <String>[];
         await _controller?.applyShaders(paths);
       },
-      initialLockWindowAspectRatio: _lockWindowAspectRatio,
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
-      initialVideoFitMode: _videoFitMode,
       onVideoFitModeChanged: _setVideoFitMode,
-      initialImmersiveMode: appModel.videoImmersiveMode,
       onImmersiveModeChanged: appModel.setVideoImmersiveMode,
-      initialDanmakuEnabled: appModel.videoDanmakuEnabled,
-      initialDanmakuOnlineEnabled: appModel.videoDanmakuOnlineEnabled,
-      initialDanmakuMaxActive: appModel.videoDanmakuMaxActive,
       onDanmakuEnabledChanged: _setVideoDanmakuEnabled,
       onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled,
       onDanmakuMaxActiveChanged: _setVideoDanmakuMaxActive,
       // TODO-1376：弹幕样式（拖动即时预览，松手落盘）+ 屏蔽词/正则过滤 + 手动匹配入口。
-      initialDanmakuStyle: _danmakuStyle,
       onDanmakuStylePreview: _previewVideoDanmakuStyle,
       onDanmakuStyleCommit: _setVideoDanmakuStyle,
-      initialDanmakuBlockRules: appModel.videoDanmakuBlockRulesText,
       onDanmakuBlockRulesChanged: _setVideoDanmakuBlockRules,
       onManualDanmakuMatch: _openDanmakuManualMatch,
       // 「从本机 mpv 导入」找不到时用户手动指定的 mpv 目录，记住下次优先扫。
-      initialMpvShaderDir: appModel.videoMpvShaderDir,
       onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),
       // 一键画质档位：原子落「mpv 内置缩放开关 + 启用集」并实时应用（着色器文件由
       // 着色器视图在回调前已下载到目录）。统一在此一处写两套 pref，消除两回调顺序耦合。
       onSelectShaderTier:
           (VideoShaderTier tier, bool highQuality, List<String> enabledNames) =>
               _applyShaderTier(highQuality, enabledNames),
-      initialControlLayout: _controlLayout,
       onControlLayoutChanged: _setVideoControlLayout,
-      onEditControlsOnscreen: _showVideoControlEditOverlay,
       // TODO-1158 / TODO-1159：多档画质入口（跨平台，经设置面板「播放」分类可达）。HLS
       // master variant 或 YouTube 流（懒解析多档）时给入口；点开画质侧栏（替换设置侧栏）。
       qualityOptionCount: _qualityOptionCount,
@@ -5580,12 +5577,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               !RenderBackendService.instance.activeImpellerDisabled)
           ? _switchToSkiaAndRestart
           : null,
-      // TODO-554：触屏无右键菜单兜底，禁止把「设置」按钮拖入 hidden 移除，
-      // 否则用户进不去设置/控件编辑器、无法加回，软锁死。
-      isTouchControls: !_isDesktopVideoControls,
       // TODO-1351：轨切换收进设置面板对应 tab（音频轨在「音频」、字幕轨在「字幕」顶部），
       // 由页面构建内容（复用既有切轨/切源方法与数据），删掉外面浮的轨切换侧栏。
-      initialCategory: _settingsInitialCategory,
       audioTrackSection: _controller != null
           ? _buildAudioTrackSettingsSection(_controller!)
           : null,

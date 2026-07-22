@@ -140,6 +140,7 @@ void main() {
         'bgColor': 0x00000000,
         'windowWidth': 0,
         'clickLookupEnabled': true,
+        'windowTitle': '',
       });
     });
 

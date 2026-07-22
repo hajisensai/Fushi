@@ -74,19 +74,19 @@ Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别�
 
 galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendored LunaHook/Host DLL）含
 `CreateRemoteThread`/`WriteProcessMemory`，**必被杀软报毒**，故与 `hibiki.exe` **物理隔离**——
-**源码与 workflow 已完全迁到独立仓库 [`hajisensai/hibiki-voice-hook`](https://github.com/hajisensai/hibiki-voice-hook)**
+**源码与 workflow 已完全迁到独立仓库 [`hajisensai/hibiki-hook`](https://github.com/hajisensai/hibiki-hook)**
 （原 `native/galgame_voice_hook` + `.github/workflows/voice-hook-helper.yml` 已从本仓库移除）。
 连注入源码都不在主仓库，绝不进主 app 安装包（维持主包分发口碑）。
 
-- **构建/发布**：在 **hibiki-voice-hook 仓库**里 workflow `voice-hook-helper.yml`，**仅手动**
+- **构建/发布**：在 **hibiki-hook 仓库**里 workflow `voice-hook-helper.yml`，**仅手动**
   `workflow_dispatch`（windows-2022；该 workflow 在其**默认分支 main** 上，故可正常 dispatch——
   这正是迁出独立仓库的根因：主仓库那份不在默认分支，GitHub 不暴露 dispatch 入口，release 从没被产出过）。
   cmake 编 x64（`-A x64`）+ x86（`-A Win32`），每架构打 `voice_hook_<arch>.zip`（injector/hook/
   LunaHook/LunaHost）+ `.sha256` 侧车，`softprops/action-gh-release@v3` upsert 到**固定 tag
   `voice-hook-helper`** 的 **prerelease、`make_latest: false`**。
 - **稳定下载 URL**（按 tag 而非 run 号，指向**独立仓库**；app 端 slug 为
-  `kGalgameHelperRepo = 'hajisensai/hibiki-voice-hook'`）：
-  `https://github.com/hajisensai/hibiki-voice-hook/releases/download/voice-hook-helper/voice_hook_<arch>.zip`（+ `.sha256`）。
+  `kGalgameHelperRepo = 'hajisensai/hibiki-hook'`）：
+  `https://github.com/hajisensai/hibiki-hook/releases/download/voice-hook-helper/voice_hook_<arch>.zip`（+ `.sha256`）。
 - **app 端按需下载**：开 galgame 需要注入器却缺失时，`GalgameHelperInstaller`（`hibiki/lib/src/mining/
   galgame_helper_installer.dart`）弹确认对话框（标大小）→ 下载对应架构 zip（走系统代理 + gh 镜像回退
   + sha256 校验）→ 解压到 `<app目录>\voice_hook\<arch>\` → 继续启动。幂等：已存在跳过。

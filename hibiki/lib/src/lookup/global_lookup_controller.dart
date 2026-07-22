@@ -188,6 +188,18 @@ class GlobalLookupController {
       onOverlayHidden: _onOverlayHidden,
     );
 
+    // 防截屏初值 — 瞬态覆盖窗与剪贴板面板同一 pref（clipboardPanelBlockCapture，
+    // 默认开）。native GlobalLookupWindow 记住该值并在每次窗口（重）建时重应用
+    // （ApplyBlockCapture），故启动推一次即可覆盖此后每次弹出；pref 变更时经
+    // [ClipboardPanelController.applyBlockCapture] 扇出到 [applyBlockCapture]
+    // 即时重推。best-effort：失败不打断启动链（热键注册等）。
+    try {
+      await GlobalLookupChannel.setBlockCapture(
+          appModel.clipboardPanelBlockCapture);
+    } catch (e) {
+      glog('start: setBlockCapture FAILED (non-fatal): $e');
+    }
+
     // TODO-1066 — read the trigger hotkey from the shortcut registry (was a
     // hard-coded Ctrl+Alt+D that bypassed the whole registry, so it never showed
     // up in the settings page and could not be remapped). Register it now and
@@ -205,6 +217,18 @@ class GlobalLookupController {
     // keepWebViewWarm hot slot, but for THIS bare overlay window (which
     // webview_prewarm.dart never warmed — that gap was the root cause).
     unawaited(_prewarmOverlay(appModel));
+  }
+
+  /// 「防截屏」pref 即时重应用到瞬态覆盖窗（与剪贴板面板同一 pref
+  /// clipboardPanelBlockCapture）。唯一扇出入口是
+  /// [ClipboardPanelController.applyBlockCapture]（设置页开关与面板栏 🛡 按钮
+  /// 都走它），本方法只管把值推到本窗的 native 通道；native 侧记值并在窗口
+  /// 重建后自动重加（global_lookup_window.cpp ApplyBlockCapture），故无需在每次
+  /// 查词路径上重推。不依赖 [_started]——native 通道随主窗注册即存在，[start]
+  /// 时还会按 pref 再推一次初值兜底。
+  Future<void> applyBlockCapture(bool block) async {
+    if (!isSupported) return;
+    await GlobalLookupChannel.setBlockCapture(block);
   }
 
   /// TODO-1079 — off-screen prewarm of the overlay WebView2 (see [start]).

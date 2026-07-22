@@ -20,7 +20,7 @@ import 'package:hibiki/src/mining/galgame_audio_source.dart';
 /// 需要**环境变量**指到本机素材（缺任一则 skip、不误报失败，故 CI/无游戏机器上自动跳过）：
 ///   - `GALTEST_GAME_EXE`：目标游戏 exe（如 32 位 KiriKiriZ `otomeki.exe`）。
 ///   - `GALTEST_INJECTOR`：与游戏位数匹配的 `hibiki_voice_injector.exe`
-///     （helper 已迁至独立仓库 hibiki-voice-hook，本机构建落 `build/<arch>/Release/`；
+///     （helper 已迁至独立仓库 hibiki-hook，本机构建落 `build/<arch>/Release/`；
 ///     或 app 按需下载后落在 `<app>/voice_hook/<arch>/`）。
 ///
 /// 实测（2026-07-18，otomeki.exe 32 位 KiriKiriZ）：
@@ -57,8 +57,7 @@ void main() {
       // start：拉起游戏 + 早注入 + 轮询 status 等 hook 拿到语音格式。
       fmt = await src.start();
       gpid = src.gamePid;
-      expect(fmt, isNotNull,
-          reason: '引擎-hook 未就绪（注入失败 / DS hook 未命中 / 超时）');
+      expect(fmt, isNotNull, reason: '引擎-hook 未就绪（注入失败 / DS hook 未命中 / 超时）');
       expect(fmt!.sampleRate, greaterThan(0));
       expect(fmt.channels, greaterThan(0));
 

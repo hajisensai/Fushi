@@ -88,6 +88,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
                     _completedBookKeys.contains(book.bookKey),
               )
             : null,
+        // BUG-990：两阶段下载末段卡已变 SRT 卡但有声书包仍在下 → 继续显示加载覆盖层。
+        loadingOverlay: _audiobookDownloadingOverlay(book.bookKey),
       ),
     );
   }
