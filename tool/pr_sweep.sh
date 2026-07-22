@@ -16,6 +16,10 @@
 #           PR_SWEEP_SELF（默认 hajisensai）/ PR_SWEEP_LIMIT（默认 40）
 # 输出供值班 PM 与看板对照：「自动处理」区每行都应有对应 todo（按 PR 号/分支名
 # grep 看板），没有就建（--file 已自动建）；「外部 PR」区只读不动。
+# open PR 的 todo 标题尾部记录落板时的 head commit（`[head <sha9>]`，机器可反解）；
+# 后续巡检发现同一 PR head 变了（推了新 commit）→ 落一条「有新 commit」增量 todo，
+# 引用原 TODO 和 old→new sha，让更新不被「已有 todo」去重吞掉。旧格式（无 [head]）
+# 的存量 todo 保持原去重行为（视为已跟踪，不刷屏），关掉后下轮自然换成带 sha 的新单。
 set -uo pipefail
 
 FILE_MODE=0
@@ -40,7 +44,8 @@ export HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:34151}"
 export HTTP_PROXY="${HTTP_PROXY:-${HTTPS_PROXY}}"
 export PYTHONUTF8=1   # Windows GBK 控制台下内嵌 python 打中文不乱码
 
-# 检测阶段把「自动处理」项统一收集成 TSV（kind\tnum\ttitle\tbranch\tahead\toldsha\tnewsha\tbehind），
+# 检测阶段把「自动处理」项统一收集成 TSV（kind\tnum\ttitle\tbranch\tahead\toldsha\tnewsha\tbehind；
+# open 项 newsha 列 = 当前 head 短 sha，其余列空），
 # 人读输出照旧打印；--file 模式末尾一次性喂给内嵌 python 去重+落板。
 # ⚠️ 路径归一：mktemp 给 MSYS `/tmp/...`，Git-bash 的 cp/printf 解析对，但 Windows
 # 内嵌 python 对 `/tmp/...` 解析不稳定（会读到自己在别处建的空文件→落板 0 条·假成功）。
@@ -51,7 +56,7 @@ AUTO_TSV="$(cygpath -m "$AUTO_TSV" 2>/dev/null || echo "$AUTO_TSV")"
 trap 'rm -f "$AUTO_TSV"' EXIT
 
 open_json=$(gh pr list --repo "$REPO" --state open \
-  --json number,title,headRefName,author,updatedAt 2>/dev/null) || {
+  --json number,title,headRefName,headRefOid,author,updatedAt 2>/dev/null) || {
   echo "（gh 拉取失败——先核代理/网络，别当成没有 PR）"; exit 3; }
 
 echo "=== OPEN PR·自动处理（作者=$SELF：无对应看板 todo 就建 → 审查→复测→integration owner 合并→关 PR）==="
@@ -65,12 +70,15 @@ ext  = [r for r in rows if r["author"]["login"] != self_login]
 def clean(s: str) -> str:
     return " ".join(str(s).split())  # 去掉标题里的 tab/换行，保 TSV 一行一项
 with open(tsv_path, "a", encoding="utf-8") as f:
-    for r in mine:  # 8 列（kind num title branch ahead oldsha newsha behind），open 项后四列空
-        f.write("open\t%s\t%s\t%s\t\t\t\t\n"
-                % (r["number"], clean(r["title"]), clean(r["headRefName"])))
+    for r in mine:  # 8 列（kind num title branch ahead oldsha newsha behind）；
+                    # open 项 newsha 列 = 当前 head 短 sha（落板记录 + 更新检测判据）
+        f.write("open\t%s\t%s\t%s\t\t\t%s\t\n"
+                % (r["number"], clean(r["title"]), clean(r["headRefName"]),
+                   str(r.get("headRefOid") or "")[:9]))
 for r in mine:
-    print("#%s %s | head=%s | updated=%s"
-          % (r["number"], r["title"], r["headRefName"], r["updatedAt"]))
+    print("#%s %s | head=%s@%s | updated=%s"
+          % (r["number"], r["title"], r["headRefName"],
+             str(r.get("headRefOid") or "?")[:9], r["updatedAt"]))
 if not mine:
     print("（无）")
 print()
@@ -168,21 +176,37 @@ dlp = run_cli(["list", "--status", "done"])
 done_nums = set(re.findall(r"TODO-(\d+)", dlp.stdout)) if dlp.returncode == 0 else set()
 
 # PR#41 不得匹配 PR#410：号后接非数字守卫（空格/全角括号/半角括号/句读都放行）。
-_PR_TODO_RE = r"\] TODO-(\d+) PR#%s(?![0-9])"
+_PR_TODO_RE = re.compile(r"\] TODO-(\d+) PR#(\d+)(?![0-9])")
+# open todo 标题尾部记录的落板 head（`[head <sha>]`）；取行内**最后一个**匹配，
+# 防 PR 标题正文恰好包含同格式片段时读错。
+_HEAD_RE = re.compile(r"\[head ([0-9a-f]{7,40})\]")
 
 
-def tracked(num: str) -> bool:
-    """该 PR 号是否已有**未 done**的 todo（done 单不抑制 → 假完成能被重捞）。"""
-    for m in re.finditer(_PR_TODO_RE % re.escape(num), listing):
-        if m.group(1) not in done_nums:
-            return True
-    return False
+def entries(num: str) -> list:
+    """listing 里该 PR 号的所有 todo：[(todo_num, head_sha|None, is_done)]。
+
+    逐行解析（list 每 todo 一行、标题不截断），head_sha 来自标题尾部 [head ...]；
+    旧格式 todo 没有该标记 → None。每次调用重扫 listing，同轮 add 后追加的行也能读到。
+    """
+    out: list = []
+    for line in listing.splitlines():
+        m = _PR_TODO_RE.search(line)
+        if m is None or m.group(2) != num:
+            continue
+        heads = _HEAD_RE.findall(line)
+        out.append((m.group(1), heads[-1] if heads else None,
+                    m.group(1) in done_nums))
+    return out
 
 
 def prior_done(num: str) -> bool:
     """该 PR 曾有 done 单却又被检出未落地 = 那条是假完成（关了但 commit 没进 base）。"""
-    return any(m.group(1) in done_nums
-               for m in re.finditer(_PR_TODO_RE % re.escape(num), listing))
+    return any(done for _t, _s, done in entries(num))
+
+
+def same_head(a: str, b: str) -> bool:
+    """短/长 sha 前缀互认（本脚本记 9 位；防历史/手改单长度不一时误判「更新了」）。"""
+    return a.startswith(b) or b.startswith(a)
 
 today: str = datetime.date.today().isoformat()
 added: list = []
@@ -193,15 +217,39 @@ try:
 except ValueError:
     stale_behind = 20  # 环境变量给了非数字：退回默认，绝不因此崩落板
 for kind, num, title, branch, ahead, oldsha, newsha, behind in rows:
-    if tracked(num):
+    live = [e for e in entries(num) if not e[2]]  # 未 done 的既有 todo
+    fresh_update = False  # open PR 落板后又推新 commit 的增量单（不加重捞后缀）
+    if kind == "open":
+        cur = newsha  # 检测阶段写进 newsha 列的当前 head 短 sha
+        if live:
+            # 任一既有 todo 无 sha 记录（旧格式，无从判断）或 sha 未变 → 已跟踪，跳过
+            if not cur or any(sha is None or same_head(sha, cur)
+                              for _t, sha, _d in live):
+                skipped += 1
+                continue
+            # 全部记录的 head 都不是当前 head = 落板后又推了新 commit → 增量 todo
+            fresh_update = True
+            prev_todo, prev_sha, _d = max(live, key=lambda e: int(e[0]))
+            todo_title = ("PR#%s 有新 commit：%s（head %s→%s）[head %s]"
+                          % (num, title, prev_sha, cur, cur))
+            acceptance = ("【验收】PR#%s 在 TODO-%s 落板（head %s）后又推了新 commit"
+                          "（现 head %s）：增量审查新 commit 的 diff，并与原 todo 的"
+                          "审查/合并进度对齐（原 todo 未动 → 合并处理；已审/已合 → 只看增量）。"
+                          "来源：pr_sweep --file 自动落板 %s。"
+                          % (num, prev_todo, prev_sha, cur, today))
+            next_val = ("分支 %s @ %s（原 TODO-%s @ %s）"
+                        % (branch, cur, prev_todo, prev_sha))
+        else:
+            todo_title = "PR#%s 审查合并：%s" % (num, title)
+            if cur:  # 标题尾部记录落板时 head，供后续巡检做更新检测
+                todo_title += " [head %s]" % cur
+            acceptance = ("【验收】审查 diff（范围/越界/回退他人）→ bug 类核复测证据 → "
+                          "integration owner 合并 %s → CI 绿 → 关 PR、清远端分支。"
+                          "来源：pr_sweep --file 自动落板 %s。" % (base, today))
+            next_val = "分支 %s" % branch + (" @ %s" % cur if cur else "")
+    elif live:  # merged：与旧行为一致，有未 done todo 即跳过
         skipped += 1
         continue
-    if kind == "open":
-        todo_title = "PR#%s 审查合并：%s" % (num, title)
-        acceptance = ("【验收】审查 diff（范围/越界/回退他人）→ bug 类核复测证据 → "
-                      "integration owner 合并 %s → CI 绿 → 关 PR、清远端分支。"
-                      "来源：pr_sweep --file 自动落板 %s。" % (base, today))
-        next_val = "分支 %s" % branch
     else:  # merged：合并后更新。behind 大 = 分支陈旧/被后续工作取代（PR#68 死循环教训）：
            # 标题与验收指向「删远端分支」而非「再合并」，避免只关不删导致每轮重报。
         stale = behind.isdigit() and int(behind) >= stale_behind
@@ -220,7 +268,8 @@ for kind, num, title, branch, ahead, oldsha, newsha, behind in rows:
                           "未进 → 走门禁再合并；已进/已废弃 → 删远端分支并注明。"
                           "来源：pr_sweep --file 自动落板 %s。" % (base, today))
         next_val = "%s→%s（behind %s）" % (oldsha, newsha, behind)
-    if prior_done(num):  # 曾被标 done 又检出未落地 → 明说是假完成重捞，别让人以为是新单
+    # 增量单不算重捞（原 todo 还活着，只是 head 前进了）；其余路径维持旧行为
+    if not fresh_update and prior_done(num):  # 曾被标 done 又检出未落地 → 明说是假完成重捞，别让人以为是新单
         acceptance += ("（⚠️重捞：此 PR 之前有 done 单，但 commit 仍不在 %s——"
                        "上次「已完成」是假完成，本轮按当前 head 重新落板。）" % base)
     ap = run_cli(["add", todo_title, "--status", "todo"])
@@ -238,7 +287,8 @@ for kind, num, title, branch, ahead, oldsha, newsha, behind in rows:
                              % (field, todo_num, (sp.stderr or sp.stdout).strip()))
             failed += 1
     added.append("TODO-" + todo_num)
-    listing += "\n] TODO-%s PR#%s " % (todo_num, num)  # 同轮防重：同 PR 号只落一条
+    # 同轮防重：追加完整标题（带 PR 号 + [head sha]），entries() 重扫时能读到
+    listing += "\n] TODO-%s %s" % (todo_num, todo_title)
 
 if added:
     print("已落板 %d 条：%s；已存在跳过 %d 条" % (len(added), "、".join(added), skipped))
