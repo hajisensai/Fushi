@@ -2234,5 +2234,6 @@
   "settings_section_general": "通用",
   "reading_section_mode": "模式與排版方向",
   "settings_destination_system_summary": "通用、更新與診斷",
-  "error_load_failed": "Something went wrong while loading"
+  "error_load_failed": "Something went wrong while loading",
+  "collection_loading_hint": "Loading collections and matching audio files…"
 }

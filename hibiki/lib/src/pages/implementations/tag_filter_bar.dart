@@ -107,7 +107,10 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: tokens.surfaces.outline.withValues(alpha: 0.3),
+            // eink：30% alpha 分隔线合成抖动灰 → 实心 outline（巡检 PR-3）。
+            color: isEinkTheme(context)
+                ? tokens.surfaces.outline
+                : tokens.surfaces.outline.withValues(alpha: 0.3),
           ),
         ),
       ),

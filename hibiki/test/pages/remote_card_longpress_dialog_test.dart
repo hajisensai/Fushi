@@ -216,6 +216,9 @@ class _FakeRemoteBookClient implements RemoteBookClient {
           'title': 'Remote Book',
           'hasContent': true,
           'coverPath': coverPath,
+          // 巡检 PR-3：「信息」入口只在有附加元数据（hasAudiobook）时显示——
+          // 本 fake 带有声书，动作面板断言（含 remote_book_info）保持原语义。
+          'hasAudiobook': true,
         }),
       ];
 

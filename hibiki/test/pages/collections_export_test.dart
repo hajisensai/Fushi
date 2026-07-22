@@ -83,9 +83,10 @@ void main() {
         ),
       );
 
+  // 巡检 PR-3：分享图标从 iOS 专属 ios_share_outlined 统一为 Material share_outlined。
   Finder exportButton() => find.widgetWithIcon(
         HibikiIconButton,
-        Icons.ios_share_outlined,
+        Icons.share_outlined,
       );
 
   testWidgets('export button hidden when there are no favorite sentences',

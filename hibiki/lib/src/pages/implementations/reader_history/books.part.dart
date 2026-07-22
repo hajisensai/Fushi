@@ -29,10 +29,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   /// （selectionKey 置空 → 不画勾、不可单独勾），点击照常开书。
   /// [removeFromCollection] 非空（合集详情页成员卡）时给长按 / 右键对话框补「移出合集」
   /// 动作，让键盘/手柄用户（聚焦长按 A 弹此对话框，不经网格指针菜单）也能移出。
+  /// [focusIdPrefix]：详情页渲染路径传 'collection-detail-' 隔离焦点 id 命名空间
+  /// （BUG-1009，见 [_buildCollectionMemberCard]）；书架路径恒空串（id 不变）。
   Widget _buildSrtCard(SrtBook book,
       {String? epubCoverUri,
       bool selectable = true,
-      VoidCallback? removeFromCollection}) {
+      VoidCallback? removeFromCollection,
+      String focusIdPrefix = ''}) {
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
@@ -55,7 +58,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
-      focusId: HibikiFocusId('reader-shelf-srt-${book.uid}'),
+      focusId: HibikiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
       selectionKey: selectable ? selKey : null,
       dragBookId: srtBookId,
       onTagDropped:
@@ -367,9 +370,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         ) !=
         CombineTier.noop;
 
-    return Material(
-      elevation: 6,
-      color: theme.colorScheme.surfaceContainer,
+    // 全 app elevation 0 纪律：去阴影改上边框分隔（巡检 PR-3）；窄屏 + 大字体下
+    // 「已选 N / 全选 / 反选」改 Wrap 自动换行（旧 Row 全员不可收缩必溢出）。
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainer,
+        border: Border(
+          top: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+      ),
       child: SafeArea(
         top: false,
         child: Padding(
@@ -379,22 +388,28 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           ),
           child: Row(
             children: [
-              Text(
-                t.batch_selected_count(n: selectedCount),
-                style: textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: tokens.spacing.gap,
+                  children: <Widget>[
+                    Text(
+                      t.batch_selected_count(n: selectedCount),
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _selectAll,
+                      child: Text(t.batch_select_all),
+                    ),
+                    TextButton(
+                      onPressed: _invertSelection,
+                      child: Text(t.batch_invert_selection),
+                    ),
+                  ],
                 ),
               ),
-              SizedBox(width: tokens.spacing.gap),
-              TextButton(
-                onPressed: _selectAll,
-                child: Text(t.batch_select_all),
-              ),
-              TextButton(
-                onPressed: _invertSelection,
-                child: Text(t.batch_invert_selection),
-              ),
-              const Spacer(),
               HibikiIconButton(
                 key: const ValueKey<String>('reader_shelf_batch_combine'),
                 enabled: canCombine,

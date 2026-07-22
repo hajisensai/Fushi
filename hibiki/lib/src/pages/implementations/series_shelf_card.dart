@@ -27,6 +27,8 @@ class SeriesShelfCard extends StatelessWidget {
     this.selectionMode = false,
     this.selected = false,
     this.onSelectionToggle,
+    this.onLongPress,
+    this.onSecondaryTap,
     super.key,
   });
 
@@ -53,6 +55,11 @@ class SeriesShelfCard extends StatelessWidget {
   final bool selected;
   final VoidCallback? onSelectionToggle;
 
+  /// 长按 / 桌面右键（与散书卡 onLongPress/onSecondaryTap 同语义，巡检 PR-3 补齐
+  /// 交互对称性）。null 时保持纯点击（零破坏）；多选态下自动禁用（与散卡一致）。
+  final VoidCallback? onLongPress;
+  final VoidCallback? onSecondaryTap;
+
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -69,6 +76,8 @@ class SeriesShelfCard extends StatelessWidget {
           canRequestFocus: false,
           borderRadius: tokens.radii.cardRadius,
           onTap: effectiveTap,
+          onLongPress: selectionMode ? null : onLongPress,
+          onSecondaryTap: selectionMode ? null : onSecondaryTap,
           child: AspectRatio(
             aspectRatio: slotAspectRatio,
             child: Column(
@@ -97,47 +106,16 @@ class SeriesShelfCard extends StatelessWidget {
                         Positioned(
                           top: tokens.spacing.gap / 2,
                           left: tokens.spacing.gap / 2,
-                          child: _selectionCheck(theme, tokens),
+                          child: ShelfSelectionCheck(selected: selected),
                         ),
                       if (selected)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: tokens.surfaces.primary
-                                    .withValues(alpha: 0.12),
-                                borderRadius: tokens.radii.cardRadius,
-                              ),
-                            ),
-                          ),
-                        ),
+                        const Positioned.fill(child: ShelfSelectedOverlay()),
                     ],
                   ),
                 ),
                 SizedBox(
-                  height: 40,
-                  child: Padding(
-                    padding: EdgeInsetsDirectional.fromSTEB(
-                      tokens.spacing.gap * 0.75,
-                      tokens.spacing.gap / 2,
-                      tokens.spacing.gap * 0.75,
-                      0,
-                    ),
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: Text(
-                        name,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 2,
-                        textAlign: TextAlign.center,
-                        softWrap: true,
-                        style: tokens.type.metadata.copyWith(
-                          color: tokens.surfaces.onSurface,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
+                  height: ShelfCardFooter.height,
+                  child: ShelfCardFooter(title: name),
                 ),
               ],
             ),
@@ -192,30 +170,6 @@ class SeriesShelfCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _selectionCheck(ThemeData theme, HibikiDesignTokens tokens) {
-    final Color selectionColor = tokens.surfaces.primary;
-    return IgnorePointer(
-      child: Container(
-        decoration: BoxDecoration(
-          color: selected
-              ? selectionColor
-              : tokens.surfaces.page.withValues(alpha: 0.7),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected ? selectionColor : tokens.surfaces.outline,
-            width: 1.5,
-          ),
-        ),
-        padding: EdgeInsets.all(tokens.spacing.gap / 4),
-        child: Icon(
-          Icons.check,
-          size: tokens.spacing.gap * 1.75,
-          color: selected ? theme.colorScheme.onPrimary : Colors.transparent,
-        ),
       ),
     );
   }
