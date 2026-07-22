@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 
@@ -18,6 +19,10 @@ class _FakeMining implements HibikiRemoteMiningService {
 
   @override
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async =>
+      const RemoteMineResult(result: 'success');
+
+  @override
+  Future<RemoteMineResult> mineForwarded(ForwardedMinePayload payload) async =>
       const RemoteMineResult(result: 'success');
 
   @override
