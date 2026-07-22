@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 981 条。点号进各自文件。
+> 共 983 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1016](bugs/BUG-1016-profile-swallows-audiobook-progress.md) | ✅ | ✅ | profile 切换吞听书进度/倍速：进度型 pref 被快照/prune/回灌 |
+| [BUG-1015](bugs/BUG-1015-rename-not-applied-everywhere.md) | ✅ | ✅ | 改名/改作者不生效：override title 消费面缺口 + 作者保存不刷新 + SRT 空 bookKey 互踩 + profile 吞 override |
 | [BUG-1014](bugs/BUG-1014-global-lookup-card-corner-asymmetry.md) | 🚧 | 🚧 | 查词浮窗卡片左侧圆角右侧直角 |
 | [BUG-1013](bugs/BUG-1013-external-window-attach-ready-race.md) | ✅ | ✅ | 外部窗口挖矿在helper就绪前打开共享内存导致降级 |
 | [BUG-1012](bugs/BUG-1012-ext-shadow-dom-lookup.md) | ✅ | ✅ | 浏览器扩展无法读取Shadow DOM内文字(B站评论区) |
