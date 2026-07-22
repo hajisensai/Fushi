@@ -38,6 +38,23 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 - P1 与 P2 可并行（一个管音频 adapter 拆分，一个管文本 IPC），都在为 P3 铺稳定接缝。
 - P3 是「降低新增成本」的核心交付；P4/P5 依赖 P1+P3 的 adapter 骨架。
 
+## 执行进度（2026-07-22）
+
+- **P0 已完成**（hibiki-hook `77c6cf8`）：新增 `engine-support.yaml` 单一真相源、依赖-free
+  生成器、自动生成的 `docs/engine-support.md`、真实样本证据守卫和 CI 漂移检查。矩阵覆盖 Siglus、
+  KiriKiriZ、通用 XAudio2/DirectSound、Ren'Py/FFmpeg 54、Unity IL2CPP；已实现但缺真机命中的路径明确
+  标成 `implemented_unverified`，没有扩大兼容宣称。Hibiki 侧只读同步副本见
+  [engine-support.md](engine-support.md)。
+- **P1 已完成**（hibiki-hook `f4242b9`）：`dll_main.cpp` 从约 3940 行降到 521 行；新增
+  `EngineAdapter` 契约、中心 registry、工作线程模块观察接缝，并把 Unity、Windows 通用音频、Siglus、
+  KiriKiri、Ren'Py、文本渲染、Loopback 原样拆到 `hook/adapters/`。HookWorker 只保留 IPC、共享状态、
+  registry 生命周期和 MinHook 收尾。
+- 验证：x64/x86 均成功 configure/build；两个架构各 10 个 CTest 全绿；清单生成/漂移检查、3 个清单
+  契约测试、3 个 adapter 结构守卫全绿。P1 没有新增引擎能力；本轮未重复跑商业游戏真机路径，因此
+  真机支持范围仍严格沿用 §1 的既有证据。
+- 下一阶段：P2（LunaHost ABI 桥接边界与版本化 IPC）或 P3（probe/new/replay）。P3 仍需等待 P2 的稳定
+  文本接缝；P4/P5 未开始。
+
 ---
 
 ## 0. 开工前必读 & 纪律（指针，不重复）
@@ -61,11 +78,16 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
      可与主 app 分开构建/分发、降低对主 app 的误报牵连；
   2. 独立仓默认分支上的 `voice-hook-helper.yml` 才能正常 `workflow_dispatch` 刷新 release（主仓那份不在
      默认分支无法 dispatch）。
-- **因此：原始设想里要拆的"巨型主流程" `native/galgame_voice_hook/hook/dll_main.cpp`（~2666 行）现在在
-  hibiki-hook，不在 hibiki。** hibiki 已无此目录（迁出前最后快照见 `origin/worktree-galgame-mining`）。
-- hibiki-hook 现有结构（要重构的对象）：
+- **因此：原始设想里要拆的"巨型主流程" `native/galgame_voice_hook/hook/dll_main.cpp`（P1 前已增长到
+  约 3940 行）现在在 hibiki-hook，不在 hibiki。** hibiki 已无此目录（迁出前最后快照见
+  `origin/worktree-galgame-mining`）。P1 后主文件为 521 行，具体逻辑已在 `hook/adapters/`。
+- hibiki-hook 现有结构（P0/P1 后）：
   - `CMakeLists.txt`（`-A x64` / `-A Win32` 双架构）
-  - `hook/dll_main.cpp`（**2666 行**，Unity/Siglus/KiriKiri/Ren'Py/XAudio2/DirectSound/文本渲染逻辑全堆在此）
+  - `engine-support.yaml` + `tools/generate_engine_support.py` + 自动生成 `docs/engine-support.md`
+  - `hook/adapter.h`（`probe/install/capabilities/onModuleLoaded/shutdown/diagnostics` 契约）
+  - `hook/adapter_registry.inc`（中心注册/重试预算/统一模块观察）
+  - `hook/adapters/`（Unity/Siglus/KiriKiri/Ren'Py/XAudio2/DirectSound/文本渲染/Loopback 独立逻辑）
+  - `hook/dll_main.cpp`（**521 行**，共享 IPC/环形缓冲基础设施 + registry 生命周期）
   - `injector/injector_main.cpp`（`--launch <exe>` 随启动加载 / `--pid` 运行中附着 两种模式）
   - `include/voice_hook_ipc.h`（IPC 契约，与 hibiki 侧同名头对齐）
   - `tools/ring_probe.cpp`（`hibiki_voice_ring_probe`，读共享内存做诊断）
@@ -113,7 +135,8 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   BUG-952 texthooker 线程下拉值不匹配。
 
 ### 【原始设想里的幽灵引用（写了但仓库没有 → 新建或改指）】
-- `tool/galhook.ps1`（无，待建）、`engine-support.yaml`（无，待建）、`docs/agent/galgame-hooking.md`（无，待建）。
+- `engine-support.yaml` 已由 P0 在 hibiki-hook 落地；仍缺 `tool/galhook.ps1` 与
+  `docs/agent/galgame-hooking.md`（P3 待建）。
 - `native/galgame_voice_hook/hook/dll_main.cpp` 的正确归属是 **hibiki-hook**，非 hibiki。
 
 ---
@@ -132,7 +155,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 
 ## 3. 分阶段计划（每阶段独立可审查提交；铁律：先无行为变化重构，再扩能力，两者不混在同一提交）
 
-### Phase 0 — 建机器可读真相源（无代码行为变化）
+### Phase 0 — 建机器可读真相源（无代码行为变化，✅ `77c6cf8`）
 - 新建 `engine-support.yaml`，字段至少：引擎 id/别名/家族关系；识别规则（exe 名/PE 架构/目录文件/PE imports/
   运行时模块/资源扩展名 + 可选哈希）；进程策略（随启动加载 / 运行中附着 / 普通 attach / 跟随子进程）；
   文本能力（Luna 自动识别 / PC Hooks / 专用 Hook Code / codepage / 线程选择提示）；音频能力 + 优先级；
@@ -142,7 +165,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 - 用 §1 真机基线填 Siglus/KiriKiriZ/XAudio2/Unity 真实状态，消除 handoff 与旧设想口径不一致。
 - **完成定义**：yaml 单一真相源存在且能自动生成矩阵 md；Siglus/KiriKiriZ/XAudio2/Unity 状态与 §1 基线逐条一致；本阶段零代码行为变化。
 
-### Phase 1 — 无行为变化拆分 `dll_main.cpp`（在 hibiki-hook）
+### Phase 1 — 无行为变化拆分 `dll_main.cpp`（在 hibiki-hook，✅ `f4242b9`）
 - 统一 adapter 契约：`probe`（是否适用）/ `install` / `capabilities`（text, resourceAudio, pcmAudio）/
   `onModuleLoaded`（延迟加载 DLL）/ `shutdown`（安全停止释放）/ `diagnostics`（结构化诊断）。
 - 建中心 registry；主 worker 只负责生命周期 + 注册调度。把现有 Unity/Siglus/KiriKiri/Ren'Py/XAudio2/
@@ -196,8 +219,8 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 ---
 
 ## 5. 完成标准（逐条可验，全满足才可标记完成）
-- [ ] **[P0]** 引擎支持矩阵有唯一机器可读真相源（engine-support.yaml）并可自动生成文档。
-- [ ] **[P1]** 现有采集能力已迁入 adapter registry，主 worker 不再直接堆各引擎实现。
+- [x] **[P0]** 引擎支持矩阵有唯一机器可读真相源（engine-support.yaml）并可自动生成文档（`77c6cf8`）。
+- [x] **[P1]** 现有采集能力已迁入 adapter registry，主 worker 不再直接堆各引擎实现（`f4242b9`）。
 - [ ] **[P3]** probe/new/replay 三条工作流可实际执行并有自动化测试。
 - [ ] **[P2]** LunaHost ABI 收进可升级桥接边界，有版本 + 导出守卫。
 - [ ] **[P5]** 至少完成 RealLive/VisualArt's 首批适配 + fixture + native 测试 + 上层配对测试。
