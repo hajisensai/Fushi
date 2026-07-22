@@ -20,6 +20,8 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
+import 'package:hibiki/src/sync/deletion_prompt.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
@@ -993,17 +995,19 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     final NavigatorState outerNavigator =
         Navigator.of(context, rootNavigator: true);
 
-    final bool? confirm = await showAppDialog<bool>(
-      context: context,
-      builder: (ctx) => AudiobookRemoveConfirmationDialog(
-        onConfirm: () => Navigator.of(ctx).pop(true),
-      ),
+    final DeleteScope? scope = await showDeleteScopeConfirm(
+      context,
+      title: t.dialog_delete,
+      message: t.audiobook_remove_confirm,
     );
-    debugPrint('AudiobookImportDialog: confirm=$confirm');
-    if (confirm != true) return;
+    debugPrint('AudiobookImportDialog: scope=$scope');
+    if (scope == null) return;
 
     try {
-      await widget.repo.deleteAudiobook(widget.bookKey);
+      await widget.repo.deleteAudiobook(
+        widget.bookKey,
+        propagateDeletion: scope == DeleteScope.syncEverywhere,
+      );
       debugPrint('AudiobookImportDialog: deleteAudiobook done');
     } catch (e, st) {
       ErrorLogService.instance.log('AudiobookImport.deleteAudiobook', e, st);

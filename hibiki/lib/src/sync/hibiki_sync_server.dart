@@ -557,6 +557,9 @@ class HibikiSyncServer {
     if (reqPath == '/api/library/collections') {
       return _handleLibraryCollections(request, method, reqPath);
     }
+    if (reqPath == '/api/tombstones') {
+      return _handleTombstones(request, method);
+    }
 
     // 真实读写路径：只做词法规整、**保留原始大小写**。p.canonicalize 在
     // 大小写不敏感平台（Windows）会把整条路径小写化，这会让书文件夹名按宿主平台
@@ -2208,6 +2211,41 @@ class HibikiSyncServer {
       default:
         return shelf.Response(405);
     }
+  }
+
+  /// GET `/api/tombstones`：列 host 全部删除墓碑为 JSON 数组，供 client 拉取后与本地
+  /// 在库键求交、弹逐条确认删本地（显式确认式删除传播，host→client 消费方向）。走已配对
+  /// peer 的 Basic token 校验（与 collections/aggregate 同纪律，未进鉴权豁免名单）。
+  Future<shelf.Response> _handleTombstones(
+    shelf.Request request,
+    String method,
+  ) async {
+    if (method != 'GET') return shelf.Response(405);
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+    // 可选能力探测：host 未实现删除墓碑列举（老 host / 测试 fake）→ 404，client 侧
+    // getRemoteDeletionTombstones 已优雅降级（不崩、跳过删除墓碑消费）。
+    if (svc is! DeletionTombstoneHost) {
+      return shelf.Response.notFound('No deletion tombstone capability');
+    }
+    final List<({String mediaType, String itemKey, int deletedAt})> rows =
+        await (svc as DeletionTombstoneHost).listDeletionTombstones();
+    final List<Map<String, Object?>> body = <Map<String, Object?>>[
+      for (final r in rows)
+        <String, Object?>{
+          'mediaType': r.mediaType,
+          'itemKey': r.itemKey,
+          'deletedAt': r.deletedAt,
+        },
+    ];
+    return shelf.Response.ok(
+      jsonEncode(body),
+      // charset=utf-8 必带：itemKey 可能含 CJK（书名派生 key），client 按 latin1 默认
+      // 解码会乱码（同 collections / aggregate）。
+      headers: <String, String>{
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+    );
   }
 
   Future<Map<String, dynamic>?> _readJsonObject(shelf.Request request) async {

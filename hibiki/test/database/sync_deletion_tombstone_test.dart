@@ -4,6 +4,7 @@ library;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
@@ -37,14 +38,23 @@ void main() {
     expect(await db.getSyncDeletionTombstonesOfType('book'), isEmpty);
   });
 
-  test('删视频经 repo 写墓碑；重新 upsert 清碑', () async {
+  test('删视频经 repo 写墓碑（仅 syncEverywhere）；重新 upsert 清碑', () async {
     final repo = VideoBookRepository(db);
     await db.upsertVideoBook(VideoBooksCompanion.insert(
       bookUid: 'video/v1',
       title: 'V1',
       videoPath: '/tmp/v1.mp4',
     ));
+    // keepLocalOnly（默认）不写传播墓碑。
     await repo.deleteVideoBook('video/v1');
+    expect(await db.getSyncDeletionTombstonesOfType('video'), isEmpty);
+    // syncEverywhere 才写传播墓碑。
+    await db.upsertVideoBook(VideoBooksCompanion.insert(
+      bookUid: 'video/v1',
+      title: 'V1',
+      videoPath: '/tmp/v1.mp4',
+    ));
+    await repo.deleteVideoBook('video/v1', scope: DeleteScope.syncEverywhere);
     expect(await db.getSyncDeletionTombstonesOfType('video'), hasLength(1));
     // 重新加入同 uid → 清碑。
     await db.upsertVideoBook(VideoBooksCompanion.insert(
@@ -53,6 +63,53 @@ void main() {
       videoPath: '/tmp/v1.mp4',
     ));
     expect(await db.getSyncDeletionTombstonesOfType('video'), isEmpty);
+  });
+
+  test('取消收藏写 favoriteword 墓碑；重新收藏清碑', () async {
+    await db.addFavoriteWord(
+      expression: '猫',
+      reading: 'ねこ',
+      glossary: 'cat',
+      sourceType: 'reader',
+      dateKey: '2026-07-23',
+    );
+    // 取消收藏（默认 propagateDeletion=true）→ 写墓碑。
+    final int removed = await db.removeFavoriteWord(
+      expression: '猫',
+      reading: 'ねこ',
+      sourceType: 'reader',
+    );
+    expect(removed, 1);
+    final favs = await db.getSyncDeletionTombstonesOfType('favoriteword');
+    expect(favs, hasLength(1));
+    expect(favs.single.itemKey,
+        HibikiDatabase.favoriteWordItemKey('猫', 'ねこ', 'reader'));
+    // 重新收藏 → 清碑。
+    await db.addFavoriteWord(
+      expression: '猫',
+      reading: 'ねこ',
+      glossary: 'cat',
+      sourceType: 'reader',
+      dateKey: '2026-07-23',
+    );
+    expect(await db.getSyncDeletionTombstonesOfType('favoriteword'), isEmpty);
+  });
+
+  test('propagateDeletion:false 不写墓碑', () async {
+    await db.addFavoriteWord(
+      expression: '犬',
+      reading: 'いぬ',
+      glossary: 'dog',
+      sourceType: 'reader',
+      dateKey: '2026-07-23',
+    );
+    await db.removeFavoriteWord(
+      expression: '犬',
+      reading: 'いぬ',
+      sourceType: 'reader',
+      propagateDeletion: false,
+    );
+    expect(await db.getSyncDeletionTombstonesOfType('favoriteword'), isEmpty);
   });
 
   test('发布标记 remotePublishedAt', () async {

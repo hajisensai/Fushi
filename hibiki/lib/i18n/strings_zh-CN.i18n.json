@@ -2261,5 +2261,13 @@
   "remote_video_info_no_subtitle": "不含字幕",
   "app_icon_presets": "预设",
   "anki_mine_to_server": "制卡到已配对设备",
-  "anki_mine_to_server_hint": "把制卡发送到已配对主机的 Anki（用该设备的牌组与设置），而非本机。需先在互联/同步里完成配对。"
+  "anki_mine_to_server_hint": "把制卡发送到已配对主机的 Anki（用该设备的牌组与设置），而非本机。需先在互联/同步里完成配对。",
+  "delete_scope_keep_local": "仅从本机删除",
+  "delete_scope_keep_local_desc": "其他设备保留",
+  "delete_prompt_title": "其他设备已删除",
+  "delete_prompt_message": "以下内容已在其他设备删除，也从本机删除吗？",
+  "delete_prompt_select_all": "全选",
+  "delete_prompt_delete_selected": "删除选中",
+  "delete_scope_sync_everywhere": "从所有设备删除",
+  "delete_scope_sync_everywhere_desc": "其他设备下次同步时会确认删除"
 }

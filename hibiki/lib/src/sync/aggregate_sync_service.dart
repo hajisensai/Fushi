@@ -537,7 +537,18 @@ class AggregateSyncService {
         count: r.mineCount,
       );
     }
+    // 删除传播：跳过有 `favoriteword` sync 删除墓碑的收藏——否则本设备取消收藏后，
+    // peer 快照的并集会把它重新加回（复活，正是要治的痛点）。与上面统计墓碑同律。
+    final Set<String> favTombstoned = <String>{
+      for (final SyncDeletionTombstoneRow row
+          in await _db.getSyncDeletionTombstonesOfType('favoriteword'))
+        row.itemKey,
+    };
     for (final FavoriteWordRecord r in snapshot.favoriteWords) {
+      if (favTombstoned.contains(HibikiDatabase.favoriteWordItemKey(
+          r.expression, r.reading, r.sourceType))) {
+        continue;
+      }
       // addFavoriteWord is idempotent on {expression, reading, sourceType}:
       // a word the device already has returns false, a peer-only word inserts.
       await _db.addFavoriteWord(

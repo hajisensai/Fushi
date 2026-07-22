@@ -45,7 +45,8 @@ import 'package:path/path.dart' as p;
 /// | [videoSubtitleLangCode] | 视频 sidecar 字幕匹配语言代码（P4-1）| AppModel 目标学习语言 |
 ///
 /// T2/T3 后续接线任务会在 AppModel 初始化时传入真实值。
-class AppModelLibraryHostService implements HibikiLibraryHostService {
+class AppModelLibraryHostService
+    implements HibikiLibraryHostService, DeletionTombstoneHost {
   AppModelLibraryHostService({
     required HibikiDatabase db,
     required Directory dictionaryResourceRoot,
@@ -1474,5 +1475,16 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       merged = outcome.merged;
     });
     return merged;
+  }
+
+  @override
+  Future<List<({String mediaType, String itemKey, int deletedAt})>>
+      listDeletionTombstones() async {
+    final List<SyncDeletionTombstoneRow> rows =
+        await _db.getSyncDeletionTombstones();
+    return <({String mediaType, String itemKey, int deletedAt})>[
+      for (final SyncDeletionTombstoneRow r in rows)
+        (mediaType: r.mediaType, itemKey: r.itemKey, deletedAt: r.deletedAt),
+    ];
   }
 }

@@ -29,7 +29,7 @@ void main() {
             title:
                 'Very long EPUB title used to test compact Windows delete confirmation layout',
           ),
-          onConfirm: () {},
+          onConfirm: (_) {},
         ),
       ),
     );

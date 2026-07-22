@@ -45,6 +45,8 @@ import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/pages/implementations/video_statistics_page.dart';
+import 'package:hibiki/src/sync/deletion_prompt.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
@@ -616,27 +618,33 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         : mediaCount == 0
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.dialog_delete),
-        content: Text(message),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              t.dialog_delete,
-              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+    // 混选/纯解散不删媒体本体 → 不展示同步删除选项（合集解散走合集传播机制）；
+    // 纯删媒体才有意义提供「从所有设备删除」。
+    final DeleteScope? scope = collectionCount == 0
+        ? await showDeleteScopeConfirm(context,
+            title: t.dialog_delete, message: message)
+        : await showAppDialog<DeleteScope>(
+            context: context,
+            builder: (BuildContext ctx) => AlertDialog(
+              title: Text(t.dialog_delete),
+              content: Text(message),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  child: Text(t.dialog_cancel),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(ctx, DeleteScope.keepLocalOnly),
+                  child: Text(
+                    t.dialog_delete,
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+          );
+    if (scope == null || !mounted) return;
 
     final HibikiDatabase db = ref.read(appProvider).database;
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
@@ -652,7 +660,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     for (final String bookUid in toDelete) {
       final VideoBookRow? book = await widget.repo.getByBookUid(bookUid);
       if (book == null) continue;
-      await widget.repo.deleteVideoBook(bookUid);
+      await widget.repo.deleteVideoBook(bookUid, scope: scope);
       deletedBooks.add(book);
     }
     final int deleted = deletedBooks.length;
@@ -1621,31 +1629,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   }
 
   Future<void> _confirmDelete(VideoBookRow book) async {
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.video_delete_title),
-        content: Text(t.video_delete_confirm(title: book.title)),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              t.dialog_delete,
-              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
-            ),
-          ),
-        ],
-      ),
+    final DeleteScope? scope = await showDeleteScopeConfirm(
+      context,
+      title: t.video_delete_title,
+      message: t.video_delete_confirm(title: book.title),
     );
-    if (confirmed != true || !mounted) return;
+    if (scope == null || !mounted) return;
     final String? deletedCoverPath = book.coverPath;
     final String? deletedSubtitlePath = book.subtitleSource;
     final String deletedVideoPath = book.videoPath;
-    await widget.repo.deleteVideoBook(book.bookUid);
+    await widget.repo.deleteVideoBook(book.bookUid, scope: scope);
     if (mounted) {
       _refreshAfterTagChange();
       await _waitForVideoCardsToUnmount();

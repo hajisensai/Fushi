@@ -47,6 +47,7 @@ import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:hibiki/src/sync/cloud_remote_book_client.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
@@ -1525,19 +1526,22 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  Future<bool> _confirmMediaDelete({
+  /// 弹删除确认框，返回用户选择的删除范围（[DeleteScope.syncEverywhere] = 同步删除到
+  /// 其他设备 / [DeleteScope.keepLocalOnly] = 仅本机）；取消或已 unmount 返回 null。
+  Future<DeleteScope?> _confirmMediaDelete({
     required String title,
     required String message,
   }) async {
-    final bool? confirmed = await showAppDialog<bool>(
+    final DeleteScope? scope = await showAppDialog<DeleteScope>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: title,
         message: message,
-        onConfirm: () => Navigator.pop(ctx, true),
+        onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
       ),
     );
-    return confirmed == true && mounted;
+    if (!mounted) return null;
+    return scope;
   }
 
   @override
