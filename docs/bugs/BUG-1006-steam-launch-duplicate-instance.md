@@ -1,0 +1,15 @@
+## BUG-1006 · Steam 游戏启动并捕获触发重复实例且晚附着漏音频
+- **报告**：2026-07-22（用户：Manosaba 由 Hibiki「启动并捕获」后弹出 `Fatal error: Another instance is already running`；指出改用外部窗口绑定经常漏 Hook 或音频，不能作为修复）
+- **真实性**：✅ 真 bug。Hibiki 的生产路径由 `games_library_page.dart` 调用 `GalHookSessionController.launchGame`，最终给隔离 helper 传 `--launch`；根因在 hibiki-hook `injector/injector_main.cpp:1514-1526` 的旧 Steam 分支：发现 AppID 后仍对游戏 exe 直接 `CreateProcessW`，只临时注入 `SteamAppId` / `SteamGameId` 环境变量。游戏执行 `SteamAPI_RestartAppIfNecessary` 后仍会要求 Steam 客户端重启 AppID，于是首进程与客户端拉起的真实进程争用单实例锁，helper 又留在首进程，形成截图中的重复实例、未绑定窗口和音频源失败。
+- **[x] ① 已修复** — hibiki-hook `7709bf3`：
+  - 从 appmanifest 识别到合法数字 AppID 后，不再直接 `CreateProcessW`，改为 `steam://run/<AppID>` 交给 Steam 客户端正常启动；以 15ms 间隔枚举进程，并按**完整镜像路径**精确找到真实游戏进程后自动注入。它仍是 Hibiki 的「启动并捕获」，不是要求用户事后选择外部窗口。
+  - 启动前若同一路径游戏已运行，直接复用该 PID，不再请求 Steam 拉第二实例。
+  - 非 Steam 游戏的 `CREATE_SUSPENDED` 早注入、Siglus/子进程策略保持原样；删除无效的 `SteamAppId` / `SteamGameId` 环境变量绕法。
+- **[x] ② 已加自动化测试** —
+  - hibiki-hook `tests/steam_launch_test.cpp`：AppID 策略、非法 AppID 回退和 `steam://run/3101040` URI 纯逻辑测试。
+  - hibiki-hook `tests/adapter_structure_test.py`：守卫 Steam 客户端分支必须位于直接 `CreateProcessW` 之前、必须按完整路径发现进程，并禁止恢复环境变量绕法。
+  - x64 / x86 各 16 项 CTest 全绿；结构守卫 8 项全绿。
+- **备注**：
+  - 原始路径真机复测：Steam 已登录状态从无 Manosaba 进程冷启动，日志依次出现 `requested AppID=3101040` → `discovered launched game pid=26520` → `OK hooked`；系统窗口枚举只有一个 `manosaba`，没有 `Fatal error` / `Another instance`。
+  - IPC 真机证据：`text_hooked=1`、`luna_active=1`，518+ 文本事件（含 Unity TMP 日文文本）、Unity 音频事件 `Bgm_036_001_Loop`，WASAPI loopback 为 44.1kHz/双声道且字节持续增长。证明冷启动没有漏掉文本 Hook 与音频源；角色逐句资源事件仍需在游戏内实际播放一句语音后补记，当前标题/存档界面只有 BGM。
+  - Steam 未登录时客户端会停在登录窗口；helper 45 秒后明确超时退出，不会回退到可能制造重复实例的直接启动。

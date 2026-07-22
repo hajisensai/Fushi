@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 972 条。点号进各自文件。
+> 共 973 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1006](bugs/BUG-1006-steam-launch-duplicate-instance.md) | ✅ | ✅ | Steam 游戏启动并捕获触发重复实例且晚附着漏音频 |
 | [BUG-1005](bugs/BUG-1005-mining-word-audio-remote-source.md) | ✅ | ✅ | 制卡缺单词音频·扩展needsAudio门+制卡器忽略远程发音源 |
 | [BUG-1004](bugs/BUG-1004-interconnect-mining-audio-host-clip.md) | ✅ | ✅ | 互联视频制卡句子音频改 host 端裁绕开 client ffmpeg 抓远端流 |
 | [BUG-1003](bugs/BUG-1003-download-kb-inset.md) | ✅ | ✅ | 下载页输入apikey时软键盘顶掉贴底下载任务区 |
