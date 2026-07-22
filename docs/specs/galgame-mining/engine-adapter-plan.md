@@ -62,7 +62,17 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   Windows debug 构建成功；相关 Dart 文件 `dart analyze` 无问题。全量 `flutter analyze` 在本机 Flutter
   3.44 的 analysis server 读取 LSP JSON 时自身崩溃，未产出代码诊断，故全阶段总闸暂不勾选。本轮未
   重跑商业游戏；9-nine 内置配置只把既有真机 Hook Code 改由已读取的真实 exe SHA-256 匹配。
-- 下一阶段：P3（probe/new/replay）；P4/P5 未开始。
+- **P3 已完成**（hibiki-hook `195b76d`；hibiki `a42df794e`）：新增统一
+  `tool/galhook.ps1` 入口。`probe` 产出仅含脱敏元数据/PE imports/能力摘要的诊断 ZIP，默认不复制游戏
+  载荷；`new` 自动生成并注册 profile、独立 adapter、native/Dart 测试与 fixture，且没有跳过结构守卫的
+  开关；`replay` 离线覆盖线程过滤、文本去重、resource/PCM/loopback 配对优先级、资源晚到和会话清理。
+  registry 新增受管生成接缝，普通 adapter 不再需要修改 worker 主干。开发 SOP 已写入
+  [galgame-hooking.md](../../agent/galgame-hooking.md) 并由根 `CLAUDE.md` 索引。
+- P3 验证：工作流测试 4 项、adapter 结构守卫 4 项、清单契约 3 项全绿；x64/x86 均成功增量构建且
+  各 13 个 CTest 全绿。对 9-nine Episode 1 的真实 exe 运行默认静态 probe，ZIP 仅有
+  `diagnostic.json` / `README.txt`，隐私检查通过；这只是工具隐私路径验证，没有重跑游戏内采集，故不
+  扩大该游戏的兼容宣称。
+- 下一阶段：P4（共享层音频扩展）；P5 未开始。
 
 ---
 
@@ -230,11 +240,11 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 ## 5. 完成标准（逐条可验，全满足才可标记完成）
 - [x] **[P0]** 引擎支持矩阵有唯一机器可读真相源（engine-support.yaml）并可自动生成文档（`77c6cf8`）。
 - [x] **[P1]** 现有采集能力已迁入 adapter registry，主 worker 不再直接堆各引擎实现（`f4242b9`）。
-- [ ] **[P3]** probe/new/replay 三条工作流可实际执行并有自动化测试。
+- [x] **[P3]** probe/new/replay 三条工作流可实际执行并有自动化测试（hibiki-hook `195b76d`；hibiki `a42df794e`）。
 - [x] **[P2]** LunaHost ABI 收进可升级桥接边界，有版本 + 导出守卫（hibiki-hook `7c4beaa`；hibiki `ff1e0197f`）。
 - [ ] **[P5]** 至少完成 RealLive/VisualArt's 首批适配 + fixture + native 测试 + 上层配对测试。
 - [ ] **[P4]** FFmpeg 版本识别与子进程跟随不再只针对单一旧版 Ren'Py。
-- [ ] **[P1+P3]** 新增一个普通引擎的主要工作可限于 profile + 独立 adapter + fixture，不需改主 worker 主干。
+- [x] **[P1+P3]** 新增一个普通引擎的主要工作可限于 profile + 独立 adapter + fixture，不需改主 worker 主干。
 - [ ] **[全阶段]** hibiki-hook x86/x64 native 构建 + CTest 通过；hibiki 侧 `dart format` + `flutter analyze`
       + `flutter test` 通过。
 - [ ] **[全阶段]** 所有宣称"支持/修好"的真实引擎按仓库规则走原始路径真机验证并留证据；缺样本能力显式标未真机验证。
