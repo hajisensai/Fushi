@@ -1,10 +1,16 @@
 #ifndef HIBIKI_STEAM_LAUNCH_H_
 #define HIBIKI_STEAM_LAUNCH_H_
 
+#include <algorithm>
 #include <cwctype>
 #include <string>
 
 namespace hibiki_voice_hook {
+
+enum class SteamLaunchStrategy {
+  kDirectExecutable,
+  kSteamClient,
+};
 
 struct SteamLibraryPath {
   std::wstring steamapps_dir;
@@ -50,6 +56,24 @@ inline std::wstring ParseAcfQuotedValue(const std::wstring& text,
   const size_t end = text.find(L'\"', pos + 1);
   if (end == std::wstring::npos) return L"";
   return text.substr(pos + 1, end - pos - 1);
+}
+
+inline SteamLaunchStrategy ChooseSteamLaunchStrategy(
+    const std::wstring& app_id) {
+  if (app_id.empty() ||
+      !std::all_of(app_id.begin(), app_id.end(),
+                   [](wchar_t c) { return c >= L'0' && c <= L'9'; })) {
+    return SteamLaunchStrategy::kDirectExecutable;
+  }
+  return SteamLaunchStrategy::kSteamClient;
+}
+
+inline std::wstring BuildSteamRunUri(const std::wstring& app_id) {
+  if (ChooseSteamLaunchStrategy(app_id) !=
+      SteamLaunchStrategy::kSteamClient) {
+    return L"";
+  }
+  return L"steam://run/" + app_id;
 }
 
 }  // namespace hibiki_voice_hook

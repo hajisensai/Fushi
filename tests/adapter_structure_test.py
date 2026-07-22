@@ -116,6 +116,27 @@ class AdapterStructureTest(unittest.TestCase):
         remember = remember.split("void ForgetSiglusOvk", 1)[0]
         self.assertIn("kDiagVisualArtsOvkHooksReady", remember)
 
+    def test_steam_games_launch_through_client_before_exact_path_injection(
+        self,
+    ) -> None:
+        injector = (ROOT / "injector" / "injector_main.cpp").read_text(
+            encoding="utf-8"
+        )
+        run_launch = injector.split("int RunLaunch(", 1)[1]
+        run_launch = run_launch.split("}  // namespace", 1)[0]
+        self.assertIn("RunSteamLaunch(exe, steam_app_id", run_launch)
+        self.assertLess(
+            run_launch.index("RunSteamLaunch(exe, steam_app_id"),
+            run_launch.index("CreateProcessW("),
+        )
+        self.assertIn("const HINSTANCE launched = ShellExecuteW(", injector)
+        self.assertIn("nullptr, L\"open\", uri.c_str()", injector)
+        self.assertIn("WaitForSteamGameProcess", injector)
+        self.assertIn(
+            "_wcsicmp(image.c_str(), expected_exe.c_str()) == 0", injector
+        )
+        self.assertNotIn('SetEnvironmentVariableW(L"SteamAppId"', injector)
+
 
 if __name__ == "__main__":
     unittest.main()

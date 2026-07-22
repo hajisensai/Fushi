@@ -33,9 +33,9 @@
 // 两种进入方式（二选一）：
 //   attach（--pid）：注入已运行进程。适合引擎在游戏运行中才建声音设备的情形。
 //   launch（--launch）：通常 CREATE_SUSPENDED 拉起游戏，在其 WinMain 之前注入 hook 再
-//     ResumeThread。SiglusEngine.exe 的 Enigma 保护壳会拒绝这种早注入，因此该 exe 自动改为
-//     正常启动，等保护壳退出且游戏主窗口出现后再附着；Siglus 的干净语音来自后续 OVK 文件读，
-//     不要求抢在音频设备创建之前。
+//     ResumeThread。Steam 游戏必须由客户端启动，因此改走 steam://run 并以 15ms 间隔按完整路径
+//     自动发现真实游戏进程后注入；SiglusEngine.exe 的 Enigma 保护壳会拒绝早注入，因此该 exe
+//     正常启动，等保护壳退出且游戏主窗口出现后再附着。
 //
 // 用法：
 //   hibiki_voice_injector.exe --pid <PID> [--dll <hook.dll>] [--wait-ms N] [--hold]
@@ -1381,25 +1381,93 @@ std::wstring DiscoverSteamAppId(const std::wstring& executable) {
   return found;
 }
 
-struct EnvironmentValue {
-  bool existed = false;
-  std::wstring value;
-};
+constexpr DWORD kInjectionProcessRights =
+    PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
+    PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | SYNCHRONIZE;
 
-EnvironmentValue CaptureEnvironment(const wchar_t* name) {
-  EnvironmentValue result;
-  const DWORD need = GetEnvironmentVariableW(name, nullptr, 0);
-  if (need == 0) return result;
-  std::vector<wchar_t> value(need, 0);
-  if (GetEnvironmentVariableW(name, value.data(), need) > 0) {
-    result.existed = true;
-    result.value = value.data();
+// Steam 客户端可能已经启动了目标，也可能在处理 steam://run 后异步创建目标。
+// 只按完整镜像路径匹配，避免同名启动器/其他游戏被误注入。返回的句柄由调用方关闭。
+HANDLE FindProcessByImagePath(const std::wstring& expected_exe,
+                              DWORD* found_pid) {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return nullptr;
+  PROCESSENTRY32W entry = {0};
+  entry.dwSize = sizeof(entry);
+  HANDLE found = nullptr;
+  if (Process32FirstW(snapshot, &entry)) {
+    do {
+      HANDLE process = OpenProcess(kInjectionProcessRights, FALSE,
+                                   entry.th32ProcessID);
+      if (process == nullptr) continue;
+      const std::wstring image = ProcessImagePath(process);
+      if (!image.empty() && _wcsicmp(image.c_str(), expected_exe.c_str()) == 0) {
+        found = process;
+        if (found_pid != nullptr) *found_pid = entry.th32ProcessID;
+        break;
+      }
+      CloseHandle(process);
+    } while (Process32NextW(snapshot, &entry));
   }
-  return result;
+  CloseHandle(snapshot);
+  return found;
 }
 
-void RestoreEnvironment(const wchar_t* name, const EnvironmentValue& value) {
-  SetEnvironmentVariableW(name, value.existed ? value.value.c_str() : nullptr);
+HANDLE WaitForSteamGameProcess(const std::wstring& expected_exe,
+                               DWORD timeout_ms, DWORD* found_pid) {
+  const uint64_t deadline = GetTickCount64() + timeout_ms;
+  do {
+    HANDLE process = FindProcessByImagePath(expected_exe, found_pid);
+    if (process != nullptr) return process;
+    Sleep(15);
+  } while (GetTickCount64() < deadline);
+  return nullptr;
+}
+
+int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
+                   const std::wstring& dll_path, DWORD wait_ms, bool hold,
+                   LunaOptions luna) {
+  std::vector<wchar_t> absolute_buffer(32768, L'\0');
+  const DWORD absolute_size = GetFullPathNameW(
+      exe.c_str(), static_cast<DWORD>(absolute_buffer.size()),
+      absolute_buffer.data(), nullptr);
+  const std::wstring expected_exe =
+      absolute_size > 0 && absolute_size < absolute_buffer.size()
+          ? std::wstring(absolute_buffer.data(), absolute_size)
+          : exe;
+  DWORD pid = 0;
+  HANDLE target = FindProcessByImagePath(expected_exe, &pid);
+  if (target != nullptr) {
+    fprintf(stderr,
+            "[steam] target already running; attaching without relaunch "
+            "pid=%lu image=%ls\n",
+            pid, expected_exe.c_str());
+  } else {
+    const std::wstring uri = hibiki_voice_hook::BuildSteamRunUri(app_id);
+    const HINSTANCE launched = ShellExecuteW(
+        nullptr, L"open", uri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(launched) <= 32) {
+      fprintf(stderr, "ShellExecuteW(%ls) failed: %lld\n", uri.c_str(),
+              static_cast<long long>(reinterpret_cast<INT_PTR>(launched)));
+      return 1;
+    }
+    fprintf(stderr, "[steam] requested AppID=%ls via %ls\n", app_id.c_str(),
+            uri.c_str());
+    target = WaitForSteamGameProcess(expected_exe, 45000, &pid);
+    if (target == nullptr) {
+      fprintf(stderr,
+              "Steam 已接受启动请求，但 45 秒内未发现目标进程：%ls\n",
+              expected_exe.c_str());
+      return 1;
+    }
+    fprintf(stderr, "[steam] discovered launched game pid=%lu image=%ls\n", pid,
+            expected_exe.c_str());
+  }
+
+  ApplyLunaProfiles(expected_exe, pid, luna.profile_path, &luna);
+  const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
+                              target, luna);
+  CloseHandle(target);
+  return rc;
 }
 
 // launch 模式：一般 CREATE_SUSPENDED 早注入；Siglus 因 Enigma 保护壳改为正常启动后附着。
@@ -1443,26 +1511,24 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   const bool delayed_siglus = IsSiglusGame(exe);
   const bool follow_children =
       follow_child_processes || LooksLikeRenpyRuntime(exe);
-  // Steam 游戏被直接 CreateProcess 时常会立即退出，再由 Steam 拉起一个未注入子进程。
-  // 从 exe 所在库的 appmanifest 自动发现 AppID，并只在本次 CreateProcess 的继承窗口内设置
-  // 官方环境变量，避免 Steam 二次拉起导致“看似启动成功、实际 hook 的是已退出进程”。
+  // SteamAPI_RestartAppIfNecessary 要求游戏由 Steam 客户端启动。直接 CreateProcess
+  // 即使临时设置 AppID 环境变量也可能触发客户端二次拉起，最终出现重复实例且 hook 留在
+  // 已退出的首进程。Steam 游戏改走客户端协议，并自动按完整 exe 路径发现/注入真实进程。
   const std::wstring steam_app_id = DiscoverSteamAppId(exe);
-  const EnvironmentValue old_steam_app = CaptureEnvironment(L"SteamAppId");
-  const EnvironmentValue old_steam_game = CaptureEnvironment(L"SteamGameId");
-  if (!steam_app_id.empty()) {
-    SetEnvironmentVariableW(L"SteamAppId", steam_app_id.c_str());
-    SetEnvironmentVariableW(L"SteamGameId", steam_app_id.c_str());
-    fprintf(stderr, "[steam] inherited AppID=%ls for %ls\n",
-            steam_app_id.c_str(), ExecutableBaseName(exe).c_str());
+  if (hibiki_voice_hook::ChooseSteamLaunchStrategy(steam_app_id) ==
+      hibiki_voice_hook::SteamLaunchStrategy::kSteamClient) {
+    if (!extra_args.empty()) {
+      fprintf(stderr,
+              "[steam] warning: custom --arg values are not forwarded by the "
+              "steam:// launch path\n");
+    }
+    return RunSteamLaunch(exe, steam_app_id, dll_path, wait_ms, hold,
+                          effective_luna);
   }
   const BOOL created = CreateProcessW(
       exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE,
       (delayed_siglus || follow_children) ? 0 : CREATE_SUSPENDED,
       nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
-  if (!steam_app_id.empty()) {
-    RestoreEnvironment(L"SteamAppId", old_steam_app);
-    RestoreEnvironment(L"SteamGameId", old_steam_game);
-  }
   if (!created) {
     fprintf(stderr, "CreateProcessW failed: %lu\n", GetLastError());
     return 1;

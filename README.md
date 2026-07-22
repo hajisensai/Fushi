@@ -69,8 +69,12 @@ hibiki_voice_injector.exe --pid <目标游戏PID> [--dll <hook.dll>] [--wait-ms 
 hibiki_voice_injector.exe --launch <游戏exe> [--workdir <目录>] [--arg <参数>]... [--dll <hook.dll>] [--wait-ms 5000] [--hold] [--luna-pchooks]
 ```
 
+`--launch` 对普通游戏使用挂起创建、注入后放行；Steam 库内游戏会先通过
+`steam://run/<AppID>` 交给客户端启动，再以 15ms 间隔按完整 exe 路径自动识别并注入真实游戏进程。
+若同一路径的游戏已经运行，则直接复用该进程，不再请求 Steam 启动第二实例。
+
 - `--pid`：附着模式的目标进程 ID；与 `--launch` 二选一。
-- `--launch`：由 injector 启动游戏并注入；普通引擎用 CREATE_SUSPENDED 早注入，`SiglusEngine.exe` 会自动改为 Enigma-safe 延迟附着。
+- `--launch`：由 injector 启动游戏并注入；普通引擎用 CREATE_SUSPENDED 早注入，Steam 游戏由客户端启动后自动识别真实进程，`SiglusEngine.exe` 会自动改为 Enigma-safe 延迟附着。
 - `--dll`：hook DLL 路径（默认取同目录 arch 匹配的 `hibiki_voice_hook.dll`）。
 - `--wait-ms`：等「就绪」事件超时（默认 5000）。
 - `--hold`：注入确认后常驻（host 模式，维持共享内存存活供消费）；缺省=probe 模式，确认后退出。
