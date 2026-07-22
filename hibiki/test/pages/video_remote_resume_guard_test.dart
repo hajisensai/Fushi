@@ -150,18 +150,34 @@ void main() {
     });
 
     test('remote position helpers use the stable bookUid + episode key', () {
-      // TODO-885：读侧改用单一真相源函数 videoRemotePositionEpisodePrefKey（按集 key，
-      // episodeIndex<=0 回退整书 key），与 host service / 测试共用同一公式。
+      // TODO-885 / BUG-1011：键经单一真相源 helper _remotePositionKeyForIndex 派生——
+      // 单视频 / host-playlist 返回 (widget.bookUid, index)，合集连播返回 (成员 id, 0)。
+      // 仍从稳定 id 派生、绝不硬编码/随机，与 host service / 测试共用同一按集 key 公式。
       expect(
-        src.contains('videoRemotePositionEpisodePrefKey(widget.bookUid,'),
+        src.contains('_remotePositionKeyForIndex(int index)'),
         isTrue,
-        reason: 'read-side key must derive from the stable bookUid + episode',
+        reason:
+            'key must derive via single-truth helper _remotePositionKeyForIndex',
       );
-      // 写侧（_persistRemotePosition）用回调透传的同一 bookUid 构造按集 key。
+      // 非合集分支回落稳定 bookUid + 传入集下标（单视频/host-playlist 零行为变化）。
       expect(
-        src.contains('videoRemotePositionEpisodePrefKey(uid,'),
+        src.contains('return (widget.bookUid, index);'),
         isTrue,
-        reason: 'write-side key must use the same bookUid + current episode',
+        reason:
+            'non-collection branch must key off the stable bookUid + episode',
+      );
+      // 读侧用 helper 结果元组构造按集 key。
+      expect(
+        src.contains('videoRemotePositionEpisodePrefKey(uid, ep)'),
+        isTrue,
+        reason: 'read-side key must derive from the helper tuple',
+      );
+      // 写侧（_persistRemotePosition）用 helper 结果构造同一按集 key。
+      expect(
+        src.contains('videoRemotePositionEpisodePrefKey(keyUid, episodeIndex)'),
+        isTrue,
+        reason:
+            'write-side key must use the same helper-derived bookUid + episode',
       );
     });
 
@@ -171,9 +187,11 @@ void main() {
         'Future<void> _persistRemotePosition(String uid, int posMs) async {',
         'Future<void> _persistPosition',
       );
-      // 写侧仍落本地按集 prefs（离线可用，TODO-885）。
+      // 写侧仍落本地按集 prefs（离线可用，TODO-885 / BUG-1011：键经
+      // _remotePositionKeyForIndex 派生，合集连播按成员 id 隔离）。
       expect(
-        persist.contains('videoRemotePositionEpisodePrefKey(uid,'),
+        persist.contains(
+            'videoRemotePositionEpisodePrefKey(keyUid, episodeIndex)'),
         isTrue,
         reason: 'must still persist locally (per-episode) for offline restore',
       );

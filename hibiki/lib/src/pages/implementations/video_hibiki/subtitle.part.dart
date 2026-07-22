@@ -683,8 +683,12 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     // 持久化用户为该远端集的字幕选择（根因修复：远端字幕原本只进内存、退出即丢）。
     // 本地已下载/导入的字幕文件路径（Jimaku 落 video_subtitles/、导入亦复制到该目录）可
     // 在重进时按路径重放；embedded:<n> 等非文件源退出后落回 host 默认，不阻塞当前应用。
+    // 合集连播下按当前成员 id 记忆字幕选择（键 = (成员 id, 0)），与 _loadRemoteEpisode 读取
+    // 端同源；单视频/host-playlist 沿用 (widget.bookUid, _currentEpisode)。
+    final (String subUid, int subEp) =
+        _remotePositionKeyForIndex(_currentEpisode);
     unawaited(
-      appModel.setRemoteSubtitleSource(widget.bookUid, _currentEpisode, source),
+      appModel.setRemoteSubtitleSource(subUid, subEp, source),
     );
     _showOsd(t.video_subtitle_switched(label: displayLabel));
   }
@@ -749,10 +753,12 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     _rebuild(() => _currentSubtitleSource = null);
     // 持久化「显式关闭」（off: 哨兵）：重进 _loadRemoteEpisode 时保持关闭，不再自动加载
     // host 默认字幕（否则用户每次进影片都要重新关一遍）。
+    final (String subUid, int subEp) =
+        _remotePositionKeyForIndex(_currentEpisode);
     unawaited(
       appModel.setRemoteSubtitleSource(
-        widget.bookUid,
-        _currentEpisode,
+        subUid,
+        subEp,
         SubtitleSource.offSentinel,
       ),
     );
