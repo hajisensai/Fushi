@@ -149,6 +149,36 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     return null;
   }
 
+  /// BUG-1004：host 端裁音频段 fake——已知视频 + 合法区间时返回一个**独立临时目录**里的
+  /// 音频文件（服务端回传后会 deleteSync 该文件父目录，故绝不能落在共享 tmp）。记录入参供断言。
+  static const List<int> clipBytes = <int>[0xAA, 0xBB, 0xCC, 0xDD];
+  int? lastClipStartMs;
+  int? lastClipEndMs;
+  int? lastClipEpisode;
+  int? lastClipAudioIndex;
+
+  @override
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async {
+    lastClipStartMs = startMs;
+    lastClipEndMs = endMs;
+    lastClipEpisode = episodeIndex;
+    lastClipAudioIndex = audioStreamIndex;
+    if (endMs <= startMs) return null;
+    final File? f = await resolveVideoFile(id, episodeIndex: episodeIndex);
+    if (f == null) return null;
+    final Directory d = Directory.systemTemp.createTempSync('hbk_clip_fake');
+    return File('${d.path}/clip.aac')..writeAsBytesSync(clipBytes);
+  }
+
   // ── dict stubs ──────────────────────────────────────────────────────────────
   @override
   Future<List<RemoteDictionaryInfo>> listDictionaries() async =>
@@ -340,6 +370,62 @@ void main() {
     expect(first['id'], 'video/sample', reason: 'id 含斜杠应被正确序列化');
     expect(first['title'], 'Sample Video');
     expect(first['hasSubtitle'], true);
+    c.close();
+  });
+
+  // ── clipaudio（BUG-1004：host 端裁 mining 句子音频）──────────────────────────
+
+  test('GET clipaudio 返回裁好的音频字节（audio/aac，Basic 鉴权，透传入参）', () async {
+    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+    final HttpClient c = HttpClient();
+    final HttpClientRequest req =
+        await c.getUrl(Uri.parse('$base/api/library/videos/$encodedId/clipaudio'
+            '?startMs=1000&endMs=3000&audioStreamIndex=2&ac=1&bitrate=64k'));
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 200);
+    expect(res.headers.contentType?.mimeType, 'audio/aac');
+    final List<int> bytes =
+        await res.fold<List<int>>(<int>[], (List<int> a, List<int> b) {
+      a.addAll(b);
+      return a;
+    });
+    expect(bytes, _FakeLibraryService.clipBytes);
+    expect(lib.lastClipStartMs, 1000);
+    expect(lib.lastClipEndMs, 3000);
+    expect(lib.lastClipAudioIndex, 2);
+    c.close();
+  });
+
+  test('GET clipaudio 非法区间（endMs<=startMs / 缺参）→ 400', () async {
+    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+    final HttpClient c = HttpClient();
+    final HttpClientRequest req = await c.getUrl(Uri.parse(
+        '$base/api/library/videos/$encodedId/clipaudio?startMs=3000&endMs=1000'));
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 400);
+    c.close();
+  });
+
+  test('GET clipaudio 未知视频 → 404', () async {
+    final HttpClient c = HttpClient();
+    final HttpClientRequest req = await c.getUrl(Uri.parse(
+        '$base/api/library/videos/video/nope/clipaudio?startMs=0&endMs=1000'));
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 404);
+    c.close();
+  });
+
+  test('GET clipaudio 未鉴权 → 401（不在 /stream 豁免名单）', () async {
+    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+    final HttpClient c = HttpClient();
+    final HttpClientRequest req = await c.getUrl(Uri.parse(
+        '$base/api/library/videos/$encodedId/clipaudio?startMs=0&endMs=1000'));
+    // 不设 Authorization 头
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 401);
     c.close();
   });
 

@@ -1300,6 +1300,23 @@ abstract class HibikiLibraryHostService {
     int episodeIndex = 0,
   });
 
+  /// BUG-1004：在 host **本地**对视频 [id] 的 `[startMs,endMs)` 段裁出 mining 句子音频，
+  /// 返回临时 aac(adts) 文件（调用方读完负责删其所在临时目录）；无该视频 / 区间非法 /
+  /// ffmpeg 失败时返回 null。host 用本地文件裁、不经网络/TLS，是「client ffmpeg 打不开 host
+  /// 自签 https / token 流」（BUG-891 残余缺口）的根治路径——client 全程不用 ffmpeg 抓远端流。
+  /// [audioStreamIndex]/[audioStreamCount] 选多音轨视频里用户当前听的轨（越界回退默认轨）；
+  /// [audioChannels]/[audioBitrate] 对齐制卡压缩档，使 host 裁出的片段与本地路径同规格。
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  });
+
   /// 读 host 端记录的视频 [id] 播放断点（TODO-653）。返回 (位置毫秒, 更新时间毫秒)；
   /// 无记录时返回 (0, 0)。[episodeIndex]>0（TODO-885）按集隔离读断点。
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(

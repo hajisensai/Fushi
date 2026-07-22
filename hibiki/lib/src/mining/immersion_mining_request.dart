@@ -83,6 +83,7 @@ class ImmersionMiningRequest {
     this.requireAudio = true,
     this.imageMode = VideoMiningImageMode.gif,
     this.mediaSourceTlsPinSha256,
+    this.remoteAudioClipper,
   });
 
   final Map<String, String> fields;
@@ -130,6 +131,18 @@ class ImmersionMiningRequest {
   /// `-tls_pin_sha256`，使自编 ffmpeg-kit（`--enable-gnutls` + pin 补丁）按指纹接受自签，
   /// 而非无条件放行。null = 本地源 / 公网有效证书源（YouTube 等），不钉扎、走 ffmpeg 默认。
   final String? mediaSourceTlsPinSha256;
+
+  /// BUG-1004：互联 host（LAN Hibiki 库）远端流的句子音频改由 **host 端**裁好再下载——host
+  /// 用本地文件裁、不经网络/TLS，从根上绕开「client ffmpeg 抓 host 自签 https / token 流」的
+  /// 整类失败（移动端自编 ffmpeg-kit 的 TLS pin 仍有残余缺口、URL 编码/网络脆弱等，见
+  /// BUG-891）。非空且 [audioSource]/[mediaSource] 命中远端 http(s) 时优先调用：返回裁好的
+  /// 本地音频文件路径即成功，返回 null 则回退现有 ffmpeg-over-URL 抽取（老 host 无 `clipaudio`
+  /// 端点时的兼容路径，Never break userspace）。本地/YouTube/直链源不注入（为 null）。
+  final Future<String?> Function({
+    required int startMs,
+    required int endMs,
+    required String outputPath,
+  })? remoteAudioClipper;
 
   bool get hasRange => clipEndMs > clipStartMs;
 }

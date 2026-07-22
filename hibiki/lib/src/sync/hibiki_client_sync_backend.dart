@@ -1245,6 +1245,46 @@ class HibikiClientSyncBackend extends SyncBackend
     );
   }
 
+  /// BUG-1004：请求 host 在其**本地**裁出视频 [id] 的 `[startMs,endMs)` 段音频（mining 句子
+  /// 音频），经已鉴权/钉扎的 [downloadContentFile] 通道落到 [dest]。host 用本地文件裁、不经
+  /// 网络/TLS，从根上绕开「移动端 client ffmpeg 打不开 host 自签 https / token 流」的整类失败
+  /// （BUG-891 残余缺口）。[audioChannels]/[audioBitrate] 对齐制卡压缩档，使 host 裁出的片段与
+  /// 本地路径同规格；[audioStreamIndex]/[audioStreamCount] 选多音轨视频里用户当前听的轨。
+  ///
+  /// 老 host 无 `clipaudio` 端点 → 该子路径 GET 落 host 兜底 → 404 → [downloadContentFile]
+  /// 抛可重试 `SyncBackendError`；调用方 catch 后回退直连 ffmpeg 抽取（Never break userspace）。
+  Future<void> getRemoteVideoAudioClip(
+    String id,
+    File dest, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    final Map<String, String> query = <String, String>{
+      'startMs': '$startMs',
+      'endMs': '$endMs',
+      if (episodeIndex > 0) 'episode': '$episodeIndex',
+      if (audioStreamIndex != null) 'audioStreamIndex': '$audioStreamIndex',
+      if (audioStreamCount != null) 'audioStreamCount': '$audioStreamCount',
+      'ac': '$audioChannels',
+      'bitrate': audioBitrate,
+    };
+    final Uri uri = Uri.parse(
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/clipaudio',
+    ).replace(queryParameters: query);
+    await downloadContentFile(
+      fileId: uri.toString(),
+      destination: dest,
+      onProgress: onProgress,
+    );
+  }
+
   /// 整段下载对端视频到 [dest]（用于 UI 的「下载到本机」）。
   ///
   /// 下载走 host 签发的 token stream URL，避免依赖播放器/header 兼容性；失败时

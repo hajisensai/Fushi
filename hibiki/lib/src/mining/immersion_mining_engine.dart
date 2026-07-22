@@ -184,42 +184,60 @@ class ImmersionMiningEngine {
               'immersion_audio.${immersionMiningAudioExtension()}',
           req.providedAudioBytes!);
     } else if (audioSrc != null && req.hasRange) {
-      // TODO-1314（B5）：audio-only DASH 分离流（req.audioSource 非空且为远端 http = YouTube
-      // 分离音频轨）的 ffmpeg HTTP `-ss` seek 会被 googlevideo 限速 stall→120s 超时→无句子音频
-      // （TODO-1301 曾用 muxed 绕行）。改为先用 yt-dlp 式 range 分片下载把整段音频物化到本地
-      // 临时文件、再对**本地文件**裁——本地 seek 即时、无网络 stall，根治 audio-only 不可 seek，
-      // 去掉对 muxed 的硬依赖。muxed 路径（audioSource==null → audioSrc==mediaSource，HTTP seek
-      // 只下小段、效率更高）不走物化、保持不变。物化失败回退直接对 URL 裁（best-effort，不劣于旧）。
-      String cutInput = audioSrc;
-      String? materialized;
-      if (req.audioSource != null && _isRemoteHttp(req.audioSource!)) {
-        materialized = await _materialize(
-          audioUrl: req.audioSource!,
-          outputPath: '$tempDir/immersion_audio_src',
-          onFailure: onFailure,
+      // BUG-1004：互联 host（LAN Hibiki 库）远端流优先走 **host 端裁**——host 用本地文件裁好
+      // 句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，从根上绕开
+      // 「client ffmpeg 打不开 host 自签 https / token 流」的整类失败（见 BUG-891 残余缺口：
+      // 移动端自编 ffmpeg-kit 的 TLS pin 仍会因指纹缺失/URL 编码/网络脆弱而 I/O error）。命中
+      // 远端 http(s) 源且注入了裁切器时先试；成功即用，返回 null（老 host 无 clipaudio 端点/
+      // 网络失败）则落到下方现有 ffmpeg-over-URL 抽取（Never break userspace）。
+      if (req.remoteAudioClipper != null && _isRemoteHttp(audioSrc)) {
+        audioPath = await req.remoteAudioClipper!(
+          startMs: req.clipStartMs,
+          endMs: req.clipEndMs,
+          // host 裁出的是 adts aac；命名 .aac 与内容一致（AnkiDroid/桌面直收）。
+          outputPath: '$tempDir/immersion_audio_host.aac',
         );
-        if (materialized != null) cutInput = materialized;
       }
-      audioPath = await _audio(
-        inputPath: cutInput,
-        startMs: req.clipStartMs,
-        endMs: req.clipEndMs,
-        outputPath:
-            '$tempDir/immersion_audio.${immersionMiningAudioExtension()}',
-        audioStreamIndex: req.audioStreamIndex,
-        audioStreamCount: req.audioStreamCount,
-        audioChannels: compression.audioChannels,
-        audioBitrate: compression.audioBitrate,
-        onFailure: onFailure,
-        // BUG-891：cutInput 若是物化后的本地文件（YouTube）pin 被 buildFfmpegRemoteInputArgs
-        // 的远端判定忽略；Hibiki muxed 时 cutInput 是远端 https host，pin 生效。
-        tlsPinSha256: req.mediaSourceTlsPinSha256,
-      );
-      // 物化的整段音频临时文件用完即删（裁好的 immersion_audio.* 才是产物）。
-      if (materialized != null) {
-        try {
-          File(materialized).deleteSync();
-        } catch (_) {}
+      // host 端裁未命中（非互联 host / 老 host 无 clipaudio 端点 / 裁切失败）时回退现有
+      // ffmpeg-over-URL 抽取（YouTube 物化 + 直连 ffmpeg 抽取，含 BUG-891 的 tls pin）。
+      if (audioPath == null) {
+        // TODO-1314（B5）：audio-only DASH 分离流（req.audioSource 非空且为远端 http = YouTube
+        // 分离音频轨）的 ffmpeg HTTP `-ss` seek 会被 googlevideo 限速 stall→120s 超时→无句子音频
+        // （TODO-1301 曾用 muxed 绕行）。改为先用 yt-dlp 式 range 分片下载把整段音频物化到本地
+        // 临时文件、再对**本地文件**裁——本地 seek 即时、无网络 stall，根治 audio-only 不可 seek，
+        // 去掉对 muxed 的硬依赖。muxed 路径（audioSource==null → audioSrc==mediaSource，HTTP seek
+        // 只下小段、效率更高）不走物化、保持不变。物化失败回退直接对 URL 裁（best-effort，不劣于旧）。
+        String cutInput = audioSrc;
+        String? materialized;
+        if (req.audioSource != null && _isRemoteHttp(req.audioSource!)) {
+          materialized = await _materialize(
+            audioUrl: req.audioSource!,
+            outputPath: '$tempDir/immersion_audio_src',
+            onFailure: onFailure,
+          );
+          if (materialized != null) cutInput = materialized;
+        }
+        audioPath = await _audio(
+          inputPath: cutInput,
+          startMs: req.clipStartMs,
+          endMs: req.clipEndMs,
+          outputPath:
+              '$tempDir/immersion_audio.${immersionMiningAudioExtension()}',
+          audioStreamIndex: req.audioStreamIndex,
+          audioStreamCount: req.audioStreamCount,
+          audioChannels: compression.audioChannels,
+          audioBitrate: compression.audioBitrate,
+          onFailure: onFailure,
+          // BUG-891：cutInput 若是物化后的本地文件（YouTube）pin 被 buildFfmpegRemoteInputArgs
+          // 的远端判定忽略；Hibiki muxed 时 cutInput 是远端 https host，pin 生效。
+          tlsPinSha256: req.mediaSourceTlsPinSha256,
+        );
+        // 物化的整段音频临时文件用完即删（裁好的 immersion_audio.* 才是产物）。
+        if (materialized != null) {
+          try {
+            File(materialized).deleteSync();
+          } catch (_) {}
+        }
       }
     }
 

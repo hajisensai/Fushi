@@ -1,0 +1,21 @@
+## BUG-1004 · 互联视频制卡句子音频改 host 端裁绕开 client ffmpeg 抓远端流
+- **报告**：2026-07-22（用户：真机——互联远端 Hibiki 库流视频制卡失败，OSD `sentence audio export failed: ffmpeg exit 1; executable=ffmpeg-kit; ... stderr=https://<host>:38765/api/library/videos/<id>/stream?token=...: I/O error`；「这个是 https 的」。伴随「缺少单词音频」「句子音频也少」→ 见 [[BUG-1005]]）
+- **真实性**：✅ 真 bug。是 [[BUG-891]]「远端流媒体制卡 ffmpeg-kit 无 https/自签」修复后的**残余缺口**：BUG-891 已把自编 ffmpeg-kit 重编为 `--enable-openssl` + `tls_pin_sha256` 补丁（worktree AAR 实测含 `--enable-openssl` 且 `libavformat.so` 有 5 处 `tls_pin_sha256` 符号），并在 `desktop_audio_clipper.dart` 注入 `-tls_pin_sha256 <fp>`。但 client ffmpeg 直接抓 host 的自签 https / token 流仍会 I/O error（根因层，均 file:line 核实）：
+  - **分叉点** `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:2442`（`setMiningSourceOverride(videoPath==null ? mediaUri : null)`）：互联视频 `videoPath==null` → `controller.miningSource = mediaUri = host 的 http(s)://.../stream?token=` URL。
+  - **触发层** `hibiki/lib/src/mining/immersion_mining_engine.dart`：LAN host muxed 流 `audioSource==null` → `audioSrc = mediaSource`（远端 URL），直喂 `extractAudioSegmentViaFfmpeg` → `desktop_audio_clipper.dart` 的 `-i <url>`。
+  - **残余缺口**：`-tls_pin_sha256` 依赖 `_effectiveRemoteClient.activeFingerprintSha256`（`lookup_mining.part.dart`）非空且与实际证书一致；指纹缺失/URL 编码/token 短时/网络脆弱任一都让 ffmpeg 打开输入阶段 I/O error。且**桌面自签**（ffmpeg-min 上游默认 `tls_verify=0`、无 pin）与移动端行为不一致。一旦句子音频抽取返 null → `immersion_mining_engine.dart` 的 `requireAudio` 守卫 abort 整卡 → 文本/音频/截图/单词音频全缺，表现为「制卡整体失败」。
+- **[x] ① 已修复** — **host 端裁音频段**：让 host 用**本地文件**裁好句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，从根上绕开整类失败（http/https 自签/token/全平台通吃，且只传几十 KB 成品、不做远端 seek）。加法式接入，老 host 404 → 回退现有 ffmpeg-over-URL 抽取（含 BUG-891 的 tls pin），Never break userspace：
+  - host 端点 `GET /api/library/videos/<id>/clipaudio?startMs=&endMs=&episode=&audioStreamIndex=&audioStreamCount=&ac=&bitrate=`（Basic 鉴权，不在 `/stream` 豁免名单）：`hibiki/lib/src/sync/hibiki_sync_server.dart` `_handleLibraryVideos`。
+  - host 服务：`HibikiLibraryHostService.clipVideoAudio(...)`（抽象 `hibiki_library_host_service.dart`；实现 `app_model_library_host_service.dart` = `resolveVideoFile` + `extractAudioSegmentViaFfmpeg` 裁本地文件到独立临时目录）。
+  - client：`HibikiClientSyncBackend.getRemoteVideoAudioClip(...)`（`hibiki_client_sync_backend.dart`，镜像 `getRemoteVideoSubtitle` 的 `downloadContentFile` 范式）。
+  - 请求/引擎：`ImmersionMiningRequest.remoteAudioClipper`（新字段）；`ImmersionMiningEngine.mine` 音频分支先试 host 端裁（命中即用、不再跑 ffmpeg），返 null 回退现有抽取。
+  - 接线：`lookup_mining.part.dart` `_mineVideoCard` 当 `_effectiveRemoteClient is HibikiClientSyncBackend` 时注入调 `getRemoteVideoAudioClip` 的裁切器（带 `_effectiveRemoteInfo!.id` / `_currentEpisode` / 当前音轨 / 压缩档）。
+  - 已知边界：host 产出 adts `aac`（桌面 ffmpeg-min 与移动 ffmpeg-kit 都能产、AnkiDroid/桌面直收），iOS client 从远端 host 制卡拿 `.aac` 在 AnkiMobile 可能不自动下载（窄场景，后续可让 host 按 client 请求产 m4a）。GIF/截图封面仍走现状（互联下截图兜底 `controller.screenshot` 本就可用）。
+  - 提交：<待填>。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/mining/immersion_mining_engine_test.dart`：`remoteAudioClipper` 命中远端流 → 用 host 端裁产物且**不调** ffmpeg 音频抽取；返回 null → 回退 ffmpeg-over-URL 抽取。
+  - `hibiki/test/sync/hibiki_sync_server_video_test.dart`：`clipaudio` 返回音频字节（`audio/aac`、Basic 鉴权、透传 startMs/endMs/audioStreamIndex）/ 非法区间 400 / 未知视频 404 / 未鉴权 401。
+  - `flutter analyze` 全量 0 issue（含为 10 个 `implements HibikiLibraryHostService` 的既有测试 fake 补 `clipVideoAudio` stub）；上述 + `immersion_mining_audio_materialize_test` / `hibiki_client_live_video_test` 全绿。
+- **备注**：
+  - 真机（Android 互联远端流真机制卡出句子音频 + 老 host 回退）验证待办。
+  - 关联 [[BUG-891]]（ffmpeg-kit TLS pin，本 bug 的前置/互补）、[[BUG-1005]]（同轮报告的单词音频缺失，独立根因）。

@@ -20,6 +20,8 @@ import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_manager.dart'
     show repackageExtractedEpub, resolveExtractedEpubRoot;
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+    show extractAudioSegmentViaFfmpeg;
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_audio/hibiki_audio.dart' show AudiobookStorage;
 import 'package:path/path.dart' as p;
@@ -1129,6 +1131,48 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     if (subPath == null) return null;
     final File f = File(subPath);
     return f.existsSync() ? f : null;
+  }
+
+  /// BUG-1004：host 端本地裁 mining 句子音频（见抽象声明）。用 [resolveVideoFile] 反查真实
+  /// 本地文件后调 [extractAudioSegmentViaFfmpeg]（本地路径、不经网络/TLS——绕开 client
+  /// ffmpeg 抓 host 自签 https/token 流的整类失败）。裁到独立临时目录，产物返回给调用方，
+  /// 调用方读完删该目录；失败清理临时目录并返回 null。
+  @override
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async {
+    if (endMs <= startMs) return null;
+    final File? file = await resolveVideoFile(id, episodeIndex: episodeIndex);
+    if (file == null) return null;
+    final Directory tmp =
+        Directory.systemTemp.createTempSync('hibiki_clip_audio');
+    final String out = p.join(tmp.path, 'clip.aac');
+    final String? result = await extractAudioSegmentViaFfmpeg(
+      inputPath: file.path,
+      startMs: startMs,
+      endMs: endMs,
+      outputPath: out,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+    if (result == null) {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {
+        // best-effort：临时目录清理失败不影响返回 null（裁切已失败）。
+      }
+      return null;
+    }
+    return File(result);
   }
 
   /// 读 host 端 [id] 视频的播放断点（TODO-653 / TODO-816 断点②）。

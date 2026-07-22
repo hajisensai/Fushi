@@ -1857,6 +1857,60 @@ class HibikiSyncServer {
       }
     }
 
+    // GET /api/library/videos/<id>/clipaudio?startMs=&endMs=&episode=&audioStreamIndex=
+    //     &audioStreamCount=&ac=&bitrate= — BUG-1004：host 端本地裁 mining 句子音频段并回传。
+    // 需 Basic 鉴权（中间件已处理，clipaudio 不在 /stream 豁免名单）。client ffmpeg 打不开
+    // host 自签 https / token 流（移动端自编 ffmpeg-kit TLS pin 残余缺口）时改走此端点——host
+    // 用本地文件裁、不经网络/TLS，只回传几十 KB 的成品音频，不做远端 seek。老 host 无此分支
+    // 对该子路径的 GET 走下方兜底 → 404，client 据此回退直连 ffmpeg 抽取（Never break userspace）。
+    final String? clipAudioId = _extractVideoId(reqPath, 'clipaudio');
+    if (clipAudioId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      final int episodeIndex = _episodeIndexFromRequest(request);
+      final int? startMs =
+          int.tryParse(request.url.queryParameters['startMs'] ?? '');
+      final int? endMs =
+          int.tryParse(request.url.queryParameters['endMs'] ?? '');
+      if (startMs == null || endMs == null || endMs <= startMs) {
+        return shelf.Response(400, body: 'Invalid clip range');
+      }
+      final int? audioStreamIndex =
+          int.tryParse(request.url.queryParameters['audioStreamIndex'] ?? '');
+      final int? audioStreamCount =
+          int.tryParse(request.url.queryParameters['audioStreamCount'] ?? '');
+      final int audioChannels =
+          int.tryParse(request.url.queryParameters['ac'] ?? '') ?? 1;
+      final String audioBitrate =
+          request.url.queryParameters['bitrate'] ?? '64k';
+      final File? clip = await svc.clipVideoAudio(
+        clipAudioId,
+        startMs: startMs,
+        endMs: endMs,
+        episodeIndex: episodeIndex,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
+        audioChannels: audioChannels,
+        audioBitrate: audioBitrate,
+      );
+      if (clip == null) {
+        return shelf.Response.notFound('Clip unavailable');
+      }
+      try {
+        final Uint8List bytes = await clip.readAsBytes();
+        return shelf.Response.ok(
+          bytes,
+          headers: <String, String>{'Content-Type': 'audio/aac'},
+        );
+      } finally {
+        // 裁到独立临时目录，回传后连目录一并清（clipVideoAudio 建的 temp 目录）。
+        try {
+          clip.parent.deleteSync(recursive: true);
+        } catch (_) {
+          // best-effort
+        }
+      }
+    }
+
     // PUT /api/library/videos/<id> — client→host 上传本地视频文件并注册进 host 视频库
     // （syncVideoFiles 开关驱动的 live push）。走到此处的 PUT 必是「裸 id 无 suffix」：
     // 所有带 suffix 的端点（cover/streamurl/stream/subtitle/position）已在上方消化（非

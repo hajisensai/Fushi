@@ -1298,6 +1298,7 @@ function hibikiSendLookup(term, anchorRect, cueWindow) {
       // 单词音频：查词响应带回 app 已启用的音频源（enabledAudioSources），非空时 popup.js
       // 的 createEntryHeader 才渲染 ♪ 按钮（与 app 内 window.audioSources 注入一致）。
       window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
+      window.needsAudio = true;
       hibikiRender(resp.data.popupJson, termLen, resp.data.theme, anchorRect);
     });
   } catch (_) {
@@ -1346,6 +1347,7 @@ window.__hibikiOnLinkClick = function (query) {
         ? resp.data.result.bestLength : 0;
       const termLen = best > 0 ? best : term.length;
       window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
+      window.needsAudio = true;
       hibikiRender(resp.data.popupJson, termLen, resp.data.theme);
     });
   } catch (_) { /* 扩展上下文失效：静默 */ }
