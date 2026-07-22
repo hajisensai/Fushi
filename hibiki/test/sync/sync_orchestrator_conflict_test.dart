@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
@@ -141,13 +142,15 @@ class _FakeSyncBackend implements SyncBackend {
       null;
 
   // ── SyncAssetStore ──────────────────────────────────────────────────
-  // run() 的常开阶段（root-spill 扫除、合集清单读-合并-写）会到达这里：与
-  // listChildren 的空根语义同理，只为 `__collections__` 命名空间提供最小实现
-  // （无远端清单 → 本地也无合集 → 合并为空 → 无回写）；其余命名空间保持响亮
-  // 抛错，任何意外路径照样让测试失败。
+  // run() 的常开阶段（root-spill 扫除、合集清单读-合并-写、删除墓碑发布/消费）
+  // 会到达这里：与 listChildren 的空根语义同理，为 `__collections__` 与
+  // `__tombstones__` 命名空间提供最小实现（无远端清单/墓碑 → 合并为空 → 无回写）；
+  // 其余命名空间保持响亮抛错，任何意外路径照样让测试失败。
   @override
   Future<String> ensureNamespace(String name) async =>
-      name == kSyncCollectionsNamespace ? name : throw UnimplementedError();
+      name == kSyncCollectionsNamespace || name == kSyncTombstonesNamespace
+          ? name
+          : throw UnimplementedError();
   @override
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();

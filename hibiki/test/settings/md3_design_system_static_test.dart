@@ -1428,7 +1428,7 @@ void main() {
     );
 
     expect(audiobookBuild, contains('AudiobookImportDialogFrame('));
-    expect(removeDialog, contains('AudiobookRemoveConfirmationDialog('));
+    expect(removeDialog, contains('showDeleteScopeConfirm('));
     expect(audiobookBuild, isNot(contains('adaptiveAlertDialog(')));
     expect(removeDialog, isNot(contains('adaptiveAlertDialog(')));
 

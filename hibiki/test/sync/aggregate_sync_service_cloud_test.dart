@@ -246,8 +246,9 @@ void main() {
     expect((await dbB.getMiningStatisticsBySource('book')).single.count, 4);
   });
 
-  test('union re-adds a peer-still-present word; delete does not propagate',
-      () async {
+  test(
+      'a locally-removed favorite word is NOT re-added by a peer snapshot '
+      '(tombstone suppresses union revive)', () async {
     final FakeAssetStore store = FakeAssetStore();
 
     final HibikiDatabase dbA = await _freshDb('agg_delA_');
@@ -269,11 +270,12 @@ void main() {
         expression: 'wShared', reading: 'r', sourceType: 'book');
     expect((await dbB.getAllFavoriteWords()).isEmpty, isTrue);
 
-    // The aggregate model is union / only-grows: a peer snapshot that still
-    // carries the word re-adds it on B. Deletion propagation is a deliberate
-    // non-goal (a delete must be performed on every device).
+    // Deletion propagation for favorite words: removeFavoriteWord writes a
+    // NUL-keyed tombstone, and aggregate applySnapshot skips tombstoned words,
+    // so a peer snapshot that still carries the word does NOT revive it on B
+    // (fixes the '取消收藏被并回' pain point; see delete-propagation plan).
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
-    expect((await dbB.getAllFavoriteWords()).length, 1);
+    expect((await dbB.getAllFavoriteWords()).isEmpty, isTrue);
   });
 
   test(
