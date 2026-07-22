@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
+import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
 
@@ -26,10 +27,57 @@ class _TorrentSettingsSectionState
   QbConnectionConfig get _config =>
       ref.read(appProvider).qbConnectionConfig ?? const QbConnectionConfig();
 
+  /// 「测试连接」进行中（按钮禁用防重入）。
+  bool _probing = false;
+
+  /// 分类输入框：持 controller 是为了失焦回填——清空时存储侧兜底 'hibiki'，
+  /// 失焦把实际生效值写回输入框，所见即所得（不再「显示空、实际 hibiki」）。
+  late final TextEditingController _categoryCtrl =
+      TextEditingController(text: _config.category);
+  late final FocusNode _categoryFocus = FocusNode()
+    ..addListener(_onCategoryFocusChanged);
+
+  void _onCategoryFocusChanged() {
+    if (_categoryFocus.hasFocus) return;
+    final String effective = _config.category;
+    if (_categoryCtrl.text.trim() != effective) {
+      _categoryCtrl.text = effective;
+    }
+  }
+
+  @override
+  void dispose() {
+    _categoryFocus.dispose();
+    _categoryCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _commit(
       QbConnectionConfig Function(QbConnectionConfig c) mutate) async {
     await ref.read(appProvider).setQbConnectionConfig(mutate(_config));
     if (mounted) setState(() {});
+  }
+
+  /// 测试与下载后端的连通性（按当前配置解析后端；qb = WebUI 版本号）。
+  /// 成功 snack 显示版本，失败提示检查地址/账号。
+  Future<void> _probeConnection() async {
+    if (_probing) return;
+    setState(() => _probing = true);
+    final TorrentBackend backend =
+        ref.read(appProvider).createTorrentBackend(_config);
+    String? version;
+    try {
+      version = await backend.probeConnection();
+    } finally {
+      backend.close();
+    }
+    if (!mounted) return;
+    setState(() => _probing = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(version == null
+          ? t.download_test_connection_failed
+          : t.download_test_connection_ok(version: version)),
+    ));
   }
 
   static int _nonNegInt(String v) {
@@ -44,16 +92,22 @@ class _TorrentSettingsSectionState
 
   Widget _text({
     required String label,
-    required String initial,
+    String? initial,
     String? hint,
     bool obscure = false,
     TextInputType? keyboard,
+    TextEditingController? controller,
+    FocusNode? focusNode,
     required ValueChanged<String> onChanged,
   }) {
+    assert(
+        (initial == null) != (controller == null), 'initial 与 controller 二选一');
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: TextFormField(
         initialValue: initial,
+        controller: controller,
+        focusNode: focusNode,
         obscureText: obscure,
         keyboardType: keyboard,
         decoration: InputDecoration(
@@ -164,12 +218,33 @@ class _TorrentSettingsSectionState
             onChanged: (String v) =>
                 _commit((QbConnectionConfig c) => c.copyWith(password: v)),
           ),
+          // 测试连接：probeConnection 早已存在，给用户一个即时验证入口
+          // （成功显示 WebUI 版本，失败提示查地址/账号），不必推一次种子试错。
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _probing ? null : _probeConnection,
+                icon: _probing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.network_check, size: 18),
+                label: Text(t.download_test_connection),
+              ),
+            ),
+          ),
         ],
 
-        // 分类（两后端通用）。
+        // 分类（两后端通用）。清空时存储侧兜底 'hibiki'，失焦回填生效值
+        // （见 [_onCategoryFocusChanged]），所见即所得。
         _text(
           label: t.video_setting_qb_category,
-          initial: c.category,
+          controller: _categoryCtrl,
+          focusNode: _categoryFocus,
           hint: t.video_setting_qb_category_hint,
           onChanged: (String v) => _commit((QbConnectionConfig c) =>
               c.copyWith(category: v.trim().isEmpty ? 'hibiki' : v.trim())),
