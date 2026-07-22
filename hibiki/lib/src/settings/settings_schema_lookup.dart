@@ -11,6 +11,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
@@ -909,7 +910,11 @@ SettingsItem buildManageAudioSourcesItem() {
           sources: List<AudioSourceConfig>.from(
             appModel.audioSourceConfigs,
           ),
-          onSave: appModel.setAudioSourceConfigs,
+          // 本地音频源是跨设备同步的共享池（__local_audio__）：移除一个源默认传播删除
+          // （syncEverywhere），接收设备仍会逐条确认后才删本地，用户控制在接收端保留。
+          // 列表编辑式 UX 无单条删除确认时机，故不在源端逐条弹选择。
+          onSave: (List<AudioSourceConfig> next) => appModel
+              .setAudioSourceConfigs(next, scope: DeleteScope.syncEverywhere),
           onPickLocalDb: (bool reference) async {
             final FilePickerResult? result =
                 await FilePicker.platform.pickFiles();

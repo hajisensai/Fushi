@@ -578,8 +578,13 @@ class AppModel with ChangeNotifier {
           case 'audiobook':
             await AudiobookRepository(database)
                 .deleteAudiobook(c.itemKey, propagateDeletion: false);
+          case 'localaudio':
+            // 按 displayName 找到本地音频源并移除（不回写墓碑：keepLocalOnly 语义）。
+            final int idx = _localAudioManager.entries.indexWhere(
+                (LocalAudioDbEntry e) => e.displayName == c.itemKey);
+            if (idx >= 0) await _localAudioManager.remove(idx);
           default:
-            // localaudio 及未知类型：暂不支持消费端删除（写入侧也未接，见 Phase B）。
+            // 未知类型：跳过。
             break;
         }
       } catch (e) {
@@ -4586,11 +4591,44 @@ class AppModel with ChangeNotifier {
     List<AudioSourceConfig> sources, {
     Map<String, List<LocalAudioSourcePref>> sourcesByPath =
         const <String, List<LocalAudioSourcePref>>{},
+    DeleteScope scope = DeleteScope.keepLocalOnly,
   }) async {
     await prefsRepo.setAudioSourceConfigs(sources);
     final Map<String, LocalAudioDbEntry> current = <String, LocalAudioDbEntry>{
       for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
     };
+    // 删除传播：本地音频源按 displayName 跨设备同步（__local_audio__ / _syncLocalAudioLive）。
+    // 检测本次保存移除/新增的本地音频源，按 scope 写/清删除墓碑（itemKey=displayName）。
+    final Set<String> nextLocalPaths = <String>{
+      for (final AudioSourceConfig s in sources)
+        if (s.kind == AudioSourceKind.localAudio &&
+            (s.path?.isNotEmpty ?? false))
+          s.path!,
+    };
+    for (final MapEntry<String, LocalAudioDbEntry> e in current.entries) {
+      if (!nextLocalPaths.contains(e.key)) {
+        // 被移除的本地音频源：syncEverywhere 才记墓碑传播。
+        if (scope == DeleteScope.syncEverywhere) {
+          try {
+            await database.writeSyncDeletionTombstone('localaudio',
+                e.value.displayName, DateTime.now().millisecondsSinceEpoch);
+          } catch (_) {
+            // best-effort。
+          }
+        }
+      }
+    }
+    // 新增/仍在的源清墓碑（防「删了又加、墓碑还在」）。
+    for (final AudioSourceConfig s in sources) {
+      if (s.kind == AudioSourceKind.localAudio) {
+        try {
+          await database.clearSyncDeletionTombstone(
+              'localaudio', s.displayLabel);
+        } catch (_) {
+          // best-effort。
+        }
+      }
+    }
     final List<LocalAudioDbEntry> nextDbs = <LocalAudioDbEntry>[
       for (final AudioSourceConfig source in sources)
         if (source.kind == AudioSourceKind.localAudio &&
