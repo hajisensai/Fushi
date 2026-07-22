@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/video/video_chrome_colors.dart';
 
 class VideoTranslucentSidePanel extends StatelessWidget {
   const VideoTranslucentSidePanel({
@@ -42,7 +43,9 @@ class VideoTranslucentSidePanel extends StatelessWidget {
           child: SizedBox(
             width: panelWidth,
             child: Material(
-              color: colorScheme.surface.withValues(alpha: 0.78),
+              // 浮层 alpha 两档制的半透明档（UI 巡检 PR-4）。
+              color: colorScheme.surface
+                  .withValues(alpha: kVideoOverlayTranslucentAlpha),
               elevation: 8,
               clipBehavior: Clip.antiAlias,
               borderRadius: borderRadius,

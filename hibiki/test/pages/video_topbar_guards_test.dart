@@ -191,8 +191,11 @@ void main() {
           reason: '浮动侧栏 Stack 应只剩屏幕左/右两条（顶部两条已移入顶栏行）');
       // 顶部浮条专属的「让出固定顶栏高度」内边距随浮条一并删除（OSD 通知层用的
       // Alignment.topLeft 与本浮条无关，故不据 Alignment 判删除）。
-      expect(page.contains('_videoButtonBarHeight + 8'), isFalse,
-          reason: '顶部浮条的「让出顶栏高度」内边距应随浮条一并删除');
+      // UI 巡检 PR-4：OSD 通知卡的 top 现在也从顶栏高推导
+      // （`_videoButtonBarHeight + 8 * _videoUiScale`，吃界面缩放）——它是合法几何
+      // 联动、不是复活的顶部浮条；本禁令收紧为旧浮条的**不吃缩放**字面形态。
+      expect(page.contains('_videoButtonBarHeight + 8)'), isFalse,
+          reason: '顶部浮条的「让出顶栏高度」定值内边距应随浮条一并删除');
     });
 
     test('顶栏右侧按钮来自 topRight slot 的同一横排，不再硬编码第二套', () {

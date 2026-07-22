@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/video/video_chrome_colors.dart';
 import 'package:hibiki/src/media/video/video_panel_auto_scroll.dart';
 
 /// 视频播放列表「剧集列表」push-aside 侧栏面板（TODO-638）。
@@ -100,7 +101,9 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
     // 它要求 [Material] 是其直接祖先、且祖先与它之间不能夹不透明的 [ColoredBox]（否则
     // 抛 inkwell-on-opaque 断言）。故 Material 直接着色，内层只用 [SizedBox] 定宽。
     return Material(
-      color: cs.surface.withValues(alpha: 0.92),
+      // 浮层 alpha 两档制的实底档（UI 巡检 PR-4，0.92 → 0.94 归档）：剧集行文本
+      // 密集，近实底保证可读。
+      color: cs.surface.withValues(alpha: kVideoOverlaySolidAlpha),
       child: SizedBox(
         width: widget.width,
         child: Column(

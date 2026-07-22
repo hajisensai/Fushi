@@ -100,16 +100,18 @@ void main() {
     final InterconnectDownloadManager manager =
         ProviderScope.containerOf(tester.element(find.byType(HomeVideoPage)))
             .read(interconnectDownloadManagerProvider);
+    // UI 巡检 PR-4：封面内嵌下载按钮已撤，下载入口 = 长按卡片弹面板 → 「下载」。
+    await tester.longPress(find.byKey(
+      const ValueKey<String>('remote_video_card_remote-clip'),
+    ));
+    await tester.pumpAndSettle();
     await tester.runAsync(() async {
-      await tester.tap(find.byKey(
-        const ValueKey<String>('remote_video_download_remote-clip'),
-      ));
+      await tester.tap(find.text(t.remote_video_download));
       final Stopwatch sw = Stopwatch()..start();
       while (sw.elapsed < const Duration(seconds: 30)) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
         final InterconnectDownloadTask? task = manager.tasks['remote-clip'];
-        if (task != null &&
-            task.status != InterconnectDownloadStatus.running) {
+        if (task != null && task.status != InterconnectDownloadStatus.running) {
           return;
         }
       }

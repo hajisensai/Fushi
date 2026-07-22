@@ -41,13 +41,14 @@ void main() {
             'rail IconButton 必须显式传 iconSize: _videoControlIconSize（吃缩放，TODO-388）');
   });
 
-  test('rail 图标走主题强调色（不再硬编码黑白）', () {
+  test('rail 图标走 chrome 固定亮色强调色（不再硬编码黑白）', () {
     final String body = railForBody();
     expect(body.contains('_videoChromeColorScheme(context)'), isTrue,
-        reason: 'rail 应取 _videoChromeColorScheme（随主题着色）');
-    expect(body.contains('color: cs.primary'), isTrue,
-        reason:
-            'rail 图标应用主题强调色 cs.primary（与底 / 顶栏 buttonBarButtonColor 同源，TODO-604）');
+        reason: 'rail 应取 _videoChromeColorScheme（取当前主题色相）');
+    // UI 巡检 PR-4：cs.primary 在浅色 / eink 主题下是深色，裸图标压画面不可读，
+    // 改与底 / 顶栏 buttonBarButtonColor 同源的 _videoChromeAccent（恒亮 tone）。
+    expect(body.contains('color: _videoChromeAccent(cs)'), isTrue,
+        reason: 'rail 图标应用 chrome 固定亮色强调色（与底 / 顶栏 buttonBarButtonColor 同源）');
     expect(body.contains('Colors.black.withValues(alpha: 0.42)'), isFalse,
         reason: 'rail 不应再硬编码黑色背景（TODO-388）');
     expect(body.contains('color: Colors.white'), isFalse,
