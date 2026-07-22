@@ -82,7 +82,19 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   选择、回调零阻塞结构守卫和 host IPC 契约测试。本机已只读检查常用 galgame/Steam 目录，没有找到
   可运行的 Ren'Py/FFmpeg 样本；既有 Sakura Swim Club 记录也只证明 loopback，因此矩阵继续标
   `implemented_unverified`，**P4 完成框保持未勾选**。
-- 下一步：并行推进不依赖 Ren'Py 样本的 P5 RealLive/VisualArt's fixture/adapter；P4 等真实样本补验。
+- **P5 实现已落、RealLive 真机门未完成**（hibiki-hook `30fac24`；hibiki `aeb5acf12`）：新增
+  `reallive` profile、独立 adapter、离线 replay fixture、native 测试和 Hibiki 生产配对链测试。旧
+  VisualArt's 路径只复用经过严格边界检查的 OVK 索引/Ogg EOS 读取层；共享文件 hook 在首次实际打开
+  `.ovk` 后才发布资源音频就绪，避免普通游戏误入资源等待。观察到 OVK 不会让 RealLive profile 匹配，
+  在取得真实样本 hash 前不产生引擎身份宣称。`galhook new` 同时补上全局 profile include 生成接缝，
+  新骨架可直接汇总编译。
+- P5 自动化验证：x64/x86 DLL 均成功构建且各 16 个 CTest 全绿；清单/生成器/adapter 结构/工作流守卫
+  全绿；RealLive replay 选择晚到 OVK resource、保持 PCM/loopback 兜底并完成会话清理；Hibiki 定向
+  Flutter 测试 17 项全绿，三个变更 Dart 测试逐文件 analyze 无问题。本机只读搜索了常用游戏目录，
+  找到的是既有 `anemoi` Siglus/OVK 样本，没有 `RealLive.exe`、`Gameexe.ini` 或 NWK/KOE/NWA 样本；
+  Siglus 证据不能替代 RealLive 真机证据，因此矩阵保持 `implemented_unverified`，**P5 完成框保持未勾选**。
+- 下一步：P4 需要可运行的 Ren'Py/FFmpeg 原始样本；P5 需要可运行的 RealLive/旧 VisualArt's 原始样本，
+  再补 executable/module hash、Luna 对话线程回放、OVK 字节一致性与原始路径制卡证据。
 
 ---
 
@@ -252,7 +264,8 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 - [x] **[P1]** 现有采集能力已迁入 adapter registry，主 worker 不再直接堆各引擎实现（`f4242b9`）。
 - [x] **[P3]** probe/new/replay 三条工作流可实际执行并有自动化测试（hibiki-hook `195b76d`；hibiki `a42df794e`）。
 - [x] **[P2]** LunaHost ABI 收进可升级桥接边界，有版本 + 导出守卫（hibiki-hook `7c4beaa`；hibiki `ff1e0197f`）。
-- [ ] **[P5]** 至少完成 RealLive/VisualArt's 首批适配 + fixture + native 测试 + 上层配对测试。
+- [ ] **[P5]** 至少完成 RealLive/VisualArt's 首批适配 + fixture + native 测试 + 上层配对测试
+      （实现与自动化已落；待 RealLive 原始路径真机证据）。
 - [ ] **[P4]** FFmpeg 版本识别与子进程跟随不再只针对单一旧版 Ren'Py。
 - [x] **[P1+P3]** 新增一个普通引擎的主要工作可限于 profile + 独立 adapter + fixture，不需改主 worker 主干。
 - [ ] **[全阶段]** hibiki-hook x86/x64 native 构建 + CTest 通过；hibiki 侧 `dart format` + `flutter analyze`
