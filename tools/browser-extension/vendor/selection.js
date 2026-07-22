@@ -71,34 +71,64 @@ window.hoshiSelection = {
         return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
     },
 
-    getCaretRange(x, y) {
-        if (document.caretPositionFromPoint) {
-            const pos = document.caretPositionFromPoint(x, y);
-            if (!pos) return null;
-            const range = document.createRange();
-            range.setStart(pos.offsetNode, pos.offset);
-            range.collapse(true);
-            return range;
-        } else {
-            const element = document.elementFromPoint(x, y);
-            if (!element) return null;
+    // 穿透 open shadow DOM，返回命中点最深的元素。
+    // document.elementFromPoint / caretPositionFromPoint 只在顶层 document 内下钻，
+    // 命中 <bili-comments> 这类 Web Component（shadow root 渲染）时只返回宿主
+    // 元素而非内部文字节点，取词会失败（Yomitan 能读、旧版 Hibiki 读不了的根因）。
+    // 这里沿每一层 element.shadowRoot 逐层 elementFromPoint 下钻到真正承载文字的元素。
+    deepElementFromPoint(x, y) {
+        let element = document.elementFromPoint(x, y);
+        let guard = 0;
+        while (element && element.shadowRoot && guard++ < 32) {
+            const inner = element.shadowRoot.elementFromPoint(x, y);
+            if (!inner || inner === element) break;
+            element = inner;
+        }
+        return element;
+    },
 
-            const container = element.closest('p, div, span, ruby, a') || document.body;
-            const walker = this.createWalker(container);
-            const range = document.createRange();
-            let node;
-            while (node = walker.nextNode()) {
-                for (let i = 0; i < node.textContent.length; i++) {
-                    range.setStart(node, i);
-                    range.setEnd(node, i + 1);
-                    if (this.inCharRange(range, x, y)) {
-                        range.collapse(true);
-                        return range;
-                    }
+    // 在给定容器子树内逐字做几何命中，返回坍缩到命中字符的 range；未命中返回 null。
+    charRangeInContainer(container, x, y) {
+        const walker = this.createWalker(container);
+        const range = document.createRange();
+        let node;
+        while (node = walker.nextNode()) {
+            const len = node.textContent.length;
+            for (let i = 0; i < len; i++) {
+                range.setStart(node, i);
+                range.setEnd(node, i + 1);
+                if (this.inCharRange(range, x, y)) {
+                    range.collapse(true);
+                    return range;
                 }
             }
-            return document.caretRangeFromPoint(x, y);
         }
+        return null;
+    },
+
+    getCaretRange(x, y) {
+        // 1) 原生 caret 优先：命中普通文本最省事，部分新版浏览器也会自动穿透 shadow DOM。
+        //    仅当命中的是真正的文本节点时采纳；命中元素（典型：shadow 宿主）则继续下探。
+        if (document.caretPositionFromPoint) {
+            const pos = document.caretPositionFromPoint(x, y);
+            if (pos && pos.offsetNode && pos.offsetNode.nodeType === Node.TEXT_NODE) {
+                const range = document.createRange();
+                range.setStart(pos.offsetNode, pos.offset);
+                range.collapse(true);
+                return range;
+            }
+        }
+        // 2) caret 落在元素上（命中 Web Component 的 shadow 宿主）或浏览器无
+        //    caretPositionFromPoint：穿透 shadow DOM 到最深元素，在其内逐字几何命中。
+        const element = this.deepElementFromPoint(x, y);
+        if (element) {
+            const container = element.closest('p, div, span, ruby, a')
+                || (element.nodeType === Node.ELEMENT_NODE ? element : document.body);
+            const hit = this.charRangeInContainer(container, x, y);
+            if (hit) return hit;
+        }
+        // 3) 兜底：webkit 专有 caretRangeFromPoint（同样不穿 shadow，保留旧行为）。
+        return document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
     },
 
     getCharacterAtPoint(x, y) {

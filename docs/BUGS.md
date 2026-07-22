@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 978 条。点号进各自文件。
+> 共 979 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1012](bugs/BUG-1012-ext-shadow-dom-lookup.md) | ✅ | ✅ | 浏览器扩展无法读取Shadow DOM内文字(B站评论区) |
 | [BUG-1011](bugs/BUG-1011-interconnect-video-collection-playlist-autoplay.md) | ✅ | ✅ | 互联视频合集列表缺失+无自动连播·客户端合集播放 |
 | [BUG-1010](bugs/BUG-1010-video-controls-autohide-focus-loss.md) | 🚧 | 🚧 | 视频控制条自动隐藏后键盘焦点疑似丢失 |
 | [BUG-1009](bugs/BUG-1009-collection-detail-focus-id-clash.md) | ✅ | ✅ | 合集详情页返回后书架同名卡手柄焦点不可达 |
