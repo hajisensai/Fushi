@@ -76,6 +76,32 @@
 - 🟡 散落 6+ 删除入口，弹窗改造需逐一覆盖不漏旧路径。
 - 🟡 老 host 兼容：`/api/tombstones` 404 优雅降级。
 
+## 实施进度（2026-07-23）
+
+**已完成并提交（4 commit，全量 analyze 干净，相关 test 绿）**：
+- ✅ Phase C/D 后端：`syncDeletionTombstones`（云）/`_syncDeletionTombstonesLive`（互联）发布+消费，
+  host `/api/tombstones` 端点（DeletionTombstoneHost 可选能力），client 404 降级，消费基线。
+- ✅ Phase A 源端：书架书/SRT/批删、视频单删/批删、有声书移除 → 「从所有设备删除」勾选框
+  （DeleteScope），门控传播墓碑写入。共享 `showDeleteScopeConfirm`。
+- ✅ Phase D 接收端：`DeletionPromptDialog` 逐条确认 + `DeletionPromptPrompter`（会话 snooze +
+  确认后删本地 + 推进基线）+ `AppModel.presentDeletionCandidates`/`_applyConfirmedDeletions`。
+- ✅ 删除方法 scope 门控：book/video/audiobook。i18n 8 键×17 语言。
+- ✅ 测试：DB 层墓碑门控、消费端弹窗 widget 守卫。
+
+**经分析确定不做 / 已由其他机制覆盖**：
+- **localaudio**：itemKey=设备本地文件夹路径，A 设备的路径在 B 设备不存在 → 跨设备传播删除
+  语义无意义（这正是它列在 enum 却从未接线的原因）。**正确地排除**，非遗漏。
+- **词典**：已有 BUG-086 `deleteRemoteDictionaryAsset` 独立删除传播链，**已闭环**，不并入。
+- **标签**：已有 `BookTagMembershipTombstones`（LWW-element-set）跨设备传播增删，**已覆盖**。
+- **合集**：已有 `collection_sync_engine` 端到端墓碑传播，**已覆盖**。
+- **统计**：已有 `statistics_tombstones` 防复活。
+
+**待用户决定（低价值/高风险，建议不做）**：
+- 书签/收藏词句/搜索历史/Profile 的删除传播：无墓碑载体、当前 union/不同步、且需求偏理论
+  （「一台删书签→另一台确认删」价值存疑）。逐个建载体+发布+消费+确认 UI 工作量大、数据丢失
+  风险高。Linus 律：解决实际问题而非臆想威胁。**建议维持现状**，除非用户明确要某一类。
+
 ## 参考
 - 合集协议精读：`reference-collection-protocol.md`
-- 现存脊柱：`hibiki/lib/src/sync/deletion_propagation.dart`（纯核心+编解码，待接线）
+- 接线蓝图：`wiring-blueprint.md`
+- 脊柱：`hibiki/lib/src/sync/deletion_propagation.dart` + `deletion_prompt.dart`
