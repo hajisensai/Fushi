@@ -459,7 +459,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
   Process? _injector;
   final List<StreamSubscription<String>> _injectorOutputSubscriptions =
       <StreamSubscription<String>>[];
-  Completer<int?>? _launchedPidCompleter;
+  Completer<int?>? _hookedPidCompleter;
 
   /// 实际注入命中的游戏 PID：attach=`targetPid`；launch=从 injector stdout 解析出的子进程 PID。
   /// [grabRecent]/`open` 都用它开共享内存。
@@ -585,18 +585,18 @@ class EngineHookGalAudioSource implements GalAudioSource {
     } on ProcessException {
       return null;
     }
-    _beginInjectorOutputDrain(_injector!, awaitLaunchedPid: launchMode);
-    if (launchMode) {
-      // 等 injector 打印 `OK hooked pid=<子进程>`（注入成功 proof-of-life）解析出游戏 PID。
-      final int? childPid = await _awaitLaunchedPid();
-      if (childPid == null || childPid <= 0) {
-        await stop();
-        return null; // 启动/注入失败（exe 起不来 / 位数不符 / 超时）
-      }
-      _effectivePid = childPid;
-    } else {
-      _effectivePid = targetPid;
+    _beginInjectorOutputDrain(_injector!);
+    // launch 和 attach 都必须等 helper 宣告注入完成。attach 旧实现启动子进程后立即
+    // `open`，共享内存通常还没创建，单次 OpenFileMapping 失败后便误降级到 loopback。
+    // `OK hooked` 是 helper 创建共享会话后的 proof-of-life，也是两种模式共同的边界。
+    final int? hookedPid = await _awaitHookedPid();
+    if (hookedPid == null ||
+        hookedPid <= 0 ||
+        (!launchMode && hookedPid != targetPid)) {
+      await stop();
+      return null; // 启动/注入失败（目标不符 / 位数不符 / 超时）
     }
+    _effectivePid = hookedPid;
     // 2. open 共享内存（injector 已创建），成功后轮询 status 等 hook DLL 注入 + 拿到语音格式。
     try {
       final Map<Object?, Object?>? opened =
@@ -637,31 +637,27 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// injector 是常驻 helper，stdout/stderr 也必须贯穿会话持续排空。只在解析到 launch PID
   /// 后取消 stdout 订阅会让后续输出填满匿名管道；完全不订阅 stderr 更会使 native 卡死在
   /// `fprintf(stderr, ...)`，Unity 资源事件队列随之停止消费但进程仍显示存活。
-  void _beginInjectorOutputDrain(
-    Process process, {
-    required bool awaitLaunchedPid,
-  }) {
-    final Completer<int?>? pidCompleter =
-        awaitLaunchedPid ? Completer<int?>() : null;
+  void _beginInjectorOutputDrain(Process process) {
+    final Completer<int?> pidCompleter = Completer<int?>();
     final StringBuffer stdoutBuffer = StringBuffer();
-    _launchedPidCompleter = pidCompleter;
+    _hookedPidCompleter = pidCompleter;
     _injectorOutputSubscriptions.add(
       process.stdout.transform(const SystemEncoding().decoder).listen(
         (String chunk) {
           _emitInjectorOutput(isStderr: false, chunk: chunk);
-          if (pidCompleter == null || pidCompleter.isCompleted) return;
+          if (pidCompleter.isCompleted) return;
           stdoutBuffer.write(chunk);
           final int? pid = parseInjectorHookedPid(stdoutBuffer.toString());
           if (pid != null) pidCompleter.complete(pid);
         },
         onDone: () {
-          if (pidCompleter != null && !pidCompleter.isCompleted) {
+          if (!pidCompleter.isCompleted) {
             pidCompleter
                 .complete(parseInjectorHookedPid(stdoutBuffer.toString()));
           }
         },
         onError: (Object _) {
-          if (pidCompleter != null && !pidCompleter.isCompleted) {
+          if (!pidCompleter.isCompleted) {
             pidCompleter.complete(null);
           }
         },
@@ -689,10 +685,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
-  /// launch 模式：等 stdout 中的 `OK hooked pid=<N>`；订阅本身不会在解析成功后取消，
-  /// 仍负责排空 helper 余生的输出。
-  Future<int?> _awaitLaunchedPid() async {
-    final Completer<int?>? completer = _launchedPidCompleter;
+  /// 等 stdout 中的 `OK hooked pid=<N>`；订阅本身不会在解析成功后取消，仍负责排空
+  /// helper 余生的输出。launch 用返回 PID 发现新游戏，attach 用它避免抢跑共享内存。
+  Future<int?> _awaitHookedPid() async {
+    final Completer<int?>? completer = _hookedPidCompleter;
     if (completer == null) return null;
     return completer.future.timeout(_readyTimeout, onTimeout: () => null);
   }
@@ -1145,8 +1141,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     final List<StreamSubscription<String>> outputSubscriptions =
         List<StreamSubscription<String>>.of(_injectorOutputSubscriptions);
     _injectorOutputSubscriptions.clear();
-    final Completer<int?>? pidCompleter = _launchedPidCompleter;
-    _launchedPidCompleter = null;
+    final Completer<int?>? pidCompleter = _hookedPidCompleter;
+    _hookedPidCompleter = null;
     if (pidCompleter != null && !pidCompleter.isCompleted) {
       pidCompleter.complete(null);
     }

@@ -502,6 +502,71 @@ void main() {
       }
     });
 
+    test('attach 等 helper OK 后才打开共享内存', () async {
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'hibiki_helper_attach_ready_test_',
+      );
+      final File injector =
+          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      await injector.writeAsBytes(const <int>[0]);
+      final _FakeProcess process = _FakeProcess();
+      var openCalls = 0;
+
+      setHandler((MethodCall call) async {
+        switch (call.method) {
+          case 'open':
+            openCalls++;
+            expect(call.arguments, <String, Object?>{'pid': 2468});
+            return <String, Object?>{'ok': true};
+          case 'status':
+            return <String, Object?>{
+              'hooked': true,
+              'textHooked': true,
+              'audioHooksReady': true,
+              'ready': false,
+              'rawVoiceReady': false,
+            };
+          case 'close':
+            return null;
+        }
+        return null;
+      });
+
+      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+        targetPid: 2468,
+        injectorPath: injector.path,
+        processStarter: (String executable, List<String> arguments) async {
+          expect(executable, injector.path);
+          expect(arguments, containsAllInOrder(<String>['--pid', '2468']));
+          return process;
+        },
+        readyTimeout: const Duration(seconds: 1),
+        pollInterval: Duration.zero,
+      );
+
+      try {
+        final Future<PcmFormat?> start = source.start();
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          openCalls,
+          0,
+          reason: 'helper 尚未宣告 hooked 时不能抢跑 OpenFileMapping',
+        );
+
+        process.stdoutController.add(
+          'OK hooked pid=2468 mode=attach\n'.codeUnits,
+        );
+        expect(await start, isNull);
+        expect(openCalls, 1);
+        expect(source.gamePid, 2468);
+        expect(source.textHookReady, isTrue);
+      } finally {
+        await source.stop();
+        await process.dispose();
+        await temp.delete(recursive: true);
+      }
+    });
+
     test('targetPid<=0 -> start null', () async {
       final src =
           EngineHookGalAudioSource(targetPid: 0, injectorPath: 'C:/nope.exe');
