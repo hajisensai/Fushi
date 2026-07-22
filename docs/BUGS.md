@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 984 条。点号进各自文件。
+> 共 986 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1019](bugs/BUG-1019-profile-swallows-audiobook-progress.md) | ✅ | ✅ | profile 切换吞听书进度/倍速：进度型 pref 被快照/prune/回灌 |
+| [BUG-1018](bugs/BUG-1018-rename-not-applied-everywhere.md) | ✅ | ✅ | 改名/改作者不生效：override title 消费面缺口 + 作者保存不刷新 + SRT 空 bookKey 互踩 + profile 吞 override |
 | [BUG-1017](bugs/BUG-1017-reader-fixed-layout-svg-blank.md) | 🚧 | ✅ | 固定版式SVG竖排EPUB打开白屏·cloak被init同步异常卡住 |
 | [BUG-1016](bugs/BUG-1016-webdav-anonymous-empty-credentials.md) | ✅ | ✅ | WebDAV/FTP 匿名同步：空用户名密码被硬拦 |
 | [BUG-1015](bugs/BUG-1015-desktop-lookup-autoread-first-silent.md) | ✅ | ✅ | 桌面首次查词自动发音无声·media_kit播放器冷启动 |

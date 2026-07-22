@@ -1,0 +1,6 @@
+## BUG-1019 · profile 切换吞听书进度/倍速：进度型 pref 被快照/prune/回灌
+- **报告**：2026-07-23（用户：听书「速度飞快但进度 0」）
+- **真实性**：✅ 真 bug。听书进度/倍速等全存 prefs（`audiobook_pos_/pos_at_/speed_/follow_/delay_/volume_/image_pause_/health_overlay_` 前缀 + bookKey，`packages/hibiki_audio/lib/src/audiobook/audiobook_repository.dart:76-111`）。`backup_service.dart:563` 把 `audiobook_pos_*` 当 progress 类数据，但 profile 系统把它们全当**设置**：`ProfileKeys.isExcludedPref`（`profile_keys.dart:63-70`）不排除 → snapshot 收进快照、applyProfile prune 删掉不在目标快照的 pref（`profile_repository.dart:209-213`）、再把旧快照值回灌。开书自动切 profile（`reader_hibiki/audiobook.part.dart:129-166`）后果：同一次 applyProfile 里进度 pref 被 prune（**进度 0**）+ 倍速被旧快照顶掉（**速度飞快**）——两个 key 两种命运。
+- **[x] ① 已修复** — commit `15c8b77b7`：`ProfileKeys._excludedPrefPrefixes` 增加全部 8 个 `audiobook_*_` 每书前缀（进度/内容型=排除；判定与 backup_service 的 progress≠settings 口径对齐），snapshot/prune 经同一 `isExcludedPref` 单一真相源自动生效；`applyProfile` 对**旧快照里已存在的**排除键残值跳过回灌（`prefMap.removeWhere`，不写不删、不迁移数据）。
+- **[x] ② 已加自动化测试** — commit `15c8b77b7`：`hibiki/test/profile/profile_keys_test.dart`（8 前缀排除）、`hibiki/test/profile/profile_repository_test.dart`（快照不含进度键；apply 不 prune 活进度、不回灌旧快照 speed 残值、正常键照常还原）。
+- **备注**：旧 profile 快照里的 `audiobook_*` 残行留在 `profile_settings` 表中（apply 时被跳过，无害），不做数据迁移；阅读偏好型 reader 设置仍随 profile 走，不受影响。
