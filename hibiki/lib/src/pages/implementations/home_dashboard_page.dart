@@ -22,7 +22,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
 ///
-/// - 区块 1：阅读活动热力图（复用 [StatContributionHeatmap]），置顶。
+/// - 区块 1：学习活动热力图（复用 [StatContributionHeatmap]），置顶。
 /// - 区块 2：「继续」——把在读的书与在看的视频合并成统一列表，分段切换全部/阅读/观看。
 /// - 区块 3：Activity 时间轴——把 [ActivityEventRow] 事件流经纯函数
 ///   [aggregateActivityEvents] 聚合成「按日期分组」的时间线，顶部按类别筛选。
@@ -307,7 +307,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         return ListView(
           padding: EdgeInsets.all(tokens.spacing.card),
           children: <Widget>[
-            // 区块 1：阅读活动热力图，置顶（原顶部统计卡已移除）。
+            // 区块 1：学习活动热力图，置顶（原顶部统计卡已移除）。
             heatmapCard,
             SizedBox(height: tokens.spacing.card),
             bodyBelow,
@@ -541,9 +541,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     await appModel.openMedia(ref: ref, mediaSource: source, item: item);
   }
 
-  // ── 区块 3：阅读活动热力图 ───────────────────────────────────────────────
+  // ── 区块 3：学习活动热力图 ───────────────────────────────────────────────
 
-  /// 阅读活动热力图卡（复用 [StatContributionHeatmap]，按每日阅读字数铺格）。
+  /// 学习活动热力图卡（复用 [StatContributionHeatmap]，按每日阅读字数铺格）。
   Widget _buildHeatmapCard(HibikiDesignTokens tokens) {
     return _sectionCard(
       tokens,

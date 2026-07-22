@@ -1963,7 +1963,7 @@
   "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki.",
   "interconnect_enable": "Enable interconnect",
   "interconnect_enable_hint": "Connect to your other devices over the LAN. Works alongside a cloud backup backend — they don't conflict.",
-  "reading_activity": "Reading activity",
+  "reading_activity": "Study activity",
   "video_watch_activity": "Watch activity",
   "book_mark_completed_action": "Mark as completed",
   "book_mark_uncompleted_action": "Mark as not completed",

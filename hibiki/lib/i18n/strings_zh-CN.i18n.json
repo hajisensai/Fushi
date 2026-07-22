@@ -1963,7 +1963,7 @@
   "browser_extension_yomitan_port_conflict": "端口 $port 正被 Yomitan API 占用。请先在 Yomitan 高级设置中关闭 Yomitan API，再回 Hibiki 开启 Yomitan API 服务器。",
   "interconnect_enable": "启用互联",
   "interconnect_enable_hint": "通过局域网连接你的其他设备。与云备份后端并存，互不冲突。",
-  "reading_activity": "阅读活动",
+  "reading_activity": "学习活动",
   "video_watch_activity": "观看活动",
   "book_mark_completed_action": "标记为已读完",
   "book_mark_uncompleted_action": "取消已读完",
