@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 38012 (2236 per locale)
+/// Strings: 38029 (2237 per locale)
 ///
-/// Built on 2026-07-22 at 05:54 UTC
+/// Built on 2026-07-22 at 08:05 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2978,6 +2978,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get settings_destination_system_summary =>
       'General, updates & diagnostics';
   String get error_load_failed => 'Something went wrong while loading';
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -8038,6 +8040,9 @@ class _StringsAr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -13171,6 +13176,9 @@ class _StringsDe extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -18320,6 +18328,9 @@ class _StringsEs extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -23480,6 +23491,9 @@ class _StringsFr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -28567,6 +28581,9 @@ class _StringsId extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -33702,6 +33719,9 @@ class _StringsIt extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -38642,6 +38662,9 @@ class _StringsJa extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -43585,6 +43608,9 @@ class _StringsKo extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -48698,6 +48724,9 @@ class _StringsNl extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -53826,6 +53855,9 @@ class _StringsPtBr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -58937,6 +58969,9 @@ class _StringsRu extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -63993,6 +64028,9 @@ class _StringsTh extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -69081,6 +69119,9 @@ class _StringsTr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -74156,6 +74197,9 @@ class _StringsVi extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 // Path: <root>
@@ -78878,6 +78922,8 @@ class _StringsZhCn extends _StringsEn {
   String get settings_destination_system_summary => '通用、更新与诊断';
   @override
   String get error_load_failed => '加载出错';
+  @override
+  String get collection_loading_hint => '正在加载收藏并匹配音频文件…';
 }
 
 // Path: <root>
@@ -83736,6 +83782,9 @@ class _StringsZhHk extends _StringsEn {
   String get settings_destination_system_summary => '通用、更新與診斷';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get collection_loading_hint =>
+      'Loading collections and matching audio files…';
 }
 
 /// Flat map(s) containing all translations.
@@ -88300,6 +88349,8 @@ extension on _StringsEn {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -92862,6 +92913,8 @@ extension on _StringsAr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -97445,6 +97498,8 @@ extension on _StringsDe {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -102027,6 +102082,8 @@ extension on _StringsEs {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -106615,6 +106672,8 @@ extension on _StringsFr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -111185,6 +111244,8 @@ extension on _StringsId {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -115770,6 +115831,8 @@ extension on _StringsIt {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -120317,6 +120380,8 @@ extension on _StringsJa {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -124868,6 +124933,8 @@ extension on _StringsKo {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -129446,6 +129513,8 @@ extension on _StringsNl {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -134021,6 +134090,8 @@ extension on _StringsPtBr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -138601,6 +138672,8 @@ extension on _StringsRu {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -143165,6 +143238,8 @@ extension on _StringsTh {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -147738,6 +147813,8 @@ extension on _StringsTr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -152306,6 +152383,8 @@ extension on _StringsVi {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }
@@ -156840,6 +156919,8 @@ extension on _StringsZhCn {
         return '通用、更新与诊断';
       case 'error_load_failed':
         return '加载出错';
+      case 'collection_loading_hint':
+        return '正在加载收藏并匹配音频文件…';
       default:
         return null;
     }
@@ -161382,6 +161463,8 @@ extension on _StringsZhHk {
         return '通用、更新與診斷';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'collection_loading_hint':
+        return 'Loading collections and matching audio files…';
       default:
         return null;
     }

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -168,8 +169,28 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// row 即可定位「该集视频文件 + 时间段」，按需 ffmpeg 抽音（见
   /// [resolveVideoFavoriteAudioClip] / [_playVideoFavoriteAudio]）。
   Map<String, VideoBookRow> _videoRowMap = {};
-  bool _playingAudio = false;
-  final _dateFmt = DateFormat('MM/dd HH:mm');
+
+  /// 正在截取/播放音频的**那一行**的列表键（[_itemKey]）；null = 无进行中播放。
+  /// 旧实现是全局 bool——一行在播，全列表按钮统一变沙漏且禁点（巡检 PR-3）。
+  String? _playingItemKey;
+
+  /// 收藏日期本地化格式（巡检 PR-3）：跟随 app 语言的月日顺序，当年条目省年份、
+  /// 跨年条目补年份（旧硬编码 'MM/dd HH:mm' 对 en 等 locale 月日顺序错，且去年
+  /// 条目与今年同形混淆）。date symbols 已在 [_load] 里 initializeDateFormatting；
+  /// 仅当 app 语言对 intl 是未知 locale（ArgumentError）时退回 intl 默认 locale。
+  String _formatCreatedAt(DateTime createdAt) {
+    final bool sameYear = createdAt.year == DateTime.now().year;
+    final String locale = LocaleSettings.currentLocale.languageTag;
+    DateFormat fmt;
+    try {
+      fmt = sameYear
+          ? DateFormat.Md(locale).add_Hm()
+          : DateFormat.yMd(locale).add_Hm();
+    } on ArgumentError {
+      fmt = sameYear ? DateFormat.Md().add_Hm() : DateFormat.yMd().add_Hm();
+    }
+    return fmt.format(createdAt);
+  }
 
   @override
   void initState() {
@@ -179,6 +200,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
+
+    // 本地化日期格式（[_formatCreatedAt]）需要 intl 的 date symbols；纯内存表
+    // 初始化（date_symbol_data_local，无 IO），在首次渲染行之前完成。
+    await initializeDateFormatting();
 
     final db = appModel.database;
     final favoriteRepo = FavoriteSentenceRepository(db);
@@ -487,6 +512,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       return;
     }
 
+    // 巡检 PR-3：换行播放 = 先停旧后播新（其余行不再禁点）。只调整调用顺序，
+    // 播放器逻辑（TtsChannel.playFile / stop）不动。
+    if (_playingItemKey != null && _playingItemKey != _itemKey(item)) {
+      await TtsChannel.instance.stop();
+    }
+
     // 视频来源句：从收藏字段自带的 cue 时间窗 + 该集视频文件抽音（容器内交错，但
     // ffmpeg `-ss`/`-t` 在 `-i` 前快速输入定位，只解码这几秒，不读穿整个文件）。
     if (item.source == kFavoriteSentenceSourceVideo) {
@@ -523,6 +554,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     }
 
     await _extractAndPlay(
+      itemKey: _itemKey(item),
       inputPath: audioFiles[range.audioFileIndex].path,
       startMs: range.startMs,
       endMs: range.endMs,
@@ -553,6 +585,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       return;
     }
     await _extractAndPlay(
+      itemKey: _itemKey(item),
       inputPath: clip.filePath,
       startMs: clip.startMs,
       endMs: clip.endMs,
@@ -565,11 +598,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 桌面端经 [TtsChannel.extractAudioSegment] → ffmpeg；ffmpeg 可执行的「覆盖>捆绑>
   /// PATH」解析与捆绑损坏自动回退 PATH 由 ffmpeg_backend.dart 统一保证（BUG-233）。
   Future<void> _extractAndPlay({
+    required String itemKey,
     required String inputPath,
     required int startMs,
     required int endMs,
   }) async {
-    setState(() => _playingAudio = true);
+    setState(() => _playingItemKey = itemKey);
     try {
       final Directory tmpDir = await getTemporaryDirectory();
       final String outputPath = p.join(
@@ -589,7 +623,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         HibikiToast.show(msg: t.audio_clip_failed);
       }
     } finally {
-      if (mounted) setState(() => _playingAudio = false);
+      // 只清自己那一次的进行中标记：期间用户已点了别的行（先停旧后播新）时，
+      // 新行的 key 不能被旧 finally 抹掉。
+      if (mounted && _playingItemKey == itemKey) {
+        setState(() => _playingItemKey = null);
+      }
     }
   }
 
@@ -898,6 +936,18 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     return cleaned.isEmpty ? 'export' : cleaned;
   }
 
+  /// 行的稳定列表键（Dismissible key 与「播放中」行标记共用同一编码）。
+  String _itemKey(_CollectionItem item) {
+    switch (item.type) {
+      case _CollectionType.mined:
+        return 'mined_${item.minedId}';
+      case _CollectionType.word:
+        return 'word_${item.text}_${item.wordReading}_${item.wordSourceType}';
+      case _CollectionType.sentence:
+        return 'fav_${item.favoriteId}';
+    }
+  }
+
   bool _hasAudio(_CollectionItem item) {
     // 视频来源句：有该视频的 row 且收藏自带可用 cue 时间窗即可抽音（不进 _cueMap）。
     if (item.source == kFavoriteSentenceSourceVideo) {
@@ -933,11 +983,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           if (hasAudio)
             TextButton.icon(
               icon: Icon(
-                _playingAudio ? Icons.hourglass_top : Icons.volume_up_outlined,
+                _playingItemKey == _itemKey(item)
+                    ? Icons.hourglass_top
+                    : Icons.volume_up_outlined,
                 size: 18,
               ),
               label: Text(t.dialog_play),
-              onPressed: _playingAudio
+              // 仅「本条」正在播时禁点；别的行在播不再连坐（点击先停旧后播新）。
+              onPressed: _playingItemKey == _itemKey(item)
                   ? null
                   : () {
                       Navigator.pop(ctx);
@@ -993,7 +1046,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         if (!_loading && _hasExportableItems)
           HibikiIconButton(
             tooltip: t.dialog_export,
-            icon: Icons.ios_share_outlined,
+            // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3）。
+            icon: Icons.share_outlined,
             onTap: _openExportSheet,
           ),
         // 只要列表非空就显示「清空」；点开可选范围面板（书签/收藏句/制卡句/收藏词），
@@ -1006,7 +1060,23 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           ),
       ],
       body: _loading
-          ? Center(child: adaptiveIndicator(context: context))
+          // 加载耗时源是逐书 cue + 音频文件存在性扫描（[_load]），可能数秒——补一行
+          // 说明文案，用户知道在等什么（巡检 PR-3）。
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  adaptiveIndicator(context: context),
+                  SizedBox(height: HibikiDesignTokens.of(context).spacing.gap),
+                  Text(
+                    t.collection_loading_hint,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            )
           : _items.isEmpty
               ? Center(
                   child: HibikiPlaceholderMessage(
@@ -1033,7 +1103,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     required String? metadata,
     required DateTime createdAt,
   }) {
-    final String date = _dateFmt.format(createdAt);
+    final String date = _formatCreatedAt(createdAt);
     final bool hasMetadata = metadata != null && metadata.isNotEmpty;
     if (!hasMetadata) {
       return Text(date, maxLines: 1, overflow: TextOverflow.ellipsis);
@@ -1098,11 +1168,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
 
-    final key = isMined
-        ? 'mined_${item.minedId}'
-        : isWord
-            ? 'word_${item.text}_${item.wordReading}_${item.wordSourceType}'
-            : 'fav_${item.favoriteId}';
+    final String key = _itemKey(item);
+    final bool playingThis = _playingItemKey == key;
 
     return Dismissible(
       key: Key(key),
@@ -1167,17 +1234,25 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // 巡检 PR-3：仅正在播的那一行显示小转圈，其余行保持可点（点即
+                // 先停旧后播新，见 [_playItemAudio]）。
                 if (_hasAudio(item))
-                  HibikiIconButton(
-                    tooltip: t.dialog_play,
-                    icon: _playingAudio
-                        ? Icons.hourglass_top
-                        : Icons.volume_up_outlined,
-                    size: 18,
-                    enabled: !_playingAudio,
-                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                    onTap: () => _playItemAudio(item),
-                  ),
+                  playingThis
+                      ? Padding(
+                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                          child: const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : HibikiIconButton(
+                          tooltip: t.dialog_play,
+                          icon: Icons.volume_up_outlined,
+                          size: 18,
+                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                          onTap: () => _playItemAudio(item),
+                        ),
                 if (item.text != null)
                   HibikiIconButton(
                     tooltip: t.copy,
@@ -1603,7 +1678,7 @@ class _ExportSheetState extends State<_ExportSheet> {
       footer: Align(
         alignment: Alignment.centerRight,
         child: FilledButton.icon(
-          icon: const Icon(Icons.ios_share_outlined, size: 18),
+          icon: const Icon(Icons.share_outlined, size: 18),
           label: Text(t.dialog_export),
           onPressed: _canExport ? _confirm : null,
         ),

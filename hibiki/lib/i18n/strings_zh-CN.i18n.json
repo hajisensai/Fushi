@@ -2234,5 +2234,6 @@
   "settings_section_general": "通用",
   "reading_section_mode": "模式与排版方向",
   "settings_destination_system_summary": "通用、更新与诊断",
-  "error_load_failed": "加载出错"
+  "error_load_failed": "加载出错",
+  "collection_loading_hint": "正在加载收藏并匹配音频文件…"
 }

@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart'
     show naturalCompare;
-import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
-    show showCollectionNameDialog;
+import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
-import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -50,10 +50,22 @@ class MediaCollectionDetailPage extends StatefulWidget {
       _MediaCollectionDetailPageState();
 }
 
-class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
+class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
+    with CollectionDetailShared<MediaCollectionDetailPage> {
   late String _name;
   List<VideoBookRow> _members = const <VideoBookRow>[];
   bool _loading = true;
+
+  @override
+  HibikiDatabase get detailDatabase => widget.database;
+  @override
+  MediaCollectionRow get detailCollection => widget.collection;
+  @override
+  String get detailName => _name;
+  @override
+  set detailName(String value) => _name = value;
+  @override
+  VoidCallback get detailOnChanged => widget.onChanged;
 
   @override
   void initState() {
@@ -115,37 +127,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
   }
 
   /// AppBar「排序」菜单：按名称（natural，卷1<卷2<卷10）/ 按导入时间（旧→新 =
-  /// 原始加入时序）一键重排。
+  /// 原始加入时序）一键重排。菜单外壳共享 [buildDetailSortMenu]。
   Widget _buildSortMenu() {
     int importedMsOf(VideoBookRow r) =>
         r.importedAt?.millisecondsSinceEpoch ?? 0;
-    return MenuAnchor(
-      menuChildren: <Widget>[
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.sort_by_alpha, size: 20),
-          onPressed: () => _applyOneKeySort(
-            (VideoBookRow a, VideoBookRow b) =>
-                naturalCompare(a.title, b.title),
-          ),
-          child: Text(t.collection_sort_by_title),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.history, size: 20),
-          onPressed: () => _applyOneKeySort(
-            (VideoBookRow a, VideoBookRow b) {
-              final int c = importedMsOf(a).compareTo(importedMsOf(b));
-              return c != 0 ? c : naturalCompare(a.title, b.title);
-            },
-          ),
-          child: Text(t.collection_sort_by_imported),
-        ),
-      ],
-      builder: (BuildContext context, MenuController controller, Widget? _) =>
-          IconButton(
-        tooltip: t.sort_by,
-        icon: const Icon(Icons.sort),
-        onPressed: () =>
-            controller.isOpen ? controller.close() : controller.open(),
+    return buildDetailSortMenu(
+      onSortByTitle: () => _applyOneKeySort(
+        (VideoBookRow a, VideoBookRow b) => naturalCompare(a.title, b.title),
+      ),
+      onSortByImported: () => _applyOneKeySort(
+        (VideoBookRow a, VideoBookRow b) {
+          final int c = importedMsOf(a).compareTo(importedMsOf(b));
+          return c != 0 ? c : naturalCompare(a.title, b.title);
+        },
       ),
     );
   }
@@ -169,86 +163,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
     );
   }
 
-  Future<void> _rename() async {
-    final String? newName = await showCollectionNameDialog(
-      context: context,
-      title: t.rename_collection,
-      initialName: _name,
-    );
-    if (newName == null || newName == _name) return;
-    await widget.database.renameMediaCollection(widget.collection.id, newName);
-    if (!mounted) return;
-    setState(() => _name = newName);
-    widget.onChanged();
-  }
-
-  /// 编辑本合集的标签：复用共享标签池的 [TagPickerPage]（合集第 4 路，传
-  /// collectionId）；返回后自增刷新计数，触发 [_buildTagChips] 的 FutureBuilder
-  /// 重取，chip 行立即反映新增/移除。
-  int _tagsRefresh = 0;
-
-  Future<void> _editTags() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => TagPickerPage(collectionId: widget.collection.id),
-      ),
-    );
-    if (!mounted) return;
-    setState(() => _tagsRefresh++);
-  }
-
-  /// 详情页头部标签 chip 行：随 [_tagsRefresh] 强制重取本合集标签；空则不占位。
-  Widget _buildTagChips() {
-    return FutureBuilder<List<BookTagRow>>(
-      key: ValueKey<int>(_tagsRefresh),
-      future: widget.database.getTagsForCollection(widget.collection.id),
-      builder: (BuildContext context, AsyncSnapshot<List<BookTagRow>> snap) {
-        final List<BookTagRow> tags = snap.data ?? const <BookTagRow>[];
-        if (tags.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: <Widget>[
-              for (final BookTagRow tag in tags)
-                HibikiTagChip(
-                  label: tag.name,
-                  color: Color(tag.colorValue),
-                  tone: HibikiTagChipTone.surface,
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   /// 逐集「移出合集」（整理排序页删除后本页是视频侧唯一移出入口）：确认 →
   /// [HibikiDatabase.removeFromCollection]（空合集自动删）→ 重载；合集被清空则
   /// 退回上层。条目本身绝不删除。
   Future<void> _removeEpisode(VideoBookRow ep) async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.collection_remove_member),
-        content: Text(t.collection_remove_member_confirm),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.collection_remove_member),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
+    if (!await confirmDetailRemoveMember()) return;
+    if (!mounted) return;
     await widget.database
         .removeFromCollection(widget.collection.id, 'video', ep.bookUid);
     if (!mounted) return;
@@ -267,53 +187,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
 
   Future<void> _delete() async {
     // 仅当调用方注入了删本体回调、且合集当前有成员时，才给用户「连同视频一起删」
-    // 选项；否则退回纯解链删除（老行为，零变化）。
+    // 勾选行；否则退回纯解链删除（老行为，零变化）。确认框统一走 PR-0 的
+    // [HibikiDestructiveConfirmDialog]（经 [confirmDetailCollectionDelete]）。
     final bool canDeleteMembers =
         widget.onDeleteMembersMedia != null && _members.isNotEmpty;
-    bool alsoDeleteMembers = false;
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => StatefulBuilder(
-        builder: (BuildContext ctx, StateSetter setLocal) => AlertDialog(
-          title: Text(t.delete_collection),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(t.delete_collection_confirm),
-              if (canDeleteMembers) ...<Widget>[
-                const SizedBox(height: 8),
-                CheckboxListTile(
-                  value: alsoDeleteMembers,
-                  onChanged: (bool? v) =>
-                      setLocal(() => alsoDeleteMembers = v ?? false),
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: Text(t.delete_collection_also_videos),
-                ),
-              ],
-            ],
-          ),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: ctx,
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: ctx,
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(t.delete_collection),
-            ),
-          ],
-        ),
-      ),
+    final HibikiDestructiveConfirmResult? result =
+        await confirmDetailCollectionDelete(
+      checkboxLabel: canDeleteMembers ? t.delete_collection_also_videos : null,
     );
-    if (ok != true) return;
+    if (result == null || !mounted) return;
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
     // 引用行并自删空合集，故随后的 deleteMediaCollection 多为幂等收尾（写合集级墓碑）。
-    if (alsoDeleteMembers && widget.onDeleteMembersMedia != null) {
+    if (result.checked && widget.onDeleteMembersMedia != null) {
       await widget.onDeleteMembersMedia!(List<VideoBookRow>.of(_members));
     }
     await widget.database.deleteMediaCollection(widget.collection.id);
@@ -359,6 +244,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(_name),
@@ -372,12 +258,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
           IconButton(
             tooltip: t.rename_collection,
             icon: const Icon(Icons.drive_file_rename_outline),
-            onPressed: _rename,
+            onPressed: renameDetailCollection,
           ),
           IconButton(
             tooltip: t.tag_label,
             icon: const Icon(Icons.sell_outlined),
-            onPressed: _editTags,
+            onPressed: editDetailCollectionTags,
           ),
           IconButton(
             tooltip: t.delete_collection,
@@ -388,15 +274,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
       ),
       body: SafeArea(
         child: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? Center(child: adaptiveIndicator(context: context))
             : _members.isEmpty
-                ? Center(child: Text(t.collection_empty))
+                ? HibikiPlaceholderMessage(
+                    icon: Icons.collections_bookmark_outlined,
+                    message: t.collection_empty,
+                  )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      _buildTagChips(),
+                      buildDetailTagChips(),
                       Padding(
-                        padding: const EdgeInsets.all(12),
+                        padding: EdgeInsets.all(tokens.spacing.rowVertical),
                         child: Align(
                           alignment: AlignmentDirectional.centerStart,
                           child: FilledButton.icon(
@@ -432,20 +321,23 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                               // 用 InkWell+Row（非 ListTile）保持 MD3 设计系统一致；
                               // VideoBooks 不存总时长无法算集内百分比 → 只标「已看完 /
                               // 看过一半 / 未看」三态图标，不画误导性进度条。
-                              return Material(
+                              final Widget row = Material(
                                 color: isContinue
                                     ? cs.primaryContainer
                                         .withValues(alpha: 0.35)
                                     : Colors.transparent,
                                 child: InkWell(
+                                  canRequestFocus: false,
                                   onTap: () => widget.onOpenEpisode(ep),
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 12),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: tokens.spacing.rowHorizontal,
+                                      vertical: tokens.spacing.rowVertical,
+                                    ),
                                     child: Row(
                                       children: <Widget>[
                                         SizedBox(
-                                          width: 32,
+                                          width: tokens.spacing.gap * 4,
                                           child: Text(
                                             '${i + 1}',
                                             textAlign: TextAlign.center,
@@ -453,11 +345,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                                                 color: cs.onSurfaceVariant),
                                           ),
                                         ),
-                                        const SizedBox(width: 12),
+                                        SizedBox(
+                                            width: tokens.spacing.rowVertical),
                                         // Jellyfin 式：每集独立视频各自的封面缩略图（16:9
                                         // 抽帧；无封面时占位）。
                                         _episodeThumb(ep, cs),
-                                        const SizedBox(width: 12),
+                                        SizedBox(
+                                            width: tokens.spacing.rowVertical),
                                         Expanded(
                                           child: Text(
                                             ep.title,
@@ -472,7 +366,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                                           Icon(Icons.play_circle_outline,
                                               color: cs.onSurfaceVariant,
                                               size: 20),
-                                        const SizedBox(width: 4),
+                                        SizedBox(width: tokens.spacing.gap / 2),
                                         // 逐集移出（整理页删除后的唯一入口）。
                                         HibikiIconButton(
                                           tooltip: t.collection_remove_member,
@@ -480,7 +374,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                                           size: 18,
                                           onTap: () => _removeEpisode(ep),
                                         ),
-                                        const SizedBox(width: 4),
+                                        SizedBox(width: tokens.spacing.gap / 2),
                                         // 拖柄图标：纯视觉提示（整行可拖，见类注释）。
                                         Icon(
                                           Icons.drag_handle,
@@ -490,6 +384,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                                       ],
                                     ),
                                   ),
+                                ),
+                              );
+                              // 巡检 PR-3：剧集行接入手柄/键盘方向焦点（裸 InkWell
+                              // 不进 Hibiki 焦点系统，手柄用户到不了任何一集）。
+                              // Enter / 手柄 A 与鼠标点击同路径开该集。
+                              if (HibikiFocusRoot.maybeControllerOf(context) ==
+                                  null) {
+                                return row;
+                              }
+                              return Actions(
+                                actions: <Type, Action<Intent>>{
+                                  ActivateIntent:
+                                      CallbackAction<ActivateIntent>(
+                                    onInvoke: (_) {
+                                      widget.onOpenEpisode(ep);
+                                      return null;
+                                    },
+                                  ),
+                                },
+                                child: HibikiFocusTarget(
+                                  id: HibikiFocusId(
+                                      'collection-episode-${ep.bookUid}'),
+                                  child: row,
                                 ),
                               );
                             },
