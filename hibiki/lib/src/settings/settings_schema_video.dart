@@ -43,6 +43,21 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoAutoPlayNext(value);
             },
           ),
+          // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
+          // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
+          // 仅调全局设置页所属 SettingsSection。
+          _videoMpvSwitchItem(
+            id: 'video.quality.loop',
+            title: t.video_setting_mpv_loop,
+            icon: Icons.repeat_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 200,
+              section: t.video_setting_mpv_group_playback,
+            ),
+            read: (VideoMpvConfig c) => c.loopFile,
+            write: (VideoMpvConfig c, bool v) => c.copyWith(loopFile: v),
+          ),
           // 沉浸/画面缩放都是长标签四态：dropdown 渲染（TODO-209，分段条在窄 pane
           // 只能横向滚动裁断）。
           SettingsSegmentedItem<VideoImmersiveMode>(
@@ -187,22 +202,6 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
-          SettingsSwitchItem(
-            id: 'video.playback.pause_at_subtitle_end',
-            title: t.playback_auto_pause,
-            icon: Icons.pause_circle_outline,
-            // 面板里按语义归「字幕」分类（句尾自动暂停按字幕 cue 边界暂停）。
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 30),
-            value: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).pauseAtSubtitleEnd,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await commitVideoAsbConfig(
-                settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(pauseAtSubtitleEnd: value),
-              );
-            },
-          ),
           // 「重置控件布局」原独占一个「控件」section（仅此一项）；单项撑一个分区
           // 是欠填充结构，并入「播放」尾部。面板里归「控制」分类、排在拖拽编辑器后。
           SettingsActionItem(
@@ -299,20 +298,8 @@ SettingsDestination buildVideoDestination() {
             read: (VideoMpvConfig c) => c.deband,
             write: (VideoMpvConfig c, bool v) => c.copyWith(deband: v),
           ),
-          _videoMpvSwitchItem(
-            id: 'video.quality.loop',
-            title: t.video_setting_mpv_loop,
-            icon: Icons.repeat_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 200,
-              section: t.video_setting_mpv_group_playback,
-            ),
-            read: (VideoMpvConfig c) => c.loopFile,
-            write: (VideoMpvConfig c, bool v) => c.copyWith(loopFile: v),
-          ),
           // TODO-1247：把播放页内 mpv 画质组里的其余布尔项平移到首页（纯 pref），与播放
-          // 页内设置同源，消除「首页改不了」。
+          // 页内设置同源，消除「首页改不了」。（「单文件循环」已移到「播放」分区。）
           _videoMpvSwitchItem(
             id: 'video.quality.dither',
             title: t.video_setting_mpv_dither,
@@ -610,6 +597,24 @@ SettingsDestination buildVideoDestination() {
       SettingsSection(
         title: t.section_video_subtitles,
         items: <SettingsItem>[
+          // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
+          // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
+          // 位置照旧，仅调全局设置页所属 SettingsSection。
+          SettingsSwitchItem(
+            id: 'video.playback.pause_at_subtitle_end',
+            title: t.playback_auto_pause,
+            icon: Icons.pause_circle_outline,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 30),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).pauseAtSubtitleEnd,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(pauseAtSubtitleEnd: value),
+              );
+            },
+          ),
           // TODO-840 Part B：遮蔽模式三态选择器——不遮蔽 / 模糊（听力沉浸）/ 隐藏。
           // 持久化是 preferences 层 lazy 投影（见
           // [PreferencesRepository.videoSubtitleObscureMode]），无新 Drift schema。

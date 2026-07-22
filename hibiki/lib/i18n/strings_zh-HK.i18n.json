@@ -122,7 +122,7 @@
   "server_address": "伺服器位址",
   "text_segmentation": "文字分詞",
   "settings": "設定",
-  "manager": "管理員",
+  "manager": "詞典與來源",
   "volume_button_page_turning": "音量鍵翻頁",
   "invert_volume_buttons": "反轉音量鍵方向",
   "invert_swipe_direction": "反轉滑動翻頁方向",
@@ -2231,5 +2231,7 @@
   "video_setting_speed_step": "Speed step",
   "clipboard_panel_block_capture": "Block screen capture",
   "clipboard_panel_block_capture_hint": "Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.",
-  "settings_section_general": "通用"
+  "settings_section_general": "通用",
+  "reading_section_mode": "模式與排版方向",
+  "settings_destination_system_summary": "通用、更新與診斷"
 }
