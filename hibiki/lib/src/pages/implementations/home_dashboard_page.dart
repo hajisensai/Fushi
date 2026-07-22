@@ -346,7 +346,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
             ((item.position / item.duration) * 100).clamp(0, 100).round();
         entries.add(_ContinueEntry(
           isVideo: false,
-          title: item.title,
+          // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
+          // 首页「继续」区同步显示新名），不直接读 DB 原名。
+          title: ReaderHibikiSource.instance.getDisplayTitleFromMediaItem(item),
           recentMs: recent,
           percent: percent,
           book: item,
@@ -690,7 +692,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
-                    entry.title,
+                    _activityDisplayTitle(entry),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: tokens.type.listTitle,
@@ -709,6 +711,21 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         ),
       ),
     );
+  }
+
+  /// BUG-1018 (A1)：活动条**渲染时**应用书的 override 书名（编辑对话框改名后时间轴
+  /// 同步显示新名）。events 落库仍存 DB 原名（历史数据身份，聚合键不变），只在这里
+  /// 按 [ActivityEntry.mediaKey]（书=bookKey）查 override 替换显示。
+  String _activityDisplayTitle(ActivityEntry entry) {
+    if (entry.mediaType == kActivityMediaBook) {
+      final String? bookKey = entry.mediaKey;
+      if (bookKey != null && bookKey.isNotEmpty) {
+        final String? override =
+            ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey);
+        if (override != null) return override;
+      }
+    }
+    return entry.title;
   }
 
   /// 点击活动条：read → 书架 tab；added-book → 书架；其余（watch/added-video/game）→ 视频 tab。

@@ -214,6 +214,57 @@ void main() {
     expect(find.byType(StatContributionHeatmap), findsOneWidget);
   });
 
+  testWidgets('BUG-1018：「继续」区显示 override 书名而非 DB 原名',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 一本在读的书（0 < position < duration 才进「继续」区）。
+    final MediaItem book = MediaItem(
+      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('测试书key'),
+      title: '原书名',
+      mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
+      position: 50,
+      duration: 100,
+      canDelete: false,
+      canEdit: true,
+    );
+    // 编辑对话框同一写入通道设置 override 书名；测试后清除（instance 是单例）。
+    await ReaderHibikiSource.instance.setOverrideTitleFromMediaItem(
+      item: book,
+      title: '改后的书名',
+    );
+    addTearDown(() => ReaderHibikiSource.instance
+        .setOverrideTitleFromMediaItem(item: book, title: null));
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: <Override>[
+        platformServicesProvider.overrideWithValue(platformServices),
+        ankiRepositoryProvider.overrideWithValue(ankiRepository),
+        appProvider.overrideWith((ref) => appModel),
+        hibikiBooksProvider
+            .overrideWith((ref, language) async => <MediaItem>[book]),
+        bookLastReadAtProvider
+            .overrideWith((ref) async => <String, int>{'测试书key': 1}),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
+          ),
+        ),
+      ),
+    ));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('改后的书名'), findsOneWidget);
+    expect(find.text('原书名'), findsNothing);
+  });
+
   testWidgets('中等宽度（700，<900 窄分支）单列堆叠不抛无限高度', (WidgetTester tester) async {
     // 700px < 900：走窄屏单列堆叠分支（热力图置顶 + 继续 + Activity）。曾因把
     // stretch/Expanded 的 Row 直接放进纵向 ListView 而在此宽度崩溃，锁死不再复发。

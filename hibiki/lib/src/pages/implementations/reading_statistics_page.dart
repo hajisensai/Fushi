@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
@@ -1153,6 +1154,16 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
+  /// BUG-1018 (A1)：统计页书名列**渲染时**应用 override 书名（编辑对话框改名后
+  /// 这里同步显示新名）。统计行仍按 DB 原 title 聚合/删除（历史数据身份不动），
+  /// title→bookKey 走既有 [_bookKeyByTitle] 反查。
+  String _bookDisplayTitle(String title) {
+    final String? bookKey = _bookKeyByTitle[title];
+    if (bookKey == null) return title;
+    return ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey) ??
+        title;
+  }
+
   Widget _buildBookTile(_BookData book) {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
@@ -1180,7 +1191,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                book.title,
+                _bookDisplayTitle(book.title),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium,

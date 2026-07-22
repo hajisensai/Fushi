@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -58,7 +59,10 @@ class AudiobookSessionLauncher {
       info: SessionBookInfo(
         bookKey: bookKey,
         audiobook: audiobook,
-        title: title,
+        // BUG-1018 (A1)：通知/悬浮窗元数据走与书架同一 override 书名通道，
+        // 编辑对话框改名后媒体通知同步显示新名；无 override 回退 DB 原名。
+        title: ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey) ??
+            title,
         mediaIdentifier: 'hoshi://book/$bookKey',
         isSrtBookSource: false,
         author: author,
@@ -95,11 +99,17 @@ class AudiobookSessionLauncher {
     final SrtBookRepository srtRepo = SrtBookRepository(_db);
     final List<AudioCue> cues = await srtRepo.cuesFor(key);
 
+    // BUG-1018 (A1)：override 书名按身份取——EPUB 配对行挂在 bookKey 身份上，
+    // standalone SRT 书挂在 `hoshi://srtbook/<uid>` 身份上（A3）。
+    final String? overrideTitle = srtBook.bookKey.isNotEmpty
+        ? ReaderHibikiSource.instance.overrideTitleForBookKey(srtBook.bookKey)
+        : ReaderHibikiSource.instance.overrideTitleForSrtUid(srtBook.uid);
+
     return AudiobookSessionStartRequest(
       info: SessionBookInfo(
         bookKey: key,
         audiobook: synthetic,
-        title: srtBook.title,
+        title: overrideTitle ?? srtBook.title,
         mediaIdentifier: 'hoshi://book/'
             '${srtBook.bookKey.isNotEmpty ? srtBook.bookKey : key}',
         isSrtBookSource: true,

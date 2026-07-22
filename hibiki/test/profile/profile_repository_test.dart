@@ -173,6 +173,74 @@ void main() {
       expect(await db.getPref('active_profile_id'), '7'); // excluded → kept
     });
 
+    test(
+        'BUG-1019: audiobook progress/speed + override_title survive a '
+        'profile switch (not snapshotted, not pruned, not restored stale)',
+        () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      const String overrideTitleKey =
+          'src:reader_ttu:override_title://reader_ttu/'
+          'reader_ttu/hoshi://book/我的书';
+
+      final pid = await repo.createProfile('A');
+      await db.setPref('audiobook_pos_bookA', '111');
+      await db.setPref('audiobook_speed_bookA', '2.0');
+      await db.setPref(overrideTitleKey, '"新书名"');
+      await db.setPref('font_size', '16');
+      await repo.snapshotCurrentSettings(pid);
+
+      // 1) snapshot never contains progress/override keys.
+      final keys = await _prefKeys(db, pid);
+      expect(keys, contains('font_size'));
+      expect(keys, isNot(contains('audiobook_pos_bookA')));
+      expect(keys, isNot(contains('audiobook_speed_bookA')));
+      expect(keys, isNot(contains(overrideTitleKey)));
+
+      // 2) live progress written AFTER the snapshot survives the apply —
+      //    neither pruned (the old "progress reset to 0") nor overwritten.
+      await db.setPref('audiobook_pos_bookA', '999');
+      await db.setPref('audiobook_speed_bookA', '1.25');
+      await repo.applyProfile(pid);
+      expect(await db.getPref('audiobook_pos_bookA'), '999');
+      expect(await db.getPref('audiobook_speed_bookA'), '1.25');
+      expect(await db.getPref(overrideTitleKey), '"新书名"');
+    });
+
+    test(
+        'BUG-1019: stale excluded keys inside an OLD snapshot are neither '
+        'restored nor allowed to delete live values', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pid = await repo.createProfile('Old');
+
+      // Simulate a pre-fix snapshot that captured progress/speed rows.
+      await db.replaceProfileSettings(pid, <ProfileSettingsCompanion>[
+        ProfileSettingsCompanion.insert(
+          profileId: pid,
+          category: 'pref',
+          key: 'audiobook_speed_bookA',
+          value: '3.0', // months-old stale speed
+        ),
+        ProfileSettingsCompanion.insert(
+          profileId: pid,
+          category: 'pref',
+          key: 'font_size',
+          value: '20',
+        ),
+      ]);
+
+      await db.setPref('audiobook_speed_bookA', '1.5'); // live truth
+      await db.setPref('audiobook_pos_bookA', '4242'); // live progress
+      await repo.applyProfile(pid);
+
+      // Stale snapshot speed must NOT clobber the live one ("速度飞快" symptom)
+      // and the live position must NOT be pruned ("进度 0" symptom).
+      expect(await db.getPref('audiobook_speed_bookA'), '1.5');
+      expect(await db.getPref('audiobook_pos_bookA'), '4242');
+      expect(await db.getPref('font_size'), '20'); // normal restore still works
+    });
+
     test('resolveProfileId precedence: book > mediaType > active', () async {
       final db = await _openDb();
       final repo = _repo(db);

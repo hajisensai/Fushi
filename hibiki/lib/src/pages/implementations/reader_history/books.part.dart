@@ -143,8 +143,18 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final ({int position, int duration})? prog =
         _epubProgressByBookKey[book.bookKey];
     return MediaItem(
-      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(book.bookKey),
+      // BUG-1018 (A3)：standalone SRT 书（bookKey 空串哨兵）用自己的稳定身份
+      // `hoshi://srtbook/<uid>`——以前所有 standalone SRT 书共享
+      // mediaIdentifierFor('')，override 书名/封面互相踩、作者保存静默 no-op。
+      // EPUB 配对行照旧走 bookKey 身份（与 EPUB 卡同源，进度/override 共享）。
+      mediaIdentifier: book.bookKey.isNotEmpty
+          ? ReaderHibikiSource.mediaIdentifierFor(book.bookKey)
+          : ReaderHibikiSource.mediaIdentifierForSrtUid(book.uid),
       title: book.title,
+      // BUG-1018 (A3)：standalone SRT 书作者列真值在 srt_books.author，回填供
+      // 编辑对话框预填/保存往返。EPUB 配对行作者真值在 epubBooks.author（编辑
+      // 保存按 bookKey 写穿），此处不冒充。
+      author: book.bookKey.isEmpty ? book.author : null,
       mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
       mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
       position: prog?.position ?? 0,

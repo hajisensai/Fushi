@@ -58,13 +58,37 @@ class ProfileKeys {
   static const List<String> _excludedPrefPrefixes = [
     'current_source/',
     'audio_index/',
+    // BUG-1019: per-book audiobook playback STATE lives in prefs
+    // (`audiobook_<kind>_<bookKey>`, see AudiobookRepository). These are
+    // progress/content data — the same family backup_service already treats as
+    // the `progress` category (`key NOT LIKE 'audiobook_pos_%'` in
+    // settingsPrefPredicate) — NOT per-profile reading preferences. Snapshotting
+    // them meant a profile switch pruned the position prefs (progress reset to
+    // 0) while restoring a stale speed snapshot (playback suddenly fast/slow).
+    // `audiobook_pos_` also covers `audiobook_pos_at_` (its LWW timestamp twin).
+    'audiobook_pos_',
+    'audiobook_follow_',
+    'audiobook_delay_',
+    'audiobook_speed_',
+    'audiobook_volume_',
+    'audiobook_image_pause_',
+    'audiobook_health_overlay_',
   ];
+
+  /// BUG-1018 (A4): per-item display-name overrides are CONTENT tied to a
+  /// media item, not reading preferences. Their persisted form is
+  /// `src:<sourceId>:override_title://<sourceId>/<uniqueKey>` (see
+  /// [MediaSource.getOverrideTitleKey] + `dbSourcePrefKey`), so the marker is
+  /// matched as a substring — excluding them from profile snapshots keeps a
+  /// rename visible across profile switches instead of being pruned/reverted.
+  static const String _overrideTitleMarker = 'override_title://';
 
   static bool isExcludedPref(String key) {
     if (_excludedPrefKeys.contains(key)) return true;
     for (final prefix in _excludedPrefPrefixes) {
       if (key.startsWith(prefix)) return true;
     }
+    if (key.contains(_overrideTitleMarker)) return true;
     if (key.endsWith('/last_picked_file')) return true;
     return false;
   }
