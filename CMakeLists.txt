@@ -41,6 +41,15 @@ target_include_directories(minhook PUBLIC "third_party/minhook/include")
 # 注入进游戏的 hook DLL。
 add_library(hibiki_voice_hook SHARED
   "hook/dll_main.cpp"
+  "hook/adapter.h"
+  "hook/adapter_registry.inc"
+  "hook/adapters/unity_adapter.inc"
+  "hook/adapters/windows_audio_adapter.inc"
+  "hook/adapters/siglus_adapter.inc"
+  "hook/adapters/kirikiri_adapter.inc"
+  "hook/adapters/renpy_adapter.inc"
+  "hook/adapters/text_render_adapter.inc"
+  "hook/adapters/loopback_adapter.inc"
 )
 target_include_directories(hibiki_voice_hook PRIVATE "include")
 target_compile_definitions(hibiki_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -105,6 +114,10 @@ add_test(NAME hibiki_siglus_launch_test COMMAND hibiki_siglus_launch_test)
 add_executable(hibiki_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(hibiki_luna_hook_config_test PRIVATE include)
 add_test(NAME hibiki_luna_hook_config_test COMMAND hibiki_luna_hook_config_test)
+
+add_executable(hibiki_adapter_contract_test tests/adapter_contract_test.cpp)
+target_include_directories(hibiki_adapter_contract_test PRIVATE hook)
+add_test(NAME hibiki_adapter_contract_test COMMAND hibiki_adapter_contract_test)
 
 # 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。

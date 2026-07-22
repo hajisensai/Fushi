@@ -137,7 +137,7 @@
         "Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.",
         "The exact-text hook is implemented but is not promoted to verified by this baseline."
       ],
-      "adapter_path": "hook/dll_main.cpp",
+      "adapter_path": "hook/adapters/siglus_adapter.inc",
       "fixture_paths": [],
       "test_paths": [
         "tests/siglus_ovk_test.cpp",
@@ -240,7 +240,7 @@
         "Clean per-channel voice has not been verified.",
         "The sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature."
       ],
-      "adapter_path": "hook/dll_main.cpp",
+      "adapter_path": "hook/adapters/kirikiri_adapter.inc",
       "fixture_paths": [],
       "test_paths": ["tests/resource_audio_ready_test.cpp"]
     },
@@ -315,7 +315,7 @@
         "Attach cannot retroactively hook already-created engine/source objects.",
         "The P0 baseline does not contain a named, hashed XAudio2 sample, so compatibility must be re-verified per engine."
       ],
-      "adapter_path": "hook/dll_main.cpp",
+      "adapter_path": "hook/adapters/windows_audio_adapter.inc",
       "fixture_paths": [],
       "test_paths": ["tests/session_reuse_test.cpp"]
     },
@@ -403,7 +403,7 @@
         "The recorded sample required following a child python process, which the injector does not yet do automatically.",
         "The real sample fell back to loopback; no clean decoder-level voice claim is made."
       ],
-      "adapter_path": "hook/dll_main.cpp",
+      "adapter_path": "hook/adapters/renpy_adapter.inc",
       "fixture_paths": [],
       "test_paths": []
     },
@@ -511,7 +511,7 @@
         "The verified sample version and executable hash were not recorded.",
         "Attach after startup may miss source voices and must retain loopback fallback."
       ],
-      "adapter_path": "hook/dll_main.cpp",
+      "adapter_path": "hook/adapters/unity_adapter.inc",
       "fixture_paths": [],
       "test_paths": [
         "tests/unity_event_cursor_test.cpp",

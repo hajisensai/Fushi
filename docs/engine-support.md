@@ -21,7 +21,7 @@
 - 状态：`verified`
 - 别名：Siglus 3、VisualArt's Siglus
 - 家族：`visualarts`（VisualArt's / Key 系引擎）
-- 当前 adapter：`hook/dll_main.cpp`
+- 当前 adapter：`hook/adapters/siglus_adapter.inc`
 - 进程策略：launch=`normal_launch_then_delayed_attach_after_game_window`，attach=`supported`，follow-child=`false`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
@@ -65,7 +65,7 @@ Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/si
 - 状态：`partial`
 - 别名：吉里吉里Z、Kirikiri Z
 - 家族：`kirikiri`（KiriKiri family）
-- 当前 adapter：`hook/dll_main.cpp`
+- 当前 adapter：`hook/adapters/kirikiri_adapter.inc`
 - 进程策略：launch=`create_suspended_early_injection`，attach=`limited_after_audio_device_creation`，follow-child=`false`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
@@ -106,7 +106,7 @@ Tests：`tests/resource_audio_ready_test.cpp`
 - 状态：`verified`
 - 别名：XAudio2、DirectSound、Windows source PCM
 - 家族：`windows_audio_api`（generic audio backend）
-- 当前 adapter：`hook/dll_main.cpp`
+- 当前 adapter：`hook/adapters/windows_audio_adapter.inc`
 - 进程策略：launch=`create_suspended_preferred`，attach=`supported_for_objects_created_after_attach`，follow-child=`false`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
@@ -144,7 +144,7 @@ Tests：`tests/session_reuse_test.cpp`
 - 状态：`implemented_unverified`
 - 别名：Ren'Py、libavcodec-54、libavformat-54
 - 家族：`renpy`（legacy FFmpeg 1.0-era runtime）
-- 当前 adapter：`hook/dll_main.cpp`
+- 当前 adapter：`hook/adapters/renpy_adapter.inc`
 - 进程策略：launch=`launcher_then_child_python_requires_follow`，attach=`implemented_for_target_process_only`，follow-child=`false`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
@@ -183,7 +183,7 @@ Tests：—
 - 状态：`verified`
 - 别名：Unity、UnityPlayer IL2CPP
 - 家族：`unity`（IL2CPP runtime）
-- 当前 adapter：`hook/dll_main.cpp`
+- 当前 adapter：`hook/adapters/unity_adapter.inc`
 - 进程策略：launch=`create_suspended_early_injection`，attach=`supported_with_reduced_audio_coverage`，follow-child=`false`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：

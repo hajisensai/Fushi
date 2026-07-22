@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""Static guard for the P1 adapter boundary."""
+
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class AdapterStructureTest(unittest.TestCase):
+    def test_main_worker_only_uses_registry(self) -> None:
+        source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        self.assertLess(source.count("\n"), 700)
+        self.assertIn("AdapterRegistry registry;", source)
+        self.assertIn("registry.InstallStartupAdapters();", source)
+        self.assertIn("registry.Poll();", source)
+        self.assertNotIn("TryHook", source)
+
+    def test_every_adapter_is_an_independent_include(self) -> None:
+        source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        adapters = {
+            "unity_adapter.inc": "Unity IL2CPP AudioClip",
+            "windows_audio_adapter.inc": "IXAudio2SourceVoice",
+            "siglus_adapter.inc": "SiglusEngine OVK",
+            "kirikiri_adapter.inc": "KiriKiri",
+            "renpy_adapter.inc": "Ren'Py",
+            "text_render_adapter.inc": "grab dialogue text",
+            "loopback_adapter.inc": "WASAPI loopback",
+        }
+        for filename, marker in adapters.items():
+            path = ROOT / "hook" / "adapters" / filename
+            self.assertTrue(path.is_file(), filename)
+            self.assertIn(marker, path.read_text(encoding="utf-8"))
+            self.assertIn(f'#include "adapters/{filename}"', source)
+
+    def test_registry_exposes_module_notification_seam(self) -> None:
+        source = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+        for engine_id in (
+            "xaudio2_directsound",
+            "siglus",
+            "unity_il2cpp",
+            "kirikiri_z",
+            "renpy_ffmpeg54",
+        ):
+            self.assertIn(f'return "{engine_id}";', source)
+        self.assertIn("DispatchNewModules();", source)
+        self.assertIn("onModuleLoaded(entry.szModule);", source)
+
+
+if __name__ == "__main__":
+    unittest.main()
