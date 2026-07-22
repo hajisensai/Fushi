@@ -52,8 +52,17 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 - 验证：x64/x86 均成功 configure/build；两个架构各 10 个 CTest 全绿；清单生成/漂移检查、3 个清单
   契约测试、3 个 adapter 结构守卫全绿。P1 没有新增引擎能力；本轮未重复跑商业游戏真机路径，因此
   真机支持范围仍严格沿用 §1 的既有证据。
-- 下一阶段：P2（LunaHost ABI 桥接边界与版本化 IPC）或 P3（probe/new/replay）。P3 仍需等待 P2 的稳定
-  文本接缝；P4/P5 未开始。
+- **P2 已完成**（hibiki-hook `7c4beaa`；hibiki `ff1e0197f`）：LunaHost 回调布局、函数类型和导出表收进
+  `luna_bridge.h`，稳定 IPC 升至 v11 并显式携带 IPC/bridge/vendored Luna 三个版本；新增四 DLL
+  SHA-256 版本清单、同步/差异工具、导出 CTest 与 ABI 静态契约测试。Hook Code 的唯一内置表改为 TSV，
+  由 exe SHA-256 或 module name + SHA-256 匹配，移除了安装目录判断；Hibiki 可保存当前线程 Hook Code，
+  并导入/导出同 schema 的用户表。自动/手动线程选择逻辑提取成纯 selector，以 8 行 trace fixture 回放。
+- P2 验证：hibiki-hook x64/x86 均成功构建且各 13 个 CTest 全绿；清单/生成器/同步守卫全绿。Hibiki
+  新增 profile 单测 4 项，连同音频/会话/线程目录定向测试共 75 项全绿，MD3 + game page 65 项全绿，
+  Windows debug 构建成功；相关 Dart 文件 `dart analyze` 无问题。全量 `flutter analyze` 在本机 Flutter
+  3.44 的 analysis server 读取 LSP JSON 时自身崩溃，未产出代码诊断，故全阶段总闸暂不勾选。本轮未
+  重跑商业游戏；9-nine 内置配置只把既有真机 Hook Code 改由已读取的真实 exe SHA-256 匹配。
+- 下一阶段：P3（probe/new/replay）；P4/P5 未开始。
 
 ---
 
@@ -222,7 +231,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 - [x] **[P0]** 引擎支持矩阵有唯一机器可读真相源（engine-support.yaml）并可自动生成文档（`77c6cf8`）。
 - [x] **[P1]** 现有采集能力已迁入 adapter registry，主 worker 不再直接堆各引擎实现（`f4242b9`）。
 - [ ] **[P3]** probe/new/replay 三条工作流可实际执行并有自动化测试。
-- [ ] **[P2]** LunaHost ABI 收进可升级桥接边界，有版本 + 导出守卫。
+- [x] **[P2]** LunaHost ABI 收进可升级桥接边界，有版本 + 导出守卫（hibiki-hook `7c4beaa`；hibiki `ff1e0197f`）。
 - [ ] **[P5]** 至少完成 RealLive/VisualArt's 首批适配 + fixture + native 测试 + 上层配对测试。
 - [ ] **[P4]** FFmpeg 版本识别与子进程跟随不再只针对单一旧版 Ren'Py。
 - [ ] **[P1+P3]** 新增一个普通引擎的主要工作可限于 profile + 独立 adapter + fixture，不需改主 worker 主干。
