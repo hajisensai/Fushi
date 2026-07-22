@@ -49,6 +49,10 @@ void ForgetBgiVoiceArc(HANDLE handle);
 void RememberArtemisPfs(HANDLE handle, const wchar_t* path);
 void ObserveArtemisPfsRead(HANDLE file, DWORD done, LPOVERLAPPED overlapped);
 void ForgetArtemisPfs(HANDLE handle);
+void RememberCatSystem2Pcm(HANDLE handle, const wchar_t* path);
+void ObserveCatSystem2PcmRead(HANDLE file, DWORD done,
+                             LPOVERLAPPED overlapped);
+void ForgetCatSystem2Pcm(HANDLE handle);
 
 bool HasOvkSuffix(const wchar_t* path) {
   if (path == nullptr) return false;
@@ -155,6 +159,7 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   if (result != INVALID_HANDLE_VALUE) RememberTyranoAsar(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberBgiVoiceArc(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberArtemisPfs(result, file_name);
+  if (result != INVALID_HANDLE_VALUE) RememberCatSystem2Pcm(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
@@ -182,6 +187,7 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
       RememberTyranoAsar(result, wide);
       RememberBgiVoiceArc(result, wide);
       RememberArtemisPfs(result, wide);
+      RememberCatSystem2Pcm(result, wide);
       RememberUnityVoiceBundle(wide);
     }
   }
@@ -216,6 +222,7 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   ObserveTyranoAsarRead(file, buffer, done, overlapped);
   ObserveBgiVoiceArcRead(file, buffer, done, overlapped);
   ObserveArtemisPfsRead(file, done, overlapped);
+  ObserveCatSystem2PcmRead(file, done, overlapped);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) == 0) return ok;
 
   wchar_t path[kSiglusPathChars] = {0};
@@ -247,6 +254,7 @@ BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
   ForgetTyranoAsar(handle);
   ForgetBgiVoiceArc(handle);
   ForgetArtemisPfs(handle);
+  ForgetCatSystem2Pcm(handle);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) != 0) {
     ForgetSiglusOvk(handle);
   }

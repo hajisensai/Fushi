@@ -2,3 +2,4 @@
         reallive_.onModuleLoaded(entry.szModule);
         bgi_ethornell_.onModuleLoaded(entry.szModule);
         artemis_pfs_.onModuleLoaded(entry.szModule);
+        catsystem2_.onModuleLoaded(entry.szModule);

@@ -38,6 +38,7 @@
 #include "artemis_pfs.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
+#include "catsystem2_int.h"
 #include "ffmpeg_runtime.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"

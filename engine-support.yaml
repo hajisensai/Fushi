@@ -862,6 +862,117 @@
       "test_paths": []
     },
     {
+      "id": "catsystem2",
+      "display_name": "CatSystem2 / KIF INT",
+      "aliases": ["CatSystem2", "CS2", "KIF INT"],
+      "family": {"id": "catsystem2", "relation": "ARES ADV runtime and KIF archives"},
+      "detection": {
+        "executable_names": {
+          "values": ["cs2_open.exe", "cs2.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "ARES official CatSystem2 starter kit v3.01, verified 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official cs2_open.exe PE/COFF i386 static and live observation"
+          }
+        },
+        "directory_files_all": {
+          "values": ["config/startup.xml", "*.int"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official packaged starter-kit replay layout"
+          }
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {"values": [], "evidence": null},
+        "resource_extensions": {
+          "values": [".int", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official MakeInt.exe produced pcm_d.int with a named Ogg member that cs2_open.exe played through the pcm command"
+          }
+        },
+        "hashes": {
+          "values": [
+            "official starter zip sha256:5D6230D0B947A71737DC55BF5E282D410B35011327E8890E4DDBD520263F32D3",
+            "cs2_open.exe sha256:D1889D60DBE3350B068605F94A49AE8E93EB388CE66E7ABC36607EED2EDA7010",
+            "replay pcm_d.int sha256:B1437440DD0C9A3D92570F57C855A4F6552F22546D39C4CCF92CB1E76A94AABC"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the official starter kit and the legally generated local replay archive, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "requires_attach_before_target_pcm_archive_open",
+        "follow_child_processes": false,
+        "notes": [
+          "All unencrypted pcm_*.int indices are parsed on HookWorker before process resume.",
+          "ReadFile callbacks only match immutable archive/range tables and enqueue fixed-size metadata; file IO, Ogg validation and output run on the worker.",
+          "The verified replay set hookdiag 0x30000001, including both CatSystem2-ready and CatSystem2-captured diagnostics."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "The resource-audio replay disabled Luna; no stable CatSystem2 dialogue thread is claimed."
+          }
+        ],
+        "codepage": "CP932 / game-specific",
+        "thread_selection_hint": "Select a stable complete-line dialogue thread after enabling Luna on a target title."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "catsystem2_unencrypted_kif_voice_resource",
+            "format": "complete Ogg member from unencrypted pcm_*.int",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic source PCM fallback; 22050 Hz mono signed 16-bit in the replay",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "CatSystem2 入門セット v3.01 — local voice replay",
+          "engine_version": "cs2_open.exe 2.6.1.67",
+          "architecture": "x86",
+          "executable_sha256": "D1889D60DBE3350B068605F94A49AE8E93EB388CE66E7ABC36607EED2EDA7010",
+          "verified_on": "2026-07-23",
+          "evidence": "ARES official engine and MakeInt tool with a locally generated 4.183220-second TTS voice. Real pcm playback exported D0213_02_001.ogg (26,897 bytes, SHA-256 D3D7C4A1F08B2A82DB1B4E4416B257B88047A774CAD8EBB6DDFD0728A5BA9E00), exactly matching both the source and KIF member. This verifies the unencrypted developer KIF path, not encrypted commercial-title compatibility."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "Encrypted commercial KIF archives containing __key__.dat use title-specific Blowfish material and are deliberately rejected; no commercial-title resource-audio claim is made.",
+        "Only Ogg members in pcm_*.int are classified as voice; loose developer-mode files and non-Ogg voice formats fall back to source PCM or loopback.",
+        "Audio is verified for the official starter-kit replay, but stable automatic CatSystem2 text-thread selection remains unverified."
+      ],
+      "adapter_path": "hook/adapters/catsystem2_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
       "id": "unity_il2cpp",
       "display_name": "Unity IL2CPP",
       "aliases": ["Unity", "UnityPlayer IL2CPP"],

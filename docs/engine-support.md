@@ -16,6 +16,7 @@
 | `tyrano_nwjs` | TyranoScript / NW.js | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | tyrano_asar_voice_resource (verified)；ffmpeg_resource_event (implemented_unverified)；process_loopback (verified) | 1 |
 | `bgi_ethornell` | BGI / Ethornell | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | bgi_arc20_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `artemis_pfs` | Artemis Engine / PF8 | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | artemis_pf8_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
+| `catsystem2` | CatSystem2 / KIF INT | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | catsystem2_unencrypted_kif_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
 
 ## 识别与能力明细
@@ -348,6 +349,48 @@ Tests：—
 - Clean capture is verified for PF8 Ogg members in sound/vo and sound/sysse/vo; PF6 parsing is implemented but lacks a real-sample playback run.
 - The adapter publishes the first PFS containing recognized voice entries; multi-PFS titles that split voices across archives need measured evidence before widening the implementation.
 - Audio is verified, but stable automatic Artemis text-thread selection remains unverified.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：—
+
+### CatSystem2 / KIF INT (`catsystem2`)
+
+- 状态：`partial`
+- 别名：CatSystem2、CS2、KIF INT
+- 家族：`catsystem2`（ARES ADV runtime and KIF archives）
+- 当前 adapter：`hook/adapters/catsystem2_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`requires_attach_before_target_pcm_archive_open`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：cs2_open.exe、cs2.exe；证据：real_sample — ARES official CatSystem2 starter kit v3.01, verified 2026-07-23
+- `pe_architectures`：x86；证据：real_sample — Official cs2_open.exe PE/COFF i386 static and live observation
+- `directory_files_all`：config/startup.xml、*.int；证据：real_sample — Official packaged starter-kit replay layout
+- `resource_extensions`：.int、.ogg；证据：real_sample — Official MakeInt.exe produced pcm_d.int with a named Ogg member that cs2_open.exe played through the pcm command
+- `hashes`：official starter zip sha256:5D6230D0B947A71737DC55BF5E282D410B35011327E8890E4DDBD520263F32D3、cs2_open.exe sha256:D1889D60DBE3350B068605F94A49AE8E93EB388CE66E7ABC36607EED2EDA7010、replay pcm_d.int sha256:B1437440DD0C9A3D92570F57C855A4F6552F22546D39C4CCF92CB1E76A94AABC；证据：real_sample — Local SHA-256 of the official starter kit and the legally generated local replay archive, 2026-07-23
+
+文本能力：
+
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — The resource-audio replay disabled Luna; no stable CatSystem2 dialogue thread is claimed.
+- codepage：CP932 / game-specific
+- 线程提示：Select a stable complete-line dialogue thread after enabling Luna on a target title.
+
+音频优先级：
+
+1. `catsystem2_unencrypted_kif_voice_resource` — `verified`；格式：complete Ogg member from unencrypted pcm_*.int；clean voice：是
+2. `directsound_pcm` — `verified`；格式：generic source PCM fallback; 22050 Hz mono signed 16-bit in the replay；clean voice：engine_dependent
+3. `process_loopback` — `verified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+- **CatSystem2 入門セット v3.01 — local voice replay**（x86，cs2_open.exe 2.6.1.67，2026-07-23）：ARES official engine and MakeInt tool with a locally generated 4.183220-second TTS voice. Real pcm playback exported D0213_02_001.ogg (26,897 bytes, SHA-256 D3D7C4A1F08B2A82DB1B4E4416B257B88047A774CAD8EBB6DDFD0728A5BA9E00), exactly matching both the source and KIF member. This verifies the unencrypted developer KIF path, not encrypted commercial-title compatibility. SHA-256：D1889D60DBE3350B068605F94A49AE8E93EB388CE66E7ABC36607EED2EDA7010。
+
+已知限制：
+
+- Encrypted commercial KIF archives containing __key__.dat use title-specific Blowfish material and are deliberately rejected; no commercial-title resource-audio claim is made.
+- Only Ogg members in pcm_*.int are classified as voice; loose developer-mode files and non-Ogg voice formats fall back to source PCM or loopback.
+- Audio is verified for the official starter-kit replay, but stable automatic CatSystem2 text-thread selection remains unverified.
 
 Fixtures：尚无（P5 补齐）
 
