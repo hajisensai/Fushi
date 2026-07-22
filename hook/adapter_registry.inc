@@ -324,6 +324,7 @@ class AdapterRegistry {
     generic_audio_.install();
     siglus_.InstallResourceAudio();
     tyrano_.install();
+    bgi_ethornell_.install();
     if (g_header != nullptr) {
       g_header->hook_diagnostics |= kDiagStartupAudioHooksReady;
     }
@@ -342,6 +343,7 @@ class AdapterRegistry {
     DispatchNewModules();
     siglus_.ProcessPendingEvents();
     tyrano_.ProcessPendingEvents();
+    bgi_ethornell_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.

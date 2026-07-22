@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "bgi_ethornell",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [
+      "03BBBD0F98AF6C050924448070198D5DF180925819E57AD446FB9F6EC88BC2C1"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "real_sample",
+      "reference": "AUGUST official 千の刃濤、桃花染の皇姫 Web trial; x86 BGI.exe and BURIKO ARC20 data03110.arc measured 2026-07-23"
+    }
+  ]
+}

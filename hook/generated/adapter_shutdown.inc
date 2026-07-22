@@ -1,2 +1,3 @@
 // Managed by `tool/galhook.ps1 new`.
     reallive_.shutdown();
+    bgi_ethornell_.shutdown();

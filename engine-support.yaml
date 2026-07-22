@@ -631,6 +631,114 @@
       "test_paths": []
     },
     {
+      "id": "bgi_ethornell",
+      "display_name": "BGI / Ethornell",
+      "aliases": ["BURIKO General Interpreter", "Ethornell"],
+      "family": {"id": "bgi", "relation": "BURIKO ARC20 runtime"},
+      "detection": {
+        "executable_names": {
+          "values": ["BGI.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "AUGUST official 千の刃濤、桃花染の皇姫 Web trial, inspected 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial BGI.exe PE/COFF static probe"
+          }
+        },
+        "directory_files_all": {
+          "values": ["BGI.exe", "BGI.hvl", "data03110.arc"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial package layout"
+          }
+        },
+        "pe_imports": {
+          "values": ["DSOUND.dll", "KERNEL32.dll"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial BGI.exe import table"
+          }
+        },
+        "runtime_modules": {"values": [], "evidence": null},
+        "resource_extensions": {
+          "values": [".arc", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "data03110.arc has a BURIKO ARC20 index and 146 bw-wrapped Ogg members"
+          }
+        },
+        "hashes": {
+          "values": [
+            "BGI.exe sha256:03BBBD0F98AF6C050924448070198D5DF180925819E57AD446FB9F6EC88BC2C1",
+            "data03110.arc sha256:8EB51113AD99FCB6A8AC953C25E8F25431B3590CEA0B6C50EE722E8B1D8C4162",
+            "official trial zip sha256:470FD6C7F16980F226232925AD3E6216A4A14B1E46C6B5965706296430835E4F"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the developer-authorized DLsite trial and its BGI.exe, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported_before_voice_archive_open",
+        "follow_child_processes": false,
+        "notes": [
+          "The shared kernel file detour is installed before the game resumes, then only data031*.arc handles are tracked.",
+          "A pre-install live launch observed kDiagBgiArcHooksReady (hookdiag 0x01000401) before BGI.exe exited; no voice capture is inferred from readiness alone.",
+          "This official package uses an administrator-marked installer; static format proof is complete, but a post-install voiced-line run is still required."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "Generic Luna plumbing is present; no stable BGI dialogue thread has been selected on the official sample yet."
+          }
+        ],
+        "codepage": "CP932 / game-specific",
+        "thread_selection_hint": "Select a stable complete-line Luna thread after the installed game reaches dialogue."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "bgi_arc20_voice_resource",
+            "format": "complete Ogg after the 64-byte BGI bw wrapper in data031*.arc",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "The official trial archive and BGI wrapper were measured directly, but the adapter has not yet crossed a voiced line in the installed game, so clean voice is not claimed.",
+        "The initial profile intentionally tracks data031*.arc only; BGI titles that use another archive number require measured evidence before widening the classifier.",
+        "The callback only queues bounded metadata. ARC index parsing, Ogg validation and disk output run on the hook worker."
+      ],
+      "adapter_path": "hook/adapters/bgi_ethornell_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
       "id": "unity_il2cpp",
       "display_name": "Unity IL2CPP",
       "aliases": ["Unity", "UnityPlayer IL2CPP"],

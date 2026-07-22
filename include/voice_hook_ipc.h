@@ -84,6 +84,8 @@ constexpr uint32_t kDiagKirikiriVorbisOpenHookReady = 0x00100000u;
 constexpr uint32_t kDiagFfmpegVoiceResourceObserved = 0x00200000u;
 constexpr uint32_t kDiagTyranoAsarHooksReady = 0x00400000u;
 constexpr uint32_t kDiagTyranoAsarVoiceCaptured = 0x00800000u;
+constexpr uint32_t kDiagBgiArcHooksReady = 0x01000000u;
+constexpr uint32_t kDiagBgiArcVoiceCaptured = 0x02000000u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -102,6 +104,7 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
          (reserved_luna & kDiagSiglusOvkHooksReady) != 0 ||
          (hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0 ||
          (hook_diagnostics & kDiagTyranoAsarHooksReady) != 0 ||
+         (hook_diagnostics & kDiagBgiArcHooksReady) != 0 ||
          (hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0 || unity_ready;
 }
 

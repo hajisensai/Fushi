@@ -33,6 +33,7 @@
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
 #include "asar_runtime.h"
+#include "bgi_arc.h"
 #include "ffmpeg_runtime.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"
