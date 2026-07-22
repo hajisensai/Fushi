@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 37961 (2233 per locale)
+/// Strings: 37995 (2235 per locale)
 ///
-/// Built on 2026-07-21 at 21:54 UTC
+/// Built on 2026-07-22 at 00:05 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -349,7 +349,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get server_address => 'Server Address';
   String get text_segmentation => 'Text Segmentation';
   String get settings => 'Settings';
-  String get manager => 'Manager';
+  String get manager => 'Dictionaries & sources';
   String get volume_button_page_turning => 'Volume button page turning';
   String get invert_volume_buttons => 'Invert volume buttons';
   String get invert_swipe_direction => 'Invert swipe page turn direction';
@@ -2974,6 +2974,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get clipboard_panel_block_capture_hint =>
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   String get settings_section_general => 'General';
+  String get reading_section_mode => 'Mode & orientation';
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -8027,6 +8030,11 @@ class _StringsAr extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -13153,6 +13161,11 @@ class _StringsDe extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -18295,6 +18308,11 @@ class _StringsEs extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -23448,6 +23466,11 @@ class _StringsFr extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -28528,6 +28551,11 @@ class _StringsId extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -33656,6 +33684,11 @@ class _StringsIt extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -38589,6 +38622,11 @@ class _StringsJa extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -43525,6 +43563,11 @@ class _StringsKo extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -48631,6 +48674,11 @@ class _StringsNl extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -53752,6 +53800,11 @@ class _StringsPtBr extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -58856,6 +58909,11 @@ class _StringsRu extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -63905,6 +63963,11 @@ class _StringsTh extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -68986,6 +69049,11 @@ class _StringsTr extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -74054,6 +74122,11 @@ class _StringsVi extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => 'General';
+  @override
+  String get reading_section_mode => 'Mode & orientation';
+  @override
+  String get settings_destination_system_summary =>
+      'General, updates & diagnostics';
 }
 
 // Path: <root>
@@ -74373,7 +74446,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get settings => '设置';
   @override
-  String get manager => '管理器';
+  String get manager => '词典与来源';
   @override
   String get volume_button_page_turning => '音量键翻页';
   @override
@@ -78770,6 +78843,10 @@ class _StringsZhCn extends _StringsEn {
       '把查词和剪贴板悬浮窗从截图、录屏、直播串流中排除（Windows）。关闭后，截图、录屏和串流即可拍到查词悬浮窗。';
   @override
   String get settings_section_general => '通用';
+  @override
+  String get reading_section_mode => '模式与排版方向';
+  @override
+  String get settings_destination_system_summary => '通用、更新与诊断';
 }
 
 // Path: <root>
@@ -79061,7 +79138,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get settings => '設定';
   @override
-  String get manager => '管理員';
+  String get manager => '詞典與來源';
   @override
   String get volume_button_page_turning => '音量鍵翻頁';
   @override
@@ -83622,6 +83699,10 @@ class _StringsZhHk extends _StringsEn {
       'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
   @override
   String get settings_section_general => '通用';
+  @override
+  String get reading_section_mode => '模式與排版方向';
+  @override
+  String get settings_destination_system_summary => '通用、更新與診斷';
 }
 
 /// Flat map(s) containing all translations.
@@ -83909,7 +83990,7 @@ extension on _StringsEn {
       case 'settings':
         return 'Settings';
       case 'manager':
-        return 'Manager';
+        return 'Dictionaries & sources';
       case 'volume_button_page_turning':
         return 'Volume button page turning';
       case 'invert_volume_buttons':
@@ -88180,6 +88261,10 @@ extension on _StringsEn {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -92736,6 +92821,10 @@ extension on _StringsAr {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -97313,6 +97402,10 @@ extension on _StringsDe {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -101889,6 +101982,10 @@ extension on _StringsEs {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -106471,6 +106568,10 @@ extension on _StringsFr {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -111035,6 +111136,10 @@ extension on _StringsId {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -115614,6 +115719,10 @@ extension on _StringsIt {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -120155,6 +120264,10 @@ extension on _StringsJa {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -124700,6 +124813,10 @@ extension on _StringsKo {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -129272,6 +129389,10 @@ extension on _StringsNl {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -133841,6 +133962,10 @@ extension on _StringsPtBr {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -138415,6 +138540,10 @@ extension on _StringsRu {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -142973,6 +143102,10 @@ extension on _StringsTh {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -147540,6 +147673,10 @@ extension on _StringsTr {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -152102,6 +152239,10 @@ extension on _StringsVi {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return 'General';
+      case 'reading_section_mode':
+        return 'Mode & orientation';
+      case 'settings_destination_system_summary':
+        return 'General, updates & diagnostics';
       default:
         return null;
     }
@@ -152387,7 +152528,7 @@ extension on _StringsZhCn {
       case 'settings':
         return '设置';
       case 'manager':
-        return '管理器';
+        return '词典与来源';
       case 'volume_button_page_turning':
         return '音量键翻页';
       case 'invert_volume_buttons':
@@ -156630,6 +156771,10 @@ extension on _StringsZhCn {
         return '把查词和剪贴板悬浮窗从截图、录屏、直播串流中排除（Windows）。关闭后，截图、录屏和串流即可拍到查词悬浮窗。';
       case 'settings_section_general':
         return '通用';
+      case 'reading_section_mode':
+        return '模式与排版方向';
+      case 'settings_destination_system_summary':
+        return '通用、更新与诊断';
       default:
         return null;
     }
@@ -156887,7 +157032,7 @@ extension on _StringsZhHk {
       case 'settings':
         return '設定';
       case 'manager':
-        return '管理員';
+        return '詞典與來源';
       case 'volume_button_page_turning':
         return '音量鍵翻頁';
       case 'invert_volume_buttons':
@@ -161166,6 +161311,10 @@ extension on _StringsZhHk {
         return 'Excludes the lookup and clipboard popup windows from screenshots, screen recording, and live streaming (Windows). Turn this off to let screenshots, recording, and streaming capture the lookup popup.';
       case 'settings_section_general':
         return '通用';
+      case 'reading_section_mode':
+        return '模式與排版方向';
+      case 'settings_destination_system_summary':
+        return '通用、更新與診斷';
       default:
         return null;
     }

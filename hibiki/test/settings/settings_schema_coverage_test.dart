@@ -69,6 +69,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Design System': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
+  // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区（含
+  // page_columns）之前，覆盖 harness 焦点遍历会先把 view_mode 从 paginated 切走，
+  // 随后驱动 page_columns 时 reader 已非翻页态、T1 reader CSS 探针看不到 column-count
+  // 变化（多列模型只在 _paginatedLayoutCss）。page_columns 的 CSS 生效（翻页态发
+  // column-count、连续/VN 态不发）与 paginated-only 可见性由专项测试咬住。
+  'reading/Columns per Page':
+      'test/settings/page_columns_paginated_only_test.dart',
   // TODO-1128：合并插图页到正文（reading_display.merge_image_pages）。结构性布局键，
   // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 reader 分页布局（
   // notifyReaderLayoutChanged 需活 reader/WebView 重排），无适用 T4 探针；合并语义/
@@ -386,7 +393,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   "system/Don't remind me about updates": 'DEVICE: Android-only UpdateChecker',
   'system/Auto-install updates': 'DEVICE: Android-only UpdateChecker install',
   'appearance/Reverse navigation bar': 'WIDGET-TODO: HomePage nav order',
-  'appearance/Open lookup on startup': 'test/pages/home_page_tabs_test.dart',
+  // 阶段 G 归位：「启动时打开查词」从 appearance 移到 system·通用（item id 不变，
+  // destId 随所属 destination 改为 system）。
+  'system/Open lookup on startup': 'test/pages/home_page_tabs_test.dart',
   'reading/Reverse reader bottom bar':
       'DEVICE: reader bottom-bar layout order (like reverse nav bar)',
   // TODO-830: 反转有声书底栏 ⏮⏭ 前进/后退按钮的功能方向（per-reader）。change/
