@@ -72,7 +72,17 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   各 13 个 CTest 全绿。对 9-nine Episode 1 的真实 exe 运行默认静态 probe，ZIP 仅有
   `diagnostic.json` / `README.txt`，隐私检查通过；这只是工具隐私路径验证，没有重跑游戏内采集，故不
   扩大该游戏的兼容宣称。
-- 下一阶段：P4（共享层音频扩展）；P5 未开始。
+- **P4 实现已落、真机门未完成**（hibiki-hook `552e75a`；hibiki `c0af9b31a`）：FFmpeg 模块识别
+  泛化为任意带 major 的 `avformat` / `avcodec`；本地 OGG/WAV/Opus/FLAC 由固定容量事件交给 worker
+  验签、去重和复制，只有 major 54 继续走旧结构 PCM 兼容层。legacy decode 回调改为
+  `TryEnterCriticalSection` + 8×256 KiB 有界帧槽，只做上限 memcpy，分配/转换/写盘均移到 worker。
+  injector 能按 Ren'Py 目录签名自动启用子进程跟随，并按 python 名称与已加载 FFmpeg 模块评分；也可
+  显式传 `--follow-child-processes`。Hibiki host 已同步资源就绪诊断位。
+- P4 自动化验证：x64/x86 均成功构建且各 15 个 CTest 全绿；新增 FFmpeg module/资源魔数、子进程
+  选择、回调零阻塞结构守卫和 host IPC 契约测试。本机已只读检查常用 galgame/Steam 目录，没有找到
+  可运行的 Ren'Py/FFmpeg 样本；既有 Sakura Swim Club 记录也只证明 loopback，因此矩阵继续标
+  `implemented_unverified`，**P4 完成框保持未勾选**。
+- 下一步：并行推进不依赖 Ren'Py 样本的 P5 RealLive/VisualArt's fixture/adapter；P4 等真实样本补验。
 
 ---
 
