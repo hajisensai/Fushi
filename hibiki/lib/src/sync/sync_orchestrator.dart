@@ -764,6 +764,11 @@ class SyncOrchestrator {
       'localaudio': <String>{
         for (final LocalAudioDbEntry e in localAudioEntries) e.displayName,
       },
+      'favoriteword': <String>{
+        for (final FavoriteWordRow r in await _db.getAllFavoriteWords())
+          HibikiDatabase.favoriteWordItemKey(
+              r.expression, r.reading, r.sourceType),
+      },
     };
   }
 

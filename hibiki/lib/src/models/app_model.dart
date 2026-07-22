@@ -549,6 +549,9 @@ class AppModel with ChangeNotifier {
             // 有声书与其 epub 共享 bookKey，借书名；查不到退回 itemKey。
             'book' || 'audiobook' => bookTitles[c.itemKey] ?? c.itemKey,
             'video' => videoTitles[c.itemKey] ?? c.itemKey,
+            // 收藏词：itemKey 是 NUL 连接键，展示其中的 expression（词本身）。
+            'favoriteword' =>
+              parseFavoriteWordItemKey(c.itemKey)?.expression ?? c.itemKey,
             _ => c.itemKey, // localaudio: displayName 本身即可读。
           },
         ),
@@ -583,6 +586,17 @@ class AppModel with ChangeNotifier {
             final int idx = _localAudioManager.entries.indexWhere(
                 (LocalAudioDbEntry e) => e.displayName == c.itemKey);
             if (idx >= 0) await _localAudioManager.remove(idx);
+          case 'favoriteword':
+            // 解析 itemKey → 取消收藏。removeFavoriteWord 默认 propagateDeletion=true：
+            // 本设备也需 favoriteword 墓碑抑制第三设备快照的并集复活（幂等，与源墓碑同键）。
+            final parsed = parseFavoriteWordItemKey(c.itemKey);
+            if (parsed != null) {
+              await database.removeFavoriteWord(
+                expression: parsed.expression,
+                reading: parsed.reading,
+                sourceType: parsed.sourceType,
+              );
+            }
           default:
             // 未知类型：跳过。
             break;
