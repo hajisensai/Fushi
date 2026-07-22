@@ -2065,7 +2065,6 @@
   "galgame_helper_download_failed": "引擎组件下载失败：$error",
   "galgame_helper_install_incomplete": "引擎组件安装不完整，请重试",
   "download_settings": "下载设置",
-  "download_backend_not_configured": "请先配置下载后端（右上角设置）",
   "floating_lyric_text_opacity_hint": "调低让悬浮字幕文字更透明",
   "floating_lyric_button_bg_opacity_hint": "调整悬浮字幕控制按钮底色的透明度",
   "floating_lyric_bg_opacity_hint": "调低让悬浮字幕条更透明、更不挡视野",
@@ -2234,5 +2233,13 @@
   "settings_section_general": "通用",
   "reading_section_mode": "模式与排版方向",
   "settings_destination_system_summary": "通用、更新与诊断",
-  "error_load_failed": "加载出错"
+  "error_load_failed": "加载出错",
+  "download_backend_not_configured": "请先配置下载后端。",
+  "download_open_settings": "去设置",
+  "anime_download_search_start_hint": "在上方搜索番剧名，自动匹配种子与字幕。",
+  "download_test_connection": "测试连接",
+  "download_test_connection_ok": "连接成功（版本：$version）",
+  "download_test_connection_failed": "连接失败，请检查地址与账号密码。",
+  "anime_download_trusted": "Trusted",
+  "anime_download_episode_count": "$count 集"
 }
