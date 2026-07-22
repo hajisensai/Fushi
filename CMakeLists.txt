@@ -42,6 +42,7 @@ target_include_directories(minhook PUBLIC "third_party/minhook/include")
 add_library(hibiki_voice_hook SHARED
   "hook/dll_main.cpp"
   "hook/adapter.h"
+  "hook/ffmpeg_runtime.h"
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/windows_audio_adapter.inc"
@@ -75,6 +76,18 @@ add_executable(hibiki_resource_audio_ready_test
 target_include_directories(hibiki_resource_audio_ready_test PRIVATE "include")
 target_compile_definitions(hibiki_resource_audio_ready_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME hibiki_resource_audio_ready_test COMMAND hibiki_resource_audio_ready_test)
+
+add_executable(hibiki_ffmpeg_runtime_test
+  "tests/ffmpeg_runtime_test.cpp"
+)
+target_include_directories(hibiki_ffmpeg_runtime_test PRIVATE "hook")
+add_test(NAME hibiki_ffmpeg_runtime_test COMMAND hibiki_ffmpeg_runtime_test)
+
+add_executable(hibiki_child_process_policy_test
+  "tests/child_process_policy_test.cpp"
+)
+target_include_directories(hibiki_child_process_policy_test PRIVATE "injector")
+add_test(NAME hibiki_child_process_policy_test COMMAND hibiki_child_process_policy_test)
 
 # injector 重连同一游戏进程时必须复用 DLL 持有的映射，不能把 hooked/text/audio 环清零。
 add_executable(hibiki_voice_session_reuse_test
@@ -133,8 +146,9 @@ add_test(NAME hibiki_adapter_contract_test COMMAND hibiki_adapter_contract_test)
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(hibiki_voice_injector
   "injector/injector_main.cpp"
+  "injector/child_process_policy.h"
 )
-target_include_directories(hibiki_voice_injector PRIVATE "include")
+target_include_directories(hibiki_voice_injector PRIVATE "include" "hook" "injector")
 target_compile_definitions(hibiki_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(hibiki_voice_injector PRIVATE shell32 bcrypt)
 

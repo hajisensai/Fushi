@@ -46,6 +46,11 @@ python tests/engine_support_manifest_test.py
 - `new` 生成未验证 profile、独立 adapter、native/Dart 测试和 fixture，并写入编译与 registry 生命周期接缝。
 - `replay` 离线验证线程过滤、去重、资源晚到、文本-音频配对、fallback 顺序与会话清理。
 
+Ren'Py/FFmpeg 路径会识别任意带 major 的 `avformat-*.dll` / `libavformat-*.dll`，把本地
+OGG/WAV/Opus/FLAC 资源作为固定容量事件交给 worker 验签和复制；只有旧 major 54 继续使用专属
+PCM 结构兼容层。检测到 Ren'Py 目录签名时，injector 会自动等待并按 python/FFmpeg 运行时模块
+选择真实游戏子进程；其它启动器可显式传 `--follow-child-processes`。
+
 ## 构建（32/64 位分开——DLL 位数必须匹配目标进程）
 
 galgame 多为 32 位，须各出一份，injector 与 DLL 同目录并放：

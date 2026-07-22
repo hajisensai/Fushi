@@ -32,6 +32,7 @@
 
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
+#include "ffmpeg_runtime.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"
 #include "voice_hook_ipc.h"

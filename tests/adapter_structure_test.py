@@ -45,7 +45,7 @@ class AdapterStructureTest(unittest.TestCase):
             "siglus",
             "unity_il2cpp",
             "kirikiri_z",
-            "renpy_ffmpeg54",
+            "renpy_ffmpeg",
         ):
             self.assertIn(f'return "{engine_id}";', source)
         self.assertIn("DispatchNewModules();", source)
@@ -59,6 +59,46 @@ class AdapterStructureTest(unittest.TestCase):
             path = ROOT / "hook" / "generated" / f"adapter_{name}.inc"
             self.assertTrue(path.is_file())
             self.assertIn(f'#include "generated/adapter_{name}.inc"', registry)
+
+    def test_renpy_decode_callback_only_queues_bounded_copies(self) -> None:
+        source = (ROOT / "hook" / "adapters" / "renpy_adapter.inc").read_text(
+            encoding="utf-8"
+        )
+        callback = source.split("int __cdecl Detour_avcodec_decode_audio4", 1)[1]
+        callback = callback.split("// -- detour: avformat_close_input", 1)[0]
+        self.assertIn("EnqueueRenpyFrame(avctx, frame);", callback)
+        for forbidden in (
+            "EnterCriticalSection",
+            "CreateFile",
+            "WriteFile",
+            "malloc",
+            "Sleep",
+            "WaitForSingleObject",
+        ):
+            self.assertNotIn(forbidden, callback)
+        enqueue = source.split("void EnqueueRenpyFrame", 1)[1]
+        enqueue = enqueue.split("void ProcessRenpyPcmEvent", 1)[0]
+        self.assertIn("TryEnterCriticalSection", enqueue)
+        self.assertIn("InterlockedCompareExchange", enqueue)
+        self.assertIn("memcpy", enqueue)
+        self.assertIn("kRenpyPcmEventBytes", enqueue)
+
+    def test_renpy_runtime_is_versioned_and_follows_game_children(self) -> None:
+        adapter = (ROOT / "hook" / "adapters" / "renpy_adapter.inc").read_text(
+            encoding="utf-8"
+        )
+        registry = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+        injector = (ROOT / "injector" / "injector_main.cpp").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ParseFfmpegModuleName", registry)
+        self.assertNotIn('GetModuleHandleW(L"avformat-54.dll")', adapter)
+        self.assertIn("g_renpy_avformat_major == 54", adapter)
+        self.assertIn("LooksLikeRenpyRuntime", injector)
+        self.assertIn("WaitForGameChildProcess", injector)
+        self.assertIn('a == L"--follow-child-processes"', injector)
 
 
 if __name__ == "__main__":

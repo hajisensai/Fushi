@@ -11,7 +11,7 @@
 | `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `kirikiri_z` | KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified) | 1 |
-| `renpy_ffmpeg54` | Ren'Py / FFmpeg 54 | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
+| `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
 
 ## 识别与能力明细
@@ -139,13 +139,13 @@ Fixtures：尚无（P5 补齐）
 
 Tests：`tests/session_reuse_test.cpp`
 
-### Ren'Py / FFmpeg 54 (`renpy_ffmpeg54`)
+### Ren'Py / FFmpeg (`renpy_ffmpeg`)
 
 - 状态：`implemented_unverified`
-- 别名：Ren'Py、libavcodec-54、libavformat-54
-- 家族：`renpy`（legacy FFmpeg 1.0-era runtime）
+- 别名：Ren'Py、libavcodec、libavformat、FFmpeg 54
+- 家族：`renpy`（versioned FFmpeg runtime）
 - 当前 adapter：`hook/adapters/renpy_adapter.inc`
-- 进程策略：launch=`launcher_then_child_python_requires_follow`，attach=`implemented_for_target_process_only`，follow-child=`false`
+- 进程策略：launch=`launcher_then_scored_game_child`，attach=`implemented_for_target_process_only`，follow-child=`true`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
@@ -161,8 +161,9 @@ Tests：`tests/session_reuse_test.cpp`
 
 音频优先级：
 
-1. `ffmpeg54_decoder_pcm` — `implemented_unverified`；格式：libavcodec/libavformat major 54 decoded PCM；clean voice：not_verified
-2. `process_loopback` — `verified`；格式：host PCM fallback；clean voice：否
+1. `ffmpeg_resource_event` — `implemented_unverified`；格式：signature-checked OGG/WAV/Opus/FLAC from any versioned avformat module；clean voice：not_verified
+2. `ffmpeg54_decoder_pcm` — `implemented_unverified`；格式：libavcodec/libavformat major 54 decoded PCM；clean voice：not_verified
+3. `process_loopback` — `verified`；格式：host PCM fallback；clean voice：否
 
 真实样本证据：
 
@@ -170,13 +171,14 @@ Tests：`tests/session_reuse_test.cpp`
 
 已知限制：
 
-- Only libavcodec/libavformat major 54 with hand-maintained FFmpeg 1.0-era layouts is implemented.
-- The recorded sample required following a child python process, which the injector does not yet do automatically.
+- Generic avformat resource capture only accepts local, standalone OGG/WAV/Opus/FLAC files; archive/custom AVIO URLs fall through to PCM or loopback.
+- Only the optional decoded-PCM compatibility path interprets libavcodec/libavformat major 54 hand-maintained layouts; modern majors never use those offsets.
+- The selected injector/DLL architecture must match the followed game child; a launcher that crosses x86/x64 still requires selecting the child's architecture upstream.
 - The real sample fell back to loopback; no clean decoder-level voice claim is made.
 
-Fixtures：尚无（P5 补齐）
+Fixtures：`tests/fixtures/workflow_replay.json`
 
-Tests：—
+Tests：`tests/ffmpeg_runtime_test.cpp`、`tests/child_process_policy_test.cpp`、`tests/resource_audio_ready_test.cpp`
 
 ### Unity IL2CPP (`unity_il2cpp`)
 

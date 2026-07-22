@@ -320,10 +320,10 @@
       "test_paths": ["tests/session_reuse_test.cpp"]
     },
     {
-      "id": "renpy_ffmpeg54",
-      "display_name": "Ren'Py / FFmpeg 54",
-      "aliases": ["Ren'Py", "libavcodec-54", "libavformat-54"],
-      "family": {"id": "renpy", "relation": "legacy FFmpeg 1.0-era runtime"},
+      "id": "renpy_ffmpeg",
+      "display_name": "Ren'Py / FFmpeg",
+      "aliases": ["Ren'Py", "libavcodec", "libavformat", "FFmpeg 54"],
+      "family": {"id": "renpy", "relation": "versioned FFmpeg runtime"},
       "detection": {
         "executable_names": {
           "values": ["Sakura Swim Club.exe"],
@@ -352,12 +352,12 @@
         "hashes": {"values": [], "evidence": null}
       },
       "process_strategy": {
-        "launch": "launcher_then_child_python_requires_follow",
+        "launch": "launcher_then_scored_game_child",
         "attach": "implemented_for_target_process_only",
-        "follow_child_processes": false,
+        "follow_child_processes": true,
         "notes": [
           "The recorded top-level executable is a launcher and the real game is a child python process.",
-          "Automatic child-process following is not implemented yet and is a Phase 4 deliverable."
+          "Ren'Py directory signatures enable automatic child following; descendants are scored by python executable name and loaded avcodec/avformat modules."
         ]
       },
       "text": {
@@ -373,6 +373,12 @@
       },
       "audio": {
         "priority": [
+          {
+            "kind": "ffmpeg_resource_event",
+            "format": "signature-checked OGG/WAV/Opus/FLAC from any versioned avformat module",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
           {
             "kind": "ffmpeg54_decoder_pcm",
             "format": "libavcodec/libavformat major 54 decoded PCM",
@@ -399,13 +405,18 @@
       ],
       "current_status": "implemented_unverified",
       "known_limitations": [
-        "Only libavcodec/libavformat major 54 with hand-maintained FFmpeg 1.0-era layouts is implemented.",
-        "The recorded sample required following a child python process, which the injector does not yet do automatically.",
+        "Generic avformat resource capture only accepts local, standalone OGG/WAV/Opus/FLAC files; archive/custom AVIO URLs fall through to PCM or loopback.",
+        "Only the optional decoded-PCM compatibility path interprets libavcodec/libavformat major 54 hand-maintained layouts; modern majors never use those offsets.",
+        "The selected injector/DLL architecture must match the followed game child; a launcher that crosses x86/x64 still requires selecting the child's architecture upstream.",
         "The real sample fell back to loopback; no clean decoder-level voice claim is made."
       ],
       "adapter_path": "hook/adapters/renpy_adapter.inc",
-      "fixture_paths": [],
-      "test_paths": []
+      "fixture_paths": ["tests/fixtures/workflow_replay.json"],
+      "test_paths": [
+        "tests/ffmpeg_runtime_test.cpp",
+        "tests/child_process_policy_test.cpp",
+        "tests/resource_audio_ready_test.cpp"
+      ]
     },
     {
       "id": "unity_il2cpp",

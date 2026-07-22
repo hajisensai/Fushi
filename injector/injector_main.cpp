@@ -18,6 +18,8 @@
 
 #include "voice_hook_ipc.h"
 #include "voice_hook_session.h"
+#include "child_process_policy.h"
+#include "ffmpeg_runtime.h"
 #include "siglus_launch.h"
 #include "steam_launch.h"
 #include "luna_bridge.h"
@@ -47,6 +49,7 @@
 //     --wait-ms 等待就绪事件的超时毫秒（默认 5000）
 //     --hold    注入并确认后保持运行（host 模式，维持共享内存存活）；缺省=probe 模式，
 //               确认后退出。launch 模式下 --hold 会一直挂到游戏进程退出。
+//     --follow-child-processes  等启动器产生真实游戏子进程后再注入；Ren'Py 目录签名会自动启用。
 namespace {
 
 using hibiki_voice_hook::kClipCount;
@@ -1045,6 +1048,103 @@ std::wstring ProcessImagePath(HANDLE process) {
   return std::wstring(buffer.data(), size);
 }
 
+bool LooksLikeRenpyRuntime(const std::wstring& exe) {
+  const std::wstring dir = ExecutableDirectory(exe);
+  if (dir.empty()) return false;
+  return DirectoryExists(JoinPath(dir, L"renpy")) ||
+         DirectoryExists(JoinPath(JoinPath(dir, L"lib"), L"windows-i686")) ||
+         DirectoryExists(
+             JoinPath(JoinPath(dir, L"lib"), L"windows-x86_64")) ||
+         DirectoryExists(JoinPath(JoinPath(dir, L"lib"), L"py3-windows-x86_64")) ||
+         FileExists(JoinPath(dir, L"python.exe")) ||
+         FileExists(JoinPath(dir, L"pythonw.exe"));
+}
+
+void InspectFfmpegModules(DWORD pid,
+                          hibiki_voice_hook::ChildProcessCandidate* candidate) {
+  HANDLE snapshot = CreateToolhelp32Snapshot(
+      TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+  if (snapshot == INVALID_HANDLE_VALUE) return;
+  MODULEENTRY32W module = {0};
+  module.dwSize = sizeof(module);
+  if (Module32FirstW(snapshot, &module)) {
+    do {
+      const auto parsed =
+          hibiki_voice_hook::ParseFfmpegModuleName(module.szModule);
+      candidate->has_avcodec =
+          candidate->has_avcodec ||
+          parsed.kind == hibiki_voice_hook::FfmpegModuleKind::kAvcodec;
+      candidate->has_avformat =
+          candidate->has_avformat ||
+          parsed.kind == hibiki_voice_hook::FfmpegModuleKind::kAvformat;
+    } while (Module32NextW(snapshot, &module));
+  }
+  CloseHandle(snapshot);
+}
+
+DWORD FindGameChildProcess(DWORD root_pid) {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return 0;
+  struct OwnedCandidate {
+    hibiki_voice_hook::ChildProcessCandidate value;
+    std::wstring name;
+  };
+  std::vector<OwnedCandidate> owned;
+  PROCESSENTRY32W process = {0};
+  process.dwSize = sizeof(process);
+  if (Process32FirstW(snapshot, &process)) {
+    do {
+      if (process.th32ProcessID != root_pid && process.th32ProcessID != 0) {
+        OwnedCandidate candidate;
+        candidate.value.pid = process.th32ProcessID;
+        candidate.value.parent_pid = process.th32ParentProcessID;
+        candidate.name = process.szExeFile;
+        owned.push_back(std::move(candidate));
+      }
+    } while (Process32NextW(snapshot, &process));
+  }
+  CloseHandle(snapshot);
+  std::vector<hibiki_voice_hook::ChildProcessCandidate> candidates;
+  candidates.reserve(owned.size());
+  for (OwnedCandidate& item : owned) {
+    item.value.executable_name = item.name.c_str();
+    candidates.push_back(item.value);
+  }
+  // First select descendants without module inspection, then enrich every descendant. This keeps
+  // Toolhelp module snapshots scoped to the launcher's process tree.
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    if (hibiki_voice_hook::DescendantDepth(root_pid, i, candidates) > 0) {
+      InspectFfmpegModules(candidates[i].pid, &candidates[i]);
+    }
+  }
+  return hibiki_voice_hook::SelectGameChildProcess(root_pid, candidates);
+}
+
+DWORD WaitForGameChildProcess(DWORD root_pid, DWORD wait_ms) {
+  const uint64_t started = GetTickCount64();
+  const uint64_t deadline = GetTickCount64() + wait_ms;
+  DWORD last_candidate = 0;
+  int stable_observations = 0;
+  while (GetTickCount64() < deadline) {
+    const DWORD candidate = FindGameChildProcess(root_pid);
+    if (candidate != 0 && candidate == last_candidate) {
+      ++stable_observations;
+      if (stable_observations >= 2) return candidate;
+    } else {
+      last_candidate = candidate;
+      stable_observations = candidate == 0 ? 0 : 1;
+    }
+    if (candidate == 0 && GetTickCount64() - started >= 1000) {
+      hibiki_voice_hook::ChildProcessCandidate launcher;
+      launcher.pid = root_pid;
+      InspectFfmpegModules(root_pid, &launcher);
+      if (launcher.has_avcodec && launcher.has_avformat) return 0;
+    }
+    Sleep(100);
+  }
+  return last_candidate;
+}
+
 std::string Sha256File(const std::wstring& path) {
   HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
                             FILE_SHARE_READ | FILE_SHARE_WRITE |
@@ -1307,7 +1407,7 @@ void RestoreEnvironment(const wchar_t* name, const EnvironmentValue& value) {
 int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               const std::vector<std::wstring>& extra_args,
               const std::wstring& dll_path, DWORD wait_ms, bool hold,
-              const LunaOptions& luna) {
+              bool follow_child_processes, const LunaOptions& luna) {
   if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
     return Fail("目标 exe 不存在（--launch <exe路径>）");
   }
@@ -1341,6 +1441,8 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi = {0};
   const bool delayed_siglus = IsSiglusGame(exe);
+  const bool follow_children =
+      follow_child_processes || LooksLikeRenpyRuntime(exe);
   // Steam 游戏被直接 CreateProcess 时常会立即退出，再由 Steam 拉起一个未注入子进程。
   // 从 exe 所在库的 appmanifest 自动发现 AppID，并只在本次 CreateProcess 的继承窗口内设置
   // 官方环境变量，避免 Steam 二次拉起导致“看似启动成功、实际 hook 的是已退出进程”。
@@ -1355,7 +1457,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   }
   const BOOL created = CreateProcessW(
       exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE,
-      delayed_siglus ? 0 : CREATE_SUSPENDED,
+      (delayed_siglus || follow_children) ? 0 : CREATE_SUSPENDED,
       nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
   if (!steam_app_id.empty()) {
     RestoreEnvironment(L"SteamAppId", old_steam_app);
@@ -1366,9 +1468,6 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     return 1;
   }
 
-  ApplyLunaProfiles(exe, pi.dwProcessId, effective_luna.profile_path,
-                    &effective_luna);
-
   if (delayed_siglus &&
       !WaitForSiglusGameWindow(pi.hProcess, pi.dwProcessId, 20000)) {
     fprintf(stderr, "Siglus 保护壳初始化/游戏窗口等待超时\n");
@@ -1378,18 +1477,52 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     return 1;
   }
 
+  HANDLE target_process = pi.hProcess;
+  DWORD target_pid = pi.dwProcessId;
+  HANDLE child_process = nullptr;
+  std::wstring target_exe = exe;
+  if (follow_children) {
+    const DWORD child_wait_ms =
+        wait_ms > static_cast<DWORD>(15000) ? wait_ms : static_cast<DWORD>(15000);
+    const DWORD child_pid =
+        WaitForGameChildProcess(pi.dwProcessId, child_wait_ms);
+    if (child_pid != 0) {
+      child_process = OpenProcess(
+          PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
+              PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | SYNCHRONIZE,
+          FALSE, child_pid);
+      if (child_process != nullptr) {
+        target_process = child_process;
+        target_pid = child_pid;
+        target_exe = ProcessImagePath(child_process);
+        fprintf(stderr, "[process] following child pid=%lu image=%ls\n",
+                child_pid, target_exe.c_str());
+      }
+    }
+    if (target_process == pi.hProcess) {
+      fprintf(stderr,
+              "[process] no stable game child found; attaching launcher pid=%lu\n",
+              pi.dwProcessId);
+    }
+  }
+
+  ApplyLunaProfiles(target_exe, target_pid, effective_luna.profile_path,
+                    &effective_luna);
+
   // 复用 attach 同一套编排；普通 launch 的 resume_thread=pi.hThread（注入后放行），
   // Siglus 已正常运行故为 nullptr；hold_process 让 --hold 挂到游戏退出。
-  const int rc = RunInjection(pi.hProcess, pi.dwProcessId, dll_path, wait_ms,
-                              hold, delayed_siglus ? nullptr : pi.hThread,
-                              pi.hProcess, effective_luna);
+  const int rc = RunInjection(
+      target_process, target_pid, dll_path, wait_ms, hold,
+      (delayed_siglus || follow_children) ? nullptr : pi.hThread,
+      target_process, effective_luna);
 
   // 普通早注入在注入前/Resume 前失败（rc==1）时游戏仍处挂起：强制结束，避免留下僵死
   // 挂起进程。Siglus 延迟附着时游戏已经正常运行，hook 失败也交给用户/上层回退处理。
   // rc==2（超时但已 Resume）游戏已在跑，不 terminate。rc==0 正常退出，游戏自然运行。
-  if (rc == 1 && !delayed_siglus) {
+  if (rc == 1 && !delayed_siglus && !follow_children) {
     TerminateProcess(pi.hProcess, 1);
   }
+  if (child_process != nullptr) CloseHandle(child_process);
   CloseHandle(pi.hThread);
   CloseHandle(pi.hProcess);
   return rc;
@@ -1410,6 +1543,7 @@ int main() {
   std::wstring dll_path;
   DWORD wait_ms = 5000;
   bool hold = false;
+  bool follow_child_processes = false;
   LunaOptions luna;
 
   if (argv != nullptr) {
@@ -1429,6 +1563,8 @@ int main() {
         wait_ms = static_cast<DWORD>(_wtoi(argv[++i]));
       } else if (a == L"--hold") {
         hold = true;
+      } else if (a == L"--follow-child-processes") {
+        follow_child_processes = true;
       } else if (a == L"--no-luna") {
         luna.enabled = false;
       } else if (a == L"--luna-pchooks") {
@@ -1450,7 +1586,8 @@ int main() {
         "usage: hibiki_voice_injector --pid <PID> [--dll <hook.dll>] "
         "[--wait-ms N] [--hold]\n"
         "   or: hibiki_voice_injector --launch <exe> [--workdir <dir>] "
-        "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold]\n"
+        "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold] "
+        "[--follow-child-processes]\n"
         "LunaHook(host 侧全引擎文本 hook，仅 --hold 生效): [--no-luna] "
         "[--luna-pchooks] [--luna-codepage <cp=932>] "
         "[--luna-hook-code <H-code>]... [--luna-hook-profile <profiles.tsv>]");
@@ -1466,7 +1603,7 @@ int main() {
   // launch 模式：CREATE_SUSPENDED 早注入。
   if (!launch_exe.empty()) {
     return RunLaunch(launch_exe, workdir, launch_args, dll_path, wait_ms, hold,
-                     luna);
+                     follow_child_processes, luna);
   }
 
   // attach 模式：注入已运行进程（老路径行为不变）。

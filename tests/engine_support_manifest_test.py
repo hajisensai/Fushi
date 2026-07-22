@@ -42,7 +42,7 @@ class EngineSupportManifestTest(unittest.TestCase):
                 "siglus",
                 "kirikiri_z",
                 "xaudio2_directsound",
-                "renpy_ffmpeg54",
+                "renpy_ffmpeg",
                 "unity_il2cpp",
             },
             set(self.engines),
@@ -75,9 +75,10 @@ class EngineSupportManifestTest(unittest.TestCase):
             generic["detection"]["runtime_modules"]["values"],
         )
 
-        renpy = self.engines["renpy_ffmpeg54"]
+        renpy = self.engines["renpy_ffmpeg"]
         self.assertEqual("implemented_unverified", renpy["current_status"])
-        self.assertFalse(renpy["process_strategy"]["follow_child_processes"])
+        self.assertTrue(renpy["process_strategy"]["follow_child_processes"])
+        self.assertEqual("ffmpeg_resource_event", renpy["audio"]["priority"][0]["kind"])
         self.assertTrue(
             any("fell back to loopback" in item for item in renpy["known_limitations"])
         )

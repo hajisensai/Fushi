@@ -1,5 +1,5 @@
-// P1 zero-behaviour-change split: included inside dll_main.cpp anonymous namespace.
-// ══ C.2e Ren'Py / FFmpeg（libavcodec-54 / libavformat-54）纯人声捕获 ══════════════════
+// Included inside dll_main.cpp anonymous namespace.
+// ══ Ren'Py / FFmpeg 通用资源事件 + major 54 PCM 兼容层 ═══════════════════════════════
 // Ren'Py（测试 Sakura Swim Club）音频经独立 DLL 解码：avformat-54.dll 打开输入流、
 // avcodec-54.dll 解码。语音文件 url 常带 "voice" 或音频后缀（.ogg/.opus/.wav/.mp3…）。抓法与
 // KiriKiriZ OGG 那条同出口（%TEMP%\hibiki_gal_voice 落盘），只是这里抓的是**解码后 PCM**（Ren'Py
@@ -88,35 +88,68 @@ RenpyFmt g_renpy_fmt[kMaxRenpyFmt] = {};
 RenpyAvctx g_renpy_avctx[kMaxRenpyAvctx] = {};
 CRITICAL_SECTION g_renpy_cs;  // 专用锁：三表查改（非音频混音回调，短临界区）
 bool g_renpy_cs_ready = false;
+uint32_t g_renpy_avformat_major = 0;
 
-// 按前缀（小写）枚举已加载模块，命中返回其 HMODULE。用于 "avcodec-54.dll" 精确找不到时兜住命名
-// 变体（仍限 major 54——偏移是 54 专属，别匹配到别的 major，否则用错偏移会读到垃圾）。
-HMODULE FindLoadedModuleByPrefix(const wchar_t* prefix_lower) {
-  HMODULE result = nullptr;
-  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
-                                         GetCurrentProcessId());
-  if (snap == INVALID_HANDLE_VALUE) return nullptr;
-  MODULEENTRY32W me;
-  me.dwSize = sizeof(me);
-  const size_t plen = wcslen(prefix_lower);
-  if (Module32FirstW(snap, &me)) {
-    do {
-      wchar_t name[MAX_MODULE_NAME32 + 1];
-      int i = 0;
-      for (; me.szModule[i] != 0 && i < MAX_MODULE_NAME32; i++) {
-        wchar_t c = me.szModule[i];
-        if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c - L'A' + L'a');
-        name[i] = c;
-      }
-      name[i] = 0;
-      if (wcsncmp(name, prefix_lower, plen) == 0) {
-        result = me.hModule;
-        break;
-      }
-    } while (Module32NextW(snap, &me));
+constexpr int kRenpyResourceEventCount = 32;
+constexpr int kRenpyPcmEventCount = 8;
+constexpr int kRenpyWriteEventCount = 8;
+constexpr uint32_t kRenpyPcmEventBytes = 256u * 1024u;
+
+struct RenpyResourceEvent {
+  volatile LONG state;  // 0=free, 1=producer writing, 2=worker ready
+  char url[520];
+};
+
+struct RenpyPcmEvent {
+  volatile LONG state;  // 0=free, 1=producer writing, 2=worker ready, 3=worker owns
+  int fmt_slot;
+  void* fmt_ctx;
+  int sample_format;
+  uint32_t frames;
+  uint32_t channels;
+  uint32_t bytes_per_sample;
+  uint32_t plane_count;
+  uint32_t plane_offsets[8];
+  uint32_t plane_lengths[8];
+  uint8_t payload[kRenpyPcmEventBytes];
+};
+
+struct RenpyWriteEvent {
+  volatile LONG state;
+  uint8_t* pcm;
+  uint32_t length;
+  uint32_t sample_rate;
+  uint32_t channels;
+  wchar_t basename[128];
+};
+
+RenpyResourceEvent g_renpy_resource_events[kRenpyResourceEventCount] = {};
+RenpyPcmEvent g_renpy_pcm_events[kRenpyPcmEventCount] = {};
+RenpyWriteEvent g_renpy_write_events[kRenpyWriteEventCount] = {};
+volatile LONG g_renpy_worker_stop = 0;
+HANDLE g_renpy_worker = nullptr;
+char g_renpy_last_resource[520] = {0};
+uint64_t g_renpy_last_resource_tick = 0;
+volatile LONG g_renpy_resource_counter = 0;
+
+HMODULE FindLoadedFfmpegModule(hibiki_voice_hook::FfmpegModuleKind kind,
+                               uint32_t* major);
+
+bool SampleFormatLayout(int format, uint32_t* bytes_per_sample,
+                        bool* planar) {
+  switch (format) {
+    case 0: *bytes_per_sample = 1; *planar = false; return true;
+    case 1: *bytes_per_sample = 2; *planar = false; return true;
+    case 2: *bytes_per_sample = 4; *planar = false; return true;
+    case 3: *bytes_per_sample = 4; *planar = false; return true;
+    case 4: *bytes_per_sample = 8; *planar = false; return true;
+    case 5: *bytes_per_sample = 1; *planar = true; return true;
+    case 6: *bytes_per_sample = 2; *planar = true; return true;
+    case 7: *bytes_per_sample = 4; *planar = true; return true;
+    case 8: *bytes_per_sample = 4; *planar = true; return true;
+    case 9: *bytes_per_sample = 8; *planar = true; return true;
+    default: return false;
   }
-  CloseHandle(snap);
-  return result;
 }
 
 // url（char*，UTF-8/本地编码）是否语音：小写后先排 BGM/SE/music/sound，再命中 "voice"/"vo_" 或音频
@@ -190,6 +223,108 @@ void MakeRenpyBaseName(const char* url, void* ctx, wchar_t* out, int out_cap) {
   }
   out[o] = 0;
   if (o == 0) lstrcpynW(out, L"renpy", out_cap);
+}
+
+bool EnqueueRenpyResource(const char* url) {
+  if (!IsVoiceUrl(url)) return false;
+  for (int i = 0; i < kRenpyResourceEventCount; ++i) {
+    RenpyResourceEvent* event = &g_renpy_resource_events[i];
+    if (InterlockedCompareExchange(&event->state, 1, 0) != 0) continue;
+    size_t length = 0;
+    while (url[length] != 0 && length + 1 < sizeof(event->url)) ++length;
+    memcpy(event->url, url, length);
+    event->url[length] = 0;
+    MemoryBarrier();
+    InterlockedExchange(&event->state, 2);
+    return true;
+  }
+  return false;
+}
+
+void CopyRenpyResource(const char* url) {
+  if (url == nullptr || url[0] == 0 || strstr(url, "://") != nullptr) return;
+  const uint64_t now = GetTickCount64();
+  if (strcmp(url, g_renpy_last_resource) == 0 &&
+      now - g_renpy_last_resource_tick < 500) {
+    return;
+  }
+  wchar_t wide[520] = {0};
+  int count = MultiByteToWideChar(CP_UTF8, 0, url, -1, wide, 520);
+  if (count <= 0) count = MultiByteToWideChar(CP_ACP, 0, url, -1, wide, 520);
+  if (count <= 0) return;
+  if (wide[0] == L'\\' && wide[1] == L'\\') return;  // 不让 worker 阻塞在 UNC/设备路径。
+  wchar_t full[32768] = {0};
+  if (GetFullPathNameW(wide, 32768, full, nullptr) == 0) return;
+  HANDLE source = CreateFileW(full, GENERIC_READ,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE |
+                                  FILE_SHARE_DELETE,
+                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                              nullptr);
+  if (source == INVALID_HANDLE_VALUE) return;
+  LARGE_INTEGER size = {0};
+  if (!GetFileSizeEx(source, &size) || size.QuadPart <= 0 ||
+      size.QuadPart > 32ll * 1024ll * 1024ll) {
+    CloseHandle(source);
+    return;
+  }
+  uint8_t header[64] = {0};
+  DWORD header_read = 0;
+  if (!ReadFile(source, header, sizeof(header), &header_read, nullptr)) {
+    CloseHandle(source);
+    return;
+  }
+  const auto format =
+      hibiki_voice_hook::DetectAudioResourceFormat(header, header_read);
+  if (format == hibiki_voice_hook::AudioResourceFormat::kUnknown) {
+    CloseHandle(source);
+    return;
+  }
+  SetFilePointer(source, 0, nullptr, FILE_BEGIN);
+  wchar_t temp[MAX_PATH] = {0};
+  const DWORD temp_length = GetTempPathW(MAX_PATH, temp);
+  if (temp_length == 0 || temp_length > MAX_PATH) {
+    CloseHandle(source);
+    return;
+  }
+  std::wstring directory = std::wstring(temp) + L"hibiki_gal_voice";
+  CreateDirectoryW(directory.c_str(), nullptr);
+  wchar_t base[128] = {0};
+  MakeRenpyBaseName(url, nullptr, base, 128);
+  wchar_t* dot = wcsrchr(base, L'.');
+  if (dot != nullptr) *dot = 0;
+  const std::wstring destination =
+      directory + L"\\" + std::to_wstring(GetTickCount64()) + L"_" +
+      std::to_wstring(InterlockedIncrement(&g_renpy_resource_counter)) + L"_" + base +
+      hibiki_voice_hook::AudioResourceExtension(format);
+  HANDLE output = CreateFileW(destination.c_str(), GENERIC_WRITE, 0, nullptr,
+                              CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (output == INVALID_HANDLE_VALUE) {
+    CloseHandle(source);
+    return;
+  }
+  uint8_t buffer[64 * 1024];
+  bool ok = true;
+  while (ok) {
+    DWORD read = 0;
+    if (!ReadFile(source, buffer, sizeof(buffer), &read, nullptr)) {
+      ok = false;
+      break;
+    }
+    if (read == 0) break;
+    DWORD written = 0;
+    ok = WriteFile(output, buffer, read, &written, nullptr) && written == read;
+  }
+  CloseHandle(output);
+  CloseHandle(source);
+  if (!ok) {
+    DeleteFileW(destination.c_str());
+  } else if (g_header != nullptr) {
+    lstrcpynA(g_renpy_last_resource, url,
+              static_cast<int>(sizeof(g_renpy_last_resource)));
+    g_renpy_last_resource_tick = now;
+    g_header->hook_diagnostics |=
+        hibiki_voice_hook::kDiagFfmpegResourceCaptured;
+  }
 }
 
 // 把累积的 16-bit 交织 PCM 写成 WAV。非热路径（close 时调一次），允许 std::wstring/文件 IO。
@@ -284,50 +419,15 @@ void RenpyRegisterStreamsGuarded(void* ic, int slot) {
   }
 }
 
-// SEH 守卫读 AVFrame 解码 PCM，转 16-bit 交织累积进 slot 缓冲。纯 POD + malloc，可安全 __try。
-// 调用者持 g_renpy_cs。channels 用 slot 缓存值（find_stream_info 读到的真实声道），不再读 avctx。
-void RenpyAppendFrameGuarded(RenpyFmt* f, void* frame) {
-  __try {
-    const int nb = *reinterpret_cast<int*>(
-        reinterpret_cast<uint8_t*>(frame) + kAvfNbSamplesOff);
-    const int fmt = *reinterpret_cast<int*>(
-        reinterpret_cast<uint8_t*>(frame) + kAvfFormatOff);
-    if (nb <= 0 || nb > (1 << 20)) return;
-    if (fmt < 0 || fmt > 9) return;  // AV_SAMPLE_FMT_U8..DBLP
-    const uint32_t ch = f->channels;
-    if (ch < 1 || ch > 8) return;
-    int bps = 0;
-    bool planar = false;
-    switch (fmt) {
-      case 0: bps = 1; planar = false; break;  // U8
-      case 1: bps = 2; planar = false; break;  // S16
-      case 2: bps = 4; planar = false; break;  // S32
-      case 3: bps = 4; planar = false; break;  // FLT
-      case 4: bps = 8; planar = false; break;  // DBL
-      case 5: bps = 1; planar = true; break;   // U8P
-      case 6: bps = 2; planar = true; break;   // S16P
-      case 7: bps = 4; planar = true; break;   // S32P
-      case 8: bps = 4; planar = true; break;   // FLTP
-      case 9: bps = 8; planar = true; break;   // DBLP
-      default: return;
-    }
-    const size_t ptrsz = sizeof(void*);
+// worker 侧把回调已复制到固定事件槽的采样转成 16-bit 交织 PCM。分配、转换都不在 decode 回调。
+void RenpyAppendCopiedFrame(RenpyFmt* f, const RenpyPcmEvent* event) {
+    const int fmt = event->sample_format;
+    const uint32_t ch = event->channels;
+    const uint32_t bps = event->bytes_per_sample;
+    const bool planar = event->plane_count > 1;
     const uint8_t* planes[8] = {nullptr};
-    if (planar) {
-      const uint8_t** ext = *reinterpret_cast<const uint8_t***>(
-          reinterpret_cast<uint8_t*>(frame) + kAvfExtDataOff);
-      for (uint32_t c = 0; c < ch; c++) {
-        const uint8_t* p = *reinterpret_cast<const uint8_t**>(
-            reinterpret_cast<uint8_t*>(frame) + kAvfDataOff +
-            static_cast<size_t>(c) * ptrsz);
-        if (p == nullptr && ext != nullptr) p = ext[c];  // >8 声道走 extended_data
-        if (p == nullptr) return;
-        planes[c] = p;
-      }
-    } else {
-      planes[0] = *reinterpret_cast<const uint8_t**>(
-          reinterpret_cast<uint8_t*>(frame) + kAvfDataOff);
-      if (planes[0] == nullptr) return;
+    for (uint32_t c = 0; c < event->plane_count; ++c) {
+      planes[c] = event->payload + event->plane_offsets[c];
     }
     if (f->pcm == nullptr) {
       f->pcm = static_cast<uint8_t*>(malloc(kRenpyPcmCap));
@@ -338,7 +438,7 @@ void RenpyAppendFrameGuarded(RenpyFmt* f, void* frame) {
     const uint32_t bytes_per_out_frame = ch * 2u;  // 16-bit 交织输出
     const uint32_t room_frames = (f->pcm_cap - f->pcm_len) / bytes_per_out_frame;
     if (room_frames == 0) return;  // 满（超长语音，防御性）；已积部分等 close 落盘
-    uint32_t frames = static_cast<uint32_t>(nb);
+    uint32_t frames = event->frames;
     if (frames > room_frames) frames = room_frames;
     int16_t* out = reinterpret_cast<int16_t*>(f->pcm + f->pcm_len);
     for (uint32_t s = 0; s < frames; s++) {
@@ -394,8 +494,146 @@ void RenpyAppendFrameGuarded(RenpyFmt* f, void* frame) {
       }
     }
     f->pcm_len += frames * bytes_per_out_frame;
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
+}
+
+// decode 热路径：TryEnter（竞争即丢）读取 avctx→slot，固定上限 memcpy 到预分配槽并立即返回。
+// 不分配、不转换、不写盘、不等待 worker，满足游戏音频回调零阻塞约束。
+void EnqueueRenpyFrame(void* avctx, void* frame) {
+  if (!TryEnterCriticalSection(&g_renpy_cs)) return;
+  int slot = -1;
+  uint32_t channels = 0;
+  void* fmt_ctx = nullptr;
+  for (int k = 0; k < kMaxRenpyAvctx; ++k) {
+    if (g_renpy_avctx[k].avctx == avctx) {
+      slot = g_renpy_avctx[k].fmt_slot;
+      break;
+    }
   }
+  if (slot >= 0 && slot < kMaxRenpyFmt &&
+      g_renpy_fmt[slot].fmt_ctx != nullptr) {
+    channels = g_renpy_fmt[slot].channels;
+    fmt_ctx = g_renpy_fmt[slot].fmt_ctx;
+  }
+  LeaveCriticalSection(&g_renpy_cs);
+  if (slot < 0 || channels < 1 || channels > 8) return;
+
+  RenpyPcmEvent* event = nullptr;
+  for (int i = 0; i < kRenpyPcmEventCount; ++i) {
+    if (InterlockedCompareExchange(&g_renpy_pcm_events[i].state, 1, 0) == 0) {
+      event = &g_renpy_pcm_events[i];
+      break;
+    }
+  }
+  if (event == nullptr) return;
+  bool copied = false;
+  __try {
+    const int samples = *reinterpret_cast<int*>(
+        reinterpret_cast<uint8_t*>(frame) + kAvfNbSamplesOff);
+    const int format = *reinterpret_cast<int*>(
+        reinterpret_cast<uint8_t*>(frame) + kAvfFormatOff);
+    uint32_t bps = 0;
+    bool planar = false;
+    if (samples <= 0 || samples > (1 << 20) ||
+        !SampleFormatLayout(format, &bps, &planar)) {
+      __leave;
+    }
+    const uint32_t plane_count = planar ? channels : 1u;
+    const uint64_t bytes_per_frame = planar ? bps : bps * channels;
+    uint32_t frames = static_cast<uint32_t>(samples);
+    const uint64_t total_per_frame = bytes_per_frame * plane_count;
+    if (total_per_frame == 0) __leave;
+    const uint32_t max_frames =
+        static_cast<uint32_t>(kRenpyPcmEventBytes / total_per_frame);
+    if (frames > max_frames) frames = max_frames;
+    if (frames == 0) __leave;
+    const uint8_t* source_planes[8] = {nullptr};
+    if (planar) {
+      const uint8_t** extended = *reinterpret_cast<const uint8_t***>(
+          reinterpret_cast<uint8_t*>(frame) + kAvfExtDataOff);
+      for (uint32_t c = 0; c < channels; ++c) {
+        const uint8_t* source = *reinterpret_cast<const uint8_t**>(
+            reinterpret_cast<uint8_t*>(frame) + kAvfDataOff +
+            static_cast<size_t>(c) * sizeof(void*));
+        if (source == nullptr && extended != nullptr) source = extended[c];
+        if (source == nullptr) __leave;
+        source_planes[c] = source;
+      }
+    } else {
+      source_planes[0] = *reinterpret_cast<const uint8_t**>(
+          reinterpret_cast<uint8_t*>(frame) + kAvfDataOff);
+      if (source_planes[0] == nullptr) __leave;
+    }
+    event->fmt_slot = slot;
+    event->fmt_ctx = fmt_ctx;
+    event->sample_format = format;
+    event->frames = frames;
+    event->channels = channels;
+    event->bytes_per_sample = bps;
+    event->plane_count = plane_count;
+    uint32_t offset = 0;
+    for (uint32_t plane = 0; plane < plane_count; ++plane) {
+      const uint32_t length = frames * static_cast<uint32_t>(bytes_per_frame);
+      event->plane_offsets[plane] = offset;
+      event->plane_lengths[plane] = length;
+      memcpy(event->payload + offset, source_planes[plane], length);
+      offset += length;
+    }
+    copied = true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    copied = false;
+  }
+  MemoryBarrier();
+  InterlockedExchange(&event->state, copied ? 2 : 0);
+}
+
+void ProcessRenpyPcmEvent(RenpyPcmEvent* event) {
+  if (InterlockedCompareExchange(&event->state, 3, 2) != 2) return;
+  EnterCriticalSection(&g_renpy_cs);
+  if (event->fmt_slot >= 0 && event->fmt_slot < kMaxRenpyFmt &&
+      g_renpy_fmt[event->fmt_slot].fmt_ctx == event->fmt_ctx) {
+    RenpyAppendCopiedFrame(&g_renpy_fmt[event->fmt_slot], event);
+  }
+  LeaveCriticalSection(&g_renpy_cs);
+  InterlockedExchange(&event->state, 0);
+}
+
+void DrainRenpyPcmEvents(int slot) {
+  for (int i = 0; i < kRenpyPcmEventCount; ++i) {
+    if (g_renpy_pcm_events[i].state == 2 &&
+        g_renpy_pcm_events[i].fmt_slot == slot) {
+      ProcessRenpyPcmEvent(&g_renpy_pcm_events[i]);
+    }
+  }
+}
+
+void EnqueueRenpyWrite(uint8_t* pcm, uint32_t length, uint32_t sample_rate,
+                       uint32_t channels, const wchar_t* basename) {
+  if (pcm == nullptr) return;
+  for (int i = 0; i < kRenpyWriteEventCount; ++i) {
+    RenpyWriteEvent* event = &g_renpy_write_events[i];
+    if (InterlockedCompareExchange(&event->state, 1, 0) != 0) continue;
+    event->pcm = pcm;
+    event->length = length;
+    event->sample_rate = sample_rate;
+    event->channels = channels;
+    lstrcpynW(event->basename, basename, 128);
+    MemoryBarrier();
+    InterlockedExchange(&event->state, 2);
+    return;
+  }
+  free(pcm);  // 有界队列满：保游戏优先，丢弃该句。
+}
+
+void ProcessRenpyWriteEvent(RenpyWriteEvent* event) {
+  if (InterlockedCompareExchange(&event->state, 3, 2) != 2) return;
+  if (event->length > 0 && event->sample_rate > 0 && event->channels > 0) {
+    WriteRenpyWav(event->pcm, event->length, event->sample_rate,
+                  event->channels, event->basename);
+    if (g_header != nullptr) g_header->reserved_luna |= 0x40000000;
+  }
+  free(event->pcm);
+  event->pcm = nullptr;
+  InterlockedExchange(&event->state, 0);
 }
 
 // ctx 关闭：从表摘出该 ctx 的累积 PCM（持锁清槽 + 清关联），再在锁外落盘 + 释放（避免文件 IO 持锁）。
@@ -405,6 +643,17 @@ void RenpyCloseCtx(void* ctx) {
   uint32_t len = 0, rate = 0, ch = 0;
   wchar_t base[128];
   base[0] = 0;
+  int closing_slot = -1;
+  EnterCriticalSection(&g_renpy_cs);
+  for (int i = 0; i < kMaxRenpyFmt; ++i) {
+    if (g_renpy_fmt[i].fmt_ctx == ctx) {
+      closing_slot = i;
+      break;
+    }
+  }
+  LeaveCriticalSection(&g_renpy_cs);
+  if (closing_slot < 0) return;
+  DrainRenpyPcmEvents(closing_slot);
   EnterCriticalSection(&g_renpy_cs);
   for (int i = 0; i < kMaxRenpyFmt; i++) {
     if (g_renpy_fmt[i].fmt_ctx == ctx) {
@@ -430,21 +679,73 @@ void RenpyCloseCtx(void* ctx) {
     }
   }
   LeaveCriticalSection(&g_renpy_cs);
-  if (pcm != nullptr) {
-    if (len > 0 && rate > 0 && ch > 0) {
-      WriteRenpyWav(pcm, len, rate, ch, base);
-      if (g_header != nullptr) g_header->reserved_luna |= 0x40000000;  // diag: 写出语音 WAV
+  EnqueueRenpyWrite(pcm, len, rate, ch, base);
+}
+
+DWORD WINAPI RenpyWorker(void*) {
+  while (InterlockedCompareExchange(&g_renpy_worker_stop, 0, 0) == 0) {
+    bool processed = false;
+    for (int i = 0; i < kRenpyResourceEventCount; ++i) {
+      RenpyResourceEvent* event = &g_renpy_resource_events[i];
+      if (InterlockedCompareExchange(&event->state, 3, 2) == 2) {
+        CopyRenpyResource(event->url);
+        InterlockedExchange(&event->state, 0);
+        processed = true;
+      }
     }
-    free(pcm);
+    for (int i = 0; i < kRenpyPcmEventCount; ++i) {
+      if (g_renpy_pcm_events[i].state == 2) {
+        ProcessRenpyPcmEvent(&g_renpy_pcm_events[i]);
+        processed = true;
+      }
+    }
+    for (int i = 0; i < kRenpyWriteEventCount; ++i) {
+      if (g_renpy_write_events[i].state == 2) {
+        ProcessRenpyWriteEvent(&g_renpy_write_events[i]);
+        processed = true;
+      }
+    }
+    if (!processed) Sleep(2);
   }
+  for (int i = 0; i < kRenpyResourceEventCount; ++i) {
+    RenpyResourceEvent* event = &g_renpy_resource_events[i];
+    if (InterlockedCompareExchange(&event->state, 3, 2) == 2) {
+      CopyRenpyResource(event->url);
+      InterlockedExchange(&event->state, 0);
+    }
+  }
+  for (int i = 0; i < kRenpyPcmEventCount; ++i) {
+    ProcessRenpyPcmEvent(&g_renpy_pcm_events[i]);
+  }
+  for (int i = 0; i < kRenpyWriteEventCount; ++i) {
+    ProcessRenpyWriteEvent(&g_renpy_write_events[i]);
+  }
+  return 0;
+}
+
+bool StartRenpyWorker() {
+  if (g_renpy_worker != nullptr) return true;
+  InterlockedExchange(&g_renpy_worker_stop, 0);
+  g_renpy_worker = CreateThread(nullptr, 0, RenpyWorker, nullptr, 0, nullptr);
+  return g_renpy_worker != nullptr;
+}
+
+void StopRenpyWorker() {
+  HANDLE worker = g_renpy_worker;
+  if (worker == nullptr) return;
+  InterlockedExchange(&g_renpy_worker_stop, 1);
+  WaitForSingleObject(worker, INFINITE);
+  CloseHandle(worker);
+  g_renpy_worker = nullptr;
 }
 
 // -- detour: avformat_open_input --（url 命中语音则登记 ctx；basename 供落盘命名）
 int __cdecl Detour_avformat_open_input(void** ps, const char* url, void* fmt,
                                        void** options) {
   const int ret = g_orig_avformat_open_input(ps, url, fmt, options);
+  if (ret == 0 && g_capture_enabled) EnqueueRenpyResource(url);
   if (ret == 0 && ps != nullptr && *ps != nullptr && g_capture_enabled &&
-      g_renpy_cs_ready && IsVoiceUrl(url)) {
+      g_renpy_cs_ready && g_renpy_avformat_major == 54 && IsVoiceUrl(url)) {
     void* ctx = *ps;
     wchar_t base[128];
     MakeRenpyBaseName(url, ctx, base, 128);
@@ -497,21 +798,10 @@ int __cdecl Detour_avcodec_decode_audio4(void* avctx, void* frame, int* got_fram
   const int ret = g_orig_avcodec_decode_audio4(avctx, frame, got_frame_ptr, avpkt);
   if (g_capture_enabled && g_renpy_cs_ready && avctx != nullptr && frame != nullptr &&
       got_frame_ptr != nullptr && *got_frame_ptr != 0) {
-    EnterCriticalSection(&g_renpy_cs);
-    int slot = -1;
-    for (int k = 0; k < kMaxRenpyAvctx; k++) {
-      if (g_renpy_avctx[k].avctx == avctx) {
-        slot = g_renpy_avctx[k].fmt_slot;
-        break;
-      }
+    EnqueueRenpyFrame(avctx, frame);
+    if (g_header != nullptr) {
+      g_header->reserved_luna |= 0x20000000;  // diag: decode frame queued
     }
-    if (slot >= 0 && slot < kMaxRenpyFmt && g_renpy_fmt[slot].fmt_ctx != nullptr) {
-      if (g_header != nullptr) {
-        g_header->reserved_luna |= 0x20000000;  // diag: decode 命中语音 ctx
-      }
-      RenpyAppendFrameGuarded(&g_renpy_fmt[slot], frame);
-    }
-    LeaveCriticalSection(&g_renpy_cs);
   }
   return ret;
 }
@@ -528,50 +818,79 @@ void __cdecl Detour_av_close_input_file(void* ctx) {
   g_orig_av_close_input_file(ctx);
 }
 
-// 装 Ren'Py/FFmpeg 捕获 hook：avformat-54 的 open_input/find_stream_info/close_input(+av_close_input_file
-// 旧 API 兜底) 与 avcodec-54 的 decode_audio4。DLL 名精确找不到再按 "avcodec-54"/"avformat-54" 前缀枚举
-// （仍限 major 54）。未加载则跳过（非 Ren'Py 或注入时 FFmpeg 尚未载入）。幂等，静态标志各只装一次；
-// HookWorker 保活循环反复调直到装齐（Ren'Py 运行中注入时 FFmpeg DLL 通常已就绪）。
+// 所有带 major 的 avformat DLL 都挂稳定的 open_input ABI，发布通用 OGG/WAV/Opus/FLAC 资源事件。
+// 只有 major 54 继续解释内部结构并挂 decode_audio4，作为旧 Ren'Py 的 PCM 兼容降级；现代 major
+// 不读取私有结构偏移。所有资源 IO、PCM 转换和 WAV 落盘均由 RenpyWorker 完成。
 bool TryHookRenpyAudio() {
   static bool avformat_done = false;
-  static bool avcodec_done = false;
+  static bool legacy_avcodec_done = false;
   if (!avformat_done) {
-    HMODULE m = GetModuleHandleW(L"avformat-54.dll");
-    if (m == nullptr) m = FindLoadedModuleByPrefix(L"avformat-54");
+    uint32_t major = 0;
+    HMODULE m = FindLoadedFfmpegModule(
+        hibiki_voice_hook::FfmpegModuleKind::kAvformat, &major);
     if (m != nullptr) {
-      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_open_input")),
-             reinterpret_cast<void*>(&Detour_avformat_open_input),
-             reinterpret_cast<void**>(&g_orig_avformat_open_input));
-      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_find_stream_info")),
-             reinterpret_cast<void*>(&Detour_avformat_find_stream_info),
-             reinterpret_cast<void**>(&g_orig_avformat_find_stream_info));
-      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_close_input")),
-             reinterpret_cast<void*>(&Detour_avformat_close_input),
-             reinterpret_cast<void**>(&g_orig_avformat_close_input));
-      HookFn(reinterpret_cast<void*>(GetProcAddress(m, "av_close_input_file")),
-             reinterpret_cast<void*>(&Detour_av_close_input_file),
-             reinterpret_cast<void**>(&g_orig_av_close_input_file));
-      if (g_orig_avformat_open_input != nullptr) {
+      if (!StartRenpyWorker()) return false;
+      if (HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_open_input")),
+                 reinterpret_cast<void*>(&Detour_avformat_open_input),
+                 reinterpret_cast<void**>(&g_orig_avformat_open_input))) {
+        g_renpy_avformat_major = major;
         avformat_done = true;
         if (g_header != nullptr) {
           g_header->reserved_luna |= 0x08000000;  // diag: avformat hook 装上
+          g_header->hook_diagnostics |=
+              hibiki_voice_hook::kDiagFfmpegResourceHooksReady;
         }
+      }
+      if (major == 54) {
+        HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_find_stream_info")),
+               reinterpret_cast<void*>(&Detour_avformat_find_stream_info),
+               reinterpret_cast<void**>(&g_orig_avformat_find_stream_info));
+        HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_close_input")),
+               reinterpret_cast<void*>(&Detour_avformat_close_input),
+               reinterpret_cast<void**>(&g_orig_avformat_close_input));
+        HookFn(reinterpret_cast<void*>(GetProcAddress(m, "av_close_input_file")),
+               reinterpret_cast<void*>(&Detour_av_close_input_file),
+               reinterpret_cast<void**>(&g_orig_av_close_input_file));
       }
     }
   }
-  if (!avcodec_done) {
-    HMODULE m = GetModuleHandleW(L"avcodec-54.dll");
-    if (m == nullptr) m = FindLoadedModuleByPrefix(L"avcodec-54");
-    if (m != nullptr) {
+  if (g_renpy_avformat_major == 54 && !legacy_avcodec_done) {
+    uint32_t major = 0;
+    HMODULE m = FindLoadedFfmpegModule(
+        hibiki_voice_hook::FfmpegModuleKind::kAvcodec, &major);
+    if (m != nullptr && major == 54) {
       if (HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avcodec_decode_audio4")),
                  reinterpret_cast<void*>(&Detour_avcodec_decode_audio4),
                  reinterpret_cast<void**>(&g_orig_avcodec_decode_audio4))) {
-        avcodec_done = true;
+        legacy_avcodec_done = true;
         if (g_header != nullptr) {
           g_header->reserved_luna |= 0x08000000;  // diag: avcodec hook 装上
         }
       }
     }
   }
-  return avformat_done && avcodec_done;
+  return avformat_done;
+}
+
+HMODULE FindLoadedFfmpegModule(hibiki_voice_hook::FfmpegModuleKind kind,
+                               uint32_t* major) {
+  HMODULE result = nullptr;
+  uint32_t result_major = 0;
+  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
+                                         GetCurrentProcessId());
+  if (snap == INVALID_HANDLE_VALUE) return nullptr;
+  MODULEENTRY32W me = {0};
+  me.dwSize = sizeof(me);
+  if (Module32FirstW(snap, &me)) {
+    do {
+      const auto parsed = hibiki_voice_hook::ParseFfmpegModuleName(me.szModule);
+      if (parsed.kind == kind && parsed.major > result_major) {
+        result = me.hModule;
+        result_major = parsed.major;
+      }
+    } while (Module32NextW(snap, &me));
+  }
+  CloseHandle(snap);
+  if (major != nullptr) *major = result_major;
+  return result;
 }

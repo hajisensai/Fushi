@@ -208,10 +208,12 @@ class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
 
 class RenPyAdapter final : public hibiki_voice_hook::EngineAdapter {
  public:
-  const char* id() const override { return "renpy_ffmpeg54"; }
+  const char* id() const override { return "renpy_ffmpeg"; }
   bool probe() const override {
-    return GetModuleHandleW(L"avcodec-54.dll") != nullptr ||
-           GetModuleHandleW(L"avformat-54.dll") != nullptr;
+    uint32_t major = 0;
+    return FindLoadedFfmpegModule(
+               hibiki_voice_hook::FfmpegModuleKind::kAvformat, &major) !=
+           nullptr;
   }
   bool install() override {
     ready_ = TryHookRenpyAudio();
@@ -225,12 +227,14 @@ class RenPyAdapter final : public hibiki_voice_hook::EngineAdapter {
            hibiki_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t* module_name) override {
-    if (module_name == nullptr || ModuleNameStartsWith(module_name, L"avcodec-54") ||
-        ModuleNameStartsWith(module_name, L"avformat-54")) {
+    const auto ffmpeg = hibiki_voice_hook::ParseFfmpegModuleName(module_name);
+    if (module_name == nullptr ||
+        ffmpeg.kind != hibiki_voice_hook::FfmpegModuleKind::kNone) {
       install();
     }
   }
   void shutdown() override {
+    StopRenpyWorker();
     installed_ = false;
     ready_ = false;
   }
