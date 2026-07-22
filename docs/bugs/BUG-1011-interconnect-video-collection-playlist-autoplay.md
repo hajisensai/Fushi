@@ -1,0 +1,23 @@
+## BUG-1011 · 互联视频合集列表缺失+无自动连播·客户端合集播放
+- **报告**：2026-07-22（用户：互联视频观看时缺少合集列表、无法自动连播）
+- **真实性**：✅ 真 bug（功能级缺口，TODO-885 远端播放列表一直未完成）。客户端播放器的连播机制**完好**（`video_hibiki/episode.part.dart` `_handlePlaybackCompleted`→倒计时→`_switchEpisode`；剧集面板渲染 `_episodes`），它 100% 靠 `RemoteVideoInfo.episodes` 驱动。丢在 **host 下发层 + client 不消费合集成员**（均 file:line 核实）：
+  - host 唯一的 episodes 来源 `app_model_library_host_service.dart:1057 _episodesFromRow` **只读旧的单行 `VideoBooks.playlistJson`**（m3u8 多集模型）。「统一合集 Phase 3」把播放列表重构成 **N 个独立 `VideoBooks` 行 + `MediaCollections/Items` 分组**，成员行 `playlistJson` 为 null → `episodes` 恒空 → `RemoteVideoInfo.isPlaylist=false`。
+  - client `video_hibiki_page.dart:_initRemote` 只从 `info.episodes` 建 `_episodes`、**从不读 `info.collection`** → 合集成员看不到剧集列表、无连播。
+  - host 虽算了每视频的 `RemoteCollectionMembership`（`_primaryCollectionMembership`），但它**不含成员清单**，且 client `RemoteVideoInfo.fromJson`（`hibiki_library_host_service.dart:946`）**根本没解析 `collection`**（`RemoteBookInfo.fromJson` 有、视频侧漏）→ LAN 远端视频连首页书架合集分组都收不到（全成散卡）。
+  - 本地对照：`_initRemote`/本地路径靠 `playlistCollectionId → getCollectionItems()` 查兄弟集建 `_episodes`——远端 client 手里没有 host 的合集成员表，这正是缺的那份数据。
+- **[x] ① 已修复** — **客户端合集播放**（用户选定方案；client 已在 listVideos 收到全部成员，首页已按 collection 分组，把成员列表传进播放器即可，无需改 host 协议）：
+  - **fromJson 补解析**：`RemoteVideoInfo.fromJson` 加 `collection: RemoteCollectionMembership.fromJson(json['collection'])`——恢复首页合集分组（根因之一，独立可见）。
+  - **首页传成员**：`home_video_page.dart` 合集行 itemBuilder 收集本合集**有序远端成员**（跳过本地成员）+ 被点成员下标 → `_buildRemoteVideoCard` → `_openRemote(video, collectionMembers, startIndex)` → `neutralizedRemote(remoteCollectionMembers:, initialEpisodeIndex:)`。散卡区不传（单视频）。
+  - **播放器合集模式**：`VideoHibikiPage.remote`/`neutralizedRemote` 新增 `remoteCollectionMembers`；State 加 `_remoteMembers`（有序成员）+ 可变 `_activeRemoteMember`（当前成员指针）；`_effectiveRemoteInfo` 改为 `_activeRemoteMember ?? widget.remoteInfo ?? _resolvedStreamInfo`（换成员即跟随）。
+  - **`_initRemote` 合集分支**：`_isRemoteCollection`（`_remoteMembers.length>1`）时用成员建 `_episodes`（绕开 `info.isPlaylist` 门控），起播下标 = `initialEpisodeIndex`。
+  - **`_loadRemoteEpisode` 换成员 id**（最硬点）：合集模式下 `info = _remoteMembers[index]`、`episodeIndex=0`、`_activeRemoteMember = info`、`_delayMs = info.delayMs`；host-playlist/单视频保持「同 id 换 episodeIndex」旧行为零变化。连播 `_switchEpisode`/`_handlePlaybackCompleted` 无需改（依赖 `_episodes.length`）。
+  - **断点/字幕键按成员隔离**：新增 `_remotePositionKeyForIndex(index)`——合集模式 `(成员 id, 0)`、否则 `(widget.bookUid, index)`；position 读/写（`_readPersistedRemotePosition*`/`_persistRemotePosition`）+ 字幕读（`_loadRemoteEpisode`）+ 字幕写（`subtitle.part.dart` ×2）统一走它。合集成员各带 host `positionMs`，`_resolveRemoteInitialPositionMs` 用成员 info。
+  - 提交：<待填>。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/sync/remote_video_info_collection_test.dart`：`fromJson` 解析 collection / 无 collection→null（旧 host 兼容）/ toJson→fromJson 往返（协议闭环）。
+  - `hibiki/test/pages/remote_collection_playback_wiring_guard_test.dart`：源码守卫——`_initRemote` 合集模式用 `_remoteMembers` 建 `_episodes`；`_loadRemoteEpisode` 换成员 id + 切 `_activeRemoteMember`；首页合集行传有序成员进播放器。
+  - `flutter analyze` 主包 0 issue；上述 + 既有 `home_video_remote_*` / `hibiki_sync_server_video_test`（43 测）全绿。
+- **备注**：
+  - 真机验证待办（Android/桌面互联：远端合集出剧集列表 + 播完自动连下一成员 + 断点按成员隔离 + 首页合集分组恢复）。
+  - 混合合集（部分本地已下载 + 部分远端）：远端成员组成远端子播放列表连播，本地成员走本地播放，不跨类连播（v1 范围）。合集详情页入口的成员上下文透传为后续跟进。
+  - 与 host 端「翻译 episodes（方案 A）」相比，本方案不改 host 协议、不产生首页冗余 playlist 卡。

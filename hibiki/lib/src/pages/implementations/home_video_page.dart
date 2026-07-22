@@ -1097,7 +1097,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (mounted) _refresh();
   }
 
-  Future<void> _openRemote(RemoteVideoInfo video) async {
+  Future<void> _openRemote(
+    RemoteVideoInfo video, {
+    List<RemoteVideoInfo>? collectionMembers,
+    int startIndex = 0,
+  }) async {
     final RemoteVideoClient? client = _remoteVideoClient;
     if (client == null) {
       // #4：云后端视频无 live host、不能流播；短按 = 下载入库（对齐书侧短按=下载语义），
@@ -1120,6 +1124,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           info: video,
           repo: widget.repo,
           client: client,
+          // 客户端合集播放：合集里点某成员时带上有序远端成员列表 + 起播下标，播放器据此
+          // 建剧集列表 + 跨成员自动连播（成员是各自独立 video id，非同 id 换 episodeIndex）。
+          remoteCollectionMembers:
+              (collectionMembers != null && collectionMembers.length > 1)
+                  ? collectionMembers
+                  : null,
+          initialEpisodeIndex:
+              (collectionMembers != null && collectionMembers.length > 1)
+                  ? startIndex
+                  : null,
         ),
       ),
     );
@@ -2393,7 +2407,19 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               selectable: false,
             );
           }
-          return _buildRemoteVideoCard(slot.remote!);
+          // 客户端合集连播：把本合集的有序远端成员（跳过本地成员）+ 被点成员下标传给卡片，
+          // 播放器据此建剧集列表 + 跨成员自动连播。混合合集里本地成员走本地播放，不入此列。
+          final List<RemoteVideoInfo> remoteMembers = <RemoteVideoInfo>[
+            for (final CollectionOrderingItem<_VideoSlot> it in group.items)
+              if (it.payload.remote != null) it.payload.remote!,
+          ];
+          final int memberIdx = remoteMembers
+              .indexWhere((RemoteVideoInfo m) => m.id == slot.remote!.id);
+          return _buildRemoteVideoCard(
+            slot.remote!,
+            collectionMembers: remoteMembers.length > 1 ? remoteMembers : null,
+            memberIndex: memberIdx < 0 ? 0 : memberIdx,
+          );
         },
       ),
     );
@@ -2403,7 +2429,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 远端封面 + 云角标 ☁，混排进视频库主网格散卡区（[_buildLocalVideoSlivers]）。
   /// 短按走现有远端流播 [_openRemote]；右上角下载按钮/进度徽章复用 [_downloadRemote]
   /// （下载委托 InterconnectDownloadManager，切 tab/退页仍推进）。
-  Widget _buildRemoteVideoCard(RemoteVideoInfo video) {
+  Widget _buildRemoteVideoCard(
+    RemoteVideoInfo video, {
+    List<RemoteVideoInfo>? collectionMembers,
+    int memberIndex = 0,
+  }) {
     final String safeKey = _safeRemoteKey(video.id);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
     // 响应式网格决定（TODO-593）。
@@ -2411,7 +2441,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       key: ValueKey<String>('remote_video_card_$safeKey'),
       focusId: HibikiFocusId('home-video-remote-$safeKey'),
       padding: EdgeInsets.zero,
-      onTap: () => _openRemote(video),
+      // 合集行内点远端成员：带合集成员上下文进播放器（连播）；散卡区无上下文（单视频）。
+      onTap: () => _openRemote(video,
+          collectionMembers: collectionMembers, startIndex: memberIndex),
       // 短按仍流式播放（_openRemote）；长按 / 桌面右键弹选项面板，与本地视频
       // 卡长按一致（TODO-768 / BUG-416）。原先远端视频卡无 onLongPress（长按
       // 没反应），现在补齐。
