@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:hibiki/src/anki/remote_mining_anki_repository.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/utils.dart';
 
@@ -274,8 +276,22 @@ class LapisSetupResult {
   final String? message;
 }
 
+/// Anki 仓库 provider。默认返回按平台编译期选择的本地仓库（AnkiConnect/AnkiDroid/
+/// AnkiMobile）。当用户开启「制卡到已配对设备」开关时，包一层 [RemoteMiningAnkiRepository]：
+/// `mineEntry`/`isDuplicate` 经互联链路转发到主机（用主机的 Anki 落卡），配置类方法仍委派
+/// 本地仓库——设置页据此照常配置本地 Anki（供开关关闭时使用）。零调用点改动：查词/阅读器/
+/// 视频所有制卡入口都读本 provider，故一处切换即全量改道。
 final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
-  return ref.watch(platformServicesProvider).createAnkiRepository();
+  final BaseAnkiRepository local =
+      ref.watch(platformServicesProvider).createAnkiRepository();
+  final bool mineToServer =
+      ref.watch(appProvider.select((AppModel m) => m.mineToServerEnabled));
+  if (!mineToServer) return local;
+  final AppModel appModel = ref.read(appProvider);
+  return RemoteMiningAnkiRepository(
+    local: local,
+    client: appModel.createRemoteMiningClient(),
+  );
 });
 
 final ankiViewModelProvider =

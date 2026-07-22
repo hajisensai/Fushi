@@ -239,6 +239,8 @@ class YomitanApiServer {
         return _handleAudioLookup(request);
       case '/api/mine':
         return _handleMine(request);
+      case '/api/mine/forward':
+        return _handleMineForward(request);
       case '/api/duplicate':
         return _handleDuplicate(request);
       case '/api/extension/popup-size':
@@ -291,6 +293,20 @@ class YomitanApiServer {
       return _json(await buildRemoteMineResponse(body, mining: mining));
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
+    }
+  }
+
+  /// 互联「制卡到服务端」端点（与 HibikiSyncServer 共享契约 buildForwardedMineResponse）。
+  /// 未注入挖词 service → 404；rawPayloadJson 缺失/类型错 → 400。
+  Future<shelf.Response> _handleMineForward(shelf.Request request) async {
+    final HibikiRemoteMiningService? mining = _mining;
+    if (mining == null) return shelf.Response.notFound('Mining off');
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    try {
+      return _json(await buildForwardedMineResponse(body, mining: mining));
+    } on FormatException {
+      return shelf.Response(400, body: 'Missing rawPayloadJson');
     }
   }
 

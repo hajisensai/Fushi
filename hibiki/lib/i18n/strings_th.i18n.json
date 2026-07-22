@@ -2259,5 +2259,7 @@
   "video_danmaku_manual_bind_failed": "Couldn't load danmaku for this episode. Try again later.",
   "remote_video_info_size": "Size: $size",
   "remote_video_info_no_subtitle": "No subtitles",
-  "app_icon_presets": "Presets"
+  "app_icon_presets": "Presets",
+  "anki_mine_to_server": "Mine to paired device",
+  "anki_mine_to_server_hint": "Send mined cards to the paired host's Anki (its decks and settings) instead of this device. Requires an interconnect pairing."
 }

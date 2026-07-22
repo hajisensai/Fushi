@@ -61,6 +61,19 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             _buildCreateLapisTile(uiState, vm),
           ],
         ),
+        // 互联「制卡到服务端」开关：无条件显示（跨平台——手机也可把卡制到桌面主机的 Anki）。
+        // 开启后所有制卡（查词/阅读器/视频）转发到已配对主机，用主机的 Anki 后端 + 配置落卡；
+        // 目标即互联客户端的配对主机（与远程查词同一目标），需先在「互联/同步」里配对。
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsSwitchRow(
+              title: t.anki_mine_to_server,
+              subtitle: t.anki_mine_to_server_hint,
+              value: appModel.mineToServerEnabled,
+              onChanged: (_) => appModel.toggleMineToServer(),
+            ),
+          ],
+        ),
         if (!Platform.isAndroid)
           AdaptiveSettingsSection(
             title: 'AnkiConnect',

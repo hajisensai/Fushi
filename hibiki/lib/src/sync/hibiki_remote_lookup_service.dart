@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
+import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 
 abstract class HibikiRemoteLookupService {
@@ -31,6 +32,13 @@ abstract class HibikiRemoteMiningService {
   /// [RemoteMineResult.detail]（失败原因 / 音频落空警告），实现方须同时把失败写进错误日志，
   /// 终结「制卡失败报成功 + 诊断黑洞」。
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload);
+
+  /// 互联「制卡到服务端」：客户端把**未渲染**的制卡请求（rawPayloadJson + context 文本 +
+  /// 全部本地媒体字节）转发过来，本机用**自己的** Anki 后端 + 字段映射/牌组渲染并落卡
+  /// （服务端拥有制卡配置）。实现方须把 [ForwardedMinePayload] 的媒体字节落成本机临时文件/
+  /// 词典缓存、重建 `AnkiMiningContext` 后调 `repo.mineEntry`，与 app 内本地制卡同一渲染链路。
+  /// 与 [mineEntry]（浏览器扩展纯文本，已渲染 fields）是独立路径，互不影响契约。
+  Future<RemoteMineResult> mineForwarded(ForwardedMinePayload payload);
 
   /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重（`+`→`✓`，与 app 内一致）。经 Anki 后端
   /// （AnkiConnect `findNotes` / AnkiDroid `findDuplicateNotes`）判断 [expression]/[reading]

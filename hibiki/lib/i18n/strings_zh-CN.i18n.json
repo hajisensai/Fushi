@@ -2259,5 +2259,7 @@
   "video_danmaku_manual_bind_failed": "弹幕加载失败，请稍后重试",
   "remote_video_info_size": "大小：$size",
   "remote_video_info_no_subtitle": "不含字幕",
-  "app_icon_presets": "预设"
+  "app_icon_presets": "预设",
+  "anki_mine_to_server": "制卡到已配对设备",
+  "anki_mine_to_server_hint": "把制卡发送到已配对主机的 Anki（用该设备的牌组与设置），而非本机。需先在互联/同步里完成配对。"
 }

@@ -500,6 +500,10 @@ class HibikiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _handleMine(request);
     }
+    if (reqPath == '/api/mine/forward') {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleMineForward(request);
+    }
     if (reqPath == '/api/media/dictionary') {
       if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
       return _handleDictionaryMedia(request, method == 'HEAD');
@@ -1069,6 +1073,21 @@ class HibikiSyncServer {
       return _jsonResponse(await buildRemoteMineResponse(body, mining: svc));
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
+    }
+  }
+
+  /// 互联「制卡到服务端」：客户端转发未渲染的制卡请求 + 全部媒体字节，本机用自己的 Anki
+  /// 配置落卡。契约与 YomitanApiServer 共享（buildForwardedMineResponse，单一真相源）。
+  /// rawPayloadJson 缺失/类型错 → 400；未注入挖词 service → 404。
+  Future<shelf.Response> _handleMineForward(shelf.Request request) async {
+    final HibikiRemoteMiningService? svc = _miningService;
+    if (svc == null) return shelf.Response.notFound('Mining off');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    try {
+      return _jsonResponse(await buildForwardedMineResponse(body, mining: svc));
+    } on FormatException {
+      return shelf.Response(400, body: 'Missing rawPayloadJson');
     }
   }
 
