@@ -785,7 +785,8 @@ class SyncOrchestrator {
   /// 极小的存储/新设备重弹成本，GC 留待 Phase F。整段 try/catch，错误进 report.errors。
   Future<void> syncDeletionTombstones(SyncRunReport report) async {
     try {
-      final String ns = await _backend.ensureNamespace(kSyncTombstonesNamespace);
+      final String ns =
+          await _backend.ensureNamespace(kSyncTombstonesNamespace);
       final SyncRepository repo = SyncRepository(_db);
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
 
@@ -878,7 +879,8 @@ class SyncOrchestrator {
             .add(r.itemKey);
         final String k = '${r.mediaType} ${r.itemKey}';
         final int? prev = remoteDeletedAt[k];
-        if (prev == null || r.deletedAt > prev) remoteDeletedAt[k] = r.deletedAt;
+        if (prev == null || r.deletedAt > prev)
+          remoteDeletedAt[k] = r.deletedAt;
       }
 
       final SyncRepository repo = SyncRepository(_db);

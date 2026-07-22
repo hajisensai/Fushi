@@ -52,11 +52,14 @@ import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
 import 'package:hibiki/src/media/torrent/torrent_memory.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
+import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/deletion_prompt.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_server_controller.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
@@ -408,6 +411,10 @@ class AppModel with ChangeNotifier {
   /// 共用同一份会话级 snooze + 单飞状态，避免冲突弹窗互相重入或反复打扰。
   final SyncConflictPrompter syncConflictPrompter = SyncConflictPrompter();
 
+  /// 删除传播的「其他设备已删除，本地也删？」确认弹窗调度器（同冲突弹窗纪律：会话级
+  /// snooze + 单飞）。同步消费到远端删除标记后经 [presentDeletionCandidates] 弹出。
+  final DeletionPromptPrompter syncDeletionPrompter = DeletionPromptPrompter();
+
   /// App 级 Hibiki LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
   /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
   /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
@@ -484,6 +491,104 @@ class AppModel with ChangeNotifier {
         .catchError((Object e, StackTrace s) {
       debugPrint('[sync] auto conflict prompt failed: $e');
     });
+  }
+
+  /// 同步报告产出后的统一 UI 回调（onReport）：并列触发**冲突弹窗**与**删除传播确认
+  /// 弹窗**。两者独立（无冲突时仍可能有删除候选，反之亦然），故不能嵌套在
+  /// [presentAutoConflicts] 的 early-return 之内。签名与 [SyncReportCallback] 一致。
+  void presentSyncPrompts(SyncRunReport report, SyncBackend backend) {
+    presentAutoConflicts(report, backend);
+    presentDeletionCandidates(report, backend);
+  }
+
+  /// 同步消费到「远端已删 ∧ 本地在库」候选后，弹逐条确认框让用户选是否本地也删。
+  /// fire-and-forget（present 是 barrier 对话框，不阻塞）；解析 itemKey→展示标题后交
+  /// [DeletionPromptPrompter]。删除应用与基线推进在 prompter 内完成。
+  void presentDeletionCandidates(SyncRunReport report, SyncBackend backend) {
+    if (report.deletionCandidates.isEmpty) return;
+    _presentDeletionCandidatesAsync(report)
+        .catchError((Object e, StackTrace s) {
+      debugPrint('[sync] deletion prompt failed: $e');
+    });
+  }
+
+  Future<void> _presentDeletionCandidatesAsync(SyncRunReport report) async {
+    final List<DeletionCandidateView> views = await _resolveDeletionViews(
+      report.deletionCandidates,
+    );
+    if (views.isEmpty) return;
+    await syncDeletionPrompter.present(
+      navigatorKey: navigatorKey,
+      db: database,
+      views: views,
+      highWaterMs: report.deletionTombstonesHighWaterMs,
+      applyDeletions: _applyConfirmedDeletions,
+      source: ConflictSource.auto,
+      inBook: isMediaOpen,
+    );
+  }
+
+  /// itemKey（bookKey/bookUid/displayName，用户看不懂）→ 展示标题（书名/视频名）。
+  /// 查不到标题时退回 itemKey（绝不因缺标题吞掉候选）。
+  Future<List<DeletionCandidateView>> _resolveDeletionViews(
+    List<DeletionPropagationCandidate> candidates,
+  ) async {
+    final Map<String, String> bookTitles = <String, String>{
+      for (final EpubBookRow r in await database.getAllEpubBooks())
+        r.bookKey: r.title,
+    };
+    final Map<String, String> videoTitles = <String, String>{
+      for (final VideoBookRow r in await database.allVideoBooks())
+        r.bookUid: r.title,
+    };
+    return <DeletionCandidateView>[
+      for (final DeletionPropagationCandidate c in candidates)
+        DeletionCandidateView(
+          candidate: c,
+          title: switch (c.mediaType) {
+            // 有声书与其 epub 共享 bookKey，借书名；查不到退回 itemKey。
+            'book' || 'audiobook' => bookTitles[c.itemKey] ?? c.itemKey,
+            'video' => videoTitles[c.itemKey] ?? c.itemKey,
+            _ => c.itemKey, // localaudio: displayName 本身即可读。
+          },
+        ),
+    ];
+  }
+
+  /// 应用用户确认的删除：逐条按 mediaType 删本地（[DeleteScope.keepLocalOnly] /
+  /// propagateDeletion:false——绝不回写墓碑造成传播循环）。删完刷新书架/视频列表。
+  Future<void> _applyConfirmedDeletions(
+    List<DeletionPropagationCandidate> confirmed,
+  ) async {
+    for (final DeletionPropagationCandidate c in confirmed) {
+      try {
+        switch (c.mediaType) {
+          case 'book':
+            await ReaderHibikiSource.instance.deleteBook(
+              db: database,
+              bookKey: c.itemKey,
+              appModel: this,
+              scope: DeleteScope.keepLocalOnly,
+            );
+          case 'video':
+            await VideoBookRepository(database).deleteVideoBook(
+              c.itemKey,
+              scope: DeleteScope.keepLocalOnly,
+            );
+          case 'audiobook':
+            await AudiobookRepository(database)
+                .deleteAudiobook(c.itemKey, propagateDeletion: false);
+          default:
+            // localaudio 及未知类型：暂不支持消费端删除（写入侧也未接，见 Phase B）。
+            break;
+        }
+      } catch (e) {
+        debugPrint('[sync] apply deletion ${c.mediaType}/${c.itemKey}: $e');
+      }
+    }
+    // 删完刷新受影响的本地库缓存/书架（书 + 视频 + 有声书都可能变）。
+    ReaderMediaType.instance.refreshTab();
+    notifyListeners();
   }
 
   /// Refresh app-owned caches and visible home tabs after a sync run imports

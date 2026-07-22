@@ -188,7 +188,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         db: appModel.database,
         mediaIdentifier: item.mediaIdentifier,
         messenger: messenger,
-        onReport: appModel.presentAutoConflicts,
+        onReport: appModel.presentSyncPrompts,
       );
     }
     return true;

@@ -2265,5 +2265,13 @@
   "video_danmaku_manual_bind_failed": "Couldn't load danmaku for this episode. Try again later.",
   "remote_video_info_size": "Size: $size",
   "remote_video_info_no_subtitle": "No subtitles",
-  "app_icon_presets": "Presets"
+  "app_icon_presets": "Presets",
+  "delete_scope_keep_local": "Delete on this device only",
+  "delete_scope_keep_local_desc": "Other devices keep their copy",
+  "delete_prompt_title": "Deleted on another device",
+  "delete_prompt_message": "These items were deleted on another device. Delete them here too?",
+  "delete_prompt_select_all": "Select all",
+  "delete_prompt_delete_selected": "Delete selected",
+  "delete_scope_sync_everywhere": "Delete from all devices",
+  "delete_scope_sync_everywhere_desc": "Other devices confirm the deletion on next sync"
 }

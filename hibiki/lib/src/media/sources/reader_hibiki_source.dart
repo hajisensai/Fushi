@@ -17,6 +17,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/utils.dart';
 
@@ -697,10 +698,16 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// Pass [appModel] to also clear the override thumbnail file (it is needed to
   /// resolve the thumbnails directory); the override title preference is always
   /// cleared regardless (HBK-AUDIT-040).
+  /// [scope] 控制删除传播：[DeleteScope.syncEverywhere] 记一条 sync 删除墓碑，供同步
+  /// 时发布到远端标记、其他设备逐条确认后也删；[DeleteScope.keepLocalOnly]（默认）只删
+  /// 本机不传播（消费远端删除标记时也走此值——删本地、绝不再回写墓碑造成循环）。备份防
+  /// 复活墓碑（[HibikiDatabase.deleteEpubBook] 的 tombstone:true）与 scope 无关，永远记
+  /// （用户在本机删的东西，导入自己的旧备份不该复活）。
   Future<DeleteBookResult> deleteBook({
     required HibikiDatabase db,
     required String bookKey,
     AppModel? appModel,
+    DeleteScope scope = DeleteScope.keepLocalOnly,
   }) async {
     try {
       // HBK-AUDIT-041: db.deleteEpubBook removes every associated DB row
@@ -735,11 +742,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       // backup MERGE import never resurrects this book from an old backup.
       final int deletedRows = await db.deleteEpubBook(bookKey, tombstone: true);
 
-      // 删除传播（显式确认式）：用户主动删书记一条 sync 删除墓碑，供同步时经 compare
-      // 对话框弹确认后传播到远端（云 __tombstones__ / 互联 host DELETE）。这是「用户
-      // 主动删」路径——host 服务客户端删除请求走 _cleanupBookOnDisk，不经本方法，故不会
-      // 反向再传播。best-effort：记账失败不翻转删除结果。
-      if (deletedRows > 0) {
+      // 删除传播（显式确认式）：仅当用户在删除弹窗选「同步删除」(syncEverywhere) 才记
+      // 一条 sync 删除墓碑，供同步时发布到远端标记、其他设备逐条确认后也删。keepLocalOnly
+      // （含消费远端删除标记的路径）不记，避免「删本地→回写墓碑→再传播」循环。host 服务
+      // 客户端删除走 _cleanupBookOnDisk 不经本方法。best-effort：记账失败不翻转删除结果。
+      if (deletedRows > 0 && scope == DeleteScope.syncEverywhere) {
         try {
           await db.writeSyncDeletionTombstone(
               'book', bookKey, DateTime.now().millisecondsSinceEpoch);

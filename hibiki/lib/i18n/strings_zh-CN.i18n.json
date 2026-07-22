@@ -2265,5 +2265,13 @@
   "video_danmaku_manual_bind_failed": "弹幕加载失败，请稍后重试",
   "remote_video_info_size": "大小：$size",
   "remote_video_info_no_subtitle": "不含字幕",
-  "app_icon_presets": "预设"
+  "app_icon_presets": "预设",
+  "delete_scope_keep_local": "仅从本机删除",
+  "delete_scope_keep_local_desc": "其他设备保留",
+  "delete_prompt_title": "其他设备已删除",
+  "delete_prompt_message": "以下内容已在其他设备删除，也从本机删除吗？",
+  "delete_prompt_select_all": "全选",
+  "delete_prompt_delete_selected": "删除选中",
+  "delete_scope_sync_everywhere": "从所有设备删除",
+  "delete_scope_sync_everywhere_desc": "其他设备下次同步时会确认删除"
 }

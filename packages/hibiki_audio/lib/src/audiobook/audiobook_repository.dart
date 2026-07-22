@@ -62,13 +62,30 @@ class AudiobookRepository {
 
   Future<void> saveAudiobook(Audiobook audiobook) async {
     await _db.upsertAudiobook(_audiobookToCompanion(audiobook));
+    // 删除传播：重新导入同 bookKey 的有声书 → 清其 sync 删除墓碑，防「删了又加、墓碑
+    // 还在」误判（范式仿书/视频的插入清墓碑）。mediaType 用纯字符串，无 app 层依赖。
+    await _db.clearSyncDeletionTombstone('audiobook', audiobook.bookKey);
     debugPrint('[hibiki-audiobook] saveAudiobook bookKey=${audiobook.bookKey}');
   }
 
-  Future<void> deleteAudiobook(String bookKey) async {
+  /// [propagateDeletion]（默认 false）：true 时记一条 `audiobook` sync 删除墓碑，供同步
+  /// 发布到远端标记、其他设备逐条确认后也删（对应删除弹窗「同步删除」）。false（含消费
+  /// 远端删除标记路径）只删本机，绝不回写墓碑造成循环。app 层按 DeleteScope 传入。
+  Future<void> deleteAudiobook(
+    String bookKey, {
+    bool propagateDeletion = false,
+  }) async {
     // deleteAudiobookByBookKey 内部已先删 audioCues 再删 audiobooks。
     await _db.deleteAudiobookByBookKey(bookKey);
     await AudiobookStorage.deletePersistDir(bookKey);
+    if (propagateDeletion) {
+      try {
+        await _db.writeSyncDeletionTombstone(
+            'audiobook', bookKey, DateTime.now().millisecondsSinceEpoch);
+      } catch (_) {
+        // best-effort：记账失败不影响有声书已删。
+      }
+    }
   }
 
   // ── playback position (preferences) ────────────────────────────

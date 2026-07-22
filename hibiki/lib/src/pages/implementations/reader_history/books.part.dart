@@ -456,15 +456,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         : mediaCount == 0
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
-    final bool? confirmed = await showAppDialog<bool>(
+    final DeleteScope? scope = await showAppDialog<DeleteScope>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: t.dialog_delete,
         message: message,
-        onConfirm: () => Navigator.pop(ctx, true),
+        onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (scope == null || !mounted) return;
 
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
     final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
@@ -486,6 +486,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             await ReaderHibikiSource.instance.deleteBook(
               db: appModel.database,
               bookKey: book.bookKey,
+              scope: scope,
             );
           }
           // BUG-439：以前无条件 deleted++，即便 repo.delete 实际没删到行也计数，
@@ -500,6 +501,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
               await ReaderHibikiSource.instance.deleteBook(
             db: appModel.database,
             bookKey: bookKey,
+            scope: scope,
           );
           if (result.deleted) deleted++;
         }
@@ -700,17 +702,17 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
-    if (!await _confirmMediaDelete(
+    final DeleteScope? scope = await _confirmMediaDelete(
       title: t.srt_delete_title,
       message: t.srt_delete_confirm(title: book.title),
-    )) {
-      return;
-    }
+    );
+    if (scope == null) return;
 
     if (book.bookKey.isNotEmpty) {
       await ReaderHibikiSource.instance.deleteBook(
         db: appModel.database,
         bookKey: book.bookKey,
+        scope: scope,
       );
     }
     await SrtBookRepository(appModel.database).delete(book.uid);
@@ -756,17 +758,17 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
 
   Future<void> _confirmDeleteEpub(MediaItem item, String bookKey) async {
     Navigator.pop(context);
-    if (!await _confirmMediaDelete(
+    final DeleteScope? scope = await _confirmMediaDelete(
       title: t.epub_delete_title,
       message: t.srt_delete_confirm(title: item.title),
-    )) {
-      return;
-    }
+    );
+    if (scope == null) return;
 
     final DeleteBookResult result =
         await ReaderHibikiSource.instance.deleteBook(
       db: appModel.database,
       bookKey: bookKey,
+      scope: scope,
     );
     if (!mounted) return;
     if (!result.deleted) {

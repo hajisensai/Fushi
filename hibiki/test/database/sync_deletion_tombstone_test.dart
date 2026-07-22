@@ -4,6 +4,7 @@ library;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
@@ -37,14 +38,24 @@ void main() {
     expect(await db.getSyncDeletionTombstonesOfType('book'), isEmpty);
   });
 
-  test('删视频经 repo 写墓碑；重新 upsert 清碑', () async {
+  test('删视频经 repo 写墓碑（仅 syncEverywhere）；重新 upsert 清碑', () async {
     final repo = VideoBookRepository(db);
     await db.upsertVideoBook(VideoBooksCompanion.insert(
       bookUid: 'video/v1',
       title: 'V1',
       videoPath: '/tmp/v1.mp4',
     ));
+    // keepLocalOnly（默认）不写传播墓碑。
     await repo.deleteVideoBook('video/v1');
+    expect(await db.getSyncDeletionTombstonesOfType('video'), isEmpty);
+    // syncEverywhere 才写传播墓碑。
+    await db.upsertVideoBook(VideoBooksCompanion.insert(
+      bookUid: 'video/v1',
+      title: 'V1',
+      videoPath: '/tmp/v1.mp4',
+    ));
+    await repo.deleteVideoBook('video/v1',
+        scope: DeleteScope.syncEverywhere);
     expect(await db.getSyncDeletionTombstonesOfType('video'), hasLength(1));
     // 重新加入同 uid → 清碑。
     await db.upsertVideoBook(VideoBooksCompanion.insert(
