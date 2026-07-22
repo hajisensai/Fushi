@@ -162,6 +162,12 @@
 @import path_provider_foundation;
 #endif
 
+#if __has_include(<pdfium_flutter/PDFiumFlutterPlugin.h>)
+#import <pdfium_flutter/PDFiumFlutterPlugin.h>
+#else
+@import pdfium_flutter;
+#endif
+
 #if __has_include(<permission_handler_apple/PermissionHandlerPlugin.h>)
 #import <permission_handler_apple/PermissionHandlerPlugin.h>
 #else
@@ -239,6 +245,7 @@
   [MediaKitVideoPlugin registerWithRegistrar:[registry registrarForPlugin:@"MediaKitVideoPlugin"]];
   [FLTPackageInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTPackageInfoPlusPlugin"]];
   [PathProviderPlugin registerWithRegistrar:[registry registrarForPlugin:@"PathProviderPlugin"]];
+  [PDFiumFlutterPlugin registerWithRegistrar:[registry registrarForPlugin:@"PDFiumFlutterPlugin"]];
   [PermissionHandlerPlugin registerWithRegistrar:[registry registrarForPlugin:@"PermissionHandlerPlugin"]];
   [RecordIosPlugin registerWithRegistrar:[registry registrarForPlugin:@"RecordIosPlugin"]];
   [FPPSharePlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPSharePlusPlugin"]];
