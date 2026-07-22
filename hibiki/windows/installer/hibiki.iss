@@ -30,6 +30,12 @@ RestartApplications=no
 AppMutex=HibikiSingleInstanceMutex
 
 [Tasks]
+; 桌面快捷方式：默认勾选（保持旧行为——首装桌面即有图标），允许用户取消。
+; 配合 [Icons] 的 Check: ShouldCreateDesktopIcon，仅在快捷方式尚不存在时创建，
+; 应用内静默更新（/VERYSILENT，用户看不到向导、无法取消）不会重写已存在的 .lnk，
+; 桌面图标位置得以保留（BUG-1014）。
+Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式："
+
 ; 可选：把 Hibiki 注册为视频文件的「打开方式」候选（不抢占系统默认播放器，
 ; 只在资源管理器右键「打开方式」里出现 Hibiki，并支持拖视频到 hibiki.exe）。
 Name: "videoassoc"; Description: "将 Hibiki 加入视频文件的「打开方式」（mkv / mp4 等）"; GroupDescription: "文件关联："
@@ -40,7 +46,11 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 
 [Icons]
 Name: "{group}\Hibiki"; Filename: "{app}\hibiki.exe"
-Name: "{userdesktop}\Hibiki"; Filename: "{app}\hibiki.exe"
+; BUG-1014：只在桌面快捷方式尚不存在时创建。旧版无条件重写 {userdesktop}\Hibiki.lnk，
+; 每次静默更新都把用户在桌面摆好的图标重排回默认格子（Explorer 把重写的 .lnk 当作
+; 变更/新项，丢弃 Shell\Bags 里记住的坐标）。加 Check 后：首装照建（默认勾选 desktopicon
+; 任务），后续更新检测到 .lnk 已在即跳过、不重写、位置保留。
+Name: "{userdesktop}\Hibiki"; Filename: "{app}\hibiki.exe"; Tasks: desktopicon; Check: ShouldCreateDesktopIcon
 
 [Registry]
 ; 一个 Hibiki 应用 ProgId：双击/「打开方式」时以 hibiki.exe "<文件>" 启动。
@@ -147,6 +157,16 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'),
        '/F /IM ' + ExeName + ' /T',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+{ BUG-1014: preserve the user's desktop icon position across updates.
+  Return False (skip creating the desktop shortcut) when {userdesktop}\Hibiki.lnk
+  already exists, so an update never rewrites it -- Explorer keeps the remembered
+  grid position. On a first install the file is absent -> True -> the shortcut is
+  created as before (gated by the default-checked "desktopicon" task). }
+function ShouldCreateDesktopIcon(): Boolean;
+begin
+  Result := not FileExists(ExpandConstant('{userdesktop}\Hibiki.lnk'));
 end;
 
 function InitializeSetup(): Boolean;
