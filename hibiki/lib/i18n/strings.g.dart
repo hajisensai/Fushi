@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 38012 (2236 per locale)
+/// Strings: 38318 (2254 per locale)
 ///
-/// Built on 2026-07-22 at 05:54 UTC
+/// Built on 2026-07-22 at 06:39 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2978,6 +2978,24 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get settings_destination_system_summary =>
       'General, updates & diagnostics';
   String get error_load_failed => 'Something went wrong while loading';
+  String get game_phase_idle => 'Idle';
+  String get game_phase_resolving => 'Resolving';
+  String get game_phase_launching => 'Launching';
+  String get game_phase_attaching => 'Attaching';
+  String get game_phase_injecting => 'Injecting';
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  String get game_phase_running => 'Running';
+  String get game_phase_degraded => 'Degraded';
+  String get game_phase_stopping => 'Stopping';
+  String get game_phase_error => 'Error';
+  String get game_endpoint_phase_connecting => 'Connecting';
+  String get game_endpoint_phase_connected => 'Connected';
+  String get game_endpoint_phase_retrying => 'Retrying';
+  String get game_endpoint_phase_stopped => 'Stopped';
+  String get game_track_clips => 'Clips';
+  String get game_track_energy => 'Energy';
+  String get game_audio_duration => 'Audio duration';
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -8038,6 +8056,42 @@ class _StringsAr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -13171,6 +13225,42 @@ class _StringsDe extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -18320,6 +18410,42 @@ class _StringsEs extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -23480,6 +23606,42 @@ class _StringsFr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -28567,6 +28729,42 @@ class _StringsId extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -33702,6 +33900,42 @@ class _StringsIt extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -38642,6 +38876,42 @@ class _StringsJa extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -43585,6 +43855,42 @@ class _StringsKo extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -48698,6 +49004,42 @@ class _StringsNl extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -53826,6 +54168,42 @@ class _StringsPtBr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -58937,6 +59315,42 @@ class _StringsRu extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -63993,6 +64407,42 @@ class _StringsTh extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -69081,6 +69531,42 @@ class _StringsTr extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -74156,6 +74642,42 @@ class _StringsVi extends _StringsEn {
       'General, updates & diagnostics';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 // Path: <root>
@@ -78878,6 +79400,42 @@ class _StringsZhCn extends _StringsEn {
   String get settings_destination_system_summary => '通用、更新与诊断';
   @override
   String get error_load_failed => '加载出错';
+  @override
+  String get game_phase_idle => '空闲';
+  @override
+  String get game_phase_resolving => '解析中';
+  @override
+  String get game_phase_launching => '启动中';
+  @override
+  String get game_phase_attaching => '附着中';
+  @override
+  String get game_phase_injecting => '注入中';
+  @override
+  String get game_phase_waiting_signals => '等待信号';
+  @override
+  String get game_phase_running => '运行中';
+  @override
+  String get game_phase_degraded => '降级运行';
+  @override
+  String get game_phase_stopping => '停止中';
+  @override
+  String get game_phase_error => '出错';
+  @override
+  String get game_endpoint_phase_connecting => '连接中';
+  @override
+  String get game_endpoint_phase_connected => '已连接';
+  @override
+  String get game_endpoint_phase_retrying => '重试中';
+  @override
+  String get game_endpoint_phase_stopped => '已停止';
+  @override
+  String get game_track_clips => '音频段';
+  @override
+  String get game_track_energy => '能量';
+  @override
+  String get game_audio_duration => '音频时长';
+  @override
+  String get games_rename_label => '游戏名称';
 }
 
 // Path: <root>
@@ -83736,6 +84294,42 @@ class _StringsZhHk extends _StringsEn {
   String get settings_destination_system_summary => '通用、更新與診斷';
   @override
   String get error_load_failed => 'Something went wrong while loading';
+  @override
+  String get game_phase_idle => 'Idle';
+  @override
+  String get game_phase_resolving => 'Resolving';
+  @override
+  String get game_phase_launching => 'Launching';
+  @override
+  String get game_phase_attaching => 'Attaching';
+  @override
+  String get game_phase_injecting => 'Injecting';
+  @override
+  String get game_phase_waiting_signals => 'Waiting for signals';
+  @override
+  String get game_phase_running => 'Running';
+  @override
+  String get game_phase_degraded => 'Degraded';
+  @override
+  String get game_phase_stopping => 'Stopping';
+  @override
+  String get game_phase_error => 'Error';
+  @override
+  String get game_endpoint_phase_connecting => 'Connecting';
+  @override
+  String get game_endpoint_phase_connected => 'Connected';
+  @override
+  String get game_endpoint_phase_retrying => 'Retrying';
+  @override
+  String get game_endpoint_phase_stopped => 'Stopped';
+  @override
+  String get game_track_clips => 'Clips';
+  @override
+  String get game_track_energy => 'Energy';
+  @override
+  String get game_audio_duration => 'Audio duration';
+  @override
+  String get games_rename_label => 'Game name';
 }
 
 /// Flat map(s) containing all translations.
@@ -88300,6 +88894,42 @@ extension on _StringsEn {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -92862,6 +93492,42 @@ extension on _StringsAr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -97445,6 +98111,42 @@ extension on _StringsDe {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -102027,6 +102729,42 @@ extension on _StringsEs {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -106615,6 +107353,42 @@ extension on _StringsFr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -111185,6 +111959,42 @@ extension on _StringsId {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -115770,6 +116580,42 @@ extension on _StringsIt {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -120317,6 +121163,42 @@ extension on _StringsJa {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -124868,6 +125750,42 @@ extension on _StringsKo {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -129446,6 +130364,42 @@ extension on _StringsNl {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -134021,6 +134975,42 @@ extension on _StringsPtBr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -138601,6 +139591,42 @@ extension on _StringsRu {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -143165,6 +144191,42 @@ extension on _StringsTh {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -147738,6 +148800,42 @@ extension on _StringsTr {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -152306,6 +153404,42 @@ extension on _StringsVi {
         return 'General, updates & diagnostics';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
@@ -156840,6 +157974,42 @@ extension on _StringsZhCn {
         return '通用、更新与诊断';
       case 'error_load_failed':
         return '加载出错';
+      case 'game_phase_idle':
+        return '空闲';
+      case 'game_phase_resolving':
+        return '解析中';
+      case 'game_phase_launching':
+        return '启动中';
+      case 'game_phase_attaching':
+        return '附着中';
+      case 'game_phase_injecting':
+        return '注入中';
+      case 'game_phase_waiting_signals':
+        return '等待信号';
+      case 'game_phase_running':
+        return '运行中';
+      case 'game_phase_degraded':
+        return '降级运行';
+      case 'game_phase_stopping':
+        return '停止中';
+      case 'game_phase_error':
+        return '出错';
+      case 'game_endpoint_phase_connecting':
+        return '连接中';
+      case 'game_endpoint_phase_connected':
+        return '已连接';
+      case 'game_endpoint_phase_retrying':
+        return '重试中';
+      case 'game_endpoint_phase_stopped':
+        return '已停止';
+      case 'game_track_clips':
+        return '音频段';
+      case 'game_track_energy':
+        return '能量';
+      case 'game_audio_duration':
+        return '音频时长';
+      case 'games_rename_label':
+        return '游戏名称';
       default:
         return null;
     }
@@ -161382,6 +162552,42 @@ extension on _StringsZhHk {
         return '通用、更新與診斷';
       case 'error_load_failed':
         return 'Something went wrong while loading';
+      case 'game_phase_idle':
+        return 'Idle';
+      case 'game_phase_resolving':
+        return 'Resolving';
+      case 'game_phase_launching':
+        return 'Launching';
+      case 'game_phase_attaching':
+        return 'Attaching';
+      case 'game_phase_injecting':
+        return 'Injecting';
+      case 'game_phase_waiting_signals':
+        return 'Waiting for signals';
+      case 'game_phase_running':
+        return 'Running';
+      case 'game_phase_degraded':
+        return 'Degraded';
+      case 'game_phase_stopping':
+        return 'Stopping';
+      case 'game_phase_error':
+        return 'Error';
+      case 'game_endpoint_phase_connecting':
+        return 'Connecting';
+      case 'game_endpoint_phase_connected':
+        return 'Connected';
+      case 'game_endpoint_phase_retrying':
+        return 'Retrying';
+      case 'game_endpoint_phase_stopped':
+        return 'Stopped';
+      case 'game_track_clips':
+        return 'Clips';
+      case 'game_track_energy':
+        return 'Energy';
+      case 'game_audio_duration':
+        return 'Audio duration';
+      case 'games_rename_label':
+        return 'Game name';
       default:
         return null;
     }
