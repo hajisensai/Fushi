@@ -74,8 +74,9 @@ class ForwardedMinePayload {
           'wordAudioBase64': base64Encode(wordAudioBytes!),
         if (wordAudioExt != null) 'wordAudioExt': wordAudioExt,
         if (dictionaryMedia.isNotEmpty)
-          'dictionaryMedia':
-              dictionaryMedia.map((ForwardedDictMedia m) => m.toJson()).toList(),
+          'dictionaryMedia': dictionaryMedia
+              .map((ForwardedDictMedia m) => m.toJson())
+              .toList(),
       };
 
   /// `fields` 缺失/非法（[rawPayloadJson] 不是字符串）→ 抛 [FormatException]（真正的坏请求，
@@ -133,21 +134,29 @@ class ForwardedMinePayload {
   }
 }
 
-/// 转发的单条词典媒体：原 `path`（服务端据此按 `ankiDictionaryMediaCacheFilename(path)`
-/// 落缓存，与 repo 读取命名对齐）+ 字节。
+/// 转发的单条词典媒体：词典名 `dictionary` + 原 `path`（服务端据此按
+/// `ankiDictionaryMediaCacheFilename(dictionary, path)` 落缓存，与 repo 读取命名对齐——
+/// BUG-904 起缓存文件名同时取词典名+路径以避免跨词典同 path 串味，故必须一并转发）+ 字节。
 class ForwardedDictMedia {
-  const ForwardedDictMedia({required this.path, required this.bytes});
+  const ForwardedDictMedia({
+    this.dictionary = '',
+    required this.path,
+    required this.bytes,
+  });
 
+  final String dictionary;
   final String path;
   final Uint8List? bytes;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
+        if (dictionary.isNotEmpty) 'dictionary': dictionary,
         'path': path,
         if (bytes != null) 'base64': base64Encode(bytes!),
       };
 
   static ForwardedDictMedia fromJson(Map<String, dynamic> json) =>
       ForwardedDictMedia(
+        dictionary: json['dictionary'] as String? ?? '',
         path: json['path'] as String? ?? '',
         bytes: ForwardedMinePayload.tryDecodeBase64(json['base64']),
       );

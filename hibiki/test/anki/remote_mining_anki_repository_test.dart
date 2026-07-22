@@ -20,7 +20,8 @@ class _FakeSender implements RemoteMineSender {
   bool dupResult = false;
 
   @override
-  Future<Map<String, dynamic>?> mineForward(ForwardedMinePayload payload) async {
+  Future<Map<String, dynamic>?> mineForward(
+      ForwardedMinePayload payload) async {
     captured = payload;
     if (throwAuth) throw SyncAuthError('nope');
     return _response;
@@ -69,7 +70,8 @@ class _FakeLocal extends BaseAnkiRepository {
 void main() {
   group('RemoteMiningAnkiRepository', () {
     test('mineEntry 采集四类媒体并转发；映射 success', () async {
-      final _FakeSender sender = _FakeSender(<String, dynamic>{'result': 'success'});
+      final _FakeSender sender =
+          _FakeSender(<String, dynamic>{'result': 'success'});
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocal(),
         client: sender,
@@ -115,12 +117,14 @@ void main() {
       expect(cap.sentenceAudioExt, 'aac');
       expect(cap.wordAudioBytes, <int>[2]);
       expect(cap.wordAudioExt, 'mp3');
+      expect(cap.dictionaryMedia.single.dictionary, 'D');
       expect(cap.dictionaryMedia.single.path, 'g/1.svg');
       expect(cap.dictionaryMedia.single.bytes, <int>[9, 9]);
     });
 
     test('http 单词音频不搬字节（留给服务端下载）', () async {
-      final _FakeSender sender = _FakeSender(<String, dynamic>{'result': 'success'});
+      final _FakeSender sender =
+          _FakeSender(<String, dynamic>{'result': 'success'});
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocal(),
         client: sender,
@@ -153,8 +157,7 @@ void main() {
           MineResult.duplicate);
       expect(await run(<String, dynamic>{'result': 'notConfigured'}),
           MineResult.notConfigured);
-      expect(
-          await run(<String, dynamic>{'result': 'error', 'message': 'boom'}),
+      expect(await run(<String, dynamic>{'result': 'error', 'message': 'boom'}),
           MineResult.error);
       expect(await run(null), MineResult.error); // 无可达主机
     });
@@ -190,8 +193,8 @@ void main() {
     });
 
     test('覆盖/查看类方法保留基类降级（不误操作本机 Anki）', () async {
-      final RemoteMiningAnkiRepository repo =
-          RemoteMiningAnkiRepository(local: _FakeLocal(), client: _FakeSender(null));
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+          local: _FakeLocal(), client: _FakeSender(null));
       expect(await repo.findOverwriteTargetNoteId('a', 'b'), isNull);
       expect(await repo.findMatchingNotes('a', 'b'), isEmpty);
       expect(await repo.noteFields(1), isNull);

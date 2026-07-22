@@ -27,7 +27,9 @@ void main() {
         wordAudioExt: 'mp3',
         dictionaryMedia: <ForwardedDictMedia>[
           ForwardedDictMedia(
-              path: 'a/b.svg', bytes: Uint8List.fromList(<int>[7, 8])),
+              dictionary: '明鏡',
+              path: 'a/b.svg',
+              bytes: Uint8List.fromList(<int>[7, 8])),
         ],
       );
 
@@ -48,14 +50,19 @@ void main() {
       expect(r.sentenceAudioExt, 'aac');
       expect(r.wordAudioBytes, <int>[6]);
       expect(r.wordAudioExt, 'mp3');
+      expect(r.dictionaryMedia.single.dictionary, '明鏡');
       expect(r.dictionaryMedia.single.path, 'a/b.svg');
       expect(r.dictionaryMedia.single.bytes, <int>[7, 8]);
     });
 
     test('rawPayloadJson 缺失/空 → FormatException（真正的坏请求）', () {
-      expect(() => ForwardedMinePayload.fromJson(<String, dynamic>{'sentence': 'x'}),
+      expect(
+          () =>
+              ForwardedMinePayload.fromJson(<String, dynamic>{'sentence': 'x'}),
           throwsFormatException);
-      expect(() => ForwardedMinePayload.fromJson(<String, dynamic>{'rawPayloadJson': ''}),
+      expect(
+          () => ForwardedMinePayload.fromJson(
+              <String, dynamic>{'rawPayloadJson': ''}),
           throwsFormatException);
     });
 
@@ -74,7 +81,10 @@ void main() {
         'rawPayloadJson': '{}',
         'dictionaryMedia': <dynamic>[
           <String, dynamic>{'path': 'a.svg'}, // 无 base64 → 丢弃
-          <String, dynamic>{'path': 'b.svg', 'base64': base64Encode(<int>[1])},
+          <String, dynamic>{
+            'path': 'b.svg',
+            'base64': base64Encode(<int>[1])
+          },
         ],
       });
       expect(r.dictionaryMedia.length, 1);

@@ -5077,7 +5077,8 @@ class _AppModelRemoteLookupService
     for (final ForwardedDictMedia m in media) {
       final bytes = m.bytes;
       if (bytes == null || bytes.isEmpty || m.path.isEmpty) continue;
-      final String fname = ankiDictionaryMediaCacheFilename(m.path);
+      final String fname =
+          ankiDictionaryMediaCacheFilename(m.dictionary, m.path);
       // 防御：文件名扩展名派生自 client 提供的 path，理论上可含分隔符（`ankiDictionary…`
       // 未过滤 ext）。落在缓存目录之外/嵌套子目录是不可接受的——直接跳过该条（外字缺失即
       // 降级，与其它媒体一致），绝不写出目录。SHA-1 前缀已让路径不可上溯，这里再堵横向。

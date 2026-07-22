@@ -143,7 +143,8 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       if (m.dictionary.isEmpty || m.path.isEmpty) continue;
       final Uint8List? bytes = _dictMediaLoader(m.dictionary, m.path);
       if (bytes == null || bytes.isEmpty) continue;
-      out.add(ForwardedDictMedia(path: m.path, bytes: bytes));
+      out.add(ForwardedDictMedia(
+          dictionary: m.dictionary, path: m.path, bytes: bytes));
     }
     return out;
   }
