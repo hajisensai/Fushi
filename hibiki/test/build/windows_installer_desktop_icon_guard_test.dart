@@ -69,7 +69,7 @@ void main() {
       fn.hasMatch(iss),
       isTrue,
       reason: 'ShouldCreateDesktopIcon must return '
-          "not FileExists({userdesktop}\\Hibiki.lnk) (BUG-1014).",
+          'not FileExists({userdesktop}\\Hibiki.lnk) (BUG-1014).',
     );
   });
 
