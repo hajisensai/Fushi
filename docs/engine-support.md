@@ -15,6 +15,7 @@
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
 | `tyrano_nwjs` | TyranoScript / NW.js | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | tyrano_asar_voice_resource (verified)；ffmpeg_resource_event (implemented_unverified)；process_loopback (verified) | 1 |
 | `bgi_ethornell` | BGI / Ethornell | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | bgi_arc20_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `artemis_pfs` | Artemis Engine / PF8 | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | artemis_pf8_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
 
 ## 识别与能力明细
@@ -303,6 +304,50 @@ Tests：—
 - The official trial archive and BGI wrapper were measured directly, but the adapter has not yet crossed a voiced line in the installed game, so clean voice is not claimed.
 - The initial profile intentionally tracks data031*.arc only; BGI titles that use another archive number require measured evidence before widening the classifier.
 - The callback only queues bounded metadata. ARC index parsing, Ogg validation and disk output run on the hook worker.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：—
+
+### Artemis Engine / PF8 (`artemis_pfs`)
+
+- 状态：`partial`
+- 别名：Artemis Engine、Artemis、PF8
+- 家族：`artemis`（iarsys runtime with PF6/PF8 archives）
+- 当前 adapter：`hook/adapters/artemis_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`requires_attach_before_target_pfs_open`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：アマナツ体験版.exe；证据：real_sample — あざらしそふと official アマナツ trial, verified 2026-07-23
+- `pe_architectures`：x64；证据：real_sample — Official trial executable PE/COFF x86-64 static and live observation
+- `directory_files_all`：iarsys64.dll、*.pfs；证据：real_sample — Official trial portable package contains iarsys64.dll and a same-title PF8 archive
+- `pe_imports`：DSOUND.dll、KERNEL32.dll；证据：real_sample — Official trial executable import table
+- `runtime_modules`：iarsys64.dll；证据：runtime_observation — Official trial launched through the x64 Hibiki injector and exposed the Artemis runtime next to the executable
+- `resource_extensions`：.pfs、.ogg；证据：real_sample — PF8 index contains 797 Ogg voice members under sound/vo and sound/sysse/vo
+- `hashes`：trial executable sha256:C0C14E5215541D531AC3C68C208BB514C0EF1A36CBCA6F133872A3DDF37A92E2、trial PF8 sha256:A61E2A66056A7A9D196A8CD4D537B417D0996231103B64502FB514F0E3B8B402、official trial zip sha256:46B5BE9C24C71A3A5709312E25CEAF7E3A6638E6F5FE108C809445F2FDFED553；证据：real_sample — Local SHA-256 of the developer-authorized official trial package, executable and PF8, 2026-07-23
+
+文本能力：
+
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — The resource-audio run disabled Luna; no stable Artemis dialogue thread is claimed.
+- codepage：Unicode / game-specific
+- 线程提示：Select a stable complete-line dialogue thread after enabling Luna on the target title.
+
+音频优先级：
+
+1. `artemis_pf8_voice_resource` — `verified`；格式：complete SHA-1-XOR-decrypted Ogg member from sound/vo or sound/sysse/vo；clean voice：是
+2. `directsound_pcm` — `verified`；格式：generic DirectSound fallback；clean voice：engine_dependent
+3. `process_loopback` — `verified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+- **アマナツ 体験版**（x64，Artemis Engine PF8; title version 1.0.0，2026-07-23）：Official developer trial. Real title-screen playback exported yas_00108.ogg (17,039 bytes, SHA-256 EACCA1330C73EA131E04AC5F2456868D97F98037FC0012DFA344ED255FDF84F5) and kaz_00239.ogg (41,208 bytes, SHA-256 81FF8F2C736E514001B1CEF6BC325B4DA4DC7E8C42CFC3D4D9BFDDEE69F59CBF); both exactly matched the corresponding decrypted PF8 members. SHA-256：C0C14E5215541D531AC3C68C208BB514C0EF1A36CBCA6F133872A3DDF37A92E2。
+
+已知限制：
+
+- Clean capture is verified for PF8 Ogg members in sound/vo and sound/sysse/vo; PF6 parsing is implemented but lacks a real-sample playback run.
+- The adapter publishes the first PFS containing recognized voice entries; multi-PFS titles that split voices across archives need measured evidence before widening the implementation.
+- Audio is verified, but stable automatic Artemis text-thread selection remains unverified.
 
 Fixtures：尚无（P5 补齐）
 

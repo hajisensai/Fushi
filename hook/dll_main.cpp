@@ -18,10 +18,13 @@
 // CoInitializeEx/CoCreateInstance/CoTaskMemFree 需 ole32.lib，用 #pragma 就地声明避免改 CMake。
 #include <mmdeviceapi.h>
 #include <audioclient.h>
+#include <bcrypt.h>
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "bcrypt.lib")
 
 #include <MinHook.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -32,6 +35,7 @@
 
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
+#include "artemis_pfs.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
 #include "ffmpeg_runtime.h"

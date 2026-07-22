@@ -739,6 +739,129 @@
       "test_paths": []
     },
     {
+      "id": "artemis_pfs",
+      "display_name": "Artemis Engine / PF8",
+      "aliases": ["Artemis Engine", "Artemis", "PF8"],
+      "family": {"id": "artemis", "relation": "iarsys runtime with PF6/PF8 archives"},
+      "detection": {
+        "executable_names": {
+          "values": ["アマナツ体験版.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "あざらしそふと official アマナツ trial, verified 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x64"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial executable PE/COFF x86-64 static and live observation"
+          }
+        },
+        "directory_files_all": {
+          "values": ["iarsys64.dll", "*.pfs"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial portable package contains iarsys64.dll and a same-title PF8 archive"
+          }
+        },
+        "pe_imports": {
+          "values": ["DSOUND.dll", "KERNEL32.dll"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial executable import table"
+          }
+        },
+        "runtime_modules": {
+          "values": ["iarsys64.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Official trial launched through the x64 Hibiki injector and exposed the Artemis runtime next to the executable"
+          }
+        },
+        "resource_extensions": {
+          "values": [".pfs", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "PF8 index contains 797 Ogg voice members under sound/vo and sound/sysse/vo"
+          }
+        },
+        "hashes": {
+          "values": [
+            "trial executable sha256:C0C14E5215541D531AC3C68C208BB514C0EF1A36CBCA6F133872A3DDF37A92E2",
+            "trial PF8 sha256:A61E2A66056A7A9D196A8CD4D537B417D0996231103B64502FB514F0E3B8B402",
+            "official trial zip sha256:46B5BE9C24C71A3A5709312E25CEAF7E3A6638E6F5FE108C809445F2FDFED553"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the developer-authorized official trial package, executable and PF8, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "requires_attach_before_target_pfs_open",
+        "follow_child_processes": false,
+        "notes": [
+          "The PF8 index and SHA-1 XOR key are parsed once on HookWorker before the suspended game resumes.",
+          "ReadFile callbacks only match an immutable sorted voice-range table and enqueue fixed-size metadata; file IO, decryption, Ogg validation and output run on the worker.",
+          "The live run set hookdiag 0x0c000021, including both Artemis-ready and Artemis-captured diagnostics."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "The resource-audio run disabled Luna; no stable Artemis dialogue thread is claimed."
+          }
+        ],
+        "codepage": "Unicode / game-specific",
+        "thread_selection_hint": "Select a stable complete-line dialogue thread after enabling Luna on the target title."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "artemis_pf8_voice_resource",
+            "format": "complete SHA-1-XOR-decrypted Ogg member from sound/vo or sound/sysse/vo",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound fallback",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "アマナツ 体験版",
+          "engine_version": "Artemis Engine PF8; title version 1.0.0",
+          "architecture": "x64",
+          "executable_sha256": "C0C14E5215541D531AC3C68C208BB514C0EF1A36CBCA6F133872A3DDF37A92E2",
+          "verified_on": "2026-07-23",
+          "evidence": "Official developer trial. Real title-screen playback exported yas_00108.ogg (17,039 bytes, SHA-256 EACCA1330C73EA131E04AC5F2456868D97F98037FC0012DFA344ED255FDF84F5) and kaz_00239.ogg (41,208 bytes, SHA-256 81FF8F2C736E514001B1CEF6BC325B4DA4DC7E8C42CFC3D4D9BFDDEE69F59CBF); both exactly matched the corresponding decrypted PF8 members."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "Clean capture is verified for PF8 Ogg members in sound/vo and sound/sysse/vo; PF6 parsing is implemented but lacks a real-sample playback run.",
+        "The adapter publishes the first PFS containing recognized voice entries; multi-PFS titles that split voices across archives need measured evidence before widening the implementation.",
+        "Audio is verified, but stable automatic Artemis text-thread selection remains unverified."
+      ],
+      "adapter_path": "hook/adapters/artemis_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
       "id": "unity_il2cpp",
       "display_name": "Unity IL2CPP",
       "aliases": ["Unity", "UnityPlayer IL2CPP"],
