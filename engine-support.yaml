@@ -223,42 +223,55 @@
     },
     {
       "id": "kirikiri_z",
-      "display_name": "KiriKiriZ",
-      "aliases": ["吉里吉里Z", "Kirikiri Z"],
+      "display_name": "KiriKiri2 / KiriKiriZ",
+      "aliases": ["吉里吉里2", "Kirikiri 2", "吉里吉里Z", "Kirikiri Z"],
       "family": {"id": "kirikiri", "relation": "KiriKiri family"},
       "detection": {
         "executable_names": {
-          "values": ["otomeki.exe"],
+          "values": ["otomeki.exe", "isekai-elf-sample.exe"],
           "evidence": {
             "kind": "real_sample",
-            "reference": "otomeki.exe 32-bit integration run, hibiki handoff 2026-07-18"
+            "reference": "otomeki.exe KiriKiriZ run (2026-07-18) and official BABEL KiriKiri2 experience version run (2026-07-23)"
           }
         },
         "pe_architectures": {
           "values": ["x86"],
           "evidence": {
             "kind": "real_sample",
-            "reference": "otomeki.exe 32-bit integration run"
+            "reference": "Both recorded KiriKiriZ and KiriKiri2 samples are x86"
           }
         },
         "directory_files_all": {"values": [], "evidence": null},
         "pe_imports": {"values": [], "evidence": null},
         "runtime_modules": {
-          "values": ["dsound.dll"],
+          "values": ["dsound.dll", "wuvorbis.dll"],
           "evidence": {
             "kind": "runtime_observation",
-            "reference": "DirectSoundCreate -> CreateSoundBuffer -> Unlock observed in otomeki.exe"
+            "reference": "DirectSound was observed in otomeki.exe; the official BABEL experience version loaded wuvorbis.dll from the KiriKiri temp plugin directory"
           }
         },
-        "resource_extensions": {"values": [], "evidence": null},
-        "hashes": {"values": [], "evidence": null}
+        "resource_extensions": {
+          "values": [".xp3", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "The official BABEL experience version ships data.xp3/plugin.xp3 and opens Ogg through wuvorbis"
+          }
+        },
+        "hashes": {
+          "values": ["2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "SHA-256 of isekai-elf-sample.exe from the developer-hosted experience version"
+          }
+        }
       },
       "process_strategy": {
         "launch": "create_suspended_early_injection",
         "attach": "limited_after_audio_device_creation",
         "follow_child_processes": false,
         "notes": [
-          "The verified game creates its DirectSound device during startup, so post-hoc attach misses the output object."
+          "The verified KiriKiriZ game creates its DirectSound device during startup, so post-hoc attach misses the output object.",
+          "KiriKiri2 uses the Borland register ABI internally; the adapter hooks the stable stdcall TVPCreateIStream boundary and the wuvorbis C callback boundary instead of calling BCB C++ vtables from MSVC."
         ]
       },
       "text": {
@@ -276,7 +289,7 @@
         "priority": [
           {
             "kind": "kirikiri_resource_stream",
-            "format": "engine stream / Ogg when available",
+            "format": "TVPCreateIStream / complete Ogg from wuvorbis callbacks",
             "status": "implemented_unverified",
             "clean_voice": "not_verified"
           },
@@ -308,13 +321,21 @@
           "executable_sha256": null,
           "verified_on": "2026-07-18",
           "evidence": "Hibiki launched the game through the x86 injector and read three seconds of non-silent 44100/2/16 PCM through the real shared-memory channel."
+        },
+        {
+          "name": "異世界で猫耳聖女とツンデレエルフ 体験版",
+          "engine_version": "KiriKiri2 (Borland/BCB register ABI)",
+          "architecture": "x86",
+          "executable_sha256": "2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A",
+          "verified_on": "2026-07-23",
+          "evidence": "Developer-hosted experience version launched under Japanese CP932; the BCB resource hook and wuvorbis open/read hooks installed, Luna connected, and non-silent 44100/2/16 decoder PCM reached shared memory. A voiced dialogue line was not traversed, so clean per-line Ogg remains unverified."
         }
       ],
       "current_status": "partial",
       "known_limitations": [
         "The verified KiriKiriZ sample software-mixes into one DirectSound output stream, so captured PCM is equivalent to loopback and includes BGM/SE.",
-        "Clean per-channel voice has not been verified.",
-        "The sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature."
+        "KiriKiri2 BCB resource and decoder hooks install on the recorded official sample, but a voiced dialogue line has not yet been traversed; clean per-line Ogg is not claimed.",
+        "The older KiriKiriZ sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature."
       ],
       "adapter_path": "hook/adapters/kirikiri_adapter.inc",
       "fixture_paths": [],

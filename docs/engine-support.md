@@ -10,7 +10,7 @@
 |---|---|---|---|---|---|
 | `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
-| `kirikiri_z` | KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
+| `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified) | 1 |
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
@@ -98,19 +98,21 @@ Fixtures：`tests/fixtures/reallive_replay.json`
 
 Tests：`tests/reallive_adapter_test.cpp`
 
-### KiriKiriZ (`kirikiri_z`)
+### KiriKiri2 / KiriKiriZ (`kirikiri_z`)
 
 - 状态：`partial`
-- 别名：吉里吉里Z、Kirikiri Z
+- 别名：吉里吉里2、Kirikiri 2、吉里吉里Z、Kirikiri Z
 - 家族：`kirikiri`（KiriKiri family）
 - 当前 adapter：`hook/adapters/kirikiri_adapter.inc`
 - 进程策略：launch=`create_suspended_early_injection`，attach=`limited_after_audio_device_creation`，follow-child=`false`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
-- `executable_names`：otomeki.exe；证据：real_sample — otomeki.exe 32-bit integration run, hibiki handoff 2026-07-18
-- `pe_architectures`：x86；证据：real_sample — otomeki.exe 32-bit integration run
-- `runtime_modules`：dsound.dll；证据：runtime_observation — DirectSoundCreate -> CreateSoundBuffer -> Unlock observed in otomeki.exe
+- `executable_names`：otomeki.exe、isekai-elf-sample.exe；证据：real_sample — otomeki.exe KiriKiriZ run (2026-07-18) and official BABEL KiriKiri2 experience version run (2026-07-23)
+- `pe_architectures`：x86；证据：real_sample — Both recorded KiriKiriZ and KiriKiri2 samples are x86
+- `runtime_modules`：dsound.dll、wuvorbis.dll；证据：runtime_observation — DirectSound was observed in otomeki.exe; the official BABEL experience version loaded wuvorbis.dll from the KiriKiri temp plugin directory
+- `resource_extensions`：.xp3、.ogg；证据：real_sample — The official BABEL experience version ships data.xp3/plugin.xp3 and opens Ogg through wuvorbis
+- `hashes`：2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A；证据：real_sample — SHA-256 of isekai-elf-sample.exe from the developer-hosted experience version
 
 文本能力：
 
@@ -120,7 +122,7 @@ Tests：`tests/reallive_adapter_test.cpp`
 
 音频优先级：
 
-1. `kirikiri_resource_stream` — `implemented_unverified`；格式：engine stream / Ogg when available；clean voice：not_verified
+1. `kirikiri_resource_stream` — `implemented_unverified`；格式：TVPCreateIStream / complete Ogg from wuvorbis callbacks；clean voice：not_verified
 2. `kirikiri_decoder_pcm` — `implemented_unverified`；格式：wuvorbis / wuopus decoder output when available；clean voice：not_verified
 3. `directsound_pcm` — `verified`；格式：44100 Hz / stereo / signed 16-bit in the verified sample；clean voice：否
 4. `process_loopback` — `verified`；格式：host PCM fallback；clean voice：否
@@ -128,12 +130,13 @@ Tests：`tests/reallive_adapter_test.cpp`
 真实样本证据：
 
 - **otomeki.exe sample**（x86，not recorded，2026-07-18）：Hibiki launched the game through the x86 injector and read three seconds of non-silent 44100/2/16 PCM through the real shared-memory channel. SHA-256：未记录。
+- **異世界で猫耳聖女とツンデレエルフ 体験版**（x86，KiriKiri2 (Borland/BCB register ABI)，2026-07-23）：Developer-hosted experience version launched under Japanese CP932; the BCB resource hook and wuvorbis open/read hooks installed, Luna connected, and non-silent 44100/2/16 decoder PCM reached shared memory. A voiced dialogue line was not traversed, so clean per-line Ogg remains unverified. SHA-256：2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A。
 
 已知限制：
 
 - The verified KiriKiriZ sample software-mixes into one DirectSound output stream, so captured PCM is equivalent to loopback and includes BGM/SE.
-- Clean per-channel voice has not been verified.
-- The sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature.
+- KiriKiri2 BCB resource and decoder hooks install on the recorded official sample, but a voiced dialogue line has not yet been traversed; clean per-line Ogg is not claimed.
+- The older KiriKiriZ sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature.
 
 Fixtures：尚无（P5 补齐）
 

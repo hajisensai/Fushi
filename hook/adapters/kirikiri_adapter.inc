@@ -31,6 +31,13 @@ struct MiniOvCallbacks {
   void* tell_func;
 };
 
+typedef size_t(__cdecl* MiniOvReadCallback)(void* ptr, size_t size, size_t nmemb,
+                                            void* datasource);
+typedef int(__cdecl* MiniOvSeekCallback)(void* datasource, int64_t offset, int whence);
+typedef long(__cdecl* MiniOvTellCallback)(void* datasource);
+
+constexpr uint32_t kMaxVoiceDumpBytes = 32u * 1024u * 1024u;
+
 typedef int(__cdecl* wu_ov_open_callbacks_t)(void* datasource, void* vf,
                                              const char* initial, long ibytes,
                                              MiniOvCallbacks callbacks);
@@ -148,10 +155,57 @@ void DecoderRemove(void* handle) {
   LeaveCriticalSection(&g_dec_cs);
 }
 
-// -- detour: wu_ov_open_callbacks --（建解码流 -> 登记句柄 + 尝试拿格式）
+// 在 libvorbisfile 接管 datasource 前，经它提供的标准 C read/seek/tell 回调复制完整原始 Ogg。
+// 这是 KiriKiri2/BCB 最稳定的解密后边界：不解析 BCB C++ stream/vtable，且每个解码器仍是混音前
+// 的独立资源。不可 seek、超限、短读或不是 OggS 时直接放弃，不影响游戏原调用。
+void DumpVorbisDatasourceGuarded(void* datasource, void* vf, MiniOvCallbacks callbacks) {
+  if (!g_capture_enabled || g_header == nullptr || datasource == nullptr ||
+      callbacks.read_func == nullptr || callbacks.seek_func == nullptr ||
+      callbacks.tell_func == nullptr) {
+    return;
+  }
+  auto read_cb = reinterpret_cast<MiniOvReadCallback>(callbacks.read_func);
+  auto seek_cb = reinterpret_cast<MiniOvSeekCallback>(callbacks.seek_func);
+  auto tell_cb = reinterpret_cast<MiniOvTellCallback>(callbacks.tell_func);
+  __try {
+    const long original = tell_cb(datasource);
+    if (original < 0 || seek_cb(datasource, 0, SEEK_END) != 0) return;
+    const long end = tell_cb(datasource);
+    if (end <= 0 || static_cast<uint32_t>(end) > kMaxVoiceDumpBytes) {
+      seek_cb(datasource, original, SEEK_SET);
+      return;
+    }
+    if (seek_cb(datasource, 0, SEEK_SET) != 0) {
+      seek_cb(datasource, original, SEEK_SET);
+      return;
+    }
+
+    const uint32_t size = static_cast<uint32_t>(end);
+    uint8_t* buf = static_cast<uint8_t*>(malloc(size));
+    if (buf == nullptr) {
+      seek_cb(datasource, original, SEEK_SET);
+      return;
+    }
+    const size_t got = read_cb(buf, 1, size, datasource);
+    seek_cb(datasource, original, SEEK_SET);
+    if (got == size && size >= 4 && memcmp(buf, "OggS", 4) == 0) {
+      wchar_t source_name[80] = {};
+      swprintf_s(source_name, L"kirikiri-vorbis-%p.ogg", vf);
+      WriteVoiceOggAt(buf, size, source_name, GetTickCount64());
+      g_header->reserved_luna |=
+          0x40000 | kDiagKirikiriVoiceStreamDumped;  // 回调触发 + 完整 Ogg 已落盘
+    }
+    free(buf);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return;
+  }
+}
+
+// -- detour: wu_ov_open_callbacks --（建解码流 -> 原始 Ogg + 登记句柄 + 尝试拿格式）
 int __cdecl Detour_wu_ov_open_callbacks(void* datasource, void* vf,
                                         const char* initial, long ibytes,
                                         MiniOvCallbacks callbacks) {
+  DumpVorbisDatasourceGuarded(datasource, vf, callbacks);
   const int r = g_orig_wu_ov_open_callbacks(datasource, vf, initial, ibytes,
                                             callbacks);
   if (r == 0 && vf != nullptr) {
@@ -255,7 +309,7 @@ bool TryHookKirikiriDecoders() {
       // wu_ov_info 不 hook，detour 里直接调它读格式——须在装 open/read hook 前就绪。
       g_orig_wu_ov_info =
           reinterpret_cast<wu_ov_info_t>(GetProcAddress(vorb, "wu_ov_info"));
-      HookFn(
+      const bool open_ok = HookFn(
           reinterpret_cast<void*>(GetProcAddress(vorb, "wu_ov_open_callbacks")),
           reinterpret_cast<void*>(&Detour_wu_ov_open_callbacks),
           reinterpret_cast<void**>(&g_orig_wu_ov_open_callbacks));
@@ -266,6 +320,10 @@ bool TryHookKirikiriDecoders() {
       if (g_header != nullptr) {
         g_header->reserved_luna |=
             (p_read == nullptr) ? 0x400 : (read_ok ? 0x100 : 0x200);
+        if (open_ok) {
+          g_header->hook_diagnostics |=
+              hibiki_voice_hook::kDiagKirikiriVorbisOpenHookReady;
+        }
       }
       HookFn(reinterpret_cast<void*>(GetProcAddress(vorb, "wu_ov_clear")),
              reinterpret_cast<void*>(&Detour_wu_ov_clear),
@@ -309,10 +367,10 @@ bool TryHookKirikiriDecoders() {
 // storagename 含 "voice" 或后缀 .ogg/.opus → 拿到"当前播放那句"的原始 OGG，落盘供 host 按时间戳与文
 // 本环配对。参考实现照搬自本机 KrkrExtract（CodeAna.cpp KrkrZ 分支 / tp_stub.*）。
 //
-// 调用约定关键事实（纠正任务描述）：KrkrExtract 的 KrkrZ 分支反汇编显示内部 TVPCreateStream 是 MSVC
-// __fastcall(ecx=name, edx=mode)（stub 里 mov edx,[ebp+C]; mov ecx,[ebp+8]; call）。任务描述里
-// "eax=name / BCB fastcall"其实对应 Krkr2(BCB) 分支（mov eax,[ebp+8]）。otomeki=KrkrZ，故此处按
-// MSVC __fastcall 实现；stub 扫描同时识别 eax(BCB) 变体并置诊断位后安全跳过（避免用错约定崩游戏）。
+// 调用约定关键事实：KrkrZ 内部 TVPCreateStream 是 MSVC __fastcall(ecx=name, edx=mode)；Krkr2
+// 则由 BCB 编译，寄存器约定是 eax=name, edx=mode。插件可见的 TVPCreateIStream 导入桩在两者中都
+// 是稳定的 __stdcall ABI，并把 tTJSBinaryStream 包成标准 COM IStream。故 KrkrZ 保留更上游的内部
+// TVPCreateStream hook；Krkr2 直接 hook 导入桩并读 IStream，避免跨编译器调用 BCB C++ 对象/vtable。
 
 #if defined(_M_IX86)
 
@@ -349,15 +407,16 @@ struct ITVPFunctionExporter {
 
 // exe 导出的 TVPGetFunctionExporter（无参 __stdcall，返回 exporter 单例）。
 typedef ITVPFunctionExporter*(__stdcall* TVPGetFunctionExporter_t)();
+// 插件 SDK 的 TVPCreateIStream 导入桩：跨 MSVC/BCB 都是 __stdcall，返回标准 COM IStream。
+typedef IStream*(__stdcall* TVPCreateIStreamStub_t)(const void* name, uint32_t mode);
 // 内部 TVPCreateStream：KrkrZ = MSVC __fastcall(ecx=name(const ttstr&), edx=mode)，返回 tTJSBinaryStream*。
 typedef TjsBinaryStream*(__fastcall* TVPCreateStream_t)(const void* name, uint32_t mode);
 
+TVPCreateIStreamStub_t g_orig_TVPCreateIStreamStub = nullptr;
 TVPCreateStream_t g_orig_TVPCreateStream = nullptr;
 
 // exe 直取 / V2Link 两条拿 exporter 的路径共享的一次性安装闩（InterlockedCompareExchange）。
 volatile LONG g_voice_installed = 0;
-
-constexpr uint32_t kMaxVoiceDumpBytes = 32u * 1024u * 1024u;  // 单个语音/OGG 落盘上限（防御性）
 
 // E8 rel32 的调用目标 = p + 5 + *(int32*)(p+1)（照 my.h GetCallDestination）。
 inline uint8_t* GetCallDest(const uint8_t* p) {
@@ -571,6 +630,64 @@ bool ReadStreamAllGuarded(TjsBinaryStream* s, uint8_t** out_buf, uint32_t* out_l
   }
 }
 
+// Krkr2 的 BCB tTJSBinaryStream vtable 不能由 MSVC 安全调用。外层 TVPCreateIStream 已将它适配为
+// Windows COM IStream；在这个稳定 ABI 上读取并还原原位置，可完全绕开 BCB C++ 对象布局。
+bool ReadIStreamAllGuarded(IStream* s, uint8_t** out_buf, uint32_t* out_len) {
+  *out_buf = nullptr;
+  *out_len = 0;
+  __try {
+    LARGE_INTEGER zero = {};
+    ULARGE_INTEGER original = {};
+    ULARGE_INTEGER end = {};
+    if (FAILED(s->Seek(zero, STREAM_SEEK_CUR, &original))) {
+      return false;
+    }
+    if (FAILED(s->Seek(zero, STREAM_SEEK_END, &end))) {
+      LARGE_INTEGER restore = {};
+      restore.QuadPart = static_cast<LONGLONG>(original.QuadPart);
+      s->Seek(restore, STREAM_SEEK_SET, nullptr);
+      return false;
+    }
+    if (end.QuadPart == 0 || end.QuadPart > kMaxVoiceDumpBytes) {
+      LARGE_INTEGER restore = {};
+      restore.QuadPart = static_cast<LONGLONG>(original.QuadPart);
+      s->Seek(restore, STREAM_SEEK_SET, nullptr);
+      return false;
+    }
+
+    uint8_t* buf = static_cast<uint8_t*>(malloc(static_cast<size_t>(end.QuadPart)));
+    if (buf == nullptr) {
+      LARGE_INTEGER restore = {};
+      restore.QuadPart = static_cast<LONGLONG>(original.QuadPart);
+      s->Seek(restore, STREAM_SEEK_SET, nullptr);
+      return false;
+    }
+
+    s->Seek(zero, STREAM_SEEK_SET, nullptr);
+    uint32_t done = 0;
+    const uint32_t size = static_cast<uint32_t>(end.QuadPart);
+    while (done < size) {
+      const ULONG want = static_cast<ULONG>((size - done) > 0x100000 ? 0x100000 : (size - done));
+      ULONG got = 0;
+      if (FAILED(s->Read(buf + done, want, &got)) || got == 0) break;
+      done += got;
+    }
+
+    LARGE_INTEGER restore = {};
+    restore.QuadPart = static_cast<LONGLONG>(original.QuadPart);
+    s->Seek(restore, STREAM_SEEK_SET, nullptr);
+    if (done == 0) {
+      free(buf);
+      return false;
+    }
+    *out_buf = buf;
+    *out_len = done;
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
 // SEH 守卫从 ttstr 拷出 storagename（只用裸数组，可 __try）。判空 Ptr / long?:short。
 bool ExtractStorageNameGuarded(const void* name, wchar_t* out, size_t out_cap) {
   __try {
@@ -606,6 +723,28 @@ bool IsVoiceStorageName(const wchar_t* name) {
 void WriteVoiceOgg(const uint8_t* data, uint32_t len,
                    const wchar_t* storagename) {
   WriteVoiceOggAt(data, len, storagename, GetTickCount64());
+}
+
+// Krkr2/BCB：hook 插件导入的稳定 __stdcall 边界。wuvorbis/wuopus 通过该 API 打开 XP3 中的音频；
+// 返回值已是标准 COM IStream，因此无需伪造 eax/edx 寄存器调用，也不触碰 BCB 的 C++ vtable。
+IStream* __stdcall Detour_TVPCreateIStreamStub(const void* name, uint32_t mode) {
+  IStream* stream = g_orig_TVPCreateIStreamStub(name, mode);
+  if (g_header != nullptr) {
+    g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
+  }
+  if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
+    wchar_t storage[520];
+    if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
+      uint8_t* buf = nullptr;
+      uint32_t buf_len = 0;
+      if (ReadIStreamAllGuarded(stream, &buf, &buf_len)) {
+        WriteVoiceOgg(buf, buf_len, storage);
+        free(buf);
+        g_header->reserved_luna |= kDiagKirikiriVoiceStreamDumped;
+      }
+    }
+  }
+  return stream;
 }
 
 // ── detour：引擎内部 TVPCreateStream（MSVC __fastcall：ecx=name(const ttstr&), edx=mode）──────────
@@ -709,8 +848,14 @@ void InstallVoiceStreamHookWithExporter(ITVPFunctionExporter* exporter) {
     return;
   }
   if (is_bcb) {
-    // Krkr2(BCB, eax=name) 变体：MSVC __fastcall detour 不适用，安全跳过（用错约定会崩游戏）。
+    // Krkr2 内部是 BCB eax/edx 约定；在外层稳定 __stdcall 导入桩捕获标准 IStream。
     if (g_header != nullptr) g_header->reserved_luna |= 0x800000;
+    if (HookFn(stub, reinterpret_cast<void*>(&Detour_TVPCreateIStreamStub),
+               reinterpret_cast<void**>(&g_orig_TVPCreateIStreamStub))) {
+      if (g_header != nullptr) {
+        g_header->reserved_luna |= kDiagKirikiriVoiceStreamHookReady;
+      }
+    }
     return;
   }
   uint8_t* mod_base = nullptr;
