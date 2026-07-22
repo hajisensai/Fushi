@@ -48,6 +48,8 @@ constexpr uint32_t kDiagLunaOutputObserved = 0x00001000u;
 constexpr uint32_t kDiagLunaInjectFailed = 0x00002000u;
 constexpr uint32_t kDiagSiglusExactTextHookReady = 0x00004000u;
 constexpr uint32_t kDiagSiglusExactTextObserved = 0x00008000u;
+constexpr uint32_t kDiagFfmpegResourceHooksReady = 0x00010000u;
+constexpr uint32_t kDiagFfmpegResourceCaptured = 0x00020000u;
 constexpr uint32_t kDiagKirikiriVoiceStreamHookReady = 0x00020000u;
 constexpr uint32_t kDiagKirikiriVoiceStreamDumped = 0x00080000u;
 constexpr uint32_t kDiagSiglusOvkHooksReady = 0x10000000u;
@@ -59,7 +61,8 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
   const bool unity_ready =
       (hook_diagnostics & unity_required) == unity_required;
   return (reserved_luna & kDiagKirikiriVoiceStreamHookReady) != 0 ||
-         (reserved_luna & kDiagSiglusOvkHooksReady) != 0 || unity_ready;
+         (reserved_luna & kDiagSiglusOvkHooksReady) != 0 ||
+         (hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0 || unity_ready;
 }
 constexpr uint32_t kUnityVoiceEventCount = 16;
 constexpr uint32_t kUnityClipNameChars = 128;
