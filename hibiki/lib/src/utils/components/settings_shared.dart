@@ -318,7 +318,9 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
         onTitleTap: () => setState(() => _expanded = !_expanded),
         titleTrailing: AnimatedRotation(
           turns: _expanded ? 0.5 : 0.0,
-          duration: const Duration(milliseconds: 180),
+          // eink 下动画归零（连续重绘=残影），箭头直接跳到目标朝向。
+          duration:
+              einkSafeDuration(context, const Duration(milliseconds: 180)),
           child: Icon(
             cupertino ? CupertinoIcons.chevron_down : Icons.expand_more,
             size: cupertino ? 16 : 22,
@@ -328,10 +330,11 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
           ),
         ),
         // 收起时行不入树（不可聚焦、不参与焦点驱动），只保留标题头；用 AnimatedSize
-        // 平滑高度过渡，ClipRect 防过渡帧溢出。
+        // 平滑高度过渡，ClipRect 防过渡帧溢出。eink 下高度过渡同样归零。
         child: ClipRect(
           child: AnimatedSize(
-            duration: const Duration(milliseconds: 180),
+            duration:
+                einkSafeDuration(context, const Duration(milliseconds: 180)),
             curve: Curves.easeInOut,
             alignment: Alignment.topCenter,
             child:
@@ -468,12 +471,16 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // impossible width.
     final double textScale = MediaQuery.textScalerOf(context).scale(1);
     final double stackThreshold = (220.0 * textScale).clamp(220.0, 420.0);
+    // 左栏图标占固定宽（badge ~30 + 间距 gap+4 = 12）：堆叠判断必须把它计入
+    // 需求，否则窄 pane（如视频快捷设置侧栏）里带图标的行仍按无图标阈值走
+    // 行内布局，label+trailing 少了一个图标位而右溢出。
+    final double iconExtra = (showIcon && icon != null) ? 42.0 : 0.0;
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool stackControls = controlBelow ||
             (trailing != null &&
                 !trailingFlexible &&
-                constraints.maxWidth < stackThreshold);
+                constraints.maxWidth < stackThreshold + iconExtra);
         return Padding(
           padding: EdgeInsets.symmetric(
             horizontal: cupertino ? 16 : tokens.spacing.rowHorizontal,
@@ -655,11 +662,17 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
     super.key,
     this.subtitle,
     this.icon,
+    this.showIcon = false,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
+
+  /// 与 [AdaptiveSettingsNavigationRow.showIcon] 同款开关：true 且 [icon] 非空
+  /// 才渲染左栏图标徽章。schema 层的 `showIcons` 经此透传（此前只转发 icon 不
+  /// 转发 showIcon，值控件行声明的图标从不渲染，同卡片左栏对不齐）。
+  final bool showIcon;
   final bool value;
   final ValueChanged<bool>? onChanged;
 
@@ -669,6 +682,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       icon: icon,
+      showIcon: showIcon,
       trailing: adaptiveSwitch(
         context: context,
         value: value,
@@ -687,6 +701,7 @@ class AdaptiveSettingsSwitchActionRow extends StatelessWidget {
     super.key,
     this.subtitle,
     this.icon,
+    this.showIcon = false,
     this.body,
     this.actions = const <Widget>[],
     this.panel,
@@ -696,6 +711,9 @@ class AdaptiveSettingsSwitchActionRow extends StatelessWidget {
   final String title;
   final String? subtitle;
   final IconData? icon;
+
+  /// 见 [AdaptiveSettingsSwitchRow.showIcon]。
+  final bool showIcon;
   final bool value;
   final ValueChanged<bool>? onChanged;
   final Widget? body;
@@ -719,6 +737,7 @@ class AdaptiveSettingsSwitchActionRow extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       icon: icon,
+      showIcon: showIcon,
       controlBelow: stacked,
       trailing: stacked
           ? _buildStackedTrailing(switchControl)
@@ -826,12 +845,16 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
     super.key,
     this.subtitle,
     this.icon,
+    this.showIcon = false,
     this.controlBelow = true,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
+
+  /// 见 [AdaptiveSettingsSwitchRow.showIcon]。
+  final bool showIcon;
   final List<ButtonSegment<T>> segments;
   final T selected;
   final ValueChanged<T> onChanged;
@@ -888,6 +911,7 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       icon: icon,
+      showIcon: showIcon,
       controlBelow: controlBelow,
       // The segmented strip is intrinsically wide and wrapped in a horizontal
       // scroll view; host it as a flexible (bounded-width) trailing so it
@@ -1044,6 +1068,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
     super.key,
     this.subtitle,
     this.icon,
+    this.showIcon = false,
     this.placeholder,
     this.materialWidth,
     this.controlBelow = false,
@@ -1052,6 +1077,10 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
   final String title;
   final String? subtitle;
   final IconData? icon;
+
+  /// 见 [AdaptiveSettingsSwitchRow.showIcon]。仅作用于行内 picker 分支；超过
+  /// [kSettingsPickerInlineLimit] 的整页选择器分支沿用「有 icon 即显示」旧契约。
+  final bool showIcon;
   final List<AdaptiveSettingsPickerOption<T>> options;
   final T selected;
   final ValueChanged<T> onChanged;
@@ -1069,6 +1098,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       icon: icon,
+      showIcon: showIcon,
       controlBelow: cupertino ? false : controlBelow,
       trailingFlexible: !cupertino && !controlBelow,
       trailing: cupertino
@@ -1200,9 +1230,11 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
                 child: Text(option.label),
               ),
           ],
+          // app 内文案统一走 slang t.*：MaterialLocalizations 跟系统 locale，
+          // 与应用内语言切换脱节（用户把界面切中文后按钮仍是英文）。
           cancelButton: CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(sheetContext),
-            child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+            child: Text(t.cancel),
           ),
         );
       },
@@ -1304,11 +1336,15 @@ class AdaptiveSettingsStepperRow extends StatelessWidget {
     super.key,
     this.subtitle,
     this.icon,
+    this.showIcon = false,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
+
+  /// 见 [AdaptiveSettingsSwitchRow.showIcon]。
+  final bool showIcon;
   final double value;
   final double step;
   final double min;
@@ -1322,6 +1358,7 @@ class AdaptiveSettingsStepperRow extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       icon: icon,
+      showIcon: showIcon,
       trailing: _KeyboardStepper(
         value: value,
         step: step,
@@ -1635,6 +1672,7 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
     super.key,
     this.subtitle,
     this.icon,
+    this.showIcon = false,
     this.min = 0,
     this.max = 1,
     this.divisions,
@@ -1647,6 +1685,9 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
   final String title;
   final String? subtitle;
   final IconData? icon;
+
+  /// 见 [AdaptiveSettingsSwitchRow.showIcon]。
+  final bool showIcon;
   final double value;
   final double min;
   final double max;
@@ -1672,6 +1713,7 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
       title: readout == null ? title : '$title ($readout)',
       subtitle: subtitle,
       icon: icon,
+      showIcon: showIcon,
       controlBelow: true,
       trailing: _KeyboardSlider(
         value: value,

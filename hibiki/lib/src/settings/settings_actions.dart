@@ -5,7 +5,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/theme_notifier.dart'
-    show ThemeNotifier, CustomThemeEntry, kCustomThemeDefaultSeed;
+    show CustomThemeEntry, kCustomThemeDefaultSeed;
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/utils.dart';
@@ -489,67 +489,11 @@ Widget buildBrightnessSelector(SettingsContext settingsContext) {
   );
 }
 
-/// 「界面大小」设置项。
-///
-/// TODO-374: 删除「自动/自定义」模式切换。界面大小不再有模式概念——首次启动时
-/// [ThemeNotifier.resolveAppUiScaleForViewport] 已按屏幕算出合适值落盘成具体百分比，
-/// 之后用户始终面对一个可拖的具体数值。因此这里恒渲染可拖滑条（[_AppUiScaleSliderRow]），
-/// 不再有内联分段切换、不再有「自动模式只读展示」分支。
-Widget buildAppUiScaleSelector(SettingsContext settingsContext) {
-  return _AppUiScaleSliderRow(appModel: settingsContext.appModel);
-}
-
-/// 「界面大小」滑条行。
-///
-/// 该滑条位于受 [HibikiAppUiScale] 的 [Transform.scale] 缩放的子树内（`main.dart`
-/// 用 `appModel.appUiScale` 驱动整树缩放）。若拖动每帧都提交真实缩放，整棵树会立刻
-/// 按新比例重排，滑块在手指下被缩放位移，拖动手势随即丢失目标——表现为「改一下就
-/// 断、无法连续拖」。
-///
-/// 因此把拖动中的临时值 [_dragValue] 放在与拖动 UI 同生命周期的本 [State] 里：拖动
-/// 中只更新本地值跟手、不碰全局缩放；松手 `onChangeEnd` 才一次性提交。面板销毁时本
-/// State 一并消失，未提交的临时值不会泄漏到全局单例，所有布局下都不会有显示残留。
-class _AppUiScaleSliderRow extends StatefulWidget {
-  const _AppUiScaleSliderRow({required this.appModel});
-
-  final AppModel appModel;
-
-  @override
-  State<_AppUiScaleSliderRow> createState() => _AppUiScaleSliderRowState();
-}
-
-class _AppUiScaleSliderRowState extends State<_AppUiScaleSliderRow> {
-  /// 拖动进行中的临时值；非拖动时为 null，显示已提交的 [AppModel.appUiScale]。
-  double? _dragValue;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppModel appModel = widget.appModel;
-    final double value = (_dragValue ?? appModel.appUiScale)
-        .clamp(
-          HibikiAppUiScale.minScale,
-          HibikiAppUiScale.maxScale,
-        )
-        .toDouble();
-    return AdaptiveSettingsSliderRow(
-      title: t.app_ui_scale,
-      subtitle: t.app_ui_scale_hint,
-      icon: Icons.format_size_outlined,
-      min: HibikiAppUiScale.minScale,
-      max: HibikiAppUiScale.maxScale,
-      divisions: 27,
-      value: value,
-      label: '${(value * 100).round()}%',
-      // 拖动中只更新本地值跟手，不触发全局 Transform 重排（滑条稳定可连续拖）。
-      onChanged: (double next) => setState(() => _dragValue = next),
-      // 松手一次性提交真实缩放并清空本地拖动值，全局界面随之缩放。
-      onChangeEnd: (double next) async {
-        await appModel.setAppUiScale(next);
-        if (mounted) setState(() => _dragValue = null);
-      },
-    );
-  }
-}
+// TODO-374 的「界面大小」自定义滑条行（buildAppUiScaleSelector /
+// _AppUiScaleSliderRow）已删除：拖动解耦语义由通用的
+// SettingsSliderItem(commitOnRelease: true) 承担（settings_schema_appearance
+// 的 'appearance.app_ui_scale'），消掉 commit-on-release 双实现，并顺带获得
+// 常驻标题读数与搜索索引。
 
 // HBK-AUDIT-129: removed dead `customFontsTitle`. It computed a count-aware
 // title ('${t.custom_fonts} (N)') but had zero callers — the custom-fonts row

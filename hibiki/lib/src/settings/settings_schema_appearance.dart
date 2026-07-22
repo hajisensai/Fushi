@@ -51,14 +51,29 @@ SettingsDestination buildAppearanceDestination() {
               settingsContext.refresh();
             },
           ),
-          // 「界面大小」滑条用自定义有状态行：拖动中只更新局部值跟手，松手才提交
-          // 真实缩放（见 buildAppUiScaleSelector）。这样拖动期间不触发全局
-          // HibikiAppUiScale 的 Transform 重排，滑条不会在手指下被缩放位移、可连续拖。
-          SettingsCustomItem(
+          // 「界面大小」滑条：commitOnRelease——本滑条位于受 HibikiAppUiScale 的
+          // Transform.scale 缩放的子树内，拖动逐帧提交会让整树立刻按新比例重排、
+          // 滑块在手指下位移、手势断裂（TODO-374 旧 _AppUiScaleSliderRow 注释）。
+          // 渲染层 _CommitOnReleaseSlider 拖动只更新本地预览值（跟手 + 标题读数
+          // 实时），松手才经 onChanged 一次性提交真实缩放；键盘/手柄步进每按即提交。
+          // 一等 schema 项同时带来静止常驻读数（titleReadout）与搜索索引，替代原
+          // 自定义 custom 行双实现。id/持久化路径不变。
+          SettingsSliderItem(
             id: 'appearance.app_ui_scale',
+            title: t.app_ui_scale,
+            subtitle: t.app_ui_scale_hint,
             icon: Icons.format_size_outlined,
-            searchTitle: t.app_ui_scale,
-            builder: buildAppUiScaleSelector,
+            min: HibikiAppUiScale.minScale,
+            max: HibikiAppUiScale.maxScale,
+            divisions: 27,
+            label: (double value) => '${(value * 100).round()}%',
+            titleReadout: true,
+            commitOnRelease: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.appUiScale,
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel.setAppUiScale(value);
+            },
           ),
           // 「界面语言」从系统分类归位到这里：它改的是界面呈现语言，与主题/明暗/
           // 缩放同属界面外观；id/持久化 key 不变（本就带 appearance 前缀）。

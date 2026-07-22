@@ -33,6 +33,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   ThemeData get theme => Theme.of(context);
   TextTheme get textTheme => theme.textTheme;
 
+  /// 「创建 Lapis 卡组」在途标记（UI 层，独立于 vm 的 isFetching）。vm 的
+  /// createLapisSetup 内部复用 isFetching，若两行 spinner 都读它，点 Lapis 时
+  /// 「刷新」行也会转圈——各行只对自己的动作显示 busy。
+  bool _creatingLapis = false;
+
   @override
   Widget build(BuildContext context) {
     final uiState = ref.watch(ankiViewModelProvider);
@@ -45,9 +50,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       children: [
         AdaptiveSettingsSection(
           children: [
+            // showIcon 与同卡片的刷新/Lapis 行一致，左栏图标对齐。
             AdaptiveSettingsRow(
               title: t.profile_label,
               icon: Icons.person_outline,
+              showIcon: true,
               trailing: const ProfileSelector(),
             ),
             _buildFetchTile(uiState, vm),
@@ -202,8 +209,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       t.mining_image_quality_hd,
       t.mining_image_quality_native,
     ];
-    final int tier =
-        appModel.miningImageQuality.clamp(0, labels.length - 1);
+    final int tier = appModel.miningImageQuality.clamp(0, labels.length - 1);
     return AdaptiveSettingsSliderRow(
       title: t.mining_image_quality,
       subtitle: t.mining_image_quality_hint,
@@ -230,8 +236,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       t.mining_audio_quality_high,
       t.mining_audio_quality_native,
     ];
-    final int tier =
-        appModel.miningAudioQuality.clamp(0, labels.length - 1);
+    final int tier = appModel.miningAudioQuality.clamp(0, labels.length - 1);
     return AdaptiveSettingsSliderRow(
       title: t.mining_audio_quality,
       subtitle: t.mining_audio_quality_hint,
@@ -282,10 +287,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   }
 
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
+    // Lapis 创建在途时 vm 的 isFetching 也为 true（vm 内部复用同一 flag）；
+    // 本行的「正在刷新」文案与 spinner 只对真正的刷新动作显示。
+    final bool fetching = uiState.isFetching && !_creatingLapis;
     return AdaptiveSettingsRow(
       icon: Icons.sync_outlined,
       showIcon: true,
-      title: uiState.isFetching ? t.anki_fetching : t.anki_fetch,
+      title: fetching ? t.anki_fetching : t.anki_fetch,
       // Platform-neutral refresh hint (TODO-400): this row pulls the *current*
       // deck + note-type snapshot from Anki (AnkiConnect on desktop / iOS,
       // AnkiDroid on Android). The dropdowns only ever render what the last
@@ -293,19 +301,22 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       // invisible until the user taps here. The subtitle says exactly that,
       // replacing the old AnkiDroid-only "Fetch from AnkiDroid" label that made
       // desktop AnkiConnect users miss this as the refresh entry point.
-      subtitle: uiState.isFetching ? null : t.anki_refresh_hint,
+      subtitle: fetching ? null : t.anki_refresh_hint,
       // Action row, not navigation: a leading icon + state-layer ripple signals
       // tappability (MD3 list-item convention, same as SettingsActionItem); the
       // tap triggers a fetch (spinner while running) rather than opening a
       // subpage, so there is no trailing chevron.
-      trailing: uiState.isFetching
+      trailing: fetching
           ? SizedBox(
               width: 20,
               height: 20,
               child: adaptiveIndicator(context: context, strokeWidth: 2),
             )
           : null,
-      onTap: uiState.isFetching ? null : () => vm.fetchConfiguration(),
+      // 任一在途动作（刷新或 Lapis 创建）期间都不可重入。
+      onTap: uiState.isFetching || _creatingLapis
+          ? null
+          : () => vm.fetchConfiguration(),
     );
   }
 
@@ -315,20 +326,30 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       showIcon: true,
       title: t.anki_create_lapis,
       subtitle: t.anki_create_lapis_hint,
-      trailing: uiState.isFetching
+      // spinner 只跟本行自己的在途动作（_creatingLapis），不再借 vm 的
+      // isFetching——否则点「刷新」时本行也凭空转圈。
+      trailing: _creatingLapis
           ? SizedBox(
               width: 20,
               height: 20,
               child: adaptiveIndicator(context: context, strokeWidth: 2),
             )
           : null,
-      onTap: uiState.isFetching ? null : () => _runCreateLapis(vm),
+      onTap: uiState.isFetching || _creatingLapis
+          ? null
+          : () => _runCreateLapis(vm),
     );
   }
 
   Future<void> _runCreateLapis(AnkiViewModel vm) async {
     final messenger = ScaffoldMessenger.of(context);
-    final result = await vm.createLapisSetup();
+    setState(() => _creatingLapis = true);
+    final LapisSetupResult result;
+    try {
+      result = await vm.createLapisSetup();
+    } finally {
+      if (mounted) setState(() => _creatingLapis = false);
+    }
     if (!mounted) return;
     final String message;
     switch (result.outcome) {
@@ -678,22 +699,30 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
             ),
             SizedBox(height: tokens.spacing.gap),
             Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: widget.options.length,
-                itemBuilder: (_, i) {
-                  final opt = widget.options[i];
-                  if (opt == '-') return const Divider(height: 1);
-                  final isSelected = widget.initialValue == opt;
-                  return AdaptiveSettingsRow(
-                    title: widget.labelFor(opt),
-                    trailing: isSelected
-                        ? Icon(
-                            Icons.check,
-                            color: Theme.of(context).colorScheme.primary,
-                          )
-                        : null,
-                    onTap: () => Navigator.pop(context, opt),
+              // 选中勾对照**当前输入框值**而非打开时的旧快照（initialValue）：
+              // 用户在输入框里改过映射后，勾要实时跟着走，不再指向已过时的旧值。
+              // ValueListenableBuilder 只重建选项列表，键入不重建整个弹窗。
+              child: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _controller,
+                builder: (BuildContext context, TextEditingValue value, _) {
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: widget.options.length,
+                    itemBuilder: (_, i) {
+                      final opt = widget.options[i];
+                      if (opt == '-') return const Divider(height: 1);
+                      final bool isSelected = value.text == opt;
+                      return AdaptiveSettingsRow(
+                        title: widget.labelFor(opt),
+                        trailing: isSelected
+                            ? Icon(
+                                Icons.check,
+                                color: Theme.of(context).colorScheme.primary,
+                              )
+                            : null,
+                        onTap: () => Navigator.pop(context, opt),
+                      );
+                    },
                   );
                 },
               ),
@@ -705,21 +734,23 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
           spacing: tokens.spacing.gap,
           runSpacing: tokens.spacing.gap,
           children: [
+            // 统一走 slang t.*（MaterialLocalizations 跟系统 locale，与应用内
+            // 语言切换脱节）。首按钮语义是「清空该字段映射」而非删除实体，
+            // 用 dialog_clear。
             adaptiveDialogAction(
               context: context,
               onPressed: () => Navigator.pop(context, ''),
-              child:
-                  Text(MaterialLocalizations.of(context).deleteButtonTooltip),
+              child: Text(t.dialog_clear),
             ),
             adaptiveDialogAction(
               context: context,
               onPressed: () => Navigator.pop(context),
-              child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+              child: Text(t.dialog_cancel),
             ),
             adaptiveDialogAction(
               context: context,
               onPressed: () => Navigator.pop(context, _controller.text),
-              child: Text(MaterialLocalizations.of(context).okButtonLabel),
+              child: Text(t.dialog_ok),
             ),
           ],
         ),

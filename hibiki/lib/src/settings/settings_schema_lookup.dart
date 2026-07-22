@@ -338,6 +338,7 @@ SettingsDestination buildLookupDestination() {
         items: <SettingsItem>[
           SettingsSliderItem(
             id: 'lookup.popup_max_width',
+            titleReadout: true,
             // TODO-1352: 放宽查词弹窗最大宽度的强制上限（1000→2000），让宽屏 / 4K 下
             // 弹窗能拉到接近占满（实际宽度仍由 resolvePopupRect 按当前屏宽 clamp，
             // 绝不会超出屏幕）。divisions 保持 10px 步进（1750/175）。
@@ -356,6 +357,7 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsSliderItem(
             id: 'lookup.popup_max_height',
+            titleReadout: true,
             // TODO-1352 后续：放宽最大高度上限（800→1600），配合高分屏 / 精细调整；
             // 实际高度仍由 resolvePopupRect 按当前屏高 clamp，绝不会超出屏幕。
             // 步进保持 10px（1400/140）。
@@ -389,6 +391,7 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsSliderItem(
             id: 'lookup.overlay_lookup_max_width',
+            titleReadout: true,
             title: t.overlay_lookup_max_width,
             icon: Icons.open_in_full_outlined,
             min: 250,
@@ -406,6 +409,7 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsSliderItem(
             id: 'lookup.overlay_lookup_max_height',
+            titleReadout: true,
             title: t.overlay_lookup_max_height,
             icon: Icons.height_outlined,
             min: 200,
@@ -438,6 +442,7 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsSliderItem(
             id: 'lookup.extension_popup_max_width',
+            titleReadout: true,
             title: t.extension_popup_max_width,
             icon: Icons.open_in_full_outlined,
             min: 250,
@@ -455,6 +460,7 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsSliderItem(
             id: 'lookup.extension_popup_max_height',
+            titleReadout: true,
             title: t.extension_popup_max_height,
             icon: Icons.height_outlined,
             min: 200,

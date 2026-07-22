@@ -30,6 +30,10 @@ enum SettingsDestinationId {
   // it never collides with the real video destination（与 readerQuickSettings
   // 同款约定）。
   videoQuickSettings,
+  // Synthetic destination for the pushed shortcut-settings page
+  // (ShortcutSettingsPage)；own id so the shell no longer borrows `system` for
+  // content that isn't the system destination（与 appIcon 同款约定）。
+  shortcuts,
 }
 
 /// 书内快捷面板的分组维度，与全局 [SettingsDestinationId] 正交。
@@ -99,6 +103,7 @@ class SettingsDestination {
     this.summary,
     this.visible,
     this.body,
+    this.bodySearchEntries = const <SettingsBodySearchEntry>[],
   });
 
   final SettingsDestinationId id;
@@ -115,6 +120,11 @@ class SettingsDestination {
   /// **不得**自带脚手架/独立滚动（外层渲染器已提供滚动与内边距）。
   final SettingsItemBuilder? body;
 
+  /// [body] 逃生口里设置行的搜索元数据。设置搜索索引器只遍历 [sections]，
+  /// body 自绘正文里的行对它不可见；在此登记行标题让它们进入搜索。命中后跳转
+  /// 到本分类正文即可——body 行不是 schema item，没有滚动定位挂点。
+  final List<SettingsBodySearchEntry> bodySearchEntries;
+
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 
   List<SettingsSection> visibleSections(SettingsContext context) {
@@ -124,6 +134,28 @@ class SettingsDestination {
         .where((SettingsSection section) => section.items.isNotEmpty)
         .toList(growable: false);
   }
+}
+
+/// [SettingsDestination.bodySearchEntries] 的一条：body 逃生口正文里某个设置行
+/// 的搜索元数据（标题用与正文行一致的 i18n 文案；[subtitle] 参与元数据打分）。
+/// [visible] 为 null 表示恒可搜；否则与渲染同款谓词求值，平台/状态下不显示的
+/// 行不会进搜索索引。
+class SettingsBodySearchEntry {
+  const SettingsBodySearchEntry({
+    required this.id,
+    required this.title,
+    this.subtitle,
+    this.visible,
+  });
+
+  /// 全局唯一 id（约定带所属 destination 前缀，如 `card_creation.anki.deck`）。
+  /// 只用于搜索条目身份，不对应任何 schema item。
+  final String id;
+  final String title;
+  final String? subtitle;
+  final SettingsVisibility? visible;
+
+  bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 }
 
 /// 测试钩子：为 true 时，渲染器忽略每个 section 的 [SettingsSection.collapsedByDefault]，
