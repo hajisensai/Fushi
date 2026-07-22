@@ -422,6 +422,7 @@ bool SignalReady(DWORD pid) {
 #include "adapters/renpy_adapter.inc"
 #include "adapters/text_render_adapter.inc"
 #include "adapters/loopback_adapter.inc"
+#include "generated/adapter_includes.inc"
 
 #include "adapter_registry.inc"
 

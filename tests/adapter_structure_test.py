@@ -51,6 +51,15 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("DispatchNewModules();", source)
         self.assertIn("onModuleLoaded(entry.szModule);", source)
 
+    def test_generated_adapters_have_compile_and_lifecycle_registration_seams(self) -> None:
+        main = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        registry = (ROOT / "hook" / "adapter_registry.inc").read_text(encoding="utf-8")
+        self.assertIn('#include "generated/adapter_includes.inc"', main)
+        for name in ("startup", "module", "shutdown", "fields"):
+            path = ROOT / "hook" / "generated" / f"adapter_{name}.inc"
+            self.assertTrue(path.is_file())
+            self.assertIn(f'#include "generated/adapter_{name}.inc"', registry)
+
 
 if __name__ == "__main__":
     unittest.main()

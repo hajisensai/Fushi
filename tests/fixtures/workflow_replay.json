@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "config": {
+    "selected_thread": 2,
+    "pair_tolerance_ms": 100,
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {"kind": "text", "id": "wrong-thread", "timestamp_ms": 900, "thread": 1, "text": "ignored"},
+    {"kind": "text", "id": "line-a", "timestamp_ms": 1000, "thread": 2, "text": "line-a"},
+    {"kind": "text", "id": "line-a-duplicate", "timestamp_ms": 1050, "thread": 2, "text": "line-a"},
+    {"kind": "resource_audio", "id": "resource-a", "timestamp_ms": 1005, "available_at_ms": 1300, "format": "ogg"},
+    {"kind": "text", "id": "line-b", "timestamp_ms": 2000, "thread": 2, "text": "line-b"},
+    {"kind": "pcm", "id": "pcm-b", "timestamp_ms": 2005, "sample_rate": 48000, "channels": 2, "bits": 16},
+    {"kind": "text", "id": "line-c", "timestamp_ms": 3000, "thread": 2, "text": "line-c"},
+    {"kind": "loopback", "id": "loopback-c", "timestamp_ms": 3010, "sample_rate": 48000, "channels": 2, "bits": 16},
+    {"kind": "session_end", "timestamp_ms": 4000}
+  ],
+  "expected": {
+    "cards": [
+      {"text_id": "line-a", "audio_backend": "resource_audio", "audio_id": "resource-a"},
+      {"text_id": "line-b", "audio_backend": "pcm", "audio_id": "pcm-b"},
+      {"text_id": "line-c", "audio_backend": "loopback", "audio_id": "loopback-c"}
+    ],
+    "duplicate_text_events": 1,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}

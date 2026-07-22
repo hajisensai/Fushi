@@ -32,6 +32,20 @@ python tests/engine_support_manifest_test.py
 清单采用 YAML 1.2 兼容的 JSON 语法，因此生成器只依赖 Python 标准库。识别签名不得仅从外部引擎资料库
 照抄；每个非空签名组都必须记录真实样本或运行时观察证据。
 
+## 引擎开发流水线
+
+统一入口 `tool/galhook.ps1` 提供三个可自动化工作流：
+
+```powershell
+./tool/galhook.ps1 probe C:\game\game.exe --output probe.zip
+./tool/galhook.ps1 new engine_id --hibiki-root C:\src\hibiki
+./tool/galhook.ps1 replay tests/fixtures/workflow_replay.json
+```
+
+- `probe` 只打包路径脱敏的元数据、PE imports、哈希和可选 trace 摘要；默认不复制 exe、脚本、图片、语音。
+- `new` 生成未验证 profile、独立 adapter、native/Dart 测试和 fixture，并写入编译与 registry 生命周期接缝。
+- `replay` 离线验证线程过滤、去重、资源晚到、文本-音频配对、fallback 顺序与会话清理。
+
 ## 构建（32/64 位分开——DLL 位数必须匹配目标进程）
 
 galgame 多为 32 位，须各出一份，injector 与 DLL 同目录并放：

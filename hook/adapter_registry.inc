@@ -295,6 +295,7 @@ class AdapterRegistry {
     kirikiri_.InstallDecoders();
     kirikiri_.InstallVoiceStream();
     renpy_.install();
+#include "generated/adapter_startup.inc"
   }
 
   void InstallFallbackAdapters() { loopback_.install(); }
@@ -343,6 +344,7 @@ class AdapterRegistry {
     text_render_.shutdown();
     unity_.shutdown();
     generic_audio_.shutdown();
+#include "generated/adapter_shutdown.inc"
   }
 
  private:
@@ -378,6 +380,7 @@ class AdapterRegistry {
         kirikiri_.onModuleLoaded(entry.szModule);
         renpy_.onModuleLoaded(entry.szModule);
         loopback_.onModuleLoaded(entry.szModule);
+#include "generated/adapter_module.inc"
       } while (Module32NextW(snapshot, &entry));
       modules_seeded_ = true;
     }
@@ -392,6 +395,7 @@ class AdapterRegistry {
   KiriKiriAdapter kirikiri_;
   RenPyAdapter renpy_;
   LoopbackAdapter loopback_;
+#include "generated/adapter_fields.inc"
   int generic_retry_ = 0;
   int siglus_retry_ = 0;
   int decoder_retry_ = 0;
