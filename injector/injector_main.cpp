@@ -20,6 +20,7 @@
 #include "voice_hook_session.h"
 #include "child_process_policy.h"
 #include "ffmpeg_runtime.h"
+#include "locale_emulator_launch.h"
 #include "siglus_launch.h"
 #include "steam_launch.h"
 #include "luna_bridge.h"
@@ -40,11 +41,15 @@
 // 用法：
 //   hibiki_voice_injector.exe --pid <PID> [--dll <hook.dll>] [--wait-ms N] [--hold]
 //   hibiki_voice_injector.exe --launch <exe> [--workdir <dir>] [--arg <a>]...
+//                             [--japanese-locale]
 //                             [--dll <hook.dll>] [--wait-ms N] [--hold]
 //     --pid     目标进程 ID（attach 模式；与 --launch 二选一）
 //     --launch  目标游戏 exe 路径（launch 模式；与 --pid 二选一）
 //     --workdir 子进程工作目录（launch 缺省=exe 所在目录）
 //     --arg     追加一个传给子进程的命令行参数（可重复；launch 专用）
+//     --japanese-locale  用 injector 同目录的 Locale Emulator 运行库建立日语 CP932
+//               环境，再在同一个挂起进程里完成 Hibiki 早注入。运行库不可用时告警并安全
+//               回退普通启动（launch 专用；Steam 协议启动会明确告警且不伪装已转区）。
 //     --dll     hook DLL 路径（默认取同目录 arch 匹配的 hibiki_voice_hook.dll）
 //     --wait-ms 等待就绪事件的超时毫秒（默认 5000）
 //     --hold    注入并确认后保持运行（host 模式，维持共享内存存活）；缺省=probe 模式，
@@ -1026,6 +1031,82 @@ std::wstring JoinPath(const std::wstring& a, const std::wstring& b) {
   return a + L"\\" + b;
 }
 
+struct LeProcessInformation : PROCESS_INFORMATION {
+  PVOID first_call_ldr_load_dll = nullptr;
+};
+
+using LeCreateProcessFunction = LONG(WINAPI*)(
+    hibiki_voice_hook::LeEnvironmentBlock*, PCWSTR, PWSTR, PCWSTR, ULONG,
+    LPSTARTUPINFOW, LeProcessInformation*, LPSECURITY_ATTRIBUTES,
+    LPSECURITY_ATTRIBUTES, PVOID, HANDLE);
+
+// Locale Emulator 的 LoaderDll 负责在 kernel32 初始化前装入 LocaleEmulator.dll。这里始终
+// 把调用结果保持在 CREATE_SUSPENDED；普通引擎交回 RunInjection 完成 Hibiki 早注入后恢复，
+// 需要发现窗口/子进程的策略则由 RunLaunch 先恢复再等待，避免挂起启动器与发现逻辑死锁。
+bool CreateJapaneseLocaleProcess(
+    const std::wstring& executable,
+    std::vector<wchar_t>* command_line, const std::wstring& current_directory,
+    DWORD creation_flags, STARTUPINFOW* startup_info,
+    PROCESS_INFORMATION* process_information) {
+  if (command_line == nullptr || startup_info == nullptr ||
+      process_information == nullptr) {
+    return false;
+  }
+  const std::wstring runtime_dir = InjectorDir();
+  const std::wstring loader_path = JoinPath(runtime_dir, L"LoaderDll.dll");
+  const std::wstring emulator_path =
+      JoinPath(runtime_dir, L"LocaleEmulator.dll");
+  if (!RegularFileExists(loader_path) || !RegularFileExists(emulator_path)) {
+    fprintf(stderr,
+            "[locale] runtime incomplete; expected LoaderDll.dll and "
+            "LocaleEmulator.dll in %ls\n",
+            runtime_dir.c_str());
+    return false;
+  }
+
+  HMODULE loader = LoadLibraryExW(
+      loader_path.c_str(), nullptr,
+      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if (loader == nullptr) {
+    fprintf(stderr, "[locale] LoadLibraryExW(%ls) failed: %lu\n",
+            loader_path.c_str(), GetLastError());
+    return false;
+  }
+  const auto create_process = reinterpret_cast<LeCreateProcessFunction>(
+      GetProcAddress(loader, "LeCreateProcess"));
+  if (create_process == nullptr) {
+    fprintf(stderr, "[locale] LoaderDll!LeCreateProcess missing: %lu\n",
+            GetLastError());
+    FreeLibrary(loader);
+    return false;
+  }
+
+  auto environment = hibiki_voice_hook::BuildJapaneseLocaleEnvironment();
+  LeProcessInformation le_process = {};
+  const LONG status = create_process(
+      &environment, executable.c_str(), command_line->data(),
+      current_directory.empty() ? nullptr : current_directory.c_str(),
+      creation_flags | CREATE_SUSPENDED, startup_info, &le_process, nullptr,
+      nullptr, nullptr, nullptr);
+  if (status == 0) {
+    process_information->hProcess = le_process.hProcess;
+    process_information->hThread = le_process.hThread;
+    process_information->dwProcessId = le_process.dwProcessId;
+    process_information->dwThreadId = le_process.dwThreadId;
+    fprintf(stderr,
+            "[locale] launched with Japanese CP932 via Locale Emulator "
+            "pid=%lu\n",
+            le_process.dwProcessId);
+  } else {
+    fprintf(stderr,
+            "[locale] LeCreateProcess failed: NTSTATUS=0x%08lx; falling back "
+            "to normal launch\n",
+            static_cast<unsigned long>(status));
+  }
+  FreeLibrary(loader);
+  return status == 0;
+}
+
 bool FileExists(const std::wstring& path) {
   const DWORD attr = GetFileAttributesW(path.c_str());
   return attr != INVALID_FILE_ATTRIBUTES &&
@@ -1475,7 +1556,8 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
 int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               const std::vector<std::wstring>& extra_args,
               const std::wstring& dll_path, DWORD wait_ms, bool hold,
-              bool follow_child_processes, const LunaOptions& luna) {
+              bool follow_child_processes, bool japanese_locale,
+              const LunaOptions& luna) {
   if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
     return Fail("目标 exe 不存在（--launch <exe路径>）");
   }
@@ -1502,8 +1584,12 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     cmdline += L" ";
     cmdline += a;
   }
-  std::vector<wchar_t> cmd_buf(cmdline.begin(), cmdline.end());
-  cmd_buf.push_back(L'\0');
+  const auto make_command_buffer = [&cmdline]() {
+    std::vector<wchar_t> buffer(cmdline.begin(), cmdline.end());
+    buffer.push_back(L'\0');
+    return buffer;
+  };
+  std::vector<wchar_t> cmd_buf = make_command_buffer();
 
   STARTUPINFOW si = {0};
   si.cb = sizeof(si);
@@ -1522,16 +1608,53 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               "[steam] warning: custom --arg values are not forwarded by the "
               "steam:// launch path\n");
     }
+    if (japanese_locale) {
+      fprintf(stderr,
+              "[locale] Steam protocol launch cannot preserve the Locale "
+              "Emulator create-suspended boundary; continuing without locale "
+              "override\n");
+    }
     return RunSteamLaunch(exe, steam_app_id, dll_path, wait_ms, hold,
                           effective_luna);
   }
-  const BOOL created = CreateProcessW(
-      exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE,
-      (delayed_siglus || follow_children) ? 0 : CREATE_SUSPENDED,
-      nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
+  const DWORD creation_flags =
+      (delayed_siglus || follow_children) ? 0 : CREATE_SUSPENDED;
+  BOOL created = FALSE;
+  bool locale_launched = false;
+  if (japanese_locale) {
+    created = CreateJapaneseLocaleProcess(
+                  exe, &cmd_buf, workdir, creation_flags, &si, &pi)
+                  ? TRUE
+                  : FALSE;
+    locale_launched = created == TRUE;
+  }
+  if (!created) {
+    // LoaderDll may rewrite its mutable command line. Rebuild before the
+    // Never-break fallback to CreateProcessW.
+    cmd_buf = make_command_buffer();
+    created = CreateProcessW(
+        exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE, creation_flags,
+        nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
+  }
   if (!created) {
     fprintf(stderr, "CreateProcessW failed: %lu\n", GetLastError());
     return 1;
+  }
+
+  const auto locale_resume_policy =
+      hibiki_voice_hook::SelectLocaleThreadResumePolicy(
+          locale_launched, delayed_siglus, follow_children);
+  if (locale_resume_policy ==
+      hibiki_voice_hook::LocaleThreadResumePolicy::kBeforeProcessDiscovery) {
+    if (ResumeThread(pi.hThread) == static_cast<DWORD>(-1)) {
+      fprintf(stderr,
+              "[locale] ResumeThread before process discovery failed: %lu\n",
+              GetLastError());
+      TerminateProcess(pi.hProcess, 1);
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+      return 1;
+    }
   }
 
   if (delayed_siglus &&
@@ -1605,6 +1728,7 @@ int main() {
   DWORD pid = 0;
   std::wstring launch_exe;
   std::wstring workdir;
+  bool japanese_locale = false;
   std::vector<std::wstring> launch_args;
   std::wstring dll_path;
   DWORD wait_ms = 5000;
@@ -1621,6 +1745,8 @@ int main() {
         launch_exe = argv[++i];
       } else if (a == L"--workdir" && i + 1 < argc) {
         workdir = argv[++i];
+      } else if (a == L"--japanese-locale") {
+        japanese_locale = true;
       } else if (a == L"--arg" && i + 1 < argc) {
         launch_args.emplace_back(argv[++i]);
       } else if (a == L"--dll" && i + 1 < argc) {
@@ -1652,6 +1778,7 @@ int main() {
         "usage: hibiki_voice_injector --pid <PID> [--dll <hook.dll>] "
         "[--wait-ms N] [--hold]\n"
         "   or: hibiki_voice_injector --launch <exe> [--workdir <dir>] "
+        "[--japanese-locale] "
         "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold] "
         "[--follow-child-processes]\n"
         "LunaHook(host 侧全引擎文本 hook，仅 --hold 生效): [--no-luna] "
@@ -1669,7 +1796,7 @@ int main() {
   // launch 模式：CREATE_SUSPENDED 早注入。
   if (!launch_exe.empty()) {
     return RunLaunch(launch_exe, workdir, launch_args, dll_path, wait_ms, hold,
-                     follow_child_processes, luna);
+                     follow_child_processes, japanese_locale, luna);
   }
 
   // attach 模式：注入已运行进程（老路径行为不变）。

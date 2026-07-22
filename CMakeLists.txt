@@ -118,6 +118,13 @@ add_executable(hibiki_steam_launch_test
 target_include_directories(hibiki_steam_launch_test PRIVATE "include")
 add_test(NAME hibiki_steam_launch_test COMMAND hibiki_steam_launch_test)
 
+add_executable(hibiki_locale_emulator_launch_test
+  "tests/locale_emulator_launch_test.cpp"
+)
+target_include_directories(hibiki_locale_emulator_launch_test PRIVATE "injector")
+target_compile_definitions(hibiki_locale_emulator_launch_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_locale_emulator_launch_test COMMAND hibiki_locale_emulator_launch_test)
+
 # Siglus 文件夹签名识别（根因回归：改名 Siglus exe 被早注入弹掉）。纯逻辑，注入假文件表。
 add_executable(hibiki_siglus_launch_test
   "tests/siglus_launch_test.cpp"
@@ -148,6 +155,7 @@ add_test(NAME hibiki_adapter_contract_test COMMAND hibiki_adapter_contract_test)
 add_executable(hibiki_voice_injector
   "injector/injector_main.cpp"
   "injector/child_process_policy.h"
+  "injector/locale_emulator_launch.h"
 )
 target_include_directories(hibiki_voice_injector PRIVATE "include" "hook" "injector")
 target_compile_definitions(hibiki_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
