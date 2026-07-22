@@ -1,0 +1,523 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-07-21",
+  "source_baseline": {
+    "repository": "hajisensai/hibiki",
+    "document": "docs/specs/galgame-mining/engine-adapter-plan.md",
+    "section": "1. 当前真相"
+  },
+  "generated_document": "docs/engine-support.md",
+  "status_definitions": {
+    "verified": "已在真实游戏原始路径验证所列能力；只覆盖明确列出的版本与能力。",
+    "partial": "至少一条采集路径已真机验证，但仍有关键能力限制或未验证实现。",
+    "implemented_unverified": "代码已存在，但没有足够的真实游戏证据，不能宣称支持。",
+    "unavailable": "当前没有对应实现。"
+  },
+  "engines": [
+    {
+      "id": "siglus",
+      "display_name": "SiglusEngine",
+      "aliases": ["Siglus 3", "VisualArt's Siglus"],
+      "family": {
+        "id": "visualarts",
+        "relation": "VisualArt's / Key 系引擎"
+      },
+      "detection": {
+        "executable_names": {
+          "values": ["SiglusEngine.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "anemoi 正式版，hibiki handoff 2026-07-19"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "anemoi SiglusEngine 1.1.141.3"
+          }
+        },
+        "directory_files_all": {
+          "values": ["Gameexe.dat", "Scene.pck"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "renamed Siglus executable regression fixed by hibiki-hook d1601b9"
+          }
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["dsound.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "anemoi used DirectSound through CoCreateInstance"
+          }
+        },
+        "resource_extensions": {
+          "values": [".ovk"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "anemoi koe/*.ovk entries exported byte-identically"
+          }
+        },
+        "hashes": {
+          "values": [
+            {
+              "algorithm": "sha256",
+              "scope": "game_executable",
+              "value": "D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059",
+              "version": "1.1.141.3"
+            }
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "hibiki handoff 2026-07-19"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "normal_launch_then_delayed_attach_after_game_window",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "CREATE_SUSPENDED early injection can trigger Enigma Internal Protection Error.",
+          "Renamed executables use the Gameexe.dat + Scene.pck directory signature."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "engine_exact_utf16_hook",
+            "status": "implemented_unverified",
+            "verification": "The current hook contains the Siglus exact-text path, but P0 has no matching real-game evidence record."
+          },
+          {
+            "kind": "luna_hook",
+            "status": "implemented_unverified",
+            "verification": "Generic Luna integration exists; version-specific Siglus verification is not recorded in the P0 baseline."
+          }
+        ],
+        "codepage": "utf-16le for the exact engine path",
+        "thread_selection_hint": "Prefer the engine exact-text source when observed; otherwise select the stable Luna dialogue thread."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "resource_audio",
+            "format": "Ogg/Vorbis entries in koe/*.ovk",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "44100 Hz / stereo / signed 16-bit in the verified sample",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "anemoi 正式版",
+          "engine_version": "SiglusEngine 1.1.141.3",
+          "architecture": "x86",
+          "executable_sha256": "D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059",
+          "verified_on": "2026-07-19",
+          "evidence": "Two OVK voice entries were exported byte-identically; delayed launch/attach and DirectSound PCM were exercised on the original path."
+        }
+      ],
+      "current_status": "verified",
+      "known_limitations": [
+        "Verification is specific to the recorded x86 sample and OVK layout.",
+        "Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.",
+        "The exact-text hook is implemented but is not promoted to verified by this baseline."
+      ],
+      "adapter_path": "hook/dll_main.cpp",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/siglus_ovk_test.cpp",
+        "tests/siglus_launch_test.cpp",
+        "tests/siglus_text_test.cpp"
+      ]
+    },
+    {
+      "id": "kirikiri_z",
+      "display_name": "KiriKiriZ",
+      "aliases": ["吉里吉里Z", "Kirikiri Z"],
+      "family": {"id": "kirikiri", "relation": "KiriKiri family"},
+      "detection": {
+        "executable_names": {
+          "values": ["otomeki.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "otomeki.exe 32-bit integration run, hibiki handoff 2026-07-18"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "otomeki.exe 32-bit integration run"
+          }
+        },
+        "directory_files_all": {"values": [], "evidence": null},
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["dsound.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "DirectSoundCreate -> CreateSoundBuffer -> Unlock observed in otomeki.exe"
+          }
+        },
+        "resource_extensions": {"values": [], "evidence": null},
+        "hashes": {"values": [], "evidence": null}
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "limited_after_audio_device_creation",
+        "follow_child_processes": false,
+        "notes": [
+          "The verified game creates its DirectSound device during startup, so post-hoc attach misses the output object."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "Generic Luna plumbing exists; the P0 baseline does not record a versioned text-thread replay."
+          }
+        ],
+        "codepage": "game-specific",
+        "thread_selection_hint": "Reject metadata/per-character noise and select the stable dialogue thread manually when auto-selection is ambiguous."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "kirikiri_resource_stream",
+            "format": "engine stream / Ogg when available",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "kirikiri_decoder_pcm",
+            "format": "wuvorbis / wuopus decoder output when available",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "44100 Hz / stereo / signed 16-bit in the verified sample",
+            "status": "verified",
+            "clean_voice": false
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "otomeki.exe sample",
+          "engine_version": "not recorded",
+          "architecture": "x86",
+          "executable_sha256": null,
+          "verified_on": "2026-07-18",
+          "evidence": "Hibiki launched the game through the x86 injector and read three seconds of non-silent 44100/2/16 PCM through the real shared-memory channel."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "The verified KiriKiriZ sample software-mixes into one DirectSound output stream, so captured PCM is equivalent to loopback and includes BGM/SE.",
+        "Clean per-channel voice has not been verified.",
+        "The sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature."
+      ],
+      "adapter_path": "hook/dll_main.cpp",
+      "fixture_paths": [],
+      "test_paths": ["tests/resource_audio_ready_test.cpp"]
+    },
+    {
+      "id": "xaudio2_directsound",
+      "display_name": "XAudio2 / DirectSound generic capture",
+      "aliases": ["XAudio2", "DirectSound", "Windows source PCM"],
+      "family": {"id": "windows_audio_api", "relation": "generic audio backend"},
+      "detection": {
+        "executable_names": {"values": [], "evidence": null},
+        "pe_architectures": {
+          "values": ["x86", "x64"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Both helper architectures build; x86 KiriKiriZ/Siglus paths were exercised on real games."
+          }
+        },
+        "directory_files_all": {"values": [], "evidence": null},
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["xaudio2_9.dll", "xaudio2_8.dll", "dsound.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The shipped generic adapters resolve these loaded modules; DirectSound was observed on the recorded x86 samples."
+          }
+        },
+        "resource_extensions": {"values": [], "evidence": null},
+        "hashes": {"values": [], "evidence": null}
+      },
+      "process_strategy": {
+        "launch": "create_suspended_preferred",
+        "attach": "supported_for_objects_created_after_attach",
+        "follow_child_processes": false,
+        "notes": [
+          "Early injection is required when an engine creates its only audio device/source voices during startup."
+        ]
+      },
+      "text": {
+        "capabilities": [],
+        "codepage": "not_applicable",
+        "thread_selection_hint": "Text selection belongs to the engine/Luna profile, not the audio backend."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "xaudio2_source_voice_pcm",
+            "format": "source-voice PCM",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "directsound_buffer_pcm",
+            "format": "secondary/output buffer PCM",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "Recorded real-game set",
+          "engine_version": "mixed",
+          "architecture": "x86 verified; x64 build covered",
+          "executable_sha256": null,
+          "verified_on": "2026-07-18/19",
+          "evidence": "The generic capture path produced non-silent PCM on the KiriKiriZ and Siglus samples; the baseline also records XAudio2 real-game verification without a versioned sample hash."
+        }
+      ],
+      "current_status": "verified",
+      "known_limitations": [
+        "A backend hit does not prove clean voice: software-mixed buffers can be equivalent to loopback.",
+        "Attach cannot retroactively hook already-created engine/source objects.",
+        "The P0 baseline does not contain a named, hashed XAudio2 sample, so compatibility must be re-verified per engine."
+      ],
+      "adapter_path": "hook/dll_main.cpp",
+      "fixture_paths": [],
+      "test_paths": ["tests/session_reuse_test.cpp"]
+    },
+    {
+      "id": "renpy_ffmpeg54",
+      "display_name": "Ren'Py / FFmpeg 54",
+      "aliases": ["Ren'Py", "libavcodec-54", "libavformat-54"],
+      "family": {"id": "renpy", "relation": "legacy FFmpeg 1.0-era runtime"},
+      "detection": {
+        "executable_names": {
+          "values": ["Sakura Swim Club.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Sakura Swim Club full-card run recorded in hibiki handoff 2026-07-18"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Recorded Ren'Py sample launches a child python.exe targeted by the legacy hook"
+          }
+        },
+        "directory_files_all": {"values": [], "evidence": null},
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["avcodec-54.dll", "avformat-54.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The existing adapter targets the recorded legacy Ren'Py/FFmpeg runtime; the sample did not produce an adapter hit"
+          }
+        },
+        "resource_extensions": {"values": [], "evidence": null},
+        "hashes": {"values": [], "evidence": null}
+      },
+      "process_strategy": {
+        "launch": "launcher_then_child_python_requires_follow",
+        "attach": "implemented_for_target_process_only",
+        "follow_child_processes": false,
+        "notes": [
+          "The recorded top-level executable is a launcher and the real game is a child python process.",
+          "Automatic child-process following is not implemented yet and is a Phase 4 deliverable."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "No versioned text-thread replay is recorded for the sample."
+          }
+        ],
+        "codepage": "game-specific",
+        "thread_selection_hint": "Select the child python process and its stable dialogue thread, not the launcher."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "ffmpeg54_decoder_pcm",
+            "format": "libavcodec/libavformat major 54 decoded PCM",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "Sakura Swim Club",
+          "engine_version": "Ren'Py version not recorded",
+          "architecture": "x86 child python process",
+          "executable_sha256": null,
+          "verified_on": "2026-07-18",
+          "evidence": "The end-to-end card path succeeded through process loopback; the engine adapter did not hit, so this is not evidence of FFmpeg adapter compatibility."
+        }
+      ],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Only libavcodec/libavformat major 54 with hand-maintained FFmpeg 1.0-era layouts is implemented.",
+        "The recorded sample required following a child python process, which the injector does not yet do automatically.",
+        "The real sample fell back to loopback; no clean decoder-level voice claim is made."
+      ],
+      "adapter_path": "hook/dll_main.cpp",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
+      "id": "unity_il2cpp",
+      "display_name": "Unity IL2CPP",
+      "aliases": ["Unity", "UnityPlayer IL2CPP"],
+      "family": {"id": "unity", "relation": "IL2CPP runtime"},
+      "detection": {
+        "executable_names": {
+          "values": ["manosaba.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "manosaba_game runtime recorded in hibiki-hook README"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x64"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "manosaba_game Unity IL2CPP sample"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "UnityPlayer.dll",
+            "GameAssembly.dll",
+            "*_Data/il2cpp_data/Metadata/global-metadata.dat"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "manosaba_game directory inspection recorded in hibiki-hook README"
+          }
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["UnityPlayer.dll", "GameAssembly.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "manosaba_game Unity IL2CPP sample"
+          }
+        },
+        "resource_extensions": {"values": [], "evidence": null},
+        "hashes": {"values": [], "evidence": null}
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported_with_reduced_audio_coverage",
+        "follow_child_processes": false,
+        "notes": [
+          "Early launch catches source voices created during startup; attach keeps the Luna text helper even when engine audio falls back."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_pc_hooks",
+            "status": "verified",
+            "verification": "PC hooks are auto-enabled for the recorded Unity IL2CPP layout."
+          },
+          {
+            "kind": "unity_tmp_events",
+            "status": "verified",
+            "verification": "The baseline records TMP/text and AudioClip resource pairing on a real IL2CPP sample."
+          }
+        ],
+        "codepage": "utf-16 / managed strings",
+        "thread_selection_hint": "Prefer the stable TMP/Luna dialogue source; keep text active when audio falls back to loopback."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "unity_audioclip_resource",
+            "format": "AudioClip / StreamingAssets resource extraction",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "xaudio2_source_voice_pcm",
+            "format": "source-voice PCM fallback",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "manosaba_game / manosaba.exe",
+          "engine_version": "Unity IL2CPP (version not recorded)",
+          "architecture": "x64",
+          "executable_sha256": null,
+          "verified_on": "2026-07-18",
+          "evidence": "Real directory/runtime signatures and the AudioClip/TMP/resource-pairing path are recorded; the helper release includes the x64 unity_audio_runtime."
+        }
+      ],
+      "current_status": "verified",
+      "known_limitations": [
+        "Unity Mono is a separate Phase 4 target and is not covered by this IL2CPP claim.",
+        "The verified sample version and executable hash were not recorded.",
+        "Attach after startup may miss source voices and must retain loopback fallback."
+      ],
+      "adapter_path": "hook/dll_main.cpp",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/unity_event_cursor_test.cpp",
+        "tests/il2cpp_thread_scope_test.cpp",
+        "tests/resource_audio_ready_test.cpp"
+      ]
+    }
+  ]
+}

@@ -30,6 +30,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      # P0 单一真相源守卫：schema/真实样本证据必须有效，生成文档不得漂移。
+      - name: Verify engine support manifest
+        run: |
+          python tools/generate_engine_support.py --check
+          python tests/engine_support_manifest_test.py
+
       # 32/64 位分开构建（DLL 位数必须匹配目标游戏进程）。windows-2022 runner 自带
       # Visual Studio 2022 + CMake，多配置生成器用 -A x64 / -A Win32 选架构平台。
       - name: Configure & build (x64)

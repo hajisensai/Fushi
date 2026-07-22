@@ -18,6 +18,20 @@ galgame 一键制卡（[docs/specs/galgame-mining](../../docs/specs/galgame-mini
 | `hibiki_voice_hook.dll` | 注入进游戏进程的 hook DLL：混音前截语音写共享内存环形缓冲 |
 | `hibiki_voice_injector.exe` | 注入器：把 DLL 注入目标游戏，建共享内存 + 就绪事件，读回语音格式 |
 
+## 引擎支持矩阵
+
+机器可读的唯一真相源是 [`engine-support.yaml`](engine-support.yaml)，可读版本是自动生成的
+[`docs/engine-support.md`](docs/engine-support.md)。更新真实样本证据后运行：
+
+```sh
+python tools/generate_engine_support.py
+python tools/generate_engine_support.py --check
+python tests/engine_support_manifest_test.py
+```
+
+清单采用 YAML 1.2 兼容的 JSON 语法，因此生成器只依赖 Python 标准库。识别签名不得仅从外部引擎资料库
+照抄；每个非空签名组都必须记录真实样本或运行时观察证据。
+
 ## 构建（32/64 位分开——DLL 位数必须匹配目标进程）
 
 galgame 多为 32 位，须各出一份，injector 与 DLL 同目录并放：

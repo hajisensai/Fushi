@@ -5,4 +5,7 @@ out/
 # .NET (unity_audio_extract)
 bin/
 obj/
+# Python 诊断/文档工具缓存
+__pycache__/
+*.py[cod]
 
