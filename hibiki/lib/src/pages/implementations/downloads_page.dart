@@ -21,6 +21,12 @@ class _DownloadsPageState extends State<DownloadsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载任务折叠区
+      // 贴底、中段结果列表是唯一的 Expanded。默认 resizeToAvoidBottomInset:true 时，
+      // 手机软键盘弹出会压掉 body 高度、顶掉贴底任务区，使其爬到顶部输入框边上（看似
+      // 「下载任务被输入框挤上去」）。关掉 inset 让键盘只覆盖下半部结果/任务区（打字时
+      // 本就不看），顶部输入框保持可见、布局不反流。
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: Text(_showSettings ? t.download_settings : t.nav_downloads),
         actions: <Widget>[

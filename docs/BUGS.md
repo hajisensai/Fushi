@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 969 条。点号进各自文件。
+> 共 970 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1003](bugs/BUG-1003-download-kb-inset.md) | ✅ | ✅ | 下载页输入apikey时软键盘顶掉贴底下载任务区 |
 | [BUG-1002](bugs/BUG-1002-jimaku-download-anilist-only-no-query-fallback.md) | ✅ | ✅ | 下载页字幕搜索仅按AniList id无文本回退致误报无字幕 |
 | [BUG-1001](bugs/BUG-1001-lookup-panel-pin-block-off-faint-light.md) | ✅ | ✅ | 桌面查词浮窗顶栏图钉/防截屏关闭态浅色下太淡 |
 | [BUG-1000](bugs/BUG-1000-floating-lyric-tap-dropped-stale-reader-handler.md) | ✅ | ✅ | 桌面悬浮字幕点词后台听书时静默丢弃(reader卸载后channel残留!mounted handler) |
