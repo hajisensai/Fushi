@@ -86,9 +86,22 @@ class FtpSyncBackend extends SyncBackend
 
   // ── Auth ──────────────────────────────────────────────────────────
 
+  /// Normalize stored credentials for an FTP login. Only the host is truly
+  /// required; an empty/null username means anonymous FTP (`anonymous` with an
+  /// empty password), and a server that needs a username but no password is
+  /// honored too. Centralized so [testConnection] and [_connect] behave
+  /// identically instead of the old split where the widget test passed empty
+  /// creds through but [_connect] hard-rejected them (BUG-1016).
+  @visibleForTesting
+  static ({String user, String pass}) ftpLoginCredentials(
+      String? username, String? password) {
+    final String user =
+        (username == null || username.isEmpty) ? 'anonymous' : username;
+    return (user: user, pass: password ?? '');
+  }
+
   @override
-  Future<bool> get isAuthenticated async =>
-      _host != null && _username != null && _password != null;
+  Future<bool> get isAuthenticated async => _host != null;
 
   @override
   Future<String?> get currentEmail async => _username;
@@ -574,11 +587,13 @@ class FtpSyncBackend extends SyncBackend
     required String password,
     required bool useTls,
   }) async {
+    final ({String user, String pass}) creds =
+        ftpLoginCredentials(username, password);
     final client = FTPConnect(
       host,
       port: port,
-      user: username,
-      pass: password,
+      user: creds.user,
+      pass: creds.pass,
       securityType: useTls ? SecurityType.ftps : SecurityType.ftp,
       timeout: 15,
     );
@@ -597,14 +612,16 @@ class FtpSyncBackend extends SyncBackend
   // ── Connection management ─────────────────────────────────────────
 
   Future<void> _connect() async {
-    if (_host == null || _username == null || _password == null) {
+    if (_host == null) {
       throw SyncAuthError('FTP credentials not set');
     }
+    final ({String user, String pass}) creds =
+        ftpLoginCredentials(_username, _password);
     _client = FTPConnect(
       _host!,
       port: _port,
-      user: _username!,
-      pass: _password!,
+      user: creds.user,
+      pass: creds.pass,
       securityType: _useTls ? SecurityType.ftps : SecurityType.ftp,
       timeout: 30,
     );

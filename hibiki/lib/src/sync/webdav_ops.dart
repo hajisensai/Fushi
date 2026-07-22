@@ -29,11 +29,15 @@ class WebDavOps {
   })  : _baseUrl = baseUrl,
         _connectionTimeout = connectionTimeout,
         _pinnedFingerprint = pinnedFingerprint,
-        _authHeader =
-            'Basic ${base64Encode(utf8.encode('$username:$password'))}';
+        // 用户名和密码都空 = 匿名 / 无鉴权 WebDAV：根本不带 Authorization 头，
+        // 而不是发 `Basic base64(':')`（很多匿名服务器仍会因此回 401）。任一凭据
+        // 非空时行为完全不变（BUG-1016）。
+        _authHeader = (username.isEmpty && password.isEmpty)
+            ? null
+            : 'Basic ${base64Encode(utf8.encode('$username:$password'))}';
 
   final String _baseUrl;
-  final String _authHeader;
+  final String? _authHeader;
   final Duration _connectionTimeout;
 
   /// TODO-961 M1: https 端点的证书 SHA-256 钉扎指纹（aa:bb:.. 形式）。null = 明文
@@ -70,7 +74,8 @@ class WebDavOps {
   Future<HttpClientRequest> buildRequest(String method, String url) async {
     final request = await _client().openUrl(method, Uri.parse(url));
     request.followRedirects = false;
-    request.headers.set('Authorization', _authHeader);
+    final String? auth = _authHeader;
+    if (auth != null) request.headers.set('Authorization', auth);
     return request;
   }
 

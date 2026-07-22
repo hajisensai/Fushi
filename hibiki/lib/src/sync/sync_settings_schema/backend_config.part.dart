@@ -229,7 +229,9 @@ class _WebDavConfigWidget extends StatelessWidget {
     final String url = texts[0].trim();
     final String username = texts[1].trim();
     final String password = texts[2];
-    if (url.isEmpty || username.isEmpty || password.isEmpty) {
+    // 仅 URL 必填；用户名/密码留空 = 匿名 / 无鉴权 WebDAV（局域网自建、本机服务
+    // 等合法场景），不再当作「缺少字段」硬拦（BUG-1016）。
+    if (url.isEmpty) {
       return t.sync_webdav_test_failed(message: t.sync_webdav_missing_fields);
     }
     try {
