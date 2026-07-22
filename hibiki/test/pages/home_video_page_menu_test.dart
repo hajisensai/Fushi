@@ -520,7 +520,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.delete_outline));
     await tester.pumpAndSettle();
     // 确认对话框的「删除」按钮（AlertDialog 内）。
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
 
     final List<VideoBookRow> remaining =
@@ -567,9 +567,9 @@ void main() {
     await tester
         .longPress(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
     await waitForAsyncCleanup(
       tester,
@@ -648,7 +648,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.delete_outline).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
     await waitForAsyncCleanup(
       tester,
@@ -724,7 +724,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.delete_outline).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pump();
     await tester.runAsync(() async {
       await repo.deletesCommitted.future.timeout(const Duration(seconds: 2));

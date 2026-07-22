@@ -6,6 +6,94 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+/// 通用「删除范围」确认弹窗：正文 + 「从所有设备删除」勾选框（默认不勾）。确认返回用户
+/// 选的 [DeleteScope]（勾选=syncEverywhere 传播 / 不勾=keepLocalOnly 仅本机）；取消返回
+/// null。供书架/视频/有声书等各删除入口共用（书架另有 ReaderHistoryDeleteDialog 变体）。
+Future<DeleteScope?> showDeleteScopeConfirm(
+  BuildContext context, {
+  required String title,
+  required String message,
+}) {
+  return showAppDialog<DeleteScope>(
+    context: context,
+    builder: (_) => _DeleteScopeConfirmDialog(title: title, message: message),
+  );
+}
+
+class _DeleteScopeConfirmDialog extends StatefulWidget {
+  const _DeleteScopeConfirmDialog({required this.title, required this.message});
+  final String title;
+  final String message;
+
+  @override
+  State<_DeleteScopeConfirmDialog> createState() =>
+      _DeleteScopeConfirmDialogState();
+}
+
+class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
+  bool _syncDelete = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.74,
+      child: HibikiModalSheetFrame(
+        title: widget.title,
+        leadingIcon: Icons.delete_outline,
+        bodyPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card, 0, tokens.spacing.card, tokens.spacing.gap),
+        footerPadding: EdgeInsets.fromLTRB(tokens.spacing.card,
+            tokens.spacing.gap, tokens.spacing.card, tokens.spacing.card),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(widget.message, style: tokens.type.listSubtitle),
+            SizedBox(height: tokens.spacing.gap),
+            AdaptiveSettingsRow(
+              title: t.delete_scope_sync_everywhere,
+              subtitle: _syncDelete
+                  ? t.delete_scope_sync_everywhere_desc
+                  : t.delete_scope_keep_local_desc,
+              onTap: () => setState(() => _syncDelete = !_syncDelete),
+              trailing: Icon(
+                _syncDelete ? Icons.check_box : Icons.check_box_outline_blank,
+                color: _syncDelete
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context, null),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(
+                  context,
+                  _syncDelete
+                      ? DeleteScope.syncEverywhere
+                      : DeleteScope.keepLocalOnly),
+              child: Text(t.dialog_delete),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// 一条删除候选 + 已解析的展示标题（itemKey 是 bookKey/bookUid/displayName，用户看不懂，
 /// 由调用方预先解析成书名/视频名再传入）。
 class DeletionCandidateView {

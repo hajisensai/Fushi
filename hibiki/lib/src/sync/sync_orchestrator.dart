@@ -879,8 +879,9 @@ class SyncOrchestrator {
             .add(r.itemKey);
         final String k = '${r.mediaType} ${r.itemKey}';
         final int? prev = remoteDeletedAt[k];
-        if (prev == null || r.deletedAt > prev)
+        if (prev == null || r.deletedAt > prev) {
           remoteDeletedAt[k] = r.deletedAt;
+        }
       }
 
       final SyncRepository repo = SyncRepository(_db);
