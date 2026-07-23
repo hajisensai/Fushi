@@ -50,6 +50,39 @@ void main() {
     });
   });
 
+  group('BUG-1023 transient Drive failures are retryable (in-round retry)', () {
+    // 根因：mapDriveError 曾只把 404 判为 isRetryable，408/429/5xx 全落非重试分支，
+    // 于是一次瞬时超时就把该书 skip 到下一轮（sync_manager 的 retry-once 进不去）。
+    // 修复后 isTransientError 覆盖官方退避集，且显式排除 507 配额。
+    for (final int code in <int>[408, 429, 500, 502, 503, 504]) {
+      test('$code maps to a retryable SyncBackendError', () {
+        final Object mapped = GoogleDriveSyncBackend.mapDriveError(
+          GoogleDriveError('transient $code', statusCode: code),
+        );
+        expect(mapped, isA<SyncBackendError>());
+        expect((mapped as SyncBackendError).isRetryable, isTrue,
+            reason: '$code is a transient failure and must retry in-round');
+      });
+    }
+
+    test('507 Insufficient Storage stays NON-retryable (quota, not transient)',
+        () {
+      final Object mapped = GoogleDriveSyncBackend.mapDriveError(
+        GoogleDriveError('507 quota exceeded', statusCode: 507),
+      );
+      expect(mapped, isA<SyncBackendError>());
+      expect((mapped as SyncBackendError).isRetryable, isFalse,
+          reason: 'retrying a quota-exceeded write cannot succeed');
+    });
+
+    test('an unclassified 4xx (e.g. 400) stays NON-retryable', () {
+      final Object mapped = GoogleDriveSyncBackend.mapDriveError(
+        GoogleDriveError('bad request', statusCode: 400),
+      );
+      expect((mapped as SyncBackendError).isRetryable, isFalse);
+    });
+  });
+
   group('TODO-836 manual-sync catch decision → signOut', () {
     // Mirrors the decision in actions.part.dart `_syncNow`: sign out only when
     // the thrown error is a SyncAuthError. Pure so it stays a fast unit test;
