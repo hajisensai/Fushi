@@ -7,8 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_cover.dart';
 import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 // 书架卡片规格单一真相源（kShelfBookCardAspectRatio / kShelfTitleFooterHeight）。
@@ -54,11 +56,60 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 叠出多个「需要下载 galgame 引擎组件」对话框（用户实测症状）。true 期间忽略新的启动点击。
   bool _launching = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // 已有条目缺封面的懒回填（旧数据升级路径）：后台提取 exe 图标，成功才回写。
+    unawaited(_backfillAutoCovers());
+  }
+
   /// 覆写持久化 + 刷新本页。
   Future<void> _persist(List<GalgameEntry> next) async {
     await _appModel.setGalgames(next);
     if (!mounted) return;
     setState(() => _games = next);
+  }
+
+  /// 为无封面（或封面文件已丢失）的条目提取 exe 图标作默认封面。全程 best-effort：
+  /// 一个都没提出来就不写库；期间用户增删改由 [_persist] 后重新读 `_games` 保证不覆盖。
+  Future<void> _backfillAutoCovers() async {
+    final List<GalgameEntry> snapshot = List<GalgameEntry>.of(_games);
+    final Map<String, String> covers = <String, String>{};
+    for (final GalgameEntry game in snapshot) {
+      final String? existing = game.coverPath;
+      if (existing != null &&
+          existing.isNotEmpty &&
+          File(existing).existsSync()) {
+        continue;
+      }
+      if (!File(game.exePath).existsSync()) continue;
+      final String? cover = await generateGalgameAutoCover(
+        exePath: game.exePath,
+        entryId: game.id,
+      );
+      if (cover != null) covers[game.id] = cover;
+    }
+    if (covers.isEmpty || !mounted) return;
+    // 基于**当前**列表合并（回填期间可能有增删改），只补仍然无有效封面的条目。
+    final List<GalgameEntry> next = _games.map((GalgameEntry g) {
+      final String? cover = covers[g.id];
+      if (cover == null) return g;
+      final String? current = g.coverPath;
+      final bool stillMissing =
+          current == null || current.isEmpty || !File(current).existsSync();
+      return stillMissing ? g.withCover(cover) : g;
+    }).toList();
+    await _persist(next);
+  }
+
+  /// 由一个 exe 路径构造条目并尝试自动封面（提取失败就无封面，占位图标兜底）。
+  Future<GalgameEntry> _entryWithAutoCover(String exe, {DateTime? now}) async {
+    final GalgameEntry entry = newGalgameEntryFromExe(exe, now: now);
+    final String? cover = await generateGalgameAutoCover(
+      exePath: exe,
+      entryId: entry.id,
+    );
+    return cover == null ? entry : entry.copyWith(coverPath: cover);
   }
 
   /// 添加游戏：文件选择器选一个 `.exe`，以文件名去扩展名作默认名，追加进列表。
@@ -73,8 +124,82 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     if (exe == null || exe.isEmpty) {
       return; // 用户取消
     }
-    final GalgameEntry entry = newGalgameEntryFromExe(exe);
+    if (filterDroppedGameExes(_games, <String>[exe]).isEmpty) {
+      HibikiToast.show(msg: t.games_already_added);
+      return; // 已在库里：不重复添加
+    }
+    final GalgameEntry entry = await _entryWithAutoCover(exe);
     await _persist(<GalgameEntry>[..._games, entry]);
+  }
+
+  /// 拖入文件导入：筛出新的 `.exe` 批量添加（每条尝试自动封面），toast 汇报结果。
+  Future<void> _handleDrop(List<String> paths, Offset _) async {
+    final List<String> exes = filterDroppedGameExes(_games, paths);
+    if (exes.isEmpty) {
+      HibikiToast.show(msg: t.games_drop_no_exe);
+      return;
+    }
+    // 批内 id 用「基准时刻 + 序号微秒」错开，避免同微秒撞 id。
+    final DateTime base = DateTime.now();
+    final List<GalgameEntry> added = <GalgameEntry>[];
+    for (int i = 0; i < exes.length; i++) {
+      added.add(await _entryWithAutoCover(
+        exes[i],
+        now: base.add(Duration(microseconds: i)),
+      ));
+    }
+    if (!mounted) return;
+    await _persist(<GalgameEntry>[..._games, ...added]);
+    HibikiToast.show(msg: t.games_drop_imported(count: added.length));
+  }
+
+  /// 设置自定义封面：选一张图片拷贝进 app 封面目录并回写条目。
+  Future<void> _pickCover(GalgameEntry game) async {
+    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: <String>['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'],
+    );
+    final String? source = (picked != null && picked.files.isNotEmpty)
+        ? picked.files.first.path
+        : null;
+    if (source == null || source.isEmpty) {
+      return; // 用户取消
+    }
+    final String? cover = await importGalgameCustomCover(
+      sourcePath: source,
+      entryId: game.id,
+    );
+    if (cover == null) {
+      HibikiToast.show(msg: t.games_cover_failed);
+      return;
+    }
+    // 换下封面后清掉被替换的旧封面文件（自动图标保留，恢复默认时还能复用）。
+    final String? old = game.coverPath;
+    if (old != null && old != cover && !isGalgameAutoCover(old)) {
+      await deleteGalgameCoverFile(old);
+    }
+    await _persist(
+      _games
+          .map((GalgameEntry g) => g.id == game.id ? g.withCover(cover) : g)
+          .toList(),
+    );
+  }
+
+  /// 恢复默认封面：删掉自定义封面文件，重新提取 exe 图标（提不出则回退占位）。
+  Future<void> _resetCover(GalgameEntry game) async {
+    final String? old = game.coverPath;
+    if (old != null && !isGalgameAutoCover(old)) {
+      await deleteGalgameCoverFile(old);
+    }
+    final String? cover = await generateGalgameAutoCover(
+      exePath: game.exePath,
+      entryId: game.id,
+    );
+    await _persist(
+      _games
+          .map((GalgameEntry g) => g.id == game.id ? g.withCover(cover) : g)
+          .toList(),
+    );
   }
 
   /// 移除一个游戏（按 id 定位）。
@@ -154,8 +279,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final Widget body =
-        _games.isEmpty ? _buildEmpty(context) : _buildGrid(context);
+    final Widget body = HibikiFileDropTarget(
+      debugLabel: 'games-library',
+      onDrop: (List<String> paths, Offset position) =>
+          unawaited(_handleDrop(paths, position)),
+      child: _games.isEmpty ? _buildEmpty(context) : _buildGrid(context),
+    );
     final Widget addButton = FloatingActionButton.extended(
       onPressed: _addGame,
       icon: const Icon(Icons.add),
@@ -233,6 +362,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             game: _games[i],
             onTap: () => unawaited(_launchGame(_games[i])),
             onRename: () => unawaited(_renameGame(_games[i])),
+            onSetCover: () => unawaited(_pickCover(_games[i])),
+            onResetCover: () => unawaited(_resetCover(_games[i])),
             onRemove: () => unawaited(_removeGame(_games[i])),
           ),
         );
@@ -298,15 +429,39 @@ class _GameCard extends StatelessWidget {
     required this.game,
     required this.onTap,
     required this.onRename,
+    required this.onSetCover,
+    required this.onResetCover,
     required this.onRemove,
   });
 
   final GalgameEntry game;
   final VoidCallback onTap;
   final VoidCallback onRename;
+  final VoidCallback onSetCover;
+  final VoidCallback onResetCover;
   final VoidCallback onRemove;
 
-  /// 长按 / 右键的上下文菜单：与封面溢出菜单同两项（重命名 / 移除）。
+  /// 是否有用户自定义封面（决定要不要给「恢复默认封面」入口）。
+  bool get _hasCustomCover {
+    final String? cover = game.coverPath;
+    return cover != null && cover.isNotEmpty && !isGalgameAutoCover(cover);
+  }
+
+  /// 分发菜单动作（溢出菜单与长按/右键菜单共用）。
+  void _onMenuAction(String action) {
+    switch (action) {
+      case 'rename':
+        onRename();
+      case 'cover':
+        onSetCover();
+      case 'coverReset':
+        onResetCover();
+      case 'remove':
+        onRemove();
+    }
+  }
+
+  /// 长按 / 右键的上下文菜单：与封面溢出菜单同项（重命名 / 封面 / 移除）。
   Future<void> _showContextMenu(BuildContext context) async {
     final String? action = await showDialog<String>(
       context: context,
@@ -322,17 +477,22 @@ class _GameCard extends StatelessWidget {
             child: Text(t.games_rename),
           ),
           SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop('cover'),
+            child: Text(t.games_set_cover),
+          ),
+          if (_hasCustomCover)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop('coverReset'),
+              child: Text(t.games_reset_cover),
+            ),
+          SimpleDialogOption(
             onPressed: () => Navigator.of(ctx).pop('remove'),
             child: Text(t.games_remove),
           ),
         ],
       ),
     );
-    if (action == 'rename') {
-      onRename();
-    } else if (action == 'remove') {
-      onRemove();
-    }
+    if (action != null) _onMenuAction(action);
   }
 
   @override
@@ -374,19 +534,22 @@ class _GameCard extends StatelessWidget {
                         color: colors.onSurface,
                       ),
                     ),
-                    onSelected: (String value) {
-                      if (value == 'rename') {
-                        onRename();
-                      } else if (value == 'remove') {
-                        onRemove();
-                      }
-                    },
+                    onSelected: _onMenuAction,
                     itemBuilder: (BuildContext context) =>
                         <PopupMenuEntry<String>>[
                       PopupMenuItem<String>(
                         value: 'rename',
                         child: Text(t.games_rename),
                       ),
+                      PopupMenuItem<String>(
+                        value: 'cover',
+                        child: Text(t.games_set_cover),
+                      ),
+                      if (_hasCustomCover)
+                        PopupMenuItem<String>(
+                          value: 'coverReset',
+                          child: Text(t.games_reset_cover),
+                        ),
                       PopupMenuItem<String>(
                         value: 'remove',
                         child: Text(t.games_remove),
@@ -429,14 +592,24 @@ class _GameCard extends StatelessWidget {
   }
 
   /// 封面：有 coverPath 且文件存在则显示图片，否则默认手柄图标占位。
+  /// 自动提取的 exe 图标是小方图，用 contain + 边距贴在底色上（cover 裁切会糊）；
+  /// 用户自定义封面按海报图 cover 填满。
   Widget _buildCover(ColorScheme colors) {
     final String? cover = game.coverPath;
     if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
-      return Image.file(
+      final bool auto = isGalgameAutoCover(cover);
+      final Widget image = Image.file(
         File(cover),
-        fit: BoxFit.cover,
+        fit: auto ? BoxFit.contain : BoxFit.cover,
+        filterQuality: FilterQuality.medium,
         errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
             _defaultCover(colors),
+      );
+      if (!auto) return image;
+      return Container(
+        color: colors.surfaceContainerHighest,
+        padding: const EdgeInsets.all(24),
+        child: image,
       );
     }
     return _defaultCover(colors);

@@ -77,4 +77,51 @@ void main() {
       expect(out.single.exePath, 'D:/g/y.exe');
     });
   });
+
+  group('filterDroppedGameExes', () {
+    final List<GalgameEntry> existing = <GalgameEntry>[
+      newGalgameEntryFromExe(
+        r'D:\games\Sakura\sakura.exe',
+        now: DateTime.fromMillisecondsSinceEpoch(1000),
+      ),
+    ];
+
+    test('只认 .exe 扩展名（大小写无关），其余文件被过滤', () {
+      final List<String> out = filterDroppedGameExes(existing, <String>[
+        r'D:\g\a.exe',
+        r'D:\g\B.EXE',
+        r'D:\g\readme.txt',
+        r'D:\g\cover.png',
+        '',
+      ]);
+      expect(out, <String>[r'D:\g\a.exe', r'D:\g\B.EXE']);
+    });
+
+    test('批内重复与已在库中的路径（大小写/分隔符归一）被去重', () {
+      final List<String> out = filterDroppedGameExes(existing, <String>[
+        r'D:\g\a.exe',
+        r'D:\g\A.EXE', // 批内大小写重复
+        r'D:\GAMES\SAKURA\SAKURA.EXE', // 已在库（大小写不同）
+        'D:/games/Sakura/sakura.exe', // 已在库（正斜杠）
+      ]);
+      expect(out, <String>[r'D:\g\a.exe']);
+    });
+  });
+
+  group('GalgameEntry.withCover', () {
+    test('可设置也可清除封面（copyWith 的 null 是保留语义）', () {
+      final GalgameEntry e = newGalgameEntryFromExe(
+        r'D:\g\a.exe',
+        now: DateTime.fromMillisecondsSinceEpoch(1000),
+      );
+      final GalgameEntry withCover = e.withCover(r'D:\covers\1.auto.png');
+      expect(withCover.coverPath, r'D:\covers\1.auto.png');
+      // copyWith(coverPath: null) 保留旧值——清除必须走 withCover(null)。
+      expect(withCover.copyWith().coverPath, r'D:\covers\1.auto.png');
+      expect(withCover.withCover(null).coverPath, isNull);
+      // 其余字段不受影响。
+      expect(withCover.withCover(null).exePath, e.exePath);
+      expect(withCover.withCover(null).id, e.id);
+    });
+  });
 }

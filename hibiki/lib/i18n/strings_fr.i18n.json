@@ -2315,5 +2315,11 @@
   "pdf_outline_empty": "This PDF has no contents.",
   "pdf_bookmarks": "Bookmarks",
   "pdf_bookmarks_empty": "No bookmarks yet.",
-  "pdf_bookmark_added": "Bookmark added"
+  "pdf_bookmark_added": "Bookmark added",
+  "games_already_added": "This game is already in the library",
+  "games_drop_no_exe": "No new game .exe found in the dropped files",
+  "games_drop_imported": "Added $count game(s)",
+  "games_set_cover": "Set cover",
+  "games_reset_cover": "Reset cover",
+  "games_cover_failed": "Failed to set cover"
 }

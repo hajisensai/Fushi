@@ -178,6 +178,8 @@ class AppPaths {
   ///    `join(appDirectory, 'audiobooks')`；`AudiobookStorage.ensurePersistDir`。
   ///  - `hoshi_books` —— [epubBooksDirectory]；`EpubStorage`；backup restore。
   ///  - `video_covers` —— [videoCoversDirectory]；`VideoStorage.coversDirName`。
+  ///  - `game_covers` —— [gameCoversDirectory]；galgame 游戏库封面
+  ///    （`galgame_cover.dart` 的自动 exe 图标封面 + 用户自定义封面）。
   ///  - `video_subtitles` —— [videoSubtitlesDirectory]；`VideoStorage.subtitlesDirName`。
   ///  - `mpv_shaders` —— [mpvShadersDirectory]。
   ///  - `remote_videos` —— [remoteVideosDirectory]。
@@ -201,6 +203,7 @@ class AppPaths {
     'audiobooks',
     'hoshi_books',
     'video_covers',
+    'game_covers',
     'video_subtitles',
     'mpv_shaders',
     'remote_videos',
@@ -244,6 +247,10 @@ class AppPaths {
   /// 视频封面目录 `<documents>/video_covers`。
   static Future<Directory> videoCoversDirectory() =>
       documentsSubdirectory('video_covers');
+
+  /// galgame 游戏库封面目录 `<documents>/game_covers`。
+  static Future<Directory> gameCoversDirectory() =>
+      documentsSubdirectory('game_covers');
 
   /// 视频外挂字幕副本目录 `<documents>/video_subtitles`。
   static Future<Directory> videoSubtitlesDirectory() =>

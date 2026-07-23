@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 39389 (2317 per locale)
+/// Strings: 39491 (2323 per locale)
 ///
-/// Built on 2026-07-23 at 12:58 UTC
+/// Built on 2026-07-23 at 15:03 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3091,6 +3091,13 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get pdf_bookmarks => 'Bookmarks';
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   String get pdf_bookmark_added => 'Bookmark added';
+  String get games_already_added => 'This game is already in the library';
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  String get games_set_cover => 'Set cover';
+  String get games_reset_cover => 'Reset cover';
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -8345,6 +8352,19 @@ class _StringsAr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -13672,6 +13692,19 @@ class _StringsDe extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -19015,6 +19048,19 @@ class _StringsEs extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -24369,6 +24415,19 @@ class _StringsFr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -29650,6 +29709,19 @@ class _StringsId extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -34979,6 +35051,19 @@ class _StringsIt extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -40113,6 +40198,19 @@ class _StringsJa extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -45250,6 +45348,19 @@ class _StringsKo extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -50557,6 +50668,19 @@ class _StringsNl extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -55879,6 +56003,19 @@ class _StringsPtBr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -61184,6 +61321,19 @@ class _StringsRu extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -66434,6 +66584,19 @@ class _StringsTh extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -71716,6 +71879,19 @@ class _StringsTr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -76985,6 +77161,19 @@ class _StringsVi extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 // Path: <root>
@@ -81883,6 +82072,18 @@ class _StringsZhCn extends _StringsEn {
   String get pdf_bookmarks_empty => '还没有书签。';
   @override
   String get pdf_bookmark_added => '已添加书签';
+  @override
+  String get games_already_added => '该游戏已在库中';
+  @override
+  String get games_drop_no_exe => '拖入的文件里没有新的游戏 .exe';
+  @override
+  String games_drop_imported({required Object count}) => '已添加 ${count} 个游戏';
+  @override
+  String get games_set_cover => '设置封面';
+  @override
+  String get games_reset_cover => '恢复默认封面';
+  @override
+  String get games_cover_failed => '设置封面失败';
 }
 
 // Path: <root>
@@ -86935,6 +87136,19 @@ class _StringsZhHk extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get games_already_added => 'This game is already in the library';
+  @override
+  String get games_drop_no_exe => 'No new game .exe found in the dropped files';
+  @override
+  String games_drop_imported({required Object count}) =>
+      'Added ${count} game(s)';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_reset_cover => 'Reset cover';
+  @override
+  String get games_cover_failed => 'Failed to set cover';
 }
 
 /// Flat map(s) containing all translations.
@@ -91665,6 +91879,18 @@ extension on _StringsEn {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -96393,6 +96619,18 @@ extension on _StringsAr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -101142,6 +101380,18 @@ extension on _StringsDe {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -105890,6 +106140,18 @@ extension on _StringsEs {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -110644,6 +110906,18 @@ extension on _StringsFr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -115380,6 +115654,18 @@ extension on _StringsId {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -120131,6 +120417,18 @@ extension on _StringsIt {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -124844,6 +125142,18 @@ extension on _StringsJa {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -129561,6 +129871,18 @@ extension on _StringsKo {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -134305,6 +134627,18 @@ extension on _StringsNl {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -139046,6 +139380,18 @@ extension on _StringsPtBr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -143792,6 +144138,18 @@ extension on _StringsRu {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -148522,6 +148880,18 @@ extension on _StringsTh {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -153261,6 +153631,18 @@ extension on _StringsTr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -157995,6 +158377,18 @@ extension on _StringsVi {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
@@ -162693,6 +163087,18 @@ extension on _StringsZhCn {
         return '还没有书签。';
       case 'pdf_bookmark_added':
         return '已添加书签';
+      case 'games_already_added':
+        return '该游戏已在库中';
+      case 'games_drop_no_exe':
+        return '拖入的文件里没有新的游戏 .exe';
+      case 'games_drop_imported':
+        return ({required Object count}) => '已添加 ${count} 个游戏';
+      case 'games_set_cover':
+        return '设置封面';
+      case 'games_reset_cover':
+        return '恢复默认封面';
+      case 'games_cover_failed':
+        return '设置封面失败';
       default:
         return null;
     }
@@ -167401,6 +167807,18 @@ extension on _StringsZhHk {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'games_already_added':
+        return 'This game is already in the library';
+      case 'games_drop_no_exe':
+        return 'No new game .exe found in the dropped files';
+      case 'games_drop_imported':
+        return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_reset_cover':
+        return 'Reset cover';
+      case 'games_cover_failed':
+        return 'Failed to set cover';
       default:
         return null;
     }
