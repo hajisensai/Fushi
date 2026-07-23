@@ -10,7 +10,7 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | **繁體中文** | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![5分鐘設定指南](https://img.shields.io/badge/%F0%9F%93%96%205%E5%88%86%E9%90%98%E8%A8%AD%E5%AE%9A%E6%8C%87%E5%8D%97-0969DA?style=for-the-badge)](../user-guide.zh-Hant.md)
+[![平澤唯也能5分鐘設定好的 hibiki 使用指南](https://img.shields.io/badge/%F0%9F%93%96%20%E5%B9%B3%E6%BE%A4%E5%94%AF%E4%B9%9F%E8%83%BD5%E5%88%86%E9%90%98%E8%A8%AD%E5%AE%9A%E5%A5%BD%E7%9A%84%20hibiki%20%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D%97-0969DA?style=for-the-badge)](../user-guide.zh-Hant.md)
 
 **平澤唯也能5分鐘設定好**，推薦詞典與本機音訊一鍵匯入即用。
 

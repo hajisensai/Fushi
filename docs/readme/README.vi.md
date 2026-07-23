@@ -10,7 +10,7 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | **Tiếng Việt** | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Cài đặt trong 5 phút](https://img.shields.io/badge/%F0%9F%93%96%20C%C3%A0i%20%C4%91%E1%BA%B7t%20trong%205%20ph%C3%BAt-0969DA?style=for-the-badge)](../user-guide.vi.md)
+[![Hướng dẫn hibiki mà đến Yui Hirasawa cũng cài đặt xong trong 5 phút](https://img.shields.io/badge/%F0%9F%93%96%20H%C6%B0%E1%BB%9Bng%20d%E1%BA%ABn%20hibiki%20m%C3%A0%20%C4%91%E1%BA%BFn%20Yui%20Hirasawa%20c%C5%A9ng%20c%C3%A0i%20%C4%91%E1%BA%B7t%20xong%20trong%205%20ph%C3%BAt-0969DA?style=for-the-badge)](../user-guide.vi.md)
 
 **Đến Yui Hirasawa cũng cài đặt xong trong 5 phút** — nhập từ điển và âm thanh được đề xuất chỉ trong một bước.
 

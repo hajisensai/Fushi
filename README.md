@@ -10,7 +10,7 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
-[![5 Minute Setup Guide](https://img.shields.io/badge/%F0%9F%93%96%205%20Minute%20Setup%20Guide-0969DA?style=for-the-badge)](docs/user-guide.md)
+[![The hibiki Setup Guide Even Yui Hirasawa Can Finish in 5 Minutes](https://img.shields.io/badge/%F0%9F%93%96%20The%20hibiki%20Setup%20Guide%20Even%20Yui%20Hirasawa%20Can%20Finish%20in%205%20Minutes-0969DA?style=for-the-badge)](docs/user-guide.md)
 
 **Even Yui Hirasawa can set it up in 5 minutes** — import the recommended dictionaries and audio in one step.
 

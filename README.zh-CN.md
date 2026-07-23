@@ -10,7 +10,7 @@
 
 [English](README.md) | **简体中文** | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
-[![5分钟配置指南](https://img.shields.io/badge/%F0%9F%93%96%205%E5%88%86%E9%92%9F%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97-0969DA?style=for-the-badge)](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb)
+[![平泽唯也能5分钟配置好的 hibiki 使用指南](https://img.shields.io/badge/%F0%9F%93%96%20%E5%B9%B3%E6%B3%BD%E5%94%AF%E4%B9%9F%E8%83%BD5%E5%88%86%E9%92%9F%E9%85%8D%E7%BD%AE%E5%A5%BD%E7%9A%84%20hibiki%20%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D%97-0969DA?style=for-the-badge)](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb)
 
 **平泽唯也能5分钟配置好**，推荐词典与本地音频一键导入即用。
 
