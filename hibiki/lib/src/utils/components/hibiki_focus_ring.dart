@@ -17,9 +17,14 @@ import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 /// A deliberate manual scroll that leaves focus behind is NOT yanked back; the
 /// ring simply tracks the control to its new (possibly off-screen) position.
 class HibikiFocusRing extends StatefulWidget {
-  const HibikiFocusRing({super.key, required this.child});
+  const HibikiFocusRing({super.key, this.enabled = true, required this.child});
 
   final Widget child;
+
+  /// False = 焦点环禁用但保持挂载（不绘制、不做几何计算）。与
+  /// [HibikiFocusRoot.enabled] 同步门控：实验开关切换只改行为不改树结构，
+  /// child 的 Element 全保留（见 main.dart `_wrapFocusNavigation`）。
+  final bool enabled;
 
   @override
   State<HibikiFocusRing> createState() => _HibikiFocusRingState();
@@ -100,6 +105,17 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     _scheduleRecompute();
   }
 
+  @override
+  void didUpdateWidget(HibikiFocusRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled && !widget.enabled) {
+      // 关闭时立刻收掉残留的环（不等下一次焦点事件）。
+      setState(() => _rect = null);
+    } else if (!oldWidget.enabled && widget.enabled) {
+      _scheduleRecompute();
+    }
+  }
+
   void _onHighlight(FocusHighlightMode _) => _scheduleRecompute();
 
   void _onFocusManagerChange() {
@@ -124,6 +140,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   }
 
   void _scheduleRecompute() {
+    if (!widget.enabled) return;
     if (_recomputeScheduled || !mounted) return;
     _recomputeScheduled = true;
     // By post-frame time the element tree is finalized: every element is either
@@ -227,7 +244,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     // this single-scale mapping breaks — switch to localToGlobal(ancestor: <this
     // Stack's RenderObject>) to resolve the focused rect in local space directly.
     final double scale = HibikiAppUiScale.of(context);
-    final Rect? globalRect = _rect;
+    final Rect? globalRect = widget.enabled ? _rect : null;
     final Rect? ringRect = globalRect == null
         ? null
         : _scaleRect(globalRect.inflate(2), 1 / scale);

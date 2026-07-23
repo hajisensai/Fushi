@@ -41,7 +41,9 @@ void main() {
     appLocaleGetterSource = _functionSource(
       mainSource,
       'Locale get locale',
-      '}\n\n/// 按实验开关',
+      // 锚 = locale getter 之后下一个顶层声明的 doc 注释首行（_wrapFocusNavigation，
+      // 2026-07-22 焦点层恒定挂载改造后注释重写，锚随之更新）。
+      '}\n\n/// 焦点导航层',
     );
     // TODO-960: the primary app subtree is now wrapped in a locale-keyed
     // [KeyedSubtree] (so a desktop hot language switch remounts everything),

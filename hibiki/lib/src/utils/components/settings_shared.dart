@@ -497,38 +497,45 @@ class AdaptiveSettingsRow extends StatelessWidget {
     if (onTap == null) return content;
     final bool hasFocusRoot =
         HibikiFocusRoot.maybeControllerOf(context) != null;
-    if (!hasFocusRoot) {
-      return cupertino
-          // Cupertino has no InkWell; HibikiFocusable keeps the row reachable by
-          // directional focus navigation (gamepad/keyboard) instead of a bare,
-          // unfocusable GestureDetector.
-          ? HibikiFocusable(
-              onTap: onTap,
-              borderRadius: BorderRadius.zero,
-              child: content,
-            )
-          : InkWell(
-              onTap: onTap,
-              child: content,
-            );
-    }
-    final Widget tappable = cupertino
-        ? GestureDetector(
+    if (cupertino) {
+      // Cupertino 是隐藏内部能力，维持原有两分支（结构恒定化只做 Material
+      // 主路径）。无焦点根时 HibikiFocusable 保持方向键可达（GestureDetector
+      // 本身不可聚焦）。
+      if (!hasFocusRoot) {
+        return HibikiFocusable(
+          onTap: onTap,
+          borderRadius: BorderRadius.zero,
+          child: content,
+        );
+      }
+      return _SettingsRowFocusTarget(
+        onTap: onTap!,
+        child: ExcludeFocus(
+          child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onTap,
             child: content,
-          )
-        : InkWell(
-            onTap: onTap,
-            child: content,
-          );
-    // 单焦点站点契约（对齐滑条/步进行的 ExcludeFocus 做法）：焦点根存在时，
-    // 行的键盘/手柄停靠点只有 _SettingsRowFocusTarget 一个——InkWell 与
-    // trailing 里的 Switch 等内部可聚焦控件全部退出 Tab 遍历，否则一行
-    // 最多 3 个站点且激活语义相同，长设置页遍历冗长。
+          ),
+        ),
+      );
+    }
+    // Material：**结构恒定，行为按 hasFocusRoot 门控**。此前按有无焦点根换两棵
+    // 不同的树（裸 InkWell vs 目标+ExcludeFocus 包裹），切「键盘/手柄焦点导航」
+    // 实验开关时行子树整体重挂载，行里的 Switch 以新状态直接 mount——滑块动画
+    // 消失（用户实报 2026-07-22）。恒定结构下两态语义不变：
+    // - 有焦点根：目标可聚焦 + ExcludeFocus 生效 → 单停靠点（PR-0 契约）；
+    // - 无焦点根：目标 skipTraversal + ExcludeFocus 直通 → InkWell/Switch 照旧
+    //   参与原生 Tab 遍历，与旧「裸 InkWell」分支逐字节同语义。
     return _SettingsRowFocusTarget(
       onTap: onTap!,
-      child: ExcludeFocus(child: tappable),
+      focusEnabled: hasFocusRoot,
+      child: ExcludeFocus(
+        excluding: hasFocusRoot,
+        child: InkWell(
+          onTap: onTap,
+          child: content,
+        ),
+      ),
     );
   }
 
@@ -614,10 +621,15 @@ class _SettingsRowFocusTarget extends StatefulWidget {
     required this.onTap,
     required this.child,
     this.autoHome = true,
+    this.focusEnabled = true,
   });
 
   final VoidCallback onTap;
   final Widget child;
+
+  /// False = 目标保持挂载但不参与遍历/注册（无焦点根时的恒定结构模式，
+  /// 见调用处注释）。透传 [HibikiFocusTarget.enabled]。
+  final bool focusEnabled;
 
   /// False for a collapsible section's fold header: it stays keyboard/gamepad
   /// reachable but passive focus auto-home skips it so the cursor lands on the
@@ -648,6 +660,7 @@ class _SettingsRowFocusTargetState extends State<_SettingsRowFocusTarget> {
       child: HibikiFocusTarget(
         id: _focusId,
         autoHome: widget.autoHome,
+        enabled: widget.focusEnabled,
         child: widget.child,
       ),
     );

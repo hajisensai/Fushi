@@ -699,15 +699,21 @@ class _GeometricMoveResult {
 }
 
 class HibikiFocusRoot extends StatefulWidget {
-  const HibikiFocusRoot({super.key, required this.child});
+  const HibikiFocusRoot({super.key, this.enabled = true, required this.child});
 
   final Widget child;
+
+  /// False = 焦点导航系统关闭但**保持挂载**：[maybeControllerOf] 返回 null，
+  /// 消费方据此走「无焦点根」的原生遍历路径（语义与根本不挂载时一致）。
+  /// 恒定挂载的意义：切换实验开关不再改变树结构 → 整棵 app 子树的 Element
+  /// 全保留（开关滑块动画、各页滚动位置不丢）。
+  final bool enabled;
 
   static HibikiFocusController controllerOf(BuildContext context) {
     final _HibikiFocusScope? scope =
         context.dependOnInheritedWidgetOfExactType<_HibikiFocusScope>();
-    assert(scope != null, 'No HibikiFocusRoot found in context');
-    return scope!.controller;
+    assert(scope?.controller != null, 'No HibikiFocusRoot found in context');
+    return scope!.controller!;
   }
 
   static HibikiFocusController? maybeControllerOf(
@@ -745,12 +751,14 @@ class _HibikiFocusRootState extends State<HibikiFocusRoot> {
 
   @override
   Widget build(BuildContext context) {
+    // 结构恒定（Focus → scope → child），enabled 只影响 scope 暴露的控制器：
+    // 禁用时消费方拿到 null，走原生遍历路径；控制器实例保活，重新启用即恢复。
     return Focus(
       focusNode: _controller.fallbackNode,
-      canRequestFocus: true,
+      canRequestFocus: widget.enabled,
       skipTraversal: true,
       child: _HibikiFocusScope(
-        controller: _controller,
+        controller: widget.enabled ? _controller : null,
         child: widget.child,
       ),
     );
@@ -759,10 +767,10 @@ class _HibikiFocusRootState extends State<HibikiFocusRoot> {
 
 class _HibikiFocusScope extends InheritedNotifier<HibikiFocusController> {
   const _HibikiFocusScope({
-    required HibikiFocusController controller,
+    required this.controller,
     required super.child,
-  })  : controller = controller,
-        super(notifier: controller);
+  }) : super(notifier: controller);
 
-  final HibikiFocusController controller;
+  /// null = 焦点导航禁用（HibikiFocusRoot.enabled == false）。
+  final HibikiFocusController? controller;
 }
