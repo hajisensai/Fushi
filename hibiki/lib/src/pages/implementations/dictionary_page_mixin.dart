@@ -95,15 +95,35 @@ mixin DictionaryPageMixin {
   Future<Map<String, Object?>> Function()?
       get onSentenceContextPreviewToDraft => null;
 
+  /// BUG-797 / BUG-1040：有多少个「必须盖住查词弹窗」的 Flutter 对话框正开着。
+  ///
+  /// 查词弹窗是**原生平台视图**（桌面 WebView2 / Android platform view），靠 airspace 永远
+  /// 画在 Flutter overlay 之上——任何 `showAppDialog` 弹出来的对话框都会被它盖住（用户报
+  /// 「层级不对/看不见」）。这些对话框期间据此把弹窗 [parkedPopupLayer] 的 `visible` 强制
+  /// 翻假 → 停靠屏外（BUG-135 停靠语义，webview 仍存活、回点制卡照常），让对话框独占屏幕。
+  ///
+  /// BUG-1040 从 bool 改成**计数**：制卡动作对话框里还能再叠一层 note viewer 对话框，用
+  /// bool 会被内层的 `finally` 提前复位、外层对话框当场被弹窗盖住。计数天然支持嵌套。
+  int _popupHidingDialogDepth = 0;
+
+  /// BUG-1040：在 [body] 执行期间把查词弹窗停靠屏外的统一入口（收口 setState 增减，杜绝
+  /// 各调用点各写一份 try/finally 漏复位）。[body] 抛错时照常复位。
+  Future<T> runWithLookupPopupHidden<T>(Future<T> Function() body) async {
+    if (mounted) setState(() => _popupHidingDialogDepth++);
+    try {
+      return await body();
+    } finally {
+      if (mounted) {
+        setState(() => _popupHidingDialogDepth =
+            _popupHidingDialogDepth > 0 ? _popupHidingDialogDepth - 1 : 0);
+      }
+    }
+  }
+
   /// BUG-763/766：视频/首页车道点某词条「调整上下文」→ 弹 **app 原生顶层对话框**
   /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内）。复用视频覆写的
   /// [onSentenceContextPreviewToDraft]/[onSetSentenceContextToDraft] 驱动预览+增减；
   /// 「确认制卡」回 [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条制卡按钮。
-  /// BUG-797：「制卡·选择句子上下文」原生对话框打开期间置真。查词弹窗是原生平台视图，总
-  /// 画在 Flutter overlay 之上，会盖住 showAppDialog 弹的对话框（层级不对）。对话框期间据此
-  /// 把弹窗 [parkedPopupLayer] 的 `visible` 强制翻假 → 停靠屏外，让对话框独占屏幕；关闭后复原。
-  bool _sentenceContextDialogOpen = false;
-
   Future<void> _openSentenceContextDialogForVideo({
     required GlobalKey<DictionaryPopupWebViewState> webViewKey,
     required int entryIndex,
@@ -114,9 +134,8 @@ mixin DictionaryPageMixin {
     final Future<int> Function(int, int)? setter = onSetSentenceContextToDraft;
     if (preview == null || setter == null) return;
     // BUG-797：对话框期间把弹窗 WebView 停靠屏外，否则原生平台视图盖住对话框。
-    setState(() => _sentenceContextDialogOpen = true);
-    try {
-      await showAppDialog<void>(
+    await runWithLookupPopupHidden<void>(
+      () => showAppDialog<void>(
         context: context,
         builder: (_) => SentenceContextDialog(
           matched: matched,
@@ -125,10 +144,8 @@ mixin DictionaryPageMixin {
           onConfirm: () =>
               webViewKey.currentState?.mineEntryByIndex(entryIndex),
         ),
-      );
-    } finally {
-      setState(() => _sentenceContextDialogOpen = false);
-    }
+      ),
+    );
   }
 
   // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
@@ -396,6 +413,8 @@ mixin DictionaryPageMixin {
         final res = await onUpdateEntry(noteId, fields);
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
+      // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
+      runHidden: runWithLookupPopupHidden,
     );
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
@@ -410,6 +429,8 @@ mixin DictionaryPageMixin {
       repo: repo,
       expression: expression,
       reading: reading,
+      // BUG-1040：多卡选择框同样是 Flutter 层，期间停靠弹窗。
+      runHidden: runWithLookupPopupHidden,
     );
   }
 
@@ -587,8 +608,9 @@ mixin DictionaryPageMixin {
       // 身份钉住整层，让元素真正搬位而不是拆建原生表面。
       key: ObjectKey(entry),
       pos: pos,
-      // BUG-797：「选择句子上下文」原生对话框打开期间把弹窗停靠屏外，否则原生平台视图盖住对话框。
-      visible: entry.visible && !_sentenceContextDialogOpen,
+      // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
+      // 已制卡动作 / 打开卡片选择）期间把弹窗停靠屏外，否则原生平台视图盖住对话框。
+      visible: entry.visible && _popupHidingDialogDepth == 0,
       screen: screen,
       child: DictionaryPopupLayer(
         result: entry.result,
