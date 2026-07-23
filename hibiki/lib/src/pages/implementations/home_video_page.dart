@@ -28,7 +28,6 @@ import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
@@ -342,16 +341,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     unawaited(
       ref.read(appProvider).prefsRepo.setVideoSortModeName(mode.name),
     );
-  }
-
-  /// 合集行折叠开关：`setPref` 先同步刷内存缓存，setState 重建即读到新值；
-  /// 落库 fire-and-forget（`collapsed_collection_ids`，书架/视频页共用）。
-  void _toggleCollectionCollapsed(int collectionId) {
-    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
-    final Set<int> ids = prefs.collapsedCollectionIds;
-    if (!ids.remove(collectionId)) ids.add(collectionId);
-    unawaited(prefs.setCollapsedCollectionIds(ids));
-    setState(() {});
   }
 
   /// 统一合集 Phase 2/6：给「缺封面的本地视频行」后台逐个抽一帧当封面。
@@ -1557,7 +1546,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
   }
 
-  /// 把标签拖到合集行头 = 给整个合集打标签（`CollectionShelfRow.onTagDropped`）。
+  /// 把标签拖到合集封面卡 = 给整个合集打标签（[_buildCollectionCoverCard] 外包的
+  /// [BookDragTarget]）。
   /// `addTagToCollection` 本身幂等（INSERT OR IGNORE），这里先查现有标签给「已存在」
   /// 提示，避免静默无反馈；成功后失效 [filteredCollectionIdsProvider] 让标签过滤下
   /// 合集卡显隐立即刷新（详情页标签行走 FutureBuilder，重进即新）。
@@ -2027,10 +2017,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   }
 
   /// 本地视频区的 sliver 列表：空库 / 筛选无结果时是占满剩余空间的提示；否则
-  /// **分区**（去碎片 spec 2026-07-12，已拍板方案 A+顶部）——合集横排行集中
-  /// 渲染在前（[CollectionShelfRow]，区内保持排序模式的组间序），散卡合成
-  /// **单一** [SliverGrid] 在后。旧保序交错布局每个合集行都把网格切段产生残行
-  /// （一两张卡占一行，用户实报）；分区后残行恒 1 个（网格末行）。
+  /// **单一网格**（用户拍板 2026-07-22 恢复封面形态：「一进去就是封面，跟小说
+  /// 那种一样，一眼认出是哪部」）——合集渲染成与散卡同尺寸的**封面卡**
+  /// （[_buildCollectionCoverCard]），与散卡（本地 + 未归属远端占位）合成同一个
+  /// [SliverGrid]：合集卡在前（保持排序模式的组间序）、散卡在后。替代旧
+  /// 「合集横排行 slivers + 散卡网格」两段式（全宽横排行一屏只装下一两个合集，
+  /// 认不出是哪部）。分区序（合集区恒在散卡之上）沿袭去碎片方案 A 拍板。
   List<Widget> _buildLocalVideoSlivers(
     List<VideoBookRow> all,
     List<VideoBookRow> books,
@@ -2078,27 +2070,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         ref.watch(filteredCollectionIdsProvider).valueOrNull;
     bool collectionVisible(int collectionId) =>
         collectionFilter == null || collectionFilter.contains(collectionId);
-    // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
+    // 块2：记录本帧渲染成封面卡的合集 id（供全选/反选把可见合集纳入整选集）。
     // 被标签过滤隐藏的合集不计入可见集，避免全选勾中隐藏合集。
     _visibleCollectionIds = <int>[
       for (final CollectionGroup<_VideoSlot> g in groups)
         if (g.collection != null && collectionVisible(g.collection!.id))
           g.collection!.id,
     ];
-    final bool hasCollectionRows = groups.any(
-      (CollectionGroup<_VideoSlot> g) =>
-          g.collection != null && collectionVisible(g.collection!.id),
-    );
-    // 零合集：单网格 + 原 EdgeInsets.all 内边距（与旧布局逐像素一致）。
-    final EdgeInsetsGeometry gridPadding = hasCollectionRows
-        ? EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.gap,
-          )
-        : EdgeInsets.all(tokens.spacing.card);
-    final List<Widget> slivers = <Widget>[];
-    // 方案A（去碎片）：合集行集中渲染在前（可含远端占位成员），散卡（本地 + 未归属
-    // 远端占位）合成单一网格在后，按当前排序模式统一排序（远端进度时间戳/目录序退化）。
+    // 合集卡在前（保持排序模式的组间序）、散卡（本地 + 未归属远端占位）在后，
+    // 全部并入同一个网格（cell 逐像素同尺寸）。
+    final List<CollectionGroup<_VideoSlot>> collectionGroups =
+        <CollectionGroup<_VideoSlot>>[];
     final List<_VideoLooseCard> loose = <_VideoLooseCard>[];
     for (final CollectionGroup<_VideoSlot> group in groups) {
       if (group.collection == null) {
@@ -2108,20 +2090,25 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           build: () => _buildVideoSlotCard(slot),
         ));
       } else if (collectionVisible(group.collection!.id)) {
-        slivers.add(
-          SliverToBoxAdapter(
-            child: _buildVideoCollectionRow(group, cardLayout),
-          ),
-        );
+        collectionGroups.add(group);
       }
-      // 标签过滤隐藏的合集：整行连同成员一并跳过（成员随合集隐藏，符合按合集标签显隐语义）。
+      // 标签过滤隐藏的合集：整卡连同成员一并跳过（成员随合集隐藏，符合按合集标签显隐语义）。
     }
     loose.sort((_VideoLooseCard a, _VideoLooseCard b) =>
         compareShelfSortKeys(a.sortKey, b.sortKey, _sortMode));
-    if (loose.isNotEmpty) {
-      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding, cardLayout));
-    }
-    return slivers;
+    final List<Widget Function()> cells = <Widget Function()>[
+      for (final CollectionGroup<_VideoSlot> group in collectionGroups)
+        () => _buildCollectionCoverCard(group),
+      for (final _VideoLooseCard card in loose) card.build,
+    ];
+    if (cells.isEmpty) return const <Widget>[];
+    return <Widget>[
+      _buildVideoGridSliver(
+        cells,
+        EdgeInsets.all(tokens.spacing.card),
+        cardLayout,
+      ),
+    ];
   }
 
   /// 散卡分派：本地卡 [_buildCard] / 远端占位卡 [_buildRemoteVideoCard]（任务10 union）。
@@ -2231,17 +2218,175 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 一个合集的全宽横排行：头（合集名+集数+查看全部→详情页）+ 横向成员卡列表。
-  /// 本地成员卡复用 [_buildCard] 并带 playlistCollectionId——点某集**直接从该集**进
-  /// 播放器（带剧集面板/上下集/连播）；远端占位成员（任务10 union）走 [_buildRemoteVideoCard]
-  /// （流播/下载，无本地集坐标故不带 playlistCollectionId）。初始横滚定位到「继续看」成员。
-  Widget _buildVideoCollectionRow(
-    CollectionGroup<_VideoSlot> group,
-    ({int columns, double cardWidth}) cardLayout,
-  ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+  /// 合集封面卡（用户拍板 2026-07-22 恢复封面形态：「文字合集替换成一个封面」）。
+  /// 几何与散卡逐像素同规格（unifiedShelfCardLayout 卡宽 × [_videoCardExtent]
+  /// cell 高：16:9 封面 + 标题 footer + 进度行），并入主网格。
+  ///
+  /// 原横排行的能力全数搬进整卡（Never break userspace）：
+  /// - 点击 = 进合集详情页（原「查看全部」，点某集从详情页进播放器带连播上下文）；
+  /// - focusId 沿用 `home-video-collection-<id>`（手柄/键盘映射不变）；
+  /// - 多选态整卡勾选 = 选中整个合集（[_selectedCollectionIds]）；
+  /// - 拖标签到卡 = 给合集打标签（[BookDragTarget]，与散卡书级拖放一致）；
+  /// - 计数含远端占位成员（与详情所见同源，BUG-790 口径）；含远端占位时右上云角标。
+  ///
+  /// 折叠偏好（`collapsed_collection_ids`）视频侧退役：封面卡无成员行可折叠；
+  /// 书架横排行照旧读写该偏好，pref 本身不动。
+  Widget _buildCollectionCoverCard(CollectionGroup<_VideoSlot> group) {
     final MediaCollectionRow collection = group.collection!;
-    final int continueIdx = continueMemberIndex(<CollectionMemberProgress>[
+    final List<BookTagRow> tags =
+        ref.watch(collectionTagMapProvider).valueOrNull?[collection.id] ??
+            const <BookTagRow>[];
+    final int memberCount = group.items.length;
+    final bool hasRemoteMember = group.items.any(
+        (CollectionOrderingItem<_VideoSlot> it) => it.payload.remote != null);
+    final bool selected =
+        _selectionMode && _selectedCollectionIds.contains(collection.id);
+    final HibikiCard card = HibikiCard(
+      key: ValueKey<String>('home_video_collection_card_${collection.id}'),
+      focusId: HibikiFocusId('home-video-collection-${collection.id}'),
+      padding: EdgeInsets.zero,
+      selected: selected,
+      // 多选态整卡点击 = 整选合集；平时点击 = 进详情（原「查看全部」）。
+      onTap: _selectionMode
+          ? () => _toggleCollectionSelection(collection.id)
+          : () => _openCollectionDetail(collection),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                _buildCollectionCover(group),
+                // 合集标签 chip 列（左上，与散卡标签层同形）；多选态让位勾选框。
+                if (tags.isNotEmpty && !_selectionMode)
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: _buildTagLabels(tags),
+                  ),
+                // 含远端占位成员 → 右上云角标（与散卡云角标同款 CoverBadge）。
+                if (hasRemoteMember)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: CoverBadge(
+                      key: ValueKey<String>(
+                          'home_video_collection_cloud_${collection.id}'),
+                      icon: Icons.cloud_outlined,
+                      iconSize: 13,
+                    ),
+                  ),
+                // 左下 playlist 图标 + 成员数（本地 + 远端占位，与详情所见同源，
+                // BUG-790 口径：数字必须诚实反映合集实际成员数）。
+                Positioned(
+                  bottom: 6,
+                  left: 6,
+                  child: _buildPlaylistBadge(memberCount),
+                ),
+                if (_selectionMode)
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: _buildSelectionCheck(selected),
+                  ),
+                if (selected)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.12),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          // footer：合集名 + 进度行（结构与散卡 [_buildCard] 同骨架）。
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                  child: Text(
+                    collection.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                    child: Text(
+                      _collectionProgressLabel(group),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HibikiDesignTokens.of(context).type.metadata,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    // 选择态下禁用标签拖放命中（与散卡一致：避免选卡时误触拖标签）。
+    if (_selectionMode) return card;
+    return BookDragTarget(
+      bookId: 'collection:${collection.id}',
+      onTagDropped: (BookTagRow tag) =>
+          _addTagToVideoCollection(collection.id, tag),
+      child: card,
+    );
+  }
+
+  /// 合集卡封面借用：首个有本地封面的成员 → 首个远端成员封面（互联/云 fetch 路径）
+  /// → 无封面占位（与散卡同款 surfaceContainer + movie 图标）。组内序优先，故
+  /// 默认就是 [CollectionGroup.coverItem]（首成员）的封面，成员缺封面时向后借。
+  Widget _buildCollectionCover(CollectionGroup<_VideoSlot> group) {
+    for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
+      final VideoBookRow? local = it.payload.local;
+      if (local == null) continue;
+      final String? cover = local.coverPath;
+      if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
+        return _coverBacking(
+          Image.file(
+            File(cover),
+            fit: BoxFit.contain,
+            cacheWidth: kLocalCoverDecodePixelWidth,
+            errorBuilder: (_, __, ___) => _coverPlaceholder(),
+          ),
+        );
+      }
+    }
+    for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
+      final RemoteVideoInfo? remote = it.payload.remote;
+      if (remote == null) continue;
+      final bool hasCover =
+          (remote.coverPath != null && File(remote.coverPath!).existsSync()) ||
+              (remote.coverUrl != null && remote.coverUrl!.isNotEmpty);
+      if (hasCover) return _buildRemoteVideoCover(remote);
+    }
+    return _coverPlaceholder();
+  }
+
+  /// 合集卡进度行：有观看痕迹且未整套看完 → 「继续看 第n集」（[continueMemberIndex]
+  /// 纯函数，与旧横排行初始横滚定位同源）；否则 → 「已看完 x/N」（x = completedAt
+  /// 非空的本地成员数；远端占位无本地完成态，只计入 N）。
+  String _collectionProgressLabel(CollectionGroup<_VideoSlot> group) {
+    final int total = group.items.length;
+    int completed = 0;
+    bool hasTrace = false;
+    final List<CollectionMemberProgress> progresses =
+        <CollectionMemberProgress>[
       for (final CollectionOrderingItem<_VideoSlot> it in group.items)
         CollectionMemberProgress(
           // 远端占位无本地播放断点：用远端进度 positionMs、completed 恒 false。
@@ -2250,75 +2395,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               0,
           completed: it.payload.local?.completedAt != null,
         ),
-    ]);
-    // 行头计数 = 行体实际渲染的成员数（本地 + 远端占位），与 itemCount 同源（BUG-790）。
-    // 旧口径只数本地成员，导致「全为未下载远端剧集」的合集行明明有云占位卡却显示「0 集」，
-    // 与眼前所见割裂（用户实报）。行头数字必须诚实反映该行看得见的卡片数。
-    final int memberCount = group.items.length;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.card,
-        tokens.spacing.gap,
-        tokens.spacing.card,
-        tokens.spacing.gap,
-      ),
-      child: CollectionShelfRow(
-        key: ValueKey<String>('home_video_collection_row_${collection.id}'),
-        title: collection.name,
-        countLabel: t.video_playlist_episodes(count: memberCount),
-        itemCount: memberCount,
-        // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout + _videoCardExtent：
-        // 16:9 封面 + 标题 + Phase D 观看进度行，随卡宽联动）。
-        itemWidth: cardLayout.cardWidth,
-        rowHeight: _videoCardExtent(cardLayout.cardWidth),
-        initialIndex: continueIdx,
-        headerFocusId: HibikiFocusId('home-video-collection-${collection.id}'),
-        onOpenDetail: () => _openCollectionDetail(collection),
-        collapsed: ref
-            .watch(appProvider)
-            .prefsRepo
-            .collapsedCollectionIds
-            .contains(collection.id),
-        onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
-        // 块2：多选态行头挂整选勾选框（选=选中整个合集）；成员卡在多选态不可单独勾。
-        selectionCheckbox: _selectionMode
-            ? _buildSelectionCheck(
-                _selectedCollectionIds.contains(collection.id))
-            : null,
-        onToggleSelected: _selectionMode
-            ? () => _toggleCollectionSelection(collection.id)
-            : null,
-        // 拖标签到行头 = 给整个合集打标签（与散卡书级拖放一致）。
-        onTagDropped: (BookTagRow tag) =>
-            _addTagToVideoCollection(collection.id, tag),
-        // 行头下方展示该合集已打的标签 chip（与散卡标签列同形）。
-        tags: ref.watch(collectionTagMapProvider).valueOrNull?[collection.id],
-        itemBuilder: (BuildContext _, int i) {
-          final _VideoSlot slot = group.items[i].payload;
-          final VideoBookRow? local = slot.local;
-          if (local != null) {
-            return _buildCard(
-              local,
-              playlistCollectionId: collection.id,
-              selectable: false,
-            );
-          }
-          // 客户端合集连播：把本合集的有序远端成员（跳过本地成员）+ 被点成员下标传给卡片，
-          // 播放器据此建剧集列表 + 跨成员自动连播。混合合集里本地成员走本地播放，不入此列。
-          final List<RemoteVideoInfo> remoteMembers = <RemoteVideoInfo>[
-            for (final CollectionOrderingItem<_VideoSlot> it in group.items)
-              if (it.payload.remote != null) it.payload.remote!,
-          ];
-          final int memberIdx = remoteMembers
-              .indexWhere((RemoteVideoInfo m) => m.id == slot.remote!.id);
-          return _buildRemoteVideoCard(
-            slot.remote!,
-            collectionMembers: remoteMembers.length > 1 ? remoteMembers : null,
-            memberIndex: memberIdx < 0 ? 0 : memberIdx,
-          );
-        },
-      ),
-    );
+    ];
+    for (final CollectionMemberProgress p in progresses) {
+      if (p.completed) completed++;
+      if (p.completed || (p.positionMs ?? 0) > 0) hasTrace = true;
+    }
+    if (hasTrace && completed < total) {
+      return t.collection_continue_progress(
+        n: continueMemberIndex(progresses) + 1,
+      );
+    }
+    return t.collection_watched_progress(done: completed, total: total);
   }
 
   /// 多端库联合视图占位卡（spec 2026-07-12 §2.1，撤独立远端分区）：本地视频卡尺寸 +
@@ -2705,12 +2792,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 连续散视频段落的 [SliverGrid]（TODO-654：随主 [CustomScrollView] 滚动；
-  /// 网格 delegate 与远端区一致）。UI v2 Phase C 后合集不再进网格（渲染成全宽
-  /// 横排行），本网格只装散视频单卡。
   /// 视频卡总高 = 16:9 封面高（[cardWidth] × 9/16）+ 文字块 [_kVideoCardTextBlock]。
-  /// 卡变窄时封面等比缩，不出现固定卡高下的封面上下留白。散卡网格 [mainAxisExtent]
-  /// 与合集横排行 [CollectionShelfRow.rowHeight] 共用此高，保持逐像素同尺寸。
+  /// 卡变窄时封面等比缩，不出现固定卡高下的封面上下留白。合集封面卡与散卡同处
+  /// 一个网格、共用此 [mainAxisExtent]，逐像素同尺寸。
   static double _videoCardExtent(double cardWidth) =>
       cardWidth * 9 / 16 + _kVideoCardTextBlock;
 
@@ -2720,25 +2804,27 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 内收，无进度时仅剩约一行的常规内边距，不再是显眼空块）。
   static const double _kVideoCardTextBlock = 52;
 
-  Widget _buildLooseVideoGridSliver(
-    List<_VideoLooseCard> loose,
+  /// 视频库主 [SliverGrid]（TODO-654：随主 [CustomScrollView] 滚动）：合集封面
+  /// 卡在前、散卡在后的**单一**网格（[cells] 已按此序拼好）。
+  Widget _buildVideoGridSliver(
+    List<Widget Function()> cells,
     EdgeInsetsGeometry padding,
     ({int columns, double cardWidth}) cardLayout,
   ) {
     return SliverPadding(
       padding: padding,
       sliver: SliverGrid.builder(
-        // FixedCrossAxisCount + 统一卡宽（unifiedShelfCardLayout）：散卡 cell 与
-        // 合集横排行成员卡逐像素同尺寸（用户实报合集卡大一截）。卡高随卡宽按
-        // 16:9 封面联动（_videoCardExtent），窄卡不再残留固定 218 的封面上下留白。
+        // FixedCrossAxisCount + 统一卡宽（unifiedShelfCardLayout）：全部 cell
+        // 逐像素同尺寸。卡高随卡宽按 16:9 封面联动（_videoCardExtent），窄卡
+        // 不再残留固定 218 的封面上下留白。
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: cardLayout.columns,
           mainAxisExtent: _videoCardExtent(cardLayout.cardWidth),
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
-        itemCount: loose.length,
-        itemBuilder: (BuildContext context, int i) => loose[i].build(),
+        itemCount: cells.length,
+        itemBuilder: (BuildContext context, int i) => cells[i](),
       ),
     );
   }

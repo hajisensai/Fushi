@@ -2269,5 +2269,7 @@
   "delete_prompt_select_all": "Select all",
   "delete_prompt_delete_selected": "Delete selected",
   "delete_scope_sync_everywhere": "Delete from all devices",
-  "delete_scope_sync_everywhere_desc": "Other devices confirm the deletion on next sync"
+  "delete_scope_sync_everywhere_desc": "Other devices confirm the deletion on next sync",
+  "collection_watched_progress": "Watched $done/$total",
+  "collection_continue_progress": "Continue · EP $n"
 }
