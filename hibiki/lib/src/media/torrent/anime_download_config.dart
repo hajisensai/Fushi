@@ -316,6 +316,16 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
 }
 
 /// 序列化 [QbConnectionConfig] 为 JSON 字符串（与 [decodeQbConnectionConfig]
+
+/// Returns the configuration that is actually used by both download UI and
+/// background services.
+///
+/// A missing preference means "use built-in defaults", not "downloads are
+/// disabled". Centralising this keeps fresh installs from pushing through the
+/// default embedded backend while the completion watcher stays idle.
+QbConnectionConfig effectiveTorrentConfig(QbConnectionConfig? stored) =>
+    stored ?? const QbConnectionConfig();
+
 /// 互逆）。纯函数。
 String encodeQbConnectionConfig(QbConnectionConfig config) {
   return jsonEncode(<String, dynamic>{
