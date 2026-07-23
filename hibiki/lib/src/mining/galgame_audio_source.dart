@@ -644,7 +644,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
     _sessionStartedAt = DateTime.now();
     final bool japaneseLocale =
-        launchMode && automaticJapaneseLocale && await exeIs32Bit(exe!) == true;
+        launchMode && automaticJapaneseLocale && await exeIs32Bit(exe) == true;
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。
