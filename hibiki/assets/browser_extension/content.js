@@ -131,6 +131,13 @@ function hibikiPushCueV(text, startV, endV) {
   hibikiCueHist.push({ text: text, startV: startV, endV: endV });
   if (hibikiCueHist.length > 80) hibikiCueHist.shift();
 }
+function hibikiIsProgressiveCueUpdate(previousText, nextText) {
+  if (!previousText || !nextText || nextText.length <= previousText.length) return false;
+  // YouTube 自绘自动字幕会在同一个 DOM 节点里逐字扩长。完整前缀不变说明这是同一句的
+  // 新快照，不是新 cue；否则列表会留下「NVIDIA / NVIDIAの / NVIDIAのCEO…」一整串。
+  return nextText.indexOf(previousText) === 0;
+}
+
 function hibikiSampleCue() {
   const nowV = hibikiVideoTimeMs();
   const jumped = hibikiLastSampleV && (nowV < hibikiLastSampleV - 400 || nowV > hibikiLastSampleV + 1500);
@@ -143,6 +150,11 @@ function hibikiSampleCue() {
     return;
   }
   if (text === hibikiCurText) return;
+  if (hibikiIsProgressiveCueUpdate(hibikiCurText, text) &&
+      hibikiLiveCueUpdate(hibikiCurText, text, nowV)) {
+    hibikiCurText = text;
+    return;
+  }
   if (hibikiCurText) {
     hibikiPushCueV(hibikiCurText, hibikiCurStartV, nowV); // 上一句定格
     hibikiLiveCueEnd(hibikiCurText, nowV); // TODO-1363：live 轨同句定格真实 end
@@ -271,6 +283,16 @@ function hibikiLiveCueStart(text, startV) {
     hibikiLiveCue = null; // 回放已见过的句：不重复入轨，也不动旧句窗
   }
 }
+function hibikiLiveCueUpdate(previousText, nextText, nowV) {
+  if (!hibikiLiveCue || hibikiLiveCue.text !== previousText) return false;
+  hibikiLiveCue.text = nextText;
+  // 句子仍在屏幕上时保持一个向后的暂定窗；真正换句/清空时由 hibikiLiveCueEnd 定格。
+  hibikiLiveCue.endMs = Math.max(hibikiLiveCue.endMs, nowV + 1500);
+  const key = hibikiVideoKey() + '|' + HIBIKI_LIVE_LANG;
+  hibikiNotifyPanel(key);
+  return true;
+}
+
 function hibikiLiveCueEnd(text, endV) {
   if (hibikiLiveCue && hibikiLiveCue.text === text && endV > hibikiLiveCue.startMs) {
     hibikiLiveCue.endMs = endV;
