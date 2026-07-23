@@ -139,6 +139,44 @@ void main() {
         expect(src.contains('.hp-row-sub'), isTrue,
             reason: '$root action-popup.html 缺 .hp-row-sub 上下文行样式');
       });
+
+      // TODO-1881：popup 操作流——生成按钮显式状态机（消除「队列空/站点不对点了没反应」的
+      // 隐形三态）+ 清空队列（二次确认）+ 队列条目跳回视频页 + 连接状态行点击重检。
+      test('1881 action-popup.js 生成按钮状态机 + 清空 + 条目跳转 + 连接重检', () {
+        final String src = actionJs.readAsStringSync();
+        expect(src.contains('function hibikiGenButtonState'), isTrue,
+            reason:
+                '$root action-popup.js 缺 hibikiGenButtonState 状态机（回归成隐形三态按钮）');
+        expect(src.contains('function hibikiTabSite'), isTrue,
+            reason: '$root action-popup.js 缺 hibikiTabSite 站点判定');
+        expect(src.contains('function hibikiQueueItemUrl'), isTrue,
+            reason: '$root action-popup.js 缺 hibikiQueueItemUrl（队列条目跳回视频页）');
+        // 取消逃生口必须保留：batch active 时按钮可点（cancel 态）。
+        expect(src.contains("mode: 'cancel'"), isTrue,
+            reason: '$root hibikiGenButtonState 丢了 cancel 逃生口');
+        // 清空队列（二次确认）。
+        expect(src.contains("'hp-clear'"), isTrue,
+            reason: '$root action-popup.js 缺清空队列按钮');
+        expect(src.contains('确认清空'), isTrue,
+            reason: '$root action-popup.js 清空队列缺二次确认');
+        // 连接状态行点击强制重检（探测抽成 refreshConnection 且行上挂 click）。
+        expect(src.contains('function refreshConnection'), isTrue,
+            reason: '$root action-popup.js 连接探测未抽成 refreshConnection（行点击无法重检）');
+        expect(src.contains("connEl.addEventListener('click'"), isTrue,
+            reason: '$root action-popup.js 连接状态行未挂点击重检');
+      });
+
+      test('1881 action-popup.html 有 hint 元素与状态样式', () {
+        final String src = actionHtml.readAsStringSync();
+        expect(src.contains('hp-gen-hint'), isTrue,
+            reason: '$root action-popup.html 缺 hp-gen-hint 原因提示元素');
+        expect(src.contains('.hp-gen:disabled'), isTrue,
+            reason: '$root action-popup.html 缺禁用态样式（按钮不可点无视觉反馈）');
+        expect(src.contains('data-mode="cancel"'), isTrue,
+            reason: '$root action-popup.html 缺取消态警示样式');
+        expect(src.contains('.hp-clear'), isTrue,
+            reason: '$root action-popup.html 缺清空按钮样式');
+      });
     });
   });
 }
