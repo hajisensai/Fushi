@@ -599,6 +599,17 @@ class AnkiHandlebarOptions {
   ) =>
       anyFieldConsumesToken(fieldMappings, '{sentence-audio}') ||
       anyFieldConsumesToken(fieldMappings, '{sasayaki-audio}');
+
+  /// 是否有字段消费卡片图片（`{card-image}` 或语义等价的旧别名 `{book-cover}` /
+  /// `{video-clip}`）。三者任一被引用即视为「卡片图片有去处」，避免把 TODO-1298
+  /// 改名前建的、Picture 仍映射到旧别名 `{book-cover}` 的老配置误报成未映射（与
+  /// [AnkiHandlebarRenderer.render] 同一套别名语义：三者都渲染 context.coverPath）。
+  static bool anyFieldConsumesCardImage(
+    Map<String, String> fieldMappings,
+  ) =>
+      anyFieldConsumesToken(fieldMappings, '{card-image}') ||
+      anyFieldConsumesToken(fieldMappings, '{book-cover}') ||
+      anyFieldConsumesToken(fieldMappings, '{video-clip}');
 }
 
 String mimeTypeForPath(String path) {

@@ -264,10 +264,7 @@ class GalHookMiningCoordinator {
       if (!AnkiHandlebarOptions.anyFieldConsumesSentence(mappings)) {
         missing.add('{sentence}');
       }
-      if (!AnkiHandlebarOptions.anyFieldConsumesToken(
-        mappings,
-        '{card-image}',
-      )) {
+      if (!AnkiHandlebarOptions.anyFieldConsumesCardImage(mappings)) {
         missing.add('{card-image}');
       }
       if (hasSentenceAudio &&

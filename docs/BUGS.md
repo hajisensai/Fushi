@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 987 条。点号进各自文件。
+> 共 988 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1021](bugs/BUG-1021-galgame-cardimage-alias-false-warning.md) | ✅ | ✅ | galgame 场景制卡误报缺少 {card-image}（旧别名瞎眼） |
 | [BUG-1020](bugs/BUG-1020-clipboard-watcher-pref-flip-desync.md) | ✅ | ✅ | Windows剪贴板监听页内翻转开关后永久失效 |
 | [BUG-1019](bugs/BUG-1019-profile-swallows-audiobook-progress.md) | ✅ | ✅ | profile 切换吞听书进度/倍速：进度型 pref 被快照/prune/回灌 |
 | [BUG-1018](bugs/BUG-1018-rename-not-applied-everywhere.md) | ✅ | ✅ | 改名/改作者不生效：override title 消费面缺口 + 作者保存不刷新 + SRT 空 bookKey 互踩 + profile 吞 override |
