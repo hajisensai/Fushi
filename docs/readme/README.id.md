@@ -10,7 +10,7 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Setup dalam 5 menit](https://img.shields.io/badge/%F0%9F%93%96%20Setup%20dalam%205%20menit-0969DA?style=for-the-badge)](../user-guide.id.md)
+[![Panduan hibiki yang bahkan Yui Hirasawa bisa siapkan dalam 5 menit](https://img.shields.io/badge/%F0%9F%93%96%20Panduan%20hibiki%20yang%20bahkan%20Yui%20Hirasawa%20bisa%20siapkan%20dalam%205%20menit-0969DA?style=for-the-badge)](../user-guide.id.md)
 
 **Bahkan Yui Hirasawa bisa menyiapkannya dalam 5 menit** — impor kamus dan audio yang direkomendasikan dalam satu langkah.
 
