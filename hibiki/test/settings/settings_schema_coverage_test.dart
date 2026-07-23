@@ -359,7 +359,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Collapse dictionaries': 'DEVICE: popup.js collapse',
   // TODO-845: 折叠词典时仍展开前 N 本。效果在 popup.js createGlossarySection 的
   // <details>.open（WebView 渲染，widget 测不到）；由 node 行为守卫真执行覆盖。
-  'lookup/Auto-expand dictionaries':
+  'lookup/Auto-expand rows':
       'test/pages/popup_auto_expand_dictionaries_test.js (popup.js node behaviour guard) + test/pages/popup_auto_expand_dictionaries_test.dart',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',

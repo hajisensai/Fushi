@@ -2563,15 +2563,33 @@ window.hoshiPopupMineEntryByIndex = function(idx) {
     window.hoshiFocusDictionaryEntryReset = resetEntry;
 })();
 
+// 「自动展开」的单位是「行」，不是「本」：展开数 = window.autoExpandRows × 该词条有效列数。
+// 历史设计里它是绝对本数 N，与 --dict-columns 的 N 列 masonry 毫无关联，于是 N 不是列数的整数倍
+// 时顶部就参差——比如 1 本展开 + 2 列，展开卡独占第 0 列变很高，剩下的折叠条因第 1 列还是 0 高
+// 全堆到第 1 列，「一张大卡 vs 一摞折叠条」。改成按行计数后展开数天生跟随列数，顶部永远是整行。
+//
+// cols 与 masonry 的 `cols = Math.min(configured, items.length)`（layoutMasonry）严格同源：
+// 都用 dictColumns()（= 视口收敛后的 effectiveDictColumns()）再对该词条实际卡片数封顶，所以
+// 词典数 < 列数时不会凭空展开不存在的卡。默认列数 1 时 rows × 1 === 旧的绝对本数，老用户零改变。
+function autoExpandCount(totalDicts) {
+    const rows = window.autoExpandRows ?? 1;
+    if (!(rows > 0)) return 0;
+    const total = Number.isFinite(totalDicts) && totalDicts > 0 ? totalDicts : 1;
+    const cols = Math.max(1, Math.min(dictColumns(), total));
+    return rows * cols;
+}
+
 // TODO-845: `dictIdx` is the dictionary's global position within an entry's
-// glossary body (0-based). The popup auto-expands the leading
-// `window.autoExpandDictionaries` blocks even when collapseDictionaries is on
-// (default 1 = the historical "only the first dictionary expanded" behaviour,
-// where the leading block opened regardless of its per-dictionary collapse flag).
-function createGlossarySection(dictName, contents, dictIdx, entryIdx) {
+// glossary body (0-based); `totalDicts` is that entry's total block count, needed
+// to cap the effective column count the same way masonry does. The popup
+// auto-expands the leading `autoExpandCount(totalDicts)` blocks even when
+// collapseDictionaries is on (default 1 row = the historical "only the first
+// dictionary expanded" behaviour at the default single column, where the leading
+// block opened regardless of its per-dictionary collapse flag).
+function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts) {
     const details = el('details', { className: 'glossary-group' });
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
-    const autoExpandN = window.autoExpandDictionaries ?? 1;
+    const autoExpandN = autoExpandCount(totalDicts);
     const autoExpanded = dictIdx < autoExpandN;
     if (autoExpanded || (!window.collapseDictionaries && !perDictCollapsed)) {
         details.open = true;
@@ -2779,7 +2797,7 @@ function buildEntryElement(entry, idx) {
     const { details, body, grouped, dictNames } = glossaryWrapper;
     entryDiv.appendChild(details);
     for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
-        body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx, idx));
+        body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx, idx, dictNames.length));
     }
 
     return entryDiv;
@@ -3527,15 +3545,20 @@ window.updatePopupIncremental = function() {
                 // of visible `.glossary-group` children and bump it per appended
                 // block — same `dictIdx < autoExpandN` rule as the first-paint loop,
                 // never a bare `false` (which would forbid any incremental expand).
+                // totalDicts must be the entry's POST-append block count: the row-based
+                // threshold caps columns at the real card count, so counting only the
+                // already-rendered blocks would under-report columns and collapse cards
+                // that the finished layout does have room to expand.
                 let appendIndex =
                     body.querySelectorAll(':scope > .glossary-group').length;
-                for (const dictName of Object.keys(grouped)) {
-                    if (!existingDicts.has(dictName)) {
-                        const section = createGlossarySection(dictName, grouped[dictName], appendIndex, idx);
-                        appendIndex++;
-                        body.appendChild(section);
-                        postProcessRuby(section);
-                    }
+                const appendDictNames = Object.keys(grouped)
+                    .filter(dictName => !existingDicts.has(dictName));
+                const totalDicts = appendIndex + appendDictNames.length;
+                for (const dictName of appendDictNames) {
+                    const section = createGlossarySection(dictName, grouped[dictName], appendIndex, idx, totalDicts);
+                    appendIndex++;
+                    body.appendChild(section);
+                    postProcessRuby(section);
                 }
             }
         } else {

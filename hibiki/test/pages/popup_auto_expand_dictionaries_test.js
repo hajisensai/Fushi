@@ -1,11 +1,15 @@
 // TODO-845 behavior test: the lookup popup auto-expands the leading
-// `window.autoExpandDictionaries` dictionary blocks (force-open <details>) even
-// when "collapse dictionaries" is on. Default 1 reproduces the historical
-// "only the first dictionary is expanded" behaviour; 0 collapses all; N>1
-// expands the first N. This test EXECUTES the real popup.js
-// createGlossarySection against a minimal fake DOM and asserts the resulting
-// <details>.open state per dictionary index. Reverting the fix (hardcoding the
-// expand to dictIdx===0 / a bare false) turns this red.
+// `window.autoExpandRows` ROWS of dictionary blocks (force-open <details>) even
+// when "collapse dictionaries" is on. The unit is rows, not blocks: the expanded
+// count is `rows × effective columns` (popup.js autoExpandCount), so the expanded
+// region is always whole top rows of the --dict-columns masonry. At the default
+// single column that is identical to the historical absolute block count, so
+// rows=1 still reproduces "only the first dictionary is expanded"; 0 collapses
+// all. This test EXECUTES the real popup.js createGlossarySection against a
+// minimal fake DOM and asserts the resulting <details>.open state per dictionary
+// index. Reverting the fix (hardcoding the expand to dictIdx===0 / a bare false,
+// or dropping the column multiplier back to a column-blind block count) turns
+// this red.
 //
 // Run: node hibiki/test/pages/popup_auto_expand_dictionaries_test.js
 // (also driven from popup_auto_expand_dictionaries_test.dart so it executes
@@ -70,7 +74,11 @@ function makeSandbox(opts) {
     hiddenDictionaryNames: [],
     collapsedDictionaryNames: opts.collapsedDictionaryNames || [],
     collapseDictionaries: opts.collapseDictionaries,
-    autoExpandDictionaries: opts.autoExpandDictionaries,
+    autoExpandRows: opts.autoExpandRows,
+    // effectiveDictColumns() converges the configured column count against the
+    // viewport (each column needs >= DICT_COLUMN_MIN_WIDTH=170px). Default wide
+    // so `dictColumns` alone decides unless a case pins a narrow viewport.
+    innerWidth: opts.innerWidth === undefined ? 1200 : opts.innerWidth,
     flutter_inappwebview: { callHandler() { return Promise.resolve(false); } },
     getSelection() { return { toString() { return ''; } }; },
   };
@@ -84,7 +92,18 @@ function makeSandbox(opts) {
     DOMParser: class { parseFromString() { return { body: makeElement('body'), querySelectorAll() { return []; } }; } },
     document: documentObj,
     window: windowObj,
-    getComputedStyle() { return {}; },
+    // The row-based threshold reads the host-injected --dict-columns through
+    // effectiveDictColumns(), so the fake style must actually serve it.
+    getComputedStyle() {
+      return {
+        getPropertyValue(name) {
+          if (name === '--dict-columns') {
+            return String(opts.dictColumns === undefined ? 1 : opts.dictColumns);
+          }
+          return '';
+        },
+      };
+    },
   };
   sandbox.globalThis = sandbox;
   return sandbox;
@@ -95,8 +114,8 @@ function loadPopup(opts) {
   vm.createContext(sandbox);
   const exported = source + `
     ;window.__test = {
-      section: function(dictName, dictIdx) {
-        return createGlossarySection(dictName, [{ content: '"def"', definitionTags: '', termTags: '' }], dictIdx, 0);
+      section: function(dictName, dictIdx, totalDicts) {
+        return createGlossarySection(dictName, [{ content: '"def"', definitionTags: '', termTags: '' }], dictIdx, 0, totalDicts);
       },
     };
   `;
@@ -105,50 +124,98 @@ function loadPopup(opts) {
 }
 
 // Return whether the <details> block for a dictionary at `dictIdx` is open,
-// given collapse on/off and the auto-expand threshold N.
-function isOpen(opts, dictName, dictIdx) {
+// given collapse on/off, the auto-expand ROW count and the entry's total block
+// count (which caps the effective column count exactly like masonry does).
+function isOpen(opts, dictName, dictIdx, totalDicts) {
   const sb = loadPopup(opts);
-  const details = sb.window.__test.section(dictName || 'JMdict', dictIdx);
+  const details = sb.window.__test.section(
+    dictName || 'JMdict', dictIdx, totalDicts === undefined ? 8 : totalDicts);
   return details.open === true;
 }
 
 (function run() {
-  // --- collapse OFF: every dictionary opens regardless of N. ---
+  // --- collapse OFF: every dictionary opens regardless of the row count. ---
   {
-    const opts = { collapseDictionaries: false, autoExpandDictionaries: 1 };
+    const opts = { collapseDictionaries: false, autoExpandRows: 1 };
     assert.strictEqual(isOpen(opts, 'JMdict', 0), true, 'collapse off: idx0 open');
     assert.strictEqual(isOpen(opts, 'Daijirin', 3), true, 'collapse off: idx3 open');
   }
 
-  // --- collapse ON, N=1 (default / backward-compat): only the first opens. ---
+  // --- 1 column (default): rows === the historical absolute block count. ---
+  // This is the backward-compatibility contract — an existing user who never
+  // touched the column slider must see exactly the old behaviour.
   {
-    const opts = { collapseDictionaries: true, autoExpandDictionaries: 1 };
-    assert.strictEqual(isOpen(opts, 'JMdict', 0), true, 'N=1: idx0 open');
-    assert.strictEqual(isOpen(opts, 'Daijirin', 1), false, 'N=1: idx1 collapsed');
-    assert.strictEqual(isOpen(opts, 'Other', 5), false, 'N=1: idx5 collapsed');
+    const opts = { collapseDictionaries: true, autoExpandRows: 1, dictColumns: 1 };
+    assert.strictEqual(isOpen(opts, 'JMdict', 0), true, '1col rows=1: idx0 open');
+    assert.strictEqual(isOpen(opts, 'Daijirin', 1), false, '1col rows=1: idx1 collapsed');
+    assert.strictEqual(isOpen(opts, 'Other', 5), false, '1col rows=1: idx5 collapsed');
+  }
+  {
+    const opts = { collapseDictionaries: true, autoExpandRows: 3, dictColumns: 1 };
+    assert.strictEqual(isOpen(opts, 'D0', 0), true, '1col rows=3: idx0 open');
+    assert.strictEqual(isOpen(opts, 'D1', 1), true, '1col rows=3: idx1 open');
+    assert.strictEqual(isOpen(opts, 'D2', 2), true, '1col rows=3: idx2 open');
+    assert.strictEqual(isOpen(opts, 'D3', 3), false, '1col rows=3: idx3 collapsed');
   }
 
-  // --- collapse ON, N=3: first three open, the rest collapsed. ---
+  // --- rows=0: nothing auto-expands, whatever the column count. ---
   {
-    const opts = { collapseDictionaries: true, autoExpandDictionaries: 3 };
-    assert.strictEqual(isOpen(opts, 'D0', 0), true, 'N=3: idx0 open');
-    assert.strictEqual(isOpen(opts, 'D1', 1), true, 'N=3: idx1 open');
-    assert.strictEqual(isOpen(opts, 'D2', 2), true, 'N=3: idx2 open');
-    assert.strictEqual(isOpen(opts, 'D3', 3), false, 'N=3: idx3 collapsed');
+    const opts = { collapseDictionaries: true, autoExpandRows: 0, dictColumns: 3 };
+    assert.strictEqual(isOpen(opts, 'D0', 0), false, 'rows=0: idx0 collapsed');
+    assert.strictEqual(isOpen(opts, 'D1', 1), false, 'rows=0: idx1 collapsed');
   }
 
-  // --- collapse ON, N=0: nothing auto-expands. ---
+  // --- missing window.autoExpandRows falls back to 1 row. ---
   {
-    const opts = { collapseDictionaries: true, autoExpandDictionaries: 0 };
-    assert.strictEqual(isOpen(opts, 'D0', 0), false, 'N=0: idx0 collapsed');
-    assert.strictEqual(isOpen(opts, 'D1', 1), false, 'N=0: idx1 collapsed');
+    const opts = { collapseDictionaries: true, autoExpandRows: undefined, dictColumns: 1 };
+    assert.strictEqual(isOpen(opts, 'D0', 0), true, 'fallback rows=1: idx0 open');
+    assert.strictEqual(isOpen(opts, 'D1', 1), false, 'fallback rows=1: idx1 collapsed');
   }
 
-  // --- missing window.autoExpandDictionaries falls back to 1 (only first). ---
+  // --- THE FIX: the expanded region follows the column count (rows × columns). ---
+  // 2 columns, 1 row -> the whole TOP ROW expands (2 blocks), not a lone block
+  // that would leave one column a tall card and the other a stack of collapsed
+  // bars. This is the case the old column-blind block count got wrong.
   {
-    const opts = { collapseDictionaries: true, autoExpandDictionaries: undefined };
-    assert.strictEqual(isOpen(opts, 'D0', 0), true, 'fallback N=1: idx0 open');
-    assert.strictEqual(isOpen(opts, 'D1', 1), false, 'fallback N=1: idx1 collapsed');
+    const opts = { collapseDictionaries: true, autoExpandRows: 1, dictColumns: 2 };
+    assert.strictEqual(isOpen(opts, 'D0', 0, 6), true, '2col rows=1: idx0 open');
+    assert.strictEqual(isOpen(opts, 'D1', 1, 6), true, '2col rows=1: idx1 open (same top row)');
+    assert.strictEqual(isOpen(opts, 'D2', 2, 6), false, '2col rows=1: idx2 collapsed');
+  }
+  // 2 columns, 2 rows -> first two rows (4 blocks) expand.
+  {
+    const opts = { collapseDictionaries: true, autoExpandRows: 2, dictColumns: 2 };
+    assert.strictEqual(isOpen(opts, 'D3', 3, 6), true, '2col rows=2: idx3 open');
+    assert.strictEqual(isOpen(opts, 'D4', 4, 6), false, '2col rows=2: idx4 collapsed');
+  }
+  // 3 columns, 1 row -> 3 blocks.
+  {
+    const opts = { collapseDictionaries: true, autoExpandRows: 1, dictColumns: 3 };
+    assert.strictEqual(isOpen(opts, 'D2', 2, 9), true, '3col rows=1: idx2 open');
+    assert.strictEqual(isOpen(opts, 'D3', 3, 9), false, '3col rows=1: idx3 collapsed');
+  }
+
+  // --- columns are capped by the entry's real block count, exactly like masonry
+  //     (layoutMasonry: cols = min(configured, items.length)). A 4-column setting
+  //     on a 2-dictionary entry must not pretend there are 4 cards to expand. ---
+  {
+    const opts = { collapseDictionaries: true, autoExpandRows: 1, dictColumns: 4 };
+    assert.strictEqual(isOpen(opts, 'D0', 0, 2), true, 'cap: idx0 open (2 cards -> 2 cols)');
+    assert.strictEqual(isOpen(opts, 'D1', 1, 2), true, 'cap: idx1 open (2 cards -> 2 cols)');
+    // Single-dictionary entry collapses to 1 column -> only the first expands.
+    assert.strictEqual(isOpen(opts, 'Solo', 0, 1), true, 'cap: solo idx0 open');
+    assert.strictEqual(isOpen(opts, 'Solo', 1, 1), false, 'cap: solo idx1 collapsed');
+  }
+
+  // --- the viewport convergence in effectiveDictColumns() also applies: a narrow
+  //     panel that only fits one 170px column must expand one block per row, even
+  //     with a 4-column setting (otherwise a narrow popup over-expands). ---
+  {
+    const opts = {
+      collapseDictionaries: true, autoExpandRows: 1, dictColumns: 4, innerWidth: 300,
+    };
+    assert.strictEqual(isOpen(opts, 'D0', 0, 8), true, 'narrow: idx0 open');
+    assert.strictEqual(isOpen(opts, 'D1', 1, 8), false, 'narrow: idx1 collapsed (1 fitted column)');
   }
 
   console.log('popup_auto_expand_dictionaries_test.js: all assertions passed');

@@ -102,7 +102,7 @@ function makeSandbox() {
     hiddenDictionaryNames: [],
     collapsedDictionaryNames: [],
     collapseDictionaries: false,
-    autoExpandDictionaries: 1,
+    autoExpandRows: 1,
     flutter_inappwebview: { callHandler() { return Promise.resolve(false); } },
     getSelection() { return { toString() { return ""; } }; },
   };

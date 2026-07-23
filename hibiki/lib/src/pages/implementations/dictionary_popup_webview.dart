@@ -747,7 +747,7 @@ JSON.stringify((function(){
 
     final appModel = ref.read(appProvider);
     // TODO-895: the SHARED settings body (theme vars + dictionary font + content
-    // zoom + every window.* flag, incl. autoExpandDictionaries) is produced by the
+    // zoom + every window.* flag, incl. autoExpandRows) is produced by the
     // single source of truth in popup_settings_injection.dart — the SAME builder
     // the app-outside global-lookup window uses (options.globalLookup:false here).
     // The in-app-only wiring (instant-scroll pref, __hoshiResetPopupScroll hook,

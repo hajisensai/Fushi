@@ -329,16 +329,18 @@ void main() {
           reason: 'app-outside must not re-implement the font injection');
     });
 
-    test('D2 — autoExpandDictionaries is in the shared body', () {
+    test('D2 — autoExpandRows is in the shared body', () {
       // app-outside previously dropped this flag (folded popups never auto-
-      // expanded). It now lives in the one body both paths emit.
-      expect(inject.contains('window.autoExpandDictionaries ='), isTrue,
-          reason: 'the shared body must inject autoExpandDictionaries');
+      // expanded). It now lives in the one body both paths emit. The value is
+      // the auto-expand ROW count; popup.js multiplies it by the effective
+      // column count (autoExpandCount) to get the expanded block count.
+      expect(inject.contains('window.autoExpandRows ='), isTrue,
+          reason: 'the shared body must inject autoExpandRows');
       expect(inject.contains('appModel.popupAutoExpandDictionaries'), isTrue);
       // No second INJECTION of the flag in the app-outside file (a doc-comment
-      // mention is fine; the actual `window.autoExpandDictionaries =` must not
+      // mention is fine; the actual `window.autoExpandRows =` must not
       // be duplicated there).
-      expect(render.contains('window.autoExpandDictionaries ='), isFalse,
+      expect(render.contains('window.autoExpandRows ='), isFalse,
           reason: 'app-outside must not re-inject the flag (single source)');
     });
 

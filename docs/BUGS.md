@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1010 条。点号进各自文件。
+> 共 1011 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1044](bugs/BUG-1044-popup-auto-expand-rows-vs-columns.md) | ✅ | ✅ | 折叠词典「自动展开词典数」与「词典列数」冲突：绝对本数不随列数对齐致顶部参差 |
 | [BUG-1043](bugs/BUG-1043-ios-smoke-update-dialog-steals-focus.md) | ✅ | ✅ | iOS冒烟测试焦点断言被启动期更新弹窗与恒真判定掩盖 |
 | [BUG-1042](bugs/BUG-1042-ios-generated-xcconfig-tracked.md) | ✅ | ✅ | iOS Flutter 生成文件误入库导致 Mac 上 pod install 失败 |
 | [BUG-1041](bugs/BUG-1041-global-lookup-card-corner-asymmetry.md) | 🚧 | 🚧 | 查词浮窗卡片左侧圆角右侧直角 |

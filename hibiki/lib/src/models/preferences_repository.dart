@@ -659,12 +659,19 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  // TODO-845: how many leading dictionary blocks the lookup popup auto-expands
-  // (force-open <details>) even when "collapse dictionaries" is on. Default 1
-  // preserves the historical "only the first dictionary is expanded" behaviour.
-  // Clamped to 0..6 on read and write so a corrupt/out-of-range stored value
-  // can never reach popup.js as an absurd expand threshold; the clamp range is
-  // identical to the lookup settings slider min/max.
+  // TODO-845: how many leading *rows* of dictionary blocks the lookup popup
+  // auto-expands (force-open <details>) even when "collapse dictionaries" is on.
+  // The unit is rows, not blocks: popup.js expands `rows × effective columns`
+  // (see autoExpandCount there), so the expanded region is always whole top rows
+  // and never fights the --dict-columns masonry. Default 1 preserves the
+  // historical "only the first dictionary is expanded" behaviour, because the
+  // default column count is 1 (1 row × 1 column === 1 block).
+  //
+  // The storage key keeps its legacy `popup_auto_expand_dictionaries` name so
+  // existing stored values carry over untouched. Clamped to 0..6 on read and
+  // write so a corrupt/out-of-range stored value can never reach popup.js as an
+  // absurd expand threshold; the clamp range is identical to the lookup settings
+  // slider min/max.
   int get popupAutoExpandDictionaries =>
       (getPref('popup_auto_expand_dictionaries', defaultValue: 1) as int)
           .clamp(0, 6);
