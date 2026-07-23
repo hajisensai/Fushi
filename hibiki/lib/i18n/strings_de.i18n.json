@@ -2325,5 +2325,12 @@
   "games_cover_searching": "Looking for a cover...",
   "game_text_thread_audio_count": "$count with audio",
   "game_line_preview_tooltip": "Play this line's audio",
-  "game_line_preview_failed": "No playable audio for this line"
+  "game_line_preview_failed": "No playable audio for this line",
+  "interconnect_section_delegate": "Delegate to the paired device",
+  "interconnect_backup_backend": "Use interconnect as the backup backend",
+  "interconnect_backup_backend_hint": "Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.",
+  "interconnect_backup_backend_apply": "Set as backup backend",
+  "interconnect_backup_backend_active": "Backups already go to the paired device. Pick another backend in Sync & backup to switch away.",
+  "interconnect_backup_backend_needs_pairing": "Connect to a device above first.",
+  "interconnect_backup_backend_current": "Current backup backend: $backend"
 }

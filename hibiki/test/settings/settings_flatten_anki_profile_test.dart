@@ -185,10 +185,10 @@ void main() {
     //    并入一个无条件显示的区块。未配置 Anki 时它们也都露出——故恰有三个 SwitchRow。
     //    TODO-1650 把旧「压缩制卡媒体」开关换成「图片/GIF 清晰度 + 音频质量」两滑块，
     //    紧随其后的独立无标题区（同样无条件显示）。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(4),
-        reason: 'TODO-135 方案A 三开关（hibiki / 来源分类 / 自动添加书名）+ PR#343 '
-            '无条件「制卡到服务端」开关，未配置 Anki 时都应显示（旧「压缩」开关已换成'
-            '两滑块，不再是 SwitchRow）');
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(3),
+        reason: 'TODO-135 方案A 三开关（hibiki / 来源分类 / 自动添加书名），未配置 Anki '
+            '时都应显示（旧「压缩」开关已换成两滑块，不再是 SwitchRow；「制卡到已配对'
+            '设备」已移到 Hibiki 互联分类）');
     expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(2),
         reason: 'TODO-1650「图片/GIF 清晰度」+「音频质量」两滑块应无条件显示');
     expect(find.textContaining('Image / GIF quality'), findsOneWidget,
@@ -207,11 +207,13 @@ void main() {
         AdaptiveSettingsSwitchRow, 'Auto-add book title to tags');
     expect(autoAddRow, findsOneWidget,
         reason: '「自动添加书名」开关必须仍无条件可用（方案B会破坏，绝不退化）');
-    // PR#343：互联「制卡到服务端」开关无条件显示（跨平台，手机也能把卡制到桌面主机）。
+    // 「制卡到已配对设备」已移出本页，改挂 Hibiki 互联 →「交给已配对设备」（它的前置
+    // 条件、目标设备、失效条件全由互联决定，互联关掉时留在这里就是纯死开关）。归属由
+    // test/sync/sync_settings_visibility_test.dart 咬住；这里只守「不得回流」。
     expect(
         find.widgetWithText(AdaptiveSettingsSwitchRow, 'Mine to paired device'),
-        findsOneWidget,
-        reason: 'PR#343「制卡到服务端」开关应无条件显示于 Anki 正文');
+        findsNothing,
+        reason: '「制卡到已配对设备」不应再出现在 Anki 正文');
 
     // ④「自动添加书名」开关仍真生效（写穿 prefs）——必须保留的用户目标。
     final bool before = appModel.autoAddBookNameToTags;

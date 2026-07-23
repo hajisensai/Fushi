@@ -4375,7 +4375,7 @@ class AppModel with ChangeNotifier {
   // 语义正确落 false=本地制卡（现状），既复原「读 anki repo 无需完整初始化」的不变量，
   // 又避免早读崩溃。
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
-  void toggleMineToServer() => prefsRepo.toggleMineToServer();
+  Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
   // 视频制卡封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认 gif=现状。
   VideoMiningImageMode get videoMiningImageMode =>

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_card_creation.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
 
@@ -229,9 +230,9 @@ void main() {
 
     test('is its own top-level destination (not inside syncBackup)', () {
       expect(dest.id, SettingsDestinationId.interconnect);
-      // 启用开关 + 连接设备 + 上传到互联对端（BUG-988）+ 本机服务器 + 互联相关配置
-      // 镜像（远端词典/音频来源/远端占位卡）。
-      expect(dest.sections, hasLength(5));
+      // 启用开关 + 连接设备 + 上传到互联对端（BUG-988）+ 交给已配对设备（制卡/备份
+      // 后端）+ 本机服务器 + 互联相关配置镜像（远端词典/音频来源/远端占位卡）。
+      expect(dest.sections, hasLength(6));
     });
 
     test('enable toggle is unconditional; config sections gated on the toggle',
@@ -254,8 +255,31 @@ void main() {
         'interconnect.upload_video_files',
       ]);
       expect(dest.sections[2].visible, isNotNull);
-      expect(idsOf(dest.sections[3]), <String>['sync.server_mode']);
+      // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端。
+      expect(idsOf(dest.sections[3]), <String>[
+        'interconnect.mine_to_server',
+        'interconnect.backup_backend',
+      ]);
       expect(dest.sections[3].visible, isNotNull);
+      expect(idsOf(dest.sections[4]), <String>['sync.server_mode']);
+      expect(dest.sections[4].visible, isNotNull);
+    });
+
+    test('delegate section lives with interconnect, not in card creation', () {
+      // 用户诉求：「制卡到已配对设备要放到 hibiki 互联里面」。开关的前置条件（配对）、
+      // 目标设备、失效条件全由互联决定，故唯一归宿是互联分类——「制卡」分类里不得再有
+      // 第二份，否则互联关掉时那份就是纯死开关。
+      final List<String> allIds = dest.sections
+          .expand((SettingsSection s) => s.items)
+          .map((SettingsItem i) => i.id)
+          .toList();
+      expect(allIds, contains('interconnect.mine_to_server'));
+      final List<String> cardIds = buildCardCreationDestination()
+          .sections
+          .expand((SettingsSection s) => s.items)
+          .map((SettingsItem i) => i.id)
+          .toList();
+      expect(cardIds, isNot(contains('interconnect.mine_to_server')));
     });
 
     test('mirrors interconnect-related settings from lookup/sync categories',
@@ -264,18 +288,18 @@ void main() {
       // 作用于互联对端；在互联分类镜像同一入口（共享 builder，非复制），仅互联被选为
       // 同步方式时可见（与其它互联配置区一致）。
       expect(
-        idsOf(dest.sections[4]),
+        idsOf(dest.sections[5]),
         <String>[
           'lookup.remote_lookup',
           'lookup.audio_sources',
           'sync.show_remote_entries',
         ],
       );
-      expect(dest.sections[4].visible, isNotNull);
+      expect(dest.sections[5].visible, isNotNull);
     });
 
     test('host-server group keeps its explanatory footer', () {
-      expect(dest.sections[3].footer, isNotNull);
+      expect(dest.sections[4].footer, isNotNull);
     });
   });
 }

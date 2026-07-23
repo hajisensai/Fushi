@@ -460,6 +460,34 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
+      // 交给已配对设备：本机把某类工作整个甩给对端主机去做。两项都只有 client 角色
+      // 讲得通（host 没有「对端」可交），故与上面的上传区同门控——互联启用且本机不在
+      // host 模式。
+      //   · 制卡到已配对设备：制卡改由主机的 Anki 落卡（原在「制卡」分类，但它的前置
+      //     条件、目标设备、失效条件全由互联决定，互联关掉时在制卡页是个纯死开关）。
+      //   · 用互联做备份后端：把云备份通道也指向对端（详见 _InterconnectBackupBackendWidget）。
+      SettingsSection(
+        title: t.interconnect_section_delegate,
+        visible: (SettingsContext ctx) =>
+            interconnectActive(ctx) && !_isHostingInterconnect(ctx),
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'interconnect.mine_to_server',
+            title: t.anki_mine_to_server,
+            subtitle: t.anki_mine_to_server_hint,
+            icon: Icons.note_add_outlined,
+            value: (SettingsContext ctx) => ctx.appModel.mineToServerEnabled,
+            onChanged: (SettingsContext ctx, bool value) =>
+                ctx.appModel.setMineToServer(value),
+          ),
+          SettingsCustomItem(
+            id: 'interconnect.backup_backend',
+            icon: Icons.backup_outlined,
+            builder: (SettingsContext ctx) =>
+                _InterconnectBackupBackendWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
       // 本机作为服务器：host 模式开关（与 client 角色互斥，见 _SyncSettingsState
       // 的 roleRevision 互斥锁）。
       SettingsSection(

@@ -1276,8 +1276,8 @@ class PreferencesRepository extends ChangeNotifier {
   bool get mineToServer =>
       getPref('mine_to_server', defaultValue: false) as bool;
 
-  void toggleMineToServer() async {
-    await setPref('mine_to_server', !mineToServer);
+  Future<void> setMineToServer(bool value) async {
+    await setPref('mine_to_server', value);
     notifyListeners();
   }
 

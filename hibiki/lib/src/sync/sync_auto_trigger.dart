@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
@@ -88,30 +89,34 @@ void logSyncReportErrors(SyncRunReport report) {
 /// 当成互斥单选项，现已解耦成独立开关）。两条通道各用自己的后端实例、各自认证成功
 /// 才真正跑（未配置的通道在 [_runSyncChannel] 里 no-op）。
 ///
-/// 去重：互联后端 [HibikiClientSyncBackend] 是单例；若云通道解析出的恰是同一单例
-/// （历史遗留 backendType=='hibikiServer'，迁移后不再出现，仅防御测试直接构造），
-/// 只保留一条，避免同一通道跑两遍。
+/// 去重：互联后端 [HibikiClientSyncBackend] 是单例；若用户把「备份后端」也选成互联
+/// （互联页的「用互联做备份后端」按钮），云通道解析出的就是同一单例，只保留一条，
+/// 避免同一通道跑两遍。
 /// 一条待跑的同步通道：后端实例 + 它是不是互联通道。isInterconnect 决定分资产开关
 /// 读云备份共享值还是互联专属上传开关（[resolveChannelSyncFlags]，BUG-988）。
-class _SyncChannel {
-  const _SyncChannel(this.backend, {required this.isInterconnect});
+class SyncChannel {
+  const SyncChannel(this.backend, {required this.isInterconnect});
   final SyncBackend backend;
   final bool isInterconnect;
 }
 
-Future<List<_SyncChannel>> _enabledSyncChannelBackends(
+@visibleForTesting
+Future<List<SyncChannel>> enabledSyncChannelBackends(
   SyncRepository repo,
 ) async {
   final SyncBackend cloud = resolveSyncBackend(await repo.getBackendType());
-  final List<_SyncChannel> channels = <_SyncChannel>[
-    _SyncChannel(cloud, isInterconnect: false),
+  // isInterconnect 由后端身份决定，不由「它排在云通道那一格」决定：备份后端被选成
+  // 互联时只剩这一条通道，它跑的就是互联链路（SyncOrchestrator 内部同样按
+  // `backend is HibikiClientSyncBackend` 判断），分资产开关必须跟着读互联专属的
+  // 上传开关——否则用户在互联页看到的四个上传开关会被静默忽略、改由云备份开关决定。
+  final List<SyncChannel> channels = <SyncChannel>[
+    SyncChannel(cloud, isInterconnect: cloud is HibikiClientSyncBackend),
   ];
   if (await repo.isInterconnectEnabled()) {
     final SyncBackend interconnect =
         resolveSyncBackend(SyncBackendType.hibikiServer);
-    // 去重：仅防御历史 backendType=='hibikiServer'（迁移后不再出现）把同一单例跑两遍。
     if (!identical(interconnect, cloud)) {
-      channels.add(_SyncChannel(interconnect, isInterconnect: true));
+      channels.add(SyncChannel(interconnect, isInterconnect: true));
     }
   }
   return channels;
@@ -167,7 +172,7 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
 
 /// 为单个 [backend] 通道构建并运行一轮完整同步编排。认证失败（未配置该通道）返回
 /// null，调用方视为该通道 no-op 跳过。云备份通道与互联通道各调一次（见
-/// [_enabledSyncChannelBackends]），互不排斥（option B 双通道）。
+/// [enabledSyncChannelBackends]），互不排斥（option B 双通道）。
 Future<SyncRunReport?> _runSyncChannel({
   required HibikiDatabase db,
   required SyncRepository repo,
@@ -296,8 +301,8 @@ Future<void> _runAutoSyncAll({
 
       // option B 双通道：依次跑云备份通道 + 互联通道（若启用），互不排斥。每条通道
       // 各自认证成功才实际跑；未配置的通道 no-op（_runSyncChannel 返回 null）。
-      for (final _SyncChannel channel
-          in await _enabledSyncChannelBackends(repo)) {
+      for (final SyncChannel channel
+          in await enabledSyncChannelBackends(repo)) {
         final SyncRunReport? report = await _runSyncChannel(
           db: db,
           repo: repo,
@@ -387,8 +392,8 @@ Future<ManualSyncResult> runManualFullSync({
       final SyncRunReport merged = SyncRunReport();
       final List<ManualSyncChannelReport> channelReports =
           <ManualSyncChannelReport>[];
-      for (final _SyncChannel channel
-          in await _enabledSyncChannelBackends(repo)) {
+      for (final SyncChannel channel
+          in await enabledSyncChannelBackends(repo)) {
         final SyncRunReport? report = await _runSyncChannel(
           db: db,
           repo: repo,
@@ -500,8 +505,8 @@ Future<void> _runCollectionsSync({required HibikiDatabase db}) async {
     await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
       if (!await repo.isAutoSyncEnabled()) return;
-      for (final _SyncChannel channel
-          in await _enabledSyncChannelBackends(repo)) {
+      for (final SyncChannel channel
+          in await enabledSyncChannelBackends(repo)) {
         final SyncBackend backend = channel.backend;
         await backend.restoreAuth(repo);
         if (!await backend.isAuthenticated) continue;
@@ -576,8 +581,8 @@ Future<void> _runAutoSync({
 
       // option B 双通道：退出书时对每条启用的通道（云备份 + 互联）各跑一次 per-book
       // 同步，互不排斥。每条通道各自认证成功才跑；未配置的通道 continue 跳过。
-      for (final _SyncChannel channel
-          in await _enabledSyncChannelBackends(repo)) {
+      for (final SyncChannel channel
+          in await enabledSyncChannelBackends(repo)) {
         final SyncBackend backend = channel.backend;
         await backend.restoreAuth(repo);
         if (!await backend.isAuthenticated) continue;

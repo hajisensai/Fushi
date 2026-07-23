@@ -2325,5 +2325,12 @@
   "games_cover_searching": "正在查找封面...",
   "game_text_thread_audio_count": "$count 行有音频",
   "game_line_preview_tooltip": "播放这句音频",
-  "game_line_preview_failed": "这句还没有可播放的音频"
+  "game_line_preview_failed": "这句还没有可播放的音频",
+  "interconnect_section_delegate": "交给已配对设备",
+  "interconnect_backup_backend": "用互联做备份后端",
+  "interconnect_backup_backend_hint": "备份与同步写到已配对设备，而不是云盘。写过去的内容由上面「上传到互联对端」的几个开关决定。",
+  "interconnect_backup_backend_apply": "设为备份后端",
+  "interconnect_backup_backend_active": "备份已写到已配对设备。要换回云盘，去「同步与备份」里改后端。",
+  "interconnect_backup_backend_needs_pairing": "请先在上面连接一台设备。",
+  "interconnect_backup_backend_current": "当前备份后端：$backend"
 }
