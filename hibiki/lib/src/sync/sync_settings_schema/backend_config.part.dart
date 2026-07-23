@@ -374,15 +374,31 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
     final SyncBackendType previous = state.backendType;
     if (value == previous) return;
     state.backendType = value;
-    final SyncRepository repo =
-        SyncRepository(widget.settingsContext.appModel.database);
-    await repo.setBackendType(value);
-    await repo.clearFolderCache();
-    // The TLS flag is FTP-only; don't let it linger after switching away.
-    if (previous == SyncBackendType.ftp && value != SyncBackendType.ftp) {
-      await repo.setFtpTlsEnabled(false);
-    }
+    await applyBackupBackendChange(
+      SyncRepository(widget.settingsContext.appModel.database),
+      previous: previous,
+      next: value,
+    );
     widget.settingsContext.refresh();
+  }
+}
+
+/// 切换云备份后端时必须一起做的持久化副作用，集中一处：写 backendType、清目录缓存
+/// （缓存的 folder id 只对旧后端有意义）、离开 FTP 时清掉 FTP 专属的 TLS 标记。
+///
+/// 后端选择器（[_BackendSelectorWidgetState._selectBackend]）与互联页的
+/// 「用互联做备份后端」按钮（[_InterconnectBackupBackendWidget]）共用本函数，两个
+/// 入口不会漂成两套切换语义。不碰内存态 `_SyncSettingsState.backendType`——那是调用方
+/// 各自的 UI 状态。
+Future<void> applyBackupBackendChange(
+  SyncRepository repo, {
+  required SyncBackendType previous,
+  required SyncBackendType next,
+}) async {
+  await repo.setBackendType(next);
+  await repo.clearFolderCache();
+  if (previous == SyncBackendType.ftp && next != SyncBackendType.ftp) {
+    await repo.setFtpTlsEnabled(false);
   }
 }
 

@@ -56,7 +56,45 @@ void main() {
       await db.setPref('sync_backend_type', 'hibikiServer');
 
       await repo.migrateInterconnectBackendToToggle();
-      // 第二次：backendType 已是 googleDrive → 直接 no-op，不会误关互联开关。
+      // 第二次：迁移已标记跑过 → 直接 no-op，不会误关互联开关。
+      await repo.migrateInterconnectBackendToToggle();
+
+      expect(await repo.isInterconnectEnabled(), isTrue);
+      expect(await repo.getBackendType(), SyncBackendType.googleDrive);
+    });
+
+    test('后续用户主动选回互联做备份后端，不会被下次启动的迁移抹掉', () async {
+      // 互联页的「用互联做备份后端」按钮把 backendType 写成 hibikiServer。迁移若还只看
+      // 「backendType 是不是 hibikiServer」，下次启动就会把这个用户选择当成旧数据改回
+      // googleDrive——按钮变成重启即失效的假开关。一次性标记正是为此。
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      // 首次启动（云用户，无旧互联数据）：迁移跑过并落标记。
+      await repo.migrateInterconnectBackendToToggle();
+      expect(await repo.getBackendType(), SyncBackendType.googleDrive);
+
+      // 用户按下按钮。
+      await repo.setInterconnectEnabled(true);
+      await repo.setBackendType(SyncBackendType.hibikiServer);
+
+      // 下次启动再跑迁移。
+      await repo.migrateInterconnectBackendToToggle();
+
+      expect(await repo.getBackendType(), SyncBackendType.hibikiServer,
+          reason: '用户主动选的备份后端必须活过重启');
+      expect(await repo.isInterconnectEnabled(), isTrue);
+    });
+
+    test('旧互联用户即使升级后才首次启动，仍能被迁移一次', () async {
+      // 标记只在迁移真跑过一次后才存在：存量 hibikiServer 用户的第一次启动必须仍然
+      // 被搬到独立开关（Never break userspace）。
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      await db.setPref('sync_backend_type', 'hibikiServer');
       await repo.migrateInterconnectBackendToToggle();
 
       expect(await repo.isInterconnectEnabled(), isTrue);
