@@ -2317,5 +2317,10 @@
   "mining_image_quality_max": "Maximum",
   "mining_audio_quality_max": "Maximum",
   "video_clip_exported_with_subtitles": "Clip exported with subtitles: ${path}",
-  "home_recently_added": "Recently added"
+  "home_recently_added": "Recently added",
+  "games_set_cover": "Set cover",
+  "games_auto_cover": "Fetch cover automatically",
+  "games_cover_updated": "Cover updated",
+  "games_cover_not_found": "No usable cover found in the game folder or executable",
+  "games_cover_searching": "Looking for a cover..."
 }

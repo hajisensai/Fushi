@@ -9,6 +9,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_cover_resolver.dart';
 import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 // 书架卡片规格单一真相源（kShelfBookCardAspectRatio / kShelfTitleFooterHeight）。
@@ -62,6 +63,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 添加游戏：文件选择器选一个 `.exe`，以文件名去扩展名作默认名，追加进列表。
+  ///
+  /// 落库后**不等封面**就返回（卡片先用默认占位图出现），封面解析在后台跑完再回填：
+  /// 目录扫描 + exe 图标解析是磁盘/CPU 活，让它阻塞「添加」这一步会让 UI 无谓地卡住。
   Future<void> _addGame() async {
     final FilePickerResult? picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -75,6 +79,66 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     }
     final GalgameEntry entry = newGalgameEntryFromExe(exe);
     await _persist(<GalgameEntry>[..._games, entry]);
+    unawaited(_autoCover(entry, silent: true));
+  }
+
+  /// 自动获取封面：游戏目录里的封面图 → exe 内嵌图标（[autoResolveGameCover]）。
+  ///
+  /// [silent] = 添加游戏后的后台补齐（成功静默、失败不打扰）；用户从菜单主动触发时
+  /// 为 false，两种结局都给 toast，否则「点了没反应」无从判断。
+  Future<void> _autoCover(GalgameEntry game, {bool silent = false}) async {
+    if (!silent) HibikiToast.show(msg: t.games_cover_searching);
+    final ResolvedGameCover? resolved = await autoResolveGameCover(
+      gameId: game.id,
+      gameName: game.name,
+      exePath: game.exePath,
+      workdir: game.workdir,
+    );
+    if (resolved == null) {
+      if (!silent) HibikiToast.show(msg: t.games_cover_not_found);
+      return;
+    }
+    await _applyCover(game, resolved.path);
+    if (!silent) HibikiToast.show(msg: t.games_cover_updated);
+  }
+
+  /// 手动设置封面：选一张图 → 拷进 `<documents>/game_covers` → 回填条目。
+  /// 与视频卡「设置封面」同款语义（拷盘而非引用原图，原图移动/删除不会让封面消失）。
+  Future<void> _setCover(GalgameEntry game) async {
+    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+    );
+    final String? source = (picked != null && picked.files.isNotEmpty)
+        ? picked.files.first.path
+        : null;
+    if (source == null || source.isEmpty) return;
+    final String? saved = await saveGameCoverFromFile(
+      gameId: game.id,
+      sourcePath: source,
+    );
+    if (saved == null) {
+      HibikiToast.show(msg: t.games_cover_not_found);
+      return;
+    }
+    await _applyCover(game, saved);
+    HibikiToast.show(msg: t.games_cover_updated);
+  }
+
+  /// 把新封面路径写回条目并刷新。
+  ///
+  /// 必须先 `imageCache.evict`：[FileImage] 按 `(path, scale)` 缓存解码结果，换封面
+  /// 常常落在**同一个** `<id>.<ext>` 路径上，不驱逐旧条目的话 UI 重建会命中旧解码，
+  /// 用户看到的还是换之前那张图（与视频封面同一个坑，见 `setVideoCoverFromPickedFile`）。
+  Future<void> _applyCover(GalgameEntry game, String coverPath) async {
+    PaintingBinding.instance.imageCache.evict(FileImage(File(coverPath)));
+    if (!mounted) return;
+    // 以最新列表为基准改写（后台补齐期间用户可能已重命名/删除这条）。
+    final List<GalgameEntry> next = _games
+        .map((GalgameEntry g) =>
+            g.id == game.id ? g.copyWith(coverPath: coverPath) : g)
+        .toList();
+    if (!next.any((GalgameEntry g) => g.id == game.id)) return; // 已被删除
+    await _persist(next);
   }
 
   /// 移除一个游戏（按 id 定位）。
@@ -234,6 +298,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             onTap: () => unawaited(_launchGame(_games[i])),
             onRename: () => unawaited(_renameGame(_games[i])),
             onRemove: () => unawaited(_removeGame(_games[i])),
+            onSetCover: () => unawaited(_setCover(_games[i])),
+            onAutoCover: () => unawaited(_autoCover(_games[i])),
           ),
         );
       },
@@ -299,14 +365,19 @@ class _GameCard extends StatelessWidget {
     required this.onTap,
     required this.onRename,
     required this.onRemove,
+    required this.onSetCover,
+    required this.onAutoCover,
   });
 
   final GalgameEntry game;
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onRemove;
+  final VoidCallback onSetCover;
+  final VoidCallback onAutoCover;
 
-  /// 长按 / 右键的上下文菜单：与封面溢出菜单同两项（重命名 / 移除）。
+  /// 长按 / 右键的上下文菜单：与封面溢出菜单同四项（重命名 / 设置封面 /
+  /// 自动获取封面 / 移除）。两处菜单**共用** [_dispatchAction]，避免两份手抄。
   Future<void> _showContextMenu(BuildContext context) async {
     final String? action = await showDialog<String>(
       context: context,
@@ -317,21 +388,35 @@ class _GameCard extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         children: <Widget>[
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(ctx).pop('rename'),
-            child: Text(t.games_rename),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(ctx).pop('remove'),
-            child: Text(t.games_remove),
-          ),
+          for (final (String value, String label) item in _menuItems)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(item.$1),
+              child: Text(item.$2),
+            ),
         ],
       ),
     );
-    if (action == 'rename') {
-      onRename();
-    } else if (action == 'remove') {
-      onRemove();
+    if (action != null) _dispatchAction(action);
+  }
+
+  /// 卡片菜单项单一真相源：`(action, 文案)`。
+  List<(String, String)> get _menuItems => <(String, String)>[
+        ('rename', t.games_rename),
+        ('cover', t.games_set_cover),
+        ('autocover', t.games_auto_cover),
+        ('remove', t.games_remove),
+      ];
+
+  void _dispatchAction(String action) {
+    switch (action) {
+      case 'rename':
+        onRename();
+      case 'cover':
+        onSetCover();
+      case 'autocover':
+        onAutoCover();
+      case 'remove':
+        onRemove();
     }
   }
 
@@ -374,23 +459,15 @@ class _GameCard extends StatelessWidget {
                         color: colors.onSurface,
                       ),
                     ),
-                    onSelected: (String value) {
-                      if (value == 'rename') {
-                        onRename();
-                      } else if (value == 'remove') {
-                        onRemove();
-                      }
-                    },
+                    onSelected: _dispatchAction,
                     itemBuilder: (BuildContext context) =>
                         <PopupMenuEntry<String>>[
-                      PopupMenuItem<String>(
-                        value: 'rename',
-                        child: Text(t.games_rename),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'remove',
-                        child: Text(t.games_remove),
-                      ),
+                      for (final (String value, String label) item
+                          in _menuItems)
+                        PopupMenuItem<String>(
+                          value: item.$1,
+                          child: Text(item.$2),
+                        ),
                     ],
                   ),
                 ),

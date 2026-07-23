@@ -2317,5 +2317,10 @@
   "mining_image_quality_max": "最高",
   "mining_audio_quality_max": "最高",
   "video_clip_exported_with_subtitles": "片段已导出（含字幕）：${path}",
-  "home_recently_added": "最近添加"
+  "home_recently_added": "最近添加",
+  "games_set_cover": "设置封面",
+  "games_auto_cover": "自动获取封面",
+  "games_cover_updated": "封面已更新",
+  "games_cover_not_found": "游戏目录和程序图标里都没找到可用封面",
+  "games_cover_searching": "正在查找封面..."
 }
