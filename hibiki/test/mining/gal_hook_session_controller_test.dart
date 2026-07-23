@@ -539,6 +539,8 @@ void main() {
       <String?>['fake-609653421.ogg'],
       reason: '历史句必须按行内固化的资源 ID 直接导出，不能重新猜最新语音',
     );
+    expect(engine.findEventIds, <int?>[1]);
+    expect(engine.pairedEventIds, <int?>[1]);
 
     await controller.close();
     expect(engine.stopCalls, 1);
@@ -852,6 +854,8 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   final List<GalHookedLine> polledLines;
   final GalAudioSlice? utteranceSlice;
   final List<int> pairedTimestamps = <int>[];
+  final List<int?> pairedEventIds = <int?>[];
+  final List<int?> findEventIds = <int?>[];
   final List<int> utteranceTimestamps = <int>[];
   final List<String?> pairedResourceIds = <String?>[];
   final List<bool> grabFallbackFlags = <bool>[];
@@ -885,10 +889,12 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,
+    int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
   }) async {
     pairedTimestamps.add(textTsMs);
+    pairedEventIds.add(textEventId);
     pairedResourceIds.add(resourceId);
     grabFallbackFlags.add(allowLatestSessionFallback);
     if (pairedTimestamps.length < pairedReadyAfterCalls) return null;
@@ -897,13 +903,15 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
 
   @override
   bool hasPairedVoiceCandidate(int textTsMs,
-          {bool allowLatestSessionFallback = true}) =>
+          {int? textEventId, bool allowLatestSessionFallback = true}) =>
       pairedCandidate;
 
   @override
   String? findPairedVoiceResourceId(int textTsMs,
-          {bool allowLatestSessionFallback = true}) =>
-      pairedCandidate ? 'fake-$textTsMs.ogg' : null;
+      {int? textEventId, bool allowLatestSessionFallback = true}) {
+    findEventIds.add(textEventId);
+    return pairedCandidate ? 'fake-$textTsMs.ogg' : null;
+  }
 
   @override
   Future<GalAudioSlice?> grabUtterance(
