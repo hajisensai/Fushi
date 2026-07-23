@@ -12,11 +12,11 @@ void main() {
     test('封面类文件名排在立绘/背景之前，非图片被过滤', () {
       final List<GameCoverCandidate> ranked = rankGameCoverCandidates(
         filePaths: <String>[
-          r'C:\game\bg_school.png',
-          r'C:\game\cover.png',
-          r'C:\game\chara_yuki.png',
-          r'C:\game\readme.txt',
-          r'C:\game\パッケージ.jpg',
+          p.join('game', 'bg_school.png'),
+          p.join('game', 'cover.png'),
+          p.join('game', 'chara_yuki.png'),
+          p.join('game', 'readme.txt'),
+          p.join('game', 'パッケージ.jpg'),
         ],
         gameName: 'Some Game',
       );
@@ -27,7 +27,10 @@ void main() {
 
     test('与游戏同名的图拿到额外加分', () {
       final List<GameCoverCandidate> ranked = rankGameCoverCandidates(
-        filePaths: <String>[r'C:\g\sakura_moyu.png', r'C:\g\thumb.png'],
+        filePaths: <String>[
+          p.join('g', 'sakura_moyu.png'),
+          p.join('g', 'thumb.png')
+        ],
         gameName: 'Sakura Moyu',
       );
       expect(p.basename(ranked.first.path), 'sakura_moyu.png');
@@ -35,7 +38,7 @@ void main() {
 
     test('.ico 可用但排在同类正分图片之后', () {
       final List<GameCoverCandidate> ranked = rankGameCoverCandidates(
-        filePaths: <String>[r'C:\g\cover.ico', r'C:\g\cover.png'],
+        filePaths: <String>[p.join('g', 'cover.ico'), p.join('g', 'cover.png')],
         gameName: 'Game',
       );
       expect(p.basename(ranked.first.path), 'cover.png');
@@ -44,8 +47,8 @@ void main() {
 
     test('同分候选按路径稳定排序（目录枚举顺序不影响结果）', () {
       final List<String> files = <String>[
-        r'C:\g\b_cover.png',
-        r'C:\g\a_cover.png'
+        p.join('g', 'b_cover.png'),
+        p.join('g', 'a_cover.png')
       ];
       expect(
         rankGameCoverCandidates(filePaths: files, gameName: 'x')
