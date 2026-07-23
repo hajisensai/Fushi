@@ -14,7 +14,7 @@
   - 在主 checkout 的 `.worktrees/coordination/claims/` 复制 `_template.json` 新建自己的 claim；若当前位于 `.worktrees/<task>` worktree，则使用同级的 `../coordination/claims/`。
   - claim 写清任务、agent、分支、worktree、base SHA、预计修改文件和高冲突文件；普通任务 agent 只编辑自己的 claim，不在 tracked 文件里记录协调状态。
   - 普通任务 agent 不主动 rebase/merge `develop`；integration owner 统一读取 claims、决定合并顺序、更新 `develop`、跑 broad verification，并将完成/阻塞的 claim 移到 `done/` / `blocked/`。
-- 多使用子代理：遇到 2 个以上可独立推进的分析、审查、文件定位、测试诊断或实现子任务时，优先派发子代理并行处理；主代理负责整合结论、控制范围、复核关键证据和最终提交。不要把需要共享同一脏文件或强顺序依赖的步骤硬拆给多个子代理。
+- 多使用子代理：遇到 2 个以上可独立推进的分析、审查、文件定位、测试诊断或实现子任务时，优先派发子代理并行处理；主代理负责整合结论、控制范围、复核关键证据和最终提交。不要把需要共享同一脏文件或强顺序依赖的步骤硬拆给多个子代理。子代理**按难度选模型**（fable=根因/架构/整合，opus=独立实现/测试/机械改动，haiku/Explore=定位盘点）、后台派发、绝不同一子任务双模型冗余；难度分级、标准并行时间线和空等禁止清单见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md)。
 - 根因修复：遇到功能异常、测试失败、运行时报错或用户要求修复，先复现或沿真实代码路径定位，再修数据结构、状态同步、生命周期、平台边界或依赖契约。不允许用延迟、重试、吞异常、硬编码、特例分支掩盖症状；只有外部系统或平台限制不可控时才允许临时兼容层，并说明影响范围和清理条件。
 - 函数和新增 Dart helper 要有明确类型签名。
 - 不从零重写现有功能；在当前实现上删减、合并、修正。
@@ -69,7 +69,7 @@
 ## 验证
 
 - 文档改动：至少 `git diff --cached --check`，不必跑 Flutter 测试。
-- Dart/Flutter 改动（在 `hibiki/` 下）：`dart format .` + `flutter test`（用项目钉定的工具链：本地 `.fvmrc` 3.41.6，CI 3.44.0；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`）。
+- Dart/Flutter 改动（在 `hibiki/` 下）：`dart format` 改动文件 + push 前全量 `flutter analyze`（含 test 目录，CI 把 warning 当致命）+ **按爆炸半径分级的测试**——分支上跑改动覆盖 + 相邻功能的定向 `flutter test <目标> --no-pub`，全量套件由 PR CI 兜底（真单测门是 Build Release APK 的 Run unit tests）；**合入 `develop` 前仍必须本地全量 `flutter test`**。分级判据见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md)。（工具链钉定：本地 `.fvmrc` 3.41.6，CI 3.44.0；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`。）
 - Android 资源/manifest/Gradle/权限/通知/前台服务/打包改动：再加 `gradlew :app:assembleRelease`（在 `hibiki/android/`；Windows 用 `.\gradlew.bat`）。
 - 阅读器/导入/播放/布局问题，声明「修好了」前必须用真实模拟器或用户指定设备复测原始失败路径并留证据（见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md)）。
 - 集成测试操作真 app **一律焦点驱动（`FocusDriver` / `tester.sendKeyEvent`，禁止 `tester.tap` 或坐标点击）**：`Tab` 遍历→检测控件类型→Switch/按钮确认用 `Enter`（**不要用空格**——App 已把裸空格中和为 `DoNothingIntent`，焦点确认统一走 Enter / 手柄 A，见 `hibiki/lib/src/shortcuts/global_navigation.dart`）、Slider/Stepper/Segmented 用方向键→断言真写穿 DB/真生效→还原。同一份测试三端可跑（模拟器 `-d emulator-<port>` / Windows 离屏 `hibiki/tool/run_windows_itest.ps1` / Mac 跨机 `tool/run_mac_itest.ps1`），完整流程见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md) 的「焦点驱动操作」。
@@ -88,6 +88,7 @@
 
 | 要做的事 | 看这里 |
 |---|---|
+| 加功能/修 bug/合并的分级快车道：难度分级、opus/fable 模型分工、并行时间线、验证分级 | [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) |
 | 5 平台构建 / Melos / bootstrap + 依赖补丁机制 / 发布通道与版本号规则 / galgame hook 注入器独立分发 | [docs/agent/build.md](docs/agent/build.md) |
 | 模拟器集成测试三层架构 / 焦点驱动（禁坐标点击）/ AnkiDroid provisioning / ADB 降级 / DB 查询 / 测试素材 | [docs/agent/integration-testing.md](docs/agent/integration-testing.md) |
 | 持续审查模式 / docs/reviews 报告格式 / 回归记录 | [docs/agent/review-process.md](docs/agent/review-process.md) |
