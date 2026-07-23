@@ -50,6 +50,7 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/anime_download_importer.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
+import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
 import 'package:hibiki/src/media/torrent/torrent_memory.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -2917,28 +2918,29 @@ class AppModel with ChangeNotifier {
   /// 把配置里的内置引擎资源限制应用到常驻宿主（宿主不存在则 no-op）。
   void _applyEmbeddedTorrentLimits(QbConnectionConfig? config) {
     final EmbeddedTorrentHost? host = _embeddedTorrentHost;
-    if (host == null || config == null) return;
+    if (host == null) return;
+    final QbConnectionConfig effective = effectiveTorrentConfig(config);
     host.applyLimits(
-      downloadKbps: config.downloadLimitKbps,
-      uploadKbps: config.uploadLimitKbps,
-      maxConnections: config.maxConnections,
+      downloadKbps: effective.downloadLimitKbps,
+      uploadKbps: effective.uploadLimitKbps,
+      maxConnections: effective.maxConnections,
     );
     // 内存占用上限（按物理内存或用户设定推导；避免 libtorrent 吃满内存）。
     // 用户显式设了 maxConnections 就不用内存预算的连接数覆盖它（传 0）。
     final TorrentMemorySettings mem = computeTorrentMemorySettings(
-      memoryLimitMb: config.memoryLimitMb,
+      memoryLimitMb: effective.memoryLimitMb,
       totalRamMb: detectTotalMemoryMb() ?? 0,
     );
     host.applyMemorySettings(
       mem,
-      connectionsLimit: config.maxConnections > 0 ? 0 : mem.connectionsLimit,
+      connectionsLimit: effective.maxConnections > 0 ? 0 : mem.connectionsLimit,
     );
     // 会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
-    host.applySessionSettings(config);
+    host.applySessionSettings(effective);
     // 反吸血开关/阈值（用户可调）。
-    host.applyAntiLeechConfig(config);
+    host.applyAntiLeechConfig(effective);
     // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
-    host.setUploadPolicy(config);
+    host.setUploadPolicy(effective);
   }
 
   /// 番剧下载：计划存储（选种对话框写计划/暂存字幕，与完成监听服务共用同一实例）。
@@ -2948,6 +2950,14 @@ class AppModel with ChangeNotifier {
   /// 番剧下载：qb 完成监听 + 自动入库服务（app 生命周期常驻；未配置时每 tick 空转）。
   AnimeDownloadService? _animeDownloadService;
   AnimeDownloadService? get animeDownloadService => _animeDownloadService;
+
+  AnimeDownloadSubscriptionStore? _animeDownloadSubscriptionStore;
+  AnimeDownloadSubscriptionStore? get animeDownloadSubscriptionStore =>
+      _animeDownloadSubscriptionStore;
+
+  AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
+  AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>
+      _animeDownloadSubscriptionService;
 
   /// 内置 libtorrent 下载宿主（桌面且用户选内置后端时懒建；DLL 缺失/加载
   /// 失败为 null，服务回退外接 qb）。app 释放时 dispose。
@@ -2976,7 +2986,8 @@ class AppModel with ChangeNotifier {
 
     _animeDownloadService = AnimeDownloadService(
       store: store,
-      configProvider: () => prefsRepo.qbConnectionConfig,
+      configProvider: () =>
+          effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
       importer: buildAnimeDownloadImporter(database),
       bookImporter: _importDownloadedBooks,
       backendFactory: _torrentBackendFor,
@@ -2984,6 +2995,16 @@ class AppModel with ChangeNotifier {
         _embeddedTorrentHost?.sweepAntiLeech();
         _embeddedTorrentHost?.sweepUploadPolicy();
       },
+    )..start();
+    final AnimeDownloadSubscriptionStore subscriptionStore =
+        AnimeDownloadSubscriptionStore(baseDir: baseDir);
+    _animeDownloadSubscriptionStore = subscriptionStore;
+    _animeDownloadSubscriptionService = AnimeDownloadSubscriptionService(
+      store: subscriptionStore,
+      planStore: store,
+      configProvider: () =>
+          effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+      backendFactory: _torrentBackendFor,
     )..start();
   }
 
@@ -4287,6 +4308,7 @@ class AppModel with ChangeNotifier {
     unawaited(TexthookerWsClientManager.instance.stop());
     unawaited(stopYomitanApiServer());
     _animeDownloadService?.stop();
+    _animeDownloadSubscriptionService?.stop();
     _prefsRepo?.removeListener(notifyListeners);
     if (_themeListenerAdded) {
       themeNotifier.removeListener(notifyListeners);

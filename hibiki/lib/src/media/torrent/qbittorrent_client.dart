@@ -92,6 +92,7 @@ class QBittorrentClient {
     required this.username,
     required this.password,
     http.Client? client,
+    this.requestTimeout = const Duration(seconds: 10),
   })  : baseUrl = normalizeQbBaseUrl(baseUrl),
         _client = client ?? http.Client();
 
@@ -100,6 +101,7 @@ class QBittorrentClient {
   final String username;
   final String password;
   final http.Client _client;
+  final Duration requestTimeout;
 
   /// 当前会话 cookie；null = 尚未登录或已失效。
   String? _sid;
@@ -113,7 +115,7 @@ class QBittorrentClient {
         // qBittorrent 强制校验 Referer 与 Host 一致，否则 401。
         headers: <String, String>{'Referer': baseUrl},
         body: <String, String>{'username': username, 'password': password},
-      );
+      ).timeout(requestTimeout);
       // 成功是 200 + body `Ok.`；密码错误也是 200 但 body `Fails.`。
       if (res.statusCode != 200 || !res.body.trim().startsWith('Ok')) {
         return false;
@@ -239,9 +241,11 @@ class QBittorrentClient {
       if (_sid != null) 'Cookie': 'SID=$_sid',
     };
     if (method == 'POST') {
-      return _client.post(uri, headers: headers, body: form ?? const {});
+      return _client
+          .post(uri, headers: headers, body: form ?? const {})
+          .timeout(requestTimeout);
     }
-    return _client.get(uri, headers: headers);
+    return _client.get(uri, headers: headers).timeout(requestTimeout);
   }
 
   void close() => _client.close();

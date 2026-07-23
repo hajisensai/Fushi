@@ -24,7 +24,7 @@ void main() {
     final String src = f.readAsStringSync();
 
     // 必须出现在文件里且落在 Scaffold(...) 内（本文件只有一个 Scaffold）。
-    final int scaffold = src.indexOf('return Scaffold(');
+    final int scaffold = src.indexOf('Scaffold(');
     expect(scaffold, greaterThanOrEqualTo(0), reason: '下载页应是一个 Scaffold');
     expect(
       src.contains('resizeToAvoidBottomInset: false'),

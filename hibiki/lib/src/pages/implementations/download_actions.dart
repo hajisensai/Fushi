@@ -23,7 +23,7 @@ enum GenericPushOutcome {
 /// 否则走外接 qb，需填了地址。下载对话框与下载页共用同一判断（去重）。
 bool torrentBackendReady(AppModel appModel) {
   final QbConnectionConfig config =
-      appModel.qbConnectionConfig ?? const QbConnectionConfig();
+      effectiveTorrentConfig(appModel.qbConnectionConfig);
   if (appModel.isEmbeddedTorrentReady &&
       config.backend != QbConnectionConfig.backendQbittorrent) {
     return true;
@@ -38,7 +38,7 @@ Future<void> maybeShowTorrentUploadConsent(
   AppModel appModel,
 ) async {
   final QbConnectionConfig config =
-      appModel.qbConnectionConfig ?? const QbConnectionConfig();
+      effectiveTorrentConfig(appModel.qbConnectionConfig);
   if (appModel.torrentUploadIntroShown ||
       !appModel.isEmbeddedTorrentReady ||
       config.backend == QbConnectionConfig.backendQbittorrent) {
@@ -68,7 +68,7 @@ Future<GenericPushOutcome> pushGenericMagnet({
 }) async {
   if (!torrentBackendReady(appModel)) return GenericPushOutcome.notReady;
   final QbConnectionConfig config =
-      appModel.qbConnectionConfig ?? const QbConnectionConfig();
+      effectiveTorrentConfig(appModel.qbConnectionConfig);
   final String? infoHash = parseMagnetInfoHash(magnet.trim());
   if (infoHash == null) return GenericPushOutcome.invalidMagnet;
   final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;

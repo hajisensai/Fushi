@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 997 条。点号进各自文件。
+> 共 999 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1032](bugs/BUG-1032-qb-webui-no-request-timeout.md) | ✅ | ✅ | qB WebUI 请求缺少超时 |
+| [BUG-1031](bugs/BUG-1031-download-default-config-no-completion-poll.md) | ✅ | ✅ | 默认下载配置未传给完成轮询 |
 | [BUG-1030](bugs/BUG-1030-extension-subtitle-panel-overlay.md) | ✅ | ✅ | 浏览器扩展字幕列表覆盖页面而非挤压画面 |
 | [BUG-1029](bugs/BUG-1029-extension-subtitle-live-cumulative.md) | ✅ | ✅ | 浏览器扩展 YouTube 字幕列表逐字累积为重复行 |
 | [BUG-1028](bugs/BUG-1028-texthooker-popup-cold-webview.md) | ✅ | ✅ | 捕获工作台查词弹窗每次冷建WebView加载缓慢 |

@@ -75,6 +75,24 @@ void main() {
   });
 
   group('login', () {
+    test('times out a stalled WebUI request without throwing', () async {
+      final QBittorrentClient client = QBittorrentClient(
+        baseUrl: 'http://qb.local:8080',
+        username: 'admin',
+        password: 'secret',
+        requestTimeout: const Duration(milliseconds: 10),
+        client: MockClient((http.Request request) async {
+          await Future<void>.delayed(const Duration(seconds: 1));
+          return http.Response('Ok.', 200);
+        }),
+      );
+      final Stopwatch stopwatch = Stopwatch()..start();
+      expect(await client.login(), isFalse);
+      stopwatch.stop();
+      expect(stopwatch.elapsed, lessThan(const Duration(milliseconds: 500)));
+      client.close();
+    });
+
     test('succeeds on 200 Ok. with SID cookie and sends Referer + form',
         () async {
       late http.Request seen;
