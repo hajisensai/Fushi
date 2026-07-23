@@ -322,44 +322,16 @@ class AnkiRepository extends BaseAnkiRepository {
     final Map<String, String> dictionaryMediaTags =
         mediaResults[3] as Map<String, String>;
 
-    final mediaContext = AnkiMiningContext(
-      sentence: context.sentence,
-      cueSentence: context.cueSentence,
-      documentTitle: context.documentTitle,
-      coverPath: coverRef,
-      sasayakiAudioPath: sasayakiRef,
-      sentenceOffset: context.sentenceOffset,
-    );
-
-    final processedAudio = rawAudio != null ? '[sound:$rawAudio]' : '';
-
-    final mediaPayload = AnkiMiningPayload(
-      expression: payload.expression,
-      reading: payload.reading,
-      matched: payload.matched,
-      furiganaPlain: payload.furiganaPlain,
-      frequenciesHtml: payload.frequenciesHtml,
-      freqHarmonicRank: payload.freqHarmonicRank,
-      glossary: payload.glossary,
-      glossaryFirst: payload.glossaryFirst,
-      singleGlossaries: payload.singleGlossaries,
-      pitchPositions: payload.pitchPositions,
-      pitchCategories: payload.pitchCategories,
-      popupSelectionText: payload.popupSelectionText,
-      audio: processedAudio,
-      selectedDictionary: payload.selectedDictionary,
-      dictionaryMedia: payload.dictionaryMedia,
-    );
-
-    return RenderedMinedFields(
-      buildMinedFields(
-        fieldMappings: settings.fieldMappings,
-        payload: mediaPayload,
-        context: mediaContext,
-        dictionaryMediaTags: dictionaryMediaTags,
-        keepEmpty: keepEmpty,
-      ),
+    return renderMediaPayload(
+      settings: settings,
+      payload: payload,
+      context: context,
+      coverRef: coverRef,
+      sasayakiRef: sasayakiRef,
+      processedAudio: rawAudio != null ? '[sound:$rawAudio]' : '',
+      dictionaryMediaTags: dictionaryMediaTags,
       audioWarning: remoteAudio.failureReason,
+      keepEmpty: keepEmpty,
     );
   }
 
