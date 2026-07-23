@@ -44,6 +44,7 @@ jobs:
           ./tools/sync_lunahook.ps1
           python tests/engine_support_manifest_test.py
           python tests/adapter_structure_test.py
+          python tests/evidence_contract_test.py
           python tests/galhook_workflow_test.py
 
       # 32/64 位分开构建（DLL 位数必须匹配目标游戏进程）。windows-2022 runner 自带
@@ -52,11 +53,13 @@ jobs:
         run: |
           cmake -S . -B build/x64 -A x64
           cmake --build build/x64 --config Release
+          ctest --test-dir build/x64 -C Release --output-on-failure
 
       - name: Configure & build (x86)
         run: |
           cmake -S . -B build/x86 -A Win32
           cmake --build build/x86 --config Release
+          ctest --test-dir build/x86 -C Release --output-on-failure
 
       # 只挑分发所需文件（诊断用 ring_probe / luna_symcheck 不分发）。CMake POST_BUILD
       # 已把 vendored LunaHook<arch>.dll / LunaHost<arch>.dll 拷进各 arch 的 Release 目录。

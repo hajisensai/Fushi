@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hibiki engine-adapter probe/new/replay workflow (stdlib only)."""
+"""Hibiki engine-adapter evidence/probe/new/replay workflow (stdlib only)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,22 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
 import zipfile
 from pathlib import Path
 from typing import Any
+
+from galhook_evidence import (
+    STAGES,
+    decode_diagnostics,
+    dump_json,
+    load_diag_constants,
+    new_evidence,
+    validate_evidence,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE_ID = re.compile(r"^[a-z][a-z0-9_]{1,47}$")
@@ -403,6 +413,136 @@ def command_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_evidence_init(args: argparse.Namespace) -> int:
+    output = Path(
+        args.output
+        or ROOT / ".galhook-evidence" / f"{args.engine_id}-hook-evidence.json"
+    ).resolve()
+    if output.exists() and not args.force:
+        raise SystemExit(f"refusing to overwrite: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(dump_json(new_evidence(args.engine_id)), encoding="utf-8")
+    print(output)
+    return 0
+
+
+def command_verify_evidence(args: argparse.Namespace) -> int:
+    path = Path(args.evidence_file).resolve()
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        print(dump_json({"valid": False, "errors": [str(error)]}), end="")
+        return 2
+    report = validate_evidence(document)
+    report["evidence_file_sha256"] = _sha256(path)
+    if isinstance(document, dict) and isinstance(document.get("task"), dict):
+        report["engine_id"] = document["task"].get("engine_id")
+        report["support_status"] = document["task"].get("support_status")
+    required = args.require_stage
+    if required is not None:
+        highest = report["highest_proven_stage"]
+        if highest is None or STAGES.index(highest) < STAGES.index(required):
+            report["valid"] = False
+            report["errors"].append(
+                f"required stage {required} is not proven; highest is {highest!r}"
+            )
+    print(dump_json(report), end="")
+    return 0 if report["valid"] else 2
+
+
+def _uint32(value: str) -> int:
+    try:
+        parsed = int(value, 0)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+    if parsed < 0 or parsed > 0xFFFFFFFF:
+        raise argparse.ArgumentTypeError("value must fit uint32")
+    return parsed
+
+
+def command_explain_diag(args: argparse.Namespace) -> int:
+    constants = load_diag_constants(Path(args.header).resolve())
+    report = decode_diagnostics(
+        constants,
+        {
+            "hookdiag": args.hookdiag,
+            "hookio": args.hookio,
+            "lunadiag": args.lunadiag,
+        },
+    )
+    print(dump_json(report), end="")
+    return 0
+
+
+def _check_commands(root: Path, native: bool) -> list[list[str]]:
+    powershell = shutil.which("pwsh") or shutil.which("powershell") or "pwsh"
+    commands = [
+        [sys.executable, str(root / "tools" / "generate_engine_support.py"), "--check"],
+        [sys.executable, str(root / "tools" / "generate_luna_profiles.py"), "--check"],
+        [
+            powershell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(root / "tools" / "sync_lunahook.ps1"),
+        ],
+        [sys.executable, str(root / "tests" / "engine_support_manifest_test.py")],
+        [sys.executable, str(root / "tests" / "adapter_structure_test.py")],
+        [sys.executable, str(root / "tests" / "evidence_contract_test.py")],
+        [sys.executable, str(root / "tests" / "galhook_workflow_test.py")],
+    ]
+    if native:
+        for architecture, generator_arch in (("x64", "x64"), ("x86", "Win32")):
+            build = root / "build" / architecture
+            commands.extend(
+                [
+                    [
+                        "cmake",
+                        "-S",
+                        str(root),
+                        "-B",
+                        str(build),
+                        "-A",
+                        generator_arch,
+                    ],
+                    ["cmake", "--build", str(build), "--config", "Release"],
+                    [
+                        "ctest",
+                        "--test-dir",
+                        str(build),
+                        "-C",
+                        "Release",
+                        "--output-on-failure",
+                    ],
+                ]
+            )
+    return commands
+
+
+def command_check(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    commands = _check_commands(root, args.native)
+    if args.dry_run:
+        print(
+            dump_json(
+                {
+                    "cwd": str(root),
+                    "native": args.native,
+                    "commands": [subprocess.list2cmdline(command) for command in commands],
+                }
+            ),
+            end="",
+        )
+        return 0
+    for command in commands:
+        print(f"+ {subprocess.list2cmdline(command)}", flush=True)
+        completed = subprocess.run(command, cwd=root, check=False)
+        if completed.returncode != 0:
+            return int(completed.returncode)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="galhook")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -422,6 +562,30 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("trace")
     replay.add_argument("--output")
     replay.set_defaults(func=command_replay)
+    evidence = sub.add_parser("evidence")
+    evidence_sub = evidence.add_subparsers(dest="evidence_command", required=True)
+    evidence_init = evidence_sub.add_parser("init")
+    evidence_init.add_argument("engine_id")
+    evidence_init.add_argument("--output")
+    evidence_init.add_argument("--force", action="store_true")
+    evidence_init.set_defaults(func=command_evidence_init)
+    verify = sub.add_parser("verify-evidence")
+    verify.add_argument("evidence_file")
+    verify.add_argument("--require-stage", choices=STAGES)
+    verify.set_defaults(func=command_verify_evidence)
+    explain = sub.add_parser("explain-diag")
+    explain.add_argument("--hookdiag", type=_uint32, default=0)
+    explain.add_argument("--hookio", type=_uint32, default=0)
+    explain.add_argument("--lunadiag", type=_uint32, default=0)
+    explain.add_argument(
+        "--header", default=str(ROOT / "include" / "voice_hook_ipc.h")
+    )
+    explain.set_defaults(func=command_explain_diag)
+    check = sub.add_parser("check")
+    check.add_argument("--root", default=str(ROOT))
+    check.add_argument("--native", action="store_true")
+    check.add_argument("--dry-run", action="store_true")
+    check.set_defaults(func=command_check)
     return parser
 
 

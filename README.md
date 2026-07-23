@@ -34,14 +34,37 @@ python tests/engine_support_manifest_test.py
 
 ## 引擎开发流水线
 
-统一入口 `tool/galhook.ps1` 提供三个可自动化工作流：
+统一入口 `tool/galhook.ps1` 提供证据、诊断与适配工作流：
 
 ```powershell
+./tool/galhook.ps1 evidence init engine_id
+./tool/galhook.ps1 verify-evidence .galhook-evidence/engine_id-hook-evidence.json
+./tool/galhook.ps1 explain-diag --hookdiag 0x0 --hookio 0x0 --lunadiag 0x0
+./tool/galhook.ps1 check --dry-run --native
 ./tool/galhook.ps1 probe C:\game\game.exe --output probe.zip
 ./tool/galhook.ps1 new engine_id --hibiki-root C:\src\hibiki
 ./tool/galhook.ps1 replay tests/fixtures/workflow_replay.json
 ```
 
+- `evidence init` 创建单引擎、逐阶段的证据台账；`verify-evidence` 阻止跳阶段、Loopback
+  冒充引擎音频，以及缺真实身份/哈希/同会话制卡证据的支持升级，并输出台账 SHA-256。
+  默认任务台账位于已忽略的 `.galhook-evidence/`，避免把未脱敏现场记录误提交。
+  `timeline[].event` 使用固定名称：
+  `process_start`、`attach`/`injection`、`target_module_loaded`、`helper_loaded`、
+  `hook_installed`、`helper_ready`、`ipc_ready`、`first_text`、`text_thread_selected`、
+  `first_resource`/`first_pcm`/`first_loopback`、`paired`、`screenshot`、`card_written`。
+  新增或升级 manifest 的 `partial` / `verified` 状态或能力时，必须将通过的台账保存到
+  `evidence/*.json`，并在该引擎的 `support_evidence` 列表中按会话填写 `file`、`sha256`
+  和 `capability_refs`。不同 resource/PCM 会话可累积为多个记录；每条 refs 必须与对应
+  哈希台账的 `release.proved_capabilities` 完全一致，并绑定正确 proof boundary。新增
+  `verified_games` 还必须填写该行 canonical SHA-256 的 `verified_game_ref`，生成器会核对
+  游戏名、版本、架构、exe hash 与日期。进程策略等 engine-level 语义变化还要用
+  `engine_claim_refs` 精确匹配台账内带 value hash 的 `release.proved_engine_claims`；
+  无关音频证据不能为策略变化洗白。跨引擎、哈希漂移、错音频层或仅 Loopback 的证据均会被拒绝。
+- `explain-diag` 直接解析 `include/voice_hook_ipc.h` 中的常量并输出未知位，避免人工误拆
+  `hookdiag` / `hookio` / `lunadiag`。
+- `check --dry-run` 无副作用地列出检查；显式加 `--native` 才把 x86/x64 构建与 CTest
+  纳入计划。不加 `--dry-run` 时逐项执行并在首个失败处停止。
 - `probe` 只打包路径脱敏的元数据、PE imports、哈希和可选 trace 摘要；默认不复制 exe、脚本、图片、语音。
 - `new` 生成未验证 profile、独立 adapter、native/Dart 测试和 fixture，并写入编译与 registry 生命周期接缝。
 - `replay` 离线验证线程过滤、去重、资源晚到、文本-音频配对、fallback 顺序与会话清理。
