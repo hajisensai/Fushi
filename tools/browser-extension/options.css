@@ -70,47 +70,12 @@ summary:focus-visible {
   padding: clamp(32px, 7vw, 72px) 0 64px;
 }
 
-.hero {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 700px);
-  gap: 24px;
-  align-items: start;
-  margin-bottom: clamp(36px, 6vw, 64px);
-}
-
-.hero-mark {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  border: 1px solid var(--outline);
-  border-radius: 50%;
-  color: var(--primary-strong);
-  background: color-mix(in oklch, var(--surface) 76%, transparent);
-  font: 500 28px/1 "Yu Mincho", "Hiragino Mincho ProN", serif;
-}
-
-.eyebrow,
 .section-kicker {
   margin: 0 0 6px;
   color: var(--primary-strong);
   font-size: 11px;
   font-weight: 760;
   letter-spacing: .16em;
-}
-
-.hero h1 {
-  margin: 0;
-  font: 600 clamp(34px, 5.2vw, 58px)/1.04 "Yu Mincho", "Hiragino Mincho ProN", "Palatino Linotype", serif;
-  letter-spacing: -.045em;
-}
-
-.hero-copy {
-  max-width: 680px;
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: 16px;
-  line-height: 1.75;
 }
 
 .layout {
@@ -465,16 +430,12 @@ summary:focus-visible {
 
 @media (max-width: 760px) {
   .shell { width: min(100% - 28px, 620px); padding-top: 28px; }
-  .hero { grid-template-columns: 48px minmax(0, 1fr); gap: 15px; }
-  .hero-mark { width: 46px; height: 46px; font-size: 21px; }
   .layout { grid-template-columns: 1fr; gap: 36px; }
   .side-column { position: static; grid-row: 1; }
   .section { padding-bottom: 26px; margin-bottom: 28px; }
 }
 
 @media (max-width: 460px) {
-  .hero { grid-template-columns: 1fr; }
-  .hero-mark { display: none; }
   .section-heading { align-items: start; }
   .section-note { display: none; }
   .setting-row { gap: 16px; }

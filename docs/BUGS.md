@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 988 条。点号进各自文件。
+> 共 990 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1023](bugs/BUG-1023-extension-subtitle-panel-overlay.md) | ✅ | ✅ | 浏览器扩展字幕列表覆盖页面而非挤压画面 |
+| [BUG-1022](bugs/BUG-1022-extension-subtitle-live-cumulative.md) | ✅ | ✅ | 浏览器扩展 YouTube 字幕列表逐字累积为重复行 |
 | [BUG-1021](bugs/BUG-1021-galgame-cardimage-alias-false-warning.md) | ✅ | ✅ | galgame 场景制卡误报缺少 {card-image}（旧别名瞎眼） |
 | [BUG-1020](bugs/BUG-1020-clipboard-watcher-pref-flip-desync.md) | ✅ | ✅ | Windows剪贴板监听页内翻转开关后永久失效 |
 | [BUG-1019](bugs/BUG-1019-profile-swallows-audiobook-progress.md) | ✅ | ✅ | profile 切换吞听书进度/倍速：进度型 pref 被快照/prune/回灌 |
