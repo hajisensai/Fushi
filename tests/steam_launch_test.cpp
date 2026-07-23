@@ -6,7 +6,10 @@
 int main() {
   using hibiki_voice_hook::ParseAcfQuotedValue;
   using hibiki_voice_hook::ParseSteamLibraryPath;
+  using hibiki_voice_hook::BuildSteamRunUri;
+  using hibiki_voice_hook::ChooseSteamLaunchStrategy;
   using hibiki_voice_hook::SteamLibraryPath;
+  using hibiki_voice_hook::SteamLaunchStrategy;
 
   SteamLibraryPath path;
   assert(ParseSteamLibraryPath(
@@ -21,5 +24,14 @@ int main() {
   assert(ParseAcfQuotedValue(manifest, L"appid") == L"3101040");
   assert(ParseAcfQuotedValue(manifest, L"INSTALLDIR") == L"manosaba_game");
   assert(ParseAcfQuotedValue(manifest, L"missing").empty());
+
+  assert(ChooseSteamLaunchStrategy(L"3101040") ==
+         SteamLaunchStrategy::kSteamClient);
+  assert(ChooseSteamLaunchStrategy(L"") ==
+         SteamLaunchStrategy::kDirectExecutable);
+  assert(ChooseSteamLaunchStrategy(L"3101040-beta") ==
+         SteamLaunchStrategy::kDirectExecutable);
+  assert(BuildSteamRunUri(L"3101040") == L"steam://run/3101040");
+  assert(BuildSteamRunUri(L"not-an-appid").empty());
   return 0;
 }

@@ -24,10 +24,18 @@ DLL 位数必须匹配目标进程：32 位游戏用 `*32.dll`，64 位用 `*64.
   `src/NativeImpl/LunaHook/LunaHost/LunaHostDll.cpp` 为准。injector 的 `Luna_Start`（10 个
   `__cdecl` 回调槽）、`Luna_ConnectProcess` / `Luna_CheckIfNeedInject` / `Luna_DetachProcess`、
   `Luna_Settings`（6 参）和 `LunaThreadParam`（32B）均逐一与其对齐。
-- **升级纪律**：先核发布包 DLL 的版本/哈希与导出，再读配套 `texthook.py` 和上游导出实现，同步改
-  `injector_main.cpp` 与 `luna_symcheck.cpp`；禁止只覆盖 DLL。
+- **升级纪律**：版本与四个 DLL 哈希的机器可读真相源是 `VERSION.json`。先用
+  `tools/sync_lunahook.ps1 -SourceDir <release-dir>` 比对官方发布包，再读配套 `texthook.py`
+  和上游导出实现；确认 ABI 变化后升级 `include/luna_bridge.h` 的 bridge ABI。禁止只覆盖 DLL。
 - 校验：`hibiki_luna_symcheck.exe`（`tools/luna_symcheck.cpp`）纯 `LoadLibrary`+`GetProcAddress`，
-  离线确认 4 个必需导出齐全。
+  离线确认 4 个必需导出齐全；`tools/sync_lunahook.ps1` 校验版本清单与所有二进制哈希。
+
+## Hook Code 配置
+
+内置表的唯一真相源是 `config/luna_hook_profiles.tsv`，经
+`python tools/generate_luna_profiles.py` 生成编译期副本。匹配键只能是 exe SHA-256、模块名 +
+模块 SHA-256，不能使用安装路径。用户表使用同一 TSV schema，通过 injector
+`--luna-hook-profile <file>` 导入；`--luna-hook-code <code>` 只用于一次性诊断。
 
 ## 发布文件校验
 

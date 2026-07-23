@@ -1,0 +1,9 @@
+# hook_code	thread_id	manual_thread	text	expected_write
+bad	1	0	menu	1
+bad	1	0	load	1
+good	2	0	dialogue	0
+bad	1	0	AABBCC	0
+good	2	0	clean-line	1
+bad	1	1	manual-line	1
+bad	1	1	AABBCC	0
+good	2	0	clean-again	1

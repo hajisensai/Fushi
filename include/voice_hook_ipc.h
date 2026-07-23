@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <string>
 
+#include "luna_version.h"
+
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— 引擎级 voice hook 的**进程间契约**。
 //
 // 部署红线：这套 injector + hook DLL 是**独立可选 helper 组件**，和 `hibiki.exe` 物理隔离、
@@ -29,7 +31,9 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     最终混音（voice+BGM），按文本时刻抽窗口做卡。与引擎级纯人声路径并存，互不干扰。
 // v9：合并 v8 的引擎诊断/Unity 资源事件与 v6 的 loopback 环。
 // v10：文本槽追加事件类型，透传 Luna ThreadCreate，使尚无台词的候选线程也可被选择。
-constexpr uint32_t kSharedVersion = 10;
+// v11：显式声明稳定 IPC、Luna bridge ABI 与 vendored Luna 版本，host 可在读数据前拒绝错配。
+constexpr uint32_t kSharedVersion = 11;
+constexpr uint32_t kStableIpcVersion = 1;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
@@ -72,6 +76,36 @@ constexpr uint32_t kDiagLunaOutputObserved = 0x00001000u;
 constexpr uint32_t kDiagLunaInjectFailed = 0x00002000u;
 constexpr uint32_t kDiagSiglusExactTextHookReady = 0x00004000u;
 constexpr uint32_t kDiagSiglusExactTextObserved = 0x00008000u;
+constexpr uint32_t kDiagFfmpegResourceHooksReady = 0x00010000u;
+constexpr uint32_t kDiagFfmpegResourceCaptured = 0x00020000u;
+constexpr uint32_t kDiagVisualArtsOvkHooksReady = 0x00040000u;
+constexpr uint32_t kDiagVisualArtsOvkCaptured = 0x00080000u;
+constexpr uint32_t kDiagKirikiriVorbisOpenHookReady = 0x00100000u;
+constexpr uint32_t kDiagFfmpegVoiceResourceObserved = 0x00200000u;
+constexpr uint32_t kDiagTyranoAsarHooksReady = 0x00400000u;
+constexpr uint32_t kDiagTyranoAsarVoiceCaptured = 0x00800000u;
+constexpr uint32_t kDiagBgiArcHooksReady = 0x01000000u;
+constexpr uint32_t kDiagBgiArcVoiceCaptured = 0x02000000u;
+constexpr uint32_t kDiagArtemisPfsHooksReady = 0x04000000u;
+constexpr uint32_t kDiagArtemisPfsVoiceCaptured = 0x08000000u;
+constexpr uint32_t kDiagCatSystem2PcmHooksReady = 0x10000000u;
+constexpr uint32_t kDiagCatSystem2PcmVoiceCaptured = 0x20000000u;
+constexpr uint32_t kDiagMalieLibpHooksReady = 0x40000000u;
+constexpr uint32_t kDiagMalieLibpVoiceCaptured = 0x80000000u;
+
+// reserved_hook_diagnostics is a secondary engine-I/O trace word. Malie uses
+// it to distinguish handle discovery, async reads, and mapped views without
+// consuming the saturated primary hook_diagnostics bitset.
+constexpr uint32_t kDiagMalieArchiveHandleTracked = 0x00000001u;
+constexpr uint32_t kDiagMalieReadRangeObserved = 0x00000002u;
+constexpr uint32_t kDiagMalieMappingTracked = 0x00000004u;
+constexpr uint32_t kDiagMalieMappedRangeObserved = 0x00000008u;
+constexpr uint32_t kDiagMalieVoiceRangeQueued = 0x00000010u;
+constexpr uint32_t kDiagQlieVorbisHooksReady = 0x00000020u;
+constexpr uint32_t kDiagQlieVorbisOpenObserved = 0x00000040u;
+constexpr uint32_t kDiagQlieVorbisPcmCaptured = 0x00000080u;
+constexpr uint32_t kDiagQlieVorbisFloatHookReady = 0x00000100u;
+constexpr uint32_t kDiagQlieVorbisFloatPcmCaptured = 0x00000200u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -87,7 +121,14 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
   const bool unity_ready =
       (hook_diagnostics & unity_required) == unity_required;
   return (reserved_luna & kDiagKirikiriVoiceStreamHookReady) != 0 ||
-         (reserved_luna & kDiagSiglusOvkHooksReady) != 0 || unity_ready;
+         (reserved_luna & kDiagSiglusOvkHooksReady) != 0 ||
+         (hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0 ||
+         (hook_diagnostics & kDiagTyranoAsarHooksReady) != 0 ||
+         (hook_diagnostics & kDiagBgiArcHooksReady) != 0 ||
+         (hook_diagnostics & kDiagArtemisPfsHooksReady) != 0 ||
+         (hook_diagnostics & kDiagCatSystem2PcmHooksReady) != 0 ||
+         (hook_diagnostics & kDiagMalieLibpHooksReady) != 0 ||
+         (hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0 || unity_ready;
 }
 
 // Unity Streaming AudioClip 不能用 AudioClip.GetData 读取。DLL 在 Play/set_clip 时只写一个
@@ -171,6 +212,10 @@ struct LoopbackMarker {
 struct SharedHeader {
   uint32_t magic;           // = kSharedMagic
   uint32_t version;         // = kSharedVersion
+  uint32_t ipc_protocol_version;     // = kStableIpcVersion
+  uint32_t luna_bridge_abi_version;  // = kLunaBridgeAbiVersion
+  uint32_t luna_vendored_version;    // packed 10.16.1.2
+  uint32_t protocol_reserved;
   uint32_t sample_rate;     // hook 首次拿到语音格式后填
   uint32_t channels;        //
   uint32_t bits_per_sample;  //

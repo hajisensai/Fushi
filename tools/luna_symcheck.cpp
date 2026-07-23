@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <string>
 
+#include "luna_bridge.h"
+
 // galgame 一键制卡 C 阶段 —— LunaHost DLL 符号解析校验器（**纯查符号，不注入、不跑游戏**）。
 //
 // 用途：编译后离线确认 vendored 的 LunaHost<arch>.dll 能被 LoadLibrary 且 injector 依赖的导出
@@ -35,17 +37,6 @@ std::wstring SelfDir() {
   return path;
 }
 
-// injector 真正依赖的 4 个必需导出 + 其余 injector 可选用到的。
-const char* kRequired[] = {"Luna_Start", "Luna_ConnectProcess",
-                           "Luna_CheckIfNeedInject", "Luna_DetachProcess"};
-const char* kOptional[] = {"Luna_Settings", "Luna_InsertPCHooks",
-                           "Luna_SettingsEx", "Luna_ResetLang",
-                           "Luna_AllocString", "Luna_InsertHookCode",
-                           "Luna_QueryThreadHistory", "Luna_RemoveHook",
-                           "Luna_FindHooks", "Luna_SyncThread",
-                           "Luna_CheckIsUsingEmbed", "Luna_UseEmbed",
-                           "Luna_EmbedCallback"};
-
 }  // namespace
 
 int main() {
@@ -57,10 +48,13 @@ int main() {
     return 1;
   }
   printf("LunaHost%ls.dll 已加载。\n", kArch);
+  printf("bridge ABI=%u, vendored Luna=10.16.1.2 (0x%08x)\n",
+         hibiki_voice_hook::kLunaBridgeAbiVersion,
+         hibiki_voice_hook::kLunaVendoredVersion);
 
   int missing_required = 0;
   printf("== 必需导出 ==\n");
-  for (const char* name : kRequired) {
+  for (const char* name : hibiki_voice_hook::kLunaRequiredExports) {
     void* p = reinterpret_cast<void*>(GetProcAddress(h, name));
     printf("  [%s] %s (%p)\n", p ? "OK" : "MISSING", name, p);
     if (p == nullptr) {
@@ -68,12 +62,17 @@ int main() {
     }
   }
   printf("== 可选导出 ==\n");
-  for (const char* name : kOptional) {
+  for (const char* name : hibiki_voice_hook::kLunaOptionalExports) {
     void* p = reinterpret_cast<void*>(GetProcAddress(h, name));
     printf("  [%s] %s (%p)\n", p ? "OK" : "absent", name, p);
   }
 
   FreeLibrary(h);
+  const std::wstring hook = SelfDir() + L"LunaHook" + kArch + L".dll";
+  if (GetFileAttributesW(hook.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    fprintf(stderr, "LunaHook%ls.dll 缺失。\n", kArch);
+    return 1;
+  }
   if (missing_required != 0) {
     fprintf(stderr, "缺 %d 个必需导出 —— injector 无法接 LunaHook。\n",
             missing_required);

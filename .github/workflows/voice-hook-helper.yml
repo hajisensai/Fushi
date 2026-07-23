@@ -10,7 +10,9 @@
 #   （旧版在 hibiki 仓库因 workflow 不在默认分支无法 dispatch，故迁出独立仓库根治）。
 # - 发布到固定 tag `voice-hook-helper` 的 prerelease、非 Latest release。
 #
-# 每架构分发 4 个文件（injector.exe + hook.dll + LunaHook<arch>.dll + LunaHost<arch>.dll），
+# 每架构分发 4 个核心文件（injector.exe + hook.dll + LunaHook<arch>.dll + LunaHost<arch>.dll）。
+# x86 包另带 Locale Emulator 2.5.0.1 的 LoaderDll.dll / LocaleEmulator.dll 与 LGPL 文本，供
+# Hibiki 自动以日语 CP932 挂起启动旧式非 Unicode galgame；不运行安装器、不改系统区域设置。
 # 打成 voice_hook_<arch>.zip（文件平铺在 zip 根）+ .sha256 侧车供 app 校验完整性。app 下载 URL：
 #   https://github.com/<owner>/hibiki-voice-hook/releases/download/voice-hook-helper/voice_hook_<arch>.zip
 name: voice-hook-helper
@@ -30,19 +32,36 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      # P0 单一真相源守卫：schema/真实样本证据必须有效，生成文档不得漂移。
+      - name: Verify engine support manifest
+        run: |
+          python tools/generate_engine_support.py --check
+          python tools/generate_luna_profiles.py --check
+          ./tools/sync_lunahook.ps1
+          python tests/engine_support_manifest_test.py
+          python tests/adapter_structure_test.py
+          python tests/evidence_contract_test.py
+          python tests/galhook_workflow_test.py
+
       # 32/64 位分开构建（DLL 位数必须匹配目标游戏进程）。windows-2022 runner 自带
       # Visual Studio 2022 + CMake，多配置生成器用 -A x64 / -A Win32 选架构平台。
       - name: Configure & build (x64)
         run: |
           cmake -S . -B build/x64 -A x64
           cmake --build build/x64 --config Release
+          ctest --test-dir build/x64 -C Release --output-on-failure
 
       - name: Configure & build (x86)
         run: |
           cmake -S . -B build/x86 -A Win32
           cmake --build build/x86 --config Release
+          ctest --test-dir build/x86 -C Release --output-on-failure
 
-      # 只挑分发所需的 4 个文件（诊断用 ring_probe / luna_symcheck 不分发）。CMake POST_BUILD
+      # 只挑分发所需文件（诊断用 ring_probe / luna_symcheck 不分发）。CMake POST_BUILD
       # 已把 vendored LunaHook<arch>.dll / LunaHost<arch>.dll 拷进各 arch 的 Release 目录。
       - name: Stage helper files
         run: |
@@ -57,13 +76,37 @@ jobs:
           Copy-Item build/x86/Release/LunaHook32.dll             dist/x86/
           Copy-Item build/x86/Release/LunaHost32.dll             dist/x86/
 
-      # 契约守卫：每架构必须正好 4 个文件，缺一即失败（防漏 DLL 导致 app 端注入器起不来）。
-      - name: Verify 4 files per arch
+          # Locale Emulator 官方 v2.5.0.1（LGPL-3.0）。旧式非 Unicode galgame 基本是 x86，
+          # x64 helper 不加载这组 32 位 DLL。固定版本 + SHA-256，防供应链漂移。
+          $leUrl = 'https://github.com/xupefei/Locale-Emulator/releases/download/v2.5.0.1/Locale.Emulator.2.5.0.1.zip'
+          $leZip = Join-Path $env:RUNNER_TEMP 'Locale.Emulator.2.5.0.1.zip'
+          $leDir = Join-Path $env:RUNNER_TEMP 'Locale.Emulator.2.5.0.1'
+          Invoke-WebRequest -Uri $leUrl -OutFile $leZip
+          $expectedLeSha = '808ff584426d52cc775ad6406da00622f454be95bd4c8fbca42eef4b7235ad5c'
+          $actualLeSha = (Get-FileHash $leZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualLeSha -ne $expectedLeSha) {
+            throw "Locale Emulator SHA-256 mismatch: $actualLeSha"
+          }
+          Expand-Archive -LiteralPath $leZip -DestinationPath $leDir -Force
+          Copy-Item (Join-Path $leDir 'LoaderDll.dll') dist/x86/
+          Copy-Item (Join-Path $leDir 'LocaleEmulator.dll') dist/x86/
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/xupefei/Locale-Emulator/v2.5.0.1/COPYING.LESSER' `
+            -OutFile dist/x86/LocaleEmulator-LGPL-3.0.txt
+
+      # 契约守卫：x64 4 个核心文件；x86 再加两枚 LE DLL 与 LGPL 文本。
+      - name: Verify staged files per arch
         run: |
           $ErrorActionPreference = 'Stop'
-          foreach ($arch in 'x64', 'x86') {
-            $count = (Get-ChildItem "dist/$arch" -File).Count
-            if ($count -ne 4) { throw "arch $arch expected 4 files, got $count" }
+          $expected = @{
+            x64 = @('hibiki_voice_injector.exe', 'hibiki_voice_hook.dll', 'LunaHook64.dll', 'LunaHost64.dll')
+            x86 = @('hibiki_voice_injector.exe', 'hibiki_voice_hook.dll', 'LunaHook32.dll', 'LunaHost32.dll', 'LoaderDll.dll', 'LocaleEmulator.dll', 'LocaleEmulator-LGPL-3.0.txt')
+          }
+          foreach ($arch in $expected.Keys) {
+            $actual = @(Get-ChildItem "dist/$arch" -File | ForEach-Object Name | Sort-Object)
+            $wanted = @($expected[$arch] | Sort-Object)
+            if (Compare-Object $wanted $actual) {
+              throw "arch $arch staged files differ: $($actual -join ', ')"
+            }
           }
 
       # 打 zip（文件平铺在 zip 根）+ 产出 sha256 侧车（小写十六进制），供 app 下载后校验完整性。

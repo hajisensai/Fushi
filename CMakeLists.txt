@@ -41,6 +41,33 @@ target_include_directories(minhook PUBLIC "third_party/minhook/include")
 # 注入进游戏的 hook DLL。
 add_library(hibiki_voice_hook SHARED
   "hook/dll_main.cpp"
+  "hook/adapter.h"
+  "hook/ffmpeg_runtime.h"
+  "hook/bgi_arc.h"
+  "hook/artemis_pfs.h"
+  "hook/catsystem2_int.h"
+  "hook/malie_cfi.h"
+  "hook/malie_lib.h"
+  "hook/qlie_pack.h"
+  "hook/visual_arts_ovk.h"
+  "hook/adapter_registry.inc"
+  "hook/adapters/unity_adapter.inc"
+  "hook/adapters/windows_audio_adapter.inc"
+  "hook/adapters/siglus_adapter.inc"
+  "hook/adapters/bgi_ethornell_adapter.inc"
+  "hook/adapters/bgi_ethornell_profile.h"
+  "hook/adapters/artemis_adapter.inc"
+  "hook/adapters/artemis_profile.h"
+  "hook/adapters/catsystem2_adapter.inc"
+  "hook/adapters/catsystem2_profile.h"
+  "hook/adapters/malie_adapter.inc"
+  "hook/adapters/malie_profile.h"
+  "hook/adapters/qlie_adapter.inc"
+  "hook/adapters/qlie_profile.h"
+  "hook/adapters/kirikiri_adapter.inc"
+  "hook/adapters/renpy_adapter.inc"
+  "hook/adapters/text_render_adapter.inc"
+  "hook/adapters/loopback_adapter.inc"
 )
 target_include_directories(hibiki_voice_hook PRIVATE "include")
 target_compile_definitions(hibiki_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -66,6 +93,30 @@ add_executable(hibiki_resource_audio_ready_test
 target_include_directories(hibiki_resource_audio_ready_test PRIVATE "include")
 target_compile_definitions(hibiki_resource_audio_ready_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME hibiki_resource_audio_ready_test COMMAND hibiki_resource_audio_ready_test)
+
+add_executable(hibiki_voice_resource_filename_test
+  "tests/voice_resource_filename_test.cpp"
+)
+target_include_directories(hibiki_voice_resource_filename_test PRIVATE "hook")
+add_test(NAME hibiki_voice_resource_filename_test COMMAND hibiki_voice_resource_filename_test)
+
+add_executable(hibiki_qlie_pack_test
+  "tests/qlie_pack_test.cpp"
+)
+target_include_directories(hibiki_qlie_pack_test PRIVATE "hook")
+add_test(NAME hibiki_qlie_pack_test COMMAND hibiki_qlie_pack_test)
+
+add_executable(hibiki_ffmpeg_runtime_test
+  "tests/ffmpeg_runtime_test.cpp"
+)
+target_include_directories(hibiki_ffmpeg_runtime_test PRIVATE "hook")
+add_test(NAME hibiki_ffmpeg_runtime_test COMMAND hibiki_ffmpeg_runtime_test)
+
+add_executable(hibiki_child_process_policy_test
+  "tests/child_process_policy_test.cpp"
+)
+target_include_directories(hibiki_child_process_policy_test PRIVATE "injector")
+add_test(NAME hibiki_child_process_policy_test COMMAND hibiki_child_process_policy_test)
 
 # injector 重连同一游戏进程时必须复用 DLL 持有的映射，不能把 hooked/text/audio 环清零。
 add_executable(hibiki_voice_session_reuse_test
@@ -95,6 +146,13 @@ add_executable(hibiki_steam_launch_test
 target_include_directories(hibiki_steam_launch_test PRIVATE "include")
 add_test(NAME hibiki_steam_launch_test COMMAND hibiki_steam_launch_test)
 
+add_executable(hibiki_locale_emulator_launch_test
+  "tests/locale_emulator_launch_test.cpp"
+)
+target_include_directories(hibiki_locale_emulator_launch_test PRIVATE "injector")
+target_compile_definitions(hibiki_locale_emulator_launch_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_locale_emulator_launch_test COMMAND hibiki_locale_emulator_launch_test)
+
 # Siglus 文件夹签名识别（根因回归：改名 Siglus exe 被早注入弹掉）。纯逻辑，注入假文件表。
 add_executable(hibiki_siglus_launch_test
   "tests/siglus_launch_test.cpp"
@@ -106,14 +164,30 @@ add_executable(hibiki_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(hibiki_luna_hook_config_test PRIVATE include)
 add_test(NAME hibiki_luna_hook_config_test COMMAND hibiki_luna_hook_config_test)
 
+add_executable(hibiki_luna_bridge_abi_test tests/luna_bridge_abi_test.cpp)
+target_include_directories(hibiki_luna_bridge_abi_test PRIVATE include)
+target_compile_definitions(hibiki_luna_bridge_abi_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_luna_bridge_abi_test COMMAND hibiki_luna_bridge_abi_test)
+
+add_executable(hibiki_luna_text_replay_test tests/luna_text_replay_test.cpp)
+target_include_directories(hibiki_luna_text_replay_test PRIVATE include)
+add_test(NAME hibiki_luna_text_replay_test COMMAND hibiki_luna_text_replay_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/luna_thread_selection.tsv")
+
+add_executable(hibiki_adapter_contract_test tests/adapter_contract_test.cpp)
+target_include_directories(hibiki_adapter_contract_test PRIVATE hook)
+add_test(NAME hibiki_adapter_contract_test COMMAND hibiki_adapter_contract_test)
+
 # 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(hibiki_voice_injector
   "injector/injector_main.cpp"
+  "injector/child_process_policy.h"
+  "injector/locale_emulator_launch.h"
 )
-target_include_directories(hibiki_voice_injector PRIVATE "include")
+target_include_directories(hibiki_voice_injector PRIVATE "include" "hook" "injector")
 target_compile_definitions(hibiki_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(hibiki_voice_injector PRIVATE shell32)
+target_link_libraries(hibiki_voice_injector PRIVATE shell32 bcrypt)
 
 # Unity IL2CPP Streaming AudioClip 资源提取器（仅 x64 Unity 游戏需要）。它在 injector
 # 宿主进程解析 AssetBundle，并调用开源 vgmstream 解码 FSB5；游戏内 DLL 只写资源事件。
@@ -164,6 +238,7 @@ add_executable(hibiki_luna_symcheck
 )
 target_include_directories(hibiki_luna_symcheck PRIVATE "include")
 target_compile_definitions(hibiki_luna_symcheck PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_luna_symcheck COMMAND hibiki_luna_symcheck)
 
 # LunaHook 的 vendored 二进制（GPLv3，third_party/lunahook/，动态加载不链 .lib）。构建后把与本
 # 编译位数匹配的 LunaHost<arch>.dll（injector 加载）+ LunaHook<arch>.dll（注入进游戏）拷到
@@ -182,3 +257,7 @@ foreach(_luna_dll "LunaHost${_LUNA_ARCH}.dll" "LunaHook${_LUNA_ARCH}.dll")
     COMMENT "部署 vendored LunaHook 二进制 ${_luna_dll} 到 injector 目录"
     VERBATIM)
 endforeach()
+add_dependencies(hibiki_luna_symcheck hibiki_voice_injector)
+add_executable(hibiki_reallive_adapter_test "tests/reallive_adapter_test.cpp")
+target_include_directories(hibiki_reallive_adapter_test PRIVATE "hook")
+add_test(NAME hibiki_reallive_adapter_test COMMAND hibiki_reallive_adapter_test)

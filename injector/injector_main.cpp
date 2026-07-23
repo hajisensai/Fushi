@@ -1,21 +1,31 @@
 #include <windows.h>
 
+#include <bcrypt.h>
 #include <shellapi.h>
+#include <tlhelp32.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <map>
+#include <sstream>
 #include <string>
 #include <cwchar>
 #include <vector>
 
 #include "voice_hook_ipc.h"
 #include "voice_hook_session.h"
+#include "child_process_policy.h"
+#include "ffmpeg_runtime.h"
+#include "locale_emulator_launch.h"
 #include "siglus_launch.h"
 #include "steam_launch.h"
+#include "luna_bridge.h"
 #include "luna_hook_config.h"
+#include "luna_text_selector.h"
 
 // galgame 一键制卡 C 阶段注入器（C.1）。把 hook DLL 注入目标游戏进程，建立共享内存 + 就绪
 // 事件，确认注入成功后读回语音格式。Hibiki 主进程把它当子进程拉起（部署红线：注入代码只在
@@ -24,22 +34,27 @@
 // 两种进入方式（二选一）：
 //   attach（--pid）：注入已运行进程。适合引擎在游戏运行中才建声音设备的情形。
 //   launch（--launch）：通常 CREATE_SUSPENDED 拉起游戏，在其 WinMain 之前注入 hook 再
-//     ResumeThread。SiglusEngine.exe 的 Enigma 保护壳会拒绝这种早注入，因此该 exe 自动改为
-//     正常启动，等保护壳退出且游戏主窗口出现后再附着；Siglus 的干净语音来自后续 OVK 文件读，
-//     不要求抢在音频设备创建之前。
+//     ResumeThread。Steam 游戏必须由客户端启动，因此改走 steam://run 并以 15ms 间隔按完整路径
+//     自动发现真实游戏进程后注入；SiglusEngine.exe 的 Enigma 保护壳会拒绝早注入，因此该 exe
+//     正常启动，等保护壳退出且游戏主窗口出现后再附着。
 //
 // 用法：
 //   hibiki_voice_injector.exe --pid <PID> [--dll <hook.dll>] [--wait-ms N] [--hold]
 //   hibiki_voice_injector.exe --launch <exe> [--workdir <dir>] [--arg <a>]...
+//                             [--japanese-locale]
 //                             [--dll <hook.dll>] [--wait-ms N] [--hold]
 //     --pid     目标进程 ID（attach 模式；与 --launch 二选一）
 //     --launch  目标游戏 exe 路径（launch 模式；与 --pid 二选一）
 //     --workdir 子进程工作目录（launch 缺省=exe 所在目录）
 //     --arg     追加一个传给子进程的命令行参数（可重复；launch 专用）
+//     --japanese-locale  用 injector 同目录的 Locale Emulator 运行库建立日语 CP932
+//               环境，再在同一个挂起进程里完成 Hibiki 早注入。运行库不可用时告警并安全
+//               回退普通启动（launch 专用；Steam 协议启动会明确告警且不伪装已转区）。
 //     --dll     hook DLL 路径（默认取同目录 arch 匹配的 hibiki_voice_hook.dll）
 //     --wait-ms 等待就绪事件的超时毫秒（默认 5000）
 //     --hold    注入并确认后保持运行（host 模式，维持共享内存存活）；缺省=probe 模式，
 //               确认后退出。launch 模式下 --hold 会一直挂到游戏进程退出。
+//     --follow-child-processes  等启动器产生真实游戏子进程后再注入；Ren'Py 目录签名会自动启用。
 namespace {
 
 using hibiki_voice_hook::kClipCount;
@@ -58,6 +73,7 @@ using hibiki_voice_hook::kMaxRingBytes;
 using hibiki_voice_hook::kRingSeconds;
 using hibiki_voice_hook::kSharedMagic;
 using hibiki_voice_hook::kSharedVersion;
+using hibiki_voice_hook::kStableIpcVersion;
 using hibiki_voice_hook::kTextSlotBytes;
 using hibiki_voice_hook::kTextSlotCount;
 using hibiki_voice_hook::kUnityVoiceEventCount;
@@ -71,6 +87,11 @@ using hibiki_voice_hook::UnityVoiceEvent;
 using hibiki_voice_hook::InspectMappingSession;
 using hibiki_voice_hook::AdvanceUnityEventCursorIfCommitted;
 using hibiki_voice_hook::MappingSessionAction;
+using hibiki_voice_hook::LunaBridgeExports;
+using hibiki_voice_hook::LunaThreadParam;
+using hibiki_voice_hook::PFN_Luna_DetachProcess;
+using hibiki_voice_hook::PFN_Luna_InsertHookCode;
+using hibiki_voice_hook::PFN_Luna_InsertPCHooks;
 
 // 目标与自身位数（WOW64）必须一致才能注入：x86 DLL 只能进 32 位进程，x64 只能进 64 位。
 // 返回 true 表示匹配。CREATE_SUSPENDED 的新进程也能查（此刻映像已就绪，IsWow64Process 有效）。
@@ -182,55 +203,6 @@ int Fail(const char* msg) {
 // 10 个 __cdecl 回调指针；attach 先建 host 管道（Luna_ConnectProcess），再由
 // Luna_CheckIfNeedInject 判断是否需要注入；Luna_DetachProcess 收尾。换 DLL 版本时必须重新核对
 // 发布包内 texthook.py、上游导出实现和本文件，不能只覆盖二进制。
-
-// LunaHook ThreadParam：按 texthook.py 的 ctypes 结构 1:1 定死（processId=c_uint 后跟三个
-// c_uint64，8 对齐 → 4+4pad+8+8+8 = 32 字节）。回调里**按值**传入，布局必须精确匹配。
-#pragma pack(push, 8)
-struct LunaThreadParam {
-  uint32_t processId;
-  uint64_t addr;
-  uint64_t ctx;
-  uint64_t ctx2;
-};
-#pragma pack(pop)
-static_assert(sizeof(LunaThreadParam) == 32,
-              "LunaThreadParam 必须 32 字节，匹配 LunaHost ABI");
-
-// Luna_Start 的 10 个回调槽（默认 __cdecl，匹配 LunaHost 内部自由函数指针约定 / texthook.py 的
-// CFUNCTYPE）。只真正用第 5 个 Output；1-4、6-8 是最小 stub，9-10（i18n/emulator info）传空。
-// 参数逐个对齐 texthook.py：
-//   ProcessEvent            = void(DWORD)
-//   ThreadEvent_maybe_embed = void(const wchar_t* hookcode, const char* hookname, TP, bool)
-//   ThreadEvent             = void(const wchar_t* hookcode, const char* hookname, TP)
-//   OutputCallback          = void(const wchar_t* hookcode, const char* hookname, TP, const wchar_t* text)
-//   HostInfoHandler         = void(int type, const wchar_t* log)
-//   HookInsertHandler       = void(DWORD pid, uint64_t addr, const wchar_t* hookcode)
-//   EmbedCallback           = void(const wchar_t* text, TP)
-using LunaProcessEvent = void (*)(DWORD);
-using LunaThreadEventMaybeEmbed = void (*)(const wchar_t*, const char*,
-                                            LunaThreadParam, bool);
-using LunaThreadEvent = void (*)(const wchar_t*, const char*, LunaThreadParam);
-using LunaOutputCallback = void (*)(const wchar_t*, const char*,
-                                    LunaThreadParam, const wchar_t*);
-using LunaHostInfoHandler = void (*)(int, const wchar_t*);
-using LunaHookInsertHandler = void (*)(DWORD, uint64_t, const wchar_t*);
-using LunaEmbedCallback = void (*)(const wchar_t*, LunaThreadParam);
-using LunaI18nQueryCallback = wchar_t* (*)(const wchar_t*);
-using LunaEmuGameInfoCallback = void (*)(const wchar_t*, const wchar_t*,
-                                         const wchar_t*);
-using PFN_Luna_Start = void (*)(
-    LunaProcessEvent, LunaProcessEvent, LunaThreadEventMaybeEmbed,
-    LunaThreadEvent, LunaOutputCallback, LunaHostInfoHandler,
-    LunaHookInsertHandler, LunaEmbedCallback, LunaI18nQueryCallback,
-    LunaEmuGameInfoCallback);
-using PFN_Luna_ConnectProcess = void (*)(DWORD);
-using PFN_Luna_CheckIfNeedInject = bool (*)(DWORD);
-using PFN_Luna_DetachProcess = void (*)(DWORD);
-// Luna_Settings(flushDelay, filterRepetition, defaultCodepage, maxBufferSize,
-//               maxHistorySize, enablePCHooks)。PC hooks 仍由连接回调按目标决定，末参传 false。
-using PFN_Luna_Settings = void (*)(int, bool, int, int, int, bool);
-using PFN_Luna_InsertPCHooks = void (*)(DWORD, int);
-using PFN_Luna_InsertHookCode = bool (*)(DWORD, const wchar_t*);
 
 // host 侧 LunaHook 运行时上下文（单目标进程，injector 一对一）。
 struct LunaCtx {
@@ -533,72 +505,15 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
 // clean/dirty，自动锁定表现最干净的那条 hook；用户在 Hibiki 选择线程后则以共享 header 的
 // selected_text_thread_id 覆盖自动赢家。重复伪影始终不写，手动选择也不能绕过过滤。
 
-// 伪影判别（纯函数）：给定 [text,len]，判断是否为坏 hook 的重复伪影。
-//   ① 整串重复：len 为偶数且前半 == 后半（例：AB…|AB…）。
-//   ② 等长游程：对字符串做游程编码（连续相同字符归为一段），若段数 >=3 且所有段
+// EmbedKrkrZ 的精确完整行双写先折叠成第一份；其他引擎保持原过滤语义。
+// 伪影判别（纯函数）：给定规范化后的 [text,len]，判断是否为坏 hook 的重复伪影。
+//   ① 等长游程：对字符串做游程编码（连续相同字符归为一段），若段数 >=3 且所有段
 //     长度相等且 >=2 → 伪影（捕获每字×2/×3/×10 等）。
 // 其余为“干净”。
-bool LunaTextIsArtifact(const wchar_t* text, int len) {
-  if (text == nullptr || len <= 1) {
-    return false;
-  }
-  // ① 整串重复：偶数长且前半 == 后半。
-  if ((len % 2) == 0) {
-    const int half = len / 2;
-    if (wmemcmp(text, text + half, static_cast<size_t>(half)) == 0) {
-      return true;
-    }
-  }
-  // ② 等长游程：连续相同字符归一段，段数 >=3 且所有段等长且 >=2。
-  int seg_count = 0;
-  int first_run = 0;
-  bool uniform = true;
-  int i = 0;
-  while (i < len) {
-    int j = i + 1;
-    while (j < len && text[j] == text[i]) {
-      j++;
-    }
-    const int run = j - i;
-    if (seg_count == 0) {
-      first_run = run;
-    } else if (run != first_run) {
-      uniform = false;
-    }
-    seg_count++;
-    i = j;
-  }
-  if (seg_count >= 3 && uniform && first_run >= 2) {
-    return true;
-  }
-  // ③ 相邻同字比例：非等长的混合重画伪影（如 そそれれど…ころかか，部分字重复）游程不等长，
-  //   ② 抓不到。但每字重画的相邻相同字符占比很高（~0.5），干净日文 ≈0（偶有っ/ー/々）。>=30% 判伪影。
-  int adj_eq = 0;
-  for (int k = 1; k < len; k++) {
-    if (text[k] == text[k - 1]) {
-      adj_eq++;
-    }
-  }
-  return len > 4 && adj_eq * 100 >= (len - 1) * 30;
-}
-
-// 每条 hook 的干净/伪影计数。
-struct LunaHookStats {
-  uint64_t clean_count = 0;
-  uint64_t dirty_count = 0;
-  uint64_t last_tick = 0;
-};
-
-// hookcode -> 计数。Output 回调可能在 LunaHook 内部工作线程并发触发，用 CRITICAL_SECTION
-// 串行化计数更新与赢家评估。g_lunaSelectedHook 空=冷启动未选出赢家。
-std::map<std::wstring, LunaHookStats> g_lunaHookStats;
-std::wstring g_lunaSelectedHook;
-bool g_lunaSelectPrimed = false;
+// 线程选择的纯逻辑位于 luna_text_selector.h；运行时只负责跨回调加锁和读取手动选择值。
+hibiki_voice_hook::LunaTextSelector g_lunaTextSelector;
 CRITICAL_SECTION g_lunaSelectCs;
 bool g_lunaSelectCsInit = false;
-
-// 冷启动阈值：总干净行 < 阈值前不锁定赢家，只要该行本身干净就照写（保证首句立刻可见）。
-constexpr uint64_t kLunaSelectMinClean = 3;
 
 // 多 hook 自动选干净线程：更新某 hookcode 的计数并重算当前赢家，返回本行是否应写入文本环。
 // hookcode 可能为 nullptr（归到空串 key）。冷启动（总 clean < 阈值）时干净行照写；一旦某
@@ -621,70 +536,9 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
   }
   const std::wstring key =
       (hookcode != nullptr) ? std::wstring(hookcode) : std::wstring();
-  bool should_write = false;
   EnterCriticalSection(&g_lunaSelectCs);
-  LunaHookStats& st = g_lunaHookStats[key];
-  if (is_artifact) {
-    st.dirty_count++;
-  } else {
-    st.clean_count++;
-  }
-  st.last_tick = GetTickCount64();
-
-  // 重算赢家。**优先「纯净」hook（dirty==0，从未产伪影）**，无纯净 hook 才回落
-  // 「clean>=dirty 且 clean_count 最高」的旧规则。
-  //
-  // 根因（真机实证 lunadiag + 模拟）：per-char/整串重复的坏 hook（KiriKiri 的 KiriKiriZ）在读档
-  // 菜单阶段先吐一堆**干净**的存档预览/槽号/时间戳、凭早期高 clean_count 霸占赢家；进对话后它只
-  // 吐每字重复**伪影**（被伪影闸丢弃），而真正干净的对话 hook（textrender）虽已出干净行却因不是
-  // 赢家被拒 → 正文一句不写、只剩菜单文字（用户症状「没正文文字，只有读存档文字」）。旧规则靠
-  // 累计 clean_count 选赢家，坏 hook 的早期干净菜单数长期压过对话 hook。
-  // 纯净优先：坏 hook 一进对话吐出第一条伪影 dirty>0 即失去纯净资格，对话 hook（始终 dirty==0）
-  // 立即接管，正文流出。单 hook 偶发误判伪影的游戏无纯净 hook、回落旧规则，行为不变。
-  const std::wstring* best = nullptr;
-  uint64_t best_clean = 0;
-  const std::wstring* best_pristine = nullptr;
-  uint64_t best_pristine_clean = 0;
-  uint64_t total_clean = 0;
-  for (const auto& kv : g_lunaHookStats) {
-    total_clean += kv.second.clean_count;
-    const uint64_t c = kv.second.clean_count;
-    const uint64_t d = kv.second.dirty_count;
-    if (c == 0) {
-      continue;
-    }
-    if (d == 0 && c > best_pristine_clean) {
-      best_pristine_clean = c;  // 纯净候选（从未产伪影）
-      best_pristine = &kv.first;
-    }
-    if (c >= d && c > best_clean) {
-      best_clean = c;  // 回落候选（占比 c/(c+d)>=0.5 <=> c>=d）
-      best = &kv.first;
-    }
-  }
-  const std::wstring* winner =
-      (best_pristine != nullptr) ? best_pristine : best;
-
-  if (total_clean >= kLunaSelectMinClean && winner != nullptr) {
-    g_lunaSelectPrimed = true;
-    g_lunaSelectedHook = *winner;
-  }
-
-  // 伪影永不写——无论来自哪个 hook。赢家 hook 自己也会夹带 ×2/×3 伪影行（同一 hookcode 既出
-  // 干净又出重复），旧逻辑「锁定态只按 key 放行」会把赢家的伪影也写进去。线程选择只作次级去重
-  // （多条干净 hook 里锁定一条，避免重复），伪影过滤是无条件的第一道闸。
-  if (is_artifact) {
-    should_write = false;
-  } else if (manually_selected != 0) {
-    // Hibiki UI 手动选择优先于自动赢家；切回 0 即恢复自动选择。
-    should_write = manually_selected == thread_id;
-  } else if (!g_lunaSelectPrimed) {
-    // 冷启动：未锁定赢家，干净行照写（保证首句立刻可见）。
-    should_write = true;
-  } else {
-    // 锁定态：只写赢家 hook 的干净行。
-    should_write = (key == g_lunaSelectedHook);
-  }
+  const bool should_write = g_lunaTextSelector.ShouldWrite(
+      key, thread_id, is_artifact, manually_selected);
   LeaveCriticalSection(&g_lunaSelectCs);
   return should_write;
 }
@@ -723,30 +577,35 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
                 LunaThreadParam tp, const wchar_t* text) {
   if (g_luna.header != nullptr && text != nullptr) {
     g_luna.header->hook_diagnostics |= kDiagLunaOutputObserved;
-    const int len = static_cast<int>(wcslen(text));
+    const int raw_len = static_cast<int>(wcslen(text));
+    const int normalized_len =
+        hibiki_voice_hook::LunaNormalizedTextLengthForHook(hookname, text,
+                                                           raw_len);
     if (LunaDiagEnabled()) {
       char u8[1024];
-      LunaWideToUtf8(text, len, u8, sizeof(u8));
+      LunaWideToUtf8(text, raw_len, u8, sizeof(u8));
       char hc[512];
       LunaWideToUtf8(hookcode != nullptr ? hookcode : L"",
                      hookcode != nullptr ? static_cast<int>(wcslen(hookcode)) : 0,
                      hc, sizeof(hc));
       fprintf(stderr,
               "[lunadiag] name=%s code=%s addr=0x%llx ctx=0x%llx ctx2=0x%llx "
-              "len=%d text=%s\n",
+              "raw_len=%d normalized_len=%d text=%s\n",
               (hookname != nullptr) ? hookname : "(null)", hc,
               static_cast<unsigned long long>(tp.addr),
               static_cast<unsigned long long>(tp.ctx),
-              static_cast<unsigned long long>(tp.ctx2), len, u8);
+              static_cast<unsigned long long>(tp.ctx2), raw_len,
+              normalized_len, u8);
       fflush(stderr);
     }
-    if (LunaPassesFilter(text, len)) {
+    if (LunaPassesFilter(text, normalized_len)) {
       // 多 hook 自动选干净线程：先判伪影并累计，再决定本行是否写入文本环。
-      const bool artifact = LunaTextIsArtifact(text, len);
+      const bool artifact =
+          hibiki_voice_hook::LunaTextIsArtifact(text, normalized_len);
       const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
       if (LunaShouldWriteLine(hookcode, thread_id, artifact)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id, text,
-                          len);
+                          normalized_len);
         // 一旦 LunaHook 写出干净行，标记 LunaHook 权威：游戏内 GDI 文本 hook 让位不再写文本，
         // 避免双写者污染（见 voice_hook_ipc.h SharedHeader::luna_active 注释）。幂等，写 1 即可。
         if (!artifact) {
@@ -833,44 +692,28 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
             kLunaArch, GetLastError());
     return false;
   }
-  auto start =
-      reinterpret_cast<PFN_Luna_Start>(GetProcAddress(host, "Luna_Start"));
-  auto connect = reinterpret_cast<PFN_Luna_ConnectProcess>(
-      GetProcAddress(host, "Luna_ConnectProcess"));
-  auto need_inject = reinterpret_cast<PFN_Luna_CheckIfNeedInject>(
-      GetProcAddress(host, "Luna_CheckIfNeedInject"));
-  auto detach =
-      reinterpret_cast<PFN_Luna_DetachProcess>(
-          GetProcAddress(host, "Luna_DetachProcess"));
-  if (start == nullptr || connect == nullptr || need_inject == nullptr ||
-      detach == nullptr) {
+  LunaBridgeExports bridge;
+  if (!bridge.Resolve(host)) {
     fprintf(stderr,
             "[luna] LunaHost 缺关键导出(Start/ConnectProcess/"
             "CheckIfNeedInject/DetachProcess)；跳过\n");
     FreeLibrary(host);
     return false;
   }
-  auto settings = reinterpret_cast<PFN_Luna_Settings>(
-      GetProcAddress(host, "Luna_Settings"));  // 可选
-  auto insert_pc = reinterpret_cast<PFN_Luna_InsertPCHooks>(
-      GetProcAddress(host, "Luna_InsertPCHooks"));  // 可选
-  auto insert_hook = reinterpret_cast<PFN_Luna_InsertHookCode>(
-      GetProcAddress(host, "Luna_InsertHookCode"));  // 可选
-
   g_luna.host_dll = host;
   g_luna.header = header;
   g_luna.pid = pid;
-  g_luna.detach = detach;
-  g_luna.insert_pc = insert_pc;
-  g_luna.insert_hook = insert_hook;
-  g_luna.use_pc_hooks = use_pc_hooks && (insert_pc != nullptr);
+  g_luna.detach = bridge.detach;
+  g_luna.insert_pc = bridge.insert_pc;
+  g_luna.insert_hook = bridge.insert_hook;
+  g_luna.use_pc_hooks = use_pc_hooks && (bridge.insert_pc != nullptr);
   g_luna.hook_codes = hook_codes;
   header->hook_diagnostics |= kDiagLunaHostReady;
 
   // flushDelay=200ms（一句停顿 flush 一行）、filterRepetition=true（LunaHook 侧先去重）、
   // codepage（日文 galgame 默认 932/SHIFT_JIS）、maxBufferSize/maxHistorySize 保守非零值。
-  if (settings != nullptr) {
-    settings(200, true, codepage, 8192, 1000, false);
+  if (bridge.settings != nullptr) {
+    bridge.settings(200, true, codepage, 8192, 1000, false);
   }
 
   // 多 hook 自动选干净线程的计数锁：Output 回调可在 LunaHook 工作线程并发，
@@ -879,20 +722,21 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
     InitializeCriticalSection(&g_lunaSelectCs);
     g_lunaSelectCsInit = true;
   }
+  g_lunaTextSelector.Reset();
 
   // 注册回调，顺序严格对齐 texthook.py：Connect, Disconnect, ThreadCreate, ThreadRemove,
   // Output, HostInfo, HookInsert, Embed, I18NQuery, EmuGameInfo。后两项本组件不用，传空让
   // LunaHost 采用默认行为。
-  start(&LunaConnect, &LunaDisconnect, &LunaThreadCreate, &LunaThreadRemove,
-        &LunaOutput, &LunaHostInfo, &LunaHookInsert, &LunaEmbed, nullptr,
-        nullptr);
+  bridge.start(&LunaConnect, &LunaDisconnect, &LunaThreadCreate,
+               &LunaThreadRemove, &LunaOutput, &LunaHostInfo, &LunaHookInsert,
+               &LunaEmbed, nullptr, nullptr);
 
   // 触发 attach：先建 host<->hook 管道，再判断目标是否需要注入。需要则把
   // LunaHook<arch>.dll 注入游戏（复用 CreateRemoteThread(LoadLibraryW) 纯 DLL 注入，等价
   // LunaTranslator 的 shareddllproxy dllinject；LunaHook.dll 自初始化、连回管道、自动识别引擎
   // 装台词 hook → Output 回调回传）。
-  connect(pid);
-  if (need_inject(pid)) {
+  bridge.connect(pid);
+  if (bridge.need_inject(pid)) {
     const std::wstring hook_path =
         InjectorDir() + L"LunaHook" + kLunaArch + L".dll";
     if (GetFileAttributesW(hook_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
@@ -935,7 +779,41 @@ struct LunaOptions {
   int codepage = 932;     // --luna-codepage（日文默认 SHIFT_JIS）
   bool pc_hooks = false;  // --luna-pchooks 补装通用 PC hooks
   std::vector<std::wstring> hook_codes;  // 版本专用、已验证的 H-code
+  std::wstring profile_path;  // 用户导入的 UTF-8 TSV（按 exe/module SHA-256）
 };
+
+std::string ReadUtf8File(const std::wstring& path);
+hibiki_voice_hook::LunaTargetIdentity BuildTargetIdentity(
+    const std::wstring& executable, DWORD pid);
+
+void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
+                       const std::wstring& user_profile,
+                       LunaOptions* options) {
+  if (options == nullptr || executable.empty()) return;
+  const auto identity = BuildTargetIdentity(executable, pid);
+  auto apply = [&](const std::string& tsv, const char* source) {
+    const auto match = hibiki_voice_hook::MatchLunaHookProfiles(tsv, identity);
+    if (match.codepage > 0) options->codepage = match.codepage;
+    for (const std::wstring& code : match.hook_codes) {
+      if (std::find(options->hook_codes.begin(), options->hook_codes.end(),
+                    code) == options->hook_codes.end()) {
+        options->hook_codes.push_back(code);
+        fprintf(stderr, "[luna] matched %s SHA-256 profile: %ls\n", source,
+                code.c_str());
+      }
+    }
+  };
+  apply(hibiki_voice_hook::BuiltInLunaHookProfiles(), "built-in");
+  if (!user_profile.empty()) {
+    const std::string imported = ReadUtf8File(user_profile);
+    if (imported.empty()) {
+      fprintf(stderr, "[luna] profile unreadable or empty: %ls\n",
+              user_profile.c_str());
+    } else {
+      apply(imported, "user");
+    }
+  }
+}
 
 // attach 与 launch 共用的注入编排。target=目标进程句柄，pid=目标 pid（命名共享内存/事件）。
 // resume_thread!=nullptr（launch 模式）时：注入完成后 ResumeThread 让挂起的游戏跑起来，再等就绪
@@ -1007,6 +885,10 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     memset(header, 0, static_cast<size_t>(total_size));
     header->magic = kSharedMagic;
     header->version = kSharedVersion;
+    header->ipc_protocol_version = kStableIpcVersion;
+    header->luna_bridge_abi_version =
+        hibiki_voice_hook::kLunaBridgeAbiVersion;
+    header->luna_vendored_version = hibiki_voice_hook::kLunaVendoredVersion;
     header->ring_capacity = ring_capacity;
     // 文本环紧随音频环形；clip 索引紧随文本环。hook DLL 据此偏移定位两区。
     header->text_region_offset = expected_text_offset;
@@ -1154,6 +1036,82 @@ std::wstring JoinPath(const std::wstring& a, const std::wstring& b) {
   return a + L"\\" + b;
 }
 
+struct LeProcessInformation : PROCESS_INFORMATION {
+  PVOID first_call_ldr_load_dll = nullptr;
+};
+
+using LeCreateProcessFunction = LONG(WINAPI*)(
+    hibiki_voice_hook::LeEnvironmentBlock*, PCWSTR, PWSTR, PCWSTR, ULONG,
+    LPSTARTUPINFOW, LeProcessInformation*, LPSECURITY_ATTRIBUTES,
+    LPSECURITY_ATTRIBUTES, PVOID, HANDLE);
+
+// Locale Emulator 的 LoaderDll 负责在 kernel32 初始化前装入 LocaleEmulator.dll。这里始终
+// 把调用结果保持在 CREATE_SUSPENDED；普通引擎交回 RunInjection 完成 Hibiki 早注入后恢复，
+// 需要发现窗口/子进程的策略则由 RunLaunch 先恢复再等待，避免挂起启动器与发现逻辑死锁。
+bool CreateJapaneseLocaleProcess(
+    const std::wstring& executable,
+    std::vector<wchar_t>* command_line, const std::wstring& current_directory,
+    DWORD creation_flags, STARTUPINFOW* startup_info,
+    PROCESS_INFORMATION* process_information) {
+  if (command_line == nullptr || startup_info == nullptr ||
+      process_information == nullptr) {
+    return false;
+  }
+  const std::wstring runtime_dir = InjectorDir();
+  const std::wstring loader_path = JoinPath(runtime_dir, L"LoaderDll.dll");
+  const std::wstring emulator_path =
+      JoinPath(runtime_dir, L"LocaleEmulator.dll");
+  if (!RegularFileExists(loader_path) || !RegularFileExists(emulator_path)) {
+    fprintf(stderr,
+            "[locale] runtime incomplete; expected LoaderDll.dll and "
+            "LocaleEmulator.dll in %ls\n",
+            runtime_dir.c_str());
+    return false;
+  }
+
+  HMODULE loader = LoadLibraryExW(
+      loader_path.c_str(), nullptr,
+      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if (loader == nullptr) {
+    fprintf(stderr, "[locale] LoadLibraryExW(%ls) failed: %lu\n",
+            loader_path.c_str(), GetLastError());
+    return false;
+  }
+  const auto create_process = reinterpret_cast<LeCreateProcessFunction>(
+      GetProcAddress(loader, "LeCreateProcess"));
+  if (create_process == nullptr) {
+    fprintf(stderr, "[locale] LoaderDll!LeCreateProcess missing: %lu\n",
+            GetLastError());
+    FreeLibrary(loader);
+    return false;
+  }
+
+  auto environment = hibiki_voice_hook::BuildJapaneseLocaleEnvironment();
+  LeProcessInformation le_process = {};
+  const LONG status = create_process(
+      &environment, executable.c_str(), command_line->data(),
+      current_directory.empty() ? nullptr : current_directory.c_str(),
+      creation_flags | CREATE_SUSPENDED, startup_info, &le_process, nullptr,
+      nullptr, nullptr, nullptr);
+  if (status == 0) {
+    process_information->hProcess = le_process.hProcess;
+    process_information->hThread = le_process.hThread;
+    process_information->dwProcessId = le_process.dwProcessId;
+    process_information->dwThreadId = le_process.dwThreadId;
+    fprintf(stderr,
+            "[locale] launched with Japanese CP932 via Locale Emulator "
+            "pid=%lu\n",
+            le_process.dwProcessId);
+  } else {
+    fprintf(stderr,
+            "[locale] LeCreateProcess failed: NTSTATUS=0x%08lx; falling back "
+            "to normal launch\n",
+            static_cast<unsigned long>(status));
+  }
+  FreeLibrary(loader);
+  return status == 0;
+}
+
 bool FileExists(const std::wstring& path) {
   const DWORD attr = GetFileAttributesW(path.c_str());
   return attr != INVALID_FILE_ATTRIBUTES &&
@@ -1175,6 +1133,200 @@ std::wstring ProcessImagePath(HANDLE process) {
   }
   return std::wstring(buffer.data(), size);
 }
+
+bool LooksLikeRenpyRuntime(const std::wstring& exe) {
+  const std::wstring dir = ExecutableDirectory(exe);
+  if (dir.empty()) return false;
+  return DirectoryExists(JoinPath(dir, L"renpy")) ||
+         DirectoryExists(JoinPath(JoinPath(dir, L"lib"), L"windows-i686")) ||
+         DirectoryExists(
+             JoinPath(JoinPath(dir, L"lib"), L"windows-x86_64")) ||
+         DirectoryExists(JoinPath(JoinPath(dir, L"lib"), L"py3-windows-x86_64")) ||
+         FileExists(JoinPath(dir, L"python.exe")) ||
+         FileExists(JoinPath(dir, L"pythonw.exe"));
+}
+
+void InspectFfmpegModules(DWORD pid,
+                          hibiki_voice_hook::ChildProcessCandidate* candidate) {
+  HANDLE snapshot = CreateToolhelp32Snapshot(
+      TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+  if (snapshot == INVALID_HANDLE_VALUE) return;
+  MODULEENTRY32W module = {0};
+  module.dwSize = sizeof(module);
+  if (Module32FirstW(snapshot, &module)) {
+    do {
+      const auto parsed =
+          hibiki_voice_hook::ParseFfmpegModuleName(module.szModule);
+      candidate->has_avcodec =
+          candidate->has_avcodec ||
+          parsed.kind == hibiki_voice_hook::FfmpegModuleKind::kAvcodec;
+      candidate->has_avformat =
+          candidate->has_avformat ||
+          parsed.kind == hibiki_voice_hook::FfmpegModuleKind::kAvformat;
+      if (hibiki_voice_hook::IsMonolithicFfmpegModuleName(module.szModule)) {
+        candidate->has_avcodec = true;
+        candidate->has_avformat = true;
+      }
+    } while (Module32NextW(snapshot, &module));
+  }
+  CloseHandle(snapshot);
+}
+
+DWORD FindGameChildProcess(DWORD root_pid) {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return 0;
+  struct OwnedCandidate {
+    hibiki_voice_hook::ChildProcessCandidate value;
+    std::wstring name;
+  };
+  std::vector<OwnedCandidate> owned;
+  PROCESSENTRY32W process = {0};
+  process.dwSize = sizeof(process);
+  if (Process32FirstW(snapshot, &process)) {
+    do {
+      if (process.th32ProcessID != root_pid && process.th32ProcessID != 0) {
+        OwnedCandidate candidate;
+        candidate.value.pid = process.th32ProcessID;
+        candidate.value.parent_pid = process.th32ParentProcessID;
+        candidate.name = process.szExeFile;
+        owned.push_back(std::move(candidate));
+      }
+    } while (Process32NextW(snapshot, &process));
+  }
+  CloseHandle(snapshot);
+  std::vector<hibiki_voice_hook::ChildProcessCandidate> candidates;
+  candidates.reserve(owned.size());
+  for (OwnedCandidate& item : owned) {
+    item.value.executable_name = item.name.c_str();
+    candidates.push_back(item.value);
+  }
+  // First select descendants without module inspection, then enrich every descendant. This keeps
+  // Toolhelp module snapshots scoped to the launcher's process tree.
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    if (hibiki_voice_hook::DescendantDepth(root_pid, i, candidates) > 0) {
+      InspectFfmpegModules(candidates[i].pid, &candidates[i]);
+    }
+  }
+  return hibiki_voice_hook::SelectGameChildProcess(root_pid, candidates);
+}
+
+DWORD WaitForGameChildProcess(DWORD root_pid, DWORD wait_ms) {
+  const uint64_t started = GetTickCount64();
+  const uint64_t deadline = GetTickCount64() + wait_ms;
+  DWORD last_candidate = 0;
+  int stable_observations = 0;
+  while (GetTickCount64() < deadline) {
+    const DWORD candidate = FindGameChildProcess(root_pid);
+    if (candidate != 0 && candidate == last_candidate) {
+      ++stable_observations;
+      if (stable_observations >= 2) return candidate;
+    } else {
+      last_candidate = candidate;
+      stable_observations = candidate == 0 ? 0 : 1;
+    }
+    if (candidate == 0 && GetTickCount64() - started >= 1000) {
+      hibiki_voice_hook::ChildProcessCandidate launcher;
+      launcher.pid = root_pid;
+      InspectFfmpegModules(root_pid, &launcher);
+      if (launcher.has_avcodec && launcher.has_avformat) return 0;
+    }
+    Sleep(100);
+  }
+  return last_candidate;
+}
+
+std::string Sha256File(const std::wstring& path) {
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE |
+                                FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                            nullptr);
+  if (file == INVALID_HANDLE_VALUE) return {};
+  BCRYPT_ALG_HANDLE algorithm = nullptr;
+  BCRYPT_HASH_HANDLE hash = nullptr;
+  DWORD object_size = 0;
+  DWORD result_size = 0;
+  std::vector<uint8_t> object;
+  std::array<uint8_t, 32> digest{};
+  bool ok = BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM,
+                                         nullptr, 0) == 0 &&
+            BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH,
+                              reinterpret_cast<PUCHAR>(&object_size),
+                              sizeof(object_size), &result_size, 0) == 0;
+  if (ok) {
+    object.resize(object_size);
+    ok = BCryptCreateHash(algorithm, &hash, object.data(), object_size, nullptr,
+                          0, 0) == 0;
+  }
+  std::array<uint8_t, 64 * 1024> buffer{};
+  while (ok) {
+    DWORD read = 0;
+    if (!ReadFile(file, buffer.data(), static_cast<DWORD>(buffer.size()),
+                  &read, nullptr)) {
+      ok = false;
+      break;
+    }
+    if (read == 0) break;
+    ok = BCryptHashData(hash, buffer.data(), read, 0) == 0;
+  }
+  if (ok) {
+    ok = BCryptFinishHash(hash, digest.data(),
+                          static_cast<ULONG>(digest.size()), 0) == 0;
+  }
+  if (hash != nullptr) BCryptDestroyHash(hash);
+  if (algorithm != nullptr) BCryptCloseAlgorithmProvider(algorithm, 0);
+  CloseHandle(file);
+  if (!ok) return {};
+  std::ostringstream out;
+  out << std::hex << std::setfill('0');
+  for (uint8_t byte : digest) out << std::setw(2) << static_cast<int>(byte);
+  return out.str();
+}
+
+std::string WideToUtf8(const std::wstring& value) {
+  if (value.empty()) return {};
+  const int size = WideCharToMultiByte(CP_UTF8, 0, value.c_str(),
+                                       static_cast<int>(value.size()), nullptr,
+                                       0, nullptr, nullptr);
+  std::string result(static_cast<size_t>(size), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, value.c_str(),
+                      static_cast<int>(value.size()), result.data(), size,
+                      nullptr, nullptr);
+  return result;
+}
+
+std::string ReadUtf8File(const std::wstring& path) {
+  std::ifstream input(path, std::ios::binary);
+  return input ? std::string(std::istreambuf_iterator<char>(input),
+                             std::istreambuf_iterator<char>())
+               : std::string();
+}
+
+hibiki_voice_hook::LunaTargetIdentity BuildTargetIdentity(
+    const std::wstring& executable, DWORD pid) {
+  hibiki_voice_hook::LunaTargetIdentity identity;
+  identity.executable_sha256 = Sha256File(executable);
+  HANDLE snapshot = CreateToolhelp32Snapshot(
+      TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+  if (snapshot == INVALID_HANDLE_VALUE) return identity;
+  MODULEENTRY32W module = {0};
+  module.dwSize = sizeof(module);
+  if (Module32FirstW(snapshot, &module)) {
+    do {
+      std::string name = hibiki_voice_hook::LowerAscii(WideToUtf8(module.szModule));
+      if (!name.empty() && identity.module_sha256.find(name) ==
+                               identity.module_sha256.end()) {
+        identity.module_sha256.emplace(name, Sha256File(module.szExePath));
+      }
+    } while (Module32NextW(snapshot, &module));
+  }
+  CloseHandle(snapshot);
+  return identity;
+}
+
+void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
+                       const std::wstring& user_profile,
+                       struct LunaOptions* options);
 
 bool LooksLikeUnityRuntime(const std::wstring& exe) {
   const std::wstring dir = ExecutableDirectory(exe);
@@ -1319,25 +1471,93 @@ std::wstring DiscoverSteamAppId(const std::wstring& executable) {
   return found;
 }
 
-struct EnvironmentValue {
-  bool existed = false;
-  std::wstring value;
-};
+constexpr DWORD kInjectionProcessRights =
+    PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
+    PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | SYNCHRONIZE;
 
-EnvironmentValue CaptureEnvironment(const wchar_t* name) {
-  EnvironmentValue result;
-  const DWORD need = GetEnvironmentVariableW(name, nullptr, 0);
-  if (need == 0) return result;
-  std::vector<wchar_t> value(need, 0);
-  if (GetEnvironmentVariableW(name, value.data(), need) > 0) {
-    result.existed = true;
-    result.value = value.data();
+// Steam 客户端可能已经启动了目标，也可能在处理 steam://run 后异步创建目标。
+// 只按完整镜像路径匹配，避免同名启动器/其他游戏被误注入。返回的句柄由调用方关闭。
+HANDLE FindProcessByImagePath(const std::wstring& expected_exe,
+                              DWORD* found_pid) {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return nullptr;
+  PROCESSENTRY32W entry = {0};
+  entry.dwSize = sizeof(entry);
+  HANDLE found = nullptr;
+  if (Process32FirstW(snapshot, &entry)) {
+    do {
+      HANDLE process = OpenProcess(kInjectionProcessRights, FALSE,
+                                   entry.th32ProcessID);
+      if (process == nullptr) continue;
+      const std::wstring image = ProcessImagePath(process);
+      if (!image.empty() && _wcsicmp(image.c_str(), expected_exe.c_str()) == 0) {
+        found = process;
+        if (found_pid != nullptr) *found_pid = entry.th32ProcessID;
+        break;
+      }
+      CloseHandle(process);
+    } while (Process32NextW(snapshot, &entry));
   }
-  return result;
+  CloseHandle(snapshot);
+  return found;
 }
 
-void RestoreEnvironment(const wchar_t* name, const EnvironmentValue& value) {
-  SetEnvironmentVariableW(name, value.existed ? value.value.c_str() : nullptr);
+HANDLE WaitForSteamGameProcess(const std::wstring& expected_exe,
+                               DWORD timeout_ms, DWORD* found_pid) {
+  const uint64_t deadline = GetTickCount64() + timeout_ms;
+  do {
+    HANDLE process = FindProcessByImagePath(expected_exe, found_pid);
+    if (process != nullptr) return process;
+    Sleep(15);
+  } while (GetTickCount64() < deadline);
+  return nullptr;
+}
+
+int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
+                   const std::wstring& dll_path, DWORD wait_ms, bool hold,
+                   LunaOptions luna) {
+  std::vector<wchar_t> absolute_buffer(32768, L'\0');
+  const DWORD absolute_size = GetFullPathNameW(
+      exe.c_str(), static_cast<DWORD>(absolute_buffer.size()),
+      absolute_buffer.data(), nullptr);
+  const std::wstring expected_exe =
+      absolute_size > 0 && absolute_size < absolute_buffer.size()
+          ? std::wstring(absolute_buffer.data(), absolute_size)
+          : exe;
+  DWORD pid = 0;
+  HANDLE target = FindProcessByImagePath(expected_exe, &pid);
+  if (target != nullptr) {
+    fprintf(stderr,
+            "[steam] target already running; attaching without relaunch "
+            "pid=%lu image=%ls\n",
+            pid, expected_exe.c_str());
+  } else {
+    const std::wstring uri = hibiki_voice_hook::BuildSteamRunUri(app_id);
+    const HINSTANCE launched = ShellExecuteW(
+        nullptr, L"open", uri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(launched) <= 32) {
+      fprintf(stderr, "ShellExecuteW(%ls) failed: %lld\n", uri.c_str(),
+              static_cast<long long>(reinterpret_cast<INT_PTR>(launched)));
+      return 1;
+    }
+    fprintf(stderr, "[steam] requested AppID=%ls via %ls\n", app_id.c_str(),
+            uri.c_str());
+    target = WaitForSteamGameProcess(expected_exe, 45000, &pid);
+    if (target == nullptr) {
+      fprintf(stderr,
+              "Steam 已接受启动请求，但 45 秒内未发现目标进程：%ls\n",
+              expected_exe.c_str());
+      return 1;
+    }
+    fprintf(stderr, "[steam] discovered launched game pid=%lu image=%ls\n", pid,
+            expected_exe.c_str());
+  }
+
+  ApplyLunaProfiles(expected_exe, pid, luna.profile_path, &luna);
+  const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
+                              target, luna);
+  CloseHandle(target);
+  return rc;
 }
 
 // launch 模式：一般 CREATE_SUSPENDED 早注入；Siglus 因 Enigma 保护壳改为正常启动后附着。
@@ -1345,13 +1565,12 @@ void RestoreEnvironment(const wchar_t* name, const EnvironmentValue& value) {
 int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               const std::vector<std::wstring>& extra_args,
               const std::wstring& dll_path, DWORD wait_ms, bool hold,
-              const LunaOptions& luna) {
+              bool follow_child_processes, bool japanese_locale,
+              bool force_direct_launch, const LunaOptions& luna) {
   if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
     return Fail("目标 exe 不存在（--launch <exe路径>）");
   }
   LunaOptions effective_luna = luna;
-  effective_luna.hook_codes =
-      hibiki_voice_hook::KnownLunaHookCodesForExecutable(exe);
   if (!effective_luna.pc_hooks && ShouldAutoUseLunaPcHooks(exe)) {
     effective_luna.pc_hooks = true;
     fprintf(stderr,
@@ -1374,36 +1593,101 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     cmdline += L" ";
     cmdline += a;
   }
-  std::vector<wchar_t> cmd_buf(cmdline.begin(), cmdline.end());
-  cmd_buf.push_back(L'\0');
+  const auto make_command_buffer = [&cmdline]() {
+    std::vector<wchar_t> buffer(cmdline.begin(), cmdline.end());
+    buffer.push_back(L'\0');
+    return buffer;
+  };
+  std::vector<wchar_t> cmd_buf = make_command_buffer();
 
   STARTUPINFOW si = {0};
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi = {0};
   const bool delayed_siglus = IsSiglusGame(exe);
-  // Steam 游戏被直接 CreateProcess 时常会立即退出，再由 Steam 拉起一个未注入子进程。
-  // 从 exe 所在库的 appmanifest 自动发现 AppID，并只在本次 CreateProcess 的继承窗口内设置
-  // 官方环境变量，避免 Steam 二次拉起导致“看似启动成功、实际 hook 的是已退出进程”。
+  const bool follow_children =
+      follow_child_processes || LooksLikeRenpyRuntime(exe);
+  // SteamAPI_RestartAppIfNecessary 要求游戏由 Steam 客户端启动。直接 CreateProcess
+  // 即使临时设置 AppID 环境变量也可能触发客户端二次拉起，最终出现重复实例且 hook 留在
+  // 已退出的首进程。Steam 游戏改走客户端协议，并自动按完整 exe 路径发现/注入真实进程。
   const std::wstring steam_app_id = DiscoverSteamAppId(exe);
-  const EnvironmentValue old_steam_app = CaptureEnvironment(L"SteamAppId");
-  const EnvironmentValue old_steam_game = CaptureEnvironment(L"SteamGameId");
-  if (!steam_app_id.empty()) {
+  if (!force_direct_launch &&
+      hibiki_voice_hook::ChooseSteamLaunchStrategy(steam_app_id) ==
+      hibiki_voice_hook::SteamLaunchStrategy::kSteamClient) {
+    if (!extra_args.empty()) {
+      fprintf(stderr,
+              "[steam] warning: custom --arg values are not forwarded by the "
+              "steam:// launch path\n");
+    }
+    if (japanese_locale) {
+      fprintf(stderr,
+              "[locale] Steam protocol launch cannot preserve the Locale "
+              "Emulator create-suspended boundary; continuing without locale "
+              "override\n");
+    }
+    return RunSteamLaunch(exe, steam_app_id, dll_path, wait_ms, hold,
+                          effective_luna);
+  }
+  const DWORD creation_flags =
+      (delayed_siglus || follow_children) ? 0 : CREATE_SUSPENDED;
+  wchar_t previous_steam_app_id[64] = {0};
+  wchar_t previous_steam_game_id[64] = {0};
+  const DWORD previous_app_id_chars = GetEnvironmentVariableW(
+      L"SteamAppId", previous_steam_app_id,
+      static_cast<DWORD>(std::size(previous_steam_app_id)));
+  const DWORD previous_game_id_chars = GetEnvironmentVariableW(
+      L"SteamGameId", previous_steam_game_id,
+      static_cast<DWORD>(std::size(previous_steam_game_id)));
+  if (force_direct_launch && !steam_app_id.empty()) {
     SetEnvironmentVariableW(L"SteamAppId", steam_app_id.c_str());
     SetEnvironmentVariableW(L"SteamGameId", steam_app_id.c_str());
-    fprintf(stderr, "[steam] inherited AppID=%ls for %ls\n",
-            steam_app_id.c_str(), ExecutableBaseName(exe).c_str());
+    fprintf(stderr,
+            "[steam] forcing CREATE_SUSPENDED with inherited AppID=%ls\n",
+            steam_app_id.c_str());
   }
-  const BOOL created = CreateProcessW(
-      exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE,
-      delayed_siglus ? 0 : CREATE_SUSPENDED,
-      nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
-  if (!steam_app_id.empty()) {
-    RestoreEnvironment(L"SteamAppId", old_steam_app);
-    RestoreEnvironment(L"SteamGameId", old_steam_game);
+  BOOL created = FALSE;
+  bool locale_launched = false;
+  if (japanese_locale) {
+    created = CreateJapaneseLocaleProcess(
+                  exe, &cmd_buf, workdir, creation_flags, &si, &pi)
+                  ? TRUE
+                  : FALSE;
+    locale_launched = created == TRUE;
+  }
+  if (!created) {
+    // LoaderDll may rewrite its mutable command line. Rebuild before the
+    // Never-break fallback to CreateProcessW.
+    cmd_buf = make_command_buffer();
+    created = CreateProcessW(
+        exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE, creation_flags,
+        nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
+  }
+  if (force_direct_launch && !steam_app_id.empty()) {
+    SetEnvironmentVariableW(
+        L"SteamAppId",
+        previous_app_id_chars > 0 ? previous_steam_app_id : nullptr);
+    SetEnvironmentVariableW(
+        L"SteamGameId",
+        previous_game_id_chars > 0 ? previous_steam_game_id : nullptr);
   }
   if (!created) {
     fprintf(stderr, "CreateProcessW failed: %lu\n", GetLastError());
     return 1;
+  }
+
+  const auto locale_resume_policy =
+      hibiki_voice_hook::SelectLocaleThreadResumePolicy(
+          locale_launched, delayed_siglus, follow_children);
+  if (locale_resume_policy ==
+      hibiki_voice_hook::LocaleThreadResumePolicy::kBeforeProcessDiscovery) {
+    if (ResumeThread(pi.hThread) == static_cast<DWORD>(-1)) {
+      fprintf(stderr,
+              "[locale] ResumeThread before process discovery failed: %lu\n",
+              GetLastError());
+      TerminateProcess(pi.hProcess, 1);
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+      return 1;
+    }
   }
 
   if (delayed_siglus &&
@@ -1415,18 +1699,52 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     return 1;
   }
 
+  HANDLE target_process = pi.hProcess;
+  DWORD target_pid = pi.dwProcessId;
+  HANDLE child_process = nullptr;
+  std::wstring target_exe = exe;
+  if (follow_children) {
+    const DWORD child_wait_ms =
+        wait_ms > static_cast<DWORD>(15000) ? wait_ms : static_cast<DWORD>(15000);
+    const DWORD child_pid =
+        WaitForGameChildProcess(pi.dwProcessId, child_wait_ms);
+    if (child_pid != 0) {
+      child_process = OpenProcess(
+          PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
+              PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | SYNCHRONIZE,
+          FALSE, child_pid);
+      if (child_process != nullptr) {
+        target_process = child_process;
+        target_pid = child_pid;
+        target_exe = ProcessImagePath(child_process);
+        fprintf(stderr, "[process] following child pid=%lu image=%ls\n",
+                child_pid, target_exe.c_str());
+      }
+    }
+    if (target_process == pi.hProcess) {
+      fprintf(stderr,
+              "[process] no stable game child found; attaching launcher pid=%lu\n",
+              pi.dwProcessId);
+    }
+  }
+
+  ApplyLunaProfiles(target_exe, target_pid, effective_luna.profile_path,
+                    &effective_luna);
+
   // 复用 attach 同一套编排；普通 launch 的 resume_thread=pi.hThread（注入后放行），
   // Siglus 已正常运行故为 nullptr；hold_process 让 --hold 挂到游戏退出。
-  const int rc = RunInjection(pi.hProcess, pi.dwProcessId, dll_path, wait_ms,
-                              hold, delayed_siglus ? nullptr : pi.hThread,
-                              pi.hProcess, effective_luna);
+  const int rc = RunInjection(
+      target_process, target_pid, dll_path, wait_ms, hold,
+      (delayed_siglus || follow_children) ? nullptr : pi.hThread,
+      target_process, effective_luna);
 
   // 普通早注入在注入前/Resume 前失败（rc==1）时游戏仍处挂起：强制结束，避免留下僵死
   // 挂起进程。Siglus 延迟附着时游戏已经正常运行，hook 失败也交给用户/上层回退处理。
   // rc==2（超时但已 Resume）游戏已在跑，不 terminate。rc==0 正常退出，游戏自然运行。
-  if (rc == 1 && !delayed_siglus) {
+  if (rc == 1 && !delayed_siglus && !follow_children) {
     TerminateProcess(pi.hProcess, 1);
   }
+  if (child_process != nullptr) CloseHandle(child_process);
   CloseHandle(pi.hThread);
   CloseHandle(pi.hProcess);
   return rc;
@@ -1443,10 +1761,13 @@ int main() {
   DWORD pid = 0;
   std::wstring launch_exe;
   std::wstring workdir;
+  bool japanese_locale = false;
   std::vector<std::wstring> launch_args;
   std::wstring dll_path;
   DWORD wait_ms = 5000;
   bool hold = false;
+  bool follow_child_processes = false;
+  bool force_direct_launch = false;
   LunaOptions luna;
 
   if (argv != nullptr) {
@@ -1458,6 +1779,8 @@ int main() {
         launch_exe = argv[++i];
       } else if (a == L"--workdir" && i + 1 < argc) {
         workdir = argv[++i];
+      } else if (a == L"--japanese-locale") {
+        japanese_locale = true;
       } else if (a == L"--arg" && i + 1 < argc) {
         launch_args.emplace_back(argv[++i]);
       } else if (a == L"--dll" && i + 1 < argc) {
@@ -1466,12 +1789,20 @@ int main() {
         wait_ms = static_cast<DWORD>(_wtoi(argv[++i]));
       } else if (a == L"--hold") {
         hold = true;
+      } else if (a == L"--follow-child-processes") {
+        follow_child_processes = true;
+      } else if (a == L"--force-direct-launch") {
+        force_direct_launch = true;
       } else if (a == L"--no-luna") {
         luna.enabled = false;
       } else if (a == L"--luna-pchooks") {
         luna.pc_hooks = true;
       } else if (a == L"--luna-codepage" && i + 1 < argc) {
         luna.codepage = _wtoi(argv[++i]);
+      } else if (a == L"--luna-hook-code" && i + 1 < argc) {
+        luna.hook_codes.emplace_back(argv[++i]);
+      } else if (a == L"--luna-hook-profile" && i + 1 < argc) {
+        luna.profile_path = argv[++i];
       }
     }
     LocalFree(argv);
@@ -1483,9 +1814,12 @@ int main() {
         "usage: hibiki_voice_injector --pid <PID> [--dll <hook.dll>] "
         "[--wait-ms N] [--hold]\n"
         "   or: hibiki_voice_injector --launch <exe> [--workdir <dir>] "
-        "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold]\n"
+        "[--japanese-locale] "
+        "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold] "
+        "[--follow-child-processes] [--force-direct-launch]\n"
         "LunaHook(host 侧全引擎文本 hook，仅 --hold 生效): [--no-luna] "
-        "[--luna-pchooks] [--luna-codepage <cp=932>]");
+        "[--luna-pchooks] [--luna-codepage <cp=932>] "
+        "[--luna-hook-code <H-code>]... [--luna-hook-profile <profiles.tsv>]");
   }
 
   if (dll_path.empty()) {
@@ -1498,7 +1832,8 @@ int main() {
   // launch 模式：CREATE_SUSPENDED 早注入。
   if (!launch_exe.empty()) {
     return RunLaunch(launch_exe, workdir, launch_args, dll_path, wait_ms, hold,
-                     luna);
+                     follow_child_processes, japanese_locale,
+                     force_direct_launch, luna);
   }
 
   // attach 模式：注入已运行进程（老路径行为不变）。
@@ -1514,8 +1849,8 @@ int main() {
 
   LunaOptions effective_luna = luna;
   const std::wstring target_exe = ProcessImagePath(target);
-  effective_luna.hook_codes =
-      hibiki_voice_hook::KnownLunaHookCodesForExecutable(target_exe);
+  ApplyLunaProfiles(target_exe, pid, effective_luna.profile_path,
+                    &effective_luna);
   if (!effective_luna.pc_hooks && !target_exe.empty() &&
       ShouldAutoUseLunaPcHooks(target_exe)) {
     effective_luna.pc_hooks = true;

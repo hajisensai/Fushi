@@ -5,4 +5,9 @@ out/
 # .NET (unity_audio_extract)
 bin/
 obj/
+# Python 诊断/文档工具缓存
+__pycache__/
+*.py[cod]
+# 任务内 Hook 证据台账；release 前仅将脱敏、验签后的最终台账显式复制到 evidence/。
+.galhook-evidence/
 
