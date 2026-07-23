@@ -81,9 +81,60 @@ async function maybeSelfReload(data) {
     if (await isOffscreenRecording()) return;
     const st = await chrome.storage.local.get(['hibikiReloadedForBuild']);
     if (st.hibikiReloadedForBuild === remote) return;
-    await chrome.storage.local.set({ hibikiReloadedForBuild: remote });
+    // BUG-1042：置重注入标记，reload 后新 SW 据此把 content script 补回已打开网页
+    // （chrome.runtime.reload() 会让所有已注入页的 content script 上下文失效 → 不补的话
+    // 用户必须手动刷新浏览器才恢复）。
+    await chrome.storage.local.set({
+      hibikiReloadedForBuild: remote,
+      hibikiReinjectPending: true,
+    });
     chrome.runtime.reload();
   } catch (_) { /* 自更新失败不影响查词本身 */ }
+}
+
+// BUG-1042：自更新 chrome.runtime.reload() 会让所有已打开标签页里注入的 content script
+// 上下文失效（"Extension context invalidated"），这些页在用户手动刷新前扩展就是死的。
+// reload 后由新 SW 把 content script 重新注入已打开的普通网页，页面无感恢复，无需刷新浏览器。
+// - 仅对 reload 前置的 hibikiReinjectPending 标记生效，普通 SW 冷启动不全量重注入；
+// - 逐页探测 window.__hibikiExtension（content.js 注入后置真、隔离世界随 reload 被拆即丢），
+//   已有活着的 content script 就跳过，避免重复注入导致重复监听；
+// - 受限页（chrome:// / 扩展页 / file://）与注入被拒的 tab 逐个 try/catch 忽略。
+async function reinjectOpenTabs() {
+  if (!chrome.scripting || !chrome.tabs) return;
+  const groups = (chrome.runtime.getManifest().content_scripts || [])
+      .filter((g) => Array.isArray(g.matches) && g.matches.includes('<all_urls>'));
+  if (!groups.length) return;
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch (_) { return; }
+  for (const tab of tabs) {
+    if (!tab || tab.id == null) continue;
+    const url = tab.url || '';
+    if (!/^https?:\/\//i.test(url)) continue;
+    for (const g of groups) {
+      try {
+        const probe = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => !!window.__hibikiExtension,
+        });
+        if (probe && probe[0] && probe[0].result === true) continue;
+        if (Array.isArray(g.css) && g.css.length) {
+          await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: g.css });
+        }
+        if (Array.isArray(g.js) && g.js.length) {
+          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: g.js });
+        }
+      } catch (_) { /* 受限页/注入被拒：忽略该 tab */ }
+    }
+  }
+}
+
+async function maybeReinjectAfterReload() {
+  try {
+    const st = await chrome.storage.local.get(['hibikiReinjectPending']);
+    if (!st.hibikiReinjectPending) return;
+    await chrome.storage.local.set({ hibikiReinjectPending: false });
+    await reinjectOpenTabs();
+  } catch (_) { /* 重注入失败：用户仍可手动刷新恢复，不影响其它功能 */ }
 }
 
 // 自更新升级点：启动即主动检查版本（此前只有用户实际查词后才比对 → app 升级当天不查词
@@ -106,6 +157,20 @@ async function checkVersionOnStartup() {
 checkVersionOnStartup(); // SW 每次启动都主动检查一次版本 + 刷新 last-seen。
 chrome.runtime.onStartup.addListener(() => { checkVersionOnStartup(); });
 chrome.runtime.onInstalled.addListener(() => { checkVersionOnStartup(); });
+maybeReinjectAfterReload(); // BUG-1042：若上一轮是自更新 reload，补回已打开网页的 content script。
+
+// BUG-1041：app 侧「插件已连接」判定 = 扩展最近 120s 内打过本机 server，且该 last-seen
+// 只存在 app 内存里（app 重启即丢）。MV3 SW 空闲 ~30s 被回收、无常驻定时器 → 用户不主动
+// 划词就会在 ~120s 后被判「未连接」，app 重启后更是一直「未连接」直到下次划词唤醒 SW。
+// 用 chrome.alarms 每 60s（< 120s 窗口）唤醒 SW 打一次 /api/extension/status 刷新 last-seen，
+// 让连接指示真实反映「扩展已加载可达」，app 重启后 ≤60s 自愈。复用 checkVersionOnStartup
+// （既刷 last-seen 又顺带比对版本），自更新仍只在 build 变化时触发一次、由 BUG-1042 无感恢复。
+try { chrome.alarms.create('hibikiHeartbeat', { periodInMinutes: 1 }); } catch (_) { /* 无 alarms 权限：跳过心跳 */ }
+if (chrome.alarms && chrome.alarms.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm && alarm.name === 'hibikiHeartbeat') checkVersionOnStartup();
+  });
+}
 
 // TODO-1000 Netflix：offscreen 文档承载 tabCapture MediaRecorder。批量生成时按字幕逐句「回放
 // 录制」——每句 seek 到句首、播到句尾录成一段自包含 webm（beginClip/endClip），随 mineClip 发给
