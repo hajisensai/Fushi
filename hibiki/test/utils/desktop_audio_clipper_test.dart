@@ -1248,12 +1248,12 @@ void main() {
 
     test('原片档（满档）截图用 0 哨兵不缩放，GIF 走封顶档（BUG-1039）', () {
       final MiningMediaCompression r = MiningMediaCompression.resolve(
-        imageTier: MiningMediaCompression.imageTierNative,
+        imageTier: MiningMediaCompression.imageTierMax,
         audioTier: MiningMediaCompression.audioTierCount - 1,
       );
       expect(r.screenshotMaxLongEdge, 0, reason: '0 = 不缩放（截图原图直通，语义不变）');
-      expect(r.gifFps, MiningMediaCompression.gifNativeFps);
-      expect(r.gifWidth, MiningMediaCompression.gifNativeWidth);
+      expect(r.gifFps, MiningMediaCompression.gifMaxTierFps);
+      expect(r.gifWidth, MiningMediaCompression.gifMaxTierWidth);
       expect(r.audioChannels, 2);
       expect(r.audioBitrate, '192k');
     });
@@ -1279,7 +1279,7 @@ void main() {
             MiningMediaCompression.resolve(imageTier: t - 1, audioTier: 0);
         final MiningMediaCompression hi =
             MiningMediaCompression.resolve(imageTier: t, audioTier: 0);
-        if (t < MiningMediaCompression.imageTierNative) {
+        if (t < MiningMediaCompression.imageTierMax) {
           expect(hi.screenshotMaxLongEdge,
               greaterThanOrEqualTo(lo.screenshotMaxLongEdge));
         }
@@ -1299,7 +1299,7 @@ void main() {
       final MiningMediaCompression over =
           MiningMediaCompression.resolve(imageTier: 99, audioTier: 99);
       final MiningMediaCompression top = MiningMediaCompression.resolve(
-        imageTier: MiningMediaCompression.imageTierNative,
+        imageTier: MiningMediaCompression.imageTierMax,
         audioTier: MiningMediaCompression.audioTierCount - 1,
       );
       expect(over.screenshotMaxLongEdge, top.screenshotMaxLongEdge);
