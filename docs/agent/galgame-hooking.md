@@ -4,6 +4,23 @@
 
 总设计见 [design.md](../specs/galgame-mining/design.md)，阶段计划与完成证据见 [engine-adapter-plan.md](../specs/galgame-mining/engine-adapter-plan.md)，当前支持状态以 hibiki-hook 的 `engine-support.yaml` 为唯一真相源。
 
+## 0. 与 hibiki-hook 的连接契约
+
+native 采集组件在独立仓库 [`hajisensai/hibiki-hook`](https://github.com/hajisensai/hibiki-hook)。两仓靠三条契约挂钩，**改任一条都必须同轮更新对面**，否则线上直接握手失败：
+
+| 契约 | 本仓（消费方） | hibiki-hook（提供方） |
+|---|---|---|
+| 共享内存 ABI | `hibiki/windows/runner/voice_hook_ipc.h` 的 `kSharedVersion`，由 `hibiki/test/tools/voice_hook_ipc_contract_test.dart` 守卫 | [`include/voice_hook_ipc.h`](https://github.com/hajisensai/hibiki-hook/blob/main/include/voice_hook_ipc.h) 的同名常量 |
+| 二进制分发 | `hibiki/lib/src/mining/galgame_helper_installer.dart` 的 `kGalgameHelperRepo` / `kGalgameHelperReleaseTag`，按 sha256 侧车自动升级 | `voice-hook-helper.yml` 打 `voice_hook_<arch>.zip` + `.sha256` 到固定 tag `voice-hook-helper` |
+| 引擎支持矩阵 | `docs/specs/galgame-mining/engine-support.md` 是**逐字节只读副本** | [`engine-support.yaml`](https://github.com/hajisensai/hibiki-hook/blob/main/engine-support.yaml) 是唯一真相源，生成 `docs/engine-support.md` |
+
+提升 `kSharedVersion` 后必须在 hibiki-hook 手动 `workflow_dispatch` 跑 `voice-hook-helper.yml` 重发 release；不重发就会让新 host 对上旧 ABI 的 helper。同步矩阵副本用 hibiki-hook 的生成器直接写本仓路径，再 `--check` 验证逐字节一致：
+
+```sh
+python tools/generate_engine_support.py --output <hibiki>/docs/specs/galgame-mining/engine-support.md
+python tools/generate_engine_support.py --check --output <hibiki>/docs/specs/galgame-mining/engine-support.md
+```
+
 ## 1. 边界与开工条件
 
 - native 采集组件在独立仓库 `hajisensai/hibiki-hook`，不得重新放回 Hibiki，也不得编进 `Hibiki.exe`。
