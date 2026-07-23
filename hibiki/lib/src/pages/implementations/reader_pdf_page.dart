@@ -64,7 +64,14 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   bool _restoreDone = false;
 
   ReadingTimeTracker? _readingTimeTracker;
-  DateTime _sessionStartTime = DateTime.now();
+
+  /// BUG-1042：本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的
+  /// gap 守卫 tick 累加。取代旧的 `DateTime _sessionStartTime` 墙钟基准——旧实现把
+  /// **整段** `now - _sessionStartTime` 交给 `isContinuousReadingGap` 判一次，而
+  /// PDF 侧只在退出/失焦才 flush，于是任何超过 120s 的正常阅读会话都整段被判成
+  /// 「非连续窗口」丢弃：读多久都记 0。改成按 tick 累计后，守卫仍逐 tick 生效
+  /// （后台/睡眠照样不计），长会话则正常累计。
+  int _sessionReadingMs = 0;
 
   /// 无文本层（扫描图 PDF）只提示一次。
   bool _noTextLayerNotified = false;
@@ -109,11 +116,13 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      unawaited(_flushPosition());
+      // BUG-1042：先 stop（收尾 flush 把最后一段经 onDelta 记进累计器）再落库，
+      // 顺序同 EPUB 侧。
       _readingTimeTracker?.stop();
+      unawaited(_flushPosition());
     } else if (state == AppLifecycleState.resumed) {
-      // BUG-892 同款纪律：回前台必须重锚会话起点，否则整段后台时长被计入。
-      _sessionStartTime = DateTime.now();
+      // BUG-892 / BUG-1042: 后台那段靠「计时器停着」丢弃，不再重锚墙钟基准
+      // （那会连未落库的前台时长一起抹掉）。
       _readingTimeTracker?.start();
     }
   }
@@ -148,8 +157,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       _lastSavedPageIndex = saved.sectionIndex;
     }
 
-    _readingTimeTracker ??= ReadingTimeTracker(db)..start();
-    _sessionStartTime = DateTime.now();
+    // BUG-1042：小时桶与每书/每日时长共用这一个带 gap 守卫的时钟（同 EPUB 侧）。
+    _readingTimeTracker ??= ReadingTimeTracker(
+      db,
+      onDelta: (int deltaMs) => _sessionReadingMs += deltaMs,
+    )..start();
     return _PdfBookLoad(path: path, row: row);
   }
 
@@ -217,19 +229,20 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// PDF 无字数会被整段丢弃。这里以**时长**为触发条件，且 `charsRead` 恒 0——
   /// 「页数」绝不能塞进 charsRead，否则会污染统计页的「字数」口径与其派生指标。
   Future<void> _flushReadingStats() async {
+    // BUG-1042：先结算「上一次 tick 到现在」这段未满一个 tick 的窗口（不停表）。
+    _readingTimeTracker?.sampleNow();
     final EpubBookRow? row = _bookRow;
     if (row == null) return;
     final DateTime now = DateTime.now();
-    final int elapsedMs = now.difference(_sessionStartTime).inMilliseconds;
-    // 重锚会话起点，保证多次 flush 不重复计时。
-    _sessionStartTime = now;
-    // 太短的会话（<1s）不记账，避免生命周期抖动刷屏。
+    // BUG-1042：时长 = [_readingTimeTracker] 逐 tick 确认的累计增量。BUG-892 的
+    // `isContinuousReadingGap` 守卫仍然生效，但作用在**每个 tick 窗口**上（tracker
+    // 内部），不再拿整段会话去过一次守卫——旧写法让任何 >120s 的正常 PDF 阅读会话
+    // 被整段判成非连续窗口丢弃，读多久都记 0。
+    final int elapsedMs = _sessionReadingMs;
+    // 太短的会话（<1s）不记账，避免生命周期抖动刷屏；未达阈值时保留累计器，
+    // 留到下次 flush 一并计入（不丢时长）。
     if (elapsedMs < 1000) return;
-    // BUG-892 同款守卫：整段超过连续阅读窗口（例如后台挂起）视为非阅读，丢弃。
-    if (!isContinuousReadingGap(
-        now.subtract(Duration(milliseconds: elapsedMs)), now)) {
-      return;
-    }
+    _sessionReadingMs = 0;
     final String dateKey = statDateKey(now);
     try {
       await appModel.database.addReadingStatistic(

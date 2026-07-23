@@ -1151,7 +1151,17 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 只升不降）。统计字数只在越过它时增量计入，往返翻页不重复累计。导航/后台
   // flush 起新 session 时由调用方重置到当前位置。
   int _sessionMaxAbsoluteChars = 0;
-  DateTime _sessionStartTime = DateTime.now();
+
+  /// BUG-1042：本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的
+  /// gap 守卫 tick 累加（见 `ReadingTimeTracker.onDelta`）。
+  ///
+  /// 取代旧的 `DateTime _sessionStartTime` 墙钟基准。旧实现的时长 = `now - 基准`，
+  /// 而这个基准被 **① 生命周期 resumed ② 章节恢复完成（`_onRestoreComplete`，含每次
+  /// 重排版/重恢复）** 无条件重置；只要重置发生在 `_flushReadingStats` 之前（后者又以
+  /// `_sessionCharsRead <= 0` 早退，根本不消费这段时长），这段真实前台阅读时长就被
+  /// 直接丢弃。查词越频繁（失焦→resumed 越多）丢得越狠，表现为「今日 1832 字 / 0 分钟
+  /// / 125666 字·时⁻¹」。累计器只增不重置、只由落库消费，任何时钟重锚都吃不掉它。
+  int _sessionReadingMs = 0;
 
   List<int> _chapterCharCounts = [];
   List<int> _chapterCumulativeChars = [];
@@ -2111,21 +2121,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // HBK-AUDIT-122: sync lyrics cue position before flushing so backgrounding
       // in lyrics mode persists the current playback position, not a stale scroll.
       _syncAndFlushPosition();
-      _flushReadingStats();
       // BUG-892: 进后台/失焦时停掉阅读时长计时——否则后台挂起、熄屏、睡眠期间的墙钟
       // 时长会在恢复时被一次性计入（34h 的书 / 单小时 >1h / 凌晨幻影阅读）。stop() 先
       // flush 退出瞬间的部分窗口（受 kMaxReadingGap 守卫）再 cancel。
+      //
+      // BUG-1042：必须**先 stop 再 flush 统计**。stop() 的收尾 flush 会把「最后一个
+      // tick 到失焦」这段经 onDelta 记进 [_sessionReadingMs]，随后落库才带得上它；
+      // 反过来（旧序）这段时长会留到下次 start 之后，而 resumed 路径曾把时钟整个重锚。
       _readingTimeTracker?.stop();
+      _flushReadingStats();
     } else if (state == AppLifecycleState.resumed) {
       // TODO-900: OS 层失焦（Alt+Tab 切窗）后 Flutter 不保证把 primaryFocus 归还到
       // 页级 [_focusNode]，导致切窗回来后页级 / 全局快捷键全死，且因是焦点状态而非可
       // 重建对象，只有重启 app 才靠 autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned]
       // 的 resumed 回收范式，把焦点收回正文（门控见 helper，绝不抢对话框 / 查词焦点）。
       _reclaimReaderFocusIfOwned();
-      // BUG-892: 恢复前台时重锚两条计时链，丢弃后台那段间隔——① 每书/每日时长走
-      // [_flushReadingStats] 的 `now - _sessionStartTime`，不重置就会把整段后台算进下次
-      // flush；② 每小时桶走 [ReadingTimeTracker]，重启定时器并重锚 tick 起点。
-      _sessionStartTime = DateTime.now();
+      // BUG-892 / BUG-1042: 后台那段间隔靠「计时器停着」丢弃，而不是靠回前台重锚一个
+      // 墙钟基准——后者会连同重锚前那段**真实前台阅读时长**一起抹掉（见
+      // [_sessionReadingMs] 注释）。这里只重启计时器并重锚 tick 起点；两条账目（小时桶
+      // + 每书每日）都由它同一份 gap 守卫增量驱动，不存在第二个可被重置的时钟。
       _readingTimeTracker?.start();
     }
   }

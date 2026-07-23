@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -7,6 +8,14 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 // 单小时 >1h / 凌晨幻影阅读）。根因是 ReadingTimeTracker 的 60s 定时器按墙钟差累加，
 // 缺视频侧早有的「异常大间隔整窗丢弃」守卫。本测试锁定移植过来的纯函数
 // isContinuousReadingGap / splitReadingTime（对照 video_watch_tracker_test）。
+/// 去掉整行注释后再做源码守卫匹配——本轮修复的注释里**刻意**保留了旧字段名
+/// （`_sessionStartTime`）作为历史说明，不能让它把「字段已删除」的断言判假。
+/// 只剥整行 `//` 注释，不碰行尾注释与字符串（本文件断言的目标都在代码行上）。
+String _codeOnly(String src) => src
+    .split('\n')
+    .where((String l) => !l.trimLeft().startsWith('//'))
+    .join('\n');
+
 void main() {
   group('isContinuousReadingGap (discard suspend/sleep timer gaps)', () {
     test('normal ~60s heartbeat window is continuous', () {
@@ -98,8 +107,9 @@ void main() {
   group('BUG-892 lifecycle wiring guards (reader page)', () {
     late String src;
     setUpAll(() {
-      src = File('lib/src/pages/implementations/reader_hibiki_page.dart')
-          .readAsStringSync();
+      src = _codeOnly(
+          File('lib/src/pages/implementations/reader_hibiki_page.dart')
+              .readAsStringSync());
     });
 
     test('进后台/失焦时停掉阅读计时器', () {
@@ -112,13 +122,87 @@ void main() {
           reason: 'BUG-892 回归：后台不停计时 → 挂起时长被计入');
     });
 
-    test('恢复前台时重置会话计时起点并重启计时器', () {
+    test('恢复前台时重启计时器（后台段靠「计时器停着」丢弃，不靠重锚墙钟）', () {
       final int resumed = src.indexOf('AppLifecycleState.resumed');
-      final String resumedBranch = src.substring(resumed, resumed + 600);
-      expect(
-          resumedBranch.contains('_sessionStartTime = DateTime.now()'), isTrue,
-          reason: 'BUG-892：不重置 _sessionStartTime → 每书时长把后台段算进下次 flush');
-      expect(resumedBranch.contains('_readingTimeTracker?.start()'), isTrue);
+      final String resumedBranch = src.substring(resumed, resumed + 900);
+      expect(resumedBranch.contains('_readingTimeTracker?.start()'), isTrue,
+          reason: 'BUG-892：不重启小时桶计时器 → 回前台后阅读时长不再记账');
+      // BUG-1042：这里曾经是 `_sessionStartTime = DateTime.now()`。那个重锚在丢弃
+      // 后台段的同时，把**重锚前那段还没落库的前台阅读时长**一并抹掉（`_flushReadingStats`
+      // 以 `_sessionCharsRead <= 0` 早退时根本不消费它）。查词频繁 = 失焦/回前台频繁
+      // = 几乎全部时长蒸发。现在后台段由「tracker 停着不 tick」天然排除，无需重锚。
+      expect(resumedBranch.contains('_sessionStartTime'), isFalse,
+          reason: 'BUG-1042 回归：resumed 重锚墙钟基准会吃掉未落库的前台阅读时长');
+    });
+  });
+
+  // ── BUG-1042：每书/每日时长与小时桶必须共用同一个带守卫的时钟 ──────────────
+  //
+  // 症状（用户 2026-07-23 反馈截图）：今日 1832 字 / 时长 0 分钟 / 速度 125666 字·时⁻¹，
+  // 「最快日」421249 字·时⁻¹。生产库对账坐实——同一天 reading_statistics 记 84 分钟，
+  // reading_hourly_logs 记 345 分钟；两条账目差 4 倍以上，前者是错的那条。
+  group('BUG-1042 单一时钟：会话时长累计器不被任何重锚吃掉', () {
+    test('EPUB 阅读器不再持有可被重置的墙钟基准字段', () {
+      final String page = _codeOnly(
+          File('lib/src/pages/implementations/reader_hibiki_page.dart')
+              .readAsStringSync());
+      final String nav = _codeOnly(File(
+              'lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
+          .readAsStringSync());
+      // 字段本体必须已删除（注释里可以留历史说明，故只查声明与赋值形态）。
+      expect(page.contains('DateTime _sessionStartTime'), isFalse);
+      expect(page.contains('_sessionStartTime ='), isFalse);
+      expect(nav.contains('_sessionStartTime ='), isFalse);
+      // 取而代之：由 tracker 的 onDelta 累加的会话累计器。
+      expect(page.contains('int _sessionReadingMs = 0'), isTrue);
+      expect(nav.contains('onDelta:'), isTrue);
+      expect(nav.contains('_sessionReadingMs += deltaMs'), isTrue);
+    });
+
+    test('恢复完成（每次重排版都会跑）不得重锚会话时钟', () {
+      final String nav = _codeOnly(File(
+              'lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
+          .readAsStringSync());
+      final int i = nav.indexOf('void _onRestoreComplete()');
+      expect(i, greaterThanOrEqualTo(0));
+      final int end = nav.indexOf('\n  void ', i + 10);
+      final String body = nav.substring(i, end > i ? end : i + 4000);
+      expect(body.contains('_sessionStartTime'), isFalse,
+          reason: 'BUG-1042 回归：重排版/重恢复会抹掉上一段未落库的阅读时长');
+      expect(body.contains('_sessionReadingMs = 0'), isFalse,
+          reason: 'BUG-1042 回归：恢复完成不得清空会话时长累计器');
+    });
+
+    test('无新字数的早退路径不清空累计器（时长留到下次落库）', () {
+      final String nav = _codeOnly(File(
+              'lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
+          .readAsStringSync());
+      final int i = nav.indexOf('Future<void> _flushReadingStats()');
+      expect(i, greaterThanOrEqualTo(0));
+      final String body = nav.substring(i, math.min(i + 1600, nav.length));
+      final int guard = body.indexOf('_sessionCharsRead <= 0');
+      final int clear = body.indexOf('_sessionReadingMs = 0');
+      expect(guard, greaterThanOrEqualTo(0));
+      expect(clear, greaterThan(guard), reason: 'BUG-1042：累计器只能在真正落库那条路径上清零');
+      // 落库前必须先把「上一次 tick 到现在」这段补进累计器。
+      expect(body.indexOf('sampleNow()'), inInclusiveRange(0, guard),
+          reason: 'BUG-1042：不 sampleNow 每次落库都漏掉最多一个 tick 间隔');
+    });
+
+    test('PDF 阅读器不再拿整段会话去过一次 gap 守卫', () {
+      final String pdf = _codeOnly(
+          File('lib/src/pages/implementations/reader_pdf_page.dart')
+              .readAsStringSync());
+      expect(pdf.contains('DateTime _sessionStartTime'), isFalse);
+      expect(pdf.contains('int _sessionReadingMs = 0'), isTrue);
+      final int i = pdf.indexOf('Future<void> _flushReadingStats()');
+      expect(i, greaterThanOrEqualTo(0));
+      final String body = pdf.substring(i, i + 1400);
+      // 旧写法：if (!isContinuousReadingGap(now - elapsed, now)) return;
+      // → 任何 >120s 的正常 PDF 阅读会话被整段丢弃，读多久都记 0。
+      expect(body.contains('isContinuousReadingGap('), isFalse,
+          reason: 'BUG-1042 回归：整段会话过守卫 = 长会话时长恒为 0');
+      expect(body.contains('sampleNow()'), isTrue);
     });
   });
 }
