@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -8,6 +9,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
 import 'package:hibiki/src/pages/implementations/home_page.dart';
@@ -22,8 +24,10 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
 ///
-/// - 区块 1：学习活动热力图（复用 [StatContributionHeatmap]），置顶。
-/// - 区块 2：「继续」——把在读的书与在看的视频合并成统一列表，分段切换全部/阅读/观看。
+/// - 区块 1：学习活动热力图（复用 [StatContributionHeatmap]），置顶；带来源筛选
+///   （全部/阅读/观看/游戏）、「今日目标」行与点选日明细 sheet。
+/// - 区块 2：「继续」——把在读的书与在看的视频合并成横向滑动卡片行（Jellyfin 式：
+///   封面 + 底部进度条 + 标题/副标题），分段切换全部/阅读/观看。
 /// - 区块 3：Activity 时间轴——把 [ActivityEventRow] 事件流经纯函数
 ///   [aggregateActivityEvents] 聚合成「按日期分组」的时间线，顶部按类别筛选。
 ///
@@ -48,6 +52,8 @@ class _ContinueEntry {
     required this.title,
     required this.recentMs,
     this.percent = 0,
+    this.progress,
+    this.collectionName,
     this.book,
     this.video,
     this.remote,
@@ -61,6 +67,14 @@ class _ContinueEntry {
 
   /// 阅读进度百分比（仅书用，0..100）。
   final int percent;
+
+  /// 封面底部进度条分数（0..1）；null = 无可展示进度不画（单视频无总时长，见
+  /// [videoWatchFraction]）。
+  final double? progress;
+
+  /// 所属主合集名（显示名规则：非合集上下文标题=合集名、副标题=条目名+状态）；
+  /// null = 散卡。本地条目查折叠归属映射，远端条目由 host 直接携带。
+  final String? collectionName;
   final MediaItem? book;
   final VideoBookRow? video;
 
@@ -68,9 +82,69 @@ class _ContinueEntry {
   final RemoteContinueCandidate? remote;
 }
 
+/// 每日字数目标编辑对话框。独立 StatefulWidget **自持** controller 生命周期：
+/// dispose 跟随路由销毁（弹出动画结束后）。此前「await showDialog 返回即
+/// dispose」会在退场动画帧触碰已销毁 controller——保存后本页 setState 让仍在
+/// 退场的 TextField 重建 addListener 直接断言崩（widget 测试实测复现）。
+/// 保存 pop 解析后的字数（空/非法 → 0 = 关闭目标），取消 pop null。
+class _DailyGoalDialog extends StatefulWidget {
+  const _DailyGoalDialog({required this.initialChars});
+
+  /// 当前目标（0 = 未设，输入框留空）。
+  final int initialChars;
+
+  @override
+  State<_DailyGoalDialog> createState() => _DailyGoalDialogState();
+}
+
+class _DailyGoalDialogState extends State<_DailyGoalDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialChars == 0 ? '' : widget.initialChars.toString(),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(t.stat_goal_set),
+      content: TextField(
+        controller: _controller,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(labelText: t.stat_goal_daily),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context)
+              .pop(int.tryParse(_controller.text.trim()) ?? 0),
+          child: Text(t.dialog_save),
+        ),
+      ],
+    );
+  }
+}
+
 class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
+  /// 「继续」横滑行：卡片封面等高，书竖版 5:7 / 视频横版 16:9 由宽度区分（同一行
+  /// 混排不同宽度，Jellyfin 式）。行总高 = 封面 + 标题/副标题两行文字块。
+  static const double _kContinueCoverHeight = 132;
+  static const double _kContinueBookCoverWidth = 94; // ≈132×5/7 竖版
+  static const double _kContinueVideoCoverWidth = 234; // ≈132×16/9 横版
+  static const double _kContinueRowHeight = 196;
+
   /// 「继续」分段筛选：0=全部，1=阅读，2=观看。
   int _continueFilter = 0;
+
+  /// 「学习活动」热力图来源筛选：0=全部，1=阅读，2=观看，3=游戏。
+  int _heatmapFilter = 0;
 
   /// Activity 分类筛选：null=全部，否则 [kActivityRead]/[kActivityWatch]/
   /// [kActivityGame]/[kActivityAdded]（内存里先过滤 events 再聚合）。
@@ -100,12 +174,33 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// 实例识别），供聚合按设备分组 + 打设备标签。
   Set<ActivityEventRow> _remoteActivityRows = Set<ActivityEventRow>.identity();
 
-  /// 每日阅读字数（dateKey → 字数），喂阅读热力图。
+  /// 每日字数合计（dateKey → 字数，阅读 + 观看 + 游戏），热力图「全部」档 +
+  /// 今日目标行的分子（目标固定按全来源合计，不随热力图筛选变）。
   Map<String, int> _readingCharsByDay = const <String, int>{};
 
-  /// 每日学习时长（dateKey → 毫秒，阅读 + 视频观看），热力图气泡的第二维度
+  /// 每日学习时长合计（dateKey → 毫秒，阅读 + 观看 + 游戏），热力图气泡的第二维度
   /// （用户反馈「点击只显示字数」——字数和时长本就都按日落库，一起外显）。
   Map<String, int> _readingTimeMsByDay = const <String, int>{};
+
+  /// 每日字数/时长按来源拆分（热力图筛选 阅读/观看/游戏 档的数据源）。
+  Map<String, int> _readCharsByDay = const <String, int>{};
+  Map<String, int> _readTimeMsByDay = const <String, int>{};
+  Map<String, int> _watchCharsByDay = const <String, int>{};
+  Map<String, int> _watchTimeMsByDay = const <String, int>{};
+  Map<String, int> _gameCharsByDay = const <String, int>{};
+  Map<String, int> _gameTimeMsByDay = const <String, int>{};
+
+  /// 已加载的原始统计行（点选日明细 sheet 按 dateKey 过滤，免重查）。
+  List<ReadingStatisticRow> _readingRows = const <ReadingStatisticRow>[];
+  List<VideoWatchStatisticRow> _watchRows = const <VideoWatchStatisticRow>[];
+
+  /// 合集归属映射（统计页/书架同源，显示名规则「非合集上下文拼合集名」用）：
+  /// - [_collectionNamesById]：collectionId → 合集名。
+  /// - [_primaryCollectionByEntry]：'<mediaType>|<entryKey>' → 折叠归属主 collectionId。
+  /// - [_bookKeyByTitle]：reading_statistics 行只存 title，经 epub_books 反查 bookKey。
+  Map<int, String> _collectionNamesById = const <int, String>{};
+  Map<String, int> _primaryCollectionByEntry = const <String, int>{};
+  Map<String, String> _bookKeyByTitle = const <String, String>{};
 
   /// 每个视频 bookUid 的最近观看时刻（epoch 毫秒），继续观看排序用。
   Map<String, int> _videoWatchAtByUid = const <String, int>{};
@@ -167,19 +262,63 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         await db.getAllReadingStatistics();
     final List<VideoWatchStatisticRow> watch =
         await db.getAllVideoWatchStatistics();
+    // 游戏活动日聚合（activity_events 的 game 事件，热力图「游戏」档数据源）。
+    final List<(String, int, int)> gameDaily =
+        await db.getActivityDailyTotals(kActivityGame);
+    // 合集归属映射（统计页/书架同源）：显示名规则「非合集上下文拼合集名」用。
+    final Map<int, String> collectionNamesById = <int, String>{
+      for (final MediaCollectionRow c in await db.getAllMediaCollections())
+        c.id: c.name,
+    };
+    final Map<String, int> primaryByEntry =
+        await db.getPrimaryCollectionIdByEntry();
+    // reading_statistics 行只存 title：日明细拼合集前缀需经 epub_books 反查 bookKey
+    // （阅读统计页 _collectionNameForBook 同范式）。
+    final Map<String, String> bookKeyByTitle = <String, String>{
+      for (final EpubBookRow r in await db.getAllEpubBooks())
+        r.title: r.bookKey,
+    };
 
-    // 每日「读到的字数」聚合（活动热力图数据源）：书内阅读字数 + 视频字幕字数
-    // 一起计入——看带字幕的视频也是在读字，故热力图同时反映阅读与观看活动，不再
-    // 只有书籍点亮（用户反馈「阅读活动只有书籍，其他的呢」）。
+    // 每日「读到的字数」按来源拆三份（热力图筛选 全部/阅读/观看/游戏）：书内阅读、
+    // 视频字幕字数（看带字幕的视频也是在读字，用户反馈「阅读活动只有书籍，其他的
+    // 呢」）、游戏 hook 文本。「全部」= 三者合计。
+    final Map<String, int> readChars = <String, int>{};
+    final Map<String, int> readTimeMs = <String, int>{};
+    for (final ReadingStatisticRow r in reading) {
+      readChars[r.dateKey] = (readChars[r.dateKey] ?? 0) + r.charactersRead;
+      readTimeMs[r.dateKey] = (readTimeMs[r.dateKey] ?? 0) + r.readingTimeMs;
+    }
+    final Map<String, int> watchChars = <String, int>{};
+    final Map<String, int> watchTimeMs = <String, int>{};
+    for (final VideoWatchStatisticRow w in watch) {
+      watchChars[w.dateKey] = (watchChars[w.dateKey] ?? 0) + w.subtitleChars;
+      watchTimeMs[w.dateKey] = (watchTimeMs[w.dateKey] ?? 0) + w.watchTimeMs;
+    }
+    final Map<String, int> gameChars = <String, int>{};
+    final Map<String, int> gameTimeMs = <String, int>{};
+    for (final (String dateKey, int charsDelta, int durationMs) in gameDaily) {
+      gameChars[dateKey] = (gameChars[dateKey] ?? 0) + charsDelta;
+      gameTimeMs[dateKey] = (gameTimeMs[dateKey] ?? 0) + durationMs;
+    }
     final Map<String, int> charsByDay = <String, int>{};
     final Map<String, int> timeMsByDay = <String, int>{};
-    for (final ReadingStatisticRow r in reading) {
-      charsByDay[r.dateKey] = (charsByDay[r.dateKey] ?? 0) + r.charactersRead;
-      timeMsByDay[r.dateKey] = (timeMsByDay[r.dateKey] ?? 0) + r.readingTimeMs;
+    for (final Map<String, int> m in <Map<String, int>>[
+      readChars,
+      watchChars,
+      gameChars,
+    ]) {
+      for (final MapEntry<String, int> e in m.entries) {
+        charsByDay[e.key] = (charsByDay[e.key] ?? 0) + e.value;
+      }
     }
-    for (final VideoWatchStatisticRow w in watch) {
-      charsByDay[w.dateKey] = (charsByDay[w.dateKey] ?? 0) + w.subtitleChars;
-      timeMsByDay[w.dateKey] = (timeMsByDay[w.dateKey] ?? 0) + w.watchTimeMs;
+    for (final Map<String, int> m in <Map<String, int>>[
+      readTimeMs,
+      watchTimeMs,
+      gameTimeMs,
+    ]) {
+      for (final MapEntry<String, int> e in m.entries) {
+        timeMsByDay[e.key] = (timeMsByDay[e.key] ?? 0) + e.value;
+      }
     }
 
     // 每个视频的最近观看时刻（按 bookUid 取 lastModified 最大值）。
@@ -199,6 +338,17 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       _activityEvents = events;
       _readingCharsByDay = charsByDay;
       _readingTimeMsByDay = timeMsByDay;
+      _readCharsByDay = readChars;
+      _readTimeMsByDay = readTimeMs;
+      _watchCharsByDay = watchChars;
+      _watchTimeMsByDay = watchTimeMs;
+      _gameCharsByDay = gameChars;
+      _gameTimeMsByDay = gameTimeMs;
+      _readingRows = reading;
+      _watchRows = watch;
+      _collectionNamesById = collectionNamesById;
+      _primaryCollectionByEntry = primaryByEntry;
+      _bookKeyByTitle = bookKeyByTitle;
       _videoWatchAtByUid = watchAt;
     });
     // 本地渲染先行，互联数据到达后再增量补位（不阻塞首屏）。
@@ -351,6 +501,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           title: ReaderHibikiSource.instance.getDisplayTitleFromMediaItem(item),
           recentMs: recent,
           percent: percent,
+          progress: percent / 100,
+          collectionName: statCollectionName(
+            _bookCollectionKey(item),
+            _primaryCollectionByEntry,
+            _collectionNamesById,
+          ),
           book: item,
         ));
       }
@@ -364,6 +520,18 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           isVideo: true,
           title: v.title,
           recentMs: recent,
+          // 视频进度到集粒度（VideoBooks 不持久化总时长，无法算章内百分比）：
+          // 多集按 currentEpisode/集数，单视频未看完不画（见 videoWatchFraction）。
+          progress: videoWatchFraction(
+            completed: v.completedAt != null,
+            currentEpisode: v.currentEpisode,
+            episodeCount: playlistEpisodeCount(v.playlistJson),
+          ),
+          collectionName: statCollectionName(
+            'video|${v.bookUid}',
+            _primaryCollectionByEntry,
+            _collectionNamesById,
+          ),
           video: v,
         ));
       }
@@ -376,6 +544,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         title: c.title,
         recentMs: c.recentMs,
         percent: c.percent,
+        // 远端书带 host 阅读百分比可画进度条；远端视频无集数/完成信息不画。
+        progress: c.isVideo ? null : c.percent / 100,
+        collectionName: c.collectionName,
         remote: c,
       ));
     }
@@ -410,84 +581,145 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       ),
       child: filtered.isEmpty
           ? Text(t.home_activity_empty, style: tokens.type.metadata)
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                for (final _ContinueEntry e in filtered)
-                  _buildContinueRow(tokens, appModel, e),
-              ],
+          : SizedBox(
+              height: _kContinueRowHeight,
+              // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
+              // 用鼠标左右拖会毫无反应。显式放开 mouse/trackpad/stylus 拖动
+              // （与合集行 CollectionShelfRow 同款）；触屏行为不变。
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(
+                  dragDevices: <PointerDeviceKind>{
+                    PointerDeviceKind.touch,
+                    PointerDeviceKind.mouse,
+                    PointerDeviceKind.stylus,
+                    PointerDeviceKind.trackpad,
+                  },
+                ),
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: desktopAwareScrollPhysics(),
+                  itemCount: filtered.length,
+                  separatorBuilder: (BuildContext _, int __) =>
+                      SizedBox(width: tokens.spacing.gap),
+                  itemBuilder: (BuildContext context, int i) =>
+                      _buildContinueCard(tokens, appModel, filtered[i]),
+                ),
+              ),
             ),
     );
   }
 
-  /// 「继续」单条：封面缩略 + 标题 + 副标题（书=「阅读 · x%」/ 视频=「观看」）。
-  Widget _buildContinueRow(
+  /// 书 [MediaItem] → 合集归属键：epub 用 bookKey（'epub|<bookKey>'），standalone
+  /// SRT 书身份是 `hoshi://srtbook/<uid>`（BUG-1018 A3）→ 'srt|<uid>'；识别不出
+  /// 回退 epub 键（查不中合集，安全降级）。
+  String _bookCollectionKey(MediaItem item) {
+    final String? bookKey =
+        ReaderHibikiSource.parseBookKey(item.mediaIdentifier);
+    if (bookKey != null) return 'epub|$bookKey';
+    final String? srtUid =
+        ReaderHibikiSource.parseSrtBookUid(item.mediaIdentifier);
+    if (srtUid != null) return 'srt|$srtUid';
+    return 'epub|${item.mediaIdentifier}';
+  }
+
+  /// 「继续」单卡（Jellyfin 式横滑卡）：上=封面（底部贴进度条），下=标题一行 +
+  /// 灰副标题一行。显示名规则（非合集上下文拼合集名）：合集成员标题=合集名、
+  /// 副标题=「条目名 · 状态」；散卡标题=条目名、副标题=状态。状态：书=「阅读 ·
+  /// x%」/ 视频=「观看」，远端条目再缀设备名。
+  Widget _buildContinueCard(
     HibikiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry,
   ) {
-    String subtitle = entry.isVideo
+    final double coverWidth =
+        entry.isVideo ? _kContinueVideoCoverWidth : _kContinueBookCoverWidth;
+    String status = entry.isVideo
         ? t.home_filter_watch
         : '${t.home_filter_read} · ${entry.percent}%';
     if (entry.remote != null) {
       // 标明设备来源：优先 host 设备名（配对时存下），取不到回退通用「远端」。
-      subtitle = '$subtitle · ${_remoteDeviceName ?? t.home_remote_source}';
+      status = '$status · ${_remoteDeviceName ?? t.home_remote_source}';
     }
-    return InkWell(
-      onTap: () => _openContinueEntry(appModel, entry),
-      borderRadius: HibikiBorderRadius.card,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-        child: Row(
+    final String? collectionName = entry.collectionName;
+    final String title = collectionName ?? entry.title;
+    final String subtitle =
+        collectionName != null ? '${entry.title} · $status' : status;
+    return SizedBox(
+      width: coverWidth,
+      child: InkWell(
+        onTap: () => _openContinueEntry(appModel, entry),
+        borderRadius: HibikiBorderRadius.card,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             ClipRRect(
               borderRadius: HibikiBorderRadius.card,
               child: SizedBox(
-                width: 48,
-                height: 68,
-                child: entry.remote != null
-                    ? _remoteCover(tokens, entry)
-                    : entry.isVideo
-                        ? _videoCover(tokens, entry.video!)
-                        : FadeInImage(
-                            placeholder: MemoryImage(kTransparentImage),
-                            image: ReaderHibikiSource.instance
-                                .getDisplayThumbnailFromMediaItem(
-                              appModel: appModel,
-                              item: entry.book!,
-                            ),
-                            fit: BoxFit.cover,
-                            imageErrorBuilder: (_, __, ___) =>
-                                _coverPlaceholder(
-                                    tokens, Icons.menu_book_outlined),
+                width: coverWidth,
+                height: _kContinueCoverHeight,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    _continueCover(tokens, appModel, entry),
+                    // 进度条贴封面底部（home_video_page 视频卡同款范式）；算不出
+                    // 进度（progress==null）时不画。
+                    if (entry.progress case final double progress)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: IgnorePointer(
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 3,
+                            backgroundColor:
+                                Colors.black.withValues(alpha: 0.35),
+                            color: tokens.surfaces.primary,
                           ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-            SizedBox(width: tokens.spacing.gap + 4),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    entry.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: tokens.type.listTitle,
-                  ),
-                  SizedBox(height: tokens.spacing.gap / 2),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: tokens.type.metadata,
-                  ),
-                ],
-              ),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.listTitle,
+            ),
+            SizedBox(height: tokens.spacing.gap / 4),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.metadata,
             ),
           ],
         ),
       ),
+    );
+  }
+
+  /// 「继续」卡封面本体（远端/视频/书三路，与旧列表行同源取图逻辑）。
+  Widget _continueCover(
+    HibikiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry,
+  ) {
+    if (entry.remote != null) return _remoteCover(tokens, entry);
+    if (entry.isVideo) return _videoCover(tokens, entry.video!);
+    return FadeInImage(
+      placeholder: MemoryImage(kTransparentImage),
+      image: ReaderHibikiSource.instance.getDisplayThumbnailFromMediaItem(
+        appModel: appModel,
+        item: entry.book!,
+      ),
+      fit: BoxFit.cover,
+      imageErrorBuilder: (_, __, ___) =>
+          _coverPlaceholder(tokens, Icons.menu_book_outlined),
     );
   }
 
@@ -553,25 +785,320 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
 
   // ── 区块 3：学习活动热力图 ───────────────────────────────────────────────
 
-  /// 学习活动热力图卡（复用 [StatContributionHeatmap]，按每日阅读字数铺格）。
+  /// 学习活动热力图卡（复用 [StatContributionHeatmap]，按每日字数铺格）：header
+  /// 加来源筛选（全部/阅读/观看/游戏），格下加「今日目标」行，点选某日弹当日明细
+  /// sheet（用户反馈「点了只有日期和字数，分不清干了什么」三连的解药）。
   Widget _buildHeatmapCard(HibikiDesignTokens tokens) {
+    final Map<String, int> charsByDay = _heatmapCharsByDay();
+    final Map<String, int> timeMsByDay = _heatmapTimeMsByDay();
     return _sectionCard(
       tokens,
       title: t.reading_activity,
-      child: StatContributionHeatmap(
-        valueByDateKey: _readingCharsByDay,
-        now: DateTime.now(),
-        baseColor: tokens.surfaces.primary,
-        emptyColor: tokens.surfaces.card,
-        // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示时长段）。
-        valueLabel: (String dateKey, int chars) {
-          final int timeMs = _readingTimeMsByDay[dateKey] ?? 0;
-          final String base =
-              '${formatStatHeatmapDay(dateKey)} · ${formatStatChars(chars)}';
-          return timeMs > 0 ? '$base · ${formatStatTime(timeMs)}' : base;
-        },
+      header: _filterChips<int>(
+        tokens: tokens,
+        selected: _heatmapFilter,
+        onSelected: (int v) => setState(() => _heatmapFilter = v),
+        options: <(int, String)>[
+          (0, t.home_filter_all),
+          (1, t.home_filter_read),
+          (2, t.home_filter_watch),
+          (3, t.home_filter_game),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          StatContributionHeatmap(
+            valueByDateKey: charsByDay,
+            now: DateTime.now(),
+            baseColor: tokens.surfaces.primary,
+            emptyColor: tokens.surfaces.card,
+            // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示
+            // 时长段），字数与时长都跟随当前来源筛选。
+            valueLabel: (String dateKey, int chars) {
+              final int timeMs = timeMsByDay[dateKey] ?? 0;
+              final String base =
+                  '${formatStatHeatmapDay(dateKey)} · ${formatStatChars(chars)}';
+              return timeMs > 0 ? '$base · ${formatStatTime(timeMs)}' : base;
+            },
+            onDaySelected: (String dateKey, int _) =>
+                unawaited(_showDayDetailSheet(dateKey)),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          _buildDailyGoalRow(tokens),
+        ],
       ),
     );
+  }
+
+  /// 当前热力图筛选对应的每日字数映射（0=全部合计，1=阅读，2=观看，3=游戏）。
+  Map<String, int> _heatmapCharsByDay() {
+    switch (_heatmapFilter) {
+      case 1:
+        return _readCharsByDay;
+      case 2:
+        return _watchCharsByDay;
+      case 3:
+        return _gameCharsByDay;
+      default:
+        return _readingCharsByDay;
+    }
+  }
+
+  /// 当前热力图筛选对应的每日时长映射（分档同 [_heatmapCharsByDay]）。
+  Map<String, int> _heatmapTimeMsByDay() {
+    switch (_heatmapFilter) {
+      case 1:
+        return _readTimeMsByDay;
+      case 2:
+        return _watchTimeMsByDay;
+      case 3:
+        return _gameTimeMsByDay;
+      default:
+        return _readingTimeMsByDay;
+    }
+  }
+
+  /// 「今日目标」行：全来源合计今日字数 vs 每日字数目标（与阅读统计页同一持久化
+  /// [AppModel.readingGoalDailyChars]，不随热力图筛选变）。目标为 0 → 只留设定
+  /// 入口按钮；否则进度条 + 「X / Y 字」，点击行弹编辑对话框。
+  Widget _buildDailyGoalRow(HibikiDesignTokens tokens) {
+    final int goal = ref.read(appProvider).readingGoalDailyChars;
+    if (goal <= 0) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => unawaited(_editDailyGoal()),
+          icon: const Icon(Icons.flag_outlined, size: 18),
+          label: Text(t.stat_goal_set),
+        ),
+      );
+    }
+    final String todayKey = HibikiTimeFormat.dayKey(DateTime.now());
+    final int todayChars = _readingCharsByDay[todayKey] ?? 0;
+    final double fraction = (todayChars / goal).clamp(0.0, 1.0);
+    return InkWell(
+      onTap: () => unawaited(_editDailyGoal()),
+      borderRadius: HibikiBorderRadius.card,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+        child: Row(
+          children: <Widget>[
+            Text(t.stat_goal, style: tokens.type.metadata),
+            SizedBox(width: tokens.spacing.gap),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: tokens.radii.chipRadius,
+                child: LinearProgressIndicator(
+                  value: fraction,
+                  minHeight: 6,
+                  backgroundColor: tokens.surfaces.card,
+                  color: tokens.surfaces.primary,
+                ),
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            Text(
+              t.stat_goal_progress(read: todayChars, goal: goal),
+              style: tokens.type.metadata,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 弹每日字数目标编辑对话框（阅读统计页 _editGoals 的数字输入范式，只编辑每日
+  /// 字数；0/清空 = 关闭目标）。写回 [AppModel.setReadingGoalDailyChars] 后
+  /// setState 刷新目标行（与统计页读同一偏好，两处天然同步）。取消返回 null 不写。
+  Future<void> _editDailyGoal() async {
+    final AppModel appModel = ref.read(appProvider);
+    final int? saved = await showDialog<int>(
+      context: context,
+      builder: (BuildContext _) =>
+          _DailyGoalDialog(initialChars: appModel.readingGoalDailyChars),
+    );
+    if (saved == null) return;
+    await appModel.setReadingGoalDailyChars(saved < 0 ? 0 : saved);
+    if (mounted) setState(() {});
+  }
+
+  /// 点热力图某日 → 当日明细 sheet：头部=日期+当日合计（全来源），内容按
+  /// 阅读/观看/游戏分节列出每条目的字数+时长（空节不显示）。阅读/观看直接过滤
+  /// 已加载统计行，游戏按日按标题现查 DB 聚合。
+  Future<void> _showDayDetailSheet(String dateKey) async {
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final List<(String, int, int)> gameRows =
+        await db.getActivityTitleTotalsForDay(kActivityGame, dateKey);
+    if (!mounted) return;
+    final List<({String title, int chars, int timeMs})> reading =
+        _readingDayRows(dateKey);
+    final List<({String title, int chars, int timeMs})> watch =
+        _watchDayRows(dateKey);
+    final List<({String title, int chars, int timeMs})> game =
+        <({String title, int chars, int timeMs})>[
+      for (final (String title, int chars, int timeMs) in gameRows)
+        (title: title, chars: chars, timeMs: timeMs),
+    ];
+    await adaptiveModalSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) =>
+          _buildDayDetailSheet(sheetContext, dateKey, reading, watch, game),
+    );
+  }
+
+  /// 明细「阅读」节：reading_statistics 当日行按 title 聚合。显示名拼合集前缀
+  /// （title→bookKey 反查，阅读统计页 _collectionNameForBook 同范式）；DB 行
+  /// 仍按原 title 聚合，不动历史数据身份。
+  List<({String title, int chars, int timeMs})> _readingDayRows(
+    String dateKey,
+  ) {
+    final Map<String, ({int chars, int timeMs})> byTitle =
+        <String, ({int chars, int timeMs})>{};
+    for (final ReadingStatisticRow r in _readingRows) {
+      if (r.dateKey != dateKey) continue;
+      final ({int chars, int timeMs}) prev =
+          byTitle[r.title] ?? (chars: 0, timeMs: 0);
+      byTitle[r.title] = (
+        chars: prev.chars + r.charactersRead,
+        timeMs: prev.timeMs + r.readingTimeMs,
+      );
+    }
+    return <({String title, int chars, int timeMs})>[
+      for (final MapEntry<String, ({int chars, int timeMs})> e
+          in byTitle.entries)
+        (
+          title: _readingStatDisplayTitle(e.key),
+          chars: e.value.chars,
+          timeMs: e.value.timeMs,
+        ),
+    ];
+  }
+
+  /// 阅读统计行 title → 显示名：命中合集拼「合集名 - 名字」；反查不到 bookKey
+  /// （视频字幕书/已删书等）原样返回。
+  String _readingStatDisplayTitle(String title) {
+    final String? bookKey = _bookKeyByTitle[title];
+    if (bookKey == null) return title;
+    return collectionQualifiedTitle(
+      entryKey: 'epub|$bookKey',
+      rawTitle: title,
+      primaryByEntry: _primaryCollectionByEntry,
+      collectionNamesById: _collectionNamesById,
+    );
+  }
+
+  /// 明细「观看」节：video_watch_statistics 当日行按 title 聚合；行自带 bookUid
+  /// （任取一条非空）可直接拼合集前缀。
+  List<({String title, int chars, int timeMs})> _watchDayRows(String dateKey) {
+    final Map<String, ({int chars, int timeMs, String? uid})> byTitle =
+        <String, ({int chars, int timeMs, String? uid})>{};
+    for (final VideoWatchStatisticRow w in _watchRows) {
+      if (w.dateKey != dateKey) continue;
+      final ({int chars, int timeMs, String? uid}) prev =
+          byTitle[w.title] ?? (chars: 0, timeMs: 0, uid: null);
+      byTitle[w.title] = (
+        chars: prev.chars + w.subtitleChars,
+        timeMs: prev.timeMs + w.watchTimeMs,
+        uid: prev.uid ?? w.bookUid,
+      );
+    }
+    return <({String title, int chars, int timeMs})>[
+      for (final MapEntry<String, ({int chars, int timeMs, String? uid})> e
+          in byTitle.entries)
+        (
+          title: e.value.uid == null
+              ? e.key
+              : collectionQualifiedTitle(
+                  entryKey: 'video|${e.value.uid}',
+                  rawTitle: e.key,
+                  primaryByEntry: _primaryCollectionByEntry,
+                  collectionNamesById: _collectionNamesById,
+                ),
+          chars: e.value.chars,
+          timeMs: e.value.timeMs,
+        ),
+    ];
+  }
+
+  /// 当日明细 sheet 本体：日期头 + 合计行 + 三节（阅读/观看/游戏）。
+  Widget _buildDayDetailSheet(
+    BuildContext context,
+    String dateKey,
+    List<({String title, int chars, int timeMs})> reading,
+    List<({String title, int chars, int timeMs})> watch,
+    List<({String title, int chars, int timeMs})> game,
+  ) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final int totalChars = _readingCharsByDay[dateKey] ?? 0;
+    final int totalMs = _readingTimeMsByDay[dateKey] ?? 0;
+    final String summary = totalMs > 0
+        ? '${formatStatChars(totalChars)} · ${formatStatTime(totalMs)}'
+        : formatStatChars(totalChars);
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(tokens.spacing.card),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              formatStatHeatmapDay(dateKey),
+              style: tokens.type.sectionLabel,
+            ),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text(summary, style: tokens.type.metadata),
+            ..._dayDetailSection(
+                tokens, t.home_filter_read, Icons.menu_book, reading),
+            ..._dayDetailSection(
+                tokens, t.home_filter_watch, Icons.movie, watch),
+            ..._dayDetailSection(
+                tokens, t.home_filter_game, Icons.videogame_asset, game),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 明细 sheet 的一节：节标题 + 每行「图标 + 显示名 + 字数 · 时长」；空节不渲染。
+  List<Widget> _dayDetailSection(
+    HibikiDesignTokens tokens,
+    String label,
+    IconData icon,
+    List<({String title, int chars, int timeMs})> rows,
+  ) {
+    if (rows.isEmpty) return const <Widget>[];
+    return <Widget>[
+      SizedBox(height: tokens.spacing.gap + 4),
+      Text(label, style: tokens.type.sectionLabel),
+      SizedBox(height: tokens.spacing.gap / 2),
+      for (final ({String title, int chars, int timeMs}) row in rows)
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+          child: Row(
+            children: <Widget>[
+              Icon(icon, size: 18, color: tokens.surfaces.primary),
+              SizedBox(width: tokens.spacing.gap),
+              Expanded(
+                child: Text(
+                  row.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+              ),
+              SizedBox(width: tokens.spacing.gap),
+              Text(
+                row.timeMs > 0
+                    ? '${formatStatChars(row.chars)} · ${formatStatTime(row.timeMs)}'
+                    : formatStatChars(row.chars),
+                style: tokens.type.metadata,
+              ),
+            ],
+          ),
+        ),
+    ];
   }
 
   // ── 区块 4：Activity 时间轴 ──────────────────────────────────────────────
@@ -715,14 +1242,41 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
 
   /// BUG-1018 (A1)：活动条**渲染时**应用书的 override 书名（编辑对话框改名后时间轴
   /// 同步显示新名）。events 落库仍存 DB 原名（历史数据身份，聚合键不变），只在这里
-  /// 按 [ActivityEntry.mediaKey]（书=bookKey）查 override 替换显示。
+  /// 按 [ActivityEntry.mediaKey]（书=bookKey / 视频=bookUid）查 override 替换显示。
+  /// 命中合集时再拼「合集名 - 名字」（显示名规则：非合集上下文拼合集名；override
+  /// 后的名字再拼前缀）。
   String _activityDisplayTitle(ActivityEntry entry) {
     if (entry.mediaType == kActivityMediaBook) {
       final String? bookKey = entry.mediaKey;
       if (bookKey != null && bookKey.isNotEmpty) {
-        final String? override =
-            ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey);
-        if (override != null) return override;
+        final String title =
+            ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey) ??
+                entry.title;
+        // 书事件的 mediaKey 无类型标记：epub 键优先，standalone SRT（mediaKey=
+        // uid）回退 srt 键；都不中就是散卡。
+        final String? collectionName = statCollectionName(
+              'epub|$bookKey',
+              _primaryCollectionByEntry,
+              _collectionNamesById,
+            ) ??
+            statCollectionName(
+              'srt|$bookKey',
+              _primaryCollectionByEntry,
+              _collectionNamesById,
+            );
+        return collectionName == null ? title : '$collectionName - $title';
+      }
+      return entry.title;
+    }
+    if (entry.mediaType == kActivityMediaVideo) {
+      final String? uid = entry.mediaKey;
+      if (uid != null && uid.isNotEmpty) {
+        return collectionQualifiedTitle(
+          entryKey: 'video|$uid',
+          rawTitle: entry.title,
+          primaryByEntry: _primaryCollectionByEntry,
+          collectionNamesById: _collectionNamesById,
+        );
       }
     }
     return entry.title;

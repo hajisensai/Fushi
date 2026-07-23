@@ -265,6 +265,170 @@ void main() {
     expect(find.text('原书名'), findsNothing);
   });
 
+  testWidgets('「继续」区是横滑卡片行：书卡带封面底部进度条（percent/100）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final MediaItem book = MediaItem(
+      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('横滑书key'),
+      title: '横滑测试书',
+      mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
+      position: 50,
+      duration: 100,
+      canDelete: false,
+      canEdit: true,
+    );
+    await tester.pumpWidget(ProviderScope(
+      overrides: <Override>[
+        platformServicesProvider.overrideWithValue(platformServices),
+        ankiRepositoryProvider.overrideWithValue(ankiRepository),
+        appProvider.overrideWith((ref) => appModel),
+        hibikiBooksProvider
+            .overrideWith((ref, language) async => <MediaItem>[book]),
+        bookLastReadAtProvider
+            .overrideWith((ref) async => <String, int>{'横滑书key': 1}),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
+          ),
+        ),
+      ),
+    ));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    // 「继续」区改为横向滑动列表（Jellyfin 式卡片行）。
+    expect(
+      find.byWidgetPredicate(
+          (Widget w) => w is ListView && w.scrollDirection == Axis.horizontal),
+      findsOneWidget,
+    );
+    // 书卡封面底部进度条 = percent/100（50/100 → 0.5）；目标未设（goal=0）时
+    // 页面上没有其它 LinearProgressIndicator。
+    final LinearProgressIndicator bar = tester
+        .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+    expect(bar.value, 0.5);
+    // 散卡：标题=书名，副标题=「阅读 · 50%」。
+    expect(find.text('横滑测试书'), findsOneWidget);
+    expect(find.text('${t.home_filter_read} · 50%'), findsOneWidget);
+  });
+
+  testWidgets('显示名统一：合集成员的继续卡标题=合集名，活动时间轴拼「合集名 - 名字」',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final DateTime now = DateTime.now();
+    final String todayKey = HibikiTimeFormat.dayKey(now);
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('v1'),
+      title: Value('S01E01'),
+      videoPath: Value('/abs/s01e01.mp4'),
+      lastPositionMs: Value(60000),
+    ));
+    final int cid = await db.createMediaCollection('进击的巨人');
+    await db.addToCollection(cid, 'video', 'v1');
+    await db.addActivityEvent(
+      eventType: kActivityWatch,
+      mediaType: kActivityMediaVideo,
+      title: 'S01E01',
+      mediaKey: 'v1',
+      dateKey: todayKey,
+      timestampMs: now.millisecondsSinceEpoch,
+      durationMs: 60000,
+    );
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    // 继续卡（非合集上下文）：标题行=合集名，副标题=「条目名 · 状态」。
+    expect(find.text('进击的巨人'), findsOneWidget);
+    expect(find.text('S01E01 · ${t.home_filter_watch}'), findsOneWidget);
+    // 活动时间轴：单行拼「合集名 - 名字」。
+    expect(find.text('进击的巨人 - S01E01'), findsOneWidget);
+    // 裸 'S01E01' 不再单独出现（用户抱怨「分不清是哪部」的根治点）。
+    expect(find.text('S01E01'), findsNothing);
+  });
+
+  testWidgets('热力图卡「今日目标」行：未设目标只显示设定入口；对话框设 1000 后进度行 = 800/1000',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 未设目标（默认 0）：只显示「设定目标」按钮，无进度条/进度文案。
+    // 单次装配全程复用（appProvider 是 ChangeNotifierProvider：重挂第二棵
+    // ProviderScope 会让第一个 container 先 dispose 共享 appModel，第二棵再
+    // 用到/再 dispose 都是 use-after-dispose——目标变更走真实对话框通道）。
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(find.text(t.stat_goal_set), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+
+    // 点设定入口 → 对话框输入 1000 → 保存（_editDailyGoal 真实写回 +
+    // setState 刷新，与阅读统计页同一持久化）。
+    await tester.tap(find.text(t.stat_goal_set));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.enterText(find.byType(TextField), '1000');
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text(t.stat_goal_progress(read: 800, goal: 1000)),
+      findsOneWidget,
+    );
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('点热力图某日弹当日明细 sheet：按类型分节列出条目', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    // 网格是热力图内唯一 GestureDetector；1280 宽下自适应列数、FittedBox 不缩放，
+    // 格子坐标可按自然坐标（cell=12, spacing=3）直接计算。今天 = 末列、行 =
+    // weekday-1（周一在上）。
+    final Finder grid = find.descendant(
+      of: find.byType(StatContributionHeatmap),
+      matching: find.byType(GestureDetector),
+    );
+    final Size gridSize = tester.getSize(grid);
+    const double step = 15; // cell 12 + spacing 3
+    final int cols = ((gridSize.width + 3) / step).round();
+    final int row = DateTime.now().weekday - 1;
+    await tester.tapAt(
+      tester.getTopLeft(grid) + Offset((cols - 1) * step + 6, row * step + 6),
+    );
+    // 明细 sheet：先等 DB 聚合 future，再等 bottom sheet 入场动画。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(tester.takeException(), isNull);
+    // 阅读节列出当日读的书（seedSampleData 今天读了 800 字的这本）。
+    expect(find.text('吾輩は猫である'), findsOneWidget);
+  });
+
   testWidgets('中等宽度（700，<900 窄分支）单列堆叠不抛无限高度', (WidgetTester tester) async {
     // 700px < 900：走窄屏单列堆叠分支（热力图置顶 + 继续 + Activity）。曾因把
     // stretch/Expanded 的 Row 直接放进纵向 ListView 而在此宽度崩溃，锁死不再复发。
