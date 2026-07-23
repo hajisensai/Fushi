@@ -44,6 +44,10 @@ Map<String, String> injectActiveSentence(
   return Map<String, String>.from(fields)..['sentence'] = activeSentence;
 }
 
+/// 捕获工作台工具栏「更多」菜单动作：驱动 [PopupMenuButton.onSelected] 的单一枚举，
+/// 消除嵌入/独立两套按钮定义的特殊分支。
+enum _GalHookToolbarMenuAction { audioFallback, showOverlay, externalWindow }
+
 /// texthooker 捕获工作台：实时展示 WebSocket 收到的文本行，逐词查词 + 挖词。
 ///
 /// 订阅单例 [TexthookerService]（ChangeNotifier）实时刷新文本行；每行经日语分词
@@ -86,6 +90,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 注入会话等多个 await，可持续数秒。没有守卫时重复点击会叠出多个下载确认对话框。
   bool _launchingGalHook = false;
 
+  /// 实时台词列表的筛选维度（全部 / 有音频 / 已制卡 / 已收藏）。与线程下拉正交叠加。
+  TexthookerLineFilter _lineFilter = TexthookerLineFilter.all;
+
+  /// 分词结果缓存：行文本按 id 不可变，缓存 textToWords 避免每次 rebuild 重复分词
+  /// （每来一行整页 setState）。行对象随音频/制卡/收藏态 copyWith 换新但 id/text 不变，
+  /// 按 id 缓存恒安全。上限略高于行 buffer 上限，越界淘汰最旧插入项。
+  final _TexthookerWordCache _wordCache = _TexthookerWordCache();
+
   /// 缓存的 [AppModel] 引用（`appProvider` 为单例，实例不变）。在 [initState] 一次性
   /// 读取：浮层层在 `LayoutBuilder` 回调里访问 `mixinAppModel`，widget 失活后再
   /// `ref.read` 会抛「deactivated widget's ancestor」（与视频页同源），缓存实例规避。
@@ -107,6 +119,25 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _session.addListener(_onSessionChanged);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
+    // BUG-1023：开页 seed 常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用，
+    // 消除本页此前「每次点词 replaceStack 冷建 WebView」的高延迟（对齐 home_dictionary_page）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _seedWarmPopup();
+      // 跟随实时开着且进页前已有台词时，首帧后定位到最新一行——列表视口高度
+      // 有限（筛选 chips/线程下拉占位后更矮），不定位则最新台词可能在视口外。
+      if (mounted && _followLive && _scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+  }
+
+  /// BUG-1023：开页 seed 常驻隐藏热槽（低内存模式 [DictionaryPopupController.seedWarmSlot]
+  /// 据 lowMemory 早退不保留）。仅在 AppModel 已初始化（能安全读 lowMemoryMode）时执行，
+  /// 与 home_dictionary_page 的 `_seedWarmPopup` 同范式。
+  void _seedWarmPopup() {
+    if (!mounted || !_appModel.isInitialised) return;
+    _popup.lowMemory = _appModel.lowMemoryMode;
+    setState(() => _popup.seedWarmSlot());
   }
 
   @override
@@ -160,7 +191,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!sessionState.externalWindowMode ||
         sessionState.boundWindow == null ||
         !Platform.isWindows) {
-      return super.onMineEntry(injectActiveSentence(fields, _activeSentence));
+      // fallback 制卡不走 [GalHookMiningCoordinator]（那条路径由协调器回写 mined）——
+      // 这里在 super 成功（ankiConnect）后自己把当前活跃行标记为已制卡。
+      final MinePopupResult result = await super.onMineEntry(
+        injectActiveSentence(fields, _activeSentence),
+      );
+      final String? lineId = _activeLineId;
+      if (result.ankiConnect && lineId != null) {
+        TexthookerService.instance.markLineMined(lineId);
+      }
+      return result;
     }
     return _mineActiveLine(fields: fields);
   }
@@ -394,6 +434,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
+  /// 列表当前是否停在（接近）底部。检查发生在新行触发 rebuild 之前，故 maxScrollExtent
+  /// 反映的是加入新行前的内容——用户真在底部时 pixels≈maxScrollExtent 返回 true，手动
+  /// 滚离底部时返回 false。无 clients（首帧）视作在底部（允许首次跟随）。
+  bool _isNearBottom() {
+    if (!_scroll.hasClients) return true;
+    final ScrollPosition position = _scroll.position;
+    return position.maxScrollExtent - position.pixels <= 80;
+  }
+
   void _onLines() {
     if (!mounted) return;
     final List<TexthookerLineEntry> lines = TexthookerService.instance.entries;
@@ -401,11 +450,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final bool receivedNewLine =
         latestId != null && latestId != _lastObservedLineId;
     _lastObservedLineId = latestId;
+    // 跟随开着但用户手动滚离底部时不硬拽回底部（否则打断上翻回看）；此时累积未读，
+    // 露出「未读 N」胶囊供一键回到最新。
+    final bool follow = _followLive && _isNearBottom();
     setState(() {
-      if (!_followLive && receivedNewLine) _unreadLines++;
+      if (!follow && receivedNewLine) _unreadLines++;
     });
-    if (!receivedNewLine) return;
-    if (!_followLive) return;
+    if (!receivedNewLine || !follow) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
@@ -417,8 +468,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// reader/audiobook、video、home_dictionary 共用 [BarrierSwipeDismissTracker]）。
   final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
 
-  /// texthooker 每次点词 `replaceStack: true`，可见栈至多一层（+ 隐藏热槽）；关一层
-  /// 即收起当前查词。逐层关索引取最后可见层（无可见层回退 0，与 barrier 只在有可见层
+  /// texthooker 每次点词复用热槽（`reuseWarmSlot: true`），可见栈至多一层（+ 隐藏热槽）；
+  /// 关一层即收起当前查词。逐层关索引取最后可见层（无可见层回退 0，与 barrier 只在有可见层
   /// 时才渲染一致）。
   int get _topVisiblePopupIndex {
     final int i = _popup.lastVisibleIndex;
@@ -447,11 +498,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     Rect rect,
   ) {
     _selectLine(line);
+    // BUG-1023：顶层查词复用常驻热槽（reuseWarmSlot:true）而非 replaceStack 冷建，
+    // 复用已预热的弹窗 WebView，消除冷启动延迟（对齐 home_dictionary_page.dart:752）。
+    // 无热槽（低内存 / seed 未就绪）时 beginTop 自动退回压新层，行为不变。
     pushNestedPopup(
       query: word,
       selectionRect: rect,
       controller: _popup,
-      replaceStack: true,
+      reuseWarmSlot: true,
       autoRead: true,
     );
   }
@@ -462,6 +516,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       _activeLineId = line.id;
       _activeSentence = line.text;
     });
+  }
+
+  /// 翻转某行收藏态（仅会话内存态，不落 DB）。service 通知 → [_onLines] setState 刷新徽章。
+  void _toggleLineFavorite(TexthookerLineEntry line) {
+    TexthookerService.instance.toggleLineFavorite(line.id);
   }
 
   /// 未读胶囊点击：滚到最新一行并清零未读计数。
@@ -495,7 +554,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     tooltip: t.game_back_to_library,
                     onTap: widget.onShowLibrary,
                   ),
-            actions: _buildEmbeddedActions(context),
+            actions: _buildToolbarActions(context, embedded: true),
             bottom: _buildSectionTabs(),
           ),
           Expanded(
@@ -512,55 +571,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     return Scaffold(
       appBar: AppBar(
         title: Text(t.texthooker),
-        actions: <Widget>[
-          if (Platform.isWindows)
-            IconButton(
-              tooltip: t.game_show_hook_text_window,
-              icon: const Icon(Icons.subtitles_outlined),
-              onPressed: () => unawaited(
-                GalHookTextOverlayController.instance.showManually(),
-              ),
-            ),
-          if (Platform.isWindows)
-            IconButton(
-              tooltip: t.external_window_mining,
-              icon: Icon(
-                Icons.crop_free,
-                color: _session.state.externalWindowMode
-                    ? Theme.of(context).colorScheme.primary
-                    : null,
-              ),
-              onPressed: _toggleExternalWindowMode,
-            ),
-          IconButton(
-            key: const ValueKey<String>('game-audio-fallback-toggle'),
-            tooltip: _session.state.allowAudioFallback
-                ? t.game_audio_fallback_allow
-                : t.game_audio_fallback_resource_only,
-            icon: Icon(
-              _session.state.allowAudioFallback
-                  ? Icons.alt_route_outlined
-                  : Icons.library_music_outlined,
-              color: _session.state.allowAudioFallback
-                  ? null
-                  : Theme.of(context).colorScheme.primary,
-            ),
-            onPressed: () => _session.setAllowAudioFallback(
-              !_session.state.allowAudioFallback,
-            ),
-          ),
-          if (Platform.isWindows)
-            IconButton(
-              tooltip: t.game_launch_and_capture,
-              icon: const Icon(Icons.rocket_launch_outlined),
-              onPressed: _launchGalgameEngineHook,
-            ),
-          IconButton(
-            tooltip: t.clear,
-            icon: const Icon(Icons.delete_outline),
-            onPressed: TexthookerService.instance.clear,
-          ),
-        ],
+        actions: _buildToolbarActions(context, embedded: false),
       ),
       body: _buildMonitorBody(
         context,
@@ -571,71 +582,85 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
-  List<Widget> _buildEmbeddedActions(BuildContext context) => <Widget>[
-        if (widget.onShowDiagnostics != null)
-          HibikiIconButton(
-            icon: Icons.monitor_heart_outlined,
-            tooltip: t.game_open_diagnostics,
-            label: t.game_diagnostics,
-            onTap: widget.onShowDiagnostics,
-          ),
+  /// 嵌入模式（[HomeGamePage]）与独立模式（[Scaffold]+[AppBar]）共用的工具栏动作。
+  /// 消除此前两套按钮定义（AppBar actions 与嵌入专用 actions 不一致、独立模式缺
+  /// 「停止监听」与 isActive 守卫）的特殊情况：主操作直接可见（启动并捕获 / 停止监听 /
+  /// 清空台词），低频开关收进「更多」菜单。[embedded] 仅决定按钮是否展开文字标签
+  /// （页头模式展开、AppBar 模式纯图标），按钮集合与行为调用两模式完全一致。
+  ///
+  /// 「兼容性诊断」入口已删——顶部 [GameSectionTabs] 已有同入口，工具栏再放一份纯冗余。
+  List<Widget> _buildToolbarActions(
+    BuildContext context, {
+    required bool embedded,
+  }) {
+    final GalHookSessionState state = _session.state;
+    String? labelOf(String value) => embedded ? value : null;
+    return <Widget>[
+      if (Platform.isWindows)
         HibikiIconButton(
-          key: const ValueKey<String>('game-audio-fallback-toggle'),
-          icon: _session.state.allowAudioFallback
-              ? Icons.alt_route_outlined
-              : Icons.library_music_outlined,
-          tooltip: _session.state.allowAudioFallback
-              ? t.game_audio_fallback_allow
-              : t.game_audio_fallback_resource_only,
-          label: _session.state.allowAudioFallback
-              ? t.game_audio_fallback_allow
-              : t.game_audio_fallback_resource_only,
-          enabledColor: _session.state.allowAudioFallback
-              ? null
-              : Theme.of(context).colorScheme.primary,
-          onTap: () => _session.setAllowAudioFallback(
-            !_session.state.allowAudioFallback,
-          ),
+          icon: Icons.rocket_launch_outlined,
+          tooltip: t.game_launch_and_capture,
+          label: labelOf(t.game_launch_and_capture),
+          onTap: _launchGalgameEngineHook,
+        ),
+      if (state.isActive)
+        HibikiIconButton(
+          icon: Icons.stop_circle_outlined,
+          tooltip: t.game_stop_listening,
+          label: labelOf(t.game_stop_listening),
+          onTap: () => unawaited(_session.stopCapture()),
+        ),
+      HibikiIconButton(
+        icon: Icons.delete_outline,
+        tooltip: t.clear,
+        label: labelOf(t.clear),
+        onTap: TexthookerService.instance.clear,
+      ),
+      _buildToolbarOverflowMenu(context),
+    ];
+  }
+
+  /// 低频开关收纳菜单：允许音频降级 / 显示 Hook 文本浮窗（Win）/ 外部窗口挖矿（Win）。
+  /// 两个真开关（音频降级、外部窗口挖矿）用 [CheckedPopupMenuItem] 反映当前开关态；
+  /// 「显示 Hook 文本浮窗」是一次性动作（showManually），用普通菜单项。onSelected 由
+  /// 枚举驱动，无特殊分支；各动作调用与旧按钮完全一致。
+  Widget _buildToolbarOverflowMenu(BuildContext context) {
+    final GalHookSessionState state = _session.state;
+    return PopupMenuButton<_GalHookToolbarMenuAction>(
+      key: const ValueKey<String>('game-toolbar-more'),
+      tooltip: t.game_more_actions,
+      icon: const Icon(Icons.more_vert),
+      onSelected: (_GalHookToolbarMenuAction action) {
+        switch (action) {
+          case _GalHookToolbarMenuAction.audioFallback:
+            _session.setAllowAudioFallback(!state.allowAudioFallback);
+          case _GalHookToolbarMenuAction.showOverlay:
+            unawaited(GalHookTextOverlayController.instance.showManually());
+          case _GalHookToolbarMenuAction.externalWindow:
+            unawaited(_toggleExternalWindowMode());
+        }
+      },
+      itemBuilder: (BuildContext context) =>
+          <PopupMenuEntry<_GalHookToolbarMenuAction>>[
+        CheckedPopupMenuItem<_GalHookToolbarMenuAction>(
+          value: _GalHookToolbarMenuAction.audioFallback,
+          checked: state.allowAudioFallback,
+          child: Text(t.game_audio_fallback_allow),
         ),
         if (Platform.isWindows)
-          HibikiIconButton(
-            icon: Icons.subtitles_outlined,
-            tooltip: t.game_show_hook_text_window,
-            label: t.game_show_hook_text_window,
-            onTap: () => unawaited(
-              GalHookTextOverlayController.instance.showManually(),
-            ),
+          PopupMenuItem<_GalHookToolbarMenuAction>(
+            value: _GalHookToolbarMenuAction.showOverlay,
+            child: Text(t.game_show_hook_text_window),
           ),
         if (Platform.isWindows)
-          HibikiIconButton(
-            icon: Icons.crop_free,
-            tooltip: t.external_window_mining,
-            label: t.external_window_mining,
-            enabledColor: _session.state.externalWindowMode
-                ? Theme.of(context).colorScheme.primary
-                : null,
-            onTap: _toggleExternalWindowMode,
+          CheckedPopupMenuItem<_GalHookToolbarMenuAction>(
+            value: _GalHookToolbarMenuAction.externalWindow,
+            checked: state.externalWindowMode,
+            child: Text(t.external_window_mining),
           ),
-        if (Platform.isWindows)
-          HibikiIconButton(
-            icon: Icons.rocket_launch_outlined,
-            tooltip: t.game_launch_and_capture,
-            label: t.game_launch_and_capture,
-            onTap: _launchGalgameEngineHook,
-          ),
-        if (_session.state.isActive)
-          HibikiIconButton(
-            icon: Icons.stop_circle_outlined,
-            tooltip: t.game_stop_listening,
-            label: t.game_stop_listening,
-            onTap: () => unawaited(_session.stopCapture()),
-          ),
-        HibikiIconButton(
-          icon: Icons.delete_outline,
-          tooltip: t.clear,
-          onTap: TexthookerService.instance.clear,
-        ),
-      ];
+      ],
+    );
+  }
 
   Widget? _buildSectionTabs() {
     if (widget.onShowLibrary == null || widget.onShowDiagnostics == null) {
@@ -791,6 +816,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     List<TexthookerTextThread> textThreads,
     String? selectedTextThreadKey,
   ) {
+    // 与线程下拉正交：[lines] 已按线程过滤，这里再按 [_lineFilter] 过滤成可见列表。
+    final List<TexthookerLineEntry> visibleLines = lines
+        .where((TexthookerLineEntry e) => lineMatchesFilter(e, _lineFilter))
+        .toList(growable: false);
     return HibikiCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -853,6 +882,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 ),
               ],
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+            child: _buildFilterChips(context, lines),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
@@ -949,18 +982,84 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 : ListView.builder(
                     controller: _scroll,
                     padding: const EdgeInsets.all(8),
-                    itemCount: lines.length,
-                    itemBuilder: (BuildContext context, int i) =>
-                        _TexthookerLine(
-                      line: lines[i],
-                      selected: lines[i].id == _activeLineId,
-                      onSelectLine: _selectLine,
-                      onWordTap: _onWordTap,
-                    ),
+                    itemCount: visibleLines.length,
+                    itemBuilder: (BuildContext context, int i) {
+                      final TexthookerLineEntry line = visibleLines[i];
+                      return _TexthookerLine(
+                        line: line,
+                        // 分词结果按行 id 缓存，避免每次 rebuild 重复 textToWords。
+                        words: _wordCache.wordsFor(line.id, line.text),
+                        selected: line.id == _activeLineId,
+                        onSelectLine: _selectLine,
+                        onWordTap: _onWordTap,
+                        onToggleFavorite: _toggleLineFavorite,
+                      );
+                    },
                   ),
           ),
         ],
       ),
+    );
+  }
+
+  /// 实时台词筛选 chips（全部 / 有音频 / 已制卡 / 已收藏），各带对应计数（如「已制卡 3」）。
+  /// [lines] 是线程过滤后的完整集合——计数从它算，与线程下拉正交叠加；一个枚举 predicate
+  /// 驱动，无「有音频/已制卡/已收藏」各写一条 if 的特殊情况。
+  Widget _buildFilterChips(
+    BuildContext context,
+    List<TexthookerLineEntry> lines,
+  ) {
+    final int total = lines.length;
+    final int withAudio =
+        lines.where((TexthookerLineEntry e) => e.hasAudio).length;
+    final int mined = lines.where((TexthookerLineEntry e) => e.mined).length;
+    final int favorited =
+        lines.where((TexthookerLineEntry e) => e.favorited).length;
+    final List<(TexthookerLineFilter, String, int, IconData)> specs =
+        <(TexthookerLineFilter, String, int, IconData)>[
+      (
+        TexthookerLineFilter.all,
+        t.game_filter_all,
+        total,
+        Icons.list_alt_outlined
+      ),
+      (
+        TexthookerLineFilter.withAudio,
+        t.game_filter_with_audio,
+        withAudio,
+        Icons.graphic_eq_outlined,
+      ),
+      (
+        TexthookerLineFilter.mined,
+        t.game_filter_mined,
+        mined,
+        Icons.style_outlined
+      ),
+      (
+        TexthookerLineFilter.favorited,
+        t.game_filter_favorited,
+        favorited,
+        Icons.star_outline,
+      ),
+    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        for (final (
+              TexthookerLineFilter filter,
+              String label,
+              int count,
+              IconData icon
+            ) in specs)
+          HibikiSelectableChip(
+            label: '$label $count',
+            leadingIcon: icon,
+            selected: _lineFilter == filter,
+            focusId: HibikiFocusId('game-line-filter-${filter.name}'),
+            onSelected: (_) => setState(() => _lineFilter = filter),
+          ),
+      ],
     );
   }
 
@@ -1407,17 +1506,23 @@ class _StatusPill extends StatelessWidget {
 }
 
 /// 一行文本：日语分词成可点 span（引擎未初始化时按字符降级，widget 测试不崩）。
+/// [words] 由页级 [_TexthookerWordCache] 按行 id 预分词后注入（本 widget 不再自行
+/// textToWords），避免每来一行整页 rebuild 时重复分词。
 class _TexthookerLine extends StatelessWidget {
   const _TexthookerLine({
     required this.line,
+    required this.words,
     required this.selected,
     required this.onSelectLine,
     required this.onWordTap,
+    required this.onToggleFavorite,
   });
 
   final TexthookerLineEntry line;
+  final List<String> words;
   final bool selected;
   final ValueChanged<TexthookerLineEntry> onSelectLine;
+  final ValueChanged<TexthookerLineEntry> onToggleFavorite;
   final void Function(
     TexthookerLineEntry line,
     String word,
@@ -1426,7 +1531,6 @@ class _TexthookerLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> words = JapaneseLanguage.instance.textToWords(line.text);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final String source =
         line.sourceLabel ?? texthookerLineSourceLabel(line.source);
@@ -1456,7 +1560,23 @@ class _TexthookerLine extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
+                // 已制卡徽章优先于音频态并列显示（样式对齐 _LineAudioChip）。
+                if (line.mined) ...<Widget>[
+                  const _LineMinedChip(),
+                  const SizedBox(width: 6),
+                ],
                 _LineAudioChip(status: line.audioStatus),
+                const SizedBox(width: 4),
+                // 会话内存态收藏星（不落 DB）；已收藏填充金黄星，未收藏描边星。
+                HibikiIconButton(
+                  icon: line.favorited ? Icons.star : Icons.star_border,
+                  tooltip: line.favorited
+                      ? t.game_line_unfavorite_tooltip
+                      : t.game_line_favorite_tooltip,
+                  size: 18,
+                  enabledColor: line.favorited ? colors.tertiary : null,
+                  onTap: () => onToggleFavorite(line),
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -1489,6 +1609,37 @@ class _TexthookerLine extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 「已制卡」徽章：样式对齐 [_LineAudioChip]，用 primary 面强调本行已成功制卡。
+class _LineMinedChip extends StatelessWidget {
+  const _LineMinedChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.primary,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.style, size: 12, color: colors.onPrimary),
+          const SizedBox(width: 4),
+          Text(
+            t.game_line_mined,
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: colors.onPrimary),
+          ),
+        ],
       ),
     );
   }
@@ -1575,5 +1726,25 @@ class _WordSpan extends StatelessWidget {
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
       ),
     );
+  }
+}
+
+/// 行分词结果缓存：行文本按 id 不可变（copyWith 只改音频/制卡/收藏态，不动 id/text），
+/// 故按 id 缓存 [JapaneseLanguage.textToWords] 恒安全。每来一行整页 setState，无缓存时
+/// 每行每帧都重新分词——本缓存把它降为「每行只分一次」。默认 Map 保持插入序，越界时
+/// 淘汰最旧插入项（上限略高于行 buffer 上限 [TexthookerService.maxLines]，可见行不会被淘汰）。
+class _TexthookerWordCache {
+  static const int _maxEntries = 800;
+  final Map<String, List<String>> _cache = <String, List<String>>{};
+
+  List<String> wordsFor(String id, String text) {
+    final List<String>? cached = _cache[id];
+    if (cached != null) return cached;
+    final List<String> words = JapaneseLanguage.instance.textToWords(text);
+    _cache[id] = words;
+    if (_cache.length > _maxEntries) {
+      _cache.remove(_cache.keys.first);
+    }
+    return words;
   }
 }

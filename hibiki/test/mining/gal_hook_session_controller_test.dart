@@ -10,6 +10,11 @@ import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 
 void main() {
+  // BUG-1022 音轨快照自动刷新会在会话激活后触发（未 mock 的）voice_hook channel 的
+  // listAudioTracks——必须先初始化 binding，让调用以 MissingPluginException 收敛为
+  // 空列表而不是在无 binding 下直接抛错。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('window binding is app-level state and stop keeps binding by default',
       () async {
     final TexthookerService service = TexthookerService.test();

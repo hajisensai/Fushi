@@ -47,6 +47,9 @@ void main() {
 
         expect(find.byType(HomeGamePage), findsOneWidget);
         expect(find.byKey(HomeGamePage.libraryKey), findsOneWidget);
+        // 顶部两张总览大卡已收敛为一条紧凑会话状态带（整条可点进入捕获工作台）。
+        expect(find.byKey(HomeGamePage.captureStatusKey), findsOneWidget,
+            reason: '库页顶部应是紧凑会话状态带');
         await _capture(tester, 'game-library');
 
         final FocusDriver driver = FocusDriver(tester);

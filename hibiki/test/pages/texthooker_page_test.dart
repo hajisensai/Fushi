@@ -82,7 +82,12 @@ void main() {
       find.byKey(const ValueKey<String>('game-text-thread-selector')),
       findsOneWidget,
     );
-    expect(find.textContaining('坏'), findsWidgets);
+    // followLive 首帧定位到最新一行：视口高度有限（筛选 chips 占位后更矮），
+    // 旧行「坏线程文本」在视口外不参与懒构建，改在服务层断言其存在。
+    expect(
+      TexthookerService.instance.lines,
+      contains('坏线程文本'),
+    );
     expect(find.textContaining('干'), findsWidgets);
 
     await tester.tap(

@@ -804,7 +804,7 @@ SettingsDestination buildLookupDestination() {
           ),
           // 防截屏（用户诉求）：桌面查词/剪贴板悬浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
-          // 排除。默认开（隐私优先）。仅 Windows——display affinity 是 Win32 能力。
+          // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
           // 与面板栏 🛡 按钮同一 pref、同一 native 通道（ClipboardPanelController
           // .applyBlockCapture → OverlayWindowChannel.setBlockCapture），改设置即时
           // 重应用，不新起并行机制。applyBlockCapture 是唯一扇出入口：面板窗 +
