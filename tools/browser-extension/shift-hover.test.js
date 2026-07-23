@@ -14,14 +14,26 @@ const vm = require('node:vm');
 
 const CONTENT = path.join(__dirname, 'content.js');
 
-function loadContentAndFireShift() {
+// options.respond=false 模拟 MV3 background service worker 在消息在途时被系统终止：
+// sendMessage 的回调永不触发（BUG-1024 死锁场景）。options 缺省保持历史行为（同步回调）。
+function loadContentAndFireShift(options) {
+  const respond = !options || options.respond !== false;
   const src = fs.readFileSync(CONTENT, 'utf8');
   const docListeners = Object.create(null);
   const winListeners = Object.create(null);
   const sent = [];
   const dataset = {};
+  // 可控时钟：BUG-1024 的在途闸超时兜底按 Date.now() 判定，测试需要推进虚拟时间。
+  const nowRef = { value: 1000000 };
+  const RealDate = Date;
+  function FakeDate(...args) {
+    return new RealDate(...args);
+  }
+  FakeDate.now = () => nowRef.value;
+  FakeDate.prototype = RealDate.prototype;
 
   const sandbox = {
+    Date: FakeDate,
     console: { log() {}, warn() {}, error() {} },
     setTimeout: () => 0,
     clearTimeout() {},
@@ -58,7 +70,7 @@ function loadContentAndFireShift() {
       onMessage: { addListener() {} },
       sendMessage: (msg, cb) => {
         sent.push(msg);
-        if (cb) {
+        if (cb && respond) {
           cb({
             ok: true,
             data: { popupJson: '[]', result: { bestLength: 2 }, audioSources: [] },
@@ -91,7 +103,7 @@ function loadContentAndFireShift() {
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox, { filename: 'content.js' });
 
-  return { docListeners, sent, dataset };
+  return { docListeners, sent, dataset, nowRef };
 }
 
 test('content.js 在加载时注册了顶层 document mousemove 监听器', () => {
@@ -121,5 +133,50 @@ test('未按 Shift 的 mousemove 不发查词（不刷爆服务器）', () => {
     sent.filter((m) => m && m.type === 'lookup').length,
     0,
     '未按 Shift 也发了查词',
+  );
+});
+
+// BUG-1024 回归守卫：在途闸（hibikiPending）过去是裸 bool，只在 sendMessage 回调里复位。
+// MV3 background service worker 若在消息在途时被系统终止，回调永不触发 → hibikiPending
+// 永久停在 true → 此后所有 Shift 悬停被在途闸整条吞掉（用户报「Shift 查词弹窗不敏感」）。
+// 这两条锁死：① 超过截止时间必须放行新查词（死锁不可复活）；② 截止时间内仍然拦截（防洪不退化）。
+function fireShiftLookup(docListeners, x, y) {
+  // 先松开 Shift：复位同词去重（hibikiLastTerm=''），使同一个桩词可以再次触发查词。
+  for (const fn of docListeners.mousemove) fn({ shiftKey: false, clientX: x, clientY: y });
+  for (const fn of docListeners.mousemove) fn({ shiftKey: true, clientX: x, clientY: y });
+}
+
+test('BUG-1024 回调永不触发时，超过截止时间必须放行后续 Shift 查词（在途闸不得永久死锁）', () => {
+  const { docListeners, sent, nowRef } = loadContentAndFireShift({ respond: false });
+
+  fireShiftLookup(docListeners, 300, 400);
+  assert.strictEqual(
+    sent.filter((m) => m && m.type === 'lookup').length,
+    1,
+    '第一次 Shift 悬停应发出查词',
+  );
+
+  // worker 被杀，回调永不来；虚拟时间推过在途闸截止时间。
+  nowRef.value += 5000;
+  fireShiftLookup(docListeners, 500, 600);
+
+  assert.strictEqual(
+    sent.filter((m) => m && m.type === 'lookup').length,
+    2,
+    '在途闸超时后仍不放行 = 永久死锁复活：Shift 悬停查词将彻底失灵',
+  );
+});
+
+test('BUG-1024 截止时间内仍拦截在途重复查词（防洪未退化）', () => {
+  const { docListeners, sent, nowRef } = loadContentAndFireShift({ respond: false });
+
+  fireShiftLookup(docListeners, 300, 400);
+  nowRef.value += 100; // 远小于截止时间
+  fireShiftLookup(docListeners, 500, 600);
+
+  assert.strictEqual(
+    sent.filter((m) => m && m.type === 'lookup').length,
+    1,
+    '截止时间内不应放行第二次查词（在途闸防洪失效）',
   );
 });

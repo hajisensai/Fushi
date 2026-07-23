@@ -2271,5 +2271,7 @@
   "delete_scope_sync_everywhere": "从所有设备删除",
   "delete_scope_sync_everywhere_desc": "其他设备下次同步时会确认删除",
   "collection_watched_progress": "已看完 $done/$total",
-  "collection_continue_progress": "继续看 第$n集"
+  "collection_continue_progress": "继续看 第$n集",
+  "popup_wheel_speed": "弹窗滚轮速度",
+  "popup_wheel_speed_hint": "查词弹窗的鼠标滚轮滚动速度（浏览器扩展弹窗同样生效）。"
 }

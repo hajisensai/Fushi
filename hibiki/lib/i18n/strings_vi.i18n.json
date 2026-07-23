@@ -2271,5 +2271,7 @@
   "delete_scope_sync_everywhere": "Delete from all devices",
   "delete_scope_sync_everywhere_desc": "Other devices confirm the deletion on next sync",
   "collection_watched_progress": "Watched $done/$total",
-  "collection_continue_progress": "Continue · EP $n"
+  "collection_continue_progress": "Continue · EP $n",
+  "popup_wheel_speed": "Popup scroll speed",
+  "popup_wheel_speed_hint": "Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension)."
 }
