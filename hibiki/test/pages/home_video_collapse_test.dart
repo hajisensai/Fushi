@@ -20,11 +20,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
-/// 合集行折叠端到端接线（视频库页；书架共用同一 CollectionShelfRow +
-/// `collapsed_collection_ids` 偏好，组件行为见 collection_shelf_row_collapse_test）：
-///  - 点行头 chevron 折叠 → 成员卡消失、行头仍在；
-///  - 折叠集写穿偏好（跨启动记住）；
-///  - 带已折叠偏好开页 → 直接折叠渲染。
+/// 视频页折叠语义退役守卫（用户拍板 2026-07-22 合集改封面卡）：
+/// 封面卡无成员行可折叠——视频页不再渲染折叠 chevron、不再读写
+/// `collapsed_collection_ids` 偏好（书架横排行照旧用它，组件行为见
+/// collection_shelf_row_collapse_test）：
+///  - 视频页合集渲染成封面卡：无折叠开关、成员卡不在库页；
+///  - 带「已折叠」偏好开页 → 封面卡照常完整渲染（偏好对视频页无效且不被改写）。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -108,7 +109,7 @@ void main() {
         ),
       );
 
-  testWidgets('点行头 chevron 折叠：成员卡消失、行头仍在、偏好写穿', (WidgetTester tester) async {
+  testWidgets('合集渲染成封面卡：无折叠开关、成员卡不在库页', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -116,29 +117,20 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('某番剧'), findsOneWidget, reason: '合集行头在');
-    expect(find.text('第1集'), findsWidgets, reason: '展开态成员卡在');
-
-    await tester.tap(find.byTooltip(t.collection_collapse));
-    await tester.pumpAndSettle();
-
-    expect(find.text('某番剧'), findsOneWidget, reason: '折叠后行头仍在');
-    expect(find.text('第1集'), findsNothing, reason: '折叠后成员卡消失');
-    expect(find.text('第2集'), findsNothing);
     expect(
-      prefs.collapsedCollectionIds,
-      contains(collectionId),
-      reason: '折叠集必须写穿偏好（跨启动记住）',
+      find.byKey(ValueKey<String>('home_video_collection_card_$collectionId')),
+      findsOneWidget,
+      reason: '合集必须渲染成封面卡',
     );
-
-    // 再点展开：成员回来、偏好清除。
-    await tester.tap(find.byTooltip(t.collection_expand));
-    await tester.pumpAndSettle();
-    expect(find.text('第1集'), findsWidgets);
-    expect(prefs.collapsedCollectionIds, isNot(contains(collectionId)));
+    expect(find.text('某番剧'), findsOneWidget, reason: '卡 footer 显示合集名');
+    expect(find.text('第1集'), findsNothing, reason: '成员卡收进详情页，不在库页');
+    expect(find.text('第2集'), findsNothing);
+    expect(find.byTooltip(t.collection_collapse), findsNothing,
+        reason: '封面卡无成员行可折叠——不得再渲染折叠开关');
+    expect(find.byTooltip(t.collection_expand), findsNothing);
   });
 
-  testWidgets('带已折叠偏好开页：直接折叠渲染', (WidgetTester tester) async {
+  testWidgets('带「已折叠」偏好开页：封面卡照常完整渲染、偏好不被视频页改写', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -147,7 +139,14 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
+    expect(
+      find.byKey(ValueKey<String>('home_video_collection_card_$collectionId')),
+      findsOneWidget,
+      reason: '旧折叠偏好对封面卡无效：卡照常渲染',
+    );
     expect(find.text('某番剧'), findsOneWidget);
-    expect(find.text('第1集'), findsNothing, reason: '开页读偏好：上次折叠的合集保持折叠');
+    // 偏好保持原样（书架还在用；视频页不再读写它）。
+    expect(prefs.collapsedCollectionIds, contains(collectionId),
+        reason: '视频页不得改写 collapsed_collection_ids（书架仍在用）');
   });
 }

@@ -83,15 +83,18 @@ void main() {
     expect(historySrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
   });
 
-  test('UI v2 Phase C：合集在两页主区渲染成独占一行的横排行（CollectionShelfRow）', () {
-    // 用户拍板：每个合集独占一行、行内横移看相邻集/卷；撤掉回折叠网格卡即转红。
-    expect(homeSrc.contains('CollectionShelfRow'), isTrue,
-        reason: '视频库合集必须渲染成全宽横排行');
+  test('合集渲染形态：书架横排行（CollectionShelfRow）+ 视频封面卡（用户拍板 2026-07-22）', () {
+    // 书架维持 Phase C 横排行；视频侧用户拍板恢复封面卡形态（「一进去就是封面，
+    // 跟小说那种一样」）：合集渲染成与散卡同尺寸的封面卡并入主网格。互退即转红。
     expect(historySrc.contains('CollectionShelfRow'), isTrue,
         reason: '书架合集必须渲染成全宽横排行');
-    // 视频行成员卡点击直接从该集进播放器（带剧集面板），不再必须绕详情页。
+    expect(homeSrc.contains('_buildCollectionCoverCard'), isTrue,
+        reason: '视频库合集必须渲染成封面卡（一合集一封面）');
+    expect(homeSrc.contains('CollectionShelfRow('), isFalse,
+        reason: '视频库不得回退到全宽横排行（用户拍板封面卡）');
+    // 点某集从该集进播放器（带剧集面板/连播）的能力经详情页保留。
     expect(homeSrc.contains('playlistCollectionId: collection.id'), isTrue,
-        reason: '视频合集行成员卡必须带 playlistCollectionId 直接换集');
+        reason: '视频合集详情页开集必须带 playlistCollectionId 直接换集');
   });
 
   test('UI v2：整理排序页已按用户拍板整体砍掉——零残留 + 能力不回退', () {
@@ -345,37 +348,30 @@ void main() {
         reason: '远端书占位须给真实 mediaType（epub）才能与本地成员共键折叠');
   });
 
-  test('BUG-790：视频合集行头集数 = 行体成员数（本地+远端占位同源），全云端合集不再显示「0 集」', () {
+  test('BUG-790：视频合集卡集数 = 全部成员数（本地+远端占位同源），全云端合集不再显示「0 集」', () {
     // 根因：旧口径 localCount = group.items.where(local != null).length 只数本地成员，
-    // 但行体 itemCount = group.items.length 渲染全部成员（含远端未下载占位卡）。全为
-    // 远端剧集的合集行明明有云占位卡却显示「0 集」，与眼前所见割裂（用户实报）。
-    // 修复：行头计数与行体 itemCount 同源。回退到「行头只数本地」或「与 itemCount 异源」
-    // 即转红。
-    final int rowFn = homeSrc.indexOf('Widget _buildVideoCollectionRow(');
-    expect(rowFn, isNonNegative, reason: '缺 _buildVideoCollectionRow');
-    final int rowEnd = homeSrc.indexOf('\n  /// ', rowFn + 1);
-    final String rowSrc =
-        homeSrc.substring(rowFn, rowEnd < 0 ? homeSrc.length : rowEnd);
+    // 全为远端剧集的合集明明可见却显示「0 集」，与眼前所见割裂（用户实报）。
+    // 封面卡形态下同一口径：集数角标必须喂 group.items.length（memberCount），
+    // 回退到「只数本地」即转红。
+    final int cardFn = homeSrc.indexOf('Widget _buildCollectionCoverCard(');
+    expect(cardFn, isNonNegative, reason: '缺 _buildCollectionCoverCard');
+    final int cardEnd = homeSrc.indexOf('\n  /// ', cardFn + 1);
+    final String cardSrc =
+        homeSrc.substring(cardFn, cardEnd < 0 ? homeSrc.length : cardEnd);
 
-    // ① 行头计数不得再用「只数本地成员」的过滤式喂 video_playlist_episodes。
-    expect(rowSrc.contains('.where((it) => it.payload.local != null).length'),
+    // ① 集数不得再用「只数本地成员」的过滤式。
+    expect(cardSrc.contains('.where((it) => it.payload.local != null).length'),
         isFalse,
-        reason: 'BUG-790：不得再用「只数本地」过滤统计行头集数（localCount）');
+        reason: 'BUG-790：不得再用「只数本地」过滤统计合集集数（localCount）');
+    expect(RegExp(r'_buildPlaylistBadge\(\s*\w*[Ll]ocal').hasMatch(cardSrc),
+        isFalse,
+        reason: 'BUG-790：集数角标不得喂 localCount，须与成员总数同源');
+
+    // ② 集数角标必须喂 group.items.length 派生的 memberCount。
     expect(
-        RegExp(r'video_playlist_episodes\(\s*count:\s*\w*[Ll]ocal')
-            .hasMatch(rowSrc),
-        isFalse,
-        reason: 'BUG-790：行头计数不得喂 localCount，须与行体 itemCount 同源');
-
-    // ② 行头 countLabel 的 count 与 itemCount 必须引用同一变量（同源）。
-    final Match? countMatch =
-        RegExp(r'countLabel:\s*t\.video_playlist_episodes\(count:\s*(\w+)\)')
-            .firstMatch(rowSrc);
-    final Match? itemMatch = RegExp(r'itemCount:\s*(\w+)').firstMatch(rowSrc);
-    expect(countMatch, isNotNull, reason: '未找到行头 countLabel 表达式');
-    expect(itemMatch, isNotNull, reason: '未找到 itemCount 表达式');
-    expect(countMatch!.group(1), equals(itemMatch!.group(1)),
-        reason: 'BUG-790：行头集数与行体 itemCount 必须同源（同一变量），'
-            '否则「看得见却 0 集」回潮');
+        cardSrc.contains('final int memberCount = group.items.length;'), isTrue,
+        reason: 'BUG-790：memberCount 必须 = group.items.length（本地+远端占位同源）');
+    expect(cardSrc.contains('_buildPlaylistBadge(memberCount)'), isTrue,
+        reason: 'BUG-790：集数角标必须喂 memberCount');
   });
 }

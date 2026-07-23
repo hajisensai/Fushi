@@ -23,8 +23,9 @@ import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 多端库联合视图 §2.3 任务10：远端视频占位卡的合集归属。host 下发的
-/// [RemoteVideoInfo.collection]（自然键 name+type）解析到本地合集 → 远端占位折进该合集
-/// 横排行（与本地成员同行）；解析不到本地合集 → 散卡降级（不硬造行）。
+/// [RemoteVideoInfo.collection]（自然键 name+type）解析到本地合集 → 远端占位折进该
+/// 合集（封面卡形态：计入集数角标 + 卡带云角标，成员收进详情页）；解析不到本地
+/// 合集 → 散卡降级（不硬造合集卡）。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -98,7 +99,7 @@ void main() {
         ),
       );
 
-  testWidgets('远端归属命中本地合集 → 占位卡折进该合集横排行', (WidgetTester tester) async {
+  testWidgets('远端归属命中本地合集 → 折进合集封面卡（计数含远端 + 云角标）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -130,16 +131,29 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    final Finder collectionRow =
-        find.byKey(ValueKey<String>('home_video_collection_row_$cid'));
-    expect(collectionRow, findsOneWidget, reason: '本地合集横排行必须渲染');
-    final Finder remoteCard = find
-        .byKey(const ValueKey<String>('remote_video_card_video_remote-ep2'));
-    expect(remoteCard, findsOneWidget, reason: '远端占位卡必须渲染');
+    final Finder collectionCard =
+        find.byKey(ValueKey<String>('home_video_collection_card_$cid'));
+    expect(collectionCard, findsOneWidget, reason: '本地合集封面卡必须渲染');
+    // 远端成员折进合集卡：不再单独渲染散卡（成员收进详情页）。
     expect(
-      find.ancestor(of: remoteCard, matching: collectionRow),
+      find.byKey(const ValueKey<String>('remote_video_card_video_remote-ep2')),
+      findsNothing,
+      reason: '远端占位归属命中本地合集 → 折进合集卡，不再渲染独立散卡',
+    );
+    // 集数角标含远端占位成员（BUG-790 口径：1 本地 + 1 远端 = 2）。
+    expect(
+      find.descendant(
+        of: collectionCard,
+        matching: find.text(t.video_playlist_episodes(count: 2)),
+      ),
       findsOneWidget,
-      reason: '远端占位卡归属命中本地合集 → 必须折进该合集横排行（非散卡）',
+      reason: '集数角标必须计入远端占位成员（本地+远端同源）',
+    );
+    // 含远端占位成员 → 合集卡右上云角标。
+    expect(
+      find.byKey(ValueKey<String>('home_video_collection_cloud_$cid')),
+      findsOneWidget,
+      reason: '含远端占位成员的合集卡必须带云角标',
     );
   });
 

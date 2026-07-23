@@ -9,7 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
@@ -22,7 +21,7 @@ import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 块2/3/4 视频库批量合集操作 widget 测试（真写穿内存 DB）：
-///  - 多选态合集整选（行头勾选 → 合集入选中集、成员卡无勾选框）；
+///  - 多选态合集整选（封面卡整卡勾选 → 合集入选中集；成员卡收进详情页不在库页）；
 ///  - 组合三档（新建 / 并入 / 合并默认名）；
 ///  - 删除区分（解散不删媒体行 / 混选计数文案）。
 void main() {
@@ -112,7 +111,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('块2：行头勾选 → 合集入选中集；成员卡多选态无勾选框', (WidgetTester tester) async {
+  testWidgets('块2：合集封面卡勾选 → 整合集入选中集；成员卡不在库页', (WidgetTester tester) async {
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
     final int cid = await db.createMediaCollection('合集甲');
@@ -122,29 +121,26 @@ void main() {
     await pumpPage(tester);
     await enterSelectionMode(tester);
 
-    // 进多选态：行头有 1 个勾选框（透明对勾），成员卡无勾选框。
+    // 进多选态：合集封面卡带 1 个勾选框（透明对勾）；成员卡不在库页（收进详情页）。
     expect(
       find.descendant(
-        of: find.byType(CollectionShelfRow),
+        of: find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
         matching: find.byIcon(Icons.check),
       ),
       findsOneWidget,
-      reason: '仅合集行头一个勾选框；成员卡不画勾（selectable=false）',
+      reason: '合集封面卡多选态画整选勾选框',
     );
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('home_video_video/ep1')),
-        matching: find.byIcon(Icons.check),
-      ),
+      find.byKey(const ValueKey<String>('home_video_video/ep1')),
       findsNothing,
-      reason: '成员卡多选态不可单独勾（无勾选框）',
+      reason: '合集成员卡不在库页（封面卡形态），无从单独勾选',
     );
 
-    // 点行头 → 整合集入选中集，底栏计数 = 1。
+    // 点合集卡 → 整合集入选中集，底栏计数 = 1。
     await tester.tap(find.text('合集甲'));
     await tester.pumpAndSettle();
     expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget,
-        reason: '行头勾选把合集计入选中集');
+        reason: '整卡勾选把合集计入选中集');
   });
 
   testWidgets('块3 档1：仅散卡 → 命名弹窗新建合集', (WidgetTester tester) async {

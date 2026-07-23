@@ -2259,5 +2259,7 @@
   "video_danmaku_manual_bind_failed": "弹幕加载失败，请稍后重试",
   "remote_video_info_size": "大小：$size",
   "remote_video_info_no_subtitle": "不含字幕",
-  "app_icon_presets": "预设"
+  "app_icon_presets": "预设",
+  "collection_watched_progress": "已看完 $done/$total",
+  "collection_continue_progress": "继续看 第$n集"
 }
