@@ -95,6 +95,11 @@ extension _VideoClipExport on _VideoHibikiPageState {
       outputPath: outputPath,
       audioStreamIndex: audioStreamIndex,
       audioStreamCount: audioStreamCount,
+      subtitleContents: _clipExportSubtitleContents(
+        controller: controller,
+        startMs: startMs,
+        endMs: endMs,
+      ),
     );
 
     if (!mounted) {
@@ -113,7 +118,12 @@ extension _VideoClipExport on _VideoHibikiPageState {
     _rebuild(_clearClipExportState);
     final String? exported = result.outputPath;
     if (result.isSuccess && exported != null) {
-      _showOsd(t.video_clip_exported(path: exported));
+      // 区分带没带字幕：字幕封装可能被静默降级（容器封不下、旧的桌面精简 ffmpeg 没有
+      // movtext 编码器），不告诉用户的话，他只会看到一个「导出成功却没字幕」的片段，
+      // 无从判断是自己没选字幕还是导出丢了。
+      _showOsd(result.subtitleTrackCount > 0
+          ? t.video_clip_exported_with_subtitles(path: exported)
+          : t.video_clip_exported(path: exported));
       if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
         await HibikiShare.shareFiles(<XFile>[
           XFile(exported),
@@ -133,6 +143,38 @@ extension _VideoClipExport on _VideoHibikiPageState {
       _showOsd(t.video_clip_export_failed(reason: reason));
     }
     _refocusVideo();
+  }
+
+  /// 收集片段区间内「用户正在看的字幕」，裁成 SRT 文本（主字幕一条、副字幕一条）。
+  ///
+  /// 真相源是播放器内存里的 cue 列表，不是源文件的 `0:s:N`：Hibiki 的字幕全部由
+  /// Flutter overlay 渲染（libmpv 侧被 `setSubtitleTrack(no())` 关掉），外挂字幕在源
+  /// 文件里压根没有对应流，内嵌轨也丢掉了用户调过的 [VideoPlayerController.delayMs]
+  /// 偏移。从 cue 生成，导出的字幕恰好等于屏幕上看到的那条。
+  ///
+  /// 区间内无字幕（纯 OP/ED 片段）时返回空列表——调用方据此不加字幕输入。
+  List<String> _clipExportSubtitleContents({
+    required VideoPlayerController controller,
+    required int startMs,
+    required int endMs,
+  }) {
+    final int delayMs = controller.delayMs;
+    final String? primary = buildClipSrtContent(
+      cues: controller.cues,
+      startMs: startMs,
+      endMs: endMs,
+      delayMs: delayMs,
+    );
+    final String? secondary = buildClipSrtContent(
+      cues: controller.secondaryCues,
+      startMs: startMs,
+      endMs: endMs,
+      delayMs: delayMs,
+    );
+    return <String>[
+      if (primary != null) primary,
+      if (secondary != null) secondary,
+    ];
   }
 
   void _clearClipExportState() {

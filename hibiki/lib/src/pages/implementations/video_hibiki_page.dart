@@ -84,6 +84,7 @@ import 'package:hibiki/src/media/video/subtitle_auto_align.dart';
 import 'package:hibiki/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:hibiki/src/media/video/video_chapter_markers.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart';
+import 'package:hibiki/src/media/video/video_clip_subtitle.dart';
 import 'package:hibiki/src/media/video/video_episode_panel.dart';
 import 'package:hibiki/src/media/video/video_side_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
