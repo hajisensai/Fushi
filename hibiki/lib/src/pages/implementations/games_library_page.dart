@@ -49,6 +49,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 本页持有的游戏列表（从持久化载入，增删改后回写并 setState 刷新）。
   late List<GalgameEntry> _games = List<GalgameEntry>.of(_appModel.galgames);
 
+  /// 启动流程的**再入守卫**：一次启动含位数探测、helper 确认/下载对话框、注入会话等多个 await，
+  /// 全程可能持续数秒。没有此守卫时，用户在等待期间重复点击游戏卡片会各自开一条 _launchGame，
+  /// 叠出多个「需要下载 galgame 引擎组件」对话框（用户实测症状）。true 期间忽略新的启动点击。
+  bool _launching = false;
+
   /// 覆写持久化 + 刷新本页。
   Future<void> _persist(List<GalgameEntry> next) async {
     await _appModel.setGalgames(next);
@@ -107,38 +112,44 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 启动一个游戏 → 台词进查词弹窗：非 Windows 优雅提示不支持；Windows 上交给
   /// 启动前先按 exe 位数确保 helper 就位，再交给 app 级 Hook 会话。
   Future<void> _launchGame(GalgameEntry game) async {
-    if (!Platform.isWindows) {
-      HibikiToast.show(msg: t.games_launch_unsupported);
-      return;
-    }
-    if (!File(game.exePath).existsSync()) {
-      HibikiToast.show(msg: t.games_exe_missing);
-      return;
-    }
-    final bool is32Bit =
-        await EngineHookGalAudioSource.exeIs32Bit(game.exePath) ?? false;
-    if (GalHookSessionController.defaultInjectorResolver(is32Bit: is32Bit) ==
-        null) {
+    if (_launching) return; // 再入守卫：启动进行中，忽略重复点击（避免多开确认对话框）。
+    _launching = true;
+    try {
+      if (!Platform.isWindows) {
+        HibikiToast.show(msg: t.games_launch_unsupported);
+        return;
+      }
+      if (!File(game.exePath).existsSync()) {
+        HibikiToast.show(msg: t.games_exe_missing);
+        return;
+      }
+      final bool is32Bit =
+          await EngineHookGalAudioSource.exeIs32Bit(game.exePath) ?? false;
+      if (GalHookSessionController.defaultInjectorResolver(is32Bit: is32Bit) ==
+          null) {
+        if (!mounted) return;
+        final bool installed = await GalgameHelperInstaller().ensureInjector(
+          is32Bit: is32Bit,
+          context: context,
+        );
+        if (!installed || !mounted) return;
+      }
+      final bool launched =
+          await (widget.sessionController ?? GalHookSessionController.instance)
+              .launchGame(game.exePath);
       if (!mounted) return;
-      final bool installed = await GalgameHelperInstaller().ensureInjector(
-        is32Bit: is32Bit,
-        context: context,
-      );
-      if (!installed || !mounted) return;
+      if (!launched) {
+        final String? reason =
+            (widget.sessionController ?? GalHookSessionController.instance)
+                .state
+                .lastError;
+        HibikiToast.show(msg: reason ?? t.game_capture_launch_failed);
+        return;
+      }
+      widget.onLaunched?.call();
+    } finally {
+      _launching = false;
     }
-    final bool launched =
-        await (widget.sessionController ?? GalHookSessionController.instance)
-            .launchGame(game.exePath);
-    if (!mounted) return;
-    if (!launched) {
-      final String? reason =
-          (widget.sessionController ?? GalHookSessionController.instance)
-              .state
-              .lastError;
-      HibikiToast.show(msg: reason ?? t.game_capture_launch_failed);
-      return;
-    }
-    widget.onLaunched?.call();
   }
 
   @override

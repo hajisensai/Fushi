@@ -446,7 +446,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   ) async {
     final dictionaryNames =
         appModel.termDictionaries.map((d) => d.name).toList();
-    final options = AnkiHandlebarOptions.forTermDictionaries(dictionaryNames);
+    // 隐藏没被用到的旧别名；当前字段正用着的旧别名仍会出现（并标「已弃用」）。
+    final options = AnkiHandlebarOptions.optionsForField(
+      dictionaryNames: dictionaryNames,
+      currentValue: currentValue,
+    );
 
     final result = await showAppDialog<String>(
       context: context,
@@ -572,11 +576,21 @@ class _AnkiConnectionFieldState extends State<_AnkiConnectionField> {
 /// （渲染器认的是字面量）。未识别 / 动态占位符回退原字面量，绝不返回空白：
 /// - `{single-glossary-<dict>}` → 直接显示词典名 `<dict>`（零新 i18n key）。
 /// - 其它未知占位符 → 原样返回 `option`（向后兼容）。
+/// - [AnkiHandlebarOptions.deprecatedAliases] 里的旧别名额外套一层「已弃用」标注，
+///   提示改用等价新键；标注只是展示，渲染器照旧认这些别名，行为完全不变。
 String ankiHandlebarLabel(String option) {
   const String singleGlossaryPrefix = '{single-glossary-';
   if (option.startsWith(singleGlossaryPrefix) && option.endsWith('}')) {
     return option.substring(singleGlossaryPrefix.length, option.length - 1);
   }
+  final String base = _ankiHandlebarBaseLabel(option);
+  return AnkiHandlebarOptions.deprecatedAliases.contains(option)
+      ? t.handlebar_deprecated_label(label: base)
+      : base;
+}
+
+/// [ankiHandlebarLabel] 的裸标签部分（不含「已弃用」标注）。
+String _ankiHandlebarBaseLabel(String option) {
   switch (option) {
     case '{expression}':
       return t.handlebar_expression;

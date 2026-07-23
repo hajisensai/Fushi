@@ -26,6 +26,38 @@ enum GalHookSessionPhase {
 
 enum GalHookAudioBackend { none, gameResource, enginePcm, systemLoopback }
 
+/// 「活跃音轨」空列表时的解释分支（BUG-1027，纯函数可单测）。
+///
+/// gameResource 模式语音按句直接提取资源文件、不进共享内存 PCM 环（native
+/// `ListAudioTracks` 只枚举 PCM 环，voice_hook_reader.cpp:546），空列表是**常态**
+/// 而非故障；systemLoopback 是整机混音单流，同样没有逐轨枚举。只有引擎 PCM /
+/// 无音频后端时才保留通用「尚无音轨数据」空态。
+enum GalTrackEmptyHint { generic, resourceMode, loopbackMode }
+
+/// 按音频后端返回音轨空态解释分支。
+GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
+    switch (backend) {
+      GalHookAudioBackend.gameResource => GalTrackEmptyHint.resourceMode,
+      GalHookAudioBackend.systemLoopback => GalTrackEmptyHint.loopbackMode,
+      _ => GalTrackEmptyHint.generic,
+    };
+
+/// [GalHookSessionController.exportTrackPreview] 的产物：临时 WAV 路径 + 时长。
+@immutable
+class GalTrackPreview {
+  const GalTrackPreview({required this.filePath, required this.durationMs});
+
+  final String filePath;
+  final int durationMs;
+}
+
+/// 试听临时 WAV 的文件名（纯函数，可单测）：轨指针十六进制 + 抓取用文本时间戳。
+String galTrackPreviewFileName({
+  required int sourcePtr,
+  required int timestampMs,
+}) =>
+    'gal_track_preview_${sourcePtr.toRadixString(16)}_$timestampMs.wav';
+
 enum GalHookEventSeverity { info, success, warning, error }
 
 @immutable
@@ -182,6 +214,7 @@ class GalHookSessionController extends ChangeNotifier {
     Duration resourceAudioWait = const Duration(milliseconds: 1200),
     Duration resourceAudioPollInterval = const Duration(milliseconds: 80),
     int windowPollAttempts = 20,
+    Duration trackRefreshInterval = const Duration(seconds: 5),
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
   })  : _textService = textService ?? TexthookerService.instance,
@@ -201,6 +234,7 @@ class GalHookSessionController extends ChangeNotifier {
         _resourceAudioWait = resourceAudioWait,
         _resourceAudioPollInterval = resourceAudioPollInterval,
         _windowPollAttempts = windowPollAttempts,
+        _trackRefreshInterval = trackRefreshInterval,
         _endpointListenable =
             endpointListenable ?? TexthookerWsClientManager.instance,
         _endpointStatusLoader = endpointStatusLoader ??
@@ -232,6 +266,7 @@ class GalHookSessionController extends ChangeNotifier {
   final Duration _resourceAudioWait;
   final Duration _resourceAudioPollInterval;
   final int _windowPollAttempts;
+  final Duration _trackRefreshInterval;
   final Listenable _endpointListenable;
   final List<TexthookerEndpointStatus> Function() _endpointStatusLoader;
 
@@ -281,12 +316,17 @@ class GalHookSessionController extends ChangeNotifier {
   List<TexthookerEndpointStatus> get endpointStatuses =>
       _endpointStatusLoader();
 
+  /// 当前是否存在引擎 hook 源。音轨选择 / 排除 / 试听等能力只在此时有意义；
+  /// 诊断页据此把「选轨不生效」显式提示给用户（BUG-1027），不再静默失败。
+  bool get hasEngineSource => _engineSource != null;
+
   final List<GalHookEvent> _events = <GalHookEvent>[];
   List<GalHookEvent> get events => List<GalHookEvent>.unmodifiable(_events);
 
   GalAudioSource? _audioSource;
   EngineHookGalAudioSource? _engineSource;
   Timer? _textPollTimer;
+  Timer? _trackRefreshTimer;
   bool _pollInFlight = false;
   int _lastTextSeq = 0;
   int _eventId = 0;
@@ -647,29 +687,153 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 两份音轨快照的「轨成员」是否一致（只比 sourcePtr 序列）。低频自动刷新下
+  /// clipCount / 能量持续变化，若纳入判等，事件日志会被每轮刷新刷成噪音——
+  /// 只有轨的出现/消失才值得记一条结构化事件。
+  @visibleForTesting
+  static bool sameTrackMembership(
+    List<GalAudioTrack> a,
+    List<GalAudioTrack> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].sourcePtr != b[i].sourcePtr) return false;
+    }
+    return true;
+  }
+
   Future<void> refreshAudioTracks() async {
     final EngineHookGalAudioSource? engine = _engineSource;
     if (engine == null) {
-      _setState(_state.copyWith(audioTracks: const <GalAudioTrack>[]));
+      if (_state.audioTracks.isNotEmpty) {
+        _setState(_state.copyWith(audioTracks: const <GalAudioTrack>[]));
+      }
       return;
     }
     final int timestamp = _lineTimestampCache.values.isEmpty
         ? 0
         : _lineTimestampCache.values.last;
     final List<GalAudioTrack> tracks = await engine.listAudioTracks(timestamp);
+    // await 期间会话可能已停止/重启：旧 engine 的快照不落地（同 BUG-950 范式）。
+    if (engine != _engineSource) return;
+    final bool membershipChanged =
+        !sameTrackMembership(_state.audioTracks, tracks);
     _setState(_state.copyWith(audioTracks: tracks));
-    _record(
-      GalHookEventSeverity.info,
-      'audio',
-      'audio.tracks_refreshed',
-      'Audio track snapshot refreshed',
-      details: <String, Object?>{'count': tracks.length},
+    // BUG-1027：刷新已由定时器/状态迁移自动驱动，只有轨成员变化才记事件，
+    // 避免 5s 一条「已刷新」把事件日志淹掉。
+    if (membershipChanged) {
+      _record(
+        GalHookEventSeverity.info,
+        'audio',
+        'audio.tracks_refreshed',
+        'Audio track snapshot refreshed',
+        details: <String, Object?>{'count': tracks.length},
+      );
+    }
+  }
+
+  /// BUG-1027：音轨快照不再依赖诊断页手动刷新。
+  ///
+  /// 每次会话激活 / 音频后端切换后（含 [_promoteLateResourceAudio]）先立即刷一次；
+  /// 引擎 PCM 与「文本 + Loopback 混合」（engine 仍存活）两种形态另起**会话级**低频
+  /// 定时器持续刷新。定时器挂在会话生命周期而非诊断页可见性上：控制器不感知页面
+  /// 路由，且 [_trackRefreshInterval]（默认 5s）一次的共享内存枚举成本可忽略，为可见性
+  /// 门控引入页面回调只会增加状态同步面。gameResource 模式语音走逐句资源文件、不进
+  /// PCM 环（voice_hook_reader.cpp:546 只枚举 PCM 环），刷一次保持快照一致即可，不开
+  /// 定时器。[_stopSources] 统一回收定时器。
+  void _syncTrackAutoRefresh() {
+    _trackRefreshTimer?.cancel();
+    _trackRefreshTimer = null;
+    if (_engineSource == null) return;
+    unawaited(refreshAudioTracks());
+    final GalHookAudioBackend backend = _state.audioBackend;
+    if (backend == GalHookAudioBackend.enginePcm ||
+        backend == GalHookAudioBackend.systemLoopback) {
+      _trackRefreshTimer = Timer.periodic(
+        _trackRefreshInterval,
+        (_) => unawaited(refreshAudioTracks()),
+      );
+    }
+  }
+
+  /// 试听指定音轨（BUG-1027）：按最近一条 hook 台词时间戳，经既有 `grabUtterance`
+  /// IPC 抓取该 [sourcePtr] 在 `[ts-200, ts+6000]` 窗口内的整句 PCM（native
+  /// `GrabUtterance`，voice_hook_reader.cpp:408——`target_source` 非 0 时直接按轨过滤；
+  /// exclude 传空集，试听已标记 BGM 的轨同样允许），拼成 WAV 写入系统临时目录，播放
+  /// 器可直接播（无需 ffmpeg 转码）。无 engine / 尚无台词时间戳 / 该轨窗口内无 PCM /
+  /// 写盘失败时返回 null 并记结构化事件（调用方 toast 提示，不静默）。
+  Future<GalTrackPreview?> exportTrackPreview(int sourcePtr) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    if (engine == null) return null;
+    final int timestamp = _lineTimestampCache.values.isEmpty
+        ? 0
+        : _lineTimestampCache.values.last;
+    final GalAudioSlice? slice = await engine.grabUtterance(
+      timestamp,
+      sourcePtr: sourcePtr,
+      exclude: const <int>[],
     );
+    if (slice == null || slice.isEmpty) {
+      _record(
+        GalHookEventSeverity.warning,
+        'audio',
+        'audio.track_preview_empty',
+        'No recent PCM was available on the selected track',
+        details: <String, Object?>{'sourcePtr': sourcePtr, 'tsMs': timestamp},
+      );
+      return null;
+    }
+    try {
+      final Directory dir = Directory(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}'
+        'hibiki_gal_track_preview',
+      );
+      await dir.create(recursive: true);
+      final File out = File(
+        '${dir.path}${Platform.pathSeparator}'
+        '${galTrackPreviewFileName(sourcePtr: sourcePtr, timestampMs: timestamp)}',
+      );
+      await out.writeAsBytes(buildWavBytes(slice.pcm, slice.format),
+          flush: true);
+      final int durationMs =
+          pcmDurationMs(slice.pcm.length, slice.format.byteRate);
+      _record(
+        GalHookEventSeverity.info,
+        'audio',
+        'audio.track_preview_ready',
+        'Track preview clip exported',
+        details: <String, Object?>{
+          'sourcePtr': sourcePtr,
+          'durationMs': durationMs,
+        },
+      );
+      return GalTrackPreview(filePath: out.path, durationMs: durationMs);
+    } catch (error, stack) {
+      _record(
+        GalHookEventSeverity.error,
+        'audio',
+        'audio.track_preview_failed',
+        'Track preview export failed',
+        details: <String, Object?>{'error': '$error', 'stack': '$stack'},
+      );
+      return null;
+    }
   }
 
   void selectVoiceTrack(int sourcePtr) {
     final EngineHookGalAudioSource? engine = _engineSource;
-    if (engine == null) return;
+    if (engine == null) {
+      // BUG-1027：此前静默 return，诊断页点 radio 毫无反馈。记结构化警告事件，
+      // 页面另以 toast 明示「选轨需要引擎 hook 会话」。
+      _record(
+        GalHookEventSeverity.warning,
+        'audio',
+        'audio.voice_track_select_unavailable',
+        'Voice-track selection requires an active engine hook session',
+        details: <String, Object?>{'sourcePtr': sourcePtr},
+      );
+      return;
+    }
     engine.selectedAudioSourcePtr = sourcePtr;
     _setState(_state.copyWith(selectedAudioSourcePtr: sourcePtr));
     _record(
@@ -992,6 +1156,7 @@ class GalHookSessionController extends ChangeNotifier {
         'channels': format.channels,
       },
     );
+    _syncTrackAutoRefresh();
   }
 
   /// 原始游戏资源音频是首选，系统回环只作为某句没有资源文件时的兜底。资源 hook 本身
@@ -1032,6 +1197,7 @@ class GalHookSessionController extends ChangeNotifier {
         'loopbackAvailable': fallbackFormat != null,
       },
     );
+    _syncTrackAutoRefresh();
   }
 
   /// 保留已就绪的引擎文本 helper，同时以系统 Loopback 作为独立音频源。
@@ -1097,6 +1263,7 @@ class GalHookSessionController extends ChangeNotifier {
         if (format != null) 'channels': format.channels,
       },
     );
+    _syncTrackAutoRefresh();
     return true;
   }
 
@@ -1172,6 +1339,8 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> _stopSources() async {
     _textPollTimer?.cancel();
     _textPollTimer = null;
+    _trackRefreshTimer?.cancel();
+    _trackRefreshTimer = null;
     _pollInFlight = false;
     final EngineHookGalAudioSource? engine = _engineSource;
     _engineSource = null;
@@ -1382,6 +1551,9 @@ class GalHookSessionController extends ChangeNotifier {
       details: <String, Object?>{'pid': _state.gamePid},
     );
     _refreshPendingResourceMatches(engine);
+    // audioBackend 已切到 gameResource：立即重刷一次音轨快照并停掉 PCM 低频定时器
+    //（BUG-1027，资源模式不进 PCM 环，快照保持一致的空/残留态即可）。
+    _syncTrackAutoRefresh();
   }
 
   void _refreshPendingResourceMatches(EngineHookGalAudioSource engine) {

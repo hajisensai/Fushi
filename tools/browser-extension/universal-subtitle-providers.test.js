@@ -137,6 +137,41 @@ test('live 轨：句子出现即入轨、结束定格 end、倒退回看去重�
   assert.strictEqual(store[key][1].startMs, 5000);
 });
 
+test('live 轨：YouTube 同一句逐字扩长时就地更新，不把每个快照追加成重复行', () => {
+  const h = loadContent({ hostname: 'www.youtube.com', pathname: '/watch', search: '?v=rolling' });
+  const notified = [];
+  h.windowObj.hibikiSubtitlePanelOnCues = (key) => notified.push(key);
+  const key = 'yt-rolling|live';
+
+  h.video.currentTime = 25.0;
+  h.state.subText = '自価総額およそ';
+  h.sampler.fn();
+
+  h.video.currentTime = 25.2;
+  h.state.subText = '自価総額およそ800';
+  h.sampler.fn();
+  h.video.currentTime = 25.4;
+  h.state.subText = '自価総額およそ800兆円。';
+  h.sampler.fn();
+  h.video.currentTime = 25.6;
+  h.state.subText = '自価総額およそ800兆円。NIAはAIブーム';
+  h.sampler.fn();
+
+  const track = h.windowObj.hibikiEpisodeCues[key];
+  assert.strictEqual(track.length, 1, '同一句的逐字扩长快照必须合并到一行');
+  assert.strictEqual(track[0].startMs, 25000, '就地更新不得改变原句起点');
+  assert.strictEqual(track[0].text, '自価総額およそ800兆円。NIAはAIブーム');
+  assert.ok(track[0].endMs > 25600, '仍在显示时暂定 end 必须随快照延长');
+  assert.strictEqual(notified.length, 4, '每次就地更新仍需通知面板刷新现有行');
+
+  h.video.currentTime = 25.8;
+  h.state.subText = '次の文';
+  h.sampler.fn();
+  assert.strictEqual(track.length, 2, '真正换句仍应新增一行');
+  assert.strictEqual(track[0].endMs, 25800, '换句时上一句必须定格真实 end');
+  assert.strictEqual(track[1].text, '次の文');
+});
+
 test('textTracks 收割：原生字幕轨整轨读出（清洗标签）并增量刷新', () => {
   const cues = [
     { startTime: 1, endTime: 2, text: 'Hello <i>world</i>' },

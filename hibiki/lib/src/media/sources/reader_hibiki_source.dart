@@ -513,6 +513,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
     final String? imageUrl = await _resolveCoverUrl(book);
 
+    // PDF 阅读器 Phase 1：书架列书 format-agnostic（本方法列全部 EpubBooks 行），但
+    // `format=='pdf'` 的行必须带 [ReaderPdfSource] 的 mediaSourceIdentifier，这样
+    // `item.getMediaSource` 打开时解析到 PDF 源、进 ReaderPdfPage，而不是用 EPUB 阅读器
+    // 打开（后者会对 PDF 走解压/解析路径崩溃）。媒体标识前缀共用 `hoshi://book/<bookKey>`
+    // （bookKey 是主键、与 format 无关），路由只认 mediaSourceIdentifier。
+    final bool isPdf = book.format == 'pdf';
+
     return MediaItem(
       mediaIdentifier: mediaIdentifierFor(book.bookKey),
       title: book.title,
@@ -520,7 +527,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
       author: book.author,
       imageUrl: imageUrl,
       mediaTypeIdentifier: mediaType.uniqueKey,
-      mediaSourceIdentifier: uniqueKey,
+      mediaSourceIdentifier: isPdf ? ReaderPdfSource.kUniqueKey : uniqueKey,
       position: position,
       duration: duration,
       canDelete: false,

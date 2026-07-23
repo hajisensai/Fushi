@@ -27,12 +27,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 990 条。点号进各自文件。
+> 共 999 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1023](bugs/BUG-1023-galgame-auto-locale.md) | ✅ | ✅ | Hibiki 启动日文非 Unicode 游戏时界面乱码 |
-| [BUG-1022](bugs/BUG-1022-steam-launch-duplicate-instance.md) | ✅ | ✅ | Steam 游戏启动并捕获触发重复实例且晚附着漏音频 |
+| [BUG-1032](bugs/BUG-1032-galgame-auto-locale.md) | ✅ | ✅ | Hibiki 启动日文非 Unicode 游戏时界面乱码 |
+| [BUG-1031](bugs/BUG-1031-steam-launch-duplicate-instance.md) | ✅ | ✅ | Steam 游戏启动并捕获触发重复实例且晚附着漏音频 |
+| [BUG-1030](bugs/BUG-1030-extension-subtitle-panel-overlay.md) | ✅ | ✅ | 浏览器扩展字幕列表覆盖页面而非挤压画面 |
+| [BUG-1029](bugs/BUG-1029-extension-subtitle-live-cumulative.md) | ✅ | ✅ | 浏览器扩展 YouTube 字幕列表逐字累积为重复行 |
+| [BUG-1028](bugs/BUG-1028-texthooker-popup-cold-webview.md) | ✅ | ✅ | 捕获工作台查词弹窗每次冷建WebView加载缓慢 |
+| [BUG-1027](bugs/BUG-1027-gal-diagnostics-audio-tracks-stale.md) | ✅ | ✅ | 兼容性诊断音轨快照不自动拉取且资源音频模式误报尚无数据 |
+| [BUG-1026](bugs/BUG-1026-popup-wheel-speed-config.md) | ✅ | ✅ | 查词弹窗滚轮滚动慢，缺可配置速度项 |
+| [BUG-1025](bugs/BUG-1025-clipboard-recopy-same-word-dedup.md) | ✅ | ✅ | 浏览器查词复制同一个词无法重复查（内容去重挡住手动重复复制） |
+| [BUG-1024](bugs/BUG-1024-ext-shift-hover-pending-deadlock.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词在途闸永久死锁致弹窗不敏感 |
+| [BUG-1023](bugs/BUG-1023-drive-transient-408-not-retried.md) | ✅ | ✅ | Google Drive 瞬时故障(408/429/5xx)被判非重试整本skip |
+| [BUG-1022](bugs/BUG-1022-galgame-helper-dialog-latency-and-restack.md) | ✅ | ✅ | galgame 引擎组件下载确认弹窗点击不立即出现且多次点击叠出多个弹窗 |
 | [BUG-1021](bugs/BUG-1021-galgame-cardimage-alias-false-warning.md) | ✅ | ✅ | galgame 场景制卡误报缺少 {card-image}（旧别名瞎眼） |
 | [BUG-1020](bugs/BUG-1020-clipboard-watcher-pref-flip-desync.md) | ✅ | ✅ | Windows剪贴板监听页内翻转开关后永久失效 |
 | [BUG-1019](bugs/BUG-1019-profile-swallows-audiobook-progress.md) | ✅ | ✅ | profile 切换吞听书进度/倍速：进度型 pref 被快照/prune/回灌 |

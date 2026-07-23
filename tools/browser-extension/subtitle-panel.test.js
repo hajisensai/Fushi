@@ -18,6 +18,8 @@ const PANEL = path.join(__dirname, 'subtitle-panel.js');
 
 // 极简 DOM 元素桩：支持面板构建所需的全部操作（append/remove/attr/style/事件捕获）。
 function makeEl(tag) {
+  const styleValues = {};
+  const stylePriorities = {};
   const el = {
     tagName: (tag || 'div').toUpperCase(),
     _id: '',
@@ -31,8 +33,21 @@ function makeEl(tag) {
     handlers: {},
     style: {
       _props: {},
-      setProperty(k, v) { this._props[k] = v; },
-      getPropertyValue(k) { return this._props[k] || ''; },
+      setProperty(k, v, priority) {
+        this._props[k] = String(v);
+        styleValues[k] = String(v);
+        stylePriorities[k] = priority || '';
+      },
+      getPropertyValue(k) {
+        if (k in styleValues) return styleValues[k];
+        return this[k] || '';
+      },
+      getPropertyPriority(k) { return stylePriorities[k] || ''; },
+      removeProperty(k) {
+        delete this._props[k];
+        delete styleValues[k];
+        delete stylePriorities[k];
+      },
     },
     setAttribute(k, v) { el._attrs[k] = String(v); if (k === 'id') el._id = String(v); },
     getAttribute(k) { return k in el._attrs ? el._attrs[k] : null; },
@@ -95,6 +110,7 @@ function loadPanel(opts) {
   const storageListeners = [];
   const intervals = [];
   const posted = [];
+  const pushEl = opts.pushEl || null;
   const windowObj = {
     hibikiEpisodeCues: opts.store || {},
     postMessage: (msg) => posted.push(msg),
@@ -105,7 +121,11 @@ function loadPanel(opts) {
     fullscreenElement: null,
     addEventListener() {},
     getElementById: (id) => findByIdDeep(body, id),
-    querySelector: (sel) => (sel === 'video' ? video : null),
+    querySelector: (sel) => {
+      if (sel === 'video') return video;
+      if (pushEl && sel === opts.pushSelector) return pushEl;
+      return null;
+    },
     querySelectorAll: () => [],
     createElement: (t) => makeEl(t),
     createDocumentFragment: () => makeEl('fragment'),
@@ -145,6 +165,7 @@ function loadPanel(opts) {
     video,
     posted,
     windowObj,
+    pushEl,
     enable: () => fireToggle(true),
     disable: () => fireToggle(false),
     panel: () => findByIdDeep(body, 'hibiki-subtitle-panel'),
@@ -268,4 +289,78 @@ test('新 cue 到达（onCues）时勾选态面板自动出现（cue 晚于开�
   store['81001|ja'] = [{ startMs: 0, endMs: 1000, text: 'late cue' }];
   h.windowObj.hibikiSubtitlePanelOnCues('81001|ja');
   assert.ok(h.panel(), 'cue 到达后面板必须自动出现');
+});
+
+test('live cue 对象就地扩长时刷新现有行文本，不要求数组长度变化', () => {
+  const key = 'www.youtube.com/watch|live';
+  const cue = { startMs: 25000, endMs: 26500, text: '自価総額およそ' };
+  const h = loadPanel({
+    hostname: 'www.youtube.com',
+    pathname: '/watch',
+    store: { [key]: [cue] },
+    stored: { netflixSubtitlePanel: true },
+  });
+  let texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  assert.strictEqual(texts.length, 1);
+  assert.strictEqual(texts[0].textContent, '自価総額およそ');
+
+  cue.text = '自価総額およそ800兆円。';
+  cue.endMs = 27000;
+  h.windowObj.hibikiSubtitlePanelOnCues(key);
+
+  texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  assert.strictEqual(texts.length, 1, '就地更新不得重建出额外行');
+  assert.strictEqual(texts[0].textContent, '自価総額およそ800兆円。',
+    '数组长度不变时也必须把扩长后的文本刷新到现有行');
+});
+
+test('YouTube 整集字幕预取稍后到达时，从 live 兜底轨自动升级到真轨', () => {
+  const liveKey = 'www.youtube.com/watch|live';
+  const fullKey = 'www.youtube.com/watch|日本語';
+  const store = {
+    [liveKey]: [{ startMs: 0, endMs: 1000, text: '逐字采样' }],
+  };
+  const h = loadPanel({
+    hostname: 'www.youtube.com',
+    pathname: '/watch',
+    store,
+    stored: { netflixSubtitlePanel: true },
+  });
+  let texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  assert.strictEqual(texts.length, 1);
+  assert.strictEqual(texts[0].textContent, '逐字采样');
+
+  store[fullKey] = [{ startMs: 0, endMs: 3000, text: '整集字幕' }];
+  h.windowObj.hibikiSubtitlePanelOnCues(fullKey);
+
+  texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  assert.strictEqual(texts.length, 1, '整集轨到达后仍只渲染当前选中轨');
+  assert.strictEqual(texts[0].textContent, '整集字幕',
+    '真轨必须自动取代先到的 live 兜底轨');
+});
+
+test('YouTube 字幕面板占独立右栏：压缩 ytd-app，并在关闭后恢复原宽度', () => {
+  const app = makeEl('ytd-app');
+  app.style.setProperty('width', '1440px');
+  const key = 'www.youtube.com/watch|ja';
+  const h = loadPanel({
+    hostname: 'www.youtube.com',
+    pathname: '/watch',
+    store: { [key]: [{ startMs: 0, endMs: 1000, text: 'push aside' }] },
+    stored: { netflixSubtitlePanel: true },
+    pushEl: app,
+    pushSelector: 'ytd-app',
+  });
+
+  assert.strictEqual(
+    app.style.getPropertyValue('width'),
+    'calc(100% - 320px)',
+    '面板打开时必须给 YouTube 页面容器让出 320px，不能覆盖在画面上',
+  );
+  assert.strictEqual(app.style.getPropertyPriority('width'), 'important');
+
+  h.disable();
+  assert.strictEqual(app.style.getPropertyValue('width'), '1440px',
+    '面板关闭后必须恢复站点原来的内联宽度');
+  assert.strictEqual(app.style.getPropertyPriority('width'), '');
 });

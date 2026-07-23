@@ -609,6 +609,54 @@ void main() {
             'the foreground / steal focus.');
   });
 
+  // BUG-1025 回归守卫：用户在浏览器里复制同一个词两次，第二次必须也能查。旧实现用
+  // 永久内容去重（_lastText 相等即丢弃），把用户的显式重复复制误判成自触发回声。
+  // 现改为时间窗：窗口内的同词仍当回声吞掉（防挖词/抓选区写回自触发循环），超窗口放行。
+  group('剪贴板同词重复复制 (BUG-1025)', () {
+    late DateTime fakeNow;
+
+    setUp(() {
+      fakeNow = DateTime(2026, 7, 23, 12, 0, 0);
+      DesktopLookupService.instance.clock = () => fakeNow;
+    });
+
+    tearDown(() {
+      DesktopLookupService.instance.clock = DateTime.now;
+    });
+
+    test('窗口内重复同一文本仍被当作自触发回声吞掉', () {
+      final DesktopLookupService service = DesktopLookupService.instance;
+      service.submitText('見る');
+      expect(service.pendingText, '見る');
+      service.clearPending();
+
+      fakeNow = fakeNow.add(const Duration(milliseconds: 100));
+      service.submitText('見る');
+      expect(service.pendingText, isNull, reason: '窗口内的同词是挖词/抓选区写回的回声，必须继续吞掉');
+    });
+
+    test('超出窗口后重复复制同一个词必须重新排队查词', () {
+      final DesktopLookupService service = DesktopLookupService.instance;
+      service.submitText('見る');
+      expect(service.pendingText, '見る');
+      service.clearPending();
+
+      fakeNow = fakeNow.add(const Duration(seconds: 3));
+      service.submitText('見る');
+      expect(service.pendingText, '見る',
+          reason: '用户手动再次复制同一个词查不了，正是 BUG-1025 的用户症状');
+    });
+
+    test('不同的词不受时间窗影响，恒放行', () {
+      final DesktopLookupService service = DesktopLookupService.instance;
+      service.submitText('見る');
+      service.clearPending();
+      fakeNow = fakeNow.add(const Duration(milliseconds: 10));
+      service.submitText('読む');
+      expect(service.pendingText, '読む');
+    });
+  });
+
   test('emoji surrogate pairs are not split when capping (BUG-442)', () {
     // 每个 emoji 是一个 grapheme（两个 UTF-16 码元）。用 characters 截断不应
     // 在代理对中间切断产生孤立代理项。构造 cap+10 个 emoji，截断到 cap 个。

@@ -220,6 +220,19 @@ void main() {
                 '$root options.js must persist the netflixSubtitlePanel setting');
       });
 
+      test(
+          '[$name] options start directly with settings, without promotional hero copy',
+          () {
+        final String html = File('$root/options.html').readAsStringSync();
+        final String css = File('$root/options.css').readAsStringSync();
+        expect(html.contains('class="hero"'), isFalse,
+            reason: '$root options.html must not render the promotional hero');
+        expect(html.contains('让字幕留在观看现场'), isFalse,
+            reason: '$root options.html must remove the discarded hero copy');
+        expect(css.contains('.hero {'), isFalse,
+            reason: '$root options.css must not retain dead hero layout rules');
+      });
+
       test('[$name] options expose user-subtitle playback controls', () {
         final String html = File('$root/options.html').readAsStringSync();
         final String js = File('$root/options.js').readAsStringSync();

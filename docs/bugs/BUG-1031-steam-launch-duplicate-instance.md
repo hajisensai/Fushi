@@ -1,4 +1,4 @@
-## BUG-1022 · Steam 游戏启动并捕获触发重复实例且晚附着漏音频
+## BUG-1031 · Steam 游戏启动并捕获触发重复实例且晚附着漏音频
 - **报告**：2026-07-22（用户：Manosaba 由 Hibiki「启动并捕获」后弹出 `Fatal error: Another instance is already running`；指出改用外部窗口绑定经常漏 Hook 或音频，不能作为修复）
 - **真实性**：✅ 真 bug。Hibiki 的生产路径由 `games_library_page.dart` 调用 `GalHookSessionController.launchGame`，最终给隔离 helper 传 `--launch`；根因在 hibiki-hook `injector/injector_main.cpp:1514-1526` 的旧 Steam 分支：发现 AppID 后仍对游戏 exe 直接 `CreateProcessW`，只临时注入 `SteamAppId` / `SteamGameId` 环境变量。游戏执行 `SteamAPI_RestartAppIfNecessary` 后仍会要求 Steam 客户端重启 AppID，于是首进程与客户端拉起的真实进程争用单实例锁，helper 又留在首进程，形成截图中的重复实例、未绑定窗口和音频源失败。
 - **[x] ① 已修复** — hibiki-hook `7709bf3`：

@@ -11,6 +11,11 @@ enum TexthookerLineAudioStatus {
   encoded,
 }
 
+/// 实时台词列表的筛选维度。单一枚举驱动 [lineMatchesFilter] 一个 predicate，
+/// 消除「有音频 / 已制卡 / 已收藏」各写一条 if 分支的特殊情况。与线程下拉筛选正交：
+/// 先按线程取行，再按本枚举过滤。
+enum TexthookerLineFilter { all, withAudio, mined, favorited }
+
 /// 一条可由用户选择的文本 Hook 线程。
 ///
 /// [key] 在一次捕获会话内稳定；LunaHook 使用 ThreadParam + hookcode 的哈希，
@@ -53,6 +58,8 @@ class TexthookerLineEntry {
     this.audioResourceId,
     this.audioDurationMs,
     this.fallbackReason,
+    this.mined = false,
+    this.favorited = false,
   });
 
   final String id;
@@ -75,12 +82,34 @@ class TexthookerLineEntry {
   final int? audioDurationMs;
   final String? fallbackReason;
 
+  /// 本行是否已成功制卡（会话内存态，不落 DB）。制卡成功由
+  /// [GalHookMiningCoordinator] / fallback 制卡回写（见 [TexthookerService.markLineMined]）。
+  final bool mined;
+
+  /// 本行是否已被用户收藏（会话内存态，不落 DB；重启即失）。
+  final bool favorited;
+
+  /// 本行是否已有可用句音：matched（配到游戏资源）/ encoded（音频已提取进卡）/
+  /// fallback（回退环回声）三态即有音频；pending/missing/unavailable 视作无。
+  bool get hasAudio => switch (audioStatus) {
+        TexthookerLineAudioStatus.matched ||
+        TexthookerLineAudioStatus.encoded ||
+        TexthookerLineAudioStatus.fallback =>
+          true,
+        TexthookerLineAudioStatus.pending ||
+        TexthookerLineAudioStatus.missing ||
+        TexthookerLineAudioStatus.unavailable =>
+          false,
+      };
+
   TexthookerLineEntry copyWith({
     TexthookerLineAudioStatus? audioStatus,
     String? audioBackend,
     String? audioResourceId,
     int? audioDurationMs,
     String? fallbackReason,
+    bool? mined,
+    bool? favorited,
     bool clearAudioResourceId = false,
     bool clearFallbackReason = false,
   }) {
@@ -103,6 +132,8 @@ class TexthookerLineEntry {
       audioDurationMs: audioDurationMs ?? this.audioDurationMs,
       fallbackReason:
           clearFallbackReason ? null : fallbackReason ?? this.fallbackReason,
+      mined: mined ?? this.mined,
+      favorited: favorited ?? this.favorited,
     );
   }
 }
@@ -261,6 +292,35 @@ class TexthookerService extends ChangeNotifier {
     return true;
   }
 
+  /// 把 [id] 行标记为已制卡（幂等：已是 mined 直接返回 false 不重复通知）。
+  /// 制卡成功后由挖矿编排回写，供列表显示「已制卡」徽章。
+  bool markLineMined(String id) {
+    final int index = _entries.indexWhere((entry) => entry.id == id);
+    if (index < 0 || _entries[index].mined) return false;
+    _entries[index] = _entries[index].copyWith(mined: true);
+    notifyListeners();
+    return true;
+  }
+
+  /// 设置 [id] 行的收藏态（会话内存态，不落 DB）。状态无变化时不通知。
+  bool setLineFavorite(String id, bool favorited) {
+    final int index = _entries.indexWhere((entry) => entry.id == id);
+    if (index < 0 || _entries[index].favorited == favorited) return false;
+    _entries[index] = _entries[index].copyWith(favorited: favorited);
+    notifyListeners();
+    return true;
+  }
+
+  /// 翻转 [id] 行的收藏态，返回翻转后的新状态（行不存在返回 false）。
+  bool toggleLineFavorite(String id) {
+    final int index = _entries.indexWhere((entry) => entry.id == id);
+    if (index < 0) return false;
+    final bool next = !_entries[index].favorited;
+    _entries[index] = _entries[index].copyWith(favorited: next);
+    notifyListeners();
+    return next;
+  }
+
   void clear() {
     if (_entries.isEmpty && _discoveredTextThreads.isEmpty) return;
     _entries.clear();
@@ -268,3 +328,14 @@ class TexthookerService extends ChangeNotifier {
     notifyListeners();
   }
 }
+
+/// 实时台词筛选的唯一 predicate：枚举驱动、无特殊分支。页面/服务共用，
+/// 保证「有音频 / 已制卡 / 已收藏」的判据单一真相源。
+bool lineMatchesFilter(
+        TexthookerLineEntry entry, TexthookerLineFilter filter) =>
+    switch (filter) {
+      TexthookerLineFilter.all => true,
+      TexthookerLineFilter.withAudio => entry.hasAudio,
+      TexthookerLineFilter.mined => entry.mined,
+      TexthookerLineFilter.favorited => entry.favorited,
+    };
