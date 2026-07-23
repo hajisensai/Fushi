@@ -180,9 +180,11 @@ int? parseInjectorHookedPid(String stdout) {
   return (pid != null && pid > 0) ? pid : null;
 }
 
-/// galgame 纯人声配对（真机验证，docs/specs/galgame-mining）：注入 hook DLL 把每句原始语音
-/// OGG dump 到 `%TEMP%\hibiki_gal_voice\<tickMs>_<basename>.ogg`（tickMs=GetTickCount64，与
-/// 文本环 `TextSlot.timestamp_ms` 同源）。新版 Siglus 资源导出会直接沿用当前文本 tick，
+/// galgame 纯人声配对（真机验证，docs/specs/galgame-mining）：具有运行时契约的引擎把
+/// `TextSlot.seq` 写进资源名并优先按该稳定 ID 配对；显式 ID 不匹配时禁止回退时间猜测。
+/// 旧资源仍是 `%TEMP%\hibiki_gal_voice\<tickMs>_<basename>.ogg`
+///（tickMs=GetTickCount64，与文本环 `TextSlot.timestamp_ms` 同源）。新版 Siglus
+/// 资源导出会直接沿用当前文本 tick，
 /// 因此先取 [exactToleranceMs] 内的同 tick 文件；旧引擎仍可能让语音先开流、文本约 220ms
 /// 后显示，精确 tick 不存在时再在 `[textTsMs-windowHighMs, textTsMs-windowLowMs]` 内取离
 /// `textTsMs-expectedOffsetMs` 最近者。BGM/SE/系统音始终排除。
@@ -191,14 +193,18 @@ int? parseInjectorHookedPid(String stdout) {
 String? pickPairedVoiceOgg({
   required List<String> oggFileNames,
   required int textTsMs,
+  int? textEventId,
   int windowLowMs = 130,
   int windowHighMs = 330,
   int expectedOffsetMs = 220,
   int exactToleranceMs = 0,
+  int eventIdToleranceMs = 1000,
 }) {
   final int lo = textTsMs - windowHighMs;
   final int hi = textTsMs - windowLowMs;
   final int target = textTsMs - expectedOffsetMs;
+  String? eventBest;
+  int eventBestDist = 1 << 62;
   String? exactBest;
   int exactBestDist = 1 << 62;
   String? offsetBest;
@@ -212,6 +218,18 @@ String? pickPairedVoiceOgg({
       continue;
     }
     final int tick = parsed.tick;
+    if (parsed.textEventId != null) {
+      final int eventDist = (tick - textTsMs).abs();
+      if (textEventId != null &&
+          parsed.textEventId == textEventId &&
+          eventDist <= eventIdToleranceMs &&
+          eventDist < eventBestDist) {
+        eventBestDist = eventDist;
+        eventBest = name;
+      }
+      // 显式携带事件 ID 的资源不能再降级成“附近最新文件”猜给另一条文本。
+      continue;
+    }
     final int exactDist = (tick - textTsMs).abs();
     if (exactDist <= exactToleranceMs && exactDist < exactBestDist) {
       exactBestDist = exactDist;
@@ -227,7 +245,7 @@ String? pickPairedVoiceOgg({
       offsetBest = name;
     }
   }
-  return exactBest ?? offsetBest;
+  return eventBest ?? exactBest ?? offsetBest;
 }
 
 /// Unity 资源提取器在 AudioSource 播放入口以同一个 GetTickCount64 时钟写 WAV。相较 Siglus
@@ -266,6 +284,7 @@ String? pickPairedGameResource({
   required List<String> oggFileNames,
   required List<String> wavFileNames,
   required int textTsMs,
+  int? textEventId,
   String? latestSessionVoiceName,
 }) {
   if (textTsMs <= 0) return latestSessionVoiceName;
@@ -276,18 +295,26 @@ String? pickPairedGameResource({
       pickPairedVoiceOgg(
         oggFileNames: oggFileNames,
         textTsMs: textTsMs,
+        textEventId: textEventId,
       );
 }
 
-/// [pickPairedVoiceOgg] 解析出的一条 dump 文件名：`<tick>_<basename>` 的 tick（GetTickCount64）
-/// 与 basename（`<tick>_` 之后的部分，含扩展名）。
+/// 旧资源名为 `<tick>_<basename>`；具有运行时顺序证据的引擎可写
+/// `<tick>_hibiki_textseq<textSeq>_<basename>`，把资源绑定到稳定的
+/// TextSlot::seq。
 class _ParsedVoiceOgg {
-  const _ParsedVoiceOgg({required this.tick, required this.basename});
+  const _ParsedVoiceOgg({
+    required this.tick,
+    required this.basename,
+    this.textEventId,
+  });
   final int tick;
   final String basename;
+  final int? textEventId;
 }
 
-/// 解析 `<tick>_<basename>` 文件名。tick 必须是纯数字前缀、`_` 分隔；解析失败返回 null。
+/// 解析 `<tick>_[hibiki_textseq<textSeq>_]<basename>`。显式标记损坏时整条
+/// 拒绝，不得把它当普通 basename 再走时间窗。
 _ParsedVoiceOgg? _parseVoiceOggName(String fileName) {
   final int underscore = fileName.indexOf('_');
   if (underscore <= 0) {
@@ -297,11 +324,28 @@ _ParsedVoiceOgg? _parseVoiceOggName(String fileName) {
   if (tick == null) {
     return null;
   }
-  final String basename = fileName.substring(underscore + 1);
+  String basename = fileName.substring(underscore + 1);
   if (basename.isEmpty) {
     return null;
   }
-  return _ParsedVoiceOgg(tick: tick, basename: basename);
+  int? textEventId;
+  if (basename.startsWith('hibiki_textseq')) {
+    final RegExpMatch? match =
+        RegExp(r'^hibiki_textseq(\d+)_(.+)$').firstMatch(basename);
+    if (match == null) {
+      return null;
+    }
+    textEventId = int.tryParse(match.group(1)!);
+    if (textEventId == null || textEventId <= 0) {
+      return null;
+    }
+    basename = match.group(2)!;
+  }
+  return _ParsedVoiceOgg(
+    tick: tick,
+    basename: basename,
+    textEventId: textEventId,
+  );
 }
 
 /// BGM / 音效 / 系统音的 basename 前缀（不区分大小写）——这些不是角色语音，配对时排除。
@@ -353,19 +397,33 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
 List<String> buildEngineHookInjectorArguments({
   required int targetPid,
   required String? launchExe,
+  bool japaneseLocale = false,
   bool lunaPcHooks = false,
   int? lunaCodepage,
+  String? lunaHookProfilePath,
+  List<String> lunaHookCodes = const <String>[],
 }) {
   final String? exe = launchExe;
   final bool launchMode = exe != null && exe.isNotEmpty;
   final List<String> args = launchMode
       ? <String>['--launch', exe, '--hold']
       : <String>['--pid', '$targetPid', '--hold'];
+  if (launchMode && japaneseLocale) {
+    args.add('--japanese-locale');
+  }
   if (lunaPcHooks) {
     args.add('--luna-pchooks');
   }
   if (lunaCodepage != null && lunaCodepage > 0) {
     args.addAll(<String>['--luna-codepage', '$lunaCodepage']);
+  }
+  if (lunaHookProfilePath != null && lunaHookProfilePath.isNotEmpty) {
+    args.addAll(<String>['--luna-hook-profile', lunaHookProfilePath]);
+  }
+  for (final String hookCode in lunaHookCodes) {
+    if (hookCode.trim().isNotEmpty) {
+      args.addAll(<String>['--luna-hook-code', hookCode]);
+    }
   }
   return args;
 }
@@ -416,8 +474,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
     this.targetPid = 0,
     this.launchExe,
     required this.injectorPath,
+    this.automaticJapaneseLocale = true,
     this.lunaPcHooks = false,
     this.lunaCodepage,
+    this.lunaHookProfilePath,
+    this.lunaHookCodes = const <String>[],
     MethodChannel? channel,
     GalHookProcessStarter? processStarter,
     GalHookProcessOutputSink? processOutputSink,
@@ -442,12 +503,25 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// （降级回 loopback，绝不假装注入成功）。**位数必须匹配目标游戏**（KiriKiriZ 多 32 位 -> x86）。
   final String? injectorPath;
 
+  /// 32 位 launch 目标默认以 helper 随包提供的 Locale Emulator 建立日语 CP932
+  /// 环境。它只影响 injector 创建的游戏进程，不修改 Windows 全局区域设置；64 位与
+  /// attach 模式不启用。运行库缺失时 native helper 会记录诊断并安全回退普通启动。
+  final bool automaticJapaneseLocale;
+
   /// 是否让 LunaHook 连接后额外插入通用 PC hooks。Unity/Mono/IL2CPP 这类自绘文本路径需要它，
   /// 经典 GDI/KiriKiri/Siglus 默认关闭以减少重复线程。
   final bool lunaPcHooks;
 
   /// LunaHook 默认文本代码页。null 时沿用 injector 默认值（日文 Shift-JIS/932）。
   final int? lunaCodepage;
+
+  /// UTF-8 TSV profile file. The injector matches entries by executable/module
+  /// SHA-256, so moving a game directory does not change the selected code.
+  String? lunaHookProfilePath;
+
+  /// Explicit one-shot codes, mainly for diagnostics. Persisted user codes use
+  /// [lunaHookProfilePath] so they retain their SHA-256 identity guard.
+  final List<String> lunaHookCodes;
 
   final MethodChannel _channel;
   final GalHookProcessStarter _processStarter;
@@ -569,6 +643,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
       return null; // 既无 launchExe 又无有效 targetPid -> 无目标
     }
     _sessionStartedAt = DateTime.now();
+    final bool japaneseLocale =
+        launchMode && automaticJapaneseLocale && await exeIs32Bit(exe) == true;
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。
@@ -578,8 +654,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
         buildEngineHookInjectorArguments(
           targetPid: targetPid,
           launchExe: exe,
+          japaneseLocale: japaneseLocale,
           lunaPcHooks: lunaPcHooks,
           lunaCodepage: lunaCodepage,
+          lunaHookProfilePath: lunaHookProfilePath,
+          lunaHookCodes: lunaHookCodes,
         ),
       );
     } on ProcessException {
@@ -891,8 +970,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// `providedAudioBytes`。这是引擎级最干净的语音（混音前、无 BGM/SE），优先于共享内存里的
   /// [grabUtterance]/[grabClipNear]。非 Windows / 目录不存在 / 无匹配 / 转码失败返回 null
   /// （调用方回退 grabUtterance→grabClipNear→grabRecent 采集链，Never break）。
-  File? _findPairedVoiceFile(int textTsMs,
-      {bool allowLatestSessionFallback = true}) {
+  File? _findPairedVoiceFile(
+    int textTsMs, {
+    int? textEventId,
+    bool allowLatestSessionFallback = true,
+  }) {
     if (!Platform.isWindows) return null;
     final Directory dir = _galVoiceDumpDir();
     if (!dir.existsSync()) return null;
@@ -921,6 +1003,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       oggFileNames: oggNames,
       wavFileNames: wavNames,
       textTsMs: textTsMs,
+      textEventId: textEventId,
     );
     // Siglus 的 Enigma-safe 晚附着可能没有文本 hook 时间戳。只有这种无时间戳路径才在本会话
     // 新文件里选修改时间最新的一条；有时间戳但窗口未命中必须返回 null，让上层明确降级，
@@ -976,17 +1059,26 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 只检查资源文件是否已落盘，不提前做转码。捕获工作台的文本轮询用它把逐行状态从
   /// “等待音频”推进到 `game_resource`；真正制卡时仍由 [grabPairedVoiceBytes] 读取并转码。
   bool hasPairedVoiceCandidate(int textTsMs,
-          {bool allowLatestSessionFallback = true}) =>
-      _findPairedVoiceFile(textTsMs,
-          allowLatestSessionFallback: allowLatestSessionFallback) !=
+          {int? textEventId, bool allowLatestSessionFallback = true}) =>
+      _findPairedVoiceFile(
+        textTsMs,
+        textEventId: textEventId,
+        allowLatestSessionFallback: allowLatestSessionFallback,
+      ) !=
       null;
 
   /// 返回与文本时间戳精确配对的资源 ID（dump 目录内的 basename）。控制器在台词刚到达时
   /// 把它固化到该行；之后即使用户从历史列表制卡，也不再按“当前最新资源”重新猜测。
-  String? findPairedVoiceResourceId(int textTsMs,
-      {bool allowLatestSessionFallback = true}) {
-    final File? file = _findPairedVoiceFile(textTsMs,
-        allowLatestSessionFallback: allowLatestSessionFallback);
+  String? findPairedVoiceResourceId(
+    int textTsMs, {
+    int? textEventId,
+    bool allowLatestSessionFallback = true,
+  }) {
+    final File? file = _findPairedVoiceFile(
+      textTsMs,
+      textEventId: textEventId,
+      allowLatestSessionFallback: allowLatestSessionFallback,
+    );
     return file == null ? null : _fileBaseName(file.path);
   }
 
@@ -1007,12 +1099,16 @@ class EngineHookGalAudioSource implements GalAudioSource {
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,
+    int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
   }) async {
     final File? picked = resourceId == null
-        ? _findPairedVoiceFile(textTsMs,
-            allowLatestSessionFallback: allowLatestSessionFallback)
+        ? _findPairedVoiceFile(
+            textTsMs,
+            textEventId: textEventId,
+            allowLatestSessionFallback: allowLatestSessionFallback,
+          )
         : _voiceFileForResourceId(resourceId);
     if (picked == null) return null;
     return transcodeVoiceOggToMiningAudio(

@@ -15,6 +15,7 @@ import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_helper_installer.dart';
+import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/game_shared.dart';
@@ -381,6 +382,74 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
     } finally {
       _launchingGalHook = false;
+    }
+  }
+
+  Future<void> _importLunaHookProfiles() async {
+    try {
+      final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: <String>['tsv'],
+      );
+      final String? path = picked == null || picked.files.isEmpty
+          ? null
+          : picked.files.first.path;
+      if (path == null) return;
+      final LunaHookCodeProfileStore store =
+          await LunaHookCodeProfileStore.openDefault();
+      await store.replaceFrom(File(path));
+      HibikiToast.show(msg: 'Hook Code · ${t.dialog_import}');
+    } on FormatException {
+      HibikiToast.show(msg: t.audiobook_import_error);
+    } catch (_) {
+      HibikiToast.show(msg: t.audiobook_import_error);
+    }
+  }
+
+  Future<void> _exportLunaHookProfiles() async {
+    try {
+      final String? path = await FilePicker.platform.saveFile(
+        fileName: 'hibiki_luna_hook_profiles.tsv',
+        type: FileType.custom,
+        allowedExtensions: <String>['tsv'],
+      );
+      if (path == null) return;
+      final LunaHookCodeProfileStore store =
+          await LunaHookCodeProfileStore.openDefault();
+      await store.exportTo(File(path));
+      HibikiToast.show(msg: 'Hook Code · ${t.dialog_export}');
+    } catch (_) {
+      HibikiToast.show(msg: t.audiobook_import_error);
+    }
+  }
+
+  Future<void> _saveSelectedLunaHookCode() async {
+    final String? executable = _session.currentLaunchExecutable;
+    final TexthookerTextThread? thread = _session.selectedTextThread;
+    final String? hookCode = thread?.hookCode;
+    if (executable == null || hookCode == null || hookCode.trim().isEmpty) {
+      HibikiToast.show(msg: t.game_text_thread_hint);
+      return;
+    }
+    try {
+      final File executableFile = File(executable);
+      final String hash = await sha256File(executableFile);
+      final String label = executable.split(RegExp(r'[/\\]')).last;
+      final LunaHookCodeProfileStore store =
+          await LunaHookCodeProfileStore.openDefault();
+      await store.upsert(
+        LunaHookCodeProfile(
+          executableSha256: hash,
+          moduleName: '',
+          moduleSha256: '',
+          codepage: 932,
+          hookCode: hookCode,
+          label: label,
+        ),
+      );
+      HibikiToast.show(msg: 'Hook Code · ${t.dialog_save}');
+    } catch (_) {
+      HibikiToast.show(msg: t.audiobook_import_error);
     }
   }
 
@@ -879,6 +948,21 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                       });
                     }
                   },
+                ),
+                IconButton(
+                  tooltip: 'Hook Code · ${t.dialog_save}',
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 20),
+                  onPressed: _saveSelectedLunaHookCode,
+                ),
+                IconButton(
+                  tooltip: 'Hook Code · ${t.dialog_import}',
+                  icon: const Icon(Icons.file_download_outlined, size: 20),
+                  onPressed: _importLunaHookProfiles,
+                ),
+                IconButton(
+                  tooltip: 'Hook Code · ${t.dialog_export}',
+                  icon: const Icon(Icons.file_upload_outlined, size: 20),
+                  onPressed: _exportLunaHookProfiles,
                 ),
               ],
             ),

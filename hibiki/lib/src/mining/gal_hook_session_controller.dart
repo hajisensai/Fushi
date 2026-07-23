@@ -6,6 +6,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/mining/gal_hook_activity_accumulator.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
 import 'package:hibiki/src/mining/serial_job_queue.dart';
 import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
@@ -300,6 +301,15 @@ class GalHookSessionController extends ChangeNotifier {
   }
 
   int? get selectedNativeTextThreadId => _selectedNativeTextThreadId;
+  String? get currentLaunchExecutable => _state.launchExe;
+  TexthookerTextThread? get selectedTextThread {
+    final String? key = selectedTextThreadKey;
+    if (key == null) return null;
+    for (final TexthookerTextThread thread in textThreads) {
+      if (thread.key == key) return thread;
+    }
+    return null;
+  }
 
   /// 当前捕获会话、当前线程的有效行。历史缓冲仍保留在 [lines]，但浮窗和场景
   /// 制卡只允许消费这里的行，防止跨会话或跨线程借用上下文。
@@ -347,7 +357,10 @@ class GalHookSessionController extends ChangeNotifier {
 
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
   final Map<String, int> _lineTimestampCache = <String, int>{};
-  final Map<String, int> _pendingResourceTimestamps = <String, int>{};
+  final Map<String, int> _lineTextEventIdCache = <String, int>{};
+  final Map<String, ({int timestampMs, int textEventId})>
+      _pendingResourceMatches =
+      <String, ({int timestampMs, int textEventId})>{};
 
   // ── 游戏活动记账（首页「游戏」活动 = activity_events 的唯一写入方）─────────
   /// 纯累计器：把 hook 文本行累计成活跃时长 + 字符数（挂机间隔封顶，见其实现）。
@@ -395,6 +408,19 @@ class GalHookSessionController extends ChangeNotifier {
       return File(path).existsSync() ? path : null;
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> _attachPersistedHookProfiles(
+    EngineHookGalAudioSource engine,
+  ) async {
+    try {
+      final LunaHookCodeProfileStore store =
+          await LunaHookCodeProfileStore.openDefault();
+      engine.lunaHookProfilePath = store.file.path;
+    } catch (_) {
+      // Profile persistence must never prevent capture; injector built-ins and
+      // automatic Luna engine detection remain available.
     }
   }
 
@@ -483,6 +509,7 @@ class GalHookSessionController extends ChangeNotifier {
         injectorPath: injector,
         lunaPcHooks: false,
       );
+      await _attachPersistedHookProfiles(engine);
       final PcmFormat? format = await engine.start();
       if (generation != _operationGeneration) {
         await engine.stop();
@@ -584,6 +611,7 @@ class GalHookSessionController extends ChangeNotifier {
       injectorPath: injector,
       lunaPcHooks: lunaPcHooks,
     );
+    await _attachPersistedHookProfiles(engine);
     _setState(_state.copyWith(phase: GalHookSessionPhase.injecting));
     final PcmFormat? format = await engine.start();
     if (generation != _operationGeneration) {
@@ -1088,6 +1116,7 @@ class GalHookSessionController extends ChangeNotifier {
       // 这里只按精确 resourceId / 正时间戳窗口取，取不到就交给下游 PCM/loopback 或明确 missing。
       resourceId ??= engine.findPairedVoiceResourceId(
         timestamp,
+        textEventId: _lineTextEventIdCache[lineId],
         allowLatestSessionFallback: false,
       );
       if (resourceId != null && _resourceIdForLine(lineId) == null) {
@@ -1101,6 +1130,7 @@ class GalHookSessionController extends ChangeNotifier {
       final Uint8List? bytes = await engine.grabPairedVoiceBytes(
         timestamp,
         outputExtension: outputExtension,
+        textEventId: _lineTextEventIdCache[lineId],
         resourceId: resourceId,
         allowLatestSessionFallback: false,
       );
@@ -1413,8 +1443,9 @@ class GalHookSessionController extends ChangeNotifier {
     _pollInFlight = false;
     _lineVoiceCache.clear();
     _lineTimestampCache.clear();
+    _lineTextEventIdCache.clear();
     _loopbackCacheInFlight.clear();
-    _pendingResourceTimestamps.clear();
+    _pendingResourceMatches.clear();
     unawaited(engine.pruneVoiceDump());
     _textPollTimer?.cancel();
     _textPollTimer = Timer.periodic(
@@ -1487,8 +1518,9 @@ class GalHookSessionController extends ChangeNotifier {
     _lastTextSeq = 0;
     _lineVoiceCache.clear();
     _lineTimestampCache.clear();
+    _lineTextEventIdCache.clear();
     _loopbackCacheInFlight.clear();
-    _pendingResourceTimestamps.clear();
+    _pendingResourceMatches.clear();
     final GalAudioSource? source = _audioSource;
     _audioSource = null;
     if (engine != null && !identical(engine, source)) {
@@ -1577,9 +1609,14 @@ class GalHookSessionController extends ChangeNotifier {
         _recordActivityLine(entry.text);
         _lineTimestampCache[entry.id] = line.timestampMs;
         _trimCache(_lineTimestampCache);
+        _lineTextEventIdCache[entry.id] = line.seq;
+        _trimCache(_lineTextEventIdCache);
         GalAudioSlice? clip;
         final String? resourceId = engine.rawVoiceReady
-            ? engine.findPairedVoiceResourceId(line.timestampMs)
+            ? engine.findPairedVoiceResourceId(
+                line.timestampMs,
+                textEventId: line.seq,
+              )
             : null;
         final bool resourceMatched = resourceId != null;
         if (resourceMatched) {
@@ -1597,8 +1634,11 @@ class GalHookSessionController extends ChangeNotifier {
             details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
           );
         } else if (engine.rawVoiceReady) {
-          _pendingResourceTimestamps[entry.id] = line.timestampMs;
-          _trimCache(_pendingResourceTimestamps);
+          _pendingResourceMatches[entry.id] = (
+            timestampMs: line.timestampMs,
+            textEventId: line.seq,
+          );
+          _trimCache(_pendingResourceMatches);
           _textService.updateLineAudio(
             entry.id,
             status: TexthookerLineAudioStatus.pending,
@@ -1671,8 +1711,15 @@ class GalHookSessionController extends ChangeNotifier {
 
   void _promoteLateResourceAudio(EngineHookGalAudioSource engine) {
     if (_state.audioBackend == GalHookAudioBackend.gameResource) return;
-    _pendingResourceTimestamps.addAll(_lineTimestampCache);
-    _trimCache(_pendingResourceTimestamps);
+    for (final MapEntry<String, int> line in _lineTimestampCache.entries) {
+      final int? textEventId = _lineTextEventIdCache[line.key];
+      if (textEventId == null) continue;
+      _pendingResourceMatches[line.key] = (
+        timestampMs: line.value,
+        textEventId: textEventId,
+      );
+    }
+    _trimCache(_pendingResourceMatches);
     _setState(
       _state.copyWith(
         phase: _state.textSignalReceived
@@ -1698,12 +1745,14 @@ class GalHookSessionController extends ChangeNotifier {
   }
 
   void _refreshPendingResourceMatches(EngineHookGalAudioSource engine) {
-    if (!engine.rawVoiceReady || _pendingResourceTimestamps.isEmpty) return;
+    if (!engine.rawVoiceReady || _pendingResourceMatches.isEmpty) return;
     final List<String> matched = <String>[];
-    for (final MapEntry<String, int> pending
-        in _pendingResourceTimestamps.entries) {
-      final String? resourceId =
-          engine.findPairedVoiceResourceId(pending.value);
+    for (final MapEntry<String, ({int timestampMs, int textEventId})> pending
+        in _pendingResourceMatches.entries) {
+      final String? resourceId = engine.findPairedVoiceResourceId(
+        pending.value.timestampMs,
+        textEventId: pending.value.textEventId,
+      );
       if (resourceId == null) continue;
       _textService.updateLineAudio(
         pending.key,
@@ -1714,7 +1763,7 @@ class GalHookSessionController extends ChangeNotifier {
       matched.add(pending.key);
     }
     for (final String lineId in matched) {
-      _pendingResourceTimestamps.remove(lineId);
+      _pendingResourceMatches.remove(lineId);
     }
   }
 

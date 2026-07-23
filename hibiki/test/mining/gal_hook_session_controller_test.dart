@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -545,10 +546,78 @@ void main() {
       <String?>['fake-609653421.ogg'],
       reason: '历史句必须按行内固化的资源 ID 直接导出，不能重新猜最新语音',
     );
+    expect(engine.findEventIds, <int?>[1]);
+    expect(engine.pairedEventIds, <int?>[1]);
 
     await controller.close();
     expect(engine.stopCalls, 1);
     expect(loopback.stopCalls, 1);
+    endpoints.dispose();
+  });
+
+  test(
+      'RealLive replay fixture selects resource audio through production pairing',
+      () async {
+    final Map<String, dynamic> fixture = jsonDecode(
+      await File(
+        'test/fixtures/galhook/reallive_replay.json',
+      ).readAsString(),
+    ) as Map<String, dynamic>;
+    final Map<String, dynamic> expected =
+        fixture['expected'] as Map<String, dynamic>;
+    final Map<String, dynamic> card =
+        (expected['cards'] as List<dynamic>).single as Map<String, dynamic>;
+
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[11, 12, 13]),
+      rawReady: true,
+      pairedCandidate: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 2000,
+          text: 'synthetic reallive line',
+          threadId: 19,
+          hookName: 'RealLive fixture',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 21, pid: 2200, title: 'RealLive fixture'),
+    );
+    for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(card['audio_backend'], 'resource_audio');
+    expect(service.entries.single.audioBackend, 'game_resource');
+    expect(
+        service.entries.single.audioStatus, TexthookerLineAudioStatus.matched);
+    expect(loopback.startCalls, 1,
+        reason: 'loopback stays available as fallback');
+
+    await controller.close();
     endpoints.dispose();
   });
 
@@ -871,6 +940,8 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   final List<GalHookedLine> polledLines;
   final GalAudioSlice? utteranceSlice;
   final List<int> pairedTimestamps = <int>[];
+  final List<int?> pairedEventIds = <int?>[];
+  final List<int?> findEventIds = <int?>[];
   final List<int> utteranceTimestamps = <int>[];
   final List<String?> pairedResourceIds = <String?>[];
   final List<bool> grabFallbackFlags = <bool>[];
@@ -904,10 +975,12 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,
+    int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
   }) async {
     pairedTimestamps.add(textTsMs);
+    pairedEventIds.add(textEventId);
     pairedResourceIds.add(resourceId);
     grabFallbackFlags.add(allowLatestSessionFallback);
     if (pairedTimestamps.length < pairedReadyAfterCalls) return null;
@@ -916,13 +989,15 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
 
   @override
   bool hasPairedVoiceCandidate(int textTsMs,
-          {bool allowLatestSessionFallback = true}) =>
+          {int? textEventId, bool allowLatestSessionFallback = true}) =>
       pairedCandidate;
 
   @override
   String? findPairedVoiceResourceId(int textTsMs,
-          {bool allowLatestSessionFallback = true}) =>
-      pairedCandidate ? 'fake-$textTsMs.ogg' : null;
+      {int? textEventId, bool allowLatestSessionFallback = true}) {
+    findEventIds.add(textEventId);
+    return pairedCandidate ? 'fake-$textTsMs.ogg' : null;
+  }
 
   @override
   Future<GalAudioSlice?> grabUtterance(

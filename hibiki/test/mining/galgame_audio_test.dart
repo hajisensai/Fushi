@@ -422,6 +422,8 @@ void main() {
       final File injector =
           File('${temp.path}${Platform.pathSeparator}fake.exe');
       await injector.writeAsBytes(const <int>[0]);
+      final File game = File('${temp.path}${Platform.pathSeparator}game.exe');
+      await game.writeAsBytes(_craftPe(0x014c));
       final _FakeProcess process = _FakeProcess();
       final StringBuffer stdoutSeen = StringBuffer();
       var stderrCharacters = 0;
@@ -449,12 +451,19 @@ void main() {
       });
 
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
-        launchExe: 'game.exe',
+        launchExe: game.path,
         injectorPath: injector.path,
         processStarter: (String executable, List<String> arguments) async {
           expect(executable, injector.path);
           expect(
-              arguments, containsAllInOrder(<String>['--launch', 'game.exe']));
+            arguments,
+            <String>[
+              '--launch',
+              game.path,
+              '--hold',
+              '--japanese-locale',
+            ],
+          );
           scheduleMicrotask(() {
             process.stdoutController.add(
               'OK hooked pid=4321 mode=launch\n'.codeUnits,
@@ -731,6 +740,30 @@ void main() {
   });
 
   group('buildEngineHookInjectorArguments', () {
+    test('x86 launch 可请求日语 CP932，attach 不会误带', () {
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 0,
+          launchExe: r'D:\Games\old-vn.exe',
+          japaneseLocale: true,
+        ),
+        <String>[
+          '--launch',
+          r'D:\Games\old-vn.exe',
+          '--hold',
+          '--japanese-locale',
+        ],
+      );
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 4567,
+          launchExe: null,
+          japaneseLocale: true,
+        ),
+        <String>['--pid', '4567', '--hold'],
+      );
+    });
+
     test('launch 模式可追加 Luna PC hooks 参数', () {
       expect(
         buildEngineHookInjectorArguments(
