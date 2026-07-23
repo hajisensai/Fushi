@@ -146,14 +146,34 @@ class GalgameHelperInstaller {
       return true; // 幂等：已装好（可能刚被刷新）
     }
 
-    // 探测大小（best-effort，供确认对话框展示；失败则显示「大小未知」）。
-    final int? sizeBytes = await _probeSize(arch);
-    if (!context.mounted) return false;
-    final String sizeText = (sizeBytes != null && sizeBytes > 0)
-        ? formatDownloadSize(sizeBytes)
-        : t.galgame_helper_size_unknown;
+    // 确认对话框**立即**弹出，绝不为 best-effort 的大小探测阻塞 UI（旧实现先 await
+    // _probeSize——一个 10s 连接超时、逐镜像回退的 HTTP HEAD——再弹框，弱网/GFW 下点击后
+    // 要等好几秒对话框才出现，是「点了没反应」的根因）。大小仅作展示，先填「大小未知」，探测
+    // 在后台并发进行，返回后就地更新对话框里的「约 N MB」。
+    final ValueNotifier<String> sizeText =
+        ValueNotifier<String>(t.galgame_helper_size_unknown);
+    // sizeText.dispose() 后不得再写其 value（debug 下会 assert）。用本地守卫记录对话框是否已关闭；
+    // Dart 单线程事件循环下 then 回调与 dispose 后的代码不会真并发，简单 bool 守卫即安全。
+    bool dialogClosed = false;
+    int? probedSize;
+    final Future<int?> sizeProbe = _probeSize(arch);
+    unawaited(sizeProbe.then((int? bytes) {
+      probedSize = bytes;
+      if (!dialogClosed && bytes != null && bytes > 0) {
+        sizeText.value = formatDownloadSize(bytes);
+      }
+    }).catchError((Object _) {
+      // 探测失败：保持「大小未知」，不打扰用户。
+    }));
+
     final bool confirmed = await _confirmDownload(context, sizeText: sizeText);
+    dialogClosed = true;
+    sizeText.dispose();
     if (!confirmed || !context.mounted) return false;
+
+    // 复用后台探测结果作 expectedSize（用户看完对话框再确认，多半已就绪；未就绪则为 null，
+    // 下载阶段仍靠 Content-Length / sha256 兜底校验）。
+    final int? sizeBytes = probedSize;
 
     // 下载 + 校验 + 解压（带进度对话框）。
     final bool ok = await _downloadAndExtract(
@@ -212,10 +232,11 @@ class GalgameHelperInstaller {
     }
   }
 
-  /// 弹确认对话框（复用 app 统一对话框外框），返回用户是否确认下载。
+  /// 弹确认对话框（复用 app 统一对话框外框），返回用户是否确认下载。[sizeText] 是可监听的
+  /// 大小文案：对话框先以「大小未知」立即出现，后台探测返回后就地刷新为「约 N MB」。
   Future<bool> _confirmDownload(
     BuildContext context, {
-    required String sizeText,
+    required ValueListenable<String> sizeText,
   }) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
@@ -244,9 +265,12 @@ class GalgameHelperInstaller {
               tokens.spacing.card,
               tokens.spacing.card,
             ),
-            body: Text(
-              t.galgame_helper_needed_body(size: sizeText),
-              style: tokens.type.listSubtitle,
+            body: ValueListenableBuilder<String>(
+              valueListenable: sizeText,
+              builder: (BuildContext _, String size, Widget? __) => Text(
+                t.galgame_helper_needed_body(size: size),
+                style: tokens.type.listSubtitle,
+              ),
             ),
             footer: Wrap(
               alignment: WrapAlignment.end,
