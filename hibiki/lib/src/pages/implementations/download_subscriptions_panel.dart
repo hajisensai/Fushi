@@ -168,38 +168,34 @@ class _DownloadSubscriptionsPanelState
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
-          child: Card(
-            elevation: 0,
-            color: theme.colorScheme.surfaceContainerHighest,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    Icons.schedule_outlined,
-                    color: theme.colorScheme.primary,
+          child: HibikiCard(
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.schedule_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    t.download_subscription_running_hint,
+                    style: theme.textTheme.bodySmall,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      t.download_subscription_running_hint,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonalIcon(
-                    onPressed: checking ? null : _checkAll,
-                    icon: checking
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh, size: 18),
-                    label: Text(t.download_subscription_check_all),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: checking ? null : _checkAll,
+                  icon: checking
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh, size: 18),
+                  label: Text(t.download_subscription_check_all),
+                ),
+              ],
             ),
           ),
         ),
@@ -257,12 +253,10 @@ class _DownloadSubscriptionsPanelState
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
-        child: Card(
-          elevation: 0,
-          child: ListTile(
-            enabled: subscription.enabled,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: HibikiCard(
+          padding: EdgeInsets.zero,
+          child: HibikiListItem(
+            subtitleMaxLines: 4,
             leading: Icon(
               subscription.enabled
                   ? Icons.notifications_active_outlined

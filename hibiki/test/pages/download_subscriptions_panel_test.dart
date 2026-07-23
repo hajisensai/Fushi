@@ -11,6 +11,7 @@ import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/download_subscriptions_panel.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/pages/implementations/downloads_page.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -188,7 +189,7 @@ void main() {
       size: const Size(1200, 800),
     );
 
-    final Finder card = find.byType(Card);
+    final Finder card = find.byType(HibikiCard);
     expect(card, findsWidgets);
     expect(
       tester.getSize(card.last).width,
