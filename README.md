@@ -10,9 +10,9 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
-[![User Guide](https://img.shields.io/badge/%F0%9F%93%96%20User%20Guide-0969DA?style=for-the-badge)](docs/user-guide.md)
+[![The hibiki Setup Guide Even Yui Hirasawa Can Finish in 5 Minutes](https://img.shields.io/badge/%F0%9F%93%96%20The%20hibiki%20Setup%20Guide%20Even%20Yui%20Hirasawa%20Can%20Finish%20in%205%20Minutes-0969DA?style=for-the-badge)](docs/user-guide.md)
 
-**No fiddly setup** — import the recommended dictionaries and audio in one step.
+**Even Yui Hirasawa can set it up in 5 minutes** — import the recommended dictionaries and audio in one step.
 
 [![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Join our Discord](https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
@@ -146,7 +146,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 Download the latest release from [GitHub Releases](https://github.com/hajisensai/hibiki/releases) — Android APK and Windows installer are available.
 
 <details open>
-<summary>📖 <b>No fiddly setup</b> — import the recommended dictionaries and audio in one step.</summary>
+<summary>📖 <b>Even Yui Hirasawa can set it up in 5 minutes</b> — import the recommended dictionaries and audio in one step.</summary>
 
 <a href="docs/user-guide.md"><img src="docs/static-assets/user-guide/config-tutorial.en.png" alt="Configuration tutorial — import recommended dictionaries and audio" width="360"></a>
 

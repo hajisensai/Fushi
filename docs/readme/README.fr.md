@@ -10,9 +10,9 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | **Français** | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Guide d'utilisation](https://img.shields.io/badge/%F0%9F%93%96%20Guide%20d%27utilisation-0969DA?style=for-the-badge)](../user-guide.fr.md)
+[![Le guide hibiki que même Yui Hirasawa configure en 5 minutes](https://img.shields.io/badge/%F0%9F%93%96%20Le%20guide%20hibiki%20que%20m%C3%AAme%20Yui%20Hirasawa%20configure%20en%205%20minutes-0969DA?style=for-the-badge)](../user-guide.fr.md)
 
-**Aucune configuration fastidieuse** — importez les dictionnaires et l'audio recommandés en une étape.
+**Même Yui Hirasawa le configure en 5 minutes** — importez les dictionnaires et l'audio recommandés en une étape.
 
 [![Télécharger la dernière version](https://img.shields.io/badge/%E2%AC%87%20T%C3%A9l%C3%A9charger%20la%20derni%C3%A8re%20version-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Rejoindre le Discord](https://img.shields.io/badge/Rejoindre%20le%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)

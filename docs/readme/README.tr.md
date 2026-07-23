@@ -10,9 +10,9 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | **Türkçe** | [العربية](README.ar.md)
 
-[![Kullanım Kılavuzu](https://img.shields.io/badge/%F0%9F%93%96%20Kullan%C4%B1m%20K%C4%B1lavuzu-0969DA?style=for-the-badge)](../user-guide.tr.md)
+[![Yui Hirasawa'nın bile 5 dakikada kurabildiği hibiki kılavuzu](https://img.shields.io/badge/%F0%9F%93%96%20Yui%20Hirasawa%27n%C4%B1n%20bile%205%20dakikada%20kurabildi%C4%9Fi%20hibiki%20k%C4%B1lavuzu-0969DA?style=for-the-badge)](../user-guide.tr.md)
 
-**Zahmetli kurulum yok** — önerilen sözlükleri ve sesi tek adımda içe aktarın.
+**Yui Hirasawa bile 5 dakikada kurar** — önerilen sözlükleri ve sesi tek adımda içe aktarın.
 
 [![En son sürümü indir](https://img.shields.io/badge/%E2%AC%87%20En%20son%20s%C3%BCr%C3%BCm%C3%BC%20indir-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Discord'a katıl](https://img.shields.io/badge/Discord%27a%20kat%C4%B1l-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
