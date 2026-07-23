@@ -637,46 +637,18 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         mediaResults[3] as Map<String, String>;
 
     final String? remoteAudioRef = remoteAudio.ref;
-    final String processedAudio =
-        remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '';
 
-    final mediaContext = AnkiMiningContext(
-      sentence: context.sentence,
-      cueSentence: context.cueSentence,
-      documentTitle: context.documentTitle,
-      coverPath: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
-      sasayakiAudioPath:
+    return renderMediaPayload(
+      settings: settings,
+      payload: payload,
+      context: context,
+      coverRef: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
+      sasayakiRef:
           sasayakiMediaRef != null ? '[sound:$sasayakiMediaRef]' : null,
-      sentenceOffset: context.sentenceOffset,
-    );
-
-    final mediaPayload = AnkiMiningPayload(
-      expression: payload.expression,
-      reading: payload.reading,
-      matched: payload.matched,
-      furiganaPlain: payload.furiganaPlain,
-      frequenciesHtml: payload.frequenciesHtml,
-      freqHarmonicRank: payload.freqHarmonicRank,
-      glossary: payload.glossary,
-      glossaryFirst: payload.glossaryFirst,
-      singleGlossaries: payload.singleGlossaries,
-      pitchPositions: payload.pitchPositions,
-      pitchCategories: payload.pitchCategories,
-      popupSelectionText: payload.popupSelectionText,
-      audio: processedAudio,
-      selectedDictionary: payload.selectedDictionary,
-      dictionaryMedia: payload.dictionaryMedia,
-    );
-
-    return RenderedMinedFields(
-      buildMinedFields(
-        fieldMappings: settings.fieldMappings,
-        payload: mediaPayload,
-        context: mediaContext,
-        dictionaryMediaTags: dictionaryMediaTags,
-        keepEmpty: keepEmpty,
-      ),
+      processedAudio: remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '',
+      dictionaryMediaTags: dictionaryMediaTags,
       audioWarning: remoteAudio.failureReason,
+      keepEmpty: keepEmpty,
     );
   }
 
