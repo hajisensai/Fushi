@@ -140,4 +140,14 @@ void main() {
     expect(src.contains('loadOutline()'), isTrue);
     expect(src.contains('goToDest('), isTrue, reason: '点目录项跳转到该 dest');
   });
+
+  test('书签复用 EPUB 的 Bookmarks 表，sectionIndex 存页码', () {
+    final String src =
+        read('lib/src/pages/implementations/reader_pdf_page.dart');
+    expect(src.contains('BookmarkRepository('), isTrue,
+        reason: '复用同一张 Bookmarks 表（外键指 EpubBooks，删书自动级联清书签）');
+    expect(src.contains('sectionIndex: _currentPageIndex'), isTrue,
+        reason: '书签的 sectionIndex 存 0-based 页码，与 ReaderPositions 同口径');
+    expect(src.contains('removeBookmarkById('), isTrue, reason: '可删书签');
+  });
 }

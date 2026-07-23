@@ -426,6 +426,72 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     HibikiToast.show(msg: t.pdf_no_text_layer);
   }
 
+  // ── Phase 5：书签（复用 EPUB 的 Bookmarks 表）───────────────────────
+
+  /// 在当前页加书签。PDF 复用同一张 `Bookmarks` 表：`sectionIndex` 存 0-based 页码
+  /// （与 [ReaderPositions] 同口径），`normCharOffset` 恒 0。外键指向 `EpubBooks`，
+  /// PDF 行已在该表，故删书时书签随级联自动清掉，零额外接线。
+  Future<void> _addBookmarkAtCurrentPage() async {
+    final EpubBookRow? row = _bookRow;
+    if (row == null) return;
+    try {
+      await BookmarkRepository(appModel.database).addBookmark(
+        widget.bookKey,
+        Bookmark(
+          sectionIndex: _currentPageIndex,
+          normCharOffset: 0,
+          // 标签用页序（1-based，与页码指示器一致）；纯数字免 i18n。
+          label: 'P.${_currentPageIndex + 1}',
+          createdAt: DateTime.now(),
+          bookKey: widget.bookKey,
+          bookTitle: row.title,
+        ),
+      );
+      if (!mounted) return;
+      HibikiToast.show(msg: t.pdf_bookmark_added);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderPdfPage.addBookmark', e, stack);
+    }
+  }
+
+  Future<void> _showBookmarks() async {
+    List<Bookmark> bookmarks;
+    try {
+      bookmarks = await BookmarkRepository(appModel.database)
+          .getBookmarks(widget.bookKey);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderPdfPage.getBookmarks', e, stack);
+      return;
+    }
+    if (!mounted) return;
+    if (bookmarks.isEmpty) {
+      HibikiToast.show(msg: t.pdf_bookmarks_empty);
+      return;
+    }
+    await showAppDialog<void>(
+      context: context,
+      builder: (BuildContext context) => _PdfBookmarkSheet(
+        bookmarks: bookmarks,
+        onSelect: (Bookmark bookmark) {
+          Navigator.of(context).pop();
+          unawaited(
+            _pdfController.goToPage(pageNumber: bookmark.sectionIndex + 1),
+          );
+        },
+        onDelete: (Bookmark bookmark) async {
+          final int? id = bookmark.id;
+          if (id == null) return;
+          try {
+            await BookmarkRepository(appModel.database).removeBookmarkById(id);
+          } catch (e, stack) {
+            ErrorLogService.instance
+                .log('ReaderPdfPage.removeBookmark', e, stack);
+          }
+        },
+      ),
+    );
+  }
+
   // ── Phase 5：目录（PDF outline）导航 ──────────────────────────────────
 
   /// 打开 PDF 自带目录（outline / bookmarks）。懒加载：只在用户点开时解析一次。
@@ -618,6 +684,16 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
           actions: <Widget>[
             _buildPageIndicator(),
             IconButton(
+              tooltip: t.pdf_bookmarks,
+              icon: const Icon(Icons.bookmark_add_outlined),
+              onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
+            ),
+            IconButton(
+              tooltip: t.pdf_bookmarks,
+              icon: const Icon(Icons.bookmarks_outlined),
+              onPressed: () => unawaited(_showBookmarks()),
+            ),
+            IconButton(
               tooltip: t.pdf_outline,
               icon: const Icon(Icons.list_alt_outlined),
               onPressed: () => unawaited(_showOutline()),
@@ -698,6 +774,65 @@ class _PdfBookLoad {
 
   final String path;
   final EpubBookRow row;
+}
+
+/// PDF 书签弹层：列出本书书签（按创建时间倒序），点击跳页、删除即时从列表移除。
+class _PdfBookmarkSheet extends StatefulWidget {
+  const _PdfBookmarkSheet({
+    required this.bookmarks,
+    required this.onSelect,
+    required this.onDelete,
+  });
+
+  final List<Bookmark> bookmarks;
+  final void Function(Bookmark bookmark) onSelect;
+  final Future<void> Function(Bookmark bookmark) onDelete;
+
+  @override
+  State<_PdfBookmarkSheet> createState() => _PdfBookmarkSheetState();
+}
+
+class _PdfBookmarkSheetState extends State<_PdfBookmarkSheet> {
+  late final List<Bookmark> _items = List<Bookmark>.of(widget.bookmarks);
+
+  @override
+  Widget build(BuildContext context) {
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.82,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.pdf_bookmarks,
+        leadingIcon: Icons.bookmarks_outlined,
+        body: _items.isEmpty
+            ? Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(child: Text(t.pdf_bookmarks_empty)),
+              )
+            : ListView.builder(
+                shrinkWrap: true,
+                itemCount: _items.length,
+                itemBuilder: (BuildContext context, int index) {
+                  final Bookmark bookmark = _items[index];
+                  return HibikiListItem(
+                    leading: const Icon(Icons.bookmark_outline),
+                    title: Text(bookmark.label),
+                    trailing: IconButton(
+                      tooltip: t.dialog_delete,
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () async {
+                        await widget.onDelete(bookmark);
+                        if (!mounted) return;
+                        setState(() => _items.removeAt(index));
+                      },
+                    ),
+                    onTap: () => widget.onSelect(bookmark),
+                  );
+                },
+              ),
+      ),
+    );
+  }
 }
 
 /// PDF 目录弹层：把 pdfrx 的树形 [PdfOutlineNode] 拍平成带缩进的可点列表。
