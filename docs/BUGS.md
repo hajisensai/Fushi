@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1002 条。点号进各自文件。
+> 共 1003 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1036](bugs/BUG-1036-extension-connection-reopen-stale.md) | ✅ | ✅ | 浏览器扩展重开后连接检测误报 API 未开启 |
 | [BUG-1035](bugs/BUG-1035-glossary-first-ignores-selected-dict.md) | ✅ | ✅ | 长按选中词典对制卡无效：{glossary-first} 恒取第一本，Lapis 默认无字段消费 {selected-glossary} |
 | [BUG-1034](bugs/BUG-1034-subtitle-row-extent-clip.md) | ✅ | ✅ | 视频字幕列表当前行末行文字被裁掉一半 |
 | [BUG-1033](bugs/BUG-1033-popup-zoom-tooltip-misfire.md) | ✅ | ✅ | 嵌套查词弹出时 A- 的「缩小查词字号」tooltip 自动弹出遮挡正文 |

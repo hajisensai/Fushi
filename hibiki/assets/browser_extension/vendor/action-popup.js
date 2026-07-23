@@ -53,7 +53,9 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   const connTitleEl = document.getElementById('hp-connection-title');
   const connDetailEl = document.getElementById('hp-connection-detail');
   try {
-    chrome.runtime.sendMessage({ type: 'connectionStatus' }, (resp) => {
+    // BUG-1036：popup 生命周期很短，每次打开都要新探测；否则会把上次瞬时离线缓存继续显示成
+    // “Hibiki API 未开启”，直到用户进完整设置手动重检。
+    chrome.runtime.sendMessage({ type: 'connectionStatus', force: true }, (resp) => {
       try { if (chrome.runtime.lastError) return; } catch (_) { return; }
       const c = resp && resp.connection ? resp.connection : { state: 'offline', port: 19633 };
       const copy = self.HIBIKI_CONNECTION.copy(c.state, c.port);
