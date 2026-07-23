@@ -314,6 +314,31 @@ test('live cue 对象就地扩长时刷新现有行文本，不要求数组长�
     '数组长度不变时也必须把扩长后的文本刷新到现有行');
 });
 
+test('YouTube 整集字幕预取稍后到达时，从 live 兜底轨自动升级到真轨', () => {
+  const liveKey = 'www.youtube.com/watch|live';
+  const fullKey = 'www.youtube.com/watch|日本語';
+  const store = {
+    [liveKey]: [{ startMs: 0, endMs: 1000, text: '逐字采样' }],
+  };
+  const h = loadPanel({
+    hostname: 'www.youtube.com',
+    pathname: '/watch',
+    store,
+    stored: { netflixSubtitlePanel: true },
+  });
+  let texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  assert.strictEqual(texts.length, 1);
+  assert.strictEqual(texts[0].textContent, '逐字采样');
+
+  store[fullKey] = [{ startMs: 0, endMs: 3000, text: '整集字幕' }];
+  h.windowObj.hibikiSubtitlePanelOnCues(fullKey);
+
+  texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  assert.strictEqual(texts.length, 1, '整集轨到达后仍只渲染当前选中轨');
+  assert.strictEqual(texts[0].textContent, '整集字幕',
+    '真轨必须自动取代先到的 live 兜底轨');
+});
+
 test('YouTube 字幕面板占独立右栏：压缩 ytd-app，并在关闭后恢复原宽度', () => {
   const app = makeEl('ytd-app');
   app.style.setProperty('width', '1440px');

@@ -342,7 +342,10 @@
     var want = st.activeLang;
     var haveWant = false;
     for (var i = 0; i < tracks.length; i++) if (tracks[i].lang === want) haveWant = true;
-    if (!haveWant) { st.activeLang = tracks.length ? tracks[0].lang : null; }
+    // live 是整集字幕预取失败前的兜底。真轨稍后到达时必须自动升级，不能因为 live 先挂载
+    // 就永久留在逐字采样轨；用户仍可在下拉框里手动切回「实时采集」。
+    var fullTrackArrived = want === LIVE_LANG && tracks.length && tracks[0].lang !== LIVE_LANG;
+    if (!haveWant || fullTrackArrived) { st.activeLang = tracks.length ? tracks[0].lang : null; }
     var sig = tracks.map(function (t) { return t.lang; }).join(',');
     if (sel.getAttribute('data-sig') !== sig) {
       sel.textContent = '';
