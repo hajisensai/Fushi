@@ -101,6 +101,13 @@
   接收端逐条确认；消费端按 displayName remove。修正了早前"路径不稳→无意义"的误判。
 - ✅ **收藏词**：aggregate 并集同步。取消收藏写 favoriteword 墓碑（NUL 连接键），aggregate
   applySnapshot 跳过有碑收藏防并集复活；发布+消费+确认复用统一机制。治"取消收藏被并回"痛点。
+- ✅ **收藏句**（pref JSON 载体，无稳定 id）：照收藏词双通道复刻。共享内容键
+  `FavoriteSentenceRepository.itemKey`（aggregate 去重 / 墓碑 itemKey / 接收端删除三处委托
+  同一函数，杜绝分叉）；`removeById/removeByContent/removeAt/clear` 默认写 `favoritesentence`
+  墓碑、`add` 清墓碑、`removeByItemKey` 供接收端确认删；orchestrator present 键 + 通用发布
+  消费循环覆盖云 + 互联；`_writeFavoriteSentences` 剔除有碑句防并集复活。**"改结构可以"后
+  确认无需迁表**——墓碑存进现成统一表，pref 存储不动。顺带修正主 PR c550f3982 遗漏的过时
+  收藏词测试断言（该文件当初未跑到）。
 
 **结构性无法做（无跨设备同步前提，非本功能范畴）**：
 - **书签 / Profile**：当前**完全不 live 同步**（仅整库备份，Profile 导入还刻意保留本机），
@@ -108,7 +115,7 @@
   另一个独立的大功能（"给书签/Profile 建同步"），不属"删除传播"。
 - **搜索历史**：设计上**刻意不同步、连备份都主动 wipe（隐私红线）**。给它建同步会**违反现有
   隐私设计**，不做。
-- **收藏句（pref 式）**：收藏词已闭环，收藏句是 pref 载体、机制略不同，作快速后续。
+- ~~**收藏句（pref 式）**：快速后续~~ → **已完成**（见上，用户「收藏句做，改一下结构可以」后落地）。
 
 > 结论：删除传播已覆盖**所有当前可跨设备同步的实体**（书/视频/有声书/本地音频/收藏词
 > + 已自有机制的合集/标签/词典）。书签/Profile/搜索历史需先有同步才谈得上传删，是独立议题。
