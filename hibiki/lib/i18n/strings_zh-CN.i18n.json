@@ -2290,5 +2290,6 @@
   "game_track_select_requires_engine": "选择语音轨需要引擎 Hook 会话处于活动状态",
   "game_endpoints_hint": "供 Textractor / LunaTranslator 等外部文本工具接入的端口；未使用这些工具可忽略",
   "game_endpoints_engine_active": "当前文本来自引擎 Hook，这些端点无需连接",
-  "game_text_gaps_hint": "序号缺口 = Hook 文本环丢行计数，0 为正常"
+  "game_text_gaps_hint": "序号缺口 = Hook 文本环丢行计数，0 为正常",
+  "handlebar_deprecated_label": "${label}（已弃用）"
 }

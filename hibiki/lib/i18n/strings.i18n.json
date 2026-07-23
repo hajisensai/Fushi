@@ -2290,5 +2290,6 @@
   "game_track_select_requires_engine": "Track selection requires an active engine hook session",
   "game_endpoints_hint": "Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don't use them",
   "game_endpoints_engine_active": "Text is provided by the engine hook; these endpoints are optional",
-  "game_text_gaps_hint": "Sequence gaps = dropped-line count in the hook text ring; 0 is normal"
+  "game_text_gaps_hint": "Sequence gaps = dropped-line count in the hook text ring; 0 is normal",
+  "handlebar_deprecated_label": "${label} (deprecated)"
 }
