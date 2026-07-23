@@ -1,6 +1,18 @@
 # hibiki_voice_hook —— galgame 引擎级 voice hook（C 阶段，独立可选组件）
 
-galgame 一键制卡（[docs/specs/galgame-mining](../../docs/specs/galgame-mining/design.md)）C 阶段：从游戏引擎在**混音之前**截取角色语音的干净音轨，回传 Hibiki 做一键制卡。
+galgame 一键制卡（[docs/specs/galgame-mining](https://github.com/hajisensai/hibiki/blob/develop/docs/specs/galgame-mining/design.md)）C 阶段：从游戏引擎在**混音之前**截取角色语音的干净音轨，回传 Hibiki 做一键制卡。
+
+## 与主仓库 `hajisensai/hibiki` 的连接契约
+
+本仓库是主 app [`hajisensai/hibiki`](https://github.com/hajisensai/hibiki) 的 native 采集组件，双向靠三条契约挂钩，**改任一条都必须同轮更新对面**：
+
+| 契约 | 本仓库 | 主仓库 |
+|---|---|---|
+| 共享内存 ABI | [`include/voice_hook_ipc.h`](include/voice_hook_ipc.h) 的 `kSharedVersion` | [`hibiki/windows/runner/voice_hook_ipc.h`](https://github.com/hajisensai/hibiki/blob/develop/hibiki/windows/runner/voice_hook_ipc.h) 的同名常量，由 `hibiki/test/tools/voice_hook_ipc_contract_test.dart` 守卫 |
+| 二进制分发 | `voice-hook-helper.yml` 打 `voice_hook_<arch>.zip` + `.sha256` 到固定 tag `voice-hook-helper` 的 prerelease | [`hibiki/lib/src/mining/galgame_helper_installer.dart`](https://github.com/hajisensai/hibiki/blob/develop/hibiki/lib/src/mining/galgame_helper_installer.dart) 的 `kGalgameHelperRepo` / `kGalgameHelperReleaseTag` 按此 URL 下载校验，并按 sha256 侧车自动升级 |
+| 引擎支持矩阵 | [`engine-support.yaml`](engine-support.yaml) 是唯一真相源，生成 [`docs/engine-support.md`](docs/engine-support.md) | `docs/specs/galgame-mining/engine-support.md` 是逐字节只读副本 |
+
+版本号提升后**必须** `workflow_dispatch` 跑一次 `voice-hook-helper.yml` 重发 release：主仓按 sha256 判断更新，helper 不重发就会让新 host 对上旧 ABI 的 helper，握手直接失败。
 
 ## ⚠️ 部署红线：与 hibiki.exe 物理隔离
 
