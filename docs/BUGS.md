@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1008 条。点号进各自文件。
+> 共 1010 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1043](bugs/BUG-1043-ios-smoke-update-dialog-steals-focus.md) | ✅ | ✅ | iOS冒烟测试焦点断言被启动期更新弹窗与恒真判定掩盖 |
+| [BUG-1042](bugs/BUG-1042-ios-generated-xcconfig-tracked.md) | ✅ | ✅ | iOS Flutter 生成文件误入库导致 Mac 上 pod install 失败 |
 | [BUG-1041](bugs/BUG-1041-global-lookup-card-corner-asymmetry.md) | 🚧 | 🚧 | 查词浮窗卡片左侧圆角右侧直角 |
 | [BUG-1040](bugs/BUG-1040-mined-card-dialog-centered-and-above-popup.md) | ✅ | ✅ | 「卡片已在 Anki 中」是底部 sheet 且层级低于查词弹窗（被盖住看不见） |
 | [BUG-1039](bugs/BUG-1039-native-tier-gif-explodes-mining.md) | ✅ | ✅ | 制卡「原片档」把 GIF 按源分辨率+源帧率导出 → 制卡/覆盖巨慢、Anki 无响应 |

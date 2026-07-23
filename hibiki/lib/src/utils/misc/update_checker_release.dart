@@ -43,6 +43,17 @@ class UpdateChecker {
   /// 同一时刻只跑一轮检查（`scheduleCheck` 走 post-frame 单次触发），单个足矣。
   static UpdateCheckCancellation? _activeCheckCancellation;
 
+  /// 集成测试专用：置位后 [scheduleCheck] 直接短路，本进程不再发起任何更新检查。
+  ///
+  /// 焦点驱动 itest 与启动期自动检查是真实网络竞速：检查成功会弹「发现新版本」
+  /// [DialogRoute]，其 ModalScope 抢走 primary focus，页面焦点断言随机失败
+  /// （iOS 模拟器实测复现）。事后 [cancelActiveCheck] 无法根治——scheduleCheck
+  /// 经 post-frame 才启动 `_check`，home 首帧当口取消时令牌还未登记（no-op），
+  /// 而 `neverRemind` 是调用时刻已捕获的参数。集成测试与 app 同 isolate，测试在
+  /// `app.main()` 之前置位本旗标即可确定性排除整轮检查。生产路径永不置位。
+  @visibleForTesting
+  static bool disableAutoCheckForTesting = false;
+
   /// 调度一轮更新检查（post-frame 单次触发）。
   ///
   /// TODO-898：新增可选结果回调，默认 `null` = 自动检查路径字节级零变化。
@@ -78,6 +89,16 @@ class UpdateChecker {
             HttpClient client, UpdateChannel channel)?
         fetchReleasesForTesting,
   }) {
+    // 集成测试短路：见 [disableAutoCheckForTesting]。
+    if (disableAutoCheckForTesting) return Future<void>.value();
+    // 任何测试 harness 下自动短路：生产 `runApp` 的 binding 一定是
+    // [WidgetsFlutterBinding]；flutter_test / integration_test 的 binding
+    // （TestWidgetsFlutterBinding 及其子类）都不是它的子类。启动期自动更新检查
+    // 是真实网络 + 可能弹 [DialogRoute] 抢焦点（BUG-1043），任何自动化测试里都
+    // 不应发生；逐测试置位旗标无法覆盖 71 个 itest 且对新增测试不设防。
+    if (WidgetsBinding.instance is! WidgetsFlutterBinding) {
+      return Future<void>.value();
+    }
     final UpdateChannel channel = debugChannel
         ? UpdateChannel.debug
         : betaChannel
