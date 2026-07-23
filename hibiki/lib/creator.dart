@@ -4,6 +4,7 @@ export 'src/creator/field.dart';
 export 'src/creator/audio_enhancement.dart';
 export 'src/creator/image_enhancement.dart';
 export 'src/creator/quick_action.dart';
+export 'src/creator/export_field_search.dart';
 export 'src/creator/image_export_field.dart';
 export 'src/creator/audio_export_field.dart';
 
