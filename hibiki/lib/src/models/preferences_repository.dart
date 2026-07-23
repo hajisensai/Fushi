@@ -690,6 +690,23 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // BUG-1026：查词弹窗滚轮速度倍率。popup.js 的粗鼠标 notch 用 0.24 降速系数（BUG-260），
+  // 部分用户觉得太慢；此倍率乘进 popup.js 的 factor（同乘粗鼠标 0.24 与触控板 1.0），
+  // 作为统一「滚轮速度」旋钮。默认 1.0 与改前逐帧一致。clamp 0.5–5.0 防越界值把滚动放飞。
+  // 一处存储驱动全部弹窗：in-app 三种弹窗经 popup_settings_injection 注入
+  // window.__hoshiPopupWheelSpeed；浏览器扩展弹窗经查词响应 theme 的 --hibiki-wheel-speed 下发。
+  double get popupWheelSpeed {
+    final double v =
+        (getPref('popup_wheel_speed', defaultValue: 1.0) as num).toDouble();
+    return v.isFinite ? v.clamp(0.5, 5.0) : 1.0;
+  }
+
+  Future<void> setPopupWheelSpeed(double value) async {
+    final double v = value.isFinite ? value.clamp(0.5, 5.0) : 1.0;
+    await setPref('popup_wheel_speed', v);
+    notifyListeners();
+  }
+
   // TODO-108：查词弹窗显示模式。默认 OFF（跟随被查词位置，即现状的左/右/上/下避让）。
   // ON 时弹窗固定为屏幕底部一条全宽面板，忽略选区位置——适合需要稳定固定弹窗落点的
   // 用户。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留其存值。

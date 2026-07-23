@@ -1,0 +1,6 @@
+## BUG-1025 · 浏览器查词复制同一个词无法重复查（内容去重挡住手动重复复制）
+- **报告**：2026-07-23（用户：）
+- **真实性**：✅ 真 bug — 根因两层内容去重：桌面 `hibiki/lib/src/sync/desktop_lookup_service.dart:67`（`_lastText`）+ `dedupeClipboard`（`hibiki/lib/src/sync/clipboard_dedupe.dart:6` `if (trimmed == last) return null;`）；词典页 `hibiki/lib/src/pages/implementations/home_dictionary_page.dart:585`（`_lastQuery == trimmed` 即 return）；安卓 `hibiki/android/.../FloatingDictService.java:324`（`trimmed.equals(lastClipText)` 即 return）。三处「与上次相同文本即跳过」使用户手动再次复制同词时不触发查词。设计初衷是防挖词/抓选区写回剪贴板自触发循环，但该自触发回声已由 `ClipboardIgnoreSet` + 捕获期括号按内容精确处理，内容去重剩余副作用即挡住手动重复复制。
+- **[x] ① 已修复** — 改为**时间窗去重**：仅当「与上次相同 **且** 距上次在极短窗口内（默认 800ms）」才判为回声跳过；超窗口的同词复制视为用户显式重复查，放行。三处同步：`dedupeClipboard` 增可选 `lastAt`/`now`/`window` 参数（缺省保持纯函数可测）；`_lastText` 配 `_lastTextTime` + 可注入 `clock`；`_lastQuery` 配 `_lastQueryAt`；安卓 `lastClipText` 配 `lastClipTime`。热键/显式查词仍走 `dedupe:false` 无条件重查（不变）。提交：<待填>
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/clipboard_dedupe_test.dart`（同词窗口内跳过、超窗口放行、空串跳过、不同词放行）+ `desktop_lookup_service_test.dart` 用注入 clock 断言同词隔窗口后重新排队。提交：<待填>
+- **备注**：`ClipboardIgnoreSet` 只由 `selection_capture_ffi.dart` 登记；挖词写回时 app 在前台，`shouldTriggerOnClipboard` 已拦截，故去掉长期内容去重不重新引入自触发循环。

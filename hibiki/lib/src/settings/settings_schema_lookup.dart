@@ -220,6 +220,25 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // BUG-1026: 查词弹窗滚轮速度倍率。默认 1.0（与改前一致），0.5–5.0。倍率乘进
+          // popup.js 的 wheel factor，一处存储驱动 in-app 三种弹窗 + 浏览器扩展弹窗。
+          SettingsSliderItem(
+            id: 'lookup.popup_wheel_speed',
+            title: t.popup_wheel_speed,
+            subtitle: t.popup_wheel_speed_hint,
+            icon: Icons.mouse_outlined,
+            min: 0.5,
+            max: 5.0,
+            divisions: 9,
+            titleReadout: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupWheelSpeed,
+            label: (double value) => '${value.toStringAsFixed(1)}×',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupWheelSpeed(value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'lookup.show_expression_tags',
             title: t.show_expression_tags,

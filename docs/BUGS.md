@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 990 条。点号进各自文件。
+> 共 993 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1026](bugs/BUG-1026-popup-wheel-speed-config.md) | ✅ | ✅ | 查词弹窗滚轮滚动慢，缺可配置速度项 |
+| [BUG-1025](bugs/BUG-1025-clipboard-recopy-same-word-dedup.md) | ✅ | ✅ | 浏览器查词复制同一个词无法重复查（内容去重挡住手动重复复制） |
+| [BUG-1024](bugs/BUG-1024-ext-shift-hover-pending-deadlock.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词在途闸永久死锁致弹窗不敏感 |
 | [BUG-1023](bugs/BUG-1023-drive-transient-408-not-retried.md) | ✅ | ✅ | Google Drive 瞬时故障(408/429/5xx)被判非重试整本skip |
 | [BUG-1022](bugs/BUG-1022-galgame-helper-dialog-latency-and-restack.md) | ✅ | ✅ | galgame 引擎组件下载确认弹窗点击不立即出现且多次点击叠出多个弹窗 |
 | [BUG-1021](bugs/BUG-1021-galgame-cardimage-alias-false-warning.md) | ✅ | ✅ | galgame 场景制卡误报缺少 {card-image}（旧别名瞎眼） |

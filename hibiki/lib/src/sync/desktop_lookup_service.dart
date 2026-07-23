@@ -73,6 +73,14 @@ class DesktopLookupService extends ChangeNotifier
   String? get pendingText => _pendingRequest?.text;
   String? _lastText;
 
+  /// BUG-1025：上次查词文本的时刻，配 [_lastText] 做时间窗去重——同词只在极短窗口内
+  /// 判为自触发回声跳过，超窗口的同词复制视为用户显式重查放行。
+  DateTime? _lastTextTime;
+
+  /// BUG-1025：时间窗去重用的时钟，@visibleForTesting 便于离屏单测注入固定时刻。
+  @visibleForTesting
+  DateTime Function() clock = () => DateTime.now();
+
   /// BUG-700 / TODO-1385：监听生命周期用**引用计数**而非裸 `bool _running`。
   ///
   /// 根因：本服务是 app 级单例，但其唯一 owner（[HomeDictionaryPage]）会在窗口物理宽
@@ -135,6 +143,7 @@ class DesktopLookupService extends ChangeNotifier
       final String trimmed = raw.trim();
       if (trimmed.isEmpty) return;
       _lastText = trimmed;
+      _lastTextTime = clock();
       _pendingRequest = DesktopLookupRequest(
         text: trimmed,
         origin: origin,
@@ -145,9 +154,14 @@ class DesktopLookupService extends ChangeNotifier
       notifyListeners();
       return;
     }
-    final String? deduped = dedupeClipboard(raw, _lastText);
+    // BUG-1025：时间窗去重——同词只在极短窗口内当自触发回声跳过，超窗口的同词复制
+    // 视为用户显式重查放行。
+    final DateTime nowTs = clock();
+    final String? deduped =
+        dedupeClipboard(raw, _lastText, lastAt: _lastTextTime, now: nowTs);
     if (deduped == null) return;
     _lastText = deduped;
+    _lastTextTime = nowTs;
     _pendingRequest = DesktopLookupRequest(
       text: deduped,
       origin: origin,
@@ -181,6 +195,7 @@ class DesktopLookupService extends ChangeNotifier
   void debugReset() {
     _pendingRequest = null;
     _lastText = null;
+    _lastTextTime = null;
     // BUG-700：跑过 start()/stop() 的用例可能留下非零计数 + 已挂的 Dart 侧监听器，
     // 若不清会漏进后续用例。仅在确有累计计数时同步摘除监听并归零（未 start 的用例
     // 计数恒 0，此块跳过，行为不变）。removeListener 对未注册的监听器是安全 no-op。
