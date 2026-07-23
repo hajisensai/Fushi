@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 38607 (2271 per locale)
+/// Strings: 38658 (2274 per locale)
 ///
-/// Built on 2026-07-22 at 21:40 UTC
+/// Built on 2026-07-23 at 06:20 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3021,6 +3021,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get delete_scope_sync_everywhere => 'Delete from all devices';
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  String get pdf_outline => 'Contents';
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -8159,6 +8163,13 @@ class _StringsAr extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -13370,6 +13381,13 @@ class _StringsDe extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -18597,6 +18615,13 @@ class _StringsEs extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -23835,6 +23860,13 @@ class _StringsFr extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -29000,6 +29032,13 @@ class _StringsId extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -34213,6 +34252,13 @@ class _StringsIt extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -39231,6 +39277,13 @@ class _StringsJa extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -44252,6 +44305,13 @@ class _StringsKo extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -49443,6 +49503,13 @@ class _StringsNl extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -54649,6 +54716,13 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -59838,6 +59912,13 @@ class _StringsRu extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -64972,6 +65053,13 @@ class _StringsTh extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -70138,6 +70226,13 @@ class _StringsTr extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -75291,6 +75386,13 @@ class _StringsVi extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 // Path: <root>
@@ -80085,6 +80187,12 @@ class _StringsZhCn extends _StringsEn {
   String get delete_scope_sync_everywhere => '从所有设备删除';
   @override
   String get delete_scope_sync_everywhere_desc => '其他设备下次同步时会确认删除';
+  @override
+  String get pdf_no_text_layer => '此 PDF 没有文本层（扫描图），无法查词。';
+  @override
+  String get pdf_outline => '目录';
+  @override
+  String get pdf_outline_empty => '此 PDF 没有目录。';
 }
 
 // Path: <root>
@@ -85021,6 +85129,13 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
 }
 
 /// Flat map(s) containing all translations.
@@ -89655,6 +89770,12 @@ extension on _StringsEn {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -94287,6 +94408,12 @@ extension on _StringsAr {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -98940,6 +99067,12 @@ extension on _StringsDe {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -103592,6 +103725,12 @@ extension on _StringsEs {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -108250,6 +108389,12 @@ extension on _StringsFr {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -112890,6 +113035,12 @@ extension on _StringsId {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -117545,6 +117696,12 @@ extension on _StringsIt {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -122162,6 +122319,12 @@ extension on _StringsJa {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -126783,6 +126946,12 @@ extension on _StringsKo {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -131431,6 +131600,12 @@ extension on _StringsNl {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -136076,6 +136251,12 @@ extension on _StringsPtBr {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -140726,6 +140907,12 @@ extension on _StringsRu {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -145360,6 +145547,12 @@ extension on _StringsTh {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -150003,6 +150196,12 @@ extension on _StringsTr {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -154641,6 +154840,12 @@ extension on _StringsVi {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }
@@ -159245,6 +159450,12 @@ extension on _StringsZhCn {
         return '从所有设备删除';
       case 'delete_scope_sync_everywhere_desc':
         return '其他设备下次同步时会确认删除';
+      case 'pdf_no_text_layer':
+        return '此 PDF 没有文本层（扫描图），无法查词。';
+      case 'pdf_outline':
+        return '目录';
+      case 'pdf_outline_empty':
+        return '此 PDF 没有目录。';
       default:
         return null;
     }
@@ -163857,6 +164068,12 @@ extension on _StringsZhHk {
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
         return 'Other devices confirm the deletion on next sync';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
       default:
         return null;
     }

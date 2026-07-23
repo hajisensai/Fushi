@@ -2269,5 +2269,8 @@
   "delete_prompt_select_all": "全选",
   "delete_prompt_delete_selected": "删除选中",
   "delete_scope_sync_everywhere": "从所有设备删除",
-  "delete_scope_sync_everywhere_desc": "其他设备下次同步时会确认删除"
+  "delete_scope_sync_everywhere_desc": "其他设备下次同步时会确认删除",
+  "pdf_no_text_layer": "此 PDF 没有文本层（扫描图），无法查词。",
+  "pdf_outline": "目录",
+  "pdf_outline_empty": "此 PDF 没有目录。"
 }
