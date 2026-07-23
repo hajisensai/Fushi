@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1041 + BUG-1042 guard: keep the browser-extension connection lifecycle fixes wired.
+/// BUG-1043 + BUG-1044 guard: keep the browser-extension connection lifecycle fixes wired.
 ///
 /// ① 未连接：app 判「插件已连接」= 扩展最近 <window> 内打过本机 server，且该 last-seen 只在
 ///    app 内存里（重启即丢）。MV3 SW 空闲 ~30s 被回收、无常驻定时器 → 不查词就 ~120s 后误判
@@ -20,7 +20,7 @@ void main() {
     'tools': '../tools/browser-extension',
   };
 
-  group('BUG-1041 heartbeat keeps app-side connection status live', () {
+  group('BUG-1043 heartbeat keeps app-side connection status live', () {
     mirrors.forEach((String name, String root) {
       test('[$name] manifest declares alarms permission', () {
         final String src = File('$root/manifest.json').readAsStringSync();
@@ -58,11 +58,11 @@ void main() {
           reason:
               'browser_extension_page.dart _seenWindow must widen to 150s so a '
               'single missed 60s heartbeat does not flip the status to '
-              '"未连接" (BUG-1041)');
+              '"未连接" (BUG-1043)');
     });
   });
 
-  group('BUG-1042 reload re-injects content scripts into open tabs', () {
+  group('BUG-1044 reload re-injects content scripts into open tabs', () {
     mirrors.forEach((String name, String root) {
       test('[$name] manifest grants scripting + broad host access', () {
         final String src = File('$root/manifest.json').readAsStringSync();

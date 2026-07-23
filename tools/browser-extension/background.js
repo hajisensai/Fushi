@@ -81,7 +81,7 @@ async function maybeSelfReload(data) {
     if (await isOffscreenRecording()) return;
     const st = await chrome.storage.local.get(['hibikiReloadedForBuild']);
     if (st.hibikiReloadedForBuild === remote) return;
-    // BUG-1042：置重注入标记，reload 后新 SW 据此把 content script 补回已打开网页
+    // BUG-1044：置重注入标记，reload 后新 SW 据此把 content script 补回已打开网页
     // （chrome.runtime.reload() 会让所有已注入页的 content script 上下文失效 → 不补的话
     // 用户必须手动刷新浏览器才恢复）。
     await chrome.storage.local.set({
@@ -92,7 +92,7 @@ async function maybeSelfReload(data) {
   } catch (_) { /* 自更新失败不影响查词本身 */ }
 }
 
-// BUG-1042：自更新 chrome.runtime.reload() 会让所有已打开标签页里注入的 content script
+// BUG-1044：自更新 chrome.runtime.reload() 会让所有已打开标签页里注入的 content script
 // 上下文失效（"Extension context invalidated"），这些页在用户手动刷新前扩展就是死的。
 // reload 后由新 SW 把 content script 重新注入已打开的普通网页，页面无感恢复，无需刷新浏览器。
 // - 仅对 reload 前置的 hibikiReinjectPending 标记生效，普通 SW 冷启动不全量重注入；
@@ -157,14 +157,14 @@ async function checkVersionOnStartup() {
 checkVersionOnStartup(); // SW 每次启动都主动检查一次版本 + 刷新 last-seen。
 chrome.runtime.onStartup.addListener(() => { checkVersionOnStartup(); });
 chrome.runtime.onInstalled.addListener(() => { checkVersionOnStartup(); });
-maybeReinjectAfterReload(); // BUG-1042：若上一轮是自更新 reload，补回已打开网页的 content script。
+maybeReinjectAfterReload(); // BUG-1044：若上一轮是自更新 reload，补回已打开网页的 content script。
 
-// BUG-1041：app 侧「插件已连接」判定 = 扩展最近 120s 内打过本机 server，且该 last-seen
+// BUG-1043：app 侧「插件已连接」判定 = 扩展最近 120s 内打过本机 server，且该 last-seen
 // 只存在 app 内存里（app 重启即丢）。MV3 SW 空闲 ~30s 被回收、无常驻定时器 → 用户不主动
 // 划词就会在 ~120s 后被判「未连接」，app 重启后更是一直「未连接」直到下次划词唤醒 SW。
 // 用 chrome.alarms 每 60s（< 120s 窗口）唤醒 SW 打一次 /api/extension/status 刷新 last-seen，
 // 让连接指示真实反映「扩展已加载可达」，app 重启后 ≤60s 自愈。复用 checkVersionOnStartup
-// （既刷 last-seen 又顺带比对版本），自更新仍只在 build 变化时触发一次、由 BUG-1042 无感恢复。
+// （既刷 last-seen 又顺带比对版本），自更新仍只在 build 变化时触发一次、由 BUG-1044 无感恢复。
 try { chrome.alarms.create('hibikiHeartbeat', { periodInMinutes: 1 }); } catch (_) { /* 无 alarms 权限：跳过心跳 */ }
 if (chrome.alarms && chrome.alarms.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
