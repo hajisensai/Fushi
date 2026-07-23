@@ -1,7 +1,17 @@
 # PDF 阅读器 + 文本层查词 —— 实现计划
 
-> 状态：**待用户确认**。用户已选「做正经 PDF 阅读器 + 文本层查词」方案（非 PDF→EPUB 降级）。
-> 本文件是动手前的计划（对应 CLAUDE.md 工作流步骤 1）。确认后再进入实现。
+> 状态：**Phase 0-5 全部已实现**（Phase 0 已落 develop `e8eaca236`；Phase 1-5 在 PR #352，
+> 分支 `worktree-pdf-reader`）。`flutter analyze`（含 test）干净，34 项测试绿。
+> **仅 Windows 静态 + 单测验证；真机与 Android/iOS/macOS/Linux 待验。**
+>
+> 与原计划的偏差（实现时按真实代码调整）：
+> - Phase 2 未手写命中测试：pdfrx 自带文本选择 + `onGeneralTap` 直接给文档坐标，
+>   命中用其公开的 `charRects.containsPoint` / `distanceSquaredTo`，并用 pdfrx 原生选区
+>   做命中词高亮（零手绘）。
+> - 分句复用既有 `extractSentenceAt`（未新写工具）；PDF 换行用**等长替换**规避误分句。
+> - Phase 5 的**竖排重排未做**：无真实竖排样本可验证，不做投机性几何重排（见「主要风险 2」），
+>   如实留作已知限制。
+> - Phase 5 额外做了书签（复用 `Bookmarks` 表）与页码指示器。
 
 ## 目标
 
