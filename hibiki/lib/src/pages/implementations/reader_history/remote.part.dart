@@ -75,13 +75,27 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     });
   }
 
-  /// 下拉刷新：强制重拉远端书列表（并失效本地书 / 有声书列表 provider 一并重读），
-  /// await 远端 future 完成后指示器才收起。
+  /// 下拉刷新 = **手动同步**：先跑一遍云备份 / 互联同步，再强制重拉远端书列表（并失效
+  /// 本地书 / 有声书列表 provider 一并重读），await 全程完成后指示器才收起。
   ///
   /// 顶层 tab 保活（[HomePage] 的 `_keepAliveTabs`）后，切回书架不再隐式重拉远端，
   /// 故给用户一个**显式**强制刷新入口——对端设备 / 云盘新增的书，不重启 app 也能刷出来。
+  ///
+  /// 同步必须排在重读列表**之前**：同步会往本地库里落新书和新进度，先刷列表就会漏掉
+  /// 本次同步的产物，用户得再下拉一次才看得见。没配同步后端时
+  /// [runManualSyncWithFeedback] 直接返回 notConfigured（且不弹提示），退化成纯列表
+  /// 刷新——与加同步之前的行为一字不差。
   /// [_loadRemoteBooks] 内部吞异常返回 failed 态，await 不会抛，指示器必定收起。
   Future<void> _pullToRefreshBooks() async {
+    await runManualSyncWithFeedback(
+      context: context,
+      appModel: appModel,
+      // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
+      // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
+      announceNotConfigured: false,
+      announceBusy: false,
+    );
+    if (!mounted) return;
     ref.invalidate(hibikiBooksProvider);
     ref.invalidate(srtBooksProvider);
     _batchAudiobookInfoFuture = null;
