@@ -915,6 +915,23 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         label: '${thread.label} · ${thread.lineCount}',
                       ),
                   ],
+                  // 每条线程第二行：有音频行数 + 最近台词预览——没有预览用户
+                  // 只能对着「引擎 · 地址 · 行数」盲选（用户实拍反馈）。
+                  entrySubtitle: (String key) {
+                    if (key.isEmpty) return null; // 「全部」行不带预览
+                    for (final TexthookerTextThread thread in textThreads) {
+                      if (thread.key == key) {
+                        return texthookerThreadSubtitle(
+                          audioLineCount: thread.audioLineCount,
+                          latestText: thread.latestText,
+                          audioLabel: t.game_text_thread_audio_count(
+                            count: thread.audioLineCount,
+                          ),
+                        );
+                      }
+                    }
+                    return null;
+                  },
                   onChanged: (String value) {
                     TexthookerTextThread? selectedThread;
                     if (value.isNotEmpty) {

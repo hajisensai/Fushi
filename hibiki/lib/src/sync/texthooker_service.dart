@@ -1,6 +1,32 @@
+import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
 
 enum TexthookerLineSource { websocket, engineHook, unknown }
+
+/// 线程选择下拉的副标题：`[N 行有音频 · ]最近台词预览`。两段都空返回 null
+/// （该行保持单行）。[audioLabel] 由调用方用 i18n 拼好传入（纯函数不碰 t）。
+String? texthookerThreadSubtitle({
+  required int audioLineCount,
+  required String? latestText,
+  required String audioLabel,
+}) {
+  final String preview =
+      latestText == null ? '' : collapseTexthookerPreview(latestText);
+  final List<String> parts = <String>[
+    if (audioLineCount > 0) audioLabel,
+    if (preview.isNotEmpty) preview,
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
+}
+
+/// 台词预览归一：连续空白（含换行）折成单空格、trim、按**字素簇**截断到
+/// [maxCharacters]（绝不劈开代理对/组合字），超长补省略号。纯函数。
+String collapseTexthookerPreview(String text, {int maxCharacters = 40}) {
+  final String collapsed = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final Characters chars = collapsed.characters;
+  if (chars.length <= maxCharacters) return collapsed;
+  return '${chars.take(maxCharacters)}…';
+}
 
 enum TexthookerLineAudioStatus {
   unavailable,
@@ -29,6 +55,8 @@ class TexthookerTextThread {
     required this.latestAt,
     this.hookCode,
     this.nativeThreadId,
+    this.latestText,
+    this.audioLineCount = 0,
   });
 
   final String key;
@@ -37,6 +65,13 @@ class TexthookerTextThread {
   final int? nativeThreadId;
   final int lineCount;
   final DateTime latestAt;
+
+  /// 该线程最近一条台词原文（线程选择下拉的预览；尚无台词为 null）。
+  final String? latestText;
+
+  /// 该线程已配到句音的行数（[TexthookerLineEntry.hasAudio] 计数；语音线程
+  /// 通常≈lineCount，UI 线程为 0——选择下拉靠它区分「选哪个」）。
+  final int audioLineCount;
 }
 
 @immutable
@@ -187,6 +222,10 @@ class TexthookerService extends ChangeNotifier {
         nativeThreadId: entry.nativeTextThreadId ?? previous?.nativeThreadId,
         lineCount: (previous?.lineCount ?? 0) + 1,
         latestAt: entry.receivedAt,
+        // _entries 按接收顺序迭代，最后一次赋值即最新台词。
+        latestText: entry.text,
+        audioLineCount:
+            (previous?.audioLineCount ?? 0) + (entry.hasAudio ? 1 : 0),
       );
     }
     final List<TexthookerTextThread> result = byKey.values.toList()

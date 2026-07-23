@@ -2315,5 +2315,6 @@
   "pdf_outline_empty": "此 PDF 没有目录。",
   "pdf_bookmarks": "书签",
   "pdf_bookmarks_empty": "还没有书签。",
-  "pdf_bookmark_added": "已添加书签"
+  "pdf_bookmark_added": "已添加书签",
+  "game_text_thread_audio_count": "$count 行有音频"
 }

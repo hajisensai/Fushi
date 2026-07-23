@@ -1,6 +1,7 @@
 // gal-hook-ux-overhaul：捕获工作台行状态（已制卡 / 已收藏）与筛选 predicate 的纯逻辑测试。
 // 这些逻辑不依赖 i18n key，故与页面层新增 key 解耦，可独立编译运行。
 
+import 'package:characters/characters.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 
@@ -161,6 +162,79 @@ void main() {
       expect(
           lineMatchesFilter(favorited, TexthookerLineFilter.favorited), isTrue);
       expect(lineMatchesFilter(plain, TexthookerLineFilter.favorited), isFalse);
+    });
+  });
+
+  group('textThreads 聚合预览（latestText / audioLineCount）', () {
+    test('latestText 取该线程最新一条，audioLineCount 只数 hasAudio 行', () {
+      final TexthookerService s = TexthookerService.instance;
+      s.appendLine(
+        '第一句',
+        textThreadKey: 'k1',
+        textThreadLabel: 'KiriKiriZ',
+        audioStatus: TexthookerLineAudioStatus.matched,
+      );
+      s.appendLine(
+        '第二句',
+        textThreadKey: 'k1',
+        textThreadLabel: 'KiriKiriZ',
+        audioStatus: TexthookerLineAudioStatus.missing,
+      );
+      s.appendLine(
+        'UI 文本',
+        textThreadKey: 'k2',
+        textThreadLabel: 'TextRender',
+      );
+      final Map<String, TexthookerTextThread> byKey =
+          <String, TexthookerTextThread>{
+        for (final TexthookerTextThread t in s.textThreads) t.key: t,
+      };
+      expect(byKey['k1']!.latestText, '第二句');
+      expect(byKey['k1']!.audioLineCount, 1, reason: 'missing 不算有音频');
+      expect(byKey['k1']!.lineCount, 2);
+      expect(byKey['k2']!.latestText, 'UI 文本');
+      expect(byKey['k2']!.audioLineCount, 0);
+    });
+  });
+
+  group('texthookerThreadSubtitle / collapseTexthookerPreview', () {
+    test('音频段仅在 audioLineCount>0 时出现，两段用 · 连接', () {
+      expect(
+        texthookerThreadSubtitle(
+          audioLineCount: 3,
+          latestText: '「こんにちは」',
+          audioLabel: '3 行有音频',
+        ),
+        '3 行有音频 · 「こんにちは」',
+      );
+      expect(
+        texthookerThreadSubtitle(
+          audioLineCount: 0,
+          latestText: '台词',
+          audioLabel: '0 行有音频',
+        ),
+        '台词',
+      );
+      expect(
+        texthookerThreadSubtitle(
+          audioLineCount: 0,
+          latestText: null,
+          audioLabel: '0 行有音频',
+        ),
+        isNull,
+      );
+    });
+
+    test('预览折叠空白并按字素簇截断', () {
+      expect(collapseTexthookerPreview('  多行\n台词\t文本  '), '多行 台词 文本');
+      final String long = 'あ' * 50;
+      final String out = collapseTexthookerPreview(long);
+      expect(out.characters.length, 41, reason: '40 字素 + 省略号');
+      expect(out.endsWith('…'), isTrue);
+      // 截断不劈开代理对（emoji 是双 code unit）。
+      final String emoji = '😀' * 45;
+      final String cut = collapseTexthookerPreview(emoji);
+      expect(cut.characters.take(40).every((String c) => c == '😀'), isTrue);
     });
   });
 }
