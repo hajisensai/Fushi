@@ -9,6 +9,8 @@ PODS:
     - GoogleUtilities/Environment (~> 8.0)
     - GoogleUtilities/UserDefaults (~> 8.0)
     - PromisesObjC (~> 2.4)
+  - appkit_ui_element_colors (1.0.0):
+    - FlutterMacOS
   - audio_service (0.0.1):
     - Flutter
     - FlutterMacOS
@@ -70,6 +72,10 @@ PODS:
     - HotKey
   - just_audio (0.0.1):
     - FlutterMacOS
+  - macos_ui (0.1.0):
+    - FlutterMacOS
+  - macos_window_utils (1.0.0):
+    - FlutterMacOS
   - media_kit_libs_macos_video (1.0.4):
     - FlutterMacOS
   - media_kit_video (0.0.1):
@@ -78,6 +84,9 @@ PODS:
   - package_info_plus (0.0.1):
     - FlutterMacOS
   - path_provider_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - pdfium_flutter (0.1.5):
     - Flutter
     - FlutterMacOS
   - PromisesObjC (2.4.0)
@@ -127,6 +136,7 @@ PODS:
   - ZIPFoundation (0.9.13)
 
 DEPENDENCIES:
+  - appkit_ui_element_colors (from `Flutter/ephemeral/.symlinks/plugins/appkit_ui_element_colors/macos`)
   - audio_service (from `Flutter/ephemeral/.symlinks/plugins/audio_service/darwin`)
   - audio_session (from `Flutter/ephemeral/.symlinks/plugins/audio_session/macos`)
   - bonsoir_darwin (from `Flutter/ephemeral/.symlinks/plugins/bonsoir_darwin/darwin`)
@@ -142,10 +152,13 @@ DEPENDENCIES:
   - google_sign_in_ios (from `Flutter/ephemeral/.symlinks/plugins/google_sign_in_ios/darwin`)
   - hotkey_manager_macos (from `Flutter/ephemeral/.symlinks/plugins/hotkey_manager_macos/macos`)
   - just_audio (from `Flutter/ephemeral/.symlinks/plugins/just_audio/macos`)
+  - macos_ui (from `Flutter/ephemeral/.symlinks/plugins/macos_ui/macos`)
+  - macos_window_utils (from `Flutter/ephemeral/.symlinks/plugins/macos_window_utils/macos`)
   - media_kit_libs_macos_video (from `Flutter/ephemeral/.symlinks/plugins/media_kit_libs_macos_video/macos`)
   - media_kit_video (from `Flutter/ephemeral/.symlinks/plugins/media_kit_video/macos`)
   - package_info_plus (from `Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos`)
   - path_provider_foundation (from `Flutter/ephemeral/.symlinks/plugins/path_provider_foundation/darwin`)
+  - pdfium_flutter (from `Flutter/ephemeral/.symlinks/plugins/pdfium_flutter/darwin`)
   - record_macos (from `Flutter/ephemeral/.symlinks/plugins/record_macos/macos`)
   - screen_retriever_macos (from `Flutter/ephemeral/.symlinks/plugins/screen_retriever_macos/macos`)
   - share_plus (from `Flutter/ephemeral/.symlinks/plugins/share_plus/macos`)
@@ -171,6 +184,8 @@ SPEC REPOS:
     - ZIPFoundation
 
 EXTERNAL SOURCES:
+  appkit_ui_element_colors:
+    :path: Flutter/ephemeral/.symlinks/plugins/appkit_ui_element_colors/macos
   audio_service:
     :path: Flutter/ephemeral/.symlinks/plugins/audio_service/darwin
   audio_session:
@@ -201,6 +216,10 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/hotkey_manager_macos/macos
   just_audio:
     :path: Flutter/ephemeral/.symlinks/plugins/just_audio/macos
+  macos_ui:
+    :path: Flutter/ephemeral/.symlinks/plugins/macos_ui/macos
+  macos_window_utils:
+    :path: Flutter/ephemeral/.symlinks/plugins/macos_window_utils/macos
   media_kit_libs_macos_video:
     :path: Flutter/ephemeral/.symlinks/plugins/media_kit_libs_macos_video/macos
   media_kit_video:
@@ -209,6 +228,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos
   path_provider_foundation:
     :path: Flutter/ephemeral/.symlinks/plugins/path_provider_foundation/darwin
+  pdfium_flutter:
+    :path: Flutter/ephemeral/.symlinks/plugins/pdfium_flutter/darwin
   record_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/record_macos/macos
   screen_retriever_macos:
@@ -231,44 +252,48 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   AppAuth: d4f13a8fe0baf391b2108511793e4b479691fb73
   AppCheckCore: cc8fd0a3a230ddd401f326489c99990b013f0c4f
-  audio_service: cab6c1a0eaf01b5a35b567e11fa67d3cc1956910
-  audio_session: 728ae3823d914f809c485d390274861a24b0904e
-  bonsoir_darwin: 722434d059e48f381a3af21440dd79d95cc41c78
-  clipboard_watcher: a71da520051c24c1b969a411b3e152d4dcc93ca5
-  desktop_drop: 69eeff437544aa619c8db7f4481b3a65f7696898
-  device_info_plus: 5401765fde0b8d062a2f8eb65510fb17e77cf07f
-  dynamic_color: 5fdff3953fb3457311091863f72914fc76ea3209
-  file_picker: e716a70a9fe5fd9e09ebc922d7541464289443af
-  flutter_archive: 1a28d55ba9013cf5f4513ae1bb6af118f787df96
-  flutter_inappwebview_macos: bdf207b8f4ebd58e86ae06cd96b147de99a67c9b
+  appkit_ui_element_colors: c8e13c23cbd781e0f5d9b75cad686e6a4bb958da
+  audio_service: aa99a6ba2ae7565996015322b0bb024e1d25c6fd
+  audio_session: eaca2512cf2b39212d724f35d11f46180ad3a33e
+  bonsoir_darwin: 14bd7429acb51db6a8e51f6574ac3b1ea0037a87
+  clipboard_watcher: e9c9d88b3aea4889fe80025037e690e73600b160
+  desktop_drop: e0b672a7d84c0a6cbc378595e82cdb15f2970a43
+  device_info_plus: b0fafc687fb901e2af612763340f1b0d4352f8e5
+  dynamic_color: cb7c2a300ee67ed3bd96c3e852df3af0300bf610
+  file_picker: 7584aae6fa07a041af2b36a2655122d42f578c1a
+  flutter_archive: b9204ab1f7855c9a140af6937ed5fcd86294ea0f
+  flutter_inappwebview_macos: c2d68649f9f8f1831bfcd98d73fd6256366d9d1d
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
-  gamepads_darwin: 07af6c60c282902b66574c800e20b2b26e68fda8
-  google_sign_in_ios: 7411fab6948df90490dc4620ecbcabdc3ca04017
+  gamepads_darwin: 643b6a69e20ca678fae83781b7f7fc8f15f5d710
+  google_sign_in_ios: b48bb9af78576358a168361173155596c845f0b9
   GoogleSignIn: ce8c89bb9b37fb624b92e7514cc67335d1e277e4
   GoogleUtilities: 00c88b9a86066ef77f0da2fab05f65d7768ed8e1
   GTMAppAuth: f69bd07d68cd3b766125f7e072c45d7340dea0de
   GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
   HotKey: 400beb7caa29054ea8d864c96f5ba7e5b4852277
-  hotkey_manager_macos: 1e2edb0c7ae4fe67108af44a9d3445de41404160
-  just_audio: 9b67ca7b97c61cfc9784ea23cd8cc55eb226d489
-  media_kit_libs_macos_video: b3e2bbec2eef97c285f2b1baa7963c67c753fb82
-  media_kit_video: c75b07f14d59706c775778e4dd47dd027de8d1e5
+  hotkey_manager_macos: a4317849af96d2430fa89944d3c58977ca089fbe
+  just_audio: eb8b016ac4493159ab24db4f7215e55303b39a84
+  macos_ui: ff29104a215c2e1b76f37aacdcbba648abb25faa
+  macos_window_utils: 23f54331a0fd51eea9e0ed347253bf48fd379d1d
+  media_kit_libs_macos_video: 85a23e549b5f480e72cae3e5634b5514bc692f65
+  media_kit_video: fa6564e3799a0a28bff39442334817088b7ca758
   OrderedSet: e539b66b644ff081c73a262d24ad552a69be3a94
-  package_info_plus: 02d7a575e80f194102bef286361c6c326e4c29ce
-  path_provider_foundation: 0b743cbb62d8e47eab856f09262bb8c1ddcfe6ba
+  package_info_plus: 122abb51244f66eead59ce7c9c200d6b53111779
+  path_provider_foundation: bb55f6dbba17d0dccd6737fe6f7f34fbd0376880
+  pdfium_flutter: e5a6e881af0b182d5b0465ebad23a8a20caa28d4
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
-  record_macos: ccd7864c9922136e50c2937b21384f0b175922f2
-  screen_retriever_macos: 776e0fa5d42c6163d2bf772d22478df4b302b161
-  share_plus: 76dd39142738f7a68dd57b05093b5e8193f220f7
-  shared_preferences_foundation: fcdcbc04712aee1108ac7fda236f363274528f78
-  sqflite: 673a0e54cc04b7d6dba8d24fb8095b31c3a99eec
+  record_macos: 5d55909f9650314be6424ffd6b123ac75a08c3c1
+  screen_retriever_macos: 452e51764a9e1cdb74b3c541238795849f21557f
+  share_plus: 3c787998077d6b31e839225a282e9e27edf99274
+  shared_preferences_foundation: 9e1978ff2562383bd5676f64ec4e9aa8fa06a6f7
+  sqflite: c35dad70033b8862124f8337cc994a809fcd9fa3
   sqlite3: a51c07cf16e023d6c48abd5e5791a61a47354921
-  sqlite3_flutter_libs: f9114e4bbe1f2e03dd543373c53d23245982ca13
-  url_launcher_macos: 5335912b679c073563f29d89d33d10d459f95451
-  wakelock_plus: 4783562c9a43d209c458cb9b30692134af456269
-  window_manager: e25faf20d88283a0d46e7b1a759d07261ca27575
+  sqlite3_flutter_libs: b3e120efe9a82017e5552a620f696589ed4f62ab
+  url_launcher_macos: be8b6bbc62bb3bd5befb226f3345dd434a91802f
+  wakelock_plus: 21ddc249ac4b8d018838dbdabd65c5976c308497
+  window_manager: b729e31d38fb04905235df9ea896128991cad99e
   ZIPFoundation: ae5b4b813d216d3bf0a148773267fff14bd51d37
 
 PODFILE CHECKSUM: 54d867c82ac51cbd61b565781b9fada492027009
 
-COCOAPODS: 1.12.1
+COCOAPODS: 1.16.2
