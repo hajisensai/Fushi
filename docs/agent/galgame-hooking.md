@@ -4,27 +4,10 @@
 
 总设计见 [design.md](../specs/galgame-mining/design.md)，阶段计划与完成证据见 [engine-adapter-plan.md](../specs/galgame-mining/engine-adapter-plan.md)，当前支持状态以 hibiki-hook 的 `engine-support.yaml` 为唯一真相源。
 
-## 0. 与 hibiki-hook 的连接契约
-
-native 采集组件在独立仓库 [`hajisensai/hibiki-hook`](https://github.com/hajisensai/hibiki-hook)。两仓靠三条契约挂钩，**改任一条都必须同轮更新对面**，否则线上直接握手失败：
-
-| 契约 | 本仓（消费方） | hibiki-hook（提供方） |
-|---|---|---|
-| 共享内存 ABI | `hibiki/windows/runner/voice_hook_ipc.h` 的 `kSharedVersion`，由 `hibiki/test/tools/voice_hook_ipc_contract_test.dart` 守卫 | [`include/voice_hook_ipc.h`](https://github.com/hajisensai/hibiki-hook/blob/main/include/voice_hook_ipc.h) 的同名常量 |
-| 二进制分发 | `hibiki/lib/src/mining/galgame_helper_installer.dart` 的 `kGalgameHelperRepo` / `kGalgameHelperReleaseTag`，按 sha256 侧车自动升级 | `voice-hook-helper.yml` 打 `voice_hook_<arch>.zip` + `.sha256` 到固定 tag `voice-hook-helper` |
-| 引擎支持矩阵 | `docs/specs/galgame-mining/engine-support.md` 是**逐字节只读副本** | [`engine-support.yaml`](https://github.com/hajisensai/hibiki-hook/blob/main/engine-support.yaml) 是唯一真相源，生成 `docs/engine-support.md` |
-
-提升 `kSharedVersion` 后必须在 hibiki-hook 手动 `workflow_dispatch` 跑 `voice-hook-helper.yml` 重发 release；不重发就会让新 host 对上旧 ABI 的 helper。同步矩阵副本用 hibiki-hook 的生成器直接写本仓路径，再 `--check` 验证逐字节一致：
-
-```sh
-python tools/generate_engine_support.py --output <hibiki>/docs/specs/galgame-mining/engine-support.md
-python tools/generate_engine_support.py --check --output <hibiki>/docs/specs/galgame-mining/engine-support.md
-```
-
 ## 1. 边界与开工条件
 
 - native 采集组件在独立仓库 `hajisensai/hibiki-hook`，不得重新放回 Hibiki，也不得编进 `Hibiki.exe`。
-- Hibiki 仓只负责稳定 IPC 的消费、文本与音频配对、制卡 UI、支持矩阵副本和本 SOP。
+- Hibiki 仓只负责稳定 IPC 的消费、文本与音频配对、制卡 UI 和本 SOP；引擎支持矩阵不在本仓保存副本，直接看 hibiki-hook 的 [`docs/engine-support.md`](https://github.com/hajisensai/hibiki-hook/blob/main/docs/engine-support.md)（由 `engine-support.yaml` 自动生成，唯一真相源）。
 - 一引擎一任务、一独立 worktree；批量引擎任务只负责排队和汇总，不在同一实现任务里交叉试错。两仓分别使用独立 worktree 和提交；Hibiki worktree 先运行 `tool/setup_worktree.ps1`，并按根 `CLAUDE.md` 登记 ownership。
 - 先记录游戏名、版本、exe 架构、启动器与真实游戏进程关系、原始失败路径；没有真实样本证据时只能标记 `implemented_unverified`，不得写成“已支持”。
 - 不收集、提交或上传游戏 exe、脚本、图片、语音、归档密钥等受版权或敏感内容。诊断包也遵守同一边界。
@@ -162,7 +145,7 @@ ctest --test-dir build-x86 -C Release --output-on-failure
 - 原始逐句资源时的格式、大小/哈希一致性证据；否则明确说明是否含混音；
 - 失败、降级与已知限制，以及证据日期。
 
-证据只保存元数据、哈希、结构化事件和必要截图；截图先检查个人信息与版权范围，禁止把游戏素材作为测试资产提交。随后更新 hibiki-hook 的 `engine-support.yaml`，运行生成器更新 `docs/engine-support.md`，再同步 Hibiki 的只读矩阵副本。状态只能按证据从 `implemented_unverified` 提升为已验证。
+证据只保存元数据、哈希、结构化事件和必要截图；截图先检查个人信息与版权范围，禁止把游戏素材作为测试资产提交。随后更新 hibiki-hook 的 `engine-support.yaml`，运行生成器更新 hibiki-hook 的 `docs/engine-support.md`（唯一真相源，Hibiki 不再另存副本）。状态只能按证据从 `implemented_unverified` 提升为已验证。
 
 ## 8. 提交与交接
 

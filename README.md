@@ -125,6 +125,7 @@ Every scenario shares the same dictionaries, statistics, and review workflow. It
 
 - **17 interface languages**, fully localized across all platforms.
 - Share text from other apps to look up words directly.
+- **Galgame voice mining** (Windows) uses an optional native voice-hook helper, distributed separately at [hajisensai/hibiki-hook](https://github.com/hajisensai/hibiki-hook).
 
 ## Platform Support
 

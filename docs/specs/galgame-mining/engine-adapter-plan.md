@@ -43,8 +43,8 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 - **P0 已完成**（hibiki-hook `77c6cf8`）：新增 `engine-support.yaml` 单一真相源、依赖-free
   生成器、自动生成的 `docs/engine-support.md`、真实样本证据守卫和 CI 漂移检查。矩阵覆盖 Siglus、
   KiriKiriZ、通用 XAudio2/DirectSound、Ren'Py/FFmpeg 54、Unity IL2CPP；已实现但缺真机命中的路径明确
-  标成 `implemented_unverified`，没有扩大兼容宣称。Hibiki 侧只读同步副本见
-  [engine-support.md](engine-support.md)。
+  标成 `implemented_unverified`，没有扩大兼容宣称。矩阵唯一真相源在 hibiki-hook 的
+  [`docs/engine-support.md`](https://github.com/hajisensai/hibiki-hook/blob/main/docs/engine-support.md)，Hibiki 不再保存副本。
 - **P1 已完成**（hibiki-hook `f4242b9`）：`dll_main.cpp` 从约 3940 行降到 521 行；新增
   `EngineAdapter` 契约、中心 registry、工作线程模块观察接缝，并把 Unity、Windows 通用音频、Siglus、
   KiriKiri、Ren'Py、文本渲染、Loopback 原样拆到 `hook/adapters/`。HookWorker 只保留 IPC、共享状态、
