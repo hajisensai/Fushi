@@ -50,11 +50,13 @@ import 'package:hibiki/src/sync/cloud_remote_book_client.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/manual_sync_ui.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/remote_cover_image.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
+import 'package:hibiki/src/sync/sync_progress_banner.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/utils.dart';
@@ -392,6 +394,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               children: [
                 if (!isCupertinoPlatform(context)) _buildPageHeader(),
                 _buildTagBar(allTags.valueOrNull ?? const []),
+                // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
+                const SyncProgressBanner(),
                 Expanded(
                   child: books.when(
                     data: (bookList) {
