@@ -10,7 +10,7 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | **ภาษาไทย** | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![ตั้งค่าใน 5 นาที](https://img.shields.io/badge/%F0%9F%93%96%20%E0%B8%95%E0%B8%B1%E0%B9%89%E0%B8%87%E0%B8%84%E0%B9%88%E0%B8%B2%E0%B9%83%E0%B8%99%205%20%E0%B8%99%E0%B8%B2%E0%B8%97%E0%B8%B5-0969DA?style=for-the-badge)](../user-guide.th.md)
+[![คู่มือ hibiki ที่แม้แต่ฮิราซาวะ ยุอิ ก็ตั้งค่าเสร็จใน 5 นาที](https://img.shields.io/badge/%F0%9F%93%96%20%E0%B8%84%E0%B8%B9%E0%B9%88%E0%B8%A1%E0%B8%B7%E0%B8%AD%20hibiki%20%E0%B8%97%E0%B8%B5%E0%B9%88%E0%B9%81%E0%B8%A1%E0%B9%89%E0%B9%81%E0%B8%95%E0%B9%88%E0%B8%AE%E0%B8%B4%E0%B8%A3%E0%B8%B2%E0%B8%8B%E0%B8%B2%E0%B8%A7%E0%B8%B0%20%E0%B8%A2%E0%B8%B8%E0%B8%AD%E0%B8%B4%20%E0%B8%81%E0%B9%87%E0%B8%95%E0%B8%B1%E0%B9%89%E0%B8%87%E0%B8%84%E0%B9%88%E0%B8%B2%E0%B9%80%E0%B8%AA%E0%B8%A3%E0%B9%87%E0%B8%88%E0%B9%83%E0%B8%99%205%20%E0%B8%99%E0%B8%B2%E0%B8%97%E0%B8%B5-0969DA?style=for-the-badge)](../user-guide.th.md)
 
 **แม้แต่ฮิราซาวะ ยุอิ ก็ตั้งค่าเสร็จใน 5 นาที** — นำเข้าพจนานุกรมและเสียงที่แนะนำได้ในขั้นตอนเดียว
 

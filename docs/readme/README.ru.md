@@ -10,7 +10,7 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | **Русский** | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Настройка за 5 минут](https://img.shields.io/badge/%F0%9F%93%96%20%D0%9D%D0%B0%D1%81%D1%82%D1%80%D0%BE%D0%B9%D0%BA%D0%B0%20%D0%B7%D0%B0%205%20%D0%BC%D0%B8%D0%BD%D1%83%D1%82-0969DA?style=for-the-badge)](../user-guide.ru.md)
+[![Руководство hibiki, которое даже Юи Хирасава настроит за 5 минут](https://img.shields.io/badge/%F0%9F%93%96%20%D0%A0%D1%83%D0%BA%D0%BE%D0%B2%D0%BE%D0%B4%D1%81%D1%82%D0%B2%D0%BE%20hibiki%2C%20%D0%BA%D0%BE%D1%82%D0%BE%D1%80%D0%BE%D0%B5%20%D0%B4%D0%B0%D0%B6%D0%B5%20%D0%AE%D0%B8%20%D0%A5%D0%B8%D1%80%D0%B0%D1%81%D0%B0%D0%B2%D0%B0%20%D0%BD%D0%B0%D1%81%D1%82%D1%80%D0%BE%D0%B8%D1%82%20%D0%B7%D0%B0%205%20%D0%BC%D0%B8%D0%BD%D1%83%D1%82-0969DA?style=for-the-badge)](../user-guide.ru.md)
 
 **Даже Юи Хирасава настроит за 5 минут** — импортируйте рекомендованные словари и аудио за один шаг.
 

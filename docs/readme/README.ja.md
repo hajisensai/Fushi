@@ -10,7 +10,7 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | **日本語** | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![5分で終わる設定ガイド](https://img.shields.io/badge/%F0%9F%93%96%205%E5%88%86%E3%81%A7%E7%B5%82%E3%82%8F%E3%82%8B%E8%A8%AD%E5%AE%9A%E3%82%AC%E3%82%A4%E3%83%89-0969DA?style=for-the-badge)](../user-guide.ja.md)
+[![平沢唯でも5分で設定できる hibiki ユーザーガイド](https://img.shields.io/badge/%F0%9F%93%96%20%E5%B9%B3%E6%B2%A2%E5%94%AF%E3%81%A7%E3%82%825%E5%88%86%E3%81%A7%E8%A8%AD%E5%AE%9A%E3%81%A7%E3%81%8D%E3%82%8B%20hibiki%20%E3%83%A6%E3%83%BC%E3%82%B6%E3%83%BC%E3%82%AC%E3%82%A4%E3%83%89-0969DA?style=for-the-badge)](../user-guide.ja.md)
 
 **平沢唯でも5分で設定できる** — 推奨辞書と音声をワンステップでインポート。
 

@@ -10,7 +10,7 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | **Español** | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Configuración en 5 minutos](https://img.shields.io/badge/%F0%9F%93%96%20Configuraci%C3%B3n%20en%205%20minutos-0969DA?style=for-the-badge)](../user-guide.es.md)
+[![La guía de hibiki que hasta Yui Hirasawa configura en 5 minutos](https://img.shields.io/badge/%F0%9F%93%96%20La%20gu%C3%ADa%20de%20hibiki%20que%20hasta%20Yui%20Hirasawa%20configura%20en%205%20minutos-0969DA?style=for-the-badge)](../user-guide.es.md)
 
 **Hasta Yui Hirasawa lo configura en 5 minutos** — importa los diccionarios y el audio recomendados en un solo paso.
 

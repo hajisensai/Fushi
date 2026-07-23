@@ -10,7 +10,7 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | **Nederlands** | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Instellen in 5 minuten](https://img.shields.io/badge/%F0%9F%93%96%20Instellen%20in%205%20minuten-0969DA?style=for-the-badge)](../user-guide.nl.md)
+[![De hibiki-handleiding die zelfs Yui Hirasawa in 5 minuten instelt](https://img.shields.io/badge/%F0%9F%93%96%20De%20hibiki--handleiding%20die%20zelfs%20Yui%20Hirasawa%20in%205%20minuten%20instelt-0969DA?style=for-the-badge)](../user-guide.nl.md)
 
 **Zelfs Yui Hirasawa stelt het in 5 minuten in** — importeer de aanbevolen woordenboeken en audio in één stap.
 

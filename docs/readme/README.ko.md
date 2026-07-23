@@ -10,7 +10,7 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | **한국어** | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![5분 설정 가이드](https://img.shields.io/badge/%F0%9F%93%96%205%EB%B6%84%20%EC%84%A4%EC%A0%95%20%EA%B0%80%EC%9D%B4%EB%93%9C-0969DA?style=for-the-badge)](../user-guide.ko.md)
+[![히라사와 유이도 5분이면 설정하는 hibiki 사용 설명서](https://img.shields.io/badge/%F0%9F%93%96%20%ED%9E%88%EB%9D%BC%EC%82%AC%EC%99%80%20%EC%9C%A0%EC%9D%B4%EB%8F%84%205%EB%B6%84%EC%9D%B4%EB%A9%B4%20%EC%84%A4%EC%A0%95%ED%95%98%EB%8A%94%20hibiki%20%EC%82%AC%EC%9A%A9%20%EC%84%A4%EB%AA%85%EC%84%9C-0969DA?style=for-the-badge)](../user-guide.ko.md)
 
 **히라사와 유이도 5분이면 설정 완료** — 추천 사전과 오디오를 한 번에 가져오기.
 
