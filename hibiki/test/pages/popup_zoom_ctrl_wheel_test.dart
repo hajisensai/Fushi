@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
@@ -170,9 +171,128 @@ void main() {
       expect(layerSrc.contains('zoomFontStep(zoomIn: zoomIn)'), isTrue);
       expect(layerSrc.contains('Icons.text_decrease'), isTrue);
       expect(layerSrc.contains('Icons.text_increase'), isTrue);
-      // 可见提示（桌面平台附带 dictionary_font_size_zoom_hint）。
+      // 可见提示（桌面平台附带 dictionary_font_size_zoom_hint）。BUG-1033 后气泡本体由
+      // HibikiIconButton 统一提供，这里只负责把带 hint 的 message 交给它。
       expect(layerSrc.contains('dictionary_font_size_zoom_hint'), isTrue);
-      expect(layerSrc.contains('Tooltip('), isTrue);
+      expect(layerSrc.contains('tooltip: message'), isTrue);
+    });
+  });
+
+  /// BUG-1033 guard：嵌套查词弹出时 A−/A+ 的气泡不得自作主张冒出来。
+  ///
+  /// 复现的是真实几何：[calcPopupPosition] 把子弹窗锚成
+  /// `left = selectionRect.left` / `top = selectionRect.bottom + gap`，A−/A+ 又钉在顶栏
+  /// 最左端，所以嵌套弹窗一出现，A− 必然落在用户刚点的那个词正下方——也就是指针的停留处。
+  /// Material [Tooltip] 默认 waitDuration 是 [Duration.zero]，而 Flutter 的 MouseTracker
+  /// 每帧后会用最后已知光标位置重新 hit-test，于是「光标不动、按钮出现在它下面」就立刻弹出
+  /// 「缩小查词字号」盖住父层正文。根因修在 [HibikiIconButton] 这唯一出口
+  /// （[kIconButtonTooltipHoverDelay]），同时把这里原本重复嵌套的两层 Tooltip 收成一层。
+  group('BUG-1033：子弹窗落到光标下时 A−/A+ 不得立刻冒气泡', () {
+    final String layerSrc = File(
+      'lib/src/pages/implementations/dictionary_popup_layer.dart',
+    ).readAsStringSync();
+
+    Widget buildLayer() => buildTestApp(
+          SizedBox(
+            width: 320,
+            height: 240,
+            child: DictionaryPopupLayer(
+              result: null,
+              isSearching: false,
+              webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
+              onDismiss: () {},
+              onClose: () {},
+              onTextSelected: (String text, Rect rect) {},
+              onLinkClick: (String query, Rect rect) {},
+              onMineEntry: (Map<String, String> fields) async =>
+                  const MinePopupResult(),
+              onDuplicateCheck: (String expression, String reading) async =>
+                  false,
+            ),
+          ),
+        );
+
+    testWidgets('按钮出现在静止光标下时不弹气泡（真实悬停后才弹）', (WidgetTester tester) async {
+      // 先量出 A− 的中心（此时尚无鼠标指针参与）。
+      await tester.pumpWidget(buildLayer());
+      final Offset center = tester.getCenter(find.byIcon(Icons.text_decrease));
+
+      // 换成空壳，把鼠标停到那个坐标——此处当前什么都没有。
+      await tester
+          .pumpWidget(buildTestApp(const SizedBox(width: 320, height: 240)));
+      final TestGesture mouse =
+          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: center);
+      addTearDown(() => mouse.removePointer());
+      await tester.pump();
+
+      // 光标一动不动，子弹窗出现，A− 正落在光标下 —— 不得立刻冒气泡。
+      await tester.pumpWidget(buildLayer());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.textContaining(t.popup_font_size_decrease),
+        findsNothing,
+        reason: '子弹窗刚落到光标下就弹「缩小查词字号」会盖住父层正文（BUG-1033）',
+      );
+
+      // 但真实悬停意图（停够 waitDuration）仍要给出提示，不能把功能弄丢。
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(
+        find.textContaining(t.dictionary_font_size_zoom_hint),
+        findsOneWidget,
+        reason: '悬停停留够久仍必须显示 Ctrl+滚轮提示',
+      );
+    });
+
+    testWidgets('A−/A+ 只有一层 Tooltip，且桌面上真能看到 Ctrl+滚轮提示',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(buildLayer());
+
+      // 每个按钮恰好一层 Tooltip：两层嵌套时内层先吃 hover，外层的 hint 永远显示不出来。
+      final List<String> zoomMessages = tester
+          .widgetList<Tooltip>(find.byType(Tooltip))
+          .map((Tooltip w) => w.message)
+          .whereType<String>()
+          .where((String m) =>
+              m.contains(t.popup_font_size_decrease) ||
+              m.contains(t.popup_font_size_increase))
+          .toList();
+      expect(
+        zoomMessages.length,
+        2,
+        reason: 'A−/A+ 各只应有一层 Tooltip（BUG-1033：原先内外重复嵌套）',
+      );
+      // 那唯一一层必须带上 hint —— 否则 TODO-1353 的提示等于没给。
+      expect(
+        zoomMessages
+            .where((String m) => m.contains(t.dictionary_font_size_zoom_hint))
+            .length,
+        2,
+        reason: '桌面上唯一那层 Tooltip 必须带 Ctrl+滚轮提示',
+      );
+    });
+
+    test('源码守卫：气泡悬停延迟收口在 HibikiIconButton 唯一出口', () {
+      // popup layer 不得再自建 Tooltip（重复嵌套会把 hint 挡掉）。
+      expect(
+        layerSrc.contains('Tooltip('),
+        isFalse,
+        reason: 'A−/A+ 的气泡由 HibikiIconButton 统一提供，不得再套一层（BUG-1033）',
+      );
+      // 根因修在组件唯一出口：不得沿用 Material 的 Duration.zero 默认值。
+      final String buttonSrc = File(
+        'lib/src/utils/components/hibiki_icon_button.dart',
+      ).readAsStringSync();
+      expect(
+        buttonSrc.contains('waitDuration: kIconButtonTooltipHoverDelay'),
+        isTrue,
+        reason: '纯图标按钮的 Tooltip 必须显式给悬停延迟（BUG-1033）',
+      );
+      expect(
+        buttonSrc.contains('const Duration kIconButtonTooltipHoverDelay ='),
+        isTrue,
+      );
     });
   });
 }

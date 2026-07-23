@@ -38,6 +38,22 @@ class HibikiHeaderLabelScope extends InheritedWidget {
       expandLabels != oldWidget.expandLabels;
 }
 
+/// BUG-1033：纯图标按钮气泡的悬停延迟。
+///
+/// Material [Tooltip] 的 `waitDuration` 默认是 [Duration.zero]，而 Flutter 的
+/// MouseTracker 每帧结束后会用**最后已知的光标位置**重新 hit-test。两者相乘的后果是：
+/// 光标一动不动、只要有个带 tooltip 的按钮新出现在它下面，就会立刻冒出气泡——用户没有
+/// 做过任何悬停动作。查词弹窗把这点放大成必现：嵌套查词的子弹窗锚成
+/// `left = selectionRect.left` / `top = selectionRect.bottom + gap`（见
+/// `dictionary_popup_layer.dart` 的 `calcPopupPosition`），左上角紧贴被查词，而顶栏最左端
+/// 正是 A−/A+ ——子层一弹出，按钮必然落在用户刚点的那个词正下方，也就是光标停留处，于是
+/// 「缩小查词字号」气泡自动盖住父层正文。
+///
+/// 根因在「零延迟」而非某一个调用点，故修在本组件这唯一出口：给一段悬停延迟，让气泡只对
+/// **真实的悬停意图**作出反应。长按触发路径（移动端 [TooltipTriggerMode.longPress]）不看
+/// 此值，行为不变。
+const Duration kIconButtonTooltipHoverDelay = Duration(milliseconds: 500);
+
 /// A button that can be set as busy. When busy, the icon is faded out when its
 /// [onTap] action is on-going and processing, which can be used to
 /// indicate when a button cannot be pressed once its click action has been
@@ -298,7 +314,11 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
   /// 故不走此路径。空 [tooltip] 不包裹，避免弹出空浮层。
   Widget _withTooltip(Widget child) {
     if (widget.tooltip.isEmpty) return child;
-    return Tooltip(message: widget.tooltip, child: child);
+    return Tooltip(
+      message: widget.tooltip,
+      waitDuration: kIconButtonTooltipHoverDelay,
+      child: child,
+    );
   }
 
   Widget _focusable(BuildContext context, Widget button) {

@@ -765,24 +765,27 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// [DictionaryPopupWebViewState.zoomFontStep] 走与 Ctrl+滚轮完全同一条 JS 步进路径
   /// （同 [8,72] 夹紧、就地改 zoom 即时生效不闪烁、popupZoomFont 回调持久化到
   /// dictionaryFontSize），三端一致；WebView 未挂载（无结果占位/搜索中）时安全 no-op。
-  /// 外层可见 [Tooltip]（桌面 hover / 移动端长按）给出按钮语义，桌面平台附带
-  /// 「Ctrl+滚轮也可缩放」提示（dictionary_font_size_zoom_hint）——解决缩放入口零提示。
+  ///
+  /// BUG-1033：这里原本在 [HibikiIconButton] 外面**又**套了一层 [Tooltip]，而
+  /// [HibikiIconButton] 自己已经为纯图标形态包了一层。两层嵌套下，更靠近 child 的内层
+  /// 先命中 hover，外层那句「Ctrl+滚轮也可缩放」从来没机会显示——桌面用户看到的一直是
+  /// 只有标签的单行气泡，TODO-1353 想给的提示等于没给。现在收成一层：把完整 message 直接
+  /// 交给 [HibikiIconButton.tooltip]，由那唯一一层负责显示（并带
+  /// [kIconButtonTooltipHoverDelay] 悬停延迟，避免子弹窗落到光标下就自动冒泡盖住父层正文）。
   Widget _buildZoomFontButton(BuildContext context, {required bool zoomIn}) {
     final String label =
         zoomIn ? t.popup_font_size_increase : t.popup_font_size_decrease;
+    // 桌面才提 Ctrl+滚轮：移动端没有滚轮，多这行只会让气泡更长。
     final String message = isDesktopPlatform
         ? '$label\n${t.dictionary_font_size_zoom_hint}'
         : label;
-    return Tooltip(
-      message: message,
-      child: HibikiIconButton(
-        icon: zoomIn ? Icons.text_increase : Icons.text_decrease,
-        size: 20,
-        tooltip: label,
-        constraints: _topActionConstraints,
-        padding: EdgeInsets.zero,
-        onTap: () => webViewKey.currentState?.zoomFontStep(zoomIn: zoomIn),
-      ),
+    return HibikiIconButton(
+      icon: zoomIn ? Icons.text_increase : Icons.text_decrease,
+      size: 20,
+      tooltip: message,
+      constraints: _topActionConstraints,
+      padding: EdgeInsets.zero,
+      onTap: () => webViewKey.currentState?.zoomFontStep(zoomIn: zoomIn),
     );
   }
 

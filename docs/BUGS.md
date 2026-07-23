@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 999 条。点号进各自文件。
+> 共 1000 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1033](bugs/BUG-1033-popup-zoom-tooltip-misfire.md) | ✅ | ✅ | 嵌套查词弹出时 A- 的「缩小查词字号」tooltip 自动弹出遮挡正文 |
 | [BUG-1032](bugs/BUG-1032-qb-webui-no-request-timeout.md) | ✅ | ✅ | qB WebUI 请求缺少超时 |
 | [BUG-1031](bugs/BUG-1031-download-default-config-no-completion-poll.md) | ✅ | ✅ | 默认下载配置未传给完成轮询 |
 | [BUG-1030](bugs/BUG-1030-extension-subtitle-panel-overlay.md) | ✅ | ✅ | 浏览器扩展字幕列表覆盖页面而非挤压画面 |
