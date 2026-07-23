@@ -1,4 +1,5 @@
-import 'package:hibiki_audio/hibiki_audio.dart' show FavoriteSentence;
+import 'package:hibiki_audio/hibiki_audio.dart'
+    show FavoriteSentence, FavoriteSentenceRepository;
 
 /// Pure, side-effect-free merge semantics for the aggregate families that
 /// travel between devices on both offline backup merge-import (TODO-888) and
@@ -111,11 +112,15 @@ class AggregateMergeService {
   ///
   /// On a content collision the row with the EARLIER createdAt is retained
   /// (mirrors favorite-word "earlier createdAt kept"), making the result
-  /// independent of which side is passed as [local]. Deletions do not propagate:
-  /// a sentence removed locally is not re-added just because [remote] still has
-  /// it; but a remote-only sentence IS added. The output is sorted newest-first
-  /// (by createdAt descending) so it matches FavoriteSentenceRepository.getAll's
-  /// ordering when written back.
+  /// independent of which side is passed as [local]. This primitive is a PURE
+  /// union: a remote-only sentence IS added (including one this device just
+  /// un-favorited). Deletion propagation is layered ABOVE this by the
+  /// `favoritesentence` tombstone suppression in
+  /// `AggregateSyncService._writeFavoriteSentences` — it drops any unioned
+  /// sentence that carries a delete tombstone so an un-favorite is not resurrected
+  /// (see `FavoriteSentenceRepository.itemKeyOf`). The output is sorted
+  /// newest-first (by createdAt descending) so it matches
+  /// FavoriteSentenceRepository.getAll's ordering when written back.
   static List<FavoriteSentence> mergeFavoriteSentences(
     List<FavoriteSentence> local,
     List<FavoriteSentence> remote,
@@ -145,21 +150,15 @@ class AggregateMergeService {
     return out;
   }
 
-  /// Content identity of a favorite sentence, matching
-  /// FavoriteSentenceRepository._contentMatch
-  /// ({text, bookKey, sectionIndex, normCharOffset}). Each nullable field uses
-  /// an explicit null sentinel so a missing bookKey never collides with an empty
-  /// string, nor a null sectionIndex with 0; text is length-prefixed so a
-  /// separator inside text cannot forge a field boundary.
-  static String _favoriteSentenceContentKey(FavoriteSentence s) {
-    const String nul = '<null>';
-    final String bookKey = s.bookKey ?? nul;
-    final String section =
-        s.sectionIndex == null ? nul : s.sectionIndex.toString();
-    final String offset =
-        s.normCharOffset == null ? nul : s.normCharOffset.toString();
-    return '${s.text.length}:${s.text}|$bookKey|$section|$offset';
-  }
+  /// Content identity of a favorite sentence — delegates to the single source of
+  /// truth [FavoriteSentenceRepository.itemKeyOf] so this dedup key, the deletion
+  /// tombstone itemKey, and the receiver-side removal all use one identical
+  /// string (no key divergence). Each nullable field uses an explicit null
+  /// sentinel so a missing bookKey never collides with an empty string, nor a
+  /// null sectionIndex with 0; text is length-prefixed so a separator inside text
+  /// cannot forge a field boundary.
+  static String _favoriteSentenceContentKey(FavoriteSentence s) =>
+      FavoriteSentenceRepository.itemKeyOf(s);
 }
 
 /// A single statistics bucket's numeric payload, MAX-merged field-by-field.

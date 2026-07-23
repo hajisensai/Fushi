@@ -5,7 +5,11 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/sync/aggregate_merge_service.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki_audio/hibiki_audio.dart' show FavoriteSentence;
+import 'package:hibiki_audio/hibiki_audio.dart'
+    show
+        FavoriteSentence,
+        FavoriteSentenceRepository,
+        kFavoriteSentenceTombstoneType;
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// Reserved top-level folder (under the backend root) that holds per-device
@@ -605,8 +609,21 @@ class AggregateSyncService {
     final List<FavoriteSentence> current = await _readFavoriteSentences();
     final List<FavoriteSentence> union =
         AggregateMergeService.mergeFavoriteSentences(current, merged);
+    // 删除传播：剔除有 `favoritesentence` 删除墓碑的收藏句——否则本设备取消收藏后，peer
+    // 快照的并集会把它重新加回（复活）。与收藏词墓碑抑制（applySnapshotToLocal 内）同律。
+    final Set<String> tombstoned = <String>{
+      for (final SyncDeletionTombstoneRow row in await _db
+          .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
+        row.itemKey,
+    };
+    final List<FavoriteSentence> out = tombstoned.isEmpty
+        ? union
+        : union
+            .where((FavoriteSentence s) =>
+                !tombstoned.contains(FavoriteSentenceRepository.itemKeyOf(s)))
+            .toList();
     final String json =
-        jsonEncode(union.map((FavoriteSentence s) => s.toJson()).toList());
+        jsonEncode(out.map((FavoriteSentence s) => s.toJson()).toList());
     await _db.setPref(_favoriteSentencesPrefKey, json);
   }
 }

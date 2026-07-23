@@ -543,6 +543,13 @@ class AppModel with ChangeNotifier {
       for (final VideoBookRow r in await database.allVideoBooks())
         r.bookUid: r.title,
     };
+    // 收藏句：itemKey 是内容键（用户看不懂），从本地在库收藏句解析回句子文本展示。
+    // deleteLocal 候选必是本地仍在库者，映射通常命中；查不到退回 itemKey。
+    final Map<String, String> favSentenceTexts = <String, String>{
+      for (final FavoriteSentence s
+          in await FavoriteSentenceRepository(database).getAll())
+        FavoriteSentenceRepository.itemKeyOf(s): s.text,
+    };
     return <DeletionCandidateView>[
       for (final DeletionPropagationCandidate c in candidates)
         DeletionCandidateView(
@@ -554,6 +561,7 @@ class AppModel with ChangeNotifier {
             // 收藏词：itemKey 是 NUL 连接键，展示其中的 expression（词本身）。
             'favoriteword' =>
               parseFavoriteWordItemKey(c.itemKey)?.expression ?? c.itemKey,
+            'favoritesentence' => favSentenceTexts[c.itemKey] ?? c.itemKey,
             _ => c.itemKey, // localaudio: displayName 本身即可读。
           },
         ),
@@ -599,6 +607,10 @@ class AppModel with ChangeNotifier {
                 sourceType: parsed.sourceType,
               );
             }
+          case 'favoritesentence':
+            // 按内容键取消收藏。默认写墓碑（本设备也需抑制第三设备并集复活，与源墓碑同键）。
+            await FavoriteSentenceRepository(database)
+                .removeByItemKey(c.itemKey);
           default:
             // 未知类型：跳过。
             break;
