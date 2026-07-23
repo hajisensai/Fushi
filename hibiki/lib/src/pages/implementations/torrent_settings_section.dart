@@ -25,7 +25,7 @@ class _TorrentSettingsSectionState
       Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
   QbConnectionConfig get _config =>
-      ref.read(appProvider).qbConnectionConfig ?? const QbConnectionConfig();
+      effectiveTorrentConfig(ref.read(appProvider).qbConnectionConfig);
 
   /// 「测试连接」进行中（按钮禁用防重入）。
   bool _probing = false;

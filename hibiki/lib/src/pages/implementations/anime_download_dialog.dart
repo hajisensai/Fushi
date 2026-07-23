@@ -10,6 +10,7 @@ import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
+import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
@@ -31,6 +32,8 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
   const AnimeDownloadDialog({
     super.key,
     this.embedded = false,
+    this.showTasks = true,
+    this.tasksOnly = false,
     this.onOpenSettings,
     @visibleForTesting this.debugInitialMedia,
     @visibleForTesting this.debugInitialTorrent,
@@ -39,6 +42,12 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
   /// 内联模式：直接铺在「下载」页里（无对话框外框、无标题栏、无取消按钮），
   /// 用户要求番剧下载直接摊在页面上而非弹窗按钮。默认 false = 独立对话框。
   final bool embedded;
+
+  /// Whether the compact task section is shown under the discovery flow.
+  final bool showTasks;
+
+  /// Renders only the full-height task list for the Downloads page task tab.
+  final bool tasksOnly;
 
   /// 「后端未配置」横幅上「去设置」的落点：embedded 下由下载页传入
   /// （切到页内设置面板）；null（独立对话框，如视频页入口）则 push 下载设置页。
@@ -398,11 +407,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   }
 
   /// 推送下载：暂存字幕 → 落计划 → 推 qBittorrent（失败回滚计划）→ 催一轮 tick。
-  Future<void> _push() async {
+  Future<void> _push({bool subscribe = false}) async {
     final AppModel appModel = ref.read(appProvider);
     // null（全新用户没进过设置）→ 默认配置（auto：桌面内置引擎，开箱即用）。
     final QbConnectionConfig config =
-        appModel.qbConnectionConfig ?? const QbConnectionConfig();
+        effectiveTorrentConfig(appModel.qbConnectionConfig);
     final NyaaTorrent? torrent = _selectedTorrent;
     final AniListMedia? media = _selectedMedia;
     if (!_backendReady) return;
@@ -491,9 +500,37 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       }
       return;
     }
+    bool subscribed = false;
+    if (subscribe) {
+      final String? releaseGroup = torrent.releaseGroup?.trim();
+      final int? episode = torrent.episode;
+      final AnimeDownloadSubscriptionService? subscriptionService =
+          appModel.animeDownloadSubscriptionService;
+      if (releaseGroup != null &&
+          releaseGroup.isNotEmpty &&
+          episode != null &&
+          !torrent.isBatch &&
+          subscriptionService != null) {
+        await subscriptionService.subscribe(
+          AnimeDownloadSubscription.fromSelection(
+            anilistId: media.id,
+            seriesTitle: media.displayTitle,
+            coverUrl: media.coverUrl,
+            nyaaQuery: _nyaaQueryCtrl.text.trim(),
+            category: _category,
+            trustedOnly: _trustedOnly,
+            releaseGroup: releaseGroup,
+            resolution: torrent.resolution,
+            startAfterEpisode: episode,
+          ),
+        );
+        subscribed = true;
+      }
+    }
     unawaited(appModel.animeDownloadService?.tick());
     if (!mounted) return;
-    _snack(t.anime_download_pushed);
+    _snack(
+        subscribed ? t.download_subscription_created : t.anime_download_pushed);
     // BUG-1006：embedded（下载页内联）没有对话框可关——无条件 pop 会把宿主
     // 路由（下载 tab 页/整个页面栈）弹掉。独立对话框才 pop；内联模式复位回
     // 搜番初始阶段并刷新任务区（对照 [_pushGeneric] 成功后的节奏）。
@@ -1048,16 +1085,59 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
           ),
         Expanded(child: _buildChosenSubsList(theme)),
         const SizedBox(height: 8),
-        FilledButton.icon(
-          onPressed: (_qbMissing || _pushing) ? null : _push,
-          icon: _pushing
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.download),
-          label: Text(t.anime_download_push),
+        Builder(
+          builder: (BuildContext context) {
+            final NyaaTorrent torrent = _selectedTorrent!;
+            final String? group = torrent.releaseGroup?.trim();
+            final bool canSubscribe = !torrent.isBatch &&
+                torrent.episode != null &&
+                group != null &&
+                group.isNotEmpty &&
+                ref.read(appProvider).animeDownloadSubscriptionService != null;
+            final Widget progressIcon = _pushing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    OutlinedButton.icon(
+                      onPressed: (_qbMissing || _pushing || !canSubscribe)
+                          ? null
+                          : () => _push(subscribe: true),
+                      icon: const Icon(Icons.subscriptions_outlined),
+                      label: Text(t.download_subscription_download_and_create),
+                    ),
+                    FilledButton.icon(
+                      onPressed:
+                          (_qbMissing || _pushing) ? null : () => _push(),
+                      icon: progressIcon,
+                      label: Text(t.anime_download_push),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  canSubscribe
+                      ? t.download_subscription_choice_hint(
+                          group: group,
+                          resolution: torrent.resolution ?? '-',
+                        )
+                      : t.download_subscription_unavailable_hint,
+                  textAlign: TextAlign.end,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            );
+          },
         ),
       ],
     );
@@ -1233,7 +1313,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       return;
     }
     final QbConnectionConfig config =
-        appModel.qbConnectionConfig ?? const QbConnectionConfig();
+        effectiveTorrentConfig(appModel.qbConnectionConfig);
     final TorrentBackend backend = appModel.createTorrentBackend(config);
     bool pushed = false;
     try {
@@ -1379,12 +1459,51 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     );
   }
 
+  Widget _buildTasksPage(ThemeData theme) {
+    return RefreshIndicator(
+      onRefresh: _refreshPlans,
+      child: _plans.isEmpty
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(24),
+              children: <Widget>[
+                const SizedBox(height: 72),
+                Icon(
+                  Icons.downloading_outlined,
+                  size: 48,
+                  color: theme.colorScheme.outline,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  t.anime_download_no_tasks,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium,
+                ),
+              ],
+            )
+          : ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              itemCount: _plans.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (BuildContext context, int index) =>
+                  _buildPlanRow(theme, _plans[index]),
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Widget stage;
     if (_selectedMedia == null) {
       stage = _buildAnimeSearchStage(theme);
+      if (widget.tasksOnly) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: _buildTasksPage(theme),
+        );
+      }
     } else if (_selectedTorrent == null) {
       stage = _buildTorrentStage(theme);
     } else {
@@ -1402,8 +1521,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
             if (_qbMissing) _buildQbHintBanner(theme),
             if (_showJimakuKeyField) _buildJimakuKeyField(),
             Expanded(child: stage),
-            const SizedBox(height: 4),
-            _buildTasksSection(theme),
+            if (widget.showTasks) const SizedBox(height: 4),
+            if (widget.showTasks) _buildTasksSection(theme),
           ],
         ),
       );
@@ -1426,8 +1545,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
           if (_qbMissing) _buildQbHintBanner(theme),
           if (_showJimakuKeyField) _buildJimakuKeyField(),
           Flexible(child: stage),
-          const SizedBox(height: 4),
-          _buildTasksSection(theme),
+          if (widget.showTasks) const SizedBox(height: 4),
+          if (widget.showTasks) _buildTasksSection(theme),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
