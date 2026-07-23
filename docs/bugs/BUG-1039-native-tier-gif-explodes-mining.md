@@ -24,11 +24,23 @@
   （原图直通）语义完全不动。实测同一 4 秒区间：**6 秒 / 7.7 MB**，仍明显优于高清档
   （720px/12fps，4 秒 / 4.3 MB）。同步修正类文档注释与设置项说明文案
   （`mining_image_quality_hint`，en / zh-CN / zh-HK）。
+- **[x] ①b 满档改名（用户追加：「那他不应该叫原图了」）** — 封顶之后「原片」名不副实：这一档
+  对 GIF 已不是源分辨率/源帧率，只有截图仍是原图直通。故满档改叫**「最高 / Maximum」**
+  （只承诺是滑块顶格，不承诺具体保真度），档位阶梯变成 省流 → 标准 → 高清 → 最高。
+  一并修掉**音频**滑块的同类名不副实：音频满档过去也叫「原片」，但 192k 立体声 AAC 本就是
+  有损重编码，同改「最高」（两个滑块顶格叫法也统一）。
+  i18n key 经 `tool/i18n_sync.dart` 重命名（17 语言）：`mining_image_quality_native` →
+  `mining_image_quality_max`、`mining_audio_quality_native` → `mining_audio_quality_max`；
+  代码标识符同步：`imageTierNative` → `imageTierMax`、`gifNativeFps`/`gifNativeWidth` →
+  `gifMaxTierFps`/`gifMaxTierWidth`；档位表与设置页注释里名不副实的「原片」措辞一并改写
+  （仅保留「BUG-1039 前叫原片」这类历史叙述）。
 - **[x] ② 已加自动化测试** — `hibiki/test/utils/desktop_audio_clipper_test.dart`：
   新增回归守卫「BUG-1039：没有任何图片档把 GIF 参数留成 0（不限制）哨兵」（遍历全部
   4 档断言 `gifFps > 0 && gifWidth > 0`）；原「满档用 0 哨兵」用例改断言封顶值；
   单调递增用例的 GIF 部分从「排除满档」扩到覆盖满档。
-  `hibiki/test/settings/mining_media_quality_guard_test.dart` 同步更新满档断言。
+  `hibiki/test/settings/mining_media_quality_guard_test.dart` 同步更新满档断言，并新增
+  「两滑块满档标签是『最高』而非名不副实的『原片』」守卫（钉死 `t.mining_*_quality_max`、
+  禁止旧 `_native` key 复活）。
 - **备注**：ffmpeg 参数本身（`-ss`/`-t` 在 `-i` 前的输入侧 seek、palettegen/paletteuse 双遍）
   没问题，不需要动。**待用户真机复验**：视频页查词 →「+」新建 / 点「✓」→ 覆盖，在原片档下
   制卡应从 ~49 秒回到个位数秒，Anki 不再卡死。UI 侧的弹窗形态/层级见 [BUG-1040](BUG-1040-mined-card-dialog-centered-and-above-popup.md)。
