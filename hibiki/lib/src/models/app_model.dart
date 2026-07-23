@@ -2959,10 +2959,36 @@ class AppModel with ChangeNotifier {
   AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>
       _animeDownloadSubscriptionService;
 
-  /// 内置 libtorrent 下载宿主（桌面且用户选内置后端时懒建；DLL 缺失/加载
-  /// 失败为 null，服务回退外接 qb）。app 释放时 dispose。
+  /// 内置 libtorrent 下载宿主。**懒建**：只在第一次真的要用下载后端时才创建
+  /// （见 [_ensureEmbeddedTorrentHost]）；DLL 缺失/加载失败为 null，服务回退外接
+  /// qb。app 释放时 dispose。
+  ///
+  /// BUG-1043：以前是在 [startAnimeDownloadService] 里对**所有桌面用户无条件**
+  /// 创建——而创建 = 起一个 libtorrent session（绑 6881 TCP+UDP + 默认开 DHT）。
+  /// 于是没有任何下载任务的用户，只要 Hibiki 开着就一直在跑全球 DHT，路由器
+  /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Hibiki 即恢复。
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
+
+  /// 内置下载根目录（懒建 host 时需要）。[startAnimeDownloadService] 里算好存下，
+  /// 避免懒建路径再去 await 一次目录解析。
+  String? _embeddedTorrentSavePath;
+
+  /// 需要真会话时才建（幂等）。不支持的平台 / 无保存路径 / DLL 不可用 → null，
+  /// 调用方自然回退外接 qb。
+  EmbeddedTorrentHost? _ensureEmbeddedTorrentHost() {
+    final EmbeddedTorrentHost? existing = _embeddedTorrentHost;
+    if (existing != null) return existing;
+    final String? savePath = _embeddedTorrentSavePath;
+    if (savePath == null || !_supportsEmbeddedTorrent()) return null;
+    final EmbeddedTorrentHost? host =
+        EmbeddedTorrentHost.open(baseSavePath: savePath);
+    if (host == null) return null;
+    _embeddedTorrentHost = host;
+    // 建好即把已保存的资源限制/会话设置铺上（不必等用户改设置）。
+    _applyEmbeddedTorrentLimits(prefsRepo.qbConnectionConfig);
+    return host;
+  }
 
   /// 启动番剧下载完成监听。幂等（重复调用不重建）；失败由调用方记日志，不破坏 init。
   Future<void> startAnimeDownloadService() async {
@@ -2974,15 +3000,13 @@ class AppModel with ChangeNotifier {
     _animeDownloadPlanStore = store;
 
     // 内置引擎宿主：仅桌面（Android/iOS 阶段4/5 再定），且下载根目录就在
-    // 计划目录旁的 `content/` 子目录（分类再往下分）。DLL 未随包/未构建时
-    // open 返回 null，工厂自然回退 qb。
-    if (_supportsEmbeddedTorrent()) {
-      _embeddedTorrentHost = EmbeddedTorrentHost.open(
-        baseSavePath: path.join(baseDir.path, 'content'),
-      );
-      // 启动即把已保存的资源限制铺到宿主（不必等用户改设置）。
-      _applyEmbeddedTorrentLimits(prefsRepo.qbConnectionConfig);
-    }
+    // 计划目录旁的 `content/` 子目录（分类再往下分）。
+    //
+    // BUG-1043：这里**只记路径，不建 session**。真正的 libtorrent session 会绑
+    // 6881 并起 DHT，对没有下载任务的用户是纯粹的网络噪声（整机延迟）。改由
+    // [_ensureEmbeddedTorrentHost] 在第一次真要用后端时懒建；`_tickOnce` 本就
+    // 「没有等待中的计划就不建连接」，所以空闲用户永远不会走到那一步。
+    _embeddedTorrentSavePath = path.join(baseDir.path, 'content');
 
     _animeDownloadService = AnimeDownloadService(
       store: store,
@@ -3029,9 +3053,18 @@ class AppModel with ChangeNotifier {
     return imported;
   }
 
-  /// 内置引擎宿主是否就绪（桌面且 DLL 已加载）。下载对话框据此判断能否走
+  /// 内置引擎在本机是否可用（桌面 + DLL 能加载）。下载对话框据此判断能否走
   /// 内置引擎（不必配置外接 qb）。
-  bool get isEmbeddedTorrentReady => _embeddedTorrentHost != null;
+  ///
+  /// BUG-1043：这是**能力探测**，不代表已经开了 session。以前它等价于
+  /// `_embeddedTorrentHost != null`，逼得启动就必须建 session（= 绑 6881 + 起
+  /// DHT）才能让下载按钮可用。现在探测只加载 DLL、不碰网络，真会话由
+  /// [_ensureEmbeddedTorrentHost] 在要下载时才建。
+  bool get isEmbeddedTorrentReady =>
+      _embeddedTorrentHost != null ||
+      (_supportsEmbeddedTorrent() &&
+          _embeddedTorrentSavePath != null &&
+          EmbeddedTorrentHost.probeAvailable());
 
   /// 按配置解析出应使用的下载后端（供下载对话框的推送按钮与轮询服务共用
   /// 同一选择逻辑）。调用方用完须 `close()`（内置引擎的视图 close 是 no-op，
@@ -3042,9 +3075,13 @@ class AppModel with ChangeNotifier {
   /// 后端选择：配置选内置且宿主可用 → 内置引擎的共享 session 视图；否则
   /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
-    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
     final String backend =
         config.resolveBackend(isDesktop: _supportsEmbeddedTorrent());
+    // BUG-1043：到这里才是「真的要用下载后端」，session 在此懒建（幂等）。
+    final EmbeddedTorrentHost? host =
+        backend == QbConnectionConfig.backendEmbedded
+            ? _ensureEmbeddedTorrentHost()
+            : _embeddedTorrentHost;
     if (backend == QbConnectionConfig.backendEmbedded && host != null) {
       return host.backendView();
     }
