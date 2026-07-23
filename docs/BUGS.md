@@ -31,8 +31,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1042](bugs/BUG-1042-ext-reload-orphans-content-script.md) | ✅ | ✅ | 扩展自更新reload孤立已开页content script需手动刷新 |
-| [BUG-1041](bugs/BUG-1041-ext-connection-heartbeat.md) | ✅ | ✅ | 扩展未连接:app内存last-seen无心跳+MV3 SW空闲回收 |
+| [BUG-1044](bugs/BUG-1044-ext-reload-orphans-content-script.md) | ✅ | ✅ | 扩展自更新reload孤立已开页content script需手动刷新 |
+| [BUG-1043](bugs/BUG-1043-ext-connection-heartbeat.md) | ✅ | ✅ | 扩展未连接:app内存last-seen无心跳+MV3 SW空闲回收 |
 | [BUG-1040](bugs/BUG-1040-mined-card-dialog-centered-and-above-popup.md) | ✅ | ✅ | 「卡片已在 Anki 中」是底部 sheet 且层级低于查词弹窗（被盖住看不见） |
 | [BUG-1039](bugs/BUG-1039-native-tier-gif-explodes-mining.md) | ✅ | ✅ | 制卡「原片档」把 GIF 按源分辨率+源帧率导出 → 制卡/覆盖巨慢、Anki 无响应 |
 | [BUG-1038](bugs/BUG-1038-galgame-auto-locale.md) | ✅ | ✅ | Hibiki 启动日文非 Unicode 游戏时界面乱码 |
