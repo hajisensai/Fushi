@@ -29,16 +29,57 @@ void main() {
     }
   });
 
-  test('{video-clip} maps to t.handlebar_video_clip', () {
-    expect(ankiHandlebarLabel('{video-clip}'), t.handlebar_video_clip);
+  test('{video-clip} keeps its label but is marked deprecated', () {
+    expect(
+      ankiHandlebarLabel('{video-clip}'),
+      t.handlebar_deprecated_label(label: t.handlebar_video_clip),
+    );
   });
 
-  test('{book-cover} maps to t.handlebar_book_cover (unchanged)', () {
-    expect(ankiHandlebarLabel('{book-cover}'), t.handlebar_book_cover);
+  test('{book-cover} keeps its label but is marked deprecated', () {
+    expect(
+      ankiHandlebarLabel('{book-cover}'),
+      t.handlebar_deprecated_label(label: t.handlebar_book_cover),
+    );
+  });
+
+  test('{sasayaki-audio} keeps its label but is marked deprecated', () {
+    expect(
+      ankiHandlebarLabel('{sasayaki-audio}'),
+      t.handlebar_deprecated_label(label: t.handlebar_sasayaki_audio),
+    );
   });
 
   test('{card-image} maps to t.handlebar_card_image (TODO-1298)', () {
     expect(ankiHandlebarLabel('{card-image}'), t.handlebar_card_image);
+  });
+
+  test('canonical keys are never marked deprecated', () {
+    // 新键（含刚接管 {book-cover} 的 {card-image}）不该带弃用标注。
+    final Map<String, String> canonical = <String, String>{
+      '{card-image}': t.handlebar_card_image,
+      '{sentence-audio}': t.handlebar_sentence_audio,
+      '{sentence}': t.handlebar_sentence,
+      '{audio}': t.handlebar_audio,
+    };
+    canonical.forEach((String option, String expected) {
+      expect(
+        AnkiHandlebarOptions.deprecatedAliases.contains(option),
+        isFalse,
+        reason: '$option 是新键，不该进 deprecatedAliases',
+      );
+      expect(ankiHandlebarLabel(option), expected);
+    });
+  });
+
+  test('every deprecated alias still has a real label under the marker', () {
+    for (final String alias in AnkiHandlebarOptions.deprecatedAliases) {
+      final String label = ankiHandlebarLabel(alias);
+      expect(label, isNotEmpty);
+      expect(label, isNot(equals(alias)), reason: '$alias 不该退化成裸字面量');
+      expect(label, isNot(equals(t.handlebar_deprecated_label(label: ''))),
+          reason: '$alias 只剩弃用标记、丢了本体标签');
+    }
   });
 
   test('unknown placeholder falls back to the raw literal', () {

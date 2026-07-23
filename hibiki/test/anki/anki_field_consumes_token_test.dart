@@ -144,4 +144,52 @@ void main() {
       expect(AnkiHandlebarOptions.anyFieldConsumesCardImage({}), isFalse);
     });
   });
+
+  group('AnkiHandlebarOptions.optionsForField', () {
+    // 选择器默认隐藏没被用到的旧别名（新用户只看到新键），但当前字段正用着的旧
+    // 别名必须仍在候选里——否则 picker 的列表不含当前值（BUG-952 那类坑）。
+    List<String> optionsFor(String currentValue) =>
+        AnkiHandlebarOptions.optionsForField(
+          dictionaryNames: const <String>[],
+          currentValue: currentValue,
+        );
+
+    test('unused legacy aliases are hidden for a fresh field', () {
+      final List<String> options = optionsFor('');
+      for (final String alias in AnkiHandlebarOptions.deprecatedAliases) {
+        expect(options, isNot(contains(alias)));
+      }
+    });
+
+    test('canonical keys always remain available', () {
+      final List<String> options = optionsFor('');
+      expect(options, contains('{card-image}'));
+      expect(options, contains('{sentence-audio}'));
+      expect(options, contains('{sentence}'));
+      expect(options, contains('-'));
+    });
+
+    test('the legacy alias currently in use stays visible', () {
+      final List<String> options = optionsFor('{book-cover}');
+      expect(options, contains('{book-cover}'),
+          reason: '当前值必须在候选里，否则 picker 显示不出当前选中项');
+      // 其它没用到的别名仍然隐藏。
+      expect(options, isNot(contains('{video-clip}')));
+      expect(options, isNot(contains('{sasayaki-audio}')));
+    });
+
+    test('alias embedded in a composite HTML template also stays visible', () {
+      final List<String> options =
+          optionsFor('<div>{expression}</div><img>{book-cover}</img>');
+      expect(options, contains('{book-cover}'));
+    });
+
+    test('dictionary-specific options are appended untouched', () {
+      final List<String> options = AnkiHandlebarOptions.optionsForField(
+        dictionaryNames: const <String>['広辞苑'],
+        currentValue: '',
+      );
+      expect(options, contains('{single-glossary-広辞苑}'));
+    });
+  });
 }

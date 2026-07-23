@@ -536,9 +536,9 @@ class PreferencesRepository extends ChangeNotifier {
 
   /// 防截屏（剪贴板面板，Windows）—— 面板窗设 SetWindowDisplayAffinity
   /// (WDA_EXCLUDEFROMCAPTURE)，对用户可见但从截图 / 录屏 / 屏幕共享排除。
-  /// 默认 true（隐私优先）；面板栏 🛡 按钮切换。
+  /// 默认 false（用户要求默认关闭，2026-07；需要时面板栏 🛡 按钮或设置里打开）。
   bool get clipboardPanelBlockCapture =>
-      getPref('clipboard_panel_block_capture', defaultValue: true) as bool;
+      getPref('clipboard_panel_block_capture', defaultValue: false) as bool;
 
   Future<void> setClipboardPanelBlockCapture(bool value) async {
     await setPref('clipboard_panel_block_capture', value);
@@ -687,6 +687,23 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setPopupInstantScroll(bool value) async {
     await setPref('popup_instant_scroll', value);
+    notifyListeners();
+  }
+
+  // BUG-1026：查词弹窗滚轮速度倍率。popup.js 的粗鼠标 notch 用 0.24 降速系数（BUG-260），
+  // 部分用户觉得太慢；此倍率乘进 popup.js 的 factor（同乘粗鼠标 0.24 与触控板 1.0），
+  // 作为统一「滚轮速度」旋钮。默认 1.0 与改前逐帧一致。clamp 0.5–5.0 防越界值把滚动放飞。
+  // 一处存储驱动全部弹窗：in-app 三种弹窗经 popup_settings_injection 注入
+  // window.__hoshiPopupWheelSpeed；浏览器扩展弹窗经查词响应 theme 的 --hibiki-wheel-speed 下发。
+  double get popupWheelSpeed {
+    final double v =
+        (getPref('popup_wheel_speed', defaultValue: 1.0) as num).toDouble();
+    return v.isFinite ? v.clamp(0.5, 5.0) : 1.0;
+  }
+
+  Future<void> setPopupWheelSpeed(double value) async {
+    final double v = value.isFinite ? value.clamp(0.5, 5.0) : 1.0;
+    await setPref('popup_wheel_speed', v);
     notifyListeners();
   }
 

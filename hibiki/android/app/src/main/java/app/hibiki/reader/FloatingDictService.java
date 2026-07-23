@@ -50,6 +50,12 @@ public class FloatingDictService extends BaseFloatingService {
     private ClipboardManager clipboardManager;
     private ClipboardManager.OnPrimaryClipChangedListener clipListener;
     private String lastClipText = "";
+    // BUG-1025：同词重复复制的「回声 vs 用户显式重查」时间窗（与 Dart 侧
+    // kClipboardRecopyWindow 同义、同值）。挖词/写回剪贴板的自触发回声在毫秒级到达，
+    // 用户手动再次复制同一个词通常隔数秒：窗口内的同词判为回声跳过，超窗口的放行重查。
+    // 旧实现是「与上次相同即 return」的永久去重，导致同一个词第二次复制查不了。
+    private static final long RECOPY_WINDOW_MS = 800L;
+    private long lastClipTime = 0L;
     private boolean monitoringEnabled = true;
 
     private String currentWord = "";
@@ -321,8 +327,13 @@ public class FloatingDictService extends BaseFloatingService {
         CharSequence text = clip.getItemAt(0).getText();
         if (text == null) return;
         String trimmed = text.toString().trim();
-        if (trimmed.isEmpty() || trimmed.equals(lastClipText)) return;
+        if (trimmed.isEmpty()) return;
+        // BUG-1025：时间窗去重（见 RECOPY_WINDOW_MS）——同词只在极短窗口内判为自触发
+        // 回声跳过，超窗口的同词复制视为用户显式重查，放行。
+        long nowMs = android.os.SystemClock.elapsedRealtime();
+        if (trimmed.equals(lastClipText) && (nowMs - lastClipTime) < RECOPY_WINDOW_MS) return;
         lastClipText = trimmed;
+        lastClipTime = nowMs;
         new Handler(Looper.getMainLooper()).post(() -> {
             // HBK-AUDIT-056: a clip event posted before teardown can run after
             // the views are gone; bail if the content view no longer exists.

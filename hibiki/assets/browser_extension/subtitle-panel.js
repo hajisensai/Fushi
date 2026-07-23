@@ -23,13 +23,17 @@
   var REOPEN_ID = 'hibiki-subtitle-reopen';
   var PANEL_WIDTH = 320;
   var FONT_STEPS = [0.85, 1.0, 1.15, 1.3];
-  var PUSH_SELECTORS = ['.watch-video--player-view', '.watch-video', '.nfp.nf-player-container', '#appMountPoint'];
+  var PUSH_SELECTORS = [
+    'ytd-app',
+    '.watch-video--player-view', '.watch-video', '.nfp.nf-player-container', '#appMountPoint',
+  ];
 
   // TODO-1219：面板默认关闭——enabled 由扩展 options 的 netflixSubtitlePanel 开关驱动（默认 false）。
   var st = {
-    activeLang: null, videoId: null, cues: [], rowEls: [], currentIndex: -1,
+    activeLang: null, videoId: null, cues: [], rowEls: [], rowTextEls: [], rowTsEls: [], currentIndex: -1,
     autoScroll: true, fontScaleIndex: 1, hidden: false, panel: null, listEl: null,
-    langSelect: null, builtLang: null, builtLen: -1, pushedEl: null, prevWidth: '', tickTimer: null,
+    langSelect: null, builtLang: null, builtLen: -1, builtCues: null,
+    pushedEl: null, prevWidth: '', prevWidthPriority: '', tickTimer: null,
     pushSuspended: false, enabled: false,
     // B（外挂字幕）：用户主动打开面板（即使暂无轨也不自动拆）；已加载外挂轨的原始 cue + 时轴偏移。
     forceOpen: false, extTracks: Object.create(null), offsetBar: null, offsetLabel: null,
@@ -157,23 +161,50 @@
   }
 
   function applyPush() {
-    // TODO-1219 P3：录制期间推挤被挂起（video 需全宽），此时不重挂（refresh/fullscreenchange 也不）。
+    // BUG-1030：面板是独立右栏，不是浮在宿主页上。YouTube 压缩 ytd-app；Netflix 沿用
+    // 已验证的播放器容器；其它站点回退到 video 的直接父容器。录制期间仍恢复全宽。
     if (st.pushSuspended || st.pushedEl) return;
+    var el = null;
     for (var i = 0; i < PUSH_SELECTORS.length; i++) {
-      var el = document.querySelector(PUSH_SELECTORS[i]);
-      if (el) {
-        st.pushedEl = el;
-        st.prevWidth = el.style.width || '';
-        el.style.width = 'calc(100% - ' + PANEL_WIDTH + 'px)';
-        return;
-      }
+      el = document.querySelector(PUSH_SELECTORS[i]);
+      if (el) break;
     }
+    if (!el) {
+      var video = videoEl();
+      el = video && video.parentElement ? video.parentElement : null;
+    }
+    if (!el || !el.style) return;
+    st.pushedEl = el;
+    try {
+      st.prevWidth = typeof el.style.getPropertyValue === 'function'
+        ? el.style.getPropertyValue('width') : (el.style.width || '');
+      st.prevWidthPriority = typeof el.style.getPropertyPriority === 'function'
+        ? el.style.getPropertyPriority('width') : '';
+      if (typeof el.style.setProperty === 'function') {
+        el.style.setProperty('width', 'calc(100% - ' + PANEL_WIDTH + 'px)', 'important');
+      } else {
+        el.style.width = 'calc(100% - ' + PANEL_WIDTH + 'px)';
+      }
+    } catch (_) {}
   }
   function clearPush() {
     if (!st.pushedEl) return;
-    try { st.pushedEl.style.width = st.prevWidth; } catch (_) {}
+    try {
+      if (typeof st.pushedEl.style.setProperty === 'function') {
+        if (st.prevWidth) {
+          st.pushedEl.style.setProperty('width', st.prevWidth, st.prevWidthPriority);
+        } else if (typeof st.pushedEl.style.removeProperty === 'function') {
+          st.pushedEl.style.removeProperty('width');
+        } else {
+          st.pushedEl.style.width = '';
+        }
+      } else {
+        st.pushedEl.style.width = st.prevWidth;
+      }
+    } catch (_) {}
     st.pushedEl = null;
     st.prevWidth = '';
+    st.prevWidthPriority = '';
   }
 
   function buildPanel() {
@@ -311,7 +342,10 @@
     var want = st.activeLang;
     var haveWant = false;
     for (var i = 0; i < tracks.length; i++) if (tracks[i].lang === want) haveWant = true;
-    if (!haveWant) { st.activeLang = tracks.length ? tracks[0].lang : null; }
+    // live 是整集字幕预取失败前的兜底。真轨稍后到达时必须自动升级，不能因为 live 先挂载
+    // 就永久留在逐字采样轨；用户仍可在下拉框里手动切回「实时采集」。
+    var fullTrackArrived = want === LIVE_LANG && tracks.length && tracks[0].lang !== LIVE_LANG;
+    if (!haveWant || fullTrackArrived) { st.activeLang = tracks.length ? tracks[0].lang : null; }
     var sig = tracks.map(function (t) { return t.lang; }).join(',');
     if (sel.getAttribute('data-sig') !== sig) {
       sel.textContent = '';
@@ -331,11 +365,27 @@
     var active = null;
     for (var i = 0; i < tracks.length; i++) if (tracks[i].lang === st.activeLang) active = tracks[i];
     st.cues = active ? active.cues : [];
-    if (st.builtLang === st.activeLang && st.builtLen === st.cues.length) return;
+    if (st.builtLang === st.activeLang && st.builtLen === st.cues.length &&
+        st.builtCues === st.cues) {
+      // BUG-1029：live cue 逐字扩长时数组和长度都不变。沿用行节点，只刷新文本/时间戳；
+      // 这样不会重建长列表，也不会把每个中间快照追加成一行。
+      for (var n = 0; n < st.cues.length; n++) {
+        if (st.rowTextEls[n] && st.rowTextEls[n].textContent !== st.cues[n].text) {
+          st.rowTextEls[n].textContent = st.cues[n].text;
+        }
+        var nextTs = fmtTs(st.cues[n].startMs);
+        if (st.rowTsEls[n] && st.rowTsEls[n].textContent !== nextTs) {
+          st.rowTsEls[n].textContent = nextTs;
+        }
+      }
+      return;
+    }
     var list = st.listEl;
     if (!list) return;
     list.textContent = '';
     st.rowEls = [];
+    st.rowTextEls = [];
+    st.rowTsEls = [];
     st.currentIndex = -1;
     if (!st.cues.length) {
       hideSubtitleOverlay();
@@ -345,6 +395,7 @@
       list.appendChild(empty);
       st.builtLang = st.activeLang;
       st.builtLen = 0;
+      st.builtCues = st.cues;
       return;
     }
     var frag = document.createDocumentFragment();
@@ -354,6 +405,7 @@
     list.appendChild(frag);
     st.builtLang = st.activeLang;
     st.builtLen = st.cues.length;
+    st.builtCues = st.cues;
   }
 
   function buildRow(cue, idx) {
@@ -383,6 +435,8 @@
     row.appendChild(text);
 
     st.rowEls[idx] = row;
+    st.rowTsEls[idx] = ts;
+    st.rowTextEls[idx] = text;
     return row;
   }
 

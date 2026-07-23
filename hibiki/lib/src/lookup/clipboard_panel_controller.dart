@@ -362,7 +362,7 @@ class ClipboardPanelController {
     // 真机实测它经 windowed WebView2 呈现为不透明，且毛玻璃≠「看见底下」。
     await _channel.setWindowAlpha((model.clipboardPanelOpacity * 100).round());
     await _channel.setPinned(model.clipboardPanelPinned);
-    // 防截屏：按 pref（默认开）给面板窗设 display affinity。窗口重建后 native
+    // 防截屏：按 pref（默认关）给面板窗设 display affinity。窗口重建后 native
     // 侧 ApplyBlockCapture 自动重加，这里每次显示再确认一次（pref 可能已改）。
     await _channel.setBlockCapture(model.clipboardPanelBlockCapture);
     // pin 视觉态同步折进 _renderPanel 的渲染脚本（审查修正：native

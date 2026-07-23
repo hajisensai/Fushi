@@ -54,8 +54,8 @@ void main() {
     await tester.pump();
 
     expect(initCount, 1, reason: 'IndexedStack 在模块存活期只挂载一个工作台 State');
-    await tester.ensureVisible(find.byKey(HomeGamePage.openCaptureKey));
-    await tester.tap(find.byKey(HomeGamePage.openCaptureKey));
+    await tester.ensureVisible(find.byKey(HomeGamePage.captureStatusKey));
+    await tester.tap(find.byKey(HomeGamePage.captureStatusKey));
     await tester.pump();
     expect(find.text('monitor-session'), findsOneWidget);
 
@@ -63,27 +63,39 @@ void main() {
     await tester.pump();
     expect(disposeCount, 0, reason: '返回游戏库只能 Offstage，不能停止 Hook 会话');
 
-    await tester.ensureVisible(find.byKey(HomeGamePage.openCaptureKey));
-    await tester.tap(find.byKey(HomeGamePage.openCaptureKey));
+    await tester.ensureVisible(find.byKey(HomeGamePage.captureStatusKey));
+    await tester.tap(find.byKey(HomeGamePage.captureStatusKey));
     await tester.pump();
     expect(initCount, 1);
     expect(disposeCount, 0);
   });
 
-  testWidgets('library opens real diagnostics section',
+  testWidgets('library opens real diagnostics section via section tab',
       (WidgetTester tester) async {
+    // 诊断总览大卡已删除，诊断页现只经顶部页签进入（焦点驱动激活，与 itest 一致）。
     await tester.pumpWidget(
       MaterialApp(
-        home: HomeGamePage(
-          monitorBuilder: (_, __) => const SizedBox(),
-          libraryBuilder: _testLibrary,
+        home: HibikiFocusRoot(
+          child: HomeGamePage(
+            monitorBuilder: (_, __) => const SizedBox(),
+            libraryBuilder: _testLibrary,
+          ),
         ),
       ),
     );
     await tester.pump();
 
-    await tester.ensureVisible(find.byKey(HomeGamePage.openDiagnosticsKey));
-    await tester.tap(find.byKey(HomeGamePage.openDiagnosticsKey));
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(HomeGamePage)),
+    );
+    expect(
+      controller.requestById(
+        const HibikiFocusId('game-library-tab-diagnostics'),
+      ),
+      isTrue,
+    );
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
 
     expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);

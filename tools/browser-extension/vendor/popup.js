@@ -3736,9 +3736,17 @@ document.addEventListener('wheel', (e) => {
     if (fineFrame) { _popupWheelFineDevice = true; }
     const coarseMouseNotch = !_popupWheelFineDevice &&
         (e.deltaMode !== 0 || absY >= POPUP_WHEEL_MOUSE_NOTCH_PX);
-    const factor = coarseMouseNotch
+    // BUG-1026: 用户可调「滚轮速度」倍率。in-app 由 popup_settings_injection 注入
+    // window.__hoshiPopupWheelSpeed；浏览器扩展经查词响应 theme 的 --hibiki-wheel-speed
+    // 由 content.js 设同名全局（content/popup 同隔离世界共享 window）。缺省/非法 → 1.0，
+    // 与改前逐帧一致。倍率同乘粗鼠标(0.24)与触控板(1.0)，作为统一滚轮速度旋钮。
+    const wheelSpeed = (typeof window.__hoshiPopupWheelSpeed === 'number' &&
+        isFinite(window.__hoshiPopupWheelSpeed) && window.__hoshiPopupWheelSpeed > 0)
+        ? window.__hoshiPopupWheelSpeed
+        : 1;
+    const factor = (coarseMouseNotch
         ? POPUP_WHEEL_PIXEL_FACTOR
-        : POPUP_WHEEL_TRACKPAD_FACTOR;
+        : POPUP_WHEEL_TRACKPAD_FACTOR) * wheelSpeed;
     // Scale the notch, cap unusually large visual deltas, then divide by zoom so
     // the on-screen step is zoom-independent.
     const visualStep = popupClampWheelVisualStep(deltaPx * factor);

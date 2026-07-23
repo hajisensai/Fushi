@@ -93,7 +93,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   Flutter 测试 17 项全绿，三个变更 Dart 测试逐文件 analyze 无问题。本机只读搜索了常用游戏目录，
   找到的是既有 `anemoi` Siglus/OVK 样本，没有 `RealLive.exe`、`Gameexe.ini` 或 NWK/KOE/NWA 样本；
   Siglus 证据不能替代 RealLive 真机证据，因此矩阵保持 `implemented_unverified`，**P5 完成框保持未勾选**。
-- **Steam 启动链路补强**（hibiki-hook `7709bf3`，[[BUG-1022]]）：Steam 库游戏不再靠 AppID
+- **Steam 启动链路补强**（hibiki-hook `7709bf3`，[[BUG-1031]]）：Steam 库游戏不再靠 AppID
   环境变量直接 `CreateProcessW`，而是由 `steam://run/<AppID>` 正常启动，再以 15ms 间隔按完整镜像路径
   自动发现并注入真实游戏进程；已有同路径实例则直接复用，避免客户端二次拉起和单实例冲突。Manosaba
   已从无进程状态按原始「启动并捕获」路径真机复测：只有一个游戏窗口、无 `Another instance`，helper

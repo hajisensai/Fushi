@@ -31,6 +31,12 @@ let hibikiLastTerm = '';
 let hibikiLastX = -1;
 let hibikiLastY = -1;
 let hibikiPending = false;
+// BUG-1024：在途闸不能只用裸 bool——MV3 background service worker 若在查词消息在途时
+// 被系统终止，chrome.runtime.sendMessage 的回调会永不触发，hibikiPending 永久卡在 true，
+// 此后所有 Shift 悬停被在途闸整条吞掉（弹窗越来越不敏感）。记发起时刻，超过此截止时间
+// 就当上一次已废弃、放行新查词（回调仍会正常复位，此值只是「回调永不来」的安全兜底）。
+let hibikiPendingSince = 0;
+const HIBIKI_PENDING_TIMEOUT_MS = 1500;
 
 // 弹窗尺寸精细化 Phase D：拖拽调整扩展弹窗尺寸。
 // hibikiResizeGrip：右下角拖拽把手（顶层 position:fixed overlay，与高亮层同父挂在
@@ -125,6 +131,13 @@ function hibikiPushCueV(text, startV, endV) {
   hibikiCueHist.push({ text: text, startV: startV, endV: endV });
   if (hibikiCueHist.length > 80) hibikiCueHist.shift();
 }
+function hibikiIsProgressiveCueUpdate(previousText, nextText) {
+  if (!previousText || !nextText || nextText.length <= previousText.length) return false;
+  // YouTube 自绘自动字幕会在同一个 DOM 节点里逐字扩长。完整前缀不变说明这是同一句的
+  // 新快照，不是新 cue；否则列表会留下「NVIDIA / NVIDIAの / NVIDIAのCEO…」一整串。
+  return nextText.indexOf(previousText) === 0;
+}
+
 function hibikiSampleCue() {
   const nowV = hibikiVideoTimeMs();
   const jumped = hibikiLastSampleV && (nowV < hibikiLastSampleV - 400 || nowV > hibikiLastSampleV + 1500);
@@ -137,6 +150,11 @@ function hibikiSampleCue() {
     return;
   }
   if (text === hibikiCurText) return;
+  if (hibikiIsProgressiveCueUpdate(hibikiCurText, text) &&
+      hibikiLiveCueUpdate(hibikiCurText, text, nowV)) {
+    hibikiCurText = text;
+    return;
+  }
   if (hibikiCurText) {
     hibikiPushCueV(hibikiCurText, hibikiCurStartV, nowV); // 上一句定格
     hibikiLiveCueEnd(hibikiCurText, nowV); // TODO-1363：live 轨同句定格真实 end
@@ -265,6 +283,16 @@ function hibikiLiveCueStart(text, startV) {
     hibikiLiveCue = null; // 回放已见过的句：不重复入轨，也不动旧句窗
   }
 }
+function hibikiLiveCueUpdate(previousText, nextText, nowV) {
+  if (!hibikiLiveCue || hibikiLiveCue.text !== previousText) return false;
+  hibikiLiveCue.text = nextText;
+  // 句子仍在屏幕上时保持一个向后的暂定窗；真正换句/清空时由 hibikiLiveCueEnd 定格。
+  hibikiLiveCue.endMs = Math.max(hibikiLiveCue.endMs, nowV + 1500);
+  const key = hibikiVideoKey() + '|' + HIBIKI_LIVE_LANG;
+  hibikiNotifyPanel(key);
+  return true;
+}
+
 function hibikiLiveCueEnd(text, endV) {
   if (hibikiLiveCue && hibikiLiveCue.text === text && endV > hibikiLiveCue.startMs) {
     hibikiLiveCue.endMs = endV;
@@ -1205,7 +1233,9 @@ document.addEventListener('mousemove', (e) => {
   if (Math.abs(e.clientX - hibikiLastX) < 4 && Math.abs(e.clientY - hibikiLastY) < 4) return;
   hibikiLastX = e.clientX;
   hibikiLastY = e.clientY;
-  if (hibikiPending) return; // 在途闸：上一次查词还没回来就不发新请求（防洪）
+  // 在途闸：上一次查词还没回来就不发新请求（防洪）。BUG-1024：带截止时间——超时视为
+  // 上一次已废弃（回调被杀死的 worker 吞掉），放行本次，避免永久卡死。
+  if (hibikiPending && Date.now() - hibikiPendingSince < HIBIKI_PENDING_TIMEOUT_MS) return;
   // 取词：复用 Flutter app 同款 window.hoshiSelection（vendor/selection.js，manifest 里先于本脚本加载）——
   // 统一处理 furigana/ruby、词边界、跨文本节点扩词，取词一致性与阅读器/视频查词同源（TODO-1150）。
   if (!window.hoshiSelection || typeof window.hoshiSelection.getCharacterAtPoint !== 'function') return;
@@ -1277,6 +1307,7 @@ function hibikiSendLookup(term, anchorRect, cueWindow) {
   }
   if (!hibikiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
   hibikiPending = true;
+  hibikiPendingSince = Date.now(); // BUG-1024：记发起时刻，供在途闸超时兜底
   try {
     chrome.runtime.sendMessage({ type: 'lookup', term }, (resp) => {
       hibikiPending = false;
@@ -1556,6 +1587,12 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
     // 「滑动关闭」偏好（app enableSwipeToClose）随 theme 下发（'1'/'0'）；置位后弹窗宿主上已挂的
     // 水平拖关手势才真正关窗（缺该 key = 旧 app，保持关闭，向后兼容）。
     hibikiSwipeCloseEnabled = theme['--hibiki-swipe-close'] === '1';
+    // BUG-1026：查词弹窗滚轮速度倍率随 theme 下发（app popupWheelSpeed）→ 设同名全局供
+    // popup.js 的 wheel 监听器读（content/popup 同隔离世界共享 window）。非法/缺失 → 1.0。
+    {
+      const ws = parseFloat(theme['--hibiki-wheel-speed']);
+      window.__hoshiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
+    }
     // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
     if (hibikiHost) {
       hibikiHost.style.width = theme['--hibiki-popup-max-width'] || '400px';

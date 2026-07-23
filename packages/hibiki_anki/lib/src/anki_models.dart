@@ -569,6 +569,34 @@ class AnkiHandlebarOptions {
         ...dictionaryNames.toSet().map((name) => '{single-glossary-$name}'),
       ];
 
+  /// 旧别名（历史命名）：语义与新键完全等价、渲染同一个值，保留只为兼容老配置与
+  /// 老卡片模板——`{book-cover}` / `{video-clip}` → `{card-image}`（都读
+  /// `context.coverPath`），`{sasayaki-audio}` → `{sentence-audio}`（都读
+  /// `context.sasayakiAudioPath`）。**渲染器永远继续认它们**，此集合只影响选择器
+  /// 展示与「已弃用」标注，不改变任何写进 `fieldMappings` 的字面量真值。
+  static const Set<String> deprecatedAliases = <String>{
+    '{book-cover}',
+    '{video-clip}',
+    '{sasayaki-audio}',
+  };
+
+  /// 字段占位符选择器的候选项：默认隐藏**没被用到的**旧别名（新用户只看到新键，
+  /// 少三个等价重复项），但当前字段已经用着的旧别名必须继续出现——否则候选列表
+  /// 不含当前值，当前选中项在 picker 里不可见、容易被误改成别的（同 BUG-952 那类
+  /// 「value 不在 items」坑）。
+  ///
+  /// [currentValue] 是该字段当前映射的字面量：可能是裸 token，也可能是把多个 token
+  /// 拼进 HTML 的大模板，故按子串包含判断（与 [anyFieldConsumesToken] 同一套语义）。
+  static List<String> optionsForField({
+    required List<String> dictionaryNames,
+    required String currentValue,
+  }) =>
+      forTermDictionaries(dictionaryNames)
+          .where((String option) =>
+              !deprecatedAliases.contains(option) ||
+              currentValue.contains(option))
+          .toList();
+
   /// TODO-948/952 诊断（纯函数）：当前 note-type 的 [fieldMappings]（Anki 字段名 →
   /// handlebar 模板）里是否**有任何一个字段消费了** [token]（如 `{sentence}` /
   /// `{sentence-audio}`）。字段模板可以是裸 token，也可以是把多个 token 拼进 HTML 的

@@ -1633,6 +1633,10 @@ class AppModel with ChangeNotifier {
     final Map<MediaType, List<MediaSource>> availableMediaSources = {
       ReaderMediaType.instance: [
         ReaderHibikiSource.instance,
+        // PDF 阅读器 Phase 1：注册第二个 reader 源。书架/页头恒用第一个（默认源），PDF 行
+        // 仅在打开时经 mediaSourceIdentifier='reader_pdf' 路由到本源、进 ReaderPdfPage。
+        // 通用 init 循环与 refreshPrefCache 按 mediaSources 遍历，自动接管本源初始化。
+        ReaderPdfSource.instance,
       ],
       DictionaryMediaType.instance: [],
     };
@@ -2536,6 +2540,10 @@ class AppModel with ChangeNotifier {
       // 与 --hibiki-color-scheme 同法（那个也被当 data-theme 而非 CSS 值消费）。值 '1'/'0'。
       '--hibiki-swipe-close':
           ReaderHibikiSource.instance.enableSwipeToClose ? '1' : '0',
+      // BUG-1026：查词弹窗滚轮速度倍率下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
+      // content.js hibikiRender 读它设 window.__hoshiPopupWheelSpeed（与 in-app 注入同名
+      // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --hibiki-swipe-close 同法。
+      '--hibiki-wheel-speed': popupWheelSpeed.toStringAsFixed(3),
     };
   }
 
@@ -4203,6 +4211,11 @@ class AppModel with ChangeNotifier {
   bool get popupInstantScroll => prefsRepo.popupInstantScroll;
   Future<void> setPopupInstantScroll(bool value) =>
       prefsRepo.setPopupInstantScroll(value);
+
+  // BUG-1026：查词弹窗滚轮速度倍率（默认 1.0，clamp 0.5–5.0）。
+  double get popupWheelSpeed => prefsRepo.popupWheelSpeed;
+  Future<void> setPopupWheelSpeed(double value) =>
+      prefsRepo.setPopupWheelSpeed(value);
 
   bool get popupBottomDocked => prefsRepo.popupBottomDocked;
   Future<void> setPopupBottomDocked(bool value) =>
