@@ -1,34 +1,13 @@
 // GENERATED-NOTE: extracted from sync_settings_schema.dart (TODO-585).
 part of '../sync_settings_schema.dart';
 
-// Manual sync action row (sync-now) + sync-report summary.
+// Manual sync action row (sync-now).
 // Shares the parent library's imports + private scope (_syncSettings / _showSnackBar / _SyncSettingsState); moved verbatim.
-
-/// 手动同步完成后的 SnackBar 摘要（消费 [SyncRunReport]）。纯函数，便于单测边界：
-/// 全 0 → "无新增"；多类型 → ` · ` 拼接；有失败 → 追加失败计数后缀。
-@visibleForTesting
-String summarizeSyncReport(SyncRunReport r) {
-  final List<String> parts = <String>[
-    if (r.booksImported > 0) t.sync_now_books_in(count: r.booksImported),
-    if (r.dictionariesImported > 0)
-      t.sync_now_dicts_in(count: r.dictionariesImported),
-    if (r.dictionariesExported > 0)
-      t.sync_now_dicts_out(count: r.dictionariesExported),
-    if (r.audiobooksImported > 0)
-      t.sync_now_audio_in(count: r.audiobooksImported),
-    if (r.audiobooksExported > 0)
-      t.sync_now_audio_out(count: r.audiobooksExported),
-    if (r.localAudioImported > 0)
-      t.sync_now_local_audio_in(count: r.localAudioImported),
-    if (r.localAudioExported > 0)
-      t.sync_now_local_audio_out(count: r.localAudioExported),
-  ];
-  final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
-  final String done = t.sync_now_done(detail: head);
-  return r.errors.isEmpty
-      ? done
-      : '$done${t.sync_now_failed_suffix(count: r.errors.length)}';
-}
+//
+// 「跑同步 + 统一反馈」的实现搬去了 lib/src/sync/manual_sync_ui.dart
+// （[runManualSyncWithFeedback] / [summarizeSyncReport]），因为媒体页的下拉同步要走
+// 同一条路径 —— 冲突必须按各自通道后端呈现、鉴权失效必须登出，这些不能被复制成
+// 多份各自演化。本行现在只是那个入口的一层壳。
 
 // ── Backup export widget ─────────────────────────────────────────────
 
@@ -41,107 +20,16 @@ class _SyncNowWidget extends StatefulWidget {
 }
 
 class _SyncNowWidgetState extends State<_SyncNowWidget> {
+  /// 设置页「立即同步」——只是 [runManualSyncWithFeedback] 的壳。重入 guard、三种
+  /// outcome 的提示、逐通道冲突呈现、鉴权失效登出全在那个共享入口里，与媒体页下拉
+  /// 同步同一份实现。设置页是显式动作，三种结果都要给用户回音（全 announce 默认 true）。
   Future<void> _syncNow() async {
-    // Re-entrant / already-in-flight guard: the whole row is a focus target
-    // whose Activate (A/Enter, see [AdaptiveSettingsRow.onTap] below) runs this
-    // too, AND a background/app-open auto-sync may already hold the sweep lock.
-    // In both cases a second trigger is a no-op — the global [syncInProgress]
-    // notifier already drives the inline bar (BUG-101), so there's nothing to do
-    // here but let it run.
-    if (syncInProgress.value) return;
-    try {
-      final AppModel appModel = widget.settingsContext.appModel;
-      final ManualSyncResult result = await runManualFullSync(
-        db: appModel.database,
-        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-        audioDatabaseRoot:
-            Directory('${appModel.appDirectory.path}/audiobooks'),
-        tempDir: appModel.temporaryDirectory,
-        localAudioEntries: appModel.localAudioDbs,
-        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
-        onPostRun: appModel.refreshAfterSyncRun,
-      );
-      if (!mounted) return;
-      switch (result.outcome) {
-        case ManualSyncOutcome.notConfigured:
-          _showSnackBar(context, t.sync_compare_unavailable);
-        case ManualSyncOutcome.busy:
-          _showSnackBar(context, t.sync_now_busy);
-        case ManualSyncOutcome.completed:
-          final SyncRunReport report = result.report!;
-          _showSnackBar(context, summarizeSyncReport(report));
-          // Manual sync is an explicit user action: prompt resolution
-          // immediately, unconstrained by in-book/snooze (ConflictSource.manual).
-          // option B 双通道：逐通道用**各自的**后端呈现该通道的冲突——合并报告的
-          // 冲突可能来自互联通道，用云后端去 apply 会写错端。
-          for (final ManualSyncChannelReport channel in result.channelReports) {
-            if (channel.report.conflicts.isEmpty) continue;
-            if (!mounted) return;
-            await appModel.syncConflictPrompter.present(
-              navigatorKey: appModel.navigatorKey,
-              db: appModel.database,
-              backend: channel.backend,
-              conflicts: channel.report.conflicts,
-              source: ConflictSource.manual,
-              inBook: appModel.isMediaOpen,
-            );
-          }
-      }
-    } on SyncAuthError catch (e) {
-      // TODO-836: insufficient_scope (or any auth error) — the saved session is
-      // no longer usable. Sign out so the account row falls back to "not signed
-      // in" (the sign-in button reappears), then prompt re-login. The sign-out
-      // sequence mirrors the manual sign-out path in account.part.dart.
-      final AppModel appModel = widget.settingsContext.appModel;
-      final SyncRepository repo = SyncRepository(appModel.database);
-      try {
-        final SyncBackend backend =
-            resolveSyncBackend(await repo.getBackendType());
-        await backend.signOut(repo: repo);
-        backend.clearCache();
-        await repo.clearFolderCache();
-      } catch (_) {
-        // Best-effort sign-out; never hide the original re-login prompt.
-      }
-      if (mounted) _showSnackBar(context, friendlySyncError(e));
-    } catch (e) {
-      if (mounted) {
-        _showSnackBar(
-          context,
-          t.sync_error(message: friendlySyncErrorDetail(e)),
-        );
-      }
-    }
-    // No local teardown: the inline bar is driven by the global [syncInProgress]
-    // / [syncProgress] notifiers, which the sync entry points reset in their own
-    // finally blocks.
-  }
-
-  /// Localized phase name for the inline progress line.
-  String _phaseLabel(SyncPhase phase) {
-    switch (phase) {
-      case SyncPhase.books:
-        return t.sync_progress_books;
-      case SyncPhase.readingData:
-        return t.sync_progress_reading;
-      case SyncPhase.dictionaries:
-        return t.sync_progress_dictionaries;
-      case SyncPhase.localAudio:
-        return t.sync_progress_local_audio;
-      case SyncPhase.audiobooks:
-        return t.sync_progress_audiobooks;
-      case SyncPhase.videos:
-        return t.sync_progress_videos;
-    }
-  }
-
-  /// "phase (k/N) title" — count omitted when the phase has no items.
-  String _progressLine(SyncProgress p) {
-    final String phase = _phaseLabel(p.phase);
-    if (p.itemTotal <= 0) return phase;
-    final String head = '$phase (${p.itemIndex + 1}/${p.itemTotal})';
-    final String? title = p.title;
-    return (title == null || title.isEmpty) ? head : '$head $title';
+    await runManualSyncWithFeedback(
+      context: context,
+      appModel: widget.settingsContext.appModel,
+      // 已在同步中时这一行本就在显示进度条，再弹一句 toast 是噪音（BUG-101）。
+      announceBusy: false,
+    );
   }
 
   @override
@@ -159,7 +47,7 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
             final AdaptiveSettingsRow row = AdaptiveSettingsRow(
               title: t.sync_now,
               subtitle:
-                  syncing && p != null ? _progressLine(p) : t.sync_now_hint,
+                  syncing && p != null ? syncProgressLine(p) : t.sync_now_hint,
               icon: Icons.sync,
               controlBelow: true,
               // The action lives on the trailing button; giving the ROW an onTap

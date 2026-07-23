@@ -16,6 +16,8 @@ import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:hibiki/src/sync/manual_sync_ui.dart';
+import 'package:hibiki/src/sync/sync_progress_banner.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:hibiki/utils.dart';
@@ -337,6 +339,30 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _clearSearch();
   }
 
+  /// 词典页下拉 = **手动同步**（云备份 + 互联两条通道）。
+  ///
+  /// 与书架 / 视频页不同，词典页没有「远端词典列表」这种视图——词典资源是被**同步进
+  /// 来的**（同步流程的 dictionaries 阶段，互联通道走 listRemoteDictionaries）。所以这里
+  /// 下拉只有同步一件事，跑完 setState 重读 `appModel.dictionaries` /
+  /// `dictionaryHistory`（本页不走 Riverpod，数据直读 AppModel），让同步落地的新词典
+  /// 和新查词历史立刻显示。
+  ///
+  /// 只挂在历史列表 / 空态上，**不挂查询结果屏**：那一屏的下拉早已被「清空查询」占用
+  /// （[_clearSearchFromResultPull]，手势的真实来源是结果 WebView 内的 JS），再叠一层
+  /// 刷新就是两个手势抢同一个下拉。
+  Future<void> _pullToRefreshDictionary() async {
+    await runManualSyncWithFeedback(
+      context: context,
+      appModel: appModel,
+      // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
+      // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
+      announceNotConfigured: false,
+      announceBusy: false,
+    );
+    if (!mounted) return;
+    setState(() {});
+  }
+
   // ── build ──────────────────────────────────────────────────────────
 
   @override
@@ -361,6 +387,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
             children: [
               if (!isCupertinoPlatform(context)) _buildPageHeader(),
               _buildSearchHeader(),
+              // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
+              const SyncProgressBanner(),
               Expanded(child: _buildBody()),
             ],
           ),
@@ -441,12 +469,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   Widget _buildBody() {
     if (_hasActiveQuery) {
+      // 查询结果屏不包 RefreshIndicator：那儿的下拉是「清空查询」
+      // （[_clearSearchFromResultPull]），两个手势不能抢同一个下拉。
       return _buildQueryBody();
     }
-    if (appModel.dictionaryHistory.isEmpty) {
-      return _buildPlaceholder();
-    }
-    return _buildDictionaryHistory();
+    return RefreshIndicator(
+      onRefresh: _pullToRefreshDictionary,
+      child: appModel.dictionaryHistory.isEmpty
+          ? _buildPlaceholder()
+          : _buildDictionaryHistory(),
+    );
   }
 
   Widget _buildQueryBody() {
@@ -467,25 +499,36 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   Widget _buildPlaceholder() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final noDictionaries = appModel.dictionaries.isEmpty;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          HibikiPlaceholderMessage(
-            icon: mediaType.outlinedIcon,
-            message: noDictionaries
-                ? t.dictionaries_menu_empty
-                : t.info_empty_home_tab,
+    final Widget content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        HibikiPlaceholderMessage(
+          icon: mediaType.outlinedIcon,
+          message: noDictionaries
+              ? t.dictionaries_menu_empty
+              : t.info_empty_home_tab,
+        ),
+        if (noDictionaries) ...[
+          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+          FilledButton.icon(
+            icon: const Icon(Icons.auto_stories_outlined, size: 18),
+            label: Text(t.dialog_import_dictionary),
+            onPressed: appModel.showDictionaryMenu,
           ),
-          if (noDictionaries) ...[
-            SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-            FilledButton.icon(
-              icon: const Icon(Icons.auto_stories_outlined, size: 18),
-              label: Text(t.dialog_import_dictionary),
-              onPressed: appModel.showDictionaryMenu,
-            ),
-          ],
         ],
+      ],
+    );
+    // 空态也要能下拉同步——RefreshIndicator 需要一个真实 Scrollable 后代，裸 Center
+    // 没有滚动就吃不到下拉手势。撑到 minHeight = 视口高度既保住原来的垂直居中，又让
+    // AlwaysScrollableScrollPhysics 在内容不满一屏时仍然响应下拉。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(child: content),
+        ),
       ),
     );
   }
@@ -503,6 +546,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         top: tokens.spacing.gap / 2,
         bottom: tokens.spacing.page,
       ),
+      // 历史只有一两条、撑不满一屏时，默认 physics 不可滚 → 下拉同步吃不到手势。
+      physics: const AlwaysScrollableScrollPhysics(),
       controller: DictionaryMediaType.instance.scrollController,
       itemCount: historyResults.length,
       itemBuilder: (context, index) {

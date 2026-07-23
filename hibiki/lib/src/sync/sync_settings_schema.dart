@@ -28,6 +28,7 @@ import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_server_controller.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
+import 'package:hibiki/src/sync/manual_sync_ui.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pair_v2_client.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_ping_client.dart';
 import 'package:hibiki/src/sync/pairing/discovered_pairing_probe.dart';
@@ -36,9 +37,7 @@ import 'package:hibiki/src/sync/tls/hibiki_tofu_probe.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
-import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -54,6 +53,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/utils/misc/hibiki_share.dart';
+
+/// [summarizeSyncReport] 的实现搬去了 manual_sync_ui.dart（媒体页下拉同步共用），
+/// 这里再导出一次以保持既有导入点（test/sync/sync_summary_test.dart）不变。
+export 'package:hibiki/src/sync/manual_sync_ui.dart' show summarizeSyncReport;
 
 part 'sync_settings_schema/account.part.dart';
 part 'sync_settings_schema/backend_config.part.dart';

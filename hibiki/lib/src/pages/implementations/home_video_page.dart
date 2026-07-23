@@ -48,12 +48,14 @@ import 'package:hibiki/src/sync/deletion_prompt.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/manual_sync_ui.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/interconnect_download_manager.dart';
 import 'package:hibiki/src/sync/cloud_remote_video_client.dart';
 import 'package:hibiki/src/sync/remote_cover_image.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_progress_banner.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
@@ -279,14 +281,28 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     _maybeBackfillCovers();
   }
 
-  /// 下拉刷新：强制重拉远端视频列表 + 本地列表，await 远端 future 完成后指示器才收起。
+  /// 下拉刷新 = **手动同步**：先跑一遍云备份 / 互联同步，再强制重拉远端视频列表 + 本地
+  /// 列表，await 全程完成后指示器才收起。
   ///
   /// 顶层 tab 保活（[HomePage] 的 `_keepAliveTabs`）后，切回视频 tab 不再隐式重拉远端，
   /// 故给用户一个**显式**强制刷新入口——别的设备新上传的互联视频，不重启 app 也能刷出来。
+  ///
+  /// 同步排在重读列表**之前**：同步会往本地库里落新视频和观看进度，先刷列表就会漏掉
+  /// 本次同步的产物。没配同步后端时 [runManualSyncWithFeedback] 直接返回 notConfigured
+  /// 且不弹提示，退化成纯列表刷新——与加同步之前的行为一字不差。
   /// [_loadRemoteVideos] 内部吞异常返回 `failed:true`，await 不会抛，指示器必定收起
   /// （客户端 [listRemoteVideos] 已用 listTimeout 封顶，host 卡响应也不会无限转圈）。
   /// 显式刷新失败时给一个可见 SnackBar（带原因），避免「看不到远端视频却不知为何」。
   Future<void> _pullToRefresh() async {
+    await runManualSyncWithFeedback(
+      context: context,
+      appModel: ref.read(appProvider),
+      // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
+      // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
+      announceNotConfigured: false,
+      announceBusy: false,
+    );
+    if (!mounted) return;
     final Future<_RemoteVideoState?> remote = _loadRemoteVideos();
     if (mounted) {
       setState(() {
@@ -1699,6 +1715,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               children: <Widget>[
                 if (!isCupertinoPlatform(context)) _buildPageHeader(canImport),
                 _buildTagFilterBar(allTags),
+                // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
+                const SyncProgressBanner(),
                 Expanded(
                   child: _buildVideoLibraryBody(),
                 ),
