@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
-
 import '../audiobook/audiobook_model.dart';
+import 'cue_parse_dispatch.dart';
 import 'subtitle_markup.dart';
 import 'text_file_io.dart';
 
@@ -20,15 +18,14 @@ import 'text_file_io.dart';
 /// 名前はまだない。
 /// ```
 class SrtParser {
-  static const int largeContentComputeThreshold = 1024 * 1024;
+  static const int largeContentComputeThreshold =
+      CueParseDispatch.largeContentComputeThreshold;
 
-  static int utf8ContentByteLength(String content) {
-    return utf8.encode(content).length;
-  }
+  static int utf8ContentByteLength(String content) =>
+      CueParseDispatch.utf8ContentByteLength(content);
 
-  static bool shouldParseInIsolate(String content) {
-    return utf8ContentByteLength(content) > largeContentComputeThreshold;
-  }
+  static bool shouldParseInIsolate(String content) =>
+      CueParseDispatch.shouldParseInIsolate(content);
 
   /// SRT 独立书籍使用的固定章节标识。
   static const String defaultChapter = 'srt://default';
@@ -64,28 +61,14 @@ class SrtParser {
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) {
-    if (shouldParseInIsolate(content)) {
-      return compute(_parseStringIsolate, <String, dynamic>{
-        'content': content,
-        'bookKey': bookKey,
-        'chapterHref': chapterHref,
-        'audioFileIndex': audioFileIndex,
-      });
-    }
-    return Future<List<AudioCue>>.value(parseString(
+    return CueParseDispatch.run(
       content: content,
-      bookKey: bookKey,
-      chapterHref: chapterHref,
-      audioFileIndex: audioFileIndex,
-    ));
-  }
-
-  static List<AudioCue> _parseStringIsolate(Map<String, dynamic> args) {
-    return parseString(
-      content: args['content'] as String,
-      bookKey: args['bookKey'] as String,
-      chapterHref: args['chapterHref'] as String,
-      audioFileIndex: args['audioFileIndex'] as int,
+      parse: () => parseString(
+        content: content,
+        bookKey: bookKey,
+        chapterHref: chapterHref,
+        audioFileIndex: audioFileIndex,
+      ),
     );
   }
 
