@@ -2322,5 +2322,6 @@
   "games_auto_cover": "Fetch cover automatically",
   "games_cover_updated": "Cover updated",
   "games_cover_not_found": "No usable cover found in the game folder or executable",
-  "games_cover_searching": "Looking for a cover..."
+  "games_cover_searching": "Looking for a cover...",
+  "game_text_thread_audio_count": "$count with audio"
 }

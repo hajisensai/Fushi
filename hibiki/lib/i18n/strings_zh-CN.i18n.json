@@ -2322,5 +2322,6 @@
   "games_auto_cover": "自动获取封面",
   "games_cover_updated": "封面已更新",
   "games_cover_not_found": "游戏目录和程序图标里都没找到可用封面",
-  "games_cover_searching": "正在查找封面..."
+  "games_cover_searching": "正在查找封面...",
+  "game_text_thread_audio_count": "$count 行有音频"
 }

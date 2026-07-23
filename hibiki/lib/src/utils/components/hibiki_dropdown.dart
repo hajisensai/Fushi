@@ -49,6 +49,7 @@ class GamepadMenuDropdown<T> extends StatefulWidget {
     this.label,
     this.hintText,
     this.focusId,
+    this.entrySubtitle,
   });
 
   final List<GamepadDropdownEntry<T>> entries;
@@ -63,6 +64,12 @@ class GamepadMenuDropdown<T> extends StatefulWidget {
   final String? label;
   final String? hintText;
   final HibikiFocusId? focusId;
+
+  /// Optional per-entry subtitle (a second, muted line under the label inside
+  /// the open menu — e.g. a latest-line preview for text threads). Returning
+  /// null/empty for a value keeps that row single-line. The closed trigger
+  /// still shows only the label.
+  final String? Function(T value)? entrySubtitle;
 
   @override
   State<GamepadMenuDropdown<T>> createState() => _GamepadMenuDropdownState<T>();
@@ -129,7 +136,11 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       hintText: widget.hintText,
       dropdownMenuEntries: <DropdownMenuEntry<T>>[
         for (final GamepadDropdownEntry<T> e in widget.entries)
-          DropdownMenuEntry<T>(value: e.value, label: e.label),
+          DropdownMenuEntry<T>(
+            value: e.value,
+            label: e.label,
+            labelWidget: _entryLabelWidget(context, e),
+          ),
       ],
       onSelected: widget.enabled
           ? (T? value) {
@@ -140,6 +151,29 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
     return widget.width == null
         ? menu
         : SizedBox(width: widget.width, child: menu);
+  }
+
+  /// Two-line label for the stock [DropdownMenu] path when a subtitle exists;
+  /// null falls back to the plain `label` string rendering.
+  Widget? _entryLabelWidget(BuildContext context, GamepadDropdownEntry<T> e) {
+    final String? subtitle = widget.entrySubtitle?.call(e.value);
+    if (subtitle == null || subtitle.isEmpty) return null;
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(e.label, maxLines: 2, softWrap: true),
+        Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildMenuAnchor(BuildContext context) {
@@ -274,7 +308,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
     final GamepadDropdownEntry<T> entry = widget.entries[i];
     final Color foreground =
         selected ? tokens.surfaces.primary : tokens.surfaces.onSurface;
-    final Widget text = Text(
+    final Widget title = Text(
       entry.label,
       maxLines: 2,
       softWrap: true,
@@ -283,6 +317,24 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
         fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
       ),
     );
+    final String? subtitle = widget.entrySubtitle?.call(entry.value);
+    final Widget text = (subtitle == null || subtitle.isEmpty)
+        ? title
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              title,
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.type.metadata.copyWith(
+                  color: tokens.surfaces.onVariant,
+                ),
+              ),
+            ],
+          );
     // Flex (Expanded) needs a bounded width; only the pinned-width menu hands
     // the item finite constraints. The unbounded fallback uses a min-size row
     // so a flex child can never assert against infinite width.
