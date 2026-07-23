@@ -2315,5 +2315,6 @@
   "pdf_outline_empty": "This PDF has no contents.",
   "pdf_bookmarks": "Bookmarks",
   "pdf_bookmarks_empty": "No bookmarks yet.",
-  "pdf_bookmark_added": "Bookmark added"
+  "pdf_bookmark_added": "Bookmark added",
+  "video_clip_exported_with_subtitles": "Clip exported with subtitles: ${path}"
 }
