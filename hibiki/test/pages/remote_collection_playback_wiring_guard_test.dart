@@ -47,14 +47,16 @@ void main() {
         reason: '_effectiveRemoteInfo 应优先返回当前成员');
   });
 
-  test('首页合集行把有序远端成员传进播放器', () {
+  test('首页保留有序远端成员 → 播放器的透传接线（_openRemote）', () {
+    // 封面卡形态（用户拍板 2026-07-22）后合集成员不再直接渲染在库页，旧「行内
+    // itemBuilder 收集有序远端成员」的调用点随横排行退役；但 _openRemote /
+    // _buildRemoteVideoCard 的成员透传参数必须保留（散卡远端播放 + 后续详情页
+    // 接入远端成员的既定通道），删参即回退成「远端只认 host 下发 episodes」。
     final String src =
         read('lib/src/pages/implementations/home_video_page.dart');
     expect(src.contains('remoteCollectionMembers:'), true,
         reason: '_openRemote 应把合集成员透传给 neutralizedRemote');
-    // itemBuilder 收集本合集的有序远端成员（跳过本地成员）。
-    expect(
-        src.contains('if (it.payload.remote != null) it.payload.remote!'), true,
-        reason: '合集行应收集有序远端成员列表');
+    expect(src.contains('List<RemoteVideoInfo>? collectionMembers'), true,
+        reason: '_openRemote/_buildRemoteVideoCard 必须保留有序成员透传参数');
   });
 }

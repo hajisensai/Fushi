@@ -2259,5 +2259,7 @@
   "video_danmaku_manual_bind_failed": "Couldn't load danmaku for this episode. Try again later.",
   "remote_video_info_size": "Size: $size",
   "remote_video_info_no_subtitle": "No subtitles",
-  "app_icon_presets": "Presets"
+  "app_icon_presets": "Presets",
+  "collection_watched_progress": "Watched $done/$total",
+  "collection_continue_progress": "Continue · EP $n"
 }

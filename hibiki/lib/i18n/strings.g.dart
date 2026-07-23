@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 38437 (2261 per locale)
+/// Strings: 38471 (2263 per locale)
 ///
-/// Built on 2026-07-22 at 14:47 UTC
+/// Built on 2026-07-22 at 16:24 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3008,6 +3008,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String remote_video_info_size({required Object size}) => 'Size: ${size}';
   String get remote_video_info_no_subtitle => 'No subtitles';
   String get app_icon_presets => 'Presets';
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -8123,6 +8128,13 @@ class _StringsAr extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -13311,6 +13323,13 @@ class _StringsDe extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -18515,6 +18534,13 @@ class _StringsEs extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -23730,6 +23756,13 @@ class _StringsFr extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -28872,6 +28905,13 @@ class _StringsId extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -34062,6 +34102,13 @@ class _StringsIt extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -39057,6 +39104,13 @@ class _StringsJa extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -44055,6 +44109,13 @@ class _StringsKo extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -49223,6 +49284,13 @@ class _StringsNl extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -54406,6 +54474,13 @@ class _StringsPtBr extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -59572,6 +59647,13 @@ class _StringsRu extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -64683,6 +64765,13 @@ class _StringsTh extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -69826,6 +69915,13 @@ class _StringsTr extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -74956,6 +75052,13 @@ class _StringsVi extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 // Path: <root>
@@ -79729,6 +79832,12 @@ class _StringsZhCn extends _StringsEn {
   String get remote_video_info_no_subtitle => '不含字幕';
   @override
   String get app_icon_presets => '预设';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      '已看完 ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) => '继续看 第${n}集';
 }
 
 // Path: <root>
@@ -84642,6 +84751,13 @@ class _StringsZhHk extends _StringsEn {
   String get remote_video_info_no_subtitle => 'No subtitles';
   @override
   String get app_icon_presets => 'Presets';
+  @override
+  String collection_watched_progress(
+          {required Object done, required Object total}) =>
+      'Watched ${done}/${total}';
+  @override
+  String collection_continue_progress({required Object n}) =>
+      'Continue · EP ${n}';
 }
 
 /// Flat map(s) containing all translations.
@@ -89256,6 +89372,11 @@ extension on _StringsEn {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -93868,6 +93989,11 @@ extension on _StringsAr {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -98501,6 +98627,11 @@ extension on _StringsDe {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -103133,6 +103264,11 @@ extension on _StringsEs {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -107771,6 +107907,11 @@ extension on _StringsFr {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -112391,6 +112532,11 @@ extension on _StringsId {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -117026,6 +117172,11 @@ extension on _StringsIt {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -121623,6 +121774,11 @@ extension on _StringsJa {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -126224,6 +126380,11 @@ extension on _StringsKo {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -130852,6 +131013,11 @@ extension on _StringsNl {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -135477,6 +135643,11 @@ extension on _StringsPtBr {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -140107,6 +140278,11 @@ extension on _StringsRu {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -144721,6 +144897,11 @@ extension on _StringsTh {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -149344,6 +149525,11 @@ extension on _StringsTr {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -153962,6 +154148,11 @@ extension on _StringsVi {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
@@ -158546,6 +158737,11 @@ extension on _StringsZhCn {
         return '不含字幕';
       case 'app_icon_presets':
         return '预设';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            '已看完 ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => '继续看 第${n}集';
       default:
         return null;
     }
@@ -163138,6 +163334,11 @@ extension on _StringsZhHk {
         return 'No subtitles';
       case 'app_icon_presets':
         return 'Presets';
+      case 'collection_watched_progress':
+        return ({required Object done, required Object total}) =>
+            'Watched ${done}/${total}';
+      case 'collection_continue_progress':
+        return ({required Object n}) => 'Continue · EP ${n}';
       default:
         return null;
     }
