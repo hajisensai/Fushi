@@ -94,6 +94,12 @@ target_include_directories(hibiki_resource_audio_ready_test PRIVATE "include")
 target_compile_definitions(hibiki_resource_audio_ready_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME hibiki_resource_audio_ready_test COMMAND hibiki_resource_audio_ready_test)
 
+add_executable(hibiki_voice_resource_filename_test
+  "tests/voice_resource_filename_test.cpp"
+)
+target_include_directories(hibiki_voice_resource_filename_test PRIVATE "hook")
+add_test(NAME hibiki_voice_resource_filename_test COMMAND hibiki_voice_resource_filename_test)
+
 add_executable(hibiki_qlie_pack_test
   "tests/qlie_pack_test.cpp"
 )

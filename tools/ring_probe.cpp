@@ -150,6 +150,47 @@ void DumpTextMeta(const SharedHeader* h) {
   fflush(stdout);
 }
 
+void DumpTextEvents(const SharedHeader* h) {
+  const uint64_t count = h->text_write_count;
+  const uint8_t* base = reinterpret_cast<const uint8_t*>(h) +
+                        h->text_region_offset;
+  const uint64_t start = count > hibiki_voice_hook::kTextSlotCount
+                             ? count - hibiki_voice_hook::kTextSlotCount
+                             : 0;
+  for (uint64_t seq = start + 1; seq <= count; ++seq) {
+    const auto* slot = reinterpret_cast<const hibiki_voice_hook::TextSlot*>(
+        base + static_cast<size_t>((seq - 1) %
+                                   hibiki_voice_hook::kTextSlotCount) *
+                   hibiki_voice_hook::kTextSlotBytes);
+    if (slot->seq != seq) continue;
+    char text[1400] = {0};
+    if (slot->byte_len != 0) {
+      const uint8_t* raw = reinterpret_cast<const uint8_t*>(slot) +
+                           sizeof(hibiki_voice_hook::TextSlot);
+      if (slot->is_utf8 != 0) {
+        memcpy(text, raw, (std::min)(slot->byte_len, 1399u));
+      } else {
+        WideCharToMultiByte(CP_UTF8, 0,
+                            reinterpret_cast<const wchar_t*>(raw),
+                            static_cast<int>(slot->byte_len / 2), text,
+                            sizeof(text) - 1, nullptr, nullptr);
+      }
+    }
+    char hook_code[600] = {0};
+    WideCharToMultiByte(CP_UTF8, 0, slot->hook_code,
+                        static_cast<int>(slot->hook_code_len), hook_code,
+                        sizeof(hook_code) - 1, nullptr, nullptr);
+    printf("%llu|%llu|%llu|%u|%u|%u|%.*s|%s|%s\n",
+           static_cast<unsigned long long>(seq),
+           static_cast<unsigned long long>(slot->timestamp_ms),
+           static_cast<unsigned long long>(slot->thread_id),
+           slot->source_kind, slot->event_kind, slot->event_flags,
+           static_cast<int>(slot->hook_name_len), slot->hook_name, hook_code,
+           text);
+  }
+  fflush(stdout);
+}
+
 void DumpUnityEvents(const SharedHeader* h) {
   const uint64_t count = h->unity_voice_write_count;
   const uint64_t start = count > hibiki_voice_hook::kUnityVoiceEventCount
@@ -675,7 +716,8 @@ int main(int argc, char** argv) {
   if (argc < 2) {
     fprintf(stderr,
             "usage: hibiki_voice_ring_probe <pid> [轮数=30] [间隔ms=500]\n"
-            "  或导出: <pid> --dump-text | --list-clips\n"
+            "  或导出: <pid> --dump-text | --dump-text-events | --list-clips\n"
+            "         <pid> --select-text-thread <thread_id|0>\n"
             "         <pid> --dump-wav|--dump-utterance <ts_ms> <out.wav>\n"
             "         <pid> --dump-sources <ts_ms> <prefix>\n"
             "         <pid> --dump-loopback <ts_start_ms> <ts_end_ms> <out.wav>\n");
@@ -684,9 +726,13 @@ int main(int argc, char** argv) {
   const DWORD pid = static_cast<DWORD>(strtoul(argv[1], nullptr, 10));
   const int rounds = (argc >= 3) ? atoi(argv[2]) : 30;
   const int interval_ms = (argc >= 4) ? atoi(argv[3]) : 500;
+  const bool select_text_thread =
+      argc >= 4 && strcmp(argv[2], "--select-text-thread") == 0;
 
   const std::wstring shm = SharedMemoryName(pid);
-  HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, shm.c_str());
+  const DWORD mapping_access =
+      select_text_thread ? FILE_MAP_READ | FILE_MAP_WRITE : FILE_MAP_READ;
+  HANDLE mapping = OpenFileMappingW(mapping_access, FALSE, shm.c_str());
   if (mapping == nullptr) {
     fprintf(stderr,
             "OpenFileMapping 失败：%lu（injector 未对 pid=%lu 建共享内存？pid 错？）\n",
@@ -694,7 +740,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   auto* header = static_cast<const SharedHeader*>(
-      MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
+      MapViewOfFile(mapping, mapping_access, 0, 0, 0));
   if (header == nullptr) {
     fprintf(stderr, "MapViewOfFile 失败：%lu\n", GetLastError());
     CloseHandle(mapping);
@@ -711,6 +757,23 @@ int main(int argc, char** argv) {
   const uint8_t* ring =
       reinterpret_cast<const uint8_t*>(header) + sizeof(SharedHeader);
 
+  // Diagnostic equivalent of Hibiki VoiceHookReader::SelectTextThread. This
+  // changes only the production IPC selector; text/resource events still have
+  // to be produced by the live Luna/game hooks.
+  if (select_text_thread) {
+    const uint64_t thread_id = strtoull(argv[3], nullptr, 10);
+    auto* writable_header = const_cast<SharedHeader*>(header);
+    InterlockedExchange64(
+        reinterpret_cast<volatile LONGLONG*>(
+            &writable_header->selected_text_thread_id),
+        static_cast<LONGLONG>(thread_id));
+    printf("selected_text_thread_id=%llu\n",
+           static_cast<unsigned long long>(thread_id));
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
+
   // 导出模式：--dump-text 打印所有台词行；--dump-wav <ts_ms> <out.wav> 导出最近该时间戳的语音。
   if (argc >= 3 && strcmp(argv[2], "--dump-text") == 0) {
     DumpText(header);
@@ -720,6 +783,12 @@ int main(int argc, char** argv) {
   }
   if (argc >= 3 && strcmp(argv[2], "--dump-text-meta") == 0) {
     DumpTextMeta(header);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
+  if (argc >= 3 && strcmp(argv[2], "--dump-text-events") == 0) {
+    DumpTextEvents(header);
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     return 0;

@@ -1,11 +1,34 @@
 #ifndef HIBIKI_LUNA_TEXT_SELECTOR_H_
 #define HIBIKI_LUNA_TEXT_SELECTOR_H_
 
+#include <cstring>
 #include <cstdint>
 #include <map>
 #include <string>
 
 namespace hibiki_voice_hook {
+
+// Some KiriKiri/Luna hook paths concatenate an already complete line with an
+// exact second copy.  Preserve a view of the first complete line instead of
+// discarding the event as an artifact.  A one-character doubled string remains
+// untouched so the artifact filter can continue rejecting single-character
+// repetition noise.
+inline int LunaNormalizedTextLength(const wchar_t* text, int len) {
+  if (text == nullptr || len < 4 || (len % 2) != 0) return len;
+  const int half = len / 2;
+  for (int i = 0; i < half; ++i) {
+    if (text[i] != text[half + i]) return len;
+  }
+  return half;
+}
+
+inline int LunaNormalizedTextLengthForHook(const char* hook_name,
+                                           const wchar_t* text, int len) {
+  if (hook_name == nullptr || std::strcmp(hook_name, "EmbedKrkrZ") != 0) {
+    return len;
+  }
+  return LunaNormalizedTextLength(text, len);
+}
 
 inline bool LunaTextIsArtifact(const wchar_t* text, int len) {
   if (text == nullptr || len <= 1) return false;

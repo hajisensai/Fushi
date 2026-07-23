@@ -45,6 +45,8 @@
 #include "siglus_text.h"
 #include "visual_arts_ovk.h"
 #include "voice_hook_ipc.h"
+#include "voice_resource_filename.h"
+#include "voice_resource_pairing.h"
 #include "generated/profile_includes.inc"
 
 // C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
@@ -152,15 +154,17 @@ std::wstring VoiceBaseName(const wchar_t* storagename) {
 }
 
 void WriteVoiceOggAt(const uint8_t* data, uint32_t len,
-                     const wchar_t* storagename, uint64_t tick_ms) {
+                     const wchar_t* storagename, uint64_t tick_ms,
+                     uint64_t text_event_id = 0) {
   if (data == nullptr || len == 0) return;
   wchar_t temp[MAX_PATH] = {0};
   const DWORD n = GetTempPathW(MAX_PATH, temp);
   if (n == 0 || n > MAX_PATH) return;
   std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
   CreateDirectoryW(dir.c_str(), nullptr);
-  std::wstring file = dir + L"\\" + std::to_wstring(tick_ms) + L"_" +
-                      VoiceBaseName(storagename);
+  std::wstring file =
+      dir + L"\\" + hibiki_voice_hook::BuildVoiceResourceFileName(
+                          tick_ms, VoiceBaseName(storagename), text_event_id);
   HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr,
                          CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (f == INVALID_HANDLE_VALUE) return;

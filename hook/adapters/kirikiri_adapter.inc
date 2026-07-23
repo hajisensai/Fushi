@@ -79,6 +79,153 @@ DecoderState g_decoders[kMaxDecoders] = {};
 CRITICAL_SECTION g_dec_cs;
 bool g_dec_cs_ready = false;
 
+constexpr int kKirikiriVoiceTaskSlots = 8;
+constexpr size_t kKirikiriStorageNameChars = 520;
+
+struct KiriKiriVoicePairingContext {
+  uint64_t resource_tick_ms = 0;
+  uint64_t baseline_text_seq = 0;
+  uint64_t selected_thread_id = 0;
+};
+
+struct KiriKiriVoiceTask {
+  volatile LONG state = 0;  // 0=free, 1=producing, 2=pending, 3=consuming
+  uint8_t* data = nullptr;
+  uint32_t len = 0;
+  KiriKiriVoicePairingContext pairing;
+  wchar_t storage_name[kKirikiriStorageNameChars] = {};
+};
+
+KiriKiriVoiceTask g_kirikiri_voice_tasks[kKirikiriVoiceTaskSlots];
+
+uint64_t ReadKirikiriSharedU64(volatile uint64_t* value) {
+  return value == nullptr
+             ? 0
+             : static_cast<uint64_t>(InterlockedCompareExchange64(
+                   reinterpret_cast<volatile LONGLONG*>(value), 0, 0));
+}
+
+KiriKiriVoicePairingContext CaptureKirikiriVoicePairingContext(
+    bool stable_pairing_eligible) {
+  KiriKiriVoicePairingContext context;
+  context.resource_tick_ms = GetTickCount64();
+  if (!stable_pairing_eligible || g_header == nullptr) return context;
+  context.selected_thread_id =
+      ReadKirikiriSharedU64(&g_header->selected_text_thread_id);
+  if (context.selected_thread_id != 0) {
+    context.baseline_text_seq =
+        ReadKirikiriSharedU64(&g_header->text_write_count);
+  }
+  return context;
+}
+
+// Takes ownership of data on every path. The detour has already made one
+// bounded copy while the engine stream is valid; disk IO and text association
+// stay on HookWorker.
+void EnqueueKirikiriVoiceResourceOwned(
+    uint8_t* data, uint32_t len, const wchar_t* storage_name,
+    const KiriKiriVoicePairingContext& pairing) {
+  if (data == nullptr || len == 0) {
+    free(data);
+    return;
+  }
+  for (int i = 0; i < kKirikiriVoiceTaskSlots; ++i) {
+    KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
+    if (InterlockedCompareExchange(&task->state, 1, 0) != 0) continue;
+    task->data = data;
+    task->len = len;
+    task->pairing = pairing;
+    wcsncpy_s(task->storage_name, kKirikiriStorageNameChars,
+              storage_name == nullptr ? L"voice.ogg" : storage_name,
+              _TRUNCATE);
+    MemoryBarrier();
+    InterlockedExchange(&task->state, 2);
+    return;
+  }
+  free(data);
+}
+
+void ProcessKirikiriVoiceTasks() {
+  for (int i = 0; i < kKirikiriVoiceTaskSlots; ++i) {
+    KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
+    if (InterlockedCompareExchange(&task->state, 3, 2) != 2) continue;
+
+    hibiki_voice_hook::VoiceTextCandidate candidates[kTextSlotCount] = {};
+    size_t candidate_count = 0;
+    uint64_t selected_thread_id = task->pairing.selected_thread_id;
+    if (g_header == nullptr || g_text_base == nullptr ||
+        ReadKirikiriSharedU64(&g_header->selected_text_thread_id) !=
+            selected_thread_id) {
+      selected_thread_id = 0;
+    } else {
+      const uint64_t current_text_seq =
+          ReadKirikiriSharedU64(&g_header->text_write_count);
+      uint64_t first_seq = task->pairing.baseline_text_seq + 1;
+      if (current_text_seq >= kTextSlotCount &&
+          first_seq <= current_text_seq - kTextSlotCount) {
+        first_seq = current_text_seq - kTextSlotCount + 1;
+      }
+      for (uint64_t seq = first_seq;
+           seq <= current_text_seq && candidate_count < kTextSlotCount; ++seq) {
+        auto* slot = reinterpret_cast<TextSlot*>(
+            g_text_base +
+            static_cast<size_t>((seq - 1) % kTextSlotCount) *
+                kTextSlotBytes);
+        if (ReadKirikiriSharedU64(&slot->seq) != seq) continue;
+        MemoryBarrier();
+        hibiki_voice_hook::VoiceTextCandidate candidate;
+        candidate.seq = seq;
+        candidate.timestamp_ms = slot->timestamp_ms;
+        candidate.thread_id = slot->thread_id;
+        candidate.byte_len = slot->byte_len;
+        candidate.is_line =
+            slot->event_kind == hibiki_voice_hook::kTextEventLine;
+        MemoryBarrier();
+        if (ReadKirikiriSharedU64(&slot->seq) != seq) continue;
+        candidates[candidate_count++] = candidate;
+      }
+    }
+
+    const uint64_t deadline_ms =
+        task->pairing.resource_tick_ms +
+        hibiki_voice_hook::kKirikiriFollowingTextWindowMs;
+    const auto decision = hibiki_voice_hook::ResolveFollowingSelectedText(
+        task->pairing.resource_tick_ms, deadline_ms, GetTickCount64(),
+        selected_thread_id, task->pairing.baseline_text_seq, candidates,
+        candidate_count);
+    if (decision.state ==
+        hibiki_voice_hook::VoiceResourcePairState::kWait) {
+      InterlockedExchange(&task->state, 2);
+      continue;
+    }
+
+    WriteVoiceOggAt(task->data, task->len, task->storage_name,
+                    task->pairing.resource_tick_ms, decision.text_event_id);
+    if (g_header != nullptr) {
+      g_header->reserved_luna |= kDiagKirikiriVoiceStreamDumped;
+    }
+    free(task->data);
+    task->data = nullptr;
+    task->len = 0;
+    task->pairing = {};
+    task->storage_name[0] = 0;
+    InterlockedExchange(&task->state, 0);
+  }
+}
+
+void StopKirikiriVoiceTasks() {
+  for (int i = 0; i < kKirikiriVoiceTaskSlots; ++i) {
+    KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
+    if (InterlockedCompareExchange(&task->state, 3, 2) != 2) continue;
+    free(task->data);
+    task->data = nullptr;
+    task->len = 0;
+    task->pairing = {};
+    task->storage_name[0] = 0;
+    InterlockedExchange(&task->state, 0);
+  }
+}
+
 // 登记/更新一个解码器句柄的格式（同句柄复用槽；表满则忽略）。调用方不持锁。
 void DecoderAdd(void* handle, uint32_t rate, uint32_t channels, uint8_t kind) {
   if (handle == nullptr || !g_dec_cs_ready) {
@@ -197,9 +344,14 @@ void DumpVorbisDatasourceGuarded(void* datasource, void* vf, MiniOvCallbacks cal
     if (got == size && size >= 4 && memcmp(buf, "OggS", 4) == 0) {
       wchar_t source_name[80] = {};
       swprintf_s(source_name, L"kirikiri-vorbis-%p.ogg", vf);
-      WriteVoiceOggAt(buf, size, source_name, GetTickCount64());
-      g_header->reserved_luna |=
-          0x40000 | kDiagKirikiriVoiceStreamDumped;  // 回调触发 + 完整 Ogg 已落盘
+      // Anonymous decoder opens can include BGM/SE. Keep them unmarked and
+      // defer disk IO to HookWorker; only named voice storage may opt into a
+      // stable selected-thread association.
+      EnqueueKirikiriVoiceResourceOwned(
+          buf, size, source_name,
+          CaptureKirikiriVoicePairingContext(false));
+      buf = nullptr;
+      g_header->reserved_luna |= 0x40000;  // callback observed
     }
     free(buf);
   } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -809,11 +961,6 @@ bool IsVoiceStorageName(const wchar_t* name) {
   return wcsstr(low, L"voice") != nullptr;
 }
 
-void WriteVoiceOgg(const uint8_t* data, uint32_t len,
-                   const wchar_t* storagename) {
-  WriteVoiceOggAt(data, len, storagename, GetTickCount64());
-}
-
 // Krkr2/BCB：hook 插件导入的稳定 __stdcall 边界。wuvorbis/wuopus 通过该 API 打开 XP3 中的音频；
 // 返回值已是标准 COM IStream，因此无需伪造 eax/edx 寄存器调用，也不触碰 BCB 的 C++ vtable。
 IStream* __stdcall Detour_TVPCreateIStreamStub(const void* name, uint32_t mode) {
@@ -824,12 +971,12 @@ IStream* __stdcall Detour_TVPCreateIStreamStub(const void* name, uint32_t mode) 
   if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
     wchar_t storage[520];
     if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
+      const KiriKiriVoicePairingContext pairing =
+          CaptureKirikiriVoicePairingContext(true);
       uint8_t* buf = nullptr;
       uint32_t buf_len = 0;
       if (ReadIStreamAllGuarded(stream, &buf, &buf_len)) {
-        WriteVoiceOgg(buf, buf_len, storage);
-        free(buf);
-        g_header->reserved_luna |= kDiagKirikiriVoiceStreamDumped;
+        EnqueueKirikiriVoiceResourceOwned(buf, buf_len, storage, pairing);
       }
     }
   }
@@ -847,13 +994,12 @@ TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(const void* name, uint3
   if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
     wchar_t storage[520];
     if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
+      const KiriKiriVoicePairingContext pairing =
+          CaptureKirikiriVoicePairingContext(true);
       uint8_t* buf = nullptr;
       uint32_t buf_len = 0;
       if (ReadStreamAllGuarded(stream, &buf, &buf_len)) {
-        WriteVoiceOgg(buf, buf_len, storage);
-        free(buf);
-        g_header->reserved_luna |=
-            kDiagKirikiriVoiceStreamDumped;  // 命中并 dump 过一个 voice OGG
+        EnqueueKirikiriVoiceResourceOwned(buf, buf_len, storage, pairing);
       }
     }
   }

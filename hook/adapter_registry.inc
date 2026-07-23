@@ -180,6 +180,7 @@ class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = installed_ || voice_ready_;
     return voice_ready_;
   }
+  void ProcessPendingEvents() { ProcessKirikiriVoiceTasks(); }
   bool decoder_ready() const { return decoder_ready_; }
   bool voice_ready() const { return voice_ready_; }
   hibiki_voice_hook::AdapterCapability capabilities() const override {
@@ -194,6 +195,7 @@ class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
     }
   }
   void shutdown() override {
+    StopKirikiriVoiceTasks();
     installed_ = false;
     decoder_ready_ = false;
     voice_ready_ = false;
@@ -353,6 +355,7 @@ class AdapterRegistry {
     artemis_pfs_.ProcessPendingEvents();
     catsystem2_.ProcessPendingEvents();
     malie_libp_.ProcessPendingEvents();
+    kirikiri_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.

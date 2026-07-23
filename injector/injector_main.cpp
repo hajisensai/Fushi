@@ -505,9 +505,9 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
 // clean/dirty，自动锁定表现最干净的那条 hook；用户在 Hibiki 选择线程后则以共享 header 的
 // selected_text_thread_id 覆盖自动赢家。重复伪影始终不写，手动选择也不能绕过过滤。
 
-// 伪影判别（纯函数）：给定 [text,len]，判断是否为坏 hook 的重复伪影。
-//   ① 整串重复：len 为偶数且前半 == 后半（例：AB…|AB…）。
-//   ② 等长游程：对字符串做游程编码（连续相同字符归为一段），若段数 >=3 且所有段
+// EmbedKrkrZ 的精确完整行双写先折叠成第一份；其他引擎保持原过滤语义。
+// 伪影判别（纯函数）：给定规范化后的 [text,len]，判断是否为坏 hook 的重复伪影。
+//   ① 等长游程：对字符串做游程编码（连续相同字符归为一段），若段数 >=3 且所有段
 //     长度相等且 >=2 → 伪影（捕获每字×2/×3/×10 等）。
 // 其余为“干净”。
 // 线程选择的纯逻辑位于 luna_text_selector.h；运行时只负责跨回调加锁和读取手动选择值。
@@ -577,30 +577,35 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
                 LunaThreadParam tp, const wchar_t* text) {
   if (g_luna.header != nullptr && text != nullptr) {
     g_luna.header->hook_diagnostics |= kDiagLunaOutputObserved;
-    const int len = static_cast<int>(wcslen(text));
+    const int raw_len = static_cast<int>(wcslen(text));
+    const int normalized_len =
+        hibiki_voice_hook::LunaNormalizedTextLengthForHook(hookname, text,
+                                                           raw_len);
     if (LunaDiagEnabled()) {
       char u8[1024];
-      LunaWideToUtf8(text, len, u8, sizeof(u8));
+      LunaWideToUtf8(text, raw_len, u8, sizeof(u8));
       char hc[512];
       LunaWideToUtf8(hookcode != nullptr ? hookcode : L"",
                      hookcode != nullptr ? static_cast<int>(wcslen(hookcode)) : 0,
                      hc, sizeof(hc));
       fprintf(stderr,
               "[lunadiag] name=%s code=%s addr=0x%llx ctx=0x%llx ctx2=0x%llx "
-              "len=%d text=%s\n",
+              "raw_len=%d normalized_len=%d text=%s\n",
               (hookname != nullptr) ? hookname : "(null)", hc,
               static_cast<unsigned long long>(tp.addr),
               static_cast<unsigned long long>(tp.ctx),
-              static_cast<unsigned long long>(tp.ctx2), len, u8);
+              static_cast<unsigned long long>(tp.ctx2), raw_len,
+              normalized_len, u8);
       fflush(stderr);
     }
-    if (LunaPassesFilter(text, len)) {
+    if (LunaPassesFilter(text, normalized_len)) {
       // 多 hook 自动选干净线程：先判伪影并累计，再决定本行是否写入文本环。
-      const bool artifact = hibiki_voice_hook::LunaTextIsArtifact(text, len);
+      const bool artifact =
+          hibiki_voice_hook::LunaTextIsArtifact(text, normalized_len);
       const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
       if (LunaShouldWriteLine(hookcode, thread_id, artifact)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id, text,
-                          len);
+                          normalized_len);
         // 一旦 LunaHook 写出干净行，标记 LunaHook 权威：游戏内 GDI 文本 hook 让位不再写文本，
         // 避免双写者污染（见 voice_hook_ipc.h SharedHeader::luna_active 注释）。幂等，写 1 即可。
         if (!artifact) {
