@@ -4,3 +4,4 @@
     artemis_pfs_.shutdown();
     catsystem2_.shutdown();
     malie_libp_.shutdown();
+    qlie_.shutdown();

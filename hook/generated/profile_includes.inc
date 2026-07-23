@@ -3,3 +3,4 @@
 #include "../adapters/artemis_profile.h"
 #include "../adapters/catsystem2_profile.h"
 #include "../adapters/malie_profile.h"
+#include "../adapters/qlie_profile.h"

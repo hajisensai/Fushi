@@ -4,8 +4,9 @@
 // 是 BGM/SE）。人声在**解码环节**：KiriKiriZ 给每个正在播放的声音建一个独立解码器实例，语音是
 // 台词播放时新建的短时解码器。故在解码后、混音前把每个解码器输出的纯 PCM 抓走——无 BGM 混音。
 //
-// wuvorbis.dll：libvorbisfile 风格封装（wu_ov_open_callbacks/wu_ov_info/wu_ov_read/wu_ov_clear，
-//   dumpbin 确认）。wu_ov_read 返回 16-bit 交织 PCM（word=2,sgned=1 时）。
+// wuvorbis.dll：libvorbisfile 风格封装（wu_ov_open_callbacks/wu_ov_info/wu_ov_read/
+//   wu_ov_read_float/wu_ov_clear，dumpbin 确认）。wu_ov_read 返回 16-bit 交织 PCM
+//   （word=2,sgned=1 时）；wu_ov_read_float 返回按声道分平面的 float PCM。
 // wuopus.dll：dumpbin 确认**没有** wu_op_* 封装，导出的是**原始 libopus**
 //   （opus_decoder_create/opus_decode/opus_decoder_destroy）。故 opus 按原始 libopus API hook：
 //   opus_decode 返回**每通道样本数**（非字节），格式取自 opus_decoder_create 的 Fs/channels。
@@ -45,6 +46,8 @@ typedef void*(__cdecl* wu_ov_info_t)(void* vf, int link);
 typedef long(__cdecl* wu_ov_read_t)(void* vf, char* buffer, int length,
                                     int bigendianp, int word, int sgned,
                                     int* bitstream);
+typedef long(__cdecl* wu_ov_read_float_t)(void* vf, float*** pcm_channels,
+                                          int samples, int* bitstream);
 typedef int(__cdecl* wu_ov_clear_t)(void* vf);
 
 // 原始 libopus（opus_int32 = int，opus_int16 = int16_t）。
@@ -56,6 +59,7 @@ typedef void(__cdecl* opus_decoder_destroy_t)(void* st);
 wu_ov_open_callbacks_t g_orig_wu_ov_open_callbacks = nullptr;
 wu_ov_info_t g_orig_wu_ov_info = nullptr;  // 不 hook，只 GetProcAddress 直接调（读格式）
 wu_ov_read_t g_orig_wu_ov_read = nullptr;
+wu_ov_read_float_t g_orig_wu_ov_read_float = nullptr;
 wu_ov_clear_t g_orig_wu_ov_clear = nullptr;
 opus_decoder_create_t g_orig_opus_decoder_create = nullptr;
 opus_decode_t g_orig_opus_decode = nullptr;
@@ -161,7 +165,9 @@ void DecoderRemove(void* handle) {
 void DumpVorbisDatasourceGuarded(void* datasource, void* vf, MiniOvCallbacks callbacks) {
   if (!g_capture_enabled || g_header == nullptr || datasource == nullptr ||
       callbacks.read_func == nullptr || callbacks.seek_func == nullptr ||
-      callbacks.tell_func == nullptr) {
+      callbacks.tell_func == nullptr ||
+      InterlockedCompareExchange(
+          &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0) {
     return;
   }
   auto read_cb = reinterpret_cast<MiniOvReadCallback>(callbacks.read_func);
@@ -209,6 +215,12 @@ int __cdecl Detour_wu_ov_open_callbacks(void* datasource, void* vf,
   const int r = g_orig_wu_ov_open_callbacks(datasource, vf, initial, ibytes,
                                             callbacks);
   if (r == 0 && vf != nullptr) {
+    if (InterlockedCompareExchange(
+            &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0 &&
+        g_header != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagQlieVorbisOpenObserved;
+    }
     uint32_t rate = 0, channels = 0;
     if (g_orig_wu_ov_info != nullptr) {
       const auto* info =
@@ -240,7 +252,70 @@ long __cdecl Detour_wu_ov_read(void* vf, char* buffer, int length, int bigendian
           RingAppendVoice(reinterpret_cast<const uint8_t*>(buffer), len);
       RecordVoiceClipFmt(off, len, reinterpret_cast<uint64_t>(vf), rate, channels,
                          16, 0);
+      if (InterlockedCompareExchange(
+              &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0) {
+        g_header->reserved_hook_diagnostics |=
+            hibiki_voice_hook::kDiagQlieVorbisPcmCaptured;
+      }
     }
+  }
+  return ret;
+}
+
+// -- detour: wu_ov_read_float --
+// QLIE 的角色语音会走 libvorbisfile 的浮点接口。返回值是每声道样本数，pcm_channels 是
+// planar float；用固定 thread_local 缓冲做有界的 16-bit 交织转换，避免音频线程堆分配/IO。
+long __cdecl Detour_wu_ov_read_float(void* vf, float*** pcm_channels,
+                                     int samples, int* bitstream) {
+  const long ret =
+      g_orig_wu_ov_read_float(vf, pcm_channels, samples, bitstream);
+  if (!g_capture_enabled || g_header == nullptr || ret <= 0 ||
+      pcm_channels == nullptr || *pcm_channels == nullptr) {
+    return ret;
+  }
+
+  uint32_t rate = 0;
+  uint32_t channels = 0;
+  if (!DecoderGetFormat(vf, &rate, &channels) || rate == 0 || channels == 0 ||
+      channels > 8) {
+    return ret;
+  }
+
+  constexpr uint32_t kMaxInterleavedSamples = 16384;
+  thread_local int16_t converted[kMaxInterleavedSamples];
+  const uint32_t returned_frames = static_cast<uint32_t>(ret);
+  const uint32_t frame_cap = kMaxInterleavedSamples / channels;
+  float** planar = *pcm_channels;
+  for (uint32_t first_frame = 0; first_frame < returned_frames;) {
+    const uint32_t remaining = returned_frames - first_frame;
+    const uint32_t frame_count =
+        remaining < frame_cap ? remaining : frame_cap;
+    __try {
+      for (uint32_t frame = 0; frame < frame_count; ++frame) {
+        for (uint32_t channel = 0; channel < channels; ++channel) {
+          float value = planar[channel][first_frame + frame];
+          if (value > 1.0f) value = 1.0f;
+          if (value < -1.0f) value = -1.0f;
+          converted[frame * channels + channel] =
+              static_cast<int16_t>(value * 32767.0f);
+        }
+      }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      return ret;
+    }
+
+    const uint32_t bytes = frame_count * channels * sizeof(int16_t);
+    const uint32_t off =
+        RingAppendVoice(reinterpret_cast<const uint8_t*>(converted), bytes);
+    RecordVoiceClipFmt(off, bytes, reinterpret_cast<uint64_t>(vf), rate,
+                       channels, 16, 0);
+    first_frame += frame_count;
+  }
+  if (returned_frames != 0 &&
+      InterlockedCompareExchange(
+          &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0) {
+    g_header->reserved_hook_diagnostics |=
+        hibiki_voice_hook::kDiagQlieVorbisFloatPcmCaptured;
   }
   return ret;
 }
@@ -317,12 +392,26 @@ bool TryHookKirikiriDecoders() {
       const bool read_ok =
           HookFn(p_read, reinterpret_cast<void*>(&Detour_wu_ov_read),
                  reinterpret_cast<void**>(&g_orig_wu_ov_read));
+      void* p_read_float =
+          reinterpret_cast<void*>(GetProcAddress(vorb, "wu_ov_read_float"));
+      const bool read_float_ok =
+          HookFn(p_read_float,
+                 reinterpret_cast<void*>(&Detour_wu_ov_read_float),
+                 reinterpret_cast<void**>(&g_orig_wu_ov_read_float));
       if (g_header != nullptr) {
         g_header->reserved_luna |=
             (p_read == nullptr) ? 0x400 : (read_ok ? 0x100 : 0x200);
-        if (open_ok) {
+        if (open_ok &&
+            InterlockedCompareExchange(
+                &hibiki_voice_hook::g_qlie_profile_active, 0, 0) == 0) {
           g_header->hook_diagnostics |=
               hibiki_voice_hook::kDiagKirikiriVorbisOpenHookReady;
+        }
+        if (InterlockedCompareExchange(
+                &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0 &&
+            p_read_float != nullptr && read_float_ok) {
+          g_header->reserved_hook_diagnostics |=
+              hibiki_voice_hook::kDiagQlieVorbisFloatHookReady;
         }
       }
       HookFn(reinterpret_cast<void*>(GetProcAddress(vorb, "wu_ov_clear")),

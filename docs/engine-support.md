@@ -18,6 +18,7 @@
 | `artemis_pfs` | Artemis Engine / PF8 | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | artemis_pf8_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `catsystem2` | CatSystem2 / KIF INT | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | catsystem2_unencrypted_kif_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `malie_libp` | Malie System / LIBP CFI | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | malie_libp_cfi_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
+| `qlie_filepack` | QLIE / FilePack | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | qlie_wuvorbis_per_source_pcm (verified)；qlie_wuvorbis_float_per_source_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
 
 ## 识别与能力明细
@@ -440,6 +441,52 @@ Tests：—
 Fixtures：尚无（P5 补齐）
 
 Tests：—
+
+### QLIE / FilePack (`qlie_filepack`)
+
+- 状态：`partial`
+- 别名：QLIE、FilePackVer3.1、wuvorbis QLIE
+- 家族：`qlie`（Warmth / AMUSE CRAFT QLIE runtime and FilePack archives）
+- 当前 adapter：`hook/adapters/qlie_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection_with_optional_japanese_locale`，attach=`verified_live_attach_for_new_decoder_instances`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：美少女万華鏡_体験版.exe；证据：real_sample — 美少女万華鏡 -理と迷宮の少女- 体験版 1.01, verified 2026-07-23
+- `pe_architectures`：x86；证据：real_sample — Measured trial executable PE/COFF i386
+- `directory_files_all`：DLL/wuvorbis.dll、GameData/data0.pack；证据：real_sample — Measured trial directory; data0.pack tail contains FilePackVer3.1
+- `runtime_modules`：wuvorbis.dll；证据：runtime_observation — Live x86 process invoked wu_ov_open_callbacks and wu_ov_read; the wu_ov_read_float export was present and its detour reached hook-ready state
+- `resource_extensions`：.pack、.ogg；证据：real_sample — GameData/data*.pack with GARbro-extracted character voice Ogg members
+- `hashes`：美少女万華鏡_体験版.exe sha256:E40C01C7611F1868F7057E534B3AA61316E9639481D1447267BF8645DEEB789B、wuvorbis.dll sha256:60996D622B30DC0AF15BD85A1B701F84FC8A34E7A8F1877C917E0EB63FA9EB2B、data0.pack sha256:A9E1C3EFECA180891C8C788A226391CD0DD96E34E127C9CEA1F2894C68B1A2A7；证据：real_sample — Local SHA-256 of the measured trial files, 2026-07-23
+
+文本能力：
+
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — The live run verified audio and visible Japanese dialogue, but did not establish a stable automatic QLIE dialogue thread.
+- codepage：CP932
+- 线程提示：Select the stable complete-line QLIE dialogue thread; launch old non-Unicode titles with the optional Japanese-locale path.
+
+音频优先级：
+
+1. `qlie_wuvorbis_per_source_pcm` — `verified`；格式：44.1 kHz per-decoder signed 16-bit PCM from wu_ov_read；clean voice：是
+2. `qlie_wuvorbis_float_per_source_pcm` — `implemented_unverified`；格式：planar float from wu_ov_read_float, chunk-converted to interleaved signed 16-bit PCM；clean voice：是
+3. `directsound_pcm` — `verified`；格式：generic source PCM fallback；clean voice：engine_dependent
+4. `process_loopback` — `verified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+- **美少女万華鏡 -理と迷宮の少女- 体験版**（x86，QLIE FilePackVer3.1; trial version 1.01，2026-07-23）：Live attach captured separate decoder sources while a voiced line was displayed. The mono 44.1 kHz capture segment matched the beginning of GARbro-extracted syou0005.ogg decoded PCM at zero lag with normalized waveform correlation 0.99964, while simultaneous stereo BGM remained on different source handles. This verifies clean pre-mix voice PCM, not original compressed Ogg bytes. SHA-256：E40C01C7611F1868F7057E534B3AA61316E9639481D1447267BF8645DEEB789B。
+
+已知限制：
+
+- The verified path emits decoded PCM rather than the original compressed Ogg member; Hibiki must package or encode the selected utterance for card storage.
+- Only the measured x86 wuvorbis/FilePackVer3.1 title is verified. Other QLIE versions, alternate decoder DLLs, and non-Ogg voice formats require their own samples.
+- The measured voice path invoked wu_ov_read. The wu_ov_read_float detour was installed successfully but its capture path still needs a title that actually invokes that export.
+- Live attach captures decoder instances created after injection and can miss a line already playing at attach time; early launch injection remains preferred.
+- Stable automatic text-thread selection is not yet verified for this title.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：`tests/qlie_pack_test.cpp`、`tests/adapter_structure_test.py`
 
 ### Unity IL2CPP (`unity_il2cpp`)
 

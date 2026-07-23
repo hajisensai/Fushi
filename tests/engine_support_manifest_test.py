@@ -37,7 +37,7 @@ class EngineSupportManifestTest(unittest.TestCase):
         self.assertEqual(expected, output.read_text(encoding="utf-8"))
 
     def test_phase_zero_baseline_is_explicit(self) -> None:
-        self.assertEqual(
+        self.assertTrue(
             {
                 "siglus",
                 "reallive",
@@ -45,8 +45,8 @@ class EngineSupportManifestTest(unittest.TestCase):
                 "xaudio2_directsound",
                 "renpy_ffmpeg",
                 "unity_il2cpp",
-            },
-            set(self.engines),
+            }.issubset(self.engines),
+            "The P0 baseline must remain present as later adapters are added.",
         )
 
         siglus = self.engines["siglus"]

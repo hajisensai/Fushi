@@ -101,6 +101,11 @@ constexpr uint32_t kDiagMalieReadRangeObserved = 0x00000002u;
 constexpr uint32_t kDiagMalieMappingTracked = 0x00000004u;
 constexpr uint32_t kDiagMalieMappedRangeObserved = 0x00000008u;
 constexpr uint32_t kDiagMalieVoiceRangeQueued = 0x00000010u;
+constexpr uint32_t kDiagQlieVorbisHooksReady = 0x00000020u;
+constexpr uint32_t kDiagQlieVorbisOpenObserved = 0x00000040u;
+constexpr uint32_t kDiagQlieVorbisPcmCaptured = 0x00000080u;
+constexpr uint32_t kDiagQlieVorbisFloatHookReady = 0x00000100u;
+constexpr uint32_t kDiagQlieVorbisFloatPcmCaptured = 0x00000200u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM

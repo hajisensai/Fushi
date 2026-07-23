@@ -48,6 +48,7 @@ add_library(hibiki_voice_hook SHARED
   "hook/catsystem2_int.h"
   "hook/malie_cfi.h"
   "hook/malie_lib.h"
+  "hook/qlie_pack.h"
   "hook/visual_arts_ovk.h"
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
@@ -61,6 +62,8 @@ add_library(hibiki_voice_hook SHARED
   "hook/adapters/catsystem2_profile.h"
   "hook/adapters/malie_adapter.inc"
   "hook/adapters/malie_profile.h"
+  "hook/adapters/qlie_adapter.inc"
+  "hook/adapters/qlie_profile.h"
   "hook/adapters/kirikiri_adapter.inc"
   "hook/adapters/renpy_adapter.inc"
   "hook/adapters/text_render_adapter.inc"
@@ -90,6 +93,12 @@ add_executable(hibiki_resource_audio_ready_test
 target_include_directories(hibiki_resource_audio_ready_test PRIVATE "include")
 target_compile_definitions(hibiki_resource_audio_ready_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME hibiki_resource_audio_ready_test COMMAND hibiki_resource_audio_ready_test)
+
+add_executable(hibiki_qlie_pack_test
+  "tests/qlie_pack_test.cpp"
+)
+target_include_directories(hibiki_qlie_pack_test PRIVATE "hook")
+add_test(NAME hibiki_qlie_pack_test COMMAND hibiki_qlie_pack_test)
 
 add_executable(hibiki_ffmpeg_runtime_test
   "tests/ffmpeg_runtime_test.cpp"

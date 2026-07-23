@@ -159,8 +159,9 @@ class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "kirikiri_z"; }
   bool probe() const override {
-    return GetModuleHandleW(L"wuvorbis.dll") != nullptr ||
-           GetModuleHandleW(L"wuopus.dll") != nullptr;
+    return !hibiki_voice_hook::MatchesQlieProfile(nullptr) &&
+           (GetModuleHandleW(L"wuvorbis.dll") != nullptr ||
+            GetModuleHandleW(L"wuopus.dll") != nullptr);
   }
   bool install() override {
     const bool decoder_ready = InstallDecoders();
@@ -168,11 +169,13 @@ class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
     return decoder_ready && voice_ready;
   }
   bool InstallDecoders() {
+    if (hibiki_voice_hook::MatchesQlieProfile(nullptr)) return false;
     decoder_ready_ = TryHookKirikiriDecoders();
     installed_ = installed_ || decoder_ready_;
     return decoder_ready_;
   }
   bool InstallVoiceStream() {
+    if (hibiki_voice_hook::MatchesQlieProfile(nullptr)) return false;
     voice_ready_ = TryHookKirikiriVoiceStream();
     installed_ = installed_ || voice_ready_;
     return voice_ready_;

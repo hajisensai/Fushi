@@ -4,3 +4,4 @@
 #include "../adapters/artemis_adapter.inc"
 #include "../adapters/catsystem2_adapter.inc"
 #include "../adapters/malie_adapter.inc"
+#include "../adapters/qlie_adapter.inc"

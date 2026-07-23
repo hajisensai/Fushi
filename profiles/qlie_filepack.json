@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "qlie_filepack",
+  "status": "partial",
+  "detection": {
+    "executable_sha256": [
+      "E40C01C7611F1868F7057E534B3AA61316E9639481D1447267BF8645DEEB789B"
+    ],
+    "module_sha256": [
+      "60996D622B30DC0AF15BD85A1B701F84FC8A34E7A8F1877C917E0EB63FA9EB2B"
+    ]
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": false,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "real_sample",
+      "reference": "美少女万華鏡 -理と迷宮の少女- 体験版 1.01; x86 live attach captured per-decoder 44.1 kHz PCM on 2026-07-23"
+    }
+  ]
+}

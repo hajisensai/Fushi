@@ -116,6 +116,43 @@ class AdapterStructureTest(unittest.TestCase):
         remember = remember.split("void ForgetSiglusOvk", 1)[0]
         self.assertIn("kDiagVisualArtsOvkHooksReady", remember)
 
+    def test_qlie_float_callback_is_bounded_and_does_not_copy_pack_streams(
+        self,
+    ) -> None:
+        qlie = (ROOT / "hook" / "adapters" / "qlie_adapter.inc").read_text(
+            encoding="utf-8"
+        )
+        kirikiri = (
+            ROOT / "hook" / "adapters" / "kirikiri_adapter.inc"
+        ).read_text(encoding="utf-8")
+        callback = kirikiri.split(
+            "long __cdecl Detour_wu_ov_read_float", 1
+        )[1]
+        callback = callback.split("// -- detour: wu_ov_clear", 1)[0]
+        self.assertIn("thread_local int16_t converted", callback)
+        self.assertIn("first_frame < returned_frames", callback)
+        self.assertIn("first_frame += frame_count", callback)
+        self.assertIn("RingAppendVoice", callback)
+        self.assertIn("RecordVoiceClipFmt", callback)
+        for forbidden in (
+            "CreateFile",
+            "ReadFile",
+            "WriteFile",
+            "malloc",
+            "Sleep",
+            "WaitForSingleObject",
+        ):
+            self.assertNotIn(forbidden, callback)
+        datasource_dump = kirikiri.split(
+            "void DumpVorbisDatasourceGuarded", 1
+        )[1]
+        datasource_dump = datasource_dump.split(
+            "int __cdecl Detour_wu_ov_open_callbacks", 1
+        )[0]
+        self.assertIn("g_qlie_profile_active", datasource_dump)
+        self.assertIn("MatchesQlieProfile", qlie)
+        self.assertIn('return "qlie_filepack";', qlie)
+
     def test_steam_games_launch_through_client_before_exact_path_injection(
         self,
     ) -> None:
@@ -135,7 +172,18 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn(
             "_wcsicmp(image.c_str(), expected_exe.c_str()) == 0", injector
         )
-        self.assertNotIn('SetEnvironmentVariableW(L"SteamAppId"', injector)
+        before_explicit_direct_launch = run_launch.split(
+            "if (force_direct_launch && !steam_app_id.empty())", 1
+        )[0]
+        self.assertNotIn(
+            'SetEnvironmentVariableW(L"SteamAppId"',
+            before_explicit_direct_launch,
+        )
+        self.assertEqual(
+            1,
+            run_launch.count('SetEnvironmentVariableW(L"SteamAppId"'),
+            "Only the explicit force-direct launch may set SteamAppId.",
+        )
 
 
 if __name__ == "__main__":
