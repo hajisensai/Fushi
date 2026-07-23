@@ -191,6 +191,16 @@ class _MediaItemEditDialogPageState
         );
       }
 
+      // BUG-1018 (A2): the shelf's reactive source (_epubBookKeysProvider)
+      // dedupes by key set, so a pure column update like the author write above
+      // never re-fires it — refreshTab() alone re-renders stale cached
+      // MediaItems and the edit looks like it "did not save". Invalidate the
+      // book providers so the shelf re-reads the DB rows.
+      if (mediaSource is ReaderHibikiSource) {
+        ref.invalidate(hibikiBooksProvider);
+        ref.invalidate(srtBooksProvider);
+      }
+
       navigator.pop();
       navigator.pop();
       mediaSource.mediaType.refreshTab();

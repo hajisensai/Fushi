@@ -1371,3 +1371,15 @@ abstract class HibikiLibraryHostService {
   Future<CollectionManifest> mergeCollectionManifest(
       CollectionManifest incoming);
 }
+
+/// host 端「列删除墓碑」的**可选**能力（显式确认式删除传播，host→client 消费方向）。
+/// 与 [HibikiLibraryHostService] 分开：不是每个 host 实现（尤其测试 fake）都需要它，
+/// 塞进主接口会强制全部实现者补方法（Never break userspace）。真实 host
+/// （[AppModelLibraryHostService]）额外 implements 本接口；server 用 `is` 探测——不实现
+/// 就 GET `/api/tombstones` → 404，client 侧 [getRemoteDeletionTombstones] 已优雅降级。
+abstract interface class DeletionTombstoneHost {
+  /// 列出 host 当前全部删除墓碑（`sync_deletion_tombstones`）为 JSON 数组，供 client
+  /// 拉取后与本地在库键求交、弹逐条确认删本地。纯读，无副作用。
+  Future<List<({String mediaType, String itemKey, int deletedAt})>>
+      listDeletionTombstones();
+}

@@ -133,15 +133,18 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 6,
             ),
+            // label 用本地化全称（从右到左/从左到右），不再用只有排版从业者
+            // 认识的 RTL/LTR 缩写；分段条过宽时 _SegmentedStripHost 自带横向
+            // 滚动兜底。
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: 'rtl',
-                label: 'RTL',
+                label: t.spread_direction_rtl,
                 tooltip: t.spread_direction_rtl,
               ),
               SettingsSegmentOption<String>(
                 value: 'ltr',
-                label: 'LTR',
+                label: t.spread_direction_ltr,
                 tooltip: t.spread_direction_ltr,
               ),
             ],
@@ -505,6 +508,7 @@ SettingsDestination buildReadingDestination() {
           // 纯时长不改预留高 → 走 settings 刷新即可，无需重锚。
           SettingsSliderItem(
             id: 'reading_controls.auto_hide_chrome_duration',
+            titleReadout: true,
             title: t.reader_auto_hide_chrome_duration,
             icon: Icons.timer_outlined,
             min: 1,
@@ -617,6 +621,7 @@ SettingsDestination buildReadingDestination() {
           ),
           SettingsSliderItem(
             id: 'reading_controls.wheel_page_turn_interval',
+            titleReadout: true,
             title: t.wheel_page_turn_interval,
             icon: Icons.mouse_outlined,
             min: 150,

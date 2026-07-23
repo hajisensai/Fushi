@@ -120,8 +120,7 @@ void main() {
       while (sw.elapsed < const Duration(seconds: 30)) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
         final InterconnectDownloadTask? task = manager.tasks['cloud/vid1'];
-        if (task != null &&
-            task.status != InterconnectDownloadStatus.running) {
+        if (task != null && task.status != InterconnectDownloadStatus.running) {
           return;
         }
       }
@@ -194,9 +193,15 @@ void main() {
     // 下载前列表无该行（云视频不在 VideoBooks）。
     expect(await repo.getByBookUid('cloud/vid1'), isNull);
 
+    // UI 巡检 PR-4：封面内嵌下载按钮已撤，下载入口 = 长按卡片弹面板 → 「下载」
+    // （云视频短按卡片本体也下载，见下一个用例）。
+    await tester.longPress(
+      find.byKey(const ValueKey<String>('remote_video_card_cloud_vid1')),
+    );
+    await tester.pumpAndSettle();
     await tapAndAwaitDownload(
       tester,
-      find.byKey(const ValueKey<String>('remote_video_download_cloud_vid1')),
+      find.text(t.remote_video_download),
     );
 
     // 撤掉 saveVideoBook 建行后此断言转红（行不存在）。

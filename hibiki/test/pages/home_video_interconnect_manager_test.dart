@@ -98,22 +98,20 @@ void main() {
     await tester.pumpWidget(buildApp(client: client, manager: manager));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(
-      const ValueKey<String>('remote_video_download_remote_video-1'),
+    // UI 巡检 PR-4：封面内嵌下载按钮已撤，下载入口 = 长按卡片弹面板 → 「下载」。
+    await tester.longPress(find.byKey(
+      const ValueKey<String>('remote_video_card_remote_video-1'),
     ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.remote_video_download));
     await tester.pump();
     await tester.pump();
 
-    // 进度徽章出现（页面从 manager 读 isRunning），下载按钮被替换。
+    // 进度徽章出现（页面从 manager 读 isRunning）。
     expect(
       find.byKey(
           const ValueKey<String>('remote_video_downloading_remote_video-1')),
       findsOneWidget,
-    );
-    expect(
-      find.byKey(
-          const ValueKey<String>('remote_video_download_remote_video-1')),
-      findsNothing,
     );
     // manager（app 级真相源）确实持有该 running 任务。
     expect(manager.isRunning('remote/video-1'), isTrue);

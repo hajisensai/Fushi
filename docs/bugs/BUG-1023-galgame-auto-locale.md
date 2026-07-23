@@ -1,4 +1,4 @@
-## BUG-1014 · Hibiki 启动日文非 Unicode 游戏时界面乱码
+## BUG-1023 · Hibiki 启动日文非 Unicode 游戏时界面乱码
 - **报告**：2026-07-22（用户：Hibiki 启动旧式 KiriKiri 体验版后界面日文乱码，希望启动游戏时自动转区。）
 - **真实性**：✅ 真 bug。`hibiki/lib/src/mining/galgame_audio_source.dart:356-367` 原先只构造 `injector --launch`，独立 helper 的 `injector/injector_main.cpp` 再直接 `CreateProcessW`；目标继承中文系统的非 Unicode ANSI 代码页，CP932 字节因此被错误解码。官方 BABEL KiriKiri x86 体验版（exe SHA-256 `2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A`）可稳定复现；这不是文本 hook 解码问题，乱码在游戏自身菜单中已经出现。
 - **[x] ① 已修复** — hibiki-hook `fe75b74c6` 新增 `--japanese-locale`：用随 x86 helper 固定配套的 Locale Emulator 2.5.0.1（官方 release、固定 SHA-256、LGPL 文本随包）以 CP932 创建同一个挂起进程，普通引擎先早注入再恢复，Siglus/子进程启动器先恢复再发现，Steam 无法保留创建边界时明确告警而不伪装成功；不修改 Windows 全局区域设置。Hibiki `3442231bd` 在 `galgame_audio_source.dart:602-613` 仅对识别为 x86 的 launch 目标自动传参，x64/attach 保持旧路径。

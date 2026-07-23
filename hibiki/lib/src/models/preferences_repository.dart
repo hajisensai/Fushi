@@ -1246,6 +1246,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 互联「制卡到服务端」开关：开启后所有 app 内制卡（查词/阅读器/视频）不落本地 Anki，
+  // 而是把制卡内容 + 全部媒体字节转发给已配对主机，用主机的 Anki 后端 + 配置落卡。
+  // 默认 false=本地制卡（现状零破坏）。目标主机复用互联客户端（远程查词的同一配对目标）。
+  bool get mineToServer =>
+      getPref('mine_to_server', defaultValue: false) as bool;
+
+  void toggleMineToServer() async {
+    await setPref('mine_to_server', !mineToServer);
+    notifyListeners();
+  }
+
   // 视频制卡封面图片模式（GIF 动图 / 制卡时当前帧 / 字幕开头帧）。默认 gif=现状零破坏。
   // 存稳定字符串键（[VideoMiningImageMode.wireName]），解析未知值回退 gif（向后兼容）。
   VideoMiningImageMode get videoMiningImageMode =>

@@ -29,10 +29,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   /// （selectionKey 置空 → 不画勾、不可单独勾），点击照常开书。
   /// [removeFromCollection] 非空（合集详情页成员卡）时给长按 / 右键对话框补「移出合集」
   /// 动作，让键盘/手柄用户（聚焦长按 A 弹此对话框，不经网格指针菜单）也能移出。
+  /// [focusIdPrefix]：详情页渲染路径传 'collection-detail-' 隔离焦点 id 命名空间
+  /// （BUG-1009，见 [_buildCollectionMemberCard]）；书架路径恒空串（id 不变）。
   Widget _buildSrtCard(SrtBook book,
       {String? epubCoverUri,
       bool selectable = true,
-      VoidCallback? removeFromCollection}) {
+      VoidCallback? removeFromCollection,
+      String focusIdPrefix = ''}) {
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
@@ -55,7 +58,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
-      focusId: HibikiFocusId('reader-shelf-srt-${book.uid}'),
+      focusId: HibikiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
       selectionKey: selectable ? selKey : null,
       dragBookId: srtBookId,
       onTagDropped:
@@ -140,8 +143,18 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final ({int position, int duration})? prog =
         _epubProgressByBookKey[book.bookKey];
     return MediaItem(
-      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(book.bookKey),
+      // BUG-1018 (A3)：standalone SRT 书（bookKey 空串哨兵）用自己的稳定身份
+      // `hoshi://srtbook/<uid>`——以前所有 standalone SRT 书共享
+      // mediaIdentifierFor('')，override 书名/封面互相踩、作者保存静默 no-op。
+      // EPUB 配对行照旧走 bookKey 身份（与 EPUB 卡同源，进度/override 共享）。
+      mediaIdentifier: book.bookKey.isNotEmpty
+          ? ReaderHibikiSource.mediaIdentifierFor(book.bookKey)
+          : ReaderHibikiSource.mediaIdentifierForSrtUid(book.uid),
       title: book.title,
+      // BUG-1018 (A3)：standalone SRT 书作者列真值在 srt_books.author，回填供
+      // 编辑对话框预填/保存往返。EPUB 配对行作者真值在 epubBooks.author（编辑
+      // 保存按 bookKey 写穿），此处不冒充。
+      author: book.bookKey.isEmpty ? book.author : null,
       mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
       mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
       position: prog?.position ?? 0,
@@ -367,9 +380,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         ) !=
         CombineTier.noop;
 
-    return Material(
-      elevation: 6,
-      color: theme.colorScheme.surfaceContainer,
+    // 全 app elevation 0 纪律：去阴影改上边框分隔（巡检 PR-3）；窄屏 + 大字体下
+    // 「已选 N / 全选 / 反选」改 Wrap 自动换行（旧 Row 全员不可收缩必溢出）。
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainer,
+        border: Border(
+          top: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+      ),
       child: SafeArea(
         top: false,
         child: Padding(
@@ -379,22 +398,28 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           ),
           child: Row(
             children: [
-              Text(
-                t.batch_selected_count(n: selectedCount),
-                style: textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: tokens.spacing.gap,
+                  children: <Widget>[
+                    Text(
+                      t.batch_selected_count(n: selectedCount),
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _selectAll,
+                      child: Text(t.batch_select_all),
+                    ),
+                    TextButton(
+                      onPressed: _invertSelection,
+                      child: Text(t.batch_invert_selection),
+                    ),
+                  ],
                 ),
               ),
-              SizedBox(width: tokens.spacing.gap),
-              TextButton(
-                onPressed: _selectAll,
-                child: Text(t.batch_select_all),
-              ),
-              TextButton(
-                onPressed: _invertSelection,
-                child: Text(t.batch_invert_selection),
-              ),
-              const Spacer(),
               HibikiIconButton(
                 key: const ValueKey<String>('reader_shelf_batch_combine'),
                 enabled: canCombine,
@@ -441,15 +466,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         : mediaCount == 0
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
-    final bool? confirmed = await showAppDialog<bool>(
+    final DeleteScope? scope = await showAppDialog<DeleteScope>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: t.dialog_delete,
         message: message,
-        onConfirm: () => Navigator.pop(ctx, true),
+        onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (scope == null || !mounted) return;
 
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
     final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
@@ -471,6 +496,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             await ReaderHibikiSource.instance.deleteBook(
               db: appModel.database,
               bookKey: book.bookKey,
+              scope: scope,
             );
           }
           // BUG-439：以前无条件 deleted++，即便 repo.delete 实际没删到行也计数，
@@ -485,6 +511,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
               await ReaderHibikiSource.instance.deleteBook(
             db: appModel.database,
             bookKey: bookKey,
+            scope: scope,
           );
           if (result.deleted) deleted++;
         }
@@ -685,17 +712,17 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
-    if (!await _confirmMediaDelete(
+    final DeleteScope? scope = await _confirmMediaDelete(
       title: t.srt_delete_title,
       message: t.srt_delete_confirm(title: book.title),
-    )) {
-      return;
-    }
+    );
+    if (scope == null) return;
 
     if (book.bookKey.isNotEmpty) {
       await ReaderHibikiSource.instance.deleteBook(
         db: appModel.database,
         bookKey: book.bookKey,
+        scope: scope,
       );
     }
     await SrtBookRepository(appModel.database).delete(book.uid);
@@ -741,17 +768,17 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
 
   Future<void> _confirmDeleteEpub(MediaItem item, String bookKey) async {
     Navigator.pop(context);
-    if (!await _confirmMediaDelete(
+    final DeleteScope? scope = await _confirmMediaDelete(
       title: t.epub_delete_title,
       message: t.srt_delete_confirm(title: item.title),
-    )) {
-      return;
-    }
+    );
+    if (scope == null) return;
 
     final DeleteBookResult result =
         await ReaderHibikiSource.instance.deleteBook(
       db: appModel.database,
       bookKey: bookKey,
+      scope: scope,
     );
     if (!mounted) return;
     if (!result.deleted) {

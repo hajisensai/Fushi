@@ -1790,12 +1790,30 @@ $blurFn
 ''';
   }
 
+  // BUG-1017: `initialize()` runs synchronously inside the outer reader-setup
+  // IIFE (webview.part.dart), whose tail removes the `#hoshi-cloak`
+  // `body{visibility:hidden}` FOUC guard. A synchronous throw in initialize()
+  // (e.g. on a fixed-layout SVG vertical cover page with zero text nodes)
+  // aborted the IIFE before its tail, stranding the cloak -> the whole book
+  // stayed `visibility:hidden` (permanent blank). The VN shell already guards
+  // its boot for exactly this reason (reader_visual_novel_scripts.dart) but the
+  // paginated / continuous shells used a bare call. Contain the throw here so
+  // the IIFE always reaches its cloak removal (and later caret / furigana /
+  // gesture setup still installs), and surface the real error on the console so
+  // the underlying init failure can still be diagnosed and fixed.
   static const String _sharedInitBoot = '''
+function _hoshiBootInitialize() {
+  try {
+    window.hoshiReader.initialize();
+  } catch (e) {
+    try { if (window.console && console.error) console.error('[HoshiReader] boot initialize failed', e); } catch (_ignored) {}
+  }
+}
 window.addEventListener('load', function() {
-  window.hoshiReader.initialize();
+  _hoshiBootInitialize();
 });
 if (document.readyState === 'complete') {
-  window.hoshiReader.initialize();
+  _hoshiBootInitialize();
 }
 ''';
 

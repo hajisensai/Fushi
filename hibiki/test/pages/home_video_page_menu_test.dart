@@ -14,6 +14,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -43,8 +44,11 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
   int compactCalls = 0;
 
   @override
-  Future<void> deleteVideoBook(String bookUid) async {
-    await super.deleteVideoBook(bookUid);
+  Future<void> deleteVideoBook(
+    String bookUid, {
+    DeleteScope scope = DeleteScope.keepLocalOnly,
+  }) async {
+    await super.deleteVideoBook(bookUid, scope: scope);
     deleteCalls++;
     if (deleteCalls == pauseAfterDeleteCount && !deletesCommitted.isCompleted) {
       deletesCommitted.complete();
@@ -516,7 +520,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.delete_outline));
     await tester.pumpAndSettle();
     // 确认对话框的「删除」按钮（AlertDialog 内）。
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
 
     final List<VideoBookRow> remaining =
@@ -563,9 +567,9 @@ void main() {
     await tester
         .longPress(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
     await waitForAsyncCleanup(
       tester,
@@ -644,7 +648,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.delete_outline).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
     await waitForAsyncCleanup(
       tester,
@@ -720,7 +724,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.delete_outline).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.tap(find.text(t.dialog_delete).last);
     await tester.pump();
     await tester.runAsync(() async {
       await repo.deletesCommitted.future.timeout(const Duration(seconds: 2));

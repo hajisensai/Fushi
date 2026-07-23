@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
+    show unifiedShelfCardLayout;
 import 'package:hibiki/src/media/collections/shelf_sort.dart'
     show naturalCompare;
-import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
-    show showCollectionNameDialog;
-import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
+import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
+import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart'
+    show kShelfBookCardAspectRatio;
 import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -65,9 +67,21 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
 }
 
 class _MediaCollectionGridDetailPageState
-    extends State<MediaCollectionGridDetailPage> {
+    extends State<MediaCollectionGridDetailPage>
+    with CollectionDetailShared<MediaCollectionGridDetailPage> {
   late String _name;
   List<MediaCollectionItemRow> _rows = const <MediaCollectionItemRow>[];
+
+  @override
+  HibikiDatabase get detailDatabase => widget.database;
+  @override
+  MediaCollectionRow get detailCollection => widget.collection;
+  @override
+  String get detailName => _name;
+  @override
+  set detailName(String value) => _name = value;
+  @override
+  VoidCallback get detailOnChanged => widget.onChanged;
 
   /// 当前**可见**成员行（memberCardBuilder 返回非空的子集，与 [_rows] 同序）。build
   /// 时刷新；拖拽 onReorder 的 from/to 是这份列表的下标，用它把可见序回写进 [_rows]
@@ -133,142 +147,28 @@ class _MediaCollectionGridDetailPageState
   }
 
   /// AppBar「排序」菜单：按名称（natural，卷1<卷2<卷10）/ 按导入时间一键重排。
+  /// 菜单外壳共享 [buildDetailSortMenu]。
   Widget _buildSortMenu() {
-    return MenuAnchor(
-      menuChildren: <Widget>[
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.sort_by_alpha, size: 20),
-          onPressed: () => _applyOneKeySort(byTitle: true),
-          child: Text(t.collection_sort_by_title),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.history, size: 20),
-          onPressed: () => _applyOneKeySort(byTitle: false),
-          child: Text(t.collection_sort_by_imported),
-        ),
-      ],
-      builder: (BuildContext context, MenuController controller, Widget? _) =>
-          IconButton(
-        tooltip: t.sort_by,
-        icon: const Icon(Icons.sort),
-        onPressed: () =>
-            controller.isOpen ? controller.close() : controller.open(),
-      ),
-    );
-  }
-
-  Future<void> _rename() async {
-    final String? newName = await showCollectionNameDialog(
-      context: context,
-      title: t.rename_collection,
-      initialName: _name,
-    );
-    if (newName == null || newName == _name) return;
-    await widget.database.renameMediaCollection(widget.collection.id, newName);
-    if (!mounted) return;
-    setState(() => _name = newName);
-    widget.onChanged();
-  }
-
-  /// 编辑本合集的标签：复用共享标签池的 [TagPickerPage]（合集第 4 路，传
-  /// collectionId）；返回后自增刷新计数，触发 [_buildTagChips] 的 FutureBuilder
-  /// 重取，chip 行立即反映新增/移除。
-  int _tagsRefresh = 0;
-
-  Future<void> _editTags() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => TagPickerPage(collectionId: widget.collection.id),
-      ),
-    );
-    if (!mounted) return;
-    setState(() => _tagsRefresh++);
-  }
-
-  /// 详情页头部标签 chip 行：随 [_tagsRefresh] 强制重取本合集标签；空则不占位。
-  Widget _buildTagChips() {
-    return FutureBuilder<List<BookTagRow>>(
-      key: ValueKey<int>(_tagsRefresh),
-      future: widget.database.getTagsForCollection(widget.collection.id),
-      builder: (BuildContext context, AsyncSnapshot<List<BookTagRow>> snap) {
-        final List<BookTagRow> tags = snap.data ?? const <BookTagRow>[];
-        if (tags.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: <Widget>[
-              for (final BookTagRow tag in tags)
-                HibikiTagChip(
-                  label: tag.name,
-                  color: Color(tag.colorValue),
-                  tone: HibikiTagChipTone.surface,
-                ),
-            ],
-          ),
-        );
-      },
+    return buildDetailSortMenu(
+      onSortByTitle: () => _applyOneKeySort(byTitle: true),
+      onSortByImported: () => _applyOneKeySort(byTitle: false),
     );
   }
 
   Future<void> _delete() async {
     // 仅当调用方注入了删本体回调、且合集当前有成员时，才给用户「连同书一起删」
-    // 选项；否则退回纯解链删除（老行为，零变化）。
+    // 勾选行；否则退回纯解链删除（老行为，零变化）。确认框统一走 PR-0 的
+    // [HibikiDestructiveConfirmDialog]（经 [confirmDetailCollectionDelete]）。
     final bool canDeleteMembers =
         widget.onDeleteMembersMedia != null && _rows.isNotEmpty;
-    bool alsoDeleteMembers = false;
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => StatefulBuilder(
-        builder: (BuildContext ctx, StateSetter setLocal) => AlertDialog(
-          title: Text(t.delete_collection),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(t.delete_collection_confirm),
-              if (canDeleteMembers) ...<Widget>[
-                const SizedBox(height: 8),
-                InkWell(
-                  onTap: () =>
-                      setLocal(() => alsoDeleteMembers = !alsoDeleteMembers),
-                  child: Row(
-                    children: <Widget>[
-                      Checkbox(
-                        value: alsoDeleteMembers,
-                        onChanged: (bool? v) =>
-                            setLocal(() => alsoDeleteMembers = v ?? false),
-                      ),
-                      Expanded(
-                        child: Text(t.delete_collection_also_books),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: ctx,
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: ctx,
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(t.delete_collection),
-            ),
-          ],
-        ),
-      ),
+    final HibikiDestructiveConfirmResult? result =
+        await confirmDetailCollectionDelete(
+      checkboxLabel: canDeleteMembers ? t.delete_collection_also_books : null,
     );
-    if (ok != true) return;
+    if (result == null || !mounted) return;
     // 先删成员本体（书/有声书/视频 DB 行 + 磁盘副本），再解散容器。删书不动合集引用
     // 行，故随后的 deleteMediaCollection 负责清掉残留引用 + 写合集级墓碑。
-    if (alsoDeleteMembers && widget.onDeleteMembersMedia != null) {
+    if (result.checked && widget.onDeleteMembersMedia != null) {
       await widget
           .onDeleteMembersMedia!(List<MediaCollectionItemRow>.of(_rows));
     }
@@ -419,12 +319,12 @@ class _MediaCollectionGridDetailPageState
           IconButton(
             tooltip: t.rename_collection,
             icon: const Icon(Icons.drive_file_rename_outline),
-            onPressed: _rename,
+            onPressed: renameDetailCollection,
           ),
           IconButton(
             tooltip: t.tag_label,
             icon: const Icon(Icons.sell_outlined),
-            onPressed: _editTags,
+            onPressed: editDetailCollectionTags,
           ),
           IconButton(
             tooltip: t.delete_collection,
@@ -435,13 +335,16 @@ class _MediaCollectionGridDetailPageState
       ),
       body: SafeArea(
         child: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? Center(child: adaptiveIndicator(context: context))
             : members.isEmpty
-                ? Center(child: Text(t.collection_empty))
+                ? HibikiPlaceholderMessage(
+                    icon: Icons.collections_bookmark_outlined,
+                    message: t.collection_empty,
+                  )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      _buildTagChips(),
+                      buildDetailTagChips(),
                       Expanded(child: _buildMemberGrid(members)),
                     ],
                   ),
@@ -449,29 +352,36 @@ class _MediaCollectionGridDetailPageState
     );
   }
 
-  /// 成员网格：消缩放 2D 拖排（[HibikiReorderableGrid]）。列数按可用宽度换算
-  /// （每卡 ≤180 宽，与旧 [SliverGridDelegateWithMaxCrossAxisExtent] 一致）。卡片包在
+  /// 成员网格：消缩放 2D 拖排（[HibikiReorderableGrid]）。卡尺寸对齐书架散卡口径
+  /// （[readerShelfGridExtentForLayout] 断点 → [unifiedShelfCardLayout] 列数、
+  /// [kShelfBookCardAspectRatio] 槽比）——旧实现自带 180+ceil+硬编码 160/260，
+  /// 同一本书在书架与详情页两个网格里尺寸口径不一致（巡检 PR-3）。卡片包在
   /// [IgnorePointer] 里——其内部 InkWell 的 long-press 会与网格触摸长按拖拽争用手势
   /// 竞技场（LongPress 在 500ms 抢先夺胜 → 触摸永远拖不动），故屏蔽卡片自身手势，由
-  /// 网格统一接管：轻点→打开、按下/长按拖→重排、长按松手/右键→上下文菜单。
+  /// 网格统一接管：轻点→打开、按下/长按拖→重排、长按松手/右键→上下文菜单；
+  /// 指针悬停反馈由外层 [_HoverableMemberCard] 补回（IgnorePointer 灭掉了 InkWell
+  /// 自身 hover，桌面上成员卡曾读作死内容）。
   Widget _buildMemberGrid(
       List<({MediaCollectionItemRow row, Widget card})> members) {
     const double spacing = 12;
-    const double maxCardWidth = 180;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double available = constraints.maxWidth - 24; // 两侧各 12 padding
-        final int cols = available <= 0
-            ? 1
-            : ((available + spacing) / (maxCardWidth + spacing))
-                .ceil()
-                .clamp(1, 1 << 30);
+        final double targetWidth = readerShelfGridExtentForLayout(
+          mediaWidth: MediaQuery.sizeOf(context).width,
+          contentWidth: available,
+        );
+        final ({int columns, double cardWidth}) layout = unifiedShelfCardLayout(
+          availableWidth: available > 0 ? available : targetWidth,
+          targetWidth: targetWidth,
+          spacing: spacing,
+        );
         return SingleChildScrollView(
           padding: const EdgeInsets.all(12),
           child: HibikiReorderableGrid(
             itemCount: members.length,
-            crossAxisCount: cols,
-            childAspectRatio: 160 / 260,
+            crossAxisCount: layout.columns,
+            childAspectRatio: kShelfBookCardAspectRatio,
             crossAxisSpacing: spacing,
             mainAxisSpacing: spacing,
             feedbackBorderRadius: HibikiBorderRadius.card,
@@ -485,10 +395,61 @@ class _MediaCollectionGridDetailPageState
             onContextMenu: (int i, Offset globalPosition) =>
                 _showMemberMenu(members[i].row, globalPosition),
             itemBuilder: (BuildContext context, int i) =>
-                IgnorePointer(child: members[i].card),
+                _HoverableMemberCard(child: members[i].card),
           ),
         );
       },
+    );
+  }
+}
+
+/// 成员卡的指针悬停反馈壳：卡片本体仍被 [IgnorePointer] 屏蔽（长按拖拽手势竞技场
+/// 决策不变），悬停高亮由本壳的 [MouseRegion]（默认 opaque，自身参与命中测试）
+/// 提供——桌面指针划过成员卡有可交互反馈，触摸/手柄路径零变化。
+class _HoverableMemberCard extends StatefulWidget {
+  const _HoverableMemberCard({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_HoverableMemberCard> createState() => _HoverableMemberCardState();
+}
+
+class _HoverableMemberCardState extends State<_HoverableMemberCard> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final bool eink = isEinkTheme(context);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          IgnorePointer(child: widget.child),
+          if (_hovering)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  // eink 半透明 hover 罩合成抖动灰 → 改描边反馈。
+                  decoration: eink
+                      ? BoxDecoration(
+                          border: Border.all(color: tokens.surfaces.outline),
+                          borderRadius: tokens.radii.cardRadius,
+                        )
+                      : BoxDecoration(
+                          color:
+                              tokens.surfaces.onSurface.withValues(alpha: 0.08),
+                          borderRadius: tokens.radii.cardRadius,
+                        ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

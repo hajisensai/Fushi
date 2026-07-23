@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/remote_cover_fetcher.dart';
@@ -879,6 +880,36 @@ class HibikiClientSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'POST /api/library/collections');
     final String body = await res.transform(utf8.decoder).join();
     return CollectionManifest.fromJson(jsonDecode(body));
+  }
+
+  /// GET 对端 host 当前删除墓碑清单（显式确认式删除传播，host→client 消费方向）。
+  /// 老 host 无 `/api/tombstones` 端点返回 404 时优雅降级返回 null（调用方跳过删除墓碑
+  /// 消费，绝不因老 server 缺端点崩溃，与 [getRemoteCollectionManifest] 同纪律）。
+  /// 返回体是 JSON 数组，逐条 [parseDeletionTombstoneJson] 解码；非法条目安全跳过。
+  Future<List<({String mediaType, String itemKey, int deletedAt})>?>
+      getRemoteDeletionTombstones() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/tombstones',
+    );
+    final HttpClientResponse res = await req.close();
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null; // 老 host 无删除墓碑端点：降级跳过，不崩。
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/tombstones');
+    final String body = await res.transform(utf8.decoder).join();
+    final Object? decoded = jsonDecode(body);
+    final List<({String mediaType, String itemKey, int deletedAt})> out =
+        <({String mediaType, String itemKey, int deletedAt})>[];
+    if (decoded is List) {
+      for (final Object? e in decoded) {
+        final parsed = parseDeletionTombstoneJson(e);
+        if (parsed != null) out.add(parsed);
+      }
+    }
+    return out;
   }
 
   // ── Live local audio (interconnect-only) ──────────────────────────

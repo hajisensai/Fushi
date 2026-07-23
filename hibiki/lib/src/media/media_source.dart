@@ -527,11 +527,17 @@ abstract class MediaSource {
       item: item,
     );
 
+    // BUG-1018 (附带): only touch the disk when there is an actual change. The
+    // old unconditional createSync left a 0-byte override file behind on every
+    // "save without picking a new image", and getOverrideThumbnailFromMediaItem
+    // gates only on existsSync — so the cover then rendered as a broken blank.
     File thumbnailFile = File(filename);
-    thumbnailFile.createSync(recursive: true);
     if (clearOverrideImage) {
-      thumbnailFile.deleteSync();
+      if (thumbnailFile.existsSync()) {
+        thumbnailFile.deleteSync();
+      }
     } else if (file != null) {
+      thumbnailFile.parent.createSync(recursive: true);
       file.copySync(filename);
     }
   }

@@ -29,10 +29,11 @@ class SettingsHomePage extends BasePage {
 
 class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     with SettingsContextHost<SettingsHomePage> {
-  // 默认选中 schema 首个分类（外观），与宽屏导航列表的视觉首项一致；
-  // 若首项被平台门控隐藏，build 里的兜底会自动落到第一个可见分类。
-  SettingsDestinationId _selectedDestinationId =
-      SettingsDestinationId.appearance;
+  // 默认选中 schema 首个可见分类（当前重排后是「阅读」），与宽屏导航列表的
+  // 视觉首项一致：不再硬编码某个 id——分类顺序的唯一真相源是 buildSettingsSchema
+  // （有顺序守卫），这里在 build 里首次解析时取 destinations.first.id，顺序调整
+  // 时默认项自动跟随，不会再脱节。
+  SettingsDestinationId? _selectedDestinationId;
 
   // 设置搜索：跨全部分类按标题/副标题/分区/分类名过滤配置项，点结果跳转到
   // 对应分类并滚动定位（SettingsSearchReveal）。
@@ -68,12 +69,14 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         .where((SettingsDestination destination) =>
             destination.isVisible(settingsContext))
         .toList(growable: false);
+    // 首次进入（null）或当前选中分类被平台门控隐藏时，落到第一个可见分类。
     if (!destinations.any(
       (SettingsDestination destination) =>
           destination.id == _selectedDestinationId,
     )) {
       _selectedDestinationId = destinations.first.id;
     }
+    final SettingsDestinationId selectedDestinationId = _selectedDestinationId!;
     final SettingsRenderer renderer = isCupertinoPlatform(context)
         ? const CupertinoSettingsRenderer()
         : const MaterialSettingsRenderer();
@@ -87,6 +90,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
             settingsContext: settingsContext,
             renderer: renderer,
             destinations: destinations,
+            selectedDestinationId: selectedDestinationId,
           );
         }
         // 窄屏单列：居中限宽（单列阅读更舒适）。搜索时结果列表整体替换分类列表。
@@ -101,7 +105,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                     ? renderer.buildHomePage(
                         settingsContext: settingsContext,
                         destinations: destinations,
-                        selectedDestinationId: _selectedDestinationId,
+                        selectedDestinationId: selectedDestinationId,
                         onDestinationSelected: _selectDestination,
                         embedded: widget.embedded,
                       )
@@ -208,8 +212,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   /// 点搜索结果：登记滚动定位挂点、清空搜索，宽屏切主从选中分类，窄屏 push
   /// 详情页；目标行由 SettingsSchemaItem 消费挂点后滚入视口并闪烁高亮。
+  /// body 合成条目（bodySearchEntries）不登记挂点——body 行不是 schema item，
+  /// 挂点永远不会被消费，跳转到分类正文即为完整语义。
   void _openSearchResult(SettingsSearchEntry entry, {required bool wide}) {
-    SettingsSearchReveal.pendingItemId = entry.item.id;
+    SettingsSearchReveal.pendingItemId =
+        entry.isBodyEntry ? null : entry.item.id;
     _searchController.clear();
     setState(() {
       _searchQuery = '';
@@ -260,10 +267,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     required SettingsContext settingsContext,
     required SettingsRenderer renderer,
     required List<SettingsDestination> destinations,
+    required SettingsDestinationId selectedDestinationId,
   }) {
     final SettingsDestination selected = destinations.firstWhere(
       (SettingsDestination destination) =>
-          destination.id == _selectedDestinationId,
+          destination.id == selectedDestinationId,
     );
     final bool cupertino = isCupertinoPlatform(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -295,7 +303,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                           child: renderer.buildDestinationList(
                             settingsContext: settingsContext,
                             destinations: destinations,
-                            selectedDestinationId: _selectedDestinationId,
+                            selectedDestinationId: selectedDestinationId,
                             onDestinationSelected: _selectDestination,
                             pushRoutes: false,
                           ),
@@ -303,7 +311,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                       : renderer.buildDestinationList(
                           settingsContext: settingsContext,
                           destinations: destinations,
-                          selectedDestinationId: _selectedDestinationId,
+                          selectedDestinationId: selectedDestinationId,
                           onDestinationSelected: _selectDestination,
                           pushRoutes:
                               false, // master-detail keeps selection in-pane.
@@ -321,11 +329,26 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       // 切换目标时整棵子树作废重建，避免 Flutter 复用上一目标同位置的 Switch
       // Element 触发 didUpdateWidget(value 变化)→ 圆点滑动（以及分段滑动、滚动
       // 位置串页等同类复用副作用）。
+      // 详情正文限宽：与窄屏 DesktopContentLayout 的 settings 档共用同一上限
+      // （desktopContentMaxWidth，当前 960），超宽窗口不再把设置行拉成整屏长条；
+      // 左对齐贴导航 pane（不居中，避免详情和导航之间出现空腹）。
       primary: KeyedSubtree(
         key: ValueKey<SettingsDestinationId>(selected.id),
-        child: renderer.buildDetailContent(
-          settingsContext: settingsContext,
-          destination: selected,
+        child: Align(
+          alignment: AlignmentDirectional.topStart,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: desktopContentMaxWidth(
+                    WindowSizeClass.expanded,
+                    DesktopContentKind.settings,
+                  ) ??
+                  double.infinity,
+            ),
+            child: renderer.buildDetailContent(
+              settingsContext: settingsContext,
+              destination: selected,
+            ),
+          ),
         ),
       ),
     );

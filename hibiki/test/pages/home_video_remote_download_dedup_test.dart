@@ -112,10 +112,13 @@ void main() {
     await tester.pumpWidget(buildApp(client: client));
     await tester.pumpAndSettle();
 
-    // 点下载：进入下载中态，badge 出现、原下载按钮被替换（用户看到进行中反馈）。
-    await tester.tap(find.byKey(
-      const ValueKey<String>('remote_video_download_remote_video-1'),
+    // 点下载（UI 巡检 PR-4：封面内嵌下载按钮已撤，入口 = 长按卡片弹面板 →
+    // 「下载」）：进入下载中态，badge 出现（用户看到进行中反馈）。
+    await tester.longPress(find.byKey(
+      const ValueKey<String>('remote_video_card_remote_video-1'),
     ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.remote_video_download));
     await tester.pump();
     await tester.pump();
 
@@ -123,11 +126,6 @@ void main() {
       find.byKey(
           const ValueKey<String>('remote_video_downloading_remote_video-1')),
       findsOneWidget,
-    );
-    expect(
-      find.byKey(
-          const ValueKey<String>('remote_video_download_remote_video-1')),
-      findsNothing,
     );
 
     // 收尾：放行下载让 finally 跑完，避免 pending future 泄漏告警。

@@ -130,6 +130,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
   'cardCreation/Add source category tag':
       'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
+  // PR#343: 互联「制卡到服务端」开关。写 prefsRepo mine_to_server（changed=true），
+  // 生效点在 ankiRepositoryProvider——开关开时把本地仓库包一层 RemoteMiningAnkiRepository，
+  // mineEntry/isDuplicate 经互联链路转发到已配对主机（用主机 Anki 落卡），配置类方法仍委派
+  // 本地（非 reader CSS / 主题树），无适用 widget 探针；由专项测试咬住转发路由/字段透传/
+  // 序列化契约（远端制卡仓库包装 + 转发载荷 + 服务端 handler）。
+  'cardCreation/Mine to paired device':
+      'test/anki/remote_mining_anki_repository_test.dart + '
+          'test/sync/forwarded_mine_payload_test.dart + '
+          'test/sync/hibiki_remote_mining_service_test.dart',
   'system/Low Memory Mode': 'test/models/app_model_low_memory_mode_test.dart',
   'system/Keyboard & gamepad focus navigation':
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 HibikiFocusRoot/Ring',

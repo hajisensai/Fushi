@@ -101,4 +101,47 @@ void main() {
       expect(AnkiHandlebarOptions.anyFieldConsumesSentence({}), isFalse);
     });
   });
+
+  group('AnkiHandlebarOptions.anyFieldConsumesCardImage', () {
+    // TODO-1298 改名后 {book-cover} / {video-clip} 是 {card-image} 的向后兼容
+    // 别名（三者都渲染 context.coverPath）。改名前建的 Lapis 卡组持久化里
+    // Picture 仍是 {book-cover}，galgame 场景制卡的诊断必须认这些别名，否则误报
+    // 「缺少游戏卡片字段: {card-image}」，尽管画面/GIF 其实已通过别名落卡（BUG）。
+    test('{card-image} counts as consuming the card image', () {
+      expect(
+        AnkiHandlebarOptions.anyFieldConsumesCardImage(
+            {'Picture': '{card-image}'}),
+        isTrue,
+      );
+    });
+
+    test('legacy alias {book-cover} also counts (pre-TODO-1298 config)', () {
+      expect(
+        AnkiHandlebarOptions.anyFieldConsumesCardImage(
+            {'Picture': '{book-cover}'}),
+        isTrue,
+      );
+    });
+
+    test('legacy alias {video-clip} also counts', () {
+      expect(
+        AnkiHandlebarOptions.anyFieldConsumesCardImage(
+            {'Picture': '{video-clip}'}),
+        isTrue,
+      );
+    });
+
+    test('none of the three card-image aliases mapped returns false', () {
+      expect(
+        AnkiHandlebarOptions.anyFieldConsumesCardImage(
+          {'Expression': '{expression}', 'Sentence': '{sentence}'},
+        ),
+        isFalse,
+      );
+    });
+
+    test('empty mappings return false (no field to receive the image)', () {
+      expect(AnkiHandlebarOptions.anyFieldConsumesCardImage({}), isFalse);
+    });
+  });
 }

@@ -282,6 +282,40 @@ void main() {
         reason: 'there is no sentence-audio media to map for this card');
   });
 
+  test('legacy {book-cover}/{sasayaki-audio} aliases are not reported missing',
+      () async {
+    // TODO-1298 改名前建的 Lapis 卡组持久化里 Picture 仍是 {book-cover}、
+    // SentenceAudio 仍是 {sasayaki-audio}（都渲染同一媒体）。诊断必须认这些别名，
+    // 否则误报「缺少游戏卡片字段: {card-image}」，尽管画面/句音其实已通过别名落卡。
+    final TexthookerLineEntry entry = service.appendLine('旧别名映射台词')!;
+    final _RecordingRepo repo = _RecordingRepo(
+      settings: const AnkiSettings(fieldMappings: <String, String>{
+        'Sentence': '{sentence}',
+        'Picture': '{book-cover}',
+        'SentenceAudio': '{sasayaki-audio}',
+        'Audio': '{audio}',
+      }),
+    );
+    final GalHookMiningResult result = await coordinator(
+      validator: (_) => true,
+      audio: ({
+        required String lineId,
+        required String sentence,
+        required String outputExtension,
+      }) async =>
+          Uint8List.fromList(<int>[1]),
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '别名'},
+      compression: MiningMediaCompression.compressed,
+      repo: repo,
+    );
+
+    expect(result.success, isTrue);
+    expect(result.unmappedTokens, isEmpty,
+        reason: '{book-cover} 是 {card-image} 的别名，不该报缺游戏卡片字段');
+  });
+
   test('制卡历史行标注 staleScene，制卡当前最新行不标（BUG-955 ②）', () async {
     final TexthookerLineEntry older = service.appendLine('古い台詞')!;
     final TexthookerLineEntry newer = service.appendLine('最新の台詞')!;

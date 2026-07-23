@@ -21,13 +21,20 @@ void main() {
           reason: 'lazy-init exactly one client and reuse it');
     });
 
-    test('both lookup call sites pass the shared client in', () {
-      // Each HibikiRemoteLookupClient(...) must receive the cached client so it
-      // does not fall back to its own per-instance http.Client().
+    test('all remote call sites pass the shared client in', () {
+      // Every consumer that opens a keep-alive connection to a paired host must
+      // receive the cached client so it does not fall back to its own
+      // per-instance http.Client(). PR#343 added a third consumer — the
+      // 「制卡到服务端」forwarder (HibikiRemoteMiningClient) — which correctly
+      // reuses the same cached client, so the count is 3, not 2. Bumping this
+      // keeps the invariant exact (one shared client, everyone reuses it): the
+      // mining client threads _remoteLookupClient in exactly like the dictionary
+      // and audio lookups, never new-ing up its own.
       final int passes =
           RegExp(r'httpClient:\s*_remoteLookupClient').allMatches(src).length;
-      expect(passes, 2,
-          reason: 'dictionary + audio lookups both reuse the one client');
+      expect(passes, 3,
+          reason: 'dictionary + audio lookups + server-mining forwarder all '
+              'reuse the one cached client');
     });
 
     test('the cached client is closed on dispose', () {

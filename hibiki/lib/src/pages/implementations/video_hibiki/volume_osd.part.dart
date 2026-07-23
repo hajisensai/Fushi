@@ -246,7 +246,11 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
           valueListenable: _levelHudNotifier,
           builder: (BuildContext _, _VideoLevelHudState? hud, __) {
             return AnimatedSwitcher(
-              duration: const Duration(milliseconds: 160),
+              // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
+              duration: einkSafeDuration(
+                context,
+                const Duration(milliseconds: 160),
+              ),
               child: hud == null
                   ? const SizedBox.shrink()
                   : switch (hud.kind) {
@@ -273,7 +277,11 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
             valueListenable: _osdNotifier,
             builder: (BuildContext _, _VideoOsdMessage? osd, __) {
               return AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
+                // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
+                duration: einkSafeDuration(
+                  context,
+                  const Duration(milliseconds: 180),
+                ),
                 child:
                     osd == null ? const SizedBox.shrink() : _buildOsdCard(osd),
               );
@@ -330,7 +338,13 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
         : const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
     final BorderRadius radius = BorderRadius.circular(prominent ? 12 : 6);
     const AlignmentGeometry alignment = Alignment.topLeft;
-    const EdgeInsets outerPadding = EdgeInsets.only(left: 16, top: 52);
+    // OSD 顶部避让从顶栏几何推导（UI 巡检 PR-4）：顶栏高 = [_videoButtonBarHeight]
+    // （56×界面缩放）+ 8×缩放 呼吸间距——此前固定 52 不吃 [_videoUiScale]，缩放
+    // >1 时 OSD 压进顶栏按钮行。SafeArea 已在外层吃掉系统 inset。
+    final EdgeInsets outerPadding = EdgeInsets.only(
+      left: 16,
+      top: _videoButtonBarHeight + 8 * _videoUiScale,
+    );
     return Align(
       alignment: alignment,
       child: Padding(

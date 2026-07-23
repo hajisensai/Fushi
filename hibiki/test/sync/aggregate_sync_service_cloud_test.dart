@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import 'fake_asset_store.dart';
@@ -84,6 +85,47 @@ void main() {
     await AggregateSyncService(db).sync(store: store, deviceId: 'dev-A');
     final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
     expect((await store.listChildren(ns)).isEmpty, isTrue);
+  });
+
+  test('取消收藏句后 peer 快照并集不复活（favoritesentence 墓碑抑制）', () async {
+    final HibikiDatabase db = await _freshDb('agg_fs_tomb_');
+    addTearDown(db.close);
+    final FavoriteSentenceRepository repo = FavoriteSentenceRepository(db);
+    final FavoriteSentence s = FavoriteSentence(
+      id: 'hl_x',
+      text: '消したい文',
+      bookTitle: 'BookA',
+      bookKey: 'a',
+      sectionIndex: 0,
+      normCharOffset: 7,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(100),
+    );
+    // 收藏后取消 → 本地删掉 + 写墓碑。
+    await repo.add(s);
+    await repo.removeById('hl_x');
+    expect(await repo.getAll(), isEmpty);
+
+    // peer 快照仍带同一句（不同 id / 较晚 createdAt）→ 应用后**不得**复活。
+    final AggregateSnapshot peer = AggregateSnapshot(
+      favoriteSentences: <FavoriteSentence>[
+        FavoriteSentence(
+          id: 'hl_peer',
+          text: '消したい文',
+          bookTitle: 'BookA',
+          bookKey: 'a',
+          sectionIndex: 0,
+          normCharOffset: 7,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(900),
+        ),
+      ],
+    );
+    await AggregateSyncService(db).applySnapshotToLocal(peer);
+    expect(await repo.getAll(), isEmpty, reason: '有墓碑 → 并集不复活');
+
+    // 重新收藏 → 清碑；此后 peer 快照的同句可正常并入。
+    await repo.add(s);
+    await AggregateSyncService(db).applySnapshotToLocal(peer);
+    expect((await repo.getAll()).single.text, '消したい文');
   });
 
   test('two devices converge to the union via the store', () async {
@@ -246,8 +288,10 @@ void main() {
     expect((await dbB.getMiningStatisticsBySource('book')).single.count, 4);
   });
 
-  test('union re-adds a peer-still-present word; delete does not propagate',
-      () async {
+  test('取消收藏词写墓碑后 peer 快照并集不复活；重新收藏清碑可再并入', () async {
+    // 删除传播上线后行为更新：`removeFavoriteWord` 默认写 favoriteword 墓碑，
+    // `applySnapshotToLocal` 跳过有碑收藏 → 取消收藏不再被 peer 并集复活（旧「delete does
+    // not propagate」断言已随删除传播作废）。
     final FakeAssetStore store = FakeAssetStore();
 
     final HibikiDatabase dbA = await _freshDb('agg_delA_');
@@ -265,13 +309,25 @@ void main() {
     addTearDown(dbB.close);
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
     expect((await dbB.getAllFavoriteWords()).length, 1);
+    // 取消收藏 → 本地删 + 写墓碑。
     await dbB.removeFavoriteWord(
         expression: 'wShared', reading: 'r', sourceType: 'book');
     expect((await dbB.getAllFavoriteWords()).isEmpty, isTrue);
 
-    // The aggregate model is union / only-grows: a peer snapshot that still
-    // carries the word re-adds it on B. Deletion propagation is a deliberate
-    // non-goal (a delete must be performed on every device).
+    // A 的快照仍带 wShared；B 再同步折进 merged，但墓碑令 applySnapshotToLocal 跳过它
+    // → 保持删除（删除传播生效）。
+    await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
+    expect((await dbB.getAllFavoriteWords()).isEmpty, isTrue,
+        reason: '墓碑抑制并集复活');
+
+    // 重新收藏 → 清碑；此后 peer 快照的同词可正常并入（「重加清墓碑」语义）。
+    await dbB.addFavoriteWord(
+      expression: 'wShared',
+      reading: 'r',
+      glossary: 'g',
+      sourceType: 'book',
+      dateKey: '2026-06-02',
+    );
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
     expect((await dbB.getAllFavoriteWords()).length, 1);
   });

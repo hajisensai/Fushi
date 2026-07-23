@@ -500,6 +500,10 @@ class HibikiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _handleMine(request);
     }
+    if (reqPath == '/api/mine/forward') {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleMineForward(request);
+    }
     if (reqPath == '/api/media/dictionary') {
       if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
       return _handleDictionaryMedia(request, method == 'HEAD');
@@ -552,6 +556,9 @@ class HibikiSyncServer {
     }
     if (reqPath == '/api/library/collections') {
       return _handleLibraryCollections(request, method, reqPath);
+    }
+    if (reqPath == '/api/tombstones') {
+      return _handleTombstones(request, method);
     }
 
     // 真实读写路径：只做词法规整、**保留原始大小写**。p.canonicalize 在
@@ -1069,6 +1076,21 @@ class HibikiSyncServer {
       return _jsonResponse(await buildRemoteMineResponse(body, mining: svc));
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
+    }
+  }
+
+  /// 互联「制卡到服务端」：客户端转发未渲染的制卡请求 + 全部媒体字节，本机用自己的 Anki
+  /// 配置落卡。契约与 YomitanApiServer 共享（buildForwardedMineResponse，单一真相源）。
+  /// rawPayloadJson 缺失/类型错 → 400；未注入挖词 service → 404。
+  Future<shelf.Response> _handleMineForward(shelf.Request request) async {
+    final HibikiRemoteMiningService? svc = _miningService;
+    if (svc == null) return shelf.Response.notFound('Mining off');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    try {
+      return _jsonResponse(await buildForwardedMineResponse(body, mining: svc));
+    } on FormatException {
+      return shelf.Response(400, body: 'Missing rawPayloadJson');
     }
   }
 
@@ -2189,6 +2211,41 @@ class HibikiSyncServer {
       default:
         return shelf.Response(405);
     }
+  }
+
+  /// GET `/api/tombstones`：列 host 全部删除墓碑为 JSON 数组，供 client 拉取后与本地
+  /// 在库键求交、弹逐条确认删本地（显式确认式删除传播，host→client 消费方向）。走已配对
+  /// peer 的 Basic token 校验（与 collections/aggregate 同纪律，未进鉴权豁免名单）。
+  Future<shelf.Response> _handleTombstones(
+    shelf.Request request,
+    String method,
+  ) async {
+    if (method != 'GET') return shelf.Response(405);
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+    // 可选能力探测：host 未实现删除墓碑列举（老 host / 测试 fake）→ 404，client 侧
+    // getRemoteDeletionTombstones 已优雅降级（不崩、跳过删除墓碑消费）。
+    if (svc is! DeletionTombstoneHost) {
+      return shelf.Response.notFound('No deletion tombstone capability');
+    }
+    final List<({String mediaType, String itemKey, int deletedAt})> rows =
+        await (svc as DeletionTombstoneHost).listDeletionTombstones();
+    final List<Map<String, Object?>> body = <Map<String, Object?>>[
+      for (final r in rows)
+        <String, Object?>{
+          'mediaType': r.mediaType,
+          'itemKey': r.itemKey,
+          'deletedAt': r.deletedAt,
+        },
+    ];
+    return shelf.Response.ok(
+      jsonEncode(body),
+      // charset=utf-8 必带：itemKey 可能含 CJK（书名派生 key），client 按 latin1 默认
+      // 解码会乱码（同 collections / aggregate）。
+      headers: <String, String>{
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+    );
   }
 
   Future<Map<String, dynamic>?> _readJsonObject(shelf.Request request) async {

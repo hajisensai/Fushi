@@ -47,6 +47,7 @@ import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:hibiki/src/sync/cloud_remote_book_client.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
@@ -799,7 +800,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   ///
   /// 数据边界（诚实外显）：hero = 在读（0<position<duration）EPUB-backed 书中
   /// 「最后阅读时间」（[bookLastReadAtProvider]，即 reader_positions.updatedAt）
-  /// 最新者，显示「已读 x%」；无候选整块只剩统计。BUG-777：旧实现取列表第一本
+  /// 最新者，显示「已读 x%」；无候选整块隐藏。BUG-777：旧实现取列表第一本
   /// 在读书，但列表序 = getAllEpubBooks 的 importedAt 倒序，选中的是「最近导入」
   /// 而非「最近阅读」的书。
   ///
@@ -807,16 +808,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// （`hibikiBooksProvider` 全部行，含有声书——EPUB 正文 + SRT 字幕同 bookKey）。
   /// 旧实现只喂 srt 过滤后的 `epubBooks`，有声书虽有进度与 lastReadAt 却被整类
   /// 排除，读了有声书回书架「继续阅读」永不更新。过滤到纯 EPUB 只为主网格卡
-  /// 去重（有声书渲染成 SRT 卡），与 hero/统计无关。
+  /// 去重（有声书渲染成 SRT 卡），与 hero 无关。
   ///
-  /// 统计 = 总数（[libraryTotal] = 书架可见卡数 = 本地纯 EPUB 卡 + SRT 卡（有声书计
-  /// 一次）+ 联合视图里的远端占位卡；调用处按此传入，BUG-991）/ 在读 / 读完（后两格
-  /// 按 EPUB-backed 进度；远端未下载卡与纯字幕书无进度维度，跳过）。
-  /// 宽 >=720 并排、窄屏堆叠。
-  Widget _buildShelfOverviewSection(
-    List<MediaItem> progressBooks,
-    int libraryTotal,
-  ) {
+  /// 原并排的「统计」三格（总数/在读/已完成，BUG-991 的口径修正随之退役）已按
+  /// 用户反馈移除——与右上角「阅读统计」入口重复。
+  Widget _buildShelfOverviewSection(List<MediaItem> progressBooks) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ShelfProgressTally<MediaItem> tally = tallyShelfProgress<MediaItem>(
       progressBooks,
@@ -828,14 +824,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       (MediaItem item) =>
           _lastReadAtByBookKey[_parseBookKey(item.mediaIdentifier)] ?? 0,
     );
-    final Widget stats = _buildShelfOverviewStats(
-      total: libraryTotal,
-      reading: tally.reading,
-      finished: tally.finished,
-      tokens: tokens,
-    );
-    final Widget? heroCard =
-        hero == null ? null : _buildContinueReadingHero(hero, tokens);
+    if (hero == null) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
@@ -843,34 +832,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         tokens.spacing.card,
         0,
       ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          if (heroCard == null) return stats;
-          final bool wide = constraints.maxWidth >= 720;
-          if (wide) {
-            // IntrinsicHeight 必须有：SliverToBoxAdapter 下主轴无界，裸
-            // Row(stretch) 会强制无限高崩溃（与视频页同一根因，对抗审查确认）。
-            return IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(flex: 3, child: heroCard),
-                  SizedBox(width: tokens.spacing.gap + 4),
-                  Expanded(flex: 2, child: stats),
-                ],
-              ),
-            );
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              heroCard,
-              SizedBox(height: tokens.spacing.gap),
-              stats,
-            ],
-          );
-        },
-      ),
+      child: _buildContinueReadingHero(hero, tokens),
     );
   }
 
@@ -936,60 +898,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             color: tokens.surfaces.primary,
           ),
         ],
-      ),
-    );
-  }
-
-  /// 书库概览统计三格：总数 / 在读 / 读完。
-  Widget _buildShelfOverviewStats({
-    required int total,
-    required int reading,
-    required int finished,
-    required HibikiDesignTokens tokens,
-  }) {
-    Widget cell(String label, int value, {String? valueKey}) => Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text('$value',
-                  key: valueKey == null ? null : ValueKey<String>(valueKey),
-                  style: tokens.type.pageTitle),
-              SizedBox(height: tokens.spacing.gap / 2),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tokens.type.metadata,
-              ),
-            ],
-          ),
-        );
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        color: tokens.surfaces.group,
-        shape: const RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.card,
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.gap + 4),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(t.book_library_overview, style: tokens.type.sectionLabel),
-            SizedBox(height: tokens.spacing.gap),
-            Row(
-              children: <Widget>[
-                cell(t.video_stat_total_videos, total,
-                    valueKey: 'shelf_overview_total'),
-                cell(t.shelf_stat_reading, reading),
-                cell(t.video_stat_completed, finished),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1206,7 +1114,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
     _epubProgressByBookKey = epubProgressByBookKey;
-    if (epubBooks.isEmpty && srtBooks.isEmpty && remoteBooks.isEmpty) {
+    // BUG-1008：空态判定看**全部**会渲染成卡的列表（含纯 SRT 远端占位）。标签筛选
+    // 激活时才可能落到 tag_no_books_for_filter；旧实现另有一个
+    // `hasActiveFilter && epubBooks.isEmpty` 特殊分支——SRT 命中已渲染网格却仍
+    // 无条件叠「无匹配」空态文案，且丢 RefreshIndicator / 合集横排行 / 书库概览。
+    // 筛选态与常态统一走下方主分支组装（shelfGroups 已能承载纯 SRT 命中结果），
+    // 特殊分支消灭。
+    if (epubBooks.isEmpty &&
+        srtBooks.isEmpty &&
+        remoteBooks.isEmpty &&
+        remoteSrtBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
               child: HibikiPlaceholderMessage(
@@ -1215,49 +1132,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               ),
             )
           : buildPlaceholder();
-    }
-    if (hasActiveFilter && epubBooks.isEmpty) {
-      return RawScrollbar(
-        thumbVisibility: true,
-        thickness: 3,
-        controller: mediaType.scrollController,
-        child: LayoutBuilder(
-          builder: (context, constraints) => CustomScrollView(
-            controller: mediaType.scrollController,
-            physics: desktopAwareScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-              // 标签筛选激活时不混排远端占位（远端书无本地标签，不参与筛选）。
-              // TODO-902: 不再渲染 srt_books_section 分区头，SRT 卡直接进网格。
-              if (srtBooks.isNotEmpty)
-                SliverGrid.builder(
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: _gridExtent(context, constraints),
-                    childAspectRatio: kShelfBookCardAspectRatio,
-                  ),
-                  itemCount: srtBooks.length,
-                  itemBuilder: (_, i) => _buildSrtCard(
-                    srtBooks[i],
-                    epubCoverUri: epubCoverUrisByBookKey[srtBooks[i].bookKey],
-                  ),
-                ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding:
-                      EdgeInsets.all(tokens.spacing.card + tokens.spacing.gap),
-                  child: Text(
-                    t.tag_no_books_for_filter,
-                    textAlign: TextAlign.center,
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
     }
     return RawScrollbar(
       thumbVisibility: true,
@@ -1274,27 +1148,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             ),
             slivers: [
               SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-              // UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页，用户
-              // 拍板「书架也要有」）。空库隐藏；统计按未过滤全量描述整库。
-              // BUG-804：hero/在读统计喂**未过滤的全量 EPUB-backed `books`**（含
-              // 有声书），不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续
-              // 阅读」永不更新。
-              // BUG-991：libraryTotal = 书架**可见卡数** = 本地（纯 EPUB + SRT，有声书
-              // 只计一次）+ 联合视图里的远端占位卡（`remoteBooks` + `remoteSrtBooks`，
-              // 已 dedupe 去掉与本地重复者、已按 showRemote 门控）。此前只数本地，用户
-              // 看到一屏含远端书却「总数」只报本地数，对不上（与视频页统计口径看齐）。
-              if (epubBooks.isNotEmpty ||
-                  srtBooks.isNotEmpty ||
-                  remoteBooks.isNotEmpty ||
-                  remoteSrtBooks.isNotEmpty)
+              // 书架顶部「继续阅读 hero」条。原并排的「统计」三格（总数/在读/
+              // 已完成）按用户反馈移除——右上角「阅读统计」已有完整入口，此处
+              // 属重复信息。无在读候选时整条隐藏。
+              // BUG-804：hero 喂**未过滤的全量 EPUB-backed `books`**（含有声书），
+              // 不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续阅读」永不更新。
+              if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
                 SliverToBoxAdapter(
-                  child: _buildShelfOverviewSection(
-                    books,
-                    epubBooks.length +
-                        srtBooks.length +
-                        remoteBooks.length +
-                        remoteSrtBooks.length,
-                  ),
+                  child: _buildShelfOverviewSection(books),
                 ),
               // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
               // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
@@ -1608,6 +1469,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 不注入就没有移出项）。
   Widget? _buildCollectionMemberCard(String mediaType, String entryKey,
       {VoidCallback? onRemoveFromCollection}) {
+    // BUG-1009：详情页与书架是两条同时存活的路由（详情页 push 在书架之上），成员卡
+    // 若复用书架同名 focusId，两个 HibikiFocusTarget 撞号——焦点注册表按 id 覆盖，
+    // 后注册者赢、pop 后书架卡失焦。详情页渲染路径统一加 route 前缀隔离命名空间。
+    const String prefix = 'collection-detail-';
     if (mediaType == 'srt') {
       for (final SrtBook book in _visibleSrtBooks) {
         if (book.uid == entryKey) {
@@ -1615,6 +1480,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             book,
             epubCoverUri: _epubCoverUrisByBookKey[book.bookKey],
             removeFromCollection: onRemoveFromCollection,
+            focusIdPrefix: prefix,
           );
         }
       }
@@ -1626,6 +1492,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           return _buildEpubBookCard(
             item,
             removeFromCollection: onRemoveFromCollection,
+            focusIdPrefix: prefix,
           );
         }
       }
@@ -1659,19 +1526,22 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  Future<bool> _confirmMediaDelete({
+  /// 弹删除确认框，返回用户选择的删除范围（[DeleteScope.syncEverywhere] = 同步删除到
+  /// 其他设备 / [DeleteScope.keepLocalOnly] = 仅本机）；取消或已 unmount 返回 null。
+  Future<DeleteScope?> _confirmMediaDelete({
     required String title,
     required String message,
   }) async {
-    final bool? confirmed = await showAppDialog<bool>(
+    final DeleteScope? scope = await showAppDialog<DeleteScope>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: title,
         message: message,
-        onConfirm: () => Navigator.pop(ctx, true),
+        onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
       ),
     );
-    return confirmed == true && mounted;
+    if (!mounted) return null;
+    return scope;
   }
 
   @override
@@ -1759,13 +1629,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 块2：合集行成员卡传 false（selectionKey 置空 → 不画勾、不可单独勾）。
   /// [removeFromCollection] 非空（合集详情页成员卡）时给长按 / 右键对话框补一条
   /// 「移出合集」动作，让键盘/手柄用户（聚焦长按 A 弹此对话框，不经网格指针菜单）也能移出。
+  /// [focusIdPrefix]：详情页渲染路径传 'collection-detail-' 隔离焦点 id 命名空间
+  /// （BUG-1009，见 [_buildCollectionMemberCard]）；书架路径恒空串（id 不变）。
   Widget _buildEpubBookCard(MediaItem item,
-      {bool selectable = true, VoidCallback? removeFromCollection}) {
+      {bool selectable = true,
+      VoidCallback? removeFromCollection,
+      String focusIdPrefix = ''}) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     final Widget card = _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
-      focusId: HibikiFocusId('reader-shelf-book-${item.mediaIdentifier}'),
+      focusId: HibikiFocusId(
+          '${focusIdPrefix}reader-shelf-book-${item.mediaIdentifier}'),
       selectionKey: selectable ? item.mediaIdentifier : null,
       dragBookId: bookKey,
       onTagDropped:

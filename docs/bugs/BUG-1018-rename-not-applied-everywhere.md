@@ -1,0 +1,11 @@
+## BUG-1018 · 改名/改作者不生效：override title 消费面缺口 + 作者保存不刷新 + SRT 空 bookKey 互踩 + profile 吞 override
+- **报告**：2026-07-23（用户：改名/改作者保存后到处不生效）
+- **真实性**：✅ 真 bug，四条独立根因（合一档）：
+  - **A1 消费面缺口**：override title 只在书架 EPUB 卡 / SRT 卡（`hibiki/lib/src/pages/implementations/reader_history/books.part.dart:57` 经 `getDisplayTitleFromMediaItem`）/ 长按对话框三处生效；首页「继续」区直接用 `item.title`（`home_dashboard_page.dart:349`）、活动时间轴直接用 `entry.title`（`home_dashboard_page.dart:693`）、阅读统计页书名列直接用 `book.title`（`reading_statistics_page.dart:1183`）、听书通知元数据直接读 DB 原名（`audiobook_session_launcher.dart:168` / `:102`），全都显示旧名。
+  - **A2 改作者写库成功但 UI 不刷新**：作者真写 `epubBooks.author`（`database.dart:3971-3976`），但书架 provider 的响应源 `_epubBookKeysProvider` 按 key 集合去重（`reader_hibiki_source.dart:27-33`，注释明说纯列更新不触发），编辑对话框 `executeSave` 只 `refreshTab()` 不 invalidate `hibikiBooksProvider`（`media_item_edit_dialog_page.dart:169-197`）。
+  - **A3 独立 SRT 书（bookKey 空串哨兵）身份坍缩**：所有 standalone SRT 书共享 `mediaIdentifierFor('')` == `hoshi://book/`（`books.part.dart:146`）→ override 书名/封面互相踩；作者保存 `parseBookKey==null` 静默 no-op（`reader_hibiki_source.dart:259-261`）。
+  - **A4 profile 切换吞 override**：`override_title://` pref 不在 `ProfileKeys` 排除清单（`profile_keys.dart:26-70`），profile 切换 snapshot/prune 时被吞掉/回灌旧值。
+  - 附带：`setOverrideThumbnailFromMediaItem` 无条件 `createSync`（`media_source.dart:531`），没选新图也留 0 字节 override 封面文件，读取端只查 `existsSync`（`media_source.dart:475`）→ 编辑保存后封面变损坏占位。
+- **[x] ① 已修复** — commit `15c8b77b7`：A1 加 `ReaderHibikiSource.overrideTitleForBookKey/overrideTitleForSrtUid` 统一 helper，首页「继续」区、活动时间轴（仅渲染层替换，events 落库仍存原名）、阅读统计页、听书通知全部接上；A2 `executeSave` 保存后 invalidate `hibikiBooksProvider`/`srtBooksProvider`；A3 standalone SRT 身份改 `hoshi://srtbook/<uid>`、作者真实写穿 `srt_books.author`；A4 `ProfileKeys.isExcludedPref` 增加 `override_title://` 子串排除；附带封面只在真选图/明确清除时写盘。
+- **[x] ② 已加自动化测试** — commit `15c8b77b7`：`hibiki/test/profile/profile_keys_test.dart`（override_title 排除）、`hibiki/test/media/override_identity_test.dart`（SRT 身份唯一性 + 作者写穿 + 封面无新图不落文件）、`hibiki/test/pages/home_dashboard_page_test.dart`（「继续」区显示 override 名）。
+- **备注**：互联远端条目（RemoteContinueCandidate / 远端活动行）标题来自对端，不在本地 override 范围；旧 standalone SRT 书挂在空 key 上的共享 override 不迁移（本就互踩、无单书归属），改身份后自然失效；方案 3（EpubBooks 加 displayTitle 列真改名）本轮不做。

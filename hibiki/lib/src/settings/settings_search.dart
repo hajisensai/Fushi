@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
@@ -21,11 +22,17 @@ class SettingsSearchEntry {
     required this.destination,
     required this.item,
     this.sectionTitle,
+    this.isBodyEntry = false,
   });
 
   final SettingsDestination destination;
   final String? sectionTitle;
   final SettingsItem item;
+
+  /// true = 由 [SettingsDestination.bodySearchEntries] 合成（body 逃生口正文
+  /// 里的行）。命中后只跳转分类，不登记滚动定位挂点——body 行不是 schema item，
+  /// 挂点永远不会被消费。
+  final bool isBodyEntry;
 
   /// 打分与结果展示用的标题（custom 项取 searchTitle，见
   /// [settingsItemSearchTitle]）。
@@ -69,6 +76,23 @@ List<SettingsSearchEntry> flattenVisibleSettings(
           item: item,
         ));
       }
+    }
+    // body 逃生口正文（如「制卡」的 AnkiSettingsBody）不走 sections，索引器
+    // 看不见其中的行；把 destination 声明的 bodySearchEntries 合成为普通搜索
+    // 条目（复用 custom 项的 searchTitle 通道），命中后跳转到该分类正文。
+    for (final SettingsBodySearchEntry bodyEntry
+        in destination.bodySearchEntries) {
+      if (!bodyEntry.isVisible(context)) continue;
+      entries.add(SettingsSearchEntry(
+        destination: destination,
+        item: SettingsCustomItem(
+          id: bodyEntry.id,
+          searchTitle: bodyEntry.title,
+          subtitle: bodyEntry.subtitle,
+          builder: (_) => const SizedBox.shrink(),
+        ),
+        isBodyEntry: true,
+      ));
     }
   }
   return entries;
@@ -145,9 +169,10 @@ class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // eink 下滚动动画归零（连续重绘=残影），直接跳到目标位置。
       HibikiFocusScroll.ensureVisible(
         context,
-        duration: const Duration(milliseconds: 250),
+        duration: einkSafeDuration(context, const Duration(milliseconds: 250)),
       );
     });
   }
@@ -158,9 +183,11 @@ class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
     // MD3 守卫：圆角一律走 design tokens，不自持字面量。
     final BorderRadius radius =
         HibikiDesignTokens.of(context).radii.controlRadius;
+    // eink 下闪烁衰减动画归零：TweenAnimationBuilder duration zero 直接落在
+    // end（透明），不闪不残影；定位仍由上面的滚动完成。
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 1, end: 0),
-      duration: const Duration(milliseconds: 1400),
+      duration: einkSafeDuration(context, const Duration(milliseconds: 1400)),
       curve: Curves.easeOut,
       child: widget.child,
       builder: (BuildContext context, double value, Widget? child) {

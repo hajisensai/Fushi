@@ -94,7 +94,6 @@ extension _VideoChapter on _VideoHibikiPageState {
       bottomSystemInset: _videoBottomSystemInset(),
       tickHeight: tickHeight,
     );
-    final ColorScheme cs = _videoChromeColorScheme(context);
     return Positioned.fill(
       child: SafeArea(
         // 全屏安全区与 media_kit 控制条 padding 对齐；窗口态安全区为 0 不影响。
@@ -104,7 +103,11 @@ extension _VideoChapter on _VideoHibikiPageState {
             return IgnorePointer(
               child: AnimatedOpacity(
                 opacity: controlsVisible ? 1.0 : 0.0,
-                duration: _VideoHibikiPageState._videoChromeFadeDuration,
+                // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
+                duration: einkSafeDuration(
+                  context,
+                  _VideoHibikiPageState._videoChromeFadeDuration,
+                ),
                 child: Padding(
                   // 水平内缩 16px 对齐 seekBarMargin；竖直由 band 锚定到 seek bar 轨道。
                   padding: EdgeInsets.only(
@@ -119,9 +122,11 @@ extension _VideoChapter on _VideoHibikiPageState {
                       width: double.infinity,
                       child: VideoChapterMarkers(
                         controller: controller,
-                        // 高对比刻度色：进度条用 primary，刻度改用 onSurface 让它在
-                        // 已播 / 未播段都可见（避免与 primary 进度填充同色被吞）。
-                        color: cs.onSurface.withValues(alpha: 0.7),
+                        // 高对比刻度色：进度条用 chrome 强调色，刻度用 chrome 中性
+                        // 前景（固定近白，UI 巡检 PR-4——onSurface 在浅色 / eink 主题
+                        // 下是深色，压深色 scrim 上不可见），两者恒不同色不被吞。
+                        color: _VideoHibikiPageState._videoChromeNeutralFg
+                            .withValues(alpha: 0.7),
                         thickness: 2.0 * _videoUiScale,
                       ),
                     ),

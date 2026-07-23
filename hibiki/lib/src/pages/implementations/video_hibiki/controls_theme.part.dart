@@ -77,9 +77,13 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // 独立处理、不会冒泡到这里，故启用后点字幕仍是查词、点空白区才暂停，不冲突。
       playAndPauseOnTap: true,
       toggleFullscreenOnDoublePress: false,
-      seekBarPositionColor: cs.primary,
-      seekBarThumbColor: cs.primary,
-      buttonBarButtonColor: cs.primary,
+      // 播放器 chrome 前景固定亮色（UI 巡检 PR-4 P1）：控制条压在 fork 固定深色
+      // scrim（material_desktop.dart 0x61000000）上，表面固定深色 OSD 体系不随
+      // colorScheme——此前 cs.primary 在浅色 / eink 主题下是深色，黑压黑不可读。
+      // [_videoChromeAccent] 恒取亮 tone primary，深色主题取值与旧实现一致。
+      seekBarPositionColor: _videoChromeAccent(cs),
+      seekBarThumbColor: _videoChromeAccent(cs),
+      buttonBarButtonColor: _videoChromeAccent(cs),
       buttonBarHeight: _videoButtonBarHeight,
       buttonBarButtonSize: _videoControlIconSize,
       keyboardShortcuts: _videoKeyboardShortcuts(controller),
@@ -218,9 +222,11 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       seekBarContainerHeight: _videoSeekBarContainerHeight,
       seekBarThumbSize: _videoSeekBarThumbSize,
       seekBarHeight: _videoSeekBarTrackHeight,
-      seekBarPositionColor: cs.primary,
-      seekBarThumbColor: cs.primary,
-      buttonBarButtonColor: cs.primary,
+      // chrome 前景固定亮色（同桌面 theme，UI 巡检 PR-4 P1）：压固定深色 scrim
+      // （material.dart 0x66000000），不随 colorScheme。
+      seekBarPositionColor: _videoChromeAccent(cs),
+      seekBarThumbColor: _videoChromeAccent(cs),
+      buttonBarButtonColor: _videoChromeAccent(cs),
       buttonBarHeight: _videoButtonBarHeight,
       buttonBarButtonSize: _videoControlIconSize,
       primaryButtonBar: const <Widget>[],
@@ -278,11 +284,18 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
     final String targetLabel =
         VideoSeekIndicatorLabel.target(position, delta, duration);
     final String deltaLabel = VideoSeekIndicatorLabel.deltaSigned(delta);
+    // UI 巡检 PR-4：HUD 表面 / 前景与页内其余 OSD 同源（[_osdSurfaceColor] /
+    // [_osdTextColor]，inverseSurface 自配对），字号 / 内边距吃 [_videoUiScale]
+    // ——此前硬编码 0xCC000000 / 白 / 22px，是页内唯一不吃缩放的 OSD。
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final Color textColor = _osdTextColor(cs);
+    final double scale = _videoUiScale;
     return Container(
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding:
+          EdgeInsets.symmetric(horizontal: 20 * scale, vertical: 12 * scale),
       decoration: BoxDecoration(
-        color: const Color(0xCC000000),
+        color: _osdSurfaceColor(cs),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -291,21 +304,21 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
           Text(
             targetLabel,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 22,
+            style: TextStyle(
+              fontSize: 22 * scale,
               fontWeight: FontWeight.w600,
-              color: Color(0xFFFFFFFF),
-              fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+              color: textColor,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
           const SizedBox(height: 2),
           Text(
             deltaLabel,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xCCFFFFFF),
-              fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+            style: TextStyle(
+              fontSize: 14 * scale,
+              color: textColor.withValues(alpha: 0.8),
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
         ],

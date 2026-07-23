@@ -44,6 +44,35 @@ void main() {
       expect(ProfileKeys.isExcludedPref('reader_vertical'), isFalse);
     });
 
+    test(
+        'BUG-1019: per-book audiobook playback state is progress, '
+        'never profile-snapshotted', () {
+      expect(ProfileKeys.isExcludedPref('audiobook_pos_bookA'), isTrue);
+      expect(ProfileKeys.isExcludedPref('audiobook_pos_at_bookA'), isTrue);
+      expect(ProfileKeys.isExcludedPref('audiobook_speed_bookA'), isTrue);
+      expect(ProfileKeys.isExcludedPref('audiobook_follow_bookA'), isTrue);
+      expect(ProfileKeys.isExcludedPref('audiobook_delay_bookA'), isTrue);
+      expect(ProfileKeys.isExcludedPref('audiobook_volume_bookA'), isTrue);
+      expect(ProfileKeys.isExcludedPref('audiobook_image_pause_bookA'), isTrue);
+      expect(
+          ProfileKeys.isExcludedPref('audiobook_health_overlay_bookA'), isTrue);
+    });
+
+    test('BUG-1018 (A4): override_title prefs are content, never snapshotted',
+        () {
+      // Persisted form: src:<sourceId>:override_title://<sourceId>/<uniqueKey>
+      expect(
+        ProfileKeys.isExcludedPref('src:reader_ttu:override_title://reader_ttu/'
+            'reader_ttu/hoshi://book/我的书'),
+        isTrue,
+      );
+      expect(
+        ProfileKeys.isExcludedPref('src:reader_ttu:override_title://reader_ttu/'
+            'reader_ttu/hoshi://srtbook/srtbook_123'),
+        isTrue,
+      );
+    });
+
     test('reading goals are per-Profile (not excluded, TODO-1046)', () {
       // 0=off, but the goal targets themselves are per-Profile prefs: they must
       // NOT be in the exclusion set so each profile keeps its own daily/weekly

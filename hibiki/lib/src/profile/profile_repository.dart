@@ -203,6 +203,16 @@ class ProfileRepository {
       }
     }
 
+    // BUG-1019: old snapshots (taken before a key entered the exclusion list,
+    // e.g. audiobook_pos_* / audiobook_speed_* / override_title://*) may still
+    // carry excluded keys. Apply must neither restore those stale values (a
+    // months-old speed/position overwriting the live one) nor delete the live
+    // rows (the prune loop below already skips excluded keys) — so drop them
+    // from the restore map here. Same single source of truth as snapshot/prune:
+    // [ProfileKeys.isExcludedPref].
+    prefMap
+        .removeWhere((String key, String _) => ProfileKeys.isExcludedPref(key));
+
     // Wrap DB writes in transaction for consistency
     await _db.transaction(() async {
       final currentPrefs = await _db.getAllPrefs();

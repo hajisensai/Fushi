@@ -100,7 +100,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 多端库联合视图（spec §2.1，撤独立远端分区）：远端互联视频以占位卡混排进
-    // 主网格——卡片在、带云角标 ☁、右上角保留下载按钮（能力未丢失）。
+    // 主网格——卡片在、带云角标 ☁。UI 巡检 PR-4：封面不再内嵌下载 IconButton
+    // （卡内嵌套焦点目标 + 热区 <48dp），下载收敛到长按 / 右键面板。
     expect(find.text('Remote Episode'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>(
@@ -112,7 +113,8 @@ void main() {
       find.byKey(const ValueKey<String>(
         'remote_video_download_remote_video-1',
       )),
-      findsOneWidget,
+      findsNothing,
+      reason: '封面内嵌下载按钮已撤（UI 巡检 PR-4），下载走长按面板',
     );
 
     final String source =
@@ -179,9 +181,12 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey<String>(
-      'remote_video_download_remote_video-1',
+    // UI 巡检 PR-4：封面内嵌下载按钮已撤，下载入口 = 长按卡片弹面板 → 「下载」。
+    await tester.longPress(find.byKey(const ValueKey<String>(
+      'remote_video_card_remote_video-1',
     )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.remote_video_download));
     await _pumpUntil(
       tester,
       () => remoteClient.downloadedIds.isNotEmpty,

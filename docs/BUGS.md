@@ -27,17 +27,26 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 981 条。点号进各自文件。
+> 共 990 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1014](bugs/BUG-1014-galgame-auto-locale.md) | ✅ | ✅ | Hibiki 启动日文非 Unicode 游戏时界面乱码 |
+| [BUG-1023](bugs/BUG-1023-galgame-auto-locale.md) | ✅ | ✅ | Hibiki 启动日文非 Unicode 游戏时界面乱码 |
+| [BUG-1022](bugs/BUG-1022-steam-launch-duplicate-instance.md) | ✅ | ✅ | Steam 游戏启动并捕获触发重复实例且晚附着漏音频 |
+| [BUG-1021](bugs/BUG-1021-galgame-cardimage-alias-false-warning.md) | ✅ | ✅ | galgame 场景制卡误报缺少 {card-image}（旧别名瞎眼） |
+| [BUG-1020](bugs/BUG-1020-clipboard-watcher-pref-flip-desync.md) | ✅ | ✅ | Windows剪贴板监听页内翻转开关后永久失效 |
+| [BUG-1019](bugs/BUG-1019-profile-swallows-audiobook-progress.md) | ✅ | ✅ | profile 切换吞听书进度/倍速：进度型 pref 被快照/prune/回灌 |
+| [BUG-1018](bugs/BUG-1018-rename-not-applied-everywhere.md) | ✅ | ✅ | 改名/改作者不生效：override title 消费面缺口 + 作者保存不刷新 + SRT 空 bookKey 互踩 + profile 吞 override |
+| [BUG-1017](bugs/BUG-1017-reader-fixed-layout-svg-blank.md) | 🚧 | ✅ | 固定版式SVG竖排EPUB打开白屏·cloak被init同步异常卡住 |
+| [BUG-1016](bugs/BUG-1016-webdav-anonymous-empty-credentials.md) | ✅ | ✅ | WebDAV/FTP 匿名同步：空用户名密码被硬拦 |
+| [BUG-1015](bugs/BUG-1015-desktop-lookup-autoread-first-silent.md) | ✅ | ✅ | 桌面首次查词自动发音无声·media_kit播放器冷启动 |
+| [BUG-1014](bugs/BUG-1014-win-update-desktop-icon-move.md) | ✅ | ✅ | Windows 更新后桌面快捷方式移位 |
 | [BUG-1013](bugs/BUG-1013-external-window-attach-ready-race.md) | ✅ | ✅ | 外部窗口挖矿在helper就绪前打开共享内存导致降级 |
-| [BUG-1012](bugs/BUG-1012-steam-launch-duplicate-instance.md) | ✅ | ✅ | Steam 游戏启动并捕获触发重复实例且晚附着漏音频 |
+| [BUG-1012](bugs/BUG-1012-ext-shadow-dom-lookup.md) | ✅ | ✅ | 浏览器扩展无法读取Shadow DOM内文字(B站评论区) |
 | [BUG-1011](bugs/BUG-1011-interconnect-video-collection-playlist-autoplay.md) | ✅ | ✅ | 互联视频合集列表缺失+无自动连播·客户端合集播放 |
 | [BUG-1010](bugs/BUG-1010-video-controls-autohide-focus-loss.md) | 🚧 | 🚧 | 视频控制条自动隐藏后键盘焦点疑似丢失 |
-| [BUG-1009](bugs/BUG-1009-collection-detail-focus-id-clash.md) | 🚧 | 🚧 | 合集详情页返回后书架同名卡手柄焦点不可达 |
-| [BUG-1008](bugs/BUG-1008-shelf-tag-filter-contradictory-empty.md) | 🚧 | 🚧 | 标签筛选下 SRT 命中仍显示无匹配空态且丢失下拉刷新 |
+| [BUG-1009](bugs/BUG-1009-collection-detail-focus-id-clash.md) | ✅ | ✅ | 合集详情页返回后书架同名卡手柄焦点不可达 |
+| [BUG-1008](bugs/BUG-1008-shelf-tag-filter-contradictory-empty.md) | ✅ | ✅ | 标签筛选下 SRT 命中仍显示无匹配空态且丢失下拉刷新 |
 | [BUG-1007](bugs/BUG-1007-texthooker-anki-health-hardcoded.md) | ✅ | ✅ | 游戏工作台健康卡 Anki 行恒显未配置 |
 | [BUG-1006](bugs/BUG-1006-anime-download-embedded-pop.md) | 🚧 | 🚧 | 下载页内嵌推送成功后误 pop 宿主路由 |
 | [BUG-1005](bugs/BUG-1005-mining-word-audio-remote-source.md) | ✅ | ✅ | 制卡缺单词音频·扩展needsAudio门+制卡器忽略远程发音源 |

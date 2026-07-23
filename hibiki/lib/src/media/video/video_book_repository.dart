@@ -10,6 +10,7 @@ import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/media/video/video_storage.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
@@ -336,18 +337,25 @@ class VideoBookRepository {
   /// 在一个事务里删 videoBooks + audio_cues；标签映射经 FK cascade）。on-disk 的
   /// 封面/字幕副本回收交给调用方的 [VideoStorage.deleteBookAssets]（按被删 book 精确
   /// 删，不全库 sweep，BUG-276）。
-  Future<void> deleteVideoBook(String bookUid) async {
+  /// [scope]：[DeleteScope.syncEverywhere] 记一条 sync 删除墓碑供同步传播；
+  /// [DeleteScope.keepLocalOnly]（默认，含消费远端删除标记路径）只删本机不回写墓碑。
+  Future<void> deleteVideoBook(
+    String bookUid, {
+    DeleteScope scope = DeleteScope.keepLocalOnly,
+  }) async {
     await _db.deleteVideoBook(bookUid);
     // 统一合集：删条目时清其全部合集引用（逻辑外键无 DB cascade）；被清空的 playlist
     // 合集随之自删，避免留孤儿成员 / 合集卡数量虚高。
     await _db.removeEntryFromAllCollections('video', bookUid);
-    // 删除传播（显式确认式）：用户主动删视频记一条 sync 删除墓碑，供同步经 compare
-    // 确认后传播到远端。best-effort。
-    try {
-      await _db.writeSyncDeletionTombstone(
-          'video', bookUid, DateTime.now().millisecondsSinceEpoch);
-    } catch (_) {
-      // best-effort：记账失败不影响视频已删。
+    // 删除传播（显式确认式）：仅当用户选「同步删除」才记 sync 删除墓碑，供同步发布到远端
+    // 标记、其他设备逐条确认后也删。keepLocalOnly 不记，避免删本地→回写墓碑循环。best-effort。
+    if (scope == DeleteScope.syncEverywhere) {
+      try {
+        await _db.writeSyncDeletionTombstone(
+            'video', bookUid, DateTime.now().millisecondsSinceEpoch);
+      } catch (_) {
+        // best-effort：记账失败不影响视频已删。
+      }
     }
   }
 

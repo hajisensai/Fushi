@@ -94,6 +94,11 @@ dependencies:
   path: ^1.8.2
   path_provider: ^2.0.13
   permission_handler: ^10.2.0
+  # PDF 阅读器（Phase 0 spike）：PDFium 底层、字符级文本矩形供点选查词。
+  # 五平台 + native-assets/build-hook 下载 PDFium。见 docs/specs/pdf-reader-lookup。
+  # 钉 2.4.5：>=2.4.6 经 pdfrx_engine 拉 image ^4.8.0 → 要 archive ^4.0.7 / xml ^7.0.1，
+  # 与本仓 archive ^3.6.1 / xml ^6.3.0 冲突（升 archive/xml 主版本代价大，Phase 0 先钉）。
+  pdfrx: 2.4.5
   progress_indicators: ^1.0.0
   recase: ^4.1.0
   receive_intent:

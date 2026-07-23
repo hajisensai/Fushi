@@ -107,11 +107,14 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
           );
         }
 
-        final int visibleCount = maxSlots <= 1 ? 1 : maxSlots - 1;
+        // 溢出时最后一个槽恒让给「+N」合并 chip。仅 1 槽（书卡容器高恒 ≈1 槽）
+        // 时唯一槽也显示「+N」（N=全部标签数）——旧实现只显示第 1 个标签且无
+        // +N，多标签书在书架上读作「只有 1 个标签」（巡检 PR-3）。
+        final int visibleCount = maxSlots <= 1 ? 0 : maxSlots - 1;
         final int overflow = tags.length - visibleCount;
         return _uniformWidthTagColumn([
           for (final tag in tags.take(visibleCount)) _tagChip(tag),
-          if (overflow > 0 && maxSlots > 1) _overflowChip(overflow),
+          _overflowChip(overflow),
         ]);
       },
     );
@@ -172,11 +175,21 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   }
 
   Widget _coverPlaceholderIcon(IconData icon) {
-    return Center(
-      child: Icon(
-        icon,
-        size: 40,
-        color: theme.colorScheme.onSurfaceVariant,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 巡检 B11：深色主题下无封面占位（卡面色 ≈ 页面背景）与背景零对比，占位卡
+    // 读作一块空洞。给占位区补 1px outlineVariant 描边（全主题恒有；eink 的卡级
+    // 描边另由 HibikiCard 兜，两者叠加无害）。
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: tokens.radii.cardRadius,
+      ),
+      child: Center(
+        child: Icon(
+          icon,
+          size: 40,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
@@ -198,10 +211,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Color selectionColor = tokens.surfaces.primary;
     final double selectionInset = tokens.spacing.gap / 2;
-    final double selectionPadding = tokens.spacing.gap / 4;
-    final double selectionIconSize = tokens.spacing.gap * 1.75;
     final VoidCallback effectiveTap = _selectionMode && selectionKey != null
         ? () => _toggleSelection(selectionKey)
         : onTap;
@@ -227,43 +237,10 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
                   Positioned(
                     top: selectionInset,
                     left: selectionInset,
-                    child: IgnorePointer(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? selectionColor
-                              : tokens.surfaces.page.withValues(alpha: 0.7),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: selected
-                                ? selectionColor
-                                : tokens.surfaces.outline,
-                            width: 1.5,
-                          ),
-                        ),
-                        padding: EdgeInsets.all(selectionPadding),
-                        child: Icon(
-                          Icons.check,
-                          size: selectionIconSize,
-                          color: selected
-                              ? theme.colorScheme.onPrimary
-                              : Colors.transparent,
-                        ),
-                      ),
-                    ),
+                    child: ShelfSelectionCheck(selected: selected),
                   ),
                 if (selected)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color:
-                              tokens.surfaces.primary.withValues(alpha: 0.12),
-                          borderRadius: tokens.radii.cardRadius,
-                        ),
-                      ),
-                    ),
-                  ),
+                  const Positioned.fill(child: ShelfSelectedOverlay()),
               ],
             ),
           ),
@@ -301,31 +278,10 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   }
 
   /// 块2：合集行头整选勾选框（选=选中整个合集）。与散卡 [_bookCardShell] 的封面
-  /// 勾选框同款圆形对勾视觉；[IgnorePointer] 让点击穿透到行头 InkWell（整选回调）。
-  Widget _buildSelectionCheck(bool selected) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Color selectionColor = tokens.surfaces.primary;
-    return IgnorePointer(
-      child: Container(
-        decoration: BoxDecoration(
-          color: selected
-              ? selectionColor
-              : tokens.surfaces.page.withValues(alpha: 0.7),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected ? selectionColor : tokens.surfaces.outline,
-            width: 1.5,
-          ),
-        ),
-        padding: EdgeInsets.all(tokens.spacing.gap / 4),
-        child: Icon(
-          Icons.check,
-          size: tokens.spacing.gap * 1.75,
-          color: selected ? theme.colorScheme.onPrimary : Colors.transparent,
-        ),
-      ),
-    );
-  }
+  /// 勾选框同为共享 [ShelfSelectionCheck]（内建 [IgnorePointer] 让点击穿透到行头
+  /// InkWell 整选回调；eink 实心底由组件统一处理）。
+  Widget _buildSelectionCheck(bool selected) =>
+      ShelfSelectionCheck(selected: selected);
 
   Widget _bookCardLayout({
     required String title,
@@ -406,7 +362,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
         ),
         SizedBox(
           height: kShelfTitleFooterHeight,
-          child: _bookCardFooter(title),
+          child: ShelfCardFooter(title: title),
         ),
       ],
     );
@@ -417,32 +373,6 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
       padding: EdgeInsets.zero,
       margin: EdgeInsets.zero,
       child: child,
-    );
-  }
-
-  Widget _bookCardFooter(String title) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsetsDirectional.fromSTEB(
-        tokens.spacing.gap * 0.75,
-        tokens.spacing.gap / 2,
-        tokens.spacing.gap * 0.75,
-        0,
-      ),
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: Text(
-          title,
-          overflow: TextOverflow.ellipsis,
-          maxLines: 2,
-          textAlign: TextAlign.center,
-          softWrap: true,
-          style: tokens.type.metadata.copyWith(
-            color: tokens.surfaces.onSurface,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
     );
   }
 

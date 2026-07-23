@@ -327,7 +327,7 @@ class _HomePageState extends BasePageState<HomePage>
       localAudioEntries: appModel.localAudioDbs,
       onLocalAudioImported: appModel.importSyncedLocalAudioDb,
       onPostRun: appModel.refreshAfterSyncRun,
-      onReport: appModel.presentAutoConflicts,
+      onReport: appModel.presentSyncPrompts,
     );
   }
 

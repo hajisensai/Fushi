@@ -11,6 +11,11 @@ const String kFavoriteSentenceSourceVideo = 'video';
 const String kFavoriteSentenceSourceAudiobook = 'audiobook';
 const String kFavoriteSentenceSourceLyrics = 'lyrics';
 
+/// 收藏句删除传播墓碑的 mediaType（与收藏词 `'favoriteword'` 并列）。存进统一表
+/// [HibikiDatabase.writeSyncDeletionTombstone]，供 aggregate 并集抑制复活 + orchestrator
+/// 逐条确认删对端两条通道共用。
+const String kFavoriteSentenceTombstoneType = 'favoritesentence';
+
 class FavoriteSentence {
   factory FavoriteSentence.fromJson(Map<String, dynamic> json) =>
       FavoriteSentence(
@@ -93,6 +98,37 @@ class FavoriteSentenceRepository {
 
   static const String _key = 'favorite_sentences';
 
+  /// 跨设备稳定的内容身份键（**唯一真源**：aggregate 去重、删除墓碑 itemKey、接收端删除
+  /// 三处共用同一函数，杜绝键分叉）。`收藏句无稳定 id`（本机随机），只能靠内容四元组。
+  /// text 长度前缀防分隔符伪造字段边界；可空字段用显式 `<null>` 哨兵，避免 null 与空串/0
+  /// 撞键。与 `AggregateMergeService._favoriteSentenceContentKey`（已改为委托本函数）一致。
+  static String itemKey({
+    required String text,
+    required String? bookKey,
+    required int? sectionIndex,
+    required int? normCharOffset,
+  }) {
+    const String nul = '<null>';
+    final String bk = bookKey ?? nul;
+    final String section = sectionIndex == null ? nul : sectionIndex.toString();
+    final String offset =
+        normCharOffset == null ? nul : normCharOffset.toString();
+    return '${text.length}:$text|$bk|$section|$offset';
+  }
+
+  /// [itemKey] 的便捷重载：直接从一条收藏句取内容键。
+  static String itemKeyOf(FavoriteSentence s) => itemKey(
+        text: s.text,
+        bookKey: s.bookKey,
+        sectionIndex: s.sectionIndex,
+        normCharOffset: s.normCharOffset,
+      );
+
+  /// 写删除墓碑（取消收藏 → 传播删除）。
+  Future<void> _writeTombstone(FavoriteSentence s) =>
+      _db.writeSyncDeletionTombstone(kFavoriteSentenceTombstoneType,
+          itemKeyOf(s), DateTime.now().millisecondsSinceEpoch);
+
   Future<List<FavoriteSentence>> getAll() async {
     final raw = await _db.getPref(_key);
     if (raw == null || raw.isEmpty) return [];
@@ -117,6 +153,10 @@ class FavoriteSentenceRepository {
       _key,
       jsonEncode(sentences.map((s) => s.toJson()).toList()),
     );
+    // 重新收藏 → 清除该内容键的删除墓碑；否则墓碑会在 aggregate 并集里把这条刚收藏的句
+    // 再次抑制掉（与收藏词 addFavoriteWord 清墓碑同律）。
+    await _db.clearSyncDeletionTombstone(
+        kFavoriteSentenceTombstoneType, itemKeyOf(sentence));
   }
 
   /// 查已收藏项：返回**匹配到的条目 id**（未收藏 → null）。id-first——先按内容键（含
@@ -161,6 +201,7 @@ class FavoriteSentenceRepository {
     required String? bookKey,
     required int? sectionIndex,
     required int? normCharOffset,
+    bool propagateDeletion = true,
   }) async {
     final sentences = await getAll();
     // BUG-494：只删**第一条**匹配内容键的记录（非 removeWhere 全删），避免同章重复短句
@@ -171,34 +212,77 @@ class FavoriteSentenceRepository {
         s.sectionIndex == sectionIndex &&
         s.normCharOffset == normCharOffset);
     if (idx < 0) return;
+    final FavoriteSentence removed = sentences[idx];
     sentences.removeAt(idx);
     await _db.setPref(
       _key,
       jsonEncode(sentences.map((s) => s.toJson()).toList()),
     );
+    if (propagateDeletion) await _writeTombstone(removed);
   }
 
-  Future<void> removeAt(int index) async {
+  Future<void> removeAt(int index, {bool propagateDeletion = true}) async {
     final sentences = await getAll();
     if (index < 0 || index >= sentences.length) return;
+    final FavoriteSentence removed = sentences[index];
     sentences.removeAt(index);
     await _db.setPref(
       _key,
       jsonEncode(sentences.map((s) => s.toJson()).toList()),
     );
+    if (propagateDeletion) await _writeTombstone(removed);
   }
 
-  Future<void> removeById(String id) async {
+  Future<void> removeById(String id, {bool propagateDeletion = true}) async {
     final sentences = await getAll();
+    // id 理论唯一，但 BUG-494 前的旧数据可能撞 id；捕获全部被删条目各写一次墓碑（同内容
+    // 键幂等）。
+    final List<FavoriteSentence> removed =
+        sentences.where((s) => s.id == id).toList();
+    if (removed.isEmpty) return;
     sentences.removeWhere((s) => s.id == id);
     await _db.setPref(
       _key,
       jsonEncode(sentences.map((s) => s.toJson()).toList()),
     );
+    if (propagateDeletion) {
+      for (final FavoriteSentence s in removed) {
+        await _writeTombstone(s);
+      }
+    }
+  }
+
+  /// 按内容键取消收藏（删除传播**接收端**确认后调用）。默认写墓碑：本设备也需墓碑抑制
+  /// 第三设备 aggregate 快照的并集复活（与收藏词 `_applyConfirmedDeletions` 同律）。本地
+  /// 已无此句时仍写墓碑（幂等，防复活）。
+  Future<void> removeByItemKey(String key,
+      {bool propagateDeletion = true}) async {
+    final sentences = await getAll();
+    final int idx = sentences.indexWhere((s) => itemKeyOf(s) == key);
+    if (idx < 0) {
+      if (propagateDeletion) {
+        await _db.writeSyncDeletionTombstone(kFavoriteSentenceTombstoneType,
+            key, DateTime.now().millisecondsSinceEpoch);
+      }
+      return;
+    }
+    final FavoriteSentence removed = sentences[idx];
+    sentences.removeAt(idx);
+    await _db.setPref(
+      _key,
+      jsonEncode(sentences.map((s) => s.toJson()).toList()),
+    );
+    if (propagateDeletion) await _writeTombstone(removed);
   }
 
   /// 清空全部收藏句。收藏夹「清空」面板的收藏句范围走这里，直接删掉承载偏好键。
-  Future<void> clear() async {
+  /// [propagateDeletion] 时为清空前的每条各写一个删除墓碑（传播到其它设备）。
+  Future<void> clear({bool propagateDeletion = true}) async {
+    if (propagateDeletion) {
+      for (final FavoriteSentence s in await getAll()) {
+        await _writeTombstone(s);
+      }
+    }
     await _db.deletePref(_key);
   }
 }

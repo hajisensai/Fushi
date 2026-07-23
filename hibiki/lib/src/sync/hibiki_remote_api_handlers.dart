@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
+import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 
@@ -94,6 +95,23 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
       ? await mining.mineImmersion(payload)
       : await mining.mineEntry(
           fields: payload.fields, sentence: payload.sentence);
+  return <String, dynamic>{
+    'result': r.result,
+    if (r.message != null) 'message': r.message,
+    if (r.detail != null) 'detail': r.detail,
+  };
+}
+
+/// `POST /api/mine/forward` 的响应体。互联「制卡到服务端」：客户端把未渲染的制卡请求 +
+/// 全部本地媒体字节转发来，本机用自己的 Anki 配置落卡。[body] 需含 `rawPayloadJson`（非空
+/// 字符串），缺失/类型错时 [ForwardedMinePayload.fromJson] 抛 [FormatException]，由调用方转
+/// 400。响应形状与 `/api/mine` 一致（`{result, message?, detail?}`）。
+Future<Map<String, dynamic>> buildForwardedMineResponse(
+  Map<String, dynamic> body, {
+  required HibikiRemoteMiningService mining,
+}) async {
+  final ForwardedMinePayload payload = ForwardedMinePayload.fromJson(body);
+  final RemoteMineResult r = await mining.mineForwarded(payload);
   return <String, dynamic>{
     'result': r.result,
     if (r.message != null) 'message': r.message,

@@ -492,14 +492,15 @@ void main() {
         reason: 'BUG-990：有声书下载完成后覆盖层必须清除');
   });
 
-  testWidgets('BUG-991: 书库概览总数含书架上可见的远端占位书', (WidgetTester tester) async {
+  testWidgets('书架统计带已按用户要求移除（原 BUG-991 口径随之退役）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    // 1 本本地 SRT 书 + remoteClient 默认 1 本远端书 → 总数应为 2（本地 1 + 远端 1），
-    // 而非旧实现只数本地的 1。
+    // 「统计」三格（总数/在读/已完成）与右上角「阅读统计」入口重复，2026-07-22
+    // 用户拍板删除；此守卫防止统计带被无意识复活（复活需连同 BUG-991 的远端
+    // 计数口径一起补回）。
     shelfSrtBooks = <SrtBook>[
       SrtBook()
         ..uid = 'local-srt-uid'
@@ -511,11 +512,11 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    final Finder totalFinder =
-        find.byKey(const ValueKey<String>('shelf_overview_total'));
-    expect(totalFinder, findsOneWidget);
-    expect(tester.widget<Text>(totalFinder).data, '2',
-        reason: 'BUG-991：总数 = 本地 1 + 远端占位 1（此前只报本地 1）');
+    expect(
+      find.byKey(const ValueKey<String>('shelf_overview_total')),
+      findsNothing,
+      reason: '书架不应再渲染「统计」三格（与阅读统计页重复）',
+    );
   });
 
   testWidgets('BUG-992: 切回书架 tab 自动重拉远端书（不必手动下拉刷新）',

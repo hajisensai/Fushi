@@ -17,6 +17,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/utils.dart';
 
@@ -243,6 +244,56 @@ class ReaderHibikiSource extends ReaderMediaSource {
     return bookKey;
   }
 
+  /// BUG-1018 (A3): standalone SRT books (empty bookKey sentinel) need their
+  /// OWN media identity. They previously all shared `mediaIdentifierFor('')`
+  /// == `hoshi://book/`, so every standalone SRT book's override title/cover
+  /// landed on the same preference key and stomped each other, and the author
+  /// save silently no-opped (parseBookKey returned null). Their identity is
+  /// the stable `SrtBook.uid` under a distinct prefix that can never collide
+  /// with a sanitized EPUB bookKey identifier.
+  static const String _srtBookIdentifierPrefix = 'hoshi://srtbook/';
+
+  static String mediaIdentifierForSrtUid(String uid) =>
+      '$_srtBookIdentifierPrefix$uid';
+
+  /// Inverse of [mediaIdentifierForSrtUid]; null for non-SRT identifiers.
+  static String? parseSrtBookUid(String identifier) {
+    if (!identifier.startsWith(_srtBookIdentifierPrefix)) return null;
+    final String uid = identifier.substring(_srtBookIdentifierPrefix.length);
+    if (uid.isEmpty) return null;
+    return uid;
+  }
+
+  /// BUG-1018 (A1): resolve the user's override display title for a book by
+  /// its stable [bookKey], for surfaces that don't hold a full [MediaItem]
+  /// (home continue/activity rows, reading statistics, audiobook notification
+  /// metadata). Single source of truth: the same preference the edit dialog
+  /// writes via [setOverrideTitleFromMediaItem]. Returns null when the user
+  /// never renamed the book (callers fall back to the DB title).
+  String? overrideTitleForBookKey(String bookKey) {
+    if (bookKey.isEmpty) return null;
+    return _overrideTitleForIdentifier(mediaIdentifierFor(bookKey));
+  }
+
+  /// [overrideTitleForBookKey]'s standalone-SRT sibling (identity = uid).
+  String? overrideTitleForSrtUid(String uid) {
+    if (uid.isEmpty) return null;
+    return _overrideTitleForIdentifier(mediaIdentifierForSrtUid(uid));
+  }
+
+  String? _overrideTitleForIdentifier(String mediaIdentifier) {
+    return getOverrideTitleFromMediaItem(MediaItem(
+      mediaIdentifier: mediaIdentifier,
+      title: '',
+      mediaTypeIdentifier: mediaType.uniqueKey,
+      mediaSourceIdentifier: uniqueKey,
+      position: 0,
+      duration: 1,
+      canDelete: false,
+      canEdit: true,
+    ));
+  }
+
   /// BUG-220: EPUB books carry an editable author column, so expose author
   /// editing in the media edit dialog.
   @override
@@ -251,15 +302,31 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// BUG-220: persist the edited author directly to the `epubBooks.author`
   /// column (NOT the primary key, so no re-key is needed — unlike the title,
   /// which is overridden via a preference). A blank author clears the column.
+  ///
+  /// BUG-1018 (A3): standalone SRT books (identity `hoshi://srtbook/<uid>`)
+  /// write through to the `srt_books.author` column instead of silently
+  /// no-opping like the old empty-bookKey identifier did.
   @override
   Future<void> setAuthorFromMediaItem({
     required MediaItem item,
     required String? author,
   }) async {
-    final String? bookKey = parseBookKey(item.mediaIdentifier);
     final HibikiDatabase? db = sharedDatabase;
-    if (bookKey == null || db == null) return;
-    await db.updateEpubBookAuthor(bookKey, author);
+    if (db == null) return;
+    final String? bookKey = parseBookKey(item.mediaIdentifier);
+    if (bookKey != null) {
+      await db.updateEpubBookAuthor(bookKey, author);
+      return;
+    }
+    final String? srtUid = parseSrtBookUid(item.mediaIdentifier);
+    if (srtUid == null) return;
+    final SrtBookRepository repo = SrtBookRepository(db);
+    final SrtBook? book = await repo.findByUid(srtUid);
+    if (book == null) return;
+    // Mirror updateEpubBookAuthor's blank-clears semantics.
+    final String trimmed = (author ?? '').trim();
+    book.author = trimmed.isEmpty ? null : trimmed;
+    await repo.save(book);
   }
 
   @override
@@ -697,10 +764,16 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// Pass [appModel] to also clear the override thumbnail file (it is needed to
   /// resolve the thumbnails directory); the override title preference is always
   /// cleared regardless (HBK-AUDIT-040).
+  /// [scope] 控制删除传播：[DeleteScope.syncEverywhere] 记一条 sync 删除墓碑，供同步
+  /// 时发布到远端标记、其他设备逐条确认后也删；[DeleteScope.keepLocalOnly]（默认）只删
+  /// 本机不传播（消费远端删除标记时也走此值——删本地、绝不再回写墓碑造成循环）。备份防
+  /// 复活墓碑（[HibikiDatabase.deleteEpubBook] 的 tombstone:true）与 scope 无关，永远记
+  /// （用户在本机删的东西，导入自己的旧备份不该复活）。
   Future<DeleteBookResult> deleteBook({
     required HibikiDatabase db,
     required String bookKey,
     AppModel? appModel,
+    DeleteScope scope = DeleteScope.keepLocalOnly,
   }) async {
     try {
       // HBK-AUDIT-041: db.deleteEpubBook removes every associated DB row
@@ -735,11 +808,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       // backup MERGE import never resurrects this book from an old backup.
       final int deletedRows = await db.deleteEpubBook(bookKey, tombstone: true);
 
-      // 删除传播（显式确认式）：用户主动删书记一条 sync 删除墓碑，供同步时经 compare
-      // 对话框弹确认后传播到远端（云 __tombstones__ / 互联 host DELETE）。这是「用户
-      // 主动删」路径——host 服务客户端删除请求走 _cleanupBookOnDisk，不经本方法，故不会
-      // 反向再传播。best-effort：记账失败不翻转删除结果。
-      if (deletedRows > 0) {
+      // 删除传播（显式确认式）：仅当用户在删除弹窗选「同步删除」(syncEverywhere) 才记
+      // 一条 sync 删除墓碑，供同步时发布到远端标记、其他设备逐条确认后也删。keepLocalOnly
+      // （含消费远端删除标记的路径）不记，避免「删本地→回写墓碑→再传播」循环。host 服务
+      // 客户端删除走 _cleanupBookOnDisk 不经本方法。best-effort：记账失败不翻转删除结果。
+      if (deletedRows > 0 && scope == DeleteScope.syncEverywhere) {
         try {
           await db.writeSyncDeletionTombstone(
               'book', bookKey, DateTime.now().millisecondsSinceEpoch);

@@ -1,18 +1,32 @@
 // GENERATED-NOTE: extracted from reader_hibiki_history_page.dart (TODO-587).
 part of '../reader_hibiki_history_page.dart';
 
+/// 书架删除确认弹窗。[onConfirm] 回传用户在「同步删除」勾选框选择的 [DeleteScope]
+/// （勾选=[DeleteScope.syncEverywhere] 记墓碑传播到其他设备；默认不勾=
+/// [DeleteScope.keepLocalOnly] 只删本机）。[showSyncScope]=false 时隐藏勾选框、恒
+/// keepLocalOnly（用于不参与删除传播的实体/场景，保持旧行为）。取消返回 null。
 @visibleForTesting
-class ReaderHistoryDeleteDialog extends StatelessWidget {
+class ReaderHistoryDeleteDialog extends StatefulWidget {
   const ReaderHistoryDeleteDialog({
     required this.title,
     required this.message,
     required this.onConfirm,
+    this.showSyncScope = true,
     super.key,
   });
 
   final String title;
   final String message;
-  final VoidCallback onConfirm;
+  final ValueChanged<DeleteScope> onConfirm;
+  final bool showSyncScope;
+
+  @override
+  State<ReaderHistoryDeleteDialog> createState() =>
+      _ReaderHistoryDeleteDialogState();
+}
+
+class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
+  bool _syncDelete = false;
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +36,7 @@ class ReaderHistoryDeleteDialog extends StatelessWidget {
       maxWidth: 420,
       maxHeightFactor: 0.74,
       child: HibikiModalSheetFrame(
-        title: title,
+        title: widget.title,
         leadingIcon: Icons.delete_outline,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -36,9 +50,28 @@ class ReaderHistoryDeleteDialog extends StatelessWidget {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: Text(
-          message,
-          style: tokens.type.listSubtitle,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(widget.message, style: tokens.type.listSubtitle),
+            if (widget.showSyncScope) ...[
+              SizedBox(height: tokens.spacing.gap),
+              AdaptiveSettingsRow(
+                title: t.delete_scope_sync_everywhere,
+                subtitle: _syncDelete
+                    ? t.delete_scope_sync_everywhere_desc
+                    : t.delete_scope_keep_local_desc,
+                onTap: () => setState(() => _syncDelete = !_syncDelete),
+                trailing: Icon(
+                  _syncDelete ? Icons.check_box : Icons.check_box_outline_blank,
+                  color: _syncDelete
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
         ),
         footer: Wrap(
           alignment: WrapAlignment.end,
@@ -47,13 +80,16 @@ class ReaderHistoryDeleteDialog extends StatelessWidget {
           children: [
             adaptiveDialogAction(
               context: context,
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(context, null),
               child: Text(t.dialog_cancel),
             ),
             adaptiveDialogAction(
               context: context,
               isDestructiveAction: true,
-              onPressed: onConfirm,
+              onPressed: () => widget.onConfirm(
+                  widget.showSyncScope && _syncDelete
+                      ? DeleteScope.syncEverywhere
+                      : DeleteScope.keepLocalOnly),
               child: Text(t.dialog_delete),
             ),
           ],

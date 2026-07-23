@@ -95,6 +95,11 @@ class SyncRepository {
   static const _keyAutoSync = 'sync_auto_enabled';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
   static const _keyCollectionsBaselineMs = 'sync_collections_baseline_ms';
+  // 删除墓碑消费的因果基线：描述「本设备见过远端删除标记到什么时刻」。远端墓碑
+  // deletedAt 晚于它才是「新闻」（弹逐条确认），早于它视为本设备已处理过、不再反复弹。
+  // 设备本地（[deviceLocalPrefKeys]）：随备份跨设备会让新设备把老墓碑误判为新闻反复弹。
+  static const _keyDeletionTombstonesBaselineMs =
+      'sync_deletion_tombstones_baseline_ms';
   static const _keyDesktopCredentials = 'sync_desktop_credentials';
   static const _keyBackendType = 'sync_backend_type';
   // 「与 Hoshi/ッツ 共享」开关：开启后 Google Drive 后端改用可见 My Drive /
@@ -230,6 +235,17 @@ class SyncRepository {
 
   Future<void> setCollectionsSyncBaselineMs(int ms) =>
       _setString(_keyCollectionsBaselineMs, ms.toString());
+
+  /// 删除墓碑消费的因果基线（毫秒）。远端删除标记 deletedAt 晚于它才弹逐条确认；
+  /// 早于它视为本设备已处理过、不再反复弹。0 = 从未消费过。设备本地
+  /// （[deviceLocalPrefKeys]），随备份跨设备会让新设备把老墓碑误判为新闻反复骚扰。
+  Future<int> getDeletionTombstonesBaselineMs() async {
+    final String? s = await _getStringOrNull(_keyDeletionTombstonesBaselineMs);
+    return s == null ? 0 : int.tryParse(s) ?? 0;
+  }
+
+  Future<void> setDeletionTombstonesBaselineMs(int ms) =>
+      _setString(_keyDeletionTombstonesBaselineMs, ms.toString());
 
   // ── Desktop OAuth credentials ──────────────────────────────────────
 
@@ -790,6 +806,8 @@ class SyncRepository {
     // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
     // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
     _keyCollectionsBaselineMs,
+    // 删除墓碑消费基线：同理设备本地，跨设备携带会让新设备反复弹老墓碑确认框。
+    _keyDeletionTombstonesBaselineMs,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────
