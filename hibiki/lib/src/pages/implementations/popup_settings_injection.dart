@@ -2,7 +2,7 @@
 // injection body. Both popup render paths feed the SAME popup assets and end in
 // window.renderPopup(). The settings body was previously hand-copied TWICE (in-app
 // _pushResults + app-outside buildFrameSettingsJs) and drifted: app-outside lost the
-// dictionary font (D1), autoExpandDictionaries (D2), and the clamped/NaN-guarded zoom
+// dictionary font (D1), autoExpandRows (D2), and the clamped/NaN-guarded zoom
 // (D3). This builder is the ONE place that emits the shared body; the two call sites
 // pass their own PopupSettingsOptions for the legitimate differences (app-outside
 // global-lookup class + icon-font override + hidden mine button; in-app sentence i18n
@@ -214,7 +214,7 @@ class PopupStaticSettingsJs {
 
 /// THE single source of truth for the popup settings injection body. Emits the
 /// shared theme vars + dictionary font + content zoom + every `window.*` flag
-/// (audio, dedup/harmonic, collapse + autoExpandDictionaries, collapsed/hidden
+/// (audio, dedup/harmonic, collapse + autoExpandRows, collapsed/hidden
 /// names, lookupEntries/kanjiResults, dictionary styles + custom CSS). Each call
 /// site appends its own reset hooks + window.renderPopup() AFTER this body, so the
 /// body intentionally does NOT call renderPopup itself.
@@ -310,7 +310,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.harmonicFrequency = ${appModel.harmonicFrequency};
     window.showExpressionTags = ${appModel.showExpressionTags};
     window.collapseDictionaries = ${appModel.collapseDictionaries};
-    window.autoExpandDictionaries = ${appModel.popupAutoExpandDictionaries};
+    window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.hiddenDictionaryNames = $hiddenNames;
 ''';

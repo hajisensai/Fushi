@@ -173,9 +173,13 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
-          // TODO-845: how many leading dictionary blocks the popup auto-expands
-          // even when "collapse dictionaries" is on. int preference surfaced
-          // through a double slider; min/max (0..6) match the repository clamp.
+          // TODO-845: how many leading *rows* of dictionary blocks the popup
+          // auto-expands even when "collapse dictionaries" is on. The unit is
+          // rows so the expanded region always fills whole top rows of the
+          // --dict-columns masonry (popup.js autoExpandCount = rows × effective
+          // columns) instead of fighting it with a column-blind block count.
+          // int preference surfaced through a double slider; min/max (0..6)
+          // match the repository clamp.
           // 仅当「折叠词典显示」开启时才有意义（折叠关闭时所有词典本就展开，「自动展开
           // 前 N 本」无从谈起）；据此对齐用户预期，仅折叠开启时才显示本项。
           SettingsSliderItem(

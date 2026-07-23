@@ -1419,8 +1419,6 @@
   "update_install_permission_message": "Please allow Hibiki to install apps in system settings, then retry.",
   "update_install_permission_retry": "Retry install",
   "update_install_permission_cancel": "Cancel",
-  "popup_auto_expand_dictionaries": "Auto-expand dictionaries",
-  "popup_auto_expand_dictionaries_hint": "Keep the first N dictionary blocks expanded even when 'Collapse dictionaries' is on (0 = collapse all)",
   "profile_export": "Export",
   "profile_import": "Import",
   "profile_export_failed": "Export failed",
@@ -2315,5 +2313,7 @@
   "pdf_outline_empty": "This PDF has no contents.",
   "pdf_bookmarks": "Bookmarks",
   "pdf_bookmarks_empty": "No bookmarks yet.",
-  "pdf_bookmark_added": "Bookmark added"
+  "pdf_bookmark_added": "Bookmark added",
+  "popup_auto_expand_dictionaries": "Auto-expand rows",
+  "popup_auto_expand_dictionaries_hint": "Keep the first N rows of dictionary blocks expanded even when 'Collapse dictionaries' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)"
 }

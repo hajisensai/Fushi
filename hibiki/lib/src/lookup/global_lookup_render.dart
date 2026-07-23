@@ -36,7 +36,7 @@ import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
 /// [PopupSettingsOptions.globalLookup] = true, then appends the host reset hooks
 /// + renderPopup() this per-frame realm needs. Sharing the body keeps the
 /// app-outside window in lock-step with the in-app popup (dictionary font, zoom
-/// clamp, autoExpandDictionaries, all window.* flags) so the two can never drift
+/// clamp, autoExpandRows, all window.* flags) so the two can never drift
 /// again. It deliberately omits the in-app load-more / instant-scroll wiring —
 /// those belong to the in-app popup, not to an iframe inside the host shell.
 ///

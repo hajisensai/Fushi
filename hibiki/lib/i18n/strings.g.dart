@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 39389 (2317 per locale)
 ///
-/// Built on 2026-07-23 at 12:58 UTC
+/// Built on 2026-07-23 at 15:37 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1938,9 +1938,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Please allow Hibiki to install apps in system settings, then retry.';
   String get update_install_permission_retry => 'Retry install';
   String get update_install_permission_cancel => 'Cancel';
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
   String get profile_export => 'Export';
   String get profile_import => 'Import';
   String get profile_export_failed => 'Export failed';
@@ -3091,6 +3088,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get pdf_bookmarks => 'Bookmarks';
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   String get pdf_bookmark_added => 'Bookmark added';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -6296,11 +6296,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -8345,6 +8340,11 @@ class _StringsAr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -11622,11 +11622,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -13672,6 +13667,11 @@ class _StringsDe extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -16965,11 +16965,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -19015,6 +19010,11 @@ class _StringsEs extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -22319,11 +22319,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -24369,6 +24364,11 @@ class _StringsFr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -27600,11 +27600,6 @@ class _StringsId extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -29650,6 +29645,11 @@ class _StringsId extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -32929,11 +32929,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -34979,6 +34974,11 @@ class _StringsIt extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -38067,11 +38067,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -40113,6 +40108,11 @@ class _StringsJa extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -43203,11 +43203,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -45250,6 +45245,11 @@ class _StringsKo extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -48507,11 +48507,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -50557,6 +50552,11 @@ class _StringsNl extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -53829,11 +53829,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -55879,6 +55874,11 @@ class _StringsPtBr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -59134,11 +59134,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -61184,6 +61179,11 @@ class _StringsRu extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -64385,11 +64385,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -66434,6 +66429,11 @@ class _StringsTh extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -69666,11 +69666,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -71716,6 +71711,11 @@ class _StringsTr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -74936,11 +74936,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -76985,6 +76980,11 @@ class _StringsVi extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 // Path: <root>
@@ -79991,11 +79991,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get update_install_permission_cancel => '取消';
   @override
-  String get popup_auto_expand_dictionaries => '自动展开词典数';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      '即使开启「折叠词典」，也保持前 N 个词典展开（0 = 全部折叠）';
-  @override
   String get profile_export => '导出';
   @override
   String get profile_import => '导入';
@@ -81883,6 +81878,11 @@ class _StringsZhCn extends _StringsEn {
   String get pdf_bookmarks_empty => '还没有书签。';
   @override
   String get pdf_bookmark_added => '已添加书签';
+  @override
+  String get popup_auto_expand_dictionaries => '自动展开行数';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      '即使开启「折叠词典」，也保持前 N 行词典方框展开。展开数跟随列数设置：行数 x 词典列数（0 = 全部折叠）';
 }
 
 // Path: <root>
@@ -84893,11 +84893,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get update_install_permission_cancel => '取消';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
-  @override
-  String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
-  @override
   String get profile_export => 'Export';
   @override
   String get profile_import => 'Import';
@@ -86935,6 +86930,11 @@ class _StringsZhHk extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
+  @override
+  String get popup_auto_expand_dictionaries_hint =>
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
 }
 
 /// Flat map(s) containing all translations.
@@ -89847,10 +89847,6 @@ extension on _StringsEn {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -91665,6 +91661,10 @@ extension on _StringsEn {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -94575,10 +94575,6 @@ extension on _StringsAr {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -96393,6 +96389,10 @@ extension on _StringsAr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -99324,10 +99324,6 @@ extension on _StringsDe {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -101142,6 +101138,10 @@ extension on _StringsDe {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -104072,10 +104072,6 @@ extension on _StringsEs {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -105890,6 +105886,10 @@ extension on _StringsEs {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -108826,10 +108826,6 @@ extension on _StringsFr {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -110644,6 +110640,10 @@ extension on _StringsFr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -113562,10 +113562,6 @@ extension on _StringsId {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -115380,6 +115376,10 @@ extension on _StringsId {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -118313,10 +118313,6 @@ extension on _StringsIt {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -120131,6 +120127,10 @@ extension on _StringsIt {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -123027,10 +123027,6 @@ extension on _StringsJa {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -124844,6 +124840,10 @@ extension on _StringsJa {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -127743,10 +127743,6 @@ extension on _StringsKo {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -129561,6 +129557,10 @@ extension on _StringsKo {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -132487,10 +132487,6 @@ extension on _StringsNl {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -134305,6 +134301,10 @@ extension on _StringsNl {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -137228,10 +137228,6 @@ extension on _StringsPtBr {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -139046,6 +139042,10 @@ extension on _StringsPtBr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -141974,10 +141974,6 @@ extension on _StringsRu {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -143792,6 +143788,10 @@ extension on _StringsRu {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -146704,10 +146704,6 @@ extension on _StringsTh {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -148522,6 +148518,10 @@ extension on _StringsTh {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -151443,10 +151443,6 @@ extension on _StringsTr {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -153261,6 +153257,10 @@ extension on _StringsTr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -156177,10 +156177,6 @@ extension on _StringsVi {
         return 'Retry install';
       case 'update_install_permission_cancel':
         return 'Cancel';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -157995,6 +157991,10 @@ extension on _StringsVi {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
@@ -160884,10 +160884,6 @@ extension on _StringsZhCn {
         return '重试安装';
       case 'update_install_permission_cancel':
         return '取消';
-      case 'popup_auto_expand_dictionaries':
-        return '自动展开词典数';
-      case 'popup_auto_expand_dictionaries_hint':
-        return '即使开启「折叠词典」，也保持前 N 个词典展开（0 = 全部折叠）';
       case 'profile_export':
         return '导出';
       case 'profile_import':
@@ -162693,6 +162689,10 @@ extension on _StringsZhCn {
         return '还没有书签。';
       case 'pdf_bookmark_added':
         return '已添加书签';
+      case 'popup_auto_expand_dictionaries':
+        return '自动展开行数';
+      case 'popup_auto_expand_dictionaries_hint':
+        return '即使开启「折叠词典」，也保持前 N 行词典方框展开。展开数跟随列数设置：行数 x 词典列数（0 = 全部折叠）';
       default:
         return null;
     }
@@ -165584,10 +165584,6 @@ extension on _StringsZhHk {
         return '重試安裝';
       case 'update_install_permission_cancel':
         return '取消';
-      case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
-      case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -167401,6 +167397,10 @@ extension on _StringsZhHk {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'popup_auto_expand_dictionaries':
+        return 'Auto-expand rows';
+      case 'popup_auto_expand_dictionaries_hint':
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       default:
         return null;
     }
