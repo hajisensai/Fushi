@@ -8,6 +8,6 @@
 - **[x] ① 已修复** — `packages/hibiki_anki/lib/src/anki_models.dart` 的 `{glossary-first}` 分支改为「**选中优先，没选中才退回第一本**」：先走既有 `_singleGlossaryForDictionary(payload, payload.selectedDictionary)`（含 `[n]` 后缀归一化匹配），空则原样返回 `payload.glossaryFirst`。
   - **为什么落在 Dart 渲染器而不是 popup.js**：`selectedDictionary` 与 `singleGlossaries` 都已在 payload 里，单点改动一次覆盖阅读器 / 视频 / 互联 / 悬浮 / 浏览器扩展**全部**制卡路径，且免去 popup.js 三份镜像（`hibiki/assets/popup/` `hibiki/assets/browser_extension/vendor/` `tools/browser-extension/vendor/`）的同步风险。
   - **零破坏**：没长按 → `selectedDictionary` 为空 → fallback 返回 `glossaryFirst`，行为逐字节不变；选中名在 `singleGlossaries` 查不到时同样退回，不产出空字段。`{selected-glossary}` / `{glossary}` 语义均未改动。
-  - 提交：<待填>
+  - 提交：`deb5b46b3f99093ab7d0a3bf1ccad624c52f726c`
 - **[x] ② 已加自动化测试** — `packages/hibiki_anki/test/handlebar_glossary_first_selected_test.dart`（9 例，最强可落地层=渲染器纯函数）：选中第二/第三本 → 主释义取那本；未选中 → 逐字节退回第一本；选中名查不到 → 退回第一本不产空；`[n]` 后缀归一化命中；选中时 `{glossary-first}` == `{selected-glossary}`；`{selected-glossary}` 未选中仍空串（不被 fallback 污染）；`{glossary}` 不受影响；Lapis `MainDefinition` 仍映射 `{glossary-first}`（钉死本修复必须落在该键上）。**真红→绿验证过**：临时回退修复 → 4 例红（全是选中相关）、5 例仍绿（零破坏那几条）；恢复后 9 绿。
 - **备注**：Anki 字段 / 弹窗交互类。用户无需改任何字段映射即可生效。**真机复测待用户**：查词弹窗长按某本词典标题（标题变主题色加粗）→ 制卡 → Anki 卡片 MainDefinition 应是那本词典的释义；不长按时仍是第一本。相关：BUG-358（同一 `selectedDictionaries` 的一次性生命周期，已修）。
