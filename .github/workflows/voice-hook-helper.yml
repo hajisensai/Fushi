@@ -19,6 +19,20 @@ name: voice-hook-helper
 
 on:
   workflow_dispatch:
+  # push 自动重发：main 上任何影响产物的提交都自动重建并 upsert 同一 prerelease，
+  # 杜绝「修复已合入但 release 忘了重发、客户端 sha 对比一致永不自更」的漏发事故
+  # （2026-07-21 两个注入修复合入后 release 停在 init 版两天，实锤过一次）。
+  # 文档改动不触发（paths-ignore）；固定 tag prerelease、非 Latest，不碰正式发布通道。
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+# 同一时刻只跑一份发布（push 连发时后车顶掉前车，避免并发 upsert 同一 release 竞态）。
+concurrency:
+  group: voice-hook-helper-release
+  cancel-in-progress: true
 
 permissions:
   contents: write
