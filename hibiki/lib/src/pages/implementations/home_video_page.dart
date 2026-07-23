@@ -1885,8 +1885,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   ) {
     final int? collectionId =
         _primaryCollectionByEntry['video|${hero.bookUid}'];
+    // 非合集上下文的 hero：命中主合集时标题行显示合集名、剧集名降到副标题行首，
+    // 让用户一眼分清是哪部（用户实报裸剧集名 `S01E01` 认不出）；未命中合集保持
+    // 原样显示剧集名。合集名取自与 [_primaryCollectionByEntry] 同批预取的
+    // [_collectionsById]（同一次 setState 原子加载，collectionId 非空则字典必已就绪）。
+    final String? collectionName =
+        collectionId == null ? null : _collectionsById[collectionId]?.name;
+    final bool inCollection =
+        collectionName != null && collectionName.isNotEmpty;
+    final String titleText = inCollection ? collectionName : hero.title;
     final DateTime? watched = overview.heroLastWatched;
     final List<String> metadata = <String>[
+      if (inCollection) hero.title,
       t.video_watched_up_to(time: formatVideoPosition(hero.lastPositionMs)),
       if (watched != null)
         t.video_last_watched(date: _formatOverviewDate(watched)),
@@ -1915,7 +1925,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                     style: tokens.type.sectionLabel),
                 SizedBox(height: tokens.spacing.gap / 2),
                 Text(
-                  hero.title,
+                  titleText,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: tokens.type.listTitle,
@@ -1949,8 +1959,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     VideoLibraryOverview overview,
     HibikiDesignTokens tokens,
   ) {
+    // 远端占位 hero：host 下发的 [RemoteVideoInfo.collection] 携合集名，处理同本地
+    // hero（命中合集→标题显合集名、剧集名进副标题行首；纯云散卡 collection=null 保持原样）。
+    final RemoteCollectionMembership? membership = video.collection;
+    final String? collectionName = membership?.collectionName;
+    final bool inCollection =
+        collectionName != null && collectionName.isNotEmpty;
+    final String titleText = inCollection ? collectionName : video.title;
     final DateTime? watched = overview.heroLastWatched;
     final List<String> metadata = <String>[
+      if (inCollection) video.title,
       t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
       if (watched != null)
         t.video_last_watched(date: _formatOverviewDate(watched)),
@@ -1979,7 +1997,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                     style: tokens.type.sectionLabel),
                 SizedBox(height: tokens.spacing.gap / 2),
                 Text(
-                  video.title,
+                  titleText,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: tokens.type.listTitle,

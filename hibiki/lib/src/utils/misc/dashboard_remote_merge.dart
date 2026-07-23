@@ -19,6 +19,7 @@ class RemoteContinueCandidate {
     required this.recentMs,
     this.percent = 0,
     this.coverUrl,
+    this.collectionName,
   });
 
   final bool isVideo;
@@ -36,6 +37,10 @@ class RemoteContinueCandidate {
   final int percent;
 
   final String? coverUrl;
+
+  /// host 端主合集归属的合集名（[RemoteCollectionMembership.collectionName]；
+  /// null = 散卡/旧 host 不带）。「继续」卡按显示名规则拼「合集名 + 条目名」用。
+  final String? collectionName;
 }
 
 /// 从互联 host 清单里挑「继续」远端候选：
@@ -58,6 +63,7 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
       recentMs: b.progressUpdatedAtMs,
       percent: b.progressPercent,
       coverUrl: b.coverUrl,
+      collectionName: b.collection?.collectionName,
     ));
   }
   for (final RemoteVideoInfo v in remoteVideos) {
@@ -69,6 +75,7 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
       title: v.title,
       recentMs: v.positionUpdatedAtMs,
       coverUrl: v.coverUrl,
+      collectionName: v.collection?.collectionName,
     ));
   }
   return out;

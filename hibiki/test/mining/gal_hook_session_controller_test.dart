@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -728,6 +730,85 @@ void main() {
       isTrue,
       reason: 'BUG-955：mine 阶段绝不允许最新语音兜底（防历史行借当前语音）',
     );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('游戏活动落库：hook 台词累计字符/时长写入 activity_events（game 类别）', () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: 'あいうえお', // 5 字
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+        GalHookedLine(
+          seq: 2,
+          timestampMs: 2000,
+          text: 'かきくけこさ', // 6 字
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    controller.attachActivityDatabase(() => db);
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
+    );
+    for (int i = 0; i < 40 && service.entries.length < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, hasLength(2));
+
+    // 会话结束落库；flush 内写入是 unawaited，轮询等其完成。
+    await controller.stopCapture();
+    List<ActivityEventRow> rows = const <ActivityEventRow>[];
+    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      rows =
+          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
+    }
+    expect(rows, hasLength(1));
+    expect(rows.single.eventType, kActivityGame);
+    expect(rows.single.mediaType, kActivityMediaGame);
+    expect(rows.single.title, 'サノバウィッチ');
+    // attach 模式无稳定可执行文件 id → mediaKey 为空。
+    expect(rows.single.mediaKey, isNull);
+    // 两行合计 5 + 6 = 11 字。
+    expect(rows.single.charsDelta, 11);
+    expect(rows.single.durationMs, isNotNull);
+    expect(rows.single.durationMs, greaterThanOrEqualTo(0));
 
     await controller.close();
     endpoints.dispose();

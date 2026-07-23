@@ -91,6 +91,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (_started || !isSupported) return;
     _started = true;
     _appModel = appModel;
+    // 给会话控制器接上 DB：galgame hook 会话据此把游戏时长/字数落 activity_events
+    // （首页「游戏」活动的唯一写入方）。惰性解析——flush 时 App 尚未初始化完
+    // （或测试替身无 DB）则返回 null 跳过本次落库，不在 start 急切解引用 late 字段。
+    _session.attachActivityDatabase(
+      () => appModel.isInitialised ? appModel.database : null,
+    );
     _loadPreferences(appModel);
     GalHookTextOverlayChannel.setEventHandlers(
       onLookupText: _onLookupText,

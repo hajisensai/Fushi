@@ -39,6 +39,39 @@ String? statCollectionName(
   return namesById[cid];
 }
 
+/// 纯函数：非合集上下文的「合集名 + 条目名」显示名解析（显示名只在渲染层拼，DB
+/// 落库保持原名——BUG-1018 惯例）。[entryKey] 是 '<mediaType>|<entryKey>' 归属键
+/// （与 [statCollectionName] 同契约：epub=bookKey / srt=srtUid / video=bookUid）；
+/// 命中合集返回 (合集名, 原名)，未命中 (null, 原名)——调用方据此决定
+/// 「标题=合集名、副标题=条目名」还是「标题=条目名」。
+({String? collectionName, String title}) resolveEntryDisplayTitle({
+  required String entryKey,
+  required String rawTitle,
+  required Map<String, int> primaryByEntry,
+  required Map<int, String> collectionNamesById,
+}) {
+  return (
+    collectionName:
+        statCollectionName(entryKey, primaryByEntry, collectionNamesById),
+    title: rawTitle,
+  );
+}
+
+/// [resolveEntryDisplayTitle] 的单行拼接便捷函数：命中合集返回「合集名 - 条目名」
+/// （分隔符 ' - ' 与制卡 documentTitle 口径一致，见 composeVideoMiningDocumentTitle；
+/// 同样不做合集名==条目名去重），未命中原样返回条目名。活动时间轴等单行场景用。
+String collectionQualifiedTitle({
+  required String entryKey,
+  required String rawTitle,
+  required Map<String, int> primaryByEntry,
+  required Map<int, String> collectionNamesById,
+}) {
+  final String? name =
+      statCollectionName(entryKey, primaryByEntry, collectionNamesById);
+  if (name == null || name.isEmpty) return rawTitle;
+  return '$name - $rawTitle';
+}
+
 /// 统计页 per-book / per-video tile 的「所属合集」小标签（文件夹图标 + 合集名），
 /// 阅读统计与视频统计共用（同一视觉）。合集名为 null 时调用方不渲染本 widget。
 Widget buildStatCollectionLabel(

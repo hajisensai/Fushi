@@ -170,6 +170,7 @@ class StatContributionHeatmap extends StatefulWidget {
     required this.emptyColor,
     required this.valueLabel,
     super.key,
+    this.onDaySelected,
     this.weeks = 17,
     this.cell = 12,
     this.spacing = 3,
@@ -187,6 +188,11 @@ class StatContributionHeatmap extends StatefulWidget {
 
   /// 选中某天时气泡文案的格式化器：入参为 (dateKey, 当日值)，返回完整气泡文本。
   final String Function(String dateKey, int value) valueLabel;
+
+  /// 选中某个真实日（非占位格）时的可选回调：入参为 (dateKey, 当日值)。外层
+  /// 据此弹当日明细（首页仪表盘）。再点同格收起、点空白/未来占位格、翻页清除
+  /// 选中都**不**触发；null = 只保留气泡行为（其余消费者零变化）。
+  final void Function(String dateKey, int value)? onDaySelected;
 
   /// 每屏**最少**列数（周数），也是窄屏下的翻页步长。宽屏下实际列数按可用宽度
   /// 自适应加宽（见 build 的 LayoutBuilder）——此前固定 17 周 + FittedBox 只缩
@@ -237,10 +243,15 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
       // 占位格（未来日）dateKey 为 null → 视作点空白，收起气泡。
       next = model.weeks[hit.col][hit.row].dateKey;
     }
+    final String? prev = _selectedDateKey;
     setState(() {
       // 再点同一格 → 收起。
-      _selectedDateKey = (next == _selectedDateKey) ? null : next;
+      _selectedDateKey = (next == prev) ? null : next;
     });
+    // 只在「新选中一个真实日」时对外回调（收起/点空白不触发）。
+    if (next != null && next != prev) {
+      widget.onDaySelected?.call(next, widget.valueByDateKey[next] ?? 0);
+    }
   }
 
   Widget _arrow(

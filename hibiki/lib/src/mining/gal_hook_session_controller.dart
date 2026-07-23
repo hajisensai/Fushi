@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki_core/hibiki_core.dart';
+
+import 'package:hibiki/src/mining/gal_hook_activity_accumulator.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/serial_job_queue.dart';
@@ -9,6 +12,19 @@ import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
+
+/// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [HibikiDatabase.
+/// addActivityEvent]（[kActivityGame] / [kActivityMediaGame]）；单测可注入假写入方
+/// 断言 flush 时机与聚合值，无需真实 DB。
+typedef GalHookActivityWriter = Future<void> Function({
+  required String title,
+  String? mediaKey,
+  required String dateKey,
+  required int timestampMs,
+  required int durationMs,
+  required int charsDelta,
+});
 
 enum GalHookSessionPhase {
   idle,
@@ -216,7 +232,9 @@ class GalHookSessionController extends ChangeNotifier {
     Duration trackRefreshInterval = const Duration(seconds: 5),
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
+    GalHookActivityWriter? activityWriter,
   })  : _textService = textService ?? TexthookerService.instance,
+        _activityWriter = activityWriter,
         _engineSourceFactory = engineSourceFactory ?? _defaultEngineFactory,
         _loopbackSourceFactory =
             loopbackSourceFactory ?? LoopbackGalAudioSource.new,
@@ -331,6 +349,26 @@ class GalHookSessionController extends ChangeNotifier {
   final Map<String, int> _lineTimestampCache = <String, int>{};
   final Map<String, int> _pendingResourceTimestamps = <String, int>{};
 
+  // ── 游戏活动记账（首页「游戏」活动 = activity_events 的唯一写入方）─────────
+  /// 纯累计器：把 hook 文本行累计成活跃时长 + 字符数（挂机间隔封顶，见其实现）。
+  final GalHookActivityAccumulator _activityAccumulator =
+      GalHookActivityAccumulator();
+
+  /// 可注入的落库写入方（单测用假实现）；为 null 时经 [_activityDatabaseResolver]
+  /// 惰性取 DB 走默认写入。
+  final GalHookActivityWriter? _activityWriter;
+
+  /// 由桌面启动流程注入的 DB 惰性解析器（见 [attachActivityDatabase]）。flush 时才
+  /// 解析——App 未初始化完/未注入时解析到 null 静默不落库（累计保留，下次再试），
+  /// 避免 start 时急切解引用未初始化的 late 字段。
+  HibikiDatabase? Function()? _activityDatabaseResolver;
+
+  /// 当前会话归属的游戏显示名（窗口标题 / 可执行文件名）；null = 无可归属标题。
+  String? _activityGameTitle;
+
+  /// 当前会话的稳定游戏 id（launch 模式为可执行文件路径），无稳定 id 时为 null。
+  String? _activityGameKey;
+
   static EngineHookGalAudioSource _defaultEngineFactory({
     required int targetPid,
     required String? launchExe,
@@ -425,6 +463,8 @@ class GalHookSessionController extends ChangeNotifier {
         textSignalReceived: false,
       ),
     );
+    // attach 模式无稳定可执行文件 id：以窗口标题作为游戏名，mediaKey 留空。
+    _beginActivitySession(title: window.title, mediaKey: null);
     _record(
       GalHookEventSeverity.info,
       'resolve',
@@ -509,6 +549,11 @@ class GalHookSessionController extends ChangeNotifier {
         clearFallbackReason: true,
         textSignalReceived: false,
       ),
+    );
+    // launch 模式可执行文件路径是稳定 id：文件名去扩展名作游戏名，路径作 mediaKey。
+    _beginActivitySession(
+      title: _displayNameForExecutable(executablePath),
+      mediaKey: executablePath,
     );
     final bool? is32Bit = await _exe32BitProbe(executablePath);
     final String? injector = _injectorResolver(is32Bit: is32Bit ?? false);
@@ -618,6 +663,11 @@ class GalHookSessionController extends ChangeNotifier {
 
   Future<void> stopCapture({bool keepBinding = true}) async {
     ++_operationGeneration;
+    // 会话结束先把剩余累计落库，再复位记账并解除游戏归属（防停后串扰）。
+    _flushGameActivity();
+    _activityAccumulator.reset();
+    _activityGameTitle = null;
+    _activityGameKey = null;
     if (_state.phase == GalHookSessionPhase.idle && _audioSource == null) {
       _setState(
         _state.copyWith(
@@ -1097,10 +1147,125 @@ class GalHookSessionController extends ChangeNotifier {
 
   Future<void> close() async {
     ++_operationGeneration;
+    _flushGameActivity();
+    _activityAccumulator.reset();
     _textService.removeListener(_onTextBufferChanged);
     _endpointListenable.removeListener(_onEndpointStatusChanged);
     await _stopSources();
     dispose();
+  }
+
+  /// 注入 activity_events 落库用的 DB 惰性解析器（桌面启动流程
+  /// [GalHookTextOverlayController.start] 调用一次；解析在每次 flush 时发生，
+  /// App 尚未初始化完则返回 null 跳过本次落库）。是首页「游戏」活动的唯一数据来源。
+  void attachActivityDatabase(HibikiDatabase? Function() resolve) {
+    _activityDatabaseResolver = resolve;
+  }
+
+  /// 开始一段游戏活动记账：先把上一段残留 flush（防上次异常未落），再复位累计器并
+  /// 绑定本会话的游戏标题/稳定 id。会话开始（attach / launch）时调用。
+  void _beginActivitySession({required String title, String? mediaKey}) {
+    _flushGameActivity();
+    _activityAccumulator.reset();
+    final String trimmed = title.trim();
+    _activityGameTitle = trimmed.isEmpty ? null : trimmed;
+    _activityGameKey = mediaKey == null || mediaKey.isEmpty ? null : mediaKey;
+  }
+
+  /// 记一行 hook 文本到活动累计；命中中途 flush 阈值即落一条（防崩溃丢账）。
+  /// 仅在已开始游戏活动会话（[_activityGameTitle] 非空）时记账——纯 WebSocket/剪贴板
+  /// 文本流没有绑定游戏进程、无可归属标题，不计入「游戏」活动。
+  void _recordActivityLine(String text) {
+    if (text.isEmpty || _activityGameTitle == null) return;
+    _activityAccumulator.recordLine(
+      text.length,
+      _now().millisecondsSinceEpoch,
+    );
+    if (_activityAccumulator.shouldFlush) _flushGameActivity();
+  }
+
+  /// 可执行文件路径 → 展示用游戏名：取文件名去扩展名（跨平台按 `/` 或 `\` 切分）。
+  String _displayNameForExecutable(String path) {
+    final String name = path.split(RegExp(r'[\\/]')).last;
+    final int dot = name.lastIndexOf('.');
+    return dot > 0 ? name.substring(0, dot) : name;
+  }
+
+  /// 把当前累计（活跃时长 + 字符数）落一条 activity_events。无可归属标题、无 DB/写入
+  /// 方或无累计时不落（保留累计，等下一行或会话结束再试）；落库失败静默（try/catch）。
+  void _flushGameActivity() {
+    final String? title = _activityGameTitle;
+    final GalHookActivityWriter? writer = _resolveActivityWriter();
+    if (title == null || writer == null) return;
+    if (!_activityAccumulator.hasPending) return;
+    final (int charsDelta, int durationMs) = _activityAccumulator.drain();
+    if (charsDelta <= 0 && durationMs <= 0) return;
+    final String? mediaKey = _activityGameKey;
+    final DateTime now = _now();
+    unawaited(
+      _safeWriteActivity(
+        writer: writer,
+        title: title,
+        mediaKey: mediaKey,
+        charsDelta: charsDelta,
+        durationMs: durationMs,
+        now: now,
+      ),
+    );
+  }
+
+  GalHookActivityWriter? _resolveActivityWriter() {
+    final GalHookActivityWriter? injected = _activityWriter;
+    if (injected != null) return injected;
+    final HibikiDatabase? database = _activityDatabaseResolver?.call();
+    if (database == null) return null;
+    return ({
+      required String title,
+      String? mediaKey,
+      required String dateKey,
+      required int timestampMs,
+      required int durationMs,
+      required int charsDelta,
+    }) =>
+        database.addActivityEvent(
+          eventType: kActivityGame,
+          mediaType: kActivityMediaGame,
+          title: title,
+          mediaKey: mediaKey,
+          dateKey: dateKey,
+          timestampMs: timestampMs,
+          durationMs: durationMs,
+          charsDelta: charsDelta,
+        );
+  }
+
+  Future<void> _safeWriteActivity({
+    required GalHookActivityWriter writer,
+    required String title,
+    required String? mediaKey,
+    required int charsDelta,
+    required int durationMs,
+    required DateTime now,
+  }) async {
+    try {
+      await writer(
+        title: title,
+        mediaKey: mediaKey,
+        dateKey: HibikiTimeFormat.dayKey(now),
+        timestampMs: now.millisecondsSinceEpoch,
+        durationMs: durationMs,
+        charsDelta: charsDelta,
+      );
+    } catch (error, stack) {
+      _record(
+        GalHookEventSeverity.warning,
+        'activity',
+        'activity.write_failed',
+        'Failed to persist game activity event',
+        details: <String, Object?>{'error': '$error', 'stack': '$stack'},
+        notify: false,
+      );
+    }
   }
 
   void _activateEngine(
@@ -1409,6 +1574,7 @@ class GalHookSessionController extends ChangeNotifier {
           continue;
         }
         receivedTextLine = true;
+        _recordActivityLine(entry.text);
         _lineTimestampCache[entry.id] = line.timestampMs;
         _trimCache(_lineTimestampCache);
         GalAudioSlice? clip;
@@ -1577,6 +1743,7 @@ class GalHookSessionController extends ChangeNotifier {
         } else {
           _state = _state.copyWith(textSignalReceived: true);
         }
+        _recordActivityLine(latest.text);
         unawaited(_cacheLoopbackForLine(latest));
       }
     }
