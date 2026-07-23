@@ -202,8 +202,9 @@ Future<String?> materializeRemoteAudioViaRangeDownload({
 ///
 /// 不可变值对象（纯数据，可单测、可在隔离中构造）。各底层纯函数（[buildFfmpegClipArgs]
 /// / [buildFfmpegClipGifArgs] / [downsampleCardScreenshot]）仍接收原始可选参数，本类只是
-/// 调用点选档时的参数捆绑，不让纯函数读全局偏好。原片档用 [gifFps]/[gifWidth]/
-/// [screenshotMaxLongEdge] == 0 表示「源帧率 / 源分辨率 / 不缩放」，由底层纯函数解读。
+/// 调用点选档时的参数捆绑，不让纯函数读全局偏好。原片档用 [screenshotMaxLongEdge] == 0
+/// 表示「不缩放」（截图原图直通），由底层纯函数解读；**GIF 侧没有 0 哨兵档**（BUG-1039，
+/// 见 [imageTiers]），任何档位的 [gifFps]/[gifWidth] 都是有限值。
 class MiningMediaCompression {
   const MiningMediaCompression({
     required this.audioChannels,
@@ -235,14 +236,36 @@ class MiningMediaCompression {
   /// 图片/GIF 清晰度有序档位（索引 0..[imageTierNative]）：低→高。
   /// 档 1 = 旧「压缩档」（1000px/q90/GIF 480px·8fps），逐字节保持现状。
   /// 档 2 = 旧「高保真档」（2000px/q95/GIF 720px·12fps）。
-  /// 档 3 = 原片（不缩 / 源分辨率 / 源帧率），用 0 哨兵表达。
+  /// 档 3 = 原片：**截图**不缩、原图直通（`maxLongEdge` 用 0 哨兵）；**GIF** 走
+  /// [gifNativeFps]/[gifNativeWidth] 的封顶档，见下方 BUG-1039 说明。
+  ///
+  /// BUG-1039：原片档过去对 GIF 也用 0 哨兵（源分辨率 + 源帧率），这是把「截图」的
+  /// 语义错套到「动图」上——截图原图直通只是几 MB 的一张 JPEG，而 GIF 是 8-bit 调色板
+  /// 逐帧 LZW、**无帧间压缩**，「源分辨率+源帧率」必然线性爆炸。1080p 源、**4 秒**字幕
+  /// 区间实测：标准档(480/8) 1.5 秒 / 1.5 MB，原片档(0/0) **48.9 秒 / 54 MB**；cue 上限
+  /// 10 秒时约 135 MB、还会撞 [extractClipGifViaFfmpeg] 的 120 秒超时。这条链路后面是
+  /// base64 + jsonEncode + POST 给 AnkiConnect，Anki 在自己主线程解析这坨 JSON → 直接
+  /// 无响应；落到卡片里每次复习都要解 54 MB GIF、AnkiWeb 也同步不上去。也就是说「GIF
+  /// 原片」不是一个更高的质量档，而是一个**在任何口径下都不可用**的配置。故档 3 对 GIF
+  /// 给出真实可用的封顶值（仍显著高于高清档：960px·12fps ≈ 高清档 1.8 倍像素，实测同一
+  /// 4 秒区间 6 秒 / 7.7 MB），截图侧的原图直通语义完全不动。
   static const List<({int gifFps, int gifWidth, int maxLongEdge, int quality})>
       imageTiers = [
     (gifFps: 6, gifWidth: 360, maxLongEdge: 720, quality: 80), // 0 省流
     (gifFps: 8, gifWidth: 480, maxLongEdge: 1000, quality: 90), // 1 标准（默认=旧压缩档）
     (gifFps: 12, gifWidth: 720, maxLongEdge: 2000, quality: 95), // 2 高清（=旧高保真档）
-    (gifFps: 0, gifWidth: 0, maxLongEdge: 0, quality: 100), // 3 原片
+    (
+      gifFps: gifNativeFps,
+      gifWidth: gifNativeWidth,
+      maxLongEdge: 0,
+      quality: 100
+    ), // 3 原片（截图原图直通；GIF 封顶，BUG-1039）
   ];
+
+  /// BUG-1039：原片档 GIF 的封顶帧率 / 宽度。GIF 无帧间压缩，不存在可用的「源分辨率+
+  /// 源帧率」档；这两个值是「仍明显优于高清档、且体积与耗时可控」的实测折中。
+  static const int gifNativeFps = 12;
+  static const int gifNativeWidth = 960;
 
   /// 音频质量有序档位（索引 0..2）：低→高。
   /// 档 0 = 旧压缩档（单声道 64k），档 1 = 旧高保真档（立体声 128k），档 2 = 原片（立体声 192k）。

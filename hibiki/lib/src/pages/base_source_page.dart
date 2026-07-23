@@ -681,9 +681,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
     return parkedPopupLayer(
       pos: pos,
-      // BUG-797：「选择句子上下文」原生对话框打开期间把弹窗停靠屏外，否则原生平台视图
+      // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
+      // 已制卡动作 / 打开卡片选择）期间把弹窗停靠屏外，否则原生平台视图
       // （WebView2 / Android platform view）盖住 showAppDialog 弹的对话框（层级不对）。
-      visible: item.visible && !_sentenceContextDialogOpen,
+      visible: item.visible && _popupHidingDialogDepth == 0,
       screen: screen,
       child: DictionaryPopupLayer(
         result: item.result,
@@ -807,13 +808,32 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
   }
 
-  /// BUG-797：「制卡·选择句子上下文」原生对话框打开期间置真。查词弹窗是**原生平台视图**
-  /// （桌面 WebView2 / Android platform view），总画在 Flutter overlay 之上——`showAppDialog`
-  /// 弹的对话框在 Flutter overlay 层，会被原生弹窗**盖住**（用户报「层级不对」，对话框被词典
-  /// 弹窗遮住右半边）。对话框期间据此把弹窗 [parkedPopupLayer] 的 `visible` 强制翻假 → 弹窗
-  /// 停靠到屏外（[parkedPopupLayer] 的 BUG-135 停靠语义，webview 仍存活、确认制卡回点照常），
-  /// 让对话框独占屏幕；关闭后复原。
-  bool _sentenceContextDialogOpen = false;
+  /// BUG-797 / BUG-1040：有多少个「必须盖住查词弹窗」的 Flutter 对话框正开着。
+  ///
+  /// 查词弹窗是**原生平台视图**（桌面 WebView2 / Android platform view），总画在 Flutter
+  /// overlay 之上——`showAppDialog` 弹的对话框在 Flutter overlay 层，会被原生弹窗**盖住**
+  /// （用户报「层级不对」，对话框被词典弹窗遮住）。这些对话框期间据此把弹窗
+  /// [parkedPopupLayer] 的 `visible` 强制翻假 → 弹窗停靠到屏外（[parkedPopupLayer] 的
+  /// BUG-135 停靠语义，webview 仍存活、确认制卡回点照常），让对话框独占屏幕；关闭后复原。
+  ///
+  /// BUG-1040 从 bool 改成**计数**：已制卡动作对话框里还能再叠一层 note viewer 对话框，
+  /// 用 bool 会被内层 `finally` 提前复位、外层对话框当场被弹窗盖回去。计数支持嵌套。
+  int _popupHidingDialogDepth = 0;
+
+  /// BUG-1040：在 [body] 执行期间把查词弹窗停靠屏外的统一入口（收口 setState 增减，
+  /// 杜绝各调用点各写一份 try/finally 漏复位）。[body] 抛错时照常复位。
+  // 类型参数用 R（本 State 类自身已有类型参数 T，避免遮蔽）。
+  Future<R> runWithLookupPopupHidden<R>(Future<R> Function() body) async {
+    if (mounted) setState(() => _popupHidingDialogDepth++);
+    try {
+      return await body();
+    } finally {
+      if (mounted) {
+        setState(() => _popupHidingDialogDepth =
+            _popupHidingDialogDepth > 0 ? _popupHidingDialogDepth - 1 : 0);
+      }
+    }
+  }
 
   /// BUG-763/766：弹窗点某词条「调整上下文」→ 弹 **app 原生顶层对话框**
   /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内——那受弹窗表面尺寸/半透明
@@ -829,9 +849,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required String matched,
   }) async {
     if (!mounted) return;
-    setState(() => _sentenceContextDialogOpen = true);
-    try {
-      await showAppDialog<void>(
+    await runWithLookupPopupHidden<void>(
+      () => showAppDialog<void>(
         context: context,
         builder: (_) => SentenceContextDialog(
           matched: matched,
@@ -840,10 +859,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           onConfirm: () =>
               webViewKey.currentState?.mineEntryByIndex(entryIndex),
         ),
-      );
-    } finally {
-      if (mounted) setState(() => _sentenceContextDialogOpen = false);
-    }
+      ),
+    );
   }
 
   /// TODO-058：某弹窗层 WebView 渲染完成（`popupRendered`）。先把挂起的冷层翻为
@@ -1121,6 +1138,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         final res = await onUpdateFromPopup(noteId, fields);
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
+      // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
+      runHidden: runWithLookupPopupHidden,
     );
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
@@ -1135,6 +1154,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       repo: repo,
       expression: expression,
       reading: reading,
+      // BUG-1040：多卡选择框同样是 Flutter 层，期间停靠弹窗。
+      runHidden: runWithLookupPopupHidden,
     );
   }
 

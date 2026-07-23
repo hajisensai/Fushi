@@ -1246,27 +1246,43 @@ void main() {
       expect(r.audioBitrate, h.audioBitrate);
     });
 
-    test('原片档（满档）用 0 哨兵表达源分辨率/源帧率/不缩放', () {
+    test('原片档（满档）截图用 0 哨兵不缩放，GIF 走封顶档（BUG-1039）', () {
       final MiningMediaCompression r = MiningMediaCompression.resolve(
         imageTier: MiningMediaCompression.imageTierNative,
         audioTier: MiningMediaCompression.audioTierCount - 1,
       );
-      expect(r.gifFps, 0, reason: '0 = 源帧率');
-      expect(r.gifWidth, 0, reason: '0 = 源分辨率');
-      expect(r.screenshotMaxLongEdge, 0, reason: '0 = 不缩放');
+      expect(r.screenshotMaxLongEdge, 0, reason: '0 = 不缩放（截图原图直通，语义不变）');
+      expect(r.gifFps, MiningMediaCompression.gifNativeFps);
+      expect(r.gifWidth, MiningMediaCompression.gifNativeWidth);
       expect(r.audioChannels, 2);
       expect(r.audioBitrate, '192k');
     });
 
+    // BUG-1039 回归守卫：GIF 无帧间压缩，「源分辨率+源帧率」会线性爆炸（1080p 源 4 秒
+    // 区间实测 48.9 秒 / 54 MB，Anki 收到后主线程解析直接无响应）。**任何**档位都不得
+    // 再把 0 哨兵（=不限制）传给 GIF 抽取。截图侧的 0（不缩放）不受此约束。
+    test('BUG-1039：没有任何图片档把 GIF 参数留成 0（不限制）哨兵', () {
+      for (int t = 0; t < MiningMediaCompression.imageTierCount; t++) {
+        final MiningMediaCompression c =
+            MiningMediaCompression.resolve(imageTier: t, audioTier: 0);
+        expect(c.gifFps, greaterThan(0), reason: '档 $t 的 gifFps 不得为 0（源帧率）');
+        expect(c.gifWidth, greaterThan(0),
+            reason: '档 $t 的 gifWidth 不得为 0（源分辨率）');
+      }
+    });
+
     test('图片档单调递增（清晰度越高，分辨率/质量/GIF 越大）', () {
-      // 原片档 maxLongEdge=0 是「不缩放」哨兵（语义上最大），单独排除在数值比较外。
-      for (int t = 1; t < MiningMediaCompression.imageTierNative; t++) {
+      // 原片档 maxLongEdge=0 是「不缩放」哨兵（语义上最大），单独排除在截图数值比较外；
+      // GIF 侧 BUG-1039 后全档都是有限值，故 gif 参数覆盖到满档一起校单调。
+      for (int t = 1; t < MiningMediaCompression.imageTierCount; t++) {
         final MiningMediaCompression lo =
             MiningMediaCompression.resolve(imageTier: t - 1, audioTier: 0);
         final MiningMediaCompression hi =
             MiningMediaCompression.resolve(imageTier: t, audioTier: 0);
-        expect(hi.screenshotMaxLongEdge,
-            greaterThanOrEqualTo(lo.screenshotMaxLongEdge));
+        if (t < MiningMediaCompression.imageTierNative) {
+          expect(hi.screenshotMaxLongEdge,
+              greaterThanOrEqualTo(lo.screenshotMaxLongEdge));
+        }
         expect(hi.gifWidth, greaterThanOrEqualTo(lo.gifWidth));
         expect(hi.gifFps, greaterThanOrEqualTo(lo.gifFps));
       }

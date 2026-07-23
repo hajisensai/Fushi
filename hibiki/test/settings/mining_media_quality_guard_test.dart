@@ -108,14 +108,16 @@ void main() {
       expect(r.audioBitrate, '64k');
     });
 
-    test('满档（图片原片 + 音频原片）= 0 哨兵 + 立体声 192k', () {
+    test('满档（图片原片 + 音频原片）= 截图 0 哨兵 + GIF 封顶 + 立体声 192k', () {
       final MiningMediaCompression r = MiningMediaCompression.resolve(
         imageTier: MiningMediaCompression.imageTierNative,
         audioTier: MiningMediaCompression.audioTierCount - 1,
       );
       expect(r.screenshotMaxLongEdge, 0, reason: '0 = 不缩放（原图直通）');
-      expect(r.gifWidth, 0, reason: '0 = 源分辨率');
-      expect(r.gifFps, 0, reason: '0 = 源帧率');
+      // BUG-1039：GIF 侧不存在「源分辨率/源帧率」档——GIF 无帧间压缩，0 哨兵会让
+      // 1080p 源的 4 秒区间涨到 54 MB / 48.9 秒，把 Anki 打成无响应。
+      expect(r.gifWidth, MiningMediaCompression.gifNativeWidth);
+      expect(r.gifFps, MiningMediaCompression.gifNativeFps);
       expect(r.audioChannels, 2);
       expect(r.audioBitrate, '192k');
     });
