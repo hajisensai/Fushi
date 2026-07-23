@@ -497,28 +497,41 @@ class ReaderHibikiSource extends ReaderMediaSource {
     }
     final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
 
-    // TODO-1346：进度纳入当前章内 charOffset（与章字数同单位），并对老书无字数时
-    // 回退章级粗粒度，避免书架恒显 0%。见 [computeBookProgress]。
-    final pos = await posRepo.findByBookKey(book.bookKey);
-    final ({int position, int duration}) prog = computeBookProgress(
-      sectionChars: sectionChars,
-      sectionIndex: pos?.sectionIndex,
-      charOffset: pos?.charOffset ?? -1,
-      // BUG-728：听书时 charOffset 存 -1，章内进度只在 normCharOffset（0-10000）
-      // 里，传进去让 computeBookProgress 回退还原，否则书架进度停在章边界。
-      normCharOffset: pos?.normCharOffset ?? 0,
-    );
-    position = prog.position;
-    duration = prog.duration;
-
-    final String? imageUrl = await _resolveCoverUrl(book);
-
-    // PDF 阅读器 Phase 1：书架列书 format-agnostic（本方法列全部 EpubBooks 行），但
+    // PDF 阅读器：书架列书 format-agnostic（本方法列全部 EpubBooks 行），但
     // `format=='pdf'` 的行必须带 [ReaderPdfSource] 的 mediaSourceIdentifier，这样
     // `item.getMediaSource` 打开时解析到 PDF 源、进 ReaderPdfPage，而不是用 EPUB 阅读器
     // 打开（后者会对 PDF 走解压/解析路径崩溃）。媒体标识前缀共用 `hoshi://book/<bookKey>`
     // （bookKey 是主键、与 format 无关），路由只认 mediaSourceIdentifier。
     final bool isPdf = book.format == 'pdf';
+
+    // TODO-1346：进度纳入当前章内 charOffset（与章字数同单位），并对老书无字数时
+    // 回退章级粗粒度，避免书架恒显 0%。见 [computeBookProgress]。
+    final pos = await posRepo.findByBookKey(book.bookKey);
+    final ({int position, int duration}) prog = isPdf
+        // PDF Phase 3：进度单位是**页**（sectionIndex=当前页 0-based，chapterCount=总页数）。
+        // chaptersJson='[]' 无字数，走 computeBookProgress 会恒回 (0,1)=0%。
+        // 用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时 position>0 才会被
+        // `tallyShelfProgress` 计入「在读」并进「继续阅读」；读到最后一页 position==duration
+        // 恰好等于「读完」判据，两端都自洽。
+        ? (
+            // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
+            // position 溢出 duration（>100%）。
+            position: ((pos?.sectionIndex ?? 0) + 1)
+                .clamp(1, book.chapterCount > 0 ? book.chapterCount : 1),
+            duration: book.chapterCount > 0 ? book.chapterCount : 1,
+          )
+        : computeBookProgress(
+            sectionChars: sectionChars,
+            sectionIndex: pos?.sectionIndex,
+            charOffset: pos?.charOffset ?? -1,
+            // BUG-728：听书时 charOffset 存 -1，章内进度只在 normCharOffset（0-10000）
+            // 里，传进去让 computeBookProgress 回退还原，否则书架进度停在章边界。
+            normCharOffset: pos?.normCharOffset ?? 0,
+          );
+    position = prog.position;
+    duration = prog.duration;
+
+    final String? imageUrl = await _resolveCoverUrl(book);
 
     return MediaItem(
       mediaIdentifier: mediaIdentifierFor(book.bookKey),
