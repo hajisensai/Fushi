@@ -10,9 +10,9 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | **Deutsch** | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Benutzerhandbuch](https://img.shields.io/badge/%F0%9F%93%96%20Benutzerhandbuch-0969DA?style=for-the-badge)](../user-guide.de.md)
+[![Einrichtung in 5 Minuten](https://img.shields.io/badge/%F0%9F%93%96%20Einrichtung%20in%205%20Minuten-0969DA?style=for-the-badge)](../user-guide.de.md)
 
-**Kein umständliches Einrichten** — empfohlene Wörterbücher und Audio in einem Schritt importieren.
+**Selbst Yui Hirasawa richtet es in 5 Minuten ein** — empfohlene Wörterbücher und Audio in einem Schritt importieren.
 
 [![Neueste Version herunterladen](https://img.shields.io/badge/%E2%AC%87%20Neueste%20Version%20herunterladen-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
 [![Discord beitreten](https://img.shields.io/badge/Discord%20beitreten-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
