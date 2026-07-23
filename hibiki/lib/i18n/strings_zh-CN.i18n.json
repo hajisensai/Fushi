@@ -2315,5 +2315,10 @@
   "pdf_outline_empty": "此 PDF 没有目录。",
   "pdf_bookmarks": "书签",
   "pdf_bookmarks_empty": "还没有书签。",
-  "pdf_bookmark_added": "已添加书签"
+  "pdf_bookmark_added": "已添加书签",
+  "games_set_cover": "设置封面",
+  "games_auto_cover": "自动获取封面",
+  "games_cover_updated": "封面已更新",
+  "games_cover_not_found": "游戏目录和程序图标里都没找到可用封面",
+  "games_cover_searching": "正在查找封面..."
 }
