@@ -54,7 +54,7 @@ void main() {
       );
     });
 
-    // BUG-1043: the popup encodes a local-audio-library word pronunciation as a
+    // BUG-1045: the popup encodes a local-audio-library word pronunciation as a
     // `data:<mime>;base64,…` URI (audioRefToWebViewUrl) and reuses it verbatim
     // as the mine payload's audio field. It must classify as its own dataUri
     // kind — not localFile, where the repos treated it as a missing file and

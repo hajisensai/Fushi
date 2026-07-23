@@ -739,7 +739,7 @@ class AnkiAudioRef {
   static AnkiAudioRefKind classify(String ref) {
     if (ref.isEmpty) return AnkiAudioRefKind.empty;
     if (ref.startsWith('http')) return AnkiAudioRefKind.remoteUrl;
-    // BUG-1043：查词弹窗把命中本地音频库的单词发音编码成 `data:<mime>;base64,…`
+    // BUG-1045：查词弹窗把命中本地音频库的单词发音编码成 `data:<mime>;base64,…`
     // （audioRefToWebViewUrl，本为弹窗 HTML5 <audio> 播放而生）。视频/沉浸制卡时该
     // URI 原样进 fields['audio']；它既不是 http 也不是真实文件路径——早先落到
     // localFile 分支被当成不存在的文件（existsSync()==false）静默丢弃，导致本地源
