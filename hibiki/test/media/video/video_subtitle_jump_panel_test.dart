@@ -1735,7 +1735,11 @@ void main() {
       final double tsWidth = subtitleTimestampColumnWidth(14, false);
       expect(textBox.size.width, greaterThan(tsWidth), reason: '文本列必须宽于时间戳列');
       // 旧实现下文本列被挤到 ~50px（3-4 个假名折行）。修复后应明显更宽。
-      expect(textBox.size.width, greaterThan(80),
+      // 下界 78 而非 80：BUG-1034 把勾选框列宽锁死为 [kSubtitleRowSelectionSize]（36，
+      // 原自然宽 35.7），行高测量才能按确定的文本列宽排版；文本列因此少 0.3px，不影响
+      // 本用例「文本列拿到主要空间」的意图。文本列宽与测量同源另有专门守卫
+      // （video_subtitle_row_extent_guard_test.dart）。
+      expect(textBox.size.width, greaterThan(78),
           reason: '窄面板上文本列应拿到足够宽度，不再 3-4 字硬折行');
       // 文本列应是行内最大的单列（宽于时间戳与动作列）。
       expect(textBox.size.width, greaterThan(tsWidth * 1.5));
