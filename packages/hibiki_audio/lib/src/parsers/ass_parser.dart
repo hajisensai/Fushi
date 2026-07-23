@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../audiobook/audiobook_model.dart';
+import 'cue_parse_dispatch.dart';
 import 'srt_parser.dart';
 import 'subtitle_markup.dart';
 import 'text_file_io.dart';
@@ -31,12 +32,11 @@ import 'text_file_io.dart';
 /// - 软换行符 `\N`、`\n`、`\h` 转为空格
 /// - textFragmentId 格式为 `[data-cue-id="<sentenceIndex>"]`，供 AudiobookBridge CSS selector 定位
 class AssParser {
-  static const int largeContentComputeThreshold = 1024 * 1024;
+  static const int largeContentComputeThreshold =
+      CueParseDispatch.largeContentComputeThreshold;
 
-  static bool shouldParseInIsolate(String content) {
-    return SrtParser.utf8ContentByteLength(content) >
-        largeContentComputeThreshold;
-  }
+  static bool shouldParseInIsolate(String content) =>
+      CueParseDispatch.shouldParseInIsolate(content);
 
   /// 与 [SrtParser.defaultChapter] 共用同一章节标识。
   static const String defaultChapter = SrtParser.defaultChapter;
@@ -65,28 +65,14 @@ class AssParser {
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) {
-    if (shouldParseInIsolate(content)) {
-      return compute(_parseStringIsolate, <String, dynamic>{
-        'content': content,
-        'bookKey': bookKey,
-        'chapterHref': chapterHref,
-        'audioFileIndex': audioFileIndex,
-      });
-    }
-    return Future<List<AudioCue>>.value(parseString(
+    return CueParseDispatch.run(
       content: content,
-      bookKey: bookKey,
-      chapterHref: chapterHref,
-      audioFileIndex: audioFileIndex,
-    ));
-  }
-
-  static List<AudioCue> _parseStringIsolate(Map<String, dynamic> args) {
-    return parseString(
-      content: args['content'] as String,
-      bookKey: args['bookKey'] as String,
-      chapterHref: args['chapterHref'] as String,
-      audioFileIndex: args['audioFileIndex'] as int,
+      parse: () => parseString(
+        content: content,
+        bookKey: bookKey,
+        chapterHref: chapterHref,
+        audioFileIndex: audioFileIndex,
+      ),
     );
   }
 
