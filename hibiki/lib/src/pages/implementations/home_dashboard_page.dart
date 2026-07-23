@@ -9,6 +9,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
@@ -227,6 +228,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// 「最近添加」行的书侧排序时间源（视频侧用 [VideoBookRow.importedAt]）。
   Map<String, int> _epubImportedAtByKey = const <String, int>{};
 
+  /// '<mediaType>|<entryKey>' → 条目在其主折叠合集里的组内 sortIndex（只记归属
+  /// 主合集的行，书架/视频页同口径）。继续区合集 Next-Up 的组内排序键。
+  Map<String, int> _memberSortIndex = const <String, int>{};
+
   /// 每个视频 bookUid 的最近观看时刻（epoch 毫秒），继续观看排序用。
   Map<String, int> _videoWatchAtByUid = const <String, int>{};
 
@@ -297,6 +302,15 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     };
     final Map<String, int> primaryByEntry =
         await db.getPrimaryCollectionIdByEntry();
+    // 组内序：条目在其主折叠合集里的 sortIndex（视频页/书架 _loadShelfMaps 同
+    // 口径——一次 getAllCollectionItems 内存分组，只记归属主合集的行）。
+    final Map<String, int> memberSortIndex = <String, int>{};
+    for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
+      final String key = '${m.mediaType}|${m.entryKey}';
+      if (primaryByEntry[key] == m.collectionId) {
+        memberSortIndex[key] = m.sortIndex;
+      }
+    }
     // reading_statistics 行只存 title：日明细拼合集前缀需经 epub_books 反查 bookKey
     // （阅读统计页 _collectionNameForBook 同范式）。同批顺带取 importedAt 喂
     // 「最近添加」行（一次查询两用）。
@@ -379,6 +393,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       _primaryCollectionByEntry = primaryByEntry;
       _bookKeyByTitle = bookKeyByTitle;
       _epubImportedAtByKey = epubImportedAtByKey;
+      _memberSortIndex = memberSortIndex;
       _videoWatchAtByUid = watchAt;
     });
     // 本地渲染先行，互联数据到达后再增量补位（不阻塞首屏）。
@@ -563,30 +578,53 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         ));
       }
     }
+    // 视频侧合集感知 Next-Up（用户实报：合集里看完一集，合集不该从「继续」消
+    // 失，应推进为下一集）：成员按主折叠合集归组，每个合集在继续区**最多一张
+    // 卡**——组内复用视频页 hero 同口径（BUG-848 computeVideoLibraryOverview
+    // 的单元逻辑：sortIndex 排序 + [continueMemberIndex] 的 Jellyfin Next-Up
+    // 语义）；整组看完/整组没看过不出卡。散卡保持「有断点且未看完」现行为。
+    // 单行多集形态（playlistJson/currentEpisode 行内集数）completedAt 按整行，
+    // 天然沿用现行为。
+    final Map<int, List<VideoBookRow>> videosByCollection =
+        <int, List<VideoBookRow>>{};
+    final List<VideoBookRow> standaloneVideos = <VideoBookRow>[];
     for (final VideoBookRow v in _videos) {
+      final int? cid = _primaryCollectionByEntry['video|${v.bookUid}'];
+      if (cid == null) {
+        standaloneVideos.add(v);
+      } else {
+        (videosByCollection[cid] ??= <VideoBookRow>[]).add(v);
+      }
+    }
+    for (final VideoBookRow v in standaloneVideos) {
       if (v.lastPositionMs > 0 && v.completedAt == null) {
         final int recent = _videoWatchAtByUid[v.bookUid] ??
             v.importedAt?.millisecondsSinceEpoch ??
             0;
-        entries.add(_ContinueEntry(
-          isVideo: true,
-          title: v.title,
-          recentMs: recent,
-          // 视频进度到集粒度（VideoBooks 不持久化总时长，无法算章内百分比）：
-          // 多集按 currentEpisode/集数，单视频未看完不画（见 videoWatchFraction）。
-          progress: videoWatchFraction(
-            completed: v.completedAt != null,
-            currentEpisode: v.currentEpisode,
-            episodeCount: playlistEpisodeCount(v.playlistJson),
-          ),
-          collectionName: statCollectionName(
-            'video|${v.bookUid}',
-            _primaryCollectionByEntry,
-            _collectionNamesById,
-          ),
-          video: v,
-        ));
+        entries.add(
+          _videoContinueEntry(v, collectionName: null, recentMs: recent),
+        );
       }
+    }
+    for (final MapEntry<int, List<VideoBookRow>> ce
+        in videosByCollection.entries) {
+      final VideoBookRow? resume = _collectionResumeTarget(ce.value);
+      if (resume == null) continue;
+      // 单元活跃时刻 = 成员观看时刻最大值（含已完成集——Next-Up 卡按「刚看完
+      // 上一集」的时间参与混排），无统计行回退续播目标导入时间。
+      int recent = 0;
+      for (final VideoBookRow m in ce.value) {
+        final int at = _videoWatchAtByUid[m.bookUid] ?? 0;
+        if (at > recent) recent = at;
+      }
+      if (recent == 0) {
+        recent = resume.importedAt?.millisecondsSinceEpoch ?? 0;
+      }
+      entries.add(_videoContinueEntry(
+        resume,
+        collectionName: _collectionNamesById[ce.key],
+        recentMs: recent,
+      ));
     }
     // 互联 host 的远端补位（本地无同 key/uid 的在读书/在看视频），与本地条目
     // 按最近活动时刻统一混排（「继续也走互联」）。
@@ -742,6 +780,57 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         ReaderHibikiSource.parseSrtBookUid(item.mediaIdentifier);
     if (srtUid != null) return 'srt|$srtUid';
     return 'epub|${item.mediaIdentifier}';
+  }
+
+  /// 视频行 → 继续卡条目（散卡与合集续播目标共用）：进度到集粒度（VideoBooks
+  /// 不持久化总时长，无法算章内百分比——多集按 currentEpisode/集数，单视频未
+  /// 看完不画，见 [videoWatchFraction]）；合集成员由渲染层按 [collectionName]
+  /// 拼「标题=合集名、副标题=集名 · 观看」。
+  _ContinueEntry _videoContinueEntry(
+    VideoBookRow v, {
+    required String? collectionName,
+    required int recentMs,
+  }) {
+    return _ContinueEntry(
+      isVideo: true,
+      title: v.title,
+      recentMs: recentMs,
+      progress: videoWatchFraction(
+        completed: v.completedAt != null,
+        currentEpisode: v.currentEpisode,
+        episodeCount: playlistEpisodeCount(v.playlistJson),
+      ),
+      collectionName: collectionName,
+      video: v,
+    );
+  }
+
+  /// 合集单元的续播目标（**视频页 hero 同口径**，BUG-848
+  /// computeVideoLibraryOverview 的单元逻辑）：成员按主合集组内 sortIndex
+  /// （缺失沉底）→ bookUid 排序，跑 [continueMemberIndex]（最靠后有痕迹一集；
+  /// 它已完成则推进下一集）。整组无痕迹（没看过，不劝人从头开始）或目标仍是
+  /// 已完成集（整季看完）→ null 不出卡（自然滚出继续区）。
+  VideoBookRow? _collectionResumeTarget(List<VideoBookRow> members) {
+    final List<VideoBookRow> sorted = List<VideoBookRow>.of(members)
+      ..sort((VideoBookRow a, VideoBookRow b) {
+        final int ai = _memberSortIndex['video|${a.bookUid}'] ?? 1 << 30;
+        final int bi = _memberSortIndex['video|${b.bookUid}'] ?? 1 << 30;
+        if (ai != bi) return ai.compareTo(bi);
+        return a.bookUid.compareTo(b.bookUid);
+      });
+    final bool anyTrace = sorted.any(
+      (VideoBookRow m) => m.completedAt != null || m.lastPositionMs > 0,
+    );
+    if (!anyTrace) return null;
+    final int idx = continueMemberIndex(<CollectionMemberProgress>[
+      for (final VideoBookRow m in sorted)
+        CollectionMemberProgress(
+          positionMs: m.lastPositionMs,
+          completed: m.completedAt != null,
+        ),
+    ]);
+    final VideoBookRow resume = sorted[idx];
+    return resume.completedAt != null ? null : resume;
   }
 
   /// 「继续」单卡（Jellyfin 式横滑卡）：上=封面（底部贴进度条），下=标题一行 +
