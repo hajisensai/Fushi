@@ -13,6 +13,8 @@ import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
 import 'package:hibiki/src/pages/implementations/home_page.dart';
+import 'package:hibiki/src/pages/implementations/home_video_page.dart'
+    show openLocalVideoBook;
 import 'package:hibiki/src/pages/implementations/stat_shared.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -35,10 +37,24 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// （Activity）；窄屏堆叠。书与阅读位置走 Riverpod provider（响应式）；视频与活动事件在
 /// [initState] 一次性异步载入到本地状态（视频列表天然是 Future）。
 class HomeDashboardPage extends ConsumerStatefulWidget {
-  const HomeDashboardPage({super.key, required this.videoRepo});
+  const HomeDashboardPage({
+    super.key,
+    required this.videoRepo,
+    this.openVideoOverride,
+  });
 
   /// 视频库仓库：仪表盘「继续观看」与视频计数的数据源（[VideoBookRepository.listForShelf]）。
   final VideoBookRepository videoRepo;
+
+  /// 测试缝：打开本地视频播放页的实现覆盖（默认走共享 [openLocalVideoBook] 真实
+  /// 路由）。widget 测试无法构建 media_kit 播放页，注入替身即可断言「点继续卡/
+  /// 活动条 = 直接续播（带 playlistCollectionId）」的接线；生产恒 null。
+  final Future<void> Function(
+    BuildContext context,
+    VideoBookRepository repo,
+    String bookUid,
+    int? playlistCollectionId,
+  )? openVideoOverride;
 
   @override
   ConsumerState<HomeDashboardPage> createState() => _HomeDashboardPageState();
@@ -54,6 +70,7 @@ class _ContinueEntry {
     this.percent = 0,
     this.progress,
     this.collectionName,
+    this.subtitleOverride,
     this.book,
     this.video,
     this.remote,
@@ -75,6 +92,10 @@ class _ContinueEntry {
   /// 所属主合集名（显示名规则：非合集上下文标题=合集名、副标题=条目名+状态）；
   /// null = 散卡。本地条目查折叠归属映射，远端条目由 host 直接携带。
   final String? collectionName;
+
+  /// 副标题状态段的覆盖文案（「最近添加」行用「类型 · 相对时间」替代进度状态）；
+  /// null = 按 继续区 默认规则（书=「阅读 · x%」/ 视频=「观看」+ 远端设备名）。
+  final String? subtitleOverride;
   final MediaItem? book;
   final VideoBookRow? video;
 
@@ -202,6 +223,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
   Map<String, String> _bookKeyByTitle = const <String, String>{};
 
+  /// epub bookKey → 导入时刻（epoch 毫秒，`EpubBooks.importedAt`），
+  /// 「最近添加」行的书侧排序时间源（视频侧用 [VideoBookRow.importedAt]）。
+  Map<String, int> _epubImportedAtByKey = const <String, int>{};
+
   /// 每个视频 bookUid 的最近观看时刻（epoch 毫秒），继续观看排序用。
   Map<String, int> _videoWatchAtByUid = const <String, int>{};
 
@@ -273,10 +298,14 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final Map<String, int> primaryByEntry =
         await db.getPrimaryCollectionIdByEntry();
     // reading_statistics 行只存 title：日明细拼合集前缀需经 epub_books 反查 bookKey
-    // （阅读统计页 _collectionNameForBook 同范式）。
+    // （阅读统计页 _collectionNameForBook 同范式）。同批顺带取 importedAt 喂
+    // 「最近添加」行（一次查询两用）。
+    final List<EpubBookRow> epubRows = await db.getAllEpubBooks();
     final Map<String, String> bookKeyByTitle = <String, String>{
-      for (final EpubBookRow r in await db.getAllEpubBooks())
-        r.title: r.bookKey,
+      for (final EpubBookRow r in epubRows) r.title: r.bookKey,
+    };
+    final Map<String, int> epubImportedAtByKey = <String, int>{
+      for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
     };
 
     // 每日「读到的字数」按来源拆三份（热力图筛选 全部/阅读/观看/游戏）：书内阅读、
@@ -349,6 +378,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       _collectionNamesById = collectionNamesById;
       _primaryCollectionByEntry = primaryByEntry;
       _bookKeyByTitle = bookKeyByTitle;
+      _epubImportedAtByKey = epubImportedAtByKey;
       _videoWatchAtByUid = watchAt;
     });
     // 本地渲染先行，互联数据到达后再增量补位（不阻塞首屏）。
@@ -431,10 +461,26 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
     final DateTime now = DateTime.now();
 
+    // 活动条封面/点击直达需要「mediaKey → 本地条目」反查映射（渲染层现算，不
+    // 落状态；书键兼容 epub bookKey 与 standalone SRT uid 两种身份）。
+    final Map<String, MediaItem> booksByKey = <String, MediaItem>{};
+    for (final MediaItem item in books) {
+      final String? key =
+          ReaderHibikiSource.parseBookKey(item.mediaIdentifier) ??
+              ReaderHibikiSource.parseSrtBookUid(item.mediaIdentifier);
+      if (key != null) booksByKey[key] = item;
+    }
+    final Map<String, VideoBookRow> videosByUid = <String, VideoBookRow>{
+      for (final VideoBookRow v in _videos) v.bookUid: v,
+    };
+
     final Widget continueCard =
         _buildContinueSection(tokens, appModel, books, lastReadByKey);
     final Widget heatmapCard = _buildHeatmapCard(tokens);
-    final Widget activityCard = _buildActivitySection(tokens, now);
+    final Widget activityCard =
+        _buildActivitySection(tokens, now, appModel, booksByKey, videosByUid);
+    final Widget? recentCard =
+        _buildRecentlyAddedSection(tokens, appModel, books, now);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -469,6 +515,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
             heatmapCard,
             SizedBox(height: tokens.spacing.card),
             bodyBelow,
+            // 区块 4：「最近添加」横滑行，两栏下方通栏（空库不占位——用户反馈
+            // 「底部很空」的填充提案）。
+            if (recentCard != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.card),
+              recentCard,
+            ],
           ],
         );
       },
@@ -581,31 +633,101 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       ),
       child: filtered.isEmpty
           ? Text(t.home_activity_empty, style: tokens.type.metadata)
-          : SizedBox(
-              height: _kContinueRowHeight,
-              // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
-              // 用鼠标左右拖会毫无反应。显式放开 mouse/trackpad/stylus 拖动
-              // （与合集行 CollectionShelfRow 同款）；触屏行为不变。
-              child: ScrollConfiguration(
-                behavior: ScrollConfiguration.of(context).copyWith(
-                  dragDevices: <PointerDeviceKind>{
-                    PointerDeviceKind.touch,
-                    PointerDeviceKind.mouse,
-                    PointerDeviceKind.stylus,
-                    PointerDeviceKind.trackpad,
-                  },
-                ),
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  physics: desktopAwareScrollPhysics(),
-                  itemCount: filtered.length,
-                  separatorBuilder: (BuildContext _, int __) =>
-                      SizedBox(width: tokens.spacing.gap),
-                  itemBuilder: (BuildContext context, int i) =>
-                      _buildContinueCard(tokens, appModel, filtered[i]),
-                ),
-              ),
-            ),
+          : _continueCardsRow(tokens, appModel, filtered),
+    );
+  }
+
+  /// 横滑卡片行本体（「继续」与「最近添加」共用）：定高横向 ListView。
+  Widget _continueCardsRow(
+    HibikiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> entries,
+  ) {
+    return SizedBox(
+      height: _kContinueRowHeight,
+      // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
+      // 用鼠标左右拖会毫无反应。显式放开 mouse/trackpad/stylus 拖动
+      // （与合集行 CollectionShelfRow 同款）；触屏行为不变。
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: <PointerDeviceKind>{
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.stylus,
+            PointerDeviceKind.trackpad,
+          },
+        ),
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: desktopAwareScrollPhysics(),
+          itemCount: entries.length,
+          separatorBuilder: (BuildContext _, int __) =>
+              SizedBox(width: tokens.spacing.gap),
+          itemBuilder: (BuildContext context, int i) =>
+              _buildContinueCard(tokens, appModel, entries[i]),
+        ),
+      ),
+    );
+  }
+
+  /// 区块 4：「最近添加」横滑行（底部通栏，用户反馈「底部很空」的填充提案）：
+  /// 本地书（epub importedAt）+ 本地视频（[VideoBookRow.importedAt]）按添加时刻
+  /// 倒序混排取前 12，复用继续卡组件（不画进度条，副标题=「类型 · 相对时间」）。
+  /// 无可排条目（空库/无时间戳）返回 null 不占位。
+  Widget? _buildRecentlyAddedSection(
+    HibikiDesignTokens tokens,
+    AppModel appModel,
+    List<MediaItem> books,
+    DateTime now,
+  ) {
+    final List<_ContinueEntry> entries = <_ContinueEntry>[];
+    for (final MediaItem item in books) {
+      final String? bookKey =
+          ReaderHibikiSource.parseBookKey(item.mediaIdentifier);
+      // standalone SRT 书无 epub 导入时间戳（不在 epub_books），本轮不进最近添加。
+      final int addedMs =
+          bookKey == null ? 0 : (_epubImportedAtByKey[bookKey] ?? 0);
+      if (addedMs <= 0) continue;
+      entries.add(_ContinueEntry(
+        isVideo: false,
+        // BUG-1018 (A1)：与继续卡同一 override 显示名通道。
+        title: ReaderHibikiSource.instance.getDisplayTitleFromMediaItem(item),
+        recentMs: addedMs,
+        collectionName: statCollectionName(
+          _bookCollectionKey(item),
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        ),
+        subtitleOverride:
+            '${t.home_filter_read} · ${_relativeTimeLabel(addedMs, now)}',
+        book: item,
+      ));
+    }
+    for (final VideoBookRow v in _videos) {
+      final int addedMs = v.importedAt?.millisecondsSinceEpoch ?? 0;
+      if (addedMs <= 0) continue;
+      entries.add(_ContinueEntry(
+        isVideo: true,
+        title: v.title,
+        recentMs: addedMs,
+        collectionName: statCollectionName(
+          'video|${v.bookUid}',
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        ),
+        subtitleOverride:
+            '${t.home_filter_watch} · ${_relativeTimeLabel(addedMs, now)}',
+        video: v,
+      ));
+    }
+    if (entries.isEmpty) return null;
+    entries.sort((_ContinueEntry a, _ContinueEntry b) =>
+        b.recentMs.compareTo(a.recentMs));
+    final List<_ContinueEntry> top = entries.take(12).toList();
+    return _sectionCard(
+      tokens,
+      title: t.home_recently_added,
+      child: _continueCardsRow(tokens, appModel, top),
     );
   }
 
@@ -640,6 +762,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       // 标明设备来源：优先 host 设备名（配对时存下），取不到回退通用「远端」。
       status = '$status · ${_remoteDeviceName ?? t.home_remote_source}';
     }
+    // 「最近添加」行覆盖状态段（类型 · 相对时间）；继续区恒 null 走上面默认。
+    status = entry.subtitleOverride ?? status;
     final String? collectionName = entry.collectionName;
     final String title = collectionName ?? entry.title;
     final String subtitle =
@@ -763,8 +887,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     );
   }
 
-  /// 打开「继续」条目：本地书走 openMedia，视频切到视频 tab；远端条目切到对应
-  /// tab（远端占位卡在那里承接播放/下载，行为与本地视频条目的 tab 跳转一致）。
+  /// 打开「继续」条目：本地书走 openMedia，本地视频**直接续播**（用户实报点卡
+  /// 只跳视频 tab 不打开——旧竖列表残留；改走与视频页 hero 同一条打开路径，合集
+  /// 成员带 playlistCollectionId 从合集续播）；远端条目仍切到对应 tab（远端占位
+  /// 卡在那里承接播放/下载）。
   Future<void> _openContinueEntry(
     AppModel appModel,
     _ContinueEntry entry,
@@ -775,12 +901,36 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       return;
     }
     if (entry.isVideo) {
-      homeShellTabNotifier.value = HomeTab.video;
+      await _openLocalVideo(entry.video!.bookUid);
       return;
     }
     final MediaItem item = entry.book!;
     final MediaSource source = item.getMediaSource(appModel: appModel);
     await appModel.openMedia(ref: ref, mediaSource: source, item: item);
+  }
+
+  /// 直接续播本地视频：与视频页 hero/卡片同一条共享路由入口 [openLocalVideoBook]
+  /// （合集成员带主合集 id → 播放器建剧集面板/上下集/连播；散卡单视频打开）。
+  /// 播放页关闭后无需手动刷新——lastPositionMs 落库触发 videoBooks 表级变更，
+  /// [_scheduleReload] 自动重查。测试经 [HomeDashboardPage.openVideoOverride] 注入替身。
+  Future<void> _openLocalVideo(String bookUid) async {
+    final int? playlistCollectionId =
+        _primaryCollectionByEntry['video|$bookUid'];
+    final Future<void> Function(
+      BuildContext context,
+      VideoBookRepository repo,
+      String bookUid,
+      int? playlistCollectionId,
+    ) open = widget.openVideoOverride ??
+        (BuildContext context, VideoBookRepository repo, String bookUid,
+                int? playlistCollectionId) =>
+            openLocalVideoBook(
+              context: context,
+              repo: repo,
+              bookUid: bookUid,
+              playlistCollectionId: playlistCollectionId,
+            );
+    await open(context, widget.videoRepo, bookUid, playlistCollectionId);
   }
 
   // ── 区块 3：学习活动热力图 ───────────────────────────────────────────────
@@ -1104,7 +1254,15 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   // ── 区块 4：Activity 时间轴 ──────────────────────────────────────────────
 
   /// Activity 时间轴：顶部分类筛选 → 内存过滤 events → 纯函数聚合 → 按日期分组渲染。
-  Widget _buildActivitySection(HibikiDesignTokens tokens, DateTime now) {
+  /// [booksByKey] / [videosByUid] 是「mediaKey → 本地条目」反查映射（封面缩略 +
+  /// 点击直达用；查不到回退图标/切 tab）。
+  Widget _buildActivitySection(
+    HibikiDesignTokens tokens,
+    DateTime now,
+    AppModel appModel,
+    Map<String, MediaItem> booksByKey,
+    Map<String, VideoBookRow> videosByUid,
+  ) {
     final List<ActivityEventRow> filtered = _activityFilter == null
         ? _activityEvents
         : _activityEvents
@@ -1143,7 +1301,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 for (final ActivityDateGroup g in groups)
-                  _buildActivityGroup(tokens, g, todayKey, yesterdayKey, now),
+                  _buildActivityGroup(tokens, g, todayKey, yesterdayKey, now,
+                      appModel, booksByKey, videosByUid),
               ],
             ),
     );
@@ -1156,6 +1315,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     String todayKey,
     String yesterdayKey,
     DateTime now,
+    AppModel appModel,
+    Map<String, MediaItem> booksByKey,
+    Map<String, VideoBookRow> videosByUid,
   ) {
     final String label;
     if (group.dateKey == todayKey) {
@@ -1176,17 +1338,22 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           child: Text(label, style: tokens.type.sectionLabel),
         ),
         for (final ActivityEntry e in group.entries)
-          _buildActivityEntry(tokens, e, now),
+          _buildActivityEntry(
+              tokens, e, now, appModel, booksByKey, videosByUid),
       ],
     );
   }
 
-  /// 单条活动：前置图标 + 标题（粗）+ 副行（动作词 · 相对时间 · [时长] · [session 数]）。
-  /// 整行可点：read→书架 tab，视频类→视频 tab（added-book 回书架）。
+  /// 单条活动：前置封面缩略（命中本地条目；否则类型图标）+ 标题（粗）+ 副行
+  /// （动作词 · 相对时间 · [时长] · [session 数]）。整行可点：命中本地条目直接
+  /// 打开（视频续播/书 openMedia），查不到回退切 tab。
   Widget _buildActivityEntry(
     HibikiDesignTokens tokens,
     ActivityEntry entry,
     DateTime now,
+    AppModel appModel,
+    Map<String, MediaItem> booksByKey,
+    Map<String, VideoBookRow> videosByUid,
   ) {
     final List<String> parts = <String>[
       _actionWord(entry.eventType),
@@ -1197,21 +1364,15 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       if (entry.sourceDevice case final String device) device,
     ];
     return InkWell(
-      onTap: () => _openActivityEntry(entry),
+      onTap: () => unawaited(
+          _openActivityEntry(appModel, entry, booksByKey, videosByUid)),
       borderRadius: HibikiBorderRadius.card,
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Icon(
-                _activityIcon(entry.eventType),
-                size: 20,
-                color: tokens.surfaces.primary,
-              ),
-            ),
+            _activityLeading(tokens, appModel, entry, booksByKey, videosByUid),
             SizedBox(width: tokens.spacing.gap + 4),
             Expanded(
               child: Column(
@@ -1282,9 +1443,91 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     return entry.title;
   }
 
-  /// 点击活动条：read → 书架 tab；added-book → 书架；其余（watch/added-video/game）→ 视频 tab。
-  void _openActivityEntry(ActivityEntry entry) {
-    if (entry.eventType == kActivityRead || entry.mediaType == 'book') {
+  /// 活动条前置视觉：命中本地条目用封面缩略（书 40×56 竖版 / 视频 68×40 横版，
+  /// 圆角裁切，与继续卡同源取图），查不到（已删/远端 display-only 行/游戏/导入
+  /// 无封面）回退原类型图标（用户反馈时间轴只有小图标认不出条目）。
+  Widget _activityLeading(
+    HibikiDesignTokens tokens,
+    AppModel appModel,
+    ActivityEntry entry,
+    Map<String, MediaItem> booksByKey,
+    Map<String, VideoBookRow> videosByUid,
+  ) {
+    final String? key = entry.mediaKey;
+    if (key != null && key.isNotEmpty) {
+      if (entry.mediaType == kActivityMediaVideo) {
+        final VideoBookRow? video = videosByUid[key];
+        if (video != null) {
+          return ClipRRect(
+            borderRadius: HibikiBorderRadius.card,
+            child: SizedBox(
+              width: 68,
+              height: 40,
+              child: _videoCover(tokens, video),
+            ),
+          );
+        }
+      } else if (entry.mediaType == kActivityMediaBook) {
+        final MediaItem? book = booksByKey[key];
+        if (book != null) {
+          return ClipRRect(
+            borderRadius: HibikiBorderRadius.card,
+            child: SizedBox(
+              width: 40,
+              height: 56,
+              child: FadeInImage(
+                placeholder: MemoryImage(kTransparentImage),
+                image: ReaderHibikiSource.instance
+                    .getDisplayThumbnailFromMediaItem(
+                  appModel: appModel,
+                  item: book,
+                ),
+                fit: BoxFit.cover,
+                imageErrorBuilder: (_, __, ___) =>
+                    _coverPlaceholder(tokens, Icons.menu_book_outlined),
+              ),
+            ),
+          );
+        }
+      }
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Icon(
+        _activityIcon(entry.eventType),
+        size: 20,
+        color: tokens.surfaces.primary,
+      ),
+    );
+  }
+
+  /// 点击活动条：命中本地条目**直接打开**——视频=续播（与继续卡同一条
+  /// [_openLocalVideo] 路径），书=openMedia；查不到（远端 display-only/已删/
+  /// 游戏/导入）保持旧行为：read/book → 书架 tab，其余 → 视频 tab。
+  Future<void> _openActivityEntry(
+    AppModel appModel,
+    ActivityEntry entry,
+    Map<String, MediaItem> booksByKey,
+    Map<String, VideoBookRow> videosByUid,
+  ) async {
+    final String? key = entry.mediaKey;
+    if (key != null && key.isNotEmpty) {
+      if (entry.mediaType == kActivityMediaVideo &&
+          videosByUid.containsKey(key)) {
+        await _openLocalVideo(key);
+        return;
+      }
+      if (entry.mediaType == kActivityMediaBook) {
+        final MediaItem? book = booksByKey[key];
+        if (book != null) {
+          final MediaSource source = book.getMediaSource(appModel: appModel);
+          await appModel.openMedia(ref: ref, mediaSource: source, item: book);
+          return;
+        }
+      }
+    }
+    if (entry.eventType == kActivityRead ||
+        entry.mediaType == kActivityMediaBook) {
       homeShellTabNotifier.value = HomeTab.books;
     } else {
       homeShellTabNotifier.value = HomeTab.video;

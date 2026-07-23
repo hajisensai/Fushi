@@ -2309,5 +2309,6 @@
   "download_subscription_after_episode": "After episode ${episode}",
   "download_subscription_last_checked": "Last checked: ${time}",
   "download_subscription_latest_episode": "Latest queued: episode ${episode}",
-  "download_subscription_check_now": "Check now"
+  "download_subscription_check_now": "Check now",
+  "home_recently_added": "Recently added"
 }
