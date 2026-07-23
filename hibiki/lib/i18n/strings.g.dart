@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 39287 (2311 per locale)
 ///
-/// Built on 2026-07-23 at 11:05 UTC
+/// Built on 2026-07-23 at 12:06 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2648,7 +2648,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Tag ${name} is already on this collection.';
   String get mining_image_quality => 'Image / GIF quality';
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   String get mining_image_quality_thrift => 'Data saver';
   String get mining_image_quality_standard => 'Standard';
   String get mining_image_quality_hd => 'HD';
@@ -7546,7 +7546,7 @@ class _StringsAr extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -12860,7 +12860,7 @@ class _StringsDe extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -18190,7 +18190,7 @@ class _StringsEs extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -23531,7 +23531,7 @@ class _StringsFr extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -28799,7 +28799,7 @@ class _StringsId extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -34115,7 +34115,7 @@ class _StringsIt extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -39237,7 +39237,7 @@ class _StringsJa extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -44361,7 +44361,7 @@ class _StringsKo extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -49654,7 +49654,7 @@ class _StringsNl extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -54963,7 +54963,7 @@ class _StringsPtBr extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -60255,7 +60255,7 @@ class _StringsRu extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -65492,7 +65492,7 @@ class _StringsTh extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -70761,7 +70761,7 @@ class _StringsTr extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -76017,7 +76017,7 @@ class _StringsVi extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -80965,7 +80965,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get mining_image_quality => '图片 / GIF 清晰度';
   @override
-  String get mining_image_quality_hint => '越高越清晰，卡片体积也越大。原片档保留源分辨率与帧率。';
+  String get mining_image_quality_hint =>
+      '越高越清晰，卡片体积也越大。原片档的截图保留源分辨率；动图有上限，避免卡片大到不可用。';
   @override
   String get mining_image_quality_thrift => '省流';
   @override
@@ -85947,7 +85948,7 @@ class _StringsZhHk extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
@@ -90746,7 +90747,7 @@ extension on _StringsEn {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -95462,7 +95463,7 @@ extension on _StringsAr {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -100199,7 +100200,7 @@ extension on _StringsDe {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -104935,7 +104936,7 @@ extension on _StringsEs {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -109677,7 +109678,7 @@ extension on _StringsFr {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -114401,7 +114402,7 @@ extension on _StringsId {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -119140,7 +119141,7 @@ extension on _StringsIt {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -123841,7 +123842,7 @@ extension on _StringsJa {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -128546,7 +128547,7 @@ extension on _StringsKo {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -133278,7 +133279,7 @@ extension on _StringsNl {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -138007,7 +138008,7 @@ extension on _StringsPtBr {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -142741,7 +142742,7 @@ extension on _StringsRu {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -147459,7 +147460,7 @@ extension on _StringsTh {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -152186,7 +152187,7 @@ extension on _StringsTr {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -156908,7 +156909,7 @@ extension on _StringsVi {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
@@ -161597,7 +161598,7 @@ extension on _StringsZhCn {
       case 'mining_image_quality':
         return '图片 / GIF 清晰度';
       case 'mining_image_quality_hint':
-        return '越高越清晰，卡片体积也越大。原片档保留源分辨率与帧率。';
+        return '越高越清晰，卡片体积也越大。原片档的截图保留源分辨率；动图有上限，避免卡片大到不可用。';
       case 'mining_image_quality_thrift':
         return '省流';
       case 'mining_image_quality_standard':
@@ -166290,7 +166291,7 @@ extension on _StringsZhHk {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
