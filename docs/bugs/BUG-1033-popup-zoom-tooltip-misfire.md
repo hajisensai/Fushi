@@ -9,7 +9,7 @@
 
   顺带查出第二个缺陷：`_buildZoomFontButton` 原先在 `HibikiIconButton` **外面又套了一层** `Tooltip`（`HibikiIconButton` 自己已包一层）。两层嵌套下更靠近 child 的内层先命中 hover，外层那句「Ctrl+滚轮也可缩放」**从来没机会显示** —— 桌面用户看到的一直是只有标签的单行气泡（正是截图那个），TODO-1353 想给的提示等于没给。
 
-- **[x] ① 已修复** — commit `（见下方回填）`
+- **[x] ① 已修复** — commit `beb7ed0cb`
   - `hibiki_icon_button.dart`：新增 `kIconButtonTooltipHoverDelay = 500ms`，`_withTooltip` 显式传 `waitDuration`。气泡只对**真实的悬停意图**作出反应；移动端长按触发路径（`TooltipTriggerMode.longPress`）不看此值，行为不变。
   - `dictionary_popup_layer.dart`：`_buildZoomFontButton` 去掉重复嵌套的外层 `Tooltip`，把带 hint 的完整 message 直接交给 `HibikiIconButton.tooltip`，收成一层 —— 同时真正兑现 TODO-1353 的 Ctrl+滚轮提示。
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/popup_zoom_ctrl_wheel_test.dart`（group `BUG-1033：子弹窗落到光标下时 A−/A+ 不得立刻冒气泡`）
