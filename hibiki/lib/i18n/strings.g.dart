@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 39389 (2317 per locale)
+/// Strings: 39406 (2318 per locale)
 ///
-/// Built on 2026-07-23 at 12:58 UTC
+/// Built on 2026-07-23 at 17:11 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3091,6 +3091,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get pdf_bookmarks => 'Bookmarks';
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   String get pdf_bookmark_added => 'Bookmark added';
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -8345,6 +8346,8 @@ class _StringsAr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -13672,6 +13675,8 @@ class _StringsDe extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -19015,6 +19020,8 @@ class _StringsEs extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -24369,6 +24376,8 @@ class _StringsFr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -29650,6 +29659,8 @@ class _StringsId extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -34979,6 +34990,8 @@ class _StringsIt extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -40113,6 +40126,8 @@ class _StringsJa extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -45250,6 +45265,8 @@ class _StringsKo extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -50557,6 +50574,8 @@ class _StringsNl extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -55879,6 +55898,8 @@ class _StringsPtBr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -61184,6 +61205,8 @@ class _StringsRu extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -66434,6 +66457,8 @@ class _StringsTh extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -71716,6 +71741,8 @@ class _StringsTr extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -76985,6 +77012,8 @@ class _StringsVi extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 // Path: <root>
@@ -81883,6 +81912,8 @@ class _StringsZhCn extends _StringsEn {
   String get pdf_bookmarks_empty => '还没有书签。';
   @override
   String get pdf_bookmark_added => '已添加书签';
+  @override
+  String get external_window_current_game => '当前游戏';
 }
 
 // Path: <root>
@@ -86935,6 +86966,8 @@ class _StringsZhHk extends _StringsEn {
   String get pdf_bookmarks_empty => 'No bookmarks yet.';
   @override
   String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get external_window_current_game => 'Current game';
 }
 
 /// Flat map(s) containing all translations.
@@ -91665,6 +91698,8 @@ extension on _StringsEn {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -96393,6 +96428,8 @@ extension on _StringsAr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -101142,6 +101179,8 @@ extension on _StringsDe {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -105890,6 +105929,8 @@ extension on _StringsEs {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -110644,6 +110685,8 @@ extension on _StringsFr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -115380,6 +115423,8 @@ extension on _StringsId {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -120131,6 +120176,8 @@ extension on _StringsIt {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -124844,6 +124891,8 @@ extension on _StringsJa {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -129561,6 +129610,8 @@ extension on _StringsKo {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -134305,6 +134356,8 @@ extension on _StringsNl {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -139046,6 +139099,8 @@ extension on _StringsPtBr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -143792,6 +143847,8 @@ extension on _StringsRu {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -148522,6 +148579,8 @@ extension on _StringsTh {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -153261,6 +153320,8 @@ extension on _StringsTr {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -157995,6 +158056,8 @@ extension on _StringsVi {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }
@@ -162693,6 +162756,8 @@ extension on _StringsZhCn {
         return '还没有书签。';
       case 'pdf_bookmark_added':
         return '已添加书签';
+      case 'external_window_current_game':
+        return '当前游戏';
       default:
         return null;
     }
@@ -167401,6 +167466,8 @@ extension on _StringsZhHk {
         return 'No bookmarks yet.';
       case 'pdf_bookmark_added':
         return 'Bookmark added';
+      case 'external_window_current_game':
+        return 'Current game';
       default:
         return null;
     }

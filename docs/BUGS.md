@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1003 条。点号进各自文件。
+> 共 1005 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1042](bugs/BUG-1042-gal-hook-window-autobind-late.md) | ✅ | ✅ | 捕获目标没有自动选中 Hibiki 启动的游戏（窗口迟到即永久停在 window_not_found） |
+| [BUG-1041](bugs/BUG-1041-galgame-lookup-mouse-hook-lag.md) | ✅ | ✅ | galgame 查词后鼠标移动全局卡顿（WH_MOUSE_LL 装在 Flutter 主线程） |
 | [BUG-1036](bugs/BUG-1036-extension-connection-reopen-stale.md) | ✅ | ✅ | 浏览器扩展重开后连接检测误报 API 未开启 |
 | [BUG-1035](bugs/BUG-1035-glossary-first-ignores-selected-dict.md) | ✅ | ✅ | 长按选中词典对制卡无效：{glossary-first} 恒取第一本，Lapis 默认无字段消费 {selected-glossary} |
 | [BUG-1034](bugs/BUG-1034-subtitle-row-extent-clip.md) | ✅ | ✅ | 视频字幕列表当前行末行文字被裁掉一半 |
