@@ -822,9 +822,9 @@ int main(int argc, char** argv) {
     const uint64_t twc = header->text_write_count;
     const uint64_t cwc = header->clip_write_count;
     const uint64_t uwc = header->unity_voice_write_count;
-    printf("     [v10] text_hooked=%u luna_active=%u decdiag=0x%08x hookdiag=0x%08x text_events=%llu voice_clips=%llu unity_events=%llu",
+    printf("     [v10] text_hooked=%u luna_active=%u decdiag=0x%08x hookdiag=0x%08x hookio=0x%08x text_events=%llu voice_clips=%llu unity_events=%llu",
            text_hooked, header->luna_active, header->reserved_luna,
-           header->hook_diagnostics,
+           header->hook_diagnostics, header->reserved_hook_diagnostics,
            static_cast<unsigned long long>(twc),
            static_cast<unsigned long long>(cwc),
            static_cast<unsigned long long>(uwc));

@@ -17,6 +17,7 @@
 | `bgi_ethornell` | BGI / Ethornell | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | bgi_arc20_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `artemis_pfs` | Artemis Engine / PF8 | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | artemis_pf8_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `catsystem2` | CatSystem2 / KIF INT | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | catsystem2_unencrypted_kif_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
+| `malie_libp` | Malie System / LIBP CFI | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | malie_libp_cfi_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
 
 ## 识别与能力明细
@@ -391,6 +392,50 @@ Tests：—
 - Encrypted commercial KIF archives containing __key__.dat use title-specific Blowfish material and are deliberately rejected; no commercial-title resource-audio claim is made.
 - Only Ogg members in pcm_*.int are classified as voice; loose developer-mode files and non-Ogg voice formats fall back to source PCM or loopback.
 - Audio is verified for the official starter-kit replay, but stable automatic CatSystem2 text-thread selection remains unverified.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：—
+
+### Malie System / LIBP CFI (`malie_libp`)
+
+- 状态：`partial`
+- 别名：Malie、Malie System、LIBP、CFI
+- 家族：`malie`（Greenwood Malie runtime and title-keyed LIBP archives）
+- 当前 adapter：`hook/adapters/malie_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`ready_but_preloaded_voice_requires_restart`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：malie.exe、malie_dsp.exe、malie_fabla.exe；证据：real_sample — Steam app 644540 build 21665074, verified 2026-07-23
+- `pe_architectures`：x86；证据：real_sample — Official malie.exe PE/COFF i386, Malie System 1.0.0.5
+- `directory_files_all`：malie.exe、data2.dat；证据：real_sample — Official Steam free common-route installation
+- `pe_imports`：CreateFileA、CreateFileW、ReadFile、CreateFileMappingA、MapViewOfFile；证据：real_sample — malie.exe import table and live file-I/O diagnostics
+- `resource_extensions`：.dat、.ogg；证据：real_sample — data2.dat contains 20,434 CFI-encrypted data\voice\*.ogg members
+- `hashes`：malie.exe sha256:CFDAA598422245A36B2333F1E923C8E808412D0360C86EF83D914ADF4D6EA926、data2.dat sha256:D900B788306D1F7016FDAA592D3839E0E0845529435B1E8D73931E9D3F17AB39、GARbro 1.5.44 Formats.dat sha256:6AFB3BFD04FA1CD6D4616A1D36B21B8BE6E58B9FF475462A43D370EEAC4A37C3；证据：real_sample — Local SHA-256 of the official Steam sample and GARbro release database, 2026-07-23
+
+文本能力：
+
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — The resource-audio run disabled Luna; no stable Malie dialogue thread is claimed.
+- codepage：CP932 / localized build dependent
+- 线程提示：Select a complete-line Malie dialogue thread after enabling Luna on a supported title.
+
+音频优先级：
+
+1. `malie_libp_cfi_voice_resource` — `verified`；格式：complete decrypted Ogg member from title-scoped data2.dat；clean voice：是
+2. `directsound_pcm` — `verified`；格式：generic source PCM fallback；clean voice：engine_dependent
+3. `process_loopback` — `verified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+- **Dies irae ~Amantes amentes~ — free common route**（x86，Malie System 1.0.0.5; Steam build 21665074，2026-07-23）：Official free Steam release. Suspended direct launch captured v_ma2056.ogg (62,028 bytes, 44.1 kHz mono Vorbis, SHA-256 4FEFD3841D465BE76DBC41566E0BC26EDBA09F189EC533C213A450FA8A777FAD), exactly matching the corresponding GARbro-decrypted data\voice\ma\v_ma2056.ogg member at offset 737,280. SHA-256：CFDAA598422245A36B2333F1E923C8E808412D0360C86EF83D914ADF4D6EA926。
+
+已知限制：
+
+- CFI keys and rotation words are title/version specific. This implementation is deliberately limited to the measured non-HD Dies irae ~Amantes amentes~ scheme; HD, 4:3 patch, and other Malie titles require separate evidence.
+- Only data2.dat is classified as voice for the verified title. data1.dat BGM and data3.dat environment Ogg files are deliberately excluded.
+- Default Steam protocol attach can miss startup-prefetched resource reads. Clean capture is verified with explicit --force-direct-launch; titles that reject inherited AppID direct launch retain DirectSound/loopback fallback.
+- Audio is verified, but stable automatic Malie text-thread selection remains unverified.
 
 Fixtures：尚无（P5 补齐）
 

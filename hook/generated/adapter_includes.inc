@@ -3,3 +3,4 @@
 #include "../adapters/bgi_ethornell_adapter.inc"
 #include "../adapters/artemis_adapter.inc"
 #include "../adapters/catsystem2_adapter.inc"
+#include "../adapters/malie_adapter.inc"

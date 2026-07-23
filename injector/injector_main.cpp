@@ -1561,7 +1561,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               const std::vector<std::wstring>& extra_args,
               const std::wstring& dll_path, DWORD wait_ms, bool hold,
               bool follow_child_processes, bool japanese_locale,
-              const LunaOptions& luna) {
+              bool force_direct_launch, const LunaOptions& luna) {
   if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
     return Fail("目标 exe 不存在（--launch <exe路径>）");
   }
@@ -1605,7 +1605,8 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   // 即使临时设置 AppID 环境变量也可能触发客户端二次拉起，最终出现重复实例且 hook 留在
   // 已退出的首进程。Steam 游戏改走客户端协议，并自动按完整 exe 路径发现/注入真实进程。
   const std::wstring steam_app_id = DiscoverSteamAppId(exe);
-  if (hibiki_voice_hook::ChooseSteamLaunchStrategy(steam_app_id) ==
+  if (!force_direct_launch &&
+      hibiki_voice_hook::ChooseSteamLaunchStrategy(steam_app_id) ==
       hibiki_voice_hook::SteamLaunchStrategy::kSteamClient) {
     if (!extra_args.empty()) {
       fprintf(stderr,
@@ -1623,6 +1624,21 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   }
   const DWORD creation_flags =
       (delayed_siglus || follow_children) ? 0 : CREATE_SUSPENDED;
+  wchar_t previous_steam_app_id[64] = {0};
+  wchar_t previous_steam_game_id[64] = {0};
+  const DWORD previous_app_id_chars = GetEnvironmentVariableW(
+      L"SteamAppId", previous_steam_app_id,
+      static_cast<DWORD>(std::size(previous_steam_app_id)));
+  const DWORD previous_game_id_chars = GetEnvironmentVariableW(
+      L"SteamGameId", previous_steam_game_id,
+      static_cast<DWORD>(std::size(previous_steam_game_id)));
+  if (force_direct_launch && !steam_app_id.empty()) {
+    SetEnvironmentVariableW(L"SteamAppId", steam_app_id.c_str());
+    SetEnvironmentVariableW(L"SteamGameId", steam_app_id.c_str());
+    fprintf(stderr,
+            "[steam] forcing CREATE_SUSPENDED with inherited AppID=%ls\n",
+            steam_app_id.c_str());
+  }
   BOOL created = FALSE;
   bool locale_launched = false;
   if (japanese_locale) {
@@ -1639,6 +1655,14 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     created = CreateProcessW(
         exe.c_str(), cmd_buf.data(), nullptr, nullptr, FALSE, creation_flags,
         nullptr, workdir.empty() ? nullptr : workdir.c_str(), &si, &pi);
+  }
+  if (force_direct_launch && !steam_app_id.empty()) {
+    SetEnvironmentVariableW(
+        L"SteamAppId",
+        previous_app_id_chars > 0 ? previous_steam_app_id : nullptr);
+    SetEnvironmentVariableW(
+        L"SteamGameId",
+        previous_game_id_chars > 0 ? previous_steam_game_id : nullptr);
   }
   if (!created) {
     fprintf(stderr, "CreateProcessW failed: %lu\n", GetLastError());
@@ -1738,6 +1762,7 @@ int main() {
   DWORD wait_ms = 5000;
   bool hold = false;
   bool follow_child_processes = false;
+  bool force_direct_launch = false;
   LunaOptions luna;
 
   if (argv != nullptr) {
@@ -1761,6 +1786,8 @@ int main() {
         hold = true;
       } else if (a == L"--follow-child-processes") {
         follow_child_processes = true;
+      } else if (a == L"--force-direct-launch") {
+        force_direct_launch = true;
       } else if (a == L"--no-luna") {
         luna.enabled = false;
       } else if (a == L"--luna-pchooks") {
@@ -1784,7 +1811,7 @@ int main() {
         "   or: hibiki_voice_injector --launch <exe> [--workdir <dir>] "
         "[--japanese-locale] "
         "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold] "
-        "[--follow-child-processes]\n"
+        "[--follow-child-processes] [--force-direct-launch]\n"
         "LunaHook(host 侧全引擎文本 hook，仅 --hold 生效): [--no-luna] "
         "[--luna-pchooks] [--luna-codepage <cp=932>] "
         "[--luna-hook-code <H-code>]... [--luna-hook-profile <profiles.tsv>]");
@@ -1800,7 +1827,8 @@ int main() {
   // launch 模式：CREATE_SUSPENDED 早注入。
   if (!launch_exe.empty()) {
     return RunLaunch(launch_exe, workdir, launch_args, dll_path, wait_ms, hold,
-                     follow_child_processes, japanese_locale, luna);
+                     follow_child_processes, japanese_locale,
+                     force_direct_launch, luna);
   }
 
   // attach 模式：注入已运行进程（老路径行为不变）。

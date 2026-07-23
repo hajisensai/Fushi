@@ -90,6 +90,17 @@ constexpr uint32_t kDiagArtemisPfsHooksReady = 0x04000000u;
 constexpr uint32_t kDiagArtemisPfsVoiceCaptured = 0x08000000u;
 constexpr uint32_t kDiagCatSystem2PcmHooksReady = 0x10000000u;
 constexpr uint32_t kDiagCatSystem2PcmVoiceCaptured = 0x20000000u;
+constexpr uint32_t kDiagMalieLibpHooksReady = 0x40000000u;
+constexpr uint32_t kDiagMalieLibpVoiceCaptured = 0x80000000u;
+
+// reserved_hook_diagnostics is a secondary engine-I/O trace word. Malie uses
+// it to distinguish handle discovery, async reads, and mapped views without
+// consuming the saturated primary hook_diagnostics bitset.
+constexpr uint32_t kDiagMalieArchiveHandleTracked = 0x00000001u;
+constexpr uint32_t kDiagMalieReadRangeObserved = 0x00000002u;
+constexpr uint32_t kDiagMalieMappingTracked = 0x00000004u;
+constexpr uint32_t kDiagMalieMappedRangeObserved = 0x00000008u;
+constexpr uint32_t kDiagMalieVoiceRangeQueued = 0x00000010u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -111,6 +122,7 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
          (hook_diagnostics & kDiagBgiArcHooksReady) != 0 ||
          (hook_diagnostics & kDiagArtemisPfsHooksReady) != 0 ||
          (hook_diagnostics & kDiagCatSystem2PcmHooksReady) != 0 ||
+         (hook_diagnostics & kDiagMalieLibpHooksReady) != 0 ||
          (hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0 || unity_ready;
 }
 

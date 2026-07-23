@@ -30,6 +30,9 @@ volatile LONG g_visual_arts_ovk_seen = 0;
 
 decltype(&CreateFileW) g_orig_CreateFileW = nullptr;
 decltype(&CreateFileA) g_orig_CreateFileA = nullptr;
+decltype(&CreateFileMappingW) g_orig_CreateFileMappingW = nullptr;
+decltype(&CreateFileMappingA) g_orig_CreateFileMappingA = nullptr;
+decltype(&MapViewOfFile) g_orig_MapViewOfFile = nullptr;
 decltype(&ReadFile) g_orig_ReadFile = nullptr;
 decltype(&CloseHandle) g_orig_CloseHandle = nullptr;
 
@@ -53,6 +56,14 @@ void RememberCatSystem2Pcm(HANDLE handle, const wchar_t* path);
 void ObserveCatSystem2PcmRead(HANDLE file, DWORD done,
                              LPOVERLAPPED overlapped);
 void ForgetCatSystem2Pcm(HANDLE handle);
+void RememberMalieArchive(HANDLE handle, const wchar_t* path);
+void ObserveMalieArchiveReadRequest(HANDLE file, DWORD requested,
+                                    LPOVERLAPPED overlapped);
+void ObserveMalieArchiveRead(HANDLE file, DWORD done, LPOVERLAPPED overlapped);
+void RememberMalieMapping(HANDLE mapping, HANDLE file);
+void ObserveMalieMappedRange(HANDLE mapping, uint64_t offset, SIZE_T bytes);
+void ForgetMalieMapping(HANDLE handle);
+void ForgetMalieArchive(HANDLE handle);
 
 bool HasOvkSuffix(const wchar_t* path) {
   if (path == nullptr) return false;
@@ -160,6 +171,7 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   if (result != INVALID_HANDLE_VALUE) RememberBgiVoiceArc(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberArtemisPfs(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberCatSystem2Pcm(result, file_name);
+  if (result != INVALID_HANDLE_VALUE) RememberMalieArchive(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
@@ -188,8 +200,40 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
       RememberBgiVoiceArc(result, wide);
       RememberArtemisPfs(result, wide);
       RememberCatSystem2Pcm(result, wide);
+      RememberMalieArchive(result, wide);
       RememberUnityVoiceBundle(wide);
     }
+  }
+  return result;
+}
+
+HANDLE WINAPI Detour_CreateFileMappingW(
+    HANDLE file, LPSECURITY_ATTRIBUTES attributes, DWORD protect,
+    DWORD maximum_size_high, DWORD maximum_size_low, LPCWSTR name) {
+  HANDLE result = g_orig_CreateFileMappingW(
+      file, attributes, protect, maximum_size_high, maximum_size_low, name);
+  if (result != nullptr) RememberMalieMapping(result, file);
+  return result;
+}
+
+HANDLE WINAPI Detour_CreateFileMappingA(
+    HANDLE file, LPSECURITY_ATTRIBUTES attributes, DWORD protect,
+    DWORD maximum_size_high, DWORD maximum_size_low, LPCSTR name) {
+  HANDLE result = g_orig_CreateFileMappingA(
+      file, attributes, protect, maximum_size_high, maximum_size_low, name);
+  if (result != nullptr) RememberMalieMapping(result, file);
+  return result;
+}
+
+LPVOID WINAPI Detour_MapViewOfFile(HANDLE mapping, DWORD desired_access,
+                                   DWORD offset_high, DWORD offset_low,
+                                   SIZE_T bytes) {
+  LPVOID result = g_orig_MapViewOfFile(mapping, desired_access, offset_high,
+                                       offset_low, bytes);
+  if (result != nullptr && bytes != 0) {
+    const uint64_t offset = (static_cast<uint64_t>(offset_high) << 32) |
+                            static_cast<uint64_t>(offset_low);
+    ObserveMalieMappedRange(mapping, offset, bytes);
   }
   return result;
 }
@@ -214,6 +258,7 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
                             LPDWORD bytes_read, LPOVERLAPPED overlapped) {
   if (g_capture_enabled && overlapped != nullptr && requested > 0) {
     ObserveTyranoAsarReadRequest(file, requested, overlapped);
+    ObserveMalieArchiveReadRequest(file, requested, overlapped);
   }
   const BOOL ok =
       g_orig_ReadFile(file, buffer, requested, bytes_read, overlapped);
@@ -223,6 +268,7 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   ObserveBgiVoiceArcRead(file, buffer, done, overlapped);
   ObserveArtemisPfsRead(file, done, overlapped);
   ObserveCatSystem2PcmRead(file, done, overlapped);
+  ObserveMalieArchiveRead(file, done, overlapped);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) == 0) return ok;
 
   wchar_t path[kSiglusPathChars] = {0};
@@ -255,6 +301,8 @@ BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
   ForgetBgiVoiceArc(handle);
   ForgetArtemisPfs(handle);
   ForgetCatSystem2Pcm(handle);
+  ForgetMalieArchive(handle);
+  ForgetMalieMapping(handle);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) != 0) {
     ForgetSiglusOvk(handle);
   }
@@ -363,6 +411,13 @@ bool TryHookSiglusOvk() {
   HMODULE kernel = GetModuleHandleW(L"KernelBase.dll");
   if (kernel == nullptr) kernel = GetModuleHandleW(L"kernel32.dll");
   if (kernel == nullptr) return false;
+  HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+  void* create_mapping_a_target =
+      reinterpret_cast<void*>(GetProcAddress(kernel, "CreateFileMappingA"));
+  if (create_mapping_a_target == nullptr && kernel32 != nullptr) {
+    create_mapping_a_target = reinterpret_cast<void*>(
+        GetProcAddress(kernel32, "CreateFileMappingA"));
+  }
   const bool create_w = HookFn(
       reinterpret_cast<void*>(GetProcAddress(kernel, "CreateFileW")),
       reinterpret_cast<void*>(&Detour_CreateFileW),
@@ -371,6 +426,18 @@ bool TryHookSiglusOvk() {
       reinterpret_cast<void*>(GetProcAddress(kernel, "CreateFileA")),
       reinterpret_cast<void*>(&Detour_CreateFileA),
       reinterpret_cast<void**>(&g_orig_CreateFileA));
+  const bool mapping_w = HookFn(
+      reinterpret_cast<void*>(GetProcAddress(kernel, "CreateFileMappingW")),
+      reinterpret_cast<void*>(&Detour_CreateFileMappingW),
+      reinterpret_cast<void**>(&g_orig_CreateFileMappingW));
+  const bool mapping_a = HookFn(
+      create_mapping_a_target,
+      reinterpret_cast<void*>(&Detour_CreateFileMappingA),
+      reinterpret_cast<void**>(&g_orig_CreateFileMappingA));
+  const bool map_view = HookFn(
+      reinterpret_cast<void*>(GetProcAddress(kernel, "MapViewOfFile")),
+      reinterpret_cast<void*>(&Detour_MapViewOfFile),
+      reinterpret_cast<void**>(&g_orig_MapViewOfFile));
   const bool read = HookFn(
       reinterpret_cast<void*>(GetProcAddress(kernel, "ReadFile")),
       reinterpret_cast<void*>(&Detour_ReadFile),
@@ -379,7 +446,13 @@ bool TryHookSiglusOvk() {
       reinterpret_cast<void*>(GetProcAddress(kernel, "CloseHandle")),
       reinterpret_cast<void*>(&Detour_CloseHandle),
       reinterpret_cast<void**>(&g_orig_CloseHandle));
+  // ReadFile is the verified Malie path. Mapping hooks are best-effort for
+  // variants that map bounded archive windows; they must not make the shared
+  // file-hook boundary unavailable on systems without the ANSI wrapper.
   const bool ready = create_w && create_a && read && close;
+  (void)mapping_w;
+  (void)mapping_a;
+  (void)map_view;
   if (ready && siglus && g_header != nullptr) {
     g_header->reserved_luna |= kDiagSiglusOvkHooksReady;
   }

@@ -3,3 +3,4 @@
     bgi_ethornell_.shutdown();
     artemis_pfs_.shutdown();
     catsystem2_.shutdown();
+    malie_libp_.shutdown();

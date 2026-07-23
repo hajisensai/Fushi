@@ -327,6 +327,7 @@ class AdapterRegistry {
     bgi_ethornell_.install();
     artemis_pfs_.install();
     catsystem2_.install();
+    malie_libp_.install();
     if (g_header != nullptr) {
       g_header->hook_diagnostics |= kDiagStartupAudioHooksReady;
     }
@@ -348,6 +349,7 @@ class AdapterRegistry {
     bgi_ethornell_.ProcessPendingEvents();
     artemis_pfs_.ProcessPendingEvents();
     catsystem2_.ProcessPendingEvents();
+    malie_libp_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.

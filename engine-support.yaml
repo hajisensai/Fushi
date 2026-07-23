@@ -973,6 +973,133 @@
       "test_paths": []
     },
     {
+      "id": "malie_libp",
+      "display_name": "Malie System / LIBP CFI",
+      "aliases": ["Malie", "Malie System", "LIBP", "CFI"],
+      "family": {
+        "id": "malie",
+        "relation": "Greenwood Malie runtime and title-keyed LIBP archives"
+      },
+      "detection": {
+        "executable_names": {
+          "values": ["malie.exe", "malie_dsp.exe", "malie_fabla.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Steam app 644540 build 21665074, verified 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official malie.exe PE/COFF i386, Malie System 1.0.0.5"
+          }
+        },
+        "directory_files_all": {
+          "values": ["malie.exe", "data2.dat"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official Steam free common-route installation"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "CreateFileA",
+            "CreateFileW",
+            "ReadFile",
+            "CreateFileMappingA",
+            "MapViewOfFile"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "malie.exe import table and live file-I/O diagnostics"
+          }
+        },
+        "runtime_modules": {"values": [], "evidence": null},
+        "resource_extensions": {
+          "values": [".dat", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "data2.dat contains 20,434 CFI-encrypted data\\voice\\*.ogg members"
+          }
+        },
+        "hashes": {
+          "values": [
+            "malie.exe sha256:CFDAA598422245A36B2333F1E923C8E808412D0360C86EF83D914ADF4D6EA926",
+            "data2.dat sha256:D900B788306D1F7016FDAA592D3839E0E0845529435B1E8D73931E9D3F17AB39",
+            "GARbro 1.5.44 Formats.dat sha256:6AFB3BFD04FA1CD6D4616A1D36B21B8BE6E58B9FF475462A43D370EEAC4A37C3"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the official Steam sample and GARbro release database, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "ready_but_preloaded_voice_requires_restart",
+        "follow_child_processes": false,
+        "notes": [
+          "Steam protocol launch can expose the process after Malie has already opened and prefetched data2.dat. The verified run used the explicit --force-direct-launch option, which inherits SteamAppId/SteamGameId only into a CREATE_SUSPENDED child and preserves the default Steam strategy otherwise.",
+          "LIBP index parsing and CFI decryption run on HookWorker. ReadFile and mapped-file callbacks only resolve bounded handle metadata, match immutable ranges, and enqueue fixed-size tasks.",
+          "The verified run set hookdiag 0xC0000001 and hookio 0x00000013: startup hooks ready, Malie ready, archive handle tracked, read range observed, voice range queued, and clean voice captured."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "The resource-audio run disabled Luna; no stable Malie dialogue thread is claimed."
+          }
+        ],
+        "codepage": "CP932 / localized build dependent",
+        "thread_selection_hint": "Select a complete-line Malie dialogue thread after enabling Luna on a supported title."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "malie_libp_cfi_voice_resource",
+            "format": "complete decrypted Ogg member from title-scoped data2.dat",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic source PCM fallback",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "Dies irae ~Amantes amentes~ — free common route",
+          "engine_version": "Malie System 1.0.0.5; Steam build 21665074",
+          "architecture": "x86",
+          "executable_sha256": "CFDAA598422245A36B2333F1E923C8E808412D0360C86EF83D914ADF4D6EA926",
+          "verified_on": "2026-07-23",
+          "evidence": "Official free Steam release. Suspended direct launch captured v_ma2056.ogg (62,028 bytes, 44.1 kHz mono Vorbis, SHA-256 4FEFD3841D465BE76DBC41566E0BC26EDBA09F189EC533C213A450FA8A777FAD), exactly matching the corresponding GARbro-decrypted data\\voice\\ma\\v_ma2056.ogg member at offset 737,280."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "CFI keys and rotation words are title/version specific. This implementation is deliberately limited to the measured non-HD Dies irae ~Amantes amentes~ scheme; HD, 4:3 patch, and other Malie titles require separate evidence.",
+        "Only data2.dat is classified as voice for the verified title. data1.dat BGM and data3.dat environment Ogg files are deliberately excluded.",
+        "Default Steam protocol attach can miss startup-prefetched resource reads. Clean capture is verified with explicit --force-direct-launch; titles that reject inherited AppID direct launch retain DirectSound/loopback fallback.",
+        "Audio is verified, but stable automatic Malie text-thread selection remains unverified."
+      ],
+      "adapter_path": "hook/adapters/malie_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
       "id": "unity_il2cpp",
       "display_name": "Unity IL2CPP",
       "aliases": ["Unity", "UnityPlayer IL2CPP"],
