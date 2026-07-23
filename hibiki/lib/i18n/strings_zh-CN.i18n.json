@@ -2315,5 +2315,7 @@
   "pdf_outline_empty": "此 PDF 没有目录。",
   "pdf_bookmarks": "书签",
   "pdf_bookmarks_empty": "还没有书签。",
-  "pdf_bookmark_added": "已添加书签"
+  "pdf_bookmark_added": "已添加书签",
+  "game_line_preview_tooltip": "播放这句音频",
+  "game_line_preview_failed": "这句还没有可播放的音频"
 }
