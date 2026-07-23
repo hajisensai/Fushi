@@ -101,7 +101,9 @@ void main() {
       'SettingsDestination buildSyncBackupDestination',
       'SettingsDestinationId.syncBackup',
       'sync.sync_now',
-      'runManualFullSync',
+      // 手动同步的实现搬去了 lib/src/sync/manual_sync_ui.dart（媒体页下拉同步共用
+      // 同一入口），设置页这一行现在接的是那个共享入口。
+      'runManualSyncWithFeedback',
     ],
     // schema 行的自适应组件收口在共享 settings_schema_widgets（见下条），两个渲染器
     // 只保留各自平台外壳并复用共享 SettingsSchemaSection。
