@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/painting.dart' show FileImage;
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
@@ -262,6 +263,9 @@ Future<String?> generateGalgameAutoCover({
     await dir.create(recursive: true);
     final String out = p.join(dir.path, galgameAutoCoverName(entryId));
     await File(out).writeAsBytes(png, flush: true);
+    // 同路径覆盖写后必须 evict：Image.file 按路径缓存，不清会一直显示旧图
+    //（恢复默认封面重新提取时命中）。
+    await FileImage(File(out)).evict();
     return out;
   } catch (_) {
     return null;
@@ -292,6 +296,8 @@ Future<String?> importGalgameCustomCover({
     }
     final String out = p.join(dir.path, galgameCustomCoverName(entryId, ext));
     await File(sourcePath).copy(out);
+    // 同扩展名换图落在同一路径：evict 掉 ImageCache 里的旧封面。
+    await FileImage(File(out)).evict();
     return out;
   } catch (_) {
     return null;

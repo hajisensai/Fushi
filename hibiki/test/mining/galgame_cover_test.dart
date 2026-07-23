@@ -115,7 +115,7 @@ Uint8List _buildTestPe(List<_TestIcon> icons) {
   // root(16+2*8) → iconNames(16+n*8) → groupNames(16+8) → n 个 iconLang(24)
   // → groupLang(24) → n 个 iconDataEntry(16) → groupDataEntry(16) → 载荷。
   const int rootOff = 0;
-  final int iconNamesOff = rootOff + 16 + 2 * 8;
+  const int iconNamesOff = rootOff + 16 + 2 * 8;
   final int groupNamesOff = iconNamesOff + 16 + n * 8;
   final int iconLangOff0 = groupNamesOff + 16 + 8;
   final int groupLangOff = iconLangOff0 + n * 24;
@@ -228,7 +228,7 @@ Uint8List _buildTestPe(List<_TestIcon> icons) {
     fu32(optOff + 96 + 2 * 8, rsrcVa); // 资源目录 RVA
     fu32(optOff + 96 + 2 * 8 + 4, rsrcSize);
   }
-  final int secOff = optOff + optSize;
+  const int secOff = optOff + optSize;
   fu32(secOff + 8, rsrcSize); // VirtualSize
   fu32(secOff + 12, rsrcVa); // VirtualAddress
   fu32(secOff + 16, rsrcSize); // SizeOfRawData
