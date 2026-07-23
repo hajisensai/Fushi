@@ -364,6 +364,66 @@ abstract class BaseAnkiRepository {
     return fields;
   }
 
+  /// 用已备好的媒体引用把 [payload] + [context] 组装成最终渲染结果。
+  ///
+  /// 两 backend 的差异只在「媒体引用怎么准备」（AnkiConnect 远程上传后内联
+  /// `<img>` / `[sound:]`；AnkiDroid 平台通道写入返回已格式化引用）；引用备好
+  /// 之后的 payload 字段透传 + [buildMinedFields] 渲染 + 打包完全一致，收敛在
+  /// 这里，杜绝两份 16 字段透传漂移。
+  ///
+  /// [coverRef] / [sasayakiRef] / [processedAudio] 均须是**已格式化**的最终
+  /// 引用（`<img src>` / `[sound:]`；无则 null / 空串）。
+  @protected
+  RenderedMinedFields renderMediaPayload({
+    required AnkiSettings settings,
+    required AnkiMiningPayload payload,
+    required AnkiMiningContext context,
+    required String? coverRef,
+    required String? sasayakiRef,
+    required String processedAudio,
+    required Map<String, String> dictionaryMediaTags,
+    String? audioWarning,
+    bool keepEmpty = false,
+  }) {
+    final mediaContext = AnkiMiningContext(
+      sentence: context.sentence,
+      cueSentence: context.cueSentence,
+      documentTitle: context.documentTitle,
+      coverPath: coverRef,
+      sasayakiAudioPath: sasayakiRef,
+      sentenceOffset: context.sentenceOffset,
+    );
+
+    final mediaPayload = AnkiMiningPayload(
+      expression: payload.expression,
+      reading: payload.reading,
+      matched: payload.matched,
+      furiganaPlain: payload.furiganaPlain,
+      frequenciesHtml: payload.frequenciesHtml,
+      freqHarmonicRank: payload.freqHarmonicRank,
+      glossary: payload.glossary,
+      glossaryFirst: payload.glossaryFirst,
+      singleGlossaries: payload.singleGlossaries,
+      pitchPositions: payload.pitchPositions,
+      pitchCategories: payload.pitchCategories,
+      popupSelectionText: payload.popupSelectionText,
+      audio: processedAudio,
+      selectedDictionary: payload.selectedDictionary,
+      dictionaryMedia: payload.dictionaryMedia,
+    );
+
+    return RenderedMinedFields(
+      buildMinedFields(
+        fieldMappings: settings.fieldMappings,
+        payload: mediaPayload,
+        context: mediaContext,
+        dictionaryMediaTags: dictionaryMediaTags,
+        keepEmpty: keepEmpty,
+      ),
+      audioWarning: audioWarning,
+    );
+  }
+
   // ── 远程单词音频失败原因（TODO-779）：两 backend 共用，杜绝两份文案漂移 ──────────
 
   /// 把单词远程音频的**非 200 HTTP 响应**格式化成给用户看的简短失败原因
