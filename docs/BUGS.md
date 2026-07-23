@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 990 条。点号进各自文件。
+> 共 991 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1024](bugs/BUG-1024-popup-zoom-tooltip-misfire.md) | 🚧 | 🚧 | 嵌套查词弹出时 A- 的「缩小查词字号」tooltip 自动弹出遮挡正文 |
 | [BUG-1023](bugs/BUG-1023-drive-transient-408-not-retried.md) | ✅ | ✅ | Google Drive 瞬时故障(408/429/5xx)被判非重试整本skip |
 | [BUG-1022](bugs/BUG-1022-galgame-helper-dialog-latency-and-restack.md) | ✅ | ✅ | galgame 引擎组件下载确认弹窗点击不立即出现且多次点击叠出多个弹窗 |
 | [BUG-1021](bugs/BUG-1021-galgame-cardimage-alias-false-warning.md) | ✅ | ✅ | galgame 场景制卡误报缺少 {card-image}（旧别名瞎眼） |
