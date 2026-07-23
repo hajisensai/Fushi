@@ -412,7 +412,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       case AnkiAudioRefKind.remoteUrl:
         return _AnkiMobileAudioField(audio);
       case AnkiAudioRefKind.dataUri:
-        // BUG-1043：查词弹窗把本地音频库命中的单词发音编码成 `data:` URI 塞进
+        // BUG-1045：查词弹窗把本地音频库命中的单词发音编码成 `data:` URI 塞进
         // fields['audio']。解码内联字节写临时文件，经本地媒体服务器（addFile 复制
         // 快照）转成 AnkiMobile 可取的 URL，与 localFile 走同一入库通道。
         final data = AnkiAudioRef.decodeDataUri(audio);

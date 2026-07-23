@@ -114,7 +114,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
         wordAudioBytes = await _readPath(localPath);
         wordAudioExt = _extOf(localPath);
       } else if (audioKind == AnkiAudioRefKind.dataUri) {
-        // BUG-1043：`data:` 内联单词发音（本地音频库命中）——解码成字节转发给主机，
+        // BUG-1045：`data:` 内联单词发音（本地音频库命中）——解码成字节转发给主机，
         // 否则互联「制卡到服务端」丢单词音频（与本地落卡同一根因）。
         final AnkiAudioData? data = AnkiAudioRef.decodeDataUri(parsed.audio);
         if (data != null) {
