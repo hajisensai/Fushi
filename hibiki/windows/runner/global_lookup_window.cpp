@@ -4,6 +4,7 @@
 #include <shlwapi.h>
 #include <windowsx.h>  // GET_X_LPARAM / GET_KEYSTATE_WPARAM（composition 鼠标转发）
 
+#include "low_level_mouse_hook.h"
 #include "resource.h"
 
 #include <cmath>
@@ -184,33 +185,22 @@ void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
   }
 }
 
-LRESULT CALLBACK GlobalLookupWindow::MouseHookProc(int code, WPARAM wparam,
-                                                   LPARAM lparam) {
-  if (code >= 0 &&
-      (wparam == WM_LBUTTONDOWN || wparam == WM_RBUTTONDOWN ||
-       wparam == WM_NCLBUTTONDOWN)) {
-    GlobalLookupWindow* self = s_hook_owner_;
-    if (self != nullptr && self->IsShowing() && self->hwnd_ != nullptr) {
-      const MSLLHOOKSTRUCT* info =
-          reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
-      RECT rc;
-      GetWindowRect(self->hwnd_, &rc);
-      // TODO-867 P3c C4/E2 — the window is now the whole nested-stack bounding
-      // box (E1): the transparent area BETWEEN cards is inside the HWND rect, so
-      // a coarse "PtInRect -> Hide" would wrongly close on a click in that gap.
-      // Split the decision: a click OUTSIDE the whole window rect dismisses the
-      // overlay (clicked another app); a click INSIDE the window is forwarded to
-      // the web host, which owns the per-shell geometry truth and decides whether
-      // to keep (hit a card) or dismiss the root (gap between cards). C++ only
-      // feeds coordinates; the host hit-tests (no shell geometry duplicated here).
-      if (!PtInRect(&rc, info->pt)) {
-        self->Hide();  // Click outside the whole stack window -> dismiss.
-      } else {
-        self->ForwardGlobalClickToHost(info->pt.x, info->pt.y);
-      }
-    }
+void GlobalLookupWindow::HandleGlobalClick(POINT screen_pt,
+                                           bool inside_window) {
+  if (!IsShowing()) return;
+  // TODO-867 P3c C4/E2 — the window is now the whole nested-stack bounding
+  // box (E1): the transparent area BETWEEN cards is inside the HWND rect, so
+  // a coarse "PtInRect -> Hide" would wrongly close on a click in that gap.
+  // Split the decision: a click OUTSIDE the whole window rect dismisses the
+  // overlay (clicked another app); a click INSIDE the window is forwarded to
+  // the web host, which owns the per-shell geometry truth and decides whether
+  // to keep (hit a card) or dismiss the root (gap between cards). C++ only
+  // feeds coordinates; the host hit-tests (no shell geometry duplicated here).
+  if (!inside_window) {
+    Hide();  // Click outside the whole stack window -> dismiss.
+  } else {
+    ForwardGlobalClickToHost(screen_pt.x, screen_pt.y);
   }
-  return CallNextHookEx(nullptr, code, wparam, lparam);
 }
 
 GlobalLookupWindow::GlobalLookupWindow() = default;
@@ -220,9 +210,9 @@ GlobalLookupWindow::~GlobalLookupWindow() {
     UnhookWinEvent(foreground_hook_);
     foreground_hook_ = nullptr;
   }
-  if (mouse_hook_ != nullptr) {
-    UnhookWindowsHookEx(mouse_hook_);
-    mouse_hook_ = nullptr;
+  if (mouse_hook_armed_) {
+    hibiki::DisarmLowLevelMouseHook();
+    mouse_hook_armed_ = false;
   }
   // Only clear the hook owner if it is ours (two instances share the static;
   // see Hide()).
@@ -452,11 +442,10 @@ void GlobalLookupWindow::Reveal(int width, int height) {
           &GlobalLookupWindow::ForegroundHookProc, 0, 0,
           WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
     }
-    if (mouse_hook_ == nullptr) {
-      mouse_hook_ = SetWindowsHookEx(WH_MOUSE_LL,
-                                     &GlobalLookupWindow::MouseHookProc,
-                                     GetModuleHandle(nullptr), 0);
-    }
+    // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
+    // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
+    hibiki::ArmLowLevelMouseHook(hwnd_);
+    mouse_hook_armed_ = true;
   }
 }
 
@@ -533,11 +522,10 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
           &GlobalLookupWindow::ForegroundHookProc, 0, 0,
           WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
     }
-    if (mouse_hook_ == nullptr) {
-      mouse_hook_ = SetWindowsHookEx(WH_MOUSE_LL,
-                                     &GlobalLookupWindow::MouseHookProc,
-                                     GetModuleHandle(nullptr), 0);
-    }
+    // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
+    // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
+    hibiki::ArmLowLevelMouseHook(hwnd_);
+    mouse_hook_armed_ = true;
   }
 }
 
@@ -753,9 +741,9 @@ void GlobalLookupWindow::Hide(bool notify) {
     UnhookWinEvent(foreground_hook_);
     foreground_hook_ = nullptr;
   }
-  if (mouse_hook_ != nullptr) {
-    UnhookWindowsHookEx(mouse_hook_);
-    mouse_hook_ = nullptr;
+  if (mouse_hook_armed_) {
+    hibiki::DisarmLowLevelMouseHook();
+    mouse_hook_armed_ = false;
   }
   // spec 2026-07-10 — only clear the hook owner if it is OURS: the persistent
   // clipboard panel never arms the hooks, and its Hide() must not disarm the
@@ -1758,6 +1746,12 @@ void GlobalLookupWindow::ForwardGlobalClickToHost(int screen_x, int screen_y) {
 LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
                                           LPARAM lparam) {
   switch (message) {
+    case hibiki::kLowLevelMouseClickMessage:
+      // BUG-1048 — 钩子线程投递的全局点击（wparam 打包屏幕物理坐标，lparam=是否
+      // 落在本窗口 rect 内）。真正的决策（关闭 / 转发给 host）在这里做，钩子线程
+      // 只搬坐标：那条线程必须随时能返回，否则整个系统的鼠标输入都跟着它排队。
+      HandleGlobalClick(hibiki::UnpackMouseHookPoint(wparam), lparam != 0);
+      return 0;
     case WM_SIZE:
       if (controller_) {
         RECT rc;

@@ -192,24 +192,36 @@ void main() {
     });
 
     test(
-        'C4/E2: MouseHookProc no longer unconditionally hides; forwards inside',
-        () {
-      // The old coarse "PtInRect outside -> Hide" is replaced: outside the whole
-      // window -> Hide; inside -> ForwardGlobalClickToHost (the host owns the
-      // per-shell hit-test). Lock that the forward path exists and the hook is
-      // not a bare always-hide anymore.
+        'C4/E2: the window-thread click handler no longer unconditionally '
+        'hides; forwards inside', () {
+      // BUG-1048: the WH_MOUSE_LL hook moved OFF the window class onto a
+      // dedicated GetMessage thread (low_level_mouse_hook.cpp) so a busy Flutter
+      // main thread can no longer stall global mouse input. The hook thread only
+      // PostMessages the click; the inside/outside decision now lives in
+      // GlobalLookupWindow::HandleGlobalClick on the window thread. The C4/E2
+      // contract is unchanged: outside the whole window -> Hide; inside ->
+      // ForwardGlobalClickToHost (the host owns the per-shell hit-test). Lock
+      // that the forward path exists and the handler is not a bare always-hide.
       expect(cpp.contains('ForwardGlobalClickToHost'), isTrue,
           reason: 'a click inside the stack window is forwarded to the host');
       expect(cpp.contains('handleGlobalClick('), isTrue,
           reason: 'C++ calls the host hit-test entry via ExecuteScript');
-      // The MouseHookProc body must reach the forward branch (else-of PtInRect),
-      // i.e. it is no longer "PtInRect -> Hide" with nothing else.
-      final int hookAt = cpp.indexOf('GlobalLookupWindow::MouseHookProc');
-      expect(hookAt, greaterThan(-1));
-      final String hookBody =
-          cpp.substring(hookAt, cpp.indexOf('CallNextHookEx', hookAt));
+      // The handler body must reach the forward branch (else-of inside_window),
+      // i.e. it is no longer "outside -> Hide" with nothing else.
+      final int hookAt =
+          cpp.indexOf('void GlobalLookupWindow::HandleGlobalClick');
+      expect(hookAt, greaterThan(-1),
+          reason: 'the window-thread click handler must exist (BUG-1048 moved '
+              'the raw hook to a dedicated thread)');
+      final int hookEnd =
+          cpp.indexOf('GlobalLookupWindow::GlobalLookupWindow', hookAt);
+      expect(hookEnd, greaterThan(hookAt));
+      final String hookBody = cpp.substring(hookAt, hookEnd);
       expect(hookBody.contains('ForwardGlobalClickToHost'), isTrue,
-          reason: 'the hook forwards an in-window click instead of hiding it');
+          reason:
+              'the handler forwards an in-window click instead of hiding it');
+      expect(hookBody.contains('Hide()'), isTrue,
+          reason: 'a click outside the whole window still dismisses (Hide)');
     });
 
     test('D2/E1: host reports a union bbox; Dart reveals the window to it', () {

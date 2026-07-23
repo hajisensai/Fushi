@@ -2332,5 +2332,6 @@
   "interconnect_backup_backend_apply": "设为备份后端",
   "interconnect_backup_backend_active": "备份已写到已配对设备。要换回云盘，去「同步与备份」里改后端。",
   "interconnect_backup_backend_needs_pairing": "请先在上面连接一台设备。",
-  "interconnect_backup_backend_current": "当前备份后端：$backend"
+  "interconnect_backup_backend_current": "当前备份后端：$backend",
+  "external_window_current_game": "当前游戏"
 }

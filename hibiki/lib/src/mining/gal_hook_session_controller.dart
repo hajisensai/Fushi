@@ -230,6 +230,7 @@ class GalHookSessionController extends ChangeNotifier {
     Duration resourceAudioWait = const Duration(milliseconds: 1200),
     Duration resourceAudioPollInterval = const Duration(milliseconds: 80),
     int windowPollAttempts = 20,
+    Duration windowRebindInterval = const Duration(seconds: 2),
     Duration trackRefreshInterval = const Duration(seconds: 5),
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
@@ -252,6 +253,7 @@ class GalHookSessionController extends ChangeNotifier {
         _resourceAudioWait = resourceAudioWait,
         _resourceAudioPollInterval = resourceAudioPollInterval,
         _windowPollAttempts = windowPollAttempts,
+        _windowRebindInterval = windowRebindInterval,
         _trackRefreshInterval = trackRefreshInterval,
         _endpointListenable =
             endpointListenable ?? TexthookerWsClientManager.instance,
@@ -284,6 +286,7 @@ class GalHookSessionController extends ChangeNotifier {
   final Duration _resourceAudioWait;
   final Duration _resourceAudioPollInterval;
   final int _windowPollAttempts;
+  final Duration _windowRebindInterval;
   final Duration _trackRefreshInterval;
   final Listenable _endpointListenable;
   final List<TexthookerEndpointStatus> Function() _endpointStatusLoader;
@@ -345,6 +348,9 @@ class GalHookSessionController extends ChangeNotifier {
   EngineHookGalAudioSource? _engineSource;
   Timer? _textPollTimer;
   Timer? _trackRefreshTimer;
+  // BUG-1049：launch 后游戏窗口尚未出现时的重绑监视（见 [_startWindowRebindWatch]）。
+  Timer? _windowRebindTimer;
+  bool _windowRebindInFlight = false;
   bool _pollInFlight = false;
   int _lastTextSeq = 0;
   int _eventId = 0;
@@ -685,8 +691,78 @@ class GalHookSessionController extends ChangeNotifier {
         'window.not_found',
         'Audio hook is active, but no game window was found for screenshots',
       );
+      // BUG-1049：开场那 10 秒只是「窗口通常多快出现」的经验值，不是硬事实——带启动器 /
+      // 壳解包 / 首次着色器编译的游戏常常更慢，而首帧一旦错过，旧实现就永久停在
+      // window_not_found，用户只能自己去点「捕获目标」条手动选窗口（明明是 Hibiki 自己
+      // 启动的进程）。绑定因此改成会话级监视：只要这条会话还活着且仍没有窗口，就继续
+      // 按同一个 pid 找，找到即自动绑上。
+      // gamePid 为空表示 hook 根本没拿到目标进程，没有可重试的匹配依据。
+      if (gamePid != null) _startWindowRebindWatch(generation, gamePid);
     }
     return true;
+  }
+
+  /// launch 会话的窗口重绑监视：周期性按 [gamePid] 找顶层窗口，找到就补上绑定并把
+  /// 因 `window_not_found` 降级的会话恢复回真实 phase（文本信号来了就是 running，
+  /// 否则还在等信号）。绑定成功 / 会话被换代（stop、重启、attach）即自停。
+  ///
+  /// 只更新状态，不走 [bindWindow]——那条路径是给「用户手动改绑另一个窗口」用的，
+  /// 会 [startAttachedCapture] 重启整条会话；这里 hook 已经在跑，重启只会丢台词。
+  void _startWindowRebindWatch(int generation, int gamePid) {
+    _windowRebindTimer?.cancel();
+    _windowRebindTimer = Timer.periodic(_windowRebindInterval, (Timer timer) {
+      if (generation != _operationGeneration ||
+          _state.boundWindow != null ||
+          _state.gamePid != gamePid) {
+        timer.cancel();
+        _windowRebindTimer = null;
+        return;
+      }
+      if (_windowRebindInFlight) return;
+      _windowRebindInFlight = true;
+      unawaited(
+        _tryRebindWindow(generation, gamePid).whenComplete(() {
+          _windowRebindInFlight = false;
+        }),
+      );
+    });
+  }
+
+  Future<void> _tryRebindWindow(int generation, int gamePid) async {
+    final List<ExternalWindowInfo> windows = await _windowListLoader();
+    if (generation != _operationGeneration ||
+        _state.boundWindow != null ||
+        _state.gamePid != gamePid) {
+      return;
+    }
+    for (final ExternalWindowInfo candidate in windows) {
+      if (candidate.pid != gamePid) continue;
+      _windowRebindTimer?.cancel();
+      _windowRebindTimer = null;
+      final bool degradedForWindow =
+          _state.phase == GalHookSessionPhase.degraded &&
+              _state.fallbackReason == 'window_not_found';
+      _setState(
+        _state.copyWith(
+          boundWindow: candidate,
+          gamePid: gamePid,
+          phase: degradedForWindow
+              ? (_state.textSignalReceived
+                  ? GalHookSessionPhase.running
+                  : GalHookSessionPhase.waitingSignals)
+              : _state.phase,
+          clearFallbackReason: degradedForWindow,
+        ),
+      );
+      _record(
+        GalHookEventSeverity.success,
+        'window',
+        'window.auto_bound_late',
+        'Bound the launched game window once it appeared',
+        details: <String, Object?>{'pid': gamePid, 'hwnd': candidate.hwnd},
+      );
+      return;
+    }
   }
 
   Future<void> stopCapture({bool keepBinding = true}) async {
@@ -1571,6 +1647,9 @@ class GalHookSessionController extends ChangeNotifier {
     _textPollTimer = null;
     _trackRefreshTimer?.cancel();
     _trackRefreshTimer = null;
+    _windowRebindTimer?.cancel();
+    _windowRebindTimer = null;
+    _windowRebindInFlight = false;
     _pollInFlight = false;
     final EngineHookGalAudioSource? engine = _engineSource;
     _engineSource = null;
