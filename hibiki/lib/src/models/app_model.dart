@@ -1633,6 +1633,10 @@ class AppModel with ChangeNotifier {
     final Map<MediaType, List<MediaSource>> availableMediaSources = {
       ReaderMediaType.instance: [
         ReaderHibikiSource.instance,
+        // PDF 阅读器 Phase 1：注册第二个 reader 源。书架/页头恒用第一个（默认源），PDF 行
+        // 仅在打开时经 mediaSourceIdentifier='reader_pdf' 路由到本源、进 ReaderPdfPage。
+        // 通用 init 循环与 refreshPrefCache 按 mediaSources 遍历，自动接管本源初始化。
+        ReaderPdfSource.instance,
       ],
       DictionaryMediaType.instance: [],
     };
