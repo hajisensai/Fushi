@@ -431,42 +431,39 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool autoReady = serverEnabled && hasToken;
-    final Color bannerColor = autoReady
-        ? theme.colorScheme.primaryContainer
-        : theme.colorScheme.tertiaryContainer;
-    final Color bannerFg = autoReady
-        ? theme.colorScheme.onPrimaryContainer
-        : theme.colorScheme.onTertiaryContainer;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        // 自动配置状态横幅：server+token 就绪 → 成功；否则提醒先开 server / 端口冲突。
-        HibikiCard(
-          color: bannerColor,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Icon(
-                autoReady ? Icons.check_circle : Icons.info_outline,
-                color: bannerFg,
-                size: 20,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  autoReady
-                      ? t.browser_extension_step_done_auto
-                      : portConflict
-                          ? _portInUseMessage()
-                          : t.browser_extension_enable_server_first,
-                  style: TextStyle(color: bannerFg),
+        // 自动配置状态横幅：仅在未就绪时提醒（端口冲突 / 先开 server）。
+        // 就绪时不再显示——「完成」由步骤 5 承担，横幅重复它反而是句废话。
+        if (!autoReady) ...<Widget>[
+          HibikiCard(
+            color: theme.colorScheme.tertiaryContainer,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(
+                  Icons.info_outline,
+                  color: theme.colorScheme.onTertiaryContainer,
+                  size: 20,
                 ),
-              ),
-            ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    portConflict
+                        ? _portInUseMessage()
+                        : t.browser_extension_enable_server_first,
+                    style: TextStyle(
+                      color: theme.colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 16),
+        ],
         // 步骤 1：打开扩展管理页（chrome:// / edge:// 无法程序化导航，给可复制文本）。
         _step(
           context,
