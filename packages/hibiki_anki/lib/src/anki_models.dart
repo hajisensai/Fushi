@@ -446,8 +446,25 @@ class AnkiHandlebarRenderer {
         return payload.audio;
       case '{glossary}':
         return payload.glossary;
+      // BUG-1035：「首选词典释义」= 用户在弹窗里长按选中的那本，没长按才退回排在第一位
+      // 的那本（[AnkiMiningPayload.glossaryFirst]，popup.js 的 singleGlossaries 首项）。
+      //
+      // 此前这里只读 glossaryFirst，而全模板里只有 {selected-glossary} 消费
+      // [AnkiMiningPayload.selectedDictionary]。Lapis 出厂默认把 MainDefinition 映射成
+      // {glossary-first}（lapis_note_type.dart），于是长按选词典对绝大多数用户是**死交互**：
+      // 弹窗把词典标题染成主题色加粗（popup.css `.dict-label.selected`）给了明确「已选中」
+      // 反馈，制出来的卡片主释义却恒是第一本。长按选中本就是「这张卡我要这本词典的释义」，
+      // 让 first 退化成「无选中时的兜底」消除了这个特殊情况，无需任何用户改字段映射。
+      //
+      // 零破坏：没长按 → selectedDictionary 为空 → _singleGlossaryForDictionary 返回 ''
+      // → 原样退回 glossaryFirst，行为逐字节不变。选中的词典名在 singleGlossaries 里查
+      // 不到（理论上不该发生：两者同源于同一 dictName）时同样退回，不产出空字段。
       case '{glossary-first}':
-        return payload.glossaryFirst;
+        final String selectedGlossary =
+            _singleGlossaryForDictionary(payload, payload.selectedDictionary);
+        return selectedGlossary.isNotEmpty
+            ? selectedGlossary
+            : payload.glossaryFirst;
       case '{selected-glossary}':
         return _singleGlossaryForDictionary(
             payload, payload.selectedDictionary);
