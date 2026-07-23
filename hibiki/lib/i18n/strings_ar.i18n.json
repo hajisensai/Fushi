@@ -2316,5 +2316,6 @@
   "pdf_bookmark_added": "Bookmark added",
   "mining_image_quality_max": "Maximum",
   "mining_audio_quality_max": "Maximum",
-  "video_clip_exported_with_subtitles": "Clip exported with subtitles: ${path}"
+  "video_clip_exported_with_subtitles": "Clip exported with subtitles: ${path}",
+  "home_recently_added": "Recently added"
 }

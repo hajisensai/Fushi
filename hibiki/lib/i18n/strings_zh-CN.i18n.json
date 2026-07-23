@@ -2316,5 +2316,6 @@
   "pdf_bookmark_added": "已添加书签",
   "mining_image_quality_max": "最高",
   "mining_audio_quality_max": "最高",
-  "video_clip_exported_with_subtitles": "片段已导出（含字幕）：${path}"
+  "video_clip_exported_with_subtitles": "片段已导出（含字幕）：${path}",
+  "home_recently_added": "最近添加"
 }

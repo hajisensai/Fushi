@@ -64,6 +64,30 @@ import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
 import 'package:path/path.dart' as p;
 
+/// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
+/// dashboard 继续卡/活动条同一条路径），统一经 [VideoHibikiPage.neutralized]
+/// 在路由层中和全局缩放（video_render_fixes_guard 守卫的接线）。
+/// [playlistCollectionId] 非空 = 作为合集一集打开（剧集面板/上下集/连播），
+/// null = 散卡单视频。返回的 Future 在播放页关闭后完成（调用方据此刷新）。
+Future<void> openLocalVideoBook({
+  required BuildContext context,
+  required VideoBookRepository repo,
+  required String bookUid,
+  int? playlistCollectionId,
+}) {
+  return Navigator.push(
+    context,
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoHibikiPage.neutralized(
+        bookUid: bookUid,
+        repo: repo,
+        playlistCollectionId: playlistCollectionId,
+      ),
+    ),
+  );
+}
+
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
@@ -1078,16 +1102,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<void> _open(VideoBookRow book, {int? playlistCollectionId}) async {
     await _showAnime4kFirstUsePromptIfNeeded();
     if (!mounted) return;
-    await Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => VideoHibikiPage.neutralized(
-          bookUid: book.bookUid,
-          repo: widget.repo,
-          playlistCollectionId: playlistCollectionId,
-        ),
-      ),
+    // 路由构造走共享顶层入口 [openLocalVideoBook]（dashboard 续播同一条路径）。
+    await openLocalVideoBook(
+      context: context,
+      repo: widget.repo,
+      bookUid: book.bookUid,
+      playlistCollectionId: playlistCollectionId,
     );
     // 从播放器返回后刷新：继续观看 hero / 概览统计 / 卡片观看进度行都依赖
     // lastPositionMs 与 watch-stats，播完不刷会展示陈旧数据（对抗审查确认）。

@@ -13,6 +13,8 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_dashboard_page.dart';
+import 'package:hibiki/src/pages/implementations/home_page.dart'
+    show homeShellTabNotifier, HomeTab;
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
@@ -76,7 +78,15 @@ void main() {
     }
   });
 
-  Widget buildApp() => ProviderScope(
+  Widget buildApp({
+    Future<void> Function(
+      BuildContext context,
+      VideoBookRepository repo,
+      String bookUid,
+      int? playlistCollectionId,
+    )? openVideoOverride,
+  }) =>
+      ProviderScope(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(platformServices),
           ankiRepositoryProvider.overrideWithValue(ankiRepository),
@@ -91,7 +101,10 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
-              body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
+              body: HomeDashboardPage(
+                videoRepo: VideoBookRepository(db),
+                openVideoOverride: openVideoOverride,
+              ),
             ),
           ),
         ),
@@ -427,6 +440,222 @@ void main() {
     expect(tester.takeException(), isNull);
     // 阅读节列出当日读的书（seedSampleData 今天读了 800 字的这本）。
     expect(find.text('吾輩は猫である'), findsOneWidget);
+  });
+
+  testWidgets('点继续区视频卡/活动条直接续播（带主合集 id），不再只是切视频 tab',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final DateTime now = DateTime.now();
+    final String todayKey = HibikiTimeFormat.dayKey(now);
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('v1'),
+      title: Value('S01E01'),
+      videoPath: Value('/abs/s01e01.mp4'),
+      lastPositionMs: Value(60000),
+    ));
+    final int cid = await db.createMediaCollection('进击的巨人');
+    await db.addToCollection(cid, 'video', 'v1');
+    // 活动条命中同一本地 uid：点击也应走同一条续播路径。
+    await db.addActivityEvent(
+      eventType: kActivityWatch,
+      mediaType: kActivityMediaVideo,
+      title: 'S01E01',
+      mediaKey: 'v1',
+      dateKey: todayKey,
+      timestampMs: now.millisecondsSinceEpoch,
+      durationMs: 60000,
+    );
+
+    // 注入打开替身（widget 测试无法构建 media_kit 播放页），记录续播调用。
+    final List<(String, int?)> opened = <(String, int?)>[];
+    await tester.pumpWidget(buildApp(
+      openVideoOverride: (
+        BuildContext _,
+        VideoBookRepository __,
+        String bookUid,
+        int? playlistCollectionId,
+      ) async {
+        opened.add((bookUid, playlistCollectionId));
+      },
+    ));
+    await pumpDashboard(tester);
+
+    final HomeTab tabBefore = homeShellTabNotifier.value;
+    // 继续卡点击 → 直接续播（合集成员带 playlistCollectionId 从合集续播）。
+    await tester.tap(find.text('S01E01 · ${t.home_filter_watch}'));
+    await tester.pump();
+    expect(opened, <(String, int?)>[('v1', cid)]);
+    // 活动条点击 → 同一条续播路径。
+    await tester.tap(find.text('进击的巨人 - S01E01'));
+    await tester.pump();
+    expect(opened.length, 2);
+    expect(opened.last, ('v1', cid));
+    // 旧行为（只把首页切到视频 tab）不再发生。
+    expect(homeShellTabNotifier.value, tabBefore);
+    // 活动条前置已是视频封面缩略槽（68×40，占位图标兜底），不再是裸 20px 图标。
+    expect(
+      find.byWidgetPredicate(
+          (Widget w) => w is SizedBox && w.width == 68 && w.height == 40),
+      findsWidgets,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('「最近添加」通栏：按导入时间列出本地视频卡（类型 · 相对时间）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 仅导入（无播放断点）：不进「继续」，只进「最近添加」。
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('recent-v'),
+      title: const Value('新导入的视频'),
+      videoPath: const Value('/abs/recent.mp4'),
+      importedAt: Value(DateTime.now()),
+    ));
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.home_recently_added), findsOneWidget);
+    expect(find.text('新导入的视频'), findsOneWidget);
+    // 副标题 = 类型 · 相对添加时间（刚导入 → 「刚刚」）。
+    expect(
+      find.text('${t.home_filter_watch} · ${t.activity_just_now}'),
+      findsOneWidget,
+    );
+  });
+
+  /// 合集 Next-Up 三态的公共装配：合集「进击的巨人」+ 两集独立行 E1/E2。
+  Future<int> seedCollectionTwoEpisodes({
+    required VideoBooksCompanion e1,
+    required VideoBooksCompanion e2,
+  }) async {
+    await db.upsertVideoBook(e1);
+    await db.upsertVideoBook(e2);
+    final int cid = await db.createMediaCollection('进击的巨人');
+    await db.addToCollection(cid, 'video', 'e1');
+    await db.addToCollection(cid, 'video', 'e2');
+    return cid;
+  }
+
+  testWidgets('继续区合集 Next-Up：看完 E1 后合集卡推进为 E2，点击直接打开 E2（带合集 id）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int cid = await seedCollectionTwoEpisodes(
+      // E1 已看完（旧逻辑会把它踢出继续区、整个合集消失——用户实报）。
+      e1: VideoBooksCompanion(
+        bookUid: const Value('e1'),
+        title: const Value('S01E01'),
+        videoPath: const Value('/abs/e1.mp4'),
+        lastPositionMs: const Value(1200000),
+        completedAt: Value(DateTime.now()),
+      ),
+      // E2 全新未看。
+      e2: const VideoBooksCompanion(
+        bookUid: Value('e2'),
+        title: Value('S01E02'),
+        videoPath: Value('/abs/e2.mp4'),
+      ),
+    );
+
+    final List<(String, int?)> opened = <(String, int?)>[];
+    await tester.pumpWidget(buildApp(
+      openVideoOverride: (
+        BuildContext _,
+        VideoBookRepository __,
+        String bookUid,
+        int? playlistCollectionId,
+      ) async {
+        opened.add((bookUid, playlistCollectionId));
+      },
+    ));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    // 合集卡仍在，且推进为下一集：标题=合集名、副标题=「S01E02 · 观看」。
+    expect(find.text('进击的巨人'), findsOneWidget);
+    expect(find.text('S01E02 · ${t.home_filter_watch}'), findsOneWidget);
+    expect(find.text('S01E01 · ${t.home_filter_watch}'), findsNothing);
+    // 点击 Next-Up 卡 → 直接打开 E2（带合集 id 进合集连播）。
+    await tester.tap(find.text('S01E02 · ${t.home_filter_watch}'));
+    await tester.pump();
+    expect(opened, <(String, int?)>[('e2', cid)]);
+  });
+
+  testWidgets('继续区合集 Next-Up：整个合集全部看完 → 不出卡（自然滚出继续区）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedCollectionTwoEpisodes(
+      e1: VideoBooksCompanion(
+        bookUid: const Value('e1'),
+        title: const Value('S01E01'),
+        videoPath: const Value('/abs/e1.mp4'),
+        lastPositionMs: const Value(1200000),
+        completedAt: Value(DateTime.now()),
+      ),
+      e2: VideoBooksCompanion(
+        bookUid: const Value('e2'),
+        title: const Value('S01E02'),
+        videoPath: const Value('/abs/e2.mp4'),
+        lastPositionMs: const Value(1300000),
+        completedAt: Value(DateTime.now()),
+      ),
+    );
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('进击的巨人'), findsNothing);
+    expect(find.text('S01E01 · ${t.home_filter_watch}'), findsNothing);
+    expect(find.text('S01E02 · ${t.home_filter_watch}'), findsNothing);
+  });
+
+  testWidgets('继续区合集 Next-Up：有在看中的集 → 显示该集（回归现行为）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedCollectionTwoEpisodes(
+      // E1 在看中（有断点未完成）。
+      e1: const VideoBooksCompanion(
+        bookUid: Value('e1'),
+        title: Value('S01E01'),
+        videoPath: Value('/abs/e1.mp4'),
+        lastPositionMs: Value(60000),
+      ),
+      e2: const VideoBooksCompanion(
+        bookUid: Value('e2'),
+        title: Value('S01E02'),
+        videoPath: Value('/abs/e2.mp4'),
+      ),
+    );
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    // 每合集最多一张卡：显示在看中的 E1，而不是 E2、也不是两张。
+    expect(find.text('进击的巨人'), findsOneWidget);
+    expect(find.text('S01E01 · ${t.home_filter_watch}'), findsOneWidget);
+    expect(find.text('S01E02 · ${t.home_filter_watch}'), findsNothing);
   });
 
   testWidgets('中等宽度（700，<900 窄分支）单列堆叠不抛无限高度', (WidgetTester tester) async {
