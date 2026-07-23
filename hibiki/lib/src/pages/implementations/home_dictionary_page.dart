@@ -227,7 +227,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         DesktopLookupForegroundPolicy.bringToFront) {
       unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
     }
-    if (mounted) _search(request.text, autoRead: false);
+    // BUG-1025：force——服务层时间窗已判定这是真实查词意图（同词超窗口的重复复制、
+    // 或热键/显式查词），页面不再叠加第二次「同词不重查」内容去重。
+    if (mounted) _search(request.text, autoRead: false, force: true);
   }
 
   void _onFocusChanged() {
@@ -594,12 +596,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     int? overrideMaximumTerms,
     bool writeHistory = true,
     bool? autoRead,
+    // BUG-1025：跳过「与上次查询相同即不重查」守卫。剪贴板/热键/显式查词经
+    // DesktopLookupService 排队时已做过时间窗去重判定（同词超窗口 = 用户显式重查），
+    // 页面这层若再叠加一次永久内容去重，用户第二次复制同一个词依旧查不了。
+    bool force = false,
   }) {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
     final bool replaceSourceLookupText = overrideMaximumTerms == null;
 
-    if (_lastQuery == trimmed && overrideMaximumTerms == null) {
+    if (!force && _lastQuery == trimmed && overrideMaximumTerms == null) {
       if (_sourceLookupText != trimmed && mounted) {
         setState(() => _sourceLookupText = trimmed);
       }

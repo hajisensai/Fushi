@@ -103,6 +103,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Separate size for browser extension':
       'test/lookup/effective_lookup_size_test.dart + test/models/lookup_effective_size_wiring_test.dart',
   'lookup/Instant popup scroll': 'test/reader/reader_caret_scripts_test.dart',
+  // BUG-1026：滚轮速度倍率的生效面在 popup.js（WebView 内的 wheel 监听器），widget
+  // 层没有可观测探针；由专项测试逐环锁死注入链路（偏好 → 注入/theme 下发 → 三份
+  // popup.js 读取并乘进 factor）。
+  'lookup/Popup scroll speed': 'test/reader/popup_wheel_speed_asset_test.dart',
   // TODO-108: 底部固定弹窗开关——生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流（非 reader CSS / 主题树），
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
   'lookup/Bottom-docked popup':

@@ -296,6 +296,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 读这两个全局算新字号 → 立即 documentElement.style.zoom，再回调 Dart 持久化。
     window.__hoshiPopupUiScale = ${appModel.appUiScale};
     window.__hoshiPopupFontSize = ${appModel.dictionaryFontSize};
+    // BUG-1026: 查词弹窗滚轮速度倍率。popup.js 的 wheel 监听器把 factor 乘以它
+    // （缺省 1.0）。三种 in-app 弹窗都经此 head 注入；浏览器扩展走 theme 通道另发。
+    window.__hoshiPopupWheelSpeed = ${appModel.popupWheelSpeed};
     window.audioSources = ${jsonEncode(appModel.enabledAudioSources)};
     window.needsAudio = true;
     window.lookupAudioVolume = ${ReaderHibikiSource.instance.lookupAudioVolumeGain.clamp(0.0, 1.0).toStringAsFixed(4)};

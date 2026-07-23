@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 38641 (2273 per locale)
+/// Strings: 38675 (2275 per locale)
 ///
-/// Built on 2026-07-23 at 00:39 UTC
+/// Built on 2026-07-23 at 04:37 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3026,6 +3026,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Watched ${done}/${total}';
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  String get popup_wheel_speed => 'Popup scroll speed';
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -8171,6 +8174,11 @@ class _StringsAr extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -13389,6 +13397,11 @@ class _StringsDe extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -18623,6 +18636,11 @@ class _StringsEs extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -23868,6 +23886,11 @@ class _StringsFr extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -29040,6 +29063,11 @@ class _StringsId extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -34260,6 +34288,11 @@ class _StringsIt extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -39285,6 +39318,11 @@ class _StringsJa extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -44313,6 +44351,11 @@ class _StringsKo extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -49511,6 +49554,11 @@ class _StringsNl extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -54724,6 +54772,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -59920,6 +59973,11 @@ class _StringsRu extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -65061,6 +65119,11 @@ class _StringsTh extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -70234,6 +70297,11 @@ class _StringsTr extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -75394,6 +75462,11 @@ class _StringsVi extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 // Path: <root>
@@ -80194,6 +80267,10 @@ class _StringsZhCn extends _StringsEn {
       '已看完 ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) => '继续看 第${n}集';
+  @override
+  String get popup_wheel_speed => '弹窗滚轮速度';
+  @override
+  String get popup_wheel_speed_hint => '查词弹窗的鼠标滚轮滚动速度（浏览器扩展弹窗同样生效）。';
 }
 
 // Path: <root>
@@ -85137,6 +85214,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
 }
 
 /// Flat map(s) containing all translations.
@@ -89776,6 +89858,10 @@ extension on _StringsEn {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -94413,6 +94499,10 @@ extension on _StringsAr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -99071,6 +99161,10 @@ extension on _StringsDe {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -103728,6 +103822,10 @@ extension on _StringsEs {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -108391,6 +108489,10 @@ extension on _StringsFr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -113036,6 +113138,10 @@ extension on _StringsId {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -117696,6 +117802,10 @@ extension on _StringsIt {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -122318,6 +122428,10 @@ extension on _StringsJa {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -126944,6 +127058,10 @@ extension on _StringsKo {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -131597,6 +131715,10 @@ extension on _StringsNl {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -136247,6 +136369,10 @@ extension on _StringsPtBr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -140902,6 +141028,10 @@ extension on _StringsRu {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -145541,6 +145671,10 @@ extension on _StringsTh {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -150189,6 +150323,10 @@ extension on _StringsTr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -154832,6 +154970,10 @@ extension on _StringsVi {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
@@ -159441,6 +159583,10 @@ extension on _StringsZhCn {
             '已看完 ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => '继续看 第${n}集';
+      case 'popup_wheel_speed':
+        return '弹窗滚轮速度';
+      case 'popup_wheel_speed_hint':
+        return '查词弹窗的鼠标滚轮滚动速度（浏览器扩展弹窗同样生效）。';
       default:
         return null;
     }
@@ -164058,6 +164204,10 @@ extension on _StringsZhHk {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
       default:
         return null;
     }
