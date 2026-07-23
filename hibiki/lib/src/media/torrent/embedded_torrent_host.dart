@@ -11,9 +11,15 @@ import 'package:hibiki_torrent/hibiki_torrent.dart';
 /// （所有内置下载共享），按需派发短命 [EmbeddedTorrentBackend] 适配器给
 /// `AnimeDownloadService` 的每 tick 用（适配器 close 不连累会话）。
 ///
-/// 生命周期：app 启动时（桌面、且用户选内置后端）`open` 一次，AppModel
-/// 释放时 `dispose`。DLL 加载失败（未构建/缺依赖）返回 null，上层回退外接
+/// 生命周期：**首次真的要用下载后端时**懒建（见 `AppModel._ensureEmbeddedTorrentHost`），
+/// AppModel 释放时 `dispose`。DLL 加载失败（未构建/缺依赖）返回 null，上层回退外接
 /// qb 或静默不动作，绝不 crash 启动流程。
+///
+/// BUG-1043：绝不能在 app 启动时无条件 [open]。[open] 会创建 libtorrent session ——
+/// 绑 6881（TCP+UDP，全网卡）并**默认开 DHT**，于是一个种子都没有的用户，只要开着
+/// Hibiki 就在持续收发全球 DHT 小包，把家用路由器的 NAT/conntrack 表撑爆，表现为
+/// 「每隔一段时间整机网络高延迟，关掉 Hibiki 就好」。能力探测请用 [probeAvailable]，
+/// 它只加载 DLL、**不建 session、不碰网络**。
 ///
 /// 反吸血：持有全局单例 [AntiLeechEngine]（共享连坐段），`sweepAntiLeech`
 /// 每次把所有种子的 peer 喂进引擎判定，新增封段全量重建 libtorrent
@@ -91,6 +97,35 @@ class EmbeddedTorrentHost {
   }
 
   static int _defaultClockMs() => DateTime.now().millisecondsSinceEpoch;
+
+  /// 缓存的能力探测结果（DLL 只需加载一次，`DynamicLibrary` 也无法卸载）。
+  static bool? _availabilityCache;
+
+  /// 内置引擎在本机是否可用——**只加载 DLL，不创建 session**（不绑端口、不起
+  /// DHT、不产生任何网络流量）。
+  ///
+  /// BUG-1043：UI 的「内置引擎就绪」判定（下载对话框/下载页）以前是
+  /// `_embeddedTorrentHost != null`，逼得 AppModel 必须在启动时就把真 session 开
+  /// 起来才能让按钮可用。拆成「能力探测」与「真实会话」两件事之后，就绪判定走
+  /// 这里，session 留到真的要下载时再建。
+  static bool probeAvailable({String? libraryPath}) {
+    final bool? cached = _availabilityCache;
+    if (cached != null) return cached;
+    bool ok;
+    try {
+      EmbeddedTorrentEngine.open(libraryPath: libraryPath);
+      ok = true;
+    } on ArgumentError {
+      ok = false; // DLL 缺失/未构建
+    } on Object {
+      ok = false;
+    }
+    _availabilityCache = ok;
+    return ok;
+  }
+
+  /// 仅测试用：清掉 [probeAvailable] 的缓存。
+  static void resetAvailabilityProbeForTesting() => _availabilityCache = null;
 
   /// 应用用户可调的全局资源限制（速率 + 连接数）。[downloadKbps]/[uploadKbps]
   /// 单位 KB/s（0 = 不限），[maxConnections]（0 = 引擎默认）。config 变更时
