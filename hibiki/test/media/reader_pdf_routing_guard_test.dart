@@ -51,4 +51,103 @@ void main() {
     // .pdf 必须在文件选择白名单里，否则用户根本选不到。
     expect(src.contains("'pdf'"), isTrue, reason: '_bookExtensions 白名单应含 pdf');
   });
+
+  // ── Phase 2：点选查词 ────────────────────────────────────────────────
+
+  test('PDF 页接在共享查词链路上（BaseSourcePage + buildDictionary + 弹窗入口）', () {
+    final String src =
+        read('lib/src/pages/implementations/reader_pdf_page.dart');
+    // 必须是 BaseSourcePage 子类，否则拿不到 searchDictionaryResult / 弹窗栈 / 制卡。
+    expect(src.contains('class ReaderPdfPage extends BaseSourcePage'), isTrue,
+        reason: 'PDF 页必须是 BaseSourcePage 才能复用查词弹窗链路');
+    expect(src.contains('BaseSourcePageState<ReaderPdfPage>'), isTrue);
+    // buildDictionary() 不在树里 → 查到结果也不显示（静默失败，最难查）。
+    expect(src.contains('buildDictionary()'), isTrue,
+        reason: '弹窗层必须在 widget 树里，否则查词结果不渲染');
+    expect(src.contains('searchDictionaryResult('), isTrue);
+    // 句子走 setCurrentSentence 通道喂制卡/收藏（不是 searchDictionaryResult 的参数）。
+    expect(src.contains('setCurrentSentence('), isTrue,
+        reason: '整句必须经 setCurrentSentence 送出，制卡才拿得到句子');
+  });
+
+  test('点选查词用 pdfrx 文档坐标命中字符，且不自行分词', () {
+    final String src =
+        read('lib/src/pages/implementations/reader_pdf_page.dart');
+    expect(src.contains('onGeneralTap'), isTrue, reason: '单击查词入口');
+    expect(src.contains('documentPosition'), isTrue,
+        reason: '命中测试必须基于 pdfrx 文档坐标');
+    expect(src.contains('toPdfPoint('), isTrue,
+        reason: '文档坐标要换算成页内 PDF 坐标（原点左下）才能与 charRects 比对');
+    expect(src.contains('loadStructuredText()'), isTrue,
+        reason: 'charRects 来自结构化文本');
+    // 不分词：整串交引擎最长匹配（与视频字幕同构）。出现分词器即是走偏了。
+    expect(src.contains('_kLookupWindow'), isTrue,
+        reason: '取固定窗口子串交引擎最长匹配，而非自行切词');
+  });
+
+  // ── Phase 3：页码进度 ────────────────────────────────────────────────
+
+  test('页码进度落 ReaderPositions.sectionIndex，且显式传 charOffset', () {
+    final String src =
+        read('lib/src/pages/implementations/reader_pdf_page.dart');
+    expect(src.contains('ReaderPositionRepository('), isTrue);
+    expect(src.contains('sectionIndex: pageIndex'), isTrue,
+        reason: 'PDF 用 sectionIndex 存 0-based 页码');
+    // charOffset 传 null 会掉进 EPUB 专用的「跨 section 精确锚失效」启发式。
+    expect(src.contains('charOffset: 0'), isTrue,
+        reason: 'PDF 必须显式传 charOffset，不能传 null');
+    expect(src.contains('onPageChanged'), isTrue, reason: '翻页触发保存');
+    expect(src.contains('goToPage('), isTrue, reason: '打开时恢复到已保存页');
+    expect(src.contains('markEpubBookCompletedIfUnset'), isTrue,
+        reason: '翻到末页写已读完');
+  });
+
+  test('书架 PDF 进度按页计，且用 1-based 页序（第 1 页也算在读）', () {
+    final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
+    // 0-based 会让停在第 1 页的书 position==0 → 不进「继续阅读」。
+    expect(src.contains('(pos?.sectionIndex ?? 0) + 1'), isTrue,
+        reason: 'PDF 进度用 1-based 页序，停在第 1 页也要计入在读');
+    expect(src.contains('book.chapterCount'), isTrue,
+        reason: 'PDF 总页数存在 chapterCount');
+  });
+
+  test('PDF 阅读统计不把页数当字数（charsRead 恒 0）', () {
+    final String src =
+        read('lib/src/pages/implementations/reader_pdf_page.dart');
+    expect(src.contains('charsRead: 0'), isTrue,
+        reason: 'PDF 无字数；把页数塞进 charsRead 会污染统计页的「字数」口径');
+    expect(src.contains('ReadingTimeTracker'), isTrue, reason: '复用时长统计');
+  });
+
+  // ── Phase 4：制卡 ────────────────────────────────────────────────────
+
+  test('制卡走 onMineFromPopup + AnkiMiningContext，卡图是当前页栅格化 PNG', () {
+    final String src =
+        read('lib/src/pages/implementations/reader_pdf_page.dart');
+    expect(src.contains('onMineFromPopup'), isTrue, reason: '制卡入口');
+    expect(src.contains('AnkiMiningContext('), isTrue);
+    expect(src.contains('coverPath'), isTrue,
+        reason: '卡图经 coverPath 传**文件路径**（不是字节）');
+    expect(src.contains('AnkiMiningSource.book'), isTrue);
+    expect(src.contains('mineEntry('), isTrue);
+  });
+
+  // ── Phase 5：目录 ────────────────────────────────────────────────────
+
+  test('目录导航用 PDF 自带 outline + goToDest', () {
+    final String src =
+        read('lib/src/pages/implementations/reader_pdf_page.dart');
+    expect(src.contains('loadOutline()'), isTrue);
+    expect(src.contains('goToDest('), isTrue, reason: '点目录项跳转到该 dest');
+  });
+
+  test('书签复用 EPUB 的 Bookmarks 表，sectionIndex 存页码', () {
+    final String src =
+        read('lib/src/pages/implementations/reader_pdf_page.dart');
+    expect(src.contains('BookmarkRepository('), isTrue,
+        reason: '复用同一张 Bookmarks 表（外键指 EpubBooks，删书自动级联清书签）');
+    expect(src.contains('sectionIndex: _currentPageIndex'), isTrue,
+        reason: '书签的 sectionIndex 存 0-based 页码，与 ReaderPositions 同口径');
+    expect(src.contains('removeBookmarkById('), isTrue, reason: '可删书签');
+  });
 }
