@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
@@ -110,6 +111,84 @@ void main() {
       propagateDeletion: false,
     );
     expect(await db.getSyncDeletionTombstonesOfType('favoriteword'), isEmpty);
+  });
+
+  FavoriteSentence mkSentence({
+    String? id,
+    String text = '猫が好き',
+    String? bookKey = 'a',
+    int? sectionIndex = 0,
+    int? normCharOffset = 5,
+  }) =>
+      FavoriteSentence(
+        id: id,
+        text: text,
+        bookTitle: 'BookA',
+        bookKey: bookKey,
+        sectionIndex: sectionIndex,
+        normCharOffset: normCharOffset,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(100),
+      );
+
+  test('取消收藏句 removeById 写 favoritesentence 墓碑；重新收藏清碑', () async {
+    final repo = FavoriteSentenceRepository(db);
+    final FavoriteSentence s = mkSentence(id: 'hl_1');
+    await repo.add(s);
+    await repo.removeById('hl_1');
+    final rows = await db.getSyncDeletionTombstonesOfType('favoritesentence');
+    expect(rows, hasLength(1));
+    expect(rows.single.itemKey, FavoriteSentenceRepository.itemKeyOf(s));
+    // 重新收藏同内容 → 清碑（清的是内容键，与 id 无关）。
+    await repo.add(mkSentence(id: 'hl_2'));
+    expect(
+        await db.getSyncDeletionTombstonesOfType('favoritesentence'), isEmpty);
+  });
+
+  test('removeByContent 写墓碑；propagateDeletion:false 不写', () async {
+    final repo = FavoriteSentenceRepository(db);
+    await repo.add(mkSentence(id: 'hl_c1'));
+    await repo.removeByContent(
+      text: '猫が好き',
+      bookKey: 'a',
+      sectionIndex: 0,
+      normCharOffset: 5,
+    );
+    expect(await db.getSyncDeletionTombstonesOfType('favoritesentence'),
+        hasLength(1));
+
+    await db.clearSyncDeletionTombstone(
+        'favoritesentence', FavoriteSentenceRepository.itemKeyOf(mkSentence()));
+    await repo.add(mkSentence(id: 'hl_c2'));
+    await repo.removeByContent(
+      text: '猫が好き',
+      bookKey: 'a',
+      sectionIndex: 0,
+      normCharOffset: 5,
+      propagateDeletion: false,
+    );
+    expect(
+        await db.getSyncDeletionTombstonesOfType('favoritesentence'), isEmpty);
+  });
+
+  test('removeByItemKey 删本地 + 写墓碑（接收端确认路径）', () async {
+    final repo = FavoriteSentenceRepository(db);
+    final FavoriteSentence s = mkSentence(id: 'hl_k1');
+    await repo.add(s);
+    final String key = FavoriteSentenceRepository.itemKeyOf(s);
+    await repo.removeByItemKey(key);
+    expect(await repo.getAll(), isEmpty);
+    final rows = await db.getSyncDeletionTombstonesOfType('favoritesentence');
+    expect(rows.single.itemKey, key);
+  });
+
+  test('清空收藏句为每条写墓碑', () async {
+    final repo = FavoriteSentenceRepository(db);
+    await repo.add(mkSentence(id: 'hl_a', text: '一', normCharOffset: 1));
+    await repo.add(mkSentence(id: 'hl_b', text: '二', normCharOffset: 2));
+    await repo.clear();
+    expect(await repo.getAll(), isEmpty);
+    expect(await db.getSyncDeletionTombstonesOfType('favoritesentence'),
+        hasLength(2));
   });
 
   test('发布标记 remotePublishedAt', () async {

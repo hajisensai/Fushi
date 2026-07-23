@@ -22,6 +22,8 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
+import 'package:hibiki_audio/hibiki_audio.dart'
+    show FavoriteSentence, FavoriteSentenceRepository;
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -768,6 +770,13 @@ class SyncOrchestrator {
         for (final FavoriteWordRow r in await _db.getAllFavoriteWords())
           HibikiDatabase.favoriteWordItemKey(
               r.expression, r.reading, r.sourceType),
+      },
+      // 收藏句无稳定 id，用内容键（[FavoriteSentenceRepository.itemKeyOf]）；与写墓碑点、
+      // aggregate 去重键同源。
+      'favoritesentence': <String>{
+        for (final FavoriteSentence s
+            in await FavoriteSentenceRepository(_db).getAll())
+          FavoriteSentenceRepository.itemKeyOf(s),
       },
     };
   }
