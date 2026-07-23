@@ -2312,5 +2312,8 @@
   "download_subscription_check_now": "立即检查",
   "pdf_no_text_layer": "此 PDF 没有文本层（扫描图），无法查词。",
   "pdf_outline": "目录",
-  "pdf_outline_empty": "此 PDF 没有目录。"
+  "pdf_outline_empty": "此 PDF 没有目录。",
+  "pdf_bookmarks": "书签",
+  "pdf_bookmarks_empty": "还没有书签。",
+  "pdf_bookmark_added": "已添加书签"
 }

@@ -2312,5 +2312,8 @@
   "download_subscription_check_now": "Check now",
   "pdf_no_text_layer": "This PDF has no text layer (scanned image), so lookup is unavailable.",
   "pdf_outline": "Contents",
-  "pdf_outline_empty": "This PDF has no contents."
+  "pdf_outline_empty": "This PDF has no contents.",
+  "pdf_bookmarks": "Bookmarks",
+  "pdf_bookmarks_empty": "No bookmarks yet.",
+  "pdf_bookmark_added": "Bookmark added"
 }
