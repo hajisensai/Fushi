@@ -1096,6 +1096,14 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return file.existsSync() ? file : null;
   }
 
+  /// 已配对语音资源文件（dump 目录里的 OGG/WAV 原件）的绝对路径。列表行试听直接
+  /// 播原文件（media_kit 原生可解），**不走** [grabPairedVoiceBytes] 的 ffmpeg
+  /// 转码链。文件不存在（已被 [pruneVoiceDump] 清理）返回 null。
+  String? pairedVoiceFilePathForResourceId(String resourceId) {
+    final File? file = _voiceFileForResourceId(resourceId);
+    return (file != null && file.existsSync()) ? file.path : null;
+  }
+
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,

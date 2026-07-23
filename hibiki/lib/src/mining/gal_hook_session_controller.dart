@@ -873,6 +873,65 @@ class GalHookSessionController extends ChangeNotifier {
     }
   }
 
+  /// 测试缝：向行级 PCM 缓存注入一条冻结切片（[exportLineAudioPreview] 的 ② 路径
+  /// 依赖会话期缓存，单测无真实引擎会话）。
+  @visibleForTesting
+  void debugCacheLineVoice(String lineId, GalAudioSlice slice) {
+    _lineVoiceCache[lineId] = slice;
+  }
+
+  /// 试听指定台词行已配的音频（实时台词列表行内播放按钮）：
+  ///  ① `game_resource` 行 → 直接返回 dump 目录里的原始资源文件路径（OGG/WAV，
+  ///     播放器原生可解，**不走** ffmpeg 转码链；时长未知记 0，调用方按上限兜底复位）；
+  ///  ② 引擎 PCM / loopback 兜底行 → [_lineVoiceCache] 冻结切片拼 WAV 写临时目录。
+  /// 只读既有配对结果，不改行状态、不影响制卡链路；取不到返回 null 并记结构化事件。
+  Future<GalTrackPreview?> exportLineAudioPreview(String lineId) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    final String? resourceId = _resourceIdForLine(lineId);
+    if (engine != null && resourceId != null) {
+      final String? path = engine.pairedVoiceFilePathForResourceId(resourceId);
+      if (path != null) {
+        return GalTrackPreview(filePath: path, durationMs: 0);
+      }
+    }
+    final GalAudioSlice? slice = _lineVoiceCache[lineId];
+    if (slice != null && !slice.isEmpty) {
+      try {
+        final Directory dir = Directory(
+          '${Directory.systemTemp.path}${Platform.pathSeparator}'
+          'hibiki_gal_track_preview',
+        );
+        await dir.create(recursive: true);
+        final File out = File(
+          '${dir.path}${Platform.pathSeparator}gal_line_preview_$lineId.wav',
+        );
+        await out.writeAsBytes(buildWavBytes(slice.pcm, slice.format),
+            flush: true);
+        return GalTrackPreview(
+          filePath: out.path,
+          durationMs: pcmDurationMs(slice.pcm.length, slice.format.byteRate),
+        );
+      } catch (error) {
+        _record(
+          GalHookEventSeverity.error,
+          'audio',
+          'audio.line_preview_failed',
+          'Line preview export failed',
+          details: <String, Object?>{'lineId': lineId, 'error': '$error'},
+        );
+        return null;
+      }
+    }
+    _record(
+      GalHookEventSeverity.warning,
+      'audio',
+      'audio.line_preview_unavailable',
+      'No playable audio for the selected line',
+      details: <String, Object?>{'lineId': lineId},
+    );
+    return null;
+  }
+
   void selectVoiceTrack(int sourcePtr) {
     final EngineHookGalAudioSource? engine = _engineSource;
     if (engine == null) {

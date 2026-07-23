@@ -24,6 +24,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
@@ -94,6 +95,50 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 实时台词列表的筛选维度（全部 / 有音频 / 已制卡 / 已收藏）。与线程下拉正交叠加。
   TexthookerLineFilter _lineFilter = TexthookerLineFilter.all;
 
+  /// 正在行内试听的行 id；null = 未在试听（样式对齐诊断页逐轨试听）。
+  String? _previewingLineId;
+
+  /// 试听播完把按钮从「停止」复位回「播放」的定时器。资源原件时长未知（durationMs
+  /// 0）时按 [_kLinePreviewMaxMs] 上限兜底复位。
+  Timer? _linePreviewResetTimer;
+
+  /// 资源原件（OGG/WAV）时长未知时的复位上限：galgame 单句语音极少超过它。
+  static const int _kLinePreviewMaxMs = 15000;
+
+  /// 行内试听 / 停止：经 controller 取该行已配音频（game_resource 原件直接播，
+  /// PCM/loopback 冻结切片拼 WAV），只读不改行状态、不碰制卡链路。
+  Future<void> _toggleLinePreview(TexthookerLineEntry line) async {
+    if (_previewingLineId == line.id) {
+      _linePreviewResetTimer?.cancel();
+      setState(() => _previewingLineId = null);
+      await DesktopAudioPlayback.stop();
+      return;
+    }
+    final GalTrackPreview? preview =
+        await _session.exportLineAudioPreview(line.id);
+    if (!mounted) return;
+    if (preview == null) {
+      HibikiToast.show(msg: t.game_line_preview_failed);
+      return;
+    }
+    final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
+    if (!mounted) return;
+    if (!started) {
+      HibikiToast.show(msg: t.game_line_preview_failed);
+      return;
+    }
+    _linePreviewResetTimer?.cancel();
+    setState(() => _previewingLineId = line.id);
+    final int resetMs =
+        preview.durationMs > 0 ? preview.durationMs + 300 : _kLinePreviewMaxMs;
+    _linePreviewResetTimer = Timer(
+      Duration(milliseconds: resetMs),
+      () {
+        if (mounted) setState(() => _previewingLineId = null);
+      },
+    );
+  }
+
   /// 分词结果缓存：行文本按 id 不可变，缓存 textToWords 避免每次 rebuild 重复分词
   /// （每来一行整页 setState）。行对象随音频/制卡/收藏态 copyWith 换新但 id/text 不变，
   /// 按 id 缓存恒安全。上限略高于行 buffer 上限，越界淘汰最旧插入项。
@@ -143,6 +188,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   @override
   void dispose() {
+    _linePreviewResetTimer?.cancel();
     TexthookerService.instance.removeListener(_onLines);
     _session.removeListener(_onSessionChanged);
     final OverlayEntry? popupOverlay = _popupOverlayEntry;
@@ -1091,9 +1137,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         // 分词结果按行 id 缓存，避免每次 rebuild 重复 textToWords。
                         words: _wordCache.wordsFor(line.id, line.text),
                         selected: line.id == _activeLineId,
+                        previewingAudio: line.id == _previewingLineId,
                         onSelectLine: _selectLine,
                         onWordTap: _onWordTap,
                         onToggleFavorite: _toggleLineFavorite,
+                        onPreviewAudio: (TexthookerLineEntry l) =>
+                            unawaited(_toggleLinePreview(l)),
                       );
                     },
                   ),
@@ -1614,16 +1663,24 @@ class _TexthookerLine extends StatelessWidget {
     required this.line,
     required this.words,
     required this.selected,
+    required this.previewingAudio,
     required this.onSelectLine,
     required this.onWordTap,
     required this.onToggleFavorite,
+    required this.onPreviewAudio,
   });
 
   final TexthookerLineEntry line;
   final List<String> words;
   final bool selected;
+
+  /// 本行是否正被行内试听（播放按钮显示为停止）。
+  final bool previewingAudio;
   final ValueChanged<TexthookerLineEntry> onSelectLine;
   final ValueChanged<TexthookerLineEntry> onToggleFavorite;
+
+  /// 行内试听已配音频（仅 [TexthookerLineEntry.hasAudio] 行显示按钮）。
+  final ValueChanged<TexthookerLineEntry> onPreviewAudio;
   final void Function(
     TexthookerLineEntry line,
     String word,
@@ -1668,6 +1725,23 @@ class _TexthookerLine extends StatelessWidget {
                 ],
                 _LineAudioChip(status: line.audioStatus),
                 const SizedBox(width: 4),
+                // 行内试听已配音频（用户实拍：音频就绪却听不了）。仅 hasAudio 行显示；
+                // 试听中变停止钮。样式对齐收藏星。
+                if (line.hasAudio) ...<Widget>[
+                  HibikiIconButton(
+                    icon: previewingAudio
+                        ? Icons.stop_circle_outlined
+                        : Icons.play_circle_outline,
+                    tooltip: previewingAudio
+                        ? t.game_track_preview_stop
+                        : t.game_line_preview_tooltip,
+                    size: 18,
+                    enabledColor: previewingAudio ? colors.primary : null,
+                    focusId: HibikiFocusId('game-line-preview-${line.id}'),
+                    onTap: () => onPreviewAudio(line),
+                  ),
+                  const SizedBox(width: 4),
+                ],
                 // 会话内存态收藏星（不落 DB）；已收藏填充金黄星，未收藏描边星。
                 HibikiIconButton(
                   icon: line.favorited ? Icons.star : Icons.star_border,

@@ -910,6 +910,70 @@ void _bug950Guard() {
       reason: 'BUG-950：推进 cursor 前必须复检 engine generation（await 跨重启防倒灌）',
     );
   });
+
+  group('exportLineAudioPreview（实时台词行内试听）', () {
+    test('PCM 缓存路径：冻结切片拼 WAV 落临时目录，时长>0，不改行状态', () async {
+      final TexthookerService service = TexthookerService.test();
+      final TexthookerLineEntry line = service.appendLine('試聴の台詞')!;
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: false,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+      controller.debugCacheLineVoice(
+        line.id,
+        GalAudioSlice(
+          pcm: Uint8List(44100), // 单声道 16bit 44.1kHz 下 0.5s
+          format: const PcmFormat(
+            sampleRate: 44100,
+            channels: 1,
+            bitsPerSample: 16,
+            isFloat: false,
+          ),
+        ),
+      );
+
+      final GalTrackPreview? preview =
+          await controller.exportLineAudioPreview(line.id);
+      expect(preview, isNotNull);
+      expect(File(preview!.filePath).existsSync(), isTrue);
+      expect(preview.durationMs, greaterThan(0));
+      // 只读试听：不得动行的音频状态（制卡链路语义不受影响）。
+      expect(
+        service.entryById(line.id)!.audioStatus,
+        TexthookerLineAudioStatus.unavailable,
+      );
+
+      try {
+        File(preview.filePath).deleteSync();
+      } catch (_) {}
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('无任何已配音频：返回 null 并记结构化事件（不静默）', () async {
+      final TexthookerService service = TexthookerService.test();
+      final TexthookerLineEntry line = service.appendLine('音無しの台詞')!;
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: false,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      expect(await controller.exportLineAudioPreview(line.id), isNull);
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('audio.line_preview_unavailable'),
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    });
+  });
 }
 
 class _FakeEngineSource extends EngineHookGalAudioSource {
