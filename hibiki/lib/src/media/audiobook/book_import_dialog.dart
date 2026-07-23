@@ -21,6 +21,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/pdf/pdf_importer.dart';
 import 'package:hibiki/utils.dart';
 
 /// 统一"导入书"对话框。EPUB、字幕、音频可按需组合，一次导入。
@@ -380,6 +381,9 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   static final List<String> _bookExtensions = [
     'epub',
+    // PDF 阅读器 Phase 1：PDF 走独立 PdfImporter（真渲染，不经 TextToEpub 文本转换），
+    // 在 [_importEpubOnly] 里按 .pdf 扩展名分支。
+    'pdf',
     ...TextToEpub.supportedExtensions,
   ];
 
@@ -400,7 +404,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           _autoFillTitle(
             file.name.replaceAll(
                 RegExp(
-                    r'\.(epub|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
+                    r'\.(epub|pdf|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
                     caseSensitive: false),
                 ''),
             ImportTitleSource.epub,
@@ -869,6 +873,23 @@ class _BookImportDialogState extends State<BookImportDialog>
 
     reportProgress(0.2, t.import_step_reading);
     final String ext = p.extension(_epubPath!).toLowerCase();
+
+    // PDF 阅读器 Phase 1：.pdf 走独立 PdfImporter（pdfrx 真渲染 + 落库 format='pdf'），
+    // 必须在下面的 TextToEpub 文本转换分支之前早退——否则 PDF 二进制会被当文本转成乱码
+    // EPUB。PDF 封面在 PdfImporter 内栅格化首页得到，故不走 _applyBestCoverToEpub。
+    if (ext == '.pdf') {
+      reportProgress(0.5, t.import_step_importing_epub);
+      await PdfImporter.importFromPath(
+        db: widget.db,
+        filePath: _epubPath!,
+        fileName: _epubName ?? p.basename(_epubPath!),
+        title: title,
+        onDuplicateTitle: _onDuplicateTitle,
+      );
+      reportProgress(1, t.import_step_done);
+      return;
+    }
+
     final String bookKey;
     if (TextToEpub.isSupported(_epubPath!) ||
         (ext != '.epub' && ext != '.zip')) {

@@ -295,6 +295,13 @@ class EpubBooks extends Table {
   TextColumn get sourceMetadata => text().nullable()();
   IntColumn get importedAt => integer()();
 
+  /// 书身份格式判别（PDF 阅读器 Phase 1）：`'epub'`（默认，含 EPUB / TextToEpub /
+  /// 有声书配对壳）或 `'pdf'`（pdfrx 渲染的真 PDF）。默认 `'epub'` 让既有全部行零破坏
+  /// （Never break userspace，v51 迁移 addColumn 自动回填），书架/进度/删除按此列区分而
+  /// 非另建平行表。PDF 行：`format='pdf'`、`epubPath`=PDF 绝对路径、`extractDir`=占位、
+  /// `chapterCount`=页数、`chaptersJson`=`'[]'`。
+  TextColumn get format => text().withDefault(const Constant('epub'))();
+
   /// 书「读完」的时间戳（用户手动标记，或读到全书末尾自动写入）；null = 未完成。
   /// 镜像 [VideoBooks.completedAt]，书架概览「Completed」统计用。跳过后记/附录的
   /// 读者靠手动标记即可计入完成，不再受「必须读到最后一字」限制。

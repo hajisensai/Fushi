@@ -4469,6 +4469,13 @@ class $EpubBooksTable extends EpubBooks
   late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
       'imported_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _formatMeta = const VerificationMeta('format');
+  @override
+  late final GeneratedColumn<String> format = GeneratedColumn<String>(
+      'format', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('epub'));
   static const VerificationMeta _completedAtMeta =
       const VerificationMeta('completedAt');
   @override
@@ -4497,6 +4504,7 @@ class $EpubBooksTable extends EpubBooks
         tocJson,
         sourceMetadata,
         importedAt,
+        format,
         completedAt,
         sourceId
       ];
@@ -4578,6 +4586,10 @@ class $EpubBooksTable extends EpubBooks
     } else if (isInserting) {
       context.missing(_importedAtMeta);
     }
+    if (data.containsKey('format')) {
+      context.handle(_formatMeta,
+          format.isAcceptableOrUnknown(data['format']!, _formatMeta));
+    }
     if (data.containsKey('completed_at')) {
       context.handle(
           _completedAtMeta,
@@ -4619,6 +4631,8 @@ class $EpubBooksTable extends EpubBooks
           .read(DriftSqlType.string, data['${effectivePrefix}source_metadata']),
       importedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
+      format: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}format'])!,
       completedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}completed_at']),
       sourceId: attachedDatabase.typeMapping
@@ -4645,6 +4659,13 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final String? sourceMetadata;
   final int importedAt;
 
+  /// 书身份格式判别（PDF 阅读器 Phase 1）：`'epub'`（默认，含 EPUB / TextToEpub /
+  /// 有声书配对壳）或 `'pdf'`（pdfrx 渲染的真 PDF）。默认 `'epub'` 让既有全部行零破坏
+  /// （Never break userspace，v51 迁移 addColumn 自动回填），书架/进度/删除按此列区分而
+  /// 非另建平行表。PDF 行：`format='pdf'`、`epubPath`=PDF 绝对路径、`extractDir`=占位、
+  /// `chapterCount`=页数、`chaptersJson`=`'[]'`。
+  final String format;
+
   /// 书「读完」的时间戳（用户手动标记，或读到全书末尾自动写入）；null = 未完成。
   /// 镜像 [VideoBooks.completedAt]，书架概览「Completed」统计用。跳过后记/附录的
   /// 读者靠手动标记即可计入完成，不再受「必须读到最后一字」限制。
@@ -4665,6 +4686,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       this.tocJson,
       this.sourceMetadata,
       required this.importedAt,
+      required this.format,
       this.completedAt,
       this.sourceId});
   @override
@@ -4689,6 +4711,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       map['source_metadata'] = Variable<String>(sourceMetadata);
     }
     map['imported_at'] = Variable<int>(importedAt);
+    map['format'] = Variable<String>(format);
     if (!nullToAbsent || completedAt != null) {
       map['completed_at'] = Variable<DateTime>(completedAt);
     }
@@ -4718,6 +4741,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ? const Value.absent()
           : Value(sourceMetadata),
       importedAt: Value(importedAt),
+      format: Value(format),
       completedAt: completedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(completedAt),
@@ -4742,6 +4766,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       tocJson: serializer.fromJson<String?>(json['tocJson']),
       sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
+      format: serializer.fromJson<String>(json['format']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       sourceId: serializer.fromJson<int?>(json['sourceId']),
     );
@@ -4761,6 +4786,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       'tocJson': serializer.toJson<String?>(tocJson),
       'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
       'importedAt': serializer.toJson<int>(importedAt),
+      'format': serializer.toJson<String>(format),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'sourceId': serializer.toJson<int?>(sourceId),
     };
@@ -4778,6 +4804,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           Value<String?> tocJson = const Value.absent(),
           Value<String?> sourceMetadata = const Value.absent(),
           int? importedAt,
+          String? format,
           Value<DateTime?> completedAt = const Value.absent(),
           Value<int?> sourceId = const Value.absent()}) =>
       EpubBookRow(
@@ -4793,6 +4820,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
         sourceMetadata:
             sourceMetadata.present ? sourceMetadata.value : this.sourceMetadata,
         importedAt: importedAt ?? this.importedAt,
+        format: format ?? this.format,
         completedAt: completedAt.present ? completedAt.value : this.completedAt,
         sourceId: sourceId.present ? sourceId.value : this.sourceId,
       );
@@ -4817,6 +4845,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           : this.sourceMetadata,
       importedAt:
           data.importedAt.present ? data.importedAt.value : this.importedAt,
+      format: data.format.present ? data.format.value : this.format,
       completedAt:
           data.completedAt.present ? data.completedAt.value : this.completedAt,
       sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
@@ -4837,6 +4866,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('format: $format, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId')
           ..write(')'))
@@ -4856,6 +4886,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       tocJson,
       sourceMetadata,
       importedAt,
+      format,
       completedAt,
       sourceId);
   @override
@@ -4873,6 +4904,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           other.tocJson == this.tocJson &&
           other.sourceMetadata == this.sourceMetadata &&
           other.importedAt == this.importedAt &&
+          other.format == this.format &&
           other.completedAt == this.completedAt &&
           other.sourceId == this.sourceId);
 }
@@ -4889,6 +4921,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> tocJson;
   final Value<String?> sourceMetadata;
   final Value<int> importedAt;
+  final Value<String> format;
   final Value<DateTime?> completedAt;
   final Value<int?> sourceId;
   final Value<int> rowid;
@@ -4904,6 +4937,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.format = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4920,6 +4954,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     required int importedAt,
+    this.format = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4942,6 +4977,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? tocJson,
     Expression<String>? sourceMetadata,
     Expression<int>? importedAt,
+    Expression<String>? format,
     Expression<DateTime>? completedAt,
     Expression<int>? sourceId,
     Expression<int>? rowid,
@@ -4958,6 +4994,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (tocJson != null) 'toc_json': tocJson,
       if (sourceMetadata != null) 'source_metadata': sourceMetadata,
       if (importedAt != null) 'imported_at': importedAt,
+      if (format != null) 'format': format,
       if (completedAt != null) 'completed_at': completedAt,
       if (sourceId != null) 'source_id': sourceId,
       if (rowid != null) 'rowid': rowid,
@@ -4976,6 +5013,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       Value<String?>? tocJson,
       Value<String?>? sourceMetadata,
       Value<int>? importedAt,
+      Value<String>? format,
       Value<DateTime?>? completedAt,
       Value<int?>? sourceId,
       Value<int>? rowid}) {
@@ -4991,6 +5029,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       tocJson: tocJson ?? this.tocJson,
       sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       importedAt: importedAt ?? this.importedAt,
+      format: format ?? this.format,
       completedAt: completedAt ?? this.completedAt,
       sourceId: sourceId ?? this.sourceId,
       rowid: rowid ?? this.rowid,
@@ -5033,6 +5072,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (format.present) {
+      map['format'] = Variable<String>(format.value);
+    }
     if (completedAt.present) {
       map['completed_at'] = Variable<DateTime>(completedAt.value);
     }
@@ -5059,6 +5101,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('format: $format, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
           ..write('rowid: $rowid')
@@ -19795,6 +19838,7 @@ typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   required int importedAt,
+  Value<String> format,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
   Value<int> rowid,
@@ -19811,6 +19855,7 @@ typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   Value<int> importedAt,
+  Value<String> format,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
   Value<int> rowid,
@@ -19923,6 +19968,9 @@ class $$EpubBooksTableFilterComposer
 
   ColumnFilters<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get format => $composableBuilder(
+      column: $table.format, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnFilters(column));
@@ -20056,6 +20104,9 @@ class $$EpubBooksTableOrderingComposer
   ColumnOrderings<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get format => $composableBuilder(
+      column: $table.format, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnOrderings(column));
 
@@ -20121,6 +20172,9 @@ class $$EpubBooksTableAnnotationComposer
 
   GeneratedColumn<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get format =>
+      $composableBuilder(column: $table.format, builder: (column) => column);
 
   GeneratedColumn<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => column);
@@ -20247,6 +20301,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             Value<int> importedAt = const Value.absent(),
+            Value<String> format = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -20263,6 +20318,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            format: format,
             completedAt: completedAt,
             sourceId: sourceId,
             rowid: rowid,
@@ -20279,6 +20335,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             required int importedAt,
+            Value<String> format = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -20295,6 +20352,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            format: format,
             completedAt: completedAt,
             sourceId: sourceId,
             rowid: rowid,

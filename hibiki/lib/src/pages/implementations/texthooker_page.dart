@@ -82,6 +82,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   int _unreadLines = 0;
   String? _lastObservedLineId;
 
+  /// galgame 引擎-hook 启动的**再入守卫**：一次启动含选文件、位数探测、helper 确认/下载对话框、
+  /// 注入会话等多个 await，可持续数秒。没有守卫时重复点击会叠出多个下载确认对话框。
+  bool _launchingGalHook = false;
+
   /// 缓存的 [AppModel] 引用（`appProvider` 为单例，实例不变）。在 [initState] 一次性
   /// 读取：浮层层在 `LayoutBuilder` 回调里访问 `mixinAppModel`，widget 失活后再
   /// `ref.read` 会抛「deactivated widget's ancestor」（与视频页同源），缓存实例规避。
@@ -296,41 +300,48 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 音频源回退都在 [GalHookSessionController]。KiriKiriZ 仍走早注入；SiglusEngine 由
   /// injector 自动改为 Enigma-safe 延迟附着，并通过 raw-only Ogg 路径提供制卡音频。
   Future<void> _launchGalgameEngineHook() async {
-    if (!Platform.isWindows) {
-      HibikiToast.show(msg: t.external_window_unsupported);
-      return;
-    }
-    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: <String>['exe'],
-    );
-    final String? executable =
-        picked == null || picked.files.isEmpty ? null : picked.files.first.path;
-    if (executable == null) return;
-    final bool is32Bit =
-        await EngineHookGalAudioSource.exeIs32Bit(executable) ?? false;
-    if (GalHookSessionController.defaultInjectorResolver(is32Bit: is32Bit) ==
-        null) {
-      if (!context.mounted) return;
-      final bool installed = await GalgameHelperInstaller().ensureInjector(
-        is32Bit: is32Bit,
-        context: context,
+    if (_launchingGalHook) return; // 再入守卫：启动进行中，忽略重复点击（避免多开确认对话框）。
+    _launchingGalHook = true;
+    try {
+      if (!Platform.isWindows) {
+        HibikiToast.show(msg: t.external_window_unsupported);
+        return;
+      }
+      final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: <String>['exe'],
       );
-      if (!installed || !mounted) return;
+      final String? executable = picked == null || picked.files.isEmpty
+          ? null
+          : picked.files.first.path;
+      if (executable == null) return;
+      final bool is32Bit =
+          await EngineHookGalAudioSource.exeIs32Bit(executable) ?? false;
+      if (GalHookSessionController.defaultInjectorResolver(is32Bit: is32Bit) ==
+          null) {
+        if (!context.mounted) return;
+        final bool installed = await GalgameHelperInstaller().ensureInjector(
+          is32Bit: is32Bit,
+          context: context,
+        );
+        if (!installed || !mounted) return;
+      }
+      HibikiToast.show(msg: t.game_capture_launching);
+      final bool launched = await _session.launchGame(executable);
+      if (!mounted) return;
+      final GalHookSessionState state = _session.state;
+      if (!launched) {
+        HibikiToast.show(msg: state.lastError ?? t.game_capture_launch_failed);
+        return;
+      }
+      HibikiToast.show(
+        msg: state.boundWindow == null
+            ? t.game_capture_running_no_window
+            : t.game_capture_running,
+      );
+    } finally {
+      _launchingGalHook = false;
     }
-    HibikiToast.show(msg: t.game_capture_launching);
-    final bool launched = await _session.launchGame(executable);
-    if (!mounted) return;
-    final GalHookSessionState state = _session.state;
-    if (!launched) {
-      HibikiToast.show(msg: state.lastError ?? t.game_capture_launch_failed);
-      return;
-    }
-    HibikiToast.show(
-      msg: state.boundWindow == null
-          ? t.game_capture_running_no_window
-          : t.game_capture_running,
-    );
   }
 
   void _onSessionChanged() {

@@ -161,7 +161,7 @@
   }
 
   function applyPush() {
-    // BUG-1023：面板是独立右栏，不是浮在宿主页上。YouTube 压缩 ytd-app；Netflix 沿用
+    // BUG-1024：面板是独立右栏，不是浮在宿主页上。YouTube 压缩 ytd-app；Netflix 沿用
     // 已验证的播放器容器；其它站点回退到 video 的直接父容器。录制期间仍恢复全宽。
     if (st.pushSuspended || st.pushedEl) return;
     var el = null;
@@ -367,7 +367,7 @@
     st.cues = active ? active.cues : [];
     if (st.builtLang === st.activeLang && st.builtLen === st.cues.length &&
         st.builtCues === st.cues) {
-      // BUG-1022：live cue 逐字扩长时数组和长度都不变。沿用行节点，只刷新文本/时间戳；
+      // BUG-1023：live cue 逐字扩长时数组和长度都不变。沿用行节点，只刷新文本/时间戳；
       // 这样不会重建长列表，也不会把每个中间快照追加成一行。
       for (var n = 0; n < st.cues.length; n++) {
         if (st.rowTextEls[n] && st.rowTextEls[n].textContent !== st.cues[n].text) {
