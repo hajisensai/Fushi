@@ -2,6 +2,8 @@ import 'package:flutter/cupertino.dart' show CupertinoTabBar;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/pages/implementations/home_page.dart'
+    show HomeTab, homeNavItemFor;
 import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -93,36 +95,55 @@ Finder findDictionaryResultEvidence() {
 }
 
 List<Finder> findPrimaryNavigationTargets() {
+  final Finder? root = _primaryNavigationRoot();
+  if (root == null) return const <Finder>[];
+  return _navigationIconsInside(root);
+}
+
+/// 主导航里指定 [HomeTab] 的图标 target（选中/未选中两态都匹配）。
+///
+/// 顶层 tab 顺序是条件化的（video / downloads / games / browserExtension 按开关
+/// 插入，见 home_page.dart 的 `homeActiveTabs`），按位置索引取 `navTargets[i]`
+/// 会随开关漂移（曾把 books 当成 dictionaries 驱动）；按 tab 身份取图标才稳定。
+/// 图标真值直接来自生产端 `homeNavItemFor`，不在测试里复制常量。
+Finder findNavTargetForTab(HomeTab tab) {
+  final AdaptiveNavItem item = homeNavItemFor(tab);
+  final Finder? root = _primaryNavigationRoot();
+  final Finder icon = find.byWidgetPredicate(
+    (Widget w) =>
+        w is Icon &&
+        w.icon != null &&
+        (w.icon == item.icon || w.icon == item.selectedIcon),
+  );
+  if (root == null) {
+    // 导航根还没挂载：返回一个此刻必空的 finder（调用方按「不可达」处理）。
+    return find.descendant(
+        of: find.byKey(hibikiMaterialNavKey), matching: icon);
+  }
+  return find.descendant(of: root, matching: icon);
+}
+
+Finder? _primaryNavigationRoot() {
   // Material now self-draws the bottom bar / side rail (per-item gamepad focus),
   // tagged with [hibikiMaterialNavKey] instead of the stock NavigationBar/Rail.
   final Finder materialNav = find.byKey(hibikiMaterialNavKey);
-  if (materialNav.evaluate().isNotEmpty) {
-    return _navigationIconsInside(materialNav);
-  }
+  if (materialNav.evaluate().isNotEmpty) return materialNav;
 
   final Finder rail = find.byType(NavigationRail);
-  if (rail.evaluate().isNotEmpty) {
-    return _navigationIconsInside(rail);
-  }
+  if (rail.evaluate().isNotEmpty) return rail;
 
   final Finder bottomNav = find.byType(BottomNavigationBar);
-  if (bottomNav.evaluate().isNotEmpty) {
-    return _navigationIconsInside(bottomNav);
-  }
+  if (bottomNav.evaluate().isNotEmpty) return bottomNav;
 
   final Finder navigationBar = find.byType(NavigationBar);
-  if (navigationBar.evaluate().isNotEmpty) {
-    return _navigationIconsInside(navigationBar);
-  }
+  if (navigationBar.evaluate().isNotEmpty) return navigationBar;
 
   // iOS draws a CupertinoTabBar (see adaptive_navigation.dart); without this
   // branch isHomeReady() never fires on iOS and every waitForHome() test hangs.
   final Finder cupertinoTabBar = find.byType(CupertinoTabBar);
-  if (cupertinoTabBar.evaluate().isNotEmpty) {
-    return _navigationIconsInside(cupertinoTabBar);
-  }
+  if (cupertinoTabBar.evaluate().isNotEmpty) return cupertinoTabBar;
 
-  return const <Finder>[];
+  return null;
 }
 
 List<Finder> _navigationIconsInside(Finder navigationRoot) {
