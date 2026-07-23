@@ -1,5 +1,5 @@
 // gal-hook-ux-overhaul 源码接线守卫：
-//  ① BUG-1023 查词预热——texthooker_page 必须 seedWarmSlot 且顶层查词 reuseWarmSlot（防回归到
+//  ① BUG-1028 查词预热——texthooker_page 必须 seedWarmSlot 且顶层查词 reuseWarmSlot（防回归到
 //     每次点词冷建 WebView 的高延迟）。
 //  ② 工具栏只保留一套按钮构建方法——嵌入/独立两模式都引用 _buildToolbarActions，旧的
 //     _buildEmbeddedActions（与独立模式不一致的特殊情况）必须删除。
@@ -19,7 +19,7 @@ void main() {
       File('lib/src/mining/gal_hook_mining_coordinator.dart')
           .readAsStringSync();
 
-  group('BUG-1023 查词预热（防回归冷建 WebView）', () {
+  group('BUG-1028 查词预热（防回归冷建 WebView）', () {
     test('initState seed 常驻热槽', () {
       expect(pageSrc.contains('seedWarmSlot'), isTrue,
           reason: '开页必须 seed 隐藏热槽，使弹窗 WebView 冷加载一次后全程复用');
@@ -31,7 +31,7 @@ void main() {
     test('顶层查词复用热槽而非 replaceStack 冷建', () {
       expect(pageSrc.contains('reuseWarmSlot: true'), isTrue,
           reason: '_onWordTap 必须 reuseWarmSlot:true 复用预热 WebView');
-      // 逐词查词点击本身不得再走 replaceStack 冷建弹窗（BUG-1023 根因）。
+      // 逐词查词点击本身不得再走 replaceStack 冷建弹窗（BUG-1028 根因）。
       expect(pageSrc.contains('replaceStack: true'), isFalse,
           reason: 'texthooker 顶层查词不应再用 replaceStack 冷建');
     });

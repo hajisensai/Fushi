@@ -1,4 +1,4 @@
-// BUG-1022 源码守卫：音轨快照自动刷新接线 + 诊断页 UX 修正不得被后续改动悄悄退化。
+// BUG-1027 源码守卫：音轨快照自动刷新接线 + 诊断页 UX 修正不得被后续改动悄悄退化。
 //
 // 行为断言见 test/mining/gal_hook_track_autorefresh_test.dart；此处守卫接线本身：
 //   ① controller 各激活路径 / backend 迁移路径都调 _syncTrackAutoRefresh（自动刷新）；
@@ -19,7 +19,7 @@ void main() {
       File('lib/src/pages/implementations/game_diagnostics_page.dart')
           .readAsStringSync();
 
-  test('controller：激活/backend 迁移路径接线 _syncTrackAutoRefresh（BUG-1022 ①）', () {
+  test('controller：激活/backend 迁移路径接线 _syncTrackAutoRefresh（BUG-1027 ①）', () {
     expect(
       controllerSrc.contains('void _syncTrackAutoRefresh()'),
       isTrue,
@@ -37,7 +37,7 @@ void main() {
       final int callAt = controllerSrc.indexOf('_syncTrackAutoRefresh();', at);
       expect(callAt, greaterThan(at),
           reason: '$activator 内（或其后）必须调用 _syncTrackAutoRefresh——'
-              '会话激活/音频后端变化后音轨快照要自动刷新（BUG-1022）');
+              '会话激活/音频后端变化后音轨快照要自动刷新（BUG-1027）');
       // 粗粒度边界：调用点必须离声明 4000 字符以内，防止匹配到无关远处调用。
       expect(callAt - at, lessThan(4000),
           reason: '$activator 附近未找到 _syncTrackAutoRefresh 调用');
@@ -60,7 +60,7 @@ void main() {
     expect(initAt, greaterThan(0), reason: '诊断页必须有 initState 自动刷新');
     final int refreshAt = pageSrc.indexOf('refreshAudioTracks', initAt);
     expect(refreshAt, greaterThan(initAt),
-        reason: 'initState 内必须自动调用 refreshAudioTracks（BUG-1022）');
+        reason: 'initState 内必须自动调用 refreshAudioTracks（BUG-1027）');
     expect(refreshAt - initAt, lessThan(600));
   });
 
@@ -82,7 +82,7 @@ void main() {
     );
   });
 
-  test('诊断页：gameResource / Loopback 空轨走解释态分支（BUG-1022 ②）', () {
+  test('诊断页：gameResource / Loopback 空轨走解释态分支（BUG-1027 ②）', () {
     final int tracksCardAt = pageSrc.indexOf('class _AudioTracksCard');
     expect(tracksCardAt, greaterThan(0));
     final String tracksCard = pageSrc.substring(tracksCardAt);
@@ -94,7 +94,7 @@ void main() {
         reason: '纯 Loopback 空轨必须显示回环无逐轨枚举的解释');
   });
 
-  test('选轨无 engine 不静默：controller 记事件 + 页面 toast（BUG-1022 ④）', () {
+  test('选轨无 engine 不静默：controller 记事件 + 页面 toast（BUG-1027 ④）', () {
     final int selectAt =
         controllerSrc.indexOf('void selectVoiceTrack(int sourcePtr)');
     expect(selectAt, greaterThan(0));

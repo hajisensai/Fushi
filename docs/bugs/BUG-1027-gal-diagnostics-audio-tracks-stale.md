@@ -1,4 +1,4 @@
-## BUG-1022 · 兼容性诊断音轨快照不自动拉取且资源音频模式误报尚无数据
+## BUG-1027 · 兼容性诊断音轨快照不自动拉取且资源音频模式误报尚无数据
 - **报告**：2026-07-23（用户：）
 - **真实性**：✅ 真 bug。
   - `state.audioTracks` 唯一填充点是 `refreshAudioTracks()`（`hibiki/lib/src/mining/gal_hook_session_controller.dart:625-643`，修复前），唯一调用点是诊断页右上角「刷新音轨」按钮（`hibiki/lib/src/pages/implementations/game_diagnostics_page.dart:64-69`，修复前）——无任何自动拉取，`stopCapture` 清空后更是永远空。

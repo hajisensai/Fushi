@@ -119,7 +119,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _session.addListener(_onSessionChanged);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
-    // BUG-1023：开页 seed 常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用，
+    // BUG-1028：开页 seed 常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用，
     // 消除本页此前「每次点词 replaceStack 冷建 WebView」的高延迟（对齐 home_dictionary_page）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _seedWarmPopup();
@@ -131,7 +131,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     });
   }
 
-  /// BUG-1023：开页 seed 常驻隐藏热槽（低内存模式 [DictionaryPopupController.seedWarmSlot]
+  /// BUG-1028：开页 seed 常驻隐藏热槽（低内存模式 [DictionaryPopupController.seedWarmSlot]
   /// 据 lowMemory 早退不保留）。仅在 AppModel 已初始化（能安全读 lowMemoryMode）时执行，
   /// 与 home_dictionary_page 的 `_seedWarmPopup` 同范式。
   void _seedWarmPopup() {
@@ -498,7 +498,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     Rect rect,
   ) {
     _selectLine(line);
-    // BUG-1023：顶层查词复用常驻热槽（reuseWarmSlot:true）而非 replaceStack 冷建，
+    // BUG-1028：顶层查词复用常驻热槽（reuseWarmSlot:true）而非 replaceStack 冷建，
     // 复用已预热的弹窗 WebView，消除冷启动延迟（对齐 home_dictionary_page.dart:752）。
     // 无热槽（低内存 / seed 未就绪）时 beginTop 自动退回压新层，行为不变。
     pushNestedPopup(

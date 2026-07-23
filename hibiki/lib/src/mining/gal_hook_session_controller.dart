@@ -25,7 +25,7 @@ enum GalHookSessionPhase {
 
 enum GalHookAudioBackend { none, gameResource, enginePcm, systemLoopback }
 
-/// 「活跃音轨」空列表时的解释分支（BUG-1022，纯函数可单测）。
+/// 「活跃音轨」空列表时的解释分支（BUG-1027，纯函数可单测）。
 ///
 /// gameResource 模式语音按句直接提取资源文件、不进共享内存 PCM 环（native
 /// `ListAudioTracks` 只枚举 PCM 环，voice_hook_reader.cpp:546），空列表是**常态**
@@ -307,7 +307,7 @@ class GalHookSessionController extends ChangeNotifier {
       _endpointStatusLoader();
 
   /// 当前是否存在引擎 hook 源。音轨选择 / 排除 / 试听等能力只在此时有意义；
-  /// 诊断页据此把「选轨不生效」显式提示给用户（BUG-1022），不再静默失败。
+  /// 诊断页据此把「选轨不生效」显式提示给用户（BUG-1027），不再静默失败。
   bool get hasEngineSource => _engineSource != null;
 
   final List<GalHookEvent> _events = <GalHookEvent>[];
@@ -694,7 +694,7 @@ class GalHookSessionController extends ChangeNotifier {
     final bool membershipChanged =
         !sameTrackMembership(_state.audioTracks, tracks);
     _setState(_state.copyWith(audioTracks: tracks));
-    // BUG-1022：刷新已由定时器/状态迁移自动驱动，只有轨成员变化才记事件，
+    // BUG-1027：刷新已由定时器/状态迁移自动驱动，只有轨成员变化才记事件，
     // 避免 5s 一条「已刷新」把事件日志淹掉。
     if (membershipChanged) {
       _record(
@@ -707,7 +707,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
   }
 
-  /// BUG-1022：音轨快照不再依赖诊断页手动刷新。
+  /// BUG-1027：音轨快照不再依赖诊断页手动刷新。
   ///
   /// 每次会话激活 / 音频后端切换后（含 [_promoteLateResourceAudio]）先立即刷一次；
   /// 引擎 PCM 与「文本 + Loopback 混合」（engine 仍存活）两种形态另起**会话级**低频
@@ -731,7 +731,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
   }
 
-  /// 试听指定音轨（BUG-1022）：按最近一条 hook 台词时间戳，经既有 `grabUtterance`
+  /// 试听指定音轨（BUG-1027）：按最近一条 hook 台词时间戳，经既有 `grabUtterance`
   /// IPC 抓取该 [sourcePtr] 在 `[ts-200, ts+6000]` 窗口内的整句 PCM（native
   /// `GrabUtterance`，voice_hook_reader.cpp:408——`target_source` 非 0 时直接按轨过滤；
   /// exclude 传空集，试听已标记 BGM 的轨同样允许），拼成 WAV 写入系统临时目录，播放
@@ -798,7 +798,7 @@ class GalHookSessionController extends ChangeNotifier {
   void selectVoiceTrack(int sourcePtr) {
     final EngineHookGalAudioSource? engine = _engineSource;
     if (engine == null) {
-      // BUG-1022：此前静默 return，诊断页点 radio 毫无反馈。记结构化警告事件，
+      // BUG-1027：此前静默 return，诊断页点 radio 毫无反馈。记结构化警告事件，
       // 页面另以 toast 明示「选轨需要引擎 hook 会话」。
       _record(
         GalHookEventSeverity.warning,
@@ -1527,7 +1527,7 @@ class GalHookSessionController extends ChangeNotifier {
     );
     _refreshPendingResourceMatches(engine);
     // audioBackend 已切到 gameResource：立即重刷一次音轨快照并停掉 PCM 低频定时器
-    //（BUG-1022，资源模式不进 PCM 环，快照保持一致的空/残留态即可）。
+    //（BUG-1027，资源模式不进 PCM 环，快照保持一致的空/残留态即可）。
     _syncTrackAutoRefresh();
   }
 

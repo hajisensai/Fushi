@@ -1,4 +1,4 @@
-// BUG-1022：诊断页音轨快照自动化 + 逐轨试听 + 选轨反馈的控制器行为测试。
+// BUG-1027：诊断页音轨快照自动化 + 逐轨试听 + 选轨反馈的控制器行为测试。
 //
 // 覆盖：
 //   ① 会话激活后音轨快照自动填充（不再依赖诊断页手动「刷新音轨」按钮）；
@@ -162,7 +162,7 @@ Future<void> _waitUntil(bool Function() done) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('会话激活自动填充音轨快照，stopCapture 停定时器并清空（BUG-1022 ①）', () async {
+  test('会话激活自动填充音轨快照，stopCapture 停定时器并清空（BUG-1027 ①）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _TrackFakeEngine engine = _TrackFakeEngine(
@@ -229,7 +229,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('晚到资源 hook 切 backend 后重刷一次并停掉低频定时器（BUG-1022 ①）', () async {
+  test('晚到资源 hook 切 backend 后重刷一次并停掉低频定时器（BUG-1027 ①）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _TrackFakeEngine engine = _TrackFakeEngine(
@@ -263,7 +263,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('exportTrackPreview 按轨抓整句 PCM 并落临时 WAV（BUG-1022 试听）', () async {
+  test('exportTrackPreview 按轨抓整句 PCM 并落临时 WAV（BUG-1027 试听）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final Uint8List pcm = Uint8List(44100); // 0.5s @ 44100Hz/16bit/mono
@@ -327,7 +327,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('selectVoiceTrack 无 engine 记录警告事件而非静默（BUG-1022 ④）', () async {
+  test('selectVoiceTrack 无 engine 记录警告事件而非静默（BUG-1027 ④）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final GalHookSessionController controller = GalHookSessionController(

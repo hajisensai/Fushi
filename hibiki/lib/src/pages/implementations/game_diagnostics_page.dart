@@ -45,7 +45,7 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
   @override
   void initState() {
     super.initState();
-    // BUG-1022：进入诊断页即自动拉一次音轨快照；会话未激活时 controller 侧自行
+    // BUG-1027：进入诊断页即自动拉一次音轨快照；会话未激活时 controller 侧自行
     // 归一为空快照，无需在页面再判 engine。
     if (_controller.state.isActive) {
       unawaited(_controller.refreshAudioTracks());
@@ -58,7 +58,7 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
     super.dispose();
   }
 
-  /// 选轨需要引擎 hook 会话；无 engine 时明确 toast 而非静默无反应（BUG-1022）。
+  /// 选轨需要引擎 hook 会话；无 engine 时明确 toast 而非静默无反应（BUG-1027）。
   void _handleSelectVoice(int sourcePtr) {
     if (!_controller.hasEngineSource) {
       HibikiToast.show(msg: t.game_track_select_requires_engine);
@@ -126,7 +126,7 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
                   onTap: widget.onShowCapture,
                 ),
                 actions: <Widget>[
-                  // BUG-1022：「刷新音轨」已就近移入「活跃音轨」卡片标题行；
+                  // BUG-1027：「刷新音轨」已就近移入「活跃音轨」卡片标题行；
                   // 页头只保留全局性的清事件动作。
                   HibikiIconButton(
                     icon: Icons.delete_sweep_outlined,
@@ -156,7 +156,7 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
                             label: t.game_captured_lines,
                           ),
                           // 文本来自引擎 Hook 时，「0/3 文本端点」是外部工具的可选
-                          // 接入口而非健康指标——KPI 改为显示真实文本来源（BUG-1022）。
+                          // 接入口而非健康指标——KPI 改为显示真实文本来源（BUG-1027）。
                           if (_controller.hasEngineSource)
                             StatKpiItem(
                               icon: Icons.link_outlined,
@@ -326,7 +326,7 @@ class _EndpointCard extends StatelessWidget {
   final List<TexthookerEndpointStatus> endpoints;
 
   /// 当前会话文本是否已由引擎 Hook 供给。为 true 时端点只是外部工具的可选接入口，
-  /// 整卡降级为默认收起的次要样式（BUG-1022 降噪）。
+  /// 整卡降级为默认收起的次要样式（BUG-1027 降噪）。
   final bool engineHookActive;
 
   @override
@@ -387,7 +387,7 @@ class _EndpointCard extends StatelessWidget {
 
 /// 单条文本端点状态行。与 [_DiagnosticRow] 的差别：未连接（连接中/重试中/已停止）
 /// 用中性的同步图标与中性色，不再暗示健康问题——这些端点没接外部工具时本就
-/// 不会连上（BUG-1022 降噪）。
+/// 不会连上（BUG-1027 降噪）。
 class _EndpointRow extends StatelessWidget {
   const _EndpointRow({required this.endpoint});
 
@@ -448,7 +448,7 @@ class _AudioTracksCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // BUG-1022：gameResource / 纯 Loopback 模式下 PCM 音轨列表**本就不存在**，
+    // BUG-1027：gameResource / 纯 Loopback 模式下 PCM 音轨列表**本就不存在**，
     // 通用「尚无音轨数据」会误导用户以为音频链路故障——改为按后端给解释态，
     // 且不再渲染只对引擎 PCM 有意义的「自动选择」radio。
     final GalTrackEmptyHint emptyHint =
@@ -543,7 +543,7 @@ class _TrackTile extends StatelessWidget {
       trailing: Wrap(
         spacing: 4,
         children: <Widget>[
-          // BUG-1022：逐轨试听——抓该轨最近整句 PCM 播放，帮用户判断这条轨
+          // BUG-1027：逐轨试听——抓该轨最近整句 PCM 播放，帮用户判断这条轨
           // 是语音还是 BGM，再决定选轨/排除。播放中变停止按钮。
           HibikiIconButton(
             icon: previewing

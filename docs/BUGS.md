@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 993 条。点号进各自文件。
+> 共 995 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1028](bugs/BUG-1028-texthooker-popup-cold-webview.md) | ✅ | ✅ | 捕获工作台查词弹窗每次冷建WebView加载缓慢 |
+| [BUG-1027](bugs/BUG-1027-gal-diagnostics-audio-tracks-stale.md) | ✅ | ✅ | 兼容性诊断音轨快照不自动拉取且资源音频模式误报尚无数据 |
 | [BUG-1026](bugs/BUG-1026-popup-wheel-speed-config.md) | ✅ | ✅ | 查词弹窗滚轮滚动慢，缺可配置速度项 |
 | [BUG-1025](bugs/BUG-1025-clipboard-recopy-same-word-dedup.md) | ✅ | ✅ | 浏览器查词复制同一个词无法重复查（内容去重挡住手动重复复制） |
 | [BUG-1024](bugs/BUG-1024-ext-shift-hover-pending-deadlock.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词在途闸永久死锁致弹窗不敏感 |
