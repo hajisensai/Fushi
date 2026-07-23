@@ -110,14 +110,14 @@ void main() {
 
     test('满档（图片原片 + 音频原片）= 截图 0 哨兵 + GIF 封顶 + 立体声 192k', () {
       final MiningMediaCompression r = MiningMediaCompression.resolve(
-        imageTier: MiningMediaCompression.imageTierNative,
+        imageTier: MiningMediaCompression.imageTierMax,
         audioTier: MiningMediaCompression.audioTierCount - 1,
       );
       expect(r.screenshotMaxLongEdge, 0, reason: '0 = 不缩放（原图直通）');
       // BUG-1039：GIF 侧不存在「源分辨率/源帧率」档——GIF 无帧间压缩，0 哨兵会让
       // 1080p 源的 4 秒区间涨到 54 MB / 48.9 秒，把 Anki 打成无响应。
-      expect(r.gifWidth, MiningMediaCompression.gifNativeWidth);
-      expect(r.gifFps, MiningMediaCompression.gifNativeFps);
+      expect(r.gifWidth, MiningMediaCompression.gifMaxTierWidth);
+      expect(r.gifFps, MiningMediaCompression.gifMaxTierFps);
       expect(r.audioChannels, 2);
       expect(r.audioBitrate, '192k');
     });
@@ -182,6 +182,23 @@ void main() {
           reason: '音频滑块标题用 i18n key mining_audio_quality');
       expect(src.contains('appModel.setMiningImageQuality'), isTrue);
       expect(src.contains('appModel.setMiningAudioQuality'), isTrue);
+    });
+
+    // BUG-1039：两个滑块的满档过去都叫「原片 / Native」，但都名不副实——图片满档对 GIF
+    // 已是封顶档（只有截图仍是原图），音频满档 192k AAC 本就是有损重编码。统一改叫
+    // 「最高 / Maximum」（只承诺是滑块顶格，不承诺保真度）。钉死不许滑回旧名。
+    test('BUG-1039：两滑块满档标签是「最高」而非名不副实的「原片」', () {
+      final String src = File(
+        'lib/src/pages/implementations/anki_settings_page.dart',
+      ).readAsStringSync();
+      expect(src.contains('t.mining_image_quality_max'), isTrue,
+          reason: '图片满档标签必须用 mining_image_quality_max');
+      expect(src.contains('t.mining_audio_quality_max'), isTrue,
+          reason: '音频满档标签必须用 mining_audio_quality_max');
+      expect(src.contains('t.mining_image_quality_native'), isFalse,
+          reason: '「原片」是名不副实的旧名，不得复活');
+      expect(src.contains('t.mining_audio_quality_native'), isFalse,
+          reason: '「原片」是名不副实的旧名，不得复活');
     });
   });
 }

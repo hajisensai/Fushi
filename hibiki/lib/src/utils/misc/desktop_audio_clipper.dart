@@ -194,15 +194,15 @@ Future<String?> materializeRemoteAudioViaRangeDownload({
 ///
 /// 由两个用户可调的清晰度滑块组装（各是独立有序档位，替代旧的单一「压缩」开关）：
 /// - **图片/GIF 清晰度**（`AppModel.miningImageQuality`，4 档 0..3）：只管截图分辨率/
-///   JPEG 质量 + GIF 帧率/宽度。见 [imageTiers]。满档 [imageTierNative]=原片（截图不缩、
-///   原图直通；GIF 源分辨率+源帧率），最省档 0 更小更省流。默认档 [defaultImageTier]=1
-///   与旧「压缩档」逐字节一致——零行为破坏。
+///   JPEG 质量 + GIF 帧率/宽度。见 [imageTiers]。满档 [imageTierMax]=**最高**（截图不缩、
+///   原图直通；GIF 走封顶档，非源分辨率/源帧率——BUG-1039），最省档 0 更小更省流。
+///   默认档 [defaultImageTier]=1 与旧「压缩档」逐字节一致——零行为破坏。
 /// - **音频质量**（`AppModel.miningAudioQuality`，3 档 0..2）：只管句子/cue 音频声道 +
 ///   比特率。见 [audioTiers]。默认档 [defaultAudioTier]=0 = 旧压缩档（单声道 64k）。
 ///
 /// 不可变值对象（纯数据，可单测、可在隔离中构造）。各底层纯函数（[buildFfmpegClipArgs]
 /// / [buildFfmpegClipGifArgs] / [downsampleCardScreenshot]）仍接收原始可选参数，本类只是
-/// 调用点选档时的参数捆绑，不让纯函数读全局偏好。原片档用 [screenshotMaxLongEdge] == 0
+/// 调用点选档时的参数捆绑，不让纯函数读全局偏好。最高档用 [screenshotMaxLongEdge] == 0
 /// 表示「不缩放」（截图原图直通），由底层纯函数解读；**GIF 侧没有 0 哨兵档**（BUG-1039，
 /// 见 [imageTiers]），任何档位的 [gifFps]/[gifWidth] 都是有限值。
 class MiningMediaCompression {
@@ -221,25 +221,29 @@ class MiningMediaCompression {
   /// 音频比特率（`-b:a`，如 `'64k'`）。
   final String audioBitrate;
 
-  /// cue 封面 GIF 帧率（`fps=`）。**0 = 源帧率**（原片档，不加 fps 滤镜）。
+  /// cue 封面 GIF 帧率（`fps=`）。**0 = 源帧率**（不加 fps 滤镜）。BUG-1039 后已无档位
+  /// 产出 0——GIF 侧全档有限值；纯函数仍支持 0 供直接调用方使用。
   final int gifFps;
 
-  /// cue 封面 GIF 宽度（`scale=W:-2`）。**0 = 源分辨率**（原片档，不加 scale 滤镜）。
+  /// cue 封面 GIF 宽度（`scale=W:-2`）。**0 = 源分辨率**（不加 scale 滤镜）。同上，
+  /// BUG-1039 后已无档位产出 0。
   final int gifWidth;
 
-  /// 帧截图封面降采样长边（px）。**0 = 不缩放**（原片档，原图字节直通）。
+  /// 帧截图封面降采样长边（px）。**0 = 不缩放**（最高档，原图字节直通）。
   final int screenshotMaxLongEdge;
 
-  /// 帧截图封面重编码 JPEG 质量（0–100）。原片档不重编码，此值不生效。
+  /// 帧截图封面重编码 JPEG 质量（0–100）。最高档不重编码，此值不生效。
   final int screenshotQuality;
 
-  /// 图片/GIF 清晰度有序档位（索引 0..[imageTierNative]）：低→高。
+  /// 图片/GIF 清晰度有序档位（索引 0..[imageTierMax]）：低→高。
   /// 档 1 = 旧「压缩档」（1000px/q90/GIF 480px·8fps），逐字节保持现状。
   /// 档 2 = 旧「高保真档」（2000px/q95/GIF 720px·12fps）。
-  /// 档 3 = 原片：**截图**不缩、原图直通（`maxLongEdge` 用 0 哨兵）；**GIF** 走
-  /// [gifNativeFps]/[gifNativeWidth] 的封顶档，见下方 BUG-1039 说明。
+  /// 档 3 = **最高**（UI 文案 `mining_image_quality_max`）：**截图**不缩、原图直通
+  /// （`maxLongEdge` 用 0 哨兵）；**GIF** 走 [gifMaxTierFps]/[gifMaxTierWidth] 的封顶档。
+  /// BUG-1039 前这一档叫「原片」，但它对 GIF 已不再是源分辨率/源帧率——只有截图仍是
+  /// 原图，故改名为「最高」：只承诺是滑块顶格，不承诺具体保真度。
   ///
-  /// BUG-1039：原片档过去对 GIF 也用 0 哨兵（源分辨率 + 源帧率），这是把「截图」的
+  /// BUG-1039：这一档过去对 GIF 也用 0 哨兵（源分辨率 + 源帧率），这是把「截图」的
   /// 语义错套到「动图」上——截图原图直通只是几 MB 的一张 JPEG，而 GIF 是 8-bit 调色板
   /// 逐帧 LZW、**无帧间压缩**，「源分辨率+源帧率」必然线性爆炸。1080p 源、**4 秒**字幕
   /// 区间实测：标准档(480/8) 1.5 秒 / 1.5 MB，原片档(0/0) **48.9 秒 / 54 MB**；cue 上限
@@ -255,24 +259,25 @@ class MiningMediaCompression {
     (gifFps: 8, gifWidth: 480, maxLongEdge: 1000, quality: 90), // 1 标准（默认=旧压缩档）
     (gifFps: 12, gifWidth: 720, maxLongEdge: 2000, quality: 95), // 2 高清（=旧高保真档）
     (
-      gifFps: gifNativeFps,
-      gifWidth: gifNativeWidth,
+      gifFps: gifMaxTierFps,
+      gifWidth: gifMaxTierWidth,
       maxLongEdge: 0,
       quality: 100
-    ), // 3 原片（截图原图直通；GIF 封顶，BUG-1039）
+    ), // 3 最高（截图原图直通；GIF 封顶，BUG-1039）
   ];
 
-  /// BUG-1039：原片档 GIF 的封顶帧率 / 宽度。GIF 无帧间压缩，不存在可用的「源分辨率+
+  /// BUG-1039：最高档 GIF 的封顶帧率 / 宽度。GIF 无帧间压缩，不存在可用的「源分辨率+
   /// 源帧率」档；这两个值是「仍明显优于高清档、且体积与耗时可控」的实测折中。
-  static const int gifNativeFps = 12;
-  static const int gifNativeWidth = 960;
+  static const int gifMaxTierFps = 12;
+  static const int gifMaxTierWidth = 960;
 
   /// 音频质量有序档位（索引 0..2）：低→高。
-  /// 档 0 = 旧压缩档（单声道 64k），档 1 = 旧高保真档（立体声 128k），档 2 = 原片（立体声 192k）。
+  /// 档 0 = 旧压缩档（单声道 64k），档 1 = 旧高保真档（立体声 128k），档 2 = 最高（立体声
+  /// 192k）。BUG-1039 前档 2 叫「原片」，但 192k AAC 是有损重编码、并非原片，故一并改名。
   static const List<({int channels, String bitrate})> audioTiers = [
     (channels: 1, bitrate: '64k'), // 0 标准（默认=旧压缩档）
     (channels: 2, bitrate: '128k'), // 1 高音质（=旧高保真档）
-    (channels: 2, bitrate: '192k'), // 2 原片
+    (channels: 2, bitrate: '192k'), // 2 最高
   ];
 
   static const int imageTierCount = 4;
@@ -284,8 +289,8 @@ class MiningMediaCompression {
   /// 默认音频档（= 旧压缩档，单声道 64k）。
   static const int defaultAudioTier = 0;
 
-  /// 满档索引（原片，供 UI / 调用点判定「原片」语义）。
-  static const int imageTierNative = imageTierCount - 1;
+  /// 满档索引（最高档，供 UI / 调用点判定「滑块顶格」语义）。
+  static const int imageTierMax = imageTierCount - 1;
 
   static int _clampImageTier(int tier) =>
       tier < 0 ? 0 : (tier >= imageTierCount ? imageTierCount - 1 : tier);
@@ -935,7 +940,7 @@ List<String> buildFfmpegClipGifArgs({
   final int clampedDur =
       rawDur > maxDurationMs ? maxDurationMs : (rawDur < 1 ? 1 : rawDur);
   final double durationSeconds = clampedDur / 1000.0;
-  // 原片档（清晰度滑块满档）用 [fps]<=0 / [width]<=0 表示「源帧率 / 源分辨率」：
+  // [fps]<=0 / [width]<=0 表示「源帧率 / 源分辨率」（BUG-1039 后无档位再传 0，仅供直接调用方）：
   // 对应滤镜前缀整段省略（不降帧、不缩放），仅保留 palettegen/paletteuse 双遍避免抖动。
   final StringBuffer pre = StringBuffer();
   if (fps > 0) pre.write('fps=$fps,');

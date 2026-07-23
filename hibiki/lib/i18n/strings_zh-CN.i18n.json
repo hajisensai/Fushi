@@ -1966,16 +1966,14 @@
   "tag_added_to_collection": "标签「$name」已添加到合集。",
   "tag_already_on_collection": "标签「$name」已在此合集上。",
   "mining_image_quality": "图片 / GIF 清晰度",
-  "mining_image_quality_hint": "越高越清晰，卡片体积也越大。原片档的截图保留源分辨率；动图有上限，避免卡片大到不可用。",
+  "mining_image_quality_hint": "越高越清晰，卡片体积也越大。最高档的截图保留源分辨率；动图有上限，避免卡片大到不可用。",
   "mining_image_quality_thrift": "省流",
   "mining_image_quality_standard": "标准",
   "mining_image_quality_hd": "高清",
-  "mining_image_quality_native": "原片",
   "mining_audio_quality": "音频质量",
   "mining_audio_quality_hint": "比特率越高越清晰，卡片体积也越大。",
   "mining_audio_quality_standard": "标准",
   "mining_audio_quality_high": "高音质",
-  "mining_audio_quality_native": "原片",
   "video_setting_torrent_backend": "下载后端",
   "video_setting_torrent_backend_qb": "外接 qBittorrent",
   "video_setting_torrent_backend_embedded": "内置引擎（仅桌面）",
@@ -2315,5 +2313,7 @@
   "pdf_outline_empty": "此 PDF 没有目录。",
   "pdf_bookmarks": "书签",
   "pdf_bookmarks_empty": "还没有书签。",
-  "pdf_bookmark_added": "已添加书签"
+  "pdf_bookmark_added": "已添加书签",
+  "mining_image_quality_max": "最高",
+  "mining_audio_quality_max": "最高"
 }

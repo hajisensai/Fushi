@@ -1966,16 +1966,14 @@
   "tag_added_to_collection": "Tag $name added to collection.",
   "tag_already_on_collection": "Tag $name is already on this collection.",
   "mining_image_quality": "Image / GIF quality",
-  "mining_image_quality_hint": "Higher is sharper but makes larger cards. Native keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.",
+  "mining_image_quality_hint": "Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.",
   "mining_image_quality_thrift": "Data saver",
   "mining_image_quality_standard": "Standard",
   "mining_image_quality_hd": "HD",
-  "mining_image_quality_native": "Native",
   "mining_audio_quality": "Audio quality",
   "mining_audio_quality_hint": "Higher bitrate is clearer but makes larger cards.",
   "mining_audio_quality_standard": "Standard",
   "mining_audio_quality_high": "High",
-  "mining_audio_quality_native": "Native",
   "video_setting_torrent_backend": "Download backend",
   "video_setting_torrent_backend_qb": "External qBittorrent",
   "video_setting_torrent_backend_embedded": "Built-in engine (desktop only)",
@@ -2315,5 +2313,7 @@
   "pdf_outline_empty": "This PDF has no contents.",
   "pdf_bookmarks": "Bookmarks",
   "pdf_bookmarks_empty": "No bookmarks yet.",
-  "pdf_bookmark_added": "Bookmark added"
+  "pdf_bookmark_added": "Bookmark added",
+  "mining_image_quality_max": "Maximum",
+  "mining_audio_quality_max": "Maximum"
 }
