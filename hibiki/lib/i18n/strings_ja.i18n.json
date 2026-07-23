@@ -2315,5 +2315,12 @@
   "pdf_outline_empty": "This PDF has no contents.",
   "pdf_bookmarks": "Bookmarks",
   "pdf_bookmarks_empty": "No bookmarks yet.",
-  "pdf_bookmark_added": "Bookmark added"
+  "pdf_bookmark_added": "Bookmark added",
+  "interconnect_section_delegate": "Delegate to the paired device",
+  "interconnect_backup_backend": "Use interconnect as the backup backend",
+  "interconnect_backup_backend_hint": "Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.",
+  "interconnect_backup_backend_apply": "Set as backup backend",
+  "interconnect_backup_backend_active": "Backups already go to the paired device. Pick another backend in Sync & backup to switch away.",
+  "interconnect_backup_backend_needs_pairing": "Connect to a device above first.",
+  "interconnect_backup_backend_current": "Current backup backend: $backend"
 }
