@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 38641 (2273 per locale)
+/// Strings: 38930 (2290 per locale)
 ///
-/// Built on 2026-07-23 at 00:39 UTC
+/// Built on 2026-07-23 at 04:11 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2806,7 +2806,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_text_source_unknown => 'Unknown source';
   String get game_line_audio_pending => 'Matching';
   String get game_line_audio_matched => 'Audio ready';
-  String get game_line_audio_encoded => 'Encoded';
   String get game_line_audio_fallback => 'Fallback';
   String get game_line_audio_missing => 'No audio';
   String get game_line_audio_unavailable => 'Text only';
@@ -3026,6 +3025,31 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Watched ${done}/${total}';
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  String get game_more_actions => 'More';
+  String get game_filter_all => 'All';
+  String get game_filter_with_audio => 'With audio';
+  String get game_filter_mined => 'Mined';
+  String get game_filter_favorited => 'Favorited';
+  String get game_line_mined => 'Mined';
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  String get game_line_audio_encoded => 'Audio extracted';
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  String get game_track_preview => 'Preview this track';
+  String get game_track_preview_stop => 'Stop preview';
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -7770,8 +7794,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -8171,6 +8193,49 @@ class _StringsAr extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -12988,8 +13053,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -13389,6 +13452,49 @@ class _StringsDe extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -18222,8 +18328,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -18623,6 +18727,49 @@ class _StringsEs extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -23467,8 +23614,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -23868,6 +24013,49 @@ class _StringsFr extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -28639,8 +28827,6 @@ class _StringsId extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -29040,6 +29226,49 @@ class _StringsId extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -33859,8 +34088,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -34260,6 +34487,49 @@ class _StringsIt extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -38884,8 +39154,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -39285,6 +39553,49 @@ class _StringsJa extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -43912,8 +44223,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -44313,6 +44622,49 @@ class _StringsKo extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -49110,8 +49462,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -49511,6 +49861,49 @@ class _StringsNl extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -54323,8 +54716,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -54724,6 +55115,49 @@ class _StringsPtBr extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -59519,8 +59953,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -59920,6 +60352,49 @@ class _StringsRu extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -64660,8 +65135,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -65061,6 +65534,49 @@ class _StringsTh extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -69833,8 +70349,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -70234,6 +70748,49 @@ class _StringsTr extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -74993,8 +75550,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -75394,6 +75949,49 @@ class _StringsVi extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 // Path: <root>
@@ -79817,8 +80415,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get game_line_audio_matched => '音频就绪';
   @override
-  String get game_line_audio_encoded => '已编码';
-  @override
   String get game_line_audio_fallback => '已降级';
   @override
   String get game_line_audio_missing => '无音频';
@@ -80194,6 +80790,44 @@ class _StringsZhCn extends _StringsEn {
       '已看完 ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) => '继续看 第${n}集';
+  @override
+  String get game_more_actions => '更多';
+  @override
+  String get game_filter_all => '全部';
+  @override
+  String get game_filter_with_audio => '有音频';
+  @override
+  String get game_filter_mined => '已制卡';
+  @override
+  String get game_filter_favorited => '已收藏';
+  @override
+  String get game_line_mined => '已制卡';
+  @override
+  String get game_line_favorite_tooltip => '收藏台词';
+  @override
+  String get game_line_unfavorite_tooltip => '取消收藏';
+  @override
+  String get game_line_audio_encoded => '音频已提取';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      '游戏资源音频模式按句直接提取原始语音文件，不经过 PCM 音轨环，因此这里不会出现音轨列表；自动/手动选轨仅对引擎 PCM 模式有意义。';
+  @override
+  String get game_tracks_loopback_hint => '系统回环捕获的是整机混音单流，无法枚举独立音轨。';
+  @override
+  String get game_track_preview => '试听该音轨';
+  @override
+  String get game_track_preview_stop => '停止试听';
+  @override
+  String get game_track_preview_failed => '未能从该音轨抓到最近的音频片段';
+  @override
+  String get game_track_select_requires_engine => '选择语音轨需要引擎 Hook 会话处于活动状态';
+  @override
+  String get game_endpoints_hint =>
+      '供 Textractor / LunaTranslator 等外部文本工具接入的端口；未使用这些工具可忽略';
+  @override
+  String get game_endpoints_engine_active => '当前文本来自引擎 Hook，这些端点无需连接';
+  @override
+  String get game_text_gaps_hint => '序号缺口 = Hook 文本环丢行计数，0 为正常';
 }
 
 // Path: <root>
@@ -84737,8 +85371,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get game_line_audio_matched => 'Audio ready';
   @override
-  String get game_line_audio_encoded => 'Encoded';
-  @override
   String get game_line_audio_fallback => 'Fallback';
   @override
   String get game_line_audio_missing => 'No audio';
@@ -85137,6 +85769,49 @@ class _StringsZhHk extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
 }
 
 /// Flat map(s) containing all translations.
@@ -89411,8 +90086,6 @@ extension on _StringsEn {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -89776,6 +90449,42 @@ extension on _StringsEn {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -94048,8 +94757,6 @@ extension on _StringsAr {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -94413,6 +95120,42 @@ extension on _StringsAr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -98706,8 +99449,6 @@ extension on _StringsDe {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -99071,6 +99812,42 @@ extension on _StringsDe {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -103363,8 +104140,6 @@ extension on _StringsEs {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -103728,6 +104503,42 @@ extension on _StringsEs {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -108026,8 +108837,6 @@ extension on _StringsFr {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -108391,6 +109200,42 @@ extension on _StringsFr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -112671,8 +113516,6 @@ extension on _StringsId {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -113036,6 +113879,42 @@ extension on _StringsId {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -117331,8 +118210,6 @@ extension on _StringsIt {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -117696,6 +118573,42 @@ extension on _StringsIt {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -121953,8 +122866,6 @@ extension on _StringsJa {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -122318,6 +123229,42 @@ extension on _StringsJa {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -126579,8 +127526,6 @@ extension on _StringsKo {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -126944,6 +127889,42 @@ extension on _StringsKo {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -131232,8 +132213,6 @@ extension on _StringsNl {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -131597,6 +132576,42 @@ extension on _StringsNl {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -135882,8 +136897,6 @@ extension on _StringsPtBr {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -136247,6 +137260,42 @@ extension on _StringsPtBr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -140537,8 +141586,6 @@ extension on _StringsRu {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -140902,6 +141949,42 @@ extension on _StringsRu {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -145176,8 +146259,6 @@ extension on _StringsTh {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -145541,6 +146622,42 @@ extension on _StringsTh {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -149824,8 +150941,6 @@ extension on _StringsTr {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -150189,6 +151304,42 @@ extension on _StringsTr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -154467,8 +155618,6 @@ extension on _StringsVi {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -154832,6 +155981,42 @@ extension on _StringsVi {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
@@ -159076,8 +160261,6 @@ extension on _StringsZhCn {
         return '匹配中';
       case 'game_line_audio_matched':
         return '音频就绪';
-      case 'game_line_audio_encoded':
-        return '已编码';
       case 'game_line_audio_fallback':
         return '已降级';
       case 'game_line_audio_missing':
@@ -159441,6 +160624,42 @@ extension on _StringsZhCn {
             '已看完 ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => '继续看 第${n}集';
+      case 'game_more_actions':
+        return '更多';
+      case 'game_filter_all':
+        return '全部';
+      case 'game_filter_with_audio':
+        return '有音频';
+      case 'game_filter_mined':
+        return '已制卡';
+      case 'game_filter_favorited':
+        return '已收藏';
+      case 'game_line_mined':
+        return '已制卡';
+      case 'game_line_favorite_tooltip':
+        return '收藏台词';
+      case 'game_line_unfavorite_tooltip':
+        return '取消收藏';
+      case 'game_line_audio_encoded':
+        return '音频已提取';
+      case 'game_tracks_resource_mode_hint':
+        return '游戏资源音频模式按句直接提取原始语音文件，不经过 PCM 音轨环，因此这里不会出现音轨列表；自动/手动选轨仅对引擎 PCM 模式有意义。';
+      case 'game_tracks_loopback_hint':
+        return '系统回环捕获的是整机混音单流，无法枚举独立音轨。';
+      case 'game_track_preview':
+        return '试听该音轨';
+      case 'game_track_preview_stop':
+        return '停止试听';
+      case 'game_track_preview_failed':
+        return '未能从该音轨抓到最近的音频片段';
+      case 'game_track_select_requires_engine':
+        return '选择语音轨需要引擎 Hook 会话处于活动状态';
+      case 'game_endpoints_hint':
+        return '供 Textractor / LunaTranslator 等外部文本工具接入的端口；未使用这些工具可忽略';
+      case 'game_endpoints_engine_active':
+        return '当前文本来自引擎 Hook，这些端点无需连接';
+      case 'game_text_gaps_hint':
+        return '序号缺口 = Hook 文本环丢行计数，0 为正常';
       default:
         return null;
     }
@@ -163693,8 +164912,6 @@ extension on _StringsZhHk {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -164058,6 +165275,42 @@ extension on _StringsZhHk {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
       default:
         return null;
     }
