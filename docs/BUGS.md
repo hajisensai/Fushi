@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 991 条。点号进各自文件。
+> 共 992 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1025](bugs/BUG-1025-extension-connection-reopen-stale.md) | ✅ | ✅ | 浏览器扩展重开后连接检测误报 API 未开启 |
 | [BUG-1024](bugs/BUG-1024-extension-subtitle-panel-overlay.md) | ✅ | ✅ | 浏览器扩展字幕列表覆盖页面而非挤压画面 |
 | [BUG-1023](bugs/BUG-1023-extension-subtitle-live-cumulative.md) | ✅ | ✅ | 浏览器扩展 YouTube 字幕列表逐字累积为重复行 |
 | [BUG-1022](bugs/BUG-1022-galgame-helper-dialog-latency-and-restack.md) | ✅ | ✅ | galgame 引擎组件下载确认弹窗点击不立即出现且多次点击叠出多个弹窗 |
