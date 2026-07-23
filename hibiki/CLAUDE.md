@@ -140,6 +140,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `lib/src/lookup/gal_hook_text_overlay_controller.dart` / `overlay_window_channel.dart` -- Hook 文本浮窗通道。
 - `lib/src/mining/galgame_*`（含 `galgame_helper_installer.dart`）-- 场景制卡/语音捕获/波形选段。
 - C++ hook 在独立仓 `hajisensai/hibiki-hook`（Helper 物理隔离分发，不编进 app）。
+- 修改本子系统、helper IPC、引擎能力或支持状态前，必须先读 [Galgame Hook 引擎适配 SOP](../docs/agent/galgame-hooking.md) 并遵守其中的身份/阶段证据门；本仓只改消费端，native 采集实现只进独立仓。
 
 ### 13. 浏览器扩展 (仓库根 `tools/browser-extension/`)
 
