@@ -172,6 +172,26 @@ abstract class GalgameMetadataAdapter {
 
 两源都要**独立令牌桶限流 + 尊重 `Retry-After`**（`galgame_metadata_rate_limit.dart`）。
 
+#### 2.3.1 与真实 API 的契约核对（2026-07-25 实测，勿凭记忆改）
+
+适配器单测用的是自造 fixture——**fixture 猜错字段名时测试照样绿，运行时却静默刮不到东西**。
+所以下面这些是打真实接口核对过的事实，改 adapter 前先看这里：
+
+VNDB（`POST /vn`，官方文档核对）：
+- `image` **必须**写成 `image{url}` 或 `image.url`；只写裸 `image` 是**错误**，服务端直接报错。
+- `rating` 实际区间是 **10–100**（不是 0–100），÷10 后落在 1.0–10.0，符合我们的 0–10 语义。
+- `titles` 里恰有一条 `main == true`；`released` 可能是 `YYYY` / `YYYY-MM` / `YYYY-MM-DD` / `"TBA"`。
+- `tags.rating` 区间是 0（不含）到 3（含），`tags.spoiler` 是 0/1/2。
+- `results` 上限 100；限流 200 请求 / 5 分钟。
+
+Bangumi（实测 `GET /v0/subjects/935`、`POST /v0/search/subjects`）：
+- 搜索响应是 `{data, limit, offset, total}`；`filter: {type: [4]}` 里 **4 = 游戏**。
+- `rating` = `{rank, score, count, total}`，`score` 本身就是 0–10，不需要归一。
+- `images` = `{large, common, medium, small, grid}`；搜索结果项里还可能退化成 `image` 字符串。
+- **`infobox` 的 `value` 两种形状都真实存在**：`别名` 实测是 `[{v: "FSN"}, …]` 数组，
+  `开发` 实测是纯字符串 `"TYPE-MOON"`。两种都必须解析，只认一种就会丢字段。
+- `tags` 项是 `{name, count, total_count}`。
+
 ### 2.4 mixed 合并优先级
 
 | 字段 | 优先级 |
