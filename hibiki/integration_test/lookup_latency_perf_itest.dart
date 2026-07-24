@@ -3,11 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/media_item.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
@@ -16,6 +14,7 @@ import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
 import 'helpers/library_fixture.dart';
+import 'helpers/reader_itest.dart';
 import 'test_helpers.dart';
 
 /// BUG-712 查词时延实测 itest —— 只产出计时数据，不做性能断言（避免机器差异假红）。
@@ -43,18 +42,7 @@ void main() {
     'BUG-712: measure real lookup latency (e2e + engine segments)',
     timeout: const Timeout(Duration(minutes: 40)),
     (WidgetTester tester) async {
-      app.main();
-      expect(await waitForHome(tester), isTrue, reason: 'Home must render');
-      await tester.pump(const Duration(seconds: 2));
-
-      final ProviderContainer container = ProviderScope.containerOf(
-        tester.element(find.byType(MaterialApp).first),
-      );
-      final AppModel appModel = container.read(appProvider);
-      for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-      }
-      expect(appModel.isInitialised, isTrue);
+      final AppModel appModel = await launchAppAndReadyModel(tester);
 
       // ── 词典：真实组合优先，缺省退回生成词典 ──
       final bool realDicts = await _importPerfDictionaries(appModel, tester);

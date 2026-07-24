@@ -1,20 +1,17 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/media.dart';
-import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
 import 'helpers/focus_driver.dart';
-import 'helpers/generate_test_epub.dart' show EpubGenerator;
+import 'helpers/library_fixture.dart' show openBookViaProductionPath;
+import 'helpers/reader_itest.dart';
 import 'test_helpers.dart';
 
 /// BUG-470 / TODO-975 回归 —— 顶部阅读进度首屏 inset 缺口（real-DOM 验证）。
@@ -83,9 +80,10 @@ void main() {
 
       // Books 标签置前 + 始终导入一本全新 EPUB（无有声书）并打开它，确定性走分页章节
       // 阅读器首载路径（不被书架既有书状态污染）。
-      await _openBooksTab(tester, driver);
-      final String bookKey = await _seedTestBook(tester);
-      await _openBooksTab(tester, driver);
+      await openBooksTabViaFocus(tester, driver);
+      final String bookKey = await seedPaginatedTestBook(tester,
+          fileName: 'test_top_progress_inset.epub', logPrefix: 'TOPINSET');
+      await openBooksTabViaFocus(tester, driver);
 
       // 书架条目按 media identifier（hoshi://book/<id>）取键，不是裸 row id。
       final String seededKey =
@@ -101,7 +99,7 @@ void main() {
       // Enter→activate 绑定只在卡片处于 HibikiFocusRoot 下才装上，测试书架没包它，
       // 故焦点驱动 Enter 是 no-op、阅读器永远打不开（见 reader_pagination_test.dart
       // _activateBook / TODO-783）。直接 openMedia 绕过焦点树。
-      await _activateBook(tester, bookKey);
+      await openBookViaProductionPath(tester, bookKey);
       await tester.pump(const Duration(seconds: 3));
 
       // 先断言 ReaderHibikiPage 真挂载，让「打开失败」显式暴露在这里，而非下游被
@@ -226,104 +224,6 @@ void main() {
   });
 }
 
-/// 在 WebView 里定位正文首个可见文本块并回传其 client rect（JSON）。抽成顶层常量，
-/// 避免 Dart 多行字符串与脚本拼接相互混淆。
-const String jsFirstTextLineProbe = r'''
-(function(){
-  function visible(el){
-    var r = el.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return false;
-    var cs = getComputedStyle(el);
-    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-    return (el.textContent || '').trim().length > 0;
-  }
-  var nodes = document.querySelectorAll('p,div,span,li,blockquote,h1,h2,h3');
-  for (var i = 0; i < nodes.length; i++) {
-    var el = nodes[i];
-    var hasChildBlock = false;
-    for (var j = 0; j < el.children.length; j++) {
-      if (visible(el.children[j])) { hasChildBlock = true; break; }
-    }
-    if (hasChildBlock) continue;
-    if (!visible(el)) continue;
-    var r = el.getBoundingClientRect();
-    return JSON.stringify({
-      top: r.top,
-      bottom: r.bottom,
-      tag: el.tagName,
-      text: (el.textContent || '').trim().substr(0, 12)
-    });
-  }
-  return JSON.stringify(null);
-})()
-''';
-
-/// Books 标签置前（home 可能默认别的 tab；书架列表也会懒加载）。
-Future<void> _openBooksTab(WidgetTester tester, FocusDriver driver) async {
-  final List<Finder> navTargets = findPrimaryNavigationTargets();
-  if (navTargets.isEmpty) return;
-  final bool focused = await driver.focusWidget(navTargets.first);
-  expect(focused, isTrue, reason: 'Books tab must be reachable by focus');
-  await driver.activate();
-  await tester.pump(const Duration(milliseconds: 500));
-}
-
-/// 导入一本全新合成 EPUB（无有声书），返回其 book key。
-Future<String> _seedTestBook(WidgetTester tester) async {
-  final ProviderContainer container = ProviderScope.containerOf(
-    tester.element(find.byType(MaterialApp).first),
-  );
-  final AppModel appModel = container.read(appProvider);
-  for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
-    await tester.pump(const Duration(milliseconds: 500));
-  }
-  expect(appModel.isInitialised, isTrue,
-      reason: 'AppModel must be initialised before importing a book');
-
-  final Uint8List bytes = EpubGenerator().generate();
-  final String bookKey = await EpubImporter.import(
-    db: appModel.database,
-    bytes: bytes,
-    fileName: 'test_top_progress_inset.epub',
-  );
-  debugPrint('[TOPINSET] Imported test EPUB as book key=$bookKey');
-
-  container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
-  await tester.pumpAndSettle();
-  return bookKey;
-}
-
-/// 确定性打开书架书（与 reader_pagination_test._activateBook 同一手法）：书架卡片的
-/// Enter→activate→openMedia 绑定只在卡片处于 HibikiFocusRoot 下才装上，测试书架没包它，
-/// 故焦点驱动 Enter 是 no-op、阅读器永远打不开（TODO-783）。绕过焦点树：从 key 解析
-/// MediaItem，直接驱动 AppModel.openMedia（与真实卡片 tap 同一调用），把 ReaderHibikiPage
-/// push 上导航栈，与焦点树状态无关。
-Future<void> _activateBook(WidgetTester tester, String bookKey) async {
-  final BuildContext appContext =
-      tester.element(find.byType(MaterialApp).first);
-  final ProviderContainer container = ProviderScope.containerOf(appContext);
-  final AppModel appModel = container.read(appProvider);
-
-  // openMedia 需要 WidgetRef 但打开路径不解引用它（经 app 的 navigatorKey context
-  // 路由，非 ref）。根 HoshiReaderApp 是 ConsumerStatefulWidget，其 element 即 WidgetRef。
-  final ConsumerStatefulElement appElement = tester
-      .element(find.byType(app.HoshiReaderApp)) as ConsumerStatefulElement;
-  final WidgetRef ref = appElement;
-
-  final MediaItem? item =
-      await ReaderHibikiSource.instance.mediaItemForBookKey(bookKey);
-  expect(item, isNotNull,
-      reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)');
-
-  // 不 await openMedia 到完成：它 await Navigator.push，其 future 只在阅读器路由被 pop
-  // 时才 resolve，await 会永久阻塞线性测试体。fire 它（与真实卡片 onTap 同一调用）并
-  // pump 帧让 push + 阅读器异步 _initBook 跑起来；路由生命周期 future 故意不 await。
-  unawaited(appModel.openMedia(
-    ref: ref,
-    mediaSource: ReaderHibikiSource.instance,
-    item: item!,
-  ));
-  for (int i = 0; i < 8; i++) {
-    await tester.pump(const Duration(milliseconds: 250));
-  }
-}
+// Shared reader-DOM scaffolding (jsFirstTextLineProbe / openBooksTabViaFocus /
+// seedPaginatedTestBook) now lives in helpers/reader_itest.dart, and the
+// deterministic open path in helpers/library_fixture.dart::openBookViaProductionPath.

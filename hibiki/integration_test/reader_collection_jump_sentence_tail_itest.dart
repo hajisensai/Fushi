@@ -4,17 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart'
     show ReaderHibikiSource;
-import 'package:hibiki/src/models/app_model.dart' show AppModel;
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
     show ReaderHibikiPage;
 
-import 'helpers/focus_driver.dart';
-import 'helpers/library_fixture.dart' show readyAppModel, seedReaderBook;
+import 'helpers/reader_itest.dart';
 import 'support/itest_startup_guard.dart';
-import 'test_helpers.dart';
 
 /// TODO-982 / BUG-461 设备层几何验收门（真实 Windows 引擎 + 真实 reader WebView +
 /// DOM-rect 探针）。
@@ -63,32 +59,6 @@ import 'test_helpers.dart';
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 \
 ///       integration_test/reader_collection_jump_sentence_tail_itest.dart
 
-/// reader WebView 是否挂载。
-bool _webViewShown() =>
-    find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
-
-/// 内容就绪标记（hoshiReader 已注入、首章已铺好）。
-bool _contentReady() => find
-    .byKey(const ValueKey<String>('hoshi_content_ready'))
-    .evaluate()
-    .isNotEmpty;
-
-Future<void> _waitFor(
-  WidgetTester tester,
-  bool Function() ready,
-  String label, {
-  int maxPolls = 120,
-}) async {
-  for (int i = 0; i < maxPolls; i++) {
-    await tester.pump(const Duration(milliseconds: 500));
-    if (ready()) {
-      debugPrint('[coll-jump] $label ready after ${i * 500}ms');
-      return;
-    }
-  }
-  fail('$label did not become ready');
-}
-
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -99,46 +69,9 @@ void main() {
       await runHibikiItest(
         label: 'coll-jump',
         body: () async {
-          app.main();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
-          await tester.pump(const Duration(seconds: 2));
-
-          // 焦点驱动需要 HibikiFocusRoot（默认 OFF；开关后 main.dart 重建装上壳）。
-          final AppModel appModel = await readyAppModel(tester);
-          await appModel.setExperimentalFocusNavigationEnabled(true);
-          for (int i = 0; i < 8; i++) {
-            await tester.pump(const Duration(milliseconds: 250));
-          }
-
-          // 播种标准日文 EPUB（含长段落，第一章 420 个标记段落）。
-          await seedReaderBook(tester,
-              fileName: 'todo982_collection_jump.epub');
-          final FocusDriver driver = FocusDriver(tester);
-
-          // 焦点落到书架标签后打开第一本书。
-          final List<Finder> navTargets = findPrimaryNavigationTargets();
-          if (navTargets.isNotEmpty) {
-            await driver.focusWidget(navTargets.first);
-            await driver.activate();
-            await tester.pump(const Duration(seconds: 1));
-          }
-
-          final Finder bookEntries = findBookEntries();
-          for (int i = 0; i < 40; i++) {
-            await tester.pump(const Duration(milliseconds: 500));
-            if (bookEntries.evaluate().isNotEmpty) break;
-          }
-          expect(bookEntries, findsWidgets,
-              reason: 'seeded book must appear on the shelf');
-          final bool focusedBook = await driver.focusWidget(bookEntries.first);
-          expect(focusedBook, isTrue,
-              reason: 'book card must be reachable by focus');
-          await driver.activate();
-          await tester.pump(const Duration(seconds: 3));
-
-          await _waitFor(tester, _webViewShown, 'reader WebView');
-          await _waitFor(tester, _contentReady, 'hoshi content');
+          // 播种标准日文 EPUB（含长段落，第一章 420 个标记段落），焦点驱动开书。
+          await openSeededReaderBook(tester,
+              fileName: 'todo982_collection_jump.epub', logPrefix: 'coll-jump');
 
           // 强制横排 + 连续滚动模式（报告里的精确场景）。BUG-461 句尾区间对齐只在
           // 横排生效（竖排可见区在内容宽度轴，无「句尾被底栏切」语义），而本机默认是
@@ -160,7 +93,9 @@ void main() {
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
-          await _waitFor(tester, _contentReady, 'continuous content');
+          await waitForReaderCondition(
+              tester, readerContentReady, 'continuous content',
+              logPrefix: 'coll-jump');
           expect(ReaderHibikiSource.readerSettings?.isContinuousMode, isTrue,
               reason: 'reader must be in continuous scroll mode for TODO-982');
 

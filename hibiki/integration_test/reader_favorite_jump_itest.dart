@@ -3,17 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart'
     show ReaderHibikiSource;
-import 'package:hibiki/src/models/app_model.dart' show AppModel;
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
     show ReaderHibikiPage;
 
-import 'helpers/focus_driver.dart';
-import 'helpers/library_fixture.dart' show readyAppModel, seedReaderBook;
+import 'helpers/reader_itest.dart';
 import 'support/itest_startup_guard.dart';
-import 'test_helpers.dart';
 
 /// TODO-1308 问题②（BUG-696）真实路径验证：书内收藏面板跳转必须落在收藏句的
 /// 字符位置，而不是章节开头。
@@ -27,30 +23,6 @@ import 'test_helpers.dart';
 ///
 /// Run (from hibiki/):
 ///   tool\run_windows_itest.ps1 integration_test\reader_favorite_jump_itest.dart
-bool _webViewShown() =>
-    find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
-
-bool _contentReady() => find
-    .byKey(const ValueKey<String>('hoshi_content_ready'))
-    .evaluate()
-    .isNotEmpty;
-
-Future<void> _waitFor(
-  WidgetTester tester,
-  bool Function() ready,
-  String label, {
-  int maxPolls = 120,
-}) async {
-  for (int i = 0; i < maxPolls; i++) {
-    await tester.pump(const Duration(milliseconds: 500));
-    if (ready()) {
-      debugPrint('[favjump] $label ready after ${i * 500}ms');
-      return;
-    }
-  }
-  fail('$label did not become ready');
-}
-
 Future<int> _firstVisibleCharOffset(
   Future<dynamic> Function(String source) runJs,
 ) async {
@@ -72,42 +44,8 @@ void main() {
       await runHibikiItest(
         label: 'favjump',
         body: () async {
-          app.main();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
-          await tester.pump(const Duration(seconds: 2));
-
-          final AppModel appModel = await readyAppModel(tester);
-          await appModel.setExperimentalFocusNavigationEnabled(true);
-          for (int i = 0; i < 8; i++) {
-            await tester.pump(const Duration(milliseconds: 250));
-          }
-
-          final String bookKey =
-              await seedReaderBook(tester, fileName: 'todo1308_favjump.epub');
-          final FocusDriver driver = FocusDriver(tester);
-
-          final List<Finder> navTargets = findPrimaryNavigationTargets();
-          if (navTargets.isNotEmpty) {
-            await driver.focusWidget(navTargets.first);
-            await driver.activate();
-            await tester.pump(const Duration(seconds: 1));
-          }
-
-          final Finder bookEntries = findBookEntries();
-          for (int i = 0; i < 40; i++) {
-            await tester.pump(const Duration(milliseconds: 500));
-            if (bookEntries.evaluate().isNotEmpty) break;
-          }
-          expect(bookEntries, findsWidgets,
-              reason: 'seeded book must appear on the shelf');
-          expect(await driver.focusWidget(bookEntries.first), isTrue,
-              reason: 'book card must be reachable by focus');
-          await driver.activate();
-          await tester.pump(const Duration(seconds: 3));
-
-          await _waitFor(tester, _webViewShown, 'reader WebView');
-          await _waitFor(tester, _contentReady, 'hoshi content');
+          final String bookKey = await openSeededReaderBook(tester,
+              fileName: 'todo1308_favjump.epub', logPrefix: 'favjump');
 
           await ReaderHibikiSource.instance.setTtuWritingMode('vertical-rl');
           await ReaderHibikiSource.instance.setTtuViewMode('continuous');
@@ -115,7 +53,9 @@ void main() {
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
-          await _waitFor(tester, _contentReady, 'continuous content');
+          await waitForReaderCondition(
+              tester, readerContentReady, 'continuous content',
+              logPrefix: 'favjump');
 
           final Future<dynamic> Function(String source)? runJs =
               ReaderHibikiPage.debugEvaluateJavascript;

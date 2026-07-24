@@ -1,20 +1,17 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/media.dart';
-import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
 import 'helpers/focus_driver.dart';
-import 'helpers/generate_test_epub.dart' show EpubGenerator;
+import 'helpers/library_fixture.dart' show openBookViaProductionPath;
+import 'helpers/reader_itest.dart';
 import 'test_helpers.dart';
 
 /// TODO-975 floating/collapsible reader chrome — remaining interaction behaviors
@@ -93,9 +90,10 @@ void main() {
 
         final FocusDriver driver = FocusDriver(tester);
 
-        await _openBooksTab(tester, driver);
-        final String bookKey = await _seedTestBook(tester);
-        await _openBooksTab(tester, driver);
+        await openBooksTabViaFocus(tester, driver);
+        final String bookKey = await seedPaginatedTestBook(tester,
+            fileName: 'test_chrome_floating.epub', logPrefix: 'CHROME975');
+        await openBooksTabViaFocus(tester, driver);
 
         final String seededKey =
             'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
@@ -106,7 +104,7 @@ void main() {
         expect(seededEntry, findsOneWidget,
             reason: 'freshly seeded paginated book must appear on the shelf');
 
-        await _activateBook(tester, bookKey);
+        await openBookViaProductionPath(tester, bookKey);
         await tester.pump(const Duration(seconds: 3));
 
         for (int i = 0;
@@ -431,97 +429,6 @@ Future<void> _pumpForPref(WidgetTester tester) async {
   }
 }
 
-/// Locate the first visible body text block and return its client rect (JSON).
-/// Same probe as reader_top_progress_inset_dom_test.dart.
-const String jsFirstTextLineProbe = r'''
-(function(){
-  function visible(el){
-    var r = el.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return false;
-    var cs = getComputedStyle(el);
-    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-    return (el.textContent || '').trim().length > 0;
-  }
-  var nodes = document.querySelectorAll('p,div,span,li,blockquote,h1,h2,h3');
-  for (var i = 0; i < nodes.length; i++) {
-    var el = nodes[i];
-    var hasChildBlock = false;
-    for (var j = 0; j < el.children.length; j++) {
-      if (visible(el.children[j])) { hasChildBlock = true; break; }
-    }
-    if (hasChildBlock) continue;
-    if (!visible(el)) continue;
-    var r = el.getBoundingClientRect();
-    return JSON.stringify({
-      top: r.top,
-      bottom: r.bottom,
-      tag: el.tagName,
-      text: (el.textContent || '').trim().substr(0, 12)
-    });
-  }
-  return JSON.stringify(null);
-})()
-''';
-
-/// Bring the Books tab to front.
-Future<void> _openBooksTab(WidgetTester tester, FocusDriver driver) async {
-  final List<Finder> navTargets = findPrimaryNavigationTargets();
-  if (navTargets.isEmpty) return;
-  final bool focused = await driver.focusWidget(navTargets.first);
-  expect(focused, isTrue, reason: 'Books tab must be reachable by focus');
-  await driver.activate();
-  await tester.pump(const Duration(milliseconds: 500));
-}
-
-/// Import a fresh synthetic EPUB (no audiobook), return its book key.
-Future<String> _seedTestBook(WidgetTester tester) async {
-  final ProviderContainer container = ProviderScope.containerOf(
-    tester.element(find.byType(MaterialApp).first),
-  );
-  final AppModel appModel = container.read(appProvider);
-  for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
-    await tester.pump(const Duration(milliseconds: 500));
-  }
-  expect(appModel.isInitialised, isTrue,
-      reason: 'AppModel must be initialised before importing a book');
-
-  final Uint8List bytes = EpubGenerator().generate();
-  final String bookKey = await EpubImporter.import(
-    db: appModel.database,
-    bytes: bytes,
-    fileName: 'test_chrome_floating.epub',
-  );
-  debugPrint('[CHROME975] Imported test EPUB as book key=$bookKey');
-
-  container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
-  await tester.pumpAndSettle();
-  return bookKey;
-}
-
-/// Deterministically open the shelf book (same approach as
-/// reader_top_progress_inset_dom_test._activateBook): resolve MediaItem from key
-/// and drive AppModel.openMedia directly (bypassing the focus tree, TODO-783).
-Future<void> _activateBook(WidgetTester tester, String bookKey) async {
-  final BuildContext appContext =
-      tester.element(find.byType(MaterialApp).first);
-  final ProviderContainer container = ProviderScope.containerOf(appContext);
-  final AppModel appModel = container.read(appProvider);
-
-  final ConsumerStatefulElement appElement = tester
-      .element(find.byType(app.HoshiReaderApp)) as ConsumerStatefulElement;
-  final WidgetRef ref = appElement;
-
-  final MediaItem? item =
-      await ReaderHibikiSource.instance.mediaItemForBookKey(bookKey);
-  expect(item, isNotNull,
-      reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)');
-
-  unawaited(appModel.openMedia(
-    ref: ref,
-    mediaSource: ReaderHibikiSource.instance,
-    item: item!,
-  ));
-  for (int i = 0; i < 8; i++) {
-    await tester.pump(const Duration(milliseconds: 250));
-  }
-}
+// Shared reader-DOM scaffolding (jsFirstTextLineProbe / openBooksTabViaFocus /
+// seedPaginatedTestBook) now lives in helpers/reader_itest.dart, and the
+// deterministic open path in helpers/library_fixture.dart::openBookViaProductionPath.

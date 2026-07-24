@@ -3,11 +3,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/media_item.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
@@ -16,6 +14,7 @@ import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
 import 'helpers/library_fixture.dart';
+import 'helpers/reader_itest.dart';
 import 'test_helpers.dart';
 
 /// 设备验收 itest（TODO-1027 / BUG-480：查词框关闭堵塞连续查词）。
@@ -53,18 +52,7 @@ void main() {
       };
 
       try {
-        app.main();
-        expect(await waitForHome(tester), isTrue, reason: 'Home must render');
-        await tester.pump(const Duration(seconds: 2));
-
-        final ProviderContainer container = ProviderScope.containerOf(
-          tester.element(find.byType(MaterialApp).first),
-        );
-        final AppModel appModel = container.read(appProvider);
-        for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
-          await tester.pump(const Duration(milliseconds: 500));
-        }
-        expect(appModel.isInitialised, isTrue);
+        final AppModel appModel = await launchAppAndReadyModel(tester);
 
         // 词典是查词能返回结果的前提（生成词典含 "猫"→ねこ）。
         final bool dictOk = await seedDictionary(tester);

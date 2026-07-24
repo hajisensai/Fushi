@@ -4,17 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart'
     show ReaderHibikiSource;
-import 'package:hibiki/src/models/app_model.dart' show AppModel;
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
     show ReaderHibikiPage;
 
-import 'helpers/focus_driver.dart';
-import 'helpers/library_fixture.dart' show readyAppModel, seedReaderBook;
+import 'helpers/reader_itest.dart';
 import 'support/itest_startup_guard.dart';
-import 'test_helpers.dart';
 
 /// TODO-1308 real-path reproduction — vertical-rl furigana misplacement after a
 /// TOC/bookmark jump, exercised through the REAL reader WebView (real bundled
@@ -34,30 +30,6 @@ import 'test_helpers.dart';
 /// Run (PowerShell, from hibiki/):
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 \
 ///       -Visible integration_test/reader_vertical_ruby_realpath_itest.dart
-
-bool _webViewShown() =>
-    find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
-
-bool _contentReady() => find
-    .byKey(const ValueKey<String>('hoshi_content_ready'))
-    .evaluate()
-    .isNotEmpty;
-
-Future<void> _waitFor(
-  WidgetTester tester,
-  bool Function() ready,
-  String label, {
-  int maxPolls = 120,
-}) async {
-  for (int i = 0; i < maxPolls; i++) {
-    await tester.pump(const Duration(milliseconds: 500));
-    if (ready()) {
-      debugPrint('[vruby] $label ready after ${i * 500}ms');
-      return;
-    }
-  }
-  fail('$label did not become ready');
-}
 
 // Injects a paragraph with the user's exact mono-ruby (per-character furigana)
 // at the tail of the real reader body, then measures ALL ruby on the page.
@@ -153,41 +125,8 @@ void main() {
       await runHibikiItest(
         label: 'vruby',
         body: () async {
-          app.main();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
-          await tester.pump(const Duration(seconds: 2));
-
-          final AppModel appModel = await readyAppModel(tester);
-          await appModel.setExperimentalFocusNavigationEnabled(true);
-          for (int i = 0; i < 8; i++) {
-            await tester.pump(const Duration(milliseconds: 250));
-          }
-
-          await seedReaderBook(tester, fileName: 'todo1308_vertical_ruby.epub');
-          final FocusDriver driver = FocusDriver(tester);
-
-          final List<Finder> navTargets = findPrimaryNavigationTargets();
-          if (navTargets.isNotEmpty) {
-            await driver.focusWidget(navTargets.first);
-            await driver.activate();
-            await tester.pump(const Duration(seconds: 1));
-          }
-
-          final Finder bookEntries = findBookEntries();
-          for (int i = 0; i < 40; i++) {
-            await tester.pump(const Duration(milliseconds: 500));
-            if (bookEntries.evaluate().isNotEmpty) break;
-          }
-          expect(bookEntries, findsWidgets,
-              reason: 'seeded book must appear on the shelf');
-          expect(await driver.focusWidget(bookEntries.first), isTrue,
-              reason: 'book card must be reachable by focus');
-          await driver.activate();
-          await tester.pump(const Duration(seconds: 3));
-
-          await _waitFor(tester, _webViewShown, 'reader WebView');
-          await _waitFor(tester, _contentReady, 'hoshi content');
+          await openSeededReaderBook(tester,
+              fileName: 'todo1308_vertical_ruby.epub', logPrefix: 'vruby');
 
           // Keep vertical-rl (the machine default) + continuous scroll (the
           // reported scenario). writingMode/viewMode are structural layout keys:
@@ -198,7 +137,9 @@ void main() {
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
-          await _waitFor(tester, _contentReady, 'continuous content');
+          await waitForReaderCondition(
+              tester, readerContentReady, 'continuous content',
+              logPrefix: 'vruby');
 
           final Future<dynamic> Function(String source)? runJs =
               ReaderHibikiPage.debugEvaluateJavascript;
