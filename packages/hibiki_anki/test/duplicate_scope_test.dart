@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_anki/src/ankiconnect/ankiconnect_service.dart';
 
 /// 查重范围（[AnkiDuplicateScope]）守卫。
 ///
