@@ -94,4 +94,67 @@ void main() {
           'existing first-install behaviour (icon on desktop).',
     );
   });
+
+  // BUG-1014 后续回归守卫：ISCC 的 { } 块注释不支持嵌套，注释体内出现 Inno 常量
+  // （形如 {userdesktop} / {app}）时，常量的第一个 `}` 会提前闭合整个块注释，其后
+  // 的文字被当代码解析 -> "Column NN: Syntax error. Compile aborted."（原始事故：
+  // 第 163 行 `{userdesktop}\Hibiki.lnk` 提前闭合块注释）。仓库约定 [Code] 段注释
+  // 一律用 `//` 行注释（见 commit 588f30177）。本守卫扫描 [Code] 段，逐字符跟踪
+  // 字符串/行注释/块注释状态，断言任何 { } 块注释体内都不再出现会闭合它的内层 `{`。
+  test('no [Code] block comment embeds an Inno constant that closes it early',
+      () {
+    final String iss = readInstallerScript();
+
+    // 截出 [Code] 段（本文件里它是最后一段；仍稳妥地找下一个 [Section] 头收尾）。
+    final int codeStart = iss.indexOf(RegExp(r'^\[Code\]', multiLine: true));
+    expect(codeStart, greaterThanOrEqualTo(0),
+        reason: 'installer script must contain a [Code] section');
+    final String afterHeader = iss.substring(codeStart + '[Code]'.length);
+    final RegExpMatch? nextSection =
+        RegExp(r'^\[[A-Za-z]', multiLine: true).firstMatch(afterHeader);
+    final String code = nextSection == null
+        ? afterHeader
+        : afterHeader.substring(0, nextSection.start);
+
+    // 逐字符状态机：跳过单引号字符串与 // 行注释，只对裸 { } 块注释取「{ 到第一个 }」
+    // 的注释体，若注释体内还含 `{` 说明有 Inno 常量的 `}` 被当成了注释终止符。
+    final List<String> hazards = <String>[];
+    final int n = code.length;
+    int i = 0;
+    while (i < n) {
+      final String c = code[i];
+      if (c == '/' && i + 1 < n && code[i + 1] == '/') {
+        final int nl = code.indexOf('\n', i);
+        i = nl < 0 ? n : nl + 1;
+        continue;
+      }
+      if (c == "'") {
+        int j = i + 1;
+        while (j < n && code[j] != "'") {
+          j++;
+        }
+        i = j + 1;
+        continue;
+      }
+      if (c == '{') {
+        final int close = code.indexOf('}', i + 1);
+        final int end = close < 0 ? n : close;
+        final String body = code.substring(i + 1, end);
+        if (body.contains('{')) {
+          hazards.add(code.substring(i, (end + 1) > n ? n : end + 1));
+        }
+        i = end + 1;
+        continue;
+      }
+      i++;
+    }
+
+    expect(
+      hazards,
+      isEmpty,
+      reason: '[Code] 段的 { } 块注释里嵌入了会提前闭合它的 Inno 常量（内层 {…}），'
+          '会导致 ISCC 语法错误、编译中止。请把这些块注释改成逐行 // 注释。命中：'
+          '$hazards',
+    );
+  });
 }

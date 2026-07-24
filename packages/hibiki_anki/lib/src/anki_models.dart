@@ -446,8 +446,25 @@ class AnkiHandlebarRenderer {
         return payload.audio;
       case '{glossary}':
         return payload.glossary;
+      // BUG-1035：「首选词典释义」= 用户在弹窗里长按选中的那本，没长按才退回排在第一位
+      // 的那本（[AnkiMiningPayload.glossaryFirst]，popup.js 的 singleGlossaries 首项）。
+      //
+      // 此前这里只读 glossaryFirst，而全模板里只有 {selected-glossary} 消费
+      // [AnkiMiningPayload.selectedDictionary]。Lapis 出厂默认把 MainDefinition 映射成
+      // {glossary-first}（lapis_note_type.dart），于是长按选词典对绝大多数用户是**死交互**：
+      // 弹窗把词典标题染成主题色加粗（popup.css `.dict-label.selected`）给了明确「已选中」
+      // 反馈，制出来的卡片主释义却恒是第一本。长按选中本就是「这张卡我要这本词典的释义」，
+      // 让 first 退化成「无选中时的兜底」消除了这个特殊情况，无需任何用户改字段映射。
+      //
+      // 零破坏：没长按 → selectedDictionary 为空 → _singleGlossaryForDictionary 返回 ''
+      // → 原样退回 glossaryFirst，行为逐字节不变。选中的词典名在 singleGlossaries 里查
+      // 不到（理论上不该发生：两者同源于同一 dictName）时同样退回，不产出空字段。
       case '{glossary-first}':
-        return payload.glossaryFirst;
+        final String selectedGlossary =
+            _singleGlossaryForDictionary(payload, payload.selectedDictionary);
+        return selectedGlossary.isNotEmpty
+            ? selectedGlossary
+            : payload.glossaryFirst;
       case '{selected-glossary}':
         return _singleGlossaryForDictionary(
             payload, payload.selectedDictionary);
@@ -569,6 +586,34 @@ class AnkiHandlebarOptions {
         ...dictionaryNames.toSet().map((name) => '{single-glossary-$name}'),
       ];
 
+  /// 旧别名（历史命名）：语义与新键完全等价、渲染同一个值，保留只为兼容老配置与
+  /// 老卡片模板——`{book-cover}` / `{video-clip}` → `{card-image}`（都读
+  /// `context.coverPath`），`{sasayaki-audio}` → `{sentence-audio}`（都读
+  /// `context.sasayakiAudioPath`）。**渲染器永远继续认它们**，此集合只影响选择器
+  /// 展示与「已弃用」标注，不改变任何写进 `fieldMappings` 的字面量真值。
+  static const Set<String> deprecatedAliases = <String>{
+    '{book-cover}',
+    '{video-clip}',
+    '{sasayaki-audio}',
+  };
+
+  /// 字段占位符选择器的候选项：默认隐藏**没被用到的**旧别名（新用户只看到新键，
+  /// 少三个等价重复项），但当前字段已经用着的旧别名必须继续出现——否则候选列表
+  /// 不含当前值，当前选中项在 picker 里不可见、容易被误改成别的（同 BUG-952 那类
+  /// 「value 不在 items」坑）。
+  ///
+  /// [currentValue] 是该字段当前映射的字面量：可能是裸 token，也可能是把多个 token
+  /// 拼进 HTML 的大模板，故按子串包含判断（与 [anyFieldConsumesToken] 同一套语义）。
+  static List<String> optionsForField({
+    required List<String> dictionaryNames,
+    required String currentValue,
+  }) =>
+      forTermDictionaries(dictionaryNames)
+          .where((String option) =>
+              !deprecatedAliases.contains(option) ||
+              currentValue.contains(option))
+          .toList();
+
   /// TODO-948/952 诊断（纯函数）：当前 note-type 的 [fieldMappings]（Anki 字段名 →
   /// handlebar 模板）里是否**有任何一个字段消费了** [token]（如 `{sentence}` /
   /// `{sentence-audio}`）。字段模板可以是裸 token，也可以是把多个 token 拼进 HTML 的
@@ -676,7 +721,7 @@ String ankiDictionaryMediaCacheFilename(String dictionary, String path) {
 
 /// Kind of audio reference resolved by [WordAudioResolver] and handed to the
 /// repo media-store paths.
-enum AnkiAudioRefKind { empty, remoteUrl, localFile }
+enum AnkiAudioRefKind { empty, remoteUrl, dataUri, localFile }
 
 /// Classifies a word-audio reference for Anki media storage, decided purely
 /// from its string form so the repo audio paths are unit-testable.
@@ -694,6 +739,13 @@ class AnkiAudioRef {
   static AnkiAudioRefKind classify(String ref) {
     if (ref.isEmpty) return AnkiAudioRefKind.empty;
     if (ref.startsWith('http')) return AnkiAudioRefKind.remoteUrl;
+    // BUG-1050：查词弹窗把命中本地音频库的单词发音编码成 `data:<mime>;base64,…`
+    // （audioRefToWebViewUrl，本为弹窗 HTML5 <audio> 播放而生）。视频/沉浸制卡时该
+    // URI 原样进 fields['audio']；它既不是 http 也不是真实文件路径——早先落到
+    // localFile 分支被当成不存在的文件（existsSync()==false）静默丢弃，导致本地源
+    // 单词发音永远进不了卡。识别为独立 kind，由各 repo 解码内联字节入库（远程 http
+    // 发音源本就正常，不受影响）。
+    if (ref.startsWith('data:')) return AnkiAudioRefKind.dataUri;
     return AnkiAudioRefKind.localFile;
   }
 
@@ -701,6 +753,65 @@ class AnkiAudioRef {
   /// decoding `file://` URIs and returning bare paths unchanged.
   static String localPath(String ref) =>
       ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+
+  /// Decodes a [AnkiAudioRefKind.dataUri] ref (`data:<mime>;base64,<payload>`,
+  /// produced by `audioRefToWebViewUrl` for popup HTML5 playback and reused
+  /// verbatim as the mine payload's audio field) into its raw bytes plus a
+  /// filename extension derived from the MIME type. Returns null when [ref] is
+  /// not a well-formed data: URI or carries no bytes, so callers fall back to
+  /// "no audio" instead of writing a broken media file into the card.
+  static AnkiAudioData? decodeDataUri(String ref) {
+    if (!ref.startsWith('data:')) return null;
+    final UriData data;
+    try {
+      data = UriData.parse(ref);
+    } catch (_) {
+      return null;
+    }
+    final Uint8List bytes;
+    try {
+      bytes = data.contentAsBytes();
+    } catch (_) {
+      return null;
+    }
+    if (bytes.isEmpty) return null;
+    return AnkiAudioData(
+      bytes: bytes,
+      extension: _audioExtForMime(data.mimeType),
+    );
+  }
+
+  /// Inverse of `audioMimeForPath`: the filename extension to store a decoded
+  /// `data:` audio payload under, from its MIME type. Unknown types fall back to
+  /// `mp3` (the dominant word-audio format).
+  static String _audioExtForMime(String mime) {
+    switch (mime.toLowerCase()) {
+      case 'audio/mpeg':
+        return 'mp3';
+      case 'audio/ogg':
+        return 'ogg';
+      case 'audio/mp4':
+      case 'audio/aac':
+        return 'm4a';
+      case 'audio/wav':
+      case 'audio/x-wav':
+        return 'wav';
+      case 'audio/flac':
+        return 'flac';
+      case 'audio/webm':
+        return 'webm';
+      default:
+        return 'mp3';
+    }
+  }
+}
+
+/// Decoded inline audio payload from a [AnkiAudioRefKind.dataUri] ref: the raw
+/// [bytes] and the filename [extension] to store them under in Anki media.
+class AnkiAudioData {
+  const AnkiAudioData({required this.bytes, required this.extension});
+  final Uint8List bytes;
+  final String extension;
 }
 
 String ankiInlineMediaReference(String addMediaResult) {

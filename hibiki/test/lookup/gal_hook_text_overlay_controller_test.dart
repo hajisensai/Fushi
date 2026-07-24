@@ -34,6 +34,7 @@ class _OverlayTestEngine extends EngineHookGalAudioSource {
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,
+    int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
   }) async =>

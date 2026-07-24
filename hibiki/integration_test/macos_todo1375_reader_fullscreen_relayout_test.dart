@@ -8,7 +8,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart'
     show hibikiMaterialNavKey;
 
@@ -50,15 +49,15 @@ void main() {
     expect(homeReady, isTrue, reason: 'MD3 home shell within 90s');
     await tester.pump(const Duration(seconds: 2));
 
+    // Books is a lazily-built keep-alive tab and boot lands on the dashboard
+    // tab: without selecting it the shelf (and its `book_entry_*` cards) is
+    // never in the tree, so seedReaderBook's visibility poll cannot succeed.
+    await showBooksTab(tester);
+
     final String bookKey = await seedReaderBook(tester);
-    final String seededKey =
-        'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
-    final Finder entry = find.byKey(ValueKey<String>(seededKey));
-    for (int i = 0; i < 40 && entry.evaluate().isEmpty; i++) {
-      await tester.pump(const Duration(milliseconds: 500));
-    }
-    expect(entry, findsOneWidget, reason: 'seeded book on shelf');
-    await tester.tap(entry); // itest-tap-allow: macOS pixel-capture only
+    // Open via the same production call a shelf-card tap makes (openMedia);
+    // decoupled from shelf viewport/sorting exactly like abe553a5c.
+    await openBookViaProductionPath(tester, bookKey);
     await tester.pump(const Duration(seconds: 3));
 
     const Key webViewKey = ValueKey<String>('hoshi_webview');

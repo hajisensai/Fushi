@@ -302,7 +302,7 @@ void main() {
       );
     });
 
-    test('防截屏：panelBlockCapture 桥切 native + 落 pref（默认开）', () {
+    test('防截屏：panelBlockCapture 桥切 native + 落 pref', () {
       // 面板栏 🛡 按钮：_onJsMessage 处理 panelBlockCapture，切 native display
       // affinity（_channel.setBlockCapture）并落 pref（setClipboardPanelBlockCapture）。
       expect(controllerSrc.contains("case 'panelBlockCapture':"), isTrue,
@@ -312,7 +312,7 @@ void main() {
       expect(controllerSrc.contains('setClipboardPanelBlockCapture(block)'),
           isTrue,
           reason: '切换必须持久化到 pref');
-      // 显示面板时按 pref 应用一次（默认开）。
+      // 显示面板时按 pref 应用一次（默认关，用户可开）。
       expect(
         controllerSrc
             .contains('setBlockCapture(model.clipboardPanelBlockCapture)'),
@@ -321,14 +321,14 @@ void main() {
       );
     });
 
-    test('防截屏 pref 默认开（隐私优先）', () {
+    test('防截屏 pref 默认关（用户要求 2026-07 改为默认关闭）', () {
       final String prefsSrc =
           File('lib/src/models/preferences_repository.dart').readAsStringSync();
       expect(
         prefsSrc.contains(
-            "getPref('clipboard_panel_block_capture', defaultValue: true)"),
+            "getPref('clipboard_panel_block_capture', defaultValue: false)"),
         isTrue,
-        reason: '防截屏 pref 必须默认 true（用户要求「默认打开」）',
+        reason: '防截屏 pref 必须默认 false（用户要求「默认改成关闭」）',
       );
     });
 

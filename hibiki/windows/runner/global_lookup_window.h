@@ -211,9 +211,10 @@ class GlobalLookupWindow {
                                           HWND hwnd, LONG id_object,
                                           LONG id_child, DWORD thread,
                                           DWORD time);
-  // Closes the overlay when a click lands outside the card (incl. blank space in
-  // the same app, which the foreground hook does not catch).
-  static LRESULT CALLBACK MouseHookProc(int code, WPARAM wparam, LPARAM lparam);
+  // BUG-1048 — 处理钩子线程投递过来的「全局点击」消息（见 low_level_mouse_hook.h）：
+  // 落在窗口外 -> 关闭浮窗；落在窗口内 -> 交给 web host 自己命中测试。跑在窗口线程，
+  // 钩子线程只搬坐标，不碰任何 C++ 对象。
+  void HandleGlobalClick(POINT screen_pt, bool inside_window);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   int OffscreenX() const;
   // TODO-867 P2: round the window corners to match popup.css's card radius.
@@ -270,7 +271,10 @@ class GlobalLookupWindow {
 
   HWND hwnd_ = nullptr;
   HWINEVENTHOOK foreground_hook_ = nullptr;
-  HHOOK mouse_hook_ = nullptr;
+  // BUG-1048 — 本实例是否已让钩子线程装上 WH_MOUSE_LL（钩子本身不再由本线程持有）。
+  // 仍是**每实例**标志：常驻剪贴板面板从不 arm，它的 Hide() 也就不会卸掉瞬态查词
+  // 覆盖窗的点击外关闭。
+  bool mouse_hook_armed_ = false;
   static GlobalLookupWindow* s_hook_owner_;
   bool visible_ = false;
   bool revealed_ = false;

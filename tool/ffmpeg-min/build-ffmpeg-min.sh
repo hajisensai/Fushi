@@ -47,7 +47,12 @@ cd "$SRC"
 # when processing input"），片段导出全挂（AudiobookClipSynthFailure.ffmpegFailed）。
 DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe"
 DECODERS="h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
-ENCODERS="gif,aac,mjpeg,png,libx264,ass,ssa,subrip,webvtt,pcm_s16le"
+# movtext：视频片段导出把「用户正在看的字幕」封成软字幕流（`-c:s mov_text`）。片段
+# 输出恒 .mp4（BUG-917），而 ISO-BMFF 只认 3GPP Timed Text = movtext 编码器；缺它
+# ffmpeg 直接 "Unknown encoder 'mov_text'"，字幕封装在桌面全挂（导出会自动降级成
+# 无字幕片段，见 exportVideoClipViaFfmpeg 的降级重试，但字幕永远出不来）。
+# 注意 movtext **解码器**早已在 DECODERS 里（读内嵌 mp4 字幕），编码器是另一个开关。
+ENCODERS="gif,aac,mjpeg,png,libx264,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
 # pcm_s16le：能量探针（audio_energy_probe.dart，TODO-701）用 `-f null -`；null muxer 的
 # 默认音频编码器是 pcm_s16le，缺它会报 "Default encoder for format null (codec pcm_s16le)
 # is probably disabled ... Encoder not found"，探针在三平台全挂（TODO-1096）。

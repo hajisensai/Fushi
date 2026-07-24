@@ -15,7 +15,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
-import 'helpers/focus_driver.dart';
+import 'helpers/library_fixture.dart' show showBooksTab;
 import 'helpers/pagination_test_harness.dart';
 import 'test_helpers.dart';
 
@@ -53,6 +53,7 @@ void main() {
       debugPrint('[M1] FlutterError: ${details.exceptionAsString()}');
     };
 
+    double? origMarginTop;
     try {
       app.main();
 
@@ -60,19 +61,38 @@ void main() {
       expect(homeReady, isTrue, reason: 'Home must render within 90s');
       await tester.pump(const Duration(seconds: 2));
       debugPrint('[M1] Home ready');
-      final FocusDriver driver = FocusDriver(tester);
 
       // === Open first book ===
       // Ensure we're on the Books tab before looking for entries (home may
-      // default to another tab; the shelf list also lazy-loads).
-      await _openBooksTab(tester, driver);
+      // default to another tab; the shelf list also lazy-loads). 走
+      // [showBooksTab] 生产测试钩子（HomePage.debugSelectTab）：本测试的主题是
+      // 分页不变量，rail 的焦点可达性由 app_smoke / feature_flows 专门断言。
+      // 旧的 Tab 遍历实现隐式依赖「实验焦点导航开关已开」——开关默认关闭时
+      // Tab 被全局中和（TODO-112），在全新容器（iOS 模拟器每文件全新安装）上
+      // focusUntil 必然耗尽；macOS 上只是碰巧吃到前序测试残留的持久化偏好。
+      await showBooksTab(tester);
 
       // Always import and open this run's marker EPUB. Windows off-screen tests
       // reuse the user's app data, so opening the first existing shelf book can
       // silently downgrade marker coverage to a real-book smoke test.
       debugPrint('[M1] Importing synthetic marker EPUB');
       final String bookKey = await _seedTestBook(tester);
-      await _openBooksTab(tester, driver);
+      await showBooksTab(tester);
+
+      // ── Fixture: provision a FRACTIONAL column pitch ─────────────────────
+      // pitch = N·(used column-width + gap)，代数上 == V − mt·vh − mb·vh − F −
+      // chrome + gap（reader_content_styles.dart 的 verticalColumnWidthCss 与
+      // getScrollContext 成对）。macOS 桌面窗口下所有输入都是整数（V=整数逻辑
+      // px、默认上下边距 0、chrome inset 0、F=gap=22）→ 浏览器真实 pitch 恰为
+      // 整数，下面的「must retain fractional pitch」前置条件天然不成立（这不是
+      // JS 丢失小数——desktop_reader_columns_dom_test 已在本机证明 used
+      // column-width 以亚像素解析且 js_pageStep == 真实页距）。要让 M1 真正
+      // 走「小数网格」漂移路径，必须由 fixture 自己制造小数：把上边距设为
+      // 1.3%（vh 单位），margin px = innerHeight·0.013 在整数视口高下几乎必为
+      // 小数（仅 innerHeight 为 1000 整数倍时退化），pitch 随之变成小数。
+      // 原值在 finally 中恢复，不污染全局偏好。
+      origMarginTop = ReaderHibikiSource.instance.ttuMarginTop;
+      await ReaderHibikiSource.instance.setTtuMarginTop(1.3);
 
       // Do not require the exact shelf card to be mounted before opening it.
       // A populated shelf is lazily built and may sort a just-imported fixture
@@ -361,21 +381,12 @@ void main() {
       assertStrictErrors(errors);
       debugPrint('[M1] === PAGINATION TESTS PASSED ===');
     } finally {
+      if (origMarginTop != null) {
+        await ReaderHibikiSource.instance.setTtuMarginTop(origMarginTop);
+      }
       FlutterError.onError = oldHandler;
     }
   });
-}
-
-Future<void> _openBooksTab(
-  WidgetTester tester,
-  FocusDriver driver,
-) async {
-  final List<Finder> navTargets = findPrimaryNavigationTargets();
-  if (navTargets.isEmpty) return;
-  final bool focused = await driver.focusWidget(navTargets.first);
-  expect(focused, isTrue, reason: 'Books tab must be reachable by focus');
-  await driver.activate();
-  await tester.pump(const Duration(milliseconds: 500));
 }
 
 /// Open the seeded reader book deterministically.

@@ -173,9 +173,13 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
-          // TODO-845: how many leading dictionary blocks the popup auto-expands
-          // even when "collapse dictionaries" is on. int preference surfaced
-          // through a double slider; min/max (0..6) match the repository clamp.
+          // TODO-845: how many leading *rows* of dictionary blocks the popup
+          // auto-expands even when "collapse dictionaries" is on. The unit is
+          // rows so the expanded region always fills whole top rows of the
+          // --dict-columns masonry (popup.js autoExpandCount = rows × effective
+          // columns) instead of fighting it with a column-blind block count.
+          // int preference surfaced through a double slider; min/max (0..6)
+          // match the repository clamp.
           // 仅当「折叠词典显示」开启时才有意义（折叠关闭时所有词典本就展开，「自动展开
           // 前 N 本」无从谈起）；据此对齐用户预期，仅折叠开启时才显示本项。
           SettingsSliderItem(
@@ -217,6 +221,25 @@ SettingsDestination buildLookupDestination() {
             label: (double value) => value.round().toString(),
             onChanged: (SettingsContext settingsContext, double value) {
               settingsContext.appModel.setPopupDictionaryColumns(value.round());
+              settingsContext.refresh();
+            },
+          ),
+          // BUG-1026: 查词弹窗滚轮速度倍率。默认 1.0（与改前一致），0.5–5.0。倍率乘进
+          // popup.js 的 wheel factor，一处存储驱动 in-app 三种弹窗 + 浏览器扩展弹窗。
+          SettingsSliderItem(
+            id: 'lookup.popup_wheel_speed',
+            title: t.popup_wheel_speed,
+            subtitle: t.popup_wheel_speed_hint,
+            icon: Icons.mouse_outlined,
+            min: 0.5,
+            max: 5.0,
+            divisions: 9,
+            titleReadout: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupWheelSpeed,
+            label: (double value) => '${value.toStringAsFixed(1)}×',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupWheelSpeed(value);
               settingsContext.refresh();
             },
           ),
@@ -785,7 +808,7 @@ SettingsDestination buildLookupDestination() {
           ),
           // 防截屏（用户诉求）：桌面查词/剪贴板悬浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
-          // 排除。默认开（隐私优先）。仅 Windows——display affinity 是 Win32 能力。
+          // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
           // 与面板栏 🛡 按钮同一 pref、同一 native 通道（ClipboardPanelController
           // .applyBlockCapture → OverlayWindowChannel.setBlockCapture），改设置即时
           // 重应用，不新起并行机制。applyBlockCapture 是唯一扇出入口：面板窗 +

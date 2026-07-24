@@ -9,7 +9,7 @@ import 'package:hibiki/utils.dart';
 /// A special kind of field that has a special widget at the top of the creator.
 /// For example, the audio field has a media player that can be controlled
 /// based on its values.
-abstract class AudioExportField extends Field {
+abstract class AudioExportField extends Field with ExportFieldSearch {
   /// Initialise this field with the predetermined and hardset values.
   AudioExportField({
     required super.uniqueKey,
@@ -21,14 +21,6 @@ abstract class AudioExportField extends Field {
   /// The image file selected for export.
   File? get exportFile => _exportFile;
   File? _exportFile;
-
-  /// The current search term for the image.
-  String? get currentSearchTerm => _currentSearchTerm;
-  String? _currentSearchTerm;
-
-  /// Whether or not searching is in progress.
-  bool get isSearching => _isSearching;
-  bool _isSearching = false;
 
   /// Whether or not the current media cannot be overridden by an auto enhancement.
   bool _autoCannotOverride = false;
@@ -42,20 +34,8 @@ abstract class AudioExportField extends Field {
     required CreatorModel creatorModel,
   }) {
     _exportFile = null;
-    _currentSearchTerm = null;
+    currentSearchTermInternal = null;
     _autoCannotOverride = false;
-    creatorModel.refresh();
-  }
-
-  /// Flag for showing the loading state of the picker.
-  void setSearching({
-    required AppModel appModel,
-    required CreatorModel creatorModel,
-    required bool isSearching,
-    String? searchTerm,
-  }) {
-    _isSearching = isSearching;
-    _currentSearchTerm = searchTerm;
     creatorModel.refresh();
   }
 
@@ -68,48 +48,9 @@ abstract class AudioExportField extends Field {
   }) {
     creatorModel.getFieldController(this).clear();
     _exportFile = file;
-    _currentSearchTerm = searchTermUsed;
-    _isSearching = false;
+    currentSearchTermInternal = searchTermUsed;
+    isSearchingInternal = false;
     creatorModel.refresh();
-  }
-
-  /// Fetches the search term to use from the [CreatorModel]. If the field
-  /// controller is empty, use a fallback and inform the user that a fallback
-  /// has been used.
-  String? getSearchTermWithFallback({
-    required AppModel appModel,
-    required CreatorModel creatorModel,
-    required List<Field> fallbackSearchTerms,
-  }) {
-    String searchTerm = creatorModel.getFieldController(this).text.trim();
-    if (searchTerm.isNotEmpty) {
-      return searchTerm;
-    } else {
-      for (Field fallbackField in fallbackSearchTerms) {
-        String fallbackTerm =
-            creatorModel.getFieldController(fallbackField).text.trim();
-        if (fallbackTerm.isNotEmpty) {
-          HibikiToast.show(
-            msg: t.field_fallback_used(
-              field: getLocalisedLabel(appModel),
-              secondField: fallbackField.getLocalisedLabel(appModel),
-            ),
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-          );
-
-          return fallbackTerm;
-        }
-      }
-    }
-
-    HibikiToast.show(
-      msg: t.no_text_to_search,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-    );
-
-    return null;
   }
 
   /// Media fields are special and have a [Widget] that is shown at the top of

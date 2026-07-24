@@ -8,7 +8,6 @@ import 'package:integration_test/integration_test.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
-import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'helpers/pagination_test_harness.dart';
 import 'test_helpers.dart';
@@ -31,28 +30,21 @@ void main() {
       expect(await waitForHome(tester), isTrue);
       await tester.pump(const Duration(seconds: 2));
       expect(await seedDictionary(tester), isTrue);
-      final appModel = await readyAppModel(tester);
-      await appModel.setExperimentalFocusNavigationEnabled(true);
-      for (int i = 0; i < 8; i++) {
-        await tester.pump(const Duration(milliseconds: 250));
-      }
 
-      final FocusDriver driver = FocusDriver(tester);
+      // 书架是惰性构建的保活 tab，冷启动落在 dashboard；不先切过去，
+      // `book_entry_*` 书卡不在树中，seedReaderBook 的可见性轮询必然超时
+      // （与 macos_reader_screenshot / macos_todo1375 同根因同修法）。
+      await showBooksTab(tester);
 
-      Finder bookEntries = findBookEntries();
-      if (bookEntries.evaluate().isEmpty) {
-        await seedReaderBook(tester);
-        bookEntries = findBookEntries();
-      }
-      expect(bookEntries, findsWidgets);
+      final String bookKey = await seedReaderBook(tester);
+      expect(findBookEntries(), findsWidgets,
+          reason: 'seeded book card must appear on the books shelf');
 
       const Key webViewKey = ValueKey<String>('hoshi_webview');
-      await _openBookEntry(
-        tester,
-        driver,
-        bookEntries.first,
-        find.byKey(webViewKey),
-      );
+      // 书卡的 Enter→activate 未挂在 HibikiFocusRoot 下（TODO-783），且已入库
+      // fixture 可能被书架排序排到视口外——走生产同一调用 openMedia 打开
+      // （openBookViaProductionPath，同 abe553a5c 的解耦理由）。
+      await openBookViaProductionPath(tester, bookKey);
       await _waitFor(tester, find.byKey(webViewKey), 'Hoshi WebView');
       await _waitFor(
         tester,
@@ -83,7 +75,7 @@ void main() {
       nav.pop();
       await tester.pump(const Duration(seconds: 2));
 
-      final lookup = await appModel.searchDictionary(
+      final lookup = await (await readyAppModel(tester)).searchDictionary(
         searchTerm: 'testword',
         searchWithWildcards: false,
         allowRemoteLookup: false,
@@ -98,32 +90,6 @@ void main() {
       FlutterError.onError = oldHandler;
     }
   });
-}
-
-Future<void> _openBookEntry(
-  WidgetTester tester,
-  FocusDriver driver,
-  Finder bookEntry,
-  Finder webView,
-) async {
-  final bool focusedBook = await driver.requestFocusInside(
-    bookEntry,
-    debugLabelContains: 'reader-shelf-',
-  );
-  expect(focusedBook, isTrue, reason: 'Book card must be reachable by focus');
-
-  await driver.activate();
-  if (await _waitForOptional(tester, webView,
-      polls: 12, interval: const Duration(milliseconds: 250))) {
-    return;
-  }
-
-  if (await driver.activateIntent()) {
-    if (await _waitForOptional(tester, webView,
-        polls: 12, interval: const Duration(milliseconds: 250))) {
-      return;
-    }
-  }
 }
 
 Future<void> _waitFor(WidgetTester tester, Finder finder, String label) async {

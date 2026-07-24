@@ -56,4 +56,87 @@ void main() {
       expect(statCollectionName('video|same', mixed, namesById), '进击的巨人 第一季');
     });
   });
+
+  // 显示名统一规则（非合集上下文拼「合集名 + 名字」，合集内部只显示名字）的
+  // 纯函数层：resolveEntryDisplayTitle 供「标题=合集名、副标题=条目名」两行场景，
+  // collectionQualifiedTitle 供活动时间轴等单行「合集名 - 名字」场景。
+  group('resolveEntryDisplayTitle', () {
+    final Map<String, int> primaryByEntry = <String, int>{
+      'video|uid-x': 2,
+    };
+    final Map<int, String> namesById = <int, String>{
+      2: '进击的巨人 第一季',
+    };
+
+    test('命中合集返回 (合集名, 原名)', () {
+      final ({String? collectionName, String title}) r =
+          resolveEntryDisplayTitle(
+        entryKey: 'video|uid-x',
+        rawTitle: 'S01E01',
+        primaryByEntry: primaryByEntry,
+        collectionNamesById: namesById,
+      );
+      expect(r.collectionName, '进击的巨人 第一季');
+      expect(r.title, 'S01E01');
+    });
+
+    test('未命中返回 (null, 原名)', () {
+      final ({String? collectionName, String title}) r =
+          resolveEntryDisplayTitle(
+        entryKey: 'video|orphan',
+        rawTitle: 'S01E01',
+        primaryByEntry: primaryByEntry,
+        collectionNamesById: namesById,
+      );
+      expect(r.collectionName, isNull);
+      expect(r.title, 'S01E01');
+    });
+  });
+
+  group('collectionQualifiedTitle', () {
+    final Map<String, int> primaryByEntry = <String, int>{
+      'video|uid-x': 2,
+      'epub|book-a': 1,
+    };
+    final Map<int, String> namesById = <int, String>{
+      1: '夏目漱石全集',
+      2: '进击的巨人 第一季',
+    };
+
+    test('命中合集拼「合集名 - 名字」（分隔符与制卡口径一致）', () {
+      expect(
+        collectionQualifiedTitle(
+          entryKey: 'video|uid-x',
+          rawTitle: 'S01E01',
+          primaryByEntry: primaryByEntry,
+          collectionNamesById: namesById,
+        ),
+        '进击的巨人 第一季 - S01E01',
+      );
+    });
+
+    test('未命中原样返回条目名', () {
+      expect(
+        collectionQualifiedTitle(
+          entryKey: 'epub|orphan',
+          rawTitle: '吾輩は猫である',
+          primaryByEntry: primaryByEntry,
+          collectionNamesById: namesById,
+        ),
+        '吾輩は猫である',
+      );
+    });
+
+    test('归属到已删除合集（名字缺失）→ 原样返回不崩', () {
+      expect(
+        collectionQualifiedTitle(
+          entryKey: 'epub|dangling',
+          rawTitle: '书名',
+          primaryByEntry: <String, int>{'epub|dangling': 99},
+          collectionNamesById: namesById,
+        ),
+        '书名',
+      );
+    });
+  });
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,9 +54,29 @@ class FocusDriver {
   }) async {
     if (reached()) return true;
     for (int i = 0; i < maxSteps; i++) {
+      final FocusNode? before = focused;
       await _key(key);
       if (reached()) return true;
+      // macOS 平台事实：文本框聚焦时 Flutter 自带的 _macDisablingTextShortcuts
+      // 把 Tab / Shift+Tab 映射为 DoNothingAndStopPropagationTextIntent（对齐
+      // 原生 mac 文本框「Tab 不离开输入框」），Tab 遍历会在任何 autofocus /
+      // enterText 留焦的输入框上原地卡死。检测到「按了 Tab 焦点没动且焦点在
+      // EditableText 内」时用 nextFocus() 按遍历序推进（= 未被吞掉的 Tab 的
+      // 语义；纯焦点状态操作，非坐标点击。不能用 unfocus——那会把遍历重置回
+      // scope 起点，若首个 tab stop 恰是该输入框就永远乒乓）。
+      if (key == LogicalKeyboardKey.tab &&
+          identical(focused, before) &&
+          _insideEditableText(focused)) {
+        focused?.nextFocus();
+        await tester.pump(_settle);
+        if (reached()) return true;
+      }
     }
+    // 步数耗尽：把当前焦点落点打出来，避免「不可达」失败只剩一个 false。
+    final FocusNode? f = focused;
+    debugPrint('[FocusDriver] focusUntil exhausted $maxSteps steps; '
+        'primaryFocus=${f?.debugLabel ?? f?.context?.widget.runtimeType} '
+        'scope=${f?.nearestScope?.debugLabel}');
     return false;
   }
 
@@ -122,6 +143,21 @@ class FocusDriver {
     return focused == node;
   }
 
+  /// [node] 是否落在某个 [EditableText] 子树内（文本输入焦点）。
+  bool _insideEditableText(FocusNode? node) {
+    final BuildContext? ctx = node?.context;
+    if (ctx == null) return false;
+    bool found = false;
+    ctx.visitAncestorElements((Element el) {
+      if (el.widget is EditableText) {
+        found = true;
+        return false;
+      }
+      return true;
+    });
+    return found;
+  }
+
   bool _focusOwns(Finder target) {
     final FocusNode? f = focused;
     if (f == null) return false;
@@ -129,9 +165,26 @@ class FocusDriver {
     // 只有真正落在可聚焦控件上的普通 FocusNode 才算「拥有」某个 target —— 否则
     // scope 是所有 target 的共同祖先，反向子树判定会对全部 target 误报为命中。
     if (f is FocusScopeNode) return false;
+    // skipTraversal 节点是键事件 sink / chrome（如 HomePage 包住整页的
+    // _keyboardFocusNode），Tab 遍历永远到不了它，它拿着焦点也不代表任何具体
+    // 控件被聚焦。不排除的话，autofocus 的整页 sink 会让 focusWidget 对页内
+    // 一切 target 立即误报命中（iOS smoke 失败排查中实锤的假阳性来源）。
+    if (f.skipTraversal) return false;
     final BuildContext? ctx = f.context;
-    if (ctx == null || target.evaluate().isEmpty) return false;
-    final Element targetEl = target.evaluate().first;
+    if (ctx == null) return false;
+    // `.at(i)` / `.first` 型索引 finder 是惰性求值的：页面切换后底层匹配数变少，
+    // evaluate 会直接抛 RangeError（Iterable.elementAt 越界）。对 _focusOwns 而言
+    // 「越界」和「空匹配」语义相同——当前树里根本没有这个 target——按不匹配返回
+    // false（让 focusUntil 继续走 / 耗尽后由调用方的 expect 给出清晰失败理由），
+    // 而不是让越界异常直接炸掉整个测试。
+    final List<Element> targetElements;
+    try {
+      targetElements = target.evaluate().toList();
+    } on RangeError {
+      return false;
+    }
+    if (targetElements.isEmpty) return false;
+    final Element targetEl = targetElements.first;
     if (ctx == targetEl) return true;
     // 正向：焦点 owner 在 target 子树内（target 是可聚焦祖先，焦点落在其内部，
     // 例如 target=TextButton、焦点是它内层的 Focus）。
@@ -190,6 +243,25 @@ class FocusDriver {
     }
   }
 
-  /// 走全局 HibikiPopIntent 返回。
-  Future<void> back() => _key(LogicalKeyboardKey.gameButtonB);
+  /// 全局返回一层。
+  ///
+  /// 桌面与 iOS 走 Escape：flutter_test 的 macOS / iOS physical key map 里都
+  /// 没有 gameButtonB（simulateKeyDownEvent 直接断言崩溃，iOS 实锤于
+  /// feature_flows），而 Escape 退层级是真实生产路径——global_navigation.dart
+  /// 的 _handleGlobalEscape 在所有平台无条件挂载（iPad/iPhone 外接键盘同一
+  /// 惯例），iOS key map 里有 escape（keyboard_maps.g.dart kIosToPhysicalKey
+  /// 0x29）。Android/手柄环境保持 gameButtonB 的手柄返回路径（Android key map
+  /// 含 KEYCODE_BUTTON_B=305）。
+  Future<void> back() {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.macOS:
+      case TargetPlatform.windows:
+      case TargetPlatform.linux:
+      case TargetPlatform.iOS:
+        return _key(LogicalKeyboardKey.escape);
+      case TargetPlatform.android:
+      case TargetPlatform.fuchsia:
+        return _key(LogicalKeyboardKey.gameButtonB);
+    }
+  }
 }

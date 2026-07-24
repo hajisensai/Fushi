@@ -1659,6 +1659,12 @@ void FlutterWindow::RegisterVoiceHookChannel() {
         const std::string& method = call.method_name();
         auto status_map = [](const hibiki::VoiceHookStatus& s) {
           return flutter::EncodableMap{
+              {flutter::EncodableValue("ipcProtocolVersion"),
+               flutter::EncodableValue(s.ipc_protocol_version)},
+              {flutter::EncodableValue("lunaBridgeAbiVersion"),
+               flutter::EncodableValue(s.luna_bridge_abi_version)},
+              {flutter::EncodableValue("lunaVendoredVersion"),
+               flutter::EncodableValue(s.luna_vendored_version)},
               {flutter::EncodableValue("sampleRate"),
                flutter::EncodableValue(s.sample_rate)},
               {flutter::EncodableValue("channels"),

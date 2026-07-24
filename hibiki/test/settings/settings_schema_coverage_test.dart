@@ -103,6 +103,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Separate size for browser extension':
       'test/lookup/effective_lookup_size_test.dart + test/models/lookup_effective_size_wiring_test.dart',
   'lookup/Instant popup scroll': 'test/reader/reader_caret_scripts_test.dart',
+  // BUG-1026：滚轮速度倍率的生效面在 popup.js（WebView 内的 wheel 监听器），widget
+  // 层没有可观测探针；由专项测试逐环锁死注入链路（偏好 → 注入/theme 下发 → 三份
+  // popup.js 读取并乘进 factor）。
+  'lookup/Popup scroll speed': 'test/reader/popup_wheel_speed_asset_test.dart',
   // TODO-108: 底部固定弹窗开关——生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流（非 reader CSS / 主题树），
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
   'lookup/Bottom-docked popup':
@@ -135,7 +139,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // mineEntry/isDuplicate 经互联链路转发到已配对主机（用主机 Anki 落卡），配置类方法仍委派
   // 本地（非 reader CSS / 主题树），无适用 widget 探针；由专项测试咬住转发路由/字段透传/
   // 序列化契约（远端制卡仓库包装 + 转发载荷 + 服务端 handler）。
-  'cardCreation/Mine to paired device':
+  // 归属：开关已从「制卡」分类移到「Hibiki 互联」→「交给已配对设备」（它的前置条件、
+  // 目标设备、失效条件全由互联决定），故登记键的 destId 随之从 cardCreation 变 interconnect。
+  'interconnect/Mine to paired device':
       'test/anki/remote_mining_anki_repository_test.dart + '
           'test/sync/forwarded_mine_payload_test.dart + '
           'test/sync/hibiki_remote_mining_service_test.dart',
@@ -355,7 +361,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Collapse dictionaries': 'DEVICE: popup.js collapse',
   // TODO-845: 折叠词典时仍展开前 N 本。效果在 popup.js createGlossarySection 的
   // <details>.open（WebView 渲染，widget 测不到）；由 node 行为守卫真执行覆盖。
-  'lookup/Auto-expand dictionaries':
+  'lookup/Auto-expand rows':
       'test/pages/popup_auto_expand_dictionaries_test.js (popup.js node behaviour guard) + test/pages/popup_auto_expand_dictionaries_test.dart',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',

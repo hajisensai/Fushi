@@ -4469,6 +4469,13 @@ class $EpubBooksTable extends EpubBooks
   late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
       'imported_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _formatMeta = const VerificationMeta('format');
+  @override
+  late final GeneratedColumn<String> format = GeneratedColumn<String>(
+      'format', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('epub'));
   static const VerificationMeta _completedAtMeta =
       const VerificationMeta('completedAt');
   @override
@@ -4497,6 +4504,7 @@ class $EpubBooksTable extends EpubBooks
         tocJson,
         sourceMetadata,
         importedAt,
+        format,
         completedAt,
         sourceId
       ];
@@ -4578,6 +4586,10 @@ class $EpubBooksTable extends EpubBooks
     } else if (isInserting) {
       context.missing(_importedAtMeta);
     }
+    if (data.containsKey('format')) {
+      context.handle(_formatMeta,
+          format.isAcceptableOrUnknown(data['format']!, _formatMeta));
+    }
     if (data.containsKey('completed_at')) {
       context.handle(
           _completedAtMeta,
@@ -4619,6 +4631,8 @@ class $EpubBooksTable extends EpubBooks
           .read(DriftSqlType.string, data['${effectivePrefix}source_metadata']),
       importedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
+      format: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}format'])!,
       completedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}completed_at']),
       sourceId: attachedDatabase.typeMapping
@@ -4645,6 +4659,13 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final String? sourceMetadata;
   final int importedAt;
 
+  /// 书身份格式判别（PDF 阅读器 Phase 1）：`'epub'`（默认，含 EPUB / TextToEpub /
+  /// 有声书配对壳）或 `'pdf'`（pdfrx 渲染的真 PDF）。默认 `'epub'` 让既有全部行零破坏
+  /// （Never break userspace，v51 迁移 addColumn 自动回填），书架/进度/删除按此列区分而
+  /// 非另建平行表。PDF 行：`format='pdf'`、`epubPath`=PDF 绝对路径、`extractDir`=占位、
+  /// `chapterCount`=页数、`chaptersJson`=`'[]'`。
+  final String format;
+
   /// 书「读完」的时间戳（用户手动标记，或读到全书末尾自动写入）；null = 未完成。
   /// 镜像 [VideoBooks.completedAt]，书架概览「Completed」统计用。跳过后记/附录的
   /// 读者靠手动标记即可计入完成，不再受「必须读到最后一字」限制。
@@ -4665,6 +4686,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       this.tocJson,
       this.sourceMetadata,
       required this.importedAt,
+      required this.format,
       this.completedAt,
       this.sourceId});
   @override
@@ -4689,6 +4711,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       map['source_metadata'] = Variable<String>(sourceMetadata);
     }
     map['imported_at'] = Variable<int>(importedAt);
+    map['format'] = Variable<String>(format);
     if (!nullToAbsent || completedAt != null) {
       map['completed_at'] = Variable<DateTime>(completedAt);
     }
@@ -4718,6 +4741,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ? const Value.absent()
           : Value(sourceMetadata),
       importedAt: Value(importedAt),
+      format: Value(format),
       completedAt: completedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(completedAt),
@@ -4742,6 +4766,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       tocJson: serializer.fromJson<String?>(json['tocJson']),
       sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
+      format: serializer.fromJson<String>(json['format']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       sourceId: serializer.fromJson<int?>(json['sourceId']),
     );
@@ -4761,6 +4786,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       'tocJson': serializer.toJson<String?>(tocJson),
       'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
       'importedAt': serializer.toJson<int>(importedAt),
+      'format': serializer.toJson<String>(format),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'sourceId': serializer.toJson<int?>(sourceId),
     };
@@ -4778,6 +4804,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           Value<String?> tocJson = const Value.absent(),
           Value<String?> sourceMetadata = const Value.absent(),
           int? importedAt,
+          String? format,
           Value<DateTime?> completedAt = const Value.absent(),
           Value<int?> sourceId = const Value.absent()}) =>
       EpubBookRow(
@@ -4793,6 +4820,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
         sourceMetadata:
             sourceMetadata.present ? sourceMetadata.value : this.sourceMetadata,
         importedAt: importedAt ?? this.importedAt,
+        format: format ?? this.format,
         completedAt: completedAt.present ? completedAt.value : this.completedAt,
         sourceId: sourceId.present ? sourceId.value : this.sourceId,
       );
@@ -4817,6 +4845,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           : this.sourceMetadata,
       importedAt:
           data.importedAt.present ? data.importedAt.value : this.importedAt,
+      format: data.format.present ? data.format.value : this.format,
       completedAt:
           data.completedAt.present ? data.completedAt.value : this.completedAt,
       sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
@@ -4837,6 +4866,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('format: $format, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId')
           ..write(')'))
@@ -4856,6 +4886,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       tocJson,
       sourceMetadata,
       importedAt,
+      format,
       completedAt,
       sourceId);
   @override
@@ -4873,6 +4904,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           other.tocJson == this.tocJson &&
           other.sourceMetadata == this.sourceMetadata &&
           other.importedAt == this.importedAt &&
+          other.format == this.format &&
           other.completedAt == this.completedAt &&
           other.sourceId == this.sourceId);
 }
@@ -4889,6 +4921,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> tocJson;
   final Value<String?> sourceMetadata;
   final Value<int> importedAt;
+  final Value<String> format;
   final Value<DateTime?> completedAt;
   final Value<int?> sourceId;
   final Value<int> rowid;
@@ -4904,6 +4937,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.format = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4920,6 +4954,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     required int importedAt,
+    this.format = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4942,6 +4977,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? tocJson,
     Expression<String>? sourceMetadata,
     Expression<int>? importedAt,
+    Expression<String>? format,
     Expression<DateTime>? completedAt,
     Expression<int>? sourceId,
     Expression<int>? rowid,
@@ -4958,6 +4994,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (tocJson != null) 'toc_json': tocJson,
       if (sourceMetadata != null) 'source_metadata': sourceMetadata,
       if (importedAt != null) 'imported_at': importedAt,
+      if (format != null) 'format': format,
       if (completedAt != null) 'completed_at': completedAt,
       if (sourceId != null) 'source_id': sourceId,
       if (rowid != null) 'rowid': rowid,
@@ -4976,6 +5013,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       Value<String?>? tocJson,
       Value<String?>? sourceMetadata,
       Value<int>? importedAt,
+      Value<String>? format,
       Value<DateTime?>? completedAt,
       Value<int?>? sourceId,
       Value<int>? rowid}) {
@@ -4991,6 +5029,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       tocJson: tocJson ?? this.tocJson,
       sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       importedAt: importedAt ?? this.importedAt,
+      format: format ?? this.format,
       completedAt: completedAt ?? this.completedAt,
       sourceId: sourceId ?? this.sourceId,
       rowid: rowid ?? this.rowid,
@@ -5033,6 +5072,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (format.present) {
+      map['format'] = Variable<String>(format.value);
+    }
     if (completedAt.present) {
       map['completed_at'] = Variable<DateTime>(completedAt.value);
     }
@@ -5059,6 +5101,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('format: $format, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
           ..write('rowid: $rowid')
@@ -12951,6 +12994,18 @@ class $MediaCollectionsTable extends MediaCollections
   late final GeneratedColumn<int> anilistId = GeneratedColumn<int>(
       'anilist_id', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _audioTrackIdMeta =
+      const VerificationMeta('audioTrackId');
+  @override
+  late final GeneratedColumn<String> audioTrackId = GeneratedColumn<String>(
+      'audio_track_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _subtitleDelayMsMeta =
+      const VerificationMeta('subtitleDelayMs');
+  @override
+  late final GeneratedColumn<int> subtitleDelayMs = GeneratedColumn<int>(
+      'subtitle_delay_ms', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -12960,7 +13015,9 @@ class $MediaCollectionsTable extends MediaCollections
         sortOrder,
         createdAt,
         orderUpdatedAt,
-        anilistId
+        anilistId,
+        audioTrackId,
+        subtitleDelayMs
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -13013,6 +13070,18 @@ class $MediaCollectionsTable extends MediaCollections
       context.handle(_anilistIdMeta,
           anilistId.isAcceptableOrUnknown(data['anilist_id']!, _anilistIdMeta));
     }
+    if (data.containsKey('audio_track_id')) {
+      context.handle(
+          _audioTrackIdMeta,
+          audioTrackId.isAcceptableOrUnknown(
+              data['audio_track_id']!, _audioTrackIdMeta));
+    }
+    if (data.containsKey('subtitle_delay_ms')) {
+      context.handle(
+          _subtitleDelayMsMeta,
+          subtitleDelayMs.isAcceptableOrUnknown(
+              data['subtitle_delay_ms']!, _subtitleDelayMsMeta));
+    }
     return context;
   }
 
@@ -13038,6 +13107,10 @@ class $MediaCollectionsTable extends MediaCollections
           .read(DriftSqlType.int, data['${effectivePrefix}order_updated_at'])!,
       anilistId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}anilist_id']),
+      audioTrackId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_track_id']),
+      subtitleDelayMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}subtitle_delay_ms']),
     );
   }
 
@@ -13079,6 +13152,22 @@ class MediaCollectionRow extends DataClass
   /// 番名猜测。NULL = 未绑定（回退用合集名经 AniList 现解析）。无损迁移：nullable 无
   /// default，旧库既有行全 NULL = 行为与旧版一致。
   final int? anilistId;
+
+  /// 系列级音轨偏好（libmpv `AudioTrack.id`，schema v52）。统一合集迁移前多集视频
+  /// 共享一行 [VideoBooks]，天然「整片一个音轨」；迁移后每集是独立行、换集不再共享 →
+  /// 同系列音轨记忆退化（回归）。把偏好提升回系列容器修根：合集内任一集选音轨即写这里，
+  /// 任一集加载优先读这里（回退各集自己行的 [VideoBooks.audioTrackId]，兼容迁移前已存的
+  /// per-book 值）。NULL = 系列内没人选过（回退 per-book / libmpv 默认）。无损迁移：
+  /// nullable 无 default → 旧库既有行全 NULL = 行为与旧版一致（Never break userspace）。
+  final String? audioTrackId;
+
+  /// 系列级字幕调轴（音画延迟，毫秒，schema v52）。与 [audioTrackId] 同款「系列共享」
+  /// 语义，恢复统一合集迁移前多集共享一个调轴值的行为。合集内任一集调轴即写这里，任一集
+  /// 加载优先读这里（回退各集自己行的 [VideoBooks.delayMs]）。**nullable**（区别于
+  /// [VideoBooks.delayMs] 的 withDefault(0)）：NULL = 系列内没人调过（回退 per-book / 0），
+  /// 与「显式调成 0」区分，避免 0 哨兵歧义。无损迁移：nullable 无 default → 旧库既有行全
+  /// NULL = 行为与旧版一致（Never break userspace）。
+  final int? subtitleDelayMs;
   const MediaCollectionRow(
       {required this.id,
       required this.name,
@@ -13087,7 +13176,9 @@ class MediaCollectionRow extends DataClass
       required this.sortOrder,
       required this.createdAt,
       required this.orderUpdatedAt,
-      this.anilistId});
+      this.anilistId,
+      this.audioTrackId,
+      this.subtitleDelayMs});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -13102,6 +13193,12 @@ class MediaCollectionRow extends DataClass
     map['order_updated_at'] = Variable<int>(orderUpdatedAt);
     if (!nullToAbsent || anilistId != null) {
       map['anilist_id'] = Variable<int>(anilistId);
+    }
+    if (!nullToAbsent || audioTrackId != null) {
+      map['audio_track_id'] = Variable<String>(audioTrackId);
+    }
+    if (!nullToAbsent || subtitleDelayMs != null) {
+      map['subtitle_delay_ms'] = Variable<int>(subtitleDelayMs);
     }
     return map;
   }
@@ -13120,6 +13217,12 @@ class MediaCollectionRow extends DataClass
       anilistId: anilistId == null && nullToAbsent
           ? const Value.absent()
           : Value(anilistId),
+      audioTrackId: audioTrackId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioTrackId),
+      subtitleDelayMs: subtitleDelayMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subtitleDelayMs),
     );
   }
 
@@ -13135,6 +13238,8 @@ class MediaCollectionRow extends DataClass
       createdAt: serializer.fromJson<int>(json['createdAt']),
       orderUpdatedAt: serializer.fromJson<int>(json['orderUpdatedAt']),
       anilistId: serializer.fromJson<int?>(json['anilistId']),
+      audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
+      subtitleDelayMs: serializer.fromJson<int?>(json['subtitleDelayMs']),
     );
   }
   @override
@@ -13149,6 +13254,8 @@ class MediaCollectionRow extends DataClass
       'createdAt': serializer.toJson<int>(createdAt),
       'orderUpdatedAt': serializer.toJson<int>(orderUpdatedAt),
       'anilistId': serializer.toJson<int?>(anilistId),
+      'audioTrackId': serializer.toJson<String?>(audioTrackId),
+      'subtitleDelayMs': serializer.toJson<int?>(subtitleDelayMs),
     };
   }
 
@@ -13160,7 +13267,9 @@ class MediaCollectionRow extends DataClass
           int? sortOrder,
           int? createdAt,
           int? orderUpdatedAt,
-          Value<int?> anilistId = const Value.absent()}) =>
+          Value<int?> anilistId = const Value.absent(),
+          Value<String?> audioTrackId = const Value.absent(),
+          Value<int?> subtitleDelayMs = const Value.absent()}) =>
       MediaCollectionRow(
         id: id ?? this.id,
         name: name ?? this.name,
@@ -13170,6 +13279,11 @@ class MediaCollectionRow extends DataClass
         createdAt: createdAt ?? this.createdAt,
         orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
         anilistId: anilistId.present ? anilistId.value : this.anilistId,
+        audioTrackId:
+            audioTrackId.present ? audioTrackId.value : this.audioTrackId,
+        subtitleDelayMs: subtitleDelayMs.present
+            ? subtitleDelayMs.value
+            : this.subtitleDelayMs,
       );
   MediaCollectionRow copyWithCompanion(MediaCollectionsCompanion data) {
     return MediaCollectionRow(
@@ -13186,6 +13300,12 @@ class MediaCollectionRow extends DataClass
           ? data.orderUpdatedAt.value
           : this.orderUpdatedAt,
       anilistId: data.anilistId.present ? data.anilistId.value : this.anilistId,
+      audioTrackId: data.audioTrackId.present
+          ? data.audioTrackId.value
+          : this.audioTrackId,
+      subtitleDelayMs: data.subtitleDelayMs.present
+          ? data.subtitleDelayMs.value
+          : this.subtitleDelayMs,
     );
   }
 
@@ -13199,14 +13319,25 @@ class MediaCollectionRow extends DataClass
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('orderUpdatedAt: $orderUpdatedAt, ')
-          ..write('anilistId: $anilistId')
+          ..write('anilistId: $anilistId, ')
+          ..write('audioTrackId: $audioTrackId, ')
+          ..write('subtitleDelayMs: $subtitleDelayMs')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, collectionType, coverSource,
-      sortOrder, createdAt, orderUpdatedAt, anilistId);
+  int get hashCode => Object.hash(
+      id,
+      name,
+      collectionType,
+      coverSource,
+      sortOrder,
+      createdAt,
+      orderUpdatedAt,
+      anilistId,
+      audioTrackId,
+      subtitleDelayMs);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -13218,7 +13349,9 @@ class MediaCollectionRow extends DataClass
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt &&
           other.orderUpdatedAt == this.orderUpdatedAt &&
-          other.anilistId == this.anilistId);
+          other.anilistId == this.anilistId &&
+          other.audioTrackId == this.audioTrackId &&
+          other.subtitleDelayMs == this.subtitleDelayMs);
 }
 
 class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
@@ -13230,6 +13363,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<int> createdAt;
   final Value<int> orderUpdatedAt;
   final Value<int?> anilistId;
+  final Value<String?> audioTrackId;
+  final Value<int?> subtitleDelayMs;
   const MediaCollectionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -13239,6 +13374,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.createdAt = const Value.absent(),
     this.orderUpdatedAt = const Value.absent(),
     this.anilistId = const Value.absent(),
+    this.audioTrackId = const Value.absent(),
+    this.subtitleDelayMs = const Value.absent(),
   });
   MediaCollectionsCompanion.insert({
     this.id = const Value.absent(),
@@ -13249,6 +13386,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     required int createdAt,
     this.orderUpdatedAt = const Value.absent(),
     this.anilistId = const Value.absent(),
+    this.audioTrackId = const Value.absent(),
+    this.subtitleDelayMs = const Value.absent(),
   })  : name = Value(name),
         createdAt = Value(createdAt);
   static Insertable<MediaCollectionRow> custom({
@@ -13260,6 +13399,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Expression<int>? createdAt,
     Expression<int>? orderUpdatedAt,
     Expression<int>? anilistId,
+    Expression<String>? audioTrackId,
+    Expression<int>? subtitleDelayMs,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -13270,6 +13411,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       if (createdAt != null) 'created_at': createdAt,
       if (orderUpdatedAt != null) 'order_updated_at': orderUpdatedAt,
       if (anilistId != null) 'anilist_id': anilistId,
+      if (audioTrackId != null) 'audio_track_id': audioTrackId,
+      if (subtitleDelayMs != null) 'subtitle_delay_ms': subtitleDelayMs,
     });
   }
 
@@ -13281,7 +13424,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       Value<int>? sortOrder,
       Value<int>? createdAt,
       Value<int>? orderUpdatedAt,
-      Value<int?>? anilistId}) {
+      Value<int?>? anilistId,
+      Value<String?>? audioTrackId,
+      Value<int?>? subtitleDelayMs}) {
     return MediaCollectionsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -13291,6 +13436,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       createdAt: createdAt ?? this.createdAt,
       orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
       anilistId: anilistId ?? this.anilistId,
+      audioTrackId: audioTrackId ?? this.audioTrackId,
+      subtitleDelayMs: subtitleDelayMs ?? this.subtitleDelayMs,
     );
   }
 
@@ -13321,6 +13468,12 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     if (anilistId.present) {
       map['anilist_id'] = Variable<int>(anilistId.value);
     }
+    if (audioTrackId.present) {
+      map['audio_track_id'] = Variable<String>(audioTrackId.value);
+    }
+    if (subtitleDelayMs.present) {
+      map['subtitle_delay_ms'] = Variable<int>(subtitleDelayMs.value);
+    }
     return map;
   }
 
@@ -13334,7 +13487,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('orderUpdatedAt: $orderUpdatedAt, ')
-          ..write('anilistId: $anilistId')
+          ..write('anilistId: $anilistId, ')
+          ..write('audioTrackId: $audioTrackId, ')
+          ..write('subtitleDelayMs: $subtitleDelayMs')
           ..write(')'))
         .toString();
   }
@@ -19795,6 +19950,7 @@ typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   required int importedAt,
+  Value<String> format,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
   Value<int> rowid,
@@ -19811,6 +19967,7 @@ typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   Value<int> importedAt,
+  Value<String> format,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
   Value<int> rowid,
@@ -19923,6 +20080,9 @@ class $$EpubBooksTableFilterComposer
 
   ColumnFilters<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get format => $composableBuilder(
+      column: $table.format, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnFilters(column));
@@ -20056,6 +20216,9 @@ class $$EpubBooksTableOrderingComposer
   ColumnOrderings<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get format => $composableBuilder(
+      column: $table.format, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnOrderings(column));
 
@@ -20121,6 +20284,9 @@ class $$EpubBooksTableAnnotationComposer
 
   GeneratedColumn<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get format =>
+      $composableBuilder(column: $table.format, builder: (column) => column);
 
   GeneratedColumn<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => column);
@@ -20247,6 +20413,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             Value<int> importedAt = const Value.absent(),
+            Value<String> format = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -20263,6 +20430,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            format: format,
             completedAt: completedAt,
             sourceId: sourceId,
             rowid: rowid,
@@ -20279,6 +20447,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             required int importedAt,
+            Value<String> format = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -20295,6 +20464,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            format: format,
             completedAt: completedAt,
             sourceId: sourceId,
             rowid: rowid,
@@ -26431,6 +26601,8 @@ typedef $$MediaCollectionsTableCreateCompanionBuilder
   required int createdAt,
   Value<int> orderUpdatedAt,
   Value<int?> anilistId,
+  Value<String?> audioTrackId,
+  Value<int?> subtitleDelayMs,
 });
 typedef $$MediaCollectionsTableUpdateCompanionBuilder
     = MediaCollectionsCompanion Function({
@@ -26442,6 +26614,8 @@ typedef $$MediaCollectionsTableUpdateCompanionBuilder
   Value<int> createdAt,
   Value<int> orderUpdatedAt,
   Value<int?> anilistId,
+  Value<String?> audioTrackId,
+  Value<int?> subtitleDelayMs,
 });
 
 final class $$MediaCollectionsTableReferences extends BaseReferences<
@@ -26523,6 +26697,13 @@ class $$MediaCollectionsTableFilterComposer
   ColumnFilters<int> get anilistId => $composableBuilder(
       column: $table.anilistId, builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<String> get audioTrackId => $composableBuilder(
+      column: $table.audioTrackId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get subtitleDelayMs => $composableBuilder(
+      column: $table.subtitleDelayMs,
+      builder: (column) => ColumnFilters(column));
+
   Expression<bool> mediaCollectionItemsRefs(
       Expression<bool> Function($$MediaCollectionItemsTableFilterComposer f)
           f) {
@@ -26603,6 +26784,14 @@ class $$MediaCollectionsTableOrderingComposer
 
   ColumnOrderings<int> get anilistId => $composableBuilder(
       column: $table.anilistId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioTrackId => $composableBuilder(
+      column: $table.audioTrackId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get subtitleDelayMs => $composableBuilder(
+      column: $table.subtitleDelayMs,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$MediaCollectionsTableAnnotationComposer
@@ -26637,6 +26826,12 @@ class $$MediaCollectionsTableAnnotationComposer
 
   GeneratedColumn<int> get anilistId =>
       $composableBuilder(column: $table.anilistId, builder: (column) => column);
+
+  GeneratedColumn<String> get audioTrackId => $composableBuilder(
+      column: $table.audioTrackId, builder: (column) => column);
+
+  GeneratedColumn<int> get subtitleDelayMs => $composableBuilder(
+      column: $table.subtitleDelayMs, builder: (column) => column);
 
   Expression<T> mediaCollectionItemsRefs<T extends Object>(
       Expression<T> Function($$MediaCollectionItemsTableAnnotationComposer a)
@@ -26718,6 +26913,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             Value<int> createdAt = const Value.absent(),
             Value<int> orderUpdatedAt = const Value.absent(),
             Value<int?> anilistId = const Value.absent(),
+            Value<String?> audioTrackId = const Value.absent(),
+            Value<int?> subtitleDelayMs = const Value.absent(),
           }) =>
               MediaCollectionsCompanion(
             id: id,
@@ -26728,6 +26925,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             createdAt: createdAt,
             orderUpdatedAt: orderUpdatedAt,
             anilistId: anilistId,
+            audioTrackId: audioTrackId,
+            subtitleDelayMs: subtitleDelayMs,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -26738,6 +26937,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             required int createdAt,
             Value<int> orderUpdatedAt = const Value.absent(),
             Value<int?> anilistId = const Value.absent(),
+            Value<String?> audioTrackId = const Value.absent(),
+            Value<int?> subtitleDelayMs = const Value.absent(),
           }) =>
               MediaCollectionsCompanion.insert(
             id: id,
@@ -26748,6 +26949,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             createdAt: createdAt,
             orderUpdatedAt: orderUpdatedAt,
             anilistId: anilistId,
+            audioTrackId: audioTrackId,
+            subtitleDelayMs: subtitleDelayMs,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (

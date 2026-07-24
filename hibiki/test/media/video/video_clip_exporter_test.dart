@@ -365,6 +365,321 @@ void main() {
       expect(logged.error, contains('matches no streams'));
     });
   });
+  group('soft-subtitle muxing', () {
+    test('stream map stays untouched when there are no subtitle inputs', () {
+      // 向后兼容守卫：不带字幕、且音轨未知时必须一个 -map 都不给，让 ffmpeg 走
+      // 自动流选择（这是加字幕之前的既有行为）。
+      expect(
+        buildClipStreamMapArgs(explicitAudio: null, subtitleInputCount: 0),
+        isEmpty,
+      );
+      expect(
+        buildClipStreamMapArgs(explicitAudio: 2, subtitleInputCount: 0),
+        <String>['-map', '0:v:0', '-map', '0:a:2?'],
+      );
+    });
+
+    test('subtitle inputs force explicit video/audio maps', () {
+      // ffmpeg 一见 -map 就关闭自动流选择；漏掉 v/a 的 map，输出只剩字幕。
+      expect(
+        buildClipStreamMapArgs(explicitAudio: 1, subtitleInputCount: 2),
+        <String>[
+          '-map',
+          '0:v:0',
+          '-map',
+          '0:a:1?',
+          '-map',
+          '1:s:0',
+          '-map',
+          '2:s:0',
+        ],
+      );
+    });
+
+    test('unknown audio track maps ALL audio rather than gambling on 0:a:0',
+        () {
+      // 多音轨番剧的默认轨常常不是 0；赌 0:a:0 会导出错误语言的音频。
+      expect(
+        buildClipStreamMapArgs(explicitAudio: null, subtitleInputCount: 1),
+        <String>['-map', '0:v:0', '-map', '0:a?', '-map', '1:s:0'],
+      );
+    });
+
+    test('copy args add the subtitle input, its codec, and drop -sn', () {
+      final List<String> args = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 1000,
+        endMs: 3000,
+        outputPath: '/video/clip.mp4',
+        audioStreamIndex: 0,
+        subtitlePaths: <String>['/tmp/a.srt', '/tmp/b.srt'],
+        subtitleCodec: 'mov_text',
+      );
+
+      expect(args, <String>[
+        '-hide_banner',
+        '-y',
+        // -ss/-t 只作用于紧随其后的源视频输入；字幕输入不带，它已被裁好并平移到 0。
+        '-ss',
+        '1.000',
+        '-t',
+        '2.000',
+        '-i',
+        '/video/source.mkv',
+        '-i',
+        '/tmp/a.srt',
+        '-i',
+        '/tmp/b.srt',
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a:0?',
+        '-map',
+        '1:s:0',
+        '-map',
+        '2:s:0',
+        '-dn',
+        '-c',
+        'copy',
+        '-c:s',
+        'mov_text',
+        '-avoid_negative_ts',
+        'make_zero',
+        '/video/clip.mp4',
+      ]);
+      // -sn 会把刚 map 进来的字幕流一起禁掉，带字幕时绝不能出现。
+      expect(args, isNot(contains('-sn')));
+    });
+
+    test('re-encode args carry the subtitles too, so the fallback keeps them',
+        () {
+      // copy 轮失败降级到重编码时若丢字幕，用户拿到的就是没字幕的片段。
+      final List<String> args = buildFfmpegVideoClipReencodeArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/video/clip.mp4',
+        audioStreamIndex: 1,
+        subtitlePaths: <String>['/tmp/a.srt'],
+        subtitleCodec: 'mov_text',
+      );
+
+      expect(args, containsAllInOrder(<String>['-i', '/tmp/a.srt']));
+      expect(args, containsAllInOrder(<String>['-map', '1:s:0']));
+      expect(args, containsAllInOrder(<String>['-c:s', 'mov_text']));
+      expect(args, contains('libx264'));
+      expect(args, isNot(contains('-sn')));
+    });
+
+    test('subtitle args are inert without a codec (unsupported container)', () {
+      // 容器封不下文本字幕时，命令必须与「加字幕功能不存在」时逐字节一致。
+      final List<String> withPaths = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/video/clip.avi',
+        audioStreamIndex: 1,
+        subtitlePaths: <String>['/tmp/a.srt'],
+        subtitleCodec: null,
+      );
+      final List<String> baseline = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/video/clip.avi',
+        audioStreamIndex: 1,
+      );
+      expect(withPaths, baseline);
+      expect(withPaths, contains('-sn'));
+    });
+
+    test('writes cues to a temp SRT, feeds ffmpeg, then cleans it up',
+        () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_sub_ok');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+
+      final List<String> seenSubtitlePaths = <String>[];
+      String? seenSubtitleContent;
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          for (final String a in args) {
+            if (a.endsWith('.srt')) {
+              seenSubtitlePaths.add(a);
+              // ffmpeg 真跑的那一刻文件必须已经落盘且可读（flush: true）。
+              seenSubtitleContent = File(a).readAsStringSync();
+            }
+          }
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleContents: <String>[
+          '1\n00:00:00,000 --> 00:00:01,000\n主字幕\n\n',
+          '1\n00:00:00,000 --> 00:00:01,000\nsecondary\n\n',
+        ],
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, 2);
+      expect(seenSubtitlePaths.length, 2);
+      expect(seenSubtitleContent, isNotNull);
+      // UTF-8 往返：日文字幕不能在落盘时变成 mojibake。
+      expect(
+        File(seenSubtitlePaths.first).existsSync(),
+        isFalse,
+        reason: '临时 SRT 必须在导出结束后清理，否则每导一次就留一份垃圾',
+      );
+    });
+
+    test('UTF-8 subtitle content survives the round trip to disk', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_sub_utf8');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+      const String srt = '1\n00:00:00,000 --> 00:00:01,000\n日本語の字幕\n\n';
+
+      String? readBack;
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          for (final String a in args) {
+            if (a.endsWith('.srt')) readBack = File(a).readAsStringSync();
+          }
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+
+      await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleContents: <String>[srt],
+      );
+
+      expect(readBack, srt);
+    });
+
+    test(
+        'falls back to a subtitle-less export when subtitle muxing keeps '
+        'failing', () async {
+      // 根因场景：旧的桌面精简 ffmpeg 没编入 movtext 编码器 → 'Unknown encoder'。
+      // 加字幕这个增强绝不能把原本能成功的导出变成失败。
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_sub_degrade');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          if (args.contains('-c:s')) {
+            return const FfmpegRunResult(
+              returnCode: 1,
+              output: "Unknown encoder 'mov_text'",
+            );
+          }
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleContents: <String>['1\n00:00:00,000 --> 00:00:01,000\nx\n\n'],
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, 0, reason: '降级后不能谎称带了字幕');
+      expect(output.existsSync(), isTrue);
+      // 带字幕的 copy + 重编码两轮失败后，才重跑无字幕的 copy 轮。
+      expect(backend.calls.length, 3);
+      expect(backend.calls[0].contains('-c:s'), isTrue);
+      expect(backend.calls[1].contains('-c:s'), isTrue);
+      expect(backend.calls[2].contains('-c:s'), isFalse);
+    });
+
+    test('skips subtitles entirely for containers that cannot carry them',
+        () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_sub_avi');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.avi');
+
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleContents: <String>['1\n00:00:00,000 --> 00:00:01,000\nx\n\n'],
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, 0);
+      expect(
+          backend.calls.single.any((String a) => a.endsWith('.srt')), isFalse);
+      expect(backend.calls.single.contains('-sn'), isTrue);
+    });
+
+    test('blank subtitle content is ignored', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_sub_blank');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleContents: <String>['', '   \n  '],
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, 0);
+      expect(backend.calls.single.contains('-c:s'), isFalse);
+    });
+  });
+
   group('extractFfmpegFailureReason (TODO-910)', () {
     // 真实形态：开头是 ffmpeg `-hide_banner` 仍保留的输入 banner（`Input #0 ...`
     // + `Metadata: encoder :...`），真正的失败行在 stderr **末尾**。

@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 39134 (2302 per locale)
+/// Strings: 40409 (2377 per locale)
 ///
-/// Built on 2026-07-24 at 05:28 UTC
+/// Built on 2026-07-24 at 06:45 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1938,9 +1938,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Please allow Hibiki to install apps in system settings, then retry.';
   String get update_install_permission_retry => 'Retry install';
   String get update_install_permission_cancel => 'Cancel';
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   String get profile_export => 'Export';
   String get profile_import => 'Import';
   String get profile_export_failed => 'Export failed';
@@ -2648,17 +2648,15 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Tag ${name} is already on this collection.';
   String get mining_image_quality => 'Image / GIF quality';
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   String get mining_image_quality_thrift => 'Data saver';
   String get mining_image_quality_standard => 'Standard';
   String get mining_image_quality_hd => 'HD';
-  String get mining_image_quality_native => 'Native';
   String get mining_audio_quality => 'Audio quality';
   String get mining_audio_quality_hint =>
       'Higher bitrate is clearer but makes larger cards.';
   String get mining_audio_quality_standard => 'Standard';
   String get mining_audio_quality_high => 'High';
-  String get mining_audio_quality_native => 'Native';
   String get video_setting_torrent_backend => 'Download backend';
   String get video_setting_torrent_backend_qb => 'External qBittorrent';
   String get video_setting_torrent_backend_embedded =>
@@ -2806,7 +2804,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_text_source_unknown => 'Unknown source';
   String get game_line_audio_pending => 'Matching';
   String get game_line_audio_matched => 'Audio ready';
-  String get game_line_audio_encoded => 'Encoded';
   String get game_line_audio_fallback => 'Fallback';
   String get game_line_audio_missing => 'No audio';
   String get game_line_audio_unavailable => 'Text only';
@@ -3026,6 +3023,36 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Watched ${done}/${total}';
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
+  String get popup_wheel_speed => 'Popup scroll speed';
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  String get game_more_actions => 'More';
+  String get game_filter_all => 'All';
+  String get game_filter_with_audio => 'With audio';
+  String get game_filter_mined => 'Mined';
+  String get game_filter_favorited => 'Favorited';
+  String get game_line_mined => 'Mined';
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  String get game_line_audio_encoded => 'Audio extracted';
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  String get game_track_preview => 'Preview this track';
+  String get game_track_preview_stop => 'Stop preview';
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
   String get download_discover_tab => 'Discover';
   String get download_tasks_tab => 'Tasks';
   String get download_subscriptions_tab => 'Subscriptions';
@@ -3055,6 +3082,80 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String download_subscription_latest_episode({required Object episode}) =>
       'Latest queued: episode ${episode}';
   String get download_subscription_check_now => 'Check now';
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  String get pdf_outline => 'Contents';
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  String get pdf_bookmarks => 'Bookmarks';
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  String get pdf_bookmark_added => 'Bookmark added';
+  String get mining_image_quality_max => 'Maximum';
+  String get mining_audio_quality_max => 'Maximum';
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  String get home_recently_added => 'Recently added';
+  String get games_set_cover => 'Set cover';
+  String get games_auto_cover => 'Fetch cover automatically';
+  String get games_cover_updated => 'Cover updated';
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  String get games_cover_searching => 'Looking for a cover...';
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  String get game_line_preview_failed => 'No playable audio for this line';
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  String get external_window_current_game => 'Current game';
+  String get video_scrape_online_match => 'Match poster online';
+  String get video_scrape_batch_title => 'Batch match posters';
+  String get video_scrape_search_hint => 'Search by title';
+  String get video_scrape_search => 'Search';
+  String get video_scrape_source_offline => 'Offline';
+  String get video_scrape_use => 'Use';
+  String get video_scrape_confidence_high => 'High match';
+  String get video_scrape_confidence_medium => 'Medium match';
+  String get video_scrape_confidence_low => 'Low match';
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  String get video_scrape_tmdb_key_save => 'Save';
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  String get video_scrape_no_results => 'No matches found';
+  String get video_scrape_searching => 'Searching…';
+  String get video_scrape_applied => 'Cover applied';
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  String get video_scrape_batch_download => 'Download';
+  String get video_scrape_batch_skip => 'Skip online only';
+  String get video_scrape_batch_start => 'Start matching';
+  String get video_scrape_batch_cancel => 'Cancel';
+  String get video_scrape_batch_close => 'Close';
+  String get video_scrape_status_applied => 'Applied';
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  String get video_scrape_status_skipped => 'Skipped';
+  String get video_scrape_status_failed => 'Failed';
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  String get video_scrape_batch_empty => 'No local videos to match';
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   String get video_jimaku_source => 'Subtitle source';
   String get video_jimaku_source_hint =>
       'Choose one Jimaku entry. Season packs are matched by episode automatically.';
@@ -6274,10 +6375,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -7531,15 +7632,13 @@ class _StringsAr extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -7549,8 +7648,6 @@ class _StringsAr extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -7812,8 +7909,6 @@ class _StringsAr extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -8215,6 +8310,57 @@ class _StringsAr extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -8261,6 +8407,137 @@ class _StringsAr extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -11563,10 +11840,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -12821,15 +13098,13 @@ class _StringsDe extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -12839,8 +13114,6 @@ class _StringsDe extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -13102,8 +13375,6 @@ class _StringsDe extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -13505,6 +13776,57 @@ class _StringsDe extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -13551,6 +13873,137 @@ class _StringsDe extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -16869,10 +17322,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -18127,15 +18580,13 @@ class _StringsEs extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -18145,8 +18596,6 @@ class _StringsEs extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -18408,8 +18857,6 @@ class _StringsEs extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -18811,6 +19258,57 @@ class _StringsEs extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -18857,6 +19355,137 @@ class _StringsEs extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -22186,10 +22815,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -23444,15 +24073,13 @@ class _StringsFr extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -23462,8 +24089,6 @@ class _StringsFr extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -23725,8 +24350,6 @@ class _StringsFr extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -24128,6 +24751,57 @@ class _StringsFr extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -24174,6 +24848,137 @@ class _StringsFr extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -27430,10 +28235,10 @@ class _StringsId extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -28688,15 +29493,13 @@ class _StringsId extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -28706,8 +29509,6 @@ class _StringsId extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -28969,8 +29770,6 @@ class _StringsId extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -29372,6 +30171,57 @@ class _StringsId extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -29418,6 +30268,137 @@ class _StringsId extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -32722,10 +33703,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -33980,15 +34961,13 @@ class _StringsIt extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -33998,8 +34977,6 @@ class _StringsIt extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -34261,8 +35238,6 @@ class _StringsIt extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -34664,6 +35639,57 @@ class _StringsIt extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -34710,6 +35736,137 @@ class _StringsIt extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -37823,10 +38980,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -39078,15 +40235,13 @@ class _StringsJa extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -39096,8 +40251,6 @@ class _StringsJa extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -39358,8 +40511,6 @@ class _StringsJa extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -39761,6 +40912,57 @@ class _StringsJa extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -39807,6 +41009,137 @@ class _StringsJa extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -42922,10 +44255,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -44178,15 +45511,13 @@ class _StringsKo extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -44196,8 +45527,6 @@ class _StringsKo extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -44458,8 +45787,6 @@ class _StringsKo extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -44861,6 +46188,57 @@ class _StringsKo extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -44907,6 +46285,137 @@ class _StringsKo extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -48189,10 +49698,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -49447,15 +50956,13 @@ class _StringsNl extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -49465,8 +50972,6 @@ class _StringsNl extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -49728,8 +51233,6 @@ class _StringsNl extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -50131,6 +51634,57 @@ class _StringsNl extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -50177,6 +51731,137 @@ class _StringsNl extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -53474,10 +55159,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -54732,15 +56417,13 @@ class _StringsPtBr extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -54750,8 +56433,6 @@ class _StringsPtBr extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -55013,8 +56694,6 @@ class _StringsPtBr extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -55416,6 +57095,57 @@ class _StringsPtBr extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -55462,6 +57192,137 @@ class _StringsPtBr extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -58742,10 +60603,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -60000,15 +61861,13 @@ class _StringsRu extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -60018,8 +61877,6 @@ class _StringsRu extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -60281,8 +62138,6 @@ class _StringsRu extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -60684,6 +62539,57 @@ class _StringsRu extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -60730,6 +62636,137 @@ class _StringsRu extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -63956,10 +65993,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -65213,15 +67250,13 @@ class _StringsTh extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -65231,8 +67266,6 @@ class _StringsTh extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -65494,8 +67527,6 @@ class _StringsTh extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -65897,6 +67928,57 @@ class _StringsTh extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -65943,6 +68025,137 @@ class _StringsTh extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -69200,10 +71413,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -70458,15 +72671,13 @@ class _StringsTr extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -70476,8 +72687,6 @@ class _StringsTr extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -70739,8 +72948,6 @@ class _StringsTr extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -71142,6 +73349,57 @@ class _StringsTr extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -71188,6 +73446,137 @@ class _StringsTr extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -74433,10 +76822,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get update_install_permission_cancel => 'Cancel';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -75690,15 +78079,13 @@ class _StringsVi extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -75708,8 +78095,6 @@ class _StringsVi extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -75971,8 +78356,6 @@ class _StringsVi extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -76374,6 +78757,57 @@ class _StringsVi extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -76420,6 +78854,137 @@ class _StringsVi extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -79451,10 +82016,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get update_install_permission_cancel => '取消';
   @override
-  String get popup_auto_expand_dictionaries => '自动展开词典数';
+  String get popup_auto_expand_dictionaries => '自动展开行数';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      '即使开启「折叠词典」，也保持前 N 个词典展开（0 = 全部折叠）';
+      '即使开启「折叠词典」，也保持前 N 行词典方框展开。展开数跟随列数设置：行数 x 词典列数（0 = 全部折叠）';
   @override
   String get profile_export => '导出';
   @override
@@ -80614,15 +83179,14 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get mining_image_quality => '图片 / GIF 清晰度';
   @override
-  String get mining_image_quality_hint => '越高越清晰，卡片体积也越大。原片档保留源分辨率与帧率。';
+  String get mining_image_quality_hint =>
+      '越高越清晰，卡片体积也越大。最高档的截图保留源分辨率；动图有上限，避免卡片大到不可用。';
   @override
   String get mining_image_quality_thrift => '省流';
   @override
   String get mining_image_quality_standard => '标准';
   @override
   String get mining_image_quality_hd => '高清';
-  @override
-  String get mining_image_quality_native => '原片';
   @override
   String get mining_audio_quality => '音频质量';
   @override
@@ -80631,8 +83195,6 @@ class _StringsZhCn extends _StringsEn {
   String get mining_audio_quality_standard => '标准';
   @override
   String get mining_audio_quality_high => '高音质';
-  @override
-  String get mining_audio_quality_native => '原片';
   @override
   String get video_setting_torrent_backend => '下载后端';
   @override
@@ -80867,8 +83429,6 @@ class _StringsZhCn extends _StringsEn {
   String get game_line_audio_pending => '匹配中';
   @override
   String get game_line_audio_matched => '音频就绪';
-  @override
-  String get game_line_audio_encoded => '已编码';
   @override
   String get game_line_audio_fallback => '已降级';
   @override
@@ -81246,6 +83806,50 @@ class _StringsZhCn extends _StringsEn {
   @override
   String collection_continue_progress({required Object n}) => '继续看 第${n}集';
   @override
+  String get popup_wheel_speed => '弹窗滚轮速度';
+  @override
+  String get popup_wheel_speed_hint => '查词弹窗的鼠标滚轮滚动速度（浏览器扩展弹窗同样生效）。';
+  @override
+  String get game_more_actions => '更多';
+  @override
+  String get game_filter_all => '全部';
+  @override
+  String get game_filter_with_audio => '有音频';
+  @override
+  String get game_filter_mined => '已制卡';
+  @override
+  String get game_filter_favorited => '已收藏';
+  @override
+  String get game_line_mined => '已制卡';
+  @override
+  String get game_line_favorite_tooltip => '收藏台词';
+  @override
+  String get game_line_unfavorite_tooltip => '取消收藏';
+  @override
+  String get game_line_audio_encoded => '音频已提取';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      '游戏资源音频模式按句直接提取原始语音文件，不经过 PCM 音轨环，因此这里不会出现音轨列表；自动/手动选轨仅对引擎 PCM 模式有意义。';
+  @override
+  String get game_tracks_loopback_hint => '系统回环捕获的是整机混音单流，无法枚举独立音轨。';
+  @override
+  String get game_track_preview => '试听该音轨';
+  @override
+  String get game_track_preview_stop => '停止试听';
+  @override
+  String get game_track_preview_failed => '未能从该音轨抓到最近的音频片段';
+  @override
+  String get game_track_select_requires_engine => '选择语音轨需要引擎 Hook 会话处于活动状态';
+  @override
+  String get game_endpoints_hint =>
+      '供 Textractor / LunaTranslator 等外部文本工具接入的端口；未使用这些工具可忽略';
+  @override
+  String get game_endpoints_engine_active => '当前文本来自引擎 Hook，这些端点无需连接';
+  @override
+  String get game_text_gaps_hint => '序号缺口 = Hook 文本环丢行计数，0 为正常';
+  @override
+  String handlebar_deprecated_label({required Object label}) => '${label}（已弃用）';
+  @override
   String get download_discover_tab => '发现';
   @override
   String get download_tasks_tab => '任务';
@@ -81289,6 +83893,132 @@ class _StringsZhCn extends _StringsEn {
       '最近加入：第 ${episode} 集';
   @override
   String get download_subscription_check_now => '立即检查';
+  @override
+  String get pdf_no_text_layer => '此 PDF 没有文本层（扫描图），无法查词。';
+  @override
+  String get pdf_outline => '目录';
+  @override
+  String get pdf_outline_empty => '此 PDF 没有目录。';
+  @override
+  String get pdf_bookmarks => '书签';
+  @override
+  String get pdf_bookmarks_empty => '还没有书签。';
+  @override
+  String get pdf_bookmark_added => '已添加书签';
+  @override
+  String get mining_image_quality_max => '最高';
+  @override
+  String get mining_audio_quality_max => '最高';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      '片段已导出（含字幕）：${path}';
+  @override
+  String get home_recently_added => '最近添加';
+  @override
+  String get games_set_cover => '设置封面';
+  @override
+  String get games_auto_cover => '自动获取封面';
+  @override
+  String get games_cover_updated => '封面已更新';
+  @override
+  String get games_cover_not_found => '游戏目录和程序图标里都没找到可用封面';
+  @override
+  String get games_cover_searching => '正在查找封面...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} 行有音频';
+  @override
+  String get game_line_preview_tooltip => '播放这句音频';
+  @override
+  String get game_line_preview_failed => '这句还没有可播放的音频';
+  @override
+  String get interconnect_section_delegate => '交给已配对设备';
+  @override
+  String get interconnect_backup_backend => '用互联做备份后端';
+  @override
+  String get interconnect_backup_backend_hint =>
+      '备份与同步写到已配对设备，而不是云盘。写过去的内容由上面「上传到互联对端」的几个开关决定。';
+  @override
+  String get interconnect_backup_backend_apply => '设为备份后端';
+  @override
+  String get interconnect_backup_backend_active =>
+      '备份已写到已配对设备。要换回云盘，去「同步与备份」里改后端。';
+  @override
+  String get interconnect_backup_backend_needs_pairing => '请先在上面连接一台设备。';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      '当前备份后端：${backend}';
+  @override
+  String get external_window_current_game => '当前游戏';
+  @override
+  String get video_scrape_online_match => '在线匹配海报';
+  @override
+  String get video_scrape_batch_title => '批量匹配海报';
+  @override
+  String get video_scrape_search_hint => '按片名搜索';
+  @override
+  String get video_scrape_search => '搜索';
+  @override
+  String get video_scrape_source_offline => '离线库';
+  @override
+  String get video_scrape_use => '使用';
+  @override
+  String get video_scrape_confidence_high => '高匹配';
+  @override
+  String get video_scrape_confidence_medium => '中匹配';
+  @override
+  String get video_scrape_confidence_low => '低匹配';
+  @override
+  String get video_scrape_tmdb_key_hint => '输入 TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => '保存';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB 需要 API Key';
+  @override
+  String get video_scrape_no_results => '没有找到匹配结果';
+  @override
+  String get video_scrape_searching => '搜索中…';
+  @override
+  String get video_scrape_applied => '封面已应用';
+  @override
+  String get video_scrape_apply_failed => '封面应用失败';
+  @override
+  String get video_scrape_batch_download_index => '下载离线索引库（约几十 MB，可跳过）';
+  @override
+  String get video_scrape_batch_download => '下载';
+  @override
+  String get video_scrape_batch_skip => '跳过（仅在线）';
+  @override
+  String get video_scrape_batch_start => '开始匹配';
+  @override
+  String get video_scrape_batch_cancel => '取消';
+  @override
+  String get video_scrape_batch_close => '关闭';
+  @override
+  String get video_scrape_status_applied => '已应用';
+  @override
+  String get video_scrape_status_needs_confirm => '待确认';
+  @override
+  String get video_scrape_status_skipped => '跳过';
+  @override
+  String get video_scrape_status_failed => '失败';
+  @override
+  String get video_scrape_downloading_index => '正在下载离线索引库…';
+  @override
+  String get video_scrape_batch_empty => '没有可匹配的本地视频';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      '同时应用到本合集全部 ${n} 集';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      '匹配中 ${current}/${total}';
   @override
   String get video_jimaku_source => '字幕来源';
   @override
@@ -84322,10 +87052,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get update_install_permission_cancel => '取消';
   @override
-  String get popup_auto_expand_dictionaries => 'Auto-expand dictionaries';
+  String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   @override
   String get popup_auto_expand_dictionaries_hint =>
-      'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+      'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
   @override
   String get profile_export => 'Export';
   @override
@@ -85577,15 +88307,13 @@ class _StringsZhHk extends _StringsEn {
   String get mining_image_quality => 'Image / GIF quality';
   @override
   String get mining_image_quality_hint =>
-      'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+      'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
   @override
   String get mining_image_quality_thrift => 'Data saver';
   @override
   String get mining_image_quality_standard => 'Standard';
   @override
   String get mining_image_quality_hd => 'HD';
-  @override
-  String get mining_image_quality_native => 'Native';
   @override
   String get mining_audio_quality => 'Audio quality';
   @override
@@ -85595,8 +88323,6 @@ class _StringsZhHk extends _StringsEn {
   String get mining_audio_quality_standard => 'Standard';
   @override
   String get mining_audio_quality_high => 'High';
-  @override
-  String get mining_audio_quality_native => 'Native';
   @override
   String get video_setting_torrent_backend => 'Download backend';
   @override
@@ -85854,8 +88580,6 @@ class _StringsZhHk extends _StringsEn {
   String get game_line_audio_pending => 'Matching';
   @override
   String get game_line_audio_matched => 'Audio ready';
-  @override
-  String get game_line_audio_encoded => 'Encoded';
   @override
   String get game_line_audio_fallback => 'Fallback';
   @override
@@ -86256,6 +88980,57 @@ class _StringsZhHk extends _StringsEn {
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   @override
+  String get popup_wheel_speed => 'Popup scroll speed';
+  @override
+  String get popup_wheel_speed_hint =>
+      'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+  @override
+  String get game_more_actions => 'More';
+  @override
+  String get game_filter_all => 'All';
+  @override
+  String get game_filter_with_audio => 'With audio';
+  @override
+  String get game_filter_mined => 'Mined';
+  @override
+  String get game_filter_favorited => 'Favorited';
+  @override
+  String get game_line_mined => 'Mined';
+  @override
+  String get game_line_favorite_tooltip => 'Favorite this line';
+  @override
+  String get game_line_unfavorite_tooltip => 'Remove favorite';
+  @override
+  String get game_line_audio_encoded => 'Audio extracted';
+  @override
+  String get game_tracks_resource_mode_hint =>
+      'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+  @override
+  String get game_tracks_loopback_hint =>
+      'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+  @override
+  String get game_track_preview => 'Preview this track';
+  @override
+  String get game_track_preview_stop => 'Stop preview';
+  @override
+  String get game_track_preview_failed =>
+      'No recent audio could be captured from this track';
+  @override
+  String get game_track_select_requires_engine =>
+      'Track selection requires an active engine hook session';
+  @override
+  String get game_endpoints_hint =>
+      'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+  @override
+  String get game_endpoints_engine_active =>
+      'Text is provided by the engine hook; these endpoints are optional';
+  @override
+  String get game_text_gaps_hint =>
+      'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+  @override
+  String handlebar_deprecated_label({required Object label}) =>
+      '${label} (deprecated)';
+  @override
   String get download_discover_tab => 'Discover';
   @override
   String get download_tasks_tab => 'Tasks';
@@ -86302,6 +89077,137 @@ class _StringsZhHk extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get pdf_no_text_layer =>
+      'This PDF has no text layer (scanned image), so lookup is unavailable.';
+  @override
+  String get pdf_outline => 'Contents';
+  @override
+  String get pdf_outline_empty => 'This PDF has no contents.';
+  @override
+  String get pdf_bookmarks => 'Bookmarks';
+  @override
+  String get pdf_bookmarks_empty => 'No bookmarks yet.';
+  @override
+  String get pdf_bookmark_added => 'Bookmark added';
+  @override
+  String get mining_image_quality_max => 'Maximum';
+  @override
+  String get mining_audio_quality_max => 'Maximum';
+  @override
+  String video_clip_exported_with_subtitles({required Object path}) =>
+      'Clip exported with subtitles: ${path}';
+  @override
+  String get home_recently_added => 'Recently added';
+  @override
+  String get games_set_cover => 'Set cover';
+  @override
+  String get games_auto_cover => 'Fetch cover automatically';
+  @override
+  String get games_cover_updated => 'Cover updated';
+  @override
+  String get games_cover_not_found =>
+      'No usable cover found in the game folder or executable';
+  @override
+  String get games_cover_searching => 'Looking for a cover...';
+  @override
+  String game_text_thread_audio_count({required Object count}) =>
+      '${count} with audio';
+  @override
+  String get game_line_preview_tooltip => 'Play this line\'s audio';
+  @override
+  String get game_line_preview_failed => 'No playable audio for this line';
+  @override
+  String get interconnect_section_delegate => 'Delegate to the paired device';
+  @override
+  String get interconnect_backup_backend =>
+      'Use interconnect as the backup backend';
+  @override
+  String get interconnect_backup_backend_hint =>
+      'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+  @override
+  String get interconnect_backup_backend_apply => 'Set as backup backend';
+  @override
+  String get interconnect_backup_backend_active =>
+      'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+  @override
+  String get interconnect_backup_backend_needs_pairing =>
+      'Connect to a device above first.';
+  @override
+  String interconnect_backup_backend_current({required Object backend}) =>
+      'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -89240,9 +92146,9 @@ extension on _StringsEn {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -90352,15 +93258,13 @@ extension on _StringsEn {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -90369,8 +93273,6 @@ extension on _StringsEn {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -90601,8 +93503,6 @@ extension on _StringsEn {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -90966,6 +93866,48 @@ extension on _StringsEn {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -91005,6 +93947,128 @@ extension on _StringsEn {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -93938,9 +97002,9 @@ extension on _StringsAr {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -95050,15 +98114,13 @@ extension on _StringsAr {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -95067,8 +98129,6 @@ extension on _StringsAr {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -95299,8 +98359,6 @@ extension on _StringsAr {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -95664,6 +98722,48 @@ extension on _StringsAr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -95703,6 +98803,128 @@ extension on _StringsAr {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -98657,9 +101879,9 @@ extension on _StringsDe {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -99769,15 +102991,13 @@ extension on _StringsDe {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -99786,8 +103006,6 @@ extension on _StringsDe {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -100018,8 +103236,6 @@ extension on _StringsDe {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -100383,6 +103599,48 @@ extension on _StringsDe {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -100422,6 +103680,128 @@ extension on _StringsDe {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -103375,9 +106755,9 @@ extension on _StringsEs {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -104487,15 +107867,13 @@ extension on _StringsEs {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -104504,8 +107882,6 @@ extension on _StringsEs {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -104736,8 +108112,6 @@ extension on _StringsEs {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -105101,6 +108475,48 @@ extension on _StringsEs {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -105140,6 +108556,128 @@ extension on _StringsEs {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -108099,9 +111637,9 @@ extension on _StringsFr {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -109211,15 +112749,13 @@ extension on _StringsFr {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -109228,8 +112764,6 @@ extension on _StringsFr {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -109460,8 +112994,6 @@ extension on _StringsFr {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -109825,6 +113357,48 @@ extension on _StringsFr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -109864,6 +113438,128 @@ extension on _StringsFr {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -112805,9 +116501,9 @@ extension on _StringsId {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -113917,15 +117613,13 @@ extension on _StringsId {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -113934,8 +117628,6 @@ extension on _StringsId {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -114166,8 +117858,6 @@ extension on _StringsId {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -114531,6 +118221,48 @@ extension on _StringsId {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -114570,6 +118302,128 @@ extension on _StringsId {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -117526,9 +121380,9 @@ extension on _StringsIt {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -118638,15 +122492,13 @@ extension on _StringsIt {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -118655,8 +122507,6 @@ extension on _StringsIt {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -118887,8 +122737,6 @@ extension on _StringsIt {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -119252,6 +123100,48 @@ extension on _StringsIt {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -119291,6 +123181,128 @@ extension on _StringsIt {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -122210,9 +126222,9 @@ extension on _StringsJa {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -123321,15 +127333,13 @@ extension on _StringsJa {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -123338,8 +127348,6 @@ extension on _StringsJa {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -123570,8 +127578,6 @@ extension on _StringsJa {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -123935,6 +127941,48 @@ extension on _StringsJa {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -123974,6 +128022,128 @@ extension on _StringsJa {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -126896,9 +131066,9 @@ extension on _StringsKo {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -128008,15 +132178,13 @@ extension on _StringsKo {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -128025,8 +132193,6 @@ extension on _StringsKo {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -128257,8 +132423,6 @@ extension on _StringsKo {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -128622,6 +132786,48 @@ extension on _StringsKo {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -128661,6 +132867,128 @@ extension on _StringsKo {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -131610,9 +135938,9 @@ extension on _StringsNl {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -132722,15 +137050,13 @@ extension on _StringsNl {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -132739,8 +137065,6 @@ extension on _StringsNl {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -132971,8 +137295,6 @@ extension on _StringsNl {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -133336,6 +137658,48 @@ extension on _StringsNl {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -133375,6 +137739,128 @@ extension on _StringsNl {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -136321,9 +140807,9 @@ extension on _StringsPtBr {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -137433,15 +141919,13 @@ extension on _StringsPtBr {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -137450,8 +141934,6 @@ extension on _StringsPtBr {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -137682,8 +142164,6 @@ extension on _StringsPtBr {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -138047,6 +142527,48 @@ extension on _StringsPtBr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -138086,6 +142608,128 @@ extension on _StringsPtBr {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -141037,9 +145681,9 @@ extension on _StringsRu {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -142149,15 +146793,13 @@ extension on _StringsRu {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -142166,8 +146808,6 @@ extension on _StringsRu {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -142398,8 +147038,6 @@ extension on _StringsRu {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -142763,6 +147401,48 @@ extension on _StringsRu {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -142802,6 +147482,128 @@ extension on _StringsRu {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -145737,9 +150539,9 @@ extension on _StringsTh {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -146849,15 +151651,13 @@ extension on _StringsTh {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -146866,8 +151666,6 @@ extension on _StringsTh {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -147098,8 +151896,6 @@ extension on _StringsTh {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -147463,6 +152259,48 @@ extension on _StringsTh {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -147502,6 +152340,128 @@ extension on _StringsTh {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -150446,9 +155406,9 @@ extension on _StringsTr {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -151558,15 +156518,13 @@ extension on _StringsTr {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -151575,8 +156533,6 @@ extension on _StringsTr {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -151807,8 +156763,6 @@ extension on _StringsTr {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -152172,6 +157126,48 @@ extension on _StringsTr {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -152211,6 +157207,128 @@ extension on _StringsTr {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -155150,9 +160268,9 @@ extension on _StringsVi {
       case 'update_install_permission_cancel':
         return 'Cancel';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -156262,15 +161380,13 @@ extension on _StringsVi {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -156279,8 +161395,6 @@ extension on _StringsVi {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -156511,8 +161625,6 @@ extension on _StringsVi {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -156876,6 +161988,48 @@ extension on _StringsVi {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -156915,6 +162069,128 @@ extension on _StringsVi {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':
@@ -159827,9 +165103,9 @@ extension on _StringsZhCn {
       case 'update_install_permission_cancel':
         return '取消';
       case 'popup_auto_expand_dictionaries':
-        return '自动展开词典数';
+        return '自动展开行数';
       case 'popup_auto_expand_dictionaries_hint':
-        return '即使开启「折叠词典」，也保持前 N 个词典展开（0 = 全部折叠）';
+        return '即使开启「折叠词典」，也保持前 N 行词典方框展开。展开数跟随列数设置：行数 x 词典列数（0 = 全部折叠）';
       case 'profile_export':
         return '导出';
       case 'profile_import':
@@ -160933,15 +166209,13 @@ extension on _StringsZhCn {
       case 'mining_image_quality':
         return '图片 / GIF 清晰度';
       case 'mining_image_quality_hint':
-        return '越高越清晰，卡片体积也越大。原片档保留源分辨率与帧率。';
+        return '越高越清晰，卡片体积也越大。最高档的截图保留源分辨率；动图有上限，避免卡片大到不可用。';
       case 'mining_image_quality_thrift':
         return '省流';
       case 'mining_image_quality_standard':
         return '标准';
       case 'mining_image_quality_hd':
         return '高清';
-      case 'mining_image_quality_native':
-        return '原片';
       case 'mining_audio_quality':
         return '音频质量';
       case 'mining_audio_quality_hint':
@@ -160950,8 +166224,6 @@ extension on _StringsZhCn {
         return '标准';
       case 'mining_audio_quality_high':
         return '高音质';
-      case 'mining_audio_quality_native':
-        return '原片';
       case 'video_setting_torrent_backend':
         return '下载后端';
       case 'video_setting_torrent_backend_qb':
@@ -161181,8 +166453,6 @@ extension on _StringsZhCn {
         return '匹配中';
       case 'game_line_audio_matched':
         return '音频就绪';
-      case 'game_line_audio_encoded':
-        return '已编码';
       case 'game_line_audio_fallback':
         return '已降级';
       case 'game_line_audio_missing':
@@ -161546,6 +166816,48 @@ extension on _StringsZhCn {
             '已看完 ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => '继续看 第${n}集';
+      case 'popup_wheel_speed':
+        return '弹窗滚轮速度';
+      case 'popup_wheel_speed_hint':
+        return '查词弹窗的鼠标滚轮滚动速度（浏览器扩展弹窗同样生效）。';
+      case 'game_more_actions':
+        return '更多';
+      case 'game_filter_all':
+        return '全部';
+      case 'game_filter_with_audio':
+        return '有音频';
+      case 'game_filter_mined':
+        return '已制卡';
+      case 'game_filter_favorited':
+        return '已收藏';
+      case 'game_line_mined':
+        return '已制卡';
+      case 'game_line_favorite_tooltip':
+        return '收藏台词';
+      case 'game_line_unfavorite_tooltip':
+        return '取消收藏';
+      case 'game_line_audio_encoded':
+        return '音频已提取';
+      case 'game_tracks_resource_mode_hint':
+        return '游戏资源音频模式按句直接提取原始语音文件，不经过 PCM 音轨环，因此这里不会出现音轨列表；自动/手动选轨仅对引擎 PCM 模式有意义。';
+      case 'game_tracks_loopback_hint':
+        return '系统回环捕获的是整机混音单流，无法枚举独立音轨。';
+      case 'game_track_preview':
+        return '试听该音轨';
+      case 'game_track_preview_stop':
+        return '停止试听';
+      case 'game_track_preview_failed':
+        return '未能从该音轨抓到最近的音频片段';
+      case 'game_track_select_requires_engine':
+        return '选择语音轨需要引擎 Hook 会话处于活动状态';
+      case 'game_endpoints_hint':
+        return '供 Textractor / LunaTranslator 等外部文本工具接入的端口；未使用这些工具可忽略';
+      case 'game_endpoints_engine_active':
+        return '当前文本来自引擎 Hook，这些端点无需连接';
+      case 'game_text_gaps_hint':
+        return '序号缺口 = Hook 文本环丢行计数，0 为正常';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label}（已弃用）';
       case 'download_discover_tab':
         return '发现';
       case 'download_tasks_tab':
@@ -161583,6 +166895,125 @@ extension on _StringsZhCn {
         return ({required Object episode}) => '最近加入：第 ${episode} 集';
       case 'download_subscription_check_now':
         return '立即检查';
+      case 'pdf_no_text_layer':
+        return '此 PDF 没有文本层（扫描图），无法查词。';
+      case 'pdf_outline':
+        return '目录';
+      case 'pdf_outline_empty':
+        return '此 PDF 没有目录。';
+      case 'pdf_bookmarks':
+        return '书签';
+      case 'pdf_bookmarks_empty':
+        return '还没有书签。';
+      case 'pdf_bookmark_added':
+        return '已添加书签';
+      case 'mining_image_quality_max':
+        return '最高';
+      case 'mining_audio_quality_max':
+        return '最高';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) => '片段已导出（含字幕）：${path}';
+      case 'home_recently_added':
+        return '最近添加';
+      case 'games_set_cover':
+        return '设置封面';
+      case 'games_auto_cover':
+        return '自动获取封面';
+      case 'games_cover_updated':
+        return '封面已更新';
+      case 'games_cover_not_found':
+        return '游戏目录和程序图标里都没找到可用封面';
+      case 'games_cover_searching':
+        return '正在查找封面...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} 行有音频';
+      case 'game_line_preview_tooltip':
+        return '播放这句音频';
+      case 'game_line_preview_failed':
+        return '这句还没有可播放的音频';
+      case 'interconnect_section_delegate':
+        return '交给已配对设备';
+      case 'interconnect_backup_backend':
+        return '用互联做备份后端';
+      case 'interconnect_backup_backend_hint':
+        return '备份与同步写到已配对设备，而不是云盘。写过去的内容由上面「上传到互联对端」的几个开关决定。';
+      case 'interconnect_backup_backend_apply':
+        return '设为备份后端';
+      case 'interconnect_backup_backend_active':
+        return '备份已写到已配对设备。要换回云盘，去「同步与备份」里改后端。';
+      case 'interconnect_backup_backend_needs_pairing':
+        return '请先在上面连接一台设备。';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) => '当前备份后端：${backend}';
+      case 'external_window_current_game':
+        return '当前游戏';
+      case 'video_scrape_online_match':
+        return '在线匹配海报';
+      case 'video_scrape_batch_title':
+        return '批量匹配海报';
+      case 'video_scrape_search_hint':
+        return '按片名搜索';
+      case 'video_scrape_search':
+        return '搜索';
+      case 'video_scrape_source_offline':
+        return '离线库';
+      case 'video_scrape_use':
+        return '使用';
+      case 'video_scrape_confidence_high':
+        return '高匹配';
+      case 'video_scrape_confidence_medium':
+        return '中匹配';
+      case 'video_scrape_confidence_low':
+        return '低匹配';
+      case 'video_scrape_tmdb_key_hint':
+        return '输入 TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return '保存';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB 需要 API Key';
+      case 'video_scrape_no_results':
+        return '没有找到匹配结果';
+      case 'video_scrape_searching':
+        return '搜索中…';
+      case 'video_scrape_applied':
+        return '封面已应用';
+      case 'video_scrape_apply_failed':
+        return '封面应用失败';
+      case 'video_scrape_batch_download_index':
+        return '下载离线索引库（约几十 MB，可跳过）';
+      case 'video_scrape_batch_download':
+        return '下载';
+      case 'video_scrape_batch_skip':
+        return '跳过（仅在线）';
+      case 'video_scrape_batch_start':
+        return '开始匹配';
+      case 'video_scrape_batch_cancel':
+        return '取消';
+      case 'video_scrape_batch_close':
+        return '关闭';
+      case 'video_scrape_status_applied':
+        return '已应用';
+      case 'video_scrape_status_needs_confirm':
+        return '待确认';
+      case 'video_scrape_status_skipped':
+        return '跳过';
+      case 'video_scrape_status_failed':
+        return '失败';
+      case 'video_scrape_downloading_index':
+        return '正在下载离线索引库…';
+      case 'video_scrape_batch_empty':
+        return '没有可匹配的本地视频';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) => '同时应用到本合集全部 ${n} 集';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            '匹配中 ${current}/${total}';
       case 'video_jimaku_source':
         return '字幕来源';
       case 'video_jimaku_source_hint':
@@ -164497,9 +169928,9 @@ extension on _StringsZhHk {
       case 'update_install_permission_cancel':
         return '取消';
       case 'popup_auto_expand_dictionaries':
-        return 'Auto-expand dictionaries';
+        return 'Auto-expand rows';
       case 'popup_auto_expand_dictionaries_hint':
-        return 'Keep the first N dictionary blocks expanded even when \'Collapse dictionaries\' is on (0 = collapse all)';
+        return 'Keep the first N rows of dictionary blocks expanded even when \'Collapse dictionaries\' is on. The expanded count follows the column setting: rows x columns (0 = collapse all)';
       case 'profile_export':
         return 'Export';
       case 'profile_import':
@@ -165608,15 +171039,13 @@ extension on _StringsZhHk {
       case 'mining_image_quality':
         return 'Image / GIF quality';
       case 'mining_image_quality_hint':
-        return 'Higher is sharper but makes larger cards. Native keeps the source resolution and frame rate.';
+        return 'Higher is sharper but makes larger cards. Maximum keeps screenshots at the source resolution; animated GIFs stay capped so cards remain usable.';
       case 'mining_image_quality_thrift':
         return 'Data saver';
       case 'mining_image_quality_standard':
         return 'Standard';
       case 'mining_image_quality_hd':
         return 'HD';
-      case 'mining_image_quality_native':
-        return 'Native';
       case 'mining_audio_quality':
         return 'Audio quality';
       case 'mining_audio_quality_hint':
@@ -165625,8 +171054,6 @@ extension on _StringsZhHk {
         return 'Standard';
       case 'mining_audio_quality_high':
         return 'High';
-      case 'mining_audio_quality_native':
-        return 'Native';
       case 'video_setting_torrent_backend':
         return 'Download backend';
       case 'video_setting_torrent_backend_qb':
@@ -165857,8 +171284,6 @@ extension on _StringsZhHk {
         return 'Matching';
       case 'game_line_audio_matched':
         return 'Audio ready';
-      case 'game_line_audio_encoded':
-        return 'Encoded';
       case 'game_line_audio_fallback':
         return 'Fallback';
       case 'game_line_audio_missing':
@@ -166222,6 +171647,48 @@ extension on _StringsZhHk {
             'Watched ${done}/${total}';
       case 'collection_continue_progress':
         return ({required Object n}) => 'Continue · EP ${n}';
+      case 'popup_wheel_speed':
+        return 'Popup scroll speed';
+      case 'popup_wheel_speed_hint':
+        return 'Mouse-wheel scroll speed for the dictionary popup (also applies to the browser extension).';
+      case 'game_more_actions':
+        return 'More';
+      case 'game_filter_all':
+        return 'All';
+      case 'game_filter_with_audio':
+        return 'With audio';
+      case 'game_filter_mined':
+        return 'Mined';
+      case 'game_filter_favorited':
+        return 'Favorited';
+      case 'game_line_mined':
+        return 'Mined';
+      case 'game_line_favorite_tooltip':
+        return 'Favorite this line';
+      case 'game_line_unfavorite_tooltip':
+        return 'Remove favorite';
+      case 'game_line_audio_encoded':
+        return 'Audio extracted';
+      case 'game_tracks_resource_mode_hint':
+        return 'In game-resource audio mode, each voice line is extracted directly from game files, so no PCM track list exists here. Automatic or manual track selection only applies to engine PCM capture.';
+      case 'game_tracks_loopback_hint':
+        return 'System loopback captures the whole system\'s mixed output as a single stream; per-track enumeration is not available.';
+      case 'game_track_preview':
+        return 'Preview this track';
+      case 'game_track_preview_stop':
+        return 'Stop preview';
+      case 'game_track_preview_failed':
+        return 'No recent audio could be captured from this track';
+      case 'game_track_select_requires_engine':
+        return 'Track selection requires an active engine hook session';
+      case 'game_endpoints_hint':
+        return 'Ports for external text tools (Textractor / LunaTranslator etc.); ignore if you don\'t use them';
+      case 'game_endpoints_engine_active':
+        return 'Text is provided by the engine hook; these endpoints are optional';
+      case 'game_text_gaps_hint':
+        return 'Sequence gaps = dropped-line count in the hook text ring; 0 is normal';
+      case 'handlebar_deprecated_label':
+        return ({required Object label}) => '${label} (deprecated)';
       case 'download_discover_tab':
         return 'Discover';
       case 'download_tasks_tab':
@@ -166261,6 +171728,128 @@ extension on _StringsZhHk {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'pdf_no_text_layer':
+        return 'This PDF has no text layer (scanned image), so lookup is unavailable.';
+      case 'pdf_outline':
+        return 'Contents';
+      case 'pdf_outline_empty':
+        return 'This PDF has no contents.';
+      case 'pdf_bookmarks':
+        return 'Bookmarks';
+      case 'pdf_bookmarks_empty':
+        return 'No bookmarks yet.';
+      case 'pdf_bookmark_added':
+        return 'Bookmark added';
+      case 'mining_image_quality_max':
+        return 'Maximum';
+      case 'mining_audio_quality_max':
+        return 'Maximum';
+      case 'video_clip_exported_with_subtitles':
+        return ({required Object path}) =>
+            'Clip exported with subtitles: ${path}';
+      case 'home_recently_added':
+        return 'Recently added';
+      case 'games_set_cover':
+        return 'Set cover';
+      case 'games_auto_cover':
+        return 'Fetch cover automatically';
+      case 'games_cover_updated':
+        return 'Cover updated';
+      case 'games_cover_not_found':
+        return 'No usable cover found in the game folder or executable';
+      case 'games_cover_searching':
+        return 'Looking for a cover...';
+      case 'game_text_thread_audio_count':
+        return ({required Object count}) => '${count} with audio';
+      case 'game_line_preview_tooltip':
+        return 'Play this line\'s audio';
+      case 'game_line_preview_failed':
+        return 'No playable audio for this line';
+      case 'interconnect_section_delegate':
+        return 'Delegate to the paired device';
+      case 'interconnect_backup_backend':
+        return 'Use interconnect as the backup backend';
+      case 'interconnect_backup_backend_hint':
+        return 'Back up and sync to the paired device instead of a cloud drive. Everything the paired-device upload switches above allow is what gets written there.';
+      case 'interconnect_backup_backend_apply':
+        return 'Set as backup backend';
+      case 'interconnect_backup_backend_active':
+        return 'Backups already go to the paired device. Pick another backend in Sync & backup to switch away.';
+      case 'interconnect_backup_backend_needs_pairing':
+        return 'Connect to a device above first.';
+      case 'interconnect_backup_backend_current':
+        return ({required Object backend}) =>
+            'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       case 'video_jimaku_source':
         return 'Subtitle source';
       case 'video_jimaku_source_hint':

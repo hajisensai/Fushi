@@ -61,6 +61,15 @@ constexpr float kTextGripTopDip = 9.0f;
 constexpr float kTextStripRestAlpha = 0.02f;   // near-invisible, still catchable
 constexpr float kTextStripHoverAlpha = 0.55f;  // visible toolbar band on hover
 
+// BUG-1046: hook-text overlay body alpha floor. UpdateLayeredWindow windows are
+// hit-tested per PIXEL — alpha-0 pixels pass clicks through to the window
+// below no matter what WM_NCHITTEST returns. With the background hidden
+// (opacity 0) the whole body painted at alpha 0 made the caption text
+// unclickable (only the thin glyph pixels ever hit). Clamp the body fill to a
+// near-invisible minimum while the window is interactive; an explicit
+// pass-through toggle keeps true alpha 0 (clicks are MEANT to fall through).
+constexpr uint32_t kHookTextMinCatchAlpha = 5;  // ~2%, invisible but hittable
+
 // ARGB (0xAARRGGBB) -> D2D1_COLOR_F (straight alpha).
 D2D1_COLOR_F ColorFromArgb(uint32_t argb) {
   const float a = ((argb >> 24) & 0xFF) / 255.0f;
@@ -753,8 +762,15 @@ void FloatingLyricWindow::Render() {
       D2D1::RectF(0, 0, static_cast<float>(width), static_cast<float>(height)),
       corner, corner);
 
+  // BUG-1046: keep the interactive hook-text body hit-testable when the user
+  // hides the background — floor the fill alpha (see kHookTextMinCatchAlpha).
+  uint32_t body_bg = style_.bg_color;
+  if (hook_text_mode_ && !pass_through_ &&
+      (body_bg >> 24) < kHookTextMinCatchAlpha) {
+    body_bg = (kHookTextMinCatchAlpha << 24) | (body_bg & 0x00FFFFFF);
+  }
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
-  render_target_->CreateSolidColorBrush(ColorFromArgb(style_.bg_color),
+  render_target_->CreateSolidColorBrush(ColorFromArgb(body_bg),
                                         brush.GetAddressOf());
   render_target_->FillRoundedRectangle(bg_rect, brush.Get());
 

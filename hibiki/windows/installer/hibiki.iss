@@ -159,11 +159,11 @@ begin
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-{ BUG-1014: preserve the user's desktop icon position across updates.
-  Return False (skip creating the desktop shortcut) when {userdesktop}\Hibiki.lnk
-  already exists, so an update never rewrites it -- Explorer keeps the remembered
-  grid position. On a first install the file is absent -> True -> the shortcut is
-  created as before (gated by the default-checked "desktopicon" task). }
+// BUG-1014: preserve the user's desktop icon position across updates.
+// Return False (skip creating the desktop shortcut) when {userdesktop}\Hibiki.lnk
+// already exists, so an update never rewrites it -- Explorer keeps the remembered
+// grid position. On a first install the file is absent -> True -> the shortcut is
+// created as before (gated by the default-checked "desktopicon" task).
 function ShouldCreateDesktopIcon(): Boolean;
 begin
   Result := not FileExists(ExpandConstant('{userdesktop}\Hibiki.lnk'));

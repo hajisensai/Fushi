@@ -17,6 +17,17 @@ import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/media/video/cover_ui/poster_cover_image.dart';
+import 'package:hibiki/src/media/video/cover_ui/poster_match_dialog.dart';
+import 'package:hibiki/src/media/video/cover_ui/batch_scrape_dialog.dart';
+import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
+import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
+import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
+import 'package:hibiki/src/media/video/scraper/offline_index.dart';
+import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
+import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
@@ -26,6 +37,7 @@ import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
@@ -48,12 +60,14 @@ import 'package:hibiki/src/sync/deletion_prompt.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/manual_sync_ui.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/interconnect_download_manager.dart';
 import 'package:hibiki/src/sync/cloud_remote_video_client.dart';
 import 'package:hibiki/src/sync/remote_cover_image.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_progress_banner.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
@@ -63,6 +77,30 @@ import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
 import 'package:path/path.dart' as p;
+
+/// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
+/// dashboard 继续卡/活动条同一条路径），统一经 [VideoHibikiPage.neutralized]
+/// 在路由层中和全局缩放（video_render_fixes_guard 守卫的接线）。
+/// [playlistCollectionId] 非空 = 作为合集一集打开（剧集面板/上下集/连播），
+/// null = 散卡单视频。返回的 Future 在播放页关闭后完成（调用方据此刷新）。
+Future<void> openLocalVideoBook({
+  required BuildContext context,
+  required VideoBookRepository repo,
+  required String bookUid,
+  int? playlistCollectionId,
+}) {
+  return Navigator.push(
+    context,
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoHibikiPage.neutralized(
+        bookUid: bookUid,
+        repo: repo,
+        playlistCollectionId: playlistCollectionId,
+      ),
+    ),
+  );
+}
 
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
@@ -255,14 +293,28 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     _maybeBackfillCovers();
   }
 
-  /// 下拉刷新：强制重拉远端视频列表 + 本地列表，await 远端 future 完成后指示器才收起。
+  /// 下拉刷新 = **手动同步**：先跑一遍云备份 / 互联同步，再强制重拉远端视频列表 + 本地
+  /// 列表，await 全程完成后指示器才收起。
   ///
   /// 顶层 tab 保活（[HomePage] 的 `_keepAliveTabs`）后，切回视频 tab 不再隐式重拉远端，
   /// 故给用户一个**显式**强制刷新入口——别的设备新上传的互联视频，不重启 app 也能刷出来。
+  ///
+  /// 同步排在重读列表**之前**：同步会往本地库里落新视频和观看进度，先刷列表就会漏掉
+  /// 本次同步的产物。没配同步后端时 [runManualSyncWithFeedback] 直接返回 notConfigured
+  /// 且不弹提示，退化成纯列表刷新——与加同步之前的行为一字不差。
   /// [_loadRemoteVideos] 内部吞异常返回 `failed:true`，await 不会抛，指示器必定收起
   /// （客户端 [listRemoteVideos] 已用 listTimeout 封顶，host 卡响应也不会无限转圈）。
   /// 显式刷新失败时给一个可见 SnackBar（带原因），避免「看不到远端视频却不知为何」。
   Future<void> _pullToRefresh() async {
+    await runManualSyncWithFeedback(
+      context: context,
+      appModel: ref.read(appProvider),
+      // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
+      // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
+      announceNotConfigured: false,
+      announceBusy: false,
+    );
+    if (!mounted) return;
     final Future<_RemoteVideoState?> remote = _loadRemoteVideos();
     if (mounted) {
       setState(() {
@@ -1078,16 +1130,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<void> _open(VideoBookRow book, {int? playlistCollectionId}) async {
     await _showAnime4kFirstUsePromptIfNeeded();
     if (!mounted) return;
-    await Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => VideoHibikiPage.neutralized(
-          bookUid: book.bookUid,
-          repo: widget.repo,
-          playlistCollectionId: playlistCollectionId,
-        ),
-      ),
+    // 路由构造走共享顶层入口 [openLocalVideoBook]（dashboard 续播同一条路径）。
+    await openLocalVideoBook(
+      context: context,
+      repo: widget.repo,
+      bookUid: book.bookUid,
+      playlistCollectionId: playlistCollectionId,
     );
     // 从播放器返回后刷新：继续观看 hero / 概览统计 / 卡片观看进度行都依赖
     // lastPositionMs 与 watch-stats，播完不刷会展示陈旧数据（对抗审查确认）。
@@ -1485,6 +1533,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             },
           ),
           DialogQuickAction(
+            label: t.video_scrape_online_match,
+            icon: Icons.image_search,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _openPosterMatch(book);
+            },
+          ),
+          DialogQuickAction(
             label: t.video_import_pick_subtitle,
             icon: Icons.subtitles_outlined,
             onPressed: () {
@@ -1581,7 +1637,108 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       bookUid: book.bookUid,
       pickedPath: pickedPath,
     );
+    // 手动设置的封面标记 manual，批量刮削永不覆盖（CoverMetaStore 目录 = 封面目录）。
+    try {
+      final Directory covers = await VideoStorage.coversDir();
+      await CoverMetaStore(covers)
+          .set(book.bookUid, const CoverMeta(origin: CoverOrigin.manual));
+    } catch (_) {
+      // 元数据记账失败不影响封面已设置（best-effort，保护性标记）。
+    }
     if (mounted) _refresh();
+  }
+
+  /// 组装海报刮削依赖：封面目录 + 独立 `video_scraper` 目录（离线库/别名缓存）+
+  /// TMDB key（偏好）+ 离线索引（有则装载）。返回初始 service、离线重建工厂、目录。
+  Future<
+      ({
+        PosterScraperService service,
+        PosterScraperService Function(OfflineIndex offline) rebuild,
+        Directory scraperDir,
+      })> _scraperBundle() async {
+    final Directory covers = await VideoStorage.coversDir();
+    final Directory scraperDir =
+        Directory(p.join(covers.parent.path, 'video_scraper'));
+    await scraperDir.create(recursive: true);
+    final String tmdbKey = ref
+        .read(appProvider)
+        .prefsRepo
+        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
+    PosterScraperService make(OfflineIndex? offline) => PosterScraperService(
+          repository: widget.repo,
+          coverMetaStore: CoverMetaStore(covers),
+          aliasCache: AliasCache(scraperDir),
+          bangumiClient: BangumiClient(),
+          posterDownloader: PosterDownloader(),
+          tmdbClient: tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey),
+          offlineIndex: offline,
+          coversDirectory: covers,
+        );
+    final OfflineIndex? offline =
+        await PosterScraperService.loadOfflineIndex(scraperDir);
+    return (
+      service: make(offline),
+      rebuild: (OfflineIndex o) => make(o),
+      scraperDir: scraperDir,
+    );
+  }
+
+  /// 本视频所属合集的全部成员 uid（用于「同时应用到本合集全部 N 集」）；不属任何合集
+  /// 时返回仅含自身的单元素列表。
+  Future<List<String>> _collectionMemberUids(String bookUid) async {
+    final int? collectionId = _primaryCollectionByEntry['video|$bookUid'];
+    if (collectionId == null) return <String>[bookUid];
+    final List<MediaCollectionItemRow> items =
+        await ref.read(appProvider).database.getCollectionItems(collectionId);
+    final List<String> uids = <String>[
+      for (final MediaCollectionItemRow m in items)
+        if (m.mediaType == 'video') m.entryKey,
+    ];
+    return uids.isEmpty ? <String>[bookUid] : uids;
+  }
+
+  /// 长按菜单「在线匹配海报」：组装 service → 弹单本匹配弹窗（预填解析标题）。
+  Future<void> _openPosterMatch(VideoBookRow book) async {
+    final ({
+      PosterScraperService service,
+      PosterScraperService Function(OfflineIndex offline) rebuild,
+      Directory scraperDir,
+    }) bundle = await _scraperBundle();
+    if (!mounted) return;
+    final List<String> members = await _collectionMemberUids(book.bookUid);
+    if (!mounted) return;
+    await showPosterMatchDialog(
+      context: context,
+      service: bundle.service,
+      book: book,
+      collectionMemberUids: members,
+      onApplied: _refresh,
+    );
+  }
+
+  /// 页头「批量匹配海报」：对当前本地视频（远端/流媒体不参与）批量刮削。
+  Future<void> _openBatchScrape() async {
+    final List<VideoBookRow> local =
+        (_videosCache ?? await widget.repo.listAll())
+            .where((VideoBookRow b) =>
+                !b.videoPath.startsWith('http://') &&
+                !b.videoPath.startsWith('https://'))
+            .toList();
+    final ({
+      PosterScraperService service,
+      PosterScraperService Function(OfflineIndex offline) rebuild,
+      Directory scraperDir,
+    }) bundle = await _scraperBundle();
+    if (!mounted) return;
+    await showBatchScrapeDialog(
+      context: context,
+      service: bundle.service,
+      books: local,
+      offlineDbDir: bundle.scraperDir,
+      rebuildWithOffline: bundle.rebuild,
+      onOpenManual: _openPosterMatch,
+      onFinished: _refresh,
+    );
   }
 
   /// 重命名视频/播放列表（C 需求③）：弹输入框预填当前标题 → 落库 → 刷新列表。
@@ -1679,6 +1836,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               children: <Widget>[
                 if (!isCupertinoPlatform(context)) _buildPageHeader(canImport),
                 _buildTagFilterBar(allTags),
+                // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
+                const SyncProgressBanner(),
                 Expanded(
                   child: _buildVideoLibraryBody(),
                 ),
@@ -1885,8 +2044,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   ) {
     final int? collectionId =
         _primaryCollectionByEntry['video|${hero.bookUid}'];
+    // 非合集上下文的 hero：命中主合集时标题行显示合集名、剧集名降到副标题行首，
+    // 让用户一眼分清是哪部（用户实报裸剧集名 `S01E01` 认不出）；未命中合集保持
+    // 原样显示剧集名。合集名取自与 [_primaryCollectionByEntry] 同批预取的
+    // [_collectionsById]（同一次 setState 原子加载，collectionId 非空则字典必已就绪）。
+    final String? collectionName =
+        collectionId == null ? null : _collectionsById[collectionId]?.name;
+    final bool inCollection =
+        collectionName != null && collectionName.isNotEmpty;
+    final String titleText = inCollection ? collectionName : hero.title;
     final DateTime? watched = overview.heroLastWatched;
     final List<String> metadata = <String>[
+      if (inCollection) hero.title,
       t.video_watched_up_to(time: formatVideoPosition(hero.lastPositionMs)),
       if (watched != null)
         t.video_last_watched(date: _formatOverviewDate(watched)),
@@ -1915,7 +2084,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                     style: tokens.type.sectionLabel),
                 SizedBox(height: tokens.spacing.gap / 2),
                 Text(
-                  hero.title,
+                  titleText,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: tokens.type.listTitle,
@@ -1949,8 +2118,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     VideoLibraryOverview overview,
     HibikiDesignTokens tokens,
   ) {
+    // 远端占位 hero：host 下发的 [RemoteVideoInfo.collection] 携合集名，处理同本地
+    // hero（命中合集→标题显合集名、剧集名进副标题行首；纯云散卡 collection=null 保持原样）。
+    final RemoteCollectionMembership? membership = video.collection;
+    final String? collectionName = membership?.collectionName;
+    final bool inCollection =
+        collectionName != null && collectionName.isNotEmpty;
+    final String titleText = inCollection ? collectionName : video.title;
     final DateTime? watched = overview.heroLastWatched;
     final List<String> metadata = <String>[
+      if (inCollection) video.title,
       t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
       if (watched != null)
         t.video_last_watched(date: _formatOverviewDate(watched)),
@@ -1979,7 +2156,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                     style: tokens.type.sectionLabel),
                 SizedBox(height: tokens.spacing.gap / 2),
                 Text(
-                  video.title,
+                  titleText,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: tokens.type.listTitle,
@@ -2220,7 +2397,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   /// 合集封面卡（用户拍板 2026-07-22 恢复封面形态：「文字合集替换成一个封面」）。
   /// 几何与散卡逐像素同规格（unifiedShelfCardLayout 卡宽 × [_videoCardExtent]
-  /// cell 高：16:9 封面 + 标题 footer + 进度行），并入主网格。
+  /// cell 高：2:3 竖版海报封面 + 标题 footer + 进度行），并入主网格。
   ///
   /// 原横排行的能力全数搬进整卡（Never break userspace）：
   /// - 点击 = 进合集详情页（原「查看全部」，点某集从详情页进播放器带连播上下文）；
@@ -2254,7 +2431,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           AspectRatio(
-            aspectRatio: 16 / 9,
+            // 主网格统一 2:3 竖版海报（Kazumi 式，用户拍板 2026-07-24），与散卡同比。
+            aspectRatio: 2 / 3,
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
@@ -2357,13 +2535,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       if (local == null) continue;
       final String? cover = local.coverPath;
       if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
-        return _coverBacking(
-          Image.file(
-            File(cover),
-            fit: BoxFit.contain,
-            cacheWidth: kLocalCoverDecodePixelWidth,
-            errorBuilder: (_, __, ___) => _coverPlaceholder(),
-          ),
+        // 2:3 竖版槽位：横版截帧由 [PosterCoverImage] 用「模糊同图垫底 + contain
+        // 前景」填充；解码上限与旧 cacheWidth 同源（resizedFileImage 默认 720）。
+        return PosterCoverImage(
+          image: resizedFileImage(File(cover)),
+          errorBuilder: (BuildContext _) => _coverPlaceholder(),
         );
       }
     }
@@ -2373,7 +2549,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       final bool hasCover =
           (remote.coverPath != null && File(remote.coverPath!).existsSync()) ||
               (remote.coverUrl != null && remote.coverUrl!.isNotEmpty);
-      if (hasCover) return _buildRemoteVideoCover(remote);
+      if (hasCover) return _buildRemoteVideoCover(remote, poster: true);
     }
     return _coverPlaceholder();
   }
@@ -2435,14 +2611,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // BUG-926：与本地卡同因——封面从 Expanded 改为固定 AspectRatio(16/9)，让
-          // 16:9 远端封面精确铺满、无上下空隙，标题浮动高度不再反灌封面区。
+          // BUG-926：与本地卡同因——封面从 Expanded 改为固定 AspectRatio，标题浮动
+          // 高度不再反灌封面区。主网格统一 2:3 竖版海报（用户拍板 2026-07-24），
+          // 横版截帧由 [PosterCoverImage] 模糊垫底填充。
           AspectRatio(
-            aspectRatio: 16 / 9,
+            aspectRatio: 2 / 3,
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                _buildRemoteVideoCover(video),
+                _buildRemoteVideoCover(video, poster: true),
                 // UI 巡检 PR-4：撤掉封面内嵌下载 IconButton——它是卡内嵌套焦点目标
                 // （违反 hero 卡「无独立按钮」纪律，见 [_buildContinueHero]），且热区
                 // <48dp。下载动作收敛到长按 / 右键面板（[_showRemoteVideoDialog] 的
@@ -2509,18 +2686,27 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  Widget _buildRemoteVideoCover(RemoteVideoInfo video) {
+  /// [poster] = true：主网格 2:3 竖版槽位，走 [PosterCoverImage]（横版截帧模糊
+  /// 垫底 + contain 前景）；false：对话框等 16:9 语境保持原 contain + 衬底渲染。
+  Widget _buildRemoteVideoCover(RemoteVideoInfo video, {bool poster = false}) {
     final String safeKey = _safeRemoteKey(video.id);
+    final Key coverKey = ValueKey<String>('remote_video_cover_$safeKey');
     final String? coverPath = video.coverPath;
     if (coverPath != null && File(coverPath).existsSync()) {
-      // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：封面槽位现在是精确
-      // 16:9（AspectRatio），标准 16:9 封面 contain 即铺满；保留 contain 是为非
-      // 16:9 源（竖版海报等）完整显示不裁切，露出的空带由 [_coverBacking] 垫
+      // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：非 poster 槽位保留
+      // contain 让非 16:9 源完整显示不裁切，露出的空带由 [_coverBacking] 垫
       // surfaceContainer 衬底（不再透出卡片底色的突兀白/黑边）。
+      if (poster) {
+        return PosterCoverImage(
+          image: FileImage(File(coverPath)),
+          imageKey: coverKey,
+          errorBuilder: (BuildContext _) => _coverPlaceholder(),
+        );
+      }
       return _coverBacking(
         Image.file(
           File(coverPath),
-          key: ValueKey<String>('remote_video_cover_$safeKey'),
+          key: coverKey,
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => _coverPlaceholder(),
         ),
@@ -2532,11 +2718,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final RemoteCoverFetcher? fetcher =
         remoteCoverFetcherFor(_remoteVideoClient);
     if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
+      // BUG-847：按稳定 video.id 磁盘缓存（非易变 coverUrl），冷启动/滚动不重下。
+      final RemoteCoverImage remoteImage =
+          RemoteCoverImage(coverUrl, fetcher, cacheKey: video.id);
+      if (poster) {
+        return PosterCoverImage(
+          image: remoteImage,
+          imageKey: coverKey,
+          errorBuilder: (BuildContext _) => _coverPlaceholder(),
+        );
+      }
       return _coverBacking(
         Image(
-          // BUG-847：按稳定 video.id 磁盘缓存（非易变 coverUrl），冷启动/滚动不重下。
-          image: RemoteCoverImage(coverUrl, fetcher, cacheKey: video.id),
-          key: ValueKey<String>('remote_video_cover_$safeKey'),
+          image: remoteImage,
+          key: coverKey,
           // 非 16:9 源 contain 完整显示，同上衬底。
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => _coverPlaceholder(),
@@ -2615,6 +2810,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           label: t.video_statistics,
           icon: Icons.bar_chart_outlined,
           onTap: _openStatistics,
+        ),
+        // 批量匹配海报：页级工具栏是「作用于整库」动作的自然归宿（与导入/统计/刷新
+        // 并列），故放页头而非长按单卡菜单（那是单本动作）。
+        HibikiIconButton(
+          key: const ValueKey<String>('home_video_batch_scrape'),
+          tooltip: t.video_scrape_batch_title,
+          label: t.video_scrape_batch_title,
+          icon: Icons.auto_fix_high_outlined,
+          onTap: _openBatchScrape,
         ),
         // UI 巡检 PR-4：桌面无触屏下拉手势，给「强制刷新远端清单」一个鼠标可达
         // 的显式入口（与下拉刷新同一汇聚点 [_pullToRefresh]，失败提示一致）。
@@ -2792,11 +2996,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 视频卡总高 = 16:9 封面高（[cardWidth] × 9/16）+ 文字块 [_kVideoCardTextBlock]。
+  /// 视频卡总高 = 2:3 竖版海报封面高（[cardWidth] × 3/2）+ 文字块
+  /// [_kVideoCardTextBlock]。主网格统一 Kazumi 式竖版海报（用户拍板 2026-07-24），
   /// 卡变窄时封面等比缩，不出现固定卡高下的封面上下留白。合集封面卡与散卡同处
   /// 一个网格、共用此 [mainAxisExtent]，逐像素同尺寸。
   static double _videoCardExtent(double cardWidth) =>
-      cardWidth * 9 / 16 + _kVideoCardTextBlock;
+      cardWidth * 3 / 2 + _kVideoCardTextBlock;
 
   /// 视频卡封面下方文字块的固定高度：单行标题 + 单行观看进度 + 内边距（BUG-943：
   /// 旧值 83 为「2 行标题 + 进度行」的最坏预留，但绝大多数卡是单行标题、无进度，
@@ -2815,8 +3020,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       padding: padding,
       sliver: SliverGrid.builder(
         // FixedCrossAxisCount + 统一卡宽（unifiedShelfCardLayout）：全部 cell
-        // 逐像素同尺寸。卡高随卡宽按 16:9 封面联动（_videoCardExtent），窄卡
-        // 不再残留固定 218 的封面上下留白。
+        // 逐像素同尺寸。卡高随卡宽按 2:3 竖版海报封面联动（_videoCardExtent），
+        // 窄卡不再残留固定 218 的封面上下留白。
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: cardLayout.columns,
           mainAxisExtent: _videoCardExtent(cardLayout.cardWidth),
@@ -2916,16 +3121,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           // BUG-926：封面此前用 Expanded 吃掉「cell 高 − 下方文字块实际高度」的剩余，
-          // 而文字块高度随标题行数 / 有无观看进度浮动（≤_kVideoCardTextBlock），文字不
-          // 足时多出的空间灌进封面区、使其高于 16:9，16:9 封面 contain 后上下留空隙
-          // （标题短或无进度时才现，故「时有时无」）。改为固定 AspectRatio(16/9)：封面
-          // 永远精确 16:9，与标题长短彻底解耦，标准 16:9 封面无空隙。
+          // 而文字块高度随标题行数 / 有无观看进度浮动（≤_kVideoCardTextBlock），文字
+          // 不足时多出的空间灌进封面区，contain 封面上下留空隙（标题短或无进度时才
+          // 现，故「时有时无」）。改为固定 AspectRatio：封面比例恒定，与标题长短彻底
+          // 解耦。主网格统一 2:3 竖版海报（Kazumi 式，用户拍板 2026-07-24），横版
+          // 截帧由 [PosterCoverImage] 模糊垫底填充，无黑边/变形。
           AspectRatio(
-            aspectRatio: 16 / 9,
+            aspectRatio: 2 / 3,
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                _buildCover(book),
+                _buildCover(book, poster: true),
                 // UI 巡检 PR-4：多选态勾选框占左上角（同为 top:6,left:6），标签层
                 // 让位隐藏——此前两层同角重叠，勾选框压在标签 chip 上两者都花。
                 if (tags.isNotEmpty && !showSelection)
@@ -2980,7 +3186,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ],
             ),
           ),
-          // 文字块占封面下方剩余固定高度（cell 高 − 16:9 封面 = _kVideoCardTextBlock）。
+          // 文字块占封面下方剩余固定高度（cell 高 − 2:3 封面 = _kVideoCardTextBlock）。
           // 标题单行 ellipsis 内收；进度行用 Flexible 让位，浮动高度不反灌进封面区
           // （BUG-926 血缘）、大字号倍率下也不溢出。无进度时仅剩常规内边距、无显眼空块
           // （BUG-943：单行标题无进度卡曾常驻约 50px 空白）。
@@ -3184,7 +3390,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  Widget _buildCover(VideoBookRow book) {
+  /// [poster] = true：主网格 2:3 竖版槽位，走 [PosterCoverImage]（横版截帧模糊
+  /// 垫底 + contain 前景）；false：hero / 长按菜单等 16:9 语境保持原渲染。
+  Widget _buildCover(VideoBookRow book, {bool poster = false}) {
     final String? cover = book.coverPath;
     // 保留同步 existsSync 短路：对已知不存在的封面直接占位，避免对缺失文件发起
     // 无谓的异步解码（真机少一次失败 IO；widget 测试里也不会因缺失文件挂在解码上）。
@@ -3193,9 +3401,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
       return _coverPlaceholder();
     }
-    // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：槽位现在是精确 16:9，
-    // 标准封面 contain 即铺满；保留 contain 为非 16:9 源完整显示，空带走
-    // [_coverBacking] 的 surfaceContainer 衬底。
+    if (poster) {
+      // 解码上限与下方 cacheWidth 同源（resizedFileImage 默认 720，BUG-959）。
+      return PosterCoverImage(
+        image: resizedFileImage(File(cover)),
+        errorBuilder: (BuildContext _) => _coverPlaceholder(),
+      );
+    }
+    // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：非 poster 槽位保留
+    // contain 为非 16:9 源完整显示，空带走 [_coverBacking] 的 surfaceContainer 衬底。
     return _coverBacking(
       Image.file(
         File(cover),

@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -10,6 +13,11 @@ import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 
 void main() {
+  // BUG-1027 音轨快照自动刷新会在会话激活后触发（未 mock 的）voice_hook channel 的
+  // listAudioTracks——必须先初始化 binding，让调用以 MissingPluginException 收敛为
+  // 空列表而不是在无 binding 下直接抛错。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('window binding is app-level state and stop keeps binding by default',
       () async {
     final TexthookerService service = TexthookerService.test();
@@ -538,10 +546,78 @@ void main() {
       <String?>['fake-609653421.ogg'],
       reason: '历史句必须按行内固化的资源 ID 直接导出，不能重新猜最新语音',
     );
+    expect(engine.findEventIds, <int?>[1]);
+    expect(engine.pairedEventIds, <int?>[1]);
 
     await controller.close();
     expect(engine.stopCalls, 1);
     expect(loopback.stopCalls, 1);
+    endpoints.dispose();
+  });
+
+  test(
+      'RealLive replay fixture selects resource audio through production pairing',
+      () async {
+    final Map<String, dynamic> fixture = jsonDecode(
+      await File(
+        'test/fixtures/galhook/reallive_replay.json',
+      ).readAsString(),
+    ) as Map<String, dynamic>;
+    final Map<String, dynamic> expected =
+        fixture['expected'] as Map<String, dynamic>;
+    final Map<String, dynamic> card =
+        (expected['cards'] as List<dynamic>).single as Map<String, dynamic>;
+
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[11, 12, 13]),
+      rawReady: true,
+      pairedCandidate: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 2000,
+          text: 'synthetic reallive line',
+          threadId: 19,
+          hookName: 'RealLive fixture',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 21, pid: 2200, title: 'RealLive fixture'),
+    );
+    for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(card['audio_backend'], 'resource_audio');
+    expect(service.entries.single.audioBackend, 'game_resource');
+    expect(
+        service.entries.single.audioStatus, TexthookerLineAudioStatus.matched);
+    expect(loopback.startCalls, 1,
+        reason: 'loopback stays available as fallback');
+
+    await controller.close();
     endpoints.dispose();
   });
 
@@ -728,6 +804,183 @@ void main() {
     endpoints.dispose();
   });
 
+  test('BUG-1049：窗口迟到时会话继续重绑，不停在 window_not_found', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+    );
+    // 启动那一刻游戏窗口还没建好（带启动器/壳解包的真实情况）；几秒后才出现。
+    List<ExternalWindowInfo> windows = const <ExternalWindowInfo>[];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => windows,
+      windowPollAttempts: 1,
+      windowRebindInterval: const Duration(milliseconds: 10),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    expect(controller.state.boundWindow, isNull);
+    expect(controller.state.phase, GalHookSessionPhase.degraded);
+    expect(controller.state.fallbackReason, 'window_not_found');
+
+    // 窗口出现（pid 与 hook 注入的目标一致）。
+    windows = const <ExternalWindowInfo>[
+      ExternalWindowInfo(hwnd: 12, pid: 9, title: '别的窗口'),
+      ExternalWindowInfo(hwnd: 34, pid: 4242, title: '天使☆騒々 RE-BOOT!'),
+    ];
+    for (int i = 0; i < 40 && controller.state.boundWindow == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(controller.state.boundWindow?.hwnd, 34,
+        reason: '游戏窗口一出现就该自动绑上，不必用户手动去选');
+    expect(controller.state.fallbackReason, isNull);
+    expect(controller.state.phase, isNot(GalHookSessionPhase.degraded));
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      contains('window.auto_bound_late'),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-1049：会话停止后不再继续重绑窗口', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+    );
+    List<ExternalWindowInfo> windows = const <ExternalWindowInfo>[];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => windows,
+      windowPollAttempts: 1,
+      windowRebindInterval: const Duration(milliseconds: 10),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    await controller.stopCapture(keepBinding: false);
+    windows = const <ExternalWindowInfo>[
+      ExternalWindowInfo(hwnd: 34, pid: 4242, title: '天使☆騒々 RE-BOOT!'),
+    ];
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    expect(controller.state.boundWindow, isNull,
+        reason: '会话已停，迟到的窗口不该把 app 拉回一条死会话');
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('游戏活动落库：hook 台词累计字符/时长写入 activity_events（game 类别）', () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: 'あいうえお', // 5 字
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+        GalHookedLine(
+          seq: 2,
+          timestampMs: 2000,
+          text: 'かきくけこさ', // 6 字
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    controller.attachActivityDatabase(() => db);
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
+    );
+    for (int i = 0; i < 40 && service.entries.length < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, hasLength(2));
+
+    // 会话结束落库；flush 内写入是 unawaited，轮询等其完成。
+    await controller.stopCapture();
+    List<ActivityEventRow> rows = const <ActivityEventRow>[];
+    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      rows =
+          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
+    }
+    expect(rows, hasLength(1));
+    expect(rows.single.eventType, kActivityGame);
+    expect(rows.single.mediaType, kActivityMediaGame);
+    expect(rows.single.title, 'サノバウィッチ');
+    // attach 模式无稳定可执行文件 id → mediaKey 为空。
+    expect(rows.single.mediaKey, isNull);
+    // 两行合计 5 + 6 = 11 字。
+    expect(rows.single.charsDelta, 11);
+    expect(rows.single.durationMs, isNotNull);
+    expect(rows.single.durationMs, greaterThanOrEqualTo(0));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   _bug950Guard();
 }
 
@@ -754,6 +1007,70 @@ void _bug950Guard() {
       isTrue,
       reason: 'BUG-950：推进 cursor 前必须复检 engine generation（await 跨重启防倒灌）',
     );
+  });
+
+  group('exportLineAudioPreview（实时台词行内试听）', () {
+    test('PCM 缓存路径：冻结切片拼 WAV 落临时目录，时长>0，不改行状态', () async {
+      final TexthookerService service = TexthookerService.test();
+      final TexthookerLineEntry line = service.appendLine('試聴の台詞')!;
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: false,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+      controller.debugCacheLineVoice(
+        line.id,
+        GalAudioSlice(
+          pcm: Uint8List(44100), // 单声道 16bit 44.1kHz 下 0.5s
+          format: const PcmFormat(
+            sampleRate: 44100,
+            channels: 1,
+            bitsPerSample: 16,
+            isFloat: false,
+          ),
+        ),
+      );
+
+      final GalTrackPreview? preview =
+          await controller.exportLineAudioPreview(line.id);
+      expect(preview, isNotNull);
+      expect(File(preview!.filePath).existsSync(), isTrue);
+      expect(preview.durationMs, greaterThan(0));
+      // 只读试听：不得动行的音频状态（制卡链路语义不受影响）。
+      expect(
+        service.entryById(line.id)!.audioStatus,
+        TexthookerLineAudioStatus.unavailable,
+      );
+
+      try {
+        File(preview.filePath).deleteSync();
+      } catch (_) {}
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('无任何已配音频：返回 null 并记结构化事件（不静默）', () async {
+      final TexthookerService service = TexthookerService.test();
+      final TexthookerLineEntry line = service.appendLine('音無しの台詞')!;
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: false,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      expect(await controller.exportLineAudioPreview(line.id), isNull);
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('audio.line_preview_unavailable'),
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    });
   });
 }
 
@@ -785,6 +1102,8 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   final List<GalHookedLine> polledLines;
   final GalAudioSlice? utteranceSlice;
   final List<int> pairedTimestamps = <int>[];
+  final List<int?> pairedEventIds = <int?>[];
+  final List<int?> findEventIds = <int?>[];
   final List<int> utteranceTimestamps = <int>[];
   final List<String?> pairedResourceIds = <String?>[];
   final List<bool> grabFallbackFlags = <bool>[];
@@ -818,10 +1137,12 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,
+    int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
   }) async {
     pairedTimestamps.add(textTsMs);
+    pairedEventIds.add(textEventId);
     pairedResourceIds.add(resourceId);
     grabFallbackFlags.add(allowLatestSessionFallback);
     if (pairedTimestamps.length < pairedReadyAfterCalls) return null;
@@ -830,13 +1151,15 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
 
   @override
   bool hasPairedVoiceCandidate(int textTsMs,
-          {bool allowLatestSessionFallback = true}) =>
+          {int? textEventId, bool allowLatestSessionFallback = true}) =>
       pairedCandidate;
 
   @override
   String? findPairedVoiceResourceId(int textTsMs,
-          {bool allowLatestSessionFallback = true}) =>
-      pairedCandidate ? 'fake-$textTsMs.ogg' : null;
+      {int? textEventId, bool allowLatestSessionFallback = true}) {
+    findEventIds.add(textEventId);
+    return pairedCandidate ? 'fake-$textTsMs.ogg' : null;
+  }
 
   @override
   Future<GalAudioSlice?> grabUtterance(

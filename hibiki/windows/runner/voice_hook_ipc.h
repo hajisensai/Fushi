@@ -15,7 +15,10 @@
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 10;
+constexpr uint32_t kSharedVersion = 11;
+constexpr uint32_t kStableIpcVersion = 1;
+constexpr uint32_t kLunaBridgeAbiVersion = 1;
+constexpr uint32_t kLunaVendoredVersion = 0x0A100102;  // 10.16.1.2
 
 constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 2048;
@@ -45,6 +48,10 @@ constexpr uint32_t kDiagLunaOutputObserved = 0x00001000u;
 constexpr uint32_t kDiagLunaInjectFailed = 0x00002000u;
 constexpr uint32_t kDiagSiglusExactTextHookReady = 0x00004000u;
 constexpr uint32_t kDiagSiglusExactTextObserved = 0x00008000u;
+constexpr uint32_t kDiagFfmpegResourceHooksReady = 0x00010000u;
+constexpr uint32_t kDiagFfmpegResourceCaptured = 0x00020000u;
+constexpr uint32_t kDiagVisualArtsOvkHooksReady = 0x00040000u;
+constexpr uint32_t kDiagVisualArtsOvkCaptured = 0x00080000u;
 constexpr uint32_t kDiagKirikiriVoiceStreamHookReady = 0x00020000u;
 constexpr uint32_t kDiagKirikiriVoiceStreamDumped = 0x00080000u;
 constexpr uint32_t kDiagSiglusOvkHooksReady = 0x10000000u;
@@ -56,7 +63,9 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
   const bool unity_ready =
       (hook_diagnostics & unity_required) == unity_required;
   return (reserved_luna & kDiagKirikiriVoiceStreamHookReady) != 0 ||
-         (reserved_luna & kDiagSiglusOvkHooksReady) != 0 || unity_ready;
+         (reserved_luna & kDiagSiglusOvkHooksReady) != 0 ||
+         (hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0 ||
+         (hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0 || unity_ready;
 }
 constexpr uint32_t kUnityVoiceEventCount = 16;
 constexpr uint32_t kUnityClipNameChars = 128;
@@ -117,6 +126,10 @@ struct LoopbackMarker {
 struct SharedHeader {
   uint32_t magic;
   uint32_t version;
+  uint32_t ipc_protocol_version;
+  uint32_t luna_bridge_abi_version;
+  uint32_t luna_vendored_version;
+  uint32_t protocol_reserved;
   uint32_t sample_rate;
   uint32_t channels;
   uint32_t bits_per_sample;

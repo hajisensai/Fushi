@@ -1,0 +1,6 @@
+## BUG-1046 · 隐藏背景后Hook文本浮窗点不动文字
+- **报告**：2026-07-24（用户：galgame Hook 文本浮窗把背景透明度调到 0（隐藏背景）后，浮窗上的台词文字点不动、无法点词查词；把背景加回来才能点）
+- **真实性**：✅ 真 bug。根因 `hibiki/windows/runner/floating_lyric_window.cpp:757`（Render 的主体背景填充）：浮窗是 `UpdateLayeredWindow` 逐像素 alpha 的分层窗口（`floating_lyric_window.cpp:1069`），Windows 对这种窗口按**像素 alpha** 做命中测试——alpha=0 的像素鼠标事件直接穿透到下层窗口，`WM_NCHITTEST` 返回什么都无关。隐藏背景 = Dart 侧 `gal_hook_text_overlay_controller.dart` 的 `toggleTransparency` 把 `_opacity` 置 0 → `bgColor` alpha 0 → 主体圆角矩形整块以 alpha 0 填充 → 除字形本身的少量不透明像素外整窗穿透，文字区域基本点不中。同文件 text_only（剪贴板浮窗）模式早有正解先例：顶部工具条**常驻 ~2% alpha**（`kTextStripRestAlpha`，"near-invisible, still catchable"）保证透明窗口始终可抓。
+- **[x] ① 已修复** — `floating_lyric_window.cpp` Render()：hook 文本模式且**未开点击穿透**（`hook_text_mode_ && !pass_through_`）时，主体背景 alpha 钳到下限 `kHookTextMinCatchAlpha`（5/255 ≈ 2%，肉眼不可见但逐像素命中测试可命中）；开了穿透（用户明确要点穿到游戏）保持原样 alpha 0。`SetPassThrough` 本就 `RequestRender()`，切换后立即按新钳制重绘。提交 fix/hook-overlay-transparent-hittest 分支。
+- **[x] ② 已加自动化测试** — `hibiki/test/tools/hook_overlay_hittest_alpha_floor_guard_test.dart`（最强可落地层=源码扫描守卫：native C++ 无法在 Dart 测试里跑）：断言 Render 背景填充路径存在 `kHookTextMinCatchAlpha` 钳制、条件绑定 `hook_text_mode_ && !pass_through_`、且钳制值非 0。
+- **备注**：视觉影响：隐藏背景时浮窗区域有 2% 的近黑底（多数游戏画面上不可辨），换来整块文字区域可点词。真机验证路径：开浮窗 → 隐藏背景 → 点台词文字应弹查词。

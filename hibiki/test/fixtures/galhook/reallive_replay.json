@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "engine_id": "reallive",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread_id": 19,
+    "duplicate_window_ms": 1000,
+    "audio_priority": ["resource_audio", "pcm", "loopback"],
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {"kind": "text", "id": "reallive-line", "timestamp_ms": 2000, "thread_id": 19, "text": "synthetic reallive line"},
+    {"kind": "pcm", "id": "reallive-pcm", "timestamp_ms": 2010, "format": "s16le"},
+    {"kind": "resource_audio", "id": "reallive-ovk-ogg", "timestamp_ms": 2005, "available_at_ms": 2250, "format": "ogg"},
+    {"kind": "session_end", "timestamp_ms": 2600}
+  ],
+  "expected": {
+    "cards": [
+      {"text_id": "reallive-line", "audio_backend": "resource_audio", "audio_id": "reallive-ovk-ogg"}
+    ],
+    "duplicate_text_events": 0,
+    "thread_filtered_events": 0,
+    "session_clean": true
+  }
+}

@@ -432,6 +432,11 @@ class PushDedupAppModel extends AppModel {
   // ── _pushResults / buildPopupSettingsJs 真跑到的注入 getter ──
   @override
   double get dictionaryFontSize => 16;
+  // BUG-1026：buildPopupStaticSettingsJs 现注入 popupWheelSpeed；本 fake 的 prefsRepo 为
+  // null（记录桩不初始化偏好），须与其它注入 getter 一样直接给常量，否则真 getter 走
+  // prefsRepo! 抛 Null check 使整个 _pushResults 中断（pushCount 归零）。
+  @override
+  double get popupWheelSpeed => 1.0;
   @override
   bool get popupInstantScroll => false;
   @override
