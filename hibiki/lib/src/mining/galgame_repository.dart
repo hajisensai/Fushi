@@ -1,6 +1,6 @@
 /// 游戏库的 app 侧仓储：Drift 表 ↔ UI 视图模型 [GalgameEntry] 的唯一桥。
 ///
-/// v54 起真相源是 `galgames` / `galgame_sources` / `galgame_sessions` 三张表
+/// v55 起真相源是 `galgames` / `galgame_sources` / `galgame_sessions` 三张表
 /// （契约 `docs/design/galgame-library-reina-parity.md` §1），不再是偏好表单一 JSON key。
 /// 旧 pref key `galgame_library` 的回填**已在 DB 层迁移里做完**，本层只读表、不做迁移。
 ///

@@ -30,7 +30,7 @@ import 'package:hibiki/utils.dart';
 /// 排序与筛选偏好走现有偏好体系持久化）；卡片点击**仍然是启动游戏**（不破坏肌肉
 /// 记忆），长按 / 右键菜单里进详情页（[GalgameDetailPage]）。
 ///
-/// 持久化自 v54 起走 Drift 表 `galgames`（[GalgameRepository]），旧偏好 JSON key
+/// 持久化自 v55 起走 Drift 表 `galgames`（[GalgameRepository]），旧偏好 JSON key
 /// 已由 DB 迁移一次性回填。仅 Windows 桌面有注入能力；非 Windows 点击启动时优雅提示
 /// 不支持，添加/管理列表仍可用。
 class GamesLibraryPage extends ConsumerStatefulWidget {

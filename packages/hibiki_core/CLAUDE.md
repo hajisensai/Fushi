@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（49 张表，当前 schemaVersion=54）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（50 张表，当前 schemaVersion=55）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -26,7 +26,7 @@
 
 ## 数据模型
 
-49 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
+50 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
 
 | 分组 | 表名 |
 |------|------|
@@ -72,11 +72,11 @@
 - `SyncDeletionTombstones` -- sync 通道跨资产统一的删除墓碑（带发布状态，删除需双向确认、不静默传播）。
 - `BookCustomCss` -- per-book 自定义 CSS 文本 + `updatedAt` 的跨端同步载体（LWW，`deleted`=重置墓碑）。
 - `RevealedImages` -- 图片防剧透遮罩「已揭开」状态的持久真相源（书内 ↔ 图片库双向同步）。
-- `Galgames` -- v54 galgame 游戏库真相源，取代旧偏好 key `galgame_library` 的 6 字段 JSON；TEXT 主键沿用旧微秒时间戳（封面文件名与之绑定）。
+- `Galgames` -- v55 galgame 游戏库真相源，取代旧偏好 key `galgame_library` 的 6 字段 JSON；TEXT 主键沿用旧微秒时间戳（封面文件名与之绑定）。
 - `GalgameSources` -- 游戏元数据源纵表（`(gameId, source)` 复合键 + JSON 快照 + 上提的 score/rank），加数据源零 schema 变更。
 - `GalgameSessions` -- 游玩会话事实表，由前台窗口计时器写入（脱离 hook 文本）。**刻意无统计投影表**，时长/次数/最后游玩一律现算 GROUP BY。
 
-迁移策略：`onUpgrade` 逐版本增量迁移（v1->v54），支持降级时自动备份并重建。
+迁移策略：`onUpgrade` 逐版本增量迁移（v1->v55），支持降级时自动备份并重建。
 
 ## 测试与质量
 

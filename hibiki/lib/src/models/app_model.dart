@@ -4566,7 +4566,7 @@ class AppModel with ChangeNotifier {
   Future<void> setTexthookerUrls(List<String> urls) =>
       prefsRepo.setTexthookerUrls(urls);
 
-  /// galgame 游戏库仓储（v54 起真相源是 Drift 表 `galgames`，不再是偏好 JSON）。
+  /// galgame 游戏库仓储（v55 起真相源是 Drift 表 `galgames`，不再是偏好 JSON）。
   ///
   /// 懒建：绑的是 [database]，只有真正用到游戏库的路径才会碰它，冷启动不多跑查询。
   /// 库页/详情页直接用这个仓储做增删改与会话查询。

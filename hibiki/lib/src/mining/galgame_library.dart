@@ -56,10 +56,10 @@ const List<GalgamePlayStatus> kGalgamePlayStatusMenuOrder = <GalgamePlayStatus>[
 /// 用户从游戏库添加一个 galgame 的 `.exe`，点击即经引擎-hook launch 路径拉起并注入、
 /// 进入制卡（复用 texthooker 的 galgame 一键制卡逻辑）。
 ///
-/// 真相源自 v54 起是 Drift 表 `galgames` / `galgame_sources` / `galgame_sessions`
+/// 真相源自 v55 起是 Drift 表 `galgames` / `galgame_sources` / `galgame_sessions`
 /// （构造走 `galgame_repository.dart` 的 `galgameEntryFromRow`）；本类是把「行 + 多源
 /// 快照 + 用户覆盖层 + 游玩聚合」合成一个不可变对象给 UI 读的视图，本身不含 IO。
-/// [toJson] / [encodeGalgameLibrary] 只覆盖 v54 之前的 6 个基础字段，纯粹是旧偏好
+/// [toJson] / [encodeGalgameLibrary] 只覆盖 v55 之前的 6 个基础字段，纯粹是旧偏好
 /// key `galgame_library` 的 legacy 编解码（迁移读一次 + 单测），新代码不要再用。
 class GalgameEntry {
   const GalgameEntry({
@@ -210,7 +210,7 @@ class GalgameEntry {
     );
   }
 
-  /// legacy：v54 之前的偏好 JSON 形状（只有 6 个基础字段）。
+  /// legacy：v55 之前的偏好 JSON 形状（只有 6 个基础字段）。
   Map<String, Object?> toJson() => <String, Object?>{
         'id': id,
         'name': name,

@@ -15,7 +15,7 @@
 **hook 文本行**驱动（`gal_hook_session_controller.dart` `_recordActivityLine`）。
 根本缺陷：**没抓到文本 = 完全不计时**。未适配引擎、纯语音场景、hook 失败全部丢账。
 
-## 1. 数据模型（Drift schema v54）
+## 1. 数据模型（Drift schema v55）
 
 三张新表，定义进 `packages/hibiki_core/lib/src/database/tables.dart`，
 注册进 `database.dart` 的 `@DriftDatabase(tables: [...])`。
@@ -116,13 +116,13 @@
 `playtime`（默认）= 只累计**前台活跃**秒数；`elapsed` = `endMs - startMs` 墙钟。
 门槛 `kMinSessionSeconds = 60`，不足不落库。
 
-### 1.7 迁移 v53 → v54
+### 1.7 迁移 v53 → v55
 
 1. `createTable` 三张新表 + 建索引。
 2. 读偏好表 `galgame_library` 的 JSON，逐条 `decodeGalgameLibrary` 后插入 `galgames`
    （`playStatus=0`，其余元数据列 null）。
 3. **不删** `galgame_library` 这个 pref key——降级已被 `beforeOpen` 守卫挡住，
-   保留它作为回滚兜底；新代码只读表，该 key 自 v54 起成为 legacy，只在本次迁移读一次。
+   保留它作为回滚兜底；新代码只读表，该 key 自 v55 起成为 legacy，只在本次迁移读一次。
 4. 迁移幂等：`_tableExists` 守卫；fresh DB 走 `onCreate` 的 `createAll`，跳过回填。
 
 ## 2. 元数据刮削
@@ -283,7 +283,7 @@ YMGal / Kungal / DLsite / ErogameScape 四个源。
 ## 6. 验证要求
 
 - 纯函数（合并优先级、路径归一、搜索匹配、draft 解析）必须有单测。
-- 迁移 v53 → v54 必须有测试：建旧库 → 写 pref JSON → 升级 → 断言表内数据一致。
+- 迁移 v53 → v55 必须有测试：建旧库 → 写 pref JSON → 升级 → 断言表内数据一致。
 - 全量 `flutter analyze`（含 test 目录）零 warning。
 - 路径相关测试一律用 `p.join` 构造，**禁止硬编码 `C:\`**——Linux CI 上 basename
   不会按 `\` 拆分（已被 #370 坑过一次，见 `16b981c63`）。

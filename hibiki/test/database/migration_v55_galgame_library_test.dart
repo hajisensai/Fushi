@@ -5,12 +5,12 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// v54 迁移（游戏库对齐 ReinaManager）：新表 galgames / galgame_sources /
+/// v55 迁移（游戏库对齐 ReinaManager）：新表 galgames / galgame_sources /
 /// galgame_sessions，并把偏好表 legacy key `galgame_library` 里的 6 字段 JSON 列表
 /// 一次性回填进 galgames 表。
 ///
 /// 打开一个 user_version=53 的库（有 preferences 表、里面存着旧游戏库 JSON、但**无**
-/// 三张 galgame 表），触发真实 `if (from < 54)` 分支，验证：
+/// 三张 galgame 表），触发真实 `if (from < 55)` 分支，验证：
 ///  ① 三张新表被建出来；
 ///  ② 旧 JSON 逐条回填进 galgames，字段一一对应；
 ///  ③ 新增列取到无害默认值（playStatus=0=未设置、元数据列全 null=尚未刮削），
@@ -18,7 +18,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 ///  ④ 旧 pref key **保留不删**（降级回滚兜底）；
 ///  ⑤ 脏数据（缺 id/exePath、非 map、非数组）被跳过而不是让整个迁移抛异常；
 ///  ⑥ 回填幂等——再开一次不会产生重复行；
-///  ⑦ user_version 升到当前 schemaVersion（54）。
+///  ⑦ user_version 升到当前 schemaVersion（55）。
 void main() {
   /// v53 shape 的最小库：只建 preferences（回填源）+ 写入 user_version=53。
   /// 其余 v53 表不建——迁移里的建表都有 `_tableExists` 守卫，缺表不影响本用例。
@@ -49,7 +49,8 @@ CREATE TABLE preferences (
 
   /// 读当前 user_version（无现成访问器，按仓库既有测试的写法直接 PRAGMA）。
   Future<int> userVersionOf(HibikiDatabase db) async {
-    final QueryRow row = await db.customSelect('PRAGMA user_version').getSingle();
+    final QueryRow row =
+        await db.customSelect('PRAGMA user_version').getSingle();
     return row.read<int>('user_version');
   }
 
@@ -71,7 +72,7 @@ CREATE TABLE preferences (
         'addedAt': addedAt,
       };
 
-  test('v53→v54 建三张新表并把旧 JSON 游戏库回填进 galgames', () async {
+  test('v53→v55 建三张新表并把旧 JSON 游戏库回填进 galgames', () async {
     final String raw = jsonEncode(<Map<String, Object?>>[
       legacyEntry(
         id: '1700000000000001',
@@ -121,7 +122,7 @@ CREATE TABLE preferences (
     final String? pref = await db.getPref('galgame_library');
     expect(pref, isNotNull);
 
-    expect(await userVersionOf(db), 54);
+    expect(await userVersionOf(db), 55);
   });
 
   test('脏数据被逐条跳过，不让整个迁移失败', () async {
@@ -157,7 +158,7 @@ CREATE TABLE preferences (
 
     final List<GalgameRow> rows = await db.getAllGalgames();
     expect(rows.map((GalgameRow r) => r.id), <String>['ok-1', 'ok-2']);
-    expect(await userVersionOf(db), 54);
+    expect(await userVersionOf(db), 55);
   });
 
   test('整串 JSON 损坏 / 非数组 / 空串时迁移仍然成功，只是回填为空', () async {
@@ -168,7 +169,7 @@ CREATE TABLE preferences (
     ]) {
       final HibikiDatabase db = await openV53Db(raw);
       expect(await db.getAllGalgames(), isEmpty, reason: 'raw=$raw');
-      expect(await userVersionOf(db), 54, reason: 'raw=$raw');
+      expect(await userVersionOf(db), 55, reason: 'raw=$raw');
       await db.close();
     }
   });
@@ -176,7 +177,7 @@ CREATE TABLE preferences (
   test('偏好里根本没有 galgame_library 时迁移正常，表为空', () async {
     final HibikiDatabase db = await openV53Db(null);
     expect(await db.getAllGalgames(), isEmpty);
-    expect(await userVersionOf(db), 54);
+    expect(await userVersionOf(db), 55);
   });
 
   test('回填幂等：表里已有行就不再重复回填', () async {
@@ -211,7 +212,8 @@ CREATE TABLE preferences (
   });
 
   test('fresh 库（onCreate）直接就有三张表，无需回填', () async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     expect(await db.getAllGalgames(), isEmpty);
@@ -225,11 +227,12 @@ CREATE TABLE preferences (
       ),
     );
     expect(await db.getAllGalgames(), hasLength(1));
-    expect(await userVersionOf(db), 54);
+    expect(await userVersionOf(db), 55);
   });
 
   test('删游戏经 FK cascade 连带清掉 sources 与 sessions', () async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     await db.customStatement('PRAGMA foreign_keys = ON');
 

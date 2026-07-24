@@ -397,9 +397,9 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── galgame 游戏库（首页「游戏」tab）─────────────────────────────────────
 
-  /// legacy：v54 之前用户添加的 galgame 列表（单一 JSON 数组落 KV 表）。
+  /// legacy：v55 之前用户添加的 galgame 列表（单一 JSON 数组落 KV 表）。
   ///
-  /// 真相源自 v54 起是 Drift 表 `galgames`（迁移已一次性回填，见契约 §1.7），app 侧
+  /// 真相源自 v55 起是 Drift 表 `galgames`（迁移已一次性回填，见契约 §1.7），app 侧
   /// 读写走 `GalgameRepository`。这两个访问器**只**留作回滚兜底/诊断，新代码别再用。
   List<GalgameEntry> get legacyGalgames => decodeGalgameLibrary(
       getPref('galgame_library', defaultValue: '') as String);
