@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1060](bugs/BUG-1060-external-mined-card-action-dead.md) | ✅ | ✅ | app 外查词浮窗点已制卡 ✓ 无反应（重复卡操作面板被 native 降级成 null） |
+| [BUG-1062](bugs/BUG-1062-external-mined-card-action-dead.md) | ✅ | ✅ | app 外查词浮窗点已制卡 ✓ 无反应（重复卡操作面板被 native 降级成 null） |
 | [BUG-1059](bugs/BUG-1059-galgame-x86-helper.md) | ✅ | ✅ | 残缺的 x86 galgame helper 被当成已安装，自动转区失效 |
 | [BUG-1058](bugs/BUG-1058-ffmpeg-min-vendored-missing-movtext.md) | ✅ | ✅ | 入库精简 ffmpeg 缺 movtext 编码器，桌面片段导出永远封不进字幕 |
 | [BUG-1057](bugs/BUG-1057-danmaku-comment-fetch-timeout-and-swallowed-status.md) | ✅ | ✅ | 手动匹配弹幕「弹幕加载失败」：拉弹幕与搜索共用 8s 超时，且非 2xx 被吞成空列表 |

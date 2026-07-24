@@ -79,7 +79,7 @@ bool maybeHandleOverlayDeferredBridge({
     case 'duplicateCheck':
       unawaited(_handleDuplicateBridge(model, message, resolveBridge));
       return true;
-    // BUG-1060 —— app 外「卡已存在」操作面板的两根数据桥。面板本身画在 popup.js
+    // BUG-1062 —— app 外「卡已存在」操作面板的两根数据桥。面板本身画在 popup.js
     // 自己的 WebView 里（app 外没有 Flutter 层可以呈现对话框，见文件尾注），Dart
     // 只提供数据与「在 Anki 中打开」这一个副作用；覆写/新增复用既有
     // updateEntry / mineEntry 两根桥，不另开写路径。
@@ -397,7 +397,7 @@ Future<void> _handleDuplicateBridge(
   }
 }
 
-/// BUG-1060 — resolves a DEFERRED `findMinedMatches` call: the app-external
+/// BUG-1062 — resolves a DEFERRED `findMinedMatches` call: the app-external
 /// surfaces' equivalent of the in-app [runAnkiMinedCardAction] pre-step. Returns
 /// EVERY Anki note matching [expression]/[reading]
 /// ([BaseAnkiRepository.findMatchingNotes] — the same call the in-app action
@@ -437,7 +437,7 @@ Future<void> _handleFindMinedMatchesBridge(
   }
 }
 
-/// BUG-1060 — resolves a DEFERRED `openMinedNote` call by opening note [noteId]
+/// BUG-1062 — resolves a DEFERRED `openMinedNote` call by opening note [noteId]
 /// in Anki ([BaseAnkiRepository.openNoteInAnki]: AnkiConnect guiBrowse /
 /// AnkiDroid ACTION_VIEW), the same jump the in-app action dialog's 「查看·打开」
 /// performs. Replies with the bool so the panel can show a failure hint instead
