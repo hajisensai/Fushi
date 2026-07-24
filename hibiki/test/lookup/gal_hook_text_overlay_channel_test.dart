@@ -29,11 +29,13 @@ void main() {
     String? lineId;
     String? text;
     int? index;
+    Rect? wordRect;
     GalHookTextOverlayChannel.setEventHandlers(
-      onLookupText: (String id, String value, int valueIndex) {
+      onLookupText: (String id, String value, int valueIndex, Rect? rect) {
         lineId = id;
         text = value;
         index = valueIndex;
+        wordRect = rect;
       },
     );
 
@@ -46,6 +48,40 @@ void main() {
     expect(lineId, 'line-42');
     expect(text, 'これは本だ');
     expect(index, 3);
+    expect(wordRect, isNull, reason: '老 native 不带词矩形时必须回落到光标定位，不能伪造锚点');
+  });
+
+  test('被点词的屏幕矩形随查词事件送达，作为查词卡锚点', () async {
+    Rect? wordRect;
+    GalHookTextOverlayChannel.setEventHandlers(
+      onLookupText: (String id, String value, int valueIndex, Rect? rect) {
+        wordRect = rect;
+      },
+    );
+
+    await invokeFromNative('lookupText', <String, Object?>{
+      'lineId': 'line-7',
+      'text': 'これは本だ',
+      'index': 3,
+      'wordLeft': 320.5,
+      'wordTop': 880.0,
+      'wordWidth': 28.0,
+      'wordHeight': 34.0,
+    });
+
+    expect(wordRect, const Rect.fromLTWH(320.5, 880.0, 28.0, 34.0));
+
+    // 退化矩形（native 未命中字形）同样按「没有锚点」处理。
+    await invokeFromNative('lookupText', <String, Object?>{
+      'lineId': 'line-7',
+      'text': 'これは本だ',
+      'index': 3,
+      'wordLeft': 10.0,
+      'wordTop': 10.0,
+      'wordWidth': 0.0,
+      'wordHeight': 0.0,
+    });
+    expect(wordRect, isNull);
   });
 
   test('toolbar and native window state events are forwarded', () async {

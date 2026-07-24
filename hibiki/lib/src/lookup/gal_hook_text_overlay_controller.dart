@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -436,6 +437,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     String lineId,
     String text,
     int index,
+    Rect? wordRect,
   ) async {
     final AppModel? model = _appModel;
     final TexthookerLineEntry? entry = _session.entryById(lineId);
@@ -453,6 +455,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await GlobalLookupController.instance.lookupText(
       term,
       sentence: entry.text,
+      // 卡片锚在被点中的那个词上（native 给的屏幕逻辑 px 矩形），而不是鼠标位置：
+      // 浮窗里点词跟阅读器/剪贴板面板一样是「点哪个词看哪个词」。老 native 不带
+      // 矩形时为 null，自动回落到光标定位。
+      anchorScreenRect: wordRect,
       miningHandler: ({
         required Map<String, String> fields,
         int? updateNoteId,

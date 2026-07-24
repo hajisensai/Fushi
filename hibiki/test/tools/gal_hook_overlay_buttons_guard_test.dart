@@ -69,4 +69,50 @@ void main() {
       reason: 'gal_hook_text channel 必须暴露 setVoiceState',
     );
   });
+
+  test('hook 台词字号随窗口高度缩放（不再钉死在作者尺寸）', () {
+    final String source = window.readAsStringSync();
+    expect(
+      source,
+      contains('kHookTextBaseHeightForFontDip'),
+      reason: 'hook 模式必须有自己的字号基准高度',
+    );
+    // 旧写法是 hook_text_mode_ ? 1.0f : ...，等于把台词字号钉死；缩放必须真的用上
+    // 实时高度，否则用户把浮窗拖大字还是原来那么小。
+    final int scaleAt = source.indexOf('const float height_scale');
+    expect(scaleAt, greaterThan(0));
+    final String scaleExpr = source.substring(scaleAt, scaleAt + 400);
+    expect(
+      scaleExpr.contains('strip_height_dip_ / kHookTextBaseHeightForFontDip'),
+      isTrue,
+      reason: 'hook 分支必须按实时窗口高度缩放字号',
+    );
+  });
+
+  test('点词查询回传该字的屏幕矩形（查词卡锚定到词而非鼠标）', () {
+    final String source = window.readAsStringSync();
+    expect(
+      source,
+      contains('int FloatingLyricWindow::CharIndexAt(float x, float y,'),
+      reason: 'CharIndexAt 必须能输出命中字符的矩形',
+    );
+    expect(
+      source.contains(
+          'on_context_lookup_(context_id_, utf8, index, screen_rect)'),
+      isTrue,
+      reason: '查词事件必须带上屏幕逻辑 px 的词矩形',
+    );
+    for (final String key in <String>[
+      'wordLeft',
+      'wordTop',
+      'wordWidth',
+      'wordHeight',
+    ]) {
+      expect(
+        host.readAsStringSync(),
+        contains('"$key"'),
+        reason: 'channel 载荷缺少 $key，Dart 侧拿不到锚点',
+      );
+    }
+  });
 }
