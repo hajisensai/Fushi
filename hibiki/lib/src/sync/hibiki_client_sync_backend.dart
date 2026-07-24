@@ -18,6 +18,7 @@ import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
+import 'package:hibiki/src/sync/webdav_path_backend_mixin.dart';
 
 /// Probes whether a single Hibiki server URL is reachable with [token].
 /// Returns true if reachable, false on connectivity failure/timeout, and
@@ -113,7 +114,11 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
 class HibikiClientSyncBackend extends SyncBackend
-    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
+    with
+        SyncFolderCache,
+        SyncBackendFileTrioMixin,
+        SyncAssetStoreDefaults,
+        WebDavPathBackendMixin
     implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
   HibikiClientSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
@@ -269,84 +274,24 @@ class HibikiClientSyncBackend extends SyncBackend
   @override
   Future<void> refreshAuth() async {}
 
-  // ── Folder operations ─────────────────────────────────────────────
+  // ── Folder operations / metadata reads ────────────────────────────
+  //
+  // findOrCreateRootFolder / listBooks / ensureBookFolder / listSyncFiles /
+  // readJsonById 五方法收敛进 [WebDavPathBackendMixin]（与 WebDAV 后端共享）。
+  // 本后端的 ensureReady 钩子转 [_ensureResolved]：与原实现逐点一致——五方法中只有
+  // findOrCreateRootFolder 在缓存检查前解析地址；readJsonById 等读取不经解析
+  // （沿用原实现，直接用 _ops!）。
+
+  // ── WebDavPathBackendMixin hooks ──────────────────────────────────
 
   @override
-  Future<String> findOrCreateRootFolder() async {
-    await _ensureResolved();
-    if (rootFolderIdCache != null) return rootFolderIdCache!;
-
-    final path = '${_ops!.baseUrl}/$kSyncRootFolderName/';
-    await _ops!.ensureCollection(path);
-    rootFolderIdCache = path;
-    return path;
-  }
+  WebDavOps get webDavOps => _ops!;
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async {
-    final entries = await _ops!.propfindChildren(rootFolderId);
-    return entries
-        .where((e) => e.isCollection && e.href != rootFolderId)
-        .map((e) => DriveFile(id: e.href, name: e.displayName))
-        .toList();
-  }
+  String get logTag => '[hibiki-client]';
 
   @override
-  Future<String> ensureBookFolder({
-    required String bookTitle,
-    required String rootFolderId,
-    Uint8List? coverData,
-  }) async {
-    final sanitized = requireBookFolderName(bookTitle);
-
-    if (folderIdCache.containsKey(sanitized)) {
-      // Normalize a possibly slash-less cached href on return (BUG-845).
-      return ensureFolderIdTrailingSlash(folderIdCache[sanitized]!);
-    }
-
-    final path = '$rootFolderId${Uri.encodeComponent(sanitized)}/';
-    await _ops!.ensureCollection(path);
-    folderIdCache[sanitized] = path;
-
-    if (coverData != null) {
-      try {
-        final format = detectCoverFormat(coverData);
-        final coverPath = '${path}cover_1_6.${format.extension}';
-        final existing = await _ops!.headFile(coverPath);
-        if (!existing) {
-          await _ops!.putBytes(coverPath, coverData, format.mimeType);
-        }
-      } catch (e) {
-        debugPrint('[hibiki-client] cover upload failed: $e');
-      }
-    }
-
-    return path;
-  }
-
-  // ── Metadata sync ─────────────────────────────────────────────────
-
-  @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async {
-    final entries = await _ops!.propfindChildren(folderId);
-    final files = entries
-        .where((e) => !e.isCollection && e.href != folderId)
-        .map((e) => DriveFile(id: e.href, name: e.displayName))
-        .toList();
-
-    // HBK-AUDIT-085: route through the single canonical matcher in sync_utils.
-    return DriveSyncFiles(
-      progress: findSyncFileByPrefix(files, 'progress_'),
-      statistics: findSyncFileByPrefix(files, 'statistics_'),
-      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-    );
-  }
-
-  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
-  // 这里只给出 hibiki client 的下载原语（size-capped GET + jsonDecode，见
-  // WebDavOps.downloadJson）。读取不经 _ensureResolved（沿用原实现，直接用 _ops!）。
-  @override
-  Future<Object?> readJsonById(String fileId) => _ops!.downloadJson(fileId);
+  Future<void> ensureReady() => _ensureResolved();
 
   @override
   Future<void> updateProgressFile({

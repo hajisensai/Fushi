@@ -9,14 +9,31 @@ import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
+import 'package:hibiki/src/sync/webdav_path_backend_mixin.dart';
 
 class WebDavSyncBackend extends SyncBackend
-    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
+    with
+        SyncFolderCache,
+        SyncBackendFileTrioMixin,
+        SyncAssetStoreDefaults,
+        WebDavPathBackendMixin {
   WebDavSyncBackend._();
   static final WebDavSyncBackend instance = WebDavSyncBackend._();
 
   WebDavOps? _ops;
   String? _username;
+
+  // ── WebDavPathBackendMixin hooks ──────────────────────────────────
+
+  @override
+  WebDavOps get webDavOps => _ops!;
+
+  @override
+  String get logTag => '[webdav]';
+
+  // WebDAV 无地址解析步骤：authenticate/restoreAuth 建好 _ops 即就绪。
+  @override
+  Future<void> ensureReady() async {}
 
   // 路径式后端：folderId 是裸路径前缀，必须以 `/` 结尾（BUG-845）。
   @override
@@ -77,84 +94,11 @@ class WebDavSyncBackend extends SyncBackend
   @override
   Future<void> refreshAuth() async {}
 
-  // ── Folder operations ─────────────────────────────────────────────
-
-  @override
-  Future<String> findOrCreateRootFolder() async {
-    if (rootFolderIdCache != null) return rootFolderIdCache!;
-
-    final path = '${_ops!.baseUrl}/$kSyncRootFolderName/';
-    await _ops!.ensureCollection(path);
-    rootFolderIdCache = path;
-    return path;
-  }
-
-  @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async {
-    final entries = await _ops!.propfindChildren(rootFolderId);
-    return entries
-        .where((e) => e.isCollection && e.href != rootFolderId)
-        .map((e) => DriveFile(id: e.href, name: e.displayName))
-        .toList();
-  }
-
-  @override
-  Future<String> ensureBookFolder({
-    required String bookTitle,
-    required String rootFolderId,
-    Uint8List? coverData,
-  }) async {
-    final sanitized = requireBookFolderName(bookTitle);
-
-    if (folderIdCache.containsKey(sanitized)) {
-      // A cached id may have entered slash-less from a server PROPFIND href
-      // (some WebDAV servers omit the trailing slash on collection hrefs).
-      // Normalize on return so `folderId + fileName` never fuses the file into
-      // the root as `<title>audioBook_…` (BUG-845).
-      return ensureFolderIdTrailingSlash(folderIdCache[sanitized]!);
-    }
-
-    final path = '$rootFolderId${Uri.encodeComponent(sanitized)}/';
-    await _ops!.ensureCollection(path);
-    folderIdCache[sanitized] = path;
-
-    if (coverData != null) {
-      try {
-        final format = detectCoverFormat(coverData);
-        final coverPath = '${path}cover_1_6.${format.extension}';
-        final existing = await _ops!.headFile(coverPath);
-        if (!existing) {
-          await _ops!.putBytes(coverPath, coverData, format.mimeType);
-        }
-      } catch (e) {
-        debugPrint('[webdav] cover upload failed: $e');
-      }
-    }
-
-    return path;
-  }
-
-  // ── Metadata sync ─────────────────────────────────────────────────
-
-  @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async {
-    final entries = await _ops!.propfindChildren(folderId);
-    final files = entries
-        .where((e) => !e.isCollection && e.href != folderId)
-        .map((e) => DriveFile(id: e.href, name: e.displayName))
-        .toList();
-
-    return DriveSyncFiles(
-      progress: WebDavOps.findByPrefix(files, 'progress_'),
-      statistics: WebDavOps.findByPrefix(files, 'statistics_'),
-      audioBook: WebDavOps.findByPrefix(files, 'audioBook_'),
-    );
-  }
-
-  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
-  // 这里只给出 WebDAV 的下载原语（size-capped GET + jsonDecode，见 WebDavOps）。
-  @override
-  Future<Object?> readJsonById(String fileId) => _ops!.downloadJson(fileId);
+  // ── Folder operations / metadata reads ────────────────────────────
+  //
+  // findOrCreateRootFolder / listBooks / ensureBookFolder / listSyncFiles /
+  // readJsonById 五方法收敛进 [WebDavPathBackendMixin]（与 hibiki_client 后端共享，
+  // 逐字节同语义；本后端 ensureReady 为空实现）。
 
   @override
   Future<void> updateProgressFile({
