@@ -65,7 +65,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   ReadingTimeTracker? _readingTimeTracker;
 
-  /// BUG-1042：本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的
+  /// BUG-1052：本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的
   /// gap 守卫 tick 累加。取代旧的 `DateTime _sessionStartTime` 墙钟基准——旧实现把
   /// **整段** `now - _sessionStartTime` 交给 `isContinuousReadingGap` 判一次，而
   /// PDF 侧只在退出/失焦才 flush，于是任何超过 120s 的正常阅读会话都整段被判成
@@ -116,12 +116,12 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      // BUG-1042：先 stop（收尾 flush 把最后一段经 onDelta 记进累计器）再落库，
+      // BUG-1052：先 stop（收尾 flush 把最后一段经 onDelta 记进累计器）再落库，
       // 顺序同 EPUB 侧。
       _readingTimeTracker?.stop();
       unawaited(_flushPosition());
     } else if (state == AppLifecycleState.resumed) {
-      // BUG-892 / BUG-1042: 后台那段靠「计时器停着」丢弃，不再重锚墙钟基准
+      // BUG-892 / BUG-1052: 后台那段靠「计时器停着」丢弃，不再重锚墙钟基准
       // （那会连未落库的前台时长一起抹掉）。
       _readingTimeTracker?.start();
     }
@@ -157,7 +157,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       _lastSavedPageIndex = saved.sectionIndex;
     }
 
-    // BUG-1042：小时桶与每书/每日时长共用这一个带 gap 守卫的时钟（同 EPUB 侧）。
+    // BUG-1052：小时桶与每书/每日时长共用这一个带 gap 守卫的时钟（同 EPUB 侧）。
     _readingTimeTracker ??= ReadingTimeTracker(
       db,
       onDelta: (int deltaMs) => _sessionReadingMs += deltaMs,
@@ -229,12 +229,12 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// PDF 无字数会被整段丢弃。这里以**时长**为触发条件，且 `charsRead` 恒 0——
   /// 「页数」绝不能塞进 charsRead，否则会污染统计页的「字数」口径与其派生指标。
   Future<void> _flushReadingStats() async {
-    // BUG-1042：先结算「上一次 tick 到现在」这段未满一个 tick 的窗口（不停表）。
+    // BUG-1052：先结算「上一次 tick 到现在」这段未满一个 tick 的窗口（不停表）。
     _readingTimeTracker?.sampleNow();
     final EpubBookRow? row = _bookRow;
     if (row == null) return;
     final DateTime now = DateTime.now();
-    // BUG-1042：时长 = [_readingTimeTracker] 逐 tick 确认的累计增量。BUG-892 的
+    // BUG-1052：时长 = [_readingTimeTracker] 逐 tick 确认的累计增量。BUG-892 的
     // `isContinuousReadingGap` 守卫仍然生效，但作用在**每个 tick 窗口**上（tracker
     // 内部），不再拿整段会话去过一次守卫——旧写法让任何 >120s 的正常 PDF 阅读会话
     // 被整段判成非连续窗口丢弃，读多久都记 0。

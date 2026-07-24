@@ -1,4 +1,4 @@
-// BUG-1043：Hibiki 桌面版一启动就无条件创建 libtorrent session（绑 6881 TCP+UDP、
+// BUG-1053：Hibiki 桌面版一启动就无条件创建 libtorrent session（绑 6881 TCP+UDP、
 // DHT 默认开），哪怕用户一个下载任务都没有、也没配过 qBittorrent。持续的全球 DHT
 // 小包把家用路由器 NAT/conntrack 表撑爆 → 整机网络周期性高延迟，关掉 Hibiki 即恢复。
 //
@@ -25,7 +25,7 @@ String _memberBody(String src, String start, {int fallbackLen = 2500}) {
 }
 
 void main() {
-  group('BUG-1043 内置 torrent 会话必须懒建（空闲用户不得跑 DHT）', () {
+  group('BUG-1053 内置 torrent 会话必须懒建（空闲用户不得跑 DHT）', () {
     late String appModel;
     late String host;
 
@@ -38,7 +38,7 @@ void main() {
       final String body =
           _memberBody(appModel, 'Future<void> startAnimeDownloadService()');
       expect(body.contains('EmbeddedTorrentHost.open('), isFalse,
-          reason: 'BUG-1043 回归：启动即建 session = 空闲也在跑 DHT/占 6881');
+          reason: 'BUG-1053 回归：启动即建 session = 空闲也在跑 DHT/占 6881');
       // 只记保存路径，真会话交给懒建入口。
       expect(body.contains('_embeddedTorrentSavePath'), isTrue);
     });
@@ -47,7 +47,7 @@ void main() {
       final String body =
           _memberBody(appModel, 'TorrentBackend _torrentBackendFor(');
       expect(body.contains('_ensureEmbeddedTorrentHost()'), isTrue,
-          reason: 'BUG-1043：内置后端路径必须走懒建入口');
+          reason: 'BUG-1053：内置后端路径必须走懒建入口');
       expect(
           appModel
               .contains('EmbeddedTorrentHost? _ensureEmbeddedTorrentHost()'),
@@ -59,7 +59,7 @@ void main() {
       expect(i, greaterThanOrEqualTo(0));
       final String body = appModel.substring(i, i + 400);
       expect(body.contains('EmbeddedTorrentHost.probeAvailable()'), isTrue,
-          reason: 'BUG-1043：就绪判定若仍要求 session 存在，启动就又得开 session');
+          reason: 'BUG-1053：就绪判定若仍要求 session 存在，启动就又得开 session');
     });
 
     test('probeAvailable 只加载引擎，绝不创建 session', () {
@@ -69,7 +69,7 @@ void main() {
       final String body = host.substring(i, end > i ? end : i + 1200);
       expect(body.contains('EmbeddedTorrentEngine.open('), isTrue);
       expect(body.contains('EmbeddedTorrentSession.open('), isFalse,
-          reason: 'BUG-1043：探测里建 session 就等于没修');
+          reason: 'BUG-1053：探测里建 session 就等于没修');
       // 探测不该需要保存路径（不落盘、不下载）。
       expect(body.contains('baseSavePath'), isFalse);
     });
@@ -80,7 +80,7 @@ void main() {
           RegExp(r'EmbeddedTorrentHost\.open\(').allMatches(appModel);
       expect(hits.length, 1,
           reason:
-              'BUG-1043：AppModel 里 open() 只应出现在 _ensureEmbeddedTorrentHost');
+              'BUG-1053：AppModel 里 open() 只应出现在 _ensureEmbeddedTorrentHost');
       final String ensure = _memberBody(
           appModel, 'EmbeddedTorrentHost? _ensureEmbeddedTorrentHost()');
       expect(ensure.contains('EmbeddedTorrentHost.open('), isTrue);

@@ -127,21 +127,21 @@ void main() {
       final String resumedBranch = src.substring(resumed, resumed + 900);
       expect(resumedBranch.contains('_readingTimeTracker?.start()'), isTrue,
           reason: 'BUG-892：不重启小时桶计时器 → 回前台后阅读时长不再记账');
-      // BUG-1042：这里曾经是 `_sessionStartTime = DateTime.now()`。那个重锚在丢弃
+      // BUG-1052：这里曾经是 `_sessionStartTime = DateTime.now()`。那个重锚在丢弃
       // 后台段的同时，把**重锚前那段还没落库的前台阅读时长**一并抹掉（`_flushReadingStats`
       // 以 `_sessionCharsRead <= 0` 早退时根本不消费它）。查词频繁 = 失焦/回前台频繁
       // = 几乎全部时长蒸发。现在后台段由「tracker 停着不 tick」天然排除，无需重锚。
       expect(resumedBranch.contains('_sessionStartTime'), isFalse,
-          reason: 'BUG-1042 回归：resumed 重锚墙钟基准会吃掉未落库的前台阅读时长');
+          reason: 'BUG-1052 回归：resumed 重锚墙钟基准会吃掉未落库的前台阅读时长');
     });
   });
 
-  // ── BUG-1042：每书/每日时长与小时桶必须共用同一个带守卫的时钟 ──────────────
+  // ── BUG-1052：每书/每日时长与小时桶必须共用同一个带守卫的时钟 ──────────────
   //
   // 症状（用户 2026-07-23 反馈截图）：今日 1832 字 / 时长 0 分钟 / 速度 125666 字·时⁻¹，
   // 「最快日」421249 字·时⁻¹。生产库对账坐实——同一天 reading_statistics 记 84 分钟，
   // reading_hourly_logs 记 345 分钟；两条账目差 4 倍以上，前者是错的那条。
-  group('BUG-1042 单一时钟：会话时长累计器不被任何重锚吃掉', () {
+  group('BUG-1052 单一时钟：会话时长累计器不被任何重锚吃掉', () {
     test('EPUB 阅读器不再持有可被重置的墙钟基准字段', () {
       final String page = _codeOnly(
           File('lib/src/pages/implementations/reader_hibiki_page.dart')
@@ -168,9 +168,9 @@ void main() {
       final int end = nav.indexOf('\n  void ', i + 10);
       final String body = nav.substring(i, end > i ? end : i + 4000);
       expect(body.contains('_sessionStartTime'), isFalse,
-          reason: 'BUG-1042 回归：重排版/重恢复会抹掉上一段未落库的阅读时长');
+          reason: 'BUG-1052 回归：重排版/重恢复会抹掉上一段未落库的阅读时长');
       expect(body.contains('_sessionReadingMs = 0'), isFalse,
-          reason: 'BUG-1042 回归：恢复完成不得清空会话时长累计器');
+          reason: 'BUG-1052 回归：恢复完成不得清空会话时长累计器');
     });
 
     test('无新字数的早退路径不清空累计器（时长留到下次落库）', () {
@@ -183,10 +183,10 @@ void main() {
       final int guard = body.indexOf('_sessionCharsRead <= 0');
       final int clear = body.indexOf('_sessionReadingMs = 0');
       expect(guard, greaterThanOrEqualTo(0));
-      expect(clear, greaterThan(guard), reason: 'BUG-1042：累计器只能在真正落库那条路径上清零');
+      expect(clear, greaterThan(guard), reason: 'BUG-1052：累计器只能在真正落库那条路径上清零');
       // 落库前必须先把「上一次 tick 到现在」这段补进累计器。
       expect(body.indexOf('sampleNow()'), inInclusiveRange(0, guard),
-          reason: 'BUG-1042：不 sampleNow 每次落库都漏掉最多一个 tick 间隔');
+          reason: 'BUG-1052：不 sampleNow 每次落库都漏掉最多一个 tick 间隔');
     });
 
     test('PDF 阅读器不再拿整段会话去过一次 gap 守卫', () {
@@ -201,7 +201,7 @@ void main() {
       // 旧写法：if (!isContinuousReadingGap(now - elapsed, now)) return;
       // → 任何 >120s 的正常 PDF 阅读会话被整段丢弃，读多久都记 0。
       expect(body.contains('isContinuousReadingGap('), isFalse,
-          reason: 'BUG-1042 回归：整段会话过守卫 = 长会话时长恒为 0');
+          reason: 'BUG-1052 回归：整段会话过守卫 = 长会话时长恒为 0');
       expect(body.contains('sampleNow()'), isTrue);
     });
   });

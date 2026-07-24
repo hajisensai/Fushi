@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-// BUG-1042：「每书/每日阅读时长」（reading_statistics.reading_time_ms）与「小时桶」
+// BUG-1052：「每书/每日阅读时长」（reading_statistics.reading_time_ms）与「小时桶」
 // （reading_hourly_logs）此前是**两个独立时钟**——前者拿 `now - _sessionStartTime` 的
 // 墙钟差，后者走 ReadingTimeTracker 的 gap 守卫 tick。而 `_sessionStartTime` 被生命周期
 // resumed / 章节恢复完成无条件重锚，重锚前那段前台阅读时长直接蒸发（`_flushReadingStats`
@@ -56,7 +56,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 60));
 
       expect(sessionMs, greaterThan(0),
-          reason: 'onDelta 没回吐 → 每书时长恒 0（正是 BUG-1042 症状）');
+          reason: 'onDelta 没回吐 → 每书时长恒 0（正是 BUG-1052 症状）');
       expect(sessionMs, await _hourlyTotalMs(db),
           reason: '两条账目必须来自同一个 tick，不得各算各的');
     });
@@ -93,7 +93,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 60));
 
       expect(tracker.isRunning, isFalse);
-      expect(sessionMs, greaterThan(0), reason: 'BUG-1042：失焦瞬间的部分窗口必须结算进会话累计器');
+      expect(sessionMs, greaterThan(0), reason: 'BUG-1052：失焦瞬间的部分窗口必须结算进会话累计器');
       expect(sessionMs, await _hourlyTotalMs(db));
     });
 

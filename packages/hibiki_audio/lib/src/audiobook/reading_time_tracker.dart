@@ -50,7 +50,7 @@ typedef ReadingTimeDelta = void Function(int deltaMs);
 class ReadingTimeTracker {
   /// [onDelta]：每次 tick 确认一段连续阅读窗口时，把**同一份**毫秒增量回吐给调用方。
   ///
-  /// BUG-1042：每书/每日阅读时长（`reading_statistics.reading_time_ms`）此前自己拿
+  /// BUG-1052：每书/每日阅读时长（`reading_statistics.reading_time_ms`）此前自己拿
   /// `now - _sessionStartTime` 算墙钟差，与本 tracker 各算各的；而 `_sessionStartTime`
   /// 被生命周期 resumed / 章节恢复完成等多处无条件重置，重置前那段前台阅读时长直接蒸发。
   /// 现在两条账目共用**同一个**带 [isContinuousReadingGap] 守卫的时钟：本 tracker 记小时

@@ -2963,7 +2963,7 @@ class AppModel with ChangeNotifier {
   /// （见 [_ensureEmbeddedTorrentHost]）；DLL 缺失/加载失败为 null，服务回退外接
   /// qb。app 释放时 dispose。
   ///
-  /// BUG-1043：以前是在 [startAnimeDownloadService] 里对**所有桌面用户无条件**
+  /// BUG-1053：以前是在 [startAnimeDownloadService] 里对**所有桌面用户无条件**
   /// 创建——而创建 = 起一个 libtorrent session（绑 6881 TCP+UDP + 默认开 DHT）。
   /// 于是没有任何下载任务的用户，只要 Hibiki 开着就一直在跑全球 DHT，路由器
   /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Hibiki 即恢复。
@@ -3002,7 +3002,7 @@ class AppModel with ChangeNotifier {
     // 内置引擎宿主：仅桌面（Android/iOS 阶段4/5 再定），且下载根目录就在
     // 计划目录旁的 `content/` 子目录（分类再往下分）。
     //
-    // BUG-1043：这里**只记路径，不建 session**。真正的 libtorrent session 会绑
+    // BUG-1053：这里**只记路径，不建 session**。真正的 libtorrent session 会绑
     // 6881 并起 DHT，对没有下载任务的用户是纯粹的网络噪声（整机延迟）。改由
     // [_ensureEmbeddedTorrentHost] 在第一次真要用后端时懒建；`_tickOnce` 本就
     // 「没有等待中的计划就不建连接」，所以空闲用户永远不会走到那一步。
@@ -3056,7 +3056,7 @@ class AppModel with ChangeNotifier {
   /// 内置引擎在本机是否可用（桌面 + DLL 能加载）。下载对话框据此判断能否走
   /// 内置引擎（不必配置外接 qb）。
   ///
-  /// BUG-1043：这是**能力探测**，不代表已经开了 session。以前它等价于
+  /// BUG-1053：这是**能力探测**，不代表已经开了 session。以前它等价于
   /// `_embeddedTorrentHost != null`，逼得启动就必须建 session（= 绑 6881 + 起
   /// DHT）才能让下载按钮可用。现在探测只加载 DLL、不碰网络，真会话由
   /// [_ensureEmbeddedTorrentHost] 在要下载时才建。
@@ -3077,7 +3077,7 @@ class AppModel with ChangeNotifier {
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
     final String backend =
         config.resolveBackend(isDesktop: _supportsEmbeddedTorrent());
-    // BUG-1043：到这里才是「真的要用下载后端」，session 在此懒建（幂等）。
+    // BUG-1053：到这里才是「真的要用下载后端」，session 在此懒建（幂等）。
     final EmbeddedTorrentHost? host =
         backend == QbConnectionConfig.backendEmbedded
             ? _ensureEmbeddedTorrentHost()

@@ -65,7 +65,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         _reapplyChromeInsetsAfterFirstLoad();
         // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
         _settleFocusOnContentReady();
-        // BUG-1042：兜底超时也要起阅读计时。计时器原本只在 [_onRestoreComplete]
+        // BUG-1052：兜底超时也要起阅读计时。计时器原本只在 [_onRestoreComplete]
         // 里建/启，而这条路径正是「JS 迟迟不回 onRestoreComplete」——遮罩已摘、书能
         // 读，却一秒都不记时长（字数照常累计 ⇒ 速度又爆表）。
         _ensureReadingTimeTracker();
@@ -144,7 +144,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       success: true,
     );
 
-    // BUG-1042：这里**不再**重锚任何会话时钟。本方法（恢复完成）每次重排版/重恢复
+    // BUG-1052：这里**不再**重锚任何会话时钟。本方法（恢复完成）每次重排版/重恢复
     // 都会跑，旧代码在此重置 `_sessionStartTime`，把上一段还没落库的前台阅读时长整段
     // 抹掉。[_ensureReadingTimeTracker] 的 start() 对已在跑的计时器是 no-op，重排版
     // 不打断计时。
@@ -1187,7 +1187,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   /// 供进程退出路径 await（TODO-086/BUG-191）；其余生命周期调用点 fire-and-forget
   /// （不 await 返回的 Future，行为同旧版）。计数器在发起写之前清零，保证同一段
   /// 时长/字数不会被重复累加。
-  /// BUG-1042：建好并启动阅读计时器（幂等）。
+  /// BUG-1052：建好并启动阅读计时器（幂等）。
   ///
   /// 它是本页**唯一**的阅读时钟：既写每小时桶（`reading_hourly_logs`），又经 `onDelta`
   /// 把同一份 gap 守卫增量喂给 [_sessionReadingMs]，由 [_flushReadingStats] 落进
@@ -1201,12 +1201,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   }
 
   Future<void> _flushReadingStats() async {
-    // BUG-1042：先把「上一次 tick 到现在」这段未满一个 tick 的窗口结算进
+    // BUG-1052：先把「上一次 tick 到现在」这段未满一个 tick 的窗口结算进
     // [_sessionReadingMs]（不停表），否则每次落库都漏掉最多一个 tick 间隔。
     _readingTimeTracker?.sampleNow();
     if (_sessionCharsRead <= 0 || _book == null) return;
     final DateTime now = DateTime.now();
-    // BUG-1042：时长来自 [_readingTimeTracker] 的 gap 守卫增量累计，不再是
+    // BUG-1052：时长来自 [_readingTimeTracker] 的 gap 守卫增量累计，不再是
     // `now - _sessionStartTime` 墙钟差。早退路径（无新字数）不消费累计器，这段时长
     // 留到下次真正落库时一并计入——旧实现在这里蒸发。
     final int elapsedMs = _sessionReadingMs;

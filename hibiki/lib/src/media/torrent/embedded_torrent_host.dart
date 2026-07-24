@@ -15,7 +15,7 @@ import 'package:hibiki_torrent/hibiki_torrent.dart';
 /// AppModel 释放时 `dispose`。DLL 加载失败（未构建/缺依赖）返回 null，上层回退外接
 /// qb 或静默不动作，绝不 crash 启动流程。
 ///
-/// BUG-1043：绝不能在 app 启动时无条件 [open]。[open] 会创建 libtorrent session ——
+/// BUG-1053：绝不能在 app 启动时无条件 [open]。[open] 会创建 libtorrent session ——
 /// 绑 6881（TCP+UDP，全网卡）并**默认开 DHT**，于是一个种子都没有的用户，只要开着
 /// Hibiki 就在持续收发全球 DHT 小包，把家用路由器的 NAT/conntrack 表撑爆，表现为
 /// 「每隔一段时间整机网络高延迟，关掉 Hibiki 就好」。能力探测请用 [probeAvailable]，
@@ -104,7 +104,7 @@ class EmbeddedTorrentHost {
   /// 内置引擎在本机是否可用——**只加载 DLL，不创建 session**（不绑端口、不起
   /// DHT、不产生任何网络流量）。
   ///
-  /// BUG-1043：UI 的「内置引擎就绪」判定（下载对话框/下载页）以前是
+  /// BUG-1053：UI 的「内置引擎就绪」判定（下载对话框/下载页）以前是
   /// `_embeddedTorrentHost != null`，逼得 AppModel 必须在启动时就把真 session 开
   /// 起来才能让按钮可用。拆成「能力探测」与「真实会话」两件事之后，就绪判定走
   /// 这里，session 留到真的要下载时再建。

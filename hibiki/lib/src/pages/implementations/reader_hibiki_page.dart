@@ -1152,7 +1152,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // flush 起新 session 时由调用方重置到当前位置。
   int _sessionMaxAbsoluteChars = 0;
 
-  /// BUG-1042：本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的
+  /// BUG-1052：本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的
   /// gap 守卫 tick 累加（见 `ReadingTimeTracker.onDelta`）。
   ///
   /// 取代旧的 `DateTime _sessionStartTime` 墙钟基准。旧实现的时长 = `now - 基准`，
@@ -2125,7 +2125,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // 时长会在恢复时被一次性计入（34h 的书 / 单小时 >1h / 凌晨幻影阅读）。stop() 先
       // flush 退出瞬间的部分窗口（受 kMaxReadingGap 守卫）再 cancel。
       //
-      // BUG-1042：必须**先 stop 再 flush 统计**。stop() 的收尾 flush 会把「最后一个
+      // BUG-1052：必须**先 stop 再 flush 统计**。stop() 的收尾 flush 会把「最后一个
       // tick 到失焦」这段经 onDelta 记进 [_sessionReadingMs]，随后落库才带得上它；
       // 反过来（旧序）这段时长会留到下次 start 之后，而 resumed 路径曾把时钟整个重锚。
       _readingTimeTracker?.stop();
@@ -2136,7 +2136,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // 重建对象，只有重启 app 才靠 autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned]
       // 的 resumed 回收范式，把焦点收回正文（门控见 helper，绝不抢对话框 / 查词焦点）。
       _reclaimReaderFocusIfOwned();
-      // BUG-892 / BUG-1042: 后台那段间隔靠「计时器停着」丢弃，而不是靠回前台重锚一个
+      // BUG-892 / BUG-1052: 后台那段间隔靠「计时器停着」丢弃，而不是靠回前台重锚一个
       // 墙钟基准——后者会连同重锚前那段**真实前台阅读时长**一起抹掉（见
       // [_sessionReadingMs] 注释）。这里只重启计时器并重锚 tick 起点；两条账目（小时桶
       // + 每书每日）都由它同一份 gap 守卫增量驱动，不存在第二个可被重置的时钟。
