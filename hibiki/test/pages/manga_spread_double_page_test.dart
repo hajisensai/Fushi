@@ -116,7 +116,7 @@ Future<void> _pumpBook(
       await Future<void>.delayed(const Duration(milliseconds: 50));
       await tester.pump();
       if (find
-          .byKey(const ValueKey<String>('manga_webview'))
+          .byKey(const ValueKey<String>('manga_content_ready'))
           .evaluate()
           .isNotEmpty) {
         break;
@@ -160,7 +160,8 @@ void main() {
     // 配对 [0],[1,2],[3] → 跨页 1。
     await _pumpBook(tester, db, appModel, '横屏漫画', bookDir, savedPage: 2);
 
-    expect(find.byKey(const ValueKey<String>('manga_webview')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('manga_content_ready')),
+        findsOneWidget);
     expect(find.text('2-3 / 4'), findsOneWidget,
         reason: '横屏 auto 双页 + 封面独占：恢复到含第 3 页的跨页，指示区间 2-3');
     // 布局偏好菜单在 spread 模式下可见。

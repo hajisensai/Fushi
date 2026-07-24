@@ -1503,7 +1503,14 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     if (_bookRow == null || _imagesDir == null || _payload == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    return _buildWebView();
+    // 平台无关的「内容已加载」标记：非 Linux 是原生 WebView，Linux 是无后端占位
+    // （`manga_webview` key 仅存在于前者，随宿主平台变化）。加载成功的普适可观察
+    // 契约挂这里，widget 测试三端（含 Linux CI）一致命中，不再依赖平台门控的
+    // WebView key。
+    return KeyedSubtree(
+      key: const ValueKey<String>('manga_content_ready'),
+      child: _buildWebView(),
+    );
   }
 
   /// 只在有 WebView 后端的平台构造原生 WebView（Linux 无 flutter_inappwebview

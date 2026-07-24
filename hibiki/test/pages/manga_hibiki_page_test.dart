@@ -198,7 +198,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         await tester.pump();
         if (find
-            .byKey(const ValueKey<String>('manga_webview'))
+            .byKey(const ValueKey<String>('manga_content_ready'))
             .evaluate()
             .isNotEmpty) {
           break;
@@ -207,8 +207,10 @@ void main() {
     });
     await tester.pump();
 
-    // WebView 已构建（fake 平台渲染空盒）——书行 + manga.json 全链路加载成功。
-    expect(find.byKey(const ValueKey<String>('manga_webview')), findsOneWidget);
+    // 内容区已构建（manga_content_ready 平台无关标记：非 Linux 是原生 WebView，
+    // Linux 是无后端占位）——书行 + manga.json 全链路加载成功。
+    expect(find.byKey(const ValueKey<String>('manga_content_ready')),
+        findsOneWidget);
     // 页码指示恢复到已存页：2 / 2（sectionIndex=1 → 1-based 第 2 页）。
     expect(find.text('2 / 2'), findsOneWidget,
         reason: 'ReaderPositions.sectionIndex 必须恢复为当前页（0-based → 1-based 显示）');
@@ -259,7 +261,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         await tester.pump();
         if (find
-            .byKey(const ValueKey<String>('manga_webview'))
+            .byKey(const ValueKey<String>('manga_content_ready'))
             .evaluate()
             .isNotEmpty) {
           break;
