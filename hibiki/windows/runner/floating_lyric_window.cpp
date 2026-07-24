@@ -31,6 +31,11 @@ constexpr float kControlsTopDip = 8.0f;
 // Bottom-right resize grip and the min / max the user may drag the bar to.
 constexpr float kResizeGripDip = 18.0f;
 constexpr float kMinStripWidthDip = 280.0f;
+// Hook mode draws a centred 8-slot toolbar (8 * 30 + 7 * 10 = 310dip). The
+// generic 280dip floor would let the user drag the window narrower than its own
+// controls, clipping the leading voice buttons; hook mode therefore floors at
+// the toolbar width plus a small margin.
+constexpr float kHookTextMinStripWidthDip = 330.0f;
 constexpr float kMinStripHeightDip = 64.0f;
 constexpr float kMaxStripWidthDip = 2400.0f;
 constexpr float kMaxStripHeightDip = 480.0f;
@@ -45,7 +50,12 @@ constexpr float kBaseStripHeightForFontDip = 96.0f;
 // and ControlActionAt() derive their geometry from this single count so the
 // hit areas can never drift from what is drawn.
 constexpr int kControlSlotCount = 5;
-constexpr int kHookTextControlSlotCount = 6;
+// Hook text toolbar slots, in draw / hit-test order: replay voice, replay +
+// recapture, follow, click-through, transparency, lock, workbench, close. The
+// two leading slots are the voice controls (replay the line's captured audio;
+// open a recapture window so the user can replay the line inside the game and
+// have it recorded onto that line).
+constexpr int kHookTextControlSlotCount = 8;
 
 // Text-only clipboard window (Luna-style hover toolbar). A thin top strip is
 // ALWAYS a mouse catch (drawn at ~2% alpha across the full width) so the fully
@@ -243,7 +253,7 @@ bool FloatingLyricWindow::Show(HWND owner) {
     // TODO-708 P2: 首次创建即用设置宽度（>0，夹到拖拽边界），否则历史 720dip 起始宽。
     strip_width_dip_ = style_.window_width > 0.0
                            ? std::clamp(static_cast<float>(style_.window_width),
-                                        kMinStripWidthDip, kMaxStripWidthDip)
+                                        MinStripWidthDip(), kMaxStripWidthDip)
                            : kStripWidthDip;
     strip_height_dip_ = style_.window_height > 0.0
                             ? std::clamp(
@@ -345,7 +355,7 @@ void FloatingLyricWindow::ApplyStyleWidth() {
     return;
   }
   const float target_dip =
-      std::clamp(static_cast<float>(style_.window_width), kMinStripWidthDip,
+      std::clamp(static_cast<float>(style_.window_width), MinStripWidthDip(),
                  kMaxStripWidthDip);
   RECT rc;
   if (!GetWindowRect(hwnd_, &rc)) {
@@ -379,6 +389,19 @@ void FloatingLyricWindow::UpdateLabels(const Labels& labels) {
 
 void FloatingLyricWindow::SetPlaybackState(bool playing) {
   playing_ = playing;
+  RequestRender();
+}
+
+float FloatingLyricWindow::MinStripWidthDip() const {
+  return hook_text_mode_ ? kHookTextMinStripWidthDip : kMinStripWidthDip;
+}
+
+void FloatingLyricWindow::SetVoiceState(bool replaying, bool recapturing) {
+  if (replaying_ == replaying && recapturing_ == recapturing) {
+    return;
+  }
+  replaying_ = replaying;
+  recapturing_ = recapturing;
   RequestRender();
 }
 
@@ -682,7 +705,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       // Clamp the system resize to the same sane bounds the bar is authored
       // for, so the user cannot drag it to an unusable size.
       auto* mmi = reinterpret_cast<MINMAXINFO*>(lparam);
-      mmi->ptMinTrackSize.x = static_cast<LONG>(ScaleForDpi(kMinStripWidthDip));
+      mmi->ptMinTrackSize.x = static_cast<LONG>(ScaleForDpi(MinStripWidthDip()));
       mmi->ptMinTrackSize.y = static_cast<LONG>(ScaleForDpi(kMinStripHeightDip));
       mmi->ptMaxTrackSize.x = static_cast<LONG>(ScaleForDpi(kMaxStripWidthDip));
       mmi->ptMaxTrackSize.y = static_cast<LONG>(ScaleForDpi(kMaxStripHeightDip));
@@ -961,12 +984,14 @@ void FloatingLyricWindow::Render() {
         auto hook_button = [&](int slot, const wchar_t* glyph, bool active) {
           draw_tbtn(left + slot * (t_btn + t_gap), glyph, active);
         };
-        hook_button(0, playing_ ? L"⏸" : L"▶", !playing_);
-        hook_button(1, L"↗", pass_through_);
-        hook_button(2, L"◐", false);
-        hook_button(3, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);
-        hook_button(4, L"▣", false);
-        hook_button(5, L"✕", false);
+        hook_button(0, L"↺", replaying_);
+        hook_button(1, L"⏺", recapturing_);
+        hook_button(2, playing_ ? L"⏸" : L"▶", !playing_);
+        hook_button(3, L"↗", pass_through_);
+        hook_button(4, L"◐", false);
+        hook_button(5, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);
+        hook_button(6, L"▣", false);
+        hook_button(7, L"✕", false);
       } else {
         const float lock_x = width - t_pad - t_btn;
         const float top_x = lock_x - t_gap - t_btn;
@@ -1120,16 +1145,20 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
         if (x < bx || x > bx + btn) continue;
         switch (slot) {
           case 0:
-            return "toggleFollow";
+            return "replayVoice";
           case 1:
-            return "togglePassThrough";
+            return "recaptureVoice";
           case 2:
-            return "toggleTransparency";
+            return "toggleFollow";
           case 3:
-            return "lock";
+            return "togglePassThrough";
           case 4:
-            return "openWorkbench";
+            return "toggleTransparency";
           case 5:
+            return "lock";
+          case 6:
+            return "openWorkbench";
+          case 7:
             return "close";
           default:
             return std::string();

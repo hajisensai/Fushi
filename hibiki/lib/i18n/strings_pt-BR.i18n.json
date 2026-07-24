@@ -2452,5 +2452,9 @@
   "manga_ocr_mobile_note": "On mobile, the recognition model powers box scan in the manga reader.",
   "games_already_added": "This game is already in the library",
   "games_drop_no_exe": "No new game .exe among the dropped files",
-  "games_drop_imported": "Added $count game(s)"
+  "games_drop_imported": "Added $count game(s)",
+  "game_hook_recapture_started": "Recording — replay this line in the game",
+  "game_hook_recapture_saved": "Recaptured voice saved to this line",
+  "game_hook_recapture_empty": "No audio captured in the recapture window",
+  "game_hook_recapture_unavailable": "Voice recapture needs system loopback audio"
 }

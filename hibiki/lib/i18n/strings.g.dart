@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 41718 (2454 per locale)
+/// Strings: 41786 (2458 per locale)
 ///
-/// Built on 2026-07-24 at 15:00 UTC
+/// Built on 2026-07-24 at 15:54 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3269,6 +3269,13 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get games_drop_no_exe => 'No new game .exe among the dropped files';
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -8838,6 +8845,17 @@ class _StringsAr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -14480,6 +14498,17 @@ class _StringsDe extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -20138,6 +20167,17 @@ class _StringsEs extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -25807,6 +25847,17 @@ class _StringsFr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -31403,6 +31454,17 @@ class _StringsId extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -37047,6 +37109,17 @@ class _StringsIt extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -42496,6 +42569,17 @@ class _StringsJa extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -47948,6 +48032,17 @@ class _StringsKo extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -53570,6 +53665,17 @@ class _StringsNl extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -59207,6 +59313,17 @@ class _StringsPtBr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -64827,6 +64944,17 @@ class _StringsRu extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -70392,6 +70520,17 @@ class _StringsTh extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -75989,6 +76128,17 @@ class _StringsTr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -81573,6 +81723,17 @@ class _StringsVi extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 // Path: <root>
@@ -86766,6 +86927,14 @@ class _StringsZhCn extends _StringsEn {
   String get games_drop_no_exe => '拖入的文件里没有新的游戏 .exe';
   @override
   String games_drop_imported({required Object count}) => '已添加 ${count} 个游戏';
+  @override
+  String get game_hook_recapture_started => '录音中——请在游戏里重播这句语音';
+  @override
+  String get game_hook_recapture_saved => '补录语音已绑定到这句';
+  @override
+  String get game_hook_recapture_empty => '补录窗口内没有录到声音';
+  @override
+  String get game_hook_recapture_unavailable => '补录需要系统声音采集可用';
 }
 
 // Path: <root>
@@ -92133,6 +92302,17 @@ class _StringsZhHk extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_recapture_started =>
+      'Recording — replay this line in the game';
+  @override
+  String get game_hook_recapture_saved => 'Recaptured voice saved to this line';
+  @override
+  String get game_hook_recapture_empty =>
+      'No audio captured in the recapture window';
+  @override
+  String get game_hook_recapture_unavailable =>
+      'Voice recapture needs system loopback audio';
 }
 
 /// Flat map(s) containing all translations.
@@ -97147,6 +97327,14 @@ extension on _StringsEn {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -102159,6 +102347,14 @@ extension on _StringsAr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -107192,6 +107388,14 @@ extension on _StringsDe {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -112224,6 +112428,14 @@ extension on _StringsEs {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -117262,6 +117474,14 @@ extension on _StringsFr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -122282,6 +122502,14 @@ extension on _StringsId {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -127317,6 +127545,14 @@ extension on _StringsIt {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -132314,6 +132550,14 @@ extension on _StringsJa {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -137315,6 +137559,14 @@ extension on _StringsKo {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -142343,6 +142595,14 @@ extension on _StringsNl {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -147368,6 +147628,14 @@ extension on _StringsPtBr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -152398,6 +152666,14 @@ extension on _StringsRu {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -157412,6 +157688,14 @@ extension on _StringsTh {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -162435,6 +162719,14 @@ extension on _StringsTr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -167453,6 +167745,14 @@ extension on _StringsVi {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
@@ -172432,6 +172732,14 @@ extension on _StringsZhCn {
         return '拖入的文件里没有新的游戏 .exe';
       case 'games_drop_imported':
         return ({required Object count}) => '已添加 ${count} 个游戏';
+      case 'game_hook_recapture_started':
+        return '录音中——请在游戏里重播这句语音';
+      case 'game_hook_recapture_saved':
+        return '补录语音已绑定到这句';
+      case 'game_hook_recapture_empty':
+        return '补录窗口内没有录到声音';
+      case 'game_hook_recapture_unavailable':
+        return '补录需要系统声音采集可用';
       default:
         return null;
     }
@@ -177424,6 +177732,14 @@ extension on _StringsZhHk {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_recapture_started':
+        return 'Recording — replay this line in the game';
+      case 'game_hook_recapture_saved':
+        return 'Recaptured voice saved to this line';
+      case 'game_hook_recapture_empty':
+        return 'No audio captured in the recapture window';
+      case 'game_hook_recapture_unavailable':
+        return 'Voice recapture needs system loopback audio';
       default:
         return null;
     }
