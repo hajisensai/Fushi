@@ -44,6 +44,21 @@
 
 ## 三、待合并 backlog（按 收益/风险 排序）
 
+> **2026-07-24 同日更新：以下 9 项已全部落地**（同一 PR 后续 commit）：
+> 1 → `pkce_backend_auth_mixin.dart` + 新增 `oauth_backend_auth_shell_test.dart`（19 例回归网）；
+> 2 → `webdav_path_backend_mixin.dart`（`findByPrefix` 证实为死 shim 已删）；
+> 3 → `utils/components/delete_scope_confirm_dialog.dart`（md3 静态测试改传递闭环断言）；
+> 4 → `utils/misc/audio_session_helpers.dart`（含 base 侧 HBK-AUDIT-107 与 slider max 两处漂移修复）；
+> 5 → `DictionaryPopupOverlayHostMixin`（BUG-121/051/135/861 兜底逐一保留，texthooker 第三份副本为后续候选）;
+> 6 → `collections/combine_merge_orchestrator.dart`；
+> 7 → `creator_registry_entry.dart`（全部子类零改动）；
+> 8 → `stat_shared.dart` 的 `buildStatMediaRow`；
+> 9 → `test/sync/helpers/`（4 harness，净删 ~2050 行）+ `test/media/audiobook/helpers/`（净删 ~1270 行）+ `integration_test/helpers/reader_itest.dart`（净删 ~525 行）。
+> 未强并（真实漂移）：sync_manager↔sync_orchestrator conflict fake、各 audiobook 测试的 cue 建造器。
+> 新增后续候选：texthooker_page 的第三份 overlay 副本；FakeLibraryHostServiceBase 还可吸收另外 7 个 sync 测试文件。
+
+以下为当日早晨的原始 backlog 记录（已全部完成，留档）：
+
 1. **Dropbox ↔ OneDrive OAuth 外壳**（`handleAuthCode`/`_exchangeCode`/`restoreAuth`/`refreshAuth`/`_authHeaders` 五块逐字复制 ~42 行；`_checkResponse` 与授权 URL 是真实协议分叉**不动**）。方案：`PkceBackendAuthMixin` + `persistToken` 钩子。⚠️ 两后端 OAuth **无单测**，重构前先补回归网。
 2. **hibiki_client ↔ webdav 路径式四件套**（`findOrCreateRootFolder`/`listBooks`/`ensureBookFolder`/`listSyncFiles` ~45 行，都基于同一 `WebDavOps`）。方案：`WebDavPathBackendMixin` + `ensureReady()` 钩子（hibiki_client 的 `_ensureResolved()` 时机必须逐点保留）。
 3. **删除确认弹窗三份**：`_DeleteScopeConfirmDialog`（sync/deletion_prompt）↔ `ReaderHistoryDeleteDialog`（reader_history/dialogs.part）↔ `stat_delete_confirm_dialog`，build 主体逐字同构 ~46 行。⚠️ `md3_design_system_static_test.dart:1308,1431` 硬编码断言类名，重构须同步改。
