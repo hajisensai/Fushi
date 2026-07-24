@@ -49,6 +49,7 @@ class _StubScraperService extends PosterScraperService {
 
   final List<ScrapeCandidate> candidates;
   final List<String> appliedUids = <String>[];
+  final List<int> appliedCollectionIds = <int>[];
 
   @override
   Future<List<ScrapeCandidate>> searchCandidates({
@@ -59,13 +60,23 @@ class _StubScraperService extends PosterScraperService {
       candidates;
 
   @override
-  Future<String?> applyCandidateToBooks({
-    required List<String> bookUids,
+  Future<String> applyCandidateToBook({
+    required String bookUid,
     required ScrapeCandidate candidate,
     String? aliasKey,
   }) async {
-    appliedUids.addAll(bookUids);
-    return null;
+    appliedUids.add(bookUid);
+    return '';
+  }
+
+  @override
+  Future<String> applyCandidateToCollection({
+    required int collectionId,
+    required ScrapeCandidate candidate,
+    String? aliasKey,
+  }) async {
+    appliedCollectionIds.add(collectionId);
+    return '';
   }
 }
 
@@ -186,7 +197,7 @@ void main() {
         ),
       );
 
-  testWidgets('冒烟：候选渲染 + 使用按钮回调应用封面', (WidgetTester tester) async {
+  testWidgets('冒烟：候选渲染 + 使用按钮回调应用封面（散书 → 应用到该书）', (WidgetTester tester) async {
     final VideoBookRow book = await seed();
     final _StubScraperService service = buildService();
     bool applied = false;
@@ -200,7 +211,7 @@ void main() {
               context: ctx,
               service: service,
               book: book,
-              collectionMemberUids: <String>['video/my_anime'],
+              collectionId: null,
               onApplied: () => applied = true,
             ),
             child: const Text('open'),
@@ -218,6 +229,8 @@ void main() {
     expect(find.text('My Anime'), findsWidgets);
     // 置信度徽标（高匹配）。
     expect(find.text(t.video_scrape_confidence_high), findsOneWidget);
+    // 散书不显示「设为合集封面」勾选。
+    expect(find.text(t.video_scrape_set_collection_cover), findsNothing);
 
     // 点「使用」→ 回调应用（桩为纯内存记账，pumpAndSettle 即可驱动）。
     await tester.tap(find.text(t.video_scrape_use).first);
@@ -225,7 +238,82 @@ void main() {
 
     expect(applied, isTrue);
     expect(service.appliedUids, <String>['video/my_anime']);
+    expect(service.appliedCollectionIds, isEmpty);
     // 弹窗应用后关闭。
     expect(find.text(t.video_scrape_use), findsNothing);
+  });
+
+  testWidgets('合集内：「设为合集封面」默认勾上 → 应用到合集，不碰该书封面', (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService();
+
+    await tester.pumpWidget(wrap(
+      Builder(
+        builder: (BuildContext ctx) => Center(
+          child: ElevatedButton(
+            onPressed: () => showPosterMatchDialog(
+              context: ctx,
+              service: service,
+              book: book,
+              collectionId: 77,
+              onApplied: () {},
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // 勾选行出现且默认勾上。
+    final Finder checkbox = find.byKey(
+      const ValueKey<String>('poster_match_apply_collection'),
+    );
+    expect(checkbox, findsOneWidget);
+    expect(
+      tester.widget<CheckboxListTile>(checkbox).value,
+      isTrue,
+      reason: '合集内的书默认勾上「设为合集封面」',
+    );
+
+    await tester.tap(find.text(t.video_scrape_use).first);
+    await tester.pumpAndSettle();
+    expect(service.appliedCollectionIds, <int>[77]);
+    expect(service.appliedUids, isEmpty, reason: '该书自身封面不动');
+  });
+
+  testWidgets('合集内取消勾选 → 显式手动意愿，只应用到该书自身', (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService();
+
+    await tester.pumpWidget(wrap(
+      Builder(
+        builder: (BuildContext ctx) => Center(
+          child: ElevatedButton(
+            onPressed: () => showPosterMatchDialog(
+              context: ctx,
+              service: service,
+              book: book,
+              collectionId: 77,
+              onApplied: () {},
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(
+      const ValueKey<String>('poster_match_apply_collection'),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.video_scrape_use).first);
+    await tester.pumpAndSettle();
+
+    expect(service.appliedCollectionIds, isEmpty);
+    expect(service.appliedUids, <String>['video/my_anime']);
   });
 }

@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 40256 (2368 per locale)
+/// Strings: 40307 (2371 per locale)
 ///
-/// Built on 2026-07-24 at 15:02 UTC
+/// Built on 2026-07-24 at 15:58 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3146,8 +3146,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_scrape_status_failed => 'Failed';
   String get video_scrape_downloading_index => 'Downloading offline index…';
   String get video_scrape_batch_empty => 'No local videos to match';
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -3158,6 +3156,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Matching ${current}/${total}';
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -8514,9 +8517,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -8530,6 +8530,15 @@ class _StringsAr extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -13959,9 +13968,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -13975,6 +13981,15 @@ class _StringsDe extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -19420,9 +19435,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -19436,6 +19448,15 @@ class _StringsEs extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -24892,9 +24913,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -24908,6 +24926,15 @@ class _StringsFr extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -30291,9 +30318,6 @@ class _StringsId extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -30307,6 +30331,15 @@ class _StringsId extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -35738,9 +35771,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -35754,6 +35784,15 @@ class _StringsIt extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -40990,9 +41029,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -41006,6 +41042,15 @@ class _StringsJa extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -46245,9 +46290,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -46261,6 +46303,15 @@ class _StringsKo extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -51670,9 +51721,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -51686,6 +51734,15 @@ class _StringsNl extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -57110,9 +57167,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -57126,6 +57180,15 @@ class _StringsPtBr extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -62533,9 +62596,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -62549,6 +62609,15 @@ class _StringsRu extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -67901,9 +67970,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -67917,6 +67983,15 @@ class _StringsTh extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -73301,9 +73376,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -73317,6 +73389,15 @@ class _StringsTr extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -78688,9 +78769,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -78704,6 +78782,15 @@ class _StringsVi extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 // Path: <root>
@@ -83701,9 +83788,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_scrape_batch_empty => '没有可匹配的本地视频';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      '同时应用到本合集全部 ${n} 集';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -83717,6 +83801,14 @@ class _StringsZhCn extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => '已应用(${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} 集)';
+  @override
+  String get video_scrape_set_collection_cover => '设为合集封面';
+  @override
+  String get video_scrape_status_collection_cover_set => '已设为合集封面';
+  @override
+  String get video_scrape_status_skipped_directory => '跳过（各集保留抽帧画面）';
+  @override
+  String get video_scrape_run_background => '后台运行';
 }
 
 // Path: <root>
@@ -88871,9 +88963,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_scrape_batch_empty => 'No local videos to match';
   @override
-  String video_scrape_apply_to_collection({required Object n}) =>
-      'Also apply to all ${n} episodes in this collection';
-  @override
   String video_scrape_batch_summary(
           {required Object applied,
           required Object confirm,
@@ -88887,6 +88976,15 @@ class _StringsZhHk extends _StringsEn {
   String video_scrape_status_applied_n({required Object n}) => 'Applied (${n})';
   @override
   String video_scrape_group_count({required Object n}) => '(${n} eps)';
+  @override
+  String get video_scrape_set_collection_cover => 'Set as collection cover';
+  @override
+  String get video_scrape_status_collection_cover_set => 'Collection cover set';
+  @override
+  String get video_scrape_status_skipped_directory =>
+      'Skipped (episodes keep frame covers)';
+  @override
+  String get video_scrape_run_background => 'Run in background';
 }
 
 /// Flat map(s) containing all translations.
@@ -93711,9 +93809,6 @@ extension on _StringsEn {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -93727,6 +93822,14 @@ extension on _StringsEn {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -98549,9 +98652,6 @@ extension on _StringsAr {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -98565,6 +98665,14 @@ extension on _StringsAr {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -103408,9 +103516,6 @@ extension on _StringsDe {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -103424,6 +103529,14 @@ extension on _StringsDe {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -108266,9 +108379,6 @@ extension on _StringsEs {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -108282,6 +108392,14 @@ extension on _StringsEs {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -113130,9 +113248,6 @@ extension on _StringsFr {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -113146,6 +113261,14 @@ extension on _StringsFr {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -117976,9 +118099,6 @@ extension on _StringsId {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -117992,6 +118112,14 @@ extension on _StringsId {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -122837,9 +122965,6 @@ extension on _StringsIt {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -122853,6 +122978,14 @@ extension on _StringsIt {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -127660,9 +127793,6 @@ extension on _StringsJa {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -127676,6 +127806,14 @@ extension on _StringsJa {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -132487,9 +132625,6 @@ extension on _StringsKo {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -132503,6 +132638,14 @@ extension on _StringsKo {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -137341,9 +137484,6 @@ extension on _StringsNl {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -137357,6 +137497,14 @@ extension on _StringsNl {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -142192,9 +142340,6 @@ extension on _StringsPtBr {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -142208,6 +142353,14 @@ extension on _StringsPtBr {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -147048,9 +147201,6 @@ extension on _StringsRu {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -147064,6 +147214,14 @@ extension on _StringsRu {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -151888,9 +152046,6 @@ extension on _StringsTh {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -151904,6 +152059,14 @@ extension on _StringsTh {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -156737,9 +156900,6 @@ extension on _StringsTr {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -156753,6 +156913,14 @@ extension on _StringsTr {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -161581,9 +161749,6 @@ extension on _StringsVi {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -161597,6 +161762,14 @@ extension on _StringsVi {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }
@@ -166387,8 +166560,6 @@ extension on _StringsZhCn {
         return '正在下载离线索引库…';
       case 'video_scrape_batch_empty':
         return '没有可匹配的本地视频';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) => '同时应用到本合集全部 ${n} 集';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -166402,6 +166573,14 @@ extension on _StringsZhCn {
         return ({required Object n}) => '已应用(${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} 集)';
+      case 'video_scrape_set_collection_cover':
+        return '设为合集封面';
+      case 'video_scrape_status_collection_cover_set':
+        return '已设为合集封面';
+      case 'video_scrape_status_skipped_directory':
+        return '跳过（各集保留抽帧画面）';
+      case 'video_scrape_run_background':
+        return '后台运行';
       default:
         return null;
     }
@@ -171204,9 +171383,6 @@ extension on _StringsZhHk {
         return 'Downloading offline index…';
       case 'video_scrape_batch_empty':
         return 'No local videos to match';
-      case 'video_scrape_apply_to_collection':
-        return ({required Object n}) =>
-            'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
         return (
                 {required Object applied,
@@ -171220,6 +171396,14 @@ extension on _StringsZhHk {
         return ({required Object n}) => 'Applied (${n})';
       case 'video_scrape_group_count':
         return ({required Object n}) => '(${n} eps)';
+      case 'video_scrape_set_collection_cover':
+        return 'Set as collection cover';
+      case 'video_scrape_status_collection_cover_set':
+        return 'Collection cover set';
+      case 'video_scrape_status_skipped_directory':
+        return 'Skipped (episodes keep frame covers)';
+      case 'video_scrape_run_background':
+        return 'Run in background';
       default:
         return null;
     }

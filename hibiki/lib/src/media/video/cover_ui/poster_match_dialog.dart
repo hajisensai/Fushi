@@ -15,15 +15,19 @@ const String kVideoScraperTmdbApiKeyPref = 'video_scraper_tmdb_api_key';
 ///
 /// 搜索框预填**解析后的标题**（非原始文件名）；数据源分段选择 Bangumi / TMDB /
 /// 离线库（已装载才出现）；候选列表带海报缩略图 + 标题 + 年份/类型 + 评分 + 置信度
-/// 徽标（对每个候选跑 [MatchScorer.score]），「使用」即下载落封面。book 在合集内
-/// （[collectionMemberUids] 长度 > 1）时底部出「同时应用到本合集全部 N 集」勾选。
+/// 徽标（对每个候选跑 [MatchScorer.score]）。
+///
+/// 应用语义（用户拍板 2026-07-24「只改合集封面、每集保留抽帧」）：book 属 DB 合集
+/// （[collectionId] 非 null）时底部出「设为合集封面」勾选、**默认勾上**——勾上 =
+/// 海报落 `collections/collection_<id>.jpg`（成员书的抽帧封面一律不动）；取消勾选 =
+/// 只应用到该书自身（用户显式意愿）。散书/目录散集成员恒应用到该书自身。
 ///
 /// TMDB 无 key 时点该分段展开 key 输入行并存偏好（[kVideoScraperTmdbApiKeyPref]）。
 Future<void> showPosterMatchDialog({
   required BuildContext context,
   required PosterScraperService service,
   required VideoBookRow book,
-  required List<String> collectionMemberUids,
+  required int? collectionId,
   required VoidCallback onApplied,
 }) {
   return showAppDialog<void>(
@@ -31,7 +35,7 @@ Future<void> showPosterMatchDialog({
     builder: (BuildContext ctx) => PosterMatchDialog(
       service: service,
       book: book,
-      collectionMemberUids: collectionMemberUids,
+      collectionId: collectionId,
       onApplied: onApplied,
     ),
   );
@@ -43,15 +47,15 @@ class PosterMatchDialog extends ConsumerStatefulWidget {
     super.key,
     required this.service,
     required this.book,
-    required this.collectionMemberUids,
+    required this.collectionId,
     required this.onApplied,
   });
 
   final PosterScraperService service;
   final VideoBookRow book;
 
-  /// 本合集全部成员 uid（含 [book] 自身）；长度 > 1 才显示合集应用勾选。
-  final List<String> collectionMemberUids;
+  /// [book] 所属 DB 合集 id；非 null 才显示「设为合集封面」勾选（默认勾上）。
+  final int? collectionId;
 
   /// 应用成功后回调（刷新库页）。
   final VoidCallback onApplied;
@@ -70,12 +74,15 @@ class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
   bool _searching = false;
   bool _searched = false;
   bool _showTmdbKeyField = false;
-  bool _applyToCollection = false;
+
+  /// 「设为合集封面」勾选：合集内的书**默认勾上**（用户拍板的主路径）。
+  late bool _setCollectionCover;
   bool _applying = false;
 
   @override
   void initState() {
     super.initState();
+    _setCollectionCover = widget.collectionId != null;
     _parsed = widget.service.parseForPath(widget.book.videoPath);
     final String prefill =
         _parsed?.title.isNotEmpty == true ? _parsed!.title : widget.book.title;
@@ -160,16 +167,23 @@ class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
   Future<void> _use(ScrapeCandidate candidate) async {
     if (_applying) return;
     setState(() => _applying = true);
-    final List<String> targets =
-        _applyToCollection && widget.collectionMemberUids.length > 1
-            ? widget.collectionMemberUids
-            : <String>[widget.book.bookUid];
+    final int? collectionId = widget.collectionId;
     try {
-      await widget.service.applyCandidateToBooks(
-        bookUids: targets,
-        candidate: candidate,
-        aliasKey: _parsed?.title,
-      );
+      if (_setCollectionCover && collectionId != null) {
+        // 合集内且勾选：海报只落合集级封面，成员书的抽帧封面不动。
+        await widget.service.applyCandidateToCollection(
+          collectionId: collectionId,
+          candidate: candidate,
+          aliasKey: _parsed?.title,
+        );
+      } else {
+        // 散书 / 用户显式取消勾选：应用到该书自身（原有能力）。
+        await widget.service.applyCandidateToBook(
+          bookUid: widget.book.bookUid,
+          candidate: candidate,
+          aliasKey: _parsed?.title,
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _applying = false);
@@ -185,7 +199,7 @@ class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool showCollectionToggle = widget.collectionMemberUids.length > 1;
+    final bool showCollectionToggle = widget.collectionId != null;
     return AlertDialog(
       title: Text(t.video_scrape_online_match),
       content: SizedBox(
@@ -216,14 +230,10 @@ class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
-                value: _applyToCollection,
+                value: _setCollectionCover,
                 onChanged: (bool? v) =>
-                    setState(() => _applyToCollection = v ?? false),
-                title: Text(
-                  t.video_scrape_apply_to_collection(
-                    n: widget.collectionMemberUids.length,
-                  ),
-                ),
+                    setState(() => _setCollectionCover = v ?? false),
+                title: Text(t.video_scrape_set_collection_cover),
               ),
           ],
         ),

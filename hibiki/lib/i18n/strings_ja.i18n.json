@@ -2362,9 +2362,12 @@
   "video_scrape_status_failed": "Failed",
   "video_scrape_downloading_index": "Downloading offline index…",
   "video_scrape_batch_empty": "No local videos to match",
-  "video_scrape_apply_to_collection": "Also apply to all $n episodes in this collection",
   "video_scrape_batch_summary": "Done: $applied applied, $confirm to review, $skipped skipped",
   "video_scrape_batch_progress": "Matching $current/$total",
   "video_scrape_status_applied_n": "Applied ($n)",
-  "video_scrape_group_count": "($n eps)"
+  "video_scrape_group_count": "($n eps)",
+  "video_scrape_set_collection_cover": "Set as collection cover",
+  "video_scrape_status_collection_cover_set": "Collection cover set",
+  "video_scrape_status_skipped_directory": "Skipped (episodes keep frame covers)",
+  "video_scrape_run_background": "Run in background"
 }

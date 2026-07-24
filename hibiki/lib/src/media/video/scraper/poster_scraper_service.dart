@@ -18,6 +18,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
+import 'package:hibiki/src/media/video/scraper/collection_poster_store.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
 import 'package:hibiki/src/media/video/scraper/match_scorer.dart';
@@ -88,6 +89,16 @@ class ScrapeSkippedProtected extends ScrapeOutcome {
   final CoverOrigin origin;
 }
 
+/// 目录多成员组（散集、无 DB 合集）：没有可挂海报的合集级封面位，成员一律保留
+/// 抽帧封面，批量整组跳过（用户拍板 2026-07-24：「每集还是抽帧画面就够了」）。
+/// 单本弹窗里用户显式选中某集应用海报仍然允许（算手动意愿）。
+class ScrapeSkippedDirectoryGroup extends ScrapeOutcome {
+  const ScrapeSkippedDirectoryGroup(this.memberCount);
+
+  /// 组内成员数（状态行展示用）。
+  final int memberCount;
+}
+
 /// 不参与刮削（远端/流媒体书、无本地路径）。
 class ScrapeNotEligible extends ScrapeOutcome {
   const ScrapeNotEligible(this.reason);
@@ -152,8 +163,10 @@ class BatchScrapeProgress {
   /// 本组结果。
   final ScrapeOutcome outcome;
 
-  /// 组内实际可覆盖（保护线过滤后）的成员 uid：applied = 实落封面的成员；
-  /// needsConfirm = 用户确认后应应用到的成员。
+  /// 单本组实际可覆盖（保护线过滤后）的成员 uid：applied = 实落封面的成员；
+  /// needsConfirm = 用户确认后应应用到的成员。**合集组恒为空**——海报只落合集级
+  /// 封面（`collections/collection_<id>.jpg`），任何成员的抽帧封面都不动，确认
+  /// 目标由 [ScrapeGroup.collectionId] 表达。
   final List<String> coverableUids;
 }
 
@@ -362,20 +375,27 @@ class PosterScraperService {
     return groups;
   }
 
-  /// 批量刮削：先 [groupLibrary] 折叠成组，再**逐组**跑一次匹配流水线（sidecar 用
-  /// 组内第一个可覆盖成员的目录；alias/离线库/Bangumi/TMDB 每组一次）。high 海报只
-  /// 下载一次、分发到组内全部可覆盖成员；medium 该组一条 needsConfirm。
+  /// 批量刮削：先 [groupLibrary] 折叠成组，再**逐组**按三分支语义落地
+  /// （用户拍板 2026-07-24「只改合集封面、每集保留抽帧」）：
   ///
-  /// 保护线按**成员**过滤：组内 manual/sidecar/scraped 成员跳过、只覆盖 autoFrame
-  /// （或无记录）成员（[rescrapeScraped]=true 时 scraped 也可覆盖）；全组受保护则
-  /// 整组 [ScrapeSkippedProtected]。单组网络异常记 [ScrapeFailed] 继续，不中断整批。
+  /// 1. **DB 合集组**（[ScrapeGroup.collectionId] 非 null）：海报只落合集级封面
+  ///    （`collections/collection_<id>.jpg`），全部成员书的抽帧封面一律不动；
+  ///    保护线查 `cover_meta.json` 的 `collection:<id>` 记录（manual/sidecar/scraped
+  ///    受保护，[rescrapeScraped]=true 时 scraped 可重刮）。
+  /// 2. **单本组**（独立电影/单文件、自带 playlistJson 多集的单书——卡片即系列）：
+  ///    照旧落到该书自己的 coverPath（原有能力不变），保护线按该书 meta。
+  /// 3. **目录多成员组**（散集、无 DB 合集）：整组 [ScrapeSkippedDirectoryGroup]
+  ///    跳过，成员保留抽帧；不发起任何网络请求。
+  ///
+  /// alias/离线库/Bangumi/TMDB 每组一次；medium 该组一条 needsConfirm。单组网络
+  /// 异常记 [ScrapeFailed] 继续，不中断整批。
   Stream<BatchScrapeProgress> scrapeLibrary(
     List<VideoBookRow> books, {
     bool rescrapeScraped = false,
   }) async* {
     final List<ScrapeGroup> groups = await groupLibrary(books);
-    final Map<String, MatchDecision?> decisionCache =
-        <String, MatchDecision?>{};
+    final Map<String, (MatchDecision?, bool)> decisionCache =
+        <String, (MatchDecision?, bool)>{};
     for (int i = 0; i < groups.length; i++) {
       final ScrapeGroup group = groups[i];
       ScrapeOutcome outcome;
@@ -423,38 +443,48 @@ class PosterScraperService {
     }
   }
 
-  /// 用户在弹窗里点「使用」某候选（批量组应用同走此路）：下载海报落封面 +
-  /// `updateCover` + 记 scraped 元数据 + 记别名缓存（[aliasKey] 非空时）。[bookUids]
-  /// 多于一个 = 同时应用到整组/整个合集（每个成员各落一份封面文件，海报只下载一次
-  /// 后复制分发）。返回首个成员的封面路径（空列表返回 null）。
-  Future<String?> applyCandidateToBooks({
-    required List<String> bookUids,
+  /// 用户在弹窗里点「使用」某候选、应用到**单本书**（批量单本组同走此路）：下载
+  /// 海报落封面 + `updateCover` + 记 scraped 元数据 + 记别名缓存（[aliasKey] 非空
+  /// 时）。返回封面绝对路径。
+  Future<String> applyCandidateToBook({
+    required String bookUid,
+    required ScrapeCandidate candidate,
+    String? aliasKey,
+  }) =>
+      _applyCandidate(
+        bookUid: bookUid,
+        candidate: candidate,
+        aliasKey: aliasKey,
+      );
+
+  /// 把候选海报设为**合集级封面**（DB 合集组的唯一落地路径；弹窗「设为合集封面」
+  /// 与批量 high 同走此路）：下载字节 → [CollectionPosterStore.savePoster]（原子
+  /// 落 `collections/collection_<id>.jpg`）→ 记 `collection:<id>` scraped 元数据 →
+  /// 记别名缓存（[aliasKey] 非空时）。**不触碰任何成员书的 coverPath**。返回海报
+  /// 绝对路径。
+  Future<String> applyCandidateToCollection({
+    required int collectionId,
     required ScrapeCandidate candidate,
     String? aliasKey,
   }) async {
-    if (bookUids.isEmpty) return null;
-    final String firstCover = await _applyCandidate(
-      bookUid: bookUids.first,
-      candidate: candidate,
-    );
-    if (bookUids.length > 1) {
-      final Directory covers = await _coversDir();
-      final CoverMeta meta = CoverMeta(
+    final List<int> bytes =
+        await _downloader.downloadPosterBytes(url: candidate.posterUrl);
+    final CollectionPosterStore store =
+        CollectionPosterStore(await _coversDir());
+    final String posterPath =
+        await store.savePoster(collectionId: collectionId, bytes: bytes);
+    await _coverMeta.set(
+      CollectionPosterStore.metaKey(collectionId),
+      CoverMeta(
         origin: CoverOrigin.scraped,
         source: candidate.source,
         entryId: candidate.entryId,
-      );
-      for (final String uid in bookUids.skip(1)) {
-        final String dest = p.join(covers.path, videoCoverFileName(uid));
-        await File(firstCover).copy(dest);
-        await _repo.updateCover(uid, dest);
-        await _coverMeta.set(uid, meta);
-      }
-    }
+      ),
+    );
     if (aliasKey != null && aliasKey.trim().isNotEmpty) {
       await _aliasCache.put(aliasKey, candidate.source, candidate.entryId);
     }
-    return firstCover;
+    return posterPath;
   }
 
   /// 对某路径推导批量/别名缓存 key（= 目录+文件合并解析后的主标题，可空）。UI 弹窗
@@ -512,13 +542,13 @@ class PosterScraperService {
 
   // ── 内部实现 ───────────────────────────────────────────────────
 
-  /// 逐组流水线：保护线过滤 → sidecar（组内第一个可覆盖成员的目录）→ 组一次匹配
-  /// （decisionCache → alias → 逐源）→ high 组内分发 / medium 待确认。
-  /// 返回 (组结果, 可覆盖成员 uid 列表)。
+  /// 逐组流水线（三分支，见 [scrapeLibrary] 注释）：合集组 → 合集级封面；单本组
+  /// → 该书封面；目录多成员组 → 整组跳过。返回 (组结果, 可覆盖成员 uid 列表；
+  /// 合集组/跳过组恒为空)。
   Future<(ScrapeOutcome, List<String>)> _scrapeGroup(
     ScrapeGroup group, {
     required bool rescrapeScraped,
-    required Map<String, MatchDecision?> decisionCache,
+    required Map<String, (MatchDecision?, bool)> decisionCache,
   }) async {
     // ① 成员资格：远端/流媒体/空路径不参与（分组时这类恒为单本组）。
     final List<VideoBookRow> local = <VideoBookRow>[
@@ -532,115 +562,188 @@ class PosterScraperService {
       );
     }
 
-    // ② 批量保护线按成员过滤：只覆盖 autoFrame（或无记录）成员。
-    final List<VideoBookRow> coverable = <VideoBookRow>[];
-    CoverOrigin? firstProtected;
-    for (final VideoBookRow b in local) {
-      final CoverMeta? meta = await _coverMeta.get(b.bookUid);
-      final CoverOrigin origin = meta?.origin ?? CoverOrigin.autoFrame;
-      final bool protectedOrigin = origin == CoverOrigin.manual ||
-          origin == CoverOrigin.sidecar ||
-          (origin == CoverOrigin.scraped && !rescrapeScraped);
-      if (protectedOrigin) {
-        firstProtected ??= origin;
-      } else {
-        coverable.add(b);
-      }
-    }
-    if (coverable.isEmpty) {
-      return (
-        ScrapeSkippedProtected(firstProtected ?? CoverOrigin.manual),
-        const <String>[],
+    // ② DB 合集组：海报只落合集级封面，成员抽帧一律不动。
+    final int? collectionId = group.collectionId;
+    if (collectionId != null) {
+      final ScrapeOutcome outcome = await _scrapeCollectionGroup(
+        group,
+        collectionId,
+        local,
+        rescrapeScraped: rescrapeScraped,
+        decisionCache: decisionCache,
       );
+      return (outcome, const <String>[]);
     }
-    final List<String> coverableUids = <String>[
-      for (final VideoBookRow b in coverable) b.bookUid,
-    ];
 
-    // ③ sidecar：组内第一个可覆盖成员的目录，一次扫描应用到全部可覆盖成员。
+    // ③ 目录多成员组（散集、无 DB 合集）：没有合集级封面位，整组跳过。
+    if (local.length > 1) {
+      return (ScrapeSkippedDirectoryGroup(local.length), const <String>[]);
+    }
+
+    // ④ 单本组：原有单书落封面路径（含 playlistJson 多集单书——卡片即系列）。
+    return _scrapeSoloBook(
+      group,
+      local.single,
+      rescrapeScraped: rescrapeScraped,
+      decisionCache: decisionCache,
+    );
+  }
+
+  /// 合集组流水线：合集级保护线（`collection:<id>` meta）→ sidecar（首个本地成员
+  /// 目录的海报设为合集封面）→ 组一次匹配 → high/别名命中落合集封面 / medium 待确认。
+  Future<ScrapeOutcome> _scrapeCollectionGroup(
+    ScrapeGroup group,
+    int collectionId,
+    List<VideoBookRow> local, {
+    required bool rescrapeScraped,
+    required Map<String, (MatchDecision?, bool)> decisionCache,
+  }) async {
+    final String metaKey = CollectionPosterStore.metaKey(collectionId);
+    final CoverMeta? meta = await _coverMeta.get(metaKey);
+    final CoverOrigin origin = meta?.origin ?? CoverOrigin.autoFrame;
+    final bool protectedOrigin = origin == CoverOrigin.manual ||
+        origin == CoverOrigin.sidecar ||
+        (origin == CoverOrigin.scraped && !rescrapeScraped);
+    if (protectedOrigin) return ScrapeSkippedProtected(origin);
+
+    // sidecar：首个本地成员目录的 poster.jpg 设为合集封面（成员不动）。
     if (_enableSidecar) {
       final SidecarResult sidecar =
-          await SidecarScanner.scan(coverable.first.videoPath);
+          await SidecarScanner.scan(local.first.videoPath);
       final File? poster = sidecar.posterFile;
       if (poster != null) {
-        String? firstCover;
-        for (final VideoBookRow b in coverable) {
-          final String coverPath = await _copyLocalPoster(poster, b.bookUid);
-          await _repo.updateCover(b.bookUid, coverPath);
-          await _coverMeta.set(
-            b.bookUid,
-            const CoverMeta(origin: CoverOrigin.sidecar),
-          );
-          firstCover ??= coverPath;
-        }
+        final CollectionPosterStore store =
+            CollectionPosterStore(await _coversDir());
+        final String posterPath = await store.savePoster(
+          collectionId: collectionId,
+          bytes: await poster.readAsBytes(),
+        );
+        await _coverMeta.set(
+          metaKey,
+          const CoverMeta(origin: CoverOrigin.sidecar),
+        );
+        return ScrapeApplied(
+          coverPath: posterPath,
+          origin: CoverOrigin.sidecar,
+        );
+      }
+    }
+
+    final ParsedMediaName? parsed = group.parsed;
+    if (parsed == null || parsed.title.isEmpty) {
+      return const ScrapeSkippedNoTitle();
+    }
+    final (MatchDecision?, bool) resolved =
+        await _resolveDecisionCached(parsed, decisionCache);
+    final MatchDecision? best = resolved.$1;
+    if (best == null) return const ScrapeNoMatch();
+    if (resolved.$2 || best.confidence == MatchConfidence.high) {
+      final String posterPath = await applyCandidateToCollection(
+        collectionId: collectionId,
+        candidate: best.candidate,
+        aliasKey: parsed.title,
+      );
+      return ScrapeApplied(
+        coverPath: posterPath,
+        origin: CoverOrigin.scraped,
+        decision: best,
+      );
+    }
+    if (best.confidence == MatchConfidence.medium) {
+      return ScrapeNeedsConfirm(<MatchDecision>[best]);
+    }
+    return const ScrapeNoMatch();
+  }
+
+  /// 单本组流水线：书级保护线 → sidecar → 组一次匹配 → high/别名命中落该书封面。
+  Future<(ScrapeOutcome, List<String>)> _scrapeSoloBook(
+    ScrapeGroup group,
+    VideoBookRow book, {
+    required bool rescrapeScraped,
+    required Map<String, (MatchDecision?, bool)> decisionCache,
+  }) async {
+    final CoverMeta? meta = await _coverMeta.get(book.bookUid);
+    final CoverOrigin origin = meta?.origin ?? CoverOrigin.autoFrame;
+    final bool protectedOrigin = origin == CoverOrigin.manual ||
+        origin == CoverOrigin.sidecar ||
+        (origin == CoverOrigin.scraped && !rescrapeScraped);
+    if (protectedOrigin) {
+      return (ScrapeSkippedProtected(origin), const <String>[]);
+    }
+    final List<String> coverableUids = <String>[book.bookUid];
+
+    if (_enableSidecar) {
+      final SidecarResult sidecar = await SidecarScanner.scan(book.videoPath);
+      final File? poster = sidecar.posterFile;
+      if (poster != null) {
+        final String coverPath = await _copyLocalPoster(poster, book.bookUid);
+        await _repo.updateCover(book.bookUid, coverPath);
+        await _coverMeta.set(
+          book.bookUid,
+          const CoverMeta(origin: CoverOrigin.sidecar),
+        );
         return (
-          ScrapeApplied(coverPath: firstCover!, origin: CoverOrigin.sidecar),
+          ScrapeApplied(coverPath: coverPath, origin: CoverOrigin.sidecar),
           coverableUids,
         );
       }
     }
 
-    // ④ 组代表解析不出标题：整组跳过。
     final ParsedMediaName? parsed = group.parsed;
     if (parsed == null || parsed.title.isEmpty) {
       return (const ScrapeSkippedNoTitle(), coverableUids);
     }
-    final String cacheKey = parsed.title;
-
-    // ⑤ 组一次匹配：跨组同标题去重缓存 → 用户纠错别名（命中强制 high 应用）→ 逐源。
-    if (!decisionCache.containsKey(cacheKey)) {
-      final (ScrapeSource, String)? alias = await _aliasCache.get(cacheKey);
-      ScrapeCandidate? aliasCandidate;
-      if (alias != null) {
-        aliasCandidate =
-            await _resolveAliasCandidate(parsed, alias.$1, alias.$2);
-      }
-      if (aliasCandidate != null) {
-        final MatchDecision aliasDecision = MatchScorer.score(
-          parsed: parsed,
-          candidate: aliasCandidate,
-        );
-        decisionCache[cacheKey] = aliasDecision;
-        final String? firstCover = await applyCandidateToBooks(
-          bookUids: coverableUids,
-          candidate: aliasCandidate,
-          aliasKey: cacheKey,
-        );
-        return (
-          ScrapeApplied(
-            coverPath: firstCover!,
-            origin: CoverOrigin.scraped,
-            decision: aliasDecision,
-          ),
-          coverableUids,
-        );
-      }
-      decisionCache[cacheKey] = await _resolveBestDecision(parsed);
-    }
-    final MatchDecision? best = decisionCache[cacheKey];
-
-    // ⑥ 落地：high 下载一次分发全组 / medium 一组一条待确认 / 其余保留抽帧。
+    final (MatchDecision?, bool) resolved =
+        await _resolveDecisionCached(parsed, decisionCache);
+    final MatchDecision? best = resolved.$1;
     if (best == null) return (const ScrapeNoMatch(), coverableUids);
-    switch (best.confidence) {
-      case MatchConfidence.high:
-        final String? firstCover = await applyCandidateToBooks(
-          bookUids: coverableUids,
-          candidate: best.candidate,
-          aliasKey: cacheKey,
-        );
-        return (
-          ScrapeApplied(
-            coverPath: firstCover!,
-            origin: CoverOrigin.scraped,
-            decision: best,
-          ),
-          coverableUids,
-        );
-      case MatchConfidence.medium:
-        return (ScrapeNeedsConfirm(<MatchDecision>[best]), coverableUids);
-      case MatchConfidence.low:
-        return (const ScrapeNoMatch(), coverableUids);
+    if (resolved.$2 || best.confidence == MatchConfidence.high) {
+      final String coverPath = await applyCandidateToBook(
+        bookUid: book.bookUid,
+        candidate: best.candidate,
+        aliasKey: parsed.title,
+      );
+      return (
+        ScrapeApplied(
+          coverPath: coverPath,
+          origin: CoverOrigin.scraped,
+          decision: best,
+        ),
+        coverableUids,
+      );
     }
+    if (best.confidence == MatchConfidence.medium) {
+      return (ScrapeNeedsConfirm(<MatchDecision>[best]), coverableUids);
+    }
+    return (const ScrapeNoMatch(), coverableUids);
+  }
+
+  /// 组一次匹配（跨组同标题去重）：缓存命中直取；否则先查用户纠错别名（命中 =
+  /// 强制应用，`$2` 为 true）、再逐源匹配。结果（含 null）入缓存。
+  Future<(MatchDecision?, bool)> _resolveDecisionCached(
+    ParsedMediaName parsed,
+    Map<String, (MatchDecision?, bool)> decisionCache,
+  ) async {
+    final String cacheKey = parsed.title;
+    final (MatchDecision?, bool)? hit = decisionCache[cacheKey];
+    if (hit != null) return hit;
+    final (ScrapeSource, String)? alias = await _aliasCache.get(cacheKey);
+    if (alias != null) {
+      final ScrapeCandidate? aliasCandidate =
+          await _resolveAliasCandidate(parsed, alias.$1, alias.$2);
+      if (aliasCandidate != null) {
+        final (MatchDecision?, bool) forced = (
+          MatchScorer.score(parsed: parsed, candidate: aliasCandidate),
+          true,
+        );
+        decisionCache[cacheKey] = forced;
+        return forced;
+      }
+    }
+    final (MatchDecision?, bool) resolved =
+        (await _resolveBestDecision(parsed), false);
+    decisionCache[cacheKey] = resolved;
+    return resolved;
   }
 
   /// 把已解析出的最佳决策落地为结果（high 应用 / medium 待确认 / 其余保留抽帧）。

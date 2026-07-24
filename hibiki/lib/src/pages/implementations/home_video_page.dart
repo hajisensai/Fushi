@@ -19,9 +19,11 @@ import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/cover_ui/poster_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/poster_match_dialog.dart';
+import 'package:hibiki/src/media/video/cover_ui/batch_scrape_controller.dart';
 import 'package:hibiki/src/media/video/cover_ui/batch_scrape_dialog.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
+import 'package:hibiki/src/media/video/scraper/collection_poster_store.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/offline_index.dart';
 import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
@@ -220,9 +222,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Map<String, DateTime> _watchAtByUid = const <String, DateTime>{};
   Map<String, DateTime> _legacyWatchAtByTitle = const <String, DateTime>{};
 
+  /// 封面根目录缓存（build 里同步判合集海报 `collections/collection_<id>.jpg`
+  /// 是否存在需要同步路径；initState 异步取一次）。
+  Directory? _coversDirCache;
+
+  /// 批量刮削后台运行的上一帧阶段（检测 running→done 边沿触发一次刷新，
+  /// 后台完成时新封面立即上卡）。
+  BatchScrapePhase _lastBatchPhase = BatchScrapeController.instance.phase;
+
   @override
   void initState() {
     super.initState();
+    unawaited(VideoStorage.coversDir().then((Directory d) {
+      if (mounted) setState(() => _coversDirCache = d);
+    }));
+    // 后台批量刮削：页头角标随控制器重绘；running→done 边沿刷新一次库页。
+    BatchScrapeController.instance.addListener(_onBatchScrapeChanged);
     // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
     _future = widget.repo.listForShelf();
     _remoteFuture = _loadRemoteVideos();
@@ -253,8 +268,24 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
   }
 
+  /// 批量刮削控制器变化：running→done 边沿刷新库页（后台完成的封面立即可见）；
+  /// 其余变化只重绘页头角标。
+  void _onBatchScrapeChanged() {
+    if (!mounted) return;
+    final BatchScrapePhase phase = BatchScrapeController.instance.phase;
+    final bool justDone = _lastBatchPhase == BatchScrapePhase.running &&
+        phase == BatchScrapePhase.done;
+    _lastBatchPhase = phase;
+    if (justDone) {
+      _refresh();
+    } else {
+      setState(() {});
+    }
+  }
+
   @override
   void dispose() {
+    BatchScrapeController.instance.removeListener(_onBatchScrapeChanged);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     _videoUidsSub?.cancel();
     assert(() {
@@ -344,6 +375,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         ShelfSortMode.fromName(appModel.prefsRepo.videoSortModeName);
     final List<MediaCollectionRow> collections =
         await db.getAllMediaCollections();
+    // 合集海报孤儿 GC：合集删除入口分散（解散/合并/详情删除/清空自删/同步镜像），
+    // 不逐点挂钩子——每次加载合集字典后对照在库 id 清一遍 `collections/` 子目录
+    // 即覆盖全部路径并自愈历史遗留（目录只有少量小文件，开销可忽略）。best-effort。
+    unawaited(_gcCollectionPosters(
+      <int>{for (final MediaCollectionRow c in collections) c.id},
+    ));
     final Map<String, int> primaryMap =
         await db.getPrimaryCollectionIdByEntry();
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
@@ -383,6 +420,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         _watchAtByUid = watchByUid;
         _legacyWatchAtByTitle = legacyByTitle;
       });
+    }
+  }
+
+  /// 合集海报孤儿清理：删掉 `collections/` 里 id 已不在库的海报文件，并清对应
+  /// `cover_meta.json` 的 `collection:<id>` 记录。失败静默（下次加载再清）。
+  Future<void> _gcCollectionPosters(Set<int> liveCollectionIds) async {
+    try {
+      final Directory covers = await VideoStorage.coversDir();
+      final List<int> removed = await CollectionPosterStore(covers)
+          .gcOrphans(liveCollectionIds: liveCollectionIds);
+      if (removed.isEmpty) return;
+      final CoverMetaStore meta = CoverMetaStore(covers);
+      for (final int id in removed) {
+        await meta.remove(CollectionPosterStore.metaKey(id));
+      }
+    } catch (_) {
+      // best-effort：GC 失败不影响库页加载。
     }
   }
 
@@ -1537,7 +1591,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             icon: Icons.image_search,
             onPressed: () {
               Navigator.pop(dialogContext);
-              _openPosterMatch(book);
+              _openPosterMatch(
+                book,
+                collectionId:
+                    _primaryCollectionByEntry['video|${book.bookUid}'],
+              );
             },
           ),
           DialogQuickAction(
@@ -1683,26 +1741,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 本视频所属合集的全部成员 uid（用于「同时应用到本合集全部 N 集」）；不属任何合集
-  /// 时返回仅含自身的单元素列表。
-  Future<List<String>> _collectionMemberUids(String bookUid) async {
-    final int? collectionId = _primaryCollectionByEntry['video|$bookUid'];
-    if (collectionId == null) return <String>[bookUid];
-    final List<MediaCollectionItemRow> items =
-        await ref.read(appProvider).database.getCollectionItems(collectionId);
-    final List<String> uids = <String>[
-      for (final MediaCollectionItemRow m in items)
-        if (m.mediaType == 'video') m.entryKey,
-    ];
-    return uids.isEmpty ? <String>[bookUid] : uids;
-  }
-
   /// 长按菜单「在线匹配海报」：组装 service → 弹单本匹配弹窗（预填解析标题）。
-  /// [memberUids] 非 null 时（批量弹窗「待确认」组）直接用该组可覆盖成员，
-  /// 不再按合集归属另查。
+  /// [collectionId]：该书所属 DB 合集（长按入口按折叠归属查；批量「待确认」行
+  /// 直接传该组的 collectionId，含「显式 null = 目录散集成员，只应用到该书」）。
   Future<void> _openPosterMatch(
     VideoBookRow book, {
-    List<String>? memberUids,
+    required int? collectionId,
   }) async {
     final ({
       PosterScraperService service,
@@ -1710,14 +1754,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       Directory scraperDir,
     }) bundle = await _scraperBundle();
     if (!mounted) return;
-    final List<String> members =
-        memberUids ?? await _collectionMemberUids(book.bookUid);
-    if (!mounted) return;
     await showPosterMatchDialog(
       context: context,
       service: bundle.service,
       book: book,
-      collectionMemberUids: members,
+      collectionId: collectionId,
       onApplied: _refresh,
     );
   }
@@ -1742,8 +1783,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       books: local,
       offlineDbDir: bundle.scraperDir,
       rebuildWithOffline: bundle.rebuild,
-      onOpenManual: (VideoBookRow book, List<String> uids) =>
-          _openPosterMatch(book, memberUids: uids),
+      onOpenManual: (VideoBookRow book, int? collectionId) =>
+          _openPosterMatch(book, collectionId: collectionId),
       onFinished: _refresh,
     );
   }
@@ -2533,10 +2574,28 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 合集卡封面借用：首个有本地封面的成员 → 首个远端成员封面（互联/云 fetch 路径）
-  /// → 无封面占位（与散卡同款 surfaceContainer + movie 图标）。组内序优先，故
-  /// 默认就是 [CollectionGroup.coverItem]（首成员）的封面，成员缺封面时向后借。
+  /// 合集卡封面：**合集级海报优先**（刮削/手动设的 `collections/collection_<id>.jpg`，
+  /// 存在即用——用户拍板 2026-07-24「只把合集封面改成海报，每集保留抽帧」）→
+  /// 首个有本地封面的成员 → 首个远端成员封面（互联/云 fetch 路径）→ 无封面占位
+  /// （与散卡同款 surfaceContainer + movie 图标）。成员借用组内序优先，故默认是
+  /// [CollectionGroup.coverItem]（首成员）的封面，成员缺封面时向后借。
+  /// 某合集的合集级海报绝对路径（文件存在才返回；封面目录未就绪/无海报返回 null，
+  /// 走成员封面借用回退）。路径约定单一真相源在 [CollectionPosterStore.fileFor]。
+  String? _collectionPosterPath(int collectionId) {
+    final Directory? covers = _coversDirCache;
+    if (covers == null) return null;
+    final File poster = CollectionPosterStore(covers).fileFor(collectionId);
+    return poster.existsSync() ? poster.path : null;
+  }
+
   Widget _buildCollectionCover(CollectionGroup<_VideoSlot> group) {
+    final String? posterPath = _collectionPosterPath(group.collection!.id);
+    if (posterPath != null) {
+      return PosterCoverImage(
+        image: resizedFileImage(File(posterPath)),
+        errorBuilder: (BuildContext _) => _coverPlaceholder(),
+      );
+    }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
       final VideoBookRow? local = it.payload.local;
       if (local == null) continue;
@@ -2819,13 +2878,32 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           onTap: _openStatistics,
         ),
         // 批量匹配海报：页级工具栏是「作用于整库」动作的自然归宿（与导入/统计/刷新
-        // 并列），故放页头而非长按单卡菜单（那是单本动作）。
-        HibikiIconButton(
-          key: const ValueKey<String>('home_video_batch_scrape'),
-          tooltip: t.video_scrape_batch_title,
-          label: t.video_scrape_batch_title,
-          icon: Icons.auto_fix_high_outlined,
-          onTap: _openBatchScrape,
+        // 并列），故放页头而非长按单卡菜单（那是单本动作）。后台运行中叠一枚进行中
+        // 角标（[_onBatchScrapeChanged] 已监听控制器触发重绘）；此时点击 = 重新打开
+        // 进度弹窗续看（[BatchScrapeController.start] 运行中拒绝重开，不会重跑）。
+        Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            HibikiIconButton(
+              key: const ValueKey<String>('home_video_batch_scrape'),
+              tooltip: t.video_scrape_batch_title,
+              label: t.video_scrape_batch_title,
+              icon: Icons.auto_fix_high_outlined,
+              onTap: _openBatchScrape,
+            ),
+            if (BatchScrapeController.instance.isRunning)
+              const Positioned(
+                top: 2,
+                right: 2,
+                child: IgnorePointer(
+                  child: SizedBox(
+                    width: 10,
+                    height: 10,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+          ],
         ),
         // UI 巡检 PR-4：桌面无触屏下拉手势，给「强制刷新远端清单」一个鼠标可达
         // 的显式入口（与下拉刷新同一汇聚点 [_pullToRefresh]，失败提示一致）。

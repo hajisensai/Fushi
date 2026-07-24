@@ -49,6 +49,32 @@ class PosterDownloader {
         p.join(coversDir.path, videoCoverFileName(bookUid));
     final File tmpFile = File('$finalPath.tmp');
 
+    final List<int> bytes = await downloadPosterBytes(url: url);
+
+    // 原子落地：先写 .tmp，再删旧正式文件后 rename（Windows rename 不覆盖）。
+    try {
+      if (await tmpFile.exists()) await tmpFile.delete();
+      await tmpFile.writeAsBytes(bytes, flush: true);
+      final File finalFile = File(finalPath);
+      if (await finalFile.exists()) await finalFile.delete();
+      await tmpFile.rename(finalPath);
+    } catch (e) {
+      // 写盘/替换失败：清 .tmp、不动旧封面，抛统一异常。
+      try {
+        if (await tmpFile.exists()) await tmpFile.delete();
+      } catch (_) {
+        // .tmp 清理失败不掩盖原始写盘异常。
+      }
+      throw ScrapeNetworkException('Poster write failed: $e');
+    }
+
+    return finalPath;
+  }
+
+  /// 下载并校验一张海报，返回原始字节（不落盘）。合集级海报（落
+  /// `collections/collection_<id>.jpg`，见 CollectionPosterStore）与单本封面
+  /// 共用同一网络/校验路径。校验失败/网络异常抛 [ScrapeNetworkException]。
+  Future<List<int>> downloadPosterBytes({required String url}) async {
     final http.Response response;
     try {
       response = await _client.get(Uri.parse(url)).timeout(_timeout);
@@ -73,25 +99,7 @@ class PosterDownloader {
         '${contentType ?? 'unknown'})',
       );
     }
-
-    // 原子落地：先写 .tmp，再删旧正式文件后 rename（Windows rename 不覆盖）。
-    try {
-      if (await tmpFile.exists()) await tmpFile.delete();
-      await tmpFile.writeAsBytes(bytes, flush: true);
-      final File finalFile = File(finalPath);
-      if (await finalFile.exists()) await finalFile.delete();
-      await tmpFile.rename(finalPath);
-    } catch (e) {
-      // 写盘/替换失败：清 .tmp、不动旧封面，抛统一异常。
-      try {
-        if (await tmpFile.exists()) await tmpFile.delete();
-      } catch (_) {
-        // .tmp 清理失败不掩盖原始写盘异常。
-      }
-      throw ScrapeNetworkException('Poster write failed: $e');
-    }
-
-    return finalPath;
+    return bytes;
   }
 
   /// 关闭内部 client（若为默认自建）。
