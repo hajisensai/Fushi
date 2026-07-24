@@ -44,7 +44,9 @@ void main() {
     });
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir);
+          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+      // v54：游戏库真相源是 Drift 表，仓储绑 AppModel.database，测试必须注入。
+      ..wireDatabaseForTesting(db);
     await appModel.setGalgames(games);
     return appModel;
   }
