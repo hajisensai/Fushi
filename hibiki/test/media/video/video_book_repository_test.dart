@@ -277,6 +277,39 @@ void main() {
     expect((await repo.getByBookUid('video/d'))!.delayMs, 1200);
   });
 
+  test(
+      'collection-level audio track + subtitle delay round-trip '
+      '(schema v52, 同系列记忆)', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+
+    final int cid =
+        await db.createMediaCollection('シリーズ', collectionType: 'playlist');
+
+    // 无损迁移语义：新合集两列默认 NULL（系列内没人设过 → 加载回退各集 per-book）。
+    final col0 = await repo.getMediaCollectionById(cid);
+    expect(col0!.audioTrackId, isNull);
+    expect(col0.subtitleDelayMs, isNull);
+
+    // 系列级音轨写穿 + 读回（合集内任一集选轨即全系列共享）。
+    await repo.updateCollectionAudioTrackId(cid, 'jpn-2');
+    expect((await repo.getMediaCollectionById(cid))!.audioTrackId, 'jpn-2');
+
+    // 系列级调轴写穿（负值 + 显式 0，0 区别于 null「没设过」）+ 读回。
+    await repo.updateCollectionSubtitleDelayMs(cid, -1500);
+    expect((await repo.getMediaCollectionById(cid))!.subtitleDelayMs, -1500);
+    await repo.updateCollectionSubtitleDelayMs(cid, 0);
+    expect((await repo.getMediaCollectionById(cid))!.subtitleDelayMs, 0);
+
+    // 清回 NULL（加载回退 per-book / libmpv 默认 / 0）。
+    await repo.updateCollectionAudioTrackId(cid, null);
+    await repo.updateCollectionSubtitleDelayMs(cid, null);
+    final colN = await repo.getMediaCollectionById(cid);
+    expect(colN!.audioTrackId, isNull);
+    expect(colN.subtitleDelayMs, isNull);
+  });
+
   test('deleteVideoBook removes the row AND its subtitle cue rows (BUG-276)',
       () async {
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());

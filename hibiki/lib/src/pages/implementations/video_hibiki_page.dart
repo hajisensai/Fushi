@@ -50,6 +50,7 @@ import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
 import 'package:hibiki/src/media/video/video_resource_check.dart';
 import 'package:hibiki/src/media/video/video_long_press_speed_badge.dart';
 import 'package:hibiki/src/media/video/video_seek_indicator_label.dart';
+import 'package:hibiki/src/media/video/series_playback_prefs.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_chrome_colors.dart';
@@ -1882,6 +1883,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // VideoBooks 行，当前集照单视频路径加载（widget.bookUid 恒为当前集）。
     final int? collectionId = widget.playlistCollectionId;
     if (collectionId != null) {
+      final MediaCollectionRow? col =
+          await widget.repo.getMediaCollectionById(collectionId);
+      // 同系列音轨/调轴记忆（schema v52）：系列（合集）级偏好优先，回退本集 per-book
+      // 值（兼容统一合集迁移前已存的各集值，Never break userspace）。合集内任一集
+      // 选音轨/调轴即写系列级，其余集加载时（含从书架直接进某集）共享同一值 —— 恢复
+      // 统一合集迁移前「多集共享一行 → 整片一个音轨/一个调轴」的行为。
+      _currentAudioTrackId =
+          effectiveSeriesAudioTrackId(col?.audioTrackId, row.audioTrackId);
+      _delayMs = effectiveSeriesDelayMs(col?.subtitleDelayMs, row.delayMs);
       final List<MediaCollectionItemRow> members =
           await widget.repo.getCollectionItems(collectionId);
       final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
@@ -1898,8 +1908,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _currentEpisode = idx >= 0 ? idx : 0;
       if (refs.length > 1) {
         // TODO-761（方案 B）：记系列名（合集名），制卡 documentTitle 据此拼「系列名 - 剧集名」。
-        final MediaCollectionRow? col =
-            await widget.repo.getMediaCollectionById(collectionId);
         _playlistTitle = col?.name;
       }
     }
@@ -5211,7 +5219,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       t.video_subtitle_delay_osd(ms: signed),
       icon: Icons.sync_outlined,
     );
-    await widget.repo.updateDelayMs(widget.bookUid, clamped);
+    // 同系列调轴记忆（schema v52）：合集内调轴写系列级，全系列共享（换集/从书架重进
+    // 任一集都读到同一值）；单文件视频（无合集，含远端 collectionId==null）仍走
+    // per-book，行为与旧版一致。所有调轴入口（z/x 微调、asbplayer 对齐、面板滑条/
+    // 输入/自动对轴）都汇聚到此，写入分流一处覆盖全部。
+    final int? collectionId = widget.playlistCollectionId;
+    if (collectionId != null) {
+      await widget.repo.updateCollectionSubtitleDelayMs(collectionId, clamped);
+    } else {
+      await widget.repo.updateDelayMs(widget.bookUid, clamped);
+    }
     if (mounted) setState(() {});
   }
 

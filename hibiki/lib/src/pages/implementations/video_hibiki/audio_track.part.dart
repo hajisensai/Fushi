@@ -50,7 +50,15 @@ extension _VideoAudioTrack on _VideoHibikiPageState {
     AudioTrack track,
   ) async {
     await controller.selectAudioTrack(track);
-    await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
+    // 同系列音轨记忆（schema v52）：合集内选音轨写系列级，全系列共享（换集/从书架
+    // 重进任一集都读到）；单文件视频（无合集，含远端 collectionId==null）仍走
+    // per-book，行为与旧版一致。
+    final int? collectionId = widget.playlistCollectionId;
+    if (collectionId != null) {
+      await widget.repo.updateCollectionAudioTrackId(collectionId, track.id);
+    } else {
+      await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
+    }
     if (!mounted) return;
     _rebuild(() => _currentAudioTrackId = track.id);
     _showOsd(

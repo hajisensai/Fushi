@@ -1,0 +1,14 @@
+## BUG-1051 · 同系列音轨选择与字幕调轴记忆丢失（统一合集迁移回归）
+- **报告**：2026-07-24（用户：恢复同系列音轨选择和字幕调轴记忆功能）
+- **真实性**：✅ 真 bug（回归）。根因：偏好只按 per-`bookUid` 存取，统一合集迁移后每集是独立 `VideoBooks` 行，跨集不再共享。
+  - 写入：`hibiki/lib/src/pages/implementations/video_hibiki/audio_track.part.dart:53`（`updateAudioTrackId(widget.bookUid,…)`）、`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:5214`（`updateDelayMs(widget.bookUid,…)`）——均只写当前集行。
+  - 读取：`video_hibiki_page.dart:1870-1871`（`_currentAudioTrackId = row.audioTrackId` / `_delayMs = row.delayMs`）——只读当前集自己那行。
+  - 换集：`video_hibiki/episode.part.dart:151-156` `pushReplacement` 到 `VideoHibikiPage.neutralized(bookUid: targetUid,…)`，兄弟集行默认 `audioTrackId=null` / `delayMs=0` → 记忆丢失。
+  - `tables.dart:454/458` 注释「多集播放列表换集时复用同一值」是**旧单行 playlist 模型**残留（stale）；统一合集迁移（`docs/specs/2026-07-11-unified-collections-plan.md`）把每集拆成独立行后该假设不再成立。原始功能 commit `6268fd507`（音轨）/`de7a75c90a`（调轴）在旧模型下天然「整片一个值」，迁移打断了跨集共享。
+- **[x] ① 已修复** — 把偏好提升到系列（合集）容器：`MediaCollections` 加 `audioTrackId` / `subtitleDelayMs` 两列（schema v51→v52，nullable 无 default 无损迁移，`database.dart` `from < 52` 块）。写入分流——合集内选音轨/调轴写系列级（`updateCollectionAudioTrackId` / `updateCollectionSubtitleDelayMs`），单文件视频（含远端 `collectionId==null`）仍走 per-book。加载 `video_hibiki_page.dart` 合集分支用纯函数 `effectiveSeriesAudioTrackId` / `effectiveSeriesDelayMs`（`series_playback_prefs.dart`）解析「系列级优先、回退 per-book」，兼容迁移前已存的各集值（Never break userspace）。换集因 `pushReplacement` 已带 `playlistCollectionId`，值在系列容器 → 每集加载自然共享，**换集代码零改动**。语义：整个系列共享一个值（用户确认）。提交：<PENDING>
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/video/series_playback_prefs_test.dart`（纯函数：系列级优先 / null 回退 per-book / `delayMs` 显式 0 区别于「没设过」的 null）。
+  - `hibiki/test/media/video/video_book_repository_test.dart`（新增 collection-level round-trip：`updateCollectionAudioTrackId` / `updateCollectionSubtitleDelayMs` 写穿读回、显式 0、清 null）。
+  - `hibiki/test/database/migration_test.dart` 等 schema 断言同步 51→52。
+  - 提交：<PENDING>
+- **备注**：远端互联视频（`_isRemote`）不在范围——`_delayMs = info.delayMs` 跟随 host 下发（BUG-996），设计如此，本地无 `VideoBooks` 行也无合集。真机验收路径：多集视频合集内 A 集选日语音轨/调轴 +1500ms → 换到 B 集应沿用 → 退出后从书架直接点 C 集进入也应沿用。

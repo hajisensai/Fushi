@@ -325,6 +325,18 @@ class VideoBookRepository {
   Future<void> updateAudioTrackId(String bookUid, String? audioTrackId) =>
       _db.updateVideoBookAudioTrackId(bookUid, audioTrackId);
 
+  /// 更新系列（合集）级音轨偏好（schema v52，同系列音轨记忆）。合集内任一集选音轨
+  /// 写这里，全系列共享；null=清除（加载回退各集 per-book / libmpv 默认）。
+  Future<void> updateCollectionAudioTrackId(
+          int collectionId, String? audioTrackId) =>
+      _db.updateMediaCollectionAudioTrackId(collectionId, audioTrackId);
+
+  /// 更新系列（合集）级字幕调轴（音画延迟毫秒，schema v52，同系列调轴记忆）。合集内
+  /// 任一集调轴写这里，全系列共享；null=清除（加载回退各集 per-book / 0）。
+  Future<void> updateCollectionSubtitleDelayMs(
+          int collectionId, int? delayMs) =>
+      _db.updateMediaCollectionSubtitleDelayMs(collectionId, delayMs);
+
   /// 更新视频封面图绝对路径（书架/视频库长按菜单手动设置封面）。
   Future<void> updateCover(String bookUid, String coverPath) =>
       _db.updateVideoBookCover(bookUid, coverPath);
