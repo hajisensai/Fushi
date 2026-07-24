@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 41718 (2454 per locale)
+/// Strings: 42007 (2471 per locale)
 ///
-/// Built on 2026-07-24 at 15:00 UTC
+/// Built on 2026-07-24 at 17:57 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -40,11 +40,12 @@ enum AppLocale with BaseAppLocale<AppLocale, _StringsEn> {
   zhCn(languageCode: 'zh', countryCode: 'CN', build: _StringsZhCn.build),
   zhHk(languageCode: 'zh', countryCode: 'HK', build: _StringsZhHk.build);
 
-  const AppLocale(
-      {required this.languageCode,
-      this.scriptCode,
-      this.countryCode,
-      required this.build}); // ignore: unused_element
+  const AppLocale({
+    required this.languageCode,
+    this.scriptCode,
+    this.countryCode,
+    required this.build,
+  }); // ignore: unused_element
 
   @override
   final String languageCode;
@@ -96,7 +97,7 @@ class Translations {
 class TranslationProvider
     extends BaseTranslationProvider<AppLocale, _StringsEn> {
   TranslationProvider({required super.child})
-      : super(settings: LocaleSettings.instance);
+    : super(settings: LocaleSettings.instance);
 
   static InheritedLocaleData<AppLocale, _StringsEn> of(BuildContext context) =>
       InheritedLocaleData.of<AppLocale, _StringsEn>(context);
@@ -120,48 +121,53 @@ class LocaleSettings extends BaseFlutterLocaleSettings<AppLocale, _StringsEn> {
   // static aliases (checkout base methods for documentation)
   static AppLocale get currentLocale => instance.currentLocale;
   static Stream<AppLocale> getLocaleStream() => instance.getLocaleStream();
-  static AppLocale setLocale(AppLocale locale,
-          {bool? listenToDeviceLocale = false}) =>
-      instance.setLocale(locale, listenToDeviceLocale: listenToDeviceLocale);
-  static AppLocale setLocaleRaw(String rawLocale,
-          {bool? listenToDeviceLocale = false}) =>
-      instance.setLocaleRaw(rawLocale,
-          listenToDeviceLocale: listenToDeviceLocale);
+  static AppLocale setLocale(
+    AppLocale locale, {
+    bool? listenToDeviceLocale = false,
+  }) => instance.setLocale(locale, listenToDeviceLocale: listenToDeviceLocale);
+  static AppLocale setLocaleRaw(
+    String rawLocale, {
+    bool? listenToDeviceLocale = false,
+  }) => instance.setLocaleRaw(
+    rawLocale,
+    listenToDeviceLocale: listenToDeviceLocale,
+  );
   static AppLocale useDeviceLocale() => instance.useDeviceLocale();
   @Deprecated('Use [AppLocaleUtils.supportedLocales]')
   static List<Locale> get supportedLocales => instance.supportedLocales;
   @Deprecated('Use [AppLocaleUtils.supportedLocalesRaw]')
   static List<String> get supportedLocalesRaw => instance.supportedLocalesRaw;
-  static void setPluralResolver(
-          {String? language,
-          AppLocale? locale,
-          PluralResolver? cardinalResolver,
-          PluralResolver? ordinalResolver}) =>
-      instance.setPluralResolver(
-        language: language,
-        locale: locale,
-        cardinalResolver: cardinalResolver,
-        ordinalResolver: ordinalResolver,
-      );
+  static void setPluralResolver({
+    String? language,
+    AppLocale? locale,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) => instance.setPluralResolver(
+    language: language,
+    locale: locale,
+    cardinalResolver: cardinalResolver,
+    ordinalResolver: ordinalResolver,
+  );
 }
 
 /// Provides utility functions without any side effects.
 class AppLocaleUtils extends BaseAppLocaleUtils<AppLocale, _StringsEn> {
   AppLocaleUtils._()
-      : super(baseLocale: _baseLocale, locales: AppLocale.values);
+    : super(baseLocale: _baseLocale, locales: AppLocale.values);
 
   static final instance = AppLocaleUtils._();
 
   // static aliases (checkout base methods for documentation)
   static AppLocale parse(String rawLocale) => instance.parse(rawLocale);
-  static AppLocale parseLocaleParts(
-          {required String languageCode,
-          String? scriptCode,
-          String? countryCode}) =>
-      instance.parseLocaleParts(
-          languageCode: languageCode,
-          scriptCode: scriptCode,
-          countryCode: countryCode);
+  static AppLocale parseLocaleParts({
+    required String languageCode,
+    String? scriptCode,
+    String? countryCode,
+  }) => instance.parseLocaleParts(
+    languageCode: languageCode,
+    scriptCode: scriptCode,
+    countryCode: countryCode,
+  );
   static AppLocale findDeviceLocale() => instance.findDeviceLocale();
   static List<Locale> get supportedLocales => instance.supportedLocales;
   static List<String> get supportedLocalesRaw => instance.supportedLocalesRaw;
@@ -173,18 +179,20 @@ class AppLocaleUtils extends BaseAppLocaleUtils<AppLocale, _StringsEn> {
 class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsEn.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.en,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ) {
+  _StringsEn.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.en,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -319,9 +327,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'This will clear all dictionary results from history. Are you sure?';
   String get copied_to_clipboard => 'Copied to clipboard.';
   String get no_text => 'No text.';
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      'The ${field} field used ${secondField} as its fallback search term.';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => 'The ${field} field used ${secondField} as its fallback search term.';
   String get no_text_to_search => 'No text to search.';
   String get image_search_label_before => 'Selecting image ';
   String get image_search_label_middle => 'out of ';
@@ -524,12 +533,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get follow_audio_on_tooltip => 'Follow audio: ON';
   String get follow_audio_off_tooltip => 'Follow audio: OFF';
   String get reading_progress => 'Reading Progress';
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Chapter ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Chapter ${idx} / ${total}${suffix} · ${pct}%';
   String page_progress({required Object current, required Object total}) =>
       'Page ${current} / ${total}';
   String get repeat_cue => 'Repeat sentence';
@@ -723,9 +732,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get book_search_no_results => 'No results found';
   String get jump_to_char => 'Jump to Character';
   String get jump_to_char_hint => 'Enter character position…';
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Current: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Current: ${current} / ${total}';
   String get error_log_empty => 'No error logs';
   String get error_log_previous_run => 'Historical logs (before last run)';
   String import_unsupported_file_format({required Object ext}) =>
@@ -908,9 +918,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get profile_rename => 'Rename';
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} matched — ${detail}';
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Rematched: ${pct}% (window: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Rematched: ${pct}% (window: ${window})';
   String get section_epub => 'EPUB Library';
   String get srt_import_hint_epub_or_srt =>
       'Pick an EPUB or subtitle file to import.';
@@ -1020,10 +1031,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String backup_export_failed({required Object message}) =>
       'Backup export failed: ${message}';
   String get backup_import_confirm_title => 'Restore Backup?';
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'This will replace all current data with the backup from ${date}.\n\n${bookCount} books, ${statsCount} statistics records.\n\nThe app will restart after restore.';
   String get backup_import_success => 'Backup restored. Restarting…';
   String backup_import_failed({required Object message}) =>
@@ -1181,11 +1193,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get debug_log_share_subject => 'hibiki Debug Log';
   String get spread_direction_rtl => 'Right to Left';
   String get spread_direction_ltr => 'Left to Right';
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} OK. Failed: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} OK. Failed: ${error}';
   String get sync_now => 'Sync now';
   String get sync_now_hint => 'Run a full two-way sync with the cloud now';
   String get sync_now_busy => 'A sync is already running';
@@ -1282,9 +1294,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String video_shader_download_done({required Object count}) =>
       'Downloaded ${count} shader(s)';
   String get video_shader_download_failed => 'Shader download failed';
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      'Downloaded ${ok} shader(s), ${failed} failed';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => 'Downloaded ${ok} shader(s), ${failed} failed';
   String get video_shader_downloaded_label => 'Downloaded';
   String get video_shader_preset_mode_a_fast =>
       'For most 1080p anime. Lighter GPU load.';
@@ -1399,8 +1412,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Texthooker is experimental — live text, lookup and card creation may be unstable.';
   String get settings_experimental_suffix => ' (experimental)';
   String get db_downgrade_title => 'Update Hibiki';
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'This database was created by a newer version of Hibiki (schema v${dbVersion}). Your current app is too old (v${appVersion}). Opening was blocked to protect your data. Please update the app and try again.';
   String get video_shader_import_from_mpv => 'Import from local mpv';
   String get video_shader_mpv_not_found => 'No local mpv shaders found';
@@ -1505,9 +1520,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get font_target_body => 'Novel Text Font';
   String get font_target_dictionary => 'Dictionary Font';
   String get video_setting_subtitle_sync_input => 'Offset (ms)';
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Subtitle attached to ${title} (${count} cues)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Subtitle attached to ${title} (${count} cues)';
   String get video_subtitle_attach_playlist_hint =>
       'Open the playlist to attach a subtitle per episode';
   String get dict_import_started =>
@@ -1672,9 +1688,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_control_slot_screen_left => 'Screen left';
   String get video_control_slot_screen_right => 'Screen right';
   String get video_control_slot_hidden => 'Removed from player';
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'Could not reach ${host}: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'Could not reach ${host}: ${reason}';
   String get shortcut_action_video_replay_previous_subtitle =>
       'Replay previous subtitle';
   String get video_control_slot_drop_hint => 'Drag a button here';
@@ -1731,9 +1748,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_subtitle_list_loading => 'Loading subtitles...';
   String update_download_source({required Object source}) =>
       'Source: ${source}';
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Downloaded: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Downloaded: ${received} / ${total}';
   String update_download_speed({required Object speed}) => 'Speed: ${speed}';
   String update_download_resume_status({required Object status}) =>
       'Resume: ${status}';
@@ -1778,20 +1796,24 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Running executable: ${path}';
   String update_install_target_dir({required Object path}) =>
       'Install target: ${path}';
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Detected install location (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Detected install location (${source}): ${path}';
   String update_install_path_mismatch({required Object warning}) =>
       'Install directory mismatch: ${warning}';
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Running Hibiki process: PID ${pid} - ${path}';
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'libmpv holder: PID ${pid} - ${path}';
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'Installer failed to replace ${path} (code ${code})';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Running Hibiki process: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'libmpv holder: PID ${pid} - ${path}';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'Installer failed to replace ${path} (code ${code})';
   String get update_install_manual_close_retry =>
       'Close Hibiki from the listed PID/path, then retry the update or run the installer again.';
   String get update_install_restart_windows_hint =>
@@ -1830,11 +1852,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get dict_update_latest => 'Already up to date.';
   String dict_update_failed({required Object error}) =>
       'Update failed: ${error}';
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} updated, ${current} up to date, ${failed} failed.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} updated, ${current} up to date, ${failed} failed.';
   String crash_dump_label({required Object n}) => 'Crash Dumps (${n})';
   String get crash_dump_empty => 'No crash dumps';
   String get crash_dump_open_folder => 'Open dump folder';
@@ -1968,8 +1990,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Rendered by player (not lookupable)';
   String get handlebar_video_clip => 'Video Clip (GIF)';
   String get dict_update_name_mismatch_title => 'Names do not match';
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'The selected file is "${incoming}", but you are updating "${existing}". Replace anyway?';
   String get dialog_replace => 'Replace';
   String get media_source_manage_title => 'Manage Sources';
@@ -2110,9 +2134,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get data_storage_migrate_overlay_title => 'Moving your data';
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   String get collection_word => 'Word';
   String get reader_top_progress_floating => 'Floating reading progress';
   String get reader_auto_hide_chrome_duration =>
@@ -2250,8 +2275,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get backup_export_no_books => 'No books to choose from';
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   String get stat_lookup => 'Lookups';
   String get stat_delete_message =>
@@ -2560,9 +2587,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_jimaku_series => 'Series';
   String get video_jimaku_batch_title => 'Fetch subtitles for collection';
   String get video_jimaku_batch_download => 'Download all';
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   String get anki_open_no_card => 'No card found for this word in Anki.';
   String get settings_view_changelog => 'View changelog';
   String get changelog_empty =>
@@ -3018,9 +3046,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get delete_scope_sync_everywhere => 'Delete from all devices';
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
   String get popup_wheel_speed => 'Popup scroll speed';
@@ -3060,8 +3089,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Download queued and subscription created';
   String get download_subscription_download_and_create =>
       'Download and subscribe';
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   String get download_subscription_unavailable_hint =>
       'Choose a single-episode release with a recognizable release group to subscribe.';
@@ -3148,14 +3179,15 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_scrape_batch_empty => 'No local videos to match';
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   String get video_jimaku_source => 'Subtitle source';
   String get video_jimaku_source_hint =>
       'Choose one Jimaku entry. Season packs are matched by episode automatically.';
@@ -3218,9 +3250,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'No OCR engine available. Download built-in models or set the mokuro CLI path in settings.';
   String get manga_ocr_wizard_run => 'Run OCR';
   String get manga_ocr_wizard_running => 'Running OCR…';
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   String get manga_ocr_wizard_importing => 'Importing…';
   String get manga_ocr_wizard_done => 'Manga imported';
   String get manga_ocr_wizard_failed => 'OCR failed';
@@ -3229,9 +3262,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_layout_double => 'Double Page';
   String get manga_layout_auto => 'Auto';
   String get manga_remote_ocr_engine => 'Paired host';
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   String get manga_remote_ocr_not_ready =>
       'The paired host\'s OCR models are not downloaded. Download them on the host first.';
@@ -3269,29 +3303,67 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get games_drop_no_exe => 'No new game .exe among the dropped files';
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsAr extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsAr.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.ar,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsAr.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.ar,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -3510,9 +3582,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get no_text => 'لا يوجد نص.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      'استخدم حقل ${field} حقل ${secondField} كمصطلح بحث بديل.';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => 'استخدم حقل ${field} حقل ${secondField} كمصطلح بحث بديل.';
   @override
   String get no_text_to_search => 'لا يوجد نص للبحث.';
   @override
@@ -3897,12 +3970,12 @@ class _StringsAr extends _StringsEn {
   @override
   String get reading_progress => 'تقدّم القراءة';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'الفصل ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'الفصل ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'صفحة ${current} / ${total}';
@@ -4246,9 +4319,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get jump_to_char_hint => 'أدخل موضع الحرف…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'الحالي: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'الحالي: ${current} / ${total}';
   @override
   String get error_log_empty => 'لا توجد سجلات أخطاء';
   @override
@@ -4583,9 +4657,10 @@ class _StringsAr extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} مطابق — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'أُعيدت المطابقة: ${pct}% (نافذة: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'أُعيدت المطابقة: ${pct}% (نافذة: ${window})';
   @override
   String get section_epub => 'مكتبة EPUB';
   @override
@@ -4845,10 +4920,11 @@ class _StringsAr extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'استعادة النسخة الاحتياطية؟';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'سيؤدي هذا إلى استبدال كل البيانات الحالية بالنسخة الاحتياطية من ${date}.\n\n${bookCount} كتاب، ${statsCount} سجل إحصائي.\n\nسيُعاد تشغيل التطبيق بعد الاستعادة.';
   @override
   String get backup_import_success =>
@@ -5138,11 +5214,11 @@ class _StringsAr extends _StringsEn {
   @override
   String get spread_direction_ltr => 'من اليسار إلى اليمين';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} ناجح. فشل: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} ناجح. فشل: ${error}';
   @override
   String get sync_now => 'زامن الآن';
   @override
@@ -5321,9 +5397,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_shader_download_failed => 'فشل تنزيل المظلِّل';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      'تم تنزيل ${ok} مظلِّل، وفشل ${failed}';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => 'تم تنزيل ${ok} مظلِّل، وفشل ${failed}';
   @override
   String get video_shader_downloaded_label => 'تم التنزيل';
   @override
@@ -5535,8 +5612,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get db_downgrade_title => 'حدّث Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'أُنشئت قاعدة البيانات هذه بإصدار أحدث من Hibiki (المخطط v${dbVersion}). تطبيقك الحالي قديم جدًا (v${appVersion}). تم حظر الفتح لحماية بياناتك. يُرجى تحديث التطبيق والمحاولة مجددًا.';
   @override
   String get video_shader_import_from_mpv => 'استيراد من mpv المحلي';
@@ -5721,9 +5800,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'الإزاحة (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'أُرفقت الترجمة بـ ${title} (${count} سطرًا)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'أُرفقت الترجمة بـ ${title} (${count} سطرًا)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'افتح قائمة التشغيل لإرفاق ترجمة لكل حلقة';
@@ -6022,9 +6102,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'أُزيل من المشغّل';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'تعذّر الوصول إلى ${host}: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'تعذّر الوصول إلى ${host}: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'إعادة تشغيل الترجمة السابقة';
@@ -6129,9 +6210,10 @@ class _StringsAr extends _StringsEn {
   String update_download_source({required Object source}) =>
       'المصدر: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'تم التنزيل: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'تم التنزيل: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => 'السرعة: ${speed}';
   @override
@@ -6201,24 +6283,28 @@ class _StringsAr extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'هدف التثبيت: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'موقع التثبيت المكتشف (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'موقع التثبيت المكتشف (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'عدم تطابق دليل التثبيت: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'عملية Hibiki قيد التشغيل: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'عملية Hibiki قيد التشغيل: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'حامل libmpv: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'حامل libmpv: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'فشل المثبّت في استبدال ${path} (الرمز ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'فشل المثبّت في استبدال ${path} (الرمز ${code})';
   @override
   String get update_install_manual_close_retry =>
       'أغلق Hibiki من PID/المسار المدرج، ثم أعد محاولة التحديث أو شغّل المثبّت مجددًا.';
@@ -6280,11 +6366,11 @@ class _StringsAr extends _StringsEn {
   @override
   String dict_update_failed({required Object error}) => 'فشل التحديث: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} محدّث، ${current} محدّث بالفعل، ${failed} فشل.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} محدّث، ${current} محدّث بالفعل، ${failed} فشل.';
   @override
   String crash_dump_label({required Object n}) => 'تفريغات الأعطال (${n})';
   @override
@@ -6529,8 +6615,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'الأسماء غير متطابقة';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'الملف المحدد هو "${incoming}"، لكنك تُحدّث "${existing}". هل تريد الاستبدال على أي حال؟';
   @override
   String get dialog_replace => 'Replace';
@@ -6783,9 +6871,10 @@ class _StringsAr extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -7025,8 +7114,10 @@ class _StringsAr extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -7573,9 +7664,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -8402,9 +8494,10 @@ class _StringsAr extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -8472,8 +8565,10 @@ class _StringsAr extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -8628,15 +8723,16 @@ class _StringsAr extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -8749,9 +8845,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -8769,9 +8866,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -8838,29 +8936,84 @@ class _StringsAr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsDe extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsDe.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.de,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsDe.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.de,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -9082,8 +9235,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get no_text => 'Kein Text.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) =>
       'Das Feld ${field} hat ${secondField} als Ersatz-Suchbegriff verwendet.';
   @override
   String get no_text_to_search => 'Kein Text zum Suchen.';
@@ -9476,12 +9631,12 @@ class _StringsDe extends _StringsEn {
   @override
   String get reading_progress => 'Lesefortschritt';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Kapitel ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Kapitel ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Seite ${current} / ${total}';
@@ -9835,9 +9990,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Zeichenposition eingeben…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Aktuell: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Aktuell: ${current} / ${total}';
   @override
   String get error_log_empty => 'Keine Fehlerprotokolle';
   @override
@@ -10176,9 +10332,10 @@ class _StringsDe extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} übereinstimmend — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Neu abgeglichen: ${pct}% (Fenster: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Neu abgeglichen: ${pct}% (Fenster: ${window})';
   @override
   String get section_epub => 'EPUB-Bibliothek';
   @override
@@ -10443,10 +10600,11 @@ class _StringsDe extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'Backup wiederherstellen?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Dadurch werden alle aktuellen Daten durch das Backup vom ${date} ersetzt.\n\n${bookCount} Bücher, ${statsCount} Statistikeinträge.\n\nNach der Wiederherstellung wird die App neu gestartet.';
   @override
   String get backup_import_success => 'Backup wiederhergestellt. Neustart…';
@@ -10739,11 +10897,11 @@ class _StringsDe extends _StringsEn {
   @override
   String get spread_direction_ltr => 'Links nach rechts';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} OK. Fehlgeschlagen: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} OK. Fehlgeschlagen: ${error}';
   @override
   String get sync_now => 'Jetzt synchronisieren';
   @override
@@ -10931,9 +11089,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_shader_download_failed => 'Shader-Download fehlgeschlagen';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      '${ok} Shader heruntergeladen, ${failed} fehlgeschlagen';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => '${ok} Shader heruntergeladen, ${failed} fehlgeschlagen';
   @override
   String get video_shader_downloaded_label => 'Heruntergeladen';
   @override
@@ -11150,8 +11309,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get db_downgrade_title => 'Hibiki aktualisieren';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Diese Datenbank wurde von einer neueren Hibiki-Version erstellt (Schema v${dbVersion}). Deine aktuelle App ist zu alt (v${appVersion}). Das Öffnen wurde zum Schutz deiner Daten blockiert. Bitte aktualisiere die App und versuche es erneut.';
   @override
   String get video_shader_import_from_mpv => 'Aus lokalem mpv importieren';
@@ -11340,9 +11501,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Versatz (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Untertitel an ${title} angehängt (${count} Cues)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Untertitel an ${title} angehängt (${count} Cues)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Öffne die Playlist, um pro Folge einen Untertitel anzuhängen';
@@ -11651,9 +11813,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Vom Player entfernt';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      '${host} konnte nicht erreicht werden: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => '${host} konnte nicht erreicht werden: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Vorigen Untertitel erneut abspielen';
@@ -11762,9 +11925,10 @@ class _StringsDe extends _StringsEn {
   String update_download_source({required Object source}) =>
       'Quelle: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Heruntergeladen: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Heruntergeladen: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) =>
       'Geschwindigkeit: ${speed}';
@@ -11837,23 +12001,28 @@ class _StringsDe extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Installationsziel: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Erkannter Installationsort (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Erkannter Installationsort (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Installationsverzeichnis stimmt nicht überein: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Laufender Hibiki-Prozess: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Laufender Hibiki-Prozess: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'libmpv-Halter: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'libmpv-Halter: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) =>
       'Das Installationsprogramm konnte ${path} nicht ersetzen (Code ${code})';
   @override
   String get update_install_manual_close_retry =>
@@ -11919,10 +12088,11 @@ class _StringsDe extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Update fehlgeschlagen: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) =>
       '${updated} aktualisiert, ${current} aktuell, ${failed} fehlgeschlagen.';
   @override
   String crash_dump_label({required Object n}) => 'Absturzberichte (${n})';
@@ -12170,8 +12340,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'Namen stimmen nicht überein';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'Die ausgewählte Datei ist „${incoming}“, aber du aktualisierst „${existing}“. Trotzdem ersetzen?';
   @override
   String get dialog_replace => 'Replace';
@@ -12425,9 +12597,10 @@ class _StringsDe extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -12667,8 +12840,10 @@ class _StringsDe extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -13215,9 +13390,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -14044,9 +14220,10 @@ class _StringsDe extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -14114,8 +14291,10 @@ class _StringsDe extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -14270,15 +14449,16 @@ class _StringsDe extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -14391,9 +14571,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -14411,9 +14592,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -14480,29 +14662,84 @@ class _StringsDe extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsEs extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsEs.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.es,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsEs.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.es,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -14727,8 +14964,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get no_text => 'Sin texto.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) =>
       'El campo ${field} usó ${secondField} como término de búsqueda alternativo.';
   @override
   String get no_text_to_search => 'No hay texto para buscar.';
@@ -15122,12 +15361,12 @@ class _StringsEs extends _StringsEn {
   @override
   String get reading_progress => 'Progreso de lectura';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Capítulo ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Capítulo ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Página ${current} / ${total}';
@@ -15483,9 +15722,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Introduce la posición del carácter…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Actual: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Actual: ${current} / ${total}';
   @override
   String get error_log_empty => 'Sin registros de errores';
   @override
@@ -15827,9 +16067,10 @@ class _StringsEs extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} coincidencia — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Reemparejado: ${pct}% (ventana: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Reemparejado: ${pct}% (ventana: ${window})';
   @override
   String get section_epub => 'Biblioteca EPUB';
   @override
@@ -16095,10 +16336,11 @@ class _StringsEs extends _StringsEn {
   @override
   String get backup_import_confirm_title => '¿Restaurar copia de seguridad?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Esto reemplazará todos los datos actuales con la copia de seguridad del ${date}.\n\n${bookCount} libros, ${statsCount} registros de estadísticas.\n\nLa app se reiniciará tras la restauración.';
   @override
   String get backup_import_success => 'Copia restaurada. Reiniciando…';
@@ -16395,11 +16637,11 @@ class _StringsEs extends _StringsEn {
   @override
   String get spread_direction_ltr => 'De izquierda a derecha';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} correctos. Fallidos: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} correctos. Fallidos: ${error}';
   @override
   String get sync_now => 'Sincronizar ahora';
   @override
@@ -16583,9 +16825,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_shader_download_failed => 'Error al descargar el shader';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      'Se descargaron ${ok} shader(s), ${failed} fallaron';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => 'Se descargaron ${ok} shader(s), ${failed} fallaron';
   @override
   String get video_shader_downloaded_label => 'Descargado';
   @override
@@ -16805,8 +17048,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get db_downgrade_title => 'Actualiza Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Esta base de datos la creó una versión más reciente de Hibiki (esquema v${dbVersion}). Tu app actual es demasiado antigua (v${appVersion}). Se bloqueó la apertura para proteger tus datos. Actualiza la app e inténtalo de nuevo.';
   @override
   String get video_shader_import_from_mpv => 'Importar desde mpv local';
@@ -16998,9 +17243,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Desfase (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Subtítulo adjuntado a ${title} (${count} líneas)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Subtítulo adjuntado a ${title} (${count} líneas)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Abre la lista de reproducción para adjuntar un subtítulo por episodio';
@@ -17310,9 +17556,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Quitado del reproductor';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'No se pudo conectar con ${host}: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'No se pudo conectar con ${host}: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Repetir el subtítulo anterior';
@@ -17421,9 +17668,10 @@ class _StringsEs extends _StringsEn {
   String update_download_source({required Object source}) =>
       'Fuente: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Descargado: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Descargado: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) =>
       'Velocidad: ${speed}';
@@ -17496,24 +17744,28 @@ class _StringsEs extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Destino de instalación: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Ubicación de instalación detectada (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Ubicación de instalación detectada (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Directorio de instalación no coincidente: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Proceso de Hibiki en ejecución: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Proceso de Hibiki en ejecución: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'Proceso que retiene libmpv: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'Proceso que retiene libmpv: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'El instalador no pudo reemplazar ${path} (código ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'El instalador no pudo reemplazar ${path} (código ${code})';
   @override
   String get update_install_manual_close_retry =>
       'Cierra Hibiki según el PID/ruta indicados y vuelve a intentar la actualización o ejecuta el instalador de nuevo.';
@@ -17579,11 +17831,11 @@ class _StringsEs extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Error al actualizar: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} actualizados, ${current} al día, ${failed} fallaron.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} actualizados, ${current} al día, ${failed} fallaron.';
   @override
   String crash_dump_label({required Object n}) => 'Volcados de fallo (${n})';
   @override
@@ -17828,8 +18080,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'Los nombres no coinciden';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'El archivo seleccionado es «${incoming}», pero estás actualizando «${existing}». ¿Reemplazar de todos modos?';
   @override
   String get dialog_replace => 'Replace';
@@ -18083,9 +18337,10 @@ class _StringsEs extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -18325,8 +18580,10 @@ class _StringsEs extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -18873,9 +19130,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -19702,9 +19960,10 @@ class _StringsEs extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -19772,8 +20031,10 @@ class _StringsEs extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -19928,15 +20189,16 @@ class _StringsEs extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -20049,9 +20311,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -20069,9 +20332,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -20138,29 +20402,84 @@ class _StringsEs extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsFr extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsFr.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.fr,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsFr.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.fr,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -20386,8 +20705,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get no_text => 'Aucun texte.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) =>
       'Le champ ${field} a utilisé ${secondField} comme terme de recherche de secours.';
   @override
   String get no_text_to_search => 'Aucun texte à rechercher.';
@@ -20782,12 +21103,12 @@ class _StringsFr extends _StringsEn {
   @override
   String get reading_progress => 'Progression de lecture';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Chapitre ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Chapitre ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Page ${current} / ${total}';
@@ -21146,9 +21467,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Entrez la position du caractère…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Actuel : ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Actuel : ${current} / ${total}';
   @override
   String get error_log_empty => 'Aucun journal d\'erreurs';
   @override
@@ -21494,9 +21816,10 @@ class _StringsFr extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} correspondance — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Recorrespondance : ${pct}% (fenêtre : ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Recorrespondance : ${pct}% (fenêtre : ${window})';
   @override
   String get section_epub => 'Bibliothèque EPUB';
   @override
@@ -21762,10 +22085,11 @@ class _StringsFr extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'Restaurer la sauvegarde ?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Cela remplacera toutes les données actuelles par la sauvegarde du ${date}.\n\n${bookCount} livres, ${statsCount} enregistrements de statistiques.\n\nL\'application redémarrera après la restauration.';
   @override
   String get backup_import_success => 'Sauvegarde restaurée. Redémarrage…';
@@ -22062,11 +22386,11 @@ class _StringsFr extends _StringsEn {
   @override
   String get spread_direction_ltr => 'De gauche à droite';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} OK. Échecs : ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} OK. Échecs : ${error}';
   @override
   String get sync_now => 'Synchroniser maintenant';
   @override
@@ -22255,9 +22579,10 @@ class _StringsFr extends _StringsEn {
   String get video_shader_download_failed =>
       'Échec du téléchargement du shader';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      '${ok} shader(s) téléchargé(s), ${failed} échoué(s)';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => '${ok} shader(s) téléchargé(s), ${failed} échoué(s)';
   @override
   String get video_shader_downloaded_label => 'Téléchargé';
   @override
@@ -22477,8 +22802,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get db_downgrade_title => 'Mettez Hibiki à jour';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Cette base de données a été créée par une version plus récente de Hibiki (schéma v${dbVersion}). Votre application actuelle est trop ancienne (v${appVersion}). L\'ouverture a été bloquée pour protéger vos données. Veuillez mettre l\'application à jour et réessayer.';
   @override
   String get video_shader_import_from_mpv => 'Importer depuis le mpv local';
@@ -22667,9 +22994,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Décalage (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Sous-titre joint à ${title} (${count} lignes)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Sous-titre joint à ${title} (${count} lignes)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Ouvrez la playlist pour joindre un sous-titre à chaque épisode';
@@ -22978,9 +23306,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Retiré du lecteur';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'Impossible de joindre ${host} : ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'Impossible de joindre ${host} : ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Rejouer le sous-titre précédent';
@@ -23089,9 +23418,10 @@ class _StringsFr extends _StringsEn {
   String update_download_source({required Object source}) =>
       'Source : ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Téléchargé : ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Téléchargé : ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => 'Vitesse : ${speed}';
   @override
@@ -23163,24 +23493,28 @@ class _StringsFr extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Cible d\'installation : ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Emplacement d\'installation détecté (${source}) : ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Emplacement d\'installation détecté (${source}) : ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Incohérence du dossier d\'installation : ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Processus Hibiki en cours : PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Processus Hibiki en cours : PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'Processus détenant libmpv : PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'Processus détenant libmpv : PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'L\'installateur n\'a pas pu remplacer ${path} (code ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'L\'installateur n\'a pas pu remplacer ${path} (code ${code})';
   @override
   String get update_install_manual_close_retry =>
       'Fermez Hibiki via le PID/chemin indiqué, puis relancez la mise à jour ou exécutez à nouveau l\'installateur.';
@@ -23247,11 +23581,11 @@ class _StringsFr extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Échec de la mise à jour : ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} mis à jour, ${current} à jour, ${failed} en échec.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} mis à jour, ${current} à jour, ${failed} en échec.';
   @override
   String crash_dump_label({required Object n}) => 'Vidages de plantage (${n})';
   @override
@@ -23497,8 +23831,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'Les noms ne correspondent pas';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'Le fichier sélectionné est « ${incoming} », mais vous mettez à jour « ${existing} ». Remplacer quand même ?';
   @override
   String get dialog_replace => 'Replace';
@@ -23752,9 +24088,10 @@ class _StringsFr extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -23994,8 +24331,10 @@ class _StringsFr extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -24542,9 +24881,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -25371,9 +25711,10 @@ class _StringsFr extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -25441,8 +25782,10 @@ class _StringsFr extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -25597,15 +25940,16 @@ class _StringsFr extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -25718,9 +26062,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -25738,9 +26083,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -25807,29 +26153,84 @@ class _StringsFr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsId extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsId.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.id,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsId.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.id,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -26050,8 +26451,10 @@ class _StringsId extends _StringsEn {
   @override
   String get no_text => 'Tidak ada teks.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) =>
       'Field ${field} menggunakan ${secondField} sebagai kata pencarian cadangan.';
   @override
   String get no_text_to_search => 'Tidak ada teks untuk dicari.';
@@ -26438,12 +26841,12 @@ class _StringsId extends _StringsEn {
   @override
   String get reading_progress => 'Progres Membaca';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Bab ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Bab ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Halaman ${current} / ${total}';
@@ -26793,9 +27196,10 @@ class _StringsId extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Masukkan posisi karakter…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Saat ini: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Saat ini: ${current} / ${total}';
   @override
   String get error_log_empty => 'Tidak ada log kesalahan';
   @override
@@ -27129,9 +27533,10 @@ class _StringsId extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} cocok — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Dicocokkan ulang: ${pct}% (jendela: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Dicocokkan ulang: ${pct}% (jendela: ${window})';
   @override
   String get section_epub => 'Perpustakaan EPUB';
   @override
@@ -27392,10 +27797,11 @@ class _StringsId extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'Pulihkan Cadangan?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Ini akan menggantikan semua data saat ini dengan cadangan dari ${date}.\n\n${bookCount} buku, ${statsCount} catatan statistik.\n\nAplikasi akan dimulai ulang setelah pemulihan.';
   @override
   String get backup_import_success => 'Cadangan dipulihkan. Memulai ulang…';
@@ -27685,11 +28091,11 @@ class _StringsId extends _StringsEn {
   @override
   String get spread_direction_ltr => 'Kiri ke Kanan';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} OK. Gagal: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} OK. Gagal: ${error}';
   @override
   String get sync_now => 'Sinkronkan sekarang';
   @override
@@ -27868,9 +28274,10 @@ class _StringsId extends _StringsEn {
   @override
   String get video_shader_download_failed => 'Unduhan shader gagal';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      'Mengunduh ${ok} shader, ${failed} gagal';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => 'Mengunduh ${ok} shader, ${failed} gagal';
   @override
   String get video_shader_downloaded_label => 'Terunduh';
   @override
@@ -28085,8 +28492,10 @@ class _StringsId extends _StringsEn {
   @override
   String get db_downgrade_title => 'Perbarui Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Basis data ini dibuat oleh versi Hibiki yang lebih baru (schema v${dbVersion}). Aplikasimu saat ini terlalu lama (v${appVersion}). Pembukaan diblokir untuk melindungi datamu. Silakan perbarui aplikasi lalu coba lagi.';
   @override
   String get video_shader_import_from_mpv => 'Impor dari mpv lokal';
@@ -28274,9 +28683,10 @@ class _StringsId extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Offset (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Subtitle dilampirkan ke ${title} (${count} baris)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Subtitle dilampirkan ke ${title} (${count} baris)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Buka playlist untuk melampirkan subtitle per episode';
@@ -28577,9 +28987,10 @@ class _StringsId extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Dihapus dari pemutar';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'Tidak dapat menjangkau ${host}: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'Tidak dapat menjangkau ${host}: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Putar ulang subtitle sebelumnya';
@@ -28687,9 +29098,10 @@ class _StringsId extends _StringsEn {
   String update_download_source({required Object source}) =>
       'Sumber: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Terunduh: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Terunduh: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) =>
       'Kecepatan: ${speed}';
@@ -28762,24 +29174,28 @@ class _StringsId extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Target pemasangan: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Lokasi pemasangan terdeteksi (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Lokasi pemasangan terdeteksi (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Direktori pemasangan tidak cocok: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Proses Hibiki yang berjalan: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Proses Hibiki yang berjalan: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'Pemegang libmpv: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'Pemegang libmpv: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'Penginstal gagal mengganti ${path} (kode ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'Penginstal gagal mengganti ${path} (kode ${code})';
   @override
   String get update_install_manual_close_retry =>
       'Tutup Hibiki sesuai PID/jalur yang tercantum, lalu coba lagi pembaruan atau jalankan kembali penginstal.';
@@ -28843,11 +29259,11 @@ class _StringsId extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Pembaruan gagal: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} diperbarui, ${current} terbaru, ${failed} gagal.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} diperbarui, ${current} terbaru, ${failed} gagal.';
   @override
   String crash_dump_label({required Object n}) => 'Crash Dump (${n})';
   @override
@@ -29093,8 +29509,10 @@ class _StringsId extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'Nama tidak cocok';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'File yang dipilih adalah "${incoming}", tetapi Anda memperbarui "${existing}". Tetap ganti?';
   @override
   String get dialog_replace => 'Replace';
@@ -29348,9 +29766,10 @@ class _StringsId extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -29590,8 +30009,10 @@ class _StringsId extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -30138,9 +30559,10 @@ class _StringsId extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -30967,9 +31389,10 @@ class _StringsId extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -31037,8 +31460,10 @@ class _StringsId extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -31193,15 +31618,16 @@ class _StringsId extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -31314,9 +31740,10 @@ class _StringsId extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -31334,9 +31761,10 @@ class _StringsId extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -31403,29 +31831,84 @@ class _StringsId extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsIt extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsIt.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.it,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsIt.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.it,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -31649,8 +32132,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get no_text => 'Nessun testo.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) =>
       'Il campo ${field} ha usato ${secondField} come termine di ricerca di riserva.';
   @override
   String get no_text_to_search => 'Nessun testo da cercare.';
@@ -32040,12 +32525,12 @@ class _StringsIt extends _StringsEn {
   @override
   String get reading_progress => 'Progresso di lettura';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Capitolo ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Capitolo ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Pagina ${current} / ${total}';
@@ -32403,9 +32888,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Inserisci la posizione del carattere…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Attuale: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Attuale: ${current} / ${total}';
   @override
   String get error_log_empty => 'Nessun registro errori';
   @override
@@ -32744,9 +33230,10 @@ class _StringsIt extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} corrispondente — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Ricalcolato: ${pct}% (finestra: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Ricalcolato: ${pct}% (finestra: ${window})';
   @override
   String get section_epub => 'Libreria EPUB';
   @override
@@ -33010,10 +33497,11 @@ class _StringsIt extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'Ripristinare il backup?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Questa operazione sostituirà tutti i dati attuali con il backup del ${date}.\n\n${bookCount} libri, ${statsCount} record di statistiche.\n\nL\'app verrà riavviata dopo il ripristino.';
   @override
   String get backup_import_success => 'Backup ripristinato. Riavvio in corso…';
@@ -33309,11 +33797,11 @@ class _StringsIt extends _StringsEn {
   @override
   String get spread_direction_ltr => 'Da sinistra a destra';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} OK. Falliti: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} OK. Falliti: ${error}';
   @override
   String get sync_now => 'Sincronizza ora';
   @override
@@ -33494,9 +33982,10 @@ class _StringsIt extends _StringsEn {
   String get video_shader_download_failed =>
       'Download dello shader non riuscito';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      'Scaricati ${ok} shader, ${failed} non riusciti';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => 'Scaricati ${ok} shader, ${failed} non riusciti';
   @override
   String get video_shader_downloaded_label => 'Scaricato';
   @override
@@ -33714,8 +34203,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get db_downgrade_title => 'Aggiorna Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Questo database è stato creato da una versione più recente di Hibiki (schema v${dbVersion}). La tua app attuale è troppo vecchia (v${appVersion}). L\'apertura è stata bloccata per proteggere i tuoi dati. Aggiorna l\'app e riprova.';
   @override
   String get video_shader_import_from_mpv => 'Importa da mpv locale';
@@ -33906,9 +34397,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Offset (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Sottotitoli allegati a ${title} (${count} battute)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Sottotitoli allegati a ${title} (${count} battute)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Apri la playlist per allegare un sottotitolo per ogni episodio';
@@ -34219,9 +34711,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Rimosso dal lettore';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'Impossibile raggiungere ${host}: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'Impossibile raggiungere ${host}: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Riproduci di nuovo il sottotitolo precedente';
@@ -34330,9 +34823,10 @@ class _StringsIt extends _StringsEn {
   String update_download_source({required Object source}) =>
       'Sorgente: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Scaricato: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Scaricato: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => 'Velocità: ${speed}';
   @override
@@ -34405,23 +34899,28 @@ class _StringsIt extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Destinazione di installazione: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Posizione di installazione rilevata (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Posizione di installazione rilevata (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Cartella di installazione non corrispondente: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Processo Hibiki in esecuzione: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Processo Hibiki in esecuzione: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'Processo che blocca libmpv: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'Processo che blocca libmpv: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) =>
       'Il programma di installazione non è riuscito a sostituire ${path} (codice ${code})';
   @override
   String get update_install_manual_close_retry =>
@@ -34488,10 +34987,11 @@ class _StringsIt extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Aggiornamento non riuscito: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) =>
       '${updated} aggiornati, ${current} già aggiornati, ${failed} non riusciti.';
   @override
   String crash_dump_label({required Object n}) => 'Dump di crash (${n})';
@@ -34737,8 +35237,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'I nomi non corrispondono';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'Il file selezionato è «${incoming}», ma stai aggiornando «${existing}». Sostituire comunque?';
   @override
   String get dialog_replace => 'Replace';
@@ -34992,9 +35494,10 @@ class _StringsIt extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -35234,8 +35737,10 @@ class _StringsIt extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -35782,9 +36287,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -36611,9 +37117,10 @@ class _StringsIt extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -36681,8 +37188,10 @@ class _StringsIt extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -36837,15 +37346,16 @@ class _StringsIt extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -36958,9 +37468,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -36978,9 +37489,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -37047,29 +37559,84 @@ class _StringsIt extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsJa extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsJa.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.ja,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsJa.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.ja,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -37286,9 +37853,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get no_text => 'テキストがありません。';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      '${field} フィールドは ${secondField} をフォールバック検索語として使用しました。';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => '${field} フィールドは ${secondField} をフォールバック検索語として使用しました。';
   @override
   String get no_text_to_search => '検索するテキストがありません。';
   @override
@@ -37677,12 +38245,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get reading_progress => '読書進捗';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'チャプター ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'チャプター ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'ページ ${current} / ${total}';
@@ -38015,9 +38583,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get jump_to_char_hint => '文字位置を入力…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      '現在: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => '現在: ${current} / ${total}';
   @override
   String get error_log_empty => 'エラーログなし';
   @override
@@ -38334,9 +38903,10 @@ class _StringsJa extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} マッチ — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      '再マッチング結果：${pct}%（ウィンドウ：${window}）';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => '再マッチング結果：${pct}%（ウィンドウ：${window}）';
   @override
   String get section_epub => 'EPUBライブラリ';
   @override
@@ -38575,10 +39145,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'バックアップを復元しますか？';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       '現在のすべてのデータが${date}のバックアップで置き換えられます。\n\n書籍${bookCount}冊、統計${statsCount}件。\n\n復元後にアプリが再起動します。';
   @override
   String get backup_import_success => 'バックアップを復元しました。再起動中…';
@@ -38856,11 +39427,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get spread_direction_ltr => '左から右';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} 成功。失敗: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} 成功。失敗: ${error}';
   @override
   String get sync_now => '今すぐ同期';
   @override
@@ -39033,9 +39604,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_shader_download_failed => 'シェーダーのダウンロードに失敗しました';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      '${ok} 件をダウンロード、${failed} 件が失敗しました';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => '${ok} 件をダウンロード、${failed} 件が失敗しました';
   @override
   String get video_shader_downloaded_label => 'ダウンロード済み';
   @override
@@ -39239,8 +39811,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get db_downgrade_title => 'Hibiki を更新してください';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'このデータベースは新しいバージョンの Hibiki（スキーマ v${dbVersion}）で作成されています。現在のアプリ（v${appVersion}）は古すぎます。データ保護のため、開くのを中止しました。アプリを更新してから再試行してください。';
   @override
   String get video_shader_import_from_mpv => 'ローカルの mpv からインポート';
@@ -39417,9 +39991,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'オフセット (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      '『${title}』に字幕を添付しました（${count} 句）';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => '『${title}』に字幕を添付しました（${count} 句）';
   @override
   String get video_subtitle_attach_playlist_hint =>
       '再生画面を開き、エピソードごとに字幕を添付してください';
@@ -39698,9 +40273,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'プレーヤーから外す';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      '${host} に接続できませんでした：${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => '${host} に接続できませんでした：${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle => '前の字幕をリプレイ';
   @override
@@ -39801,9 +40377,10 @@ class _StringsJa extends _StringsEn {
   @override
   String update_download_source({required Object source}) => 'ソース：${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'ダウンロード済み：${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'ダウンロード済み：${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => '速度：${speed}';
   @override
@@ -39867,24 +40444,28 @@ class _StringsJa extends _StringsEn {
   @override
   String update_install_target_dir({required Object path}) => 'インストール先：${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      '検出されたインストール場所（${source}）：${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => '検出されたインストール場所（${source}）：${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'インストールディレクトリが一致しません：${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      '実行中の Hibiki プロセス：PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => '実行中の Hibiki プロセス：PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'libmpv を保持しているプロセス：PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'libmpv を保持しているプロセス：PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'インストーラーが ${path} を置き換えられませんでした（コード ${code}）';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'インストーラーが ${path} を置き換えられませんでした（コード ${code}）';
   @override
   String get update_install_manual_close_retry =>
       '上記の PID／パスから Hibiki を手動で終了し、更新を再試行するかインストーラーを再実行してください。';
@@ -39945,11 +40526,11 @@ class _StringsJa extends _StringsEn {
   @override
   String dict_update_failed({required Object error}) => '更新に失敗しました：${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} 件を更新、${current} 件は最新、${failed} 件が失敗しました。';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} 件を更新、${current} 件は最新、${failed} 件が失敗しました。';
   @override
   String crash_dump_label({required Object n}) => 'クラッシュダンプ (${n})';
   @override
@@ -40190,9 +40771,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => '名前が一致しません';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
-      '選択したファイルは「${incoming}」ですが、更新対象は「${existing}」です。置き換えますか？';
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) => '選択したファイルは「${incoming}」ですが、更新対象は「${existing}」です。置き換えますか？';
   @override
   String get dialog_replace => 'Replace';
   @override
@@ -40443,9 +41025,10 @@ class _StringsJa extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -40685,8 +41268,10 @@ class _StringsJa extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => '検索';
@@ -41232,9 +41817,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -42060,9 +42646,10 @@ class _StringsJa extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -42130,8 +42717,10 @@ class _StringsJa extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -42286,15 +42875,16 @@ class _StringsJa extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -42407,9 +42997,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -42427,9 +43018,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -42496,29 +43088,84 @@ class _StringsJa extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsKo extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsKo.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.ko,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsKo.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.ko,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -42736,9 +43383,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get no_text => '텍스트가 없습니다.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      '${field} 필드가 ${secondField}을(를) 대체 검색어로 사용했습니다.';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => '${field} 필드가 ${secondField}을(를) 대체 검색어로 사용했습니다.';
   @override
   String get no_text_to_search => '검색할 텍스트가 없습니다.';
   @override
@@ -43117,12 +43765,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get reading_progress => '읽기 진행률';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      '챕터 ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => '챕터 ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       '페이지 ${current} / ${total}';
@@ -43454,9 +44102,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get jump_to_char_hint => '문자 위치를 입력하세요…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      '현재: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => '현재: ${current} / ${total}';
   @override
   String get error_log_empty => '오류 로그 없음';
   @override
@@ -43775,9 +44424,10 @@ class _StringsKo extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} 일치 — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      '재매칭: ${pct}% (윈도우: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => '재매칭: ${pct}% (윈도우: ${window})';
   @override
   String get section_epub => 'EPUB 라이브러리';
   @override
@@ -44027,10 +44677,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get backup_import_confirm_title => '백업을 복원할까요?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       '현재 모든 데이터가 ${date} 백업으로 대체됩니다.\n\n책 ${bookCount}권, 통계 기록 ${statsCount}개.\n\n복원 후 앱이 다시 시작됩니다.';
   @override
   String get backup_import_success => '백업을 복원했습니다. 다시 시작 중…';
@@ -44305,11 +44956,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get spread_direction_ltr => '왼쪽에서 오른쪽';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} 성공. 실패: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} 성공. 실패: ${error}';
   @override
   String get sync_now => '지금 동기화';
   @override
@@ -44480,9 +45131,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_shader_download_failed => '셰이더 다운로드 실패';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      '셰이더 ${ok}개 다운로드, ${failed}개 실패';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => '셰이더 ${ok}개 다운로드, ${failed}개 실패';
   @override
   String get video_shader_downloaded_label => '다운로드됨';
   @override
@@ -44690,8 +45342,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get db_downgrade_title => 'Hibiki 업데이트';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       '이 데이터베이스는 더 새로운 버전의 Hibiki(schema v${dbVersion})로 만들어졌습니다. 현재 앱이 너무 오래되었습니다(v${appVersion}). 데이터 보호를 위해 열기가 차단되었습니다. 앱을 업데이트한 뒤 다시 시도하세요.';
   @override
   String get video_shader_import_from_mpv => '로컬 mpv에서 가져오기';
@@ -44871,9 +45525,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => '오프셋 (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      '${title}에 자막을 연결했습니다(${count}개 큐)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => '${title}에 자막을 연결했습니다(${count}개 큐)';
   @override
   String get video_subtitle_attach_playlist_hint => '재생목록을 열어 에피소드별로 자막을 연결하세요';
   @override
@@ -45152,9 +45807,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_control_slot_hidden => '플레이어에서 제거됨';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      '${host}에 연결할 수 없습니다: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => '${host}에 연결할 수 없습니다: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle => '이전 자막 다시 재생';
   @override
@@ -45255,9 +45911,10 @@ class _StringsKo extends _StringsEn {
   @override
   String update_download_source({required Object source}) => '소스: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      '다운로드: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => '다운로드: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => '속도: ${speed}';
   @override
@@ -45319,24 +45976,28 @@ class _StringsKo extends _StringsEn {
   @override
   String update_install_target_dir({required Object path}) => '설치 대상: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      '감지된 설치 위치(${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => '감지된 설치 위치(${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       '설치 디렉터리 불일치: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      '실행 중인 Hibiki 프로세스: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => '실행 중인 Hibiki 프로세스: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'libmpv 점유 프로세스: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'libmpv 점유 프로세스: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      '설치 프로그램이 ${path}을(를) 교체하지 못했습니다(코드 ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => '설치 프로그램이 ${path}을(를) 교체하지 못했습니다(코드 ${code})';
   @override
   String get update_install_manual_close_retry =>
       '위의 PID/경로로 Hibiki를 직접 종료한 뒤 업데이트를 다시 시도하거나 설치 프로그램을 다시 실행하세요.';
@@ -45397,11 +46058,11 @@ class _StringsKo extends _StringsEn {
   @override
   String dict_update_failed({required Object error}) => '업데이트 실패: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated}개 업데이트, ${current}개 최신, ${failed}개 실패.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated}개 업데이트, ${current}개 최신, ${failed}개 실패.';
   @override
   String crash_dump_label({required Object n}) => '크래시 덤프 (${n})';
   @override
@@ -45641,9 +46302,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => '이름이 일치하지 않습니다';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
-      '선택한 파일은 "${incoming}"이지만 "${existing}"을(를) 업데이트하고 있습니다. 그래도 교체할까요?';
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) => '선택한 파일은 "${incoming}"이지만 "${existing}"을(를) 업데이트하고 있습니다. 그래도 교체할까요?';
   @override
   String get dialog_replace => 'Replace';
   @override
@@ -45894,9 +46556,10 @@ class _StringsKo extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -46136,8 +46799,10 @@ class _StringsKo extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => '검색';
@@ -46684,9 +47349,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -47512,9 +48178,10 @@ class _StringsKo extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -47582,8 +48249,10 @@ class _StringsKo extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -47738,15 +48407,16 @@ class _StringsKo extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -47859,9 +48529,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -47879,9 +48550,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -47948,29 +48620,84 @@ class _StringsKo extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsNl extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsNl.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.nl,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsNl.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.nl,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -48192,9 +48919,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get no_text => 'Geen tekst.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      'Het veld ${field} gebruikte ${secondField} als terugvalzoekterm.';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => 'Het veld ${field} gebruikte ${secondField} als terugvalzoekterm.';
   @override
   String get no_text_to_search => 'Geen tekst om te zoeken.';
   @override
@@ -48581,12 +49309,12 @@ class _StringsNl extends _StringsEn {
   @override
   String get reading_progress => 'Leesvoortgang';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Hoofdstuk ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Hoofdstuk ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Pagina ${current} / ${total}';
@@ -48939,9 +49667,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Voer tekenpositie in…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Huidig: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Huidig: ${current} / ${total}';
   @override
   String get error_log_empty => 'Geen foutenlogboek';
   @override
@@ -49280,9 +50009,10 @@ class _StringsNl extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} overeenkomst — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Opnieuw gematcht: ${pct}% (venster: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Opnieuw gematcht: ${pct}% (venster: ${window})';
   @override
   String get section_epub => 'EPUB-bibliotheek';
   @override
@@ -49546,10 +50276,11 @@ class _StringsNl extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'Back-up herstellen?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Dit vervangt alle huidige gegevens door de back-up van ${date}.\n\n${bookCount} boeken, ${statsCount} statistiekrecords.\n\nDe app wordt na het herstellen opnieuw gestart.';
   @override
   String get backup_import_success => 'Back-up hersteld. Opnieuw starten…';
@@ -49842,11 +50573,11 @@ class _StringsNl extends _StringsEn {
   @override
   String get spread_direction_ltr => 'Links naar rechts';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} OK. Mislukt: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} OK. Mislukt: ${error}';
   @override
   String get sync_now => 'Nu synchroniseren';
   @override
@@ -50031,9 +50762,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_shader_download_failed => 'Shader downloaden mislukt';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      '${ok} shader(s) gedownload, ${failed} mislukt';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => '${ok} shader(s) gedownload, ${failed} mislukt';
   @override
   String get video_shader_downloaded_label => 'Gedownload';
   @override
@@ -50247,8 +50979,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get db_downgrade_title => 'Hibiki bijwerken';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Deze database is gemaakt door een nieuwere versie van Hibiki (schema v${dbVersion}). Je huidige app is te oud (v${appVersion}). Het openen is geblokkeerd om je gegevens te beschermen. Werk de app bij en probeer het opnieuw.';
   @override
   String get video_shader_import_from_mpv => 'Importeren uit lokale mpv';
@@ -50437,9 +51171,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Verschuiving (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Ondertitel gekoppeld aan ${title} (${count} regels)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Ondertitel gekoppeld aan ${title} (${count} regels)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Open de afspeellijst om per aflevering een ondertitel te koppelen';
@@ -50746,9 +51481,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Verwijderd uit speler';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'Kan ${host} niet bereiken: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'Kan ${host} niet bereiken: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Vorige ondertitel opnieuw afspelen';
@@ -50854,9 +51590,10 @@ class _StringsNl extends _StringsEn {
   @override
   String update_download_source({required Object source}) => 'Bron: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Gedownload: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Gedownload: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => 'Snelheid: ${speed}';
   @override
@@ -50929,24 +51666,28 @@ class _StringsNl extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Installatiedoel: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Gedetecteerde installatielocatie (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Gedetecteerde installatielocatie (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Installatiemap komt niet overeen: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Actief Hibiki-proces: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Actief Hibiki-proces: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'libmpv-houder: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'libmpv-houder: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'Installatieprogramma kon ${path} niet vervangen (code ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'Installatieprogramma kon ${path} niet vervangen (code ${code})';
   @override
   String get update_install_manual_close_retry =>
       'Sluit Hibiki via de vermelde PID/het vermelde pad en probeer de update opnieuw of voer het installatieprogramma opnieuw uit.';
@@ -51010,11 +51751,11 @@ class _StringsNl extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Bijwerken mislukt: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} bijgewerkt, ${current} up-to-date, ${failed} mislukt.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} bijgewerkt, ${current} up-to-date, ${failed} mislukt.';
   @override
   String crash_dump_label({required Object n}) => 'Crashdumps (${n})';
   @override
@@ -51260,8 +52001,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'Namen komen niet overeen';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'Het geselecteerde bestand is "${incoming}", maar je werkt "${existing}" bij. Toch vervangen?';
   @override
   String get dialog_replace => 'Replace';
@@ -51515,9 +52258,10 @@ class _StringsNl extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -51757,8 +52501,10 @@ class _StringsNl extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -52305,9 +53051,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -53134,9 +53881,10 @@ class _StringsNl extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -53204,8 +53952,10 @@ class _StringsNl extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -53360,15 +54110,16 @@ class _StringsNl extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -53481,9 +54232,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -53501,9 +54253,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -53570,29 +54323,84 @@ class _StringsNl extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsPtBr extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsPtBr.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.ptBr,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsPtBr.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.ptBr,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -53814,9 +54622,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get no_text => 'Sem texto.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      'O campo ${field} usou ${secondField} como termo de busca alternativo.';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => 'O campo ${field} usou ${secondField} como termo de busca alternativo.';
   @override
   String get no_text_to_search => 'Nenhum texto para buscar.';
   @override
@@ -54208,12 +55017,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get reading_progress => 'Progresso da Leitura';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Capítulo ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Capítulo ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Página ${current} / ${total}';
@@ -54569,9 +55378,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Digite a posição do caractere…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Atual: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Atual: ${current} / ${total}';
   @override
   String get error_log_empty => 'Sem registros de erros';
   @override
@@ -54912,9 +55722,10 @@ class _StringsPtBr extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} correspondência — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Recorrespondido: ${pct}% (janela: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Recorrespondido: ${pct}% (janela: ${window})';
   @override
   String get section_epub => 'Biblioteca EPUB';
   @override
@@ -55177,10 +55988,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'Restaurar backup?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Isto substituirá todos os dados atuais pelo backup de ${date}.\n\n${bookCount} livros, ${statsCount} registros de estatísticas.\n\nO app será reiniciado após a restauração.';
   @override
   String get backup_import_success => 'Backup restaurado. Reiniciando…';
@@ -55473,11 +56285,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get spread_direction_ltr => 'Da esquerda para a direita';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} OK. Falharam: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} OK. Falharam: ${error}';
   @override
   String get sync_now => 'Sincronizar agora';
   @override
@@ -55658,9 +56470,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_shader_download_failed => 'Falha ao baixar o shader';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      '${ok} shader(s) baixado(s), ${failed} com falha';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => '${ok} shader(s) baixado(s), ${failed} com falha';
   @override
   String get video_shader_downloaded_label => 'Baixado';
   @override
@@ -55877,8 +56690,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get db_downgrade_title => 'Atualize o Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Este banco de dados foi criado por uma versão mais recente do Hibiki (schema v${dbVersion}). Seu app atual é antigo demais (v${appVersion}). A abertura foi bloqueada para proteger seus dados. Atualize o app e tente novamente.';
   @override
   String get video_shader_import_from_mpv => 'Importar do mpv local';
@@ -56070,9 +56885,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Deslocamento (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Legenda anexada a ${title} (${count} linhas)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Legenda anexada a ${title} (${count} linhas)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Abra a playlist para anexar uma legenda por episódio';
@@ -56380,9 +57196,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Removido do player';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'Não foi possível conectar a ${host}: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'Não foi possível conectar a ${host}: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Repetir legenda anterior';
@@ -56490,9 +57307,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String update_download_source({required Object source}) => 'Fonte: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Baixado: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Baixado: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) =>
       'Velocidade: ${speed}';
@@ -56566,24 +57384,28 @@ class _StringsPtBr extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Destino da instalação: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Local de instalação detectado (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Local de instalação detectado (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Divergência no diretório de instalação: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Processo do Hibiki em execução: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Processo do Hibiki em execução: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'Processo que retém o libmpv: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'Processo que retém o libmpv: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'O instalador não conseguiu substituir ${path} (código ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'O instalador não conseguiu substituir ${path} (código ${code})';
   @override
   String get update_install_manual_close_retry =>
       'Feche o Hibiki pelo PID/caminho listado acima e tente atualizar novamente ou execute o instalador outra vez.';
@@ -56648,10 +57470,11 @@ class _StringsPtBr extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Falha na atualização: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) =>
       '${updated} atualizado(s), ${current} atualizado(s), ${failed} com falha.';
   @override
   String crash_dump_label({required Object n}) => 'Dumps de falha (${n})';
@@ -56897,8 +57720,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'Os nomes não coincidem';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'O arquivo selecionado é "${incoming}", mas você está atualizando "${existing}". Substituir mesmo assim?';
   @override
   String get dialog_replace => 'Replace';
@@ -57152,9 +57977,10 @@ class _StringsPtBr extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -57394,8 +58220,10 @@ class _StringsPtBr extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -57942,9 +58770,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -58771,9 +59600,10 @@ class _StringsPtBr extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -58841,8 +59671,10 @@ class _StringsPtBr extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -58997,15 +59829,16 @@ class _StringsPtBr extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -59118,9 +59951,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -59138,9 +59972,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -59207,29 +60042,84 @@ class _StringsPtBr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsRu extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsRu.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.ru,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsRu.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.ru,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -59451,8 +60341,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get no_text => 'Нет текста.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) =>
       'Поле ${field} использовало ${secondField} в качестве резервного запроса.';
   @override
   String get no_text_to_search => 'Нет текста для поиска.';
@@ -59841,12 +60733,12 @@ class _StringsRu extends _StringsEn {
   @override
   String get reading_progress => 'Прогресс чтения';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Глава ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Глава ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Страница ${current} / ${total}';
@@ -60198,9 +61090,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Введите позицию символа…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Текущая: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Текущая: ${current} / ${total}';
   @override
   String get error_log_empty => 'Нет журналов ошибок';
   @override
@@ -60539,9 +61432,10 @@ class _StringsRu extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} совпадение — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Пересопоставлено: ${pct}% (окно: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Пересопоставлено: ${pct}% (окно: ${window})';
   @override
   String get section_epub => 'Библиотека EPUB';
   @override
@@ -60804,10 +61698,11 @@ class _StringsRu extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'Восстановить копию?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Это заменит все текущие данные копией от ${date}.\n\nКниг: ${bookCount}, записей статистики: ${statsCount}.\n\nПосле восстановления приложение перезапустится.';
   @override
   String get backup_import_success => 'Копия восстановлена. Перезапуск…';
@@ -61103,11 +61998,11 @@ class _StringsRu extends _StringsEn {
   @override
   String get spread_direction_ltr => 'Слева направо';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} успешно. Ошибок: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} успешно. Ошибок: ${error}';
   @override
   String get sync_now => 'Синхронизировать сейчас';
   @override
@@ -61287,9 +62182,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_shader_download_failed => 'Не удалось загрузить шейдеры';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      'Загружено: ${ok}, не удалось: ${failed}';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => 'Загружено: ${ok}, не удалось: ${failed}';
   @override
   String get video_shader_downloaded_label => 'Загружено';
   @override
@@ -61503,8 +62399,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get db_downgrade_title => 'Обновите Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Эта база данных создана более новой версией Hibiki (схема v${dbVersion}). Текущая версия приложения слишком старая (v${appVersion}). Открытие заблокировано для защиты данных. Обновите приложение и повторите попытку.';
   @override
   String get video_shader_import_from_mpv => 'Импорт из локального mpv';
@@ -61693,9 +62591,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Смещение (мс)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Субтитры подключены к «${title}» (строк: ${count})';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Субтитры подключены к «${title}» (строк: ${count})';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Откройте плейлист, чтобы подключить субтитры к каждой серии';
@@ -61998,9 +62897,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Убрано с плеера';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'Не удалось подключиться к ${host}: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'Не удалось подключиться к ${host}: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Повторить предыдущий субтитр';
@@ -62108,9 +63008,10 @@ class _StringsRu extends _StringsEn {
   String update_download_source({required Object source}) =>
       'Источник: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Загружено: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Загружено: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => 'Скорость: ${speed}';
   @override
@@ -62182,24 +63083,28 @@ class _StringsRu extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Папка установки: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Обнаружено расположение установки (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Обнаружено расположение установки (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Несоответствие папки установки: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Запущенный процесс Hibiki: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Запущенный процесс Hibiki: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'Процесс, удерживающий libmpv: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'Процесс, удерживающий libmpv: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'Установщику не удалось заменить ${path} (код ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'Установщику не удалось заменить ${path} (код ${code})';
   @override
   String get update_install_manual_close_retry =>
       'Закройте Hibiki по указанному PID/пути, затем повторите обновление или снова запустите установщик.';
@@ -62264,11 +63169,11 @@ class _StringsRu extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Не удалось обновить: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      'Обновлено: ${updated}, актуально: ${current}, не удалось: ${failed}.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => 'Обновлено: ${updated}, актуально: ${current}, не удалось: ${failed}.';
   @override
   String crash_dump_label({required Object n}) => 'Аварийные дампы (${n})';
   @override
@@ -62517,8 +63422,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'Имена не совпадают';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'Выбранный файл — «${incoming}», но вы обновляете «${existing}». Всё равно заменить?';
   @override
   String get dialog_replace => 'Replace';
@@ -62772,9 +63679,10 @@ class _StringsRu extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -63014,8 +63922,10 @@ class _StringsRu extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -63562,9 +64472,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -64391,9 +65302,10 @@ class _StringsRu extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -64461,8 +65373,10 @@ class _StringsRu extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -64617,15 +65531,16 @@ class _StringsRu extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -64738,9 +65653,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -64758,9 +65674,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -64827,29 +65744,84 @@ class _StringsRu extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsTh extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsTh.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.th,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsTh.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.th,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -65068,9 +66040,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get no_text => 'ไม่มีข้อความ';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      'ฟิลด์ ${field} ใช้ ${secondField} เป็นคำค้นสำรอง';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => 'ฟิลด์ ${field} ใช้ ${secondField} เป็นคำค้นสำรอง';
   @override
   String get no_text_to_search => 'ไม่มีข้อความสำหรับค้นหา';
   @override
@@ -65455,12 +66428,12 @@ class _StringsTh extends _StringsEn {
   @override
   String get reading_progress => 'ความคืบหน้าการอ่าน';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'บทที่ ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'บทที่ ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'หน้า ${current} / ${total}';
@@ -65802,9 +66775,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get jump_to_char_hint => 'ป้อนตำแหน่งอักขระ…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'ปัจจุบัน: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'ปัจจุบัน: ${current} / ${total}';
   @override
   String get error_log_empty => 'ไม่มีบันทึกข้อผิดพลาด';
   @override
@@ -66139,9 +67113,10 @@ class _StringsTh extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} ตรง — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'จับคู่ใหม่: ${pct}% (หน้าต่าง: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'จับคู่ใหม่: ${pct}% (หน้าต่าง: ${window})';
   @override
   String get section_epub => 'คลัง EPUB';
   @override
@@ -66400,10 +67375,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'กู้คืนข้อมูลสำรอง?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'การดำเนินการนี้จะแทนที่ข้อมูลปัจจุบันทั้งหมดด้วยข้อมูลสำรองจาก ${date}\n\nหนังสือ ${bookCount} เล่ม, บันทึกสถิติ ${statsCount} รายการ\n\nแอปจะรีสตาร์ทหลังกู้คืน';
   @override
   String get backup_import_success => 'กู้คืนข้อมูลสำรองแล้ว กำลังรีสตาร์ท…';
@@ -66690,11 +67666,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get spread_direction_ltr => 'ซ้ายไปขวา';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} สำเร็จ ล้มเหลว: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} สำเร็จ ล้มเหลว: ${error}';
   @override
   String get sync_now => 'ซิงค์ทันที';
   @override
@@ -66875,9 +67851,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_shader_download_failed => 'ดาวน์โหลดเชเดอร์ไม่สำเร็จ';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      'ดาวน์โหลด ${ok} สำเร็จ, ${failed} ล้มเหลว';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => 'ดาวน์โหลด ${ok} สำเร็จ, ${failed} ล้มเหลว';
   @override
   String get video_shader_downloaded_label => 'ดาวน์โหลดแล้ว';
   @override
@@ -67088,8 +68065,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get db_downgrade_title => 'กรุณาอัปเดต Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'ฐานข้อมูลนี้สร้างด้วย Hibiki เวอร์ชันใหม่กว่า (schema v${dbVersion}) แอปปัจจุบันของคุณเก่าเกินไป (v${appVersion}) จึงบล็อกการเปิดเพื่อปกป้องข้อมูลของคุณ กรุณาอัปเดตแอปแล้วลองใหม่';
   @override
   String get video_shader_import_from_mpv => 'นำเข้าจาก mpv ในเครื่อง';
@@ -67272,9 +68251,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'ออฟเซ็ต (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'แนบคำบรรยายให้《${title}》แล้ว (${count} ประโยค)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'แนบคำบรรยายให้《${title}》แล้ว (${count} ประโยค)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'เปิดเพลย์ลิสต์เพื่อแนบคำบรรยายแยกตามตอน';
@@ -67573,9 +68553,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'นำออกจากโปรแกรมเล่น';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'เชื่อมต่อ ${host} ไม่ได้: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'เชื่อมต่อ ${host} ไม่ได้: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'เล่นประโยคก่อนหน้าซ้ำ';
@@ -67679,9 +68660,10 @@ class _StringsTh extends _StringsEn {
   @override
   String update_download_source({required Object source}) => 'แหล่ง: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'ดาวน์โหลดแล้ว: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'ดาวน์โหลดแล้ว: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => 'ความเร็ว: ${speed}';
   @override
@@ -67754,24 +68736,28 @@ class _StringsTh extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'ปลายทางการติดตั้ง: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'ตำแหน่งติดตั้งที่ตรวจพบ (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'ตำแหน่งติดตั้งที่ตรวจพบ (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'ไดเรกทอรีติดตั้งไม่ตรงกัน: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'โปรเซส Hibiki ที่ยังทำงานอยู่: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'โปรเซส Hibiki ที่ยังทำงานอยู่: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'โปรเซสที่ถือ libmpv: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'โปรเซสที่ถือ libmpv: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'ตัวติดตั้งแทนที่ ${path} ไม่ได้ (รหัส ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'ตัวติดตั้งแทนที่ ${path} ไม่ได้ (รหัส ${code})';
   @override
   String get update_install_manual_close_retry =>
       'กรุณาปิด Hibiki ตาม PID/เส้นทางด้านบน แล้วลองอัปเดตใหม่หรือรันตัวติดตั้งอีกครั้ง';
@@ -67834,11 +68820,11 @@ class _StringsTh extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'อัปเดตไม่สำเร็จ: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      'อัปเดต ${updated}, ล่าสุดแล้ว ${current}, ล้มเหลว ${failed}';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => 'อัปเดต ${updated}, ล่าสุดแล้ว ${current}, ล้มเหลว ${failed}';
   @override
   String crash_dump_label({required Object n}) => 'ไฟล์ Crash Dump (${n})';
   @override
@@ -68083,8 +69069,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'ชื่อไม่ตรงกัน';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'ไฟล์ที่เลือกคือ "${incoming}" แต่คุณกำลังอัปเดต "${existing}" จะแทนที่ต่อไปหรือไม่?';
   @override
   String get dialog_replace => 'Replace';
@@ -68337,9 +69325,10 @@ class _StringsTh extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -68579,8 +69568,10 @@ class _StringsTh extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -69127,9 +70118,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -69956,9 +70948,10 @@ class _StringsTh extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -70026,8 +71019,10 @@ class _StringsTh extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -70182,15 +71177,16 @@ class _StringsTh extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -70303,9 +71299,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -70323,9 +71320,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -70392,29 +71390,84 @@ class _StringsTh extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsTr extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsTr.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.tr,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsTr.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.tr,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -70633,9 +71686,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get no_text => 'Metin yok.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      '${field} alanı yedek arama terimi olarak ${secondField} kullandı.';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => '${field} alanı yedek arama terimi olarak ${secondField} kullandı.';
   @override
   String get no_text_to_search => 'Aranacak metin yok.';
   @override
@@ -71022,12 +72076,12 @@ class _StringsTr extends _StringsEn {
   @override
   String get reading_progress => 'Okuma ilerlemesi';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Bölüm ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Bölüm ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Sayfa ${current} / ${total}';
@@ -71377,9 +72431,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Karakter konumu girin…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Mevcut: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Mevcut: ${current} / ${total}';
   @override
   String get error_log_empty => 'Hata kaydı yok';
   @override
@@ -71716,9 +72771,10 @@ class _StringsTr extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} eşleşti — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Yeniden eşleştirildi: ${pct}% (pencere: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Yeniden eşleştirildi: ${pct}% (pencere: ${window})';
   @override
   String get section_epub => 'EPUB Kütüphanesi';
   @override
@@ -71981,10 +73037,11 @@ class _StringsTr extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'Yedek Geri Yüklensin mi?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Bu işlem tüm mevcut verileri ${date} tarihli yedekle değiştirir.\n\n${bookCount} kitap, ${statsCount} istatistik kaydı.\n\nGeri yüklemeden sonra uygulama yeniden başlatılacak.';
   @override
   String get backup_import_success =>
@@ -72276,11 +73333,11 @@ class _StringsTr extends _StringsEn {
   @override
   String get spread_direction_ltr => 'Soldan Sağa';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} tamam. Başarısız: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} tamam. Başarısız: ${error}';
   @override
   String get sync_now => 'Şimdi eşitle';
   @override
@@ -72460,9 +73517,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_shader_download_failed => 'Shader indirme başarısız';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      '${ok} shader indirildi, ${failed} başarısız';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => '${ok} shader indirildi, ${failed} başarısız';
   @override
   String get video_shader_downloaded_label => 'İndirildi';
   @override
@@ -72675,8 +73733,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get db_downgrade_title => 'Hibiki\'yi güncelle';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Bu veritabanı Hibiki\'nin daha yeni bir sürümü tarafından oluşturuldu (şema v${dbVersion}). Mevcut uygulamanız çok eski (v${appVersion}). Verilerinizi korumak için açma engellendi. Lütfen uygulamayı güncelleyip tekrar deneyin.';
   @override
   String get video_shader_import_from_mpv => 'Yerel mpv\'den içe aktar';
@@ -72862,9 +73922,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Kayma (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      '${title} videosuna altyazı eklendi (${count} satır)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => '${title} videosuna altyazı eklendi (${count} satır)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Bölüm başına altyazı eklemek için oynatma listesini açın';
@@ -73166,9 +74227,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Oynatıcıdan kaldırıldı';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      '${host} adresine ulaşılamadı: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => '${host} adresine ulaşılamadı: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Önceki altyazıyı tekrar oynat';
@@ -73273,9 +74335,10 @@ class _StringsTr extends _StringsEn {
   String update_download_source({required Object source}) =>
       'Kaynak: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'İndirilen: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'İndirilen: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => 'Hız: ${speed}';
   @override
@@ -73348,24 +74411,28 @@ class _StringsTr extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Yükleme hedefi: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Algılanan yükleme konumu (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Algılanan yükleme konumu (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Yükleme dizini uyuşmazlığı: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Çalışan Hibiki süreci: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Çalışan Hibiki süreci: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'libmpv tutan süreç: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'libmpv tutan süreç: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'Yükleyici ${path} dosyasını değiştiremedi (kod ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'Yükleyici ${path} dosyasını değiştiremedi (kod ${code})';
   @override
   String get update_install_manual_close_retry =>
       'Listelenen PID/yoldan Hibiki\'yi kapatın, ardından güncellemeyi tekrar deneyin ya da yükleyiciyi yeniden çalıştırın.';
@@ -73429,11 +74496,11 @@ class _StringsTr extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Güncelleme başarısız: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} güncellendi, ${current} güncel, ${failed} başarısız.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} güncellendi, ${current} güncel, ${failed} başarısız.';
   @override
   String crash_dump_label({required Object n}) => 'Çökme Dökümleri (${n})';
   @override
@@ -73679,8 +74746,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'Adlar eşleşmiyor';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'Seçilen dosya "${incoming}", ancak "${existing}" sözlüğünü güncelliyorsunuz. Yine de değiştirilsin mi?';
   @override
   String get dialog_replace => 'Replace';
@@ -73934,9 +75003,10 @@ class _StringsTr extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -74176,8 +75246,10 @@ class _StringsTr extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -74724,9 +75796,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -75553,9 +76626,10 @@ class _StringsTr extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -75623,8 +76697,10 @@ class _StringsTr extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -75779,15 +76855,16 @@ class _StringsTr extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -75900,9 +76977,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -75920,9 +76998,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -75989,29 +77068,84 @@ class _StringsTr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsVi extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsVi.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.vi,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsVi.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.vi,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -76230,9 +77364,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get no_text => 'Không có văn bản.';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      'Trường ${field} đã sử dụng ${secondField} làm từ tìm kiếm dự phòng.';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => 'Trường ${field} đã sử dụng ${secondField} làm từ tìm kiếm dự phòng.';
   @override
   String get no_text_to_search => 'Không có văn bản để tìm kiếm.';
   @override
@@ -76616,12 +77751,12 @@ class _StringsVi extends _StringsEn {
   @override
   String get reading_progress => 'Tiến độ đọc';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      'Chương ${idx} / ${total}${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => 'Chương ${idx} / ${total}${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Trang ${current} / ${total}';
@@ -76969,9 +78104,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get jump_to_char_hint => 'Nhập vị trí ký tự…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      'Hiện tại: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => 'Hiện tại: ${current} / ${total}';
   @override
   String get error_log_empty => 'Không có nhật ký lỗi';
   @override
@@ -77308,9 +78444,10 @@ class _StringsVi extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} khớp — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      'Đã khớp lại: ${pct}% (cửa sổ: ${window})';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => 'Đã khớp lại: ${pct}% (cửa sổ: ${window})';
   @override
   String get section_epub => 'Thư viện EPUB';
   @override
@@ -77571,10 +78708,11 @@ class _StringsVi extends _StringsEn {
   @override
   String get backup_import_confirm_title => 'Khôi phục bản sao lưu?';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       'Thao tác này sẽ thay thế toàn bộ dữ liệu hiện tại bằng bản sao lưu từ ${date}.\n\n${bookCount} sách, ${statsCount} bản ghi thống kê.\n\nỨng dụng sẽ khởi động lại sau khi khôi phục.';
   @override
   String get backup_import_success =>
@@ -77865,11 +79003,11 @@ class _StringsVi extends _StringsEn {
   @override
   String get spread_direction_ltr => 'Trái sang phải';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '${success} / ${total} thành công. Thất bại: ${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '${success} / ${total} thành công. Thất bại: ${error}';
   @override
   String get sync_now => 'Đồng bộ ngay';
   @override
@@ -78048,9 +79186,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_shader_download_failed => 'Tải shader thất bại';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      'Đã tải ${ok} shader, ${failed} thất bại';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => 'Đã tải ${ok} shader, ${failed} thất bại';
   @override
   String get video_shader_downloaded_label => 'Đã tải';
   @override
@@ -78264,8 +79403,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get db_downgrade_title => 'Hãy cập nhật Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       'Cơ sở dữ liệu này được tạo bởi một phiên bản Hibiki mới hơn (schema v${dbVersion}). Ứng dụng hiện tại của bạn quá cũ (v${appVersion}). Việc mở đã bị chặn để bảo vệ dữ liệu của bạn. Hãy cập nhật ứng dụng và thử lại.';
   @override
   String get video_shader_import_from_mpv => 'Nhập từ mpv cục bộ';
@@ -78452,9 +79593,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => 'Độ lệch (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      'Đã gắn phụ đề cho ${title} (${count} câu)';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => 'Đã gắn phụ đề cho ${title} (${count} câu)';
   @override
   String get video_subtitle_attach_playlist_hint =>
       'Mở danh sách phát để gắn phụ đề cho từng tập';
@@ -78752,9 +79894,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_control_slot_hidden => 'Đã gỡ khỏi trình phát';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      'Không thể kết nối ${host}: ${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => 'Không thể kết nối ${host}: ${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle =>
       'Phát lại câu trước';
@@ -78858,9 +80001,10 @@ class _StringsVi extends _StringsEn {
   @override
   String update_download_source({required Object source}) => 'Nguồn: ${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      'Đã tải: ${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => 'Đã tải: ${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => 'Tốc độ: ${speed}';
   @override
@@ -78932,24 +80076,28 @@ class _StringsVi extends _StringsEn {
   String update_install_target_dir({required Object path}) =>
       'Thư mục cài đặt: ${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      'Vị trí cài đặt phát hiện được (${source}): ${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => 'Vị trí cài đặt phát hiện được (${source}): ${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       'Thư mục cài đặt không khớp: ${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      'Tiến trình Hibiki đang chạy: PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => 'Tiến trình Hibiki đang chạy: PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'Tiến trình giữ libmpv: PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'Tiến trình giữ libmpv: PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      'Trình cài đặt không thể thay thế ${path} (mã ${code})';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => 'Trình cài đặt không thể thay thế ${path} (mã ${code})';
   @override
   String get update_install_manual_close_retry =>
       'Hãy đóng Hibiki theo PID/đường dẫn liệt kê ở trên, rồi thử lại cập nhật hoặc chạy lại trình cài đặt.';
@@ -79014,11 +80162,11 @@ class _StringsVi extends _StringsEn {
   String dict_update_failed({required Object error}) =>
       'Cập nhật thất bại: ${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} đã cập nhật, ${current} mới nhất, ${failed} thất bại.';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} đã cập nhật, ${current} mới nhất, ${failed} thất bại.';
   @override
   String crash_dump_label({required Object n}) => 'Bản kết xuất sự cố (${n})';
   @override
@@ -79264,8 +80412,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => 'Tên không khớp';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) =>
       'Tệp đã chọn là "${incoming}", nhưng bạn đang cập nhật "${existing}". Vẫn thay thế?';
   @override
   String get dialog_replace => 'Replace';
@@ -79518,9 +80668,10 @@ class _StringsVi extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -79760,8 +80911,10 @@ class _StringsVi extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => 'Lookups';
@@ -80308,9 +81461,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -81137,9 +82291,10 @@ class _StringsVi extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -81207,8 +82362,10 @@ class _StringsVi extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -81363,15 +82520,16 @@ class _StringsVi extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -81484,9 +82642,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -81504,9 +82663,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -81573,29 +82733,84 @@ class _StringsVi extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 // Path: <root>
 class _StringsZhCn extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsZhCn.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.zhCn,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsZhCn.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.zhCn,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -81836,9 +83051,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get no_text => '无文本。';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      '${field} 字段使用 ${secondField} 作为备选搜索词。';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => '${field} 字段使用 ${secondField} 作为备选搜索词。';
   @override
   String get no_text_to_search => '没有可搜索的文本。';
   @override
@@ -82224,12 +83440,12 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get reading_progress => '阅读进度';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      '第 ${idx} / ${total} 章${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => '第 ${idx} / ${total} 章${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       '第 ${current} / ${total} 页';
@@ -82559,9 +83775,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get jump_to_char_hint => '输入字符位置…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      '当前: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => '当前: ${current} / ${total}';
   @override
   String get error_log_empty => '暂无错误日志';
   @override
@@ -82871,9 +84088,10 @@ class _StringsZhCn extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} 匹配 — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      '重新匹配：${pct}%（窗口：${window}）';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => '重新匹配：${pct}%（窗口：${window}）';
   @override
   String get section_epub => 'EPUB 书库';
   @override
@@ -83078,10 +84296,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get backup_import_confirm_title => '恢复备份？';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       '这将用 ${date} 的备份替换所有当前数据。\n\n${bookCount} 本书，${statsCount} 条统计记录。\n\n恢复后应用将重启。';
   @override
   String get backup_import_success => '备份已恢复。正在重启…';
@@ -83346,11 +84565,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get spread_direction_ltr => '从左到右';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '成功 ${success} / ${total}。失败：${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '成功 ${success} / ${total}。失败：${error}';
   @override
   String get sync_now => '立即同步';
   @override
@@ -83515,9 +84734,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_shader_download_failed => '着色器下载失败';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      '已下载 ${ok} 个，${failed} 个失败';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => '已下载 ${ok} 个，${failed} 个失败';
   @override
   String get video_shader_downloaded_label => '已下载';
   @override
@@ -83715,8 +84935,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get db_downgrade_title => '请更新 Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       '此数据库由更新版本的 Hibiki 创建（schema v${dbVersion}）。当前应用版本过旧（v${appVersion}）。已阻止打开以保护你的数据。请更新应用后重试。';
   @override
   String get video_shader_import_from_mpv => '从本机 mpv 导入';
@@ -83886,9 +85108,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => '偏移 (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      '已为《${title}》挂上字幕（${count} 句）';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => '已为《${title}》挂上字幕（${count} 句）';
   @override
   String get video_subtitle_attach_playlist_hint => '请进入播放页按集挂载字幕';
   @override
@@ -84159,9 +85382,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_control_slot_hidden => '移出播放器';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      '无法连接 ${host}：${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => '无法连接 ${host}：${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle => '重播上一句';
   @override
@@ -84258,9 +85482,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String update_download_source({required Object source}) => '来源：${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      '已下载：${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => '已下载：${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => '速度：${speed}';
   @override
@@ -84321,24 +85546,28 @@ class _StringsZhCn extends _StringsEn {
   @override
   String update_install_target_dir({required Object path}) => '安装目标：${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      '检测到的安装位置（${source}）：${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => '检测到的安装位置（${source}）：${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       '安装目录不一致：${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      '仍在运行的 Hibiki 进程：PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => '仍在运行的 Hibiki 进程：PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'libmpv 持有进程：PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'libmpv 持有进程：PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      '安装器无法替换 ${path}（代码 ${code}）';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => '安装器无法替换 ${path}（代码 ${code}）';
   @override
   String get update_install_manual_close_retry =>
       '请按上方 PID/路径手动关闭 Hibiki，然后重试更新或重新运行安装器。';
@@ -84396,11 +85625,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String dict_update_failed({required Object error}) => '更新失败：${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} 个已更新，${current} 个最新，${failed} 个失败。';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} 个已更新，${current} 个最新，${failed} 个失败。';
   @override
   String crash_dump_label({required Object n}) => '崩溃转储 (${n})';
   @override
@@ -84631,9 +85860,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => '词典名称不一致';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
-      '所选文件是「${incoming}」，但你正在更新「${existing}」。仍要替换吗？';
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) => '所选文件是「${incoming}」，但你正在更新「${existing}」。仍要替换吗？';
   @override
   String get dialog_replace => '替换';
   @override
@@ -84869,9 +86099,10 @@ class _StringsZhCn extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       '正在迁移数据，请勿关闭应用或电脑，迁移完成后会自动重启。';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      '正在复制文件：${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => '正在复制文件：${copied} / ${total}';
   @override
   String get collection_word => '单词';
   @override
@@ -85093,9 +86324,10 @@ class _StringsZhCn extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '已选 ${count} 本书';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
-      '合并将新增 ${bookCount} 本书、更新 ${progressCount} 条阅读进度。';
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) => '合并将新增 ${bookCount} 本书、更新 ${progressCount} 条阅读进度。';
   @override
   String get stat_lookup => '查词';
   @override
@@ -85596,9 +86828,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_jimaku_batch_download => '下载全部';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      '字幕已获取：${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => '字幕已获取：${done}/${total}';
   @override
   String get anki_open_no_card => '在 Anki 中没有找到这个词的卡片。';
   @override
@@ -86363,9 +87596,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get delete_scope_sync_everywhere_desc => '其他设备下次同步时会确认删除';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      '已看完 ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => '已看完 ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) => '继续看 第${n}集';
   @override
@@ -86423,9 +87657,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get download_subscription_download_and_create => '下载并订阅';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
-      '将追踪 ${group} · ${resolution}，有新的单集发布时自动加入下载。';
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) => '将追踪 ${group} · ${resolution}，有新的单集发布时自动加入下载。';
   @override
   String get download_subscription_unavailable_hint =>
       '请选择能识别字幕组的单集发布后再订阅；合集仍可单次下载。';
@@ -86573,15 +87808,16 @@ class _StringsZhCn extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       '同时应用到本合集全部 ${n} 集';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      '匹配中 ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => '匹配中 ${current}/${total}';
   @override
   String get video_jimaku_source => '字幕来源';
   @override
@@ -86684,9 +87920,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => '正在识别…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      '第 ${done} / ${total} 页';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => '第 ${done} / ${total} 页';
   @override
   String get manga_ocr_wizard_importing => '正在导入…';
   @override
@@ -86704,9 +87941,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => '已配对主机';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      '正在上传页面 ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => '正在上传页面 ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => '已配对主机正在识别…';
   @override
@@ -86766,29 +88004,74 @@ class _StringsZhCn extends _StringsEn {
   String get games_drop_no_exe => '拖入的文件里没有新的游戏 .exe';
   @override
   String games_drop_imported({required Object count}) => '已添加 ${count} 个游戏';
+  @override
+  String get game_hook_reason_spawn_failed => '语音钩子组件无法启动，请检查是否被杀毒软件删除或拦截。';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      '钩子组件位数与游戏不匹配（32 位 / 64 位），请重新安装组件。';
+  @override
+  String get game_hook_reason_access_denied =>
+      '游戏以更高权限运行，请以管理员身份启动 Hibiki 后重试。';
+  @override
+  String get game_hook_reason_elevation_required =>
+      '该游戏需要管理员权限，请以管理员身份启动 Hibiki 后再启动游戏。';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'Hibiki 无法启动该游戏，请检查可执行文件路径。';
+  @override
+  String get game_hook_reason_hook_dll_missing => '钩子组件不完整（缺少 hook 库），请重新安装。';
+  @override
+  String get game_hook_reason_helper_missing => '未安装与该游戏位数匹配的语音钩子组件，请先安装后重试。';
+  @override
+  String get game_hook_reason_target_missing => '没有可捕获的游戏进程或可执行文件。';
+  @override
+  String get game_hook_reason_game_exe_missing => '保存的游戏可执行文件路径已不存在。';
+  @override
+  String get game_hook_reason_stale_session => '游戏里还残留上一次的捕获会话，请重启一次游戏。';
+  @override
+  String get game_hook_reason_ready_timeout => '钩子库未能在超时内加载完成，杀毒软件扫描可能是原因。';
+  @override
+  String get game_hook_reason_injection_failed =>
+      '注入游戏被拦截，请把 Hibiki 与该游戏加入杀毒软件白名单。';
+  @override
+  String get game_hook_reason_steam_timeout => 'Steam 已接受启动请求，但始终没有出现游戏进程。';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      '捕获通道无法打开，请重启 Hibiki。';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      '已注入游戏，但超时内没有文本或音频，该引擎可能尚未支持。';
+  @override
+  String get game_hook_reason_guarded_hook_failed => '受保护的钩子未能在超时内安装，正在自动重试。';
+  @override
+  String get game_hook_reason_resume_failed => '已启动的游戏无法恢复运行并被结束，请重新启动。';
 }
 
 // Path: <root>
 class _StringsZhHk extends _StringsEn {
   /// You can call this constructor and build your own translation instance of this locale.
   /// Constructing via the enum [AppLocale.build] is preferred.
-  _StringsZhHk.build(
-      {Map<String, Node>? overrides,
-      PluralResolver? cardinalResolver,
-      PluralResolver? ordinalResolver})
-      : assert(overrides == null,
-            'Set "translation_overrides: true" in order to enable this feature.'),
-        $meta = TranslationMetadata(
-          locale: AppLocale.zhHk,
-          overrides: overrides ?? {},
-          cardinalResolver: cardinalResolver,
-          ordinalResolver: ordinalResolver,
-        ),
-        super.build(
-            cardinalResolver: cardinalResolver,
-            ordinalResolver: ordinalResolver) {
+  _StringsZhHk.build({
+    Map<String, Node>? overrides,
+    PluralResolver? cardinalResolver,
+    PluralResolver? ordinalResolver,
+  }) : assert(
+         overrides == null,
+         'Set "translation_overrides: true" in order to enable this feature.',
+       ),
+       $meta = TranslationMetadata(
+         locale: AppLocale.zhHk,
+         overrides: overrides ?? {},
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ),
+       super.build(
+         cardinalResolver: cardinalResolver,
+         ordinalResolver: ordinalResolver,
+       ) {
     super.$meta.setFlatMapFunction(
-        $meta.getTranslation); // copy base translations to super.$meta
+      $meta.getTranslation,
+    ); // copy base translations to super.$meta
     $meta.setFlatMapFunction(_flatMapFunction);
   }
 
@@ -87001,9 +88284,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get no_text => '無文字。';
   @override
-  String field_fallback_used(
-          {required Object field, required Object secondField}) =>
-      '${field} 欄位使用 ${secondField} 作為備選搜尋詞。';
+  String field_fallback_used({
+    required Object field,
+    required Object secondField,
+  }) => '${field} 欄位使用 ${secondField} 作為備選搜尋詞。';
   @override
   String get no_text_to_search => '沒有可搜尋的文字。';
   @override
@@ -87378,12 +88662,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get reading_progress => '閱讀進度';
   @override
-  String chapter_progress(
-          {required Object idx,
-          required Object total,
-          required Object suffix,
-          required Object pct}) =>
-      '第 ${idx} / ${total} 章${suffix} · ${pct}%';
+  String chapter_progress({
+    required Object idx,
+    required Object total,
+    required Object suffix,
+    required Object pct,
+  }) => '第 ${idx} / ${total} 章${suffix} · ${pct}%';
   @override
   String page_progress({required Object current, required Object total}) =>
       '第 ${current} / ${total} 頁';
@@ -87713,9 +88997,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get jump_to_char_hint => '輸入字符位置…';
   @override
-  String jump_to_char_current(
-          {required Object current, required Object total}) =>
-      '當前: ${current} / ${total}';
+  String jump_to_char_current({
+    required Object current,
+    required Object total,
+  }) => '當前: ${current} / ${total}';
   @override
   String get error_log_empty => '暫無錯誤日誌';
   @override
@@ -88025,9 +89310,10 @@ class _StringsZhHk extends _StringsEn {
   String sasayaki_health_label({required Object pct, required Object detail}) =>
       '${pct} 比對 — ${detail}';
   @override
-  String sasayaki_rematch_result(
-          {required Object pct, required Object window}) =>
-      '重新比對：${pct}%（視窗：${window}）';
+  String sasayaki_rematch_result({
+    required Object pct,
+    required Object window,
+  }) => '重新比對：${pct}%（視窗：${window}）';
   @override
   String get section_epub => 'EPUB 書庫';
   @override
@@ -88270,10 +89556,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get backup_import_confirm_title => '還原備份？';
   @override
-  String backup_import_confirm(
-          {required Object date,
-          required Object bookCount,
-          required Object statsCount}) =>
+  String backup_import_confirm({
+    required Object date,
+    required Object bookCount,
+    required Object statsCount,
+  }) =>
       '此操作會用 ${date} 的備份取代所有目前資料。\n\n共 ${bookCount} 本書、${statsCount} 條統計記錄。\n\n還原後 App 將會重新啟動。';
   @override
   String get backup_import_success => '備份已還原。正在重新啟動…';
@@ -88538,11 +89825,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get spread_direction_ltr => '由左至右';
   @override
-  String dict_download_partial(
-          {required Object success,
-          required Object total,
-          required Object error}) =>
-      '成功 ${success} / ${total}。失敗：${error}';
+  String dict_download_partial({
+    required Object success,
+    required Object total,
+    required Object error,
+  }) => '成功 ${success} / ${total}。失敗：${error}';
   @override
   String get sync_now => '立即同步';
   @override
@@ -88707,9 +89994,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_shader_download_failed => '着色器下載失敗';
   @override
-  String video_shader_download_partial(
-          {required Object ok, required Object failed}) =>
-      '已下載 ${ok} 個，${failed} 個失敗';
+  String video_shader_download_partial({
+    required Object ok,
+    required Object failed,
+  }) => '已下載 ${ok} 個，${failed} 個失敗';
   @override
   String get video_shader_downloaded_label => '已下載';
   @override
@@ -88909,8 +90197,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get db_downgrade_title => '請更新 Hibiki';
   @override
-  String db_downgrade_message(
-          {required Object dbVersion, required Object appVersion}) =>
+  String db_downgrade_message({
+    required Object dbVersion,
+    required Object appVersion,
+  }) =>
       '此資料庫由較新版本的 Hibiki 建立（schema v${dbVersion}）。目前 App 版本過舊（v${appVersion}）。為保護你的資料已阻止開啟。請更新 App 後再試一次。';
   @override
   String get video_shader_import_from_mpv => '從本機 mpv 匯入';
@@ -89080,9 +90370,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_setting_subtitle_sync_input => '偏移 (ms)';
   @override
-  String video_subtitle_attached_to_video(
-          {required Object title, required Object count}) =>
-      '已為《${title}》掛上字幕（${count} 句）';
+  String video_subtitle_attached_to_video({
+    required Object title,
+    required Object count,
+  }) => '已為《${title}》掛上字幕（${count} 句）';
   @override
   String get video_subtitle_attach_playlist_hint => '請進入播放頁，逐集掛載字幕';
   @override
@@ -89355,9 +90646,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_control_slot_hidden => '已移出播放器';
   @override
-  String update_network_failure(
-          {required Object host, required Object reason}) =>
-      '無法連接 ${host}：${reason}';
+  String update_network_failure({
+    required Object host,
+    required Object reason,
+  }) => '無法連接 ${host}：${reason}';
   @override
   String get shortcut_action_video_replay_previous_subtitle => '重播上一句';
   @override
@@ -89454,9 +90746,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String update_download_source({required Object source}) => '來源：${source}';
   @override
-  String update_download_size(
-          {required Object received, required Object total}) =>
-      '已下載：${received} / ${total}';
+  String update_download_size({
+    required Object received,
+    required Object total,
+  }) => '已下載：${received} / ${total}';
   @override
   String update_download_speed({required Object speed}) => '速度：${speed}';
   @override
@@ -89517,24 +90810,28 @@ class _StringsZhHk extends _StringsEn {
   @override
   String update_install_target_dir({required Object path}) => '安裝目標：${path}';
   @override
-  String update_install_detected_location(
-          {required Object source, required Object path}) =>
-      '偵測到的安裝位置（${source}）：${path}';
+  String update_install_detected_location({
+    required Object source,
+    required Object path,
+  }) => '偵測到的安裝位置（${source}）：${path}';
   @override
   String update_install_path_mismatch({required Object warning}) =>
       '安裝目錄不一致：${warning}';
   @override
-  String update_install_running_process(
-          {required Object pid, required Object path}) =>
-      '仍在執行的 Hibiki 程序：PID ${pid} - ${path}';
+  String update_install_running_process({
+    required Object pid,
+    required Object path,
+  }) => '仍在執行的 Hibiki 程序：PID ${pid} - ${path}';
   @override
-  String update_install_libmpv_holder(
-          {required Object pid, required Object path}) =>
-      'libmpv 持有程序：PID ${pid} - ${path}';
+  String update_install_libmpv_holder({
+    required Object pid,
+    required Object path,
+  }) => 'libmpv 持有程序：PID ${pid} - ${path}';
   @override
-  String update_install_deletefile_failure(
-          {required Object path, required Object code}) =>
-      '安裝程式無法取代 ${path}（代碼 ${code}）';
+  String update_install_deletefile_failure({
+    required Object path,
+    required Object code,
+  }) => '安裝程式無法取代 ${path}（代碼 ${code}）';
   @override
   String get update_install_manual_close_retry =>
       '請依上方 PID／路徑手動關閉 Hibiki，然後重試更新或重新執行安裝程式。';
@@ -89592,11 +90889,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String dict_update_failed({required Object error}) => '更新失敗：${error}';
   @override
-  String dict_update_summary(
-          {required Object updated,
-          required Object current,
-          required Object failed}) =>
-      '${updated} 個已更新，${current} 個最新，${failed} 個失敗。';
+  String dict_update_summary({
+    required Object updated,
+    required Object current,
+    required Object failed,
+  }) => '${updated} 個已更新，${current} 個最新，${failed} 個失敗。';
   @override
   String crash_dump_label({required Object n}) => '當機傾印 (${n})';
   @override
@@ -89831,9 +91128,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get dict_update_name_mismatch_title => '詞典名稱不一致';
   @override
-  String dict_update_name_mismatch_body(
-          {required Object incoming, required Object existing}) =>
-      '所選檔案是「${incoming}」，但你正在更新「${existing}」。仍要替換嗎？';
+  String dict_update_name_mismatch_body({
+    required Object incoming,
+    required Object existing,
+  }) => '所選檔案是「${incoming}」，但你正在更新「${existing}」。仍要替換嗎？';
   @override
   String get dialog_replace => 'Replace';
   @override
@@ -90084,9 +91382,10 @@ class _StringsZhHk extends _StringsEn {
   String get data_storage_migrate_overlay_warning =>
       'Please keep the app open. Do not close or shut down your computer until it finishes.';
   @override
-  String data_storage_migrate_overlay_progress(
-          {required Object copied, required Object total}) =>
-      'Copying files: ${copied} / ${total}';
+  String data_storage_migrate_overlay_progress({
+    required Object copied,
+    required Object total,
+  }) => 'Copying files: ${copied} / ${total}';
   @override
   String get collection_word => 'Word';
   @override
@@ -90326,8 +91625,10 @@ class _StringsZhHk extends _StringsEn {
   String backup_export_books_selected({required Object count}) =>
       '${count} books selected';
   @override
-  String backup_import_merge_preview(
-          {required Object bookCount, required Object progressCount}) =>
+  String backup_import_merge_preview({
+    required Object bookCount,
+    required Object progressCount,
+  }) =>
       'Merge will add ${bookCount} books and update ${progressCount} reading positions.';
   @override
   String get stat_lookup => '查詞';
@@ -90873,9 +92174,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_jimaku_batch_download => 'Download all';
   @override
-  String video_jimaku_batch_done(
-          {required Object done, required Object total}) =>
-      'Subtitles fetched: ${done}/${total}';
+  String video_jimaku_batch_done({
+    required Object done,
+    required Object total,
+  }) => 'Subtitles fetched: ${done}/${total}';
   @override
   String get anki_open_no_card => 'No card found for this word in Anki.';
   @override
@@ -91697,9 +92999,10 @@ class _StringsZhHk extends _StringsEn {
   String get delete_scope_sync_everywhere_desc =>
       'Other devices confirm the deletion on next sync';
   @override
-  String collection_watched_progress(
-          {required Object done, required Object total}) =>
-      'Watched ${done}/${total}';
+  String collection_watched_progress({
+    required Object done,
+    required Object total,
+  }) => 'Watched ${done}/${total}';
   @override
   String collection_continue_progress({required Object n}) =>
       'Continue · EP ${n}';
@@ -91767,8 +93070,10 @@ class _StringsZhHk extends _StringsEn {
   String get download_subscription_download_and_create =>
       'Download and subscribe';
   @override
-  String download_subscription_choice_hint(
-          {required Object group, required Object resolution}) =>
+  String download_subscription_choice_hint({
+    required Object group,
+    required Object resolution,
+  }) =>
       'Follow ${group} · ${resolution}. New single-episode releases will be queued.';
   @override
   String get download_subscription_unavailable_hint =>
@@ -91923,15 +93228,16 @@ class _StringsZhHk extends _StringsEn {
   String video_scrape_apply_to_collection({required Object n}) =>
       'Also apply to all ${n} episodes in this collection';
   @override
-  String video_scrape_batch_summary(
-          {required Object applied,
-          required Object confirm,
-          required Object skipped}) =>
-      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_summary({
+    required Object applied,
+    required Object confirm,
+    required Object skipped,
+  }) => 'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
   @override
-  String video_scrape_batch_progress(
-          {required Object current, required Object total}) =>
-      'Matching ${current}/${total}';
+  String video_scrape_batch_progress({
+    required Object current,
+    required Object total,
+  }) => 'Matching ${current}/${total}';
   @override
   String get video_jimaku_source => 'Subtitle source';
   @override
@@ -92044,9 +93350,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get manga_ocr_wizard_running => 'Running OCR…';
   @override
-  String manga_ocr_wizard_page_progress(
-          {required Object done, required Object total}) =>
-      'Page ${done} / ${total}';
+  String manga_ocr_wizard_page_progress({
+    required Object done,
+    required Object total,
+  }) => 'Page ${done} / ${total}';
   @override
   String get manga_ocr_wizard_importing => 'Importing…';
   @override
@@ -92064,9 +93371,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get manga_remote_ocr_engine => 'Paired host';
   @override
-  String manga_remote_ocr_uploading(
-          {required Object done, required Object total}) =>
-      'Uploading pages ${done} / ${total}…';
+  String manga_remote_ocr_uploading({
+    required Object done,
+    required Object total,
+  }) => 'Uploading pages ${done} / ${total}…';
   @override
   String get manga_remote_ocr_running => 'Paired host is running OCR…';
   @override
@@ -92133,6 +93441,57 @@ class _StringsZhHk extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get game_hook_reason_spawn_failed =>
+      'The helper could not be started; check that antivirus has not removed or blocked it.';
+  @override
+  String get game_hook_reason_bitness_mismatch =>
+      'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+  @override
+  String get game_hook_reason_access_denied =>
+      'The game runs with higher privileges; start Hibiki as administrator and try again.';
+  @override
+  String get game_hook_reason_elevation_required =>
+      'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+  @override
+  String get game_hook_reason_create_process_failed =>
+      'The game could not be started from Hibiki; check the executable path.';
+  @override
+  String get game_hook_reason_hook_dll_missing =>
+      'The helper package is incomplete (hook library missing); reinstall it.';
+  @override
+  String get game_hook_reason_helper_missing =>
+      'Voice-hook helper is not installed for this game architecture; install it and try again.';
+  @override
+  String get game_hook_reason_target_missing =>
+      'No game process or executable was selected for capture.';
+  @override
+  String get game_hook_reason_game_exe_missing =>
+      'The game executable no longer exists at the saved path.';
+  @override
+  String get game_hook_reason_stale_session =>
+      'A previous capture session is still loaded in the game; restart the game once.';
+  @override
+  String get game_hook_reason_ready_timeout =>
+      'The hook library did not finish loading in time; antivirus scanning can cause this.';
+  @override
+  String get game_hook_reason_injection_failed =>
+      'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+  @override
+  String get game_hook_reason_steam_timeout =>
+      'Steam accepted the launch request but the game process never appeared.';
+  @override
+  String get game_hook_reason_shared_memory_unavailable =>
+      'The capture channel could not be opened; restart Hibiki.';
+  @override
+  String get game_hook_reason_handshake_timeout =>
+      'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+  @override
+  String get game_hook_reason_guarded_hook_failed =>
+      'A profile-guarded hook could not be installed in time; retrying automatically.';
+  @override
+  String get game_hook_reason_resume_failed =>
+      'The launched game could not be resumed and was stopped; launch it again.';
 }
 
 /// Flat map(s) containing all translations.
@@ -92752,12 +94111,12 @@ extension on _StringsEn {
       case 'reading_progress':
         return 'Reading Progress';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Chapter ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Chapter ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Page ${current} / ${total}';
@@ -93595,10 +94954,11 @@ extension on _StringsEn {
       case 'backup_import_confirm_title':
         return 'Restore Backup?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'This will replace all current data with the backup from ${date}.\n\n${bookCount} books, ${statsCount} statistics records.\n\nThe app will restart after restore.';
       case 'backup_import_success':
         return 'Backup restored. Restarting…';
@@ -93863,11 +95223,11 @@ extension on _StringsEn {
       case 'spread_direction_ltr':
         return 'Left to Right';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} OK. Failed: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} OK. Failed: ${error}';
       case 'sync_now':
         return 'Sync now';
       case 'sync_now_hint':
@@ -94870,11 +96230,11 @@ extension on _StringsEn {
       case 'dict_update_failed':
         return ({required Object error}) => 'Update failed: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated} updated, ${current} up to date, ${failed} failed.';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated} updated, ${current} up to date, ${failed} failed.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Crash Dumps (${n})';
       case 'crash_dump_empty':
@@ -96961,10 +98321,11 @@ extension on _StringsEn {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -97147,6 +98508,40 @@ extension on _StringsEn {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -97725,12 +99120,12 @@ extension on _StringsAr {
       case 'reading_progress':
         return 'تقدّم القراءة';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'الفصل ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'الفصل ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'صفحة ${current} / ${total}';
@@ -98605,10 +100000,11 @@ extension on _StringsAr {
       case 'backup_import_confirm_title':
         return 'استعادة النسخة الاحتياطية؟';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'سيؤدي هذا إلى استبدال كل البيانات الحالية بالنسخة الاحتياطية من ${date}.\n\n${bookCount} كتاب، ${statsCount} سجل إحصائي.\n\nسيُعاد تشغيل التطبيق بعد الاستعادة.';
       case 'backup_import_success':
         return 'تمت استعادة النسخة الاحتياطية. جارٍ إعادة التشغيل…';
@@ -98873,11 +100269,11 @@ extension on _StringsAr {
       case 'spread_direction_ltr':
         return 'من اليسار إلى اليمين';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} ناجح. فشل: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} ناجح. فشل: ${error}';
       case 'sync_now':
         return 'زامن الآن';
       case 'sync_now_hint':
@@ -99881,11 +101277,11 @@ extension on _StringsAr {
       case 'dict_update_failed':
         return ({required Object error}) => 'فشل التحديث: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated} محدّث، ${current} محدّث بالفعل، ${failed} فشل.';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated} محدّث، ${current} محدّث بالفعل، ${failed} فشل.';
       case 'crash_dump_label':
         return ({required Object n}) => 'تفريغات الأعطال (${n})';
       case 'crash_dump_empty':
@@ -101973,10 +103369,11 @@ extension on _StringsAr {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -102159,6 +103556,40 @@ extension on _StringsAr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -102741,12 +104172,12 @@ extension on _StringsDe {
       case 'reading_progress':
         return 'Lesefortschritt';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Kapitel ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Kapitel ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Seite ${current} / ${total}';
@@ -103632,10 +105063,11 @@ extension on _StringsDe {
       case 'backup_import_confirm_title':
         return 'Backup wiederherstellen?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Dadurch werden alle aktuellen Daten durch das Backup vom ${date} ersetzt.\n\n${bookCount} Bücher, ${statsCount} Statistikeinträge.\n\nNach der Wiederherstellung wird die App neu gestartet.';
       case 'backup_import_success':
         return 'Backup wiederhergestellt. Neustart…';
@@ -103900,11 +105332,11 @@ extension on _StringsDe {
       case 'spread_direction_ltr':
         return 'Links nach rechts';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} OK. Fehlgeschlagen: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} OK. Fehlgeschlagen: ${error}';
       case 'sync_now':
         return 'Jetzt synchronisieren';
       case 'sync_now_hint':
@@ -104914,10 +106346,11 @@ extension on _StringsDe {
       case 'dict_update_failed':
         return ({required Object error}) => 'Update fehlgeschlagen: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) =>
             '${updated} aktualisiert, ${current} aktuell, ${failed} fehlgeschlagen.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Absturzberichte (${n})';
@@ -107006,10 +108439,11 @@ extension on _StringsDe {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -107192,6 +108626,40 @@ extension on _StringsDe {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -107774,12 +109242,12 @@ extension on _StringsEs {
       case 'reading_progress':
         return 'Progreso de lectura';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Capítulo ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Capítulo ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Página ${current} / ${total}';
@@ -108664,10 +110132,11 @@ extension on _StringsEs {
       case 'backup_import_confirm_title':
         return '¿Restaurar copia de seguridad?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Esto reemplazará todos los datos actuales con la copia de seguridad del ${date}.\n\n${bookCount} libros, ${statsCount} registros de estadísticas.\n\nLa app se reiniciará tras la restauración.';
       case 'backup_import_success':
         return 'Copia restaurada. Reiniciando…';
@@ -108932,11 +110401,11 @@ extension on _StringsEs {
       case 'spread_direction_ltr':
         return 'De izquierda a derecha';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} correctos. Fallidos: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} correctos. Fallidos: ${error}';
       case 'sync_now':
         return 'Sincronizar ahora';
       case 'sync_now_hint':
@@ -109946,11 +111415,11 @@ extension on _StringsEs {
       case 'dict_update_failed':
         return ({required Object error}) => 'Error al actualizar: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated} actualizados, ${current} al día, ${failed} fallaron.';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated} actualizados, ${current} al día, ${failed} fallaron.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Volcados de fallo (${n})';
       case 'crash_dump_empty':
@@ -112038,10 +113507,11 @@ extension on _StringsEs {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -112224,6 +113694,40 @@ extension on _StringsEs {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -112804,12 +114308,12 @@ extension on _StringsFr {
       case 'reading_progress':
         return 'Progression de lecture';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Chapitre ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Chapitre ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Page ${current} / ${total}';
@@ -113698,10 +115202,11 @@ extension on _StringsFr {
       case 'backup_import_confirm_title':
         return 'Restaurer la sauvegarde ?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Cela remplacera toutes les données actuelles par la sauvegarde du ${date}.\n\n${bookCount} livres, ${statsCount} enregistrements de statistiques.\n\nL\'application redémarrera après la restauration.';
       case 'backup_import_success':
         return 'Sauvegarde restaurée. Redémarrage…';
@@ -113966,11 +115471,11 @@ extension on _StringsFr {
       case 'spread_direction_ltr':
         return 'De gauche à droite';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} OK. Échecs : ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} OK. Échecs : ${error}';
       case 'sync_now':
         return 'Synchroniser maintenant';
       case 'sync_now_hint':
@@ -114984,11 +116489,11 @@ extension on _StringsFr {
         return ({required Object error}) =>
             'Échec de la mise à jour : ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated} mis à jour, ${current} à jour, ${failed} en échec.';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated} mis à jour, ${current} à jour, ${failed} en échec.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Vidages de plantage (${n})';
       case 'crash_dump_empty':
@@ -117076,10 +118581,11 @@ extension on _StringsFr {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -117262,6 +118768,40 @@ extension on _StringsFr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -117843,12 +119383,12 @@ extension on _StringsId {
       case 'reading_progress':
         return 'Progres Membaca';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Bab ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Bab ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Halaman ${current} / ${total}';
@@ -118726,10 +120266,11 @@ extension on _StringsId {
       case 'backup_import_confirm_title':
         return 'Pulihkan Cadangan?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Ini akan menggantikan semua data saat ini dengan cadangan dari ${date}.\n\n${bookCount} buku, ${statsCount} catatan statistik.\n\nAplikasi akan dimulai ulang setelah pemulihan.';
       case 'backup_import_success':
         return 'Cadangan dipulihkan. Memulai ulang…';
@@ -118994,11 +120535,11 @@ extension on _StringsId {
       case 'spread_direction_ltr':
         return 'Kiri ke Kanan';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} OK. Gagal: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} OK. Gagal: ${error}';
       case 'sync_now':
         return 'Sinkronkan sekarang';
       case 'sync_now_hint':
@@ -120003,11 +121544,11 @@ extension on _StringsId {
       case 'dict_update_failed':
         return ({required Object error}) => 'Pembaruan gagal: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated} diperbarui, ${current} terbaru, ${failed} gagal.';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated} diperbarui, ${current} terbaru, ${failed} gagal.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Crash Dump (${n})';
       case 'crash_dump_empty':
@@ -122096,10 +123637,11 @@ extension on _StringsId {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -122282,6 +123824,40 @@ extension on _StringsId {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -122864,12 +124440,12 @@ extension on _StringsIt {
       case 'reading_progress':
         return 'Progresso di lettura';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Capitolo ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Capitolo ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Pagina ${current} / ${total}';
@@ -123752,10 +125328,11 @@ extension on _StringsIt {
       case 'backup_import_confirm_title':
         return 'Ripristinare il backup?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Questa operazione sostituirà tutti i dati attuali con il backup del ${date}.\n\n${bookCount} libri, ${statsCount} record di statistiche.\n\nL\'app verrà riavviata dopo il ripristino.';
       case 'backup_import_success':
         return 'Backup ripristinato. Riavvio in corso…';
@@ -124020,11 +125597,11 @@ extension on _StringsIt {
       case 'spread_direction_ltr':
         return 'Da sinistra a destra';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} OK. Falliti: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} OK. Falliti: ${error}';
       case 'sync_now':
         return 'Sincronizza ora';
       case 'sync_now_hint':
@@ -125038,10 +126615,11 @@ extension on _StringsIt {
         return ({required Object error}) =>
             'Aggiornamento non riuscito: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) =>
             '${updated} aggiornati, ${current} già aggiornati, ${failed} non riusciti.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Dump di crash (${n})';
@@ -127131,10 +128709,11 @@ extension on _StringsIt {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -127317,6 +128896,40 @@ extension on _StringsIt {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -127904,12 +129517,12 @@ extension on _StringsJa {
       case 'reading_progress':
         return '読書進捗';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'チャプター ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'チャプター ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'ページ ${current} / ${total}';
@@ -128769,10 +130382,11 @@ extension on _StringsJa {
       case 'backup_import_confirm_title':
         return 'バックアップを復元しますか？';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             '現在のすべてのデータが${date}のバックアップで置き換えられます。\n\n書籍${bookCount}冊、統計${statsCount}件。\n\n復元後にアプリが再起動します。';
       case 'backup_import_success':
         return 'バックアップを復元しました。再起動中…';
@@ -129036,11 +130650,11 @@ extension on _StringsJa {
       case 'spread_direction_ltr':
         return '左から右';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} 成功。失敗: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} 成功。失敗: ${error}';
       case 'sync_now':
         return '今すぐ同期';
       case 'sync_now_hint':
@@ -130038,11 +131652,11 @@ extension on _StringsJa {
       case 'dict_update_failed':
         return ({required Object error}) => '更新に失敗しました：${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated} 件を更新、${current} 件は最新、${failed} 件が失敗しました。';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated} 件を更新、${current} 件は最新、${failed} 件が失敗しました。';
       case 'crash_dump_label':
         return ({required Object n}) => 'クラッシュダンプ (${n})';
       case 'crash_dump_empty':
@@ -132128,10 +133742,11 @@ extension on _StringsJa {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -132314,6 +133929,40 @@ extension on _StringsJa {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -132893,12 +134542,12 @@ extension on _StringsKo {
       case 'reading_progress':
         return '읽기 진행률';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            '챕터 ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => '챕터 ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             '페이지 ${current} / ${total}';
@@ -133768,10 +135417,11 @@ extension on _StringsKo {
       case 'backup_import_confirm_title':
         return '백업을 복원할까요?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             '현재 모든 데이터가 ${date} 백업으로 대체됩니다.\n\n책 ${bookCount}권, 통계 기록 ${statsCount}개.\n\n복원 후 앱이 다시 시작됩니다.';
       case 'backup_import_success':
         return '백업을 복원했습니다. 다시 시작 중…';
@@ -134035,11 +135685,11 @@ extension on _StringsKo {
       case 'spread_direction_ltr':
         return '왼쪽에서 오른쪽';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} 성공. 실패: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} 성공. 실패: ${error}';
       case 'sync_now':
         return '지금 동기화';
       case 'sync_now_hint':
@@ -135038,11 +136688,11 @@ extension on _StringsKo {
       case 'dict_update_failed':
         return ({required Object error}) => '업데이트 실패: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated}개 업데이트, ${current}개 최신, ${failed}개 실패.';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated}개 업데이트, ${current}개 최신, ${failed}개 실패.';
       case 'crash_dump_label':
         return ({required Object n}) => '크래시 덤프 (${n})';
       case 'crash_dump_empty':
@@ -137129,10 +138779,11 @@ extension on _StringsKo {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -137315,6 +138966,40 @@ extension on _StringsKo {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -137897,12 +139582,12 @@ extension on _StringsNl {
       case 'reading_progress':
         return 'Leesvoortgang';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Hoofdstuk ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Hoofdstuk ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Pagina ${current} / ${total}';
@@ -138782,10 +140467,11 @@ extension on _StringsNl {
       case 'backup_import_confirm_title':
         return 'Back-up herstellen?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Dit vervangt alle huidige gegevens door de back-up van ${date}.\n\n${bookCount} boeken, ${statsCount} statistiekrecords.\n\nDe app wordt na het herstellen opnieuw gestart.';
       case 'backup_import_success':
         return 'Back-up hersteld. Opnieuw starten…';
@@ -139050,11 +140736,11 @@ extension on _StringsNl {
       case 'spread_direction_ltr':
         return 'Links naar rechts';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} OK. Mislukt: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} OK. Mislukt: ${error}';
       case 'sync_now':
         return 'Nu synchroniseren';
       case 'sync_now_hint':
@@ -140064,10 +141750,11 @@ extension on _StringsNl {
       case 'dict_update_failed':
         return ({required Object error}) => 'Bijwerken mislukt: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) =>
             '${updated} bijgewerkt, ${current} up-to-date, ${failed} mislukt.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Crashdumps (${n})';
@@ -142157,10 +143844,11 @@ extension on _StringsNl {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -142343,6 +144031,40 @@ extension on _StringsNl {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -142923,12 +144645,12 @@ extension on _StringsPtBr {
       case 'reading_progress':
         return 'Progresso da Leitura';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Capítulo ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Capítulo ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Página ${current} / ${total}';
@@ -143809,10 +145531,11 @@ extension on _StringsPtBr {
       case 'backup_import_confirm_title':
         return 'Restaurar backup?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Isto substituirá todos os dados atuais pelo backup de ${date}.\n\n${bookCount} livros, ${statsCount} registros de estatísticas.\n\nO app será reiniciado após a restauração.';
       case 'backup_import_success':
         return 'Backup restaurado. Reiniciando…';
@@ -144077,11 +145800,11 @@ extension on _StringsPtBr {
       case 'spread_direction_ltr':
         return 'Da esquerda para a direita';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} OK. Falharam: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} OK. Falharam: ${error}';
       case 'sync_now':
         return 'Sincronizar agora';
       case 'sync_now_hint':
@@ -145091,10 +146814,11 @@ extension on _StringsPtBr {
       case 'dict_update_failed':
         return ({required Object error}) => 'Falha na atualização: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) =>
             '${updated} atualizado(s), ${current} atualizado(s), ${failed} com falha.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Dumps de falha (${n})';
@@ -147182,10 +148906,11 @@ extension on _StringsPtBr {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -147368,6 +149093,40 @@ extension on _StringsPtBr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -147948,12 +149707,12 @@ extension on _StringsRu {
       case 'reading_progress':
         return 'Прогресс чтения';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Глава ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Глава ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Страница ${current} / ${total}';
@@ -148837,10 +150596,11 @@ extension on _StringsRu {
       case 'backup_import_confirm_title':
         return 'Восстановить копию?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Это заменит все текущие данные копией от ${date}.\n\nКниг: ${bookCount}, записей статистики: ${statsCount}.\n\nПосле восстановления приложение перезапустится.';
       case 'backup_import_success':
         return 'Копия восстановлена. Перезапуск…';
@@ -149105,11 +150865,11 @@ extension on _StringsRu {
       case 'spread_direction_ltr':
         return 'Слева направо';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} успешно. Ошибок: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} успешно. Ошибок: ${error}';
       case 'sync_now':
         return 'Синхронизировать сейчас';
       case 'sync_now_hint':
@@ -150120,10 +151880,11 @@ extension on _StringsRu {
       case 'dict_update_failed':
         return ({required Object error}) => 'Не удалось обновить: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) =>
             'Обновлено: ${updated}, актуально: ${current}, не удалось: ${failed}.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Аварийные дампы (${n})';
@@ -152212,10 +153973,11 @@ extension on _StringsRu {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -152398,6 +154160,40 @@ extension on _StringsRu {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -152978,12 +154774,12 @@ extension on _StringsTh {
       case 'reading_progress':
         return 'ความคืบหน้าการอ่าน';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'บทที่ ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'บทที่ ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'หน้า ${current} / ${total}';
@@ -153859,10 +155655,11 @@ extension on _StringsTh {
       case 'backup_import_confirm_title':
         return 'กู้คืนข้อมูลสำรอง?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'การดำเนินการนี้จะแทนที่ข้อมูลปัจจุบันทั้งหมดด้วยข้อมูลสำรองจาก ${date}\n\nหนังสือ ${bookCount} เล่ม, บันทึกสถิติ ${statsCount} รายการ\n\nแอปจะรีสตาร์ทหลังกู้คืน';
       case 'backup_import_success':
         return 'กู้คืนข้อมูลสำรองแล้ว กำลังรีสตาร์ท…';
@@ -154127,11 +155924,11 @@ extension on _StringsTh {
       case 'spread_direction_ltr':
         return 'ซ้ายไปขวา';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} สำเร็จ ล้มเหลว: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} สำเร็จ ล้มเหลว: ${error}';
       case 'sync_now':
         return 'ซิงค์ทันที';
       case 'sync_now_hint':
@@ -155133,11 +156930,11 @@ extension on _StringsTh {
       case 'dict_update_failed':
         return ({required Object error}) => 'อัปเดตไม่สำเร็จ: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            'อัปเดต ${updated}, ล่าสุดแล้ว ${current}, ล้มเหลว ${failed}';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => 'อัปเดต ${updated}, ล่าสุดแล้ว ${current}, ล้มเหลว ${failed}';
       case 'crash_dump_label':
         return ({required Object n}) => 'ไฟล์ Crash Dump (${n})';
       case 'crash_dump_empty':
@@ -157226,10 +159023,11 @@ extension on _StringsTh {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -157412,6 +159210,40 @@ extension on _StringsTh {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -157992,12 +159824,12 @@ extension on _StringsTr {
       case 'reading_progress':
         return 'Okuma ilerlemesi';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Bölüm ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Bölüm ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Sayfa ${current} / ${total}';
@@ -158876,10 +160708,11 @@ extension on _StringsTr {
       case 'backup_import_confirm_title':
         return 'Yedek Geri Yüklensin mi?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Bu işlem tüm mevcut verileri ${date} tarihli yedekle değiştirir.\n\n${bookCount} kitap, ${statsCount} istatistik kaydı.\n\nGeri yüklemeden sonra uygulama yeniden başlatılacak.';
       case 'backup_import_success':
         return 'Yedek geri yüklendi. Yeniden başlatılıyor…';
@@ -159144,11 +160977,11 @@ extension on _StringsTr {
       case 'spread_direction_ltr':
         return 'Soldan Sağa';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} tamam. Başarısız: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} tamam. Başarısız: ${error}';
       case 'sync_now':
         return 'Şimdi eşitle';
       case 'sync_now_hint':
@@ -160157,11 +161990,11 @@ extension on _StringsTr {
       case 'dict_update_failed':
         return ({required Object error}) => 'Güncelleme başarısız: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated} güncellendi, ${current} güncel, ${failed} başarısız.';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated} güncellendi, ${current} güncel, ${failed} başarısız.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Çökme Dökümleri (${n})';
       case 'crash_dump_empty':
@@ -162249,10 +164082,11 @@ extension on _StringsTr {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -162435,6 +164269,40 @@ extension on _StringsTr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -163016,12 +164884,12 @@ extension on _StringsVi {
       case 'reading_progress':
         return 'Tiến độ đọc';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            'Chương ${idx} / ${total}${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => 'Chương ${idx} / ${total}${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Trang ${current} / ${total}';
@@ -163897,10 +165765,11 @@ extension on _StringsVi {
       case 'backup_import_confirm_title':
         return 'Khôi phục bản sao lưu?';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             'Thao tác này sẽ thay thế toàn bộ dữ liệu hiện tại bằng bản sao lưu từ ${date}.\n\n${bookCount} sách, ${statsCount} bản ghi thống kê.\n\nỨng dụng sẽ khởi động lại sau khi khôi phục.';
       case 'backup_import_success':
         return 'Đã khôi phục bản sao lưu. Đang khởi động lại…';
@@ -164165,11 +166034,11 @@ extension on _StringsVi {
       case 'spread_direction_ltr':
         return 'Trái sang phải';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '${success} / ${total} thành công. Thất bại: ${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '${success} / ${total} thành công. Thất bại: ${error}';
       case 'sync_now':
         return 'Đồng bộ ngay';
       case 'sync_now_hint':
@@ -165175,10 +167044,11 @@ extension on _StringsVi {
       case 'dict_update_failed':
         return ({required Object error}) => 'Cập nhật thất bại: ${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) =>
             '${updated} đã cập nhật, ${current} mới nhất, ${failed} thất bại.';
       case 'crash_dump_label':
         return ({required Object n}) => 'Bản kết xuất sự cố (${n})';
@@ -167267,10 +169137,11 @@ extension on _StringsVi {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -167453,6 +169324,40 @@ extension on _StringsVi {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }
@@ -168068,12 +169973,12 @@ extension on _StringsZhCn {
       case 'reading_progress':
         return '阅读进度';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            '第 ${idx} / ${total} 章${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => '第 ${idx} / ${total} 章${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             '第 ${current} / ${total} 页';
@@ -168905,10 +170810,11 @@ extension on _StringsZhCn {
       case 'backup_import_confirm_title':
         return '恢复备份？';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             '这将用 ${date} 的备份替换所有当前数据。\n\n${bookCount} 本书，${statsCount} 条统计记录。\n\n恢复后应用将重启。';
       case 'backup_import_success':
         return '备份已恢复。正在重启…';
@@ -169171,11 +171077,11 @@ extension on _StringsZhCn {
       case 'spread_direction_ltr':
         return '从左到右';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '成功 ${success} / ${total}。失败：${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '成功 ${success} / ${total}。失败：${error}';
       case 'sync_now':
         return '立即同步';
       case 'sync_now_hint':
@@ -170169,11 +172075,11 @@ extension on _StringsZhCn {
       case 'dict_update_failed':
         return ({required Object error}) => '更新失败：${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated} 个已更新，${current} 个最新，${failed} 个失败。';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated} 个已更新，${current} 个最新，${failed} 个失败。';
       case 'crash_dump_label':
         return ({required Object n}) => '崩溃转储 (${n})';
       case 'crash_dump_empty':
@@ -172246,11 +174152,11 @@ extension on _StringsZhCn {
       case 'video_scrape_apply_to_collection':
         return ({required Object n}) => '同时应用到本合集全部 ${n} 集';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
-            '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) => '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             '匹配中 ${current}/${total}';
@@ -172432,6 +174338,40 @@ extension on _StringsZhCn {
         return '拖入的文件里没有新的游戏 .exe';
       case 'games_drop_imported':
         return ({required Object count}) => '已添加 ${count} 个游戏';
+      case 'game_hook_reason_spawn_failed':
+        return '语音钩子组件无法启动，请检查是否被杀毒软件删除或拦截。';
+      case 'game_hook_reason_bitness_mismatch':
+        return '钩子组件位数与游戏不匹配（32 位 / 64 位），请重新安装组件。';
+      case 'game_hook_reason_access_denied':
+        return '游戏以更高权限运行，请以管理员身份启动 Hibiki 后重试。';
+      case 'game_hook_reason_elevation_required':
+        return '该游戏需要管理员权限，请以管理员身份启动 Hibiki 后再启动游戏。';
+      case 'game_hook_reason_create_process_failed':
+        return 'Hibiki 无法启动该游戏，请检查可执行文件路径。';
+      case 'game_hook_reason_hook_dll_missing':
+        return '钩子组件不完整（缺少 hook 库），请重新安装。';
+      case 'game_hook_reason_helper_missing':
+        return '未安装与该游戏位数匹配的语音钩子组件，请先安装后重试。';
+      case 'game_hook_reason_target_missing':
+        return '没有可捕获的游戏进程或可执行文件。';
+      case 'game_hook_reason_game_exe_missing':
+        return '保存的游戏可执行文件路径已不存在。';
+      case 'game_hook_reason_stale_session':
+        return '游戏里还残留上一次的捕获会话，请重启一次游戏。';
+      case 'game_hook_reason_ready_timeout':
+        return '钩子库未能在超时内加载完成，杀毒软件扫描可能是原因。';
+      case 'game_hook_reason_injection_failed':
+        return '注入游戏被拦截，请把 Hibiki 与该游戏加入杀毒软件白名单。';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam 已接受启动请求，但始终没有出现游戏进程。';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return '捕获通道无法打开，请重启 Hibiki。';
+      case 'game_hook_reason_handshake_timeout':
+        return '已注入游戏，但超时内没有文本或音频，该引擎可能尚未支持。';
+      case 'game_hook_reason_guarded_hook_failed':
+        return '受保护的钩子未能在超时内安装，正在自动重试。';
+      case 'game_hook_reason_resume_failed':
+        return '已启动的游戏无法恢复运行并被结束，请重新启动。';
       default:
         return null;
     }
@@ -173009,12 +174949,12 @@ extension on _StringsZhHk {
       case 'reading_progress':
         return '閱讀進度';
       case 'chapter_progress':
-        return (
-                {required Object idx,
-                required Object total,
-                required Object suffix,
-                required Object pct}) =>
-            '第 ${idx} / ${total} 章${suffix} · ${pct}%';
+        return ({
+          required Object idx,
+          required Object total,
+          required Object suffix,
+          required Object pct,
+        }) => '第 ${idx} / ${total} 章${suffix} · ${pct}%';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             '第 ${current} / ${total} 頁';
@@ -173884,10 +175824,11 @@ extension on _StringsZhHk {
       case 'backup_import_confirm_title':
         return '還原備份？';
       case 'backup_import_confirm':
-        return (
-                {required Object date,
-                required Object bookCount,
-                required Object statsCount}) =>
+        return ({
+          required Object date,
+          required Object bookCount,
+          required Object statsCount,
+        }) =>
             '此操作會用 ${date} 的備份取代所有目前資料。\n\n共 ${bookCount} 本書、${statsCount} 條統計記錄。\n\n還原後 App 將會重新啟動。';
       case 'backup_import_success':
         return '備份已還原。正在重新啟動…';
@@ -174150,11 +176091,11 @@ extension on _StringsZhHk {
       case 'spread_direction_ltr':
         return '由左至右';
       case 'dict_download_partial':
-        return (
-                {required Object success,
-                required Object total,
-                required Object error}) =>
-            '成功 ${success} / ${total}。失敗：${error}';
+        return ({
+          required Object success,
+          required Object total,
+          required Object error,
+        }) => '成功 ${success} / ${total}。失敗：${error}';
       case 'sync_now':
         return '立即同步';
       case 'sync_now_hint':
@@ -175149,11 +177090,11 @@ extension on _StringsZhHk {
       case 'dict_update_failed':
         return ({required Object error}) => '更新失敗：${error}';
       case 'dict_update_summary':
-        return (
-                {required Object updated,
-                required Object current,
-                required Object failed}) =>
-            '${updated} 個已更新，${current} 個最新，${failed} 個失敗。';
+        return ({
+          required Object updated,
+          required Object current,
+          required Object failed,
+        }) => '${updated} 個已更新，${current} 個最新，${failed} 個失敗。';
       case 'crash_dump_label':
         return ({required Object n}) => '當機傾印 (${n})';
       case 'crash_dump_empty':
@@ -177238,10 +179179,11 @@ extension on _StringsZhHk {
         return ({required Object n}) =>
             'Also apply to all ${n} episodes in this collection';
       case 'video_scrape_batch_summary':
-        return (
-                {required Object applied,
-                required Object confirm,
-                required Object skipped}) =>
+        return ({
+          required Object applied,
+          required Object confirm,
+          required Object skipped,
+        }) =>
             'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
@@ -177424,6 +179366,40 @@ extension on _StringsZhHk {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'game_hook_reason_spawn_failed':
+        return 'The helper could not be started; check that antivirus has not removed or blocked it.';
+      case 'game_hook_reason_bitness_mismatch':
+        return 'Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.';
+      case 'game_hook_reason_access_denied':
+        return 'The game runs with higher privileges; start Hibiki as administrator and try again.';
+      case 'game_hook_reason_elevation_required':
+        return 'This game requires administrator rights; start Hibiki as administrator and launch it again.';
+      case 'game_hook_reason_create_process_failed':
+        return 'The game could not be started from Hibiki; check the executable path.';
+      case 'game_hook_reason_hook_dll_missing':
+        return 'The helper package is incomplete (hook library missing); reinstall it.';
+      case 'game_hook_reason_helper_missing':
+        return 'Voice-hook helper is not installed for this game architecture; install it and try again.';
+      case 'game_hook_reason_target_missing':
+        return 'No game process or executable was selected for capture.';
+      case 'game_hook_reason_game_exe_missing':
+        return 'The game executable no longer exists at the saved path.';
+      case 'game_hook_reason_stale_session':
+        return 'A previous capture session is still loaded in the game; restart the game once.';
+      case 'game_hook_reason_ready_timeout':
+        return 'The hook library did not finish loading in time; antivirus scanning can cause this.';
+      case 'game_hook_reason_injection_failed':
+        return 'Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.';
+      case 'game_hook_reason_steam_timeout':
+        return 'Steam accepted the launch request but the game process never appeared.';
+      case 'game_hook_reason_shared_memory_unavailable':
+        return 'The capture channel could not be opened; restart Hibiki.';
+      case 'game_hook_reason_handshake_timeout':
+        return 'The game was hooked but produced no text or audio in time; this engine may not be supported yet.';
+      case 'game_hook_reason_guarded_hook_failed':
+        return 'A profile-guarded hook could not be installed in time; retrying automatically.';
+      case 'game_hook_reason_resume_failed':
+        return 'The launched game could not be resumed and was stopped; launch it again.';
       default:
         return null;
     }

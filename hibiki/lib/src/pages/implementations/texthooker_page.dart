@@ -11,6 +11,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -446,7 +447,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (!mounted) return;
       final GalHookSessionState state = _session.state;
       if (!launched) {
-        HibikiToast.show(msg: state.lastError ?? t.game_capture_launch_failed);
+        // 失败提示优先给可执行处置（需要管理员 / 被杀软拦截 / 组件缺失），
+        // lastError 是英文内部消息，只作最后兜底。
+        HibikiToast.show(
+          msg: galHookFailureLabel(state.injectorFailure) ??
+              state.lastError ??
+              t.game_capture_launch_failed,
+        );
         return;
       }
       HibikiToast.show(
@@ -1407,10 +1414,14 @@ class _SessionOverviewCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                // 降级原因：优先显示结构化失败的可执行处置（「游戏以管理员身份运行，
+                // 请同样以管理员身份启动 Hibiki」之类）。旧实现把 `engine_attach_failed`
+                // 这种内部代码原样甩给用户，等于什么都没说。没有结构化原因时才退回代码。
                 if (!compact && state.fallbackReason != null)
                   Text(
-                    state.fallbackReason!,
-                    maxLines: 1,
+                    galHookFailureLabel(state.injectorFailure) ??
+                        state.fallbackReason!,
+                    maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.tertiary,

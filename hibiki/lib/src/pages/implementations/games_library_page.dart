@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_cover_resolver.dart';
@@ -230,11 +231,15 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
               .launchGame(game.exePath);
       if (!mounted) return;
       if (!launched) {
-        final String? reason =
+        final GalHookSessionState state =
             (widget.sessionController ?? GalHookSessionController.instance)
-                .state
-                .lastError;
-        HibikiToast.show(msg: reason ?? t.game_capture_launch_failed);
+                .state;
+        // 同 texthooker：先给用户可执行的处置，再退回内部消息。
+        HibikiToast.show(
+          msg: galHookFailureLabel(state.injectorFailure) ??
+              state.lastError ??
+              t.game_capture_launch_failed,
+        );
         return;
       }
       widget.onLaunched?.call();
