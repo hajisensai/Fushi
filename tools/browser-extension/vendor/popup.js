@@ -606,11 +606,11 @@ function applyTableStyles(html) {
     .replace(/<td(?=[>\s])/g, `<td style="${cellStyle}"`);
 }
 
-function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, useEmUnits) {
+function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance) {
     // .gloss-image-link
     node.style.cssText += 'display:inline-block;position:relative;line-height:1;max-width:100%;';
     // .gloss-image-container
-    imageContainer.style.cssText += `display:inline-block;white-space:nowrap;max-width:100%;max-height:100vh;position:relative;vertical-align:top;line-height:0;overflow:hidden;font-size:${useEmUnits ? '1em' : '1px'};`;
+    imageContainer.style.cssText += `display:inline-block;white-space:nowrap;max-width:100%;max-height:100vh;position:relative;vertical-align:top;line-height:0;overflow:hidden;font-size:1em;`;
     // .gloss-image-link[data-has-aspect-ratio=true] .gloss-image-sizer
     aspectRatioSizer.style.cssText += 'display:inline-block;width:0;vertical-align:top;font-size:0;';
     // .gloss-image-link[data-has-aspect-ratio=true] .gloss-image
@@ -854,7 +854,6 @@ function constructGlossaryHtml(entryIndex) {
     const styles = {};
     let lastDict = '';
     let prevTags = null;
-    let index = 0;
     
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     entry.glossaries.forEach(g => {
@@ -876,20 +875,21 @@ function constructGlossaryHtml(entryIndex) {
             renderStructuredContent(tempDiv, g.content, null, dictName, true);
         }
 
-        index++;
         let label = '';
         const parsedTags = parseTags(g.definitionTags).filter(tag => !NUMERIC_TAG.test(tag));
         const posTags = [...new Set(parsedTags.filter(isPartOfSpeech))].sort();
         const currentTags = JSON.stringify(posTags);
         const filteredTags = parsedTags.filter(tag => !isPartOfSpeech(tag) || !(prevTags !== null && prevTags === currentTags));
         const tags = filteredTags.length > 0 ? filteredTags.join(', ') : '';
+        // 标签格式与上游 Yomitan 的 `glossary-single`（`(definitionTags…, dictionaryAlias)`）
+        // 以及本文件的 constructSingleGlossaryHtml 保持一致：**不带序号**。此前这里自造了一个
+        // 自增序号，卡片上就成了「(1, 词典名)」（BUG-1061）。
         if (dictName !== lastDict) {
-            index = 1;
             lastDict = dictName;
-            label = tags ? `(${index}, ${tags}, ${dictName})` : `(${index}, ${dictName})`
+            label = tags ? `(${tags}, ${dictName})` : `(${dictName})`
         }
         else {
-            label = tags ? `(${index}, ${tags})` : `(${index})`
+            label = tags ? `(${tags})` : ''
         }
         
         glossaryItems += `<li data-dictionary="${dictName}"><i>${label}</i> <span>${applyTableStyles(tempDiv.innerHTML)}</span></li>`;
@@ -1073,7 +1073,13 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         imageContainer.style.overflow = 'visible';
         aspectRatioSizer.style.display = 'none';
     } else {
-        imageContainer.style.width = `${usedWidth}px`;
+        // 导出（制卡）与弹窗的尺寸语义不同：Yomitan 的 structured-content-generator 永远写
+        // `${usedWidth}em`，弹窗端再由它自己的 CSS
+        // (.gloss-image-container{font-size:calc(1em/var(--font-size-no-units))}) 把 1em 压成 1px；
+        // Anki 卡片上没有那份 CSS，em 按卡片正文字号解析，所以 Yomitan 的卡片图才是
+        // 「宽度数值 x 卡片字号」。这里若把导出也折算成物理 px，卡片图就比 Yomitan 小一个
+        // 字号的倍数（BUG-1060）。故导出保留 em 语义，弹窗维持 px。
+        imageContainer.style.width = exporting ? `${usedWidth}em` : `${usedWidth}px`;
     }
     if (typeof title === 'string') {
         imageContainer.title = title;
@@ -1142,7 +1148,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 image.width = usedWidth;
             }
             image.height = image.width * invAspectRatio;
-            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, useEmUnits);
+            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance);
         } else {
             image.textContent = alt;
         }
