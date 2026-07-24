@@ -14,6 +14,8 @@
 
 namespace hibiki_voice_hook {
 
+inline constexpr size_t kMaxLunaHostLogCharacters = 4096;
+
 struct LunaTargetIdentity {
   std::string executable_sha256;
   std::unordered_map<std::string, std::string> module_sha256;
@@ -79,7 +81,11 @@ inline bool LunaHookCodeMatchesBlock(const std::wstring& blocked,
 inline bool LunaHostLogConfirmsHookRemoval(const wchar_t* log,
                                            const std::wstring& hook_name) {
   if (log == nullptr || hook_name.empty()) return false;
-  size_t length = std::wcslen(log);
+  size_t length = 0;
+  while (length < kMaxLunaHostLogCharacters && log[length] != L'\0') {
+    ++length;
+  }
+  if (length == kMaxLunaHostLogCharacters) return false;
   while (length > 0 && std::iswspace(log[length - 1])) --length;
   return length >= hook_name.size() &&
          std::wstring(log + length - hook_name.size(), hook_name.size()) ==

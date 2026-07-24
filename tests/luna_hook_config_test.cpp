@@ -1,3 +1,4 @@
+#include <array>
 #include <cstdio>
 
 #include "luna_hook_config.h"
@@ -45,6 +46,14 @@ int main() {
           L"注入钩子: Krkr2wcs 005647F4", L"Krkr2wcs")) {
     std::fprintf(stderr, "Luna removal confirmation parsing failed\n");
     return 6;
+  }
+  std::array<wchar_t, hibiki_voice_hook::kMaxLunaHostLogCharacters>
+      unterminated_log{};
+  unterminated_log.fill(L'x');
+  if (hibiki_voice_hook::LunaHostLogConfirmsHookRemoval(
+          unterminated_log.data(), L"Krkr2wcs")) {
+    std::fprintf(stderr, "unterminated Luna host log was accepted\n");
+    return 7;
   }
 
   hibiki_voice_hook::LunaTargetIdentity moved = nine;
