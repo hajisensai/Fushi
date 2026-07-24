@@ -411,6 +411,28 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         return const _AnkiMobileAudioField('');
       case AnkiAudioRefKind.remoteUrl:
         return _AnkiMobileAudioField(audio);
+      case AnkiAudioRefKind.dataUri:
+        // BUG-1050：查词弹窗把本地音频库命中的单词发音编码成 `data:` URI 塞进
+        // fields['audio']。解码内联字节写临时文件，经本地媒体服务器（addFile 复制
+        // 快照）转成 AnkiMobile 可取的 URL，与 localFile 走同一入库通道。
+        final data = AnkiAudioRef.decodeDataUri(audio);
+        if (data == null) return const _AnkiMobileAudioField('');
+        final tempFile = File('${Directory.systemTemp.path}'
+            '${Platform.pathSeparator}hibiki_word_audio_'
+            '${DateTime.now().microsecondsSinceEpoch}.${data.extension}');
+        try {
+          await tempFile.writeAsBytes(data.bytes);
+          final url = await localMediaRef(tempFile.path,
+              mimePath: 'word_audio.${data.extension}');
+          if (url != null) return _AnkiMobileAudioField(url);
+          return const _AnkiMobileAudioField('');
+        } finally {
+          if (tempFile.existsSync()) {
+            try {
+              tempFile.deleteSync();
+            } catch (_) {}
+          }
+        }
       case AnkiAudioRefKind.localFile:
         final path = AnkiAudioRef.localPath(audio);
         final url = await localMediaRef(path);

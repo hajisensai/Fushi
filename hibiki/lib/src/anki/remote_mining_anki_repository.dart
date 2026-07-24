@@ -108,10 +108,19 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     try {
       final AnkiMiningPayload parsed = AnkiMiningPayload.fromJson(
           jsonDecode(rawPayloadJson) as Map<String, dynamic>);
-      if (AnkiAudioRef.classify(parsed.audio) == AnkiAudioRefKind.localFile) {
+      final AnkiAudioRefKind audioKind = AnkiAudioRef.classify(parsed.audio);
+      if (audioKind == AnkiAudioRefKind.localFile) {
         final String localPath = AnkiAudioRef.localPath(parsed.audio);
         wordAudioBytes = await _readPath(localPath);
         wordAudioExt = _extOf(localPath);
+      } else if (audioKind == AnkiAudioRefKind.dataUri) {
+        // BUG-1050：`data:` 内联单词发音（本地音频库命中）——解码成字节转发给主机，
+        // 否则互联「制卡到服务端」丢单词音频（与本地落卡同一根因）。
+        final AnkiAudioData? data = AnkiAudioRef.decodeDataUri(parsed.audio);
+        if (data != null) {
+          wordAudioBytes = data.bytes;
+          wordAudioExt = data.extension;
+        }
       }
       dictMedia = _collectDictionaryMedia(parsed.dictionaryMedia);
     } catch (_) {

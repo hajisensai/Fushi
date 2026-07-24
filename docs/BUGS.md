@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1014 条。点号进各自文件。
+> 共 1015 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1050](bugs/BUG-1050-video-mine-word-audio-datauri-dropped.md) | ✅ | ✅ | 视频/沉浸制卡本地源单词发音被当 data: URI 丢弃 |
 | [BUG-1047](bugs/BUG-1047-ext-reload-orphans-content-script.md) | ✅ | ✅ | 扩展自更新reload孤立已开页content script需手动刷新 |
 | [BUG-1046](bugs/BUG-1046-hook-overlay-transparent-hittest.md) | ✅ | ✅ | 隐藏背景后Hook文本浮窗点不动文字 |
 | [BUG-1045](bugs/BUG-1045-ext-connection-heartbeat.md) | ✅ | ✅ | 扩展未连接:app内存last-seen无心跳+MV3 SW空闲回收 |

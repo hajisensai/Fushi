@@ -1,0 +1,24 @@
+## BUG-1050 · 视频/沉浸制卡本地源单词发音被当 data: URI 丢弃
+- **报告**：2026-07-24（用户：app 内视频字幕查词制卡出来的卡「还是没有单词音频」。上一轮已合并的 BUG-1005 修复只覆盖扩展 content.js + CreatorModel `local_audio_enhancement.dart` 两条链，未覆盖视频/沉浸制卡这条 popup-mine 落卡链，故复发。）
+- **真实性**：✅ 真 bug（对 origin/develop 顶端逐行核实，均 file:line）。根因是 `AnkiAudioRef` 的音频引用模型不完整——不认 `data:` URI，把它当成不存在的本地文件静默丢弃：
+  - **产出点** `hibiki/lib/src/utils/misc/lookup_audio_playback.dart:140`：`audioRefToWebViewUrl` 为弹窗 HTML5 `<audio>` 播放，把**本地音频库命中**的单词发音编码成 `data:<mime>;base64,…`。
+  - **透传** popup.js（`assets/popup/popup.js:1294` `fetchAudioUrl` → Dart `resolveWordAudio` → `dictionary_popup_webview.dart:_resolveWordAudio` → `resolveWordAudioWebViewUrl`）把该 `data:` URI 原样写进 mine 的 `fields['audio']`；视频页 `_onMineEntryImpl → _mineVideoCard`（`video_hibiki/lookup_mining.part.dart`）→ `ImmersionMiningEngine.mine` → `repo.mineEntry` 原样透传。
+  - **丢弃点**（四后端同根因，`AnkiAudioRef.classify` 无 `data:` 分支，`data:` 落 `localFile` → `File("data:…")` 不存在 → 静默 `none()`）：
+    - AnkiConnect（桌面/iOS 远程，用户主路径）：`packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart` `_storeRemoteAudio` localFile 分支 `if (!file.existsSync()) return none()`。
+    - AnkiDroid：`packages/hibiki_anki/lib/src/ankidroid/anki_repository.dart` `_addRemoteAudio` localFile 分支。
+    - AnkiMobile：`hibiki/lib/src/anki/ankimobile_repository.dart:414` `_audioFieldForAnkiMobile` localFile 分支。
+    - 互联「制卡到服务端」转发：`hibiki/lib/src/anki/remote_mining_anki_repository.dart:111` 仅 `classify==localFile` 才读字节转发。
+  - 命中**远程发音源**（forvo/jpod101/hibikiRemote 返回 http URL）时本就正常；只有落到**本地音频库**（→ `data:` URI）才被丢。与已修的 CreatorModel/扩展是**不同的链**。
+- **[x] ① 已修复** — 在单一收口处补齐 `AnkiAudioRef` 模型，各 repo 解码内联字节入库（http/localFile 路径零改动，Never break userspace）：
+  - `anki_models.dart`：`AnkiAudioRefKind` 新增 `dataUri`；`classify` 认 `data:` 前缀；新增 `AnkiAudioRef.decodeDataUri`（`UriData.parse` + `contentAsBytes`，坏 URI/空体返 null）→ `AnkiAudioData{bytes, extension}`，`_audioExtForMime` 由 MIME 反推扩展名（`audioMimeForPath` 的逆）。
+  - AnkiConnect `_storeRemoteAudio` / AnkiDroid `_addRemoteAudio`：新增 `case dataUri` 解码写缓存文件，复用既有远端下载入库尾部（`storeMediaFile` / `_addMediaFile`）。
+  - AnkiMobile `_audioFieldForAnkiMobile`：新增 `case dataUri` 解码写临时文件经本地媒体服务器（`addFile` copySync 快照）转 URL，用后即删。
+  - 互联转发 `_buildForwardedPayload`：`dataUri` 分支解码成 `wordAudioBytes`/`wordAudioExt` 转发主机。
+  - 提交：`<pending>`（`fix(anki): 制卡本地源单词发音 data: URI 被丢弃 (BUG-1050)`）。
+- **[x] ② 已加自动化测试** — `hibiki/test/anki/anki_audio_ref_test.dart` 扩展：
+  - `classify('data:audio/mpeg;base64,…') == AnkiAudioRefKind.dataUri`（与 http/本地路径/`file://`/空 区分）。
+  - `decodeDataUri`：合法 `data:` 各 MIME → 正确 bytes + 扩展名（mpeg→mp3 / ogg→ogg / mp4·aac→m4a / wav→wav / flac→flac / webm→webm / 未知→mp3）；坏 URI / 空体 / 非 data: → null。
+  - `flutter analyze` 0 issue；上述测试全绿。
+- **备注**：
+  - 真机（只配本地音频库、无远程发音源时，视频字幕查词制卡 App 内 AnkiConnect 出单词发音）验证待办。
+  - 关联 [[BUG-1005]]（同报告的扩展/CreatorModel 单词音频，已合，另一条链）、[[BUG-1004]]（同轮句子音频，记忆里「AnkiAudioRef 加 dataUri/decodeDataUri」实际从未落地，本 bug 才真正补上）、[[BUG-631]]（播放侧本地源退化）。
