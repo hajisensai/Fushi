@@ -98,6 +98,7 @@ import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
 import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
+import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/immersion_capture_channel.dart';
@@ -872,6 +873,9 @@ class AppModel with ChangeNotifier {
             .log('AppModel.retryInitialise.close', e, stack);
       }
       _databaseOpened = false;
+      // 仓储绑的是刚被关掉的那个 db 实例，必须丢掉让它重建（否则重试后所有游戏库
+      // 读写都打在已关闭的连接上）。
+      _galgameRepo = null;
     }
     _initError = null;
     _downgradeError = null;
@@ -4562,11 +4566,29 @@ class AppModel with ChangeNotifier {
   Future<void> setTexthookerUrls(List<String> urls) =>
       prefsRepo.setTexthookerUrls(urls);
 
-  /// galgame 游戏库（首页「游戏」tab）：用户添加的游戏列表。读改写整列表后经
-  /// [setGalgames] 覆写持久化。
-  List<GalgameEntry> get galgames => prefsRepo.galgames;
+  /// galgame 游戏库仓储（v54 起真相源是 Drift 表 `galgames`，不再是偏好 JSON）。
+  ///
+  /// 懒建：绑的是 [database]，只有真正用到游戏库的路径才会碰它，冷启动不多跑查询。
+  /// 库页/详情页直接用这个仓储做增删改与会话查询。
+  GalgameRepository get galgameRepo =>
+      _galgameRepo ??= GalgameRepository(database);
+  GalgameRepository? _galgameRepo;
+
+  /// 当前缓存的游戏库列表（同步读，供 widget 首帧渲染）。首次进页面为空表，
+  /// 页面在 initState 里调 [reloadGalgames] 从 DB 拉真值。
+  List<GalgameEntry> get galgames => galgameRepo.games;
+
+  /// 整表覆写游戏库（保持旧签名：调用方组装整列表后写入；缺失的 id 视为删除）。
   Future<void> setGalgames(List<GalgameEntry> games) =>
-      prefsRepo.setGalgames(games);
+      galgameRepo.setGames(games);
+
+  /// 从 DB 重载游戏库缓存。
+  Future<List<GalgameEntry>> reloadGalgames() => galgameRepo.load();
+
+  /// 游戏库页的排序/筛选视图偏好（JSON 串，空 = 默认视图）。
+  String get galgameLibraryView => prefsRepo.galgameLibraryView;
+  Future<void> setGalgameLibraryView(String encoded) =>
+      prefsRepo.setGalgameLibraryView(encoded);
 
   bool get desktopClipboardEnabled => prefsRepo.desktopClipboardEnabled;
   Future<void> setDesktopClipboardEnabled(bool v) async {

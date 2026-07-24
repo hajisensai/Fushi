@@ -147,7 +147,7 @@ void main() {
           startMs: i * 1000,
           endMs: i * 1000 + 500,
           durationSeconds: 60 + i,
-          dateKey: '2026-07-2${i}');
+          dateKey: '2026-07-2$i');
     }
 
     final List<GalgameSessionRow> firstPage =

@@ -397,14 +397,26 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── galgame 游戏库（首页「游戏」tab）─────────────────────────────────────
 
-  /// 用户添加的 galgame 列表（单一 JSON 数组落 KV 表，解析失败回退空，与其它 JSON
-  /// 偏好同款容错）。
-  List<GalgameEntry> get galgames => decodeGalgameLibrary(
+  /// legacy：v54 之前用户添加的 galgame 列表（单一 JSON 数组落 KV 表）。
+  ///
+  /// 真相源自 v54 起是 Drift 表 `galgames`（迁移已一次性回填，见契约 §1.7），app 侧
+  /// 读写走 `GalgameRepository`。这两个访问器**只**留作回滚兜底/诊断，新代码别再用。
+  List<GalgameEntry> get legacyGalgames => decodeGalgameLibrary(
       getPref('galgame_library', defaultValue: '') as String);
 
-  /// 整表覆写游戏库列表（读改写整数组的增/删/改都由调用方组装后调此写入）。
-  Future<void> setGalgames(List<GalgameEntry> games) async {
+  /// 见 [legacyGalgames]。
+  Future<void> setLegacyGalgames(List<GalgameEntry> games) async {
     await setPref('galgame_library', encodeGalgameLibrary(games));
+    notifyListeners();
+  }
+
+  /// 游戏库页的排序/筛选视图偏好（`GalgameLibraryView.encode()` 的 JSON 串）。
+  /// 空串 = 默认视图。走现有偏好体系，不为一个视图状态新建表。
+  String get galgameLibraryView =>
+      getPref('galgame_library_view', defaultValue: '') as String;
+
+  Future<void> setGalgameLibraryView(String encoded) async {
+    await setPref('galgame_library_view', encoded);
     notifyListeners();
   }
 
