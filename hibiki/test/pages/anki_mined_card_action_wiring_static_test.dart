@@ -19,7 +19,7 @@ void main() {
     // return.
     expect(src.contains('async function minedCardAction('), isTrue);
     expect(src.contains("callHandler('minedCardAction', fields)"), isTrue);
-    // BUG-1060：宿主自带原生对话框时（app 内）仍然必须把点击交给 minedCardAction。
+    // BUG-1062：宿主自带原生对话框时（app 内）仍然必须把点击交给 minedCardAction。
     // 这一支现在写在三元里（另一支是 app 外的页内面板），所以钉调用本身而不是旧的
     // `const reply = await ...` 行形。
     expect(src.contains('parseMineResult(await minedCardAction('), isTrue,
@@ -29,11 +29,11 @@ void main() {
         reason: 'the two lanes must be selected by the host capability flag');
   });
 
-  /// BUG-1060：app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）
+  /// BUG-1062：app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）
   /// 没有 Flutter 层可以呈现这个对话框，它们的 minedCardAction 只会被立刻解析成 null。
   /// 旧代码把 null 当「宿主已处理」→ 点已制卡的 ✓ 完全没反应。这一组钉死替代车道：
   /// popup.js 自己画页内面板，数据走两根新 deferred 桥，动作复用 updateEntry/mineEntry。
-  group('BUG-1060 app 外点 ✓ 走页内面板（不得再静默）', () {
+  group('BUG-1062 app 外点 ✓ 走页内面板（不得再静默）', () {
     test('popup.js 有页内面板与它的两根数据桥', () {
       final src = read('assets/popup/popup.js');
       expect(src.contains('function showMinedCardActionPanel('), isTrue);

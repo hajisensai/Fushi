@@ -109,7 +109,7 @@ class FakeElement {
     }
   }
 
-  // BUG-1060: the in-page mined-card action panel detaches itself on close and
+  // BUG-1062: the in-page mined-card action panel detaches itself on close and
   // focuses its default action, so the stand-in needs both.
   remove() {
     const parent = this.parentElement;
@@ -237,7 +237,7 @@ function createPopupContext() {
 
   const document = {
     body: new FakeElement('body'),
-    // BUG-1060: the in-page action panel marks <html> while it is open (popup.css
+    // BUG-1062: the in-page action panel marks <html> while it is open (popup.css
     // gives the document a minimum height so the app-external window grows enough
     // to show it), so the stand-in document needs a real documentElement.
     documentElement: new FakeElement('html'),
@@ -279,7 +279,7 @@ function createPopupContext() {
       }
       listeners[type].push(handler);
     },
-    // BUG-1060: the action panel installs a capture-phase Esc handler and removes
+    // BUG-1062: the action panel installs a capture-phase Esc handler and removes
     // it on close; without a real removeEventListener the panel would leak one
     // handler per open in the harness (and mask a real leak in the product).
     removeEventListener(type, handler) {
@@ -1359,7 +1359,7 @@ async function testRelookupAfterDeletionDetectsMineableAndReMines() {
 // against Anki, finds the card gone, and re-mines.
 async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
   const context = loadPopup();
-  // BUG-1060：这一组用例模拟的是 app 内宿主——它自己接了 minedCardAction 并弹 Flutter
+  // BUG-1062：这一组用例模拟的是 app 内宿主——它自己接了 minedCardAction 并弹 Flutter
   // 居中对话框，所以 popup.js 把点击原样交出去。不声明这个标志的宿主（app 外裸
   // WebView2 窗口 / 浏览器扩展）只会把 minedCardAction 解析成 null，popup.js 改为在
   // 自己的 WebView 里画页内面板（见 testAppExternal* 用例）。
@@ -1417,7 +1417,7 @@ async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
 // genuinely in Anki (dupes off) must re-verify and add NOTHING.
 async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
   const context = loadPopup();
-  // BUG-1060：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1062：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const mined = [];
@@ -1584,7 +1584,7 @@ async function testLatestMinedCardCanBeOverwrittenInPlace() {
 // falls back to the ordinary mined path.
 async function testMiningNextCardDowngradesPreviousFromEditable() {
   const context = loadPopup();
-  // BUG-1060：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1062：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const mined = [];
@@ -1638,7 +1638,7 @@ async function testMiningNextCardDowngradesPreviousFromEditable() {
 // never becomes the editable latest — it stays an ordinary ✓.
 async function testNoNoteIdNeverBecomesEditableLatest() {
   const context = loadPopup();
-  // BUG-1060：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1062：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const updated = [];
@@ -2000,7 +2000,7 @@ testOverwriteScopeLatestKeepsEarlierCardOrdinary().catch((error) => {
 // re-detects mined state. Root-cause fix for "clicking ✓ did nothing".
 async function testClickingMinedCheckInvokesHostActionSheet() {
   const context = loadPopup();
-  // BUG-1060：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1062：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const actionCalls = [];
@@ -2046,7 +2046,7 @@ testClickingMinedCheckInvokesHostActionSheet().catch((error) => {
   process.exitCode = 1;
 });
 
-// BUG-1060 —— app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）：
+// BUG-1062 —— app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）：
 // 这些宿主没有 Flutter 层可以呈现「卡片已在 Anki 中」对话框，它们的 minedCardAction
 // 只会立刻拿到 null。旧代码把这个 null 当作「宿主已处理」，于是点已制卡的 ✓ 什么都
 // 不发生（用户报「app 外重复制卡点击没反应」，而主页同一操作正常）。现在 popup.js 在

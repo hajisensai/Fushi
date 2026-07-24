@@ -1358,7 +1358,7 @@ async function minedCardAction(expression, reading, frequencies, pitches, rules,
     return await window.flutter_inappwebview.callHandler('minedCardAction', fields);
 }
 
-// BUG-1060 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
+// BUG-1062 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
 //
 // 宿主分两类：
 //   * 有原生对话框（window.__hibikiMinedCardActionNative）：app 内的三个
@@ -2463,7 +2463,7 @@ function createEntryHeader(entry, idx) {
                     // new duplicate, or view / open the card in Anki. Works for
                     // cards created elsewhere / in a previous session.
                     if (typeof window.flutter_inappwebview.callHandler === 'function') {
-                        // BUG-1060 两条车道，同一套选择：
+                        // BUG-1062 两条车道，同一套选择：
                         //   * 宿主有原生对话框（app 内）→ minedCardAction，Flutter 居中
                         //     对话框（BUG-1040），行为逐字不变。
                         //   * 宿主没有（app 外裸窗 / 扩展）→ 在本 WebView 里画页内面板。
