@@ -2369,5 +2369,6 @@
   "video_scrape_set_collection_cover": "设为合集封面",
   "video_scrape_status_collection_cover_set": "已设为合集封面",
   "video_scrape_status_skipped_directory": "跳过（各集保留抽帧画面）",
-  "video_scrape_run_background": "后台运行"
+  "video_scrape_run_background": "后台运行",
+  "video_collection_restore_cover": "恢复默认封面"
 }

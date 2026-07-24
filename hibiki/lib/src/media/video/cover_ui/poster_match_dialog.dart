@@ -29,6 +29,7 @@ Future<void> showPosterMatchDialog({
   required VideoBookRow book,
   required int? collectionId,
   required VoidCallback onApplied,
+  String? initialQuery,
 }) {
   return showAppDialog<void>(
     context: context,
@@ -37,6 +38,7 @@ Future<void> showPosterMatchDialog({
       book: book,
       collectionId: collectionId,
       onApplied: onApplied,
+      initialQuery: initialQuery,
     ),
   );
 }
@@ -49,6 +51,7 @@ class PosterMatchDialog extends ConsumerStatefulWidget {
     required this.book,
     required this.collectionId,
     required this.onApplied,
+    this.initialQuery,
   });
 
   final PosterScraperService service;
@@ -59,6 +62,9 @@ class PosterMatchDialog extends ConsumerStatefulWidget {
 
   /// 应用成功后回调（刷新库页）。
   final VoidCallback onApplied;
+
+  /// 搜索框预填覆盖（合集入口传合集名）；null 时按解析标题/书名预填（散卡入口）。
+  final String? initialQuery;
 
   @override
   ConsumerState<PosterMatchDialog> createState() => _PosterMatchDialogState();
@@ -84,8 +90,14 @@ class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
     super.initState();
     _setCollectionCover = widget.collectionId != null;
     _parsed = widget.service.parseForPath(widget.book.videoPath);
-    final String prefill =
-        _parsed?.title.isNotEmpty == true ? _parsed!.title : widget.book.title;
+    // 合集入口预填合集名（[initialQuery]）；散卡入口预填解析标题、退化到书名。
+    // 打分仍用代表书的 [_parsed]（解析层输出），只覆盖搜索关键词。
+    final String? override = widget.initialQuery?.trim();
+    final String prefill = override != null && override.isNotEmpty
+        ? override
+        : (_parsed?.title.isNotEmpty == true
+            ? _parsed!.title
+            : widget.book.title);
     _queryCtrl = TextEditingController(text: prefill);
     _tmdbKeyCtrl = TextEditingController(text: _storedTmdbKey());
     // 默认数据源：Bangumi（主源）。

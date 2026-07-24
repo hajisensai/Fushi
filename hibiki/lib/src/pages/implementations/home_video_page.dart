@@ -1744,9 +1744,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 长按菜单「在线匹配海报」：组装 service → 弹单本匹配弹窗（预填解析标题）。
   /// [collectionId]：该书所属 DB 合集（长按入口按折叠归属查；批量「待确认」行
   /// 直接传该组的 collectionId，含「显式 null = 目录散集成员，只应用到该书」）。
+  /// [initialQuery]：搜索框预填覆盖（合集场景传合集名，比代表书的解析标题更贴切）；
+  /// 为 null 时弹窗按原逻辑预填解析标题（散卡入口）。
   Future<void> _openPosterMatch(
     VideoBookRow book, {
     required int? collectionId,
+    String? initialQuery,
   }) async {
     final ({
       PosterScraperService service,
@@ -1759,8 +1762,116 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       service: bundle.service,
       book: book,
       collectionId: collectionId,
+      initialQuery: initialQuery,
       onApplied: _refresh,
     );
+  }
+
+  /// 长按 / 桌面右键合集封面卡：弹与散卡 [_showVideoMenu] 同款封面背景动作面板
+  /// （[MediaItemDialogFrame] 复用），封面语义已改成合集级海报，合集必须有自己的
+  /// 封面入口。动作：
+  /// * 「查看详情」（第一项，等价 onTap）→ [_openCollectionDetail]；
+  /// * 「自定义封面」→ file_picker 选本地图片落合集级海报（标 manual，批量刮削永不覆盖）；
+  /// * 「在线匹配海报」→ 复用 [_openPosterMatch]，传首个本地成员 + collectionId、
+  ///   搜索词预填合集名（合集无本地成员时不显示——纯远端占位无代表书可匹配）；
+  /// * 「恢复默认封面」→ 删合集级海报回退成员封面借用（仅当海报文件存在时显示）。
+  void _showCollectionMenu(CollectionGroup<_VideoSlot> group) {
+    final MediaCollectionRow collection = group.collection!;
+    // 首个本地成员 = 在线匹配的代表书（纯远端占位合集无代表书，禁用该项）。
+    VideoBookRow? firstLocal;
+    for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
+      final VideoBookRow? local = it.payload.local;
+      if (local != null) {
+        firstLocal = local;
+        break;
+      }
+    }
+    // 合集级海报文件是否存在 → 决定「恢复默认封面」项显隐（无海报无可恢复）。
+    final bool hasPoster = _collectionPosterPath(collection.id) != null;
+    showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => MediaItemDialogFrame(
+        cover: _buildCollectionCover(group),
+        title: collection.name,
+        showLaunchAction: false,
+        quickActions: <DialogQuickAction>[
+          DialogQuickAction(
+            label: t.collection_view_all,
+            icon: Icons.playlist_play,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _openCollectionDetail(collection);
+            },
+          ),
+          DialogQuickAction(
+            label: t.srt_import_pick_cover,
+            icon: Icons.image_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _pickCollectionCover(collection.id);
+            },
+          ),
+          if (firstLocal != null)
+            DialogQuickAction(
+              label: t.video_scrape_online_match,
+              icon: Icons.image_search,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _openPosterMatch(
+                  firstLocal!,
+                  collectionId: collection.id,
+                  initialQuery: collection.name,
+                );
+              },
+            ),
+          if (hasPoster)
+            DialogQuickAction(
+              label: t.video_collection_restore_cover,
+              icon: Icons.restore,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _restoreCollectionCover(collection.id);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 「自定义封面」：选本地图片 → 落合集级海报（`collections/collection_<id>.jpg`）→
+  /// 标 `manual`（[CoverMetaStore] 用 [CollectionPosterStore.metaKey]，批量刮削永不
+  /// 覆盖）→ 刷新。图片校验由 file_picker 的 [FileType.image] 兜底（与 [_pickCover]
+  /// 同款选择器）。
+  Future<void> _pickCollectionCover(int collectionId) async {
+    final FilePickerResult? result =
+        await FilePicker.platform.pickFiles(type: FileType.image);
+    final String? pickedPath = result?.files.first.path;
+    if (pickedPath == null || !mounted) return;
+    final List<int> bytes = await File(pickedPath).readAsBytes();
+    final Directory covers = await VideoStorage.coversDir();
+    await CollectionPosterStore(covers)
+        .savePoster(collectionId: collectionId, bytes: bytes);
+    // 手动封面标记 manual：从此受批量刮削保护（保护线查 `collection:<id>` meta）。
+    try {
+      await CoverMetaStore(covers).set(
+        CollectionPosterStore.metaKey(collectionId),
+        const CoverMeta(origin: CoverOrigin.manual),
+      );
+    } catch (_) {
+      // 元数据记账失败不影响海报已落盘（best-effort，保护性标记）。
+    }
+    if (mounted) _refresh();
+  }
+
+  /// 「恢复默认封面」：删合集级海报 + 清来源元数据 + 刷新，封面回退到首个成员封面。
+  /// 图片缓存驱逐由 [CollectionPosterStore.remove] 内部完成（按 path 与 ResizeImage
+  /// 两种 key 都驱逐），此处无需再手动 evict。
+  Future<void> _restoreCollectionCover(int collectionId) async {
+    final Directory covers = await VideoStorage.coversDir();
+    await CollectionPosterStore(covers).remove(collectionId);
+    await CoverMetaStore(covers)
+        .remove(CollectionPosterStore.metaKey(collectionId));
+    if (mounted) _refresh();
   }
 
   /// 页头「批量匹配海报」：对当前本地视频（远端/流媒体不参与）批量刮削。
@@ -2475,6 +2586,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       onTap: _selectionMode
           ? () => _toggleCollectionSelection(collection.id)
           : () => _openCollectionDetail(collection),
+      // 长按 / 桌面右键都弹合集管理菜单（自定义封面 / 在线匹配海报 / 恢复默认封面 /
+      // 查看详情）；多选态两者都置 null（与散卡 [_buildCard]、BUG-758 两者都挂纪律
+      // 一致——此前合集卡什么都没挂，合集拿不到自己的封面入口）。
+      onLongPress: _selectionMode ? null : () => _showCollectionMenu(group),
+      onSecondaryTap: _selectionMode ? null : () => _showCollectionMenu(group),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

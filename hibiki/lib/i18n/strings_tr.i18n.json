@@ -2369,5 +2369,6 @@
   "video_scrape_set_collection_cover": "Set as collection cover",
   "video_scrape_status_collection_cover_set": "Collection cover set",
   "video_scrape_status_skipped_directory": "Skipped (episodes keep frame covers)",
-  "video_scrape_run_background": "Run in background"
+  "video_scrape_run_background": "Run in background",
+  "video_collection_restore_cover": "Restore default cover"
 }
