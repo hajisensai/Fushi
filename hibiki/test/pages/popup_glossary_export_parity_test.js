@@ -1,4 +1,4 @@
-// BUG-1060 / BUG-1061 behavior test: the Anki mining payload built by popup.js
+// BUG-1062 / BUG-1061 behavior test: the Anki mining payload built by popup.js
 // must match upstream Yomitan's exported glossary, in two respects the user hit:
 //
 // BUG-1061 — `{glossary}` label had a self-invented ordinal. Yomitan's
@@ -7,7 +7,7 @@
 //   (`{glossary-first}` / `{single-glossary-*}`) already agreed. Only
 //   constructGlossaryHtml prefixed an index, so cards read "(1, 词典名)".
 //
-// BUG-1060 — exported definition images were pinned to physical pixels. Yomitan's
+// BUG-1062 — exported definition images were pinned to physical pixels. Yomitan's
 //   structured-content-generator always writes `width: {usedWidth}em` on the
 //   container and lets CSS decide what 1em is: in its own popup a stylesheet
 //   squashes it to ~1px, but an Anki card has no such stylesheet, so `em`
@@ -182,7 +182,7 @@ function containerOf(node) {
     }
   }
 
-  // BUG-1060 (1/3): an exported image keeps Yomitan's em sizing, and does not
+  // BUG-1062 (1/3): an exported image keeps Yomitan's em sizing, and does not
   // pin an inline 1px font-size (which would also outrank note-type CSS).
   {
     const sb = loadPopup(entry);
@@ -193,12 +193,12 @@ function containerOf(node) {
     assert.ok(/font-size:1em/.test(container.style.cssText),
       'exported image container must inherit the card font size; got ' + container.style.cssText);
     assert.ok(!/font-size:1px/.test(container.style.cssText),
-      'exported image container must not pin font-size:1px (BUG-1060); got ' + container.style.cssText);
+      'exported image container must not pin font-size:1px (BUG-1062); got ' + container.style.cssText);
     assert.ok(/max-width:100%/.test(container.style.cssText),
       'exported image must still be capped at the card width');
   }
 
-  // BUG-1060 (2/3): the popup path is unchanged — px there is correct because
+  // BUG-1062 (2/3): the popup path is unchanged — px there is correct because
   // the popup ships the Yomitan stylesheet.
   {
     const sb = loadPopup(entry);
@@ -208,7 +208,7 @@ function containerOf(node) {
       'popup image container must keep px sizing; got ' + container.style.width);
   }
 
-  // BUG-1060 (3/3): dictionaries that declare em units are untouched by the fix
+  // BUG-1062 (3/3): dictionaries that declare em units are untouched by the fix
   // (they were already em on both paths).
   {
     const sb = loadPopup(entry);

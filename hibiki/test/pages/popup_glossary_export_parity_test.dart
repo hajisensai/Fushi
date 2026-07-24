@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1060 / BUG-1061：制卡（Anki mining）产出的 glossary 字段必须与上游 Yomitan
+/// BUG-1062 / BUG-1061：制卡（Anki mining）产出的 glossary 字段必须与上游 Yomitan
 /// 导出的卡片一致，用户在两处看到了差异。
 ///
 /// **BUG-1061 — `{glossary}` 词典名前多一个自造序号。**
@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `constructGlossaryHtml`（`{glossary}` 用）自增了一个 `index` 塞进标签，卡片上就成了
 /// 「(1, 词典名)」。修复：删掉 index，两个 builder 标签格式统一。
 ///
-/// **BUG-1060 — 导出图片被钉成物理像素，比 Yomitan 卡片小一个字号的倍数。**
+/// **BUG-1062 — 导出图片被钉成物理像素，比 Yomitan 卡片小一个字号的倍数。**
 /// 上游 `structured-content-generator.js` 导出时容器**永远**写 `width: {usedWidth}em`，
 /// 1em 具体多大交给 CSS：Yomitan 弹窗自带
 /// `.gloss-image-container{font-size:calc(1em/var(--font-size-no-units))}`（≈1px），
@@ -88,13 +88,13 @@ void main() {
             'gone (BUG-1061)',
       );
 
-      // BUG-1060: the export branch sizes in em; the popup branch keeps px.
+      // BUG-1062: the export branch sizes in em; the popup branch keeps px.
       expect(
         js.contains(
             r'imageContainer.style.width = exporting ? `${usedWidth}em` : `${usedWidth}px`;'),
         isTrue,
         reason: '$relative: exported definition images must keep Yomitan em '
-            'sizing while the popup keeps px (BUG-1060)',
+            'sizing while the popup keeps px (BUG-1062)',
       );
       expect(
         js.contains('font-size:1px'),
@@ -102,7 +102,7 @@ void main() {
         reason:
             '$relative: the exported image container must not pin an inline '
             'font-size:1px — it outranks note-type CSS and shrinks the card '
-            'image (BUG-1060)',
+            'image (BUG-1062)',
       );
     }
   });

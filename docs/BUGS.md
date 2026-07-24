@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1027 条。点号进各自文件。
+> 共 1029 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1062](bugs/BUG-1062-anki-glossary-image-size-vs-yomitan.md) | ✅ | ✅ | 制卡词典图片比 Yomitan 卡片小很多（导出把 em 折算成物理 px） |
+| [BUG-1061](bugs/BUG-1061-anki-glossary-label-extra-index.md) | ✅ | ✅ | 制卡 {glossary} 词典名前多出自造序号「1」 |
 | [BUG-1060](bugs/BUG-1060-gal-loopback-engine-pcm-cache.md) | ✅ | ✅ | Loopback 制卡误用引擎 PCM 碎片导致音频异常 |
 | [BUG-1059](bugs/BUG-1059-galgame-x86-helper.md) | ✅ | ✅ | 残缺的 x86 galgame helper 被当成已安装，自动转区失效 |
 | [BUG-1058](bugs/BUG-1058-ffmpeg-min-vendored-missing-movtext.md) | ✅ | ✅ | 入库精简 ffmpeg 缺 movtext 编码器，桌面片段导出永远封不进字幕 |

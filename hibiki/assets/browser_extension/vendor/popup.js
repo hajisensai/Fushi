@@ -1078,7 +1078,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         // (.gloss-image-container{font-size:calc(1em/var(--font-size-no-units))}) 把 1em 压成 1px；
         // Anki 卡片上没有那份 CSS，em 按卡片正文字号解析，所以 Yomitan 的卡片图才是
         // 「宽度数值 x 卡片字号」。这里若把导出也折算成物理 px，卡片图就比 Yomitan 小一个
-        // 字号的倍数（BUG-1060）。故导出保留 em 语义，弹窗维持 px。
+        // 字号的倍数（BUG-1062）。故导出保留 em 语义，弹窗维持 px。
         imageContainer.style.width = exporting ? `${usedWidth}em` : `${usedWidth}px`;
     }
     if (typeof title === 'string') {
