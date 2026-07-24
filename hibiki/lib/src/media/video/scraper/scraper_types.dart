@@ -99,6 +99,113 @@ class ScrapeCandidate {
   final String? ratingText;
 }
 
+// ─────────────────────── 条目级元数据（「抄 Bangumi」）───────────────────────
+
+/// 条目标签（Bangumi `tags`：名字 + 打标人数，按热度降序）。
+class ScrapeTag {
+  const ScrapeTag({required this.name, this.count = 0});
+
+  final String name;
+
+  /// 打该标签的人数（Bangumi 提供；无则 0）。
+  final int count;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'name': name,
+        if (count > 0) 'count': count,
+      };
+
+  static ScrapeTag? fromJson(Object? json) {
+    if (json is! Map<String, Object?>) return null;
+    final Object? name = json['name'];
+    if (name is! String || name.trim().isEmpty) return null;
+    final Object? count = json['count'];
+    return ScrapeTag(
+      name: name.trim(),
+      count: count is num ? count.toInt() : 0,
+    );
+  }
+}
+
+/// infobox 一行（Bangumi 条目页右侧资料表：`导演` / `话数` / `别名` …）。
+///
+/// 源里 `value` 可能是字符串，也可能是 `[{k,v},…]` 数组（如「别名」多条）；本类型
+/// 只存**已摊平的展示字符串**，摊平规则见 `bangumi_client.dart`，展示层不再解析。
+class ScrapeInfoboxEntry {
+  const ScrapeInfoboxEntry({required this.key, required this.value});
+
+  /// 原始字段名（Bangumi 的 key 本就是中文，不翻译不映射）。
+  final String key;
+
+  /// 摊平后的值（多值以 ` / ` 连接）。
+  final String value;
+
+  Map<String, Object?> toJson() =>
+      <String, Object?>{'key': key, 'value': value};
+
+  static ScrapeInfoboxEntry? fromJson(Object? json) {
+    if (json is! Map<String, Object?>) return null;
+    final Object? key = json['key'];
+    final Object? value = json['value'];
+    if (key is! String || value is! String) return null;
+    if (key.trim().isEmpty || value.trim().isEmpty) return null;
+    return ScrapeInfoboxEntry(key: key.trim(), value: value.trim());
+  }
+}
+
+/// 条目级刮削资料（落 `video_scrape_meta` 表的领域对象）。
+///
+/// 与 [ScrapeCandidate] 的分工：候选是**匹配阶段**的轻量条目（标题/年份/海报，够
+/// 打分即可），本类型是**匹配定案后**再拉一次详情得到的完整资料。分开是因为搜索
+/// 端点不返回简介/标签/infobox，硬塞进候选会让每条搜索结果都背一份用不上的重负载。
+class ScrapeMetadata {
+  const ScrapeMetadata({
+    required this.source,
+    required this.subjectId,
+    required this.title,
+    this.originalTitle,
+    this.summary,
+    this.airDate,
+    this.rating,
+    this.ratingCount,
+    this.episodeCount,
+    this.tags = const <ScrapeTag>[],
+    this.infobox = const <ScrapeInfoboxEntry>[],
+    this.detailUrl,
+  });
+
+  final ScrapeSource source;
+
+  /// 源内条目 id（Bangumi subject id）。
+  final String subjectId;
+
+  /// 主标题（中文优先）。
+  final String title;
+
+  /// 原名（日文原题）；与 [title] 相同或缺失时为 null。
+  final String? originalTitle;
+
+  final String? summary;
+
+  /// 放送开始日期 `YYYY-MM-DD`（源常见残缺，原样保留字符串，不补月/日）。
+  final String? airDate;
+
+  /// 评分 0~10 与评分人数。
+  final double? rating;
+  final int? ratingCount;
+
+  final int? episodeCount;
+
+  /// 标签（按热度降序）。
+  final List<ScrapeTag> tags;
+
+  /// 资料表（导演/制作/原作 …）。
+  final List<ScrapeInfoboxEntry> infobox;
+
+  /// 条目详情页 URL。
+  final String? detailUrl;
+}
+
 /// 打分置信度分级。
 enum MatchConfidence {
   /// 达自动应用线：批量匹配直接落封面。

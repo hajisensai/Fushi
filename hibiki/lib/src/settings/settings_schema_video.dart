@@ -216,6 +216,27 @@ SettingsDestination buildVideoDestination() {
         ],
       ),
       SettingsSection(
+        title: t.section_video_library,
+        items: <SettingsItem>[
+          // 条目自动刮削总闸：刮削从「页头按钮手动触发」改为「进视频页/新导入自动
+          // 后台跑」后，这是唯一能让库信息不自动出网的开关。默认开（与旧版用户点
+          // 一下按钮就会刮的预期一致），关掉只停后续自动请求，已刮到的资料保留、
+          // 长按卡片手动匹配仍可用。无 VideoPlacement：这是库级设置，播放页面板里
+          // 出现它没有意义。
+          SettingsSwitchItem(
+            id: 'video.library.auto_scrape',
+            title: t.video_setting_auto_scrape,
+            subtitle: t.video_setting_auto_scrape_hint,
+            icon: Icons.auto_awesome_motion_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoAutoScrape,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoAutoScrape(value);
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
         title: t.video_setting_mpv_group_quality,
         collapsedByDefault: true,
         items: <SettingsItem>[
