@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 41667 (2451 per locale)
+/// Strings: 41752 (2456 per locale)
 ///
-/// Built on 2026-07-24 at 11:10 UTC
+/// Built on 2026-07-24 at 15:17 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3265,6 +3265,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_cloud_ocr_failed => 'Cloud recognition failed';
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -8827,6 +8833,17 @@ class _StringsAr extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -14462,6 +14479,17 @@ class _StringsDe extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -20113,6 +20141,17 @@ class _StringsEs extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -25775,6 +25814,17 @@ class _StringsFr extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -31364,6 +31414,17 @@ class _StringsId extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -37001,6 +37062,17 @@ class _StringsIt extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -42443,6 +42515,17 @@ class _StringsJa extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -47888,6 +47971,17 @@ class _StringsKo extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -53503,6 +53597,17 @@ class _StringsNl extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -59133,6 +59238,17 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -64746,6 +64862,17 @@ class _StringsRu extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -70304,6 +70431,17 @@ class _StringsTh extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -75894,6 +76032,17 @@ class _StringsTr extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -81471,6 +81620,17 @@ class _StringsVi extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 // Path: <root>
@@ -86658,6 +86818,17 @@ class _StringsZhCn extends _StringsEn {
   String get manga_cloud_ocr_failed => '云端识别失败';
   @override
   String get manga_ocr_mobile_note => '移动端下载的模型用于漫画阅读页的框选识别。';
+  @override
+  String get anki_duplicate_scope_hint =>
+      '查询「这个词是否已经有卡」时搜索哪些卡组。仅 AnkiConnect（桌面 Anki）生效；AnkiDroid 始终整库查重。';
+  @override
+  String get anki_duplicate_scope_deck => '所选卡组（含子卡组）';
+  @override
+  String get anki_duplicate_scope_deck_root => '根卡组（含全部子卡组）';
+  @override
+  String get anki_duplicate_scope_collection => '整个收藏集';
+  @override
+  String get anki_duplicate_scope => '查重范围';
 }
 
 // Path: <root>
@@ -92018,6 +92189,17 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get anki_duplicate_scope_hint =>
+      'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+  @override
+  String get anki_duplicate_scope_deck => 'Selected deck (and its subdecks)';
+  @override
+  String get anki_duplicate_scope_deck_root => 'Root deck (all subdecks)';
+  @override
+  String get anki_duplicate_scope_collection => 'Whole collection';
+  @override
+  String get anki_duplicate_scope => 'Duplicate check scope';
 }
 
 /// Flat map(s) containing all translations.
@@ -97026,6 +97208,16 @@ extension on _StringsEn {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -102032,6 +102224,16 @@ extension on _StringsAr {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -107059,6 +107261,16 @@ extension on _StringsDe {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -112085,6 +112297,16 @@ extension on _StringsEs {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -117117,6 +117339,16 @@ extension on _StringsFr {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -122131,6 +122363,16 @@ extension on _StringsId {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -127160,6 +127402,16 @@ extension on _StringsIt {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -132151,6 +132403,16 @@ extension on _StringsJa {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -137146,6 +137408,16 @@ extension on _StringsKo {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -142168,6 +142440,16 @@ extension on _StringsNl {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -147187,6 +147469,16 @@ extension on _StringsPtBr {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -152211,6 +152503,16 @@ extension on _StringsRu {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -157219,6 +157521,16 @@ extension on _StringsTh {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -162236,6 +162548,16 @@ extension on _StringsTr {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -167248,6 +167570,16 @@ extension on _StringsVi {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }
@@ -172221,6 +172553,16 @@ extension on _StringsZhCn {
         return '云端识别失败';
       case 'manga_ocr_mobile_note':
         return '移动端下载的模型用于漫画阅读页的框选识别。';
+      case 'anki_duplicate_scope_hint':
+        return '查询「这个词是否已经有卡」时搜索哪些卡组。仅 AnkiConnect（桌面 Anki）生效；AnkiDroid 始终整库查重。';
+      case 'anki_duplicate_scope_deck':
+        return '所选卡组（含子卡组）';
+      case 'anki_duplicate_scope_deck_root':
+        return '根卡组（含全部子卡组）';
+      case 'anki_duplicate_scope_collection':
+        return '整个收藏集';
+      case 'anki_duplicate_scope':
+        return '查重范围';
       default:
         return null;
     }
@@ -177207,6 +177549,16 @@ extension on _StringsZhHk {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'anki_duplicate_scope_hint':
+        return 'Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.';
+      case 'anki_duplicate_scope_deck':
+        return 'Selected deck (and its subdecks)';
+      case 'anki_duplicate_scope_deck_root':
+        return 'Root deck (all subdecks)';
+      case 'anki_duplicate_scope_collection':
+        return 'Whole collection';
+      case 'anki_duplicate_scope':
+        return 'Duplicate check scope';
       default:
         return null;
     }

@@ -477,6 +477,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             deckName: deck.name,
             fieldName: firstFieldName!,
             fieldValue: firstFieldValue,
+            scope: settings.duplicateScope,
           );
           if (isDupe) return const MineOutcome.duplicate();
           addNoteReconcileFieldName = firstFieldName;
@@ -537,6 +538,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         );
       }
       try {
+        // 刻意**不**传 settings.duplicateScope：这里问的不是「这个词是否已经有卡」，
+        // 而是「我刚 addNote 到 deck.name 的那一张到底落没落下」。放宽到根卡组/整库
+        // 会把别的卡组里的同词旧卡当成刚建成功的那张，把「提交结果未知」误判成成功。
         final matches = await service.findNotesByField(
           deckName: deck.name,
           fieldName: addNoteReconcileFieldName,
@@ -742,6 +746,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         deckName: deck.name,
         fieldName: noteType.fields.first,
         fieldValue: expression,
+        scope: settings.duplicateScope,
       );
     } catch (e, stack) {
       debugPrint('AnkiConnectRepository.isDuplicate: $e\n$stack');
@@ -775,6 +780,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         deckName: deck.name,
         fieldName: noteType.fields.first,
         fieldValue: expression,
+        scope: settings.duplicateScope,
       );
       if (matches.isEmpty) return null;
       // 取最近一张：Anki note id 是创建时间戳（毫秒），越大越新。多张同条件命中
@@ -811,6 +817,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         deckName: deck.name,
         fieldName: noteType.fields.first,
         fieldValue: expression,
+        scope: settings.duplicateScope,
       );
       if (ids.isEmpty) return const <MinedNoteRef>[];
       ids.sort((a, b) => b.compareTo(a)); // 最近（id 大）在前

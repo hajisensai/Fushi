@@ -142,6 +142,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               // TODO-614：「覆写已制卡片」范围单选——和「允许重复」并排（两者都关乎
               // 「再点 ✓ 时改旧卡还是建新卡」）。latest=仅最近一张（默认=现状）；
               // all=按同一查重条件覆写任意已存在卡（含更早制的）。
+              // 查重范围：与「允许重复」「覆写范围」同区（三者都关乎「这个词算不算
+              // 已经有卡、再点 ✓ 时怎么办」）。默认 deck = 旧行为。
+              _buildDuplicateScopePicker(settings, vm),
               _buildOverwriteScopePicker(settings, vm),
               AdaptiveSettingsSwitchRow(
                 title: t.anki_compact_glossaries,
@@ -474,6 +477,35 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         hintText: t.anki_tags_hint,
         onChanged: (v) => vm.updateTags(v),
       ),
+    );
+  }
+
+  /// 查重范围单选。Anki 的 `deck:X` 包含 X 的子卡组，但**不包含**父卡组与
+  /// 兄弟子卡组，所以把制卡目标选成 `Lapis::Vocab` 时，同一个词早先制在
+  /// `Lapis::Sentences` 里就查不到、被当成新词（Yomitan 对应 duplicate scope）。
+  /// deckRoot = 根卡组及其全部子卡组；collection = 不限卡组。仅 AnkiConnect
+  /// 生效（AnkiDroid 经 ContentProvider 按笔记类型全库查，本就等价 collection）。
+  Widget _buildDuplicateScopePicker(AnkiSettings settings, AnkiViewModel vm) {
+    return AdaptiveSettingsPickerRow<AnkiDuplicateScope>(
+      title: t.anki_duplicate_scope,
+      subtitle: t.anki_duplicate_scope_hint,
+      controlBelow: true,
+      selected: settings.duplicateScope,
+      options: [
+        AdaptiveSettingsPickerOption<AnkiDuplicateScope>(
+          value: AnkiDuplicateScope.deck,
+          label: t.anki_duplicate_scope_deck,
+        ),
+        AdaptiveSettingsPickerOption<AnkiDuplicateScope>(
+          value: AnkiDuplicateScope.deckRoot,
+          label: t.anki_duplicate_scope_deck_root,
+        ),
+        AdaptiveSettingsPickerOption<AnkiDuplicateScope>(
+          value: AnkiDuplicateScope.collection,
+          label: t.anki_duplicate_scope_collection,
+        ),
+      ],
+      onChanged: (scope) => vm.updateDuplicateScope(scope),
     );
   }
 
