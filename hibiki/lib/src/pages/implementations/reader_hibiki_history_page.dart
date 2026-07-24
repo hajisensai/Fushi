@@ -34,6 +34,7 @@ import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/src/media/collections/batch_combine.dart';
+import 'package:hibiki/src/media/collections/combine_merge_orchestrator.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
