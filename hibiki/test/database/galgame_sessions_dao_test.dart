@@ -10,7 +10,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// 全部统计 UI 的正确性，必须钉死。
 void main() {
   Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     return db;
   }
@@ -50,11 +51,20 @@ void main() {
     await addGame(db, 'c'); // 一次都没玩过
 
     await addSession(db, 'a',
-        startMs: 1000, endMs: 601000, durationSeconds: 600, dateKey: '2026-07-20');
+        startMs: 1000,
+        endMs: 601000,
+        durationSeconds: 600,
+        dateKey: '2026-07-20');
     await addSession(db, 'a',
-        startMs: 700000, endMs: 1000000, durationSeconds: 300, dateKey: '2026-07-21');
+        startMs: 700000,
+        endMs: 1000000,
+        durationSeconds: 300,
+        dateKey: '2026-07-21');
     await addSession(db, 'b',
-        startMs: 5000, endMs: 65000, durationSeconds: 60, dateKey: '2026-07-21');
+        startMs: 5000,
+        endMs: 65000,
+        durationSeconds: 60,
+        dateKey: '2026-07-21');
 
     final Map<String, (int, int, int)> totals = await db.getGalgamePlayTotals();
 
@@ -158,16 +168,23 @@ void main() {
 
     final List<GalgameSessionRow> secondPage =
         await db.getGalgameSessions('a', limit: 2, offset: 2);
-    expect(secondPage.map((GalgameSessionRow r) => r.startMs), <int>[2000, 1000]);
+    expect(
+        secondPage.map((GalgameSessionRow r) => r.startMs), <int>[2000, 1000]);
   });
 
   test('deleteGalgameSession：删单条后聚合值同步变化（无投影表可失配）', () async {
     final HibikiDatabase db = await openDb();
     await addGame(db, 'a');
     await addSession(db, 'a',
-        startMs: 1000, endMs: 2000, durationSeconds: 600, dateKey: '2026-07-20');
+        startMs: 1000,
+        endMs: 2000,
+        durationSeconds: 600,
+        dateKey: '2026-07-20');
     await addSession(db, 'a',
-        startMs: 3000, endMs: 4000, durationSeconds: 300, dateKey: '2026-07-20');
+        startMs: 3000,
+        endMs: 4000,
+        durationSeconds: 300,
+        dateKey: '2026-07-20');
 
     expect((await db.getGalgamePlayTotals())['a']?.$1, 900);
 
