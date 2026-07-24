@@ -958,6 +958,9 @@ void FlutterWindow::RegisterGalHookTextChannel() {
               BoolFromValue(args, "passThrough", false));
           gal_hook_text_window_->SetPlaybackState(
               BoolFromValue(args, "following", true));
+          // 同一 window 对象跨会话复用：重新 show 时语音控件必须回到静止态，
+          // 否则上一会话遗留的「录音中」高亮会挂在新会话的浮窗上。
+          gal_hook_text_window_->SetVoiceState(false, false);
           gal_hook_text_window_->SetInitialBounds(
               IntFromValue(args, "left", 0), IntFromValue(args, "top", 0),
               IntFromValue(args, "width", 0),
@@ -993,6 +996,11 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         } else if (method == "setFollowing") {
           gal_hook_text_window_->SetPlaybackState(
               BoolFromValue(args, "following", true));
+          result->Success();
+        } else if (method == "setVoiceState") {
+          gal_hook_text_window_->SetVoiceState(
+              BoolFromValue(args, "replaying", false),
+              BoolFromValue(args, "recapturing", false));
           result->Success();
         } else {
           result->NotImplemented();

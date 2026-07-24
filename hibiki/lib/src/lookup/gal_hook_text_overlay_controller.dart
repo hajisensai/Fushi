@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -71,6 +72,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
   bool _suppressedForSession = false;
   bool _syncing = false;
   bool _syncAgain = false;
+
+  /// 当前行语音正在试听（浮窗「重播」按钮高亮）。
+  bool _replaying = false;
+  Timer? _replayResetTimer;
+
+  /// 已推给 native 的语音控件状态，避免每轮 sync 都发一次 channel 调用。
+  bool _pushedReplaying = false;
+  bool _pushedRecapturing = false;
   int? _sessionKey;
   String? _displayedLineId;
   double _opacity = _defaultOpacity;
@@ -86,6 +95,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
   bool get isLocked => _locked;
   bool get isSuppressedForSession => _suppressedForSession;
   String? get displayedLineId => _displayedLineId;
+  bool get isReplaying => _replaying;
+  bool get isRecapturing => _session.isRecapturing;
+
+  /// 试听兜底复位上限：资源原件（OGG/WAV）时长未知时按它把按钮高亮收回，
+  /// 与实时台词列表的行内试听同一上限。
+  static const int _replayMaxMs = 15000;
 
   Future<void> start({required AppModel appModel}) async {
     if (_started || !isSupported) return;
@@ -105,6 +120,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       onToggleTransparency: toggleTransparency,
       onOpenWorkbench: openWorkbench,
       onClose: closeForCurrentSession,
+      onReplayVoice: replayCurrentLine,
+      onRecaptureVoice: recaptureCurrentLine,
       onLockChanged: _onLockChanged,
       onBoundsChanged: _onBoundsChanged,
     );
@@ -175,6 +192,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
       _passThrough = false;
       _locked = false;
       _displayedLineId = null;
+      // 新会话：上一局的试听计时不能把高亮留在新浮窗上。
+      _replayResetTimer?.cancel();
+      _replayResetTimer = null;
+      _replaying = false;
       await GalHookTextOverlayChannel.setFollowing(true);
       await GalHookTextOverlayChannel.setPassThrough(false);
       await GalHookTextOverlayChannel.setLocked(false);
@@ -190,6 +211,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
       if (_visible) {
         await GalHookTextOverlayChannel.hide();
         _visible = false;
+        // 浮窗收起后试听高亮无处可显示，本地状态跟着收——否则下次 show 会把一个
+        // 早已播完的试听态推给新窗口。
+        _replayResetTimer?.cancel();
+        _replayResetTimer = null;
+        _replaying = false;
         notifyListeners();
       }
       if (nextSessionKey == null) _sessionKey = null;
@@ -212,8 +238,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
         passThrough: _passThrough,
         locked: _locked,
       );
+      // native 在 show 里把语音控件复位（见 flutter_window.cpp），本地镜像跟着复位，
+      // 否则下一次 _syncVoiceState 会认为「已经推过了」而不再推。
+      _pushedReplaying = false;
+      _pushedRecapturing = false;
       if (_visible) _displayedLineId = latest.id;
       notifyListeners();
+      await _syncVoiceState();
       return;
     }
     if (_following && latest.id != _displayedLineId) {
@@ -224,6 +255,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
       _displayedLineId = latest.id;
       notifyListeners();
     }
+    // 补录窗口可能由 session 侧超时自行收束：每轮都比对一次，浮窗上的「录音中」
+    // 高亮才不会停在已结束的状态上。
+    await _syncVoiceState();
   }
 
   int get _backgroundColor {
@@ -296,6 +330,100 @@ class GalHookTextOverlayController extends ChangeNotifier {
         await model.prefsRepo.setPref(_rectPreferenceKey, value);
       }
     }
+  }
+
+  /// 浮窗「重播」：试听当前显示行已配的语音；正在试听时再点即停止。
+  /// 只读既有配对结果（资源原件直接播，PCM/loopback 冻结切片拼 WAV），不改行状态。
+  Future<void> replayCurrentLine() async {
+    if (!_started) return;
+    if (_replaying) {
+      await _stopReplay();
+      return;
+    }
+    final String? lineId = _displayedLineId;
+    if (lineId == null) {
+      HibikiToast.show(msg: t.game_hook_line_unavailable);
+      return;
+    }
+    final GalTrackPreview? preview =
+        await _session.exportLineAudioPreview(lineId);
+    if (preview == null) {
+      HibikiToast.show(msg: t.game_line_preview_failed);
+      return;
+    }
+    if (!await DesktopAudioPlayback.playFile(preview.filePath)) {
+      HibikiToast.show(msg: t.game_line_preview_failed);
+      return;
+    }
+    _replaying = true;
+    _replayResetTimer?.cancel();
+    _replayResetTimer = Timer(
+      Duration(
+        milliseconds:
+            preview.durationMs > 0 ? preview.durationMs + 300 : _replayMaxMs,
+      ),
+      () {
+        _replaying = false;
+        unawaited(_syncVoiceState());
+        notifyListeners();
+      },
+    );
+    await _syncVoiceState();
+    notifyListeners();
+  }
+
+  Future<void> _stopReplay() async {
+    _replayResetTimer?.cancel();
+    _replayResetTimer = null;
+    _replaying = false;
+    await DesktopAudioPlayback.stop();
+    await _syncVoiceState();
+    notifyListeners();
+  }
+
+  /// 浮窗「重播并录音」：为当前显示行开一段补录窗口——用户随后在游戏里重播这句
+  /// 语音（回退/重听），窗口内录到的系统声音就绑定到这一行，覆盖此前配错或缺失的
+  /// 语音。正在补录时再点即立刻收束。
+  Future<void> recaptureCurrentLine() async {
+    if (!_started) return;
+    if (_session.isRecapturing) {
+      final bool saved = await _session.finishLineRecapture();
+      HibikiToast.show(
+        msg: saved ? t.game_hook_recapture_saved : t.game_hook_recapture_empty,
+      );
+      await _syncVoiceState();
+      notifyListeners();
+      return;
+    }
+    final String? lineId = _displayedLineId;
+    if (lineId == null) {
+      HibikiToast.show(msg: t.game_hook_line_unavailable);
+      return;
+    }
+    final bool started = await _session.startLineRecapture(lineId);
+    HibikiToast.show(
+      msg: started
+          ? t.game_hook_recapture_started
+          : t.game_hook_recapture_unavailable,
+    );
+    await _syncVoiceState();
+    notifyListeners();
+  }
+
+  /// 把语音控件状态推给浮窗（只在变化时发 channel 调用）。补录窗口也可能由 session
+  /// 侧超时自行收束，所以每轮 sync 都比对一次。
+  Future<void> _syncVoiceState() async {
+    final bool replaying = _replaying;
+    final bool recapturing = _session.isRecapturing;
+    if (replaying == _pushedReplaying && recapturing == _pushedRecapturing) {
+      return;
+    }
+    _pushedReplaying = replaying;
+    _pushedRecapturing = recapturing;
+    await GalHookTextOverlayChannel.setVoiceState(
+      replaying: replaying,
+      recapturing: recapturing,
+    );
   }
 
   Future<void> openWorkbench() async {
