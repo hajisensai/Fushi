@@ -220,6 +220,11 @@ class VideoBookRepository {
   Future<MediaCollectionRow?> getMediaCollectionById(int id) =>
       _db.getMediaCollectionById(id);
 
+  /// 统一合集：`'<mediaType>|<entryKey>'` → 折叠归属的最小 collectionId。批量刮削按
+  /// 合集聚组用，与库页折叠同源（[HibikiDatabase.getPrimaryCollectionIdByEntry]）。
+  Future<Map<String, int>> getPrimaryCollectionIdByEntry() =>
+      _db.getPrimaryCollectionIdByEntry();
+
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
 
   /// 监听视频库行集合（uid）变化，供库页在任意导入路径（页内 / 拖拽 / 外部

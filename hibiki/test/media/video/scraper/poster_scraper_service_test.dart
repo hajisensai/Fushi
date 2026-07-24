@@ -256,7 +256,116 @@ void main() {
     expect(await coverMeta.get('video/preview'), isNull);
   });
 
-  test('批量跳过 manual 封面，处理 autoFrame 无记录的书', () async {
+  group('groupLibrary 分组规则', () {
+    test('DB 合集聚组：displayTitle 用合集名，跨目录也聚', () async {
+      final VideoBookRow a = await seed(
+        bookUid: 'video/c1',
+        videoPath: p.join('anime', 'DirA', 'Foo - 01.mkv'),
+      );
+      final VideoBookRow b = await seed(
+        bookUid: 'video/c2',
+        videoPath: p.join('anime', 'DirB', 'Foo - 02.mkv'),
+      );
+      final int cid =
+          await db.createMediaCollection('我的合集', collectionType: 'playlist');
+      await db.addToCollection(cid, 'video', 'video/c1');
+      await db.addToCollection(cid, 'video', 'video/c2');
+
+      final List<ScrapeGroup> groups =
+          await build().groupLibrary(<VideoBookRow>[a, b]);
+      expect(groups, hasLength(1));
+      expect(groups.first.collectionId, cid);
+      expect(groups.first.displayTitle, '我的合集');
+      expect(groups.first.members.map((VideoBookRow r) => r.bookUid),
+          <String>['video/c1', 'video/c2']);
+      expect(groups.first.parsed, isNotNull);
+    });
+
+    test('同目录同标题散集聚成一组；不同目录不聚', () async {
+      final VideoBookRow e1 = await seed(
+        bookUid: 'video/t1',
+        videoPath: p.join('lib', '高木同学', '[组] 高木同学 - 01.mkv'),
+      );
+      final VideoBookRow e2 = await seed(
+        bookUid: 'video/t2',
+        videoPath: p.join('lib', '高木同学', '[组] 高木同学 - 02.mkv'),
+      );
+      final VideoBookRow other = await seed(
+        bookUid: 'video/t3',
+        videoPath: p.join('lib2', '高木同学', '[组] 高木同学 - 01.mkv'),
+      );
+      final List<ScrapeGroup> groups =
+          await build().groupLibrary(<VideoBookRow>[e1, e2, other]);
+      expect(groups, hasLength(2));
+      expect(groups[0].members.map((VideoBookRow r) => r.bookUid),
+          <String>['video/t1', 'video/t2']);
+      expect(groups[0].displayTitle, '高木同学');
+      expect(groups[0].collectionId, isNull);
+      expect(groups[1].members.single.bookUid, 'video/t3');
+    });
+
+    test('单本成组；解析不出标题也单本成组（parsed=null）', () async {
+      final VideoBookRow solo = await seed(
+        bookUid: 'video/solo',
+        videoPath: p.join('lib', '孤独摇滚', '孤独摇滚 - 01.mkv'),
+      );
+      final VideoBookRow noTitle = await seed(
+        bookUid: 'video/no-title',
+        videoPath: p.join('Downloads', 'VID_20260701.mkv'),
+        title: '设备录像',
+      );
+      final List<ScrapeGroup> groups =
+          await build().groupLibrary(<VideoBookRow>[solo, noTitle]);
+      expect(groups, hasLength(2));
+      expect(groups[0].members.single.bookUid, 'video/solo');
+      expect(groups[1].members.single.bookUid, 'video/no-title');
+      expect(groups[1].parsed, isNull);
+      expect(groups[1].displayTitle, '设备录像', reason: '无解析标题回退书名展示');
+    });
+  });
+
+  test('组内 high：一次搜索一次匹配，海报应用到全部成员', () async {
+    final VideoBookRow e1 = await seed(
+      bookUid: 'video/g1',
+      videoPath: p.join('lib', 'Foo', 'Foo - 01.mkv'),
+    );
+    final VideoBookRow e2 = await seed(
+      bookUid: 'video/g2',
+      videoPath: p.join('lib', 'Foo', 'Foo - 02.mkv'),
+    );
+    int searchCalls = 0;
+    final BangumiClient counting = BangumiClient(
+      client: MockClient((http.Request req) async {
+        searchCalls++;
+        return http.Response(
+          _bangumiBody(id: 42, name: 'Foo'),
+          200,
+          headers: const <String, String>{'content-type': 'application/json'},
+        );
+      }),
+    );
+    final List<BatchScrapeProgress> events = await build(bangumi: counting)
+        .scrapeLibrary(<VideoBookRow>[e1, e2]).toList();
+
+    expect(events, hasLength(1), reason: '两集一组只 yield 一条进度');
+    expect(searchCalls, 1, reason: '整组只搜索一次');
+    final BatchScrapeProgress event = events.single;
+    expect(event.total, 1);
+    expect(event.group.members, hasLength(2));
+    expect(event.outcome, isA<ScrapeApplied>());
+    expect(event.coverableUids, <String>['video/g1', 'video/g2']);
+    // 两个成员都落了封面 + scraped 元数据。
+    for (final String uid in <String>['video/g1', 'video/g2']) {
+      final VideoBookRow updated = (await repo.getByBookUid(uid))!;
+      expect(updated.coverPath, isNotNull);
+      expect(File(updated.coverPath!).existsSync(), isTrue);
+      final CoverMeta? meta = await coverMeta.get(uid);
+      expect(meta!.origin, CoverOrigin.scraped);
+      expect(meta.entryId, '42');
+    }
+  });
+
+  test('组内混合保护：manual 成员不覆盖、autoFrame 成员被覆盖', () async {
     final VideoBookRow manualBook = await seed(
       bookUid: 'video/manual',
       videoPath: p.join('anime', '进击的巨人', '进击的巨人 - 01.mkv'),
@@ -279,21 +388,71 @@ void main() {
     );
     final List<BatchScrapeProgress> events =
         await svc.scrapeLibrary(<VideoBookRow>[manualBook, autoBook]).toList();
-    expect(events, hasLength(2));
+    expect(events, hasLength(1), reason: '同目录同标题两集是一个组');
 
-    final ScrapeOutcome manualOutcome = events
-        .firstWhere((BatchScrapeProgress e) => e.book.bookUid == 'video/manual')
-        .outcome;
-    expect(manualOutcome, isA<ScrapeSkippedProtected>());
-    expect(
-        (manualOutcome as ScrapeSkippedProtected).origin, CoverOrigin.manual);
-
-    final ScrapeOutcome autoOutcome = events
-        .firstWhere((BatchScrapeProgress e) => e.book.bookUid == 'video/auto')
-        .outcome;
-    expect(autoOutcome, isA<ScrapeApplied>());
-    // manual 封面不被覆盖。
+    final BatchScrapeProgress event = events.single;
+    expect(event.outcome, isA<ScrapeApplied>());
+    expect(event.coverableUids, <String>['video/auto'],
+        reason: 'manual 成员被保护线过滤');
+    // manual 封面不被覆盖；autoFrame 成员被覆盖。
     expect((await repo.getByBookUid('video/manual'))!.coverPath, isNull);
+    expect((await repo.getByBookUid('video/auto'))!.coverPath, isNotNull);
+  });
+
+  test('全组受保护 → 整组 skippedProtected 一条', () async {
+    final VideoBookRow b1 = await seed(
+      bookUid: 'video/p1',
+      videoPath: p.join('anime', '进击的巨人', '进击的巨人 - 01.mkv'),
+    );
+    final VideoBookRow b2 = await seed(
+      bookUid: 'video/p2',
+      videoPath: p.join('anime', '进击的巨人', '进击的巨人 - 02.mkv'),
+    );
+    await coverMeta.set(
+        'video/p1', const CoverMeta(origin: CoverOrigin.manual));
+    await coverMeta.set(
+        'video/p2', const CoverMeta(origin: CoverOrigin.manual));
+
+    final List<BatchScrapeProgress> events =
+        await build().scrapeLibrary(<VideoBookRow>[b1, b2]).toList();
+    expect(events, hasLength(1));
+    final ScrapeOutcome outcome = events.single.outcome;
+    expect(outcome, isA<ScrapeSkippedProtected>());
+    expect((outcome as ScrapeSkippedProtected).origin, CoverOrigin.manual);
+    expect(events.single.coverableUids, isEmpty);
+  });
+
+  test('组 medium → 一组一条 needsConfirm，携带全组可覆盖成员', () async {
+    // 年份差 ≥2（-0.20）+ 集数超总集数（-0.15）压到 medium 带。
+    final VideoBookRow e1 = await seed(
+      bookUid: 'video/m1',
+      videoPath: p.join('lib', '进击的巨人 (2020)', '进击的巨人 - 04.mkv'),
+    );
+    final VideoBookRow e2 = await seed(
+      bookUid: 'video/m2',
+      videoPath: p.join('lib', '进击的巨人 (2020)', '进击的巨人 - 05.mkv'),
+    );
+    final PosterScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: '进击的巨人',
+        type: ScrapeEntryType.tv,
+        episodes: 3,
+        year: 2013,
+        picture: 'https://img/aot.png',
+        sourceId: 'mal/16498',
+      )),
+    );
+    final List<BatchScrapeProgress> events =
+        await svc.scrapeLibrary(<VideoBookRow>[e1, e2]).toList();
+    expect(events, hasLength(1));
+    final BatchScrapeProgress event = events.single;
+    expect(event.outcome, isA<ScrapeNeedsConfirm>());
+    final ScrapeNeedsConfirm confirm = event.outcome as ScrapeNeedsConfirm;
+    expect(confirm.candidates.single.confidence, MatchConfidence.medium);
+    expect(event.coverableUids, <String>['video/m1', 'video/m2']);
+    // 不落盘。
+    expect((await repo.getByBookUid('video/m1'))!.coverPath, isNull);
+    expect((await repo.getByBookUid('video/m2'))!.coverPath, isNull);
   });
 
   test('applyCandidateToBooks 单本：下载落封面 + updateCover + scraped meta + alias',
@@ -323,7 +482,7 @@ void main() {
     expect((await aliasCache.get('X'))!.$2, '999');
   });
 
-  test('批量：单本网络异常记 failed 但不中断整批', () async {
+  test('批量：单组网络异常记 failed 但不中断整批', () async {
     final VideoBookRow b1 = await seed(
       bookUid: 'video/e1',
       videoPath: p.join('anime', 'Foo', 'Foo - 01.mkv'),
@@ -338,8 +497,10 @@ void main() {
     );
     final List<BatchScrapeProgress> events = await build(bangumi: failing)
         .scrapeLibrary(<VideoBookRow>[b1, b2]).toList();
-    expect(events, hasLength(2));
+    expect(events, hasLength(2), reason: '不同目录不同标题 → 两个组');
     expect(events[0].outcome, isA<ScrapeFailed>());
+    expect(events[0].group.members.single.bookUid, 'video/e1');
     expect(events[1].outcome, isA<ScrapeFailed>());
+    expect(events[1].group.members.single.bookUid, 'video/e2');
   });
 }

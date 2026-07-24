@@ -11,9 +11,11 @@ import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
 
 /// 「批量匹配海报」弹窗。
 ///
-/// 流程：可选先下载离线索引库（约几十 MB，可跳过）→ 逐本流式 [scrapeLibrary]，
-/// 列出 ✓ 已应用 / ? 待确认（点击打开单本匹配弹窗预填该本）/ ✗ 失败 / 跳过原因，
-/// 顶部总进度、底部取消 → 结尾汇总计数。
+/// 流程：可选先下载离线索引库（约几十 MB，可跳过）→ 逐**组**流式 [scrapeLibrary]
+/// （工作单位是 [ScrapeGroup]：合集 / 同目录同标题散集 / 单本），列出
+/// `标题 (N 集)` + ✓ 已应用(N) / ? 待确认（点击打开单本匹配弹窗预填该组、确认后应用
+/// 全组可覆盖成员）/ ✗ 失败 / 跳过原因，顶部总进度（分母 = 组数）、底部取消 →
+/// 结尾汇总计数。
 ///
 /// 只处理传入的**本地视频**（远端/流媒体由调用方过滤或由 service 判为 notEligible）。
 Future<void> showBatchScrapeDialog({
@@ -23,7 +25,8 @@ Future<void> showBatchScrapeDialog({
   required Directory offlineDbDir,
   required PosterScraperService Function(OfflineIndex offline)
       rebuildWithOffline,
-  required void Function(VideoBookRow book) onOpenManual,
+  required void Function(VideoBookRow book, List<String> memberUids)
+      onOpenManual,
   required VoidCallback onFinished,
 }) {
   return showAppDialog<void>(
@@ -60,8 +63,9 @@ class BatchScrapeDialog extends StatefulWidget {
   /// 离线库下载完成后用它重建带离线索引的 service（页面持有全部依赖）。
   final PosterScraperService Function(OfflineIndex offline) rebuildWithOffline;
 
-  /// 点击「待确认」行 → 打开单本匹配弹窗预填该本。
-  final void Function(VideoBookRow book) onOpenManual;
+  /// 点击「待确认」行 → 打开单本匹配弹窗预填该组代表；确认后应用到 `memberUids`
+  /// （该组保护线过滤后的全部可覆盖成员）。
+  final void Function(VideoBookRow book, List<String> memberUids) onOpenManual;
 
   /// 结束（含取消）后回调，供页面刷新库。
   final VoidCallback onFinished;
@@ -75,12 +79,13 @@ class BatchScrapeDialog extends StatefulWidget {
 
 enum _Phase { idle, downloading, running, done }
 
-/// 一行结果快照。
+/// 一行（= 一组）结果快照。
 class _Row {
-  const _Row(this.book, this.outcome);
+  const _Row(this.group, this.outcome, this.coverableUids);
 
-  final VideoBookRow book;
+  final ScrapeGroup group;
   final ScrapeOutcome outcome;
+  final List<String> coverableUids;
 }
 
 class _BatchScrapeDialogState extends State<BatchScrapeDialog> {
@@ -91,6 +96,9 @@ class _BatchScrapeDialogState extends State<BatchScrapeDialog> {
 
   StreamSubscription<BatchScrapeProgress>? _sub;
   final List<_Row> _rows = <_Row>[];
+
+  /// 开跑前的分组预览（idle 阶段行 = 组，与结果行同粒度）。
+  List<ScrapeGroup>? _groups;
   int _total = 0;
   int _current = 0;
 
@@ -99,6 +107,16 @@ class _BatchScrapeDialogState extends State<BatchScrapeDialog> {
     super.initState();
     _service = widget.service;
     _total = widget.books.length;
+    unawaited(_loadGroups());
+  }
+
+  Future<void> _loadGroups() async {
+    final List<ScrapeGroup> groups = await _service.groupLibrary(widget.books);
+    if (!mounted) return;
+    setState(() {
+      _groups = groups;
+      _total = groups.length;
+    });
   }
 
   @override
@@ -154,8 +172,9 @@ class _BatchScrapeDialogState extends State<BatchScrapeDialog> {
       (BatchScrapeProgress p) {
         if (!mounted) return;
         setState(() {
-          _rows.add(_Row(p.book, p.outcome));
+          _rows.add(_Row(p.group, p.outcome, p.coverableUids));
           _current = p.index + 1;
+          _total = p.total;
         });
       },
       onDone: () {
@@ -290,18 +309,28 @@ class _BatchScrapeDialogState extends State<BatchScrapeDialog> {
     );
   }
 
+  /// 组行标题：`标题 (N 集)`（单本组不带集数后缀）。
+  String _groupTitle(ScrapeGroup group) => group.members.length > 1
+      ? '${group.displayTitle} '
+          '${t.video_scrape_group_count(n: group.members.length)}'
+      : group.displayTitle;
+
   Widget _buildBody(ThemeData theme) {
     if (widget.books.isEmpty) {
       return Center(child: Text(t.video_scrape_batch_empty));
     }
     if (_phase == _Phase.idle || _phase == _Phase.downloading) {
+      final List<ScrapeGroup>? groups = _groups;
+      if (groups == null) {
+        return const Center(child: CircularProgressIndicator());
+      }
       return ListView(
         children: <Widget>[
-          for (final VideoBookRow book in widget.books)
+          for (final ScrapeGroup group in groups)
             ListTile(
               dense: true,
               leading: const Icon(Icons.movie_outlined),
-              title: Text(book.title,
+              title: Text(_groupTitle(group),
                   maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
         ],
@@ -317,27 +346,40 @@ class _BatchScrapeDialogState extends State<BatchScrapeDialog> {
 
   Widget _buildResultRow(ThemeData theme, _Row row) {
     final (IconData icon, Color color, String label, bool tappable) =
-        _rowStatus(theme, row.outcome);
+        _rowStatus(theme, row);
     return ListTile(
       dense: true,
       leading: Icon(icon, color: color),
-      title: Text(row.book.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(_groupTitle(row.group),
+          maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(label),
       trailing: tappable ? const Icon(Icons.chevron_right) : null,
-      onTap: tappable ? () => widget.onOpenManual(row.book) : null,
+      onTap: tappable ? () => _openManualForRow(row) : null,
     );
   }
 
-  (IconData, Color, String, bool) _rowStatus(
-    ThemeData theme,
-    ScrapeOutcome outcome,
-  ) {
-    switch (outcome) {
+  /// 待确认行：代表书 = 组内首个可覆盖成员（回退组首成员），确认后应用到全部
+  /// 可覆盖成员。
+  void _openManualForRow(_Row row) {
+    final Set<String> coverable = row.coverableUids.toSet();
+    final VideoBookRow book = row.group.members.firstWhere(
+      (VideoBookRow b) => coverable.contains(b.bookUid),
+      orElse: () => row.group.members.first,
+    );
+    final List<String> memberUids =
+        row.coverableUids.isEmpty ? <String>[book.bookUid] : row.coverableUids;
+    widget.onOpenManual(book, memberUids);
+  }
+
+  (IconData, Color, String, bool) _rowStatus(ThemeData theme, _Row row) {
+    switch (row.outcome) {
       case ScrapeApplied():
         return (
           Icons.check_circle_outline,
           Colors.green,
-          t.video_scrape_status_applied,
+          row.coverableUids.length > 1
+              ? t.video_scrape_status_applied_n(n: row.coverableUids.length)
+              : t.video_scrape_status_applied,
           false,
         );
       case ScrapeNeedsConfirm():

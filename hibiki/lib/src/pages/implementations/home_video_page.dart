@@ -1698,14 +1698,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   }
 
   /// 长按菜单「在线匹配海报」：组装 service → 弹单本匹配弹窗（预填解析标题）。
-  Future<void> _openPosterMatch(VideoBookRow book) async {
+  /// [memberUids] 非 null 时（批量弹窗「待确认」组）直接用该组可覆盖成员，
+  /// 不再按合集归属另查。
+  Future<void> _openPosterMatch(
+    VideoBookRow book, {
+    List<String>? memberUids,
+  }) async {
     final ({
       PosterScraperService service,
       PosterScraperService Function(OfflineIndex offline) rebuild,
       Directory scraperDir,
     }) bundle = await _scraperBundle();
     if (!mounted) return;
-    final List<String> members = await _collectionMemberUids(book.bookUid);
+    final List<String> members =
+        memberUids ?? await _collectionMemberUids(book.bookUid);
     if (!mounted) return;
     await showPosterMatchDialog(
       context: context,
@@ -1736,7 +1742,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       books: local,
       offlineDbDir: bundle.scraperDir,
       rebuildWithOffline: bundle.rebuild,
-      onOpenManual: _openPosterMatch,
+      onOpenManual: (VideoBookRow book, List<String> uids) =>
+          _openPosterMatch(book, memberUids: uids),
       onFinished: _refresh,
     );
   }

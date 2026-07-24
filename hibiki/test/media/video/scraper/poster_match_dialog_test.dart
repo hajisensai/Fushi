@@ -59,12 +59,13 @@ class _StubScraperService extends PosterScraperService {
       candidates;
 
   @override
-  Future<void> applyCandidateToBooks({
+  Future<String?> applyCandidateToBooks({
     required List<String> bookUids,
     required ScrapeCandidate candidate,
     String? aliasKey,
   }) async {
     appliedUids.addAll(bookUids);
+    return null;
   }
 }
 

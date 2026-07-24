@@ -2364,5 +2364,7 @@
   "video_scrape_batch_empty": "没有可匹配的本地视频",
   "video_scrape_apply_to_collection": "同时应用到本合集全部 $n 集",
   "video_scrape_batch_summary": "完成：应用 $applied，待确认 $confirm，跳过 $skipped",
-  "video_scrape_batch_progress": "匹配中 $current/$total"
+  "video_scrape_batch_progress": "匹配中 $current/$total",
+  "video_scrape_status_applied_n": "已应用($n)",
+  "video_scrape_group_count": "($n 集)"
 }
