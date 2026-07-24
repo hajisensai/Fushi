@@ -38,6 +38,7 @@
 #include "artemis_pfs.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
+#include "directsound_format_registry.h"
 #include "catsystem2_int.h"
 #include "malie_lib.h"
 #include "ffmpeg_runtime.h"
@@ -204,7 +205,9 @@ SubmitSourceBuffer_t g_orig_SubmitSourceBuffer = nullptr;
 // ── DirectSound COM 方法 vtable 槽（按 dsound.h 接口声明顺序，跨 DS8 稳定）───────────
 // IDirectSound8 : IUnknown(0-2) 后 CreateSoundBuffer(3) GetCaps(4) DuplicateSoundBuffer(5)...
 constexpr size_t kIdxCreateSoundBuffer = 3;
-// IDirectSoundBuffer : IUnknown(0-2) 后 GetCaps(3)...Lock(11) Play(12)...Unlock(19) Restore(20)
+// IDirectSoundBuffer : IUnknown(0-2) 后 GetCaps(3)...Lock(11) Play(12)...
+// SetFrequency(17) Stop(18) Unlock(19) Restore(20)
+constexpr size_t kIdxDsbSetFrequency = 17;
 constexpr size_t kIdxDsbUnlock = 19;
 
 // DirectSound 导出函数 + 两个 COM 方法的原实现（MinHook trampoline）。DirectSoundCreate 与
@@ -222,11 +225,15 @@ typedef HRESULT(STDMETHODCALLTYPE* CreateSoundBuffer_t)(
 typedef HRESULT(STDMETHODCALLTYPE* DsbUnlock_t)(IDirectSoundBuffer* self,
                                                 LPVOID pv1, DWORD cb1,
                                                 LPVOID pv2, DWORD cb2);
+typedef HRESULT(STDMETHODCALLTYPE* DsbSetFrequency_t)(
+    IDirectSoundBuffer* self, DWORD frequency);
 
 DirectSoundCreate8_t g_orig_DirectSoundCreate8 = nullptr;
 DirectSoundCreate_t g_orig_DirectSoundCreate = nullptr;
 CreateSoundBuffer_t g_orig_CreateSoundBuffer = nullptr;
+DsbSetFrequency_t g_orig_DsbSetFrequency = nullptr;
 DsbUnlock_t g_orig_DsbUnlock = nullptr;
+hibiki_voice_hook::DirectSoundFormatRegistry<256> g_dsound_formats;
 
 typedef HRESULT(WINAPI* CoCreateInstance_t)(REFCLSID rclsid,
                                              LPUNKNOWN pUnkOuter,

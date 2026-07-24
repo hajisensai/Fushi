@@ -178,6 +178,12 @@ add_executable(hibiki_adapter_contract_test tests/adapter_contract_test.cpp)
 target_include_directories(hibiki_adapter_contract_test PRIVATE hook)
 add_test(NAME hibiki_adapter_contract_test COMMAND hibiki_adapter_contract_test)
 
+add_executable(hibiki_directsound_format_registry_test
+  tests/directsound_format_registry_test.cpp)
+target_include_directories(hibiki_directsound_format_registry_test PRIVATE hook)
+add_test(NAME hibiki_directsound_format_registry_test
+  COMMAND hibiki_directsound_format_registry_test)
+
 # 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(hibiki_voice_injector

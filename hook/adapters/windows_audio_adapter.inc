@@ -128,6 +128,10 @@ void TryHookXAudio2Create() {
 HRESULT STDMETHODCALLTYPE Detour_DsbUnlock(IDirectSoundBuffer* self, LPVOID pv1,
                                            DWORD cb1, LPVOID pv2, DWORD cb2) {
   if (g_capture_enabled && g_header != nullptr) {
+    hibiki_voice_hook::DirectSoundPcmFormat format;
+    if (!g_dsound_formats.Lookup(reinterpret_cast<uintptr_t>(self), &format)) {
+      return g_orig_DsbUnlock(self, pv1, cb1, pv2, cb2);
+    }
     // C.3：一次 Unlock = 一段语音；pv2/cb2 是 DS 缓冲回绕的第二片，与 pv1 须在环形里连续，合成
     // 一条 clip。多写者下必须**一次预留整段**再分段写入，否则并发写者可能插进 pv1/pv2 之间，
     // 破坏 [ring_offset, byte_len) 的连续性。
@@ -148,21 +152,35 @@ HRESULT STDMETHODCALLTYPE Detour_DsbUnlock(IDirectSoundBuffer* self, LPVOID pv1,
       if (pv2 != nullptr && cb2 != 0) {
         RingWriteAt(at, reinterpret_cast<const uint8_t*>(pv2), cb2);
       }
-      RecordVoiceClip(off, seg_len, reinterpret_cast<uint64_t>(self));
+      RecordVoiceClipFmt(off, seg_len, reinterpret_cast<uint64_t>(self),
+                         format.sample_rate, format.channels,
+                         format.bits_per_sample, format.is_float);
     }
   }
   return g_orig_DsbUnlock(self, pv1, cb1, pv2, cb2);
+}
+
+// SetFrequency 改变的是该 buffer 的实际播放采样率，WAVEFORMATEX 本身不会随之变化；格式表还
+// 必须同步这个有效采样率，不能退回首个 buffer 的全局格式。
+HRESULT STDMETHODCALLTYPE Detour_DsbSetFrequency(IDirectSoundBuffer* self,
+                                                 DWORD frequency) {
+  const HRESULT hr = g_orig_DsbSetFrequency(self, frequency);
+  if (SUCCEEDED(hr)) {
+    // DSBFREQUENCY_ORIGINAL == 0；registry 用 0 恢复创建时采样率。
+    g_dsound_formats.SetFrequency(reinterpret_cast<uintptr_t>(self),
+                                  static_cast<uint32_t>(frequency));
+  }
+  return hr;
 }
 
 // ── detour：IDirectSound8::CreateSoundBuffer（槽3）────────────────────────────
 // 先调原函数建 buffer，成功后按两道门决定是否 hook 它的 Unlock：
 //  ① 跳过主缓冲（DSBCAPS_PRIMARYBUFFER）：主缓冲是最终混音目标，抓它=抓混音不干净；只要
 //     secondary（每个音单独的流）。
-//  ② 格式一致性门控：环形缓冲只装**一种**格式的音，否则不同 bits/rate/channels 的字节混进
-//     同一缓冲会播放乱码。首个 secondary 的格式经 MaybeRecordFormat 记进 header（全局只写一
-//     次）；此后只有 (nSamplesPerSec,nChannels,wBitsPerSample) 与已记录格式全等的 buffer 才
-//     hook Unlock，不等就跳过。（只 hook Unlock、不 hook Lock——Unlock 已带回写入区+字节数，
-//     少一个 hook、少一处出错面。）
+//  ② 记录每个 secondary 自己的格式，并跟踪 SetFrequency 的实际播放采样率。Unlock 的 vtable
+//     实现由不同 buffer 共享，装一次 detour 后会命中所有 buffer，不能靠“只给同格式对象装 hook”
+//     做对象级门控。共享环可混存不同格式，因为每条 VoiceClip 都携带独立格式；host 按 source
+//     分组后再合成。
 HRESULT STDMETHODCALLTYPE Detour_CreateSoundBuffer(IDirectSound8* self,
                                                    LPCDSBUFFERDESC pcDesc,
                                                    LPDIRECTSOUNDBUFFER* ppBuf,
@@ -173,11 +191,25 @@ HRESULT STDMETHODCALLTYPE Detour_CreateSoundBuffer(IDirectSound8* self,
     const bool is_primary = (pcDesc->dwFlags & DSBCAPS_PRIMARYBUFFER) != 0;
     const WAVEFORMATEX* fmt = pcDesc->lpwfxFormat;
     if (!is_primary && fmt != nullptr) {
-      // 先尝试记格式（已记录则 no-op），再比对；全等才 hook Unlock。
       MaybeRecordFormat(fmt);
-      if (fmt->nSamplesPerSec == g_header->sample_rate &&
-          fmt->nChannels == g_header->channels &&
-          fmt->wBitsPerSample == g_header->bits_per_sample) {
+      uint32_t is_float = 0;
+      if (fmt->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+        is_float = 1;
+      } else if (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+                 fmt->cbSize >=
+                     sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+        const auto* ext = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(fmt);
+        if (ext->SubFormat.Data1 == WAVE_FORMAT_IEEE_FLOAT) {
+          is_float = 1;
+        }
+      }
+      const hibiki_voice_hook::DirectSoundPcmFormat format{
+          fmt->nSamplesPerSec, fmt->nChannels, fmt->wBitsPerSample, is_float};
+      if (g_dsound_formats.Register(
+              reinterpret_cast<uintptr_t>(*ppBuf), format)) {
+        HookFn(VtableSlot(*ppBuf, kIdxDsbSetFrequency),
+               reinterpret_cast<void*>(&Detour_DsbSetFrequency),
+               reinterpret_cast<void**>(&g_orig_DsbSetFrequency));
         HookFn(VtableSlot(*ppBuf, kIdxDsbUnlock),
                reinterpret_cast<void*>(&Detour_DsbUnlock),
                reinterpret_cast<void**>(&g_orig_DsbUnlock));
