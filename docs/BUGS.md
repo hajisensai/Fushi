@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1027 条。点号进各自文件。
+> 共 1028 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1066](bugs/BUG-1066-gal-hook-launch-degrade.md) | ✅ | ✅ | 已支持游戏总是启动失败或音频降级到整机混音 |
 | [BUG-1060](bugs/BUG-1060-gal-loopback-engine-pcm-cache.md) | ✅ | ✅ | Loopback 制卡误用引擎 PCM 碎片导致音频异常 |
 | [BUG-1059](bugs/BUG-1059-galgame-x86-helper.md) | ✅ | ✅ | 残缺的 x86 galgame helper 被当成已安装，自动转区失效 |
 | [BUG-1058](bugs/BUG-1058-ffmpeg-min-vendored-missing-movtext.md) | ✅ | ✅ | 入库精简 ffmpeg 缺 movtext 编码器，桌面片段导出永远封不进字幕 |
