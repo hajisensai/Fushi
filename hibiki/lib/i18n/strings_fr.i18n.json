@@ -2487,5 +2487,18 @@
   "game_hook_reason_resume_failed": "The launched game could not be resumed and was stopped; launch it again.",
   "game_hook_reason_steam_timeout": "Steam accepted the launch request but the game process never appeared.",
   "game_hook_reason_shared_memory_unavailable": "The capture channel could not be opened; restart Hibiki.",
-  "game_hook_reason_handshake_timeout": "The game was hooked but produced no text or audio in time; this engine may not be supported yet."
+  "game_hook_reason_handshake_timeout": "The game was hooked but produced no text or audio in time; this engine may not be supported yet.",
+  "section_video_library": "Library",
+  "video_setting_auto_scrape": "Auto-fetch series info",
+  "video_setting_auto_scrape_hint": "Silently fetch cover, synopsis, rating and tags from Bangumi for videos in your library",
+  "video_scrape_info": "Series info",
+  "video_scrape_info_empty": "No series info yet. It is fetched automatically in the background; you can also match it manually.",
+  "video_scrape_rating": "Rating",
+  "video_scrape_air_date": "Aired",
+  "video_scrape_episodes": "Episodes",
+  "video_scrape_tags": "Tags",
+  "video_scrape_summary": "Synopsis",
+  "video_scrape_view_subject": "View on Bangumi",
+  "video_scrape_rescrape": "Re-scrape",
+  "video_scrape_rating_votes": "$count ratings"
 }

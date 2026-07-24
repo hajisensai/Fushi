@@ -900,6 +900,19 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 视频条目自动刮削开关：默认开启。开则进视频页 / 新视频入库后后台静默向
+  /// Bangumi 拉条目资料（封面 + 简介/评分/放送/标签），关则完全不发这些请求
+  /// （已刮到的资料保留，手动「重新刮削」仍可用）。给不希望库信息自动出网的用户
+  /// 一个明确的总闸——自动化取代手动按钮后，没有开关就等于没得关。
+  /// getPref 仅在该 key 从未写过时返回默认 true。
+  bool get videoAutoScrape =>
+      getPref('video_auto_scrape', defaultValue: true) as bool;
+
+  Future<void> setVideoAutoScrape(bool value) async {
+    await setPref('video_auto_scrape', value);
+    notifyListeners();
+  }
+
   /// TODO-1119 / BUG-545：用户是否已在「Windows 黑屏闪烁」运行时提示里点了「不再提示」。
   /// 默认 false = 允许提示。置 true 后播放器不再弹该运行时提示条（静态「已知问题」说明行
   /// 仍在画质设置里）。getPref 仅在该 key 从未写过时返回默认 false。

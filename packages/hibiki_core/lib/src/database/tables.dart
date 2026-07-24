@@ -1032,3 +1032,66 @@ class RevealedImages extends Table {
   @override
   Set<Column> get primaryKey => {bookKey, imageKey};
 }
+
+// ── video_scrape_meta ───────────────────────────────────────────────
+// 视频条目刮削元数据（「抄 Bangumi」）：一本视频书一行，存的是**条目级**资料
+// （简介/评分/放送/话数/标签/制作人员），不是文件级资料。封面图仍落
+// `video_covers/` 文件 + `cover_meta.json`（来源标记），本表只管文字资料，二者
+// 按 bookUid 对齐、互不覆盖：封面可以是手动设置的而资料是刮来的。
+//
+// 为什么单独一张表而不是往 [VideoBooks] 加列：刮削资料是**可重建的缓存**（删了
+// 重刮即可），而 VideoBooks 是用户数据（路径/进度/字幕选择）。分表让「清空刮削
+// 缓存」= 一条 DELETE，且 VideoBooks 的行宽不被十来个可空列撑大。
+//
+// 删视频经 FK cascade 连带清本表。空表 = 全部未刮削（旧库升级后行为与旧版一致，
+// 自动刮削会逐步回填，Never break userspace）。
+@DataClassName('VideoScrapeMetaRow')
+class VideoScrapeMeta extends Table {
+  /// 视频书稳定身份（= VideoBooks.bookUid）。删视频 cascade 清本表。
+  TextColumn get bookUid =>
+      text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
+
+  /// 来源（`ScrapeSource.name`：bangumi / tmdb / offlineDb / manualUrl）。
+  TextColumn get source => text()();
+
+  /// 源内条目 id（Bangumi subject id / TMDB id），字符串化存储。
+  TextColumn get subjectId => text()();
+
+  /// 条目主标题（中文优先，= Bangumi `name_cn` 非空否则 `name`）。
+  TextColumn get title => text()();
+
+  /// 原名（日文原题，= Bangumi `name`）；与 [title] 相同或缺失时为 null。
+  TextColumn get originalTitle => text().nullable()();
+
+  /// 条目简介（Bangumi `summary` 原文，含换行）。
+  TextColumn get summary => text().nullable()();
+
+  /// 放送开始日期 `YYYY-MM-DD`（Bangumi `date`）。存字符串而非 DateTime：源数据
+  /// 常见只精确到年或年月的残缺日期，转 DateTime 会凭空补月/日造假。
+  TextColumn get airDate => text().nullable()();
+
+  /// 评分（Bangumi `rating.score`，0~10）。
+  RealColumn get rating => real().nullable()();
+
+  /// 评分人数（Bangumi `rating.total`）。
+  IntColumn get ratingCount => integer().nullable()();
+
+  /// 总话数（Bangumi `eps` / `total_episodes`）。
+  IntColumn get episodeCount => integer().nullable()();
+
+  /// 标签 JSON 数组：`[{"name":"日常","count":1234}]`（Bangumi `tags`，按热度降序）。
+  TextColumn get tagsJson => text().nullable()();
+
+  /// infobox JSON 数组：`[{"key":"导演","value":"..."}]`（Bangumi `infobox` 摊平，
+  /// 值为数组时用 `/` 连接）。存原始 key 名，展示层不翻译（源就是中文）。
+  TextColumn get infoboxJson => text().nullable()();
+
+  /// 条目详情页 URL（`https://bgm.tv/subject/<id>`），供「查看条目」跳转。
+  TextColumn get detailUrl => text().nullable()();
+
+  /// 本行写入时间（重刮判据 / 展示「资料更新于」）。
+  DateTimeColumn get scrapedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {bookUid};
+}

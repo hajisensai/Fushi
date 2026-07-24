@@ -90,8 +90,149 @@ class BangumiClient {
     return parseBangumiSearchResponse(utf8.decode(response.bodyBytes));
   }
 
+  /// 拉取条目详情 `GET /v0/subjects/{id}`，返回条目级资料（简介/评分/放送/话数/
+  /// 标签/infobox）。
+  ///
+  /// 为什么要第二次请求：搜索端点 `/v0/search/subjects` **不返回** summary / tags /
+  /// infobox / rating.total，只有详情端点有。匹配定案后才对**唯一**一个 id 拉详情，
+  /// 而不是对每条搜索候选都拉（那会把 1 次请求放大成 10 次）。
+  ///
+  /// 网络失败 / 非 2xx / JSON 异常 → 抛 [ScrapeNetworkException]；404（条目不存在
+  /// 或被删）同样走异常，由上层降级为「只有封面没有资料」。
+  Future<ScrapeMetadata> fetchSubject(String subjectId) async {
+    final Uri uri = Uri.parse('https://api.bgm.tv/v0/subjects/$subjectId');
+    final http.Response response;
+    try {
+      response = await _client.get(
+        uri,
+        headers: const <String, String>{
+          'User-Agent': _userAgent,
+          'Accept': 'application/json',
+        },
+      ).timeout(_timeout);
+    } on TimeoutException {
+      throw const ScrapeNetworkException('Bangumi subject fetch timed out');
+    } catch (e) {
+      throw ScrapeNetworkException('Bangumi subject request failed: $e');
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ScrapeNetworkException(
+        'Bangumi subject HTTP ${response.statusCode}',
+        statusCode: response.statusCode,
+      );
+    }
+
+    // 同 search：走 bodyBytes + utf8，避免缺 charset 时按 latin1 毁中日文。
+    return parseBangumiSubjectResponse(utf8.decode(response.bodyBytes));
+  }
+
   /// 关闭内部 client（若为默认自建）。测试注入的 mock client 由调用方自行管理。
   void close() => _client.close();
+}
+
+/// 纯函数：把 Bangumi `/v0/subjects/{id}` 响应体解析为 [ScrapeMetadata]。
+///
+/// 抽为顶层纯函数便于单测（无需 mock 网络）。JSON 结构异常 / 缺标题 → 抛
+/// [ScrapeNetworkException]（与网络失败同类，交上层降级）。
+ScrapeMetadata parseBangumiSubjectResponse(String body) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } catch (e) {
+    throw ScrapeNetworkException('Bangumi subject JSON decode failed: $e');
+  }
+  if (decoded is! Map<String, Object?>) {
+    throw const ScrapeNetworkException('Bangumi subject not a JSON object');
+  }
+
+  final String? nameCn = _nonEmptyString(decoded['name_cn']);
+  final String? name = _nonEmptyString(decoded['name']);
+  final String? title = nameCn ?? name;
+  if (title == null) {
+    throw const ScrapeNetworkException('Bangumi subject has no usable title');
+  }
+  // 原名只在与主标题不同时才留（主标题已用了 name 时留 null，不自我重复）。
+  final String? originalTitle = (name != null && name != title) ? name : null;
+
+  // 评分：`rating.score` / `rating.total`（total = 评分人数，非 count 直方图）。
+  double? rating;
+  int? ratingCount;
+  final Object? ratingNode = decoded['rating'];
+  if (ratingNode is Map<String, Object?>) {
+    final double? score = _asDouble(ratingNode['score']);
+    // 0 分 = 「暂无评分」，不是真的 0 分，按缺失处理。
+    if (score != null && score > 0) rating = score;
+    final int? total = _asInt(ratingNode['total']);
+    if (total != null && total > 0) ratingCount = total;
+  }
+
+  // 话数：`total_episodes` 优先（含 SP 的完整集数），回退 `eps`。
+  final int totalEps = _asInt(decoded['total_episodes']) ?? 0;
+  final int rawEps = _asInt(decoded['eps']) ?? 0;
+  final int episodes = totalEps > 0 ? totalEps : rawEps;
+
+  final List<ScrapeTag> tags = <ScrapeTag>[];
+  final Object? tagsNode = decoded['tags'];
+  if (tagsNode is List<Object?>) {
+    for (final Object? item in tagsNode) {
+      final ScrapeTag? tag = ScrapeTag.fromJson(item);
+      if (tag != null) tags.add(tag);
+    }
+  }
+
+  final List<ScrapeInfoboxEntry> infobox = <ScrapeInfoboxEntry>[];
+  final Object? infoboxNode = decoded['infobox'];
+  if (infoboxNode is List<Object?>) {
+    for (final Object? item in infoboxNode) {
+      if (item is! Map<String, Object?>) continue;
+      final String? key = _nonEmptyString(item['key']);
+      if (key == null) continue;
+      final String? value = _flattenInfoboxValue(item['value']);
+      if (value == null) continue;
+      infobox.add(ScrapeInfoboxEntry(key: key, value: value));
+    }
+  }
+
+  final String entryId = '${decoded['id']}';
+  return ScrapeMetadata(
+    source: ScrapeSource.bangumi,
+    subjectId: entryId,
+    title: title,
+    originalTitle: originalTitle,
+    summary: _nonEmptyString(decoded['summary']),
+    airDate: _nonEmptyString(decoded['date']),
+    rating: rating,
+    ratingCount: ratingCount,
+    episodeCount: episodes > 0 ? episodes : null,
+    tags: tags,
+    infobox: infobox,
+    detailUrl: 'https://bgm.tv/subject/$entryId',
+  );
+}
+
+/// 摊平 infobox 的 `value`：字符串直取；`[{k?,v},…]` 数组取每项 `v`（有 `k` 时
+/// 前缀 `k:`）后以 ` / ` 连接。其余类型 → null（该行丢弃）。
+String? _flattenInfoboxValue(Object? value) {
+  if (value is String) {
+    final String trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+  if (value is! List<Object?>) return null;
+  final List<String> parts = <String>[];
+  for (final Object? item in value) {
+    if (item is String) {
+      final String trimmed = item.trim();
+      if (trimmed.isNotEmpty) parts.add(trimmed);
+      continue;
+    }
+    if (item is! Map<String, Object?>) continue;
+    final String? v = _nonEmptyString(item['v']);
+    if (v == null) continue;
+    final String? k = _nonEmptyString(item['k']);
+    parts.add(k == null ? v : '$k: $v');
+  }
+  return parts.isEmpty ? null : parts.join(' / ');
 }
 
 /// 纯函数：把 Bangumi `/v0/search/subjects` 响应体解析为候选列表。

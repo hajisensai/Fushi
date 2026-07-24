@@ -981,16 +981,8 @@ void main() {
               'result dialog, not ordinary page chrome — same reviewed content '
               'exception class as anki_mined_card_action_sheet and '
               'sentence_context_dialog.',
-      // PR#387：批量刮削对话框把每个本地视频的匹配进度渲染为内容行（Card 包裹的
-      // 进度列表 + ListTile 每行状态：已应用 / 待确认 / 跳过 / 失败），是视频子系统
-      // 的瞬态批处理结果内容对话框，非普通页面 chrome，同上述内容对话框豁免类。
-      'lib/src/media/video/cover_ui/batch_scrape_dialog.dart':
-          'Batch poster-scrape dialog renders each local video match progress '
-              'as content rows (a Card-wrapped progress list + per-row ListTile '
-              'status: applied / needs-confirm / skipped / failed), a transient '
-              'video-subsystem batch-result content dialog, not ordinary page '
-              'chrome — same reviewed content exception class as '
-              'anki_mined_card_action_sheet and sentence_context_dialog.',
+      // 批量刮削对话框（PR#387）已随「刮削自动化」删除——刮削不再由用户点按钮
+      // 触发整库任务，故此处不再需要它的豁免条目。
       'lib/src/anki/anki_mined_card_action_sheet.dart':
           'TODO-1007/1008 mined-card action sheet lists matching Anki notes '
               'as transient content rows (note preview + per-note overwrite/view '

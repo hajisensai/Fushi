@@ -35,6 +35,12 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 视频条目自动刮削总闸。写 prefsRepo（changed=true），生效点在
+  // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
+  // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开
+  // 同一实例下轮即刮）。
+  'video/Auto-fetch series info':
+      'test/media/video/scraper/auto_scrape_service_test.dart',
   // 多端库联合视图（spec 2026-07-12 §2.6）：上传视频文件开关。写 SyncRepository
   // gate（changed=true），生效点在 SyncOrchestrator 云后端上传阶段（非 reader
   // CSS / 主题树），无适用探针；由专项 orchestrator 行为测试咬住（关=零上传、

@@ -2836,6 +2836,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoAutoPlayNext(bool value) =>
       prefsRepo.setVideoAutoPlayNext(value);
 
+  /// 视频条目自动刮削开关（落 Drift preferences，默认开）。
+  bool get videoAutoScrape => prefsRepo.videoAutoScrape;
+
+  Future<void> setVideoAutoScrape(bool value) =>
+      prefsRepo.setVideoAutoScrape(value);
+
   bool get videoDanmakuEnabled => prefsRepo.videoDanmakuEnabled;
 
   Future<void> setVideoDanmakuEnabled(bool value) =>

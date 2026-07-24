@@ -2487,5 +2487,18 @@
   "game_hook_reason_resume_failed": "已启动的游戏无法恢复运行并被结束，请重新启动。",
   "game_hook_reason_steam_timeout": "Steam 已接受启动请求，但始终没有出现游戏进程。",
   "game_hook_reason_shared_memory_unavailable": "捕获通道无法打开，请重启 Hibiki。",
-  "game_hook_reason_handshake_timeout": "已注入游戏，但超时内没有文本或音频，该引擎可能尚未支持。"
+  "game_hook_reason_handshake_timeout": "已注入游戏，但超时内没有文本或音频，该引擎可能尚未支持。",
+  "section_video_library": "媒体库",
+  "video_setting_auto_scrape": "自动刮削条目资料",
+  "video_setting_auto_scrape_hint": "库里的视频后台自动从 Bangumi 获取封面、简介、评分与标签",
+  "video_scrape_info": "条目信息",
+  "video_scrape_info_empty": "还没有条目资料。后台会自动刮削，也可以手动匹配。",
+  "video_scrape_rating": "评分",
+  "video_scrape_air_date": "放送开始",
+  "video_scrape_episodes": "话数",
+  "video_scrape_tags": "标签",
+  "video_scrape_summary": "简介",
+  "video_scrape_view_subject": "在 Bangumi 查看",
+  "video_scrape_rescrape": "重新刮削",
+  "video_scrape_rating_votes": "$count 人评分"
 }
