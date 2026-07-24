@@ -2449,5 +2449,8 @@
   "manga_cloud_ocr_model": "Model name",
   "manga_cloud_ocr_privacy": "When you tap Cloud retry, the selected image area is sent to the Google Gemini API with your own API key. Nothing is uploaded unless you trigger it manually.",
   "manga_cloud_ocr_failed": "Cloud recognition failed",
-  "manga_ocr_mobile_note": "On mobile, the recognition model powers box scan in the manga reader."
+  "manga_ocr_mobile_note": "On mobile, the recognition model powers box scan in the manga reader.",
+  "games_already_added": "This game is already in the library",
+  "games_drop_no_exe": "No new game .exe among the dropped files",
+  "games_drop_imported": "Added $count game(s)"
 }

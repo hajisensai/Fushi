@@ -2449,5 +2449,8 @@
   "manga_cloud_ocr_model": "模型名",
   "manga_cloud_ocr_privacy": "点击「云端重试」时，所选图片区域将用你自备的 API Key 发送至 Google Gemini API；仅在你手动触发时才会上传。",
   "manga_cloud_ocr_failed": "云端识别失败",
-  "manga_ocr_mobile_note": "移动端下载的模型用于漫画阅读页的框选识别。"
+  "manga_ocr_mobile_note": "移动端下载的模型用于漫画阅读页的框选识别。",
+  "games_already_added": "该游戏已在库中",
+  "games_drop_no_exe": "拖入的文件里没有新的游戏 .exe",
+  "games_drop_imported": "已添加 $count 个游戏"
 }

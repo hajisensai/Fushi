@@ -77,4 +77,60 @@ void main() {
       expect(out.single.exePath, 'D:/g/y.exe');
     });
   });
+
+  group('filterDroppedGameExes', () {
+    GalgameEntry entryFor(String exe) => newGalgameEntryFromExe(exe);
+
+    test('只保留 .exe（大小写无关），非 exe 与空路径被过滤', () {
+      final List<String> out = filterDroppedGameExes(
+        const <GalgameEntry>[],
+        <String>[
+          r'D:\g\a.exe',
+          r'D:\g\readme.txt',
+          r'D:\g\B.EXE',
+          '',
+          r'D:\g\cover.png',
+        ],
+      );
+      expect(out, <String>[r'D:\g\a.exe', r'D:\g\B.EXE']);
+    });
+
+    test('批内重复去重且保序（大小写 / 斜杠归一）', () {
+      final List<String> out = filterDroppedGameExes(
+        const <GalgameEntry>[],
+        <String>[
+          r'D:\g\a.exe',
+          r'd:/g/A.EXE', // 同一路径归一后应被判重复
+          r'D:\g\b.exe',
+          r'D:\g\a.exe',
+        ],
+      );
+      expect(out, <String>[r'D:\g\a.exe', r'D:\g\b.exe']);
+    });
+
+    test('已在库里的路径被排除（大小写 / 分隔符无关）', () {
+      final List<GalgameEntry> existing = <GalgameEntry>[
+        entryFor(r'D:\g\a.exe'),
+      ];
+      final List<String> out = filterDroppedGameExes(
+        existing,
+        <String>[r'd:/G/A.EXE', r'D:\g\c.exe'],
+      );
+      expect(out, <String>[r'D:\g\c.exe']);
+    });
+
+    test('全部重复 / 无 exe 时返回空', () {
+      expect(
+        filterDroppedGameExes(const <GalgameEntry>[], <String>[r'x\y.txt']),
+        isEmpty,
+      );
+      expect(
+        filterDroppedGameExes(
+          <GalgameEntry>[entryFor(r'D:\g\a.exe')],
+          <String>[r'D:\g\a.exe'],
+        ),
+        isEmpty,
+      );
+    });
+  });
 }

@@ -123,6 +123,30 @@ String galgameNameFromExe(String exePath) {
   return stem.isEmpty ? exePath : stem;
 }
 
+/// 路径归一成大小写无关的比较键（Windows 路径大小写不敏感、分隔符 `\\`/`/` 等价）。
+String _exePathKey(String path) => path.replaceAll('/', '\\').toLowerCase();
+
+/// 从一批拖入的文件路径里筛出**可新增**的游戏 exe：只认 `.exe` 扩展名
+/// （大小写无关），去掉批内重复与已在 [existing] 库里的路径。保序。纯函数。
+List<String> filterDroppedGameExes(
+  List<GalgameEntry> existing,
+  List<String> dropped,
+) {
+  final Set<String> seen = <String>{
+    for (final GalgameEntry g in existing) _exePathKey(g.exePath),
+  };
+  final List<String> out = <String>[];
+  for (final String path in dropped) {
+    if (path.isEmpty || !path.toLowerCase().endsWith('.exe')) {
+      continue;
+    }
+    if (seen.add(_exePathKey(path))) {
+      out.add(path);
+    }
+  }
+  return out;
+}
+
 /// 把游戏库列表编码成偏好表存的 JSON 字符串（空列表 -> 空串，读回即空）。纯函数。
 String encodeGalgameLibrary(List<GalgameEntry> games) {
   if (games.isEmpty) {

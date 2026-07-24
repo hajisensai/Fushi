@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_cover_resolver.dart';
@@ -77,9 +78,35 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     if (exe == null || exe.isEmpty) {
       return; // 用户取消
     }
+    if (filterDroppedGameExes(_games, <String>[exe]).isEmpty) {
+      HibikiToast.show(msg: t.games_already_added);
+      return; // 已在库里：不重复添加
+    }
     final GalgameEntry entry = newGalgameEntryFromExe(exe);
     await _persist(<GalgameEntry>[..._games, entry]);
     unawaited(_autoCover(entry, silent: true));
+  }
+
+  /// 拖入文件导入：筛出新的 `.exe` 批量添加，toast 汇报数量；每条落库后走
+  /// 与「添加游戏」同一套 [_autoCover] 后台补齐封面（#370 目录级联 + exe 图标）。
+  Future<void> _handleDrop(List<String> paths, Offset _) async {
+    final List<String> exes = filterDroppedGameExes(_games, paths);
+    if (exes.isEmpty) {
+      HibikiToast.show(msg: t.games_drop_no_exe);
+      return;
+    }
+    // 批内 id 用「基准时刻 + 序号微秒」错开，避免同微秒撞 id。
+    final DateTime base = DateTime.now();
+    final List<GalgameEntry> added = <GalgameEntry>[
+      for (int i = 0; i < exes.length; i++)
+        newGalgameEntryFromExe(exes[i],
+            now: base.add(Duration(microseconds: i))),
+    ];
+    await _persist(<GalgameEntry>[..._games, ...added]);
+    HibikiToast.show(msg: t.games_drop_imported(count: added.length));
+    for (final GalgameEntry entry in added) {
+      unawaited(_autoCover(entry, silent: true));
+    }
   }
 
   /// 自动获取封面：游戏目录里的封面图 → exe 内嵌图标（[autoResolveGameCover]）。
@@ -218,8 +245,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final Widget body =
-        _games.isEmpty ? _buildEmpty(context) : _buildGrid(context);
+    final Widget body = HibikiFileDropTarget(
+      debugLabel: 'games-library',
+      onDrop: (List<String> paths, Offset position) =>
+          unawaited(_handleDrop(paths, position)),
+      child: _games.isEmpty ? _buildEmpty(context) : _buildGrid(context),
+    );
     final Widget addButton = FloatingActionButton.extended(
       onPressed: _addGame,
       icon: const Icon(Icons.add),
