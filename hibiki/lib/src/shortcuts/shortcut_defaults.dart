@@ -390,6 +390,20 @@ class ShortcutDefaults {
     ShortcutAction.globalExternalLookup: _kb([
       _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl, ModifierKey.alt}),
     ]),
+    // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
+    // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
+    // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立
+    // co-active 组，与任何页面键位不冲突。
+    ShortcutAction.popupNextEntry: const ShortcutBindingSet(
+      wheelBindings: <WheelBinding>[
+        WheelBinding(WheelDirection.down, modifiers: {ModifierKey.alt}),
+      ],
+    ),
+    ShortcutAction.popupPrevEntry: const ShortcutBindingSet(
+      wheelBindings: <WheelBinding>[
+        WheelBinding(WheelDirection.up, modifiers: {ModifierKey.alt}),
+      ],
+    ),
   };
 
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
@@ -406,6 +420,9 @@ class ShortcutDefaults {
         }).toList(growable: false),
         gamepadBindings: entry.value.gamepadBindings,
         mouseBindings: entry.value.mouseBindings,
+        // 滚轮绑定的修饰键不做 Ctrl→Meta 替换：Alt+滚轮在 macOS 上同样空闲，而
+        // Ctrl+滚轮在 macOS 是系统缩放，替换过去反而撞系统手势。
+        wheelBindings: entry.value.wheelBindings,
       ),
   };
 
@@ -437,6 +454,13 @@ class ShortcutDefaults {
           // 无任何 app 内绑定（设置页对该 scope 显示系统级说明文案，不渲染可改键行）。
           case ShortcutScope.globalExternal:
             return const ShortcutBindingSet();
+          // 查词弹窗的词条导航是纯滚轮通道：Android 可接鼠标（平板 / DeX / 桌面
+          // 模式），滚轮事件同样到达弹窗 WebView 的 popup.js，故移动端保留桌面的
+          // Alt+滚轮默认；没有鼠标的设备上它永不触发，无害。
+          case ShortcutScope.dictionaryPopup:
+            return ShortcutBindingSet(
+              wheelBindings: desktop.wheelBindings,
+            );
         }
       }(),
   };

@@ -151,6 +151,10 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_dpad_right;
       case ShortcutAction.globalExternalLookup:
         return t.shortcut_action_global_external_lookup;
+      case ShortcutAction.popupNextEntry:
+        return t.shortcut_action_popup_next_entry;
+      case ShortcutAction.popupPrevEntry:
+        return t.shortcut_action_popup_prev_entry;
     }
   }
 }
@@ -173,8 +177,28 @@ extension ShortcutScopeLabel on ShortcutScope {
         return t.shortcut_scope_gamepad;
       case ShortcutScope.globalExternal:
         return t.shortcut_scope_global_external;
+      case ShortcutScope.dictionaryPopup:
+        return t.shortcut_scope_dictionary_popup;
     }
   }
+}
+
+/// 滚轮绑定的本地化显示名与小图标（与 [MouseBindingLabel] 同形，供设置页的
+/// chip 复用）。修饰键沿用 [ModifierKey.label] 的英文缩写（Alt/Ctrl/Shift/Meta，
+/// 与键盘 chip 一致），只有方向翻译成人话。
+extension WheelBindingLabel on WheelBinding {
+  String get label {
+    final String direction = switch (this.direction) {
+      WheelDirection.up => t.shortcut_wheel_up,
+      WheelDirection.down => t.shortcut_wheel_down,
+    };
+    if (modifiers.isEmpty) return direction;
+    final List<ModifierKey> sorted = modifiers.toList()
+      ..sort((ModifierKey a, ModifierKey b) => a.index.compareTo(b.index));
+    return '${sorted.map((ModifierKey m) => m.label).join('+')}+$direction';
+  }
+
+  IconData get icon => Icons.mouse_outlined;
 }
 
 /// TODO-1050b: 鼠标绑定的本地化显示名与小图标。

@@ -16,7 +16,7 @@ import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 6;
+const int kShortcutSchemaVersion = 7;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -28,6 +28,15 @@ class HibikiShortcutRegistry extends ChangeNotifier {
 
   ShortcutBindingSet bindingsFor(ShortcutAction action) =>
       _bindings[action] ?? const ShortcutBindingSet();
+
+  /// 这个注册表是否已经装过绑定（[loadDefaults] / [loadFromJsonString]）。
+  ///
+  /// 未装载时 [bindingsFor] 对**每个** action 都返回空绑定集，这与「用户把某个动作
+  /// 的绑定清空了」在数据上无法区分。绝大多数消费者跑在完成 initialise() 的主进程
+  /// 里、不必关心；但把绑定**序列化下发**给别的运行时（如注入给弹窗 WebView 的
+  /// popup.js）时必须区分：空表在那边的语义是「该动作已被用户关掉」，未装载时误发
+  /// 空表会让功能静默失效。这类调用方用本标志回落到平台默认。
+  bool get isLoaded => _bindings.isNotEmpty;
 
   void loadDefaults(TargetPlatform platform) {
     _bindings
@@ -154,6 +163,14 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     // bump 版本保持不变式诚实。⚠️ 行为面：readerDismissDict（Esc）不再在无弹窗时
     // 退书（执行体侧拆分，见 caret.part.dart），退书统一走 readerExitBook /
     // 返回手势 / 底栏。
+    //
+    // v6 -> v7（查词弹窗 Alt+滚轮词条导航）：新增 popupNextEntry / popupPrevEntry
+    // （dictionaryPopup scope，纯滚轮通道，默认 Alt+滚轮下/上）。**全新 action**，
+    // 老快照里没有它们的 key —— [loadDefaults] 已播种默认，[_loadFromJson] 只覆盖
+    // 快照里显式出现的 key、保留缺席 key 的默认，故老用户升级后天然拿到 Alt+滚轮，
+    // 无需逐个 restore。同时 [ShortcutBindingSet] 新增 `wheel` 序列化字段：老快照
+    // 缺这个 key 时 fromJson 给空表，任何既有 action 的键盘/手柄/鼠标绑定都不受
+    // 影响。这里只需 bump 版本保持「快照版本 < 当前 ⇒ 跑迁移」不变式诚实。
   }
 
   /// 当 [action] 在快照里的键盘绑定**恰等于** [oldDefaultKeyboard]（无序集合相等，
@@ -227,6 +244,7 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     Iterable<InputBinding> removeKeyboardConflicts = const <InputBinding>[],
     Iterable<GamepadBinding> removeGamepadConflicts = const <GamepadBinding>[],
     Iterable<MouseBinding> removeMouseConflicts = const <MouseBinding>[],
+    Iterable<WheelBinding> removeWheelConflicts = const <WheelBinding>[],
   }) {
     final Set<InputBinding> keyboardToRemove =
         Set<InputBinding>.of(removeKeyboardConflicts);
@@ -234,10 +252,13 @@ class HibikiShortcutRegistry extends ChangeNotifier {
         Set<GamepadBinding>.of(removeGamepadConflicts);
     final Set<MouseBinding> mouseToRemove =
         Set<MouseBinding>.of(removeMouseConflicts);
+    final Set<WheelBinding> wheelToRemove =
+        Set<WheelBinding>.of(removeWheelConflicts);
 
     if (keyboardToRemove.isNotEmpty ||
         gamepadToRemove.isNotEmpty ||
-        mouseToRemove.isNotEmpty) {
+        mouseToRemove.isNotEmpty ||
+        wheelToRemove.isNotEmpty) {
       for (final ShortcutScope scope in action.scope.coactiveScopes) {
         for (final ShortcutAction oldAction
             in ShortcutAction.actionsForScope(scope)) {
@@ -252,13 +273,18 @@ class HibikiShortcutRegistry extends ChangeNotifier {
           final List<MouseBinding> mouse = oldBindings.mouseBindings
               .where((MouseBinding b) => !mouseToRemove.contains(b))
               .toList(growable: false);
+          final List<WheelBinding> wheel = oldBindings.wheelBindings
+              .where((WheelBinding b) => !wheelToRemove.contains(b))
+              .toList(growable: false);
           if (keyboard.length != oldBindings.keyboardBindings.length ||
               gamepad.length != oldBindings.gamepadBindings.length ||
-              mouse.length != oldBindings.mouseBindings.length) {
+              mouse.length != oldBindings.mouseBindings.length ||
+              wheel.length != oldBindings.wheelBindings.length) {
             _bindings[oldAction] = oldBindings.copyWith(
               keyboardBindings: keyboard,
               gamepadBindings: gamepad,
               mouseBindings: mouse,
+              wheelBindings: wheel,
             );
           }
         }
@@ -406,6 +432,26 @@ class HibikiShortcutRegistry extends ChangeNotifier {
         if (bindings == null) continue;
         for (final mb in bindings.mouseBindings) {
           if (mb == binding) return action;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// 滚轮绑定的冲突检测，与键盘/手柄/鼠标三条同形：同一 co-active 组里同一
+  /// 「修饰键 + 方向」组合只能属于一个动作，否则后者永远不触发。
+  ShortcutAction? hasWheelConflict(
+    ShortcutScope scope,
+    WheelBinding binding, {
+    required ShortcutAction? exclude,
+  }) {
+    for (final coactive in scope.coactiveScopes) {
+      for (final action in ShortcutAction.actionsForScope(coactive)) {
+        if (action == exclude) continue;
+        final bindings = _bindings[action];
+        if (bindings == null) continue;
+        for (final wb in bindings.wheelBindings) {
+          if (wb == binding) return action;
         }
       }
     }

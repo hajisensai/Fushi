@@ -176,6 +176,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       removeKeyboardConflicts: result.keyboardReassignments,
       removeGamepadConflicts: result.gamepadReassignments,
       removeMouseConflicts: result.mouseReassignments,
+      removeWheelConflicts: result.wheelReassignments,
     );
     await _save();
     setState(() {});
@@ -453,16 +454,29 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
         ],
       );
     }
+    // 可视化模式只对真的会消费键盘 / 手柄的 scope 有意义。查词弹窗的词条导航是纯
+    // 滚轮通道（[ShortcutScope.channels]），给它画键盘图/手柄图不但是空图，点空键位
+    // 还会写出一条永不触发的死绑定——这类 scope 在可视化模式下也回落到列表行。
+    final bool hasVisualChannels =
+        scope.channels.contains(ShortcutChannel.keyboard) ||
+            scope.channels.contains(ShortcutChannel.gamepad);
     return AdaptiveSettingsSection(
       title: scope.label,
       children: <Widget>[
+        // 纯弹窗内滚轮触发，用户看不到「在哪儿按」时会以为没生效，故给一行说明。
+        if (scope == ShortcutScope.dictionaryPopup)
+          AdaptiveSettingsRow(
+            title: t.shortcut_scope_dictionary_popup_note,
+            icon: Icons.info_outline,
+            showIcon: true,
+          ),
         AdaptiveSettingsRow(
           title: t.shortcut_reset_defaults,
           icon: Icons.restore_outlined,
           showIcon: true,
           onTap: () => _confirmResetScope(scope),
         ),
-        if (_visualMode)
+        if (_visualMode && hasVisualChannels)
           Padding(
             padding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.rowHorizontal,

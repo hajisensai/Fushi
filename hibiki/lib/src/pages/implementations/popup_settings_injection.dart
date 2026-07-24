@@ -15,6 +15,10 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/popup_theme_css.dart';
 import 'package:hibiki/src/reader/dictionary_font_css.dart';
@@ -253,6 +257,48 @@ String buildPopupEntriesJs(DictionarySearchResult result) {
 ''';
 }
 
+/// 查词弹窗「上/下一个词条」的滚轮绑定 JSON（注入成 `window.__hoshiEntryWheelBindings`）。
+///
+/// 这两个动作的执行体在 popup.js —— 弹窗内容是 WebView，滚轮事件先到它的 JS，Dart
+/// 侧根本收不到（也不该收：只有指针真在弹窗内才算数）。所以「可改键」这件事就是把
+/// 注册表里的绑定翻译成 JS 能直接比对的形状：
+///
+/// ```json
+/// {"next":[{"dir":"down","mods":["alt"]}],"prev":[{"dir":"up","mods":["alt"]}]}
+/// ```
+///
+/// `dir` 取 `WheelEvent.deltaY` 的符号，`mods` 是必须**恰好**按下的修饰键集合
+/// （popup.js 侧全等比对，Alt+滚轮绝不会被 Ctrl+Alt+滚轮误触）。绑定为空时发空表，
+/// popup.js 据此关掉该方向（而不是回退到默认，否则用户清空绑定等于没清）。
+String popupEntryWheelBindingsJson(
+  HibikiShortcutRegistry registry,
+  TargetPlatform platform,
+) {
+  // 注册表还没装载时（弹窗进程的精简初始化早于 loadShortcutRegistry，或测试里的
+  // 裸 registry）每个动作都读到空绑定 —— 而空表在 popup.js 那边的语义是「用户关掉
+  // 了这个方向」，直接下发会让 Alt+滚轮静默失效。这种情况下回落到平台默认表。
+  final Map<ShortcutAction, ShortcutBindingSet>? fallback =
+      registry.isLoaded ? null : ShortcutDefaults.forPlatform(platform);
+  List<WheelBinding> bindingsOf(ShortcutAction action) => fallback == null
+      ? registry.bindingsFor(action).wheelBindings
+      : (fallback[action]?.wheelBindings ?? const <WheelBinding>[]);
+  List<Map<String, Object>> encode(ShortcutAction action) =>
+      <Map<String, Object>>[
+        for (final WheelBinding b in bindingsOf(action))
+          <String, Object>{
+            'dir': b.direction == WheelDirection.up ? 'up' : 'down',
+            'mods': b.modifiers
+                .map((ModifierKey m) => m.label.toLowerCase())
+                .toList(growable: false)
+              ..sort(),
+          },
+      ];
+  return jsonEncode(<String, Object>{
+    'next': encode(ShortcutAction.popupNextEntry),
+    'prev': encode(ShortcutAction.popupPrevEntry),
+  });
+}
+
 /// 静态设置负载（主题变量/词典字体/图标字体覆盖/zoom/开关/名单/词典样式/自定义
 /// CSS）：只随主题、设置、词典集变化，不随查词变化。in-app 路径对 [PopupStaticSettingsJs.combined]
 /// 做串级比对，变了才随下一次推送重发。
@@ -299,6 +345,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // BUG-1026: 查词弹窗滚轮速度倍率。popup.js 的 wheel 监听器把 factor 乘以它
     // （缺省 1.0）。三种 in-app 弹窗都经此 head 注入；浏览器扩展走 theme 通道另发。
     window.__hoshiPopupWheelSpeed = ${appModel.popupWheelSpeed};
+    // 查词弹窗「上/下一个词条」的滚轮绑定（ShortcutAction.popupNextEntry /
+    // popupPrevEntry，默认 Alt+滚轮下/上）。popup.js 的 wheel 监听读它，命中即调
+    // hoshiFocusDictionaryEntryMove 并吃掉该事件（不滚动内容）。三种 in-app 弹窗
+    // 都经此 head 注入；浏览器扩展没有这条注入通道，用 popup.js 里的同款默认值。
+    window.__hoshiEntryWheelBindings = ${popupEntryWheelBindingsJson(appModel.shortcutRegistry, theme.platform)};
     window.audioSources = ${jsonEncode(appModel.enabledAudioSources)};
     window.needsAudio = true;
     window.lookupAudioVolume = ${ReaderHibikiSource.instance.lookupAudioVolumeGain.clamp(0.0, 1.0).toStringAsFixed(4)};

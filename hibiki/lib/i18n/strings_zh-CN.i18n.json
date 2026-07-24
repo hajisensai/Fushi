@@ -2461,5 +2461,14 @@
   "anki_duplicate_scope_deck": "所选卡组（含子卡组）",
   "anki_duplicate_scope_deck_root": "根卡组（含全部子卡组）",
   "anki_duplicate_scope_collection": "整个收藏集",
-  "anki_duplicate_scope": "查重范围"
+  "anki_duplicate_scope": "查重范围",
+  "shortcut_scope_dictionary_popup": "查词弹窗",
+  "shortcut_action_popup_next_entry": "下一个词条",
+  "shortcut_action_popup_prev_entry": "上一个词条",
+  "shortcut_wheel": "鼠标滚轮",
+  "shortcut_press_wheel": "按住修饰键在此滚动滚轮",
+  "shortcut_wheel_needs_modifier": "裸滚轮用于滚动弹窗内容，请按住 Alt / Ctrl / Shift 再滚",
+  "shortcut_wheel_up": "滚轮向上",
+  "shortcut_wheel_down": "滚轮向下",
+  "shortcut_scope_dictionary_popup_note": "鼠标位于查词弹窗上时生效"
 }

@@ -4006,7 +4006,56 @@ function popupAncestorAbsorbsVerticalWheel(target, deltaPx) {
     }
     return false;
 }
+// 查词弹窗「上/下一个词条」的滚轮绑定（Yomitan 的 Next/Previous entry）。默认
+// Alt+滚轮下 = 下一条、Alt+滚轮上 = 上一条；in-app 由 popup_settings_injection 注入
+// window.__hoshiEntryWheelBindings 覆盖成用户在「快捷键」设置里配的绑定（动作
+// ShortcutAction.popupNextEntry / popupPrevEntry）。浏览器扩展没有那条注入通道，
+// 就吃这里的默认值。
+const HOSHI_ENTRY_WHEEL_DEFAULT_BINDINGS = {
+    next: [{ dir: 'down', mods: ['alt'] }],
+    prev: [{ dir: 'up', mods: ['alt'] }],
+};
+// 本次 wheel 事件命中哪个词条导航动作：'next' / 'prev' / null。
+// 判据：deltaY 的符号给方向，当前按下的修饰键集合必须与某条绑定**全等**（故
+// Alt+滚轮绝不会被 Ctrl+Alt+滚轮误触）。裸滚轮永远留给内容滚动，绝不劫持。
+function popupEntryWheelAction(e) {
+    const raw = window.__hoshiEntryWheelBindings;
+    const cfg = (raw && typeof raw === 'object')
+        ? raw
+        : HOSHI_ENTRY_WHEEL_DEFAULT_BINDINGS;
+    const dir = e.deltaY > 0 ? 'down' : (e.deltaY < 0 ? 'up' : null);
+    if (!dir) return null;
+    const pressed = [];
+    if (e.altKey) pressed.push('alt');
+    if (e.ctrlKey) pressed.push('ctrl');
+    if (e.shiftKey) pressed.push('shift');
+    if (e.metaKey) pressed.push('meta');
+    if (pressed.length === 0) return null;
+    const matches = (list) => Array.isArray(list) && list.some((b) => b &&
+        b.dir === dir && Array.isArray(b.mods) &&
+        b.mods.length === pressed.length &&
+        b.mods.every((m) => pressed.indexOf(m) >= 0));
+    if (matches(cfg.next)) return 'next';
+    if (matches(cfg.prev)) return 'prev';
+    return null;
+}
 document.addEventListener('wheel', (e) => {
+    // 词条导航先于一切滚动处理判定（否则 ctrlKey 早退会吃掉 Ctrl 系绑定）。只有
+    // 焦点真的移动了（返回 'moved'）才吞掉事件：单词条 / 已到首尾时返回 'blocked'，
+    // 这一帧继续走下面的正常滚动，弹窗不会「按住 Alt 就滚不动」。
+    // 作用域判据与下面的滚动接管同源：扩展里滚轮必须真的落在弹窗 shadow 内
+    // （__hibikiWheelScroller 非空），in-app 整份文档就是弹窗故允许 null。
+    const entryAction = popupEntryWheelAction(e);
+    if (entryAction && typeof window.hoshiFocusDictionaryEntryMove === 'function') {
+        const inExtensionHost =
+            typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+        if (__hibikiWheelScroller(e) || !inExtensionHost) {
+            if (window.hoshiFocusDictionaryEntryMove(entryAction) === 'moved') {
+                e.preventDefault();
+                return;
+            }
+        }
+    }
     // Ignore zoom gestures (ctrl+wheel / pinch) and predominantly-horizontal wheels.
     if (e.ctrlKey) return;
     // TODO-1387: treat a frame as horizontal (leave it to native) only when the

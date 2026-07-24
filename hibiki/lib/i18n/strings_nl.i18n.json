@@ -2461,5 +2461,14 @@
   "anki_duplicate_scope_deck": "Selected deck (and its subdecks)",
   "anki_duplicate_scope_deck_root": "Root deck (all subdecks)",
   "anki_duplicate_scope_collection": "Whole collection",
-  "anki_duplicate_scope": "Duplicate check scope"
+  "anki_duplicate_scope": "Duplicate check scope",
+  "shortcut_scope_dictionary_popup": "Dictionary popup",
+  "shortcut_action_popup_next_entry": "Next word entry",
+  "shortcut_action_popup_prev_entry": "Previous word entry",
+  "shortcut_wheel": "Mouse wheel",
+  "shortcut_press_wheel": "Hold a modifier key and scroll here",
+  "shortcut_wheel_needs_modifier": "A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling",
+  "shortcut_wheel_up": "Wheel up",
+  "shortcut_wheel_down": "Wheel down",
+  "shortcut_scope_dictionary_popup_note": "Works while the pointer is over a dictionary popup"
 }

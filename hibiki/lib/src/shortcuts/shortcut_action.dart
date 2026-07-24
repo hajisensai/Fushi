@@ -13,7 +13,14 @@ enum ShortcutScope {
   // 绑定注册到操作系统级 hotkey_manager（默认 Ctrl+Alt+D）。它跨页面常驻、不与
   // 任何应用内页面的键盘绑定竞争，故自成独立 co-active 组，冲突检测只扫自己，
   // 绝不与 global/home 等页面 scope 互相牵连。仅桌面（Windows）有意义。
-  globalExternal;
+  globalExternal,
+
+  // 查词弹窗内部的导航动作（Yomitan 式「上/下一个词条」）。这些动作**不经
+  // resolveKeyboard / 页面派发**：弹窗内容是 WebView，输入事件先到 WebView 的
+  // JS，故绑定由 popup_settings_injection 注入给 popup.js，命中即调
+  // hoshiFocusDictionaryEntryMove。它跨所有弹窗宿主（阅读器 / 视频 / 首页词典 /
+  // 桌面全局查词窗）常驻，与任何页面 scope 都不竞争，故自成独立 co-active 组。
+  dictionaryPopup;
 
   // Scopes that are resolved together on the same page. The reader page
   // resolves reader + audiobook bindings; the home page resolves home + global.
@@ -44,9 +51,42 @@ enum ShortcutScope {
       // 应用内 scope 牵连。
       case globalExternal:
         return const <ShortcutScope>[globalExternal];
+      // dictionaryPopup（查词弹窗内导航）同理是独立 co-active 组：它的绑定由弹窗
+      // WebView 的 JS 消费，永不与任何页面 scope 的键位竞争，冲突检测只扫自己。
+      case dictionaryPopup:
+        return const <ShortcutScope>[dictionaryPopup];
+    }
+  }
+
+  /// 本 scope 真正会被消费的输入通道。设置页的编辑对话框据此渲染章节——绑了不会
+  /// 生效的通道根本不给入口，杜绝「设置里能配、按了没反应」的死项（同
+  /// shortcut_action_wiring_guard 的不变式，只是发生在 UI 层）。
+  ///
+  /// 绝大多数 scope 走页面派发，键盘/手柄/鼠标三通道全通；[dictionaryPopup] 的
+  /// 动作只由弹窗 WebView 的滚轮事件触发（见枚举注释），故只开滚轮。
+  Set<ShortcutChannel> get channels {
+    switch (this) {
+      case reader:
+      case audiobook:
+      case home:
+      case global:
+      case video:
+      case gamepad:
+      case globalExternal:
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+          ShortcutChannel.mouse,
+        };
+      case dictionaryPopup:
+        return const <ShortcutChannel>{ShortcutChannel.wheel};
     }
   }
 }
+
+/// 一个 [ShortcutAction] 可能绑定的输入通道（与 [ShortcutBindingSet] 的四组绑定
+/// 一一对应）。
+enum ShortcutChannel { keyboard, gamepad, mouse, wheel }
 
 enum ShortcutAction {
   // 声明顺序 = 设置页各组的展示顺序（actionsForScope 按 values 声明序过滤），各组
@@ -227,7 +267,20 @@ enum ShortcutAction {
   // 默认 Ctrl+Alt+D），而非页面/媒体 _executeShortcutAction 派发——它是唯一一个
   // 走操作系统热键、不经 resolveKeyboard 的 action。设置页据此渲染出可改键行，
   // 修复「app 外查词快捷键没办法设置」。
-  globalExternalLookup(ShortcutScope.globalExternal, 'global_external_lookup');
+  globalExternalLookup(ShortcutScope.globalExternal, 'global_external_lookup'),
+
+  // 查词弹窗「上/下一个词条」（用户请求，Yomitan 的 Next/Previous entry）：一次查询
+  // 常返回多个词条（.entry），这两个动作把弹窗的词条级焦点（蓝三角 .entry-current）
+  // 移到相邻词条并滚进视口。默认 Alt+滚轮下 / Alt+滚轮上，与 Yomitan 手感一致。
+  //
+  // 执行体不在 Dart 侧：弹窗内容是 WebView，滚轮事件先到 popup.js，故
+  // popup_settings_injection 把这两个动作的滚轮绑定注入成
+  // `window.__hoshiEntryWheelBindings`，popup.js 的 wheel 监听命中即调
+  // `hoshiFocusDictionaryEntryMove('next'|'prev')`（TODO-1325 #5 part1 已有的能力，
+  // 此前只有阅读器选字光标模式下的硬编码 `.` / `,` 能触发，既不可改键也不覆盖
+  // 视频/首页/全局查词的弹窗）。
+  popupNextEntry(ShortcutScope.dictionaryPopup, 'popup_next_entry'),
+  popupPrevEntry(ShortcutScope.dictionaryPopup, 'popup_prev_entry');
 
   const ShortcutAction(this.scope, this.key);
 
