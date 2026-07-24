@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 40222 (2366 per locale)
+/// Strings: 40256 (2368 per locale)
 ///
-/// Built on 2026-07-24 at 04:21 UTC
+/// Built on 2026-07-24 at 07:45 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3156,6 +3156,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -8524,6 +8528,12 @@ class _StringsAr extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -13965,6 +13975,12 @@ class _StringsDe extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -19422,6 +19438,12 @@ class _StringsEs extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -24890,6 +24912,12 @@ class _StringsFr extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -30285,6 +30313,12 @@ class _StringsId extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -35728,6 +35762,12 @@ class _StringsIt extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -40976,6 +41016,12 @@ class _StringsJa extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -46227,6 +46273,12 @@ class _StringsKo extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -51648,6 +51700,12 @@ class _StringsNl extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -57084,6 +57142,12 @@ class _StringsPtBr extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -62503,6 +62567,12 @@ class _StringsRu extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -67867,6 +67937,12 @@ class _StringsTh extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -73263,6 +73339,12 @@ class _StringsTr extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -78646,6 +78728,12 @@ class _StringsVi extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 // Path: <root>
@@ -83655,6 +83743,10 @@ class _StringsZhCn extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       '匹配中 ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error => '弹幕服务器拒绝了请求，请稍后重试';
+  @override
+  String get video_danmaku_manual_bind_empty => '这一集还没有弹幕';
 }
 
 // Path: <root>
@@ -88821,6 +88913,12 @@ class _StringsZhHk extends _StringsEn {
   String video_scrape_batch_progress(
           {required Object current, required Object total}) =>
       'Matching ${current}/${total}';
+  @override
+  String get video_danmaku_manual_bind_server_error =>
+      'The danmaku server rejected the request. Try again later.';
+  @override
+  String get video_danmaku_manual_bind_empty =>
+      'No danmaku for this episode yet.';
 }
 
 /// Flat map(s) containing all translations.
@@ -93657,6 +93755,10 @@ extension on _StringsEn {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -98491,6 +98593,10 @@ extension on _StringsAr {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -103346,6 +103452,10 @@ extension on _StringsDe {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -108200,6 +108310,10 @@ extension on _StringsEs {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -113060,6 +113174,10 @@ extension on _StringsFr {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -117902,6 +118020,10 @@ extension on _StringsId {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -122759,6 +122881,10 @@ extension on _StringsIt {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -127578,6 +127704,10 @@ extension on _StringsJa {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -132401,6 +132531,10 @@ extension on _StringsKo {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -137251,6 +137385,10 @@ extension on _StringsNl {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -142098,6 +142236,10 @@ extension on _StringsPtBr {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -146950,6 +147092,10 @@ extension on _StringsRu {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -151786,6 +151932,10 @@ extension on _StringsTh {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -156631,6 +156781,10 @@ extension on _StringsTr {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -161471,6 +161625,10 @@ extension on _StringsVi {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }
@@ -166272,6 +166430,10 @@ extension on _StringsZhCn {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             '匹配中 ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return '弹幕服务器拒绝了请求，请稍后重试';
+      case 'video_danmaku_manual_bind_empty':
+        return '这一集还没有弹幕';
       default:
         return null;
     }
@@ -171086,6 +171248,10 @@ extension on _StringsZhHk {
       case 'video_scrape_batch_progress':
         return ({required Object current, required Object total}) =>
             'Matching ${current}/${total}';
+      case 'video_danmaku_manual_bind_server_error':
+        return 'The danmaku server rejected the request. Try again later.';
+      case 'video_danmaku_manual_bind_empty':
+        return 'No danmaku for this episode yet.';
       default:
         return null;
     }

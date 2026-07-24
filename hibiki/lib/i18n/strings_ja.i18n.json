@@ -2364,5 +2364,7 @@
   "video_scrape_batch_empty": "No local videos to match",
   "video_scrape_apply_to_collection": "Also apply to all $n episodes in this collection",
   "video_scrape_batch_summary": "Done: $applied applied, $confirm to review, $skipped skipped",
-  "video_scrape_batch_progress": "Matching $current/$total"
+  "video_scrape_batch_progress": "Matching $current/$total",
+  "video_danmaku_manual_bind_server_error": "The danmaku server rejected the request. Try again later.",
+  "video_danmaku_manual_bind_empty": "No danmaku for this episode yet."
 }
