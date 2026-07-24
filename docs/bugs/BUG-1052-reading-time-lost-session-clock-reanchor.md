@@ -1,8 +1,8 @@
-## BUG-1042 · 阅读时长被会话时钟重锚吃掉，速度/统计爆表（今日 0 分钟 / 125666 字·时⁻¹）
+## BUG-1052 · 阅读时长被会话时钟重锚吃掉，速度/统计爆表（今日 0 分钟 / 125666 字·时⁻¹）
 - **报告**：2026-07-24（用户截图「阅读统计」页）。今日 1832 字 / 时长 **0 分钟** / 速度 **125666 字·时⁻¹**；速度摘要「最快日 **421249 字·时⁻¹** · 07-22」。用户原话：「统计bug还在」（BUG-892 之后仍未好）。
 - **真实性**：✅ 真 bug。生产库对账坐实，根因见下（旧 `reader_hibiki_page.dart` resumed 分支 / `navigation.part.dart` `_onRestoreComplete` + `_flushReadingStats`）。
 - **[x] ① 已修复** — 见「修复」。
-- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/reading_time_tracker_delta_test.dart`（行为层：onDelta 与小时桶同源、stop 收尾结算、停表期间零增量、无 onDelta 向后兼容）+ `hibiki/test/media/audiobook/reading_time_tracker_gap_test.dart` 新增 `BUG-1042` 组（源码守卫：墙钟基准字段已删、恢复完成不重锚、早退不清累计器、PDF 不再整段过守卫）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/reading_time_tracker_delta_test.dart`（行为层：onDelta 与小时桶同源、stop 收尾结算、停表期间零增量、无 onDelta 向后兼容）+ `hibiki/test/media/audiobook/reading_time_tracker_gap_test.dart` 新增 `BUG-1052` 组（源码守卫：墙钟基准字段已删、恢复完成不重锚、早退不清累计器、PDF 不再整段过守卫）。
 - **备注**：真机复测（读一段带频繁查词的书 → 统计页速度回落到合理区间）待做。历史脏数据不会自动修正，见「未做」。
 
 ### 证据（生产库对账）

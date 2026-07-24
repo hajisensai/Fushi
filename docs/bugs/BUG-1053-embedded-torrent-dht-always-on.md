@@ -1,4 +1,4 @@
-## BUG-1043 · 空闲也常驻 libtorrent/DHT（6881），整机网络周期性高延迟
+## BUG-1053 · 空闲也常驻 libtorrent/DHT（6881），整机网络周期性高延迟
 - **报告**：2026-07-24。用户原话：「每隔一段时间会造成高延迟，**没开 hibiki 互联**，给 hibiki 关了就不会出现了」。
 - **真实性**：✅ 真 bug，且在用户机上**实测取证**（见下）。根因 `hibiki/lib/src/models/app_model.dart` `startAnimeDownloadService`（旧行 2979-2985）。与「互联」无关——用户排除互联的直觉是对的，真凶是内置 torrent 引擎。
 - **[x] ① 已修复** — 见「修复」。
