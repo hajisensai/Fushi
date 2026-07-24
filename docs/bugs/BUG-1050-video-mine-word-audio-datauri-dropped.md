@@ -14,7 +14,7 @@
   - AnkiConnect `_storeRemoteAudio` / AnkiDroid `_addRemoteAudio`：新增 `case dataUri` 解码写缓存文件，复用既有远端下载入库尾部（`storeMediaFile` / `_addMediaFile`）。
   - AnkiMobile `_audioFieldForAnkiMobile`：新增 `case dataUri` 解码写临时文件经本地媒体服务器（`addFile` copySync 快照）转 URL，用后即删。
   - 互联转发 `_buildForwardedPayload`：`dataUri` 分支解码成 `wordAudioBytes`/`wordAudioExt` 转发主机。
-  - 提交：`<pending>`（`fix(anki): 制卡本地源单词发音 data: URI 被丢弃 (BUG-1050)`）。
+  - 提交：`b99406501`（`fix(anki): 制卡本地源单词发音 data: URI 被丢弃 (BUG-1050)`）。
 - **[x] ② 已加自动化测试** — `hibiki/test/anki/anki_audio_ref_test.dart` 扩展：
   - `classify('data:audio/mpeg;base64,…') == AnkiAudioRefKind.dataUri`（与 http/本地路径/`file://`/空 区分）。
   - `decodeDataUri`：合法 `data:` 各 MIME → 正确 bytes + 扩展名（mpeg→mp3 / ogg→ogg / mp4·aac→m4a / wav→wav / flac→flac / webm→webm / 未知→mp3）；坏 URI / 空体 / 非 data: → null。
