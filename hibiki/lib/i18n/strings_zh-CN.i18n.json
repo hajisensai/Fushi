@@ -2449,5 +2449,14 @@
   "manga_cloud_ocr_model": "模型名",
   "manga_cloud_ocr_privacy": "点击「云端重试」时，所选图片区域将用你自备的 API Key 发送至 Google Gemini API；仅在你手动触发时才会上传。",
   "manga_cloud_ocr_failed": "云端识别失败",
-  "manga_ocr_mobile_note": "移动端下载的模型用于漫画阅读页的框选识别。"
+  "manga_ocr_mobile_note": "移动端下载的模型用于漫画阅读页的框选识别。",
+  "shortcut_scope_dictionary_popup": "查词弹窗",
+  "shortcut_action_popup_next_entry": "下一个词条",
+  "shortcut_action_popup_prev_entry": "上一个词条",
+  "shortcut_wheel": "鼠标滚轮",
+  "shortcut_press_wheel": "按住修饰键在此滚动滚轮",
+  "shortcut_wheel_needs_modifier": "裸滚轮用于滚动弹窗内容，请按住 Alt / Ctrl / Shift 再滚",
+  "shortcut_wheel_up": "滚轮向上",
+  "shortcut_wheel_down": "滚轮向下",
+  "shortcut_scope_dictionary_popup_note": "鼠标位于查词弹窗上时生效"
 }

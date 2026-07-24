@@ -2449,5 +2449,14 @@
   "manga_cloud_ocr_model": "Model name",
   "manga_cloud_ocr_privacy": "When you tap Cloud retry, the selected image area is sent to the Google Gemini API with your own API key. Nothing is uploaded unless you trigger it manually.",
   "manga_cloud_ocr_failed": "Cloud recognition failed",
-  "manga_ocr_mobile_note": "On mobile, the recognition model powers box scan in the manga reader."
+  "manga_ocr_mobile_note": "On mobile, the recognition model powers box scan in the manga reader.",
+  "shortcut_scope_dictionary_popup": "Dictionary popup",
+  "shortcut_action_popup_next_entry": "Next word entry",
+  "shortcut_action_popup_prev_entry": "Previous word entry",
+  "shortcut_wheel": "Mouse wheel",
+  "shortcut_press_wheel": "Hold a modifier key and scroll here",
+  "shortcut_wheel_needs_modifier": "A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling",
+  "shortcut_wheel_up": "Wheel up",
+  "shortcut_wheel_down": "Wheel down",
+  "shortcut_scope_dictionary_popup_note": "Works while the pointer is over a dictionary popup"
 }

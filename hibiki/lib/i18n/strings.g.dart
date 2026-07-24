@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 41667 (2451 per locale)
+/// Strings: 41820 (2460 per locale)
 ///
-/// Built on 2026-07-24 at 11:10 UTC
+/// Built on 2026-07-24 at 15:03 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3265,6 +3265,17 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_cloud_ocr_failed => 'Cloud recognition failed';
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  String get shortcut_wheel => 'Mouse wheel';
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  String get shortcut_wheel_up => 'Wheel up';
+  String get shortcut_wheel_down => 'Wheel down';
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -8827,6 +8838,26 @@ class _StringsAr extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -14462,6 +14493,26 @@ class _StringsDe extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -20113,6 +20164,26 @@ class _StringsEs extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -25775,6 +25846,26 @@ class _StringsFr extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -31364,6 +31455,26 @@ class _StringsId extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -37001,6 +37112,26 @@ class _StringsIt extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -42443,6 +42574,26 @@ class _StringsJa extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -47888,6 +48039,26 @@ class _StringsKo extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -53503,6 +53674,26 @@ class _StringsNl extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -59133,6 +59324,26 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -64746,6 +64957,26 @@ class _StringsRu extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -70304,6 +70535,26 @@ class _StringsTh extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -75894,6 +76145,26 @@ class _StringsTr extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -81471,6 +81742,26 @@ class _StringsVi extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 // Path: <root>
@@ -86658,6 +86949,25 @@ class _StringsZhCn extends _StringsEn {
   String get manga_cloud_ocr_failed => '云端识别失败';
   @override
   String get manga_ocr_mobile_note => '移动端下载的模型用于漫画阅读页的框选识别。';
+  @override
+  String get shortcut_scope_dictionary_popup => '查词弹窗';
+  @override
+  String get shortcut_action_popup_next_entry => '下一个词条';
+  @override
+  String get shortcut_action_popup_prev_entry => '上一个词条';
+  @override
+  String get shortcut_wheel => '鼠标滚轮';
+  @override
+  String get shortcut_press_wheel => '按住修饰键在此滚动滚轮';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      '裸滚轮用于滚动弹窗内容，请按住 Alt / Ctrl / Shift 再滚';
+  @override
+  String get shortcut_wheel_up => '滚轮向上';
+  @override
+  String get shortcut_wheel_down => '滚轮向下';
+  @override
+  String get shortcut_scope_dictionary_popup_note => '鼠标位于查词弹窗上时生效';
 }
 
 // Path: <root>
@@ -92018,6 +92328,26 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get manga_ocr_mobile_note =>
       'On mobile, the recognition model powers box scan in the manga reader.';
+  @override
+  String get shortcut_scope_dictionary_popup => 'Dictionary popup';
+  @override
+  String get shortcut_action_popup_next_entry => 'Next word entry';
+  @override
+  String get shortcut_action_popup_prev_entry => 'Previous word entry';
+  @override
+  String get shortcut_wheel => 'Mouse wheel';
+  @override
+  String get shortcut_press_wheel => 'Hold a modifier key and scroll here';
+  @override
+  String get shortcut_wheel_needs_modifier =>
+      'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+  @override
+  String get shortcut_wheel_up => 'Wheel up';
+  @override
+  String get shortcut_wheel_down => 'Wheel down';
+  @override
+  String get shortcut_scope_dictionary_popup_note =>
+      'Works while the pointer is over a dictionary popup';
 }
 
 /// Flat map(s) containing all translations.
@@ -97026,6 +97356,24 @@ extension on _StringsEn {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -102032,6 +102380,24 @@ extension on _StringsAr {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -107059,6 +107425,24 @@ extension on _StringsDe {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -112085,6 +112469,24 @@ extension on _StringsEs {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -117117,6 +117519,24 @@ extension on _StringsFr {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -122131,6 +122551,24 @@ extension on _StringsId {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -127160,6 +127598,24 @@ extension on _StringsIt {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -132151,6 +132607,24 @@ extension on _StringsJa {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -137146,6 +137620,24 @@ extension on _StringsKo {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -142168,6 +142660,24 @@ extension on _StringsNl {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -147187,6 +147697,24 @@ extension on _StringsPtBr {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -152211,6 +152739,24 @@ extension on _StringsRu {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -157219,6 +157765,24 @@ extension on _StringsTh {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -162236,6 +162800,24 @@ extension on _StringsTr {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -167248,6 +167830,24 @@ extension on _StringsVi {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }
@@ -172221,6 +172821,24 @@ extension on _StringsZhCn {
         return '云端识别失败';
       case 'manga_ocr_mobile_note':
         return '移动端下载的模型用于漫画阅读页的框选识别。';
+      case 'shortcut_scope_dictionary_popup':
+        return '查词弹窗';
+      case 'shortcut_action_popup_next_entry':
+        return '下一个词条';
+      case 'shortcut_action_popup_prev_entry':
+        return '上一个词条';
+      case 'shortcut_wheel':
+        return '鼠标滚轮';
+      case 'shortcut_press_wheel':
+        return '按住修饰键在此滚动滚轮';
+      case 'shortcut_wheel_needs_modifier':
+        return '裸滚轮用于滚动弹窗内容，请按住 Alt / Ctrl / Shift 再滚';
+      case 'shortcut_wheel_up':
+        return '滚轮向上';
+      case 'shortcut_wheel_down':
+        return '滚轮向下';
+      case 'shortcut_scope_dictionary_popup_note':
+        return '鼠标位于查词弹窗上时生效';
       default:
         return null;
     }
@@ -177207,6 +177825,24 @@ extension on _StringsZhHk {
         return 'Cloud recognition failed';
       case 'manga_ocr_mobile_note':
         return 'On mobile, the recognition model powers box scan in the manga reader.';
+      case 'shortcut_scope_dictionary_popup':
+        return 'Dictionary popup';
+      case 'shortcut_action_popup_next_entry':
+        return 'Next word entry';
+      case 'shortcut_action_popup_prev_entry':
+        return 'Previous word entry';
+      case 'shortcut_wheel':
+        return 'Mouse wheel';
+      case 'shortcut_press_wheel':
+        return 'Hold a modifier key and scroll here';
+      case 'shortcut_wheel_needs_modifier':
+        return 'A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling';
+      case 'shortcut_wheel_up':
+        return 'Wheel up';
+      case 'shortcut_wheel_down':
+        return 'Wheel down';
+      case 'shortcut_scope_dictionary_popup_note':
+        return 'Works while the pointer is over a dictionary popup';
       default:
         return null;
     }

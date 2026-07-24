@@ -44,6 +44,9 @@ class _ActionTile extends StatelessWidget {
         ),
       for (final MouseBinding b in bindings.mouseBindings)
         _MouseChip(binding: b),
+      // 滚轮绑定（Alt+滚轮…）与鼠标按钮同款图标 chip，列表视图里同样可见。
+      for (final WheelBinding b in bindings.wheelBindings)
+        _InputIconChip(icon: b.icon, label: b.label),
     ];
 
     // TODO-944: the whole row taps into the SAME assign/edit flow, so unmapped
@@ -72,8 +75,8 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
-/// TODO-1050b: 鼠标绑定的小图标 chip（HibikiTagChip 无 leading icon 位，这里用同款
-/// surface 观感自绘一个「图标 + 名称」的小 chip，与文字 chip 并排展示，不改公共组件）。
+/// TODO-1050b: 鼠标绑定的小图标 chip。展示逻辑本身与通道无关（滚轮绑定也用它），
+/// 故实际绘制在 [_InputIconChip]，这里只做「MouseBinding → 图标 + 名称」的薄壳。
 class _MouseChip extends StatelessWidget {
   const _MouseChip({required this.binding, this.onDeleted});
 
@@ -81,6 +84,29 @@ class _MouseChip extends StatelessWidget {
 
   /// TODO-1088: when non-null a trailing delete affordance is shown (edit
   /// dialog); null keeps it a plain read-only chip (list-view display).
+  final VoidCallback? onDeleted;
+
+  @override
+  Widget build(BuildContext context) => _InputIconChip(
+        icon: binding.icon,
+        label: binding.label,
+        onDeleted: onDeleted,
+      );
+}
+
+/// 「图标 + 名称」的小 chip（HibikiTagChip 无 leading icon 位，这里用同款 surface
+/// 观感自绘，与文字 chip 并排展示，不改公共组件）。鼠标按钮与滚轮两条通道共用。
+class _InputIconChip extends StatelessWidget {
+  const _InputIconChip({
+    required this.icon,
+    required this.label,
+    this.onDeleted,
+  });
+
+  final IconData icon;
+  final String label;
+
+  /// 非空时显示删除按钮（编辑对话框）；null 是只读展示（列表视图）。
   final VoidCallback? onDeleted;
 
   @override
@@ -100,10 +126,10 @@ class _MouseChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(binding.icon, size: 14, color: fg),
+          Icon(icon, size: 14, color: fg),
           SizedBox(width: tokens.spacing.gap * 0.375),
           Text(
-            binding.label,
+            label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: tokens.type.metadata.copyWith(

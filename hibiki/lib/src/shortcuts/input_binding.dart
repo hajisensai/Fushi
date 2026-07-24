@@ -518,17 +518,101 @@ class MouseBinding {
   String toString() => 'MouseBinding(${serialize()})';
 }
 
+/// 滚轮方向。滚轮是**离散事件**（没有按下/抬起），故它自成一个绑定通道，而不是
+/// 塞进 [MouseBinding] 的按钮编号：按钮绑定按 `MouseEvent.button` 分发（中键/右键/
+/// 侧键），滚轮按 `WheelEvent.deltaY` 的符号分发，两者的运行时判据根本不同。
+enum WheelDirection {
+  /// 向上滚（`deltaY < 0`）。
+  up('WheelUp'),
+
+  /// 向下滚（`deltaY > 0`）。
+  down('WheelDown');
+
+  const WheelDirection(this.token);
+
+  /// 持久化 / 显示用的稳定 token（与 [InputBinding] 的键名同风格）。
+  final String token;
+
+  static WheelDirection? fromToken(String token) {
+    for (final WheelDirection d in values) {
+      if (d.token == token) return d;
+    }
+    return null;
+  }
+}
+
+/// 「修饰键 + 滚轮方向」绑定（Yomitan 式 Alt+滚轮）。裸滚轮永远是滚动内容，故这个
+/// 通道**要求至少一个修饰键**才有意义——但数据结构不强制（空修饰集合可序列化往返），
+/// 强制留给 UI 的捕获入口，保持数据层纯粹。
+@immutable
+class WheelBinding {
+  const WheelBinding(this.direction, {this.modifiers = const {}});
+
+  final WheelDirection direction;
+  final Set<ModifierKey> modifiers;
+
+  List<String> get _sortedModifierLabels =>
+      (modifiers.toList()..sort((a, b) => a.index.compareTo(b.index)))
+          .map((m) => m.label)
+          .toList(growable: false);
+
+  String serialize() => <String>[
+        ..._sortedModifierLabels,
+        direction.token,
+      ].join('+');
+
+  /// 与 [InputBinding.displayLabel] 同形（`Alt+WheelDown`）。本地化显示名在
+  /// `shortcut_labels.dart` 的 [WheelBindingLabel] 里（那里把方向换成人话）。
+  String get displayLabel => serialize();
+
+  static WheelBinding? deserialize(String s) {
+    if (s.isEmpty) return null;
+    final List<String> parts = s.split('+');
+    final Set<ModifierKey> mods = <ModifierKey>{};
+    WheelDirection? direction;
+    for (final String part in parts) {
+      final ModifierKey? mod = ModifierKey.fromLabel(part);
+      if (mod != null) {
+        mods.add(mod);
+        continue;
+      }
+      direction ??= WheelDirection.fromToken(part);
+    }
+    if (direction == null) return null;
+    return WheelBinding(direction, modifiers: mods);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WheelBinding &&
+          direction == other.direction &&
+          setEquals(modifiers, other.modifiers);
+
+  @override
+  int get hashCode =>
+      Object.hash(direction, Object.hashAllUnordered(modifiers));
+
+  @override
+  String toString() => 'WheelBinding(${serialize()})';
+}
+
 @immutable
 class ShortcutBindingSet {
   const ShortcutBindingSet({
     this.keyboardBindings = const [],
     this.gamepadBindings = const [],
     this.mouseBindings = const [],
+    this.wheelBindings = const [],
   });
 
   final List<InputBinding> keyboardBindings;
   final List<GamepadBinding> gamepadBindings;
   final List<MouseBinding> mouseBindings;
+
+  /// 修饰键 + 滚轮方向（查词弹窗的「上/下一个词条」）。老快照没有这个 key，
+  /// [fromJson] 缺席即空表，不影响任何既有绑定（Never break userspace）。
+  final List<WheelBinding> wheelBindings;
 
   Map<String, dynamic> toJson() => {
         'keyboard':
@@ -537,12 +621,15 @@ class ShortcutBindingSet {
             gamepadBindings.map((b) => b.serialize()).toList(growable: false),
         'mouse':
             mouseBindings.map((b) => b.serialize()).toList(growable: false),
+        'wheel':
+            wheelBindings.map((b) => b.serialize()).toList(growable: false),
       };
 
   factory ShortcutBindingSet.fromJson(Map<String, dynamic> json) {
     final kbRaw = json['keyboard'];
     final gpRaw = json['gamepad'];
     final msRaw = json['mouse'];
+    final whRaw = json['wheel'];
     return ShortcutBindingSet(
       keyboardBindings: kbRaw is List
           ? kbRaw
@@ -565,6 +652,13 @@ class ShortcutBindingSet {
               .whereType<MouseBinding>()
               .toList(growable: false)
           : const [],
+      wheelBindings: whRaw is List
+          ? whRaw
+              .cast<String>()
+              .map(WheelBinding.deserialize)
+              .whereType<WheelBinding>()
+              .toList(growable: false)
+          : const [],
     );
   }
 
@@ -572,10 +666,12 @@ class ShortcutBindingSet {
     List<InputBinding>? keyboardBindings,
     List<GamepadBinding>? gamepadBindings,
     List<MouseBinding>? mouseBindings,
+    List<WheelBinding>? wheelBindings,
   }) =>
       ShortcutBindingSet(
         keyboardBindings: keyboardBindings ?? this.keyboardBindings,
         gamepadBindings: gamepadBindings ?? this.gamepadBindings,
         mouseBindings: mouseBindings ?? this.mouseBindings,
+        wheelBindings: wheelBindings ?? this.wheelBindings,
       );
 }

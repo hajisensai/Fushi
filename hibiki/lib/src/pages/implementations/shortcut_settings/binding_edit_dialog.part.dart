@@ -77,21 +77,25 @@ class ShortcutBindingEditResult {
     this.keyboardReassignments = const <InputBinding>[],
     this.gamepadReassignments = const <GamepadBinding>[],
     this.mouseReassignments = const <MouseBinding>[],
+    this.wheelReassignments = const <WheelBinding>[],
   });
 
   final ShortcutBindingSet bindings;
   final List<InputBinding> keyboardReassignments;
   final List<GamepadBinding> gamepadReassignments;
   final List<MouseBinding> mouseReassignments;
+  final List<WheelBinding> wheelReassignments;
 }
 
 class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   late List<InputBinding> _keyboard;
   late List<GamepadBinding> _gamepad;
   late List<MouseBinding> _mouse;
+  late List<WheelBinding> _wheel;
   final List<InputBinding> _keyboardReassignments = <InputBinding>[];
   final List<GamepadBinding> _gamepadReassignments = <GamepadBinding>[];
   final List<MouseBinding> _mouseReassignments = <MouseBinding>[];
+  final List<WheelBinding> _wheelReassignments = <WheelBinding>[];
   String? _conflictWarning;
   bool _capturing = false;
   // TODO-1088: distinct capture phase for mouse buttons — a bordered region that
@@ -99,6 +103,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   // (keyboard) so pressing a key while mouse-capturing doesn't record a key, and
   // vice-versa.
   bool _mouseCapturing = false;
+  // 滚轮录制：又一个独立捕获相（与键盘/鼠标/手柄互斥）。滚轮事件是 PointerSignal，
+  // 不走 onPointerDown，故它有自己的捕获区。
+  bool _wheelCapturing = false;
   // 手柄实时录键：与键盘/鼠标同一套「捕获区 + 显式停止」交互（此前手柄是下拉
   // 菜单选按钮，三通道交互割裂）。桌面轮询路径按 [GamepadButtonIntent] 分发到
   // 主焦点，Android 原生路径按 gameButton* KeyEvent 冒泡——捕获区两条都接。
@@ -127,6 +134,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     // TODO-1088: mouse bindings are now editable, so seed the draft from the
     // current bindings (was passed straight through from widget.initial before).
     _mouse = List<MouseBinding>.of(widget.initial.mouseBindings);
+    _wheel = List<WheelBinding>.of(widget.initial.wheelBindings);
   }
 
   @override
@@ -166,14 +174,104 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     });
   }
 
+  void _removeWheel(int index) {
+    setState(() {
+      final WheelBinding removed = _wheel.removeAt(index);
+      _wheelReassignments.removeWhere(
+        (WheelBinding binding) => binding == removed,
+      );
+      _conflictWarning = null;
+    });
+  }
+
   void _clearAll() {
     setState(() {
       _keyboard.clear();
       _gamepad.clear();
       _mouse.clear();
+      _wheel.clear();
       _keyboardReassignments.clear();
       _gamepadReassignments.clear();
       _mouseReassignments.clear();
+      _wheelReassignments.clear();
+      _conflictWarning = null;
+    });
+  }
+
+  void _startWheelCapture() {
+    setState(() {
+      _wheelCapturing = true;
+      _capturing = false;
+      _mouseCapturing = false;
+      _gamepadCapturing = false;
+      _conflictWarning = null;
+    });
+  }
+
+  void _cancelWheelCapture() {
+    setState(() => _wheelCapturing = false);
+  }
+
+  /// 滚轮捕获区里的一次滚动。修饰键读 [HardwareKeyboard]（PointerScrollEvent 不带
+  /// 修饰键位）；**裸滚轮不可绑定**——弹窗里裸滚轮永远是滚动内容，绑了也永不触发，
+  /// 故此时保持捕获态并给出提示，而不是记录一条死绑定。
+  void _onWheelCapturePointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    final double dy = event.scrollDelta.dy;
+    if (dy == 0) return;
+    final Set<ModifierKey> modifiers = <ModifierKey>{};
+    final HardwareKeyboard hw = HardwareKeyboard.instance;
+    if (hw.isControlPressed) modifiers.add(ModifierKey.ctrl);
+    if (hw.isShiftPressed) modifiers.add(ModifierKey.shift);
+    if (hw.isAltPressed) modifiers.add(ModifierKey.alt);
+    if (hw.isMetaPressed) modifiers.add(ModifierKey.meta);
+    if (modifiers.isEmpty) {
+      setState(() => _conflictWarning = t.shortcut_wheel_needs_modifier);
+      return;
+    }
+    unawaited(_addWheel(WheelBinding(
+      dy > 0 ? WheelDirection.down : WheelDirection.up,
+      modifiers: modifiers,
+    )));
+  }
+
+  /// 与 [_addMouse] 同形的三段式：草稿内重复 → 同组冲突 → 确认后重分配。
+  Future<void> _addWheel(WheelBinding binding) async {
+    if (_wheel.contains(binding)) {
+      setState(() {
+        _wheelCapturing = false;
+        _conflictWarning = t.shortcut_conflict(s: widget.action.label);
+      });
+      return;
+    }
+
+    final ShortcutAction? conflict = widget.registry.hasWheelConflict(
+      widget.action.scope,
+      binding,
+      exclude: widget.action,
+    );
+
+    if (conflict != null) {
+      setState(() {
+        _wheelCapturing = false;
+        _conflictWarning = t.shortcut_conflict(s: conflict.label);
+      });
+      final bool confirmed = await _showConflictReassignmentDialog(conflict);
+      if (!confirmed || !mounted) return;
+      if (_wheel.contains(binding)) return;
+      setState(() {
+        _wheel.add(binding);
+        if (!_wheelReassignments.contains(binding)) {
+          _wheelReassignments.add(binding);
+        }
+        _conflictWarning = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _wheel.add(binding);
+      _wheelCapturing = false;
       _conflictWarning = null;
     });
   }
@@ -479,6 +577,16 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   Widget build(BuildContext context) {
     final ThemeData themeData = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 只渲染这个 scope 真正会被消费的通道（见 [ShortcutScope.channels]）：查词弹窗
+    // 的词条导航只由弹窗 WebView 的滚轮触发，给它键盘/手柄入口等于制造死绑定。
+    // 已有绑定即使通道被关也照常显示（历史快照不隐身，可删）。
+    final Set<ShortcutChannel> channels = widget.action.scope.channels;
+    final bool showKeyboard =
+        channels.contains(ShortcutChannel.keyboard) || _keyboard.isNotEmpty;
+    final bool showGamepad =
+        channels.contains(ShortcutChannel.gamepad) || _gamepad.isNotEmpty;
+    final bool showWheel =
+        channels.contains(ShortcutChannel.wheel) || _wheel.isNotEmpty;
 
     return HibikiDialogFrame(
       maxWidth: 520,
@@ -505,112 +613,34 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             // Keyboard section
-            Text(
-              t.shortcut_keyboard,
-              style: themeData.textTheme.labelLarge,
-            ),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Wrap(
-              spacing: tokens.spacing.gap / 2,
-              runSpacing: tokens.spacing.gap / 2,
-              children: <Widget>[
-                for (int i = 0; i < _keyboard.length; i++)
-                  HibikiTagChip(
-                    label: _keyboard[i].displayLabel,
-                    tone: HibikiTagChipTone.surface,
-                    onDeleted: () => _removeKeyboard(i),
-                  ),
-              ],
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            if (_capturing)
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Focus(
-                    focusNode: _captureFocusNode,
-                    autofocus: true,
-                    onKeyEvent: _onKeyEvent,
-                    child: Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.symmetric(
-                        vertical: tokens.spacing.gap + 4,
-                        horizontal: tokens.spacing.gap,
-                      ),
-                      decoration: BoxDecoration(
-                        border:
-                            Border.all(color: themeData.colorScheme.primary),
-                        borderRadius: tokens.radii.controlRadius,
-                      ),
-                      child: Text(
-                        t.shortcut_press_key,
-                        textAlign: TextAlign.center,
-                        style: themeData.textTheme.bodyMedium?.copyWith(
-                          color: themeData.colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      key: const Key('shortcut_stop_capture'),
-                      onPressed: _cancelCapture,
-                      child: Text(t.shortcut_stop_capture),
-                    ),
-                  ),
-                ],
-              )
-            else
-              TextButton.icon(
-                icon: const Icon(Icons.add, size: 18),
-                label: Text(t.shortcut_keyboard),
-                onPressed: _startCapture,
+            if (showKeyboard) ...<Widget>[
+              Text(
+                t.shortcut_keyboard,
+                style: themeData.textTheme.labelLarge,
               ),
-
-            const Divider(height: 24),
-
-            // Gamepad section
-            Text(
-              t.shortcut_gamepad,
-              style: themeData.textTheme.labelLarge,
-            ),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Wrap(
-              spacing: tokens.spacing.gap / 2,
-              runSpacing: tokens.spacing.gap / 2,
-              children: <Widget>[
-                for (int i = 0; i < _gamepad.length; i++)
-                  HibikiTagChip(
-                    label: _gamepad[i].button.label,
-                    tone: HibikiTagChipTone.surface,
-                    onDeleted: () => _removeGamepad(i),
-                  ),
-              ],
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            if (_gamepadCapturing)
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              SizedBox(height: tokens.spacing.gap / 2),
+              Wrap(
+                spacing: tokens.spacing.gap / 2,
+                runSpacing: tokens.spacing.gap / 2,
                 children: <Widget>[
-                  // 桌面轮询路径：GamepadService 把按键作为 GamepadButtonIntent
-                  // 分发到主焦点上下文；这里在捕获 Focus 之上挂 Actions 消费，
-                  // 返回 true 即阻断 A→Activate / B→返回 / 十字键→移焦点等回退。
-                  Actions(
-                    actions: <Type, Action<Intent>>{
-                      GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-                        onInvoke: (GamepadButtonIntent intent) {
-                          _recordCapturedGamepadButton(intent.button);
-                          return true;
-                        },
-                      ),
-                    },
-                    child: Focus(
-                      focusNode: _gamepadCaptureFocusNode,
+                  for (int i = 0; i < _keyboard.length; i++)
+                    HibikiTagChip(
+                      label: _keyboard[i].displayLabel,
+                      tone: HibikiTagChipTone.surface,
+                      onDeleted: () => _removeKeyboard(i),
+                    ),
+                ],
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              if (_capturing)
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Focus(
+                      focusNode: _captureFocusNode,
                       autofocus: true,
-                      onKeyEvent: _onGamepadCaptureKeyEvent,
+                      onKeyEvent: _onKeyEvent,
                       child: Container(
                         width: double.infinity,
                         padding: EdgeInsets.symmetric(
@@ -618,13 +648,12 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                           horizontal: tokens.spacing.gap,
                         ),
                         decoration: BoxDecoration(
-                          border: Border.all(
-                            color: themeData.colorScheme.primary,
-                          ),
+                          border:
+                              Border.all(color: themeData.colorScheme.primary),
                           borderRadius: tokens.radii.controlRadius,
                         ),
                         child: Text(
-                          t.shortcut_press_gamepad,
+                          t.shortcut_press_key,
                           textAlign: TextAlign.center,
                           style: themeData.textTheme.bodyMedium?.copyWith(
                             color: themeData.colorScheme.primary,
@@ -632,67 +661,150 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                         ),
                       ),
                     ),
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      key: const Key('shortcut_stop_gamepad_capture'),
-                      onPressed: _cancelGamepadCapture,
-                      child: Text(t.shortcut_stop_capture),
-                    ),
-                  ),
-                ],
-              )
-            else
-              Wrap(
-                spacing: tokens.spacing.gap,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: <Widget>[
-                  TextButton.icon(
-                    key: const Key('shortcut_add_gamepad_capture'),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text(t.shortcut_gamepad),
-                    onPressed: _startGamepadCapture,
-                  ),
-                  // 无手柄在手/远程配置时的兜底：仍可从列表点选按钮。
-                  HibikiOverflowMenu<GamepadButton>(
-                    onSelected: (GamepadButton button) {
-                      unawaited(_addGamepad(button));
-                    },
-                    items: <PopupMenuEntry<GamepadButton>>[
-                      for (final GamepadButton btn in GamepadButton.values)
-                        HibikiPopupMenuItem<GamepadButton>(
-                          label: btn.label,
-                          icon: Icons.gamepad_outlined,
-                          value: btn,
-                        ),
-                    ],
-                    padding: EdgeInsets.zero,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        vertical: tokens.spacing.gap / 2,
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        key: const Key('shortcut_stop_capture'),
+                        onPressed: _cancelCapture,
+                        child: Text(t.shortcut_stop_capture),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Icon(
-                            Icons.list_outlined,
-                            size: 18,
-                            color: themeData.colorScheme.primary,
+                    ),
+                  ],
+                )
+              else
+                TextButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: Text(t.shortcut_keyboard),
+                  onPressed: _startCapture,
+                ),
+            ],
+
+            // Gamepad section
+            if (showGamepad) ...<Widget>[
+              if (showKeyboard) const Divider(height: 24),
+              Text(
+                t.shortcut_gamepad,
+                style: themeData.textTheme.labelLarge,
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              Wrap(
+                spacing: tokens.spacing.gap / 2,
+                runSpacing: tokens.spacing.gap / 2,
+                children: <Widget>[
+                  for (int i = 0; i < _gamepad.length; i++)
+                    HibikiTagChip(
+                      label: _gamepad[i].button.label,
+                      tone: HibikiTagChipTone.surface,
+                      onDeleted: () => _removeGamepad(i),
+                    ),
+                ],
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              if (_gamepadCapturing)
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    // 桌面轮询路径：GamepadService 把按键作为 GamepadButtonIntent
+                    // 分发到主焦点上下文；这里在捕获 Focus 之上挂 Actions 消费，
+                    // 返回 true 即阻断 A→Activate / B→返回 / 十字键→移焦点等回退。
+                    Actions(
+                      actions: <Type, Action<Intent>>{
+                        GamepadButtonIntent:
+                            CallbackAction<GamepadButtonIntent>(
+                          onInvoke: (GamepadButtonIntent intent) {
+                            _recordCapturedGamepadButton(intent.button);
+                            return true;
+                          },
+                        ),
+                      },
+                      child: Focus(
+                        focusNode: _gamepadCaptureFocusNode,
+                        autofocus: true,
+                        onKeyEvent: _onGamepadCaptureKeyEvent,
+                        child: Container(
+                          width: double.infinity,
+                          padding: EdgeInsets.symmetric(
+                            vertical: tokens.spacing.gap + 4,
+                            horizontal: tokens.spacing.gap,
                           ),
-                          SizedBox(width: tokens.spacing.gap / 2),
-                          Text(
-                            t.shortcut_gamepad_pick_list,
-                            style: TextStyle(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: themeData.colorScheme.primary,
+                            ),
+                            borderRadius: tokens.radii.controlRadius,
+                          ),
+                          child: Text(
+                            t.shortcut_press_gamepad,
+                            textAlign: TextAlign.center,
+                            style: themeData.textTheme.bodyMedium?.copyWith(
                               color: themeData.colorScheme.primary,
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        key: const Key('shortcut_stop_gamepad_capture'),
+                        onPressed: _cancelGamepadCapture,
+                        child: Text(t.shortcut_stop_capture),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Wrap(
+                  spacing: tokens.spacing.gap,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: <Widget>[
+                    TextButton.icon(
+                      key: const Key('shortcut_add_gamepad_capture'),
+                      icon: const Icon(Icons.add, size: 18),
+                      label: Text(t.shortcut_gamepad),
+                      onPressed: _startGamepadCapture,
+                    ),
+                    // 无手柄在手/远程配置时的兜底：仍可从列表点选按钮。
+                    HibikiOverflowMenu<GamepadButton>(
+                      onSelected: (GamepadButton button) {
+                        unawaited(_addGamepad(button));
+                      },
+                      items: <PopupMenuEntry<GamepadButton>>[
+                        for (final GamepadButton btn in GamepadButton.values)
+                          HibikiPopupMenuItem<GamepadButton>(
+                            label: btn.label,
+                            icon: Icons.gamepad_outlined,
+                            value: btn,
+                          ),
+                      ],
+                      padding: EdgeInsets.zero,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: tokens.spacing.gap / 2,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Icon(
+                              Icons.list_outlined,
+                              size: 18,
+                              color: themeData.colorScheme.primary,
+                            ),
+                            SizedBox(width: tokens.spacing.gap / 2),
+                            Text(
+                              t.shortcut_gamepad_pick_list,
+                              style: TextStyle(
+                                color: themeData.colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
 
             // Mouse section (TODO-1088): editable. Existing bindings render as
             // deletable chips; on desktop a capture region records the next
@@ -702,8 +814,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             // hidden and only inherited bindings (if any) show read-only — Never
             // break userspace: nothing captured, nothing lost.
             if (_mouse.isNotEmpty ||
-                _mouseBindingSupported(defaultTargetPlatform)) ...<Widget>[
-              const Divider(height: 24),
+                (channels.contains(ShortcutChannel.mouse) &&
+                    _mouseBindingSupported(defaultTargetPlatform))) ...<Widget>[
+              if (showKeyboard || showGamepad) const Divider(height: 24),
               Text(
                 t.shortcut_mouse_button,
                 style: themeData.textTheme.labelLarge,
@@ -772,6 +885,83 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               ],
             ],
 
+            // 滚轮章节：修饰键 + 滚轮方向（查词弹窗的「上/下一个词条」）。捕获区吃
+            // PointerSignal 而非 PointerDown，其余（重复/冲突/重分配/删除 chip）与
+            // 键盘、手柄、鼠标三条完全同形。移动端没有滚轮，但 Android 可外接鼠标，
+            // 故这里不按平台隐藏——按 scope 的通道能力隐藏（见上）。
+            if (showWheel) ...<Widget>[
+              if (showKeyboard ||
+                  showGamepad ||
+                  _mouse.isNotEmpty ||
+                  channels.contains(ShortcutChannel.mouse))
+                const Divider(height: 24),
+              Text(
+                t.shortcut_wheel,
+                style: themeData.textTheme.labelLarge,
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              Wrap(
+                spacing: tokens.spacing.gap / 2,
+                runSpacing: tokens.spacing.gap / 2,
+                children: <Widget>[
+                  for (int i = 0; i < _wheel.length; i++)
+                    _InputIconChip(
+                      icon: _wheel[i].icon,
+                      label: _wheel[i].label,
+                      onDeleted: () => _removeWheel(i),
+                    ),
+                ],
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              if (_wheelCapturing)
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Listener(
+                      key: const Key('shortcut_wheel_capture_region'),
+                      onPointerSignal: _onWheelCapturePointerSignal,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.symmetric(
+                          vertical: tokens.spacing.gap + 4,
+                          horizontal: tokens.spacing.gap,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: themeData.colorScheme.primary,
+                          ),
+                          borderRadius: tokens.radii.controlRadius,
+                        ),
+                        child: Text(
+                          t.shortcut_press_wheel,
+                          textAlign: TextAlign.center,
+                          style: themeData.textTheme.bodyMedium?.copyWith(
+                            color: themeData.colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        key: const Key('shortcut_stop_wheel_capture'),
+                        onPressed: _cancelWheelCapture,
+                        child: Text(t.shortcut_stop_capture),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                TextButton.icon(
+                  key: const Key('shortcut_add_wheel'),
+                  icon: const Icon(Icons.mouse_outlined, size: 18),
+                  label: Text(t.shortcut_wheel),
+                  onPressed: _startWheelCapture,
+                ),
+            ],
+
             // Conflict warning
             if (_conflictWarning != null) ...[
               SizedBox(height: tokens.spacing.gap),
@@ -810,6 +1000,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     gamepadBindings:
                         List<GamepadBinding>.unmodifiable(_gamepad),
                     mouseBindings: List<MouseBinding>.unmodifiable(_mouse),
+                    wheelBindings: List<WheelBinding>.unmodifiable(_wheel),
                   ),
                   keyboardReassignments:
                       List<InputBinding>.unmodifiable(_keyboardReassignments),
@@ -817,6 +1008,8 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                       List<GamepadBinding>.unmodifiable(_gamepadReassignments),
                   mouseReassignments:
                       List<MouseBinding>.unmodifiable(_mouseReassignments),
+                  wheelReassignments:
+                      List<WheelBinding>.unmodifiable(_wheelReassignments),
                 ),
               ),
               child: Text(MaterialLocalizations.of(context).okButtonLabel),

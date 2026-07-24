@@ -119,6 +119,33 @@
 弹窗自身（`assets/popup/popup.js`）无键盘快捷键；关闭走 Flutter 层（reader 的 Esc→
 readerDismissDict 关栈顶弹窗 / 全局 Navigator pop / 手柄 B）。
 
+阅读器**选字光标**在弹窗上时另有一组硬编码键（`reader_caret_router.dart`，只在光标
+模式生效）：`]` / `[` 跳下/上一本词典段，`.` / `,` 跳下/上一个词条，RT / LT 是它们的
+手柄同义键。
+
+**滚轮（可配置，见下）**：`dictionaryPopup` scope 的「上/下一个词条」默认 Alt+滚轮
+下/上，鼠标悬在任何查词弹窗上即生效，不需要先进光标模式。
+
+---
+
+## 1b. 可配置注册表（滚轮通道，`dictionaryPopup` scope）
+
+> 后加的第四条绑定通道（键盘 / 手柄 / 鼠标按钮 / **滚轮**）。滚轮绑定不经
+> `resolveKeyboard` 或页面派发：弹窗内容是 WebView，滚轮事件先到它的 JS，故
+> `popup_settings_injection` 把绑定序列化成 `window.__hoshiEntryWheelBindings` 注入给
+> `popup.js`，命中即调 `hoshiFocusDictionaryEntryMove`（TODO-1325 #5 part1 的词条焦点）。
+> 浏览器扩展没有注入通道，吃 popup.js 里的同款默认值。
+
+| 动作 | 默认绑定 | 说明 |
+|---|---|---|
+| `popup_next_entry` | Alt+滚轮下 | 多词条结果里跳到下一个词条并滚进视口（Yomitan Next entry） |
+| `popup_prev_entry` | Alt+滚轮上 | 上一个词条 |
+
+约束：裸滚轮永远留给内容滚动（不可绑定）；修饰键必须**全等**匹配，故 Ctrl+Alt+滚轮
+不会误触 Alt+滚轮；到首/末条时返回 `blocked`，该帧照常滚动内容。设置页对这个 scope
+只渲染滚轮章节（`ShortcutScope.channels`），不给键盘/手柄入口——那些通道在这里绑了
+也永不触发。
+
 ---
 
 ## 3. 待优化（发现的冲突/重复/缺失，报 PM，不擅自改）
