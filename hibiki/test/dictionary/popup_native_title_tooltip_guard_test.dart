@@ -84,11 +84,17 @@ void main() {
       expect(css, contains('.hoshi-btn-tip'),
           reason: 'popup.css 需定义 .hoshi-btn-tip 提示样式');
       // 与 .audio-hint 同一规则块（position:fixed + 主题化背景/边框），共用视觉。
-      expect(RegExp(r'\.audio-hint,\s*\n\s*\.hoshi-btn-tip\s*\{').hasMatch(css),
+      // BUG-1063 又给这条规则接了第三个共享者 `.inline-hint`（app 外页内提示气泡），
+      // 故允许两者之间再插入其它选择器——守的是「共用同一条基础规则」这个意图，
+      // 不是选择器列表的具体长度。
+      expect(
+          RegExp(r'\.audio-hint,\s*\n(?:\s*\.[\w-]+,\s*\n)*\s*\.hoshi-btn-tip\s*\{')
+              .hasMatch(css),
           isTrue,
           reason: '.hoshi-btn-tip 与 .audio-hint 共用基础规则');
       expect(
-          RegExp(r'\.audio-hint\.visible,\s*\n\s*\.hoshi-btn-tip\.visible')
+          RegExp(r'\.audio-hint\.visible,\s*\n(?:\s*\.[\w-]+\.visible,\s*\n)*'
+                  r'\s*\.hoshi-btn-tip\.visible')
               .hasMatch(css),
           isTrue,
           reason: '.hoshi-btn-tip.visible 与 .audio-hint.visible 共用淡入');
