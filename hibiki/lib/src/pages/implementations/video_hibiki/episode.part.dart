@@ -245,9 +245,17 @@ extension _VideoEpisode on _VideoHibikiPageState {
                       left: false,
                       child: VideoEpisodePanel(
                         key: const ValueKey<String>('video-episode-panel'),
-                        episodeTitles: <String>[
+                        episodes: <VideoEpisodeEntry>[
                           for (final _PlaylistEpisodeRef e in _episodes)
-                            e.title,
+                            VideoEpisodeEntry(
+                              title: e.title,
+                              coverPath: e.coverPath,
+                              // 远端集 path 为 ''（无本地文件可抽帧）→ 传 null。
+                              videoPath: e.path.isEmpty ? null : e.path,
+                              // 懒抽帧去重 key：本地集用 bookUid，否则退回本地路径。
+                              thumbnailKey:
+                                  e.bookUid ?? (e.path.isEmpty ? null : e.path),
+                            ),
                         ],
                         currentIndex: _currentEpisode,
                         onTapEpisode: _handleEpisodeListTap,

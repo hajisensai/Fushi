@@ -1,6 +1,9 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/video/episode_thumbnail_cache.dart';
 import 'package:hibiki/src/media/video/video_chrome_colors.dart';
 import 'package:hibiki/src/media/video/video_panel_auto_scroll.dart';
 
@@ -10,31 +13,31 @@ import 'package:hibiki/src/media/video/video_panel_auto_scroll.dart';
 /// 设置 / 倍速等 overlay）显示风格不一致。改成与字幕列表同款的 push-aside 侧栏后，三者
 /// 视觉统一：顶部带标题 + 右上角 × 关闭按钮的 header，下面是可滚动的剧集列表。
 ///
-/// 本 widget 只负责渲染——把每集标题列成「序号 / 当前集播放图标 + 标题」
-/// 一行，点击 [onTapEpisode] 切到该集（页面层 `_switchEpisode`），高亮 [currentIndex]
-/// 当前集。可见性与互斥由页面层（`_episodeListVisible` / `_videoWithSubtitlePanel`）管。
+/// 剧集封面（Netflix/Jellyfin 式）：每行左侧一张 16:9 缩略图（各集自己的抽帧画面，来源
+/// 见 [VideoEpisodeEntry]），右侧沿用标题；当前集用 play_arrow 覆盖 + primary 高亮标记。
+/// 缩略图经 [EpisodeThumbnailResolver] 懒加载，文件缺失 / 无封面时静默回退纯序号占位。
 ///
-/// 与 [VideoChapterPanel] 同构（简单的 [ListView] + 当前项高亮 + play_arrow 标记），但
-/// header 借鉴字幕列表面板（标题 + ×），让用户能从侧栏内部直接关闭，关闭交互（× / Esc /
-/// 控制条剧集按钮）与字幕列表三路等价。
+/// 本 widget 只负责渲染——点击 [onTapEpisode] 切到该集（页面层 `_switchEpisode`），高亮
+/// [currentIndex] 当前集。可见性与互斥由页面层（`_episodeListVisible` /
+/// `_videoWithSubtitlePanel`）管。
 class VideoEpisodePanel extends StatefulWidget {
   const VideoEpisodePanel({
     super.key,
-    required this.episodeTitles,
+    required this.episodes,
     required this.currentIndex,
     required this.onTapEpisode,
     required this.onClose,
     required this.colorScheme,
     required this.title,
     required this.emptyHint,
+    this.thumbnailResolver,
     this.fontSize = 14,
     this.width = 320,
   });
 
-  /// 播放列表各集标题（有序）。空列表（单视频）时显示 [emptyHint]（剧集入口仅在播放
-  /// 列表出现，故正常不会空；空态作防御兜底）。统一合集 Phase 3：只需标题，与内部集
-  /// 表示解耦。
-  final List<String> episodeTitles;
+  /// 播放列表各集（有序）。空列表（单视频）时显示 [emptyHint]（剧集入口仅在播放列表
+  /// 出现，故正常不会空；空态作防御兜底）。
+  final List<VideoEpisodeEntry> episodes;
 
   /// 当前播放集下标（[episodes] 内）；负 / 越界视为「无当前集」。
   final int currentIndex;
@@ -44,6 +47,10 @@ class VideoEpisodePanel extends StatefulWidget {
 
   /// 头部 × 关闭按钮（页面层 `_closeEpisodeList`，与 Esc / 控制条剧集按钮三路等价）。
   final VoidCallback onClose;
+
+  /// 缩略图解析器；null 时用进程内单例 [EpisodeThumbnailCache.instance]（生产路径）。
+  /// 测试注入替身，不真跑 ffmpeg。
+  final EpisodeThumbnailResolver? thumbnailResolver;
 
   final ColorScheme colorScheme;
   final String title;
@@ -60,6 +67,9 @@ class VideoEpisodePanel extends StatefulWidget {
 class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
   // 「当前集滚到视口中部偏上」的机器与章节面板共享（[VideoPanelAutoScroller]）。
   final VideoPanelAutoScroller _autoScroller = VideoPanelAutoScroller();
+
+  EpisodeThumbnailResolver get _resolver =>
+      widget.thumbnailResolver ?? EpisodeThumbnailCache.instance;
 
   @override
   void initState() {
@@ -90,7 +100,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
   void _scrollToCurrentEpisode() {
     _autoScroller.scrollToIndex(
       widget.currentIndex,
-      itemCount: widget.episodeTitles.length,
+      itemCount: widget.episodes.length,
     );
   }
 
@@ -112,9 +122,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
             _buildHeader(cs),
             const Divider(height: 1),
             Expanded(
-              child: widget.episodeTitles.isEmpty
-                  ? _buildEmpty(cs)
-                  : _buildList(cs),
+              child: widget.episodes.isEmpty ? _buildEmpty(cs) : _buildList(cs),
             ),
           ],
         ),
@@ -172,38 +180,33 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
     return ListView.builder(
       controller: _autoScroller.controller,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: widget.episodeTitles.length,
+      itemCount: widget.episodes.length,
       itemBuilder: (BuildContext _, int i) {
-        final String episodeTitle = widget.episodeTitles[i];
+        final VideoEpisodeEntry entry = widget.episodes[i];
         final bool selected = i == widget.currentIndex;
+        // 缩略图宽度随字号缩放（16:9），下界 96 / 上界 160，与任务约定 96~120 一致。
+        final double thumbWidth =
+            (widget.fontSize / 14.0 * 108.0).clamp(96.0, 160.0);
         return ListTile(
           dense: true,
-          // 当前集用 play_arrow 取代序号（与原 bottom sheet 一致）；其余集显示序号。
-          leading: selected
-              ? Icon(Icons.play_arrow, color: cs.primary)
-              : SizedBox(
-                  // 序号列宽随字号缩放（对齐 TODO-567 字幕时间戳列范式）：固定 24px
-                  // 在放大字号下放不下两位数序号（tabular figures，10 起约字号×1.2），
-                  // Text 默认换行被 dense ListTile 行高纵向裁切。改为 `字号 + 12` 估宽
-                  // 留余量，下界 24 保证窄字号像素不变（向后兼容）。配合 Text 单行不
-                  // 换行（`maxLines:1` / `softWrap:false`），序号永不溢出 / 被裁。
-                  width: math.max(24.0, widget.fontSize + 12),
-                  child: Text(
-                    '${i + 1}',
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      color: cs.onSurfaceVariant,
-                      fontSize: widget.fontSize,
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures(),
-                      ],
-                    ),
-                  ),
-                ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          horizontalTitleGap: 12,
+          // 左侧 16:9 缩略图（各集自己的抽帧封面），当前集叠 play_arrow + primary 边框。
+          leading: _EpisodeThumbnail(
+            key: ValueKey<String>(
+              'ep-thumb-${entry.thumbnailKey ?? entry.coverPath ?? entry.title}-$i',
+            ),
+            entry: entry,
+            resolver: _resolver,
+            index: i,
+            selected: selected,
+            width: thumbWidth,
+            colorScheme: cs,
+            fontSize: widget.fontSize,
+          ),
           title: Text(
-            episodeTitle,
+            entry.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -217,6 +220,171 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
           onTap: () => widget.onTapEpisode(i),
         );
       },
+    );
+  }
+}
+
+/// 单集缩略图：16:9 圆角封面 + 左下角序号徽标；当前集叠半透明 scrim + 居中 play_arrow +
+/// primary 边框。封面经 [resolver] 懒加载（异步），加载中 / 失败显示占位（movie 图标）。
+///
+/// [ListView] 回收：[entry] 变化（换集重建同一行 element）时按 [_resolveToken] 丢弃
+/// 过期解析，避免把上一集的封面画到本集。
+class _EpisodeThumbnail extends StatefulWidget {
+  const _EpisodeThumbnail({
+    super.key,
+    required this.entry,
+    required this.resolver,
+    required this.index,
+    required this.selected,
+    required this.width,
+    required this.colorScheme,
+    required this.fontSize,
+  });
+
+  final VideoEpisodeEntry entry;
+  final EpisodeThumbnailResolver resolver;
+  final int index;
+  final bool selected;
+  final double width;
+  final ColorScheme colorScheme;
+  final double fontSize;
+
+  @override
+  State<_EpisodeThumbnail> createState() => _EpisodeThumbnailState();
+}
+
+class _EpisodeThumbnailState extends State<_EpisodeThumbnail> {
+  String? _coverPath;
+  int _resolveToken = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startResolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant _EpisodeThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 行被回收复用到另一集：重新解析封面（旧 token 的完成回调将被忽略）。
+    if (!_sameEntry(oldWidget.entry, widget.entry)) {
+      _coverPath = null;
+      _startResolve();
+    }
+  }
+
+  bool _sameEntry(VideoEpisodeEntry a, VideoEpisodeEntry b) =>
+      a.coverPath == b.coverPath &&
+      a.videoPath == b.videoPath &&
+      a.thumbnailKey == b.thumbnailKey &&
+      a.title == b.title;
+
+  void _startResolve() {
+    final int token = ++_resolveToken;
+    final VideoEpisodeEntry entry = widget.entry;
+    unawaited(() async {
+      final String? path = await widget.resolver.resolve(entry);
+      if (!mounted || token != _resolveToken) return;
+      // 只在有变化时 setState，避免无谓重建。
+      if (path != _coverPath) {
+        setState(() => _coverPath = path);
+      }
+    }());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = widget.colorScheme;
+    final double w = widget.width;
+    final double h = w * 9.0 / 16.0;
+    final String? cover = _coverPath;
+    final double dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 2.0;
+    return SizedBox(
+      width: w,
+      height: h,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            // 底：封面或占位。
+            if (cover != null)
+              Image.file(
+                File(cover),
+                fit: BoxFit.cover,
+                // 解码尺寸按显示宽 × dpr 限制，控制内存 / 加速滚动。
+                cacheWidth: (w * dpr).round(),
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => _placeholder(cs),
+              )
+            else
+              _placeholder(cs),
+            // 当前集：半透明 scrim + 居中 play_arrow。
+            if (widget.selected) ...<Widget>[
+              ColoredBox(color: Colors.black.withValues(alpha: 0.32)),
+              Center(
+                child: Icon(
+                  Icons.play_arrow,
+                  color: cs.primary,
+                  size: math.max(20.0, widget.fontSize + 6),
+                ),
+              ),
+            ],
+            // 左下角序号徽标（始终显示，便于无封面时也能看清顺序）。
+            Positioned(
+              left: 2,
+              bottom: 2,
+              child: _numberBadge(cs),
+            ),
+            // 当前集 primary 边框。
+            if (widget.selected)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: cs.primary, width: 2),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder(ColorScheme cs) {
+    return ColoredBox(
+      color: cs.surfaceContainerHighest,
+      child: Center(
+        child: Icon(
+          Icons.movie_outlined,
+          color: cs.onSurfaceVariant,
+          size: math.max(18.0, widget.fontSize + 2),
+        ),
+      ),
+    );
+  }
+
+  Widget _numberBadge(ColorScheme cs) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        child: Text(
+          '${widget.index + 1}',
+          maxLines: 1,
+          softWrap: false,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: math.max(10.0, widget.fontSize - 2),
+            fontWeight: FontWeight.w600,
+            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+          ),
+        ),
+      ),
     );
   }
 }

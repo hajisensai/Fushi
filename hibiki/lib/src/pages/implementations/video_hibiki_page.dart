@@ -85,6 +85,7 @@ import 'package:hibiki/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:hibiki/src/media/video/video_chapter_markers.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart';
 import 'package:hibiki/src/media/video/video_clip_subtitle.dart';
+import 'package:hibiki/src/media/video/episode_thumbnail_cache.dart';
 import 'package:hibiki/src/media/video/video_episode_panel.dart';
 import 'package:hibiki/src/media/video/video_side_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
@@ -352,10 +353,14 @@ enum _VideoLoadPhase { connecting, downloadingSubtitle, buffering, preparing }
 /// [path] = ''（换集靠 episodeIndex 向 host 建流，不走 pushReplacement）。
 class _PlaylistEpisodeRef {
   const _PlaylistEpisodeRef(
-      {this.bookUid, required this.title, this.path = ''});
+      {this.bookUid, required this.title, this.path = '', this.coverPath});
   final String? bookUid;
   final String title;
   final String path;
+
+  /// 本地成员集导入时抽帧封面绝对路径（DB `coverPath`）；远端集 / 无封面为 null。
+  /// 剧集面板据此显示带封面的剧集列表（缺失时懒抽帧 / 占位）。
+  final String? coverPath;
 }
 
 class VideoHibikiPage extends ConsumerStatefulWidget {
@@ -1890,7 +1895,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         final VideoBookRow? er = await widget.repo.getByBookUid(m.entryKey);
         if (er == null) continue; // 孤儿成员（集行已删）→ 读取期过滤。
         refs.add(_PlaylistEpisodeRef(
-            bookUid: er.bookUid, title: er.title, path: er.videoPath));
+            bookUid: er.bookUid,
+            title: er.title,
+            path: er.videoPath,
+            coverPath: er.coverPath));
       }
       _episodes = refs;
       final int idx = refs
