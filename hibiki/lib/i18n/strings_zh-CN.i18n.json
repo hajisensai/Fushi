@@ -2452,5 +2452,9 @@
   "manga_ocr_mobile_note": "移动端下载的模型用于漫画阅读页的框选识别。",
   "games_already_added": "该游戏已在库中",
   "games_drop_no_exe": "拖入的文件里没有新的游戏 .exe",
-  "games_drop_imported": "已添加 $count 个游戏"
+  "games_drop_imported": "已添加 $count 个游戏",
+  "game_hook_recapture_started": "录音中——请在游戏里重播这句语音",
+  "game_hook_recapture_saved": "补录语音已绑定到这句",
+  "game_hook_recapture_empty": "补录窗口内没有录到声音",
+  "game_hook_recapture_unavailable": "补录需要系统声音采集可用"
 }

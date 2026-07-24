@@ -1001,27 +1001,38 @@ void main() {
 }
 
 void _bug950Guard() {
-  test('poll 循环 await 归来后有 engine generation 复检（BUG-950 回归守卫）', () {
-    // grabUtterance/_cacheLoopbackForLine 的 await 跨越 stop/重启时，恢复后必须复检
-    // engine == _engineSource 再推进 cursor，否则新会话的 _lastTextSeq 被旧 cursor 倒灌、
-    // 新文本全被判 duplicate 丢弃。此为跨异步 gap + 私有 seq 的时序 bug，行为断言留真机轮；
-    // 源码守卫确保复检不被后续改动悄悄删掉。
+  test('文本 poll 主路径零阻塞 + 语音抓取内复检 engine（BUG-950 / BUG-1063 守卫）', () {
+    // BUG-1063：文本主循环里一旦重新出现语音抓取的 await，同批后续台词就要排在前一句
+    // 的语音之后，_pollInFlight 还会让下一个 tick 整轮跳过——台词显示被自己的语音配对
+    // 拖慢。BUG-950：抓取的 await 跨越 stop/重启时，恢复后必须复检 engine == _engineSource，
+    // 否则旧会话的数据写进新会话的行。两者都是跨异步 gap 的时序不变量，用源码守卫钉住。
     final File src = File('lib/src/mining/gal_hook_session_controller.dart');
     expect(src.existsSync(), isTrue);
     final String body = src.readAsStringSync();
     final int pollAt = body.indexOf('Future<void> _pollHookedText()');
     expect(pollAt, greaterThan(0), reason: '_pollHookedText 不存在，守卫需更新');
-    final int cursorWriteAt =
-        body.indexOf('cursor = line.seq;\n      }', pollAt);
-    expect(cursorWriteAt, greaterThan(pollAt), reason: '找不到循环末尾 cursor 推进点');
-    // 紧邻循环末尾 cursor 推进之前的窗口里，必须存在 engine != _engineSource 复检 + BUG-950 标记
-    // （前面别处也有 generation 检查，故只看贴着 cursor 写入的这一段，避免误过）。
-    final String window = body.substring(cursorWriteAt - 400, cursorWriteAt);
+    final int pollEnd =
+        body.indexOf('Future<void> _refreshReadinessThrottled', pollAt);
+    expect(pollEnd, greaterThan(pollAt), reason: '找不到 _pollHookedText 结尾');
+    final List<String> awaited = RegExp(r'await ([A-Za-z_.]+)\(')
+        .allMatches(body.substring(pollAt, pollEnd))
+        .map((RegExpMatch m) => m.group(1)!)
+        .toList();
     expect(
-      window.contains('if (engine != _engineSource)') &&
-          window.contains('BUG-950'),
+      awaited,
+      <String>['_refreshReadinessThrottled', 'engine.pollText'],
+      reason: 'BUG-1063：文本主路径只许等 readiness 与 pollText 本身，'
+          '语音抓取必须走 _scheduleLineAudioAttach 的后台队列',
+    );
+
+    final int attachAt = body.indexOf('Future<void> _attachLineAudio(');
+    expect(attachAt, greaterThan(0), reason: '_attachLineAudio 不存在，守卫需更新');
+    final String attachBody = body.substring(attachAt, attachAt + 1200);
+    expect(
+      attachBody.contains('if (engine != _engineSource)') &&
+          attachBody.contains('BUG-950'),
       isTrue,
-      reason: 'BUG-950：推进 cursor 前必须复检 engine generation（await 跨重启防倒灌）',
+      reason: 'BUG-950：语音抓取 await 归来后必须复检 engine generation',
     );
   });
 

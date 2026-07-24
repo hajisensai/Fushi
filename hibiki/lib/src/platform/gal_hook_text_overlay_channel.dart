@@ -73,6 +73,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static GalHookTextEventHandler? _onToggleTransparency;
   static GalHookTextEventHandler? _onOpenWorkbench;
   static GalHookTextEventHandler? _onClose;
+  static GalHookTextEventHandler? _onReplayVoice;
+  static GalHookTextEventHandler? _onRecaptureVoice;
   static GalHookTextLockHandler? _onLockChanged;
   static GalHookTextBoundsHandler? _onBoundsChanged;
 
@@ -83,6 +85,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     GalHookTextEventHandler? onToggleTransparency,
     GalHookTextEventHandler? onOpenWorkbench,
     GalHookTextEventHandler? onClose,
+    GalHookTextEventHandler? onReplayVoice,
+    GalHookTextEventHandler? onRecaptureVoice,
     GalHookTextLockHandler? onLockChanged,
     GalHookTextBoundsHandler? onBoundsChanged,
   }) {
@@ -92,6 +96,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onToggleTransparency = onToggleTransparency;
     _onOpenWorkbench = onOpenWorkbench;
     _onClose = onClose;
+    _onReplayVoice = onReplayVoice;
+    _onRecaptureVoice = onRecaptureVoice;
     _onLockChanged = onLockChanged;
     _onBoundsChanged = onBoundsChanged;
     _instance.channel.setMethodCallHandler(_handleNativeCall);
@@ -104,6 +110,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onToggleTransparency = null;
     _onOpenWorkbench = null;
     _onClose = null;
+    _onReplayVoice = null;
+    _onRecaptureVoice = null;
     _onLockChanged = null;
     _onBoundsChanged = null;
     _instance.channel.setMethodCallHandler(null);
@@ -133,6 +141,12 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         break;
       case 'openWorkbench':
         await _onOpenWorkbench?.call();
+        break;
+      case 'replayVoice':
+        await _onReplayVoice?.call();
+        break;
+      case 'recaptureVoice':
+        await _onRecaptureVoice?.call();
         break;
       case 'close':
         await _onClose?.call();
@@ -218,6 +232,21 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     await _instance.channel.invokeMethod<void>(
       'setPassThrough',
       <String, Object?>{'enabled': enabled},
+    );
+  }
+
+  /// 语音控件的可见状态（浮窗是独立窗口，用户只能在这里看到「正在试听 / 正在补录」）。
+  static Future<void> setVoiceState({
+    required bool replaying,
+    required bool recapturing,
+  }) async {
+    if (!_instance.isSupported) return;
+    await _instance.channel.invokeMethod<void>(
+      'setVoiceState',
+      <String, Object?>{
+        'replaying': replaying,
+        'recapturing': recapturing,
+      },
     );
   }
 

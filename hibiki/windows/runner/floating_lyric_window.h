@@ -113,6 +113,11 @@ class FloatingLyricWindow {
   void UpdateStyle(const Style& style);
   void UpdateLabels(const Labels& labels);
   void SetPlaybackState(bool playing);
+  // Hook-text voice controls: whether the line's captured audio is currently
+  // being replayed, and whether a recapture window is open. Drives the two
+  // leading toolbar glyphs' active highlight — the overlay is a separate
+  // window, so this is the only place the user can see either state.
+  void SetVoiceState(bool replaying, bool recapturing);
   void SetClickLookupEnabled(bool enabled);
   // Text-only mode (the transparent clipboard text window): the strip draws
   // ONLY the draggable, tappable text — no playback / lock / close control
@@ -210,10 +215,17 @@ class FloatingLyricWindow {
   // cursor is not necessarily over the strip. No-op when already inside.
   void ClampCurrentPositionToWindowMonitor();
 
+  // Narrowest width the strip may be resized / restored to. Hook mode floors at
+  // its own 8-slot toolbar width so the voice buttons can never be clipped.
+  float MinStripWidthDip() const;
+
   HWND hwnd_ = nullptr;
   bool class_registered_ = false;
   bool visible_ = false;
   bool playing_ = false;
+  // Hook-text voice control state (see SetVoiceState).
+  bool replaying_ = false;
+  bool recapturing_ = false;
   bool click_lookup_enabled_ = true;
   // Text-only clipboard window: suppress control buttons + resize grip, use the
   // full window height for text. Never true for the audiobook lyric strip.
