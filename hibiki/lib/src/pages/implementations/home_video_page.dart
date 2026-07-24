@@ -19,8 +19,9 @@ import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/cover_ui/poster_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/poster_match_dialog.dart';
-import 'package:hibiki/src/media/video/cover_ui/batch_scrape_dialog.dart';
+import 'package:hibiki/src/media/video/cover_ui/scrape_info_dialog.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
+import 'package:hibiki/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/offline_index.dart';
@@ -40,7 +41,6 @@ import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
 import 'package:hibiki/src/media/collections/batch_combine.dart';
@@ -197,6 +197,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 统一合集：本会话已尝试后台抽封面的 bookUid（避免每次刷新对同一行重试 ffmpeg）。
   final Set<String> _coverBackfillAttempted = <String>{};
 
+  /// 条目自动刮削调度器（懒建，随页面 dispose 停）。见 [_maybeAutoScrape]。
+  VideoScrapeAutoService? _autoScrape;
+
   /// 后台封面补齐进行中标志（防并发重入）。
   bool _backfillingCovers = false;
 
@@ -230,6 +233,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     _loadLibraryMaps();
     // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
     _maybeBackfillCovers();
+    // 条目自动刮削：进页面补刮还没有资料的本地视频（取代旧页头「批量匹配海报」按钮）。
+    unawaited(_maybeAutoScrape());
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub =
         widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
@@ -257,6 +262,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   void dispose() {
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     _videoUidsSub?.cancel();
+    _autoScrape?.dispose();
     assert(() {
       HomeVideoPage.debugRefreshVideos = null;
       return true;
@@ -276,6 +282,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (setEquals(next, _knownVideoUids)) return;
     _knownVideoUids = next;
     if (mounted) _refresh();
+    // 集合真变了 = 有新视频入库（任意导入路径）：给新书补刮条目资料。挂在这里而
+    // 不是 _refresh 里，因为 _refresh 还被改标签/删除/播放返回等触发，那些不带来
+    // 需要刮削的新书。
+    unawaited(_maybeAutoScrape());
   }
 
   /// 刷新库页。默认只刷**本地**（书架列表 + 分组映射 + 封面自愈）；远端互联清单
@@ -779,16 +789,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       builder: (_) => VideoImportDialog(repo: widget.repo),
     );
     if (bookUid != null) _refresh();
-  }
-
-  /// 打开「番剧下载」选种对话框。关闭后刷新列表（完成钩子可能已自动入库新视频，
-  /// 「边下边播」也会立即入库）。
-  Future<void> _openAnimeDownload() async {
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => const AnimeDownloadDialog(),
-    );
-    if (mounted) _refresh();
   }
 
   /// 打开「管理来源」对话框（视频来源库）。关闭后刷新列表（扫描可能新增视频）。
@@ -1541,6 +1541,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             },
           ),
           DialogQuickAction(
+            label: t.video_scrape_info,
+            icon: Icons.info_outline,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _openScrapeInfo(book);
+            },
+          ),
+          DialogQuickAction(
             label: t.video_import_pick_subtitle,
             icon: Icons.subtitles_outlined,
             onPressed: () {
@@ -1716,29 +1724,50 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 页头「批量匹配海报」：对当前本地视频（远端/流媒体不参与）批量刮削。
-  Future<void> _openBatchScrape() async {
-    final List<VideoBookRow> local =
-        (_videosCache ?? await widget.repo.listAll())
-            .where((VideoBookRow b) =>
-                !b.videoPath.startsWith('http://') &&
-                !b.videoPath.startsWith('https://'))
-            .toList();
-    final ({
-      PosterScraperService service,
-      PosterScraperService Function(OfflineIndex offline) rebuild,
-      Directory scraperDir,
-    }) bundle = await _scraperBundle();
+  /// 长按菜单「条目信息」：读本地已刮到的 Bangumi 条目资料并展示（只读，不发网络）。
+  /// 「重新刮削」= 删掉该书资料行 + 忘掉本进程的尝试记录，再跑一次自动刮削。
+  Future<void> _openScrapeInfo(VideoBookRow book) async {
+    final ScrapeMetadata? meta = await widget.repo.scrapeMetadata(book.bookUid);
     if (!mounted) return;
-    await showBatchScrapeDialog(
+    await showScrapeInfoDialog(
       context: context,
-      service: bundle.service,
-      books: local,
-      offlineDbDir: bundle.scraperDir,
-      rebuildWithOffline: bundle.rebuild,
-      onOpenManual: _openPosterMatch,
-      onFinished: _refresh,
+      fallbackTitle: book.title,
+      metadata: meta,
+      onRescrape: () async {
+        await widget.repo.deleteScrapeMetadata(book.bookUid);
+        _autoScrape?.forget(book.bookUid);
+        await _maybeAutoScrape();
+      },
     );
+  }
+
+  /// 自动刮削：进视频页 + 每次库变化（新视频入库）后跑一遍，把还没有条目资料的
+  /// 本地视频静默补齐（封面 + Bangumi 条目资料）。取代了原页头「批量匹配海报」
+  /// 按钮——用户不必再记得点它。
+  ///
+  /// 受 [AppModel.videoAutoScrape] 总闸门控（默认开，设置页「媒体库」可关）。
+  /// 服务自身负责串行/节流/去重与「每本每进程只试一次」，本方法只管喂书单，
+  /// 重复调用是廉价的。刮完静默 [_refresh] 让新封面立即出现在网格里。
+  Future<void> _maybeAutoScrape() async {
+    final VideoScrapeAutoService service =
+        _autoScrape ??= VideoScrapeAutoService(
+      repository: widget.repo,
+      serviceFactory: () async => (await _scraperBundle()).service,
+      // 每轮进场读一次总闸：设置里关掉后下一轮立刻停，无需重建服务。
+      isEnabled: () => ref.read(appProvider).videoAutoScrape,
+    );
+    if (service.isRunning) return;
+    final List<VideoBookRow> books = await widget.repo.listAll();
+    if (!mounted) return;
+    final int before = service.attemptedCount;
+    await service.sweep(books);
+    // 有书真被刮过才重绘：没新刮到东西时避免无谓的整页重查（本方法每次 _refresh
+    // 都会被调用，无条件 setState 会形成刷新环）。
+    if (mounted && service.attemptedCount != before) {
+      setState(() {
+        _future = widget.repo.listForShelf();
+      });
+    }
   }
 
   /// 重命名视频/播放列表（C 需求③）：弹输入框预填当前标题 → 落库 → 刷新列表。
@@ -2785,13 +2814,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             icon: Icons.add,
             onTap: _openImport,
           ),
-        if (canImport)
-          HibikiIconButton(
-            tooltip: t.anime_download_title,
-            label: t.anime_download_title,
-            icon: Icons.travel_explore,
-            onTap: _openAnimeDownload,
-          ),
+        // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
+        // （downloads_page）里有完整入口，视频库页头只留库管理动作。
         if (canImport)
           HibikiIconButton(
             tooltip: t.media_source_manage_title,
@@ -2811,24 +2835,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           icon: Icons.bar_chart_outlined,
           onTap: _openStatistics,
         ),
-        // 批量匹配海报：页级工具栏是「作用于整库」动作的自然归宿（与导入/统计/刷新
-        // 并列），故放页头而非长按单卡菜单（那是单本动作）。
-        HibikiIconButton(
-          key: const ValueKey<String>('home_video_batch_scrape'),
-          tooltip: t.video_scrape_batch_title,
-          label: t.video_scrape_batch_title,
-          icon: Icons.auto_fix_high_outlined,
-          onTap: _openBatchScrape,
-        ),
-        // UI 巡检 PR-4：桌面无触屏下拉手势，给「强制刷新远端清单」一个鼠标可达
-        // 的显式入口（与下拉刷新同一汇聚点 [_pullToRefresh]，失败提示一致）。
-        HibikiIconButton(
-          key: const ValueKey<String>('home_video_refresh'),
-          tooltip: t.refresh,
-          label: t.refresh,
-          icon: Icons.refresh,
-          onTap: () => unawaited(_pullToRefresh()),
-        ),
+        // 「批量匹配海报」按钮已删：刮削改为进页面 / 新视频入库时后台自动跑
+        // （[_maybeAutoScrape]），不再需要用户手动触发整库任务。单本纠错仍在长按
+        // 菜单的「在线匹配海报」。
+        // 「刷新」按钮已删：下拉刷新（[_pullToRefresh]）仍是手动同步入口，页头不再
+        // 为它单占一格。
       ],
     );
   }

@@ -17459,6 +17459,732 @@ class ClipboardHistoryCompanion extends UpdateCompanion<ClipboardHistoryRow> {
   }
 }
 
+class $VideoScrapeMetaTable extends VideoScrapeMeta
+    with TableInfo<$VideoScrapeMetaTable, VideoScrapeMetaRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoScrapeMetaTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta =
+      const VerificationMeta('bookUid');
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+      'book_uid', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES video_books (book_uid) ON DELETE CASCADE'));
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+      'source', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _subjectIdMeta =
+      const VerificationMeta('subjectId');
+  @override
+  late final GeneratedColumn<String> subjectId = GeneratedColumn<String>(
+      'subject_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _originalTitleMeta =
+      const VerificationMeta('originalTitle');
+  @override
+  late final GeneratedColumn<String> originalTitle = GeneratedColumn<String>(
+      'original_title', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _summaryMeta =
+      const VerificationMeta('summary');
+  @override
+  late final GeneratedColumn<String> summary = GeneratedColumn<String>(
+      'summary', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _airDateMeta =
+      const VerificationMeta('airDate');
+  @override
+  late final GeneratedColumn<String> airDate = GeneratedColumn<String>(
+      'air_date', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<double> rating = GeneratedColumn<double>(
+      'rating', aliasedName, true,
+      type: DriftSqlType.double, requiredDuringInsert: false);
+  static const VerificationMeta _ratingCountMeta =
+      const VerificationMeta('ratingCount');
+  @override
+  late final GeneratedColumn<int> ratingCount = GeneratedColumn<int>(
+      'rating_count', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _episodeCountMeta =
+      const VerificationMeta('episodeCount');
+  @override
+  late final GeneratedColumn<int> episodeCount = GeneratedColumn<int>(
+      'episode_count', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _tagsJsonMeta =
+      const VerificationMeta('tagsJson');
+  @override
+  late final GeneratedColumn<String> tagsJson = GeneratedColumn<String>(
+      'tags_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _infoboxJsonMeta =
+      const VerificationMeta('infoboxJson');
+  @override
+  late final GeneratedColumn<String> infoboxJson = GeneratedColumn<String>(
+      'infobox_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _detailUrlMeta =
+      const VerificationMeta('detailUrl');
+  @override
+  late final GeneratedColumn<String> detailUrl = GeneratedColumn<String>(
+      'detail_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _scrapedAtMeta =
+      const VerificationMeta('scrapedAt');
+  @override
+  late final GeneratedColumn<DateTime> scrapedAt = GeneratedColumn<DateTime>(
+      'scraped_at', aliasedName, false,
+      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        bookUid,
+        source,
+        subjectId,
+        title,
+        originalTitle,
+        summary,
+        airDate,
+        rating,
+        ratingCount,
+        episodeCount,
+        tagsJson,
+        infoboxJson,
+        detailUrl,
+        scrapedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_scrape_meta';
+  @override
+  VerificationContext validateIntegrity(Insertable<VideoScrapeMetaRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(_bookUidMeta,
+          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(_sourceMeta,
+          source.isAcceptableOrUnknown(data['source']!, _sourceMeta));
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('subject_id')) {
+      context.handle(_subjectIdMeta,
+          subjectId.isAcceptableOrUnknown(data['subject_id']!, _subjectIdMeta));
+    } else if (isInserting) {
+      context.missing(_subjectIdMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('original_title')) {
+      context.handle(
+          _originalTitleMeta,
+          originalTitle.isAcceptableOrUnknown(
+              data['original_title']!, _originalTitleMeta));
+    }
+    if (data.containsKey('summary')) {
+      context.handle(_summaryMeta,
+          summary.isAcceptableOrUnknown(data['summary']!, _summaryMeta));
+    }
+    if (data.containsKey('air_date')) {
+      context.handle(_airDateMeta,
+          airDate.isAcceptableOrUnknown(data['air_date']!, _airDateMeta));
+    }
+    if (data.containsKey('rating')) {
+      context.handle(_ratingMeta,
+          rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta));
+    }
+    if (data.containsKey('rating_count')) {
+      context.handle(
+          _ratingCountMeta,
+          ratingCount.isAcceptableOrUnknown(
+              data['rating_count']!, _ratingCountMeta));
+    }
+    if (data.containsKey('episode_count')) {
+      context.handle(
+          _episodeCountMeta,
+          episodeCount.isAcceptableOrUnknown(
+              data['episode_count']!, _episodeCountMeta));
+    }
+    if (data.containsKey('tags_json')) {
+      context.handle(_tagsJsonMeta,
+          tagsJson.isAcceptableOrUnknown(data['tags_json']!, _tagsJsonMeta));
+    }
+    if (data.containsKey('infobox_json')) {
+      context.handle(
+          _infoboxJsonMeta,
+          infoboxJson.isAcceptableOrUnknown(
+              data['infobox_json']!, _infoboxJsonMeta));
+    }
+    if (data.containsKey('detail_url')) {
+      context.handle(_detailUrlMeta,
+          detailUrl.isAcceptableOrUnknown(data['detail_url']!, _detailUrlMeta));
+    }
+    if (data.containsKey('scraped_at')) {
+      context.handle(_scrapedAtMeta,
+          scrapedAt.isAcceptableOrUnknown(data['scraped_at']!, _scrapedAtMeta));
+    } else if (isInserting) {
+      context.missing(_scrapedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  VideoScrapeMetaRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoScrapeMetaRow(
+      bookUid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
+      source: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source'])!,
+      subjectId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}subject_id'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      originalTitle: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}original_title']),
+      summary: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}summary']),
+      airDate: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}air_date']),
+      rating: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}rating']),
+      ratingCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}rating_count']),
+      episodeCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}episode_count']),
+      tagsJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}tags_json']),
+      infoboxJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}infobox_json']),
+      detailUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}detail_url']),
+      scrapedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}scraped_at'])!,
+    );
+  }
+
+  @override
+  $VideoScrapeMetaTable createAlias(String alias) {
+    return $VideoScrapeMetaTable(attachedDatabase, alias);
+  }
+}
+
+class VideoScrapeMetaRow extends DataClass
+    implements Insertable<VideoScrapeMetaRow> {
+  /// 视频书稳定身份（= VideoBooks.bookUid）。删视频 cascade 清本表。
+  final String bookUid;
+
+  /// 来源（`ScrapeSource.name`：bangumi / tmdb / offlineDb / manualUrl）。
+  final String source;
+
+  /// 源内条目 id（Bangumi subject id / TMDB id），字符串化存储。
+  final String subjectId;
+
+  /// 条目主标题（中文优先，= Bangumi `name_cn` 非空否则 `name`）。
+  final String title;
+
+  /// 原名（日文原题，= Bangumi `name`）；与 [title] 相同或缺失时为 null。
+  final String? originalTitle;
+
+  /// 条目简介（Bangumi `summary` 原文，含换行）。
+  final String? summary;
+
+  /// 放送开始日期 `YYYY-MM-DD`（Bangumi `date`）。存字符串而非 DateTime：源数据
+  /// 常见只精确到年或年月的残缺日期，转 DateTime 会凭空补月/日造假。
+  final String? airDate;
+
+  /// 评分（Bangumi `rating.score`，0~10）。
+  final double? rating;
+
+  /// 评分人数（Bangumi `rating.total`）。
+  final int? ratingCount;
+
+  /// 总话数（Bangumi `eps` / `total_episodes`）。
+  final int? episodeCount;
+
+  /// 标签 JSON 数组：`[{"name":"日常","count":1234}]`（Bangumi `tags`，按热度降序）。
+  final String? tagsJson;
+
+  /// infobox JSON 数组：`[{"key":"导演","value":"..."}]`（Bangumi `infobox` 摊平，
+  /// 值为数组时用 `/` 连接）。存原始 key 名，展示层不翻译（源就是中文）。
+  final String? infoboxJson;
+
+  /// 条目详情页 URL（`https://bgm.tv/subject/<id>`），供「查看条目」跳转。
+  final String? detailUrl;
+
+  /// 本行写入时间（重刮判据 / 展示「资料更新于」）。
+  final DateTime scrapedAt;
+  const VideoScrapeMetaRow(
+      {required this.bookUid,
+      required this.source,
+      required this.subjectId,
+      required this.title,
+      this.originalTitle,
+      this.summary,
+      this.airDate,
+      this.rating,
+      this.ratingCount,
+      this.episodeCount,
+      this.tagsJson,
+      this.infoboxJson,
+      this.detailUrl,
+      required this.scrapedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['source'] = Variable<String>(source);
+    map['subject_id'] = Variable<String>(subjectId);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || originalTitle != null) {
+      map['original_title'] = Variable<String>(originalTitle);
+    }
+    if (!nullToAbsent || summary != null) {
+      map['summary'] = Variable<String>(summary);
+    }
+    if (!nullToAbsent || airDate != null) {
+      map['air_date'] = Variable<String>(airDate);
+    }
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<double>(rating);
+    }
+    if (!nullToAbsent || ratingCount != null) {
+      map['rating_count'] = Variable<int>(ratingCount);
+    }
+    if (!nullToAbsent || episodeCount != null) {
+      map['episode_count'] = Variable<int>(episodeCount);
+    }
+    if (!nullToAbsent || tagsJson != null) {
+      map['tags_json'] = Variable<String>(tagsJson);
+    }
+    if (!nullToAbsent || infoboxJson != null) {
+      map['infobox_json'] = Variable<String>(infoboxJson);
+    }
+    if (!nullToAbsent || detailUrl != null) {
+      map['detail_url'] = Variable<String>(detailUrl);
+    }
+    map['scraped_at'] = Variable<DateTime>(scrapedAt);
+    return map;
+  }
+
+  VideoScrapeMetaCompanion toCompanion(bool nullToAbsent) {
+    return VideoScrapeMetaCompanion(
+      bookUid: Value(bookUid),
+      source: Value(source),
+      subjectId: Value(subjectId),
+      title: Value(title),
+      originalTitle: originalTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalTitle),
+      summary: summary == null && nullToAbsent
+          ? const Value.absent()
+          : Value(summary),
+      airDate: airDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(airDate),
+      rating:
+          rating == null && nullToAbsent ? const Value.absent() : Value(rating),
+      ratingCount: ratingCount == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ratingCount),
+      episodeCount: episodeCount == null && nullToAbsent
+          ? const Value.absent()
+          : Value(episodeCount),
+      tagsJson: tagsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tagsJson),
+      infoboxJson: infoboxJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(infoboxJson),
+      detailUrl: detailUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(detailUrl),
+      scrapedAt: Value(scrapedAt),
+    );
+  }
+
+  factory VideoScrapeMetaRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoScrapeMetaRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      source: serializer.fromJson<String>(json['source']),
+      subjectId: serializer.fromJson<String>(json['subjectId']),
+      title: serializer.fromJson<String>(json['title']),
+      originalTitle: serializer.fromJson<String?>(json['originalTitle']),
+      summary: serializer.fromJson<String?>(json['summary']),
+      airDate: serializer.fromJson<String?>(json['airDate']),
+      rating: serializer.fromJson<double?>(json['rating']),
+      ratingCount: serializer.fromJson<int?>(json['ratingCount']),
+      episodeCount: serializer.fromJson<int?>(json['episodeCount']),
+      tagsJson: serializer.fromJson<String?>(json['tagsJson']),
+      infoboxJson: serializer.fromJson<String?>(json['infoboxJson']),
+      detailUrl: serializer.fromJson<String?>(json['detailUrl']),
+      scrapedAt: serializer.fromJson<DateTime>(json['scrapedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'source': serializer.toJson<String>(source),
+      'subjectId': serializer.toJson<String>(subjectId),
+      'title': serializer.toJson<String>(title),
+      'originalTitle': serializer.toJson<String?>(originalTitle),
+      'summary': serializer.toJson<String?>(summary),
+      'airDate': serializer.toJson<String?>(airDate),
+      'rating': serializer.toJson<double?>(rating),
+      'ratingCount': serializer.toJson<int?>(ratingCount),
+      'episodeCount': serializer.toJson<int?>(episodeCount),
+      'tagsJson': serializer.toJson<String?>(tagsJson),
+      'infoboxJson': serializer.toJson<String?>(infoboxJson),
+      'detailUrl': serializer.toJson<String?>(detailUrl),
+      'scrapedAt': serializer.toJson<DateTime>(scrapedAt),
+    };
+  }
+
+  VideoScrapeMetaRow copyWith(
+          {String? bookUid,
+          String? source,
+          String? subjectId,
+          String? title,
+          Value<String?> originalTitle = const Value.absent(),
+          Value<String?> summary = const Value.absent(),
+          Value<String?> airDate = const Value.absent(),
+          Value<double?> rating = const Value.absent(),
+          Value<int?> ratingCount = const Value.absent(),
+          Value<int?> episodeCount = const Value.absent(),
+          Value<String?> tagsJson = const Value.absent(),
+          Value<String?> infoboxJson = const Value.absent(),
+          Value<String?> detailUrl = const Value.absent(),
+          DateTime? scrapedAt}) =>
+      VideoScrapeMetaRow(
+        bookUid: bookUid ?? this.bookUid,
+        source: source ?? this.source,
+        subjectId: subjectId ?? this.subjectId,
+        title: title ?? this.title,
+        originalTitle:
+            originalTitle.present ? originalTitle.value : this.originalTitle,
+        summary: summary.present ? summary.value : this.summary,
+        airDate: airDate.present ? airDate.value : this.airDate,
+        rating: rating.present ? rating.value : this.rating,
+        ratingCount: ratingCount.present ? ratingCount.value : this.ratingCount,
+        episodeCount:
+            episodeCount.present ? episodeCount.value : this.episodeCount,
+        tagsJson: tagsJson.present ? tagsJson.value : this.tagsJson,
+        infoboxJson: infoboxJson.present ? infoboxJson.value : this.infoboxJson,
+        detailUrl: detailUrl.present ? detailUrl.value : this.detailUrl,
+        scrapedAt: scrapedAt ?? this.scrapedAt,
+      );
+  VideoScrapeMetaRow copyWithCompanion(VideoScrapeMetaCompanion data) {
+    return VideoScrapeMetaRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      source: data.source.present ? data.source.value : this.source,
+      subjectId: data.subjectId.present ? data.subjectId.value : this.subjectId,
+      title: data.title.present ? data.title.value : this.title,
+      originalTitle: data.originalTitle.present
+          ? data.originalTitle.value
+          : this.originalTitle,
+      summary: data.summary.present ? data.summary.value : this.summary,
+      airDate: data.airDate.present ? data.airDate.value : this.airDate,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      ratingCount:
+          data.ratingCount.present ? data.ratingCount.value : this.ratingCount,
+      episodeCount: data.episodeCount.present
+          ? data.episodeCount.value
+          : this.episodeCount,
+      tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
+      infoboxJson:
+          data.infoboxJson.present ? data.infoboxJson.value : this.infoboxJson,
+      detailUrl: data.detailUrl.present ? data.detailUrl.value : this.detailUrl,
+      scrapedAt: data.scrapedAt.present ? data.scrapedAt.value : this.scrapedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoScrapeMetaRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('summary: $summary, ')
+          ..write('airDate: $airDate, ')
+          ..write('rating: $rating, ')
+          ..write('ratingCount: $ratingCount, ')
+          ..write('episodeCount: $episodeCount, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('infoboxJson: $infoboxJson, ')
+          ..write('detailUrl: $detailUrl, ')
+          ..write('scrapedAt: $scrapedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      bookUid,
+      source,
+      subjectId,
+      title,
+      originalTitle,
+      summary,
+      airDate,
+      rating,
+      ratingCount,
+      episodeCount,
+      tagsJson,
+      infoboxJson,
+      detailUrl,
+      scrapedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoScrapeMetaRow &&
+          other.bookUid == this.bookUid &&
+          other.source == this.source &&
+          other.subjectId == this.subjectId &&
+          other.title == this.title &&
+          other.originalTitle == this.originalTitle &&
+          other.summary == this.summary &&
+          other.airDate == this.airDate &&
+          other.rating == this.rating &&
+          other.ratingCount == this.ratingCount &&
+          other.episodeCount == this.episodeCount &&
+          other.tagsJson == this.tagsJson &&
+          other.infoboxJson == this.infoboxJson &&
+          other.detailUrl == this.detailUrl &&
+          other.scrapedAt == this.scrapedAt);
+}
+
+class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
+  final Value<String> bookUid;
+  final Value<String> source;
+  final Value<String> subjectId;
+  final Value<String> title;
+  final Value<String?> originalTitle;
+  final Value<String?> summary;
+  final Value<String?> airDate;
+  final Value<double?> rating;
+  final Value<int?> ratingCount;
+  final Value<int?> episodeCount;
+  final Value<String?> tagsJson;
+  final Value<String?> infoboxJson;
+  final Value<String?> detailUrl;
+  final Value<DateTime> scrapedAt;
+  final Value<int> rowid;
+  const VideoScrapeMetaCompanion({
+    this.bookUid = const Value.absent(),
+    this.source = const Value.absent(),
+    this.subjectId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.originalTitle = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.airDate = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingCount = const Value.absent(),
+    this.episodeCount = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.infoboxJson = const Value.absent(),
+    this.detailUrl = const Value.absent(),
+    this.scrapedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoScrapeMetaCompanion.insert({
+    required String bookUid,
+    required String source,
+    required String subjectId,
+    required String title,
+    this.originalTitle = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.airDate = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingCount = const Value.absent(),
+    this.episodeCount = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.infoboxJson = const Value.absent(),
+    this.detailUrl = const Value.absent(),
+    required DateTime scrapedAt,
+    this.rowid = const Value.absent(),
+  })  : bookUid = Value(bookUid),
+        source = Value(source),
+        subjectId = Value(subjectId),
+        title = Value(title),
+        scrapedAt = Value(scrapedAt);
+  static Insertable<VideoScrapeMetaRow> custom({
+    Expression<String>? bookUid,
+    Expression<String>? source,
+    Expression<String>? subjectId,
+    Expression<String>? title,
+    Expression<String>? originalTitle,
+    Expression<String>? summary,
+    Expression<String>? airDate,
+    Expression<double>? rating,
+    Expression<int>? ratingCount,
+    Expression<int>? episodeCount,
+    Expression<String>? tagsJson,
+    Expression<String>? infoboxJson,
+    Expression<String>? detailUrl,
+    Expression<DateTime>? scrapedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (source != null) 'source': source,
+      if (subjectId != null) 'subject_id': subjectId,
+      if (title != null) 'title': title,
+      if (originalTitle != null) 'original_title': originalTitle,
+      if (summary != null) 'summary': summary,
+      if (airDate != null) 'air_date': airDate,
+      if (rating != null) 'rating': rating,
+      if (ratingCount != null) 'rating_count': ratingCount,
+      if (episodeCount != null) 'episode_count': episodeCount,
+      if (tagsJson != null) 'tags_json': tagsJson,
+      if (infoboxJson != null) 'infobox_json': infoboxJson,
+      if (detailUrl != null) 'detail_url': detailUrl,
+      if (scrapedAt != null) 'scraped_at': scrapedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoScrapeMetaCompanion copyWith(
+      {Value<String>? bookUid,
+      Value<String>? source,
+      Value<String>? subjectId,
+      Value<String>? title,
+      Value<String?>? originalTitle,
+      Value<String?>? summary,
+      Value<String?>? airDate,
+      Value<double?>? rating,
+      Value<int?>? ratingCount,
+      Value<int?>? episodeCount,
+      Value<String?>? tagsJson,
+      Value<String?>? infoboxJson,
+      Value<String?>? detailUrl,
+      Value<DateTime>? scrapedAt,
+      Value<int>? rowid}) {
+    return VideoScrapeMetaCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      source: source ?? this.source,
+      subjectId: subjectId ?? this.subjectId,
+      title: title ?? this.title,
+      originalTitle: originalTitle ?? this.originalTitle,
+      summary: summary ?? this.summary,
+      airDate: airDate ?? this.airDate,
+      rating: rating ?? this.rating,
+      ratingCount: ratingCount ?? this.ratingCount,
+      episodeCount: episodeCount ?? this.episodeCount,
+      tagsJson: tagsJson ?? this.tagsJson,
+      infoboxJson: infoboxJson ?? this.infoboxJson,
+      detailUrl: detailUrl ?? this.detailUrl,
+      scrapedAt: scrapedAt ?? this.scrapedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (subjectId.present) {
+      map['subject_id'] = Variable<String>(subjectId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (originalTitle.present) {
+      map['original_title'] = Variable<String>(originalTitle.value);
+    }
+    if (summary.present) {
+      map['summary'] = Variable<String>(summary.value);
+    }
+    if (airDate.present) {
+      map['air_date'] = Variable<String>(airDate.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<double>(rating.value);
+    }
+    if (ratingCount.present) {
+      map['rating_count'] = Variable<int>(ratingCount.value);
+    }
+    if (episodeCount.present) {
+      map['episode_count'] = Variable<int>(episodeCount.value);
+    }
+    if (tagsJson.present) {
+      map['tags_json'] = Variable<String>(tagsJson.value);
+    }
+    if (infoboxJson.present) {
+      map['infobox_json'] = Variable<String>(infoboxJson.value);
+    }
+    if (detailUrl.present) {
+      map['detail_url'] = Variable<String>(detailUrl.value);
+    }
+    if (scrapedAt.present) {
+      map['scraped_at'] = Variable<DateTime>(scrapedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoScrapeMetaCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('summary: $summary, ')
+          ..write('airDate: $airDate, ')
+          ..write('rating: $rating, ')
+          ..write('ratingCount: $ratingCount, ')
+          ..write('episodeCount: $episodeCount, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('infoboxJson: $infoboxJson, ')
+          ..write('detailUrl: $detailUrl, ')
+          ..write('scrapedAt: $scrapedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -17532,6 +18258,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $ActivityEventsTable activityEvents = $ActivityEventsTable(this);
   late final $ClipboardHistoryTable clipboardHistory =
       $ClipboardHistoryTable(this);
+  late final $VideoScrapeMetaTable videoScrapeMeta =
+      $VideoScrapeMetaTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -17582,7 +18310,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         syncDeletionTombstones,
         revealedImages,
         activityEvents,
-        clipboardHistory
+        clipboardHistory,
+        videoScrapeMeta
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -17704,6 +18433,13 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('revealed_images', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('video_books',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('video_scrape_meta', kind: UpdateKind.delete),
             ],
           ),
         ],
@@ -24282,6 +25018,23 @@ final class $$VideoBooksTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$VideoScrapeMetaTable, List<VideoScrapeMetaRow>>
+      _videoScrapeMetaRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.videoScrapeMeta,
+              aliasName: 'video_books__book_uid__video_scrape_meta__book_uid');
+
+  $$VideoScrapeMetaTableProcessedTableManager get videoScrapeMetaRefs {
+    final manager =
+        $$VideoScrapeMetaTableTableManager($_db, $_db.videoScrapeMeta).filter(
+            (f) =>
+                f.bookUid.bookUid.sqlEquals($_itemColumn<String>('book_uid')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_videoScrapeMetaRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$VideoBooksTableFilterComposer
@@ -24382,6 +25135,27 @@ class $$VideoBooksTableFilterComposer
             $$VideoBookTagMappingsTableFilterComposer(
               $db: $db,
               $table: $db.videoBookTagMappings,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> videoScrapeMetaRefs(
+      Expression<bool> Function($$VideoScrapeMetaTableFilterComposer f) f) {
+    final $$VideoScrapeMetaTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoScrapeMeta,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoScrapeMetaTableFilterComposer(
+              $db: $db,
+              $table: $db.videoScrapeMeta,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -24577,6 +25351,27 @@ class $$VideoBooksTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> videoScrapeMetaRefs<T extends Object>(
+      Expression<T> Function($$VideoScrapeMetaTableAnnotationComposer a) f) {
+    final $$VideoScrapeMetaTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoScrapeMeta,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoScrapeMetaTableAnnotationComposer(
+              $db: $db,
+              $table: $db.videoScrapeMeta,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableTableManager extends RootTableManager<
@@ -24590,7 +25385,10 @@ class $$VideoBooksTableTableManager extends RootTableManager<
     $$VideoBooksTableUpdateCompanionBuilder,
     (VideoBookRow, $$VideoBooksTableReferences),
     VideoBookRow,
-    PrefetchHooks Function({bool sourceId, bool videoBookTagMappingsRefs})> {
+    PrefetchHooks Function(
+        {bool sourceId,
+        bool videoBookTagMappingsRefs,
+        bool videoScrapeMetaRefs})> {
   $$VideoBooksTableTableManager(_$HibikiDatabase db, $VideoBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -24688,11 +25486,14 @@ class $$VideoBooksTableTableManager extends RootTableManager<
                   ))
               .toList(),
           prefetchHooksCallback: (
-              {sourceId = false, videoBookTagMappingsRefs = false}) {
+              {sourceId = false,
+              videoBookTagMappingsRefs = false,
+              videoScrapeMetaRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
-                if (videoBookTagMappingsRefs) db.videoBookTagMappings
+                if (videoBookTagMappingsRefs) db.videoBookTagMappings,
+                if (videoScrapeMetaRefs) db.videoScrapeMeta
               ],
               addJoins: <
                   T extends TableManagerState<
@@ -24734,6 +25535,19 @@ class $$VideoBooksTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.videoBookUid == item.bookUid),
+                        typedResults: items),
+                  if (videoScrapeMetaRefs)
+                    await $_getPrefetchedData<VideoBookRow, $VideoBooksTable,
+                            VideoScrapeMetaRow>(
+                        currentTable: table,
+                        referencedTable: $$VideoBooksTableReferences
+                            ._videoScrapeMetaRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$VideoBooksTableReferences(db, table, p0)
+                                .videoScrapeMetaRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.bookUid == item.bookUid),
                         typedResults: items)
                 ];
               },
@@ -24753,7 +25567,10 @@ typedef $$VideoBooksTableProcessedTableManager = ProcessedTableManager<
     $$VideoBooksTableUpdateCompanionBuilder,
     (VideoBookRow, $$VideoBooksTableReferences),
     VideoBookRow,
-    PrefetchHooks Function({bool sourceId, bool videoBookTagMappingsRefs})>;
+    PrefetchHooks Function(
+        {bool sourceId,
+        bool videoBookTagMappingsRefs,
+        bool videoScrapeMetaRefs})>;
 typedef $$VideoBookTagMappingsTableCreateCompanionBuilder
     = VideoBookTagMappingsCompanion Function({
   Value<int> id,
@@ -29653,6 +30470,420 @@ typedef $$ClipboardHistoryTableProcessedTableManager = ProcessedTableManager<
     ),
     ClipboardHistoryRow,
     PrefetchHooks Function()>;
+typedef $$VideoScrapeMetaTableCreateCompanionBuilder = VideoScrapeMetaCompanion
+    Function({
+  required String bookUid,
+  required String source,
+  required String subjectId,
+  required String title,
+  Value<String?> originalTitle,
+  Value<String?> summary,
+  Value<String?> airDate,
+  Value<double?> rating,
+  Value<int?> ratingCount,
+  Value<int?> episodeCount,
+  Value<String?> tagsJson,
+  Value<String?> infoboxJson,
+  Value<String?> detailUrl,
+  required DateTime scrapedAt,
+  Value<int> rowid,
+});
+typedef $$VideoScrapeMetaTableUpdateCompanionBuilder = VideoScrapeMetaCompanion
+    Function({
+  Value<String> bookUid,
+  Value<String> source,
+  Value<String> subjectId,
+  Value<String> title,
+  Value<String?> originalTitle,
+  Value<String?> summary,
+  Value<String?> airDate,
+  Value<double?> rating,
+  Value<int?> ratingCount,
+  Value<int?> episodeCount,
+  Value<String?> tagsJson,
+  Value<String?> infoboxJson,
+  Value<String?> detailUrl,
+  Value<DateTime> scrapedAt,
+  Value<int> rowid,
+});
+
+final class $$VideoScrapeMetaTableReferences extends BaseReferences<
+    _$HibikiDatabase, $VideoScrapeMetaTable, VideoScrapeMetaRow> {
+  $$VideoScrapeMetaTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $VideoBooksTable _bookUidTable(_$HibikiDatabase db) => db.videoBooks
+      .createAlias('video_scrape_meta__book_uid__video_books__book_uid');
+
+  $$VideoBooksTableProcessedTableManager get bookUid {
+    final $_column = $_itemColumn<String>('book_uid')!;
+
+    final manager = $$VideoBooksTableTableManager($_db, $_db.videoBooks)
+        .filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$VideoScrapeMetaTableFilterComposer
+    extends Composer<_$HibikiDatabase, $VideoScrapeMetaTable> {
+  $$VideoScrapeMetaTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get subjectId => $composableBuilder(
+      column: $table.subjectId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get originalTitle => $composableBuilder(
+      column: $table.originalTitle, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get summary => $composableBuilder(
+      column: $table.summary, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get airDate => $composableBuilder(
+      column: $table.airDate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get rating => $composableBuilder(
+      column: $table.rating, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get ratingCount => $composableBuilder(
+      column: $table.ratingCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get episodeCount => $composableBuilder(
+      column: $table.episodeCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get tagsJson => $composableBuilder(
+      column: $table.tagsJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get infoboxJson => $composableBuilder(
+      column: $table.infoboxJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get detailUrl => $composableBuilder(
+      column: $table.detailUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get scrapedAt => $composableBuilder(
+      column: $table.scrapedAt, builder: (column) => ColumnFilters(column));
+
+  $$VideoBooksTableFilterComposer get bookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableFilterComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$VideoScrapeMetaTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $VideoScrapeMetaTable> {
+  $$VideoScrapeMetaTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get subjectId => $composableBuilder(
+      column: $table.subjectId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get originalTitle => $composableBuilder(
+      column: $table.originalTitle,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get summary => $composableBuilder(
+      column: $table.summary, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get airDate => $composableBuilder(
+      column: $table.airDate, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get rating => $composableBuilder(
+      column: $table.rating, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get ratingCount => $composableBuilder(
+      column: $table.ratingCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get episodeCount => $composableBuilder(
+      column: $table.episodeCount,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get tagsJson => $composableBuilder(
+      column: $table.tagsJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get infoboxJson => $composableBuilder(
+      column: $table.infoboxJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get detailUrl => $composableBuilder(
+      column: $table.detailUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get scrapedAt => $composableBuilder(
+      column: $table.scrapedAt, builder: (column) => ColumnOrderings(column));
+
+  $$VideoBooksTableOrderingComposer get bookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableOrderingComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$VideoScrapeMetaTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $VideoScrapeMetaTable> {
+  $$VideoScrapeMetaTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get subjectId =>
+      $composableBuilder(column: $table.subjectId, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get originalTitle => $composableBuilder(
+      column: $table.originalTitle, builder: (column) => column);
+
+  GeneratedColumn<String> get summary =>
+      $composableBuilder(column: $table.summary, builder: (column) => column);
+
+  GeneratedColumn<String> get airDate =>
+      $composableBuilder(column: $table.airDate, builder: (column) => column);
+
+  GeneratedColumn<double> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<int> get ratingCount => $composableBuilder(
+      column: $table.ratingCount, builder: (column) => column);
+
+  GeneratedColumn<int> get episodeCount => $composableBuilder(
+      column: $table.episodeCount, builder: (column) => column);
+
+  GeneratedColumn<String> get tagsJson =>
+      $composableBuilder(column: $table.tagsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get infoboxJson => $composableBuilder(
+      column: $table.infoboxJson, builder: (column) => column);
+
+  GeneratedColumn<String> get detailUrl =>
+      $composableBuilder(column: $table.detailUrl, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get scrapedAt =>
+      $composableBuilder(column: $table.scrapedAt, builder: (column) => column);
+
+  $$VideoBooksTableAnnotationComposer get bookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableAnnotationComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$VideoScrapeMetaTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $VideoScrapeMetaTable,
+    VideoScrapeMetaRow,
+    $$VideoScrapeMetaTableFilterComposer,
+    $$VideoScrapeMetaTableOrderingComposer,
+    $$VideoScrapeMetaTableAnnotationComposer,
+    $$VideoScrapeMetaTableCreateCompanionBuilder,
+    $$VideoScrapeMetaTableUpdateCompanionBuilder,
+    (VideoScrapeMetaRow, $$VideoScrapeMetaTableReferences),
+    VideoScrapeMetaRow,
+    PrefetchHooks Function({bool bookUid})> {
+  $$VideoScrapeMetaTableTableManager(
+      _$HibikiDatabase db, $VideoScrapeMetaTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoScrapeMetaTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$VideoScrapeMetaTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$VideoScrapeMetaTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> bookUid = const Value.absent(),
+            Value<String> source = const Value.absent(),
+            Value<String> subjectId = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String?> originalTitle = const Value.absent(),
+            Value<String?> summary = const Value.absent(),
+            Value<String?> airDate = const Value.absent(),
+            Value<double?> rating = const Value.absent(),
+            Value<int?> ratingCount = const Value.absent(),
+            Value<int?> episodeCount = const Value.absent(),
+            Value<String?> tagsJson = const Value.absent(),
+            Value<String?> infoboxJson = const Value.absent(),
+            Value<String?> detailUrl = const Value.absent(),
+            Value<DateTime> scrapedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              VideoScrapeMetaCompanion(
+            bookUid: bookUid,
+            source: source,
+            subjectId: subjectId,
+            title: title,
+            originalTitle: originalTitle,
+            summary: summary,
+            airDate: airDate,
+            rating: rating,
+            ratingCount: ratingCount,
+            episodeCount: episodeCount,
+            tagsJson: tagsJson,
+            infoboxJson: infoboxJson,
+            detailUrl: detailUrl,
+            scrapedAt: scrapedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String bookUid,
+            required String source,
+            required String subjectId,
+            required String title,
+            Value<String?> originalTitle = const Value.absent(),
+            Value<String?> summary = const Value.absent(),
+            Value<String?> airDate = const Value.absent(),
+            Value<double?> rating = const Value.absent(),
+            Value<int?> ratingCount = const Value.absent(),
+            Value<int?> episodeCount = const Value.absent(),
+            Value<String?> tagsJson = const Value.absent(),
+            Value<String?> infoboxJson = const Value.absent(),
+            Value<String?> detailUrl = const Value.absent(),
+            required DateTime scrapedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              VideoScrapeMetaCompanion.insert(
+            bookUid: bookUid,
+            source: source,
+            subjectId: subjectId,
+            title: title,
+            originalTitle: originalTitle,
+            summary: summary,
+            airDate: airDate,
+            rating: rating,
+            ratingCount: ratingCount,
+            episodeCount: episodeCount,
+            tagsJson: tagsJson,
+            infoboxJson: infoboxJson,
+            detailUrl: detailUrl,
+            scrapedAt: scrapedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$VideoScrapeMetaTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({bookUid = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (bookUid) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.bookUid,
+                    referencedTable:
+                        $$VideoScrapeMetaTableReferences._bookUidTable(db),
+                    referencedColumn: $$VideoScrapeMetaTableReferences
+                        ._bookUidTable(db)
+                        .bookUid,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$VideoScrapeMetaTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $VideoScrapeMetaTable,
+    VideoScrapeMetaRow,
+    $$VideoScrapeMetaTableFilterComposer,
+    $$VideoScrapeMetaTableOrderingComposer,
+    $$VideoScrapeMetaTableAnnotationComposer,
+    $$VideoScrapeMetaTableCreateCompanionBuilder,
+    $$VideoScrapeMetaTableUpdateCompanionBuilder,
+    (VideoScrapeMetaRow, $$VideoScrapeMetaTableReferences),
+    VideoScrapeMetaRow,
+    PrefetchHooks Function({bool bookUid})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -29754,4 +30985,6 @@ class $HibikiDatabaseManager {
       $$ActivityEventsTableTableManager(_db, _db.activityEvents);
   $$ClipboardHistoryTableTableManager get clipboardHistory =>
       $$ClipboardHistoryTableTableManager(_db, _db.clipboardHistory);
+  $$VideoScrapeMetaTableTableManager get videoScrapeMeta =>
+      $$VideoScrapeMetaTableTableManager(_db, _db.videoScrapeMeta);
 }

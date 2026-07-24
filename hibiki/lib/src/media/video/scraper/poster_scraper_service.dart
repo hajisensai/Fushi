@@ -159,6 +159,10 @@ class PosterScraperService {
   final bool _enableSidecar;
   final Directory? _coversDirectory;
 
+  /// 条目详情缓存 / 失败记忆，key = `<source>:<entryId>`。见 [_persistMetadata]。
+  final Map<String, ScrapeMetadata> _metadataCache = <String, ScrapeMetadata>{};
+  final Set<String> _metadataFailed = <String>{};
+
   /// 是否已装载离线库（供 UI 决定是否显示「离线」来源徽标 / 下载入口）。
   bool get hasOfflineIndex => _offline != null;
 
@@ -278,6 +282,11 @@ class PosterScraperService {
               (origin == CoverOrigin.scraped && !rescrapeScraped);
           if (protectedOrigin) {
             outcome = ScrapeSkippedProtected(origin);
+            // 封面受保护 ≠ 条目资料也不要。手动设过封面、或目录里有 poster.jpg
+            // 的库（整理过的库很常见）此前会被整本跳过、永远刮不到简介/评分；
+            // 这里补一次**只刮资料不碰封面**的匹配。outcome 仍报
+            // ScrapeSkippedProtected（说的是封面），既有语义不变。
+            await _scrapeMetadataOnly(book, decisionCache);
           } else {
             outcome = await scrapeOne(
               book,
@@ -295,6 +304,34 @@ class PosterScraperService {
         outcome: outcome,
       );
     }
+  }
+
+  /// 只刮**条目资料**、绝不碰封面：给封面来源受保护（manual / sidecar / 已刮）的
+  /// 书补资料用。走与封面刮削同一套解析 + 匹配 + 打分，但只在 high 置信度落资料
+  /// ——medium 在封面侧要人工确认，资料侧同理不能自作主张（配错条目 = 一整篇别人
+  /// 的简介，比配错封面更难被一眼发现）。
+  Future<void> _scrapeMetadataOnly(
+    VideoBookRow book,
+    Map<String, MatchDecision?> decisionCache,
+  ) async {
+    final ParsedMediaName? parsed = _mergedParse(book.videoPath);
+    if (parsed == null || parsed.title.isEmpty) return;
+    final String cacheKey = parsed.title;
+
+    final MatchDecision? decision;
+    if (decisionCache.containsKey(cacheKey)) {
+      decision = decisionCache[cacheKey];
+    } else {
+      decision = await _resolveBestDecision(parsed);
+      decisionCache[cacheKey] = decision;
+    }
+    if (decision == null || decision.confidence != MatchConfidence.high) {
+      return;
+    }
+    await _persistMetadata(
+      bookUids: <String>[book.bookUid],
+      candidate: decision.candidate,
+    );
   }
 
   // ── 公开：手动匹配（UI 弹窗用）─────────────────────────────────
@@ -346,9 +383,66 @@ class PosterScraperService {
         await _coverMeta.set(uid, meta);
       }
     }
+    // 条目资料对整个合集是同一份（同一 subject），只拉一次详情、写给每个成员。
+    await _persistMetadata(bookUids: bookUids, candidate: candidate);
     if (aliasKey != null && aliasKey.trim().isNotEmpty) {
       await _aliasCache.put(aliasKey, candidate.source, candidate.entryId);
     }
+  }
+
+  /// 拉条目详情并落 `video_scrape_meta`（「抄 Bangumi」）。
+  ///
+  /// Bangumi 源走 [BangumiClient.fetchSubject] 取全量资料（简介/评分/放送/标签/
+  /// infobox）；离线库 / TMDB 源没有对应详情端点，退化为**由候选自身**拼一份最小
+  /// 资料（标题/年份/话数/详情页/评分文本），保证「刮过就有行」这条不变量成立——
+  /// 否则自动刮削每次扫描都会把这些书当成未刮过而反复重刮。
+  ///
+  /// 详情请求失败**不**回滚封面：封面已经落地是既成事实，资料是可重建缓存。此时
+  /// 不写行，下次扫描会重试（进程内 attempted 集合兜住无限重试，见
+  /// `VideoScrapeAutoService`）。
+  ///
+  /// 同一 subject 的详情在本 service 生命周期内只拉一次（[_metadataCache]）：一部
+  /// 26 集番的 26 个成员共享同一条目，缓存把 26 次详情请求压成 1 次；失败也记
+  /// （[_metadataFailed]），避免整季逐集重试同一个打不通的端点。
+  Future<void> _persistMetadata({
+    required List<String> bookUids,
+    required ScrapeCandidate candidate,
+  }) async {
+    if (bookUids.isEmpty) return;
+    final String key = '${candidate.source.name}:${candidate.entryId}';
+    if (_metadataFailed.contains(key)) return;
+
+    ScrapeMetadata? meta = _metadataCache[key];
+    if (meta == null) {
+      if (candidate.source == ScrapeSource.bangumi) {
+        try {
+          meta = await _bangumi.fetchSubject(candidate.entryId);
+        } on ScrapeNetworkException {
+          // 详情端点不可达/条目已删：本轮不落资料行，留待下次扫描重试。
+          _metadataFailed.add(key);
+          return;
+        }
+      } else {
+        meta = _metadataFromCandidate(candidate);
+      }
+      _metadataCache[key] = meta;
+    }
+    for (final String uid in bookUids) {
+      await _repo.saveScrapeMetadata(uid, meta);
+    }
+  }
+
+  /// 非 Bangumi 源的降级资料：只用候选里已有的字段，不编造缺失内容。
+  static ScrapeMetadata _metadataFromCandidate(ScrapeCandidate candidate) {
+    return ScrapeMetadata(
+      source: candidate.source,
+      subjectId: candidate.entryId,
+      title: candidate.title,
+      originalTitle: candidate.aliases.isEmpty ? null : candidate.aliases.first,
+      airDate: candidate.year == null ? null : '${candidate.year}',
+      episodeCount: candidate.episodeCount,
+      detailUrl: candidate.detailUrl,
+    );
   }
 
   /// 对某路径推导批量/别名缓存 key（= 目录+文件合并解析后的主标题，可空）。UI 弹窗
@@ -500,6 +594,10 @@ class PosterScraperService {
         source: candidate.source,
         entryId: candidate.entryId,
       ),
+    );
+    await _persistMetadata(
+      bookUids: <String>[bookUid],
+      candidate: candidate,
     );
     if (aliasKey != null && aliasKey.trim().isNotEmpty) {
       await _aliasCache.put(aliasKey, candidate.source, candidate.entryId);

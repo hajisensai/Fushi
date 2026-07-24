@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -9,6 +10,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:hibiki/src/media/video/scraper/scraper_types.dart'
+    show ScrapeInfoboxEntry, ScrapeMetadata, ScrapeSource, ScrapeTag;
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -29,6 +32,95 @@ class VideoBookRepository {
     final VideoBooksCompanion withSource =
         sourceId == null ? book : book.copyWith(sourceId: Value(sourceId));
     return _db.upsertVideoBook(withSource);
+  }
+
+  // ── 条目刮削资料（video_scrape_meta，v54）─────────────────────────
+
+  /// 落一本视频的条目资料（重刮即覆盖）。标签/infobox 在这里序列化成 JSON 列，
+  /// 读回时由 [scrapeMetadata] 反序列化——JSON 编解码只在本仓库层出现一次，
+  /// 展示层和刮削层都只见领域对象 [ScrapeMetadata]。
+  Future<void> saveScrapeMetadata(String bookUid, ScrapeMetadata meta) {
+    return _db.upsertVideoScrapeMeta(VideoScrapeMetaCompanion.insert(
+      bookUid: bookUid,
+      source: meta.source.name,
+      subjectId: meta.subjectId,
+      title: meta.title,
+      originalTitle: Value<String?>(meta.originalTitle),
+      summary: Value<String?>(meta.summary),
+      airDate: Value<String?>(meta.airDate),
+      rating: Value<double?>(meta.rating),
+      ratingCount: Value<int?>(meta.ratingCount),
+      episodeCount: Value<int?>(meta.episodeCount),
+      tagsJson: Value<String?>(
+        meta.tags.isEmpty
+            ? null
+            : jsonEncode(<Map<String, Object?>>[
+                for (final ScrapeTag t in meta.tags) t.toJson(),
+              ]),
+      ),
+      infoboxJson: Value<String?>(
+        meta.infobox.isEmpty
+            ? null
+            : jsonEncode(<Map<String, Object?>>[
+                for (final ScrapeInfoboxEntry e in meta.infobox) e.toJson(),
+              ]),
+      ),
+      detailUrl: Value<String?>(meta.detailUrl),
+      scrapedAt: DateTime.now(),
+    ));
+  }
+
+  /// 读一本视频的条目资料；未刮过返回 null。JSON 列损坏时该列降级为空列表（其余
+  /// 字段照常返回），不因一列坏掉丢掉整条资料。
+  Future<ScrapeMetadata?> scrapeMetadata(String bookUid) async {
+    final VideoScrapeMetaRow? row = await _db.getVideoScrapeMeta(bookUid);
+    if (row == null) return null;
+    return ScrapeMetadata(
+      source:
+          ScrapeSource.values.asNameMap()[row.source] ?? ScrapeSource.bangumi,
+      subjectId: row.subjectId,
+      title: row.title,
+      originalTitle: row.originalTitle,
+      summary: row.summary,
+      airDate: row.airDate,
+      rating: row.rating,
+      ratingCount: row.ratingCount,
+      episodeCount: row.episodeCount,
+      tags: _decodeJsonList<ScrapeTag>(row.tagsJson, ScrapeTag.fromJson),
+      infobox: _decodeJsonList<ScrapeInfoboxEntry>(
+        row.infoboxJson,
+        ScrapeInfoboxEntry.fromJson,
+      ),
+      detailUrl: row.detailUrl,
+    );
+  }
+
+  /// 已刮出资料的 bookUid 集合（自动刮削一次性排除已刮的，避免逐本 N+1 查询）。
+  Future<Set<String>> scrapedBookUids() => _db.scrapedVideoBookUids();
+
+  /// 删一本的条目资料（「重新刮削」前先清）。
+  Future<void> deleteScrapeMetadata(String bookUid) =>
+      _db.deleteVideoScrapeMeta(bookUid);
+
+  /// 解 JSON 数组列为领域对象列表；null / 非数组 / 解析异常一律降级为空列表。
+  static List<T> _decodeJsonList<T>(
+    String? json,
+    T? Function(Object?) fromJson,
+  ) {
+    if (json == null || json.isEmpty) return const <Never>[];
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(json);
+    } catch (_) {
+      return const <Never>[];
+    }
+    if (decoded is! List<Object?>) return const <Never>[];
+    final List<T> out = <T>[];
+    for (final Object? item in decoded) {
+      final T? parsed = fromJson(item);
+      if (parsed != null) out.add(parsed);
+    }
+    return out;
   }
 
   /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户明示导入
