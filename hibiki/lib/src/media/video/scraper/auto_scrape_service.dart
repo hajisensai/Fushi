@@ -61,6 +61,16 @@ class VideoScrapeAutoService {
   /// 复用同一个 service 实例，让它内部的条目详情缓存跨轮次生效。
   PosterScraperService? _service;
 
+  /// 本本之间节流用的可取消定时器 + 它的唤醒信号。
+  ///
+  /// 不能用裸 `Future.delayed`：那个 Timer 无法取消，页面 dispose 后它仍挂在事件
+  /// 循环上——真机是白等一拍，widget 测试里则直接踩 flutter_test 的
+  /// `!timersPending` 断言（与 BUG-834 同一类孤儿 async）。这里持有 Timer 并在
+  /// [dispose] 里 cancel + 立刻完成 completer，让挂起的 [sweep] 循环马上醒来看到
+  /// `_disposed` 并收手。
+  Timer? _delayTimer;
+  Completer<void>? _delayCompleter;
+
   /// 已刮出的资料条目数（本轮），供测试断言与调试。
   int get attemptedCount => _attempted.length;
 
@@ -94,7 +104,7 @@ class VideoScrapeAutoService {
         if (_disposed) return;
         await service.scrapeLibrary(<VideoBookRow>[book]).drain<void>();
         if (_disposed) return;
-        await Future<void>.delayed(_delay);
+        await _throttle();
       }
     } catch (_) {
       // 后台静默刮削：整轮失败不影响页面。已进 _attempted 的书本进程不再重试，
@@ -102,6 +112,17 @@ class VideoScrapeAutoService {
     } finally {
       _running = false;
     }
+  }
+
+  /// 本本之间的可取消等待。零间隔（测试）直接返回已完成 future，连 Timer 都不建。
+  Future<void> _throttle() {
+    if (_delay <= Duration.zero || _disposed) return Future<void>.value();
+    final Completer<void> completer = Completer<void>();
+    _delayCompleter = completer;
+    _delayTimer = Timer(_delay, () {
+      if (!completer.isCompleted) completer.complete();
+    });
+    return completer.future;
   }
 
   /// 过滤出真正需要刮的书：本地路径 + 无资料行 + 本进程未尝试过。
@@ -137,8 +158,14 @@ class VideoScrapeAutoService {
     _service = null;
   }
 
-  /// 停止后续刮削（页面 dispose 时调用）。跑到一半的那本会完成当前一步后退出。
+  /// 停止后续刮削（页面 dispose 时调用）。跑到一半的那本会完成当前一步后退出，
+  /// 挂在节流等待上的循环则被立刻唤醒 —— 绝不留下 pending Timer（BUG-834 类）。
   void dispose() {
     _disposed = true;
+    _delayTimer?.cancel();
+    _delayTimer = null;
+    final Completer<void>? completer = _delayCompleter;
+    _delayCompleter = null;
+    if (completer != null && !completer.isCompleted) completer.complete();
   }
 }
