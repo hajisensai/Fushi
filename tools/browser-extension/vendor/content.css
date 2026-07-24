@@ -1418,6 +1418,133 @@
 }
 
 /* =====================================================================
+ * BUG-1060 —— 「卡片已在 Anki 中」页内操作面板（app 外裸窗 / 浏览器扩展）。
+ *
+ * app 内点已制卡的 ✓ 弹的是 Flutter 居中对话框（BUG-1040）；app 外主窗在别的程序
+ * 后面，Flutter 层根本呈现不出来，所以同一套选择由 popup.js 画在弹窗自己的 WebView
+ * 里（showMinedCardActionPanel）。视觉刻意对齐那个 AlertDialog：居中、圆角、最大
+ * 420 宽、列表溢出自身滚动、右下角「取消 / 新增为重复卡」。
+ *
+ * user-select: none 是必需的，不是审美：面板里一旦产生原生选区，selection.js 会把它
+ * 当成「用户选词」触发嵌套查词（textSelected），点两下按钮就在面板上叠出新卡片。
+ * ===================================================================== */
+.mined-action-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.45);
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.mined-action-panel {
+    box-sizing: border-box;
+    width: min(420px, 100%);
+    max-height: calc(100% - 16px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    border-radius: var(--hibiki-radius-card, 12px);
+    background: var(--md-surface-container-high, var(--background-color));
+    color: var(--text-color);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.mined-action-panel.busy {
+    cursor: progress;
+}
+
+.mined-action-title {
+    font-size: 1.05em;
+    font-weight: 600;
+}
+
+.mined-action-subtitle {
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+.mined-action-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mined-action-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 8px;
+    background: var(--md-surface-container, transparent);
+}
+
+.mined-action-preview {
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.mined-action-row-buttons,
+.mined-action-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.mined-action-actions {
+    justify-content: flex-end;
+}
+
+.mined-action-error {
+    font-size: 0.85em;
+    color: #e57373;
+}
+
+.mined-action-btn {
+    font: inherit;
+    font-size: 0.85em;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+}
+
+.mined-action-btn.ghost {
+    background: transparent;
+    color: var(--md-primary, var(--text-color));
+    border: 1px solid var(--md-outline-variant, currentColor);
+}
+
+.mined-action-btn.filled {
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+}
+
+.mined-action-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* 瞬态查词窗的窗口高度会被 host（global_lookup_host.js measureAndReport）收缩到卡片
+   内容高度：矮卡片下这个 fixed 面板会被窗口下沿裁掉半截。面板打开期间给文档撑一个
+   最小高度，下一次测量就把窗口放大到够放面板；关掉即恢复原尺寸。 */
+:where(#entries-container).mined-action-open,
+:where(#entries-container).mined-action-open body {
+    min-height: 320px;
+}
+
+/* =====================================================================
  * E-ink 墨水屏模式（html.eink）。
  *
  * class 由 popup_settings_injection.dart 的 _themeVariablesJs 注入（toggle，

@@ -1358,6 +1358,217 @@ async function minedCardAction(expression, reading, frequencies, pitches, rules,
     return await window.flutter_inappwebview.callHandler('minedCardAction', fields);
 }
 
+// BUG-1060 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
+//
+// 宿主分两类：
+//   * 有原生对话框（window.__hibikiMinedCardActionNative）：app 内的三个
+//     dictionary_popup_webview 表面。点 ✓ 照旧交给 `minedCardAction` 宿主 handler，
+//     由 Flutter 弹居中对话框（BUG-1040），本段代码完全不参与。
+//   * 没有原生对话框：Windows app 外的裸 WebView2 表面（剪贴板面板 / 瞬态查词窗）与
+//     浏览器扩展。它们的 `minedCardAction` 只会立刻拿到 null——主窗在别的程序后面，
+//     Flutter 对话框呈现不出来。旧代码把这个 null 当作「宿主已处理」，于是点已制卡的
+//     ✓ 什么都不发生（用户报「app 外重复制卡点击没反应」）。改为在弹窗自己的 WebView
+//     里画同一套选择：覆写哪张 / 在 Anki 中打开 / 新增为重复卡 / 取消。
+//
+// 数据与副作用仍然全部在宿主：命中列表走 `findMinedMatches`（repo.findMatchingNotes）、
+// 打开卡片走 `openMinedNote`（repo.openNoteInAnki），覆写与新增复用既有的
+// `updateEntry` / `mineEntry` 两根桥——本面板不新增任何写路径。
+
+const MINED_ACTION_OPEN_CLASS = 'mined-action-open';
+
+// 宿主是否自带原生（Flutter）动作对话框。未注入 = 没有（扩展、以及任何还没接线的
+// 表面）→ 走页内面板，绝不静默。
+function hasNativeMinedCardAction() {
+    return window.__hibikiMinedCardActionNative === true;
+}
+
+// 反查 Anki 里这个词的全部命中卡。永不抛：拿不到就当没有命中，调用方按「卡已不在」
+// 走重新制卡（与 app 内 runAnkiMinedCardAction 的 matches.isEmpty 分支同语义）。
+async function findMinedMatches(expression, reading) {
+    try {
+        const reply = await window.flutter_inappwebview.callHandler(
+            'findMinedMatches', { expression, reading });
+        if (!Array.isArray(reply)) return [];
+        return reply
+            .map((row) => ({
+                noteId: (row && typeof row.noteId === 'number' && Number.isFinite(row.noteId))
+                    ? row.noteId : null,
+                preview: (row && typeof row.preview === 'string') ? row.preview : '',
+            }))
+            .filter((row) => row.noteId !== null);
+    } catch (_) {
+        return [];
+    }
+}
+
+// 在 Anki 中打开一张卡（AnkiConnect guiBrowse / AnkiDroid ACTION_VIEW）。返回是否成功，
+// 失败时面板就地显示提示而不是假装成功。
+async function openMinedNoteInAnki(noteId) {
+    try {
+        return await window.flutter_inappwebview.callHandler('openMinedNote', { noteId }) === true;
+    } catch (_) {
+        return false;
+    }
+}
+
+// 渲染页内操作面板，resolve 用户的选择：
+//   {action:'cancel'} / {action:'duplicate'} / {action:'overwrite', noteId}
+// 「在 Anki 中打开」就地执行、不结束面板（用户可能只是想先看一眼再决定覆写）。
+// 与 app 内对话框一致：点遮罩不关闭（制卡/覆写有副作用，误触不该丢掉整次操作），
+// 只有「取消」与 Esc 能取消。
+function showMinedCardActionPanel(matches) {
+    return new Promise((resolve) => {
+        // 弹窗是否拥有整个文档：app 内/app 外都是独立的 popup.html 文档（true）；
+        // 浏览器扩展把同一份 popup.js 注入到宿主页面的 shadow root 里（__hibikiRoot），
+        // 那里的 <html> 是别人的页面，既不该被我们挂 class，也没有窗口高度问题。
+        const ownsDocument = !window.__hibikiRoot;
+        const rootEl = document.documentElement;
+        const panel = el('div', { className: 'mined-action-panel' });
+        const backdrop = el('div', { className: 'mined-action-backdrop' }, [panel]);
+        let settled = false;
+        let busy = false;
+
+        const onKey = (e) => {
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                // 面板自己吃掉 Esc：否则会冒泡到弹窗的关闭处理器，把整个查词窗一起关了。
+                e.preventDefault();
+                e.stopPropagation();
+                if (!busy) finish({ action: 'cancel' });
+            }
+        };
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            document.removeEventListener('keydown', onKey, true);
+            backdrop.remove();
+            if (ownsDocument) rootEl.classList.remove(MINED_ACTION_OPEN_CLASS);
+            resolve(result);
+        };
+
+        // 面板内的指针事件绝不能冒泡到 document——popup.js 的 document 点击处理器会
+        // 把「点空白」理解成关闭弹窗，那样点面板等于关窗。
+        ['click', 'mousedown', 'pointerdown', 'touchstart'].forEach((type) => {
+            backdrop.addEventListener(type, (e) => { e.stopPropagation(); }, false);
+        });
+
+        const buttons = [];
+        const setBusy = (value) => {
+            busy = value;
+            panel.classList.toggle('busy', value);
+            buttons.forEach((btn) => { btn.disabled = value; });
+        };
+        const error = el('div', { className: 'mined-action-error' });
+        error.style.display = 'none';
+        const showError = (msg) => {
+            error.textContent = msg;
+            error.style.display = '';
+        };
+
+        panel.appendChild(el('div', {
+            className: 'mined-action-title',
+            textContent: window.i18nMinedCardTitle || '卡片已在 Anki 中',
+        }));
+        const subtitle = matches.length > 1
+            ? (window.i18nMinedMultipleMatches || '{count} 张匹配的卡片')
+                .replace('{count}', String(matches.length))
+            : (window.i18nMinedCardSubtitle || '选择对这张已存在的卡片做什么。');
+        panel.appendChild(el('div', { className: 'mined-action-subtitle', textContent: subtitle }));
+
+        const list = el('div', { className: 'mined-action-list' });
+        matches.forEach((note) => {
+            const row = el('div', { className: 'mined-action-row' });
+            row.appendChild(el('div', {
+                className: 'mined-action-preview',
+                textContent: note.preview || ('#' + note.noteId),
+            }));
+            const rowButtons = el('div', { className: 'mined-action-row-buttons' });
+            const overwriteBtn = el('button', {
+                className: 'mined-action-btn ghost',
+                textContent: window.i18nMinedActionOverwrite || '覆写这张卡',
+                onclick: () => {
+                    if (busy) return;
+                    setBusy(true);
+                    finish({ action: 'overwrite', noteId: note.noteId });
+                },
+            });
+            const viewBtn = el('button', {
+                className: 'mined-action-btn ghost',
+                textContent: window.i18nMinedActionView || '查看 / 在 Anki 中打开',
+                onclick: async () => {
+                    if (busy) return;
+                    setBusy(true);
+                    const ok = await openMinedNoteInAnki(note.noteId);
+                    setBusy(false);
+                    if (ok) {
+                        finish({ action: 'cancel' });
+                    } else {
+                        showError(window.i18nMinedOpenFailed || '无法在 Anki 中打开这张卡片。');
+                    }
+                },
+            });
+            buttons.push(overwriteBtn, viewBtn);
+            rowButtons.appendChild(overwriteBtn);
+            rowButtons.appendChild(viewBtn);
+            row.appendChild(rowButtons);
+            list.appendChild(row);
+        });
+        panel.appendChild(list);
+        panel.appendChild(error);
+
+        const actions = el('div', { className: 'mined-action-actions' });
+        const cancelBtn = el('button', {
+            className: 'mined-action-btn ghost',
+            textContent: window.i18nMinedActionCancel || '取消',
+            onclick: () => { if (!busy) finish({ action: 'cancel' }); },
+        });
+        const duplicateBtn = el('button', {
+            className: 'mined-action-btn filled',
+            textContent: window.i18nMinedActionAddDuplicate || '新增为重复卡',
+            onclick: () => {
+                if (busy) return;
+                setBusy(true);
+                finish({ action: 'duplicate' });
+            },
+        });
+        buttons.push(cancelBtn, duplicateBtn);
+        actions.appendChild(cancelBtn);
+        actions.appendChild(duplicateBtn);
+        panel.appendChild(actions);
+
+        // 瞬态查词窗的窗口高度会被收缩到卡片内容高度（host measureAndReport），矮卡片
+        // 下面板会被窗口下沿裁掉。开面板时给 <html> 挂 class，popup.css 借它撑出最小
+        // 高度，host 的下一次测量就把窗口放大到够放面板（面板关掉即恢复）。
+        if (ownsDocument) rootEl.classList.add(MINED_ACTION_OPEN_CLASS);
+        __hibikiOverlayParent().appendChild(backdrop);
+        document.addEventListener('keydown', onKey, true);
+        duplicateBtn.focus();
+    });
+}
+
+// 页内面板的完整编排。返回：
+//   'handled'     —— 面板已处理（含用户取消），调用方只需按 Anki 真值刷新按钮态。
+//   'fallthrough' —— Anki 里其实已经没有这张卡（别处删了），按普通新卡制卡。
+async function runInPageMinedCardAction(
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+    const matches = await findMinedMatches(expression, reading);
+    if (!matches.length) {
+        return { outcome: 'fallthrough', result: { ankiConnect: false, noteId: null } };
+    }
+    const choice = await showMinedCardActionPanel(matches);
+    if (choice.action === 'overwrite') {
+        const reply = await updateEntry(
+            choice.noteId, expression, reading, frequencies, pitches, rules, matched,
+            entryIndex, popupSelectionText);
+        return { outcome: 'handled', result: parseMineResult(reply) };
+    }
+    if (choice.action === 'duplicate') {
+        const reply = await mineEntry(
+            expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+        return { outcome: 'handled', result: parseMineResult(reply) };
+    }
+    return { outcome: 'handled', result: { ankiConnect: false, noteId: null } };
+}
+
 const INLINE_HTML_RE = /<(?:ruby|rt|rp|b|i|em|strong|span|sup|sub|br)\b[^>]*>/i;
 const URL_RE = /(?:https?:\/\/|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|dev|app|jp|uk|de|fr|info|me|co)\/)[^\s<>　，、。！））)]+/gi;
 const SAFE_TAGS = new Set(['ruby','rt','rp','b','i','em','strong','span','sup','sub','br','a']);
@@ -2252,33 +2463,52 @@ function createEntryHeader(entry, idx) {
                     // new duplicate, or view / open the card in Anki. Works for
                     // cards created elsewhere / in a previous session.
                     if (typeof window.flutter_inappwebview.callHandler === 'function') {
-                        const reply = await minedCardAction(
-                            expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
-                        const result = parseMineResult(reply);
-                        // The host applied the chosen action (or the user cancelled,
-                        // in which case it echoes the unchanged mined state). Refresh
-                        // from Anki and update the editable-latest flag.
-                        if (window.sentenceDraftEnabled) {
-                            sentenceCtxPrev = 0;
-                            sentenceCtxNext = 0;
-                            sentenceDraftCount = 0;
-                            refreshAllSentenceContextPickers();
+                        // BUG-1060 两条车道，同一套选择：
+                        //   * 宿主有原生对话框（app 内）→ minedCardAction，Flutter 居中
+                        //     对话框（BUG-1040），行为逐字不变。
+                        //   * 宿主没有（app 外裸窗 / 扩展）→ 在本 WebView 里画页内面板。
+                        //     以前这里也调 minedCardAction，但那些宿主只会回 null，
+                        //     于是点 ✓ 完全没反应。
+                        // 两条车道回同一个 {outcome, result}，收尾只有一份。
+                        const action = hasNativeMinedCardAction()
+                            ? {
+                                outcome: 'handled',
+                                result: parseMineResult(await minedCardAction(
+                                    expression, reading, frequencies, pitches, rules, matched, idx, lastSelection)),
+                            }
+                            : await runInPageMinedCardAction(
+                                expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                        if (action.outcome === 'handled') {
+                            // The host applied the chosen action (or the user cancelled,
+                            // in which case it echoes the unchanged mined state). Refresh
+                            // from Anki and update the editable-latest flag.
+                            if (window.sentenceDraftEnabled) {
+                                sentenceCtxPrev = 0;
+                                sentenceCtxNext = 0;
+                                sentenceDraftCount = 0;
+                                refreshAllSentenceContextPickers();
+                            }
+                            window.resetSelectedDictionariesForEntry(idx);
+                            if (action.result.ankiConnect) {
+                                rememberLatestMined(expression, reading, action.result.noteId);
+                            }
+                            const stillMined = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
+                            setMineState(stillMined);
+                            return;
                         }
-                        window.resetSelectedDictionariesForEntry(idx);
-                        if (result.ankiConnect) {
-                            rememberLatestMined(expression, reading, result.noteId);
+                        // outcome === 'fallthrough'：反查发现 Anki 里其实已经没有这张卡
+                        // （别处删了）→ 不弹面板，落到下面的新卡制卡路径重制，与 app 内
+                        // runAnkiMinedCardAction 的 matches.isEmpty → mineNew 同语义。
+                        mineButton.dataset.mined = '';
+                    } else {
+                        // No bridge (degenerate harness): keep the old behaviour.
+                        const stillExists = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
+                        if (stillExists && !window.allowDupes) {
+                            setMineState(true);
+                            return;
                         }
-                        const stillMined = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
-                        setMineState(stillMined);
-                        return;
+                        // Deleted in Anki (or dupes allowed) → fall through and re-mine.
                     }
-                    // No bridge (degenerate harness): keep the old behaviour.
-                    const stillExists = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
-                    if (stillExists && !window.allowDupes) {
-                        setMineState(true);
-                        return;
-                    }
-                    // Deleted in Anki (or dupes allowed) → fall through and re-mine.
                 }
 
                 const reply = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);

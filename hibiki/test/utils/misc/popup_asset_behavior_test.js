@@ -109,6 +109,21 @@ class FakeElement {
     }
   }
 
+  // BUG-1060: the in-page mined-card action panel detaches itself on close and
+  // focuses its default action, so the stand-in needs both.
+  remove() {
+    const parent = this.parentElement;
+    if (!parent) return;
+    const at = parent.children.indexOf(this);
+    if (at >= 0) parent.children.splice(at, 1);
+    this.parentElement = null;
+    this.parentNode = null;
+  }
+
+  focus() {
+    this.focused = true;
+  }
+
   setAttribute(name, value) {
     this.attributes[name] = String(value);
   }
@@ -222,6 +237,10 @@ function createPopupContext() {
 
   const document = {
     body: new FakeElement('body'),
+    // BUG-1060: the in-page action panel marks <html> while it is open (popup.css
+    // gives the document a minimum height so the app-external window grows enough
+    // to show it), so the stand-in document needs a real documentElement.
+    documentElement: new FakeElement('html'),
     createElement(tagName) {
       return new FakeElement(tagName);
     },
@@ -259,6 +278,15 @@ function createPopupContext() {
         listeners[type] = [];
       }
       listeners[type].push(handler);
+    },
+    // BUG-1060: the action panel installs a capture-phase Esc handler and removes
+    // it on close; without a real removeEventListener the panel would leak one
+    // handler per open in the harness (and mask a real leak in the product).
+    removeEventListener(type, handler) {
+      const bucket = listeners[type];
+      if (!bucket) return;
+      const at = bucket.indexOf(handler);
+      if (at >= 0) bucket.splice(at, 1);
     },
     querySelector(selector) {
       if (!selector.startsWith('.')) {
@@ -1331,6 +1359,11 @@ async function testRelookupAfterDeletionDetectsMineableAndReMines() {
 // against Anki, finds the card gone, and re-mines.
 async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
   const context = loadPopup();
+  // BUG-1060：这一组用例模拟的是 app 内宿主——它自己接了 minedCardAction 并弹 Flutter
+  // 居中对话框，所以 popup.js 把点击原样交出去。不声明这个标志的宿主（app 外裸
+  // WebView2 窗口 / 浏览器扩展）只会把 minedCardAction 解析成 null，popup.js 改为在
+  // 自己的 WebView 里画页内面板（见 testAppExternal* 用例）。
+  context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const mined = [];
   let cardExists = true; // card already in Anki at lookup time
@@ -1384,6 +1417,8 @@ async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
 // genuinely in Anki (dupes off) must re-verify and add NOTHING.
 async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
   const context = loadPopup();
+  // BUG-1060：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const mined = [];
   let cardExists = true; // card really is still in Anki
@@ -1549,6 +1584,8 @@ async function testLatestMinedCardCanBeOverwrittenInPlace() {
 // falls back to the ordinary mined path.
 async function testMiningNextCardDowngradesPreviousFromEditable() {
   const context = loadPopup();
+  // BUG-1060：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const mined = [];
   const updated = [];
@@ -1601,6 +1638,8 @@ async function testMiningNextCardDowngradesPreviousFromEditable() {
 // never becomes the editable latest — it stays an ordinary ✓.
 async function testNoNoteIdNeverBecomesEditableLatest() {
   const context = loadPopup();
+  // BUG-1060：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const updated = [];
   const actions = [];
@@ -1961,6 +2000,8 @@ testOverwriteScopeLatestKeepsEarlierCardOrdinary().catch((error) => {
 // re-detects mined state. Root-cause fix for "clicking ✓ did nothing".
 async function testClickingMinedCheckInvokesHostActionSheet() {
   const context = loadPopup();
+  // BUG-1060：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const actionCalls = [];
   let duplicateChecks = 0;
@@ -2001,6 +2042,188 @@ async function testClickingMinedCheckInvokesHostActionSheet() {
 }
 
 testClickingMinedCheckInvokesHostActionSheet().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+// BUG-1060 —— app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）：
+// 这些宿主没有 Flutter 层可以呈现「卡片已在 Anki 中」对话框，它们的 minedCardAction
+// 只会立刻拿到 null。旧代码把这个 null 当作「宿主已处理」，于是点已制卡的 ✓ 什么都
+// 不发生（用户报「app 外重复制卡点击没反应」，而主页同一操作正常）。现在 popup.js 在
+// 自己的 WebView 里画同一套选择，数据走 findMinedMatches，动作复用 updateEntry /
+// mineEntry。以下四条钉死这条车道。
+//
+// 这些用例故意不设置 window.__hibikiMinedCardActionNative（= app 外宿主）。
+
+// 面板里按可见文字找按钮（i18n 未注入时 popup.js 用中文兜底文案）。
+function findPanelButton(context, label) {
+  const panel = context.document.querySelector('.mined-action-panel');
+  assert.ok(panel, 'the in-page action panel was not rendered');
+  const visit = (node) => {
+    if (node.tagName === 'BUTTON' && node.textContent === label) return node;
+    for (const child of node.children ?? []) {
+      const found = visit(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const button = visit(panel);
+  assert.ok(button, `panel button not found: ${label}`);
+  return button;
+}
+
+function stubAppExternalHost(context, {matches, calls}) {
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    // The app-external native layer resolves this one with an immediate null —
+    // exactly the degradation this bug is about.
+    if (name === 'minedCardAction') {
+      calls.minedCardAction.push(payload);
+      return Promise.resolve(null);
+    }
+    if (name === 'findMinedMatches') {
+      calls.findMinedMatches.push(payload);
+      return Promise.resolve(matches);
+    }
+    if (name === 'mineEntry') {
+      calls.mineEntry.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: 111 });
+    }
+    if (name === 'updateEntry') {
+      calls.updateEntry.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: payload.noteId });
+    }
+    if (name === 'openMinedNote') {
+      calls.openMinedNote.push(payload);
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(true);
+  };
+}
+
+function newCalls() {
+  return {
+    minedCardAction: [], findMinedMatches: [], mineEntry: [],
+    updateEntry: [], openMinedNote: [],
+  };
+}
+
+async function testAppExternalMinedClickShowsInPagePanelAndCanAddDuplicate() {
+  const context = loadPopup();
+  context.window.allowDupes = true;
+  const calls = newCalls();
+  stubAppExternalHost(context, {
+    matches: [{ noteId: 9001, preview: '刀 — 既存カード' }],
+    calls,
+  });
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1', 'lookup-time detection marks it mined');
+
+  const click = mineButton.onclick();
+  await flush();
+
+  assert.equal(calls.minedCardAction.length, 0,
+    'an app-external host must NOT be handed minedCardAction (it only ever replies null)');
+  assert.equal(calls.findMinedMatches.length, 1,
+    'the panel asks the host for the existing cards');
+  assert.ok(context.document.querySelector('.mined-action-panel'),
+    'clicking a mined ✓ outside the app must show the in-page action panel, never nothing');
+
+  findPanelButton(context, '新增为重复卡').onclick();
+  await click;
+  await flush();
+
+  assert.equal(calls.mineEntry.length, 1, '「新增为重复卡」 mines a new card');
+  assert.equal(context.document.querySelector('.mined-action-panel'), null,
+    'the panel closes after the action');
+  assert.equal(mineButton.disabled, false, 'the button is never left disabled');
+}
+
+async function testAppExternalPanelOverwriteUsesUpdateEntry() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const calls = newCalls();
+  stubAppExternalHost(context, {
+    matches: [{ noteId: 9002, preview: '刀 — 古いカード' }],
+    calls,
+  });
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+
+  findPanelButton(context, '覆写这张卡').onclick();
+  await click;
+  await flush();
+
+  assert.equal(calls.updateEntry.length, 1, '「覆写这张卡」 overwrites in place');
+  assert.equal(calls.updateEntry[0].noteId, 9002, 'the chosen note id is overwritten');
+  assert.equal(calls.mineEntry.length, 0, 'overwriting must not also create a card');
+}
+
+async function testAppExternalPanelCancelWritesNothing() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const calls = newCalls();
+  stubAppExternalHost(context, {
+    matches: [{ noteId: 9003, preview: '刀' }],
+    calls,
+  });
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+
+  findPanelButton(context, '取消').onclick();
+  await click;
+  await flush();
+
+  assert.equal(calls.mineEntry.length, 0, 'cancel must not create a card');
+  assert.equal(calls.updateEntry.length, 0, 'cancel must not overwrite a card');
+  assert.equal(mineButton.dataset.mined, '1', 'the card is still mined after cancelling');
+  assert.equal(context.document.querySelector('.mined-action-panel'), null,
+    'cancel closes the panel');
+}
+
+// 探测时显示已制卡，但反查发现 Anki 里其实已经没有这张卡（别处删了）→ 不弹面板，
+// 直接按新卡重制。与 app 内 runAnkiMinedCardAction 的 matches.isEmpty → mineNew 同语义。
+async function testAppExternalMinedClickReminesWhenCardIsGone() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const calls = newCalls();
+  stubAppExternalHost(context, { matches: [], calls });
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(context.document.querySelector('.mined-action-panel'), null,
+    'no panel when there is nothing to choose between');
+  assert.equal(calls.mineEntry.length, 1, 'a vanished card is re-mined, not silently ignored');
+}
+
+testAppExternalMinedClickShowsInPagePanelAndCanAddDuplicate().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testAppExternalPanelOverwriteUsesUpdateEntry().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testAppExternalPanelCancelWritesNothing().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testAppExternalMinedClickReminesWhenCardIsGone().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

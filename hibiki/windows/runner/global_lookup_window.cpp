@@ -1385,11 +1385,21 @@ void GlobalLookupWindow::ConfigureWebView() {
               // null here would resolve overwriteTargetNoteId with null (card never
               // promoted, no overwrite affordance) and updateEntry with null
               // (parseMineResult -> overwrite silently did nothing), so app-external
-              // overwrite could never work. minedCardAction (the "overwrite which /
-              // add duplicate / view" action SHEET) stays NON-deferred -> immediate
-              // null: it needs a foreground Flutter bottom sheet, but the main window
-              // is backgrounded behind the external app and cannot present over it,
-              // so app-external overwrite is the ✓↩ in-place path only.
+              // overwrite could never work.
+              // BUG-1060 -- minedCardAction (the "overwrite which / add duplicate /
+              // view" action panel) still stays NON-deferred -> immediate null, for
+              // the SAME unchanged reason: it is a Flutter dialog and the main window
+              // is backgrounded behind the external app, so it cannot be presented
+              // here. What WAS broken is that popup.js took that null as "the host
+              // handled it" and did nothing at all, so clicking an already-mined ✓
+              // outside the app was visibly DEAD (the user could neither overwrite an
+              // older card nor add a duplicate). popup.js now renders the action panel
+              // INSIDE its own WebView whenever the host has no native dialog
+              // (window.__hibikiMinedCardActionNative false), and that panel needs two
+              // DEFERRED data bridges: findMinedMatches (repo.findMatchingNotes -> the
+              // existing cards) and openMinedNote (repo.openNoteInAnki). Its overwrite
+              // / add-duplicate actions reuse the already-deferred updateEntry /
+              // mineEntry, so this adds NO new write path.
               const bool deferred =
                   body.find("\"resolveWordAudio\"") != std::string::npos ||
                   body.find("\"queryLocalAudio\"") != std::string::npos ||
@@ -1399,7 +1409,9 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"mineEntry\"") != std::string::npos ||
                   body.find("\"duplicateCheck\"") != std::string::npos ||
                   body.find("\"overwriteTargetNoteId\"") != std::string::npos ||
-                  body.find("\"updateEntry\"") != std::string::npos;
+                  body.find("\"updateEntry\"") != std::string::npos ||
+                  body.find("\"findMinedMatches\"") != std::string::npos ||
+                  body.find("\"openMinedNote\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {
