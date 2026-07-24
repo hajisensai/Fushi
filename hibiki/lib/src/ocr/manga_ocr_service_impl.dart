@@ -363,7 +363,10 @@ class MangaOcrServiceImpl implements MangaOcrService {
 
   @override
   bool get isSupportedPlatform =>
-      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+      // 整卷本地 OCR 仅桌面（重活）；macOS 已随 flutter_onnxruntime gate 出 Apple
+      // （见 ocr_inference_ort.dart isLocalOnnxRuntimeAvailable），退回互联 host /
+      // 云端 OCR。Windows / Linux 上闸门恒真，等价于旧的 Windows||Linux。
+      (Platform.isWindows || Platform.isLinux) && isLocalOnnxRuntimeAvailable;
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async {

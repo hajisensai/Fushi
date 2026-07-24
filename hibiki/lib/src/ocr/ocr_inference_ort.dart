@@ -4,11 +4,23 @@
 /// 算法层不 import 本文件（依赖 `ocr_inference.dart` 的抽象）。
 library;
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
 import 'package:hibiki/src/ocr/ocr_inference.dart';
+
+/// 本平台是否内置 ONNX Runtime native 库（本地 OCR 推理是否可用）。
+///
+/// `flutter_onnxruntime` 已在 vendored fork 中 gate 出 Apple（macOS/iOS，见
+/// `third_party/flutter_onnxruntime/PATCHES.md`）：Apple 上该插件的 MethodChannel
+/// 无 native 实现，任何本地 OCR 会话构造都会抛 MissingPluginException。其余三端
+/// （Windows / Linux / Android）native 正常注册，本地 OCR 照常工作。
+///
+/// 所有本地 OCR 入口（整卷任务 `MangaOcrServiceImpl`、单框补扫
+/// `MangaBoxRescanService`）都必须先过此闸门，Apple 上改走互联 host / 云端 OCR。
+bool get isLocalOnnxRuntimeAvailable => !(Platform.isMacOS || Platform.isIOS);
 
 OrtProvider _toOrtProvider(OcrExecutionProvider provider) {
   switch (provider) {

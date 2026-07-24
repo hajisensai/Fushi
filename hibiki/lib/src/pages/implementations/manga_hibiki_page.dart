@@ -22,6 +22,8 @@ import 'package:hibiki/src/media/manga/manga_spread_model.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/ocr/cloud_ocr_client.dart';
 import 'package:hibiki/src/ocr/manga_box_rescan.dart';
+import 'package:hibiki/src/ocr/ocr_inference_ort.dart'
+    show isLocalOnnxRuntimeAvailable;
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/ocr/ocr_types.dart';
 import 'package:hibiki/src/pages/base_source_page.dart';
@@ -847,6 +849,19 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       await _setRescanMode(false);
       return;
     }
+    if (!isLocalOnnxRuntimeAvailable) {
+      // Apple 无内置 ONNX OCR：单框补扫依赖云端（Gemini）。云端未启用则提示不支持，
+      // 已启用则直接进补扫模式（不要求下载对 Apple 无用的本地识别模型）。
+      if (!isCloudOcrAvailable(
+        enabled: appModel.mangaCloudOcrEnabled,
+        apiKey: appModel.mangaCloudOcrApiKey,
+      )) {
+        HibikiToast.show(msg: t.manga_ocr_unsupported);
+        return;
+      }
+      await _setRescanMode(true);
+      return;
+    }
     if (!_rescanModelReady) {
       await _refreshRescanModelReady();
       if (!_rescanModelReady) {
@@ -902,6 +917,24 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         imagesDir, payload.images[pageIndex].url);
     if (imagePath == null) {
       HibikiToast.show(msg: t.manga_rescan_failed);
+      return;
+    }
+    if (!isLocalOnnxRuntimeAvailable) {
+      // Apple：本地 OCR 不可用，单框直接走云端（若已启用），否则提示不支持。
+      // 不崩、不阻塞——契约与 ocr_inference_ort.dart isLocalOnnxRuntimeAvailable 一致。
+      if (isCloudOcrAvailable(
+        enabled: appModel.mangaCloudOcrEnabled,
+        apiKey: appModel.mangaCloudOcrApiKey,
+      )) {
+        await _rescanCloudRetry(
+          pageIndex: pageIndex,
+          box: box,
+          imagePath: imagePath,
+          vertical: mangaBoxIsVertical(box),
+        );
+      } else {
+        HibikiToast.show(msg: t.manga_ocr_unsupported);
+      }
       return;
     }
     _rescanBusy = true;

@@ -1,7 +1,7 @@
 name: hibiki
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 1.2.0+893
+version: 1.2.0+894
 environment:
   sdk: ">=3.5.0 <4.0.0"
   flutter: "^3.41.6"
@@ -227,6 +227,16 @@ dependency_overrides:
   # third_party/media_kit_video/PATCHES.md.
   media_kit_video:
     path: ../third_party/media_kit_video
+  # macOS build fix: upstream flutter_onnxruntime 1.8.3 declares ios/macos plugin
+  # platforms whose podspecs pin onnxruntime-objc 1.23 -> forces macOS 14 / iOS 16
+  # deployment target, breaking the "Build Desktop" macOS release job (project is
+  # macOS 10.15). Vendored fork drops the ios/macos plugin-platform declarations
+  # (+ deletes the Apple native trees) so Flutter never registers it into the
+  # macOS Swift package; android/linux/windows native OCR is untouched. Apple's
+  # manga OCR degrades to interconnect-host / Gemini cloud (isLocalOnnxRuntimeAvailable).
+  # See third_party/flutter_onnxruntime/PATCHES.md.
+  flutter_onnxruntime:
+    path: ../third_party/flutter_onnxruntime
 
 dev_dependencies:
   build_runner: ^2.3.3

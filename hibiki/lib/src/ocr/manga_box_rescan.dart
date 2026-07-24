@@ -369,8 +369,13 @@ class MangaBoxRescanService {
   MangaBoxRescanRunner? _runner;
   bool _disposed = false;
 
+  /// 本平台是否内置本地 OCR native（Apple 已随 flutter_onnxruntime gate 出，见
+  /// ocr_inference_ort.dart isLocalOnnxRuntimeAvailable）。Apple 上单框补扫改由
+  /// 页面路由到云端 OCR；本 getter 让调用方在尝试本地前判定。
+  bool get isLocalRescanSupported => isLocalOnnxRuntimeAvailable;
+
   /// 识别三件套是否就绪（**不看检测器**——单框不需要它；也不看
-  /// isSupportedPlatform——那是整卷开关，单框全平台可用）。
+  /// isSupportedPlatform——那是整卷开关，单框在有本地 native 的平台全端可用）。
   Future<bool> isRecognizerReady() async {
     final Directory dir = await _modelsDirProvider();
     for (final MangaOcrModelFile model in _manifest) {
@@ -409,6 +414,11 @@ class MangaBoxRescanService {
   }) async {
     if (_disposed) {
       throw StateError('rescan service already disposed');
+    }
+    if (!isLocalRescanSupported) {
+      // Apple 无内置 ONNX Runtime native：本地补扫不可用，调用方应改走云端。
+      throw StateError('local manga OCR (onnxruntime) is not available on '
+          '${Platform.operatingSystem}');
     }
     if (!await isRecognizerReady()) {
       throw StateError('manga OCR recognizer models are not downloaded');
