@@ -153,6 +153,13 @@ target_include_directories(hibiki_locale_emulator_launch_test PRIVATE "injector"
 target_compile_definitions(hibiki_locale_emulator_launch_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME hibiki_locale_emulator_launch_test COMMAND hibiki_locale_emulator_launch_test)
 
+# 启动失败处置策略（根因回归：Resume 前失败会留下永久挂起的游戏进程）。纯逻辑。
+add_executable(hibiki_launch_failure_policy_test
+  "tests/launch_failure_policy_test.cpp"
+)
+target_include_directories(hibiki_launch_failure_policy_test PRIVATE "include")
+add_test(NAME hibiki_launch_failure_policy_test COMMAND hibiki_launch_failure_policy_test)
+
 # Siglus 文件夹签名识别（根因回归：改名 Siglus exe 被早注入弹掉）。纯逻辑，注入假文件表。
 add_executable(hibiki_siglus_launch_test
   "tests/siglus_launch_test.cpp"
