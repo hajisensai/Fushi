@@ -135,6 +135,9 @@ dependencies:
   # dependency_overrides 的 ffmpeg_kit_flutter（android 用 third_party 自编 AAR）。
   ffmpeg_kit_flutter: ^6.0.3
   web_socket_channel: ^3.0.0
+  # 漫画内置 OCR：ONNX Runtime 五平台绑定（检测 RT-DETR + 识别 manga-ocr）。
+  # 选型见 lib/src/ocr/；EP 策略（CUDA/DirectML/CoreML/CPU）在 ocr_inference.dart。
+  flutter_onnxruntime: ^1.8.3
   clipboard_watcher: ^0.3.0
   hotkey_manager: ^0.2.3
   screen_retriever: ^0.2.0
