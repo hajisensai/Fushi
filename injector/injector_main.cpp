@@ -1837,9 +1837,14 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
   }
 
   ApplyLunaProfiles(expected_exe, pid, luna.profile_path, &luna);
+  // Steam 路径的游戏由客户端启动、始终处于运行态，没有可恢复的挂起主线程；但失败原因
+  // 同样必须回报，否则 host 只能看到一个没有原因的非零退出。
+  hibiki_voice_hook::LaunchFailureReason reason =
+      hibiki_voice_hook::LaunchFailureReason::kNone;
   const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
-                              target, luna);
+                              target, luna, &reason);
   CloseHandle(target);
+  if (rc != 0) ReportFailureReason(reason, rc);
   return rc;
 }
 
