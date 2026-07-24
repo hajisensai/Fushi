@@ -216,8 +216,8 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
             width: 96,
             height: 128,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: _buildCover(game, colors),
+              borderRadius: HibikiBorderRadius.card,
+              child: _buildCover(context, game),
             ),
           ),
           const SizedBox(width: 16),
@@ -282,12 +282,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
                     runSpacing: 4,
                     children: <Widget>[
                       for (final String tag in tags.take(12))
-                        Chip(
-                          label: Text(tag),
-                          visualDensity: VisualDensity.compact,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                        ),
+                        HibikiTagChip(label: tag),
                     ],
                   ),
                 ],
@@ -324,25 +319,28 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  Widget _buildCover(GalgameEntry game, ColorScheme colors) {
+  Widget _buildCover(BuildContext context, GalgameEntry game) {
     final String? cover = game.coverPath;
     if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
       return Image.file(
         File(cover),
         fit: BoxFit.cover,
-        errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-            _defaultCover(colors),
+        errorBuilder: (BuildContext ctx, Object error, StackTrace? stack) =>
+            _defaultCover(context),
       );
     }
-    return _defaultCover(colors);
+    return _defaultCover(context);
   }
 
-  Widget _defaultCover(ColorScheme colors) => Container(
-        color: colors.surfaceContainerHighest,
-        alignment: Alignment.center,
-        child: Icon(Icons.videogame_asset,
-            size: 40, color: colors.onSurfaceVariant),
-      );
+  Widget _defaultCover(BuildContext context) {
+    final HibikiSurfaceColors surfaces =
+        HibikiDesignTokens.of(context).surfaces;
+    return Container(
+      color: surfaces.overlay,
+      alignment: Alignment.center,
+      child: Icon(Icons.videogame_asset, size: 40, color: surfaces.onVariant),
+    );
+  }
 
   // ── 统计 tab ───────────────────────────────────────────────────────────
 
@@ -422,9 +420,9 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           )
         else
           for (final GalgameSessionRow row in _sessions)
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
+            HibikiListItem(
+              density: HibikiListDensity.compact,
+              padding: EdgeInsets.zero,
               title: Text(formatGalgameSessionRange(row)),
               subtitle: Text(formatStatTime(row.durationSeconds * 1000)),
               trailing: IconButton(
@@ -737,9 +735,8 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
         _field('releaseDate', _releaseDate, t.game_edit_release_date),
         _field('rating', _rating, t.game_edit_user_rating),
         _field('review', _review, t.game_edit_user_review, maxLines: 3),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(t.game_edit_nsfw),
+        AdaptiveSettingsSwitchRow(
+          title: t.game_edit_nsfw,
           value: _nsfw,
           onChanged: (bool v) => setState(() => _nsfw = v),
         ),
