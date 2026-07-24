@@ -1638,6 +1638,9 @@ class AppModel with ChangeNotifier {
         // 仅在打开时经 mediaSourceIdentifier='reader_pdf' 路由到本源、进 ReaderPdfPage。
         // 通用 init 循环与 refreshPrefCache 按 mediaSources 遍历，自动接管本源初始化。
         ReaderPdfSource.instance,
+        // 漫画 OCR P1：第三个 reader 源。format=='manga' 的行在打开时经
+        // mediaSourceIdentifier='reader_manga' 路由到本源、进 MangaHibikiPage。
+        MangaHibikiSource.instance,
       ],
       DictionaryMediaType.instance: [],
     };

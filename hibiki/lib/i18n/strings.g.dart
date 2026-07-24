@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 39678 (2334 per locale)
+/// Strings: 39814 (2342 per locale)
 ///
-/// Built on 2026-07-24 at 02:05 UTC
+/// Built on 2026-07-24 at 04:05 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3116,6 +3116,14 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Connect to a device above first.';
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  String get manga_import_title => 'Import Manga';
+  String get manga_import_pick => 'Pick .mokuro File';
+  String get manga_import_confirm => 'Import';
+  String get manga_import_action => 'Import Manga';
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  String get manga_reading_mode_spread => 'Spread';
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -8412,6 +8420,22 @@ class _StringsAr extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -13781,6 +13805,22 @@ class _StringsDe extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -19166,6 +19206,22 @@ class _StringsEs extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -24562,6 +24618,22 @@ class _StringsFr extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -29885,6 +29957,22 @@ class _StringsId extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -35256,6 +35344,22 @@ class _StringsIt extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -40432,6 +40536,22 @@ class _StringsJa extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -45611,6 +45731,22 @@ class _StringsKo extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -50960,6 +51096,22 @@ class _StringsNl extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -56324,6 +56476,22 @@ class _StringsPtBr extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -61671,6 +61839,22 @@ class _StringsRu extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -66963,6 +67147,22 @@ class _StringsTh extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -72287,6 +72487,22 @@ class _StringsTr extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -77598,6 +77814,22 @@ class _StringsVi extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 // Path: <root>
@@ -82536,6 +82768,22 @@ class _StringsZhCn extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       '当前备份后端：${backend}';
+  @override
+  String get manga_import_title => '导入漫画';
+  @override
+  String get manga_import_pick => '选择 .mokuro 文件';
+  @override
+  String get manga_import_confirm => '导入';
+  @override
+  String get manga_import_action => '导入漫画';
+  @override
+  String get manga_invalid_import => '不是有效的 Mokuro 漫画文件夹';
+  @override
+  String get manga_reading_mode_spread => '翻页';
+  @override
+  String get manga_reading_mode_webtoon => '条漫';
+  @override
+  String get manga_mode_toggle => '阅读模式';
 }
 
 // Path: <root>
@@ -87630,6 +87878,22 @@ class _StringsZhHk extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get manga_import_title => 'Import Manga';
+  @override
+  String get manga_import_pick => 'Pick .mokuro File';
+  @override
+  String get manga_import_confirm => 'Import';
+  @override
+  String get manga_import_action => 'Import Manga';
+  @override
+  String get manga_invalid_import => 'Not a valid Mokuro manga folder';
+  @override
+  String get manga_reading_mode_spread => 'Spread';
+  @override
+  String get manga_reading_mode_webtoon => 'Webtoon';
+  @override
+  String get manga_mode_toggle => 'Reading Mode';
 }
 
 /// Flat map(s) containing all translations.
@@ -92396,6 +92660,22 @@ extension on _StringsEn {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -97160,6 +97440,22 @@ extension on _StringsAr {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -101945,6 +102241,22 @@ extension on _StringsDe {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -106729,6 +107041,22 @@ extension on _StringsEs {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -111519,6 +111847,22 @@ extension on _StringsFr {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -116291,6 +116635,22 @@ extension on _StringsId {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -121078,6 +121438,22 @@ extension on _StringsIt {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -125827,6 +126203,22 @@ extension on _StringsJa {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -130580,6 +130972,22 @@ extension on _StringsKo {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -135360,6 +135768,22 @@ extension on _StringsNl {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -140137,6 +140561,22 @@ extension on _StringsPtBr {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -144919,6 +145359,22 @@ extension on _StringsRu {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -149685,6 +150141,22 @@ extension on _StringsTh {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -154460,6 +154932,22 @@ extension on _StringsTr {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -159230,6 +159718,22 @@ extension on _StringsVi {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }
@@ -163962,6 +164466,22 @@ extension on _StringsZhCn {
         return '请先在上面连接一台设备。';
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) => '当前备份后端：${backend}';
+      case 'manga_import_title':
+        return '导入漫画';
+      case 'manga_import_pick':
+        return '选择 .mokuro 文件';
+      case 'manga_import_confirm':
+        return '导入';
+      case 'manga_import_action':
+        return '导入漫画';
+      case 'manga_invalid_import':
+        return '不是有效的 Mokuro 漫画文件夹';
+      case 'manga_reading_mode_spread':
+        return '翻页';
+      case 'manga_reading_mode_webtoon':
+        return '条漫';
+      case 'manga_mode_toggle':
+        return '阅读模式';
       default:
         return null;
     }
@@ -168706,6 +169226,22 @@ extension on _StringsZhHk {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'manga_import_title':
+        return 'Import Manga';
+      case 'manga_import_pick':
+        return 'Pick .mokuro File';
+      case 'manga_import_confirm':
+        return 'Import';
+      case 'manga_import_action':
+        return 'Import Manga';
+      case 'manga_invalid_import':
+        return 'Not a valid Mokuro manga folder';
+      case 'manga_reading_mode_spread':
+        return 'Spread';
+      case 'manga_reading_mode_webtoon':
+        return 'Webtoon';
+      case 'manga_mode_toggle':
+        return 'Reading Mode';
       default:
         return null;
     }

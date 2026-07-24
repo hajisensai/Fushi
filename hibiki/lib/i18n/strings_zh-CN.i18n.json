@@ -2332,5 +2332,13 @@
   "interconnect_backup_backend_apply": "设为备份后端",
   "interconnect_backup_backend_active": "备份已写到已配对设备。要换回云盘，去「同步与备份」里改后端。",
   "interconnect_backup_backend_needs_pairing": "请先在上面连接一台设备。",
-  "interconnect_backup_backend_current": "当前备份后端：$backend"
+  "interconnect_backup_backend_current": "当前备份后端：$backend",
+  "manga_import_title": "导入漫画",
+  "manga_import_pick": "选择 .mokuro 文件",
+  "manga_import_confirm": "导入",
+  "manga_import_action": "导入漫画",
+  "manga_invalid_import": "不是有效的 Mokuro 漫画文件夹",
+  "manga_reading_mode_spread": "翻页",
+  "manga_reading_mode_webtoon": "条漫",
+  "manga_mode_toggle": "阅读模式"
 }

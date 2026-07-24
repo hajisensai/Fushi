@@ -107,8 +107,9 @@ String mangaPageDivHtml(MokuroImage page, String imgSrc,
 /// 手势机（swipe→翻页 / scroll→滚动报告 / tap→选词或放大）。
 ///
 /// ERRATA C1（选词路径收敛不变式）：本文档对 OCR 框的 `selectText` 调用是**全工程
-/// 唯一**一处，调用 `hoshiSelection.selectText(e.clientX, e.clientY, 40)`（三参，带
-/// maxLength=40）。漏 maxLength → 扫描循环 gate `< undefined` 恒假 → text 恒空 →
+/// 唯一**一处，调用 `hoshiSelection.selectText(e.clientX, e.clientY, 40, false)`
+/// （四参：maxLength=40 + fromHover=false，对齐 develop 的四参签名 TODO-851）。
+/// 漏 maxLength → 扫描循环 gate `< undefined` 恒假 → text 恒空 →
 /// onTextSelected 永不触发（查词哑火）。Task 19 的内联选区 JS 只注入
 /// ReaderSelectionScripts 的定义，不得再加第二处 selectText。手势机与选词
 /// pointerup 共存，但选词命中仍只这一条路径（tap 且命中 `.ocr-box` 才走 selectText）。
@@ -302,7 +303,7 @@ String _mangaGestureJs({
     if (!b) return;
     if (_hitOcrBox(x, y)) {
       // 唯一 selectText 路径（命中框才走选词）。
-      if (window.hoshiSelection) window.hoshiSelection.selectText(x, y, 40);
+      if (window.hoshiSelection) window.hoshiSelection.selectText(x, y, 40, false);
       return;
     }
     // 框间裸图 → 放大（H1）。

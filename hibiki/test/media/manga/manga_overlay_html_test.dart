@@ -217,12 +217,16 @@ void main() {
       expect(doc.contains('window.hoshiSelection'), isTrue);
       // 调 selectText 前必须 null-guard bridge
       expect(doc.contains('window.flutter_inappwebview'), isTrue);
-      // ERRATA C1: 唯一一个 pointerup 监听，调 selectText 带 maxLength=40（三参）。
+      // ERRATA C1: 唯一一个 pointerup 监听，调 selectText 带 maxLength=40 +
+      // fromHover=false（对齐 develop 四参签名 TODO-851）。
       expect('selectText('.allMatches(doc).length, 1,
           reason: '全文档恰好一处 selectText 调用（唯一 pointerup 监听）');
-      expect(RegExp(r'hoshiSelection\.selectText\([^)]*,\s*40\)').hasMatch(doc),
+      expect(
+          RegExp(r'hoshiSelection\.selectText\([^)]*,\s*40,\s*false\)')
+              .hasMatch(doc),
           isTrue,
-          reason: 'selectText 必须带 maxLength=40（三参），否则扫描 gate 恒假查词哑火');
+          reason: 'selectText 必须带 maxLength=40 + fromHover=false（四参），'
+              '漏 maxLength 扫描 gate 恒假查词哑火');
       // 唯一一个 pointerup 监听
       expect('pointerup'.allMatches(doc).length, 1,
           reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）');
@@ -274,9 +278,11 @@ void main() {
       // 收敛不变式：OCR 选词 selectText 调用仍恰好一处（手势机不重复触发选词）。
       expect('selectText('.allMatches(doc).length, 1,
           reason: '全文档恰好一处 selectText 调用（选词路径唯一）');
-      expect(RegExp(r'hoshiSelection\.selectText\([^)]*,\s*40\)').hasMatch(doc),
+      expect(
+          RegExp(r'hoshiSelection\.selectText\([^)]*,\s*40,\s*false\)')
+              .hasMatch(doc),
           isTrue,
-          reason: 'selectText 必须带 maxLength=40（三参）');
+          reason: 'selectText 必须带 maxLength=40 + fromHover=false（四参）');
       // 收敛不变式：恰好一个 pointerup 监听。
       expect("addEventListener('pointerup'".allMatches(doc).length, 1,
           reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）');
