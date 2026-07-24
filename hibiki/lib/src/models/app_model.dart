@@ -5099,6 +5099,11 @@ class AppModel with ChangeNotifier {
   Future<void> setUpdateCustomProxy(String value) =>
       prefsRepo.setUpdateCustomProxy(value);
 
+  /// 外部 mokuro CLI 可执行路径（漫画 OCR 后备；空串=未设，退回 env/PATH 探测）。
+  String get mangaExternalMokuroPath => prefsRepo.mangaExternalMokuroPath;
+  Future<void> setMangaExternalMokuroPath(String value) =>
+      prefsRepo.setMangaExternalMokuroPath(value);
+
   // TODO-1024 / BUG-479：更新检查结果缓存（缓存优先 + 后台静默刷新）。
   UpdateCheckCacheEntry? get updateCheckCache => prefsRepo.updateCheckCache;
   Future<void> setUpdateCheckCache(UpdateCheckCacheEntry entry) =>

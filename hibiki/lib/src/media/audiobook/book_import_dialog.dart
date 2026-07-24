@@ -18,10 +18,14 @@ import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
 import 'package:hibiki/src/media/manga/manga_importer.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:hibiki/src/pdf/pdf_importer.dart';
 import 'package:hibiki/utils.dart';
 
@@ -172,6 +176,14 @@ class _BookImportDialogState extends State<BookImportDialog>
         title: Text(t.srt_import),
         content: _buildForm(),
         actions: [
+          // 「OCR 导入漫画」（仅桌面）：选裸图片文件夹跑整卷 OCR 后无缝落库。内置 OCR
+          // 与外部 mokuro CLI 均桌面工具，移动端隐藏此入口。
+          if (isDesktopPlatform)
+            adaptiveDialogAction(
+              context: context,
+              onPressed: importing ? null : _openOcrWizard,
+              child: Text(t.manga_ocr_wizard_title),
+            ),
           adaptiveDialogAction(
             context: context,
             onPressed: () => Navigator.pop(context),
@@ -181,6 +193,31 @@ class _BookImportDialogState extends State<BookImportDialog>
         ],
       ),
     );
+  }
+
+  /// 打开 OCR 导入漫画向导（仅桌面入口）：从 provider 取内置 OCR 服务、按当前偏好构造
+  /// 外部 mokuro runner，向导内选裸图片文件夹跑整卷 OCR 后无缝落库；成功（返回 bookKey）
+  /// 则连同关闭本导入框并回传 true，让书架刷新。
+  Future<void> _openOcrWizard() async {
+    final ProviderContainer container =
+        ProviderScope.containerOf(context, listen: false);
+    final AppModel appModel = container.read(appProvider);
+    final MangaOcrService service = container.read(mangaOcrServiceProvider);
+    final String configured = appModel.mangaExternalMokuroPath.trim();
+    final ExternalMokuroRunner runner = ExternalMokuroRunner(
+      configuredPath: configured.isEmpty ? null : configured,
+    );
+    final String? bookKey = await showAppDialog<String>(
+      context: context,
+      builder: (_) => MangaOcrWizardDialog(
+        service: service,
+        db: widget.db,
+        externalRunner: runner,
+      ),
+    );
+    if (bookKey != null && mounted) {
+      Navigator.pop(context, true);
+    }
   }
 
   /// 拖文件进本对话框 → 分类 → 按字段覆盖（仅填命中类，不清用户已选）。

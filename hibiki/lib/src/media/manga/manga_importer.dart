@@ -102,6 +102,88 @@ class MangaImporter {
 
     final Directory srcDir = mokuroFile.parent;
 
+    // 标题 → 冲突解析 → bookKey（= 净化标题即主键，与 EpubImporter/PdfImporter 同口径）。
+    final String proposedTitle = (title != null && title.trim().isNotEmpty)
+        ? title.trim()
+        : _deriveTitle(root, mokuroPath);
+
+    return _copyAndInsert(
+      db: db,
+      srcDir: srcDir,
+      payload: payload,
+      proposedTitle: proposedTitle,
+      onDuplicateTitle: onDuplicateTitle,
+      onProgress: onProgress,
+      sourceId: sourceId,
+      skipIfExists: skipIfExists,
+    );
+  }
+
+  /// 从内部 `manga.json`（[parseMangaJson] 格式，= 内置 OCR 引擎 `ocrFolder` 的产出）
+  /// 导入一本漫画。与 [importFromMokuroPath] 共用同一两遍式落库内核 [_copyAndInsert]，
+  /// 差异只在**入口格式**：
+  /// - 解析走 [parseMangaJson]（`{pages:[{url,width,height,...}]}`）而非 mokuro 的
+  ///   `{pages:[{img_path,img_width,...}]}`；
+  /// - 图片相对 [mangaJsonPath] 同级目录解析（OCR 引擎把页图与 manga.json 同放输出目录）；
+  /// - 标题优先取调用方 [title]（向导里的卷名/用户可编辑标题），缺省退化输出目录名——
+  ///   manga.json 序列化格式不含顶层 title/volume（[mangaPayloadToJson] 只写 `pages`）。
+  ///
+  /// 校验失败（缺文件 / 无页 / 缺图 / 路径穿越）抛 [MangaImportException]；同名卷冲突与
+  /// 用户取消语义与 [importFromMokuroPath] 完全一致。
+  static Future<String> importFromMangaJson({
+    required HibikiDatabase db,
+    required String mangaJsonPath,
+    String? title,
+    DuplicateTitleCallback? onDuplicateTitle,
+    void Function(int done, int total)? onProgress,
+    int? sourceId,
+    bool skipIfExists = false,
+  }) async {
+    final File jsonFile = File(mangaJsonPath);
+    if (!jsonFile.existsSync()) {
+      throw MangaImportException('Manga JSON not found: $mangaJsonPath');
+    }
+    final String jsonStr = await jsonFile.readAsString();
+    final MokuroPayload payload = parseMangaJson(jsonStr);
+    if (payload.images.isEmpty) {
+      throw const MangaImportException('Manga JSON has no pages');
+    }
+
+    final Directory srcDir = jsonFile.parent;
+    final String proposedTitle = (title != null && title.trim().isNotEmpty)
+        ? title.trim()
+        : (p.basename(srcDir.path).isNotEmpty
+            ? p.basename(srcDir.path)
+            : 'manga');
+
+    return _copyAndInsert(
+      db: db,
+      srcDir: srcDir,
+      payload: payload,
+      proposedTitle: proposedTitle,
+      onDuplicateTitle: onDuplicateTitle,
+      onProgress: onProgress,
+      sourceId: sourceId,
+      skipIfExists: skipIfExists,
+    );
+  }
+
+  /// 两遍式落库内核（[importFromMokuroPath] / [importFromMangaJson] 共用）：
+  /// 第一遍纯校验（规划 destRel + 防穿越 + 校验源图存在，零副作用），第二遍拷图 +
+  /// 写 manga.json + 插 `EpubBooks` 行 + 活动事件；任一步失败整体回滚已插行与书目录。
+  ///
+  /// [srcDir] 是页图来源目录（.mokuro 或 manga.json 的同级目录），[payload] 的每页
+  /// `url` 相对它解析。[proposedTitle] 已由各入口按各自规则派生。
+  static Future<String> _copyAndInsert({
+    required HibikiDatabase db,
+    required Directory srcDir,
+    required MokuroPayload payload,
+    required String proposedTitle,
+    DuplicateTitleCallback? onDuplicateTitle,
+    void Function(int done, int total)? onProgress,
+    int? sourceId,
+    bool skipIfExists = false,
+  }) async {
     // 第一遍：规划每页 destRel（sanitize + 保留子目录 + 去重）并校验源图存在 + 防路径穿越。
     // 全部在任何落盘/落库之前完成——校验失败零副作用，无需回滚。
     final List<String> destRels = <String>[];
@@ -116,10 +198,6 @@ class MangaImporter {
       }
     }
 
-    // 标题 → 冲突解析 → bookKey（= 净化标题即主键，与 EpubImporter/PdfImporter 同口径）。
-    final String proposedTitle = (title != null && title.trim().isNotEmpty)
-        ? title.trim()
-        : _deriveTitle(root, mokuroPath);
     final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
     final String storedTitle = await resolveBookTitleConflict(
       existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
