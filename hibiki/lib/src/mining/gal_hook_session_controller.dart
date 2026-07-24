@@ -606,17 +606,27 @@ class GalHookSessionController extends ChangeNotifier {
       );
       return;
     }
+    // 走到这里只有两种可能，原因不同、处置也不同：helper 没装（要装组件），或者这个
+    // 窗口根本没带有效 PID（拿不到注入目标）。不能笼统都说成 helper 缺失。
+    final bool helperMissing = injector == null;
     _record(
       GalHookEventSeverity.warning,
       'helper',
-      'helper.missing',
-      'Matching voice-hook helper is unavailable; using loopback',
-      details: <String, Object?>{'arch': is32Bit == true ? 'x86' : 'x64'},
+      helperMissing ? 'helper.missing' : 'window.pid_unavailable',
+      helperMissing
+          ? 'Matching voice-hook helper is unavailable; using loopback'
+          : 'The bound window exposes no process id; using loopback',
+      details: <String, Object?>{
+        'arch': is32Bit == true ? 'x86' : 'x64',
+        'pid': window.pid,
+      },
     );
     await _activateLoopback(
       generation,
-      fallbackReason: 'helper_missing',
-      failure: GalHookInjectorFailure.helperMissing,
+      fallbackReason: helperMissing ? 'helper_missing' : 'target_missing',
+      failure: helperMissing
+          ? GalHookInjectorFailure.helperMissing
+          : GalHookInjectorFailure.targetMissing,
     );
   }
 

@@ -1103,6 +1103,21 @@ void _bug950Guard() {
   // 引擎 hook 失败后的处置。旧实现：attach 一次失败就永久 Loopback（`_engineSource=null`，
   // 没有任何重试），launch 注入失败就把整个会话判成终态错误——哪怕游戏其实已经在跑。
   group('engine hook failure handling', () {
+    /// 等某个会话事件出现（重试走真实计时器，固定睡眠在忙机器上会假失败）。
+    Future<void> waitForEvent(
+      GalHookSessionController controller,
+      String code, {
+      Duration timeout = const Duration(seconds: 5),
+    }) async {
+      final DateTime deadline = DateTime.now().add(timeout);
+      while (DateTime.now().isBefore(deadline)) {
+        if (controller.events.any((GalHookEvent e) => e.code == code)) return;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      fail('等不到会话事件 $code；实际事件：'
+          '${controller.events.map((GalHookEvent e) => e.code).toList()}');
+    }
+
     test('可自愈的附着失败会在 Loopback 期间重试并升级回引擎源', () async {
       final TexthookerService service = TexthookerService.test();
       final ChangeNotifier endpoints = ChangeNotifier();
@@ -1167,11 +1182,7 @@ void _bug950Guard() {
       );
 
       // 退避到期后自动重试，成功即把音源升级回引擎，不再停在整机混音。
-      await Future<void>.delayed(const Duration(milliseconds: 120));
-      expect(
-        controller.events.map((GalHookEvent e) => e.code),
-        contains('engine.attach_recovered'),
-      );
+      await waitForEvent(controller, 'engine.attach_recovered');
       expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
       expect(controller.state.phase, GalHookSessionPhase.waitingSignals);
       expect(
@@ -1223,6 +1234,8 @@ void _bug950Guard() {
       await controller.startAttachedCapture(
         const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'game'),
       );
+      // 不可自愈的失败：确认跳过事件已落，且给足时间也没有任何重试发生。
+      await waitForEvent(controller, 'engine.retry_skipped');
       await Future<void>.delayed(const Duration(milliseconds: 120));
 
       expect(
@@ -1291,11 +1304,7 @@ void _bug950Guard() {
       expect(codes, contains('engine.launch_injection_degraded'));
       expect(codes, isNot(contains('engine.launch_or_inject_failed')));
 
-      await Future<void>.delayed(const Duration(milliseconds: 120));
-      expect(
-        controller.events.map((GalHookEvent e) => e.code),
-        contains('engine.attach_recovered'),
-      );
+      await waitForEvent(controller, 'engine.attach_recovered');
       expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
 
       await controller.close();
