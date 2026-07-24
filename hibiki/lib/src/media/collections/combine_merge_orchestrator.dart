@@ -42,7 +42,7 @@ Future<bool> combineMergeCollections({
         ),
     ],
   );
-  if (!isMounted()) return false;
+  if (!isMounted() || !context.mounted) return false;
   final String? name = await showCollectionNameDialog(
     context: context,
     title: mergeDialogTitle,

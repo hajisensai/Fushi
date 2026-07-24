@@ -45,6 +45,8 @@ Future<DuckingPlayback?> beginDuckingPlayback({
     ),
   );
 
+  // 订阅随 DuckingPlayback 交还调用方，由调用方在自己的生命周期 cancel。
+  // ignore: cancel_subscriptions
   final StreamSubscription<void> noisySubscription =
       session.becomingNoisyEventStream.listen((_) async {
     await onBecomingNoisy();
