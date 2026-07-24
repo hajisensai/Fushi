@@ -124,7 +124,10 @@ class MangaImporter {
   /// 差异只在**入口格式**：
   /// - 解析走 [parseMangaJson]（`{pages:[{url,width,height,...}]}`）而非 mokuro 的
   ///   `{pages:[{img_path,img_width,...}]}`；
-  /// - 图片相对 [mangaJsonPath] 同级目录解析（OCR 引擎把页图与 manga.json 同放输出目录）；
+  /// - 图片默认相对 [mangaJsonPath] 同级目录解析；[imageRootPath] 非 null 时改以
+  ///   它为根——OCR 引擎（`ocrFolder` / 远程代跑）把 manga.json 落在被扫描目录的
+  ///   `manga_ocr_out/` 子目录里，而页 `url` 相对**被扫描目录**（P3 修正：旧注释
+  ///   误以为引擎把页图与 manga.json 同放输出目录），向导据此显式传所选文件夹；
   /// - 标题优先取调用方 [title]（向导里的卷名/用户可编辑标题），缺省退化输出目录名——
   ///   manga.json 序列化格式不含顶层 title/volume（[mangaPayloadToJson] 只写 `pages`）。
   ///
@@ -133,6 +136,7 @@ class MangaImporter {
   static Future<String> importFromMangaJson({
     required HibikiDatabase db,
     required String mangaJsonPath,
+    String? imageRootPath,
     String? title,
     DuplicateTitleCallback? onDuplicateTitle,
     void Function(int done, int total)? onProgress,
@@ -149,7 +153,8 @@ class MangaImporter {
       throw const MangaImportException('Manga JSON has no pages');
     }
 
-    final Directory srcDir = jsonFile.parent;
+    final Directory srcDir =
+        imageRootPath != null ? Directory(imageRootPath) : jsonFile.parent;
     final String proposedTitle = (title != null && title.trim().isNotEmpty)
         ? title.trim()
         : (p.basename(srcDir.path).isNotEmpty

@@ -2376,5 +2376,13 @@
   "manga_ocr_wizard_title_label": "标题（可选）",
   "manga_layout_single": "单页",
   "manga_layout_double": "双页",
-  "manga_layout_auto": "自动"
+  "manga_layout_auto": "自动",
+  "manga_remote_ocr_engine": "已配对主机",
+  "manga_remote_ocr_uploading": "正在上传页面 $done / $total…",
+  "manga_remote_ocr_running": "已配对主机正在识别…",
+  "manga_remote_ocr_not_ready": "已配对主机的 OCR 模型未下载，请先在主机上下载模型。",
+  "manga_remote_ocr_unsupported": "已配对主机不支持漫画 OCR。",
+  "manga_remote_ocr_no_host": "没有可用的支持漫画 OCR 的已配对主机。",
+  "manga_remote_ocr_failed": "远程 OCR 失败",
+  "manga_remote_ocr_cancelled": "主机侧已取消远程 OCR。"
 }

@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 40426 (2378 per locale)
+/// Strings: 40562 (2386 per locale)
 ///
-/// Built on 2026-07-24 at 04:47 UTC
+/// Built on 2026-07-24 at 07:29 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2540,6 +2540,14 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
 	String get manga_layout_single => 'Single Page';
 	String get manga_layout_double => 'Double Page';
 	String get manga_layout_auto => 'Auto';
+	String get manga_remote_ocr_engine => 'Paired host';
+	String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	String get manga_remote_ocr_failed => 'Remote OCR failed';
+	String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -4947,6 +4955,14 @@ class _StringsAr extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -7354,6 +7370,14 @@ class _StringsDe extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -9761,6 +9785,14 @@ class _StringsEs extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -12168,6 +12200,14 @@ class _StringsFr extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -14575,6 +14615,14 @@ class _StringsId extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -16982,6 +17030,14 @@ class _StringsIt extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -19389,6 +19445,14 @@ class _StringsJa extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -21796,6 +21860,14 @@ class _StringsKo extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -24203,6 +24275,14 @@ class _StringsNl extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -26610,6 +26690,14 @@ class _StringsPtBr extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -29017,6 +29105,14 @@ class _StringsRu extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -31424,6 +31520,14 @@ class _StringsTh extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -33831,6 +33935,14 @@ class _StringsTr extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -36238,6 +36350,14 @@ class _StringsVi extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 // Path: <root>
@@ -38645,6 +38765,14 @@ class _StringsZhCn extends _StringsEn {
 	@override String get manga_layout_single => '单页';
 	@override String get manga_layout_double => '双页';
 	@override String get manga_layout_auto => '自动';
+	@override String get manga_remote_ocr_engine => '已配对主机';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => '正在上传页面 ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => '已配对主机正在识别…';
+	@override String get manga_remote_ocr_not_ready => '已配对主机的 OCR 模型未下载，请先在主机上下载模型。';
+	@override String get manga_remote_ocr_unsupported => '已配对主机不支持漫画 OCR。';
+	@override String get manga_remote_ocr_no_host => '没有可用的支持漫画 OCR 的已配对主机。';
+	@override String get manga_remote_ocr_failed => '远程 OCR 失败';
+	@override String get manga_remote_ocr_cancelled => '主机侧已取消远程 OCR。';
 }
 
 // Path: <root>
@@ -41052,6 +41180,14 @@ class _StringsZhHk extends _StringsEn {
 	@override String get manga_layout_single => 'Single Page';
 	@override String get manga_layout_double => 'Double Page';
 	@override String get manga_layout_auto => 'Auto';
+	@override String get manga_remote_ocr_engine => 'Paired host';
+	@override String manga_remote_ocr_uploading({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+	@override String get manga_remote_ocr_running => 'Paired host is running OCR…';
+	@override String get manga_remote_ocr_not_ready => 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+	@override String get manga_remote_ocr_unsupported => 'The paired host does not support manga OCR.';
+	@override String get manga_remote_ocr_no_host => 'No paired host with manga OCR is reachable.';
+	@override String get manga_remote_ocr_failed => 'Remote OCR failed';
+	@override String get manga_remote_ocr_cancelled => 'Remote OCR was cancelled on the host.';
 }
 
 /// Flat map(s) containing all translations.
@@ -43438,6 +43574,14 @@ extension on _StringsEn {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -45824,6 +45968,14 @@ extension on _StringsAr {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -48210,6 +48362,14 @@ extension on _StringsDe {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -50596,6 +50756,14 @@ extension on _StringsEs {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -52982,6 +53150,14 @@ extension on _StringsFr {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -55368,6 +55544,14 @@ extension on _StringsId {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -57754,6 +57938,14 @@ extension on _StringsIt {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -60140,6 +60332,14 @@ extension on _StringsJa {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -62526,6 +62726,14 @@ extension on _StringsKo {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -64912,6 +65120,14 @@ extension on _StringsNl {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -67298,6 +67514,14 @@ extension on _StringsPtBr {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -69684,6 +69908,14 @@ extension on _StringsRu {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -72070,6 +72302,14 @@ extension on _StringsTh {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -74456,6 +74696,14 @@ extension on _StringsTr {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -76842,6 +77090,14 @@ extension on _StringsVi {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}
@@ -79228,6 +79484,14 @@ extension on _StringsZhCn {
 			case 'manga_layout_single': return '单页';
 			case 'manga_layout_double': return '双页';
 			case 'manga_layout_auto': return '自动';
+			case 'manga_remote_ocr_engine': return '已配对主机';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => '正在上传页面 ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return '已配对主机正在识别…';
+			case 'manga_remote_ocr_not_ready': return '已配对主机的 OCR 模型未下载，请先在主机上下载模型。';
+			case 'manga_remote_ocr_unsupported': return '已配对主机不支持漫画 OCR。';
+			case 'manga_remote_ocr_no_host': return '没有可用的支持漫画 OCR 的已配对主机。';
+			case 'manga_remote_ocr_failed': return '远程 OCR 失败';
+			case 'manga_remote_ocr_cancelled': return '主机侧已取消远程 OCR。';
 			default: return null;
 		}
 	}
@@ -81614,6 +81878,14 @@ extension on _StringsZhHk {
 			case 'manga_layout_single': return 'Single Page';
 			case 'manga_layout_double': return 'Double Page';
 			case 'manga_layout_auto': return 'Auto';
+			case 'manga_remote_ocr_engine': return 'Paired host';
+			case 'manga_remote_ocr_uploading': return ({required Object done, required Object total}) => 'Uploading pages ${done} / ${total}…';
+			case 'manga_remote_ocr_running': return 'Paired host is running OCR…';
+			case 'manga_remote_ocr_not_ready': return 'The paired host\'s OCR models are not downloaded. Download them on the host first.';
+			case 'manga_remote_ocr_unsupported': return 'The paired host does not support manga OCR.';
+			case 'manga_remote_ocr_no_host': return 'No paired host with manga OCR is reachable.';
+			case 'manga_remote_ocr_failed': return 'Remote OCR failed';
+			case 'manga_remote_ocr_cancelled': return 'Remote OCR was cancelled on the host.';
 			default: return null;
 		}
 	}

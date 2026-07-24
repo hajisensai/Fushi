@@ -2376,5 +2376,13 @@
   "manga_ocr_wizard_title_label": "Title (optional)",
   "manga_layout_single": "Single Page",
   "manga_layout_double": "Double Page",
-  "manga_layout_auto": "Auto"
+  "manga_layout_auto": "Auto",
+  "manga_remote_ocr_engine": "Paired host",
+  "manga_remote_ocr_uploading": "Uploading pages $done / $total…",
+  "manga_remote_ocr_running": "Paired host is running OCR…",
+  "manga_remote_ocr_not_ready": "The paired host's OCR models are not downloaded. Download them on the host first.",
+  "manga_remote_ocr_unsupported": "The paired host does not support manga OCR.",
+  "manga_remote_ocr_no_host": "No paired host with manga OCR is reachable.",
+  "manga_remote_ocr_failed": "Remote OCR failed",
+  "manga_remote_ocr_cancelled": "Remote OCR was cancelled on the host."
 }

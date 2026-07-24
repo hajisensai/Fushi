@@ -11,6 +11,7 @@ import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
 import 'package:hibiki/src/media/manga/manga_importer.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
+import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:hibiki/utils.dart';
 
 /// OCR 导入漫画向导：选**裸图片文件夹**（无 `.mokuro`）→ 校验 → 选引擎（内置 ONNX /
@@ -25,6 +26,7 @@ class MangaOcrWizardDialog extends ConsumerStatefulWidget {
     required this.service,
     required this.db,
     this.externalRunner,
+    this.remoteRunner,
     this.importOverride,
     this.initialImageDir,
     super.key,
@@ -38,6 +40,10 @@ class MangaOcrWizardDialog extends ConsumerStatefulWidget {
 
   /// 外部 mokuro CLI 后备；null = 不提供外部引擎选项。
   final ExternalMokuroRunner? externalRunner;
+
+  /// 漫画 P3：互联「已配对主机代跑 OCR」；null = 不提供远程引擎选项。仅当探测
+  /// （probe）到具备 `mangaOcr.supported` 能力的已配对 host 时选项才显示。
+  final MangaOcrRemoteRunner? remoteRunner;
 
   /// 落库注入口（测试用）：null = 走真实 [MangaImporter]。
   final MangaOcrImportRunner? importOverride;
@@ -69,11 +75,16 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
 
   bool _builtinAvailable = false;
   bool _externalAvailable = false;
+  bool _remoteAvailable = false;
+  MangaOcrRemoteTarget? _remoteTarget;
   bool _checkingEngines = false;
   MangaOcrEngine _engine = MangaOcrEngine.builtin;
 
   // 进度。
   bool _indeterminate = true;
+
+  /// 远程引擎的两阶段展示：true = 正在上传页面，false = 远端识别中。
+  bool _remoteUploading = false;
   int _pagesDone = 0;
   int _pagesTotal = 0;
   String? _error;
@@ -146,16 +157,30 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         external = false;
       }
     }
+    // 漫画 P3：探测已配对 host 的远程 OCR 能力（老 host 无 capabilities 字段 →
+    // probe 回 null → 选项隐藏，零破坏）。
+    MangaOcrRemoteTarget? remote;
+    if (widget.remoteRunner != null) {
+      try {
+        remote = await widget.remoteRunner!.probe();
+      } catch (_) {
+        remote = null;
+      }
+    }
     if (!mounted) return;
     setState(() {
       _builtinAvailable = builtin;
       _externalAvailable = external;
+      _remoteAvailable = remote != null;
+      _remoteTarget = remote;
       _checkingEngines = false;
-      // 默认引擎：内置就绪优先内置，否则外部。
+      // 默认引擎：内置就绪优先内置，其次外部，最后已配对主机。
       if (builtin) {
         _engine = MangaOcrEngine.builtin;
       } else if (external) {
         _engine = MangaOcrEngine.external;
+      } else if (remote != null) {
+        _engine = MangaOcrEngine.remote;
       }
     });
   }
@@ -163,7 +188,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   bool get _canRun =>
       _stage == _WizardStage.configure &&
       _folderStatus == MangaOcrFolderStatus.valid &&
-      (_builtinAvailable || _externalAvailable);
+      (_builtinAvailable || _externalAvailable || _remoteAvailable);
 
   String? get _title {
     final String t = _titleCtrl.text.trim();
@@ -177,13 +202,17 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       _stage = _WizardStage.running;
       _error = null;
       _indeterminate = true;
+      _remoteUploading = false;
       _pagesDone = 0;
       _pagesTotal = 0;
     });
-    if (_engine == MangaOcrEngine.builtin) {
-      _runBuiltin(dir);
-    } else {
-      _runExternal(dir);
+    switch (_engine) {
+      case MangaOcrEngine.builtin:
+        _runBuiltin(dir);
+      case MangaOcrEngine.external:
+        _runExternal(dir);
+      case MangaOcrEngine.remote:
+        _runRemote(dir);
     }
   }
 
@@ -226,6 +255,61 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     );
   }
 
+  /// 漫画 P3：已配对主机代跑。上传/远端两阶段进度分别展示；完成事件携带的
+  /// manga.json 已由 client 写到 `<所选文件夹>/manga_ocr_out/manga.json`，与内置
+  /// 引擎产物同布局，落库走同一条 `importFromMangaJson` 路径。
+  void _runRemote(String dir) {
+    final MangaOcrRemoteTarget? target = _remoteTarget;
+    if (target == null) {
+      _onOcrError(t.manga_remote_ocr_no_host);
+      return;
+    }
+    _runSub = widget.remoteRunner!
+        .run(target: target, imageDirPath: dir, volumeTitle: _title)
+        .listen(
+      (MangaOcrRemoteEvent event) {
+        if (!mounted) return;
+        if (event.finished) {
+          unawaited(_onOcrFinished(event.mangaJsonPath!, external: false));
+        } else {
+          setState(() {
+            _remoteUploading = event.uploading;
+            _indeterminate = event.total <= 0;
+            _pagesDone = event.done;
+            _pagesTotal = event.total;
+          });
+        }
+      },
+      onError: (Object e) => _onOcrError(_remoteErrorMessage(e)),
+    );
+  }
+
+  /// 远程失败 → 本地化可读文案（机器可读 code 映射；未知归入通用失败 + 详情）。
+  String _remoteErrorMessage(Object e) {
+    if (e is MangaOcrRemoteException) {
+      switch (e.code) {
+        case 'models_not_ready':
+          return t.manga_remote_ocr_not_ready;
+        case 'not_supported':
+          return t.manga_remote_ocr_unsupported;
+        case 'no_host':
+        case 'auth':
+          return t.manga_remote_ocr_no_host;
+        case 'cancelled':
+          return t.manga_remote_ocr_cancelled;
+        case 'no_pages':
+          return t.manga_ocr_wizard_no_images;
+        default:
+          // _onOcrError 已统一加 manga_ocr_wizard_failed 前缀，这里只给原因。
+          final String? detail = e.detail;
+          return detail == null || detail.isEmpty
+              ? t.manga_remote_ocr_failed
+              : detail;
+      }
+    }
+    return '$e';
+  }
+
   Future<void> _onOcrFinished(String path, {required bool external}) async {
     // 从 onData 回调里 cancel 自身订阅：不 await（await 会在部分实现下卡住微任务，
     // 拖住后续落库），流本就在收尾，fire-and-forget 即可。
@@ -258,7 +342,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     });
   }
 
-  /// 默认落库：内置产物是 `manga.json`（[MangaImporter.importFromMangaJson]），
+  /// 默认落库：内置/远程产物是 `manga.json`（[MangaImporter.importFromMangaJson]，
+  /// 页 `url` 相对所选图片文件夹而非 `manga_ocr_out/`，须显式传 imageRootPath），
   /// 外部产物是 `.mokuro`（[MangaImporter.importFromMokuroPath]）。
   Future<String> _defaultImport({
     required String path,
@@ -275,6 +360,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     return MangaImporter.importFromMangaJson(
       db: widget.db,
       mangaJsonPath: path,
+      imageRootPath: _imageDir,
       title: title,
     );
   }
@@ -287,9 +373,28 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     setState(() {
       _stage = _WizardStage.configure;
       _indeterminate = true;
+      _remoteUploading = false;
       _pagesDone = 0;
       _pagesTotal = 0;
     });
+  }
+
+  /// running/importing 阶段的状态行文案（远程引擎的上传/远端两阶段单列）。
+  String _busyLabel() {
+    if (_stage == _WizardStage.importing) return t.manga_ocr_wizard_importing;
+    if (_engine == MangaOcrEngine.remote) {
+      if (_remoteUploading && _pagesTotal > 0) {
+        return t.manga_remote_ocr_uploading(
+            done: _pagesDone, total: _pagesTotal);
+      }
+      return _pagesTotal > 0
+          ? t.manga_ocr_wizard_page_progress(
+              done: _pagesDone, total: _pagesTotal)
+          : t.manga_remote_ocr_running;
+    }
+    return _pagesTotal > 0
+        ? t.manga_ocr_wizard_page_progress(done: _pagesDone, total: _pagesTotal)
+        : t.manga_ocr_wizard_running;
   }
 
   @override
@@ -334,12 +439,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
               ),
               const SizedBox(height: 8),
               Text(
-                _stage == _WizardStage.importing
-                    ? t.manga_ocr_wizard_importing
-                    : (_pagesTotal > 0
-                        ? t.manga_ocr_wizard_page_progress(
-                            done: _pagesDone, total: _pagesTotal)
-                        : t.manga_ocr_wizard_running),
+                _busyLabel(),
                 style: theme.textTheme.bodySmall,
               ),
             ],
@@ -370,7 +470,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         child: LinearProgressIndicator(),
       );
     }
-    if (!_builtinAvailable && !_externalAvailable) {
+    if (!_builtinAvailable && !_externalAvailable && !_remoteAvailable) {
       return _errorText(Theme.of(context), t.manga_ocr_engine_none);
     }
     final List<ButtonSegment<MangaOcrEngine>> segments =
@@ -384,6 +484,11 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         ButtonSegment<MangaOcrEngine>(
           value: MangaOcrEngine.external,
           label: Text(t.manga_ocr_engine_external),
+        ),
+      if (_remoteAvailable)
+        ButtonSegment<MangaOcrEngine>(
+          value: MangaOcrEngine.remote,
+          label: Text(t.manga_remote_ocr_engine),
         ),
     ];
     // 只有一个可用引擎时无需选择器，直接省略（仍已在 _refreshEngines 选好）。
@@ -433,8 +538,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   }
 }
 
-/// OCR 引擎选择。
-enum MangaOcrEngine { builtin, external }
+/// OCR 引擎选择。remote = 漫画 P3 已配对主机代跑（互联）。
+enum MangaOcrEngine { builtin, external, remote }
 
 /// 裸图片文件夹校验结果。
 enum MangaOcrFolderStatus {
