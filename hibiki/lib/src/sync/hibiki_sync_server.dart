@@ -15,6 +15,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/hibiki_manga_ocr_host.dart';
 import 'package:hibiki/src/sync/interconnect_device_name.dart';
 import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
@@ -139,6 +140,7 @@ class HibikiSyncServer {
     HibikiRemoteMiningService? miningService,
     HibikiRemoteHistoryService? historyService,
     HibikiLibraryHostService? libraryService,
+    MangaOcrHostJobManager? mangaOcrJobs,
     SecurityContext? securityContext,
     String? hostFingerprint,
     String? deviceName,
@@ -156,6 +158,7 @@ class HibikiSyncServer {
         _miningService = miningService,
         _historyService = historyService,
         _libraryService = libraryService,
+        _mangaOcrJobs = mangaOcrJobs,
         _dictionaryMediaProvider = dictionaryMediaProvider,
         _now = now ?? DateTime.now;
 
@@ -179,6 +182,11 @@ class HibikiSyncServer {
   final HibikiRemoteMiningService? _miningService;
   final HibikiRemoteHistoryService? _historyService;
   final HibikiLibraryHostService? _libraryService;
+
+  /// 漫画 P3：互联 host 代跑 OCR 的任务管理器（`/api/ocr/*` + capabilities
+  /// `mangaOcr` 字段）。null = 未接线（headless/单测/host 未启用），端点 404、
+  /// capabilities 不带该字段——老 client / 老 host 双向兼容。
+  final MangaOcrHostJobManager? _mangaOcrJobs;
 
   /// TODO-1215: dictionary media (gaiji/accent SVG, etc.) byte provider.
   /// Injected rather than depending on the HoshiDicts singleton directly, so
@@ -318,6 +326,8 @@ class HibikiSyncServer {
     await _server?.close(force: true);
     _server = null;
     _exportCache.dispose();
+    // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
+    await _mangaOcrJobs?.disposeAll();
   }
 
   /// gzip 压缩 JSON/XML 文本响应（`Accept-Encoding: gzip` 内容协商）。
@@ -527,6 +537,13 @@ class HibikiSyncServer {
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       return _handleCapabilities();
+    }
+    // 漫画 P3：互联 host 代跑 OCR。鉴权走上方 middleware（无豁免），处理逻辑在
+    // hibiki_manga_ocr_host.dart（本文件是共享热点，只留最小分发）。
+    if (reqPath == '/api/ocr/job' || reqPath.startsWith('/api/ocr/job/')) {
+      final MangaOcrHostJobManager? mangaOcr = _mangaOcrJobs;
+      if (mangaOcr == null) return shelf.Response.notFound('Manga OCR off');
+      return handleMangaOcrRequest(mangaOcr, request, method, reqPath);
     }
     if (reqPath == '/api/library/dictionaries' ||
         reqPath.startsWith('/api/library/dictionaries/')) {
@@ -1123,9 +1140,13 @@ class HibikiSyncServer {
     });
   }
 
-  shelf.Response _handleCapabilities() {
+  Future<shelf.Response> _handleCapabilities() async {
     final bool lib = _libraryService != null;
+    // 漫画 P3 能力协商：仅接线了 OCR 任务管理器的 host 带 `mangaOcr` 字段；老
+    // host 响应里没有该字段 → client 隐藏「已配对主机」OCR 选项（零破坏）。
+    final Map<String, Object?>? mangaOcr = await _mangaOcrJobs?.capability();
     return _jsonResponse(<String, dynamic>{
+      if (mangaOcr != null) 'mangaOcr': mangaOcr,
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
         'books': lib,

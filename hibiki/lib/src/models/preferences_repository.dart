@@ -1677,6 +1677,45 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 外部 mokuro CLI 可执行路径（漫画 OCR 后备；空串=未设）。内置 ONNX 引擎在本平台不可用
+  /// 或用户偏好外部工具时，OCR 导入向导据此调用系统 mokuro（见 [ExternalMokuroRunner]）。
+  /// 空串=未指定，运行时退回 `HIBIKI_MOKURO` 环境变量 / PATH 探测。
+  String get mangaExternalMokuroPath =>
+      getPref('manga_external_mokuro_path', defaultValue: '') as String;
+
+  Future<void> setMangaExternalMokuroPath(String value) async {
+    await setPref('manga_external_mokuro_path', value);
+    notifyListeners();
+  }
+
+  /// 漫画云端手写识别（Gemini）总开关。**默认关**；关着时零网络调用（红线），
+  /// 只影响补扫结果卡片是否显示「云端重试」与请求闸门。
+  bool get mangaCloudOcrEnabled =>
+      getPref('manga_cloud_ocr_enabled', defaultValue: false) as bool;
+
+  Future<void> setMangaCloudOcrEnabled(bool value) async {
+    await setPref('manga_cloud_ocr_enabled', value);
+    notifyListeners();
+  }
+
+  /// Gemini API key（用户自备；设置区密文显示）。空串=未设，云端重试不可用。
+  String get mangaCloudOcrApiKey =>
+      getPref('manga_cloud_ocr_api_key', defaultValue: '') as String;
+
+  Future<void> setMangaCloudOcrApiKey(String value) async {
+    await setPref('manga_cloud_ocr_api_key', value);
+    notifyListeners();
+  }
+
+  /// 云端识别模型名（空串=默认 `gemini-2.5-flash`，见 cloud_ocr_client.dart）。
+  String get mangaCloudOcrModel =>
+      getPref('manga_cloud_ocr_model', defaultValue: '') as String;
+
+  Future<void> setMangaCloudOcrModel(String value) async {
+    await setPref('manga_cloud_ocr_model', value);
+    notifyListeners();
+  }
+
   /// AniList/Nyaa/Jimaku requests: auto (env > enabled system proxy > direct),
   /// explicit direct, or a user-provided host:port proxy.
   String get downloadNetworkProxyMode =>

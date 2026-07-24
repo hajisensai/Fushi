@@ -1,0 +1,147 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/media.dart';
+
+/// 漫画 OCR P1 的接线守卫（源码扫描 + 键不变量），与 PDF 的
+/// `reader_pdf_routing_guard_test.dart` 同纪律。
+///
+/// 漫画作为「第三种书」复用 EpubBooks/书架/进度/删除管线，正确性依赖数处接线不能被
+/// 后续重构悄悄改断——一旦断掉，漫画行会带 EPUB 源标识被打开、进 EPUB 阅读器的解压/
+/// 解析路径 → 崩溃或白屏。MangaHibikiPage 过重无法在纯 widget test 拉起完整链路
+/// （WebView + 词典引擎），故守卫落在最强可落地的源码语料层。
+void main() {
+  String read(String relativePath) {
+    final File file = File(relativePath);
+    expect(file.existsSync(), isTrue, reason: '守卫目标文件应存在：$relativePath');
+    return file.readAsStringSync();
+  }
+
+  test('MangaHibikiSource.kUniqueKey 是独立键 reader_manga，与 EPUB/PDF 源互异', () {
+    expect(MangaHibikiSource.kUniqueKey, 'reader_manga');
+    expect(MangaHibikiSource.instance.uniqueKey, 'reader_manga');
+    expect(MangaHibikiSource.instance.uniqueKey,
+        isNot(ReaderHibikiSource.instance.uniqueKey));
+    expect(MangaHibikiSource.instance.uniqueKey,
+        isNot(ReaderPdfSource.instance.uniqueKey));
+  });
+
+  test('书架列书按 format 路由：format==manga 的行带 MangaHibikiSource 源标识', () {
+    final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
+    expect(src.contains("book.format == 'manga'"), isTrue,
+        reason: '_bookToMediaItem 应按 format=="manga" 分流');
+    expect(src.contains('MangaHibikiSource.kUniqueKey'), isTrue,
+        reason: '漫画行 mediaSourceIdentifier 应取 MangaHibikiSource.kUniqueKey');
+    // PDF 分流不能被漫画分流破坏（向后兼容守卫）。
+    expect(src.contains("book.format == 'pdf'"), isTrue);
+    expect(src.contains('ReaderPdfSource.kUniqueKey'), isTrue);
+  });
+
+  test('AppModel 注册 MangaHibikiSource.instance（否则打开漫画崩于 map 空断言）', () {
+    final String src = read('lib/src/models/app_model.dart');
+    expect(src.contains('MangaHibikiSource.instance'), isTrue,
+        reason: 'populateMediaSources 必须注册 MangaHibikiSource，'
+            'item.getMediaSource 才能解析到它');
+  });
+
+  test('media.dart 导出 manga_hibiki_source（书架/路由处可见）', () {
+    final String src = read('lib/media.dart');
+    expect(src.contains('manga_hibiki_source.dart'), isTrue);
+  });
+
+  // ── 身份：hoshi://book/<bookKey>，无 manga:// 特例 ──────────────────
+
+  test('漫画身份统一 hoshi://book/<bookKey>，源与页面都不引入 manga:// 标识', () {
+    final String source =
+        read('lib/src/media/sources/manga_hibiki_source.dart');
+    final String page =
+        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+    // 打开时从 hoshi://book/ 标识解析 bookKey（与 PDF 完全同构），关书自动同步
+    // （triggerAutoSyncAfterClose 的 hoshi://book/ 前缀识别）天然工作。
+    expect(source.contains('ReaderHibikiSource.parseBookKey'), isTrue,
+        reason: 'buildLaunchPage 必须用共享的 hoshi://book/ 解析器');
+    expect(source.contains('manga://'), isFalse, reason: '不再有 manga:// 身份特例');
+    expect(page.contains('manga://'), isFalse, reason: '页面也不得引入 manga:// 身份');
+  });
+
+  // ── 进度：ReaderPositions 页码口径 ──────────────────────────────────
+
+  test('页码进度落 ReaderPositions.sectionIndex，且显式传 charOffset', () {
+    final String src =
+        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+    expect(src.contains('ReaderPositionRepository('), isTrue);
+    expect(src.contains('sectionIndex: page'), isTrue,
+        reason: '漫画用 sectionIndex 存 0-based 页码');
+    // charOffset 传 null 会掉进 EPUB 专用的「跨 section 精确锚失效」启发式；
+    // spread 传 0，webtoon 存页内滚动千分比。
+    expect(src.contains('charOffset: isWebtoon'), isTrue,
+        reason: '必须显式传 charOffset（spread 0 / webtoon 千分比），不能传 null');
+    expect(src.contains('webtoonFractionToCharOffset'), isTrue);
+    expect(src.contains('markEpubBookCompletedIfUnset'), isTrue,
+        reason: '翻到末页写已读完');
+  });
+
+  test('书架漫画进度按页计（与 PDF 共用 1-based 页序分支）', () {
+    final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
+    expect(src.contains('(pos?.sectionIndex ?? 0) + 1'), isTrue,
+        reason: '页码型书进度用 1-based 页序，停在第 1 页也要计入在读');
+    expect(src.contains('pageBased'), isTrue, reason: 'PDF/漫画共用页码型进度分支');
+  });
+
+  test('漫画阅读统计不把页数当字数（charsRead 恒 0）', () {
+    final String src =
+        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+    expect(src.contains('charsRead: 0'), isTrue,
+        reason: '漫画无字数；把页数塞进 charsRead 会污染统计页的「字数」口径');
+    expect(src.contains('ReadingTimeTracker'), isTrue, reason: '复用时长统计');
+  });
+
+  // ── 阅读模式覆盖 ────────────────────────────────────────────────────
+
+  test('阅读模式读写 EpubBooks.mangaReadingMode（null=自动判定）', () {
+    final String src =
+        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+    expect(src.contains('mangaReadingMode'), isTrue, reason: '打开时读列值、切换时写列值');
+    expect(src.contains('detectReadingMode'), isTrue,
+        reason: 'null 覆盖必须回落自动判定');
+  });
+
+  // ── 查词/制卡接线 ────────────────────────────────────────────────────
+
+  test('漫画页接在共享查词链路上（BaseSourcePage + buildDictionary + 弹窗入口）', () {
+    final String src =
+        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+    expect(src.contains('class MangaHibikiPage extends BaseSourcePage'), isTrue,
+        reason: '漫画页必须是 BaseSourcePage 才能复用查词弹窗链路');
+    expect(src.contains('BaseSourcePageState<MangaHibikiPage>'), isTrue);
+    expect(src.contains('buildDictionary()'), isTrue,
+        reason: '弹窗层必须在 widget 树里，否则查词结果不渲染');
+    expect(src.contains('searchDictionaryResult('), isTrue);
+    expect(src.contains('setCurrentSentence('), isTrue,
+        reason: '整句必须经 setCurrentSentence 送出，制卡/收藏才拿得到句子');
+  });
+
+  test('制卡走 onMineFromPopup + AnkiMiningContext，卡图=当前页图文件路径', () {
+    final String src =
+        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+    expect(src.contains('onMineFromPopup'), isTrue, reason: '制卡入口');
+    expect(src.contains('AnkiMiningContext('), isTrue);
+    expect(src.contains('coverPath'), isTrue,
+        reason: '卡图经 coverPath 传**文件路径**（页图本就在盘上）');
+    expect(src.contains('AnkiMiningSource.book'), isTrue);
+    expect(src.contains('mineEntry('), isTrue);
+    expect(src.contains('_updateCurrentPageImagePath'), isTrue,
+        reason: '卡图路径必须在加载/翻页/滚动/切模式全路径更新，否则封面恒 null');
+  });
+
+  test('卡图更新在全部推进路径被调用（加载/翻页/滚动/切模式）', () {
+    final String src =
+        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+    // 至少 4 处调用点：_loadInitialWindow、_onMangaTurn（窗口内分支）、
+    // _onMangaScroll（spread 变化）、_toggleReadingMode。
+    final int calls = '_updateCurrentPageImagePath()'.allMatches(src).length;
+    expect(calls >= 4, isTrue,
+        reason: '卡图更新调用点不足（$calls < 4）——旧分支修过的坑：'
+            '漏路径会让制卡封面在该路径后恒为旧页/null');
+  });
+}

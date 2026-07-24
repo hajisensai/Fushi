@@ -42,6 +42,7 @@ import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/clipboard_history_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
@@ -434,6 +435,10 @@ class AppModel with ChangeNotifier {
     // TODO-1356: advertise this device's real per-platform name (hardware model
     // on mobile, hostname on desktop) so peers never see "localhost".
     deviceInfo: platformServices.deviceInfo,
+    // 漫画 P3：互联 host 代跑 OCR（/api/ocr/* + capabilities.mangaOcr）。工厂来自
+    // manga_ocr_provider（唯一引用 MangaOcrServiceImpl 的文件）；不支持内置 OCR 的
+    // 平台（移动端）也接线——capability 会如实报 supported=false，client 据此隐藏。
+    mangaOcrServiceFactory: createMangaOcrService,
     libraryServiceFactory: () => AppModelLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
@@ -1639,6 +1644,9 @@ class AppModel with ChangeNotifier {
         // 仅在打开时经 mediaSourceIdentifier='reader_pdf' 路由到本源、进 ReaderPdfPage。
         // 通用 init 循环与 refreshPrefCache 按 mediaSources 遍历，自动接管本源初始化。
         ReaderPdfSource.instance,
+        // 漫画 OCR P1：第三个 reader 源。format=='manga' 的行在打开时经
+        // mediaSourceIdentifier='reader_manga' 路由到本源、进 MangaHibikiPage。
+        MangaHibikiSource.instance,
       ],
       DictionaryMediaType.instance: [],
     };
@@ -5155,6 +5163,25 @@ class AppModel with ChangeNotifier {
   String get updateCustomProxy => prefsRepo.updateCustomProxy;
   Future<void> setUpdateCustomProxy(String value) =>
       prefsRepo.setUpdateCustomProxy(value);
+
+  /// 外部 mokuro CLI 可执行路径（漫画 OCR 后备；空串=未设，退回 env/PATH 探测）。
+  String get mangaExternalMokuroPath => prefsRepo.mangaExternalMokuroPath;
+  Future<void> setMangaExternalMokuroPath(String value) =>
+      prefsRepo.setMangaExternalMokuroPath(value);
+
+  /// 漫画云端手写识别（Gemini）开关/API key/模型名（P4 补扫云端兜底；默认关，
+  /// 关着时零网络调用）。
+  bool get mangaCloudOcrEnabled => prefsRepo.mangaCloudOcrEnabled;
+  Future<void> setMangaCloudOcrEnabled(bool value) =>
+      prefsRepo.setMangaCloudOcrEnabled(value);
+
+  String get mangaCloudOcrApiKey => prefsRepo.mangaCloudOcrApiKey;
+  Future<void> setMangaCloudOcrApiKey(String value) =>
+      prefsRepo.setMangaCloudOcrApiKey(value);
+
+  String get mangaCloudOcrModel => prefsRepo.mangaCloudOcrModel;
+  Future<void> setMangaCloudOcrModel(String value) =>
+      prefsRepo.setMangaCloudOcrModel(value);
 
   // TODO-1024 / BUG-479：更新检查结果缓存（缓存优先 + 后台静默刷新）。
   UpdateCheckCacheEntry? get updateCheckCache => prefsRepo.updateCheckCache;

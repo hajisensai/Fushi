@@ -296,11 +296,17 @@ class EpubBooks extends Table {
   IntColumn get importedAt => integer()();
 
   /// 书身份格式判别（PDF 阅读器 Phase 1）：`'epub'`（默认，含 EPUB / TextToEpub /
-  /// 有声书配对壳）或 `'pdf'`（pdfrx 渲染的真 PDF）。默认 `'epub'` 让既有全部行零破坏
-  /// （Never break userspace，v51 迁移 addColumn 自动回填），书架/进度/删除按此列区分而
-  /// 非另建平行表。PDF 行：`format='pdf'`、`epubPath`=PDF 绝对路径、`extractDir`=占位、
-  /// `chapterCount`=页数、`chaptersJson`=`'[]'`。
+  /// 有声书配对壳）、`'pdf'`（pdfrx 渲染的真 PDF）或 `'manga'`（漫画 OCR，第三种书）。
+  /// 默认 `'epub'` 让既有全部行零破坏（Never break userspace，v51 迁移 addColumn 自动
+  /// 回填），书架/进度/删除按此列区分而非另建平行表。PDF 行：`format='pdf'`、
+  /// `epubPath`=PDF 绝对路径、`extractDir`=占位、`chapterCount`=页数、`chaptersJson`=`'[]'`。
   TextColumn get format => text().withDefault(const Constant('epub'))();
+
+  /// 漫画阅读模式覆盖（漫画 OCR，v52）：`null`=按页图长宽比自动判定（默认，横长跨页
+  /// 走 `'spread'` 双页布局、纵长走 `'webtoon'` 长条纵向连读）；非 null 为用户手动覆盖，
+  /// 取值 `'spread'`（跨页/翻页）或 `'webtoon'`（长条纵向）。仅 `format='manga'` 的行有意义，
+  /// 其它书身份恒 null。null 语义即「跟随自动判定」，与显式取值区分。
+  TextColumn get mangaReadingMode => text().nullable()();
 
   /// 书「读完」的时间戳（用户手动标记，或读到全书末尾自动写入）；null = 未完成。
   /// 镜像 [VideoBooks.completedAt]，书架概览「Completed」统计用。跳过后记/附录的

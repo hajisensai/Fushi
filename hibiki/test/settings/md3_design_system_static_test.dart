@@ -702,6 +702,20 @@ void main() {
           'Remote book download control density is reader-shelf content.',
       'lib/src/pages/implementations/reader_history/dialogs.part.dart':
           'Reader-shelf dialog/segment typography is content chrome.',
+      // 漫画 OCR 数据模型：fontSize 是 mokuro/manga.json 的块级字段（气泡文字
+      // 的检测字号，随数据往返/估算），不是 Flutter 页面排版——纯数据层文件，
+      // 无任何 UI 代码，同「内容而非 chrome」豁免类。
+      'lib/src/media/manga/mokuro_payload.dart':
+          'MokuroBlock.fontSize is a mokuro/manga.json data field (detected '
+              'bubble text size, serialized round-trip), not page typography — '
+              'pure data-model file with no UI code.',
+      'lib/src/media/manga/manga_json_writeback.dart':
+          'Writes the MokuroBlock.fontSize data field back into manga.json '
+              '(box-rescan block append); pure data layer, no UI code.',
+      'lib/src/ocr/manga_ocr_folder_job.dart':
+          'Estimates the MokuroBlock.fontSize data field (sqrt(area/chars)) '
+              'for OCR-produced manga.json blocks; pure data layer, no UI '
+              'code.',
       'lib/src/pages/implementations/reader_hibiki_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
       // TODO-589 batch1: reader_hibiki_page.dart 拆成主壳 + reader_hibiki/*.part.dart；

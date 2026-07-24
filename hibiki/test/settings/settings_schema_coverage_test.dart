@@ -61,6 +61,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 由迁移守卫（hibikiServer→独立开关）+ 可见性守卫（开关常显、配置区门控）咬住。
   'interconnect/Enable interconnect':
       'test/sync/sync_interconnect_decouple_migration_test.dart + test/sync/sync_settings_visibility_test.dart',
+  // 漫画云端手写识别开关：行为类设置（闸门控制 CloudOcrService 是否可用/零网络
+  // 红线），生效由专项 widget/service 测试咬住：设置区写穿偏好 +
+  // cloud_ocr_client_test 的「默认关零网络」gating。
+  'reading/Enable cloud recognition':
+      'test/media/manga/manga_ocr_settings_section_ui_test.dart + test/ocr/cloud_ocr_client_test.dart',
   // 专项 unit/widget 生效探针（docs/specs/2026-06-03-t4-effect-probes-plan.md T1–T9）
   'reading/Text Orientation': 'test/reader/reader_content_styles_test.dart',
   'reading/Font Kerning (Vertical)':

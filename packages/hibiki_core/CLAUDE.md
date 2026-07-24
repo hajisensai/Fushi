@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（46 张表，当前 schemaVersion=50）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（46 张表，当前 schemaVersion=53）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -72,7 +72,7 @@
 - `BookCustomCss` -- per-book 自定义 CSS 文本 + `updatedAt` 的跨端同步载体（LWW，`deleted`=重置墓碑）。
 - `RevealedImages` -- 图片防剧透遮罩「已揭开」状态的持久真相源（书内 ↔ 图片库双向同步）。
 
-迁移策略：`onUpgrade` 逐版本增量迁移（v1->v50），支持降级时自动备份并重建。
+迁移策略：`onUpgrade` 逐版本增量迁移（v1->v53），支持降级时自动备份并重建。
 
 ## 测试与质量
 

@@ -4476,6 +4476,12 @@ class $EpubBooksTable extends EpubBooks
       type: DriftSqlType.string,
       requiredDuringInsert: false,
       defaultValue: const Constant('epub'));
+  static const VerificationMeta _mangaReadingModeMeta =
+      const VerificationMeta('mangaReadingMode');
+  @override
+  late final GeneratedColumn<String> mangaReadingMode = GeneratedColumn<String>(
+      'manga_reading_mode', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _completedAtMeta =
       const VerificationMeta('completedAt');
   @override
@@ -4505,6 +4511,7 @@ class $EpubBooksTable extends EpubBooks
         sourceMetadata,
         importedAt,
         format,
+        mangaReadingMode,
         completedAt,
         sourceId
       ];
@@ -4590,6 +4597,12 @@ class $EpubBooksTable extends EpubBooks
       context.handle(_formatMeta,
           format.isAcceptableOrUnknown(data['format']!, _formatMeta));
     }
+    if (data.containsKey('manga_reading_mode')) {
+      context.handle(
+          _mangaReadingModeMeta,
+          mangaReadingMode.isAcceptableOrUnknown(
+              data['manga_reading_mode']!, _mangaReadingModeMeta));
+    }
     if (data.containsKey('completed_at')) {
       context.handle(
           _completedAtMeta,
@@ -4633,6 +4646,8 @@ class $EpubBooksTable extends EpubBooks
           .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
       format: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}format'])!,
+      mangaReadingMode: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}manga_reading_mode']),
       completedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}completed_at']),
       sourceId: attachedDatabase.typeMapping
@@ -4660,11 +4675,17 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final int importedAt;
 
   /// 书身份格式判别（PDF 阅读器 Phase 1）：`'epub'`（默认，含 EPUB / TextToEpub /
-  /// 有声书配对壳）或 `'pdf'`（pdfrx 渲染的真 PDF）。默认 `'epub'` 让既有全部行零破坏
-  /// （Never break userspace，v51 迁移 addColumn 自动回填），书架/进度/删除按此列区分而
-  /// 非另建平行表。PDF 行：`format='pdf'`、`epubPath`=PDF 绝对路径、`extractDir`=占位、
-  /// `chapterCount`=页数、`chaptersJson`=`'[]'`。
+  /// 有声书配对壳）、`'pdf'`（pdfrx 渲染的真 PDF）或 `'manga'`（漫画 OCR，第三种书）。
+  /// 默认 `'epub'` 让既有全部行零破坏（Never break userspace，v51 迁移 addColumn 自动
+  /// 回填），书架/进度/删除按此列区分而非另建平行表。PDF 行：`format='pdf'`、
+  /// `epubPath`=PDF 绝对路径、`extractDir`=占位、`chapterCount`=页数、`chaptersJson`=`'[]'`。
   final String format;
+
+  /// 漫画阅读模式覆盖（漫画 OCR，v52）：`null`=按页图长宽比自动判定（默认，横长跨页
+  /// 走 `'spread'` 双页布局、纵长走 `'webtoon'` 长条纵向连读）；非 null 为用户手动覆盖，
+  /// 取值 `'spread'`（跨页/翻页）或 `'webtoon'`（长条纵向）。仅 `format='manga'` 的行有意义，
+  /// 其它书身份恒 null。null 语义即「跟随自动判定」，与显式取值区分。
+  final String? mangaReadingMode;
 
   /// 书「读完」的时间戳（用户手动标记，或读到全书末尾自动写入）；null = 未完成。
   /// 镜像 [VideoBooks.completedAt]，书架概览「Completed」统计用。跳过后记/附录的
@@ -4687,6 +4708,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       this.sourceMetadata,
       required this.importedAt,
       required this.format,
+      this.mangaReadingMode,
       this.completedAt,
       this.sourceId});
   @override
@@ -4712,6 +4734,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     }
     map['imported_at'] = Variable<int>(importedAt);
     map['format'] = Variable<String>(format);
+    if (!nullToAbsent || mangaReadingMode != null) {
+      map['manga_reading_mode'] = Variable<String>(mangaReadingMode);
+    }
     if (!nullToAbsent || completedAt != null) {
       map['completed_at'] = Variable<DateTime>(completedAt);
     }
@@ -4742,6 +4767,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           : Value(sourceMetadata),
       importedAt: Value(importedAt),
       format: Value(format),
+      mangaReadingMode: mangaReadingMode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mangaReadingMode),
       completedAt: completedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(completedAt),
@@ -4767,6 +4795,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
       format: serializer.fromJson<String>(json['format']),
+      mangaReadingMode: serializer.fromJson<String?>(json['mangaReadingMode']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       sourceId: serializer.fromJson<int?>(json['sourceId']),
     );
@@ -4787,6 +4816,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
       'importedAt': serializer.toJson<int>(importedAt),
       'format': serializer.toJson<String>(format),
+      'mangaReadingMode': serializer.toJson<String?>(mangaReadingMode),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'sourceId': serializer.toJson<int?>(sourceId),
     };
@@ -4805,6 +4835,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           Value<String?> sourceMetadata = const Value.absent(),
           int? importedAt,
           String? format,
+          Value<String?> mangaReadingMode = const Value.absent(),
           Value<DateTime?> completedAt = const Value.absent(),
           Value<int?> sourceId = const Value.absent()}) =>
       EpubBookRow(
@@ -4821,6 +4852,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
             sourceMetadata.present ? sourceMetadata.value : this.sourceMetadata,
         importedAt: importedAt ?? this.importedAt,
         format: format ?? this.format,
+        mangaReadingMode: mangaReadingMode.present
+            ? mangaReadingMode.value
+            : this.mangaReadingMode,
         completedAt: completedAt.present ? completedAt.value : this.completedAt,
         sourceId: sourceId.present ? sourceId.value : this.sourceId,
       );
@@ -4846,6 +4880,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       importedAt:
           data.importedAt.present ? data.importedAt.value : this.importedAt,
       format: data.format.present ? data.format.value : this.format,
+      mangaReadingMode: data.mangaReadingMode.present
+          ? data.mangaReadingMode.value
+          : this.mangaReadingMode,
       completedAt:
           data.completedAt.present ? data.completedAt.value : this.completedAt,
       sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
@@ -4867,6 +4904,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
           ..write('format: $format, ')
+          ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId')
           ..write(')'))
@@ -4887,6 +4925,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       sourceMetadata,
       importedAt,
       format,
+      mangaReadingMode,
       completedAt,
       sourceId);
   @override
@@ -4905,6 +4944,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           other.sourceMetadata == this.sourceMetadata &&
           other.importedAt == this.importedAt &&
           other.format == this.format &&
+          other.mangaReadingMode == this.mangaReadingMode &&
           other.completedAt == this.completedAt &&
           other.sourceId == this.sourceId);
 }
@@ -4922,6 +4962,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> sourceMetadata;
   final Value<int> importedAt;
   final Value<String> format;
+  final Value<String?> mangaReadingMode;
   final Value<DateTime?> completedAt;
   final Value<int?> sourceId;
   final Value<int> rowid;
@@ -4938,6 +4979,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.sourceMetadata = const Value.absent(),
     this.importedAt = const Value.absent(),
     this.format = const Value.absent(),
+    this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4955,6 +4997,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.sourceMetadata = const Value.absent(),
     required int importedAt,
     this.format = const Value.absent(),
+    this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4978,6 +5021,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? sourceMetadata,
     Expression<int>? importedAt,
     Expression<String>? format,
+    Expression<String>? mangaReadingMode,
     Expression<DateTime>? completedAt,
     Expression<int>? sourceId,
     Expression<int>? rowid,
@@ -4995,6 +5039,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (sourceMetadata != null) 'source_metadata': sourceMetadata,
       if (importedAt != null) 'imported_at': importedAt,
       if (format != null) 'format': format,
+      if (mangaReadingMode != null) 'manga_reading_mode': mangaReadingMode,
       if (completedAt != null) 'completed_at': completedAt,
       if (sourceId != null) 'source_id': sourceId,
       if (rowid != null) 'rowid': rowid,
@@ -5014,6 +5059,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       Value<String?>? sourceMetadata,
       Value<int>? importedAt,
       Value<String>? format,
+      Value<String?>? mangaReadingMode,
       Value<DateTime?>? completedAt,
       Value<int?>? sourceId,
       Value<int>? rowid}) {
@@ -5030,6 +5076,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       importedAt: importedAt ?? this.importedAt,
       format: format ?? this.format,
+      mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
       completedAt: completedAt ?? this.completedAt,
       sourceId: sourceId ?? this.sourceId,
       rowid: rowid ?? this.rowid,
@@ -5075,6 +5122,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (format.present) {
       map['format'] = Variable<String>(format.value);
     }
+    if (mangaReadingMode.present) {
+      map['manga_reading_mode'] = Variable<String>(mangaReadingMode.value);
+    }
     if (completedAt.present) {
       map['completed_at'] = Variable<DateTime>(completedAt.value);
     }
@@ -5102,6 +5152,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
           ..write('format: $format, ')
+          ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
           ..write('rowid: $rowid')
@@ -19951,6 +20002,7 @@ typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> sourceMetadata,
   required int importedAt,
   Value<String> format,
+  Value<String?> mangaReadingMode,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
   Value<int> rowid,
@@ -19968,6 +20020,7 @@ typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> sourceMetadata,
   Value<int> importedAt,
   Value<String> format,
+  Value<String?> mangaReadingMode,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
   Value<int> rowid,
@@ -20083,6 +20136,10 @@ class $$EpubBooksTableFilterComposer
 
   ColumnFilters<String> get format => $composableBuilder(
       column: $table.format, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mangaReadingMode => $composableBuilder(
+      column: $table.mangaReadingMode,
+      builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnFilters(column));
@@ -20219,6 +20276,10 @@ class $$EpubBooksTableOrderingComposer
   ColumnOrderings<String> get format => $composableBuilder(
       column: $table.format, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get mangaReadingMode => $composableBuilder(
+      column: $table.mangaReadingMode,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnOrderings(column));
 
@@ -20287,6 +20348,9 @@ class $$EpubBooksTableAnnotationComposer
 
   GeneratedColumn<String> get format =>
       $composableBuilder(column: $table.format, builder: (column) => column);
+
+  GeneratedColumn<String> get mangaReadingMode => $composableBuilder(
+      column: $table.mangaReadingMode, builder: (column) => column);
 
   GeneratedColumn<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => column);
@@ -20414,6 +20478,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> sourceMetadata = const Value.absent(),
             Value<int> importedAt = const Value.absent(),
             Value<String> format = const Value.absent(),
+            Value<String?> mangaReadingMode = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -20431,6 +20496,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
             format: format,
+            mangaReadingMode: mangaReadingMode,
             completedAt: completedAt,
             sourceId: sourceId,
             rowid: rowid,
@@ -20448,6 +20514,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> sourceMetadata = const Value.absent(),
             required int importedAt,
             Value<String> format = const Value.absent(),
+            Value<String?> mangaReadingMode = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -20465,6 +20532,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
             format: format,
+            mangaReadingMode: mangaReadingMode,
             completedAt: completedAt,
             sourceId: sourceId,
             rowid: rowid,
